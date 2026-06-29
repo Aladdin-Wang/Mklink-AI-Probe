@@ -301,8 +301,10 @@ onMounted(() => {
       },
     )
   }
+  reconnectRunningTrace()
 })
 onUnmounted(() => {
+  clearLiveIngestQueue()
   abortImport()
   tlInstance?.destroy()
   tlInstance = null
@@ -343,6 +345,10 @@ const MAX_EVENTS = 800
 const ANALYSIS_EVENTS = 100_000
 const MAX_INTERVALS = 50_000
 const ANALYSIS_BUFFER_US = 60_000_000
+const LIVE_INGEST_MAX_PENDING = 10_000
+let pendingLiveEvents: any[] = []
+let pendingLiveCountEvents = false
+let liveIngestRaf = 0
 
 function taskNameFromMeta(id: number): string {
   return meta.taskNames[id] || meta.taskNames[String(id) as any] || ''
@@ -435,6 +441,46 @@ function ingestEvents(events: any[], countEvents = true) {
   }
 }
 
+function flushLiveIngest() {
+  liveIngestRaf = 0
+  const events = pendingLiveEvents.splice(0, pendingLiveEvents.length)
+  const countEvents = pendingLiveCountEvents
+  pendingLiveCountEvents = false
+  if (events.length) ingestEvents(events, countEvents)
+}
+
+function scheduleLiveIngest(events: any[], countEvents = true) {
+  if (!events.length) return
+  pendingLiveEvents.push(...events)
+  if (pendingLiveEvents.length > LIVE_INGEST_MAX_PENDING) {
+    pendingLiveEvents = pendingLiveEvents.slice(-LIVE_INGEST_MAX_PENDING)
+  }
+  pendingLiveCountEvents = pendingLiveCountEvents || countEvents
+  if (!liveIngestRaf) liveIngestRaf = requestAnimationFrame(flushLiveIngest)
+}
+
+function clearLiveIngestQueue() {
+  pendingLiveEvents = []
+  pendingLiveCountEvents = false
+  if (liveIngestRaf) {
+    cancelAnimationFrame(liveIngestRaf)
+    liveIngestRaf = 0
+  }
+}
+
+async function reconnectRunningTrace() {
+  if (offlineMode.value) return
+  try {
+    const status = await dash.getStatus()
+    if (status?.running) {
+      await dash.start()
+      connect()
+    }
+  } catch {
+    // Best effort: opening the tab should not surface a stale-status error.
+  }
+}
+
 watch(data, (nw) => {
   if (offlineMode.value) return
   const fresh = takeNewStreamPoints(nw as any[], lastStreamSeq)
@@ -456,8 +502,8 @@ watch(data, (nw) => {
     if (evt === 'status' || evt === 'history') {
       continue
     }
-    if (evt === 'batch') { ingestEvents(dp.events || [], !Number.isFinite(backendEvents)); continue }
-    if (evt === 'data' || !evt) ingestEvents([dp])
+    if (evt === 'batch') { scheduleLiveIngest(dp.events || [], !Number.isFinite(backendEvents)); continue }
+    if (evt === 'data' || !evt) scheduleLiveIngest([dp])
   }
   lastStreamSeq = fresh.nextSeq
 })
@@ -501,6 +547,7 @@ function evtColor(k: string) {
   return ''
 }
 function clearAll() {
+  clearLiveIngestQueue()
   eventList.value = []
   analysisEvents = []
   analysisBufferCount.value = 0
