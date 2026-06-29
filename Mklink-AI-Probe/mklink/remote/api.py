@@ -187,6 +187,10 @@ def create_app(
     _state["resource_manager"].on_preempt(
         lambda lease, _new_owner: release_resource_owner(_state, lease.owner)
     )
+    # Expose shared state on the app so out-of-closure callers (e.g.
+    # run_server(auto_connect=True)) can populate it without rebuilding the
+    # closure. Route handlers keep using the same ``_state`` dict directly.
+    app.state.mklink_state = _state
 
     # Auto-restore last project from history on startup（仅当未显式指定 project_root）
     if project_root == ".":
@@ -489,59 +493,46 @@ def create_app(
         mcu: str | None = Body(default=None),
     ):
         if _state["device"] and _state["device"].connected:
-            return {"status": "already_connected", "mcu": _state["device"].mcu_name}
+            dev = _state["device"]
+            return {
+                "status": "already_connected",
+                "mcu": dev.mcu_name,
+                "idcode": hex(dev.idcode) if dev.idcode else "0x0",
+                "port": dev.port,
+                "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
+            }
 
         import mklink
-        try:
-            device = mklink.connect(
+
+        # mklink.connect() now performs SWD DP init + IDCODE read + MCU match
+        # inside Device._connect (see mklink.device.initialize_target), so this
+        # endpoint no longer duplicates that work. Run the whole (potentially
+        # slow, hardware-touching) connect in a worker thread to avoid blocking
+        # the async event loop during cmd.get_idcode().
+        loop = asyncio.get_event_loop()
+
+        def _connect():
+            return mklink.connect(
                 port=port,
                 axf=axf,
                 mcu=mcu,
                 project_root=_state["project_root"],
             )
 
-            # Read IDCODE in thread to avoid blocking async loop
-            loop = asyncio.get_event_loop()
-            def _read_idcode():
-                idcode = device._flash.get_idcode()
-                device._bridge._ctx.idcode = idcode
-                from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode
-                profiles = load_mcu_profiles()
-                # Prefer explicit mcu hint (compatible chips share IDCODE)
-                if mcu:
-                    p = profiles.get(mcu)
-                    if p:
-                        device._bridge._ctx.current_mcu = p.get("name", mcu)
-                        return idcode
-                # Fallback: match by config mcu_key
-                from mklink.project_config import load_config
-                cfg = load_config(_state["project_root"]) or {}
-                cfg_mcu = cfg.get("mcu_key")
-                if cfg_mcu:
-                    p = profiles.get(cfg_mcu)
-                    if p:
-                        device._bridge._ctx.current_mcu = p.get("name", cfg_mcu)
-                        return idcode
-                # Last resort: match by idcode
-                matched = match_mcu_by_idcode(idcode, profiles)
-                if matched:
-                    device._bridge._ctx.current_mcu = profiles[matched].get("name", matched)
-                return idcode
-
-            try:
-                idcode = await loop.run_in_executor(None, _read_idcode)
-            except Exception:
-                idcode = 0
-
-            _state["device"] = device
-            _state["dispatcher"] = DeviceDispatcher(device)
-            return {
-                "status": "connected",
-                "mcu": device.mcu_name,
-                "idcode": hex(idcode) if idcode else "0x0",
-            }
+        try:
+            device = await loop.run_in_executor(None, _connect)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+        _state["device"] = device
+        _state["dispatcher"] = DeviceDispatcher(device)
+        return {
+            "status": "connected",
+            "mcu": device.mcu_name,
+            "idcode": hex(device.idcode) if device.idcode else "0x0",
+            "port": device.port,
+            "axf_loaded": bool(getattr(device, "_dwarf_info", None)),
+        }
 
     @app.post("/api/device/disconnect")
     async def disconnect_device():
@@ -1750,12 +1741,15 @@ def run_server(
         import mklink
         try:
             device = mklink.connect(port=device_port, axf=axf, project_root=project_root)
-            # Store in app state
-            from mklink.remote.server import DeviceDispatcher
-            _state_ref = None
-            for middleware in app.user_middleware:
-                # Access the state through the app
-                pass
+            # mklink.connect() now initializes idcode/MCU inside Device._connect,
+            # so device.idcode is valid here. Store the device in the app's shared
+            # state so the API endpoints actually serve it (previously this
+            # connected then orphaned the device via a dead loop).
+            mks = getattr(app.state, "mklink_state", None)
+            if mks is not None:
+                from mklink.remote.server import DeviceDispatcher
+                mks["device"] = device
+                mks["dispatcher"] = DeviceDispatcher(device)
             logger.info("Auto-connected device: MCU=%s IDCODE=0x%08X",
                         device.mcu_name, device.idcode)
         except Exception as e:

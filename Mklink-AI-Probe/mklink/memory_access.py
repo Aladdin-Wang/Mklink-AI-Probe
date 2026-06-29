@@ -38,6 +38,7 @@ def read_memory(
     save: str | None = None,
     timeout: float = 10.0,
     bridge: "MKLinkSerialBridge | None" = None,
+    project_root: str = ".",
 ) -> tuple[bytes, str]:
     """Read target memory via MKLink ``cmd.read_ram``.
 
@@ -46,7 +47,11 @@ def read_memory(
 
     Args:
         bridge: Optional pre-connected bridge instance. If provided, the
-            port parameter is ignored and no new connection is created.
+            port parameter is ignored and no new connection is created (and no
+            target init is performed — the persistent session is expected to be
+            already initialized, e.g. via a Device).
+        project_root: Used only when opening a fresh bridge, for MCU profile
+            matching during SWD DP init.
     """
     from mklink.bridge import MKLinkSerialBridge
 
@@ -65,6 +70,13 @@ def read_memory(
     bridge = MKLinkSerialBridge(port)
     if not bridge.connect():
         raise ConnectionError("MKLink connection failed")
+    # SWD DP init + IDCODE for this fresh per-op session. Previously this
+    # path relied entirely on the probe firmware re-running cmd.get_idcode()
+    # when the serial port reopened; make it explicit and set _ctx.idcode so
+    # callers that read it get a real value. Tolerant (no target → idcode 0).
+    from mklink.flash import MKLinkFlash
+    from mklink.device import initialize_target
+    initialize_target(bridge, MKLinkFlash(bridge), project_root=project_root)
     try:
         if save:
             cmd = f'cmd.read_ram({addr_s}, {size}, "{save}")'

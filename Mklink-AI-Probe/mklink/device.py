@@ -47,6 +47,68 @@ class DeviceNotConnectedError(DeviceError):
     pass
 
 
+def initialize_target(
+    bridge: Any,
+    flash: Any,
+    *,
+    mcu_hint: str | None = None,
+    project_root: str = ".",
+    timeout: float = 10.0,
+) -> int:
+    """Initialize the target SWD DP, read IDCODE, and match the MCU profile.
+
+    Sends ``cmd.get_idcode()`` (the probe firmware's SWD line-switch + DP
+    init + IDCODE read), writes the result into the bridge context, and
+    resolves ``current_mcu`` with priority
+    ``mcu_hint > .mklink/config.json:mcu_key > idcode match``.
+
+    Call this on a freshly ``bridge.connect()``-ed session for **every path
+    that establishes a target *debug* session** — ``Device._connect``,
+    direct-bridge CLI ops, ``memory_access.read_memory``. Do NOT call it for
+    probe-only paths (``version``, ``firmware_check``, port detection, Modbus,
+    generic serial): those must work without a target MCU attached.
+
+    Best-effort / tolerant by design: if IDCODE cannot be read (no target,
+    broken SWD, timeout, or a mock bridge in tests), the bridge context keeps
+    its default (``idcode`` 0) and ``0`` is returned — the caller stays
+    connected. This preserves the historical "connect succeeds even without a
+    target" semantics while fixing the bug where ``idcode`` was *always* 0
+    even with a target present (e.g. MCP ``connect``'s long-lived session that
+    never re-opened the serial port and so missed the firmware's startup DP
+    init window).
+    """
+    from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode
+    from mklink.project_config import load_config
+
+    try:
+        idcode = flash.get_idcode(timeout=timeout)
+    except Exception:
+        # No target / broken SWD / timeout / mock bridge: stay connected, idcode 0.
+        return 0
+
+    bridge._ctx.idcode = idcode
+
+    try:
+        profiles = load_mcu_profiles()
+        # 1) explicit hint wins — compatible chips share the same IDCODE
+        if mcu_hint and profiles.get(mcu_hint):
+            bridge._ctx.current_mcu = profiles[mcu_hint].get("name", mcu_hint)
+            return idcode
+        # 2) project config mcu_key
+        cfg = load_config(project_root) or {}
+        cfg_mcu = cfg.get("mcu_key")
+        if cfg_mcu and profiles.get(cfg_mcu):
+            bridge._ctx.current_mcu = profiles[cfg_mcu].get("name", cfg_mcu)
+            return idcode
+        # 3) last resort: match by idcode
+        matched = match_mcu_by_idcode(idcode, profiles)
+        if matched:
+            bridge._ctx.current_mcu = profiles[matched].get("name", matched)
+    except Exception:
+        pass
+    return idcode
+
+
 class Device:
     """Unified MKLink device API.
 
@@ -120,6 +182,20 @@ class Device:
 
         from mklink.flash import MKLinkFlash
         self._flash = MKLinkFlash(self._bridge)
+
+        # SWD DP init + IDCODE read + MCU match. This was previously only done
+        # by the remote API layer; every other connect path (MCP, SDK users,
+        # legacy socket server, SystemView CLI, pytest fixtures) skipped it, so
+        # the DAP was never initialized in long-lived sessions and idcode read
+        # 0. Doing it here fixes all of them at once. Tolerant: a missing
+        # target leaves idcode at 0 rather than failing connect (see
+        # initialize_target docstring).
+        initialize_target(
+            self._bridge,
+            self._flash,
+            mcu_hint=self._mcu_hint,
+            project_root=self._project_root,
+        )
 
         if self._axf:
             self._load_dwarf_info()

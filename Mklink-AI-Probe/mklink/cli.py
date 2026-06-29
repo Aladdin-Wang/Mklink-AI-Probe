@@ -1371,6 +1371,23 @@ def _resolve_port(port: str | None, project_root: str = ".") -> str:
     return found
 
 
+def _init_target_bridge(bridge, project_root: str = "."):
+    """对一个刚 bridge.connect() 的目标调试会话做 SWD DP 初始化 + IDCODE 读取。
+
+    用于 CLI 一次性目标操作（read-ram/write-ram/flush-memory/dump-memory/
+    halt/resume/step/break）：这些命令每次新建串口会话，原本靠探针固件在
+    串口重开时重跑 cmd.get_idcode() 完成 DP 初始化——这里显式做一次并把
+    idcode 写回 _ctx，不再隐式依赖固件行为。容错：无目标时 idcode 留 0，
+    不影响命令本身（与 mklink.device.initialize_target 语义一致）。
+
+    仅用于 *目标调试* 命令；version/firmware_check/端口探测/Modbus/serial
+    等 probe-only 命令不要调用。
+    """
+    from mklink.flash import MKLinkFlash
+    from mklink.device import initialize_target
+    initialize_target(bridge, MKLinkFlash(bridge), project_root=project_root)
+
+
 def _cli_read_ram(port: str | None, addr: str, size: int, save: str | None):
     """读取目标芯片 RAM 数据。"""
     from mklink.bridge import MKLinkSerialBridge
@@ -1383,6 +1400,7 @@ def _cli_read_ram(port: str | None, addr: str, size: int, save: str | None):
         return
 
     try:
+        _init_target_bridge(bridge)
         if save:
             cmd = f'cmd.read_ram({addr}, {size}, "{save}")'
         else:
@@ -1573,6 +1591,7 @@ def _cli_write_ram(port: str | None, addr: str, data_bytes: list[str]):
         return
 
     try:
+        _init_target_bridge(bridge)
         byte_args = ", ".join(data_bytes)
         write_cmd = f'cmd.write_ram({addr}, {byte_args})'
         print(f"[*] 写入: {write_cmd}")
@@ -1796,6 +1815,7 @@ def _cli_flush_memory(
         return
 
     try:
+        _init_target_bridge(bridge)
         ok_count = 0
         fail_count = 0
         last_err = ""
@@ -1953,6 +1973,8 @@ def _cli_dump_memory(
     if not bridge.connect():
         print("[FAIL] connect failed")
         return
+
+    _init_target_bridge(bridge)
 
     parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
     collected_frames: list[dict] = []
@@ -3269,6 +3291,7 @@ def _cli_halt(port: str | None):
     bridge = MKLinkSerialBridge(port)
     try:
         bridge.connect()
+        _init_target_bridge(bridge)
         state = halt_cpu(bridge)
         if state.halted:
             print(f"[OK] CPU 已停止 (DHCSR=0x{state.dhcsr_raw:08X})")
@@ -3287,6 +3310,7 @@ def _cli_resume(port: str | None):
     bridge = MKLinkSerialBridge(port)
     try:
         bridge.connect()
+        _init_target_bridge(bridge)
         state = resume_cpu(bridge)
         if not state.halted:
             print(f"[OK] CPU 已恢复运行 (DHCSR=0x{state.dhcsr_raw:08X})")
@@ -3305,6 +3329,7 @@ def _cli_step(port: str | None):
     bridge = MKLinkSerialBridge(port)
     try:
         bridge.connect()
+        _init_target_bridge(bridge)
         state = step_cpu(bridge)
         print(f"[OK] 单步执行完成 (DHCSR=0x{state.dhcsr_raw:08X}, halted={state.halted})")
     finally:
@@ -3323,6 +3348,7 @@ def _cli_break(args):
     bridge = MKLinkSerialBridge(port)
     try:
         bridge.connect()
+        _init_target_bridge(bridge)
 
         # --status: show debug state
         if args.status:
