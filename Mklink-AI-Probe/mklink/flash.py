@@ -21,22 +21,10 @@ if sys.platform == "win32":
 
 from mklink.bridge import MKLinkSerialBridge
 from mklink.discovery import find_microkeen_disk
+from mklink.hpm_config import HPM_BOARD_FLASH_CFG
 from mklink.profiles import load_mcu_profiles
 from mklink.utils import parse_download_progress, parse_load_result
 from mklink._types import FLM_LOAD_TIMEOUT
-
-HPM_BOARD_FLASH_CFG = {
-    "hpm5e00evk": ("0xfcf90002U", "0x00000005U", "0x00001000U"),
-    "hpm6e00evk": ("0xfcf90001U", "0x00000005U", "0x00001000U"),
-    "hpm6p00evk": ("0xfcf90002U", "0x00000005U", "0x00001000U"),
-    "hpm5300evk": ("0xfcf90002U", "0x00000005U", "0x00001000U"),
-    "hpm5301evklite": ("0xfcf90002U", "0x00000005U", "0x00001000U"),
-    "hpm6200evk": ("0xfcf90001U", "0x00000005U", "0x00001000U"),
-    "hpm6300evk": ("0xfcf90001U", "0x00000005U", "0x00001000U"),
-    "hpm6750evk2": ("0xfcf90002U", "0x00000005U", "0x0000000EU"),
-    "hpm6750evkmini": ("0xfcf90002U", "0x00000005U", "0x0000000EU"),
-    "hpm6800evk": ("0xfcf90001U", "0x00000005U", "0x00001000U"),
-}
 
 
 def parse_hpm_program_result(output: str) -> dict:

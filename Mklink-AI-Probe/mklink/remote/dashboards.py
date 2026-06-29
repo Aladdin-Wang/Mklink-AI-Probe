@@ -336,8 +336,6 @@ class SystemViewStreamManager:
         if self._running:
             return
 
-        self._parser = self._create_parser()
-
         self._stop_event.clear()
         self._paused.set()
         self._running = True
@@ -351,6 +349,7 @@ class SystemViewStreamManager:
         self._recording_path = ""
         self._recording_summary_path = ""
         self._recording_error = ""
+        self._parser = self._create_parser(device)
 
         def _poll():
             try:
@@ -433,20 +432,30 @@ class SystemViewStreamManager:
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
 
-    def _create_parser(self):
+    def _create_parser(self, device=None):
         from mklink.systemview_parser import SystemViewParser
 
         parser = SystemViewParser()
-        # Realtime capture often starts after SEGGER INIT/TaskInfo packets have
-        # already rolled out of the RTT ring. STM32 RT-Thread task IDs are
-        # shrunken pointers, so seed the same defaults used by Device.
-        parser._ram_base = 0x20000000
-        parser._id_shift = 2
+        defaults = {}
+        getter = getattr(device, "_systemview_defaults", None)
+        if callable(getter):
+            try:
+                defaults = getter()
+            except Exception:
+                defaults = {}
+        parser._ram_base = _positive_int(defaults.get("ram_base")) or 0x20000000
+        parser._id_shift = _positive_int(defaults.get("id_shift")) or 2
+        freq = _positive_int(defaults.get("cpu_freq"))
+        if freq:
+            parser._cpu_freq = freq
+            self._cpu_freq_source = str(defaults.get("cpu_freq_source") or "systemview_default")
         return parser
 
     def _apply_cpu_freq_hint(self, device, start_result: dict | None = None) -> int:
         p = self._parser
         if not p or p.cpu_freq:
+            if p and p.cpu_freq and not self._cpu_freq_source:
+                self._cpu_freq_source = "parser_default"
             return p.cpu_freq if p else 0
 
         freq = 0
@@ -455,7 +464,7 @@ class SystemViewStreamManager:
         for key in ("cpu_freq", "cpu_freq_hint"):
             freq = _positive_int(result.get(key))
             if freq:
-                source = "systemview_start"
+                source = str(result.get("cpu_freq_source") or "systemview_start")
                 break
 
         if not freq:
@@ -484,6 +493,15 @@ class SystemViewStreamManager:
         return freq
 
     def _profile_cpu_freq_default(self, device) -> int:
+        getter = getattr(device, "_systemview_defaults", None)
+        if callable(getter):
+            try:
+                defaults = getter()
+                freq = _positive_int(defaults.get("cpu_freq"))
+                if freq:
+                    return freq
+            except Exception:
+                pass
         profile = None
         try:
             getter = getattr(device, "_get_mcu_profile", None)
@@ -617,12 +635,13 @@ class SystemViewStreamManager:
         p = self._parser
         if not p:
             return set()
+        ram_base = _positive_int(getattr(p, "_ram_base", 0)) or 0x20000000
         ids: set[int] = set()
         for ev in events:
             tid = ev.get("task_id")
             if not isinstance(tid, int):
                 continue
-            if tid < 0x20000000:
+            if tid < ram_base:
                 continue
             if tid in p._task_names or tid in self._name_resolution_attempted:
                 continue
@@ -641,11 +660,12 @@ class SystemViewStreamManager:
                     ev["task_name"] = name
 
     def _resolve_task_names(self, device, task_ids: set[int]) -> dict[int, str]:
-        ids = {int(tid) for tid in task_ids if int(tid) >= 0x20000000}
+        p = self._parser
+        ram_base = _positive_int(getattr(p, "_ram_base", 0)) or 0x20000000
+        ids = {int(tid) for tid in task_ids if int(tid) >= ram_base}
         if not ids:
             return {}
         names = device.systemview_resolve_task_names(sorted(ids)) or {}
-        p = self._parser
         if p:
             for tid, name in names.items():
                 if name:

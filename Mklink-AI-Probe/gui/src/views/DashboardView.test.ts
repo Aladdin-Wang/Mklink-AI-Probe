@@ -1,11 +1,16 @@
 import { shallowMount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import { readFileSync } from 'node:fs'
 import DashboardView from './DashboardView.vue'
 
+const routerMock = vi.hoisted(() => ({
+  query: {} as Record<string, string>,
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ query: routerMock.query }),
 }))
 
 vi.mock('../composables/useMklinkApi', () => ({
@@ -37,6 +42,10 @@ vi.mock('../composables/useResourceStatus', () => ({
 const dashStub = { template: '<div />', props: ['deviceConnected'] }
 
 describe('DashboardView layout classes', () => {
+  afterEach(() => {
+    routerMock.query = {}
+  })
+
   it('does not use the full-screen clipped card layout for RTOS Trace', async () => {
     const wrapper = shallowMount(DashboardView, {
       global: {
@@ -95,5 +104,45 @@ describe('DashboardView layout classes', () => {
     expect(source).toMatch(/\.sv-legend\s*\{[^}]*overflow-y:\s*auto/s)
     expect(source).toMatch(/\.sv-vcpu\s*\{[^}]*height:\s*96px/s)
     expect(source).toMatch(/\.sv-vcpu\s*\{[^}]*overflow-y:\s*auto/s)
+  })
+
+  it('batches live SystemView events through animation frames', () => {
+    const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
+
+    expect(source).toContain('pendingLiveEvents')
+    expect(source).toContain('function scheduleLiveIngest')
+    expect(source).toContain('requestAnimationFrame(flushLiveIngest)')
+    expect(source).not.toMatch(/evt === 'batch'\)\s*\{\s*ingestEvents\(dp\.events/s)
+  })
+
+  it('can open directly on the RTOS Trace tab from the route query', () => {
+    routerMock.query = { tab: 'systemview' }
+
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          VofaTab: dashStub,
+          SystemViewTab: { template: '<div class="sv-tab" />', props: ['deviceConnected'] },
+        },
+      },
+    })
+
+    expect(wrapper.get('.card').classes()).toContain('card-systemview')
+  })
+
+  it('reconnects SystemView SSE when opening an already running trace', () => {
+    const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
+
+    expect(source).toContain('async function reconnectRunningTrace')
+    expect(source).toContain('dash.getStatus()')
+    expect(source).toMatch(/if\s*\(status\?\.running\)/)
+    expect(source).toContain('connect()')
   })
 })
