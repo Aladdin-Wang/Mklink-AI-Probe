@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from mklink.flash import MKLinkFlash, burn_hex_file, parse_hpm_program_result
+from mklink.hpm_config import HPM_BOARD_FLASH_CFG
 from mklink.project_config import save_config, save_project_info
 
 
@@ -102,3 +103,57 @@ def test_hpm_flash_does_not_require_mcu_profile(tmp_path: Path, monkeypatch):
 
     assert result["success"] is True
     assert ("hpm", "demo.bin", "0x80000400", "hpm6e00evk") in calls
+
+
+def test_hpm_custom_mcu_burn_hex_file_routes_to_hpm_program(tmp_path: Path, monkeypatch):
+    bin_file = tmp_path / "demo.bin"
+    bin_file.write_bytes(b"demo")
+    save_config(str(tmp_path), {
+        "com_port": "COM9",
+        "mcu_key": "custom",
+        "swd_clock": 1000000,
+    })
+    save_project_info(str(tmp_path), {
+        "vendor": "HPMicro",
+        "board": "hpm5301evklite",
+        "flash_base": "0x80003000",
+        "bin_base": "0x80000400",
+        "bin_path": str(bin_file),
+    })
+
+    calls = []
+
+    class FakeFlash:
+        def set_swd_clock(self, swd_clock):
+            calls.append(("clock", swd_clock))
+
+        def get_idcode(self):
+            calls.append(("idcode",))
+            return 0x1000563D
+
+        def load_flm(self, flm_path, flash_base, ram_base):
+            raise AssertionError("custom HPM route must not load FLM")
+
+        def burn_hpm_bin(self, path, *, addr, board=None, flash_cfg=None, progress_callback=None):
+            calls.append(("hpm", Path(path).name, addr, board, tuple(flash_cfg)))
+            return {"success": True}
+
+        def burn_bin(self, *args, **kwargs):
+            raise AssertionError("HPM BIN route must use burn_hpm_bin")
+
+        def burn_hex(self, *args, **kwargs):
+            raise AssertionError("HPM BIN route must not use burn_hex")
+
+        def beep(self):
+            calls.append(("beep",))
+
+        def close(self):
+            calls.append(("close",))
+
+    monkeypatch.setattr(MKLinkFlash, "connect", staticmethod(lambda port=None: FakeFlash()))
+
+    result = burn_hex_file(project_root=str(tmp_path))
+
+    assert result["success"] is True
+    assert ("hpm", "demo.bin", "0x80000400", "hpm5301evklite", HPM_BOARD_FLASH_CFG["hpm5301evklite"]) in calls
+    assert calls[-1] == ("close",)

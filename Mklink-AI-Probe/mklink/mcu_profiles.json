@@ -88,6 +88,29 @@
         { "name": "ram", "start": "0x1FFE0000", "size": "0x80000" }
       ]
     },
+    "hpm5301": {
+      "name": "HPMicro HPM5301",
+      "idcode_pattern": "",
+      "device_prefix": "HPM5301",
+      "flm_path": "",
+      "flash_base": "0x80000000",
+      "ram_base": "0x00080000",
+      "systemview_ram_base": "0x10000000",
+      "systemview_id_shift": 2,
+      "page_size": 256,
+      "sector_size": 4096,
+      "flash_size": "2MB",
+      "swd_clock_default": 1000000,
+      "rtt_default": {
+        "addr": "0x00080000",
+        "search_size": 1024,
+        "channel": 0
+      },
+      "regions": [
+        { "name": "flash", "start": "0x80000000", "size": "0x200000" },
+        { "name": "ram", "start": "0x00080000", "size": "0x40000" }
+      ]
+    },
     "custom": {
       "name": "Custom MCU",
       "idcode_pattern": "",

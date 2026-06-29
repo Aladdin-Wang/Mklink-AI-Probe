@@ -109,6 +109,20 @@ def initialize_target(
     return idcode
 
 
+def _positive_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return 0
+    try:
+        parsed = int(value, 0) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _fmt_hex(value: int) -> str:
+    return f"0x{value:08X}"
+
+
 class Device:
     """Unified MKLink device API.
 
@@ -406,6 +420,113 @@ class Device:
                 return profiles[key]
         return None
 
+    def _systemview_defaults(self) -> dict[str, Any]:
+        defaults: dict[str, Any] = {
+            "ram_base": 0x20000000,
+            "id_shift": 2,
+            "cpu_freq": 0,
+            "cpu_freq_source": "",
+        }
+
+        profile = None
+        try:
+            profile = self._get_mcu_profile()
+        except Exception:
+            profile = None
+
+        if isinstance(profile, dict):
+            ram_base = _positive_int(
+                profile.get("systemview_ram_base")
+                or profile.get("sysview_ram_base")
+                or profile.get("ram_base")
+            )
+            if ram_base:
+                defaults["ram_base"] = ram_base
+            id_shift = _positive_int(
+                profile.get("systemview_id_shift")
+                or profile.get("sysview_id_shift")
+            )
+            if id_shift:
+                defaults["id_shift"] = id_shift
+            freq = _positive_int(
+                profile.get("systemview_cpu_freq")
+                or profile.get("sysview_cpu_freq")
+                or profile.get("cpu_freq_default")
+                or profile.get("system_core_clock")
+            )
+            if freq:
+                defaults["cpu_freq"] = freq
+                defaults["cpu_freq_source"] = "mcu_profile_default"
+
+        try:
+            from mklink.project_config import load_project_info
+            project = load_project_info(self._project_root) or {}
+        except Exception:
+            project = {}
+
+        if isinstance(project, dict):
+            board = str(project.get("board", "")).lower()
+            vendor = str(project.get("vendor", "")).lower()
+            soc = str(project.get("soc", "")).lower()
+            device = str(project.get("device", "")).lower()
+            looks_hpm5301 = (
+                "hpmicro" in vendor
+                and ("hpm5301" in board or "hpm5301" in soc or "hpm5301" in device)
+            ) or board == "hpm5301evklite"
+
+            ram_base = _positive_int(
+                project.get("systemview_ram_base")
+                or project.get("sysview_ram_base")
+            )
+            if ram_base:
+                defaults["ram_base"] = ram_base
+            elif looks_hpm5301:
+                defaults["ram_base"] = 0x10000000
+
+            id_shift = _positive_int(
+                project.get("systemview_id_shift")
+                or project.get("sysview_id_shift")
+            )
+            if id_shift:
+                defaults["id_shift"] = id_shift
+
+            freq = _positive_int(
+                project.get("systemview_cpu_freq")
+                or project.get("sysview_cpu_freq")
+                or project.get("cpu_freq_default")
+                or project.get("system_core_clock")
+            )
+            if freq:
+                defaults["cpu_freq"] = freq
+                defaults["cpu_freq_source"] = "project_info"
+
+        return defaults
+
+    def _symbol_source_path(self) -> str | None:
+        if self._axf and Path(self._axf).exists():
+            return self._axf
+        try:
+            from mklink.project_config import load_project_info
+            project = load_project_info(self._project_root) or {}
+        except Exception:
+            project = {}
+        for key in ("elf_path", "axf_path", "bin_path", "hex_path"):
+            path = project.get(key) if isinstance(project, dict) else None
+            if path and Path(path).exists():
+                return str(path)
+        return None
+
+    def _read_cpu_clock_hint(self) -> tuple[int, str]:
+        for name in ("SystemCoreClock", "hpm_core_clock"):
+            try:
+                freq = self.read_variable(name)
+            except Exception:
+                continue
+            freq = _positive_int(freq)
+            if freq:
+                return freq, name
+        return 0, ""
+
     # ------------------------------------------------------------------
     # RTT
     # ------------------------------------------------------------------
@@ -537,14 +658,11 @@ class Device:
             self._rtt_session.stop()
             self._rtt_session = None
 
-        cpu_freq_hint = 0
-        if self._dwarf_info:
-            try:
-                freq = self.read_variable("SystemCoreClock")
-                if isinstance(freq, int) and freq > 0:
-                    cpu_freq_hint = freq
-            except Exception:
-                pass
+        sv_defaults = self._systemview_defaults()
+        cpu_freq_hint, cpu_freq_source = self._read_cpu_clock_hint()
+        if not cpu_freq_hint:
+            cpu_freq_hint = _positive_int(sv_defaults.get("cpu_freq"))
+            cpu_freq_source = str(sv_defaults.get("cpu_freq_source") or "")
 
         from mklink.systemview import SystemViewSession
         from mklink.systemview_parser import SystemViewParser
@@ -561,13 +679,17 @@ class Device:
         # STM32 SRAM base 0x20000000 + ID_SHIFT=2（SEGGER 默认，4 字节对齐）。
         # 这样 task_id 还原成真实 rt_thread 指针，便于直接读线程名。INIT 若抓到
         # 会覆盖为同值。非 STM32 工程可后续从 MCU profile 取 ram base。
-        self._systemview_parser._ram_base = 0x20000000
-        self._systemview_parser._id_shift = 2
+        self._systemview_parser._ram_base = int(sv_defaults["ram_base"])
+        self._systemview_parser._id_shift = int(sv_defaults["id_shift"])
         # SystemCoreClock must be read before SystemView switches the bridge
         # into binary stream mode; command/variable reads are unavailable there.
         if cpu_freq_hint:
             self._systemview_parser._cpu_freq = cpu_freq_hint
             result.setdefault("cpu_freq_hint", cpu_freq_hint)
+            if cpu_freq_source:
+                result.setdefault("cpu_freq_source", cpu_freq_source)
+        result.setdefault("systemview_ram_base", _fmt_hex(int(sv_defaults["ram_base"])))
+        result.setdefault("systemview_id_shift", int(sv_defaults["id_shift"]))
         return result
 
     def systemview_read_bytes(
@@ -683,15 +805,32 @@ class Device:
     def read_variable(self, name: str) -> Any:
         self._require_connected()
         if not self._dwarf_info:
-            raise DeviceError(
-                "No AXF/ELF loaded. Pass axf= to connect() for variable access."
-            )
+            return self._read_variable_from_map(name)
         from mklink.watch import resolve_variable_path, decode_value
-        addr, type_name, size, enum_values = resolve_variable_path(
-            self._dwarf_info, name
-        )
+        try:
+            addr, type_name, size, enum_values = resolve_variable_path(
+                self._dwarf_info, name
+            )
+        except KeyError:
+            return self._read_variable_from_map(name)
         raw = self.read_memory(addr, size)
         return decode_value(raw, type_name, enum_values, known_size=size)
+
+    def _read_variable_from_map(self, name: str) -> Any:
+        source = self._symbol_source_path()
+        if not source:
+            raise DeviceError(
+                "No AXF/ELF/MAP source available. Pass axf= to connect() for variable access."
+            )
+        from mklink.watch import resolve_map_source_variable, decode_value
+        resolved = resolve_map_source_variable(source, name)
+        if not resolved:
+            raise KeyError(f"variable '{name}' not found or has no address")
+        addr, type_name, size = resolved
+        if not size:
+            size = 4
+        raw = self.read_memory(addr, size)
+        return decode_value(raw, type_name, None, known_size=size)
 
     def write_variable(self, name: str, value: int) -> None:
         self._require_connected()

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from mklink.cli import _cli_project_init, _detect_hpm_segger_project
+from mklink.hpm_config import HPM_BOARD_FLASH_CFG
 from mklink.project_config import load_config, load_project_info
 
 
@@ -49,6 +50,7 @@ def test_hpm_detect_prefers_newest_cmake_output_over_ses_export(tmp_path: Path):
     assert info is not None
     assert info["board"] == "hpm6e00evk"
     assert info["ide_type"] == "HPM SDK CMake"
+    assert tuple(info["hpm_flash_cfg"]) == HPM_BOARD_FLASH_CFG["hpm6e00evk"]
     assert info["bin_path"].endswith(str(Path("hpm6e00evk_flash_xip_debug") / "output" / "demo.bin"))
     assert info["axf_path"].endswith(str(Path("hpm6e00evk_flash_xip_debug") / "output" / "demo.elf"))
 

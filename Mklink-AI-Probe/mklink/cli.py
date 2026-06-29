@@ -95,19 +95,7 @@ def _detect_hpm_segger_project(project_root: str) -> dict | None:
     """
     from pathlib import Path
     import json
-
-    hpm_flash_cfg_by_board = {
-        "hpm5e00evk": ["0xfcf90002U", "0x00000005U", "0x00001000U"],
-        "hpm6e00evk": ["0xfcf90001U", "0x00000005U", "0x00001000U"],
-        "hpm6p00evk": ["0xfcf90002U", "0x00000005U", "0x00001000U"],
-        "hpm5300evk": ["0xfcf90002U", "0x00000005U", "0x00001000U"],
-        "hpm5301evklite": ["0xfcf90002U", "0x00000005U", "0x00001000U"],
-        "hpm6200evk": ["0xfcf90001U", "0x00000005U", "0x00001000U"],
-        "hpm6300evk": ["0xfcf90001U", "0x00000005U", "0x00001000U"],
-        "hpm6750evk2": ["0xfcf90002U", "0x00000005U", "0x0000000EU"],
-        "hpm6750evkmini": ["0xfcf90002U", "0x00000005U", "0x0000000EU"],
-        "hpm6800evk": ["0xfcf90001U", "0x00000005U", "0x00001000U"],
-    }
+    from mklink.hpm_config import HPM_BOARD_FLASH_CFG
 
     root = Path(project_root)
 
@@ -174,7 +162,7 @@ def _detect_hpm_segger_project(project_root: str) -> dict | None:
                 "soc": soc,
                 "flash_base": "0x80003000",
                 "bin_base": "0x80000400",
-                "hpm_flash_cfg": hpm_flash_cfg_by_board.get(str(board).lower()),
+                "hpm_flash_cfg": HPM_BOARD_FLASH_CFG.get(str(board).lower()),
                 "ram_base": "0x01200000",
                 "flash_size": 0x1000000,
                 "ram_size": 0x80000,
@@ -215,7 +203,7 @@ def _detect_hpm_segger_project(project_root: str) -> dict | None:
             "soc": target.get("soc", "HPM5301"),
             "flash_base": "0x80003000",
             "bin_base": "0x80000400",
-            "hpm_flash_cfg": hpm_flash_cfg_by_board.get(str(board).lower()),
+            "hpm_flash_cfg": HPM_BOARD_FLASH_CFG.get(str(board).lower()),
             "ram_base": "0x00080300",
             "flash_size": 0x100000,
             "ram_size": 130304,

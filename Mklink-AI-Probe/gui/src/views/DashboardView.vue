@@ -89,7 +89,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useToast } from '../composables/useToast'
 import { useResourceStatus } from '../composables/useResourceStatus'
@@ -103,6 +103,7 @@ import ModbusTab from '../components/dash/ModbusTab.vue'
 import VofaTab from '../components/dash/VofaTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
 
+const route = useRoute()
 const router = useRouter()
 const {
   deviceStatus,
@@ -114,7 +115,9 @@ const {
 } = useMklinkApi()
 const toast = useToast()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
-const tab = ref('rtt')
+const dashboardTabs = new Set(['rtt', 'watch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
+const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
 const flashing = ref(false)
 const flashReq = reactive({ firmware: '', verify: true, reset_after: true })
 
