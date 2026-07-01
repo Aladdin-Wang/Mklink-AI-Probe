@@ -348,7 +348,7 @@ class MKLinkFlash:
         bin_path: str,
         addr: str,
         board: str | None = None,
-        flash_cfg: tuple[str, str, str] | list[str] | None = None,
+        flash_cfg: tuple[str, str, str, str] | list[str] | None = None,
         microkeen_filename: str | None = None,
         progress_callback=None,
     ) -> dict:
@@ -363,9 +363,9 @@ class MKLinkFlash:
             commands.append(f'hpm.board("{board_key}")')
         elif flash_cfg:
             cfg = [str(v) for v in flash_cfg]
-            if len(cfg) != 3:
-                raise FlashError("HPM flash_cfg 需要 3 个参数")
-            commands.append(f"hpm.flash_cfg({cfg[0]},{cfg[1]},{cfg[2]})")
+            if len(cfg) != 4:
+                raise FlashError("HPM flash_cfg 需要 4 个参数: header,opt0,opt1,xpi_base_addr")
+            commands.append(f"hpm.flash_cfg({cfg[0]},{cfg[1]},{cfg[2]},{cfg[3]})")
 
         commands.append(f'hpm.program("{filename}",{addr})')
 

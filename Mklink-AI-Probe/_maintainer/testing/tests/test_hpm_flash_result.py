@@ -44,6 +44,34 @@ class _FakeBridge:
         raise AssertionError(cmd)
 
 
+def test_hpm_burn_bin_sends_four_word_flash_cfg(tmp_path: Path):
+    bin_file = tmp_path / "demo.bin"
+    bin_file.write_bytes(b"demo")
+    commands = []
+
+    class Bridge:
+        def send_command(self, cmd, timeout=0, echo=False):
+            commands.append(cmd)
+            if cmd.startswith("hpm.flash_cfg"):
+                return "Header = 0xfcf90001,opt1 = 0x7,opt2 = 0x0,xpi_base = 0xf3040000\n0\n"
+            if cmd.startswith("hpm.program"):
+                return "Download: 100% ,used 1 ms\n0\n"
+            raise AssertionError(cmd)
+
+    flash = MKLinkFlash(Bridge())
+    flash._copy_to_microkeen = lambda local_path, microkeen_filename=None: "demo.bin"
+
+    result = flash.burn_hpm_bin(
+        str(bin_file),
+        addr="0x80000400",
+        flash_cfg=("0xfcf90001U", "0x00000007U", "0x00000000U", "0xf3040000U"),
+    )
+
+    assert result["success"] is True
+    assert commands[0] == "hpm.flash_cfg(0xfcf90001U,0x00000007U,0x00000000U,0xf3040000U)"
+    assert commands[1] == 'hpm.program("demo.bin",0x80000400)'
+
+
 def test_hpm_burn_bin_does_not_treat_plain_zero_as_success(tmp_path: Path):
     bin_file = tmp_path / "demo.bin"
     bin_file.write_bytes(b"demo")

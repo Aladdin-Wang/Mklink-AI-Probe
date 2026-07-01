@@ -207,6 +207,20 @@ python -m mklink rtt --visualize --parser csv --csv-headers "counter,adc,sensor"
 python -m mklink rtt --visualize --port-http 8888 --no-browser
 ```
 
+### HPMicro BIN 下载
+
+HPM SDK 工程会走设备端 `hpm.program()` 下载路径。`project-init` 识别到 HPM board 后，会把 `hpm_flash_cfg` 写入 `project_info.json`；手动配置时必须使用 4 个参数：
+
+```json
+"hpm_flash_cfg": ["0xfcf90002U", "0x00000005U", "0x00001000U", "0xf3000000U"]
+```
+
+这 4 个参数依次对应 `hpm.flash_cfg(header,opt0,opt1,xpi_base_addr)`。不要再使用旧的 3 参数写法，因为下载算法里的 XPI 基址不应固定。
+
+XPI 基址按芯片族选择：
+- `0xf3000000U`: HPM5300/HPM5301/HPM5E/HPM6E/HPM6P/HPM6800
+- `0xf3040000U`: HPM6200/HPM6300/HPM6750
+
 ### MICROKEEN 磁盘管理
 
 #### `python -m mklink mcu-detect [--device STM32H723ZETx] [--flm CMSIS/Flash/xxx.FLM] [--json]`
