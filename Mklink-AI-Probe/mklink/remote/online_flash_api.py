@@ -28,11 +28,19 @@ _DEFAULT_UPLOAD_LIMIT = 256 * 1024 * 1024
 _UPLOAD_CHUNK = 1024 * 1024
 _TERMINAL_STATES = {JobState.STOPPED, JobState.SUCCEEDED, JobState.FAILED}
 _REDACTED_PATH = "[redacted-path]"
+_PATH_TOKEN_END = r"\s\"'<>|,;)\]}"
+_FILE_URI = re.compile(r"\bfile:[^" + _PATH_TOKEN_END + r"]+", re.IGNORECASE)
 _WINDOWS_ABSOLUTE_PATH = re.compile(
-    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\)[^\s\"'<>|,;)\]}]+"
+    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\)[^" + _PATH_TOKEN_END + r"]+"
 )
-_POSIX_ABSOLUTE_PATH = re.compile(
-    r"(?<![A-Za-z0-9:/])/(?!api(?:/|$)|ws(?:/|$))[^\s\"'<>|,;)\]}]+"
+_POSIX_LOCAL_ROOT = re.compile(
+    r"(?<![A-Za-z0-9/])/(?:home|Users|root|tmp|var|etc|mnt|opt|usr|srv)"
+    r"(?:/[^" + _PATH_TOKEN_END + r"]+)*"
+)
+_POSIX_FILE_PATH = re.compile(
+    r"(?<![A-Za-z0-9/])/(?!api(?:/|$)|ws(?:/|$))"
+    r"(?:[^/" + _PATH_TOKEN_END + r"]+/)*"
+    r"[^/" + _PATH_TOKEN_END + r"]+\.[A-Za-z0-9]{1,16}"
 )
 
 
@@ -113,8 +121,10 @@ class JobBody(BaseModel):
 
 
 def _redact_paths(value: str) -> str:
-    result = _WINDOWS_ABSOLUTE_PATH.sub(_REDACTED_PATH, value)
-    return _POSIX_ABSOLUTE_PATH.sub(_REDACTED_PATH, result)
+    result = _FILE_URI.sub(_REDACTED_PATH, value)
+    result = _WINDOWS_ABSOLUTE_PATH.sub(_REDACTED_PATH, result)
+    result = _POSIX_LOCAL_ROOT.sub(_REDACTED_PATH, result)
+    return _POSIX_FILE_PATH.sub(_REDACTED_PATH, result)
 
 
 def _json_primitive(value: object, *, hide_paths: bool = False) -> object:

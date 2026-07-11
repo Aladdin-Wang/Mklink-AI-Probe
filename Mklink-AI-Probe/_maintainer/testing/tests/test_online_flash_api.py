@@ -242,6 +242,29 @@ def test_pack_status_redacts_paths_but_preserves_addresses_and_slash_text(app, s
     assert "0x08000000" in payload["last_error"]
 
 
+def test_path_redaction_handles_file_uri_and_path_prefix_without_redacting_routes(
+    app, services
+):
+    services.catalog.status = lambda: {
+        "index_available": True,
+        "target_count": 1,
+        "last_error": (
+            "file:///home/alice/secret.bin; path:/home/alice/secret.bin; "
+            "https://example.com/download/firmware.bin; /health; /oauth/callback"
+        ),
+    }
+
+    message = request(app, "GET", "/api/online-flash/packs/status").json()[
+        "last_error"
+    ]
+
+    assert "file:///home/alice" not in message
+    assert "path:/home/alice" not in message
+    assert "https://example.com/download/firmware.bin" in message
+    assert "/health" in message
+    assert "/oauth/callback" in message
+
+
 def test_first_pack_index_failure_is_503_and_records_catalog_error(app, services):
     recorded = []
     services.catalog.status = lambda: {
@@ -439,6 +462,21 @@ def test_sse_emits_heartbeat_and_filters_duplicate_sequences(app, services):
     assert response.text.count(": heartbeat\n\n") == 1
     assert "id: 2\n" not in response.text
     assert len(calls) == 2
+    assert calls[0][2] == services.heartbeat_interval
+
+
+def test_online_flash_services_default_heartbeat_is_15_seconds(tmp_path):
+    defaults = OnlineFlashServices(
+        catalog=object(),
+        pack_manager=object(),
+        image_inspector=object(),
+        job_manager=object(),
+        probe_provider=lambda: [],
+        target_memory_provider=lambda _part: [],
+        paths=PackPaths(tmp_path),
+    )
+
+    assert defaults.heartbeat_interval == 15.0
 
 
 def test_sse_event_messages_redact_paths_without_changing_normal_text(app, services):
