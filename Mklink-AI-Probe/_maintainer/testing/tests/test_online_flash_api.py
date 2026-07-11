@@ -300,7 +300,7 @@ def test_path_redaction_covers_standard_posix_local_roots(
         "last_error"
     ]
 
-    assert f"local={local_path}" not in message
+    assert message.startswith("local=[redacted-path]; ")
     assert f"https://example.com{local_path}" in message
     assert "/health" in message
     assert "/oauth/callback" in message
