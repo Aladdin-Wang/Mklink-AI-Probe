@@ -59,6 +59,7 @@ class OnlineFlashServices:
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
+    shutdown_timeout: float = 2.0
 
 
 def _production_probe_provider() -> Sequence[object]:
@@ -96,14 +97,27 @@ def create_default_online_flash_services(resource_manager: object) -> OnlineFlas
 
 
 def shutdown_online_flash_services(services: OnlineFlashServices) -> None:
-    for component in (
-        services.job_manager,
-        services.pack_manager,
-        services.image_inspector,
-    ):
+    """Request active work to stop, then clean up without unbounded waiting.
+
+    A backend blocked in native code may outlive this call. Its job remains in
+    STOPPING and is allowed to fail or finish cleanup when the backend returns.
+    """
+    errors = []
+    shutdown = getattr(services.job_manager, "shutdown", None)
+    if callable(shutdown):
+        try:
+            shutdown(wait=True, timeout=services.shutdown_timeout)
+        except BaseException as error:
+            errors.append(error)
+    for component in (services.pack_manager, services.image_inspector):
         shutdown = getattr(component, "shutdown", None)
         if callable(shutdown):
-            shutdown()
+            try:
+                shutdown()
+            except BaseException as error:
+                errors.append(error)
+    if errors:
+        raise errors[0]
 
 
 class PackInstallBody(BaseModel):
@@ -130,6 +144,28 @@ def _redact_paths(value: str) -> str:
     return _POSIX_FILE_PATH.sub(_REDACTED_PATH, result)
 
 
+def _json_mapping(value: Mapping, *, hide_paths: bool) -> Dict[str, object]:
+    result = {}
+    redacted_index = 0
+    for key, item in value.items():
+        raw_key = str(key)
+        redacted_key = _redact_paths(raw_key)
+        if isinstance(key, Path) or redacted_key != raw_key:
+            redacted_index += 1
+            safe_key = "[redacted-key-{}]".format(redacted_index)
+        else:
+            safe_key = raw_key
+        if hide_paths and raw_key in ("file_path", "pack_path"):
+            continue
+        base_key = safe_key
+        collision_index = 2
+        while safe_key in result:
+            safe_key = "{}#{}".format(base_key, collision_index)
+            collision_index += 1
+        result[safe_key] = _json_primitive(item, hide_paths=hide_paths)
+    return result
+
+
 def _json_primitive(value: object, *, hide_paths: bool = False) -> object:
     if isinstance(value, Enum):
         return value.value
@@ -147,11 +183,7 @@ def _json_primitive(value: object, *, hide_paths: bool = False) -> object:
             result[field.name] = _json_primitive(getattr(value, field.name), hide_paths=hide_paths)
         return result
     if isinstance(value, Mapping):
-        return {
-            str(key): _json_primitive(item, hide_paths=hide_paths)
-            for key, item in value.items()
-            if not (hide_paths and str(key) in ("file_path", "pack_path"))
-        }
+        return _json_mapping(value, hide_paths=hide_paths)
     if isinstance(value, (tuple, list, set, frozenset)):
         return [_json_primitive(item, hide_paths=hide_paths) for item in value]
     return value

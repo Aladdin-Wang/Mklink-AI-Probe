@@ -1,4 +1,5 @@
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import pytest
@@ -57,6 +58,18 @@ class BlockingDisconnectBackend(FakeBackend):
         self.calls.append(("disconnect", None))
         self.disconnect_started.set()
         assert self.allow_disconnect.wait(2)
+
+
+class ShutdownBlockingBackend(FakeBackend):
+    def __init__(self):
+        super().__init__()
+        self.connect_started = threading.Event()
+        self.allow_connect = threading.Event()
+
+    def connect(self, **kwargs):
+        self.calls.append(("connect", kwargs))
+        self.connect_started.set()
+        self.allow_connect.wait()
 
 
 class FailingBackend(FakeBackend):
@@ -734,6 +747,48 @@ def test_completed_history_is_bounded_and_shutdown_rejects_new_jobs():
     manager.shutdown()
     with pytest.raises(RuntimeError):
         manager.start(request)
+
+
+def test_shutdown_timeout_requests_stop_and_returns_without_waiting_forever():
+    backend = ShutdownBlockingBackend()
+    manager = OnlineFlashJobManager(lambda: backend, ResourceManager())
+    job_id = manager.start(JobRequest(actions=("connect", "disconnect")))
+    assert backend.connect_started.wait(1)
+
+    completed = None
+    try:
+        started = time.monotonic()
+        completed = manager.shutdown(wait=True, timeout=0.05)
+        elapsed = time.monotonic() - started
+        assert completed is False
+        assert elapsed < 0.5
+        assert manager.get(job_id).state is JobState.STOPPING
+        with pytest.raises(RuntimeError, match="shut down"):
+            manager.start(JobRequest(actions=("connect", "disconnect")))
+    finally:
+        backend.allow_connect.set()
+        if completed is None:
+            manager.shutdown(wait=True)
+        else:
+            assert manager.wait(job_id, timeout=2).state is JobState.STOPPED
+
+
+def test_shutdown_waits_gracefully_when_active_job_finishes_within_timeout():
+    backend = ShutdownBlockingBackend()
+    manager = OnlineFlashJobManager(lambda: backend, ResourceManager())
+    job_id = manager.start(JobRequest(actions=("connect", "disconnect")))
+    assert backend.connect_started.wait(1)
+    releaser = threading.Timer(0.05, backend.allow_connect.set)
+    releaser.start()
+
+    try:
+        completed = manager.shutdown(wait=True, timeout=1.0)
+    finally:
+        backend.allow_connect.set()
+        releaser.join(1)
+        manager.shutdown(wait=True)
+    assert completed is True
+    assert manager.get(job_id).state is JobState.STOPPED
 
 
 def test_queued_stop_holds_admission_until_work_item_is_drained():

@@ -1,5 +1,7 @@
 import asyncio
 import json
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import (
     ImageInspection,
     JobEvent,
+    JobRequest,
     JobSnapshot,
     JobState,
     MemoryRegion,
@@ -18,6 +21,7 @@ from mklink.cmsis_dap.models import (
 )
 from mklink.cmsis_dap.paths import PackPaths
 from mklink.cmsis_dap.pack_catalog import PackCatalog
+from mklink.cmsis_dap.jobs import OnlineFlashJobManager
 from mklink.remote.online_flash_api import (
     OnlineFlashServices,
     _blocking,
@@ -25,6 +29,8 @@ from mklink.remote.online_flash_api import (
     default_target_memory_provider,
 )
 from mklink.remote.api import create_app
+from mklink.remote.resource_manager import ResourceManager
+from mklink.remote.online_flash_api import shutdown_online_flash_services
 
 
 class Catalog:
@@ -60,6 +66,15 @@ class PackManager:
                 {
                     "nested": {
                         "path": Path("C:/Users/alice/cache/Vendor.Pack"),
+                        "path_keys": {
+                            Path("C:/Users/alice/cache/one.pack"): "path-object",
+                            r"C:\Users\alice\cache\two.pack": "windows-string",
+                            "/home/alice/cache/three.pack": "posix-string",
+                        },
+                        "collision_keys": {
+                            "[redacted-key-1]": "literal-key",
+                            Path("C:/Users/alice/cache/four.pack"): "path-key",
+                        },
                     }
                 },
             )
@@ -220,6 +235,22 @@ def test_flash_error_redacts_windows_posix_and_nested_path_values(app):
     assert "C:\\Users\\alice" not in payload["message"]
     assert "/home/alice" not in encoded
     assert payload["details"]["nested"]["path"] == "[redacted-path]"
+    path_keys = payload["details"]["nested"]["path_keys"]
+    assert list(path_keys) == [
+        "[redacted-key-1]",
+        "[redacted-key-2]",
+        "[redacted-key-3]",
+    ]
+    assert list(path_keys.values()) == [
+        "path-object",
+        "windows-string",
+        "posix-string",
+    ]
+    collision_keys = payload["details"]["nested"]["collision_keys"]
+    assert collision_keys == {
+        "[redacted-key-1]": "literal-key",
+        "[redacted-key-1]#2": "path-key",
+    }
 
 
 def test_pack_status_redacts_paths_but_preserves_addresses_and_slash_text(app, services):
@@ -554,7 +585,7 @@ def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, servic
     calls = []
 
     def shutdown(name):
-        return lambda: calls.append(name)
+        return lambda *_args, **_kwargs: calls.append(name)
 
     services.job_manager.shutdown = shutdown("jobs")
     services.pack_manager.shutdown = shutdown("packs")
@@ -577,6 +608,76 @@ def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, servic
 
     with TestClient(mounted) as client:
         assert client.get("/api/online-flash/packs/status").status_code == 200
+
+    assert calls == ["jobs", "packs", "images"]
+
+
+def test_service_shutdown_is_bounded_for_blocked_backend_and_cleans_components(
+    tmp_path,
+):
+    class Backend:
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def connect(self, **_kwargs):
+            self.started.set()
+            self.release.wait(1)
+
+        def disconnect(self):
+            return None
+
+    class Component:
+        def __init__(self, name, calls):
+            self.name = name
+            self.calls = calls
+
+        def shutdown(self):
+            self.calls.append(self.name)
+
+    backend = Backend()
+    jobs = OnlineFlashJobManager(lambda: backend, ResourceManager())
+    job_id = jobs.start(JobRequest(actions=("connect", "disconnect")))
+    assert backend.started.wait(1)
+    calls = []
+    bounded = OnlineFlashServices(
+        catalog=object(),
+        pack_manager=Component("packs", calls),
+        image_inspector=Component("images", calls),
+        job_manager=jobs,
+        probe_provider=lambda: [],
+        target_memory_provider=lambda _part: [],
+        paths=PackPaths(tmp_path),
+        shutdown_timeout=0.05,
+    )
+
+    started = time.monotonic()
+    try:
+        shutdown_online_flash_services(bounded)
+        elapsed = time.monotonic() - started
+        assert elapsed < 0.5
+        assert jobs.get(job_id).state is JobState.STOPPING
+        assert calls == ["packs", "images"]
+    finally:
+        backend.release.set()
+        assert jobs.wait(job_id, timeout=2).state is JobState.STOPPED
+
+
+def test_service_shutdown_cleans_later_components_when_job_shutdown_raises(
+    services,
+):
+    calls = []
+
+    def fail(*_args, **_kwargs):
+        calls.append("jobs")
+        raise RuntimeError("shutdown failed")
+
+    services.job_manager.shutdown = fail
+    services.pack_manager.shutdown = lambda: calls.append("packs")
+    services.image_inspector.shutdown = lambda: calls.append("images")
+
+    with pytest.raises(RuntimeError, match="shutdown failed"):
+        shutdown_online_flash_services(services)
 
     assert calls == ["jobs", "packs", "images"]
 

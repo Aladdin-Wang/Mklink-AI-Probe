@@ -12,6 +12,7 @@ from typing import Callable, Dict, Mapping, Optional, Tuple
 import uuid
 
 from .errors import FlashError, FlashErrorCode
+from .pack_lock import PackRootLock
 from .paths import PackPaths
 
 
@@ -419,9 +420,20 @@ class SubprocessPackWorker:
 class PackManager:
     """Coordinate pack worker commands and the installed-pack registry."""
 
-    def __init__(self, root: Path, worker: Optional[object] = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        worker: Optional[object] = None,
+        *,
+        lock_timeout: float = 30.0,
+    ) -> None:
+        if not isinstance(lock_timeout, (int, float)) or lock_timeout <= 0:
+            raise ValueError("lock_timeout must be positive")
         self.paths = PackPaths(Path(root))
         self._worker = worker if worker is not None else SubprocessPackWorker(self.paths)
+        self._root_lock = PackRootLock(self.paths.root)
+        self._lock_timeout = float(lock_timeout)
+        self._cancel_event = threading.Event()
         self._active_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._active = False
@@ -461,59 +473,81 @@ class PackManager:
             if self._phase != "idle":
                 raise FlashError(FlashErrorCode.PROBE_BUSY, "pack worker is busy")
             self._active = True
-            self._phase = "worker"
+            self._phase = "waiting-lock"
             self._operation_token += 1
             operation_token = self._operation_token
             self._cancel_requested = False
+            self._cancel_event.clear()
         try:
-            result = self._worker.run(command, payload, on_event)
-            with self._active_lock:
-                cancelled = self._cancel_requested
-                committed = getattr(self._worker, "committed_result", None)
-                if not isinstance(committed, Mapping) or dict(committed) != dict(result):
-                    if cancelled:
-                        raise FlashError(
-                            FlashErrorCode.USER_ABORT, "pack operation cancelled"
-                        )
-                else:
-                    self._cancel_requested = False
-                self._phase = "registering"
-            if not isinstance(result, Mapping):
-                raise FlashError(
-                    FlashErrorCode.PACK_INTEGRITY_ERROR,
-                    "pack worker result must be an object",
-                )
-            normalized = dict(result)
-            if (
-                normalized.get("status") == "installed"
-                and normalized.get("pack_path") is not None
+            with self._root_lock.hold(
+                cancel_event=self._cancel_event,
+                timeout=self._lock_timeout,
             ):
-                try:
-                    self._register_result(normalized)
-                except BaseException:
-                    rollback = getattr(self._worker, "rollback_commit", None)
-                    if callable(rollback):
-                        rollback(normalized)
-                    self._clean_staging()
-                    raise
-            acknowledge = getattr(self._worker, "acknowledge_commit", None)
-            if callable(acknowledge):
-                acknowledge(normalized)
-            self._clean_staging()
-            return result
+                return self._run_locked(command, payload, on_event)
         finally:
             with self._active_lock:
                 if self._operation_token == operation_token:
                     self._active = False
                     self._phase = "idle"
                     self._cancel_requested = False
+                    self._cancel_event.clear()
+
+    def _run_locked(
+        self,
+        command: str,
+        payload: Dict[str, object],
+        on_event: EventCallback,
+    ) -> Dict[str, object]:
+        with self._active_lock:
+            if self._cancel_event.is_set():
+                raise FlashError(FlashErrorCode.USER_ABORT, "pack operation cancelled")
+            self._phase = "worker"
+        result = self._worker.run(command, payload, on_event)
+        with self._active_lock:
+            cancelled = self._cancel_requested
+            committed = getattr(self._worker, "committed_result", None)
+            if not isinstance(committed, Mapping) or dict(committed) != dict(result):
+                if cancelled:
+                    raise FlashError(
+                        FlashErrorCode.USER_ABORT, "pack operation cancelled"
+                    )
+            else:
+                self._cancel_requested = False
+            self._phase = "registering"
+        if not isinstance(result, Mapping):
+            raise FlashError(
+                FlashErrorCode.PACK_INTEGRITY_ERROR,
+                "pack worker result must be an object",
+            )
+        normalized = dict(result)
+        if (
+            normalized.get("status") == "installed"
+            and normalized.get("pack_path") is not None
+        ):
+            try:
+                self._register_result(normalized)
+            except BaseException:
+                rollback = getattr(self._worker, "rollback_commit", None)
+                if callable(rollback):
+                    rollback(normalized)
+                self._clean_staging()
+                raise
+        acknowledge = getattr(self._worker, "acknowledge_commit", None)
+        if callable(acknowledge):
+            acknowledge(normalized)
+        self._clean_staging()
+        return result
 
     def cancel(self) -> None:
         with self._active_lock:
-            if self._phase != "worker":
+            if self._phase not in ("waiting-lock", "worker"):
                 return
             operation_token = self._operation_token
             self._cancel_requested = True
+            self._cancel_event.set()
+            waiting = self._phase == "waiting-lock"
+        if waiting:
+            return
         cancel = getattr(self._worker, "cancel", None)
         if callable(cancel):
             try:
@@ -592,6 +626,17 @@ class PackManager:
         version: str,
         in_use: Optional[Callable[[str, str], bool]] = None,
     ) -> None:
+        with self._root_lock.hold(timeout=self._lock_timeout):
+            self._remove_locked(vendor, pack, version, in_use)
+
+    def _remove_locked(
+        self,
+        vendor: str,
+        pack: str,
+        version: str,
+        in_use: Optional[Callable[[str, str], bool]] = None,
+    ) -> None:
+        self._recover_root_transaction()
         if not all(isinstance(value, str) and value for value in (vendor, pack, version)):
             raise ValueError("vendor, pack, and version must be non-empty strings")
         vendor_name, pack_name, version_name, pack_id = _normalize_pack_identity(
@@ -672,6 +717,19 @@ class PackManager:
                 target.parent.rmdir()
             except OSError:
                 pass
+
+    def _recover_root_transaction(self) -> None:
+        from .pack_worker import WorkerFailure, recover_pending_transaction
+
+        try:
+            recover_pending_transaction(self.paths)
+        except WorkerFailure as error:
+            raise FlashError(error.code, error.message)
+        except OSError as error:
+            raise FlashError(
+                FlashErrorCode.PACK_INTEGRITY_ERROR,
+                "pack transaction recovery failed: {}".format(error),
+            )
 
     def _cleanup_remove_staging(self, remove_dir: Optional[Path]) -> None:
         if remove_dir is None:

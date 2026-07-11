@@ -2,7 +2,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import threading
+import time
 
 import pytest
 
@@ -71,6 +73,209 @@ def test_update_index_uses_cancellable_worker_boundary(tmp_path):
     assert worker.commands == [("update-index", {})]
     assert events == [{"type": "progress", "current": 1, "total": 1}]
     assert result == {"status": "updated", "target_count": 2}
+
+
+def test_independent_managers_serialize_fixed_transaction_files(tmp_path):
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    errors = []
+
+    class TransactionWorker:
+        def __init__(self, entered, release=None):
+            self.entered = entered
+            self.release = release
+
+        def run(self, command, payload, on_event):
+            temporary = tmp_path / "pack-transaction.json.tmp"
+            if temporary.exists():
+                raise RuntimeError("fixed transaction file collision")
+            temporary.write_text(command, encoding="utf-8")
+            self.entered.set()
+            try:
+                if self.release is not None:
+                    assert self.release.wait(2)
+                return {"status": "updated", "target_count": 1}
+            finally:
+                temporary.unlink()
+
+    first = PackManager(
+        tmp_path, worker=TransactionWorker(first_entered, release_first)
+    )
+    second = PackManager(tmp_path, worker=TransactionWorker(second_entered))
+
+    def update(manager):
+        try:
+            manager.update_index(lambda _event: None)
+        except BaseException as error:
+            errors.append(error)
+
+    first_thread = threading.Thread(target=update, args=(first,))
+    second_thread = threading.Thread(target=update, args=(second,))
+    first_thread.start()
+    assert first_entered.wait(1)
+    second_thread.start()
+    assert not second_entered.wait(0.1)
+    release_first.set()
+    first_thread.join(2)
+    second_thread.join(2)
+
+    assert errors == []
+    assert second_entered.is_set()
+    assert not (tmp_path / "pack-transaction.json.tmp").exists()
+
+
+def test_waiting_pack_manager_can_be_cancelled(tmp_path):
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    errors = []
+
+    class BlockingWorker:
+        def __init__(self, entered, release=None):
+            self.entered = entered
+            self.release = release
+
+        def run(self, command, payload, on_event):
+            self.entered.set()
+            if self.release is not None:
+                assert self.release.wait(2)
+            return {"status": "updated", "target_count": 1}
+
+        def cancel(self):
+            return None
+
+    first = PackManager(tmp_path, worker=BlockingWorker(first_entered, release_first))
+    second = PackManager(tmp_path, worker=BlockingWorker(second_entered))
+
+    first_thread = threading.Thread(
+        target=lambda: first.update_index(lambda _event: None)
+    )
+
+    def second_update():
+        try:
+            second.update_index(lambda _event: None)
+        except BaseException as error:
+            errors.append(error)
+
+    second_thread = threading.Thread(target=second_update)
+    first_thread.start()
+    assert first_entered.wait(1)
+    second_thread.start()
+    assert not second_entered.wait(0.1)
+    second.cancel()
+    second_thread.join(1)
+    release_first.set()
+    first_thread.join(2)
+
+    assert not second_thread.is_alive()
+    assert second_entered.is_set() is False
+    assert len(errors) == 1
+    assert isinstance(errors[0], FlashError)
+    assert errors[0].code is FlashErrorCode.USER_ABORT
+
+
+def test_pack_root_lock_is_released_after_operation_exception(tmp_path):
+    class FailingWorker:
+        def run(self, command, payload, on_event):
+            raise RuntimeError("worker failed")
+
+    class SuccessWorker:
+        def run(self, command, payload, on_event):
+            return {"status": "updated", "target_count": 1}
+
+    with pytest.raises(RuntimeError, match="worker failed"):
+        PackManager(tmp_path, worker=FailingWorker()).update_index(
+            lambda _event: None
+        )
+
+    result = PackManager(tmp_path, worker=SuccessWorker()).update_index(
+        lambda _event: None
+    )
+
+    assert result["status"] == "updated"
+
+
+def test_pack_root_lock_is_released_after_process_exits_abnormally(tmp_path):
+    marker = tmp_path / "child-acquired"
+    script = (
+        "import os,sys; from pathlib import Path; "
+        "from mklink.cmsis_dap.pack_lock import PackRootLock; "
+        "root=Path(sys.argv[1]); PackRootLock(root).acquire(timeout=1); "
+        "(root/'child-acquired').write_text('yes'); os._exit(7)"
+    )
+    process = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        cwd=str(Path(__file__).resolve().parents[3]),
+        check=False,
+    )
+    assert process.returncode == 7
+    assert marker.read_text(encoding="utf-8") == "yes"
+
+    class SuccessWorker:
+        def run(self, command, payload, on_event):
+            return {"status": "updated", "target_count": 1}
+
+    result = PackManager(
+        tmp_path, worker=SuccessWorker(), lock_timeout=1
+    ).update_index(lambda _event: None)
+
+    assert result["status"] == "updated"
+
+
+def test_pack_root_lock_serializes_an_independent_process(tmp_path):
+    marker = tmp_path / "child-acquired"
+    release = tmp_path / "release-child"
+    script = (
+        "import sys,time; from pathlib import Path; "
+        "from mklink.cmsis_dap.pack_lock import PackRootLock; "
+        "root=Path(sys.argv[1]); lock=PackRootLock(root); lock.acquire(timeout=1); "
+        "(root/'child-acquired').write_text('yes'); "
+        "deadline=time.monotonic()+5; "
+        "\nwhile not (root/'release-child').exists() and time.monotonic()<deadline: "
+        "time.sleep(0.01)\nlock.release()"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(tmp_path)],
+        cwd=str(Path(__file__).resolve().parents[3]),
+    )
+
+    class SuccessWorker:
+        def run(self, command, payload, on_event):
+            return {"status": "updated", "target_count": 1}
+
+    try:
+        deadline = time.monotonic() + 2
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert marker.exists()
+        with pytest.raises(FlashError) as captured:
+            PackManager(
+                tmp_path, worker=SuccessWorker(), lock_timeout=0.1
+            ).update_index(lambda _event: None)
+        assert captured.value.code is FlashErrorCode.PROBE_BUSY
+    finally:
+        release.write_text("yes", encoding="utf-8")
+        process.wait(timeout=2)
+
+    assert PackManager(
+        tmp_path, worker=SuccessWorker(), lock_timeout=1
+    ).update_index(lambda _event: None)["status"] == "updated"
+
+
+def test_remove_recovers_pending_transaction_while_holding_root_lock(tmp_path):
+    paths = PackPaths(tmp_path)
+    paths.root.mkdir(parents=True, exist_ok=True)
+    (paths.root / "pack-transaction.json").write_text(
+        '{"phase":"corrupt"}', encoding="utf-8"
+    )
+
+    with pytest.raises(FlashError) as captured:
+        PackManager(tmp_path, worker=FakeWorker()).remove(
+            "Vendor", "Pack", "1.0.0"
+        )
+
+    assert captured.value.code is FlashErrorCode.PACK_INTEGRITY_ERROR
 
 
 def test_cancel_removes_staging(tmp_path):

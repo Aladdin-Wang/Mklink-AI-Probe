@@ -183,10 +183,33 @@ class OnlineFlashJobManager:
             )
             return [event for event in job.events if event.sequence > after]
 
-    def shutdown(self, wait: bool = True) -> None:
+    def shutdown(
+        self,
+        wait: bool = True,
+        timeout: Optional[float] = None,
+    ) -> bool:
+        if timeout is not None and (
+            not isinstance(timeout, (int, float)) or timeout < 0
+        ):
+            raise ValueError("shutdown timeout must be nonnegative")
         with self._condition:
             self._shutdown = True
-        self._executor.shutdown(wait=wait)
+            active_id = self._active_id
+        if active_id is not None:
+            self.stop(active_id)
+        if not wait:
+            self._executor.shutdown(wait=False)
+            return active_id is None
+        if timeout is None:
+            self._executor.shutdown(wait=True)
+            return True
+        with self._condition:
+            completed = self._condition.wait_for(
+                lambda: self._active_id is None,
+                timeout=float(timeout),
+            )
+        self._executor.shutdown(wait=completed)
+        return completed
 
     def _run(self, job: _Job) -> None:
         owner = f"user:online-flash:{job.job_id}"
