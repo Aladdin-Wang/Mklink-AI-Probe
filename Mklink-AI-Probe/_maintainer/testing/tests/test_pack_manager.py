@@ -56,6 +56,23 @@ def test_install_downloads_selected_part_only(tmp_path):
     }
 
 
+def test_update_index_uses_cancellable_worker_boundary(tmp_path):
+    class IndexWorker(FakeWorker):
+        def run(self, command, payload, on_event):
+            self.commands.append((command, payload))
+            on_event({"type": "progress", "current": 1, "total": 1})
+            return {"status": "updated", "target_count": 2}
+
+    worker = IndexWorker()
+    events = []
+
+    result = PackManager(tmp_path, worker=worker).update_index(events.append)
+
+    assert worker.commands == [("update-index", {})]
+    assert events == [{"type": "progress", "current": 1, "total": 1}]
+    assert result == {"status": "updated", "target_count": 2}
+
+
 def test_cancel_removes_staging(tmp_path):
     staging = PackPaths(tmp_path).staging_dir
     staging.mkdir(parents=True)
@@ -514,6 +531,66 @@ def test_worker_install_downloads_only_pack_for_exact_selected_device(tmp_path):
     parent._active_staging_dir = Path(events[0]["path"])
     parent.acknowledge_commit(result)
     assert not PackPaths(tmp_path).staging_dir.exists()
+
+
+def test_worker_update_index_atomically_promotes_complete_metadata(tmp_path):
+    paths = PackPaths(tmp_path)
+    paths.index_dir.mkdir(parents=True)
+    paths.index_file.write_text('{"OLD":{}}', encoding="utf-8")
+    paths.aliases_file.write_text('{"old":"OLD"}', encoding="utf-8")
+
+    class FakeIndexCache:
+        def __init__(self, silent, no_timeouts, json_path, data_path, emitter):
+            self.json_path = Path(json_path)
+            self.data_path = Path(data_path)
+            self._index = {"DEVICE_A": {}, "DEVICE_B": {}}
+
+        def cache_descriptors(self):
+            self.json_path.joinpath("index.json").write_text(
+                json.dumps(self._index), encoding="utf-8"
+            )
+            self.json_path.joinpath("aliases.json").write_text(
+                '{"alias":"DEVICE_A"}', encoding="utf-8"
+            )
+
+        @property
+        def index(self):
+            return self._index
+
+    stage = paths.staging_dir / "index-job"
+    result = handle_request(
+        {
+            "command": "update-index",
+            "payload": {},
+            "root": str(tmp_path),
+            "staging_dir": str(stage.resolve()),
+        },
+        lambda event: None,
+        cache_factory=FakeIndexCache,
+    )
+
+    assert result == {"status": "updated", "target_count": 2}
+    assert json.loads(paths.index_file.read_text(encoding="utf-8")) == {
+        "DEVICE_A": {},
+        "DEVICE_B": {},
+    }
+    assert json.loads(paths.aliases_file.read_text(encoding="utf-8")) == {
+        "alias": "DEVICE_A"
+    }
+    parent = SubprocessPackWorker(paths)
+    parent._active_staging_dir = stage
+    parent.acknowledge_commit(result)
+    assert not paths.staging_dir.exists()
+
+
+def test_parent_accepts_update_index_result_shape(tmp_path):
+    worker = SubprocessPackWorker(PackPaths(tmp_path))
+
+    result = worker._finish_result(
+        "update-index", 0, {"status": "updated", "target_count": 10}, ""
+    )
+
+    assert result == {"status": "updated", "target_count": 10}
 
 
 def test_worker_import_promotes_exact_artifact_and_metadata(tmp_path):

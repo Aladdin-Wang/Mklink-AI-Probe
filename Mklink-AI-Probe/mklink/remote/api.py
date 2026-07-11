@@ -385,6 +385,23 @@ def create_app(
     # closure. Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
 
+    from starlette.concurrency import run_in_threadpool
+    from mklink.remote import online_flash_api
+
+    online_flash = online_flash_api.create_default_online_flash_services(
+        _state["resource_manager"]
+    )
+    app.state.online_flash = online_flash
+    app.include_router(online_flash_api.create_online_flash_router(online_flash))
+
+    async def shutdown_online_flash() -> None:
+        await run_in_threadpool(
+            online_flash_api.shutdown_online_flash_services,
+            online_flash,
+        )
+
+    app.add_event_handler("shutdown", shutdown_online_flash)
+
     @app.exception_handler(ResourceError)
     async def resource_error_handler(_request, error):
         from fastapi.responses import JSONResponse

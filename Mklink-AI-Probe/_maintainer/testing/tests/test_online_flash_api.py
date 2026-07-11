@@ -1,0 +1,384 @@
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
+from mklink.cmsis_dap.models import (
+    ImageInspection,
+    JobEvent,
+    JobSnapshot,
+    JobState,
+    MemoryRegion,
+    TargetRecord,
+)
+from mklink.cmsis_dap.paths import PackPaths
+from mklink.cmsis_dap.pack_catalog import PackCatalog
+from mklink.remote.online_flash_api import (
+    OnlineFlashServices,
+    _blocking,
+    create_online_flash_router,
+    default_target_memory_provider,
+)
+from mklink.remote.api import create_app
+
+
+class Catalog:
+    def __init__(self):
+        self.calls = []
+
+    def search(self, query, vendor=None, installed=None, limit=100):
+        self.calls.append((query, vendor, installed, limit))
+        records = [
+            TargetRecord("HPM5300", "HPMicro", "HPM.Pack", "1.0", "safe.pack", True),
+            TargetRecord("Other", "Vendor", installed=False),
+        ]
+        return [record for record in records if query.casefold() in record.part_number.casefold()][:limit]
+
+    def status(self):
+        return {"index_available": True, "target_count": 2, "last_error": None}
+
+
+class PackManager:
+    def __init__(self):
+        self.cancelled = False
+        self.removed = None
+        self.imported_path = None
+
+    def install(self, part_number, on_event):
+        on_event({"type": "progress", "progress": 0.5})
+        if part_number == "missing":
+            raise FlashError(FlashErrorCode.PACK_NOT_FOUND, "missing")
+        return {"status": "installed", "part_number": part_number}
+
+    def import_pack(self, path, on_event):
+        self.imported_path = Path(path)
+        assert self.imported_path.exists()
+        on_event({"type": "log", "message": "ok"})
+        return {"status": "installed", "pack_id": "V.P", "version": "1"}
+
+    def cancel(self):
+        self.cancelled = True
+
+    def remove(self, vendor, pack, version, in_use=None):
+        if in_use is not None and in_use("{}.{}".format(vendor, pack), version):
+            raise FlashError(FlashErrorCode.PROBE_BUSY, "in use")
+        self.removed = (vendor, pack, version)
+
+
+class Inspector:
+    def __init__(self):
+        self.inspection = ImageInspection(
+            "image-1", "fw.bin", "C:/secret/snapshot.bin", "bin", 4, "abc", 0x1000, 0x1004
+        )
+        self.seen_path = None
+        self.preview_length = None
+
+    def inspect(self, path, regions, base_address=None):
+        self.seen_path = Path(path)
+        assert self.seen_path.exists()
+        assert tuple(regions)[0].start == 0x1000
+        assert base_address == 0x1000
+        return self.inspection
+
+    def validate_unchanged(self, image_id):
+        if image_id != "image-1":
+            raise KeyError(image_id)
+        return self.inspection
+
+    def preview(self, image_id, address, length):
+        if image_id != "image-1":
+            raise KeyError(image_id)
+        self.preview_length = length
+        return Preview(address, b"\x01\xff", (True, False))
+
+
+@dataclass
+class Preview:
+    address: int
+    data: bytes
+    present: tuple
+
+
+class Jobs:
+    def __init__(self):
+        self.started = []
+        self.busy = False
+        self.snapshot = JobSnapshot(
+            "job-1", JobState.CONNECTING, ("connect", "disconnect"), None, 1.0, 2.0
+        )
+
+    def start(self, request):
+        if self.busy:
+            raise FlashError(FlashErrorCode.PROBE_BUSY, "busy")
+        self.busy = True
+        self.started.append(request)
+        return "job-1"
+
+    def get(self, job_id):
+        if job_id != "job-1":
+            raise KeyError(job_id)
+        return self.snapshot
+
+    def list(self):
+        return [self.snapshot] if self.busy else []
+
+    def stop(self, job_id):
+        return self.get(job_id)
+
+    def wait_for_events(self, job_id, after=0, timeout=None):
+        self.get(job_id)
+        if after < 2:
+            self.snapshot = JobSnapshot(
+                "job-1", JobState.SUCCEEDED, ("connect", "disconnect"), None, 1.0, 2.0
+            )
+            return [JobEvent(job_id, 2, 1.0, "state", state=JobState.SUCCEEDED)]
+        return []
+
+
+@pytest.fixture
+def services(tmp_path):
+    return OnlineFlashServices(
+        catalog=Catalog(),
+        pack_manager=PackManager(),
+        image_inspector=Inspector(),
+        job_manager=Jobs(),
+        probe_provider=lambda: [
+            type("Probe", (), {"unique_id": "mk", "product_name": "MKLink DAP"})(),
+            type("Probe", (), {"unique_id": "other", "product_name": "CMSIS-DAP"})(),
+        ],
+        target_memory_provider=lambda part: [MemoryRegion("flash", 0x1000, 0x1000, True)],
+        paths=PackPaths(tmp_path),
+        pack_index_updater=lambda on_event: ({"status": "updated"}),
+        heartbeat_interval=0.01,
+    )
+
+
+@pytest.fixture
+def app(services):
+    result = FastAPI()
+    result.include_router(create_online_flash_router(services))
+    return result
+
+
+def request(app, method, path, **kwargs):
+    with TestClient(app, raise_server_exceptions=False) as client:
+        return client.request(method, path, **kwargs)
+
+
+def test_probe_target_and_pack_status_routes_use_injected_services(app, services):
+    probes = request(app, "GET", "/api/online-flash/probes")
+    assert [item["unique_id"] for item in probes.json()] == ["mk"]
+    targets = request(app, "GET", "/api/online-flash/targets?q=hpm&vendor=HPMicro&installed=true&limit=7")
+    assert targets.json()[0]["part_number"] == "HPM5300"
+    assert "pack_path" not in targets.json()[0]
+    assert services.catalog.calls[-1] == ("hpm", "HPMicro", True, 7)
+    status = request(app, "GET", "/api/online-flash/packs/status")
+    assert status.json()["index_available"] is True
+
+
+def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, services):
+    installed = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "HPM5300"})
+    assert installed.json()["events"][0]["progress"] == 0.5
+    missing = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "missing"})
+    assert missing.status_code == 404
+    updated = request(app, "POST", "/api/online-flash/packs/index/update")
+    assert updated.json()["result"] == {"status": "updated"}
+    cancelled = request(app, "POST", "/api/online-flash/packs/cancel")
+    assert cancelled.status_code == 200 and services.pack_manager.cancelled
+    removed = request(app, "DELETE", "/api/online-flash/packs/V.P/1")
+    assert removed.status_code == 200
+    assert services.pack_manager.removed == ("V", "P", "1")
+
+
+def test_first_pack_index_failure_is_503_and_records_catalog_error(app, services):
+    recorded = []
+    services.catalog.status = lambda: {
+        "index_available": False,
+        "target_count": 0,
+        "last_error": None,
+    }
+    services.catalog.note_refresh_failure = recorded.append
+
+    def fail(_on_event):
+        raise FlashError(FlashErrorCode.PACK_DOWNLOAD_FAIL, "offline")
+
+    services.pack_index_updater = fail
+
+    response = request(app, "POST", "/api/online-flash/packs/index/update")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "PACK_INDEX_UNAVAILABLE"
+    assert len(recorded) == 1
+
+
+def test_pack_index_failure_keeps_last_good_cache_and_returns_502(app, services):
+    services.paths.index_dir.mkdir(parents=True)
+    services.paths.index_file.write_text('{"DEVICE":{}}', encoding="utf-8")
+    services.catalog = PackCatalog(services.paths, builtin_provider=lambda: [])
+
+    def fail(_on_event):
+        raise FlashError(FlashErrorCode.PACK_DOWNLOAD_FAIL, "offline")
+
+    services.pack_index_updater = fail
+
+    response = request(app, "POST", "/api/online-flash/packs/index/update")
+
+    assert response.status_code == 502
+    assert services.catalog.status().index_available is True
+    assert services.paths.index_file.read_text(encoding="utf-8") == '{"DEVICE":{}}'
+
+
+def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, services):
+    imported = request(
+        app, "POST", "/api/online-flash/packs/import", files={"file": ("a.pack", b"pack")}
+    )
+    assert imported.status_code == 200
+    assert not services.pack_manager.imported_path.exists()
+    inspected = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "0x1000"},
+        files={"file": ("fw.bin", b"abcd")},
+    )
+    body = inspected.json()
+    assert body["image_id"] == "image-1"
+    assert "file_path" not in body
+    assert not services.image_inspector.seen_path.exists()
+
+
+def test_inspect_requires_exact_installed_target_and_enforces_upload_limit(app, services):
+    absent = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "Nope", "base_address": "4096"},
+        files={"file": ("fw.bin", b"abcd")},
+    )
+    assert absent.status_code == 422
+    services.upload_limit = 3
+    too_large = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "4096"},
+        files={"file": ("fw.bin", b"abcd")},
+    )
+    assert too_large.status_code == 422
+    assert not list((services.paths.root / "uploads").glob("*"))
+
+
+def test_preview_uses_relative_offset_and_serializes_gaps(app):
+    response = request(app, "GET", "/api/online-flash/images/image-1/preview?offset=0&length=2")
+    assert response.json() == {
+        "address": 4096,
+        "length": 2,
+        "data_base64": "Af8=",
+        "present": [True, False],
+    }
+    missing = request(app, "GET", "/api/online-flash/images/missing/preview?offset=0&length=2")
+    assert missing.status_code == 404
+
+
+def test_preview_defaults_to_4096_bytes(app, services):
+    response = request(app, "GET", "/api/online-flash/images/image-1/preview")
+
+    assert response.status_code == 200
+    assert services.image_inspector.preview_length == 4096
+
+
+def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
+    payload = {
+        "actions": ["connect", "program", "disconnect"],
+        "probe_id": "mk",
+        "target_part": "HPM5300",
+        "image_id": "image-1",
+    }
+    started = request(app, "POST", "/api/online-flash/jobs", json=payload)
+    assert started.status_code == 200 and started.json()["job_id"] == "job-1"
+    assert started.json()["job"]["file_path"] is None
+    busy = request(app, "POST", "/api/online-flash/jobs", json=payload)
+    assert busy.status_code == 409
+    active = request(app, "GET", "/api/online-flash/jobs/active")
+    assert active.json()["job_id"] == "job-1"
+    missing = request(app, "GET", "/api/online-flash/jobs/missing")
+    assert missing.status_code == 404
+
+
+def test_sse_replays_after_cursor_and_closes_at_terminal_state(app):
+    response = request(app, "GET", "/api/online-flash/jobs/job-1/events?after=1")
+    assert response.status_code == 200
+    assert "id: 2\nevent: state\n" in response.text
+    assert '"state":"succeeded"' in response.text
+
+
+def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, services):
+    calls = []
+
+    def shutdown(name):
+        return lambda: calls.append(name)
+
+    services.job_manager.shutdown = shutdown("jobs")
+    services.pack_manager.shutdown = shutdown("packs")
+    services.image_inspector.shutdown = shutdown("images")
+    factory_calls = []
+
+    def factory(resource_manager):
+        factory_calls.append(resource_manager)
+        return services
+
+    monkeypatch.setattr(
+        "mklink.remote.online_flash_api.create_default_online_flash_services",
+        factory,
+    )
+
+    mounted = create_app(project_root=".")
+    assert mounted.state.online_flash is services
+    assert len(factory_calls) == 1
+    assert factory_calls[0] is mounted.state.mklink_state["resource_manager"]
+
+    with TestClient(mounted) as client:
+        assert client.get("/api/online-flash/packs/status").status_code == 200
+
+    assert calls == ["jobs", "packs", "images"]
+
+
+def test_cached_pack_memory_provider_uses_exact_flash_algorithm(tmp_path):
+    paths = PackPaths(tmp_path)
+    paths.index_dir.mkdir(parents=True)
+    paths.index_file.write_text(
+        '{"DEVICE":{"algorithms":[{"start":"0x08000000",'
+        '"size":"0x40000","sector_size":"0x800"}]}}',
+        encoding="utf-8",
+    )
+
+    regions = default_target_memory_provider("device", paths)
+
+    assert regions == [
+        MemoryRegion("flash-0", 0x08000000, 0x40000, True, True, 0x800)
+    ]
+
+
+def test_cached_pack_memory_provider_rejects_missing_memory_map(tmp_path):
+    paths = PackPaths(tmp_path)
+    paths.index_dir.mkdir(parents=True)
+    paths.index_file.write_text('{"DEVICE":{"algorithms":[]}}', encoding="utf-8")
+
+    with pytest.raises(FlashError) as captured:
+        default_target_memory_provider("DEVICE", paths)
+
+    assert captured.value.code is FlashErrorCode.TARGET_NOT_SUPPORTED
+
+
+def test_request_cancellation_is_not_converted_to_http_500(monkeypatch):
+    async def cancel(_function, *_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("mklink.remote.online_flash_api.run_in_threadpool", cancel)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(_blocking(lambda: None))

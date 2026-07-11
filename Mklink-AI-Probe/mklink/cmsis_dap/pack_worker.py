@@ -245,6 +245,14 @@ def _journal_result(payload: Mapping[str, object]) -> Dict[str, object]:
             FlashErrorCode.PACK_INTEGRITY_ERROR,
             "transaction journal result is invalid",
         )
+    if result.get("status") == "updated":
+        target_count = result.get("target_count")
+        if type(target_count) is not int or target_count < 0:
+            raise WorkerFailure(
+                FlashErrorCode.PACK_INTEGRITY_ERROR,
+                "transaction index result is incomplete",
+            )
+        return dict(result)
     required = ("status", "pack_id", "version", "pack_path")
     if any(not result.get(key) for key in required):
         raise WorkerFailure(
@@ -255,6 +263,8 @@ def _journal_result(payload: Mapping[str, object]) -> Dict[str, object]:
 
 
 def _state_matches_result(paths: PackPaths, result: Mapping[str, object]) -> bool:
+    if result.get("status") == "updated":
+        return paths.index_file.is_file() and paths.aliases_file.is_file()
     if not paths.state_file.is_file() or not Path(str(result["pack_path"])).is_file():
         return False
     try:
@@ -560,6 +570,41 @@ def _install(
     return result
 
 
+def _update_index(
+    paths: PackPaths,
+    stage: Path,
+    emit: EventEmitter,
+    cache_factory: Type[Cache],
+) -> Dict[str, object]:
+    stage_index = stage / "index"
+    stage_data = stage / "data"
+    stage_index.mkdir()
+    stage_data.mkdir()
+    cache = cache_factory(
+        False,
+        False,
+        json_path=str(stage_index),
+        data_path=str(stage_data),
+        emitter=emit,
+    )
+    cache.cache_descriptors()
+    staged_index = _read_json_object(stage_index / "index.json")
+    _read_json_object(stage_index / "aliases.json")
+    transaction_dir = stage / "transaction"
+    transaction_dir.mkdir()
+    replacements = []
+    for name, target in (
+        ("index.json", paths.index_file),
+        ("aliases.json", paths.aliases_file),
+    ):
+        prepared = transaction_dir / (name + ".prepared")
+        shutil.copy2(str(stage_index / name), str(prepared))
+        replacements.append((prepared, target))
+    result = {"status": "updated", "target_count": len(staged_index)}
+    _commit_transaction(paths, replacements, stage, result)
+    return result
+
+
 def _import_pack(
     payload: Mapping[str, object],
     paths: PackPaths,
@@ -651,6 +696,8 @@ def handle_request(
     stage.mkdir()
     try:
         emit({"type": "event", "event": "staging", "path": str(stage.resolve())})
+        if command == "update-index":
+            return _update_index(paths, stage, emit, cache_factory)
         if command == "install":
             return _install(payload, paths, stage, emit, cache_factory)
         if command == "import":

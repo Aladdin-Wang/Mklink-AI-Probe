@@ -376,6 +376,18 @@ class SubprocessPackWorker:
                 "pack worker failed with exit code {}".format(returncode),
                 details,
             )
+        if command == "update-index":
+            target_count = result.get("target_count")
+            if (
+                result.get("status") != "updated"
+                or type(target_count) is not int
+                or target_count < 0
+            ):
+                raise FlashError(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "pack index worker result is invalid",
+                )
+            return result
         required = ("status", "pack_id", "version", "pack_path")
         missing = [key for key in required if not result.get(key)]
         if missing:
@@ -425,6 +437,9 @@ class PackManager:
             {"part_number": part_number.strip()},
             on_event,
         )
+
+    def update_index(self, on_event: EventCallback) -> Dict[str, object]:
+        return self._run("update-index", {}, on_event)
 
     def import_pack(self, path: Path, on_event: EventCallback) -> Dict[str, object]:
         pack_path = Path(path)
@@ -481,10 +496,10 @@ class PackManager:
                         rollback(normalized)
                     self._clean_staging()
                     raise
-                acknowledge = getattr(self._worker, "acknowledge_commit", None)
-                if callable(acknowledge):
-                    acknowledge(normalized)
-                self._clean_staging()
+            acknowledge = getattr(self._worker, "acknowledge_commit", None)
+            if callable(acknowledge):
+                acknowledge(normalized)
+            self._clean_staging()
             return result
         finally:
             with self._active_lock:
@@ -518,6 +533,9 @@ class PackManager:
             )
         if current_worker:
             self._clean_staging()
+
+    def shutdown(self) -> None:
+        self.cancel()
 
     @staticmethod
     def _terminate_worker(worker: object) -> None:
