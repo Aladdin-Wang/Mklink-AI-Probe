@@ -1,5 +1,6 @@
 import builtins
 import json
+import os
 from dataclasses import FrozenInstanceError, is_dataclass
 from pathlib import Path
 
@@ -57,6 +58,36 @@ def test_searches_cached_index_case_insensitively(tmp_path):
     assert results[0].pack_id == "GigaDevice.GD32F30x_DFP"
     assert results[0].pack_version == "3.0.2"
     assert results[0].source == "index"
+
+
+def test_refresh_updates_status_from_new_cached_index(tmp_path):
+    paths = PackPaths(root=tmp_path)
+    catalog = PackCatalog(paths, builtin_provider=lambda: [])
+    assert catalog.status().index_available is False
+    _write_index(paths, {"DEVICE": _index_target("Vendor", "Pack", "1.0")})
+
+    status = catalog.refresh()
+
+    assert status.index_available is True
+    assert status.target_count == 1
+
+
+def test_refresh_forces_reload_when_file_signature_is_unchanged(tmp_path):
+    paths = PackPaths(root=tmp_path)
+    _write_index(paths, {"DEVICE_A": {}})
+    catalog = PackCatalog(paths, builtin_provider=lambda: [])
+    assert catalog.search("DEVICE_A")[0].part_number == "DEVICE_A"
+    signature = paths.index_file.stat()
+    _write_index(paths, {"DEVICE_B": {}})
+    os.utime(
+        paths.index_file,
+        ns=(signature.st_atime_ns, signature.st_mtime_ns),
+    )
+
+    catalog.refresh()
+
+    assert catalog.search("DEVICE_A") == []
+    assert catalog.search("DEVICE_B")[0].part_number == "DEVICE_B"
 
 
 def test_installed_registry_marks_exact_pack_version_and_path(tmp_path):

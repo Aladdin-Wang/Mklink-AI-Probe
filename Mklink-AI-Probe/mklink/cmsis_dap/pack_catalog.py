@@ -79,6 +79,13 @@ class PackCatalog:
             target_count=self._target_count,
         )
 
+    def refresh(self) -> PackCatalogStatus:
+        """Reload cached metadata and return status for the new snapshot."""
+        self._index_loaded = False
+        self._state_loaded = False
+        self.search("", limit=1)
+        return self.status()
+
     def search(
         self,
         query: str,

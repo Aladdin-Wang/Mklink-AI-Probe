@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
@@ -26,6 +27,13 @@ from mklink.remote.resource_manager import ResourceError
 _DEFAULT_UPLOAD_LIMIT = 256 * 1024 * 1024
 _UPLOAD_CHUNK = 1024 * 1024
 _TERMINAL_STATES = {JobState.STOPPED, JobState.SUCCEEDED, JobState.FAILED}
+_REDACTED_PATH = "[redacted-path]"
+_WINDOWS_ABSOLUTE_PATH = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\)[^\s\"'<>|,;)\]}]+"
+)
+_POSIX_ABSOLUTE_PATH = re.compile(
+    r"(?<![A-Za-z0-9:/])/(?!api(?:/|$)|ws(?:/|$))[^\s\"'<>|,;)\]}]+"
+)
 
 
 @dataclass
@@ -104,11 +112,18 @@ class JobBody(BaseModel):
     sector_addresses: List[int] = Field(default_factory=list)
 
 
+def _redact_paths(value: str) -> str:
+    result = _WINDOWS_ABSOLUTE_PATH.sub(_REDACTED_PATH, value)
+    return _POSIX_ABSOLUTE_PATH.sub(_REDACTED_PATH, result)
+
+
 def _json_primitive(value: object, *, hide_paths: bool = False) -> object:
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, Path):
-        return str(value)
+        return _REDACTED_PATH
+    if isinstance(value, str):
+        return _redact_paths(value)
     if isinstance(value, bytes):
         return base64.b64encode(value).decode("ascii")
     if is_dataclass(value) and not isinstance(value, type):
@@ -172,9 +187,16 @@ def _flash_status(code: FlashErrorCode) -> int:
 
 def _raise_http(error: Exception) -> None:
     if isinstance(error, HTTPException):
-        raise error
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=_json_primitive(error.detail),
+            headers=error.headers,
+        )
     if isinstance(error, FlashError):
-        raise HTTPException(status_code=_flash_status(error.code), detail=error.to_dict())
+        raise HTTPException(
+            status_code=_flash_status(error.code),
+            detail=_json_primitive(error.to_dict()),
+        )
     if isinstance(error, ResourceError):
         raise HTTPException(
             status_code=409,
@@ -185,9 +207,15 @@ def _raise_http(error: Exception) -> None:
             },
         )
     if isinstance(error, KeyError):
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(error)})
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NOT_FOUND", "message": _redact_paths(str(error))},
+        )
     if isinstance(error, (ValueError, TypeError)):
-        raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": str(error)})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "VALIDATION_ERROR", "message": _redact_paths(str(error))},
+        )
     raise HTTPException(
         status_code=500,
         detail={"code": FlashErrorCode.UNKNOWN_ERROR.value, "message": "online flash operation failed"},
@@ -223,11 +251,15 @@ def _refresh_pack_index(
     on_event: Callable[[Dict[str, object]], None],
 ) -> object:
     try:
-        return update_pack_index(
+        result = update_pack_index(
             services.pack_manager,
             on_event,
             services.pack_index_updater,
         )
+        refresh = getattr(services.catalog, "refresh", None)
+        if callable(refresh):
+            refresh()
+        return result
     except Exception as error:
         note_failure = getattr(services.catalog, "note_refresh_failure", None)
         if callable(note_failure):
@@ -454,7 +486,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         try:
             target = await _blocking(_exact_installed_target, services.catalog, part_number)
             regions = await _blocking(services.target_memory_provider, target.part_number)
-            parsed_base = _parse_base_address(base_address)
+            parsed_base = await _blocking(_parse_base_address, base_address)
             temporary, _digest, _size = await _blocking(
                 _stream_upload, file, services.paths, (".hex", ".bin"), services.upload_limit
             )

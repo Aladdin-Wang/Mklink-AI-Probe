@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,6 +53,16 @@ class PackManager:
         on_event({"type": "progress", "progress": 0.5})
         if part_number == "missing":
             raise FlashError(FlashErrorCode.PACK_NOT_FOUND, "missing")
+        if part_number == "path-leak":
+            raise FlashError(
+                FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                r"failed C:\Users\alice\cache\Vendor.Pack and /home/alice/cache/pack",
+                {
+                    "nested": {
+                        "path": Path("C:/Users/alice/cache/Vendor.Pack"),
+                    }
+                },
+            )
         return {"status": "installed", "part_number": part_number}
 
     def import_pack(self, path, on_event):
@@ -194,6 +205,43 @@ def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, servic
     assert services.pack_manager.removed == ("V", "P", "1")
 
 
+def test_flash_error_redacts_windows_posix_and_nested_path_values(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/packs/install",
+        json={"part_number": "path-leak"},
+    )
+
+    payload = response.json()["detail"]
+    encoded = json.dumps(payload)
+    assert response.status_code == 502
+    assert payload["code"] == "PACK_DOWNLOAD_FAIL"
+    assert "C:\\Users\\alice" not in payload["message"]
+    assert "/home/alice" not in encoded
+    assert payload["details"]["nested"]["path"] == "[redacted-path]"
+
+
+def test_pack_status_redacts_paths_but_preserves_addresses_and_slash_text(app, services):
+    services.catalog.status = lambda: {
+        "index_available": True,
+        "target_count": 1,
+        "last_error": (
+            r"read/write /api/online-flash at C:\Users\alice\index.json "
+            "for 0x08000000, /tmp/mklink/index.json, and /workspace/project/index.json"
+        ),
+    }
+
+    payload = request(app, "GET", "/api/online-flash/packs/status").json()
+
+    assert "C:\\Users\\alice" not in payload["last_error"]
+    assert "/tmp/mklink" not in payload["last_error"]
+    assert "/workspace/project" not in payload["last_error"]
+    assert "read/write" in payload["last_error"]
+    assert "/api/online-flash" in payload["last_error"]
+    assert "0x08000000" in payload["last_error"]
+
+
 def test_first_pack_index_failure_is_503_and_records_catalog_error(app, services):
     recorded = []
     services.catalog.status = lambda: {
@@ -230,6 +278,25 @@ def test_pack_index_failure_keeps_last_good_cache_and_returns_502(app, services)
     assert response.status_code == 502
     assert services.catalog.status().index_available is True
     assert services.paths.index_file.read_text(encoding="utf-8") == '{"DEVICE":{}}'
+
+
+def test_successful_index_update_immediately_refreshes_pack_status(app, services):
+    services.catalog = PackCatalog(services.paths, builtin_provider=lambda: [])
+
+    def update(_on_event):
+        services.paths.index_dir.mkdir(parents=True)
+        services.paths.index_file.write_text('{"DEVICE":{}}', encoding="utf-8")
+        services.paths.aliases_file.write_text("{}", encoding="utf-8")
+        return {"status": "updated", "target_count": 1}
+
+    services.pack_index_updater = update
+
+    updated = request(app, "POST", "/api/online-flash/packs/index/update")
+    status = request(app, "GET", "/api/online-flash/packs/status")
+
+    assert updated.status_code == 200
+    assert status.json()["index_available"] is True
+    assert status.json()["target_count"] == 1
 
 
 def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, services):
@@ -272,6 +339,19 @@ def test_inspect_requires_exact_installed_target_and_enforces_upload_limit(app, 
     assert not list((services.paths.root / "uploads").glob("*"))
 
 
+def test_inspect_rejects_invalid_base_address_with_422(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "not-an-address"},
+        files={"file": ("fw.bin", b"abcd")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "VALIDATION_ERROR"
+
+
 def test_preview_uses_relative_offset_and_serializes_gaps(app):
     response = request(app, "GET", "/api/online-flash/images/image-1/preview?offset=0&length=2")
     assert response.json() == {
@@ -309,11 +389,84 @@ def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
     assert missing.status_code == 404
 
 
+def test_active_job_returns_200_null_when_idle(app):
+    response = request(app, "GET", "/api/online-flash/jobs/active")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_stop_route_forwards_job_id_and_returns_snapshot(app, services):
+    stopped = []
+
+    def stop(job_id):
+        stopped.append(job_id)
+        return services.job_manager.get(job_id)
+
+    services.job_manager.stop = stop
+
+    response = request(app, "POST", "/api/online-flash/jobs/job-1/stop")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-1"
+    assert stopped == ["job-1"]
+
+
 def test_sse_replays_after_cursor_and_closes_at_terminal_state(app):
     response = request(app, "GET", "/api/online-flash/jobs/job-1/events?after=1")
     assert response.status_code == 200
     assert "id: 2\nevent: state\n" in response.text
     assert '"state":"succeeded"' in response.text
+
+
+def test_sse_emits_heartbeat_and_filters_duplicate_sequences(app, services):
+    calls = []
+
+    def wait_for_events(job_id, after=0, timeout=None):
+        calls.append((job_id, after, timeout))
+        if len(calls) == 1:
+            return []
+        services.job_manager.snapshot = JobSnapshot(
+            "job-1", JobState.SUCCEEDED, ("connect",), None, 1.0, 2.0
+        )
+        return [JobEvent(job_id, 2, 1.0, "state", state=JobState.SUCCEEDED)]
+
+    services.job_manager.wait_for_events = wait_for_events
+
+    response = request(app, "GET", "/api/online-flash/jobs/job-1/events?after=2")
+
+    assert response.status_code == 200
+    assert response.text.count(": heartbeat\n\n") == 1
+    assert "id: 2\n" not in response.text
+    assert len(calls) == 2
+
+
+def test_sse_event_messages_redact_paths_without_changing_normal_text(app, services):
+    def wait_for_events(job_id, after=0, timeout=None):
+        services.job_manager.snapshot = JobSnapshot(
+            "job-1", JobState.SUCCEEDED, ("connect",), None, 1.0, 2.0
+        )
+        return [
+            JobEvent(
+                job_id,
+                3,
+                1.0,
+                "log",
+                message=(
+                    r"read/write C:\Users\alice\firmware.bin "
+                    "and /home/alice/firmware.bin at 0x08000000"
+                ),
+            )
+        ]
+
+    services.job_manager.wait_for_events = wait_for_events
+
+    response = request(app, "GET", "/api/online-flash/jobs/job-1/events?after=2")
+
+    assert "C:\\Users\\alice" not in response.text
+    assert "/home/alice" not in response.text
+    assert "read/write" in response.text
+    assert "0x08000000" in response.text
 
 
 def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, services):
