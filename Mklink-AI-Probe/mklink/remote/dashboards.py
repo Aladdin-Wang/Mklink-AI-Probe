@@ -154,6 +154,7 @@ class RttStreamManager:
         self._parser = None
         self._interval = 0.0
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
+        self._start_failure_callback = None
 
     @property
     def running(self) -> bool:
@@ -163,14 +164,22 @@ class RttStreamManager:
     def paused(self) -> bool:
         return not self._paused.is_set()
 
+    def set_start_failure_callback(self, callback) -> None:
+        self._start_failure_callback = callback
+
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 1024,
               duration: float = 86400) -> None:
         """Start RTT polling in a background thread."""
-        if self._running:
-            return
+        if self._thread is not None and self._thread.is_alive():
+            if self.running:
+                return
+            raise RuntimeError("RTT worker thread is still active")
 
-        self._stop_event.clear()
+        stop_event = threading.Event()
+        generation = object()
+        self._stop_event = stop_event
+        self._generation = generation
         self._paused.set()
         self._running = True
         self._history.clear()
@@ -179,15 +188,19 @@ class RttStreamManager:
         # Auto-detect parser strategy from initial RTT output
         from mklink.rtt_viewer import RttLineParser
         self._parser = RttLineParser("kv")  # will auto-detect on first lines
+        failure_callback = self._start_failure_callback
 
         def _poll():
+            initialized = False
+            start_failure = None
             try:
                 device.rtt_start(addr, channel=channel, mode=mode,
                                  search_size=search_size)
+                initialized = True
                 start_time = time.time()
                 sample_lines = []
 
-                while not self._stop_event.is_set():
+                while not stop_event.is_set():
                     if time.time() - start_time > duration:
                         break
                     if not self._paused.is_set():
@@ -232,19 +245,37 @@ class RttStreamManager:
             except Exception as e:
                 logger.error("RTT stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
+                if not initialized:
+                    start_failure = e
             finally:
-                self._running = False
-                self._bridge.put({"event": "stopped"})
-                self._bridge.stop()
+                try:
+                    if getattr(self, "_generation", None) is generation:
+                        self._running = False
+                        try:
+                            self._bridge.put({"event": "stopped"})
+                        finally:
+                            self._bridge.stop()
+                finally:
+                    if start_failure is not None and failure_callback is not None:
+                        try:
+                            failure_callback(start_failure)
+                        except Exception:
+                            pass
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
+        thread = self._thread
         self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
+        if thread:
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise TimeoutError("RTT worker thread is still active")
         self._running = False
+        if self._thread is thread:
+            self._thread = None
+        return True
 
     def pause(self) -> None:
         self._paused.clear()
@@ -320,6 +351,7 @@ class SystemViewStreamManager:
         self._recording_path = ""
         self._recording_summary_path = ""
         self._recording_error = ""
+        self._start_failure_callback = None
 
     @property
     def running(self) -> bool:
@@ -329,14 +361,22 @@ class SystemViewStreamManager:
     def paused(self) -> bool:
         return not self._paused.is_set()
 
+    def set_start_failure_callback(self, callback) -> None:
+        self._start_failure_callback = callback
+
     def start(self, device, *, addr: str | None = None, channel: int = 1,
               mode: int = 0, search_size: int = 1024,
               duration: float = 86400) -> None:
         """Start SystemView polling in a background thread."""
-        if self._running:
-            return
+        if self._thread is not None and self._thread.is_alive():
+            if self.running:
+                return
+            raise RuntimeError("SystemView worker thread is still active")
 
-        self._stop_event.clear()
+        stop_event = threading.Event()
+        generation = object()
+        self._stop_event = stop_event
+        self._generation = generation
         self._paused.set()
         self._running = True
         self._history.clear()
@@ -350,12 +390,16 @@ class SystemViewStreamManager:
         self._recording_summary_path = ""
         self._recording_error = ""
         self._parser = self._create_parser(device)
+        failure_callback = self._start_failure_callback
 
         def _poll():
+            initialized = False
+            start_failure = None
             try:
                 start_result = device.systemview_start(
                     addr, channel=channel, mode=mode, search_size=search_size,
                 )
+                initialized = True
                 self._apply_cpu_freq_hint(device, start_result)
                 self._start_recording(
                     device,
@@ -363,7 +407,7 @@ class SystemViewStreamManager:
                 )
                 start_time = time.time()
                 empty_cycles = 0
-                while not self._stop_event.is_set():
+                while not stop_event.is_set():
                     if time.time() - start_time > duration:
                         break
                     if not self._paused.is_set():
@@ -419,15 +463,30 @@ class SystemViewStreamManager:
             except Exception as e:
                 logger.error("SystemView stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
+                if not initialized:
+                    start_failure = e
             finally:
                 try:
                     device.systemview_stop()
                 except Exception:
                     pass
-                self._close_recording()
-                self._running = False
-                self._bridge.put({"event": "stopped"})
-                self._bridge.stop()
+                try:
+                    self._close_recording()
+                except Exception:
+                    pass
+                try:
+                    if getattr(self, "_generation", None) is generation:
+                        self._running = False
+                        try:
+                            self._bridge.put({"event": "stopped"})
+                        finally:
+                            self._bridge.stop()
+                finally:
+                    if start_failure is not None and failure_callback is not None:
+                        try:
+                            failure_callback(start_failure)
+                        except Exception:
+                            pass
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
@@ -708,11 +767,17 @@ class SystemViewStreamManager:
         except Exception as e:
             logger.debug("SystemView task-name resolution failed: %s", e)
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
+        thread = self._thread
         self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
+        if thread:
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise TimeoutError("SystemView worker thread is still active")
         self._running = False
+        if self._thread is thread:
+            self._thread = None
+        return True
 
     def pause(self) -> None:
         self._paused.clear()
@@ -780,7 +845,7 @@ class SuperWatchStreamManager:
 
     @property
     def running(self) -> bool:
-        return self._running
+        return self._running and not self._stop_event.is_set()
 
     def prepare(self, device) -> None:
         """Build runtime from DWARF info so search/add work before collection starts."""
@@ -807,17 +872,22 @@ class SuperWatchStreamManager:
         )
 
     def start(self, device) -> None:
-        if self._running:
-            return
+        if self._thread is not None and self._thread.is_alive():
+            if self.running:
+                return
+            raise RuntimeError("SuperWatch worker thread is still active")
         self.prepare(device)
-        self._stop_event.clear()
+        stop_event = threading.Event()
+        generation = object()
+        self._stop_event = stop_event
+        self._generation = generation
         self._collecting.set()
         self._running = True
         self._origin_us = None
 
         def _poll():
             try:
-                while not self._stop_event.is_set():
+                while not stop_event.is_set():
                     if not self._collecting.is_set() or not self._runtime.items:
                         time.sleep(0.5)
                         continue
@@ -838,24 +908,31 @@ class SuperWatchStreamManager:
                         self._bridge.put({"event": "error", "message": str(e)})
                     elapsed = time.monotonic() - t0
                     remaining = max(0.0, self._interval - elapsed)
-                    self._stop_event.wait(timeout=remaining)
+                    stop_event.wait(timeout=remaining)
             except Exception as e:
                 logger.error("SuperWatch stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
             finally:
-                self._running = False
-                self._bridge.put({"event": "stopped"})
-                self._bridge.stop()
+                if getattr(self, "_generation", None) is generation:
+                    self._running = False
+                    self._bridge.put({"event": "stopped"})
+                    self._bridge.stop()
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
+        thread = self._thread
         self._stop_event.set()
         self._collecting.clear()
-        if self._thread:
-            self._thread.join(timeout=5)
+        if thread:
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise TimeoutError("SuperWatch worker thread is still active")
         self._running = False
+        if self._thread is thread:
+            self._thread = None
+        return True
 
     def add_watch(self, name: str) -> dict:
         if self._runtime is None:
@@ -1288,8 +1365,10 @@ class VofaStreamManager:
             channels: List of {name, addr (int or hex str), type?, size?}
             interval: Polling interval in seconds
         """
-        if self._running:
-            return
+        if self._thread is not None and self._thread.is_alive():
+            if self.running:
+                return
+            raise RuntimeError("VOFA worker thread is still active")
 
         import struct as _struct
         self._channels = []
@@ -1307,7 +1386,10 @@ class VofaStreamManager:
             })
 
         self._interval = max(interval, 0.01)
-        self._stop_event.clear()
+        stop_event = threading.Event()
+        generation = object()
+        self._stop_event = stop_event
+        self._generation = generation
         self._paused.set()
         self._running = True
         self._history.clear()
@@ -1323,7 +1405,7 @@ class VofaStreamManager:
 
         def _poll():
             try:
-                while not self._stop_event.is_set():
+                while not stop_event.is_set():
                     if not self._paused.is_set():
                         time.sleep(self._interval)
                         continue
@@ -1351,24 +1433,31 @@ class VofaStreamManager:
                         if len(self._history) > self._max_history:
                             self._history = self._history[-self._max_history:]
 
-                    self._stop_event.wait(self._interval)
+                    stop_event.wait(self._interval)
 
             except Exception as e:
                 logger.error("VOFA stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
             finally:
-                self._running = False
-                self._bridge.put({"event": "stopped"})
-                self._bridge.stop()
+                if getattr(self, "_generation", None) is generation:
+                    self._running = False
+                    self._bridge.put({"event": "stopped"})
+                    self._bridge.stop()
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 5.0) -> bool:
+        thread = self._thread
         self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=5)
+        if thread:
+            thread.join(timeout=timeout)
+            if thread.is_alive():
+                raise TimeoutError("VOFA worker thread is still active")
         self._running = False
+        if self._thread is thread:
+            self._thread = None
+        return True
 
     def pause(self) -> None:
         self._paused.clear()
@@ -1437,7 +1526,10 @@ def get_managers() -> dict[str, Any]:
     return _managers
 
 
-def stop_bridge_dashboards(exclude: str | None = None) -> list[str]:
+def stop_bridge_dashboards(
+    exclude: str | None = None,
+    resource_manager=None,
+) -> list[str]:
     """停止所有使用 MKLink Bridge 的 Dashboard（RTT/SuperWatch/VOFA）。
     返回被停止的 Dashboard 名称列表。"""
     stopped = []
@@ -1447,6 +1539,20 @@ def stop_bridge_dashboards(exclude: str | None = None) -> list[str]:
             continue
         mgr = managers.get(name)
         if mgr and mgr.running:
-            mgr.stop()
+            error = None
+            try:
+                mgr.stop()
+            except Exception as exc:
+                error = exc
+            thread = getattr(mgr, "_thread", None)
+            alive = thread.is_alive() if thread is not None else bool(mgr.running)
+            if alive:
+                raise TimeoutError(
+                    f"{name} worker thread is still active"
+                ) from error
+            if resource_manager is not None:
+                resource_manager.release(f"user:dashboard:{name}")
+            if error is not None:
+                raise error
             stopped.append(name)
     return stopped
