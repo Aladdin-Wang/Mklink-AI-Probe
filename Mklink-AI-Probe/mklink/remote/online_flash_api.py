@@ -34,7 +34,9 @@ _WINDOWS_ABSOLUTE_PATH = re.compile(
     r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\)[^" + _PATH_TOKEN_END + r"]+"
 )
 _POSIX_LOCAL_ROOT = re.compile(
-    r"(?<![A-Za-z0-9/])/(?:home|Users|root|tmp|var|etc|mnt|opt|usr|srv)"
+    r"(?<![A-Za-z0-9/])/"
+    r"(?:home|Users|root|tmp|var|etc|mnt|opt|usr|srv|dev|proc|sys|bin|sbin|"
+    r"boot|data|workspace|run|lib|lib64|media|snap|nix)"
     r"(?:/[^" + _PATH_TOKEN_END + r"]+)*"
 )
 _POSIX_FILE_PATH = re.compile(

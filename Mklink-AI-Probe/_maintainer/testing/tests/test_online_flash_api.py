@@ -265,6 +265,49 @@ def test_path_redaction_handles_file_uri_and_path_prefix_without_redacting_route
     assert "/oauth/callback" in message
 
 
+@pytest.mark.parametrize(
+    "local_path",
+    [
+        "/dev/ttyUSB0",
+        "/proc/self/maps",
+        "/sys/class/tty",
+        "/bin/bash",
+        "/sbin/init",
+        "/boot/vmlinuz",
+        "/data/private",
+        "/workspace/project/Makefile",
+        "/run/mklink/socket",
+        "/lib/firmware/device",
+        "/lib64/ld-linux",
+        "/media/user/disk",
+        "/snap/mklink/current",
+        "/nix/store/package",
+    ],
+)
+def test_path_redaction_covers_standard_posix_local_roots(
+    app, services, local_path
+):
+    services.catalog.status = lambda: {
+        "index_available": True,
+        "target_count": 1,
+        "last_error": (
+            f"local={local_path}; https://example.com{local_path}; "
+            "/health; /oauth/callback; /api/online-flash; /ws"
+        ),
+    }
+
+    message = request(app, "GET", "/api/online-flash/packs/status").json()[
+        "last_error"
+    ]
+
+    assert f"local={local_path}" not in message
+    assert f"https://example.com{local_path}" in message
+    assert "/health" in message
+    assert "/oauth/callback" in message
+    assert "/api/online-flash" in message
+    assert "/ws" in message
+
+
 def test_first_pack_index_failure_is_503_and_records_catalog_error(app, services):
     recorded = []
     services.catalog.status = lambda: {
