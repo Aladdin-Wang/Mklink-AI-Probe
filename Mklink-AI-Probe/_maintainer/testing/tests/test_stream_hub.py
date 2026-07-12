@@ -1,0 +1,236 @@
+import asyncio
+import threading
+
+import pytest
+
+from mklink.remote.stream_hub import StreamHub
+
+
+def test_each_subscriber_has_an_independent_bounded_queue():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        first = hub.subscribe()
+        second = hub.subscribe()
+
+        sequence = hub.publish(b"one", item_count=3)
+
+        first_batch = await first.get()
+        second_batch = await second.get()
+        assert first is not second
+        assert first.maxsize == second.maxsize == 2
+        assert first_batch == second_batch == b"one"
+        assert first_batch.sequence == second_batch.sequence == sequence == 1
+        assert first_batch.item_count == second_batch.item_count == 3
+
+    asyncio.run(scenario())
+
+
+def test_slow_client_drops_exactly_one_oldest_batch_when_full():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        client = hub.subscribe()
+        hub.publish(b"one", item_count=1)
+        hub.publish(b"two-two", item_count=2)
+        hub.publish(b"three", item_count=3)
+
+        assert await client.get() == b"two-two"
+        client.task_done()
+        assert await client.get() == b"three"
+        client.task_done()
+        await asyncio.wait_for(client.join(), timeout=0.1)
+        stats = hub.stats()
+        assert stats.produced_batches == 3
+        assert stats.produced_items == 6
+        assert stats.produced_bytes == 3 + 7 + 5
+        assert stats.delivered_batches == 3
+        assert stats.delivered_items == 6
+        assert stats.delivered_bytes == 3 + 7 + 5
+        assert stats.dropped_batches == 1
+        assert stats.dropped_items == 1
+        assert stats.dropped_bytes == 3
+        assert stats.queue_high_water_mark == 2
+
+    asyncio.run(scenario())
+
+
+def test_fast_and_slow_clients_do_not_share_backpressure_or_drops():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        fast = hub.subscribe()
+        slow = hub.subscribe()
+
+        hub.publish(b"one", item_count=1)
+        assert await fast.get() == b"one"
+        hub.publish(b"two", item_count=1)
+        assert await fast.get() == b"two"
+        hub.publish(b"three", item_count=1)
+
+        assert await fast.get() == b"three"
+        assert await slow.get() == b"two"
+        assert await slow.get() == b"three"
+        assert hub.stats().dropped_batches == 1
+
+    asyncio.run(scenario())
+
+
+def test_sequence_increments_once_per_publish_and_is_shared_by_clients():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=3)
+        first = hub.subscribe()
+        second = hub.subscribe()
+
+        assert hub.publish(b"a", item_count=1) == 1
+        assert hub.publish(b"b", item_count=1) == 2
+
+        assert [(await first.get()).sequence, (await first.get()).sequence] == [1, 2]
+        assert [(await second.get()).sequence, (await second.get()).sequence] == [1, 2]
+        assert hub.stats().last_sequence == 2
+
+    asyncio.run(scenario())
+
+
+def test_stats_and_status_frame_are_non_resetting_snapshots():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        hub.publish(b"first", item_count=2)
+        hub.publish(b"second", item_count=4)
+
+        first = hub.stats()
+        status = hub.status_frame()
+        second = hub.stats()
+        assert status == first == second
+        assert status.active_clients == 1
+        assert status.produced_batches == 2
+        assert status.delivered_batches == 2
+        assert status.dropped_batches == 1
+        assert status.last_sequence == 2
+        assert await client.get() == b"second"
+
+    asyncio.run(scenario())
+
+
+def test_publish_threadsafe_never_waits_for_a_full_client_queue():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        hub.publish(b"old", item_count=1)
+        loop = asyncio.get_running_loop()
+        returned = []
+
+        def producer():
+            returned.append(hub.publish_threadsafe(loop, b"new", item_count=2))
+
+        thread = threading.Thread(target=producer)
+        thread.start()
+        thread.join(timeout=0.5)
+        assert not thread.is_alive()
+        await asyncio.sleep(0)
+
+        batch = await client.get()
+        assert batch == b"new"
+        assert returned == [2]
+        assert batch.sequence == 2
+        assert hub.stats().dropped_batches == 1
+
+    asyncio.run(scenario())
+
+
+def test_publish_threadsafe_accepts_a_batch_without_an_item_count():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+
+        assert hub.publish_threadsafe(asyncio.get_running_loop(), b"raw") == 1
+        await asyncio.sleep(0)
+
+        assert await client.get() == b"raw"
+        assert hub.stats().produced_items == 0
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_threadsafe_publish_schedules_batches_in_sequence_order():
+    class RecordingLoop:
+        def __init__(self):
+            self.first_scheduling = threading.Event()
+            self.release_first = threading.Event()
+            self.sequences = []
+
+        @staticmethod
+        def is_closed():
+            return False
+
+        def call_soon_threadsafe(self, _callback, batch):
+            if batch.sequence == 1:
+                self.first_scheduling.set()
+                self.release_first.wait(timeout=1)
+            self.sequences.append(batch.sequence)
+
+    hub = StreamHub(max_batches_per_client=1)
+    loop = RecordingLoop()
+    first = threading.Thread(
+        target=hub.publish_threadsafe, args=(loop, b"first", 1)
+    )
+    second = threading.Thread(
+        target=hub.publish_threadsafe, args=(loop, b"second", 1)
+    )
+
+    first.start()
+    assert loop.first_scheduling.wait(timeout=1)
+    second.start()
+    second.join(timeout=0.05)
+    loop.release_first.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+
+    assert loop.sequences == [1, 2]
+
+
+def test_unsubscribe_is_idempotent_and_releases_queued_batches():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        client = hub.subscribe()
+        hub.publish(b"retained", item_count=1)
+
+        assert hub.unsubscribe(client) is True
+        assert hub.unsubscribe(client) is False
+        assert client.empty()
+        await asyncio.wait_for(client.join(), timeout=0.1)
+        assert hub.stats().active_clients == 0
+        hub.publish(b"after", item_count=1)
+        assert client.empty()
+
+    asyncio.run(scenario())
+
+
+def test_publish_without_subscribers_still_counts_production():
+    hub = StreamHub(max_batches_per_client=1)
+
+    assert hub.publish(memoryview(b"abc"), item_count=7) == 1
+
+    stats = hub.stats()
+    assert stats.produced_batches == 1
+    assert stats.produced_items == 7
+    assert stats.produced_bytes == 3
+    assert stats.delivered_batches == 0
+    assert stats.active_clients == 0
+
+
+@pytest.mark.parametrize("max_batches", [0, -1, True, 1.5])
+def test_rejects_invalid_queue_capacity(max_batches):
+    with pytest.raises((TypeError, ValueError)):
+        StreamHub(max_batches_per_client=max_batches)
+
+
+@pytest.mark.parametrize("item_count", [-1, True, 1.5])
+def test_rejects_invalid_item_count(item_count):
+    hub = StreamHub(max_batches_per_client=1)
+    with pytest.raises((TypeError, ValueError)):
+        hub.publish(b"data", item_count=item_count)
+
+
+def test_rejects_non_bytes_batches():
+    hub = StreamHub(max_batches_per_client=1)
+    with pytest.raises(TypeError):
+        hub.publish("not bytes", item_count=1)
