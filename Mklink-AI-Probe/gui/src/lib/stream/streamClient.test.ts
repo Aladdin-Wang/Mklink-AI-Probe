@@ -81,25 +81,56 @@ describe('StreamClient', () => {
     expect(worker.postMessage).toHaveBeenNthCalledWith(2, { type: 'frame', buffer }, [buffer])
   })
 
-  it('reconnects with capped exponential delays without real sleeping', () => {
+  it('backs off across open-then-immediate-close loops until valid data arrives', () => {
     vi.useFakeTimers()
     const { client, sockets, states } = setup()
     client.start()
+    sockets[0].open()
     sockets[0].emitClose()
     expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 100 })
     vi.advanceTimersByTime(100)
     expect(sockets).toHaveLength(2)
+    sockets[1].open()
     sockets[1].emitClose()
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 200 })
     vi.advanceTimersByTime(199)
     expect(sockets).toHaveLength(2)
     vi.advanceTimersByTime(1)
     expect(sockets).toHaveLength(3)
+    sockets[2].open()
     sockets[2].emitClose()
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 400 })
     vi.advanceTimersByTime(400)
     expect(sockets).toHaveLength(4)
+    sockets[3].open()
     sockets[3].emitClose()
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 400 })
     vi.advanceTimersByTime(400)
     expect(sockets).toHaveLength(5)
+  })
+
+  it('resets reconnect backoff only after the worker confirms a valid frame', () => {
+    vi.useFakeTimers()
+    const { client, sockets, worker, states } = setup()
+    client.start()
+    sockets[0].open()
+    sockets[0].emitClose()
+    vi.advanceTimersByTime(100)
+    sockets[1].open()
+    sockets[1].emitClose()
+    vi.advanceTimersByTime(200)
+    sockets[2].open()
+
+    const buffer = new ArrayBuffer(36)
+    sockets[2].onmessage?.(new MessageEvent('message', { data: buffer }))
+    worker.onmessage?.(new MessageEvent('message', { data: {
+      type: 'telemetry', bufferedSamples: 0, transportDroppedBatches: 0,
+      backendDroppedBatches: 0, backendDroppedItems: 0, backendDroppedBytes: 0,
+      lastSequence: null, acceptedFrames: 1,
+    } }))
+    sockets[2].emitClose()
+
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 100 })
   })
 
   it('does not reconnect after explicit stop', () => {
@@ -133,5 +164,59 @@ describe('StreamClient', () => {
     sockets[0].onmessage?.(new MessageEvent('message', { data: 'not binary' }))
     expect(worker.postMessage).toHaveBeenCalledTimes(1)
     expect(states.at(-1)).toMatchObject({ phase: 'error' })
+  })
+
+  it('recovers from synchronous WebSocket factory failures with controlled backoff', () => {
+    vi.useFakeTimers()
+    const worker = {
+      postMessage: vi.fn(), terminate: vi.fn(), onmessage: null,
+    }
+    const socket = new FakeSocket('ws://localhost/ws/streams/vofa')
+    const createWebSocket = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('factory one') })
+      .mockImplementationOnce(() => { throw new Error('factory two') })
+      .mockReturnValue(socket as unknown as WebSocket)
+    const states: StreamClientState[] = []
+    const client = new StreamClient({
+      url: socket.url, capacity: 10, channelCount: 1,
+      reconnectBaseMs: 100, reconnectMaxMs: 400,
+      worker: worker as unknown as Worker,
+      createWebSocket,
+      onState: state => states.push(state),
+    })
+
+    expect(() => client.start()).not.toThrow()
+    expect(states).toContainEqual({ phase: 'error', error: 'factory one' })
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 100 })
+    vi.advanceTimersByTime(100)
+    expect(states).toContainEqual({ phase: 'error', error: 'factory two' })
+    vi.advanceTimersByTime(200)
+    expect(createWebSocket).toHaveBeenCalledTimes(3)
+
+    socket.emitClose()
+    client.stop()
+    vi.runAllTimers()
+    expect(createWebSocket).toHaveBeenCalledTimes(3)
+  })
+
+  it('validates pure options before constructing a worker', () => {
+    const createWorker = vi.fn()
+    expect(() => new StreamClient({
+      url: 'ws://localhost/ws/streams/vofa',
+      capacity: 10,
+      channelCount: 1,
+      reconnectBaseMs: 0,
+      reconnectMaxMs: 400,
+      createWorker,
+    })).toThrow(/reconnect/)
+    expect(createWorker).not.toHaveBeenCalled()
+
+    expect(() => new StreamClient({
+      url: 'ws://localhost/ws/streams/vofa',
+      capacity: 0,
+      channelCount: 1,
+      createWorker,
+    })).toThrow(/capacity/)
+    expect(createWorker).not.toHaveBeenCalled()
   })
 })

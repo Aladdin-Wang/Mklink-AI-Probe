@@ -44,6 +44,7 @@ describe('useBinaryStream', () => {
     options?.onState?.({ phase: 'connected' } satisfies StreamClientState)
     options?.onWorkerMessage?.({
       type: 'telemetry',
+      acceptedFrames: 1,
       bufferedSamples: 10,
       transportDroppedBatches: 2,
       backendDroppedBatches: 3,

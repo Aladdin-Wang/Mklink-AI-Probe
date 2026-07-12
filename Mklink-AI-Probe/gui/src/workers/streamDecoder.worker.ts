@@ -9,6 +9,7 @@ export type WorkerInput =
 
 export interface StreamTelemetry {
   readonly type: 'telemetry'
+  readonly acceptedFrames: number
   readonly bufferedSamples: number
   readonly transportDroppedBatches: number
   readonly backendDroppedBatches: number
@@ -55,6 +56,7 @@ export class StreamDecoder {
   private backendDroppedBatches = 0
   private backendDroppedItems = 0
   private backendDroppedBytes = 0
+  private acceptedFrames = 0
 
   constructor(post: PostOutput) {
     this.post = post
@@ -100,6 +102,7 @@ export class StreamDecoder {
       } else {
         this.appendNumericFrame(decoded.sequence, decoded.timestampNs, decoded.itemCount, decoded.payload)
       }
+      this.acceptedFrames += 1
       this.post(this.telemetry())
     } catch (error) {
       this.error('INVALID_FRAME', error)
@@ -194,11 +197,13 @@ export class StreamDecoder {
     this.backendDroppedBatches = 0
     this.backendDroppedItems = 0
     this.backendDroppedBytes = 0
+    this.acceptedFrames = 0
   }
 
   private telemetry(): StreamTelemetry {
     return {
       type: 'telemetry',
+      acceptedFrames: this.acceptedFrames,
       bufferedSamples: this.ring?.length ?? 0,
       transportDroppedBatches: this.transportDroppedBatches,
       backendDroppedBatches: this.backendDroppedBatches,

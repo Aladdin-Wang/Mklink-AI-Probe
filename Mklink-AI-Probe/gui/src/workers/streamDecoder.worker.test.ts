@@ -52,6 +52,7 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.at(-1)).toMatchObject({
       type: 'telemetry',
       bufferedSamples: 2,
+      acceptedFrames: 1,
       transportDroppedBatches: 0,
       backendDroppedBatches: 0,
     })
@@ -98,6 +99,7 @@ describe('StreamDecoder worker controller', () => {
       type: 'telemetry',
       transportDroppedBatches: 2,
       backendDroppedBatches: 4,
+      acceptedFrames: 3,
       backendDroppedItems: 40,
       backendDroppedBytes: 160,
     })
@@ -123,6 +125,7 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.at(-1)).toMatchObject({
       type: 'telemetry',
       bufferedSamples: 0,
+      acceptedFrames: 0,
       transportDroppedBatches: 0,
       backendDroppedBatches: 0,
     })

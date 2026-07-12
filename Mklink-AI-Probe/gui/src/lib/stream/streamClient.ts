@@ -25,6 +25,25 @@ export interface StreamClientOptions {
 const DEFAULT_RECONNECT_BASE_MS = 250
 const DEFAULT_RECONNECT_MAX_MS = 8_000
 
+function requirePositiveInteger(name: string, value: number): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new RangeError(`${name} must be a positive integer`)
+  }
+}
+
+function validateOptions(options: StreamClientOptions): void {
+  if (typeof options.url !== 'string' || options.url.length === 0) {
+    throw new TypeError('url must be a non-empty string')
+  }
+  requirePositiveInteger('capacity', options.capacity)
+  requirePositiveInteger('channelCount', options.channelCount)
+  const base = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS
+  const maximum = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS
+  if (!Number.isFinite(base) || !Number.isFinite(maximum) || base <= 0 || maximum < base) {
+    throw new RangeError('reconnect delay bounds are invalid')
+  }
+}
+
 export class StreamClient {
   private readonly options: StreamClientOptions
   private readonly worker: Worker
@@ -36,8 +55,11 @@ export class StreamClient {
   private reconnectAttempt = 0
   private shouldRun = false
   private disposed = false
+  private awaitingReadyFrame = false
+  private acceptedFramesSeen = 0
 
   constructor(options: StreamClientOptions) {
+    validateOptions(options)
     this.options = options
     this.worker = options.worker ?? options.createWorker?.() ?? new Worker(
       new URL('../../workers/streamDecoder.worker.ts', import.meta.url),
@@ -46,10 +68,18 @@ export class StreamClient {
     this.createWebSocket = options.createWebSocket ?? (url => new WebSocket(url))
     this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS
     this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS
-    if (this.reconnectBaseMs <= 0 || this.reconnectMaxMs < this.reconnectBaseMs) {
-      throw new RangeError('reconnect delay bounds are invalid')
+    this.worker.onmessage = event => {
+      const message = event.data as WorkerOutput
+      if (message.type === 'telemetry') {
+        const acceptedFrameAdvanced = message.acceptedFrames > this.acceptedFramesSeen
+        this.acceptedFramesSeen = message.acceptedFrames
+        if (this.awaitingReadyFrame && acceptedFrameAdvanced) {
+          this.reconnectAttempt = 0
+          this.awaitingReadyFrame = false
+        }
+      }
+      options.onWorkerMessage?.(message)
     }
-    this.worker.onmessage = event => options.onWorkerMessage?.(event.data as WorkerOutput)
     this.worker.postMessage({
       type: 'configure',
       capacity: options.capacity,
@@ -68,6 +98,7 @@ export class StreamClient {
   stop(): void {
     if (this.disposed) return
     this.shouldRun = false
+    this.awaitingReadyFrame = false
     this.clearReconnectTimer()
     const socket = this.socket
     this.socket = null
@@ -101,12 +132,22 @@ export class StreamClient {
   private connect(): void {
     if (!this.shouldRun || this.disposed) return
     this.emitState({ phase: this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting' })
-    const socket = this.createWebSocket(this.options.url)
+    let socket: WebSocket
+    try {
+      socket = this.createWebSocket(this.options.url)
+    } catch (error) {
+      this.emitState({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      if (this.shouldRun) this.scheduleReconnect()
+      return
+    }
     this.socket = socket
     socket.binaryType = 'arraybuffer'
     socket.onopen = () => {
       if (socket !== this.socket || !this.shouldRun) return
-      this.reconnectAttempt = 0
+      this.awaitingReadyFrame = true
       if (this.options.token) {
         // Task 3 accepts token at top level or in params on the first JSON text
         // frame. params.token matches the existing RPC authentication shape.
@@ -131,6 +172,7 @@ export class StreamClient {
     socket.onclose = () => {
       if (socket !== this.socket) return
       this.socket = null
+      this.awaitingReadyFrame = false
       if (this.shouldRun) this.scheduleReconnect()
     }
   }
