@@ -5,6 +5,9 @@ import App from '../App.vue'
 import router from '../router'
 import type { JobAction, JobRequest, PackOperationResponse } from '../types/onlineFlash'
 import DashboardView from './DashboardView.vue'
+import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
+import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
+import actionBarSource from '../components/online-flash/FlashActionBar.vue?raw'
 
 async function onlineFlashView() {
   const path = './OnlineFlashView.vue'
@@ -543,6 +546,32 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('aborts a deferred inspection before unmount cleanup can start preview work', async () => {
+    const fallback = viewFetch()
+    let inspectionSignal: AbortSignal | null = null
+    let resolveInspection!: (response: Response) => void
+    const pending = new Promise<Response>(resolve => { resolveInspection = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/images/inspect')) { inspectionSignal = options?.signal ?? null; return pending }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
+
+    wrapper.unmount()
+    expect(inspectionSignal?.aborted).toBe(true)
+    resolveInspection(new Response(JSON.stringify({
+      image_id: 'late', file_name: 'firmware.bin', format: 'bin', size: 32, sha256: 'late',
+      start: 0x80000000, end: 0x80000020, segments: [], base_address: 0x80000000,
+    }), { status: 200 }))
+    for (let index = 0; index < 20; index += 1) await Promise.resolve()
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/preview?'))).toHaveLength(0)
+  })
+
   it('does not trust an install response when refreshed exact target remains uninstalled', async () => {
     const missing = { ...installedTarget, installed: false, source: 'index' }
     vi.stubGlobal('fetch', viewFetch([missing]))
@@ -571,6 +600,66 @@ describe('online flash task workspace behavior', () => {
 
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('q=HPM+53'))).toHaveLength(1)
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/targets?')).length).toBe(initialSearchCount + 1)
+    wrapper.unmount()
+  })
+
+  it('commits only the latest target search response', async () => {
+    vi.useFakeTimers()
+    const fallback = viewFetch()
+    let resolveInitial!: (response: Response) => void
+    let initialSignal: AbortSignal | null = null
+    const initial = new Promise<Response>(resolve => { resolveInitial = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/targets?q=')) {
+        const query = new URL(url, 'http://local').searchParams.get('q')
+        if (!query) { initialSignal = options?.signal ?? null; return initial }
+        return Promise.resolve(new Response(JSON.stringify([{ ...installedTarget, part_number: 'NEW-TARGET' }]), { status: 200 }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await wrapper.get('input[aria-label="搜索器件"]').setValue('new')
+    await vi.advanceTimersByTimeAsync(300)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('NEW-TARGET'))
+    expect(initialSignal?.aborted).toBe(true)
+    resolveInitial(new Response(JSON.stringify([{ ...installedTarget, part_number: 'OLD-TARGET' }]), { status: 200 }))
+    for (let index = 0; index < 10; index += 1) await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('NEW-TARGET')
+    expect(wrapper.text()).not.toContain('OLD-TARGET')
+    wrapper.unmount()
+  })
+
+  it('locks Pack install and cancel operations against duplicate clicks', async () => {
+    const missing = { ...installedTarget, installed: false, source: 'index' }
+    const fallback = viewFetch([missing])
+    let resolveInstall!: (response: Response) => void
+    let resolveCancel!: (response: Response) => void
+    const install = new Promise<Response>(resolve => { resolveInstall = resolve })
+    const cancel = new Promise<Response>(resolve => { resolveCancel = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/packs/install')) return install
+      if (url.endsWith('/packs/cancel')) return cancel
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    const target = wrapper.get('[data-testid="target-HPM5300"]')
+    await target.trigger('click'); await target.trigger('click')
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/packs/install'))).toHaveLength(1)
+    expect(target.attributes('disabled')).toBeDefined()
+    const cancelButton = wrapper.get('[data-testid="pack-cancel"]')
+    await cancelButton.trigger('click'); await cancelButton.trigger('click')
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/packs/cancel'))).toHaveLength(1)
+    expect(cancelButton.attributes('disabled')).toBeDefined()
+    resolveCancel(new Response(JSON.stringify({ status: 'cancelled' }), { status: 200 }))
+    for (let index = 0; index < 5; index += 1) await Promise.resolve()
+    expect(target.attributes('disabled')).toBeDefined()
+    expect(cancelButton.attributes('disabled')).toBeDefined()
+    resolveInstall(new Response(JSON.stringify({ result: { status: 'installed', part_number: 'HPM5300' }, events: [] }), { status: 200 }))
     wrapper.unmount()
   })
 
@@ -707,6 +796,77 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('restores the previous job state after a failed stop so stop can be retried', async () => {
+    const fallback = viewFetch()
+    let stopAttempts = 0
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs/job-1/stop')) {
+        stopAttempts += 1
+        return Promise.resolve(new Response(JSON.stringify({ detail: 'stop failed' }), { status: 500, statusText: 'fail' }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="job-state"]').text()).toContain('QUEUED'))
+    expect(wrapper.get('[data-testid="stop-job"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    await vi.waitFor(() => expect(stopAttempts).toBe(2))
+    wrapper.unmount()
+  })
+
+  it('uses a synchronous creating-job latch for normal and chip-erase starts', async () => {
+    const fallback = viewFetch()
+    let resolveJob!: (response: Response) => void
+    const pendingJob = new Promise<Response>(resolve => { resolveJob = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => (
+      String(input).endsWith('/jobs') && options?.method === 'POST' ? pendingJob : fallback(input, options)
+    )))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    const start = wrapper.get('[data-testid="start-job"]')
+    await start.trigger('click'); await start.trigger('click')
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/jobs'))).toHaveLength(1)
+    expect(start.attributes('disabled')).toBeDefined()
+    resolveJob(new Response(JSON.stringify({ job_id: 'job-1', job: { state: 'queued' } }), { status: 200 }))
+    wrapper.unmount()
+
+    let resolveErase!: (response: Response) => void
+    const pendingErase = new Promise<Response>(resolve => { resolveErase = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => (
+      String(input).endsWith('/jobs') && options?.method === 'POST' ? pendingErase : fallback(input, options)
+    )))
+    FakeEventSource.instances = []
+    const eraseWrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(eraseWrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await eraseWrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    const chipErase = eraseWrapper.get('[data-testid="chip-erase"]')
+    await chipErase.trigger('click'); await chipErase.trigger('click')
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/jobs'))).toHaveLength(1)
+    resolveErase(new Response(JSON.stringify({ job_id: 'erase', job: { state: 'queued' } }), { status: 200 }))
+    eraseWrapper.unmount()
+  })
+
+  it('survives localStorage quota errors and reports a non-sensitive warning', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => { throw new DOMException('quota details', 'QuotaExceededError') },
+    })
+    const wrapper = mount(await onlineFlashView())
+    await wrapper.get('[data-testid="frequency"]').setValue('4000000')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('本地设置未保存')
+    expect(wrapper.text()).not.toContain('quota details')
+    expect(wrapper.get('[data-testid="frequency"]').element).toHaveProperty('value', '4000000')
+    wrapper.unmount()
+  })
+
   it('does not mirror total job progress into stage progress', async () => {
     const wrapper = mount(await onlineFlashView())
     await readyAndStart(wrapper)
@@ -772,5 +932,39 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get('[data-testid="range-erase"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('扇区几何信息不可验证')
     wrapper.unmount()
+  })
+})
+
+describe('online flash component quality', () => {
+  it('virtualizes 5000 log lines and can scroll from early to middle history', async () => {
+    const lines = Array.from({ length: 5000 }, (_, index) => `line-${index}`)
+    const wrapper = mount(FlashLogPanel, { props: { lines, streamDisconnected: false } })
+    const viewport = wrapper.get('[data-testid="log-viewport"]')
+    Object.defineProperty(viewport.element, 'clientHeight', { configurable: true, value: 135 })
+    expect(wrapper.findAll('[data-testid="log-line"]').length).toBeLessThan(40)
+    expect(wrapper.text()).toContain('line-0')
+    ;(viewport.element as HTMLElement).scrollTop = 2500 * 18
+    await viewport.trigger('scroll')
+    expect(wrapper.text()).toContain('line-2500')
+    expect(wrapper.findAll('[data-testid="log-line"]').length).toBeLessThan(40)
+  })
+
+  it('opens the visually hidden file input from a keyboard-focusable trigger', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+    } })
+    const input = wrapper.get('[data-testid="firmware-input"]')
+    const click = vi.spyOn(input.element as HTMLInputElement, 'click')
+    const trigger = wrapper.get('[data-testid="firmware-trigger"]')
+    expect(trigger.attributes('tabindex')).toBe('0')
+    expect(input.classes()).toContain('visually-hidden')
+    await trigger.trigger('keydown', { key: 'Enter' })
+    expect(click).toHaveBeenCalledTimes(1)
+  })
+
+  it('wraps the action bar controls for narrow layouts', () => {
+    expect(actionBarSource).toContain('flex-wrap:wrap')
+    expect(actionBarSource).toContain('max-width:100%')
   })
 })

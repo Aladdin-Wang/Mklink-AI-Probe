@@ -100,4 +100,52 @@ describe('HexPreviewModel', () => {
     expect(loader).toHaveBeenCalledTimes(2)
     expect(loader.mock.calls[1][0]).toBe('new')
   })
+
+  it('shares one in-flight fetch for concurrent consumers of the same page', async () => {
+    let resolve!: (value: PreviewPage) => void
+    const pending = new Promise<PreviewPage>(done => { resolve = done })
+    const loader = vi.fn(() => pending)
+    const model = new HexPreviewModel(loader)
+    model.setSource({ imageId: 'image', start: 0x1000, size: 4096 })
+
+    const first = model.loadRows(0, 1)
+    const second = model.loadRows(1, 2)
+    expect(loader).toHaveBeenCalledTimes(1)
+    resolve(page(0))
+
+    await expect(first).resolves.toHaveLength(1)
+    await expect(second).resolves.toHaveLength(1)
+  })
+
+  it('removes a rejected in-flight page so it can be retried', async () => {
+    const loader = vi.fn()
+      .mockRejectedValueOnce(new Error('preview failed'))
+      .mockResolvedValueOnce(page(0))
+    const model = new HexPreviewModel(loader)
+    model.setSource({ imageId: 'image', start: 0x1000, size: 4096 })
+
+    await expect(model.loadRows(0, 1)).rejects.toThrow('preview failed')
+    await expect(model.loadRows(0, 1)).resolves.toHaveLength(1)
+    expect(loader).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an old slow consumer evict the sixteen current pages', async () => {
+    let resolveOld!: (value: PreviewPage) => void
+    const old = new Promise<PreviewPage>(done => { resolveOld = done })
+    const loader = vi.fn((_id: string, offset: number, length: number) => (
+      offset === 0 ? old : Promise.resolve(page(offset, length))
+    ))
+    const model = new HexPreviewModel(loader)
+    model.setSource({ imageId: 'image', start: 0x1000, size: 4096 * 17 })
+
+    const stale = model.loadRows(0, 1)
+    for (let pageIndex = 1; pageIndex <= 16; pageIndex += 1) {
+      await model.loadRows(pageIndex * 256, pageIndex * 256 + 1)
+    }
+    resolveOld(page(0))
+    await stale
+    await model.loadRows(256, 257)
+
+    expect(loader).toHaveBeenCalledTimes(17)
+  })
 })

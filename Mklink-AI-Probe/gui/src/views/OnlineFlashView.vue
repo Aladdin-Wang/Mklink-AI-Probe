@@ -34,6 +34,7 @@ const selectedTarget = ref<TargetRecord | null>(null)
 const desiredPart = ref(saved.targetPart ?? '')
 const packStatus = ref<PackStatus | null>(null)
 const packBusy = ref(false)
+const packCancelPending = ref(false)
 const packProgress = ref(0)
 const packError = ref('')
 const firmware = ref<File | null>(null)
@@ -52,9 +53,16 @@ const totalProgress = ref(0)
 const logs = ref<string[]>([])
 const lastSequence = ref(0)
 const streamDisconnected = ref(false)
+const creatingJob = ref(false)
 let subscription: JobSubscription | null = null
 let inspectionController: AbortController | null = null
+let inspectionGeneration = 0
 let viewportGeneration = 0
+let targetSearchGeneration = 0
+let targetSearchController: AbortController | null = null
+let packOperationToken = 0
+let disposed = false
+let storageWarningReported = false
 
 const preview = new HexPreviewModel((imageId, offset, length, signal) => api.previewImage(imageId, offset, length, signal))
 const isBin = computed(() => firmware.value?.name.toLowerCase().endsWith('.bin') ?? false)
@@ -82,8 +90,8 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
     && values.some(action => FLASH_ACTIONS.has(action))
 }
 function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value))
-const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !active.value)
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value))
+const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !active.value && !creatingJob.value)
 
 function message(error: unknown): string {
   if (error instanceof OnlineFlashApiError) {
@@ -94,12 +102,19 @@ function message(error: unknown): string {
 }
 
 function persist(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    targetPart: selectedTarget.value?.part_number || desiredPart.value,
-    frequency: frequency.value,
-    connectMode: connectMode.value,
-    resetMode: resetMode.value,
-  }))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      targetPart: selectedTarget.value?.part_number || desiredPart.value,
+      frequency: frequency.value,
+      connectMode: connectMode.value,
+      resetMode: resetMode.value,
+    }))
+  } catch {
+    if (!storageWarningReported) {
+      storageWarningReported = true
+      appendLog('[WARN] 本地设置未保存；当前交互仍可继续。')
+    }
+  }
 }
 watch([frequency, connectMode, resetMode, desiredPart], persist)
 
@@ -111,13 +126,32 @@ async function refreshProbes(): Promise<void> {
   } catch (error) { probeError.value = message(error) } finally { probeBusy.value = false }
 }
 
-async function searchTargets(query = ''): Promise<void> {
-  packError.value = ''
+async function searchTargets(query = '', commit = true): Promise<TargetRecord[]> {
+  let generation = targetSearchGeneration
+  let controller: AbortController | null = null
+  if (commit) {
+    generation = ++targetSearchGeneration
+    targetSearchController?.abort()
+    controller = new AbortController()
+    targetSearchController = controller
+    packError.value = ''
+  }
   try {
-    targets.value = await api.searchTargets(query, { limit: 100 })
-    const exact = targets.value.find(target => target.part_number === desiredPart.value)
-    if (exact?.installed) selectedTarget.value = exact
-  } catch (error) { packError.value = message(error) }
+    const records = await api.searchTargets(query, { limit: 100 }, controller?.signal)
+    if (commit && generation === targetSearchGeneration && !disposed) {
+      targets.value = records
+      const exact = records.find(target => target.part_number === desiredPart.value)
+      if (exact?.installed) selectedTarget.value = exact
+    }
+    return records
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return []
+    if (commit && generation === targetSearchGeneration) packError.value = message(error)
+    else if (!commit) throw error
+    return []
+  } finally {
+    if (targetSearchController === controller) targetSearchController = null
+  }
 }
 
 function applyPackProgress(events: Awaited<ReturnType<typeof api.installPack>>['events']): void {
@@ -128,12 +162,13 @@ function applyPackProgress(events: Awaited<ReturnType<typeof api.installPack>>['
 }
 
 async function selectTarget(target: TargetRecord): Promise<void> {
-  if (active.value) return
+  if (active.value || packBusy.value) return
   desiredPart.value = target.part_number
   resetInspection()
   selectedTarget.value = null
   if (!target.installed) {
     if (!confirm(`器件 ${target.part_number} 尚未安装。是否联网下载对应 Pack？`)) return
+    const operation = ++packOperationToken
     packBusy.value = true; packProgress.value = 0; packError.value = ''
     try {
       const response = await api.installPack(target.part_number)
@@ -143,14 +178,16 @@ async function selectTarget(target: TargetRecord): Promise<void> {
         const installedPack = 'part_number' in result ? result.part_number : `${result.pack_id}@${result.version}`
         appendLog(`[PACK] 已安装 ${installedPack}`)
       }
-      await Promise.all([refreshPackStatus(), searchTargets(target.part_number)])
-      const refreshed = targets.value.find(item => item.part_number === target.part_number && item.installed)
+      const [, refreshedTargets] = await Promise.all([refreshPackStatus(), searchTargets(target.part_number, false)])
+      const refreshed = refreshedTargets.find(item => item.part_number === target.part_number && item.installed)
       if (refreshed) selectedTarget.value = refreshed
       else {
         selectedTarget.value = null
         packError.value = `Pack 安装完成，但安装后索引仍未确认 ${target.part_number} 已安装，请刷新索引后重试。`
       }
-    } catch (error) { packError.value = message(error) } finally { packBusy.value = false }
+    } catch (error) { packError.value = message(error) } finally {
+      if (operation === packOperationToken) { packBusy.value = false; packCancelPending.value = false }
+    }
   } else selectedTarget.value = target
   persist()
 }
@@ -159,13 +196,23 @@ async function refreshPackStatus(): Promise<void> {
   try { packStatus.value = await api.getPackStatus() } catch (error) { packError.value = message(error) }
 }
 async function updatePackIndex(): Promise<void> {
+  if (packBusy.value) return
+  const operation = ++packOperationToken
   packBusy.value = true; packProgress.value = 0; packError.value = ''
   try { const response = await api.updatePackIndex(); applyPackProgress(response.events); await Promise.all([refreshPackStatus(), searchTargets('')]) }
-  catch (error) { packError.value = message(error) } finally { packBusy.value = false }
+  catch (error) { packError.value = message(error) } finally {
+    if (operation === packOperationToken) { packBusy.value = false; packCancelPending.value = false }
+  }
 }
-async function cancelPack(): Promise<void> { try { await api.cancelPackOperation() } catch (error) { packError.value = message(error) } }
+async function cancelPack(): Promise<void> {
+  if (!packBusy.value || packCancelPending.value) return
+  packCancelPending.value = true
+  try { await api.cancelPackOperation() }
+  catch (error) { packCancelPending.value = false; packError.value = message(error) }
+}
 
 function resetInspection(): void {
+  inspectionGeneration += 1
   viewportGeneration += 1
   inspectionController?.abort()
   inspectionController = null
@@ -181,11 +228,12 @@ async function inspectImage(): Promise<void> {
     return
   }
   resetInspection(); inspectBusy.value = true; inspectError.value = ''
+  const generation = ++inspectionGeneration
   const controller = new AbortController()
   inspectionController = controller
   try {
     const result = await api.inspectImage(firmware.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
-    if (controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
+    if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error('服务端返回的镜像地址范围无效')
     inspection.value = result
     preview.setSource({ imageId: result.image_id, start: result.start, size: result.end - result.start })
@@ -241,16 +289,20 @@ function receiveEvent(event: JobStreamEvent): void {
 
 async function startJob(customActions = actions.value, sectorAddresses: number[] = []): Promise<void> {
   const orderedActions = canonicalActions(customActions)
-  if (!probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  if (creatingJob.value || active.value || !probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  creatingJob.value = true
   try {
     logs.value = []; lastSequence.value = 0; stageProgress.value = 0; totalProgress.value = 0
     const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: sectorAddresses })
+    if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(`[JOB] 已创建 ${result.job_id}`); subscribe(0)
   } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
+  finally { creatingJob.value = false }
 }
 async function stopJob(): Promise<void> {
   if (!jobId.value || stopping.value) return
+  const previousState = jobState.value
   jobState.value = 'stopping'; appendLog('[JOB] STOPPING：等待探针安全停止')
   try {
     const snapshot = await api.stopJob(jobId.value)
@@ -258,20 +310,32 @@ async function stopJob(): Promise<void> {
       jobState.value = snapshot.state
     }
   }
-  catch (error) { appendLog(`[ERROR] 停止请求失败：${message(error)}`) }
+  catch (error) {
+    if (jobState.value === 'stopping') jobState.value = previousState
+    appendLog(`[ERROR] 停止请求失败：${message(error)}`)
+  }
 }
 function chipErase(): void { if (confirm('全片擦除将永久删除芯片中的全部闪存内容，确定继续？')) void startJob(['connect', 'erase', 'disconnect']) }
 function selectedErase(): void { if (confirm('确定擦除所选扇区？')) void startJob(['connect', 'erase', 'disconnect'], []) }
 
 onMounted(() => { void Promise.all([refreshProbes(), refreshPackStatus(), searchTargets(desiredPart.value)]) })
-onBeforeUnmount(() => { subscription?.close(); preview.setSource(null) })
+onBeforeUnmount(() => {
+  disposed = true
+  inspectionController?.abort()
+  inspectionGeneration += 1
+  viewportGeneration += 1
+  targetSearchGeneration += 1
+  targetSearchController?.abort()
+  subscription?.close()
+  preview.setSource(null)
+})
 </script>
 
 <template>
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
-      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :progress="packProgress" :error="packError" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" />
+      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @inspect="inspectImage" @scroll="loadVisible" />

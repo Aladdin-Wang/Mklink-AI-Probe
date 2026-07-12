@@ -119,12 +119,12 @@ export function useOnlineFlashApi() {
     return request('/probes')
   }
 
-  function searchTargets(query = '', options: TargetSearchOptions = {}): Promise<TargetRecord[]> {
+  function searchTargets(query = '', options: TargetSearchOptions = {}, signal?: AbortSignal): Promise<TargetRecord[]> {
     const params = new URLSearchParams({ q: query })
     if (options.vendor !== undefined) params.set('vendor', options.vendor)
     if (options.installed !== undefined) params.set('installed', String(options.installed))
     if (options.limit !== undefined) params.set('limit', String(options.limit))
-    return request(`/targets?${params.toString()}`)
+    return request(`/targets?${params.toString()}`, { signal })
   }
 
   function getPackStatus(): Promise<PackStatus> {

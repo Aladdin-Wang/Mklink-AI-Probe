@@ -37,6 +37,11 @@ interface DecodedPage {
   present: boolean[]
 }
 
+interface InFlightPage {
+  promise: Promise<DecodedPage>
+  controller: AbortController
+}
+
 export function formatHexRow(
   address: number,
   bytes: Uint8Array,
@@ -77,8 +82,10 @@ export class HexPreviewModel {
   private readonly maxPages: number
   private source: PreviewSource | null = null
   private readonly cache = new Map<number, DecodedPage>()
+  private readonly inFlight = new Map<number, InFlightPage>()
   private readonly controllers = new Set<AbortController>()
   private generation = 0
+  private loadGeneration = 0
 
   constructor(
     loader: PreviewPageLoader,
@@ -92,8 +99,10 @@ export class HexPreviewModel {
 
   setSource(source: PreviewSource | null): void {
     this.generation += 1
+    this.loadGeneration += 1
     for (const controller of this.controllers) controller.abort()
     this.controllers.clear()
+    this.inFlight.clear()
     this.cache.clear()
     this.source = source
   }
@@ -116,13 +125,14 @@ export class HexPreviewModel {
   async loadRows(startRow: number, endRow: number): Promise<FormattedHexRow[]> {
     const source = this.source
     if (!source) return []
+    const consumerGeneration = ++this.loadGeneration
     const boundedStart = Math.max(0, startRow)
     const boundedEnd = Math.min(Math.ceil(source.size / HEX_ROW_BYTES), Math.max(boundedStart, endRow))
     const rows: FormattedHexRow[] = []
     for (let row = boundedStart; row < boundedEnd; row += 1) {
       const offset = row * HEX_ROW_BYTES
       const pageOffset = Math.floor(offset / this.pageSize) * this.pageSize
-      const decoded = await this.loadPage(pageOffset, source)
+      const decoded = await this.loadPage(pageOffset, source, consumerGeneration)
       const withinPage = offset - pageOffset
       const length = Math.min(HEX_ROW_BYTES, source.size - offset)
       rows.push(formatHexRow(
@@ -134,35 +144,49 @@ export class HexPreviewModel {
     return rows
   }
 
-  private async loadPage(offset: number, source: PreviewSource): Promise<DecodedPage> {
+  private async loadPage(
+    offset: number,
+    source: PreviewSource,
+    consumerGeneration: number,
+  ): Promise<DecodedPage> {
     const cached = this.cache.get(offset)
     if (cached) {
-      this.cache.delete(offset)
-      this.cache.set(offset, cached)
+      if (consumerGeneration === this.loadGeneration) {
+        this.cache.delete(offset)
+        this.cache.set(offset, cached)
+      }
       return cached
     }
     const generation = this.generation
-    const controller = new AbortController()
-    this.controllers.add(controller)
-    try {
+    let pending = this.inFlight.get(offset)
+    if (!pending) {
+      const controller = new AbortController()
+      this.controllers.add(controller)
       const length = Math.min(this.pageSize, source.size - offset)
-      const response = await this.loader(source.imageId, offset, length, controller.signal)
-      if (controller.signal.aborted || generation !== this.generation || source !== this.source) {
-        throw abortError()
-      }
-      const decoded = {
+      const promise = this.loader(source.imageId, offset, length, controller.signal).then(response => ({
         bytes: decodeBase64(response.data_base64),
         present: response.present,
+      }))
+      pending = { promise, controller }
+      this.inFlight.set(offset, pending)
+    }
+    try {
+      const decoded = await pending.promise
+      if (pending.controller.signal.aborted || generation !== this.generation || source !== this.source) {
+        throw abortError()
       }
-      this.cache.set(offset, decoded)
-      while (this.cache.size > this.maxPages) {
-        const oldest = this.cache.keys().next().value as number | undefined
-        if (oldest === undefined) break
-        this.cache.delete(oldest)
+      if (consumerGeneration === this.loadGeneration) {
+        this.cache.set(offset, decoded)
+        while (this.cache.size > this.maxPages) {
+          const oldest = this.cache.keys().next().value as number | undefined
+          if (oldest === undefined) break
+          this.cache.delete(oldest)
+        }
       }
       return decoded
     } finally {
-      this.controllers.delete(controller)
+      if (this.inFlight.get(offset) === pending) this.inFlight.delete(offset)
+      this.controllers.delete(pending.controller)
     }
   }
 }
