@@ -727,7 +727,8 @@ def create_app(
     @app.get("/api/ports/discover")
     async def discover_mklink_port():
         from mklink.discovery import find_mklink_cdc_port
-        port = find_mklink_cdc_port()
+        loop = asyncio.get_running_loop()
+        port = await loop.run_in_executor(None, find_mklink_cdc_port)
         return {"port": port}
 
     @app.get("/api/profiles")
