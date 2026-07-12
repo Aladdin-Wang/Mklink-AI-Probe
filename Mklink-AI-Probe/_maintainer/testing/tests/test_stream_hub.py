@@ -334,6 +334,133 @@ def test_publish_without_subscribers_still_counts_production():
     assert stats.active_clients == 0
 
 
+def test_owner_loop_is_released_after_last_subscriber_unsubscribes():
+    hub = StreamHub(max_batches_per_client=1)
+
+    async def first_service_loop():
+        client = hub.subscribe()
+        assert hub.unsubscribe(client) is True
+
+    async def rebuilt_service_loop():
+        client = hub.subscribe()
+        hub.publish(b"rebuilt", item_count=1)
+        assert await asyncio.wait_for(client.get(), timeout=0.1) == b"rebuilt"
+        assert hub.unsubscribe(client) is True
+
+    asyncio.run(first_service_loop())
+    asyncio.run(rebuilt_service_loop())
+
+
+def test_unsubscribe_remains_idempotent_after_owner_release():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+
+        assert hub.unsubscribe(client) is True
+        assert hub.unsubscribe(client) is False
+
+    asyncio.run(scenario())
+
+
+def test_pending_delivery_blocks_rebind_until_old_generation_drains():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        loop = asyncio.get_running_loop()
+        scheduled = []
+        original_schedule = loop.call_soon_threadsafe
+
+        def capture(callback, *args):
+            scheduled.append((callback, args))
+
+        loop.call_soon_threadsafe = capture
+        try:
+            hub.publish(b"old", item_count=1)
+        finally:
+            loop.call_soon_threadsafe = original_schedule
+        assert hub.unsubscribe(client) is True
+
+        attempts = []
+
+        def try_rebind():
+            async def use_hub():
+                try:
+                    rebound = hub.subscribe()
+                except RuntimeError as exc:
+                    attempts.append(str(exc))
+                else:
+                    attempts.append("bound")
+                    hub.unsubscribe(rebound)
+
+            asyncio.run(use_hub())
+
+        blocked = threading.Thread(target=try_rebind)
+        blocked.start()
+        blocked.join(timeout=1)
+        assert attempts == ["owner event loop has pending deliveries"]
+
+        callback, args = scheduled.pop()
+        callback(*args)
+        rebound = threading.Thread(target=try_rebind)
+        rebound.start()
+        rebound.join(timeout=1)
+        assert attempts == ["owner event loop has pending deliveries", "bound"]
+
+    asyncio.run(scenario())
+
+
+def test_stale_closed_loop_callback_cannot_reach_new_generation_subscriber():
+    hub = StreamHub(max_batches_per_client=2)
+    scheduled = []
+
+    async def old_service_loop():
+        client = hub.subscribe()
+        loop = asyncio.get_running_loop()
+        original_schedule = loop.call_soon_threadsafe
+
+        def capture(callback, *args):
+            scheduled.append((callback, args))
+
+        loop.call_soon_threadsafe = capture
+        try:
+            hub.publish(b"stale", item_count=1)
+        finally:
+            loop.call_soon_threadsafe = original_schedule
+        assert hub.unsubscribe(client) is True
+
+    async def rebuilt_service_loop():
+        client = hub.subscribe()
+        stale_callback, stale_args = scheduled.pop()
+        asyncio.get_running_loop().call_soon(stale_callback, *stale_args)
+        hub.publish(b"fresh", item_count=1)
+
+        assert await asyncio.wait_for(client.get(), timeout=0.1) == b"fresh"
+        await asyncio.sleep(0)
+        assert client.empty()
+        assert hub.stats().delivered_batches == 1
+        assert hub.unsubscribe(client) is True
+
+    asyncio.run(old_service_loop())
+    asyncio.run(rebuilt_service_loop())
+
+
+def test_threadsafe_publish_without_subscribers_does_not_bind_loop():
+    hub = StreamHub(max_batches_per_client=1)
+
+    async def producer_only_loop():
+        assert hub.publish_threadsafe(
+            asyncio.get_running_loop(), b"unobserved", item_count=4
+        ) == 1
+
+    async def later_subscriber_loop():
+        client = hub.subscribe()
+        assert hub.stats().produced_items == 4
+        assert hub.unsubscribe(client) is True
+
+    asyncio.run(producer_only_loop())
+    asyncio.run(later_subscriber_loop())
+
+
 @pytest.mark.parametrize("max_batches", [0, -1, True, 1.5])
 def test_rejects_invalid_queue_capacity(max_batches):
     with pytest.raises((TypeError, ValueError)):

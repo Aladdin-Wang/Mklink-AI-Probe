@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Optional, Set, Union
+from typing import Dict, Optional, Set, Tuple, Union
 
 
 BytesLike = Union[bytes, bytearray, memoryview]
@@ -62,6 +62,8 @@ class StreamHub:
         self._max_batches_per_client = max_batches_per_client
         self._subscribers: Set[asyncio.Queue] = set()
         self._owner_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._generation = 0
+        self._pending_by_generation: Dict[int, int] = {}
         self._lock = threading.Lock()
         self._publish_lock = threading.Lock()
         self._last_sequence = 0
@@ -81,21 +83,25 @@ class StreamHub:
         queue: asyncio.Queue = asyncio.Queue(
             maxsize=self._max_batches_per_client
         )
-        with self._lock:
-            self._bind_or_require_owner_loop(loop)
-            self._subscribers.add(queue)
+        with self._publish_lock:
+            with self._lock:
+                self._bind_or_require_owner_loop(loop)
+                self._subscribers.add(queue)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> bool:
         loop = self._running_loop()
-        with self._lock:
-            self._require_owner_loop(loop)
-            if queue not in self._subscribers:
-                return False
-            self._subscribers.remove(queue)
-        while not queue.empty():
-            queue.get_nowait()
-            queue.task_done()
+        with self._publish_lock:
+            with self._lock:
+                if queue not in self._subscribers:
+                    return False
+                self._require_owner_loop(loop)
+                self._subscribers.remove(queue)
+            while not queue.empty():
+                queue.get_nowait()
+                queue.task_done()
+            with self._lock:
+                self._release_owner_if_idle()
         return True
 
     def publish(self, batch: BytesLike, item_count: int) -> int:
@@ -111,10 +117,11 @@ class StreamHub:
         item_count: int = 0,
     ) -> int:
         with self._publish_lock:
-            if loop.is_closed():
-                raise RuntimeError("event loop is closed")
             with self._lock:
-                self._bind_or_require_owner_loop(loop)
+                if self._subscribers:
+                    self._require_owner_loop(loop)
+                    if loop.is_closed():
+                        raise RuntimeError("owner event loop is closed")
             published = self._prepare_batch(batch, item_count)
             self._schedule_delivery(published)
         return published.sequence
@@ -158,35 +165,70 @@ class StreamHub:
     def _schedule_delivery(self, batch: StreamBatch) -> None:
         with self._lock:
             loop = self._owner_loop
-            has_subscribers = bool(self._subscribers)
-        if loop is None or not has_subscribers:
-            return
-        if loop.is_closed():
-            raise RuntimeError("owner event loop is closed")
-        loop.call_soon_threadsafe(self._deliver, batch)
-
-    def _deliver(self, batch: StreamBatch) -> None:
-        loop = self._running_loop()
-        with self._lock:
-            self._require_owner_loop(loop)
             subscribers = tuple(self._subscribers)
-        for queue in subscribers:
-            dropped = None
-            if queue.full():
-                dropped = queue.get_nowait()
-                queue.task_done()
-            queue.put_nowait(batch)
+            generation = self._generation
+            if loop is None or not subscribers:
+                return
+            self._pending_by_generation[generation] = (
+                self._pending_by_generation.get(generation, 0) + 1
+            )
+        if loop.is_closed():
             with self._lock:
-                self._delivered_batches += 1
-                self._delivered_items += batch.item_count
-                self._delivered_bytes += len(batch)
-                self._queue_high_water_mark = max(
-                    self._queue_high_water_mark, queue.qsize()
-                )
-                if dropped is not None:
-                    self._dropped_batches += 1
-                    self._dropped_items += dropped.item_count
-                    self._dropped_bytes += len(dropped)
+                self._finish_delivery(generation)
+            raise RuntimeError("owner event loop is closed")
+        try:
+            loop.call_soon_threadsafe(
+                self._deliver, generation, batch, subscribers
+            )
+        except Exception:
+            with self._lock:
+                self._finish_delivery(generation)
+            raise
+
+    def _deliver(
+        self,
+        generation: int,
+        batch: StreamBatch,
+        subscribers: Tuple[asyncio.Queue, ...],
+    ) -> None:
+        loop = self._running_loop()
+        try:
+            with self._lock:
+                if generation != self._generation or loop is not self._owner_loop:
+                    return
+                active_subscribers = self._subscribers.copy()
+            for queue in subscribers:
+                if queue not in active_subscribers:
+                    continue
+                dropped = None
+                if queue.full():
+                    dropped = queue.get_nowait()
+                    queue.task_done()
+                queue.put_nowait(batch)
+                with self._lock:
+                    self._delivered_batches += 1
+                    self._delivered_items += batch.item_count
+                    self._delivered_bytes += len(batch)
+                    self._queue_high_water_mark = max(
+                        self._queue_high_water_mark, queue.qsize()
+                    )
+                    if dropped is not None:
+                        self._dropped_batches += 1
+                        self._dropped_items += dropped.item_count
+                        self._dropped_bytes += len(dropped)
+        finally:
+            with self._lock:
+                self._finish_delivery(generation)
+
+    def _finish_delivery(self, generation: int) -> None:
+        pending = self._pending_by_generation.get(generation)
+        if pending is None:
+            return
+        if pending <= 1:
+            self._pending_by_generation.pop(generation, None)
+        else:
+            self._pending_by_generation[generation] = pending - 1
+        self._release_owner_if_idle()
 
     @staticmethod
     def _running_loop() -> asyncio.AbstractEventLoop:
@@ -199,9 +241,32 @@ class StreamHub:
         self, loop: asyncio.AbstractEventLoop
     ) -> None:
         if self._owner_loop is None:
-            self._owner_loop = loop
-        else:
+            self._bind_owner_loop(loop)
+            return
+        if loop is self._owner_loop:
+            return
+        if self._subscribers:
             self._require_owner_loop(loop)
+        pending = self._pending_by_generation.get(self._generation, 0)
+        if pending and not self._owner_loop.is_closed():
+            raise RuntimeError("owner event loop has pending deliveries")
+        self._pending_by_generation.pop(self._generation, None)
+        self._bind_owner_loop(loop)
+
+    def _bind_owner_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        if loop.is_closed():
+            raise RuntimeError("owner event loop is closed")
+        self._generation += 1
+        self._owner_loop = loop
+        self._pending_by_generation[self._generation] = 0
+
+    def _release_owner_if_idle(self) -> None:
+        if self._subscribers:
+            return
+        if self._pending_by_generation.get(self._generation, 0):
+            return
+        self._pending_by_generation.pop(self._generation, None)
+        self._owner_loop = None
 
     def _require_owner_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         if loop is not self._owner_loop:
