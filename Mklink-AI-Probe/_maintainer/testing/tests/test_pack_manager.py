@@ -451,6 +451,131 @@ def test_guard_attach_failure_is_fail_closed_and_leaves_no_worker(tmp_path):
     assert not marker.exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="validates Windows READY failure")
+def test_guard_ready_failure_closes_job_and_reaps_wrapper():
+    from mklink.cmsis_dap.process_guard import attach_and_release_guarded_process
+
+    code = "import sys; sys.stdin.readline(); print('WRONG',flush=True); sys.stdin.read()"
+    process = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    with pytest.raises(OSError, match="acknowledge"):
+        attach_and_release_guarded_process(process)
+
+    assert process.poll() is not None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="validates Windows Job Object cancel")
+def test_cancel_closes_job_before_recovery_and_kills_real_worker(
+    tmp_path, monkeypatch
+):
+    from mklink.cmsis_dap.process_guard import guarded_process_command as guard
+
+    marker = tmp_path / "cancel-worker-writes"
+    child_pid_file = tmp_path / "cancel-worker.pid"
+    child_code = (
+        "import json,os,sys,time; from pathlib import Path; "
+        "request=json.loads(sys.stdin.readline()); "
+        "print(json.dumps({'type':'event','event':'staging','path':request['staging_dir']}),flush=True); "
+        "Path(sys.argv[2]).write_text(str(os.getpid())); p=Path(sys.argv[1]); "
+        "[(p.open('ab').write(b'x'),time.sleep(0.01)) for _ in iter(int,1)]"
+    )
+
+    def command(_original):
+        return guard(
+            [sys.executable, "-c", child_code, str(marker), str(child_pid_file)]
+        )
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.pack_manager.guarded_process_command", command
+    )
+    worker = SubprocessPackWorker(PackPaths(tmp_path))
+    original_recover = worker._recover_pending_transaction
+    recovery_observations = []
+
+    def process_alive(process_id):
+        try:
+            os.kill(process_id, 0)
+            return True
+        except OSError:
+            return False
+
+    def terminate_process(process_id):
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x0001, False, process_id)
+        if handle:
+            try:
+                kernel32.TerminateProcess(wintypes.HANDLE(handle), 1)
+            finally:
+                kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+    def observed_recovery(*args, **kwargs):
+        child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+        before = marker.stat().st_size
+        time.sleep(0.05)
+        recovery_observations.append(
+            (not process_alive(child_pid)) and marker.stat().st_size == before
+        )
+        return original_recover(*args, **kwargs)
+
+    worker._recover_pending_transaction = observed_recovery
+    manager = PackManager(tmp_path, worker=worker, lock_timeout=1)
+    errors = []
+
+    def update():
+        try:
+            manager.update_index(lambda _event: None)
+        except BaseException as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=update, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 2
+    while not child_pid_file.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert child_pid_file.exists()
+    with worker._lock:
+        wrapper_process = worker._process
+        wrapper_pid = wrapper_process.pid
+    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+    try:
+        manager.cancel()
+        thread.join(1)
+        assert not thread.is_alive()
+        assert wrapper_process.poll() is not None
+        assert not process_alive(child_pid)
+        before = marker.stat().st_size
+        time.sleep(0.15)
+        assert marker.stat().st_size == before
+        assert recovery_observations and all(recovery_observations)
+        assert len(errors) == 1
+        assert isinstance(errors[0], FlashError)
+        assert errors[0].code is FlashErrorCode.USER_ABORT
+        with worker._lock:
+            assert worker._process is None
+            assert worker._process_guard is None
+
+        class SuccessWorker:
+            def run(self, command, payload, on_event):
+                return {"status": "updated", "target_count": 1}
+
+        assert PackManager(
+            tmp_path, worker=SuccessWorker(), lock_timeout=1
+        ).update_index(lambda _event: None)["status"] == "updated"
+    finally:
+        for process_id in (child_pid, wrapper_pid):
+            if process_alive(process_id):
+                terminate_process(process_id)
+        thread.join(2)
+
+
 def test_remove_recovers_pending_transaction_while_holding_root_lock(tmp_path):
     paths = PackPaths(tmp_path)
     paths.root.mkdir(parents=True, exist_ok=True)

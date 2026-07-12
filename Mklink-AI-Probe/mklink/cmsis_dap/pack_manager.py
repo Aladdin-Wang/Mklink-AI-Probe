@@ -93,6 +93,7 @@ class SubprocessPackWorker:
         self._lock = threading.Lock()
         self._recovery_lock = threading.Lock()
         self._process = None  # type: Optional[subprocess.Popen]
+        self._process_guard = None
         self._cancel_requested = False
         self._active_staging_dir = None  # type: Optional[Path]
         self._committed_result = None  # type: Optional[Dict[str, object]]
@@ -154,6 +155,7 @@ class SubprocessPackWorker:
                 self._active_staging_dir = None
                 raise
             self._process = process
+            self._process_guard = process_guard
 
         stderr_parts = []  # type: list
         stderr_thread = None  # type: Optional[threading.Thread]
@@ -179,6 +181,7 @@ class SubprocessPackWorker:
                 self._raise_worker_error(command, worker_error, stderr)
             return self._finish_result(command, returncode, result, stderr)
         except BaseException as error:
+            self._close_process_guard(process, process_guard)
             self._stop_process(process)
             if stderr_thread is not None:
                 stderr_thread.join(timeout=5)
@@ -202,26 +205,25 @@ class SubprocessPackWorker:
                 )
             raise
         finally:
+            self._close_process_guard(process, process_guard)
             if not preserve_staging:
                 self._cleanup_active_staging()
             with self._lock:
                 if self._process is process:
                     self._process = None
+                    self._process_guard = None
                 self._cancel_requested = False
-            if process_guard is not None:
-                process_guard.close()
 
     def cancel(self) -> None:
         with self._lock:
             self._cancel_requested = True
             process = self._process
+            process_guard = self._process_guard
+            self._process_guard = None
+        if process_guard is not None:
+            process_guard.close()
         if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            self._stop_process(process)
         self._recover_pending_transaction(preserve_committed=True)
         if self._committed_result is None:
             self._cleanup_active_staging()
@@ -273,6 +275,17 @@ class SubprocessPackWorker:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+    def _close_process_guard(self, process: object, fallback: object = None) -> None:
+        with self._lock:
+            guard = None
+            if self._process is process:
+                guard = self._process_guard
+                self._process_guard = None
+        if guard is None:
+            guard = fallback
+        if guard is not None:
+            guard.close()
 
     def _read_stdout(
         self,

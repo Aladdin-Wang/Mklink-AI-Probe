@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from typing import List, Sequence
 
 
@@ -132,6 +133,7 @@ class _WindowsJobGuard:
             raise ctypes.WinError(ctypes.get_last_error())
         self._kernel32 = kernel32
         self._handle = handle
+        self._close_lock = threading.Lock()
         try:
             limits = ExtendedLimitInformation()
             limits.BasicLimitInformation.LimitFlags = self._KILL_ON_JOB_CLOSE
@@ -154,6 +156,7 @@ class _WindowsJobGuard:
             raise
 
     def close(self) -> None:
-        handle, self._handle = getattr(self, "_handle", None), None
-        if handle:
-            self._kernel32.CloseHandle(handle)
+        with self._close_lock:
+            handle, self._handle = getattr(self, "_handle", None), None
+            if handle:
+                self._kernel32.CloseHandle(handle)
