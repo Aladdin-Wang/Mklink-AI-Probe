@@ -5,20 +5,32 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Set, Union
+from typing import Optional, Set, Union
 
 
 BytesLike = Union[bytes, bytearray, memoryview]
 
 
-class StreamBatch(bytes):
+@dataclass(frozen=True, eq=False)
+class StreamBatch:
     """An immutable payload carrying the hub-assigned batch metadata."""
 
-    def __new__(cls, payload: bytes, sequence: int, item_count: int):
-        batch = super().__new__(cls, payload)
-        batch.sequence = sequence
-        batch.item_count = item_count
-        return batch
+    payload: bytes
+    sequence: int
+    item_count: int
+
+    def __bytes__(self) -> bytes:
+        return self.payload
+
+    def __len__(self) -> int:
+        return len(self.payload)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, StreamBatch):
+            return self.payload == other.payload
+        if isinstance(other, (bytes, bytearray, memoryview)):
+            return self.payload == bytes(other)
+        return NotImplemented
 
 
 @dataclass(frozen=True)
@@ -49,6 +61,7 @@ class StreamHub:
             raise ValueError("max_batches_per_client must be greater than zero")
         self._max_batches_per_client = max_batches_per_client
         self._subscribers: Set[asyncio.Queue] = set()
+        self._owner_loop: Optional[asyncio.AbstractEventLoop] = None
         self._lock = threading.Lock()
         self._publish_lock = threading.Lock()
         self._last_sequence = 0
@@ -64,15 +77,19 @@ class StreamHub:
         self._queue_high_water_mark = 0
 
     def subscribe(self) -> asyncio.Queue:
+        loop = self._running_loop()
         queue: asyncio.Queue = asyncio.Queue(
             maxsize=self._max_batches_per_client
         )
         with self._lock:
+            self._bind_or_require_owner_loop(loop)
             self._subscribers.add(queue)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> bool:
+        loop = self._running_loop()
         with self._lock:
+            self._require_owner_loop(loop)
             if queue not in self._subscribers:
                 return False
             self._subscribers.remove(queue)
@@ -84,7 +101,7 @@ class StreamHub:
     def publish(self, batch: BytesLike, item_count: int) -> int:
         with self._publish_lock:
             published = self._prepare_batch(batch, item_count)
-            self._deliver(published)
+            self._schedule_delivery(published)
         return published.sequence
 
     def publish_threadsafe(
@@ -96,8 +113,10 @@ class StreamHub:
         with self._publish_lock:
             if loop.is_closed():
                 raise RuntimeError("event loop is closed")
+            with self._lock:
+                self._bind_or_require_owner_loop(loop)
             published = self._prepare_batch(batch, item_count)
-            loop.call_soon_threadsafe(self._deliver, published)
+            self._schedule_delivery(published)
         return published.sequence
 
     def stats(self) -> StreamHubStats:
@@ -136,8 +155,20 @@ class StreamHub:
             sequence = self._last_sequence
         return StreamBatch(payload, sequence, item_count)
 
-    def _deliver(self, batch: StreamBatch) -> None:
+    def _schedule_delivery(self, batch: StreamBatch) -> None:
         with self._lock:
+            loop = self._owner_loop
+            has_subscribers = bool(self._subscribers)
+        if loop is None or not has_subscribers:
+            return
+        if loop.is_closed():
+            raise RuntimeError("owner event loop is closed")
+        loop.call_soon_threadsafe(self._deliver, batch)
+
+    def _deliver(self, batch: StreamBatch) -> None:
+        loop = self._running_loop()
+        with self._lock:
+            self._require_owner_loop(loop)
             subscribers = tuple(self._subscribers)
         for queue in subscribers:
             dropped = None
@@ -156,3 +187,22 @@ class StreamHub:
                     self._dropped_batches += 1
                     self._dropped_items += dropped.item_count
                     self._dropped_bytes += len(dropped)
+
+    @staticmethod
+    def _running_loop() -> asyncio.AbstractEventLoop:
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError as exc:
+            raise RuntimeError("operation requires the owner event loop") from exc
+
+    def _bind_or_require_owner_loop(
+        self, loop: asyncio.AbstractEventLoop
+    ) -> None:
+        if self._owner_loop is None:
+            self._owner_loop = loop
+        else:
+            self._require_owner_loop(loop)
+
+    def _require_owner_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        if loop is not self._owner_loop:
+            raise RuntimeError("operation requires the owner event loop")

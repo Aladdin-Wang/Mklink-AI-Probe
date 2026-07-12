@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -19,6 +20,8 @@ def test_each_subscriber_has_an_independent_bounded_queue():
         assert first is not second
         assert first.maxsize == second.maxsize == 2
         assert first_batch == second_batch == b"one"
+        assert first_batch is second_batch
+        assert first_batch.payload == b"one"
         assert first_batch.sequence == second_batch.sequence == sequence == 1
         assert first_batch.item_count == second_batch.item_count == 3
 
@@ -95,6 +98,7 @@ def test_stats_and_status_frame_are_non_resetting_snapshots():
         client = hub.subscribe()
         hub.publish(b"first", item_count=2)
         hub.publish(b"second", item_count=4)
+        await asyncio.sleep(0)
 
         first = hub.stats()
         status = hub.status_frame()
@@ -150,41 +154,136 @@ def test_publish_threadsafe_accepts_a_batch_without_an_item_count():
     asyncio.run(scenario())
 
 
-def test_concurrent_threadsafe_publish_schedules_batches_in_sequence_order():
-    class RecordingLoop:
-        def __init__(self):
-            self.first_scheduling = threading.Event()
-            self.release_first = threading.Event()
-            self.sequences = []
+def test_direct_publish_from_worker_runs_all_queue_operations_on_owner_loop():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        owner_thread = threading.get_ident()
+        queue_threads = []
+        original_put = client.put_nowait
 
-        @staticmethod
-        def is_closed():
-            return False
+        def recording_put(batch):
+            queue_threads.append(threading.get_ident())
+            original_put(batch)
 
-        def call_soon_threadsafe(self, _callback, batch):
-            if batch.sequence == 1:
-                self.first_scheduling.set()
-                self.release_first.wait(timeout=1)
-            self.sequences.append(batch.sequence)
+        client.put_nowait = recording_put
+        producer = threading.Thread(target=hub.publish, args=(b"worker", 1))
+        producer.start()
+        producer.join(timeout=0.5)
+        assert not producer.is_alive()
+        await asyncio.sleep(0)
 
-    hub = StreamHub(max_batches_per_client=1)
-    loop = RecordingLoop()
-    first = threading.Thread(
-        target=hub.publish_threadsafe, args=(loop, b"first", 1)
-    )
-    second = threading.Thread(
-        target=hub.publish_threadsafe, args=(loop, b"second", 1)
-    )
+        assert queue_threads == [owner_thread]
+        assert await asyncio.wait_for(client.get(), timeout=0.1) == b"worker"
 
-    first.start()
-    assert loop.first_scheduling.wait(timeout=1)
-    second.start()
-    second.join(timeout=0.05)
-    loop.release_first.set()
-    first.join(timeout=1)
-    second.join(timeout=1)
+    asyncio.run(scenario())
 
-    assert loop.sequences == [1, 2]
+
+def test_direct_publish_from_worker_wakes_a_waiting_owner_loop_immediately():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        waiting = asyncio.create_task(client.get())
+        await asyncio.sleep(0)
+        delayed_wakeup = []
+        timer = asyncio.get_running_loop().call_later(
+            0.2, delayed_wakeup.append, True
+        )
+        producer = threading.Thread(target=hub.publish, args=(b"wake", 1))
+
+        try:
+            producer.start()
+            assert await asyncio.wait_for(waiting, timeout=0.5) == b"wake"
+            assert delayed_wakeup == []
+        finally:
+            timer.cancel()
+            producer.join(timeout=0.5)
+
+    asyncio.run(scenario())
+
+
+def test_mixed_direct_and_threadsafe_publish_preserve_sequence_order():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        client = hub.subscribe()
+        loop = asyncio.get_running_loop()
+        producer = threading.Thread(
+            target=hub.publish_threadsafe, args=(loop, b"first", 1)
+        )
+
+        producer.start()
+        producer.join(timeout=0.5)
+        assert not producer.is_alive()
+        assert hub.publish(b"second", item_count=1) == 2
+        first = await asyncio.wait_for(client.get(), timeout=0.1)
+        second = await asyncio.wait_for(client.get(), timeout=0.1)
+
+        assert [first.sequence, second.sequence] == [1, 2]
+
+    asyncio.run(scenario())
+
+
+def test_publish_threadsafe_rejects_a_loop_other_than_the_owner():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        hub.subscribe()
+        other_loop = asyncio.new_event_loop()
+        try:
+            with pytest.raises(RuntimeError, match="owner event loop"):
+                hub.publish_threadsafe(other_loop, b"wrong", item_count=1)
+        finally:
+            other_loop.close()
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_and_unsubscribe_reject_non_owner_loop():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        errors = []
+
+        def use_another_loop():
+            async def misuse():
+                for operation in (hub.subscribe, lambda: hub.unsubscribe(client)):
+                    try:
+                        operation()
+                    except RuntimeError as exc:
+                        errors.append(str(exc))
+
+            asyncio.run(misuse())
+
+        thread = threading.Thread(target=use_another_loop)
+        thread.start()
+        thread.join(timeout=1)
+
+        assert len(errors) == 2
+        assert all("owner event loop" in message for message in errors)
+        assert hub.stats().active_clients == 1
+
+    asyncio.run(scenario())
+
+
+def test_stream_batch_metadata_is_immutable_and_copies_mutable_input_once():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        first_client = hub.subscribe()
+        second_client = hub.subscribe()
+        source = bytearray(b"stable")
+        hub.publish(source, item_count=6)
+        source[:] = b"change"
+
+        first = await first_client.get()
+        second = await second_client.get()
+        assert first is second
+        assert first.payload == b"stable"
+        assert first == b"stable"
+        with pytest.raises(FrozenInstanceError):
+            first.sequence = 99
+        with pytest.raises(FrozenInstanceError):
+            first.item_count = 0
+
+    asyncio.run(scenario())
 
 
 def test_unsubscribe_is_idempotent_and_releases_queued_batches():
@@ -200,6 +299,24 @@ def test_unsubscribe_is_idempotent_and_releases_queued_batches():
         assert hub.stats().active_clients == 0
         hub.publish(b"after", item_count=1)
         assert client.empty()
+
+    asyncio.run(scenario())
+
+
+def test_unsubscribe_before_scheduled_delivery_prevents_retired_queue_enqueue():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=1)
+        client = hub.subscribe()
+        producer = threading.Thread(target=hub.publish, args=(b"late", 1))
+
+        producer.start()
+        producer.join(timeout=0.5)
+        assert not producer.is_alive()
+        assert hub.unsubscribe(client) is True
+        await asyncio.sleep(0)
+
+        assert client.empty()
+        assert hub.stats().delivered_batches == 0
 
     asyncio.run(scenario())
 
