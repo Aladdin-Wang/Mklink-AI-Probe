@@ -89,6 +89,17 @@ python -m mklink gui
 cd gui && npx tauri dev
 ```
 
+### 在线烧录与脱机烧录
+
+- **在线烧录**：打开 GUI 的 `/online-flash` 页，由主机通过 pyOCD/CMSIS-DAP 实时控制 **MKLink** 探针；支持目标搜索、CMSIS-Pack 按需下载、HEX/BIN 预览、擦除、编程、校验和复位。在线探针列表只接受 MKLink CMSIS-DAP，不会把其他厂商的 CMSIS-DAP 当作可选设备。
+- **脱机烧录**：使用已连接 MKLink 的仪表盘“脱机烧录”页签或现有 `python -m mklink flash` 流程，使用项目中已配置的 MCU/FLM 和固件路径。它不使用在线烧录页的 Pack 目录和任务流。
+
+在线烧录首次使用某个 MCU 时，先更新 Pack 索引，搜索并下载对应 DFP。Pack 只在需要时下载，安装后缓存在当前用户的 `%LOCALAPPDATA%\MKLink\pyocd` 下（可用 `MKLINK_PYOCD_HOME` 改变根目录）；离线时可继续使用已缓存的索引和 Pack。在 GUI 中可取消当前 Pack 操作或删除未被任务使用的指定版本；不要把 `.pack` 文件放入 Git 或发布资源。索引更新和 Pack 下载使用启动 `mklink serve`/GUI 进程时的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；本地缓存命中不需要网络。
+
+HEX 固件使用文件内的绝对地址；BIN 没有地址信息，必须明确填写与目标 Flash 匹配的基地址（例如 `0x08000000`）。在线烧录与 RTT、SystemView、VOFA、SuperWatch 等调试会话共用目标调试资源；冲突时应先停止或确认交接当前会话。点击“停止”是协作式取消，当前底层操作返回后才会断开并释放资源，不要在等待期间拔除探针。
+
+> **验证边界：**“Pack 可用”只表示 pyOCD 能解析目标和 Flash Algorithm，不等于该 MCU 已通过 MKLink 真机烧录验证。未完成 [真机矩阵](docs/verification/online-flash-hil.md) 的组合应视为未验证，且在线烧录不支持非 MKLink 探针。
+
 ## 命令速查
 
 | 命令 | 说明 |

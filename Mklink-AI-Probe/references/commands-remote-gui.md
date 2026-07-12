@@ -34,9 +34,10 @@ python -m mklink gui --port 8765 --device-port COM6
 python -m mklink gui --no-browser
 ```
 
-GUI 启动后在浏览器中提供两个页面：
+GUI 启动后在浏览器中提供三个主页面：
 - **配置页** (`/config`) — COM 口选择、MCU 配置、项目初始化
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
+- **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
 
 
 ## Tauri 桌面应用（原生窗口）
@@ -57,6 +58,24 @@ npx tauri dev
 ```
 
 开发模式下 Tauri 窗口连接 `http://localhost:8765` 上的 Python 后端。前端热重载通过 Vite dev server (port 5173) 实现。
+
+## 在线烧录 API
+
+`/online-flash` 页调用以下 `/api/online-flash` 端点：
+
+| 用途 | 端点 |
+|------|------|
+| 列出 MKLink 探针 | `GET /probes` |
+| 搜索目标 | `GET /targets?q=...&vendor=...&installed=...` |
+| Pack 状态/更新索引 | `GET /packs/status`、`POST /packs/index/update` |
+| 安装/导入/取消/删除 Pack | `POST /packs/install`、`POST /packs/import`、`POST /packs/cancel`、`DELETE /packs/{pack_id}/{version}` |
+| 检查与分页预览固件 | `POST /images/inspect`、`GET /images/{image_id}/preview` |
+| 启动/查询/停止任务 | `POST /jobs`、`GET /jobs/active`、`GET /jobs/{job_id}`、`POST /jobs/{job_id}/stop` |
+| 重放式任务事件 | `GET /jobs/{job_id}/events?after={sequence}` (SSE) |
+
+Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Windows 默认为 `%LOCALAPPDATA%\MKLink\pyocd`；可在启动服务前设置 `MKLINK_PYOCD_HOME` 覆盖。这些缓存不是仓库或 Tauri 发布资源，`.pack`、上传文件和测试产物不应进入 Git。更新索引和下载 Pack 继承服务进程的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；断网时可用最后一份有效索引和已安装 Pack。
+
+在线烧录会申请 `TARGET_DEBUG` 资源，与 RTT、SystemView、VOFA、SuperWatch 等会话冲突时返回 HTTP 409 及当前 owner/resource；先停止或由用户确认交接冲突会话。`POST /jobs/{job_id}/stop` 只设置协作式取消：运行中的底层操作返回后，任务才进入 `stopped`，执行 disconnect 并释放租约。页面显示“停止中”时不要立即开启新任务或拔除探针。
 
 ### 发布构建
 
