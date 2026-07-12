@@ -6,7 +6,7 @@
 
 | 范围 | 命令 | 真实结果 |
 |---|---|---|
-| Task 12 Python 定向 | `python -m pytest <9 个 online-flash/Pack 测试文件> -q` | PASS，361 passed in 8.59s |
+| Task 12 Python 定向 | `python -m pytest _maintainer/testing/tests/test_online_flash_dependencies.py _maintainer/testing/tests/test_online_flash_errors.py _maintainer/testing/tests/test_pack_catalog.py _maintainer/testing/tests/test_pack_manager.py _maintainer/testing/tests/test_online_flash_probes.py _maintainer/testing/tests/test_online_flash_images.py _maintainer/testing/tests/test_online_flash_backend.py _maintainer/testing/tests/test_online_flash_jobs.py _maintainer/testing/tests/test_online_flash_api.py -q` | PASS，361 passed in 8.59s |
 | Python 全量 | `python -m pytest -q` | PASS，端口发现修复后 388 passed in 10.20s |
 | 端口发现并发回归 | `python -m pytest _maintainer/testing/tests/test_remote_api.py -q` | PASS，2 passed；阻塞扫描期间 `/api/health` 保持响应，连续复跑 11 次稳定 |
 | GUI 定向 | `npm test -- src/views/OnlineFlashView.test.ts src/lib/hexPreview.test.ts` | PASS，2 files / 50 tests |
