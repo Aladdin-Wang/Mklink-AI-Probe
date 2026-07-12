@@ -385,6 +385,16 @@ def create_app(
     # closure. Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
 
+    from mklink.remote import stream_api
+
+    stream_registry = stream_api.create_stream_registry()
+    stream_types = dict(stream_api.STREAM_TYPES)
+    app.state.stream_registry = stream_registry
+    app.state.stream_types = stream_types
+    app.include_router(stream_api.create_stream_router(
+        stream_registry, stream_types, auth_token,
+    ))
+
     from starlette.concurrency import run_in_threadpool
     from mklink.remote import online_flash_api
 
