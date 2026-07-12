@@ -38,6 +38,7 @@ const currentTab = computed(() => route.name as string)
 const tabs = [
   { key: 'config', label: '配置' },
   { key: 'dashboard', label: '仪表盘' },
+  { key: 'online-flash', label: '在线烧录' },
 ]
 
 function navigate(key: string) {

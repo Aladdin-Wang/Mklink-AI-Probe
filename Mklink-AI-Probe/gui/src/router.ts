@@ -17,6 +17,11 @@ const router = createRouter({
       name: 'dashboard',
       component: () => import('./views/DashboardView.vue'),
     },
+    {
+      path: '/online-flash',
+      name: 'online-flash',
+      component: () => import('./views/OnlineFlashView.vue'),
+    },
   ],
 })
 

@@ -23,7 +23,7 @@
       </div>
       <div class="tabs-bar">
         <button :class="['tab-btn', { active: tab === 'rtt' }]" @click="tab = 'rtt'">RTT View</button>
-        <button :class="['tab-btn', { active: tab === 'flash' }]" @click="tab = 'flash'">烧录</button>
+        <button :class="['tab-btn', { active: tab === 'flash' }]" @click="tab = 'flash'">脱机烧录</button>
         <button :class="['tab-btn', { active: tab === 'debug' }]" @click="tab = 'debug'">调试控制</button>
         <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
         <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">符号表</button>
@@ -37,7 +37,7 @@
 
       <RttViewTab v-show="tab === 'rtt'" :device-connected="deviceStatus.connected" />
 
-      <!-- 烧录 -->
+      <!-- 脱机烧录 -->
       <div v-if="tab === 'flash'">
         <div v-if="!deviceStatus.connected" class="alert alert-warn">请先连接设备。</div>
         <template v-else>
@@ -46,17 +46,17 @@
             <input class="form-input" v-model="flashReq.firmware" placeholder=".hex 或 .bin 文件路径" />
           </div>
           <div class="form-row">
-            <span class="form-label">烧录后校验</span>
+            <span class="form-label">脱机烧录后校验</span>
             <label style="font-size:13px"><input type="checkbox" v-model="flashReq.verify" /> 启用</label>
           </div>
           <div class="form-row">
-            <span class="form-label">烧录后复位</span>
+            <span class="form-label">脱机烧录后复位</span>
             <label style="font-size:13px"><input type="checkbox" v-model="flashReq.reset_after" /> 启用</label>
           </div>
           <div class="form-row">
             <span class="form-label"></span>
             <button class="btn btn-primary" @click="doFlash" :disabled="flashing">
-              {{ flashing ? '烧录中...' : '烧录固件' }}
+              {{ flashing ? '脱机烧录中...' : '脱机烧录固件' }}
             </button>
           </div>
         </template>
@@ -144,8 +144,8 @@ function goConnect() {
 
 async function doFlash() {
   flashing.value = true
-  try { const r = await flashDevice(flashReq); toast.success('烧录完成: ' + JSON.stringify(r)) }
-  catch (e: any) { toast.error('烧录失败: ' + e.message) }
+  try { const r = await flashDevice(flashReq); toast.success('脱机烧录完成: ' + JSON.stringify(r)) }
+  catch (e: any) { toast.error('脱机烧录失败: ' + e.message) }
   finally { flashing.value = false }
 }
 async function doReset() {
