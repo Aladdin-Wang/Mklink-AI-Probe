@@ -1,9 +1,9 @@
 import { mount, shallowMount } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import App from '../App.vue'
 import router from '../router'
-import type { PackOperationResponse } from '../types/onlineFlash'
+import type { JobAction, JobRequest, PackOperationResponse } from '../types/onlineFlash'
 import DashboardView from './DashboardView.vue'
 
 async function onlineFlashView() {
@@ -14,6 +14,11 @@ async function onlineFlashView() {
 async function onlineFlashApi() {
   const path = '../composables/useOnlineFlashApi'
   return (await import(/* @vite-ignore */ path)).useOnlineFlashApi()
+}
+
+async function onlineFlashApiModule() {
+  const path = '../composables/useOnlineFlashApi'
+  return import(/* @vite-ignore */ path)
 }
 
 vi.mock('../composables/useMklinkApi', () => ({
@@ -43,22 +48,29 @@ vi.mock('../composables/useResourceStatus', () => ({
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
-  readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>()
+  readonly listeners = new Map<string, Array<(event: Event) => void>>()
   closed = false
 
   constructor(readonly url: string) {
     FakeEventSource.instances.push(this)
   }
 
-  addEventListener(name: string, listener: (event: MessageEvent) => void) {
+  addEventListener(name: string, listener: (event: Event) => void) {
     const listeners = this.listeners.get(name) ?? []
     listeners.push(listener)
     this.listeners.set(name, listeners)
   }
 
   emit(name: string, data: unknown) {
+    if (this.closed) return
     const event = new MessageEvent(name, { data: JSON.stringify(data) })
     for (const listener of this.listeners.get(name) ?? []) listener(event)
+  }
+
+  emitNativeError() {
+    if (this.closed) return
+    const event = new Event('error')
+    for (const listener of this.listeners.get('error') ?? []) listener(event)
   }
 
   close() {
@@ -111,10 +123,13 @@ describe('online flash navigation and workspace', () => {
         },
       },
     })
-
-    const labels = wrapper.findAll('.tab-btn').map(tab => tab.text())
-    expect(labels).toContain('脱机烧录')
-    expect(labels).not.toContain('烧录')
+    try {
+      const labels = wrapper.findAll('.tab-btn').map(tab => tab.text())
+      expect(labels).toContain('脱机烧录')
+      expect(labels).not.toContain('烧录')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('mounts the stable four-zone workspace landmarks', async () => {
@@ -125,6 +140,22 @@ describe('online flash navigation and workspace', () => {
     expect(wrapper.find('main[data-zone="firmware"]').exists()).toBe(true)
     expect(wrapper.find('aside[data-zone="flash-map"]').exists()).toBe(true)
     expect(wrapper.find('section[data-zone="logs"]').exists()).toBe(true)
+  })
+
+  it('renders the firmware workspace as the only main landmark', async () => {
+    await router.push('/online-flash')
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+        stubs: { StatusBar: true, ToastContainer: true },
+      },
+    })
+    try {
+      await vi.waitFor(() => expect(wrapper.find('main[data-zone="firmware"]').exists()).toBe(true))
+      expect(wrapper.findAll('main')).toHaveLength(1)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })
 
@@ -200,6 +231,38 @@ describe('useOnlineFlashApi', () => {
       method: 'POST',
       body: JSON.stringify(request),
     }))
+    expectTypeOf<JobRequest['actions'][number]>().toEqualTypeOf<JobAction>()
+  })
+
+  it('preserves structured API conflict details', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: 'PROBE_BUSY', owner: 'ai-session', resource: 'TARGET_DEBUG' },
+    }), { status: 409, statusText: 'Conflict' }))
+    const { OnlineFlashApiError, useOnlineFlashApi } = await onlineFlashApiModule()
+
+    const error = await useOnlineFlashApi().listProbes().catch((value: unknown) => value)
+
+    expect(error).toBeInstanceOf(OnlineFlashApiError)
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'PROBE_BUSY',
+      owner: 'ai-session',
+      resource: 'TARGET_DEBUG',
+      detail: { code: 'PROBE_BUSY', owner: 'ai-session', resource: 'TARGET_DEBUG' },
+    })
+    expect(error.message).toBe('PROBE_BUSY: TARGET_DEBUG is owned by ai-session')
+  })
+
+  it('formats nested API details as stable JSON instead of object coercion', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      detail: { validation: { reason: 'invalid', field: 'base_address' } },
+    }), { status: 422, statusText: 'Unprocessable Entity' }))
+    const { OnlineFlashApiError, useOnlineFlashApi } = await onlineFlashApiModule()
+
+    const error = await useOnlineFlashApi().listProbes().catch((value: unknown) => value)
+
+    expect(error).toBeInstanceOf(OnlineFlashApiError)
+    expect(error.message).toBe('{"validation":{"field":"base_address","reason":"invalid"}}')
   })
 
   it('returns consumable adapter and default-worker Pack variants', async () => {
@@ -242,23 +305,63 @@ describe('useOnlineFlashApi', () => {
     ])
   })
 
-  it('subscribes after a sequence, parses named events and can close the stream', async () => {
+  it('filters replayed sequences and closes synchronously after a terminal event', async () => {
     const onEvent = vi.fn()
     const subscription = (await onlineFlashApi()).subscribeJob('job/1', 12, onEvent)
     const source = FakeEventSource.instances[0]
-    const payload = {
+    const progress = {
       job_id: 'job/1', sequence: 13, timestamp: 1, event: 'progress', message: '',
       state: null, progress: 0.5,
     }
+    const terminal = {
+      job_id: 'job/1', sequence: 14, timestamp: 2, event: 'state', message: '',
+      state: 'succeeded', progress: 1,
+    }
 
     expect(source.url).toBe('/api/online-flash/jobs/job%2F1/events?after=12')
-    source.emit('progress', payload)
-    source.emit('error', { code: 'UNKNOWN_ERROR', message: 'event stream failed' })
-    expect(onEvent).toHaveBeenNthCalledWith(1, payload)
-    expect(onEvent).toHaveBeenNthCalledWith(2, { code: 'UNKNOWN_ERROR', message: 'event stream failed' })
+    source.emit('progress', progress)
+    source.emit('progress', progress)
+    source.emit('state', terminal)
+    source.emit('progress', { ...progress, sequence: 15 })
+    expect(onEvent).toHaveBeenCalledTimes(2)
+    expect(onEvent).toHaveBeenNthCalledWith(1, progress)
+    expect(onEvent).toHaveBeenNthCalledWith(2, terminal)
+    expect(source.closed).toBe(true)
 
     subscription.close()
     expect(source.closed).toBe(true)
+  })
+
+  it('closes after a server error event without enabling native reconnect', async () => {
+    const onEvent = vi.fn()
+    const subscription = (await onlineFlashApi()).subscribeJob('job/1', 0, onEvent)
+    const eventSource = FakeEventSource.instances[0]
+
+    eventSource.emit('error', { code: 'UNKNOWN_ERROR', message: 'event stream failed' })
+
+    expect(onEvent).toHaveBeenCalledWith({ code: 'UNKNOWN_ERROR', message: 'event stream failed' })
+    expect(eventSource.closed).toBe(true)
+    expect(eventSource.listeners.get('error')).toHaveLength(1)
+    subscription.close()
+  })
+
+  it('closes and reports a native connection error exactly once', async () => {
+    const onEvent = vi.fn()
+    const onError = vi.fn()
+    ;(await onlineFlashApi()).subscribeJob('job/1', 7, onEvent, onError)
+    const source = FakeEventSource.instances[0]
+
+    source.emitNativeError()
+    source.emitNativeError()
+
+    expect(source.closed).toBe(true)
+    expect(source.listeners.get('error')).toHaveLength(1)
+    expect(onEvent).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith({
+      code: 'STREAM_ERROR',
+      message: 'Event stream connection failed',
+    })
   })
 })
 

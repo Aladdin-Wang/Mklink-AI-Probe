@@ -1,5 +1,6 @@
 import type {
   ImageInspection,
+  JobEvent,
   JobCreateResult,
   JobRequest,
   JobSnapshot,
@@ -18,21 +19,78 @@ import type {
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const ONLINE_FLASH_BASE = '/api/online-flash'
+const TERMINAL_STATES = new Set(['succeeded', 'failed', 'stopped'])
 
-function errorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== 'object') return fallback
-  const detail = (payload as { detail?: unknown }).detail
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue)
+  if (!isRecord(value)) return value
+  return Object.fromEntries(
+    Object.keys(value).sort().map(key => [key, stableValue(value[key])]),
+  )
+}
+
+function stableJson(value: unknown): string | null {
+  try {
+    return JSON.stringify(stableValue(value)) ?? null
+  } catch {
+    return null
+  }
+}
+
+function errorDetail(payload: unknown): unknown {
+  if (isRecord(payload) && Object.prototype.hasOwnProperty.call(payload, 'detail')) {
+    return payload.detail
+  }
+  return payload
+}
+
+function stringField(value: unknown, field: string): string | null {
+  if (!isRecord(value) || typeof value[field] !== 'string') return null
+  return value[field]
+}
+
+function errorMessage(detail: unknown, fallback: string): string {
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
     return detail.map(item => {
-      if (item && typeof item === 'object' && 'msg' in item) return String(item.msg)
-      return String(item)
+      const message = stringField(item, 'msg')
+      return message ?? stableJson(item) ?? fallback
     }).join('; ')
   }
-  if (detail && typeof detail === 'object' && 'message' in detail) {
-    return String(detail.message)
+  if (isRecord(detail)) {
+    const message = stringField(detail, 'message')
+    if (message) return message
+    const code = stringField(detail, 'code')
+    const owner = stringField(detail, 'owner')
+    const resource = stringField(detail, 'resource')
+    if (code && owner && resource) return `${code}: ${resource} is owned by ${owner}`
+    return stableJson(detail) ?? fallback
   }
-  return detail ? String(detail) : fallback
+  if (detail !== null && detail !== undefined) return String(detail)
+  return fallback
+}
+
+export class OnlineFlashApiError extends Error {
+  readonly status: number
+  readonly code: string | null
+  readonly owner: string | null
+  readonly resource: string | null
+  readonly detail: unknown
+
+  constructor(status: number, fallback: string, payload: unknown) {
+    const detail = errorDetail(payload)
+    super(errorMessage(detail, fallback || `HTTP ${status}`))
+    this.name = 'OnlineFlashApiError'
+    this.status = status
+    this.code = stringField(detail, 'code')
+    this.owner = stringField(detail, 'owner')
+    this.resource = stringField(detail, 'resource')
+    this.detail = detail
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -47,7 +105,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
-    throw new Error(errorMessage(payload, response.statusText))
+    throw new OnlineFlashApiError(response.status, response.statusText, payload)
   }
   return response.json() as Promise<T>
 }
@@ -137,30 +195,71 @@ export function useOnlineFlashApi() {
     jobId: string,
     afterSequence: number,
     onEvent: (event: JobStreamEvent) => void,
+    onError?: (error: JobStreamError) => void,
   ): JobSubscription {
     const params = new URLSearchParams({ after: String(afterSequence) })
     const source = new EventSource(
       `${API_BASE}${ONLINE_FLASH_BASE}/jobs/${encoded(jobId)}/events?${params.toString()}`,
     )
+    let lastSequence = afterSequence
+    let closed = false
+    const close = () => {
+      if (closed) return
+      closed = true
+      source.close()
+    }
+    const reportError = (error: JobStreamError) => {
+      if (onError) onError(error)
+      else onEvent(error)
+    }
     const receive = (event: Event) => {
+      if (closed) return
       if (!(event instanceof MessageEvent) || typeof event.data !== 'string') {
-        onEvent({ code: 'STREAM_ERROR', message: 'Event stream connection failed' })
+        close()
+        reportError({ code: 'STREAM_ERROR', message: 'Event stream connection failed' })
         return
       }
+      let parsed: JobStreamEvent
       try {
-        onEvent(JSON.parse(event.data) as JobStreamEvent)
+        parsed = JSON.parse(event.data) as JobStreamEvent
       } catch {
         const error: JobStreamError = {
           code: 'STREAM_PARSE_ERROR',
           message: 'Event stream returned invalid JSON',
         }
-        onEvent(error)
+        close()
+        reportError(error)
+        return
       }
+      if (isRecord(parsed) && typeof parsed.sequence === 'number') {
+        const jobEvent = parsed as JobEvent
+        if (jobEvent.sequence <= lastSequence) return
+        lastSequence = jobEvent.sequence
+        if (event.type === 'error' || (jobEvent.state && TERMINAL_STATES.has(jobEvent.state))) {
+          try {
+            onEvent(jobEvent)
+          } finally {
+            close()
+          }
+          return
+        }
+        onEvent(jobEvent)
+        return
+      }
+      if (event.type === 'error') {
+        try {
+          onEvent(parsed)
+        } finally {
+          close()
+        }
+        return
+      }
+      onEvent(parsed)
     }
     for (const eventName of ['state', 'progress', 'log', 'error']) {
       source.addEventListener(eventName, receive)
     }
-    return { close: () => source.close() }
+    return { close }
   }
 
   return {

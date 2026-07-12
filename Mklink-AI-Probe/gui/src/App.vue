@@ -13,9 +13,9 @@
         <StatusBar />
       </div>
     </header>
-    <main class="app-main">
+    <div class="app-main">
       <router-view />
-    </main>
+    </div>
     <ToastContainer />
   </div>
 </template>

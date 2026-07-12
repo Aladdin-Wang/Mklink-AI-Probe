@@ -52,8 +52,10 @@ export interface SectorRecord {
   size: number
 }
 
+export type JobAction = 'connect' | 'erase' | 'program' | 'verify' | 'reset' | 'disconnect'
+
 export interface JobRequest {
-  actions: string[]
+  actions: JobAction[]
   image_id?: string | null
   preempt_ai?: boolean
   probe_id?: string | null
