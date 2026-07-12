@@ -78,7 +78,9 @@ describe('StreamClient', () => {
     expect(worker.postMessage).toHaveBeenNthCalledWith(1, {
       type: 'configure', capacity: 100, channelCount: 2,
     })
-    expect(worker.postMessage).toHaveBeenNthCalledWith(2, { type: 'frame', buffer }, [buffer])
+    expect(worker.postMessage).toHaveBeenNthCalledWith(2, {
+      type: 'frame', buffer, connectionGeneration: 1, frameTicket: 1,
+    }, [buffer])
   })
 
   it('backs off across open-then-immediate-close loops until valid data arrives', () => {
@@ -127,10 +129,59 @@ describe('StreamClient', () => {
       type: 'telemetry', bufferedSamples: 0, transportDroppedBatches: 0,
       backendDroppedBatches: 0, backendDroppedItems: 0, backendDroppedBytes: 0,
       lastSequence: null, acceptedFrames: 1,
+      acceptedConnectionGeneration: 3, acceptedFrameTicket: 1,
     } }))
     sockets[2].emitClose()
 
     expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 100 })
+  })
+
+  it('ignores a delayed accepted acknowledgement from the previous socket generation', () => {
+    vi.useFakeTimers()
+    const { client, sockets, worker, states } = setup()
+    client.start()
+    const socket0 = sockets[0]
+    socket0.open()
+    const oldBuffer = new ArrayBuffer(36)
+    socket0.onmessage?.(new MessageEvent('message', { data: oldBuffer }))
+    expect(worker.postMessage).toHaveBeenLastCalledWith({
+      type: 'frame',
+      buffer: oldBuffer,
+      connectionGeneration: 1,
+      frameTicket: 1,
+    }, [oldBuffer])
+
+    socket0.emitClose()
+    vi.advanceTimersByTime(100)
+    const socket1 = sockets[1]
+    socket1.open()
+    const postsBeforeStaleData = worker.postMessage.mock.calls.length
+    socket0.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(36) }))
+    expect(worker.postMessage).toHaveBeenCalledTimes(postsBeforeStaleData)
+    worker.onmessage?.(new MessageEvent('message', { data: {
+      type: 'telemetry', acceptedFrames: 1, bufferedSamples: 0,
+      transportDroppedBatches: 0, backendDroppedBatches: 0,
+      backendDroppedItems: 0, backendDroppedBytes: 0, lastSequence: null,
+      acceptedConnectionGeneration: 1, acceptedFrameTicket: 1,
+    } }))
+    socket1.emitClose()
+
+    expect(states.at(-1)).toMatchObject({ phase: 'reconnecting', reconnectDelayMs: 200 })
+  })
+
+  it('uses a new generation and resets frame tickets after explicit stop and restart', () => {
+    const { client, sockets, worker } = setup()
+    client.start()
+    sockets[0].open()
+    client.stop()
+    client.start()
+    sockets[1].open()
+    const buffer = new ArrayBuffer(36)
+    sockets[1].onmessage?.(new MessageEvent('message', { data: buffer }))
+
+    expect(worker.postMessage).toHaveBeenLastCalledWith({
+      type: 'frame', buffer, connectionGeneration: 2, frameTicket: 1,
+    }, [buffer])
   })
 
   it('does not reconnect after explicit stop', () => {

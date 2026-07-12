@@ -45,6 +45,8 @@ describe('useBinaryStream', () => {
     options?.onWorkerMessage?.({
       type: 'telemetry',
       acceptedFrames: 1,
+      acceptedConnectionGeneration: 1,
+      acceptedFrameTicket: 1,
       bufferedSamples: 10,
       transportDroppedBatches: 2,
       backendDroppedBatches: 3,

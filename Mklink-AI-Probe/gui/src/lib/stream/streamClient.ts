@@ -56,7 +56,10 @@ export class StreamClient {
   private shouldRun = false
   private disposed = false
   private awaitingReadyFrame = false
-  private acceptedFramesSeen = 0
+  private connectionGeneration = 0
+  private currentGeneration = 0
+  private nextFrameTicket = 0
+  private readonly pendingReadyTickets = new Set<number>()
 
   constructor(options: StreamClientOptions) {
     validateOptions(options)
@@ -71,12 +74,21 @@ export class StreamClient {
     this.worker.onmessage = event => {
       const message = event.data as WorkerOutput
       if (message.type === 'telemetry') {
-        const acceptedFrameAdvanced = message.acceptedFrames > this.acceptedFramesSeen
-        this.acceptedFramesSeen = message.acceptedFrames
-        if (this.awaitingReadyFrame && acceptedFrameAdvanced) {
+        const currentAcknowledgement =
+          message.acceptedConnectionGeneration === this.currentGeneration
+          && message.acceptedFrameTicket !== null
+          && this.pendingReadyTickets.delete(message.acceptedFrameTicket)
+        if (this.awaitingReadyFrame && currentAcknowledgement) {
           this.reconnectAttempt = 0
           this.awaitingReadyFrame = false
+          this.pendingReadyTickets.clear()
         }
+      } else if (
+        message.type === 'error'
+        && message.connectionGeneration === this.currentGeneration
+        && message.frameTicket !== undefined
+      ) {
+        this.pendingReadyTickets.delete(message.frameTicket)
       }
       options.onWorkerMessage?.(message)
     }
@@ -99,6 +111,8 @@ export class StreamClient {
     if (this.disposed) return
     this.shouldRun = false
     this.awaitingReadyFrame = false
+    this.currentGeneration = 0
+    this.pendingReadyTickets.clear()
     this.clearReconnectTimer()
     const socket = this.socket
     this.socket = null
@@ -143,6 +157,10 @@ export class StreamClient {
       if (this.shouldRun) this.scheduleReconnect()
       return
     }
+    const generation = ++this.connectionGeneration
+    this.currentGeneration = generation
+    this.nextFrameTicket = 0
+    this.pendingReadyTickets.clear()
     this.socket = socket
     socket.binaryType = 'arraybuffer'
     socket.onopen = () => {
@@ -162,7 +180,14 @@ export class StreamClient {
         return
       }
       const buffer = event.data
-      this.worker.postMessage({ type: 'frame', buffer } satisfies WorkerInput, [buffer])
+      const frameTicket = ++this.nextFrameTicket
+      this.pendingReadyTickets.add(frameTicket)
+      this.worker.postMessage({
+        type: 'frame',
+        buffer,
+        connectionGeneration: generation,
+        frameTicket,
+      } satisfies WorkerInput, [buffer])
     }
     socket.onerror = () => {
       if (socket === this.socket && this.shouldRun) {
@@ -173,6 +198,7 @@ export class StreamClient {
       if (socket !== this.socket) return
       this.socket = null
       this.awaitingReadyFrame = false
+      this.pendingReadyTickets.clear()
       if (this.shouldRun) this.scheduleReconnect()
     }
   }

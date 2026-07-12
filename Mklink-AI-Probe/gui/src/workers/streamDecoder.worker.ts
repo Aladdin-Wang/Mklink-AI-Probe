@@ -3,13 +3,20 @@ import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
 
 export type WorkerInput =
   | { type: 'configure'; capacity: number; channelCount: number }
-  | { type: 'frame'; buffer: ArrayBuffer }
+  | {
+      type: 'frame'
+      buffer: ArrayBuffer
+      connectionGeneration: number
+      frameTicket: number
+    }
   | { type: 'visible-range'; requestId: number; start: number; end: number; pixelWidth: number }
   | { type: 'reset' }
 
 export interface StreamTelemetry {
   readonly type: 'telemetry'
   readonly acceptedFrames: number
+  readonly acceptedConnectionGeneration: number | null
+  readonly acceptedFrameTicket: number | null
   readonly bufferedSamples: number
   readonly transportDroppedBatches: number
   readonly backendDroppedBatches: number
@@ -32,7 +39,13 @@ export type WorkerOutput =
       times: ArrayBuffer
       values: ArrayBuffer
     }
-  | { type: 'error'; code: 'INVALID_CONFIG' | 'NOT_CONFIGURED' | 'INVALID_FRAME' | 'INVALID_RANGE'; message: string }
+  | {
+      type: 'error'
+      code: 'INVALID_CONFIG' | 'NOT_CONFIGURED' | 'INVALID_FRAME' | 'INVALID_RANGE'
+      message: string
+      connectionGeneration?: number
+      frameTicket?: number
+    }
 
 type PostOutput = (message: WorkerOutput, transfer?: Transferable[]) => void
 
@@ -68,7 +81,11 @@ export class StreamDecoder {
         this.configure(message.capacity, message.channelCount)
         break
       case 'frame':
-        this.receiveFrame(message.buffer)
+        this.receiveFrame(
+          message.buffer,
+          message.connectionGeneration,
+          message.frameTicket,
+        )
         break
       case 'visible-range':
         this.visibleRange(message)
@@ -90,12 +107,24 @@ export class StreamDecoder {
     }
   }
 
-  private receiveFrame(buffer: ArrayBuffer): void {
+  private receiveFrame(
+    buffer: ArrayBuffer,
+    connectionGeneration: number,
+    frameTicket: number,
+  ): void {
     if (!this.ring) {
       this.post({ type: 'error', code: 'NOT_CONFIGURED', message: 'configure the worker before frames' })
       return
     }
     try {
+      if (
+        !Number.isSafeInteger(connectionGeneration)
+        || connectionGeneration <= 0
+        || !Number.isSafeInteger(frameTicket)
+        || frameTicket <= 0
+      ) {
+        throw new RangeError('frame connection generation and ticket must be positive integers')
+      }
       const decoded = decodeFrame(buffer)
       if (decoded.streamType === StreamType.CONTROL) {
         this.updateBackendDrops(decoded.payload)
@@ -103,9 +132,9 @@ export class StreamDecoder {
         this.appendNumericFrame(decoded.sequence, decoded.timestampNs, decoded.itemCount, decoded.payload)
       }
       this.acceptedFrames += 1
-      this.post(this.telemetry())
+      this.post(this.telemetry(connectionGeneration, frameTicket))
     } catch (error) {
-      this.error('INVALID_FRAME', error)
+      this.error('INVALID_FRAME', error, connectionGeneration, frameTicket)
     }
   }
 
@@ -200,10 +229,15 @@ export class StreamDecoder {
     this.acceptedFrames = 0
   }
 
-  private telemetry(): StreamTelemetry {
+  private telemetry(
+    acceptedConnectionGeneration: number | null = null,
+    acceptedFrameTicket: number | null = null,
+  ): StreamTelemetry {
     return {
       type: 'telemetry',
       acceptedFrames: this.acceptedFrames,
+      acceptedConnectionGeneration,
+      acceptedFrameTicket,
       bufferedSamples: this.ring?.length ?? 0,
       transportDroppedBatches: this.transportDroppedBatches,
       backendDroppedBatches: this.backendDroppedBatches,
@@ -213,11 +247,18 @@ export class StreamDecoder {
     }
   }
 
-  private error(code: Extract<WorkerOutput, { type: 'error' }>['code'], error: unknown): void {
+  private error(
+    code: Extract<WorkerOutput, { type: 'error' }>['code'],
+    error: unknown,
+    connectionGeneration?: number,
+    frameTicket?: number,
+  ): void {
     this.post({
       type: 'error',
       code,
       message: error instanceof Error ? error.message : String(error),
+      ...(connectionGeneration === undefined ? {} : { connectionGeneration }),
+      ...(frameTicket === undefined ? {} : { frameTicket }),
     })
   }
 }
