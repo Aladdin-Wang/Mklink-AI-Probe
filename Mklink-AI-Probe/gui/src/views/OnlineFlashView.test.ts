@@ -8,6 +8,7 @@ import DashboardView from './DashboardView.vue'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
 import actionBarSource from '../components/online-flash/FlashActionBar.vue?raw'
+import logPanelSource from '../components/online-flash/FlashLogPanel.vue?raw'
 
 async function onlineFlashView() {
   const path = './OnlineFlashView.vue'
@@ -936,17 +937,88 @@ describe('online flash task workspace behavior', () => {
 })
 
 describe('online flash component quality', () => {
+  function mockLogGeometry(viewport: ReturnType<typeof mount>['element'], values: { top: number; height: number; total: number }) {
+    Object.defineProperty(viewport, 'scrollTop', {
+      configurable: true,
+      get: () => values.top,
+      set: value => { values.top = Number(value) },
+    })
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, get: () => values.height })
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, get: () => values.total })
+  }
+
   it('virtualizes 5000 log lines and can scroll from early to middle history', async () => {
     const lines = Array.from({ length: 5000 }, (_, index) => `line-${index}`)
     const wrapper = mount(FlashLogPanel, { props: { lines, streamDisconnected: false } })
     const viewport = wrapper.get('[data-testid="log-viewport"]')
-    Object.defineProperty(viewport.element, 'clientHeight', { configurable: true, value: 135 })
+    const metrics = { top: 0, height: 135, total: lines.length * 18 }
+    mockLogGeometry(viewport.element, metrics)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
     expect(wrapper.findAll('[data-testid="log-line"]').length).toBeLessThan(40)
+    expect(wrapper.text()).toContain('line-4999')
+
+    metrics.top = 0
+    await viewport.trigger('scroll')
     expect(wrapper.text()).toContain('line-0')
-    ;(viewport.element as HTMLElement).scrollTop = 2500 * 18
+    metrics.top = 2500 * 18
     await viewport.trigger('scroll')
     expect(wrapper.text()).toContain('line-2500')
     expect(wrapper.findAll('[data-testid="log-line"]').length).toBeLessThan(40)
+  })
+
+  it('keeps long virtual log rows at the fixed 18px height with accessible full text', () => {
+    const longLine = `programming ${'0123456789'.repeat(30)}`
+    const wrapper = mount(FlashLogPanel, { props: { lines: [longLine], streamDisconnected: false } })
+    const row = wrapper.get('[data-testid="log-line"]')
+
+    expect(row.classes()).toContain('log-line')
+    expect(row.attributes('title')).toBe(longLine)
+    expect(row.attributes('aria-label')).toBe(longLine)
+    expect(logPanelSource).toContain('.log-line{height:18px;line-height:18px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}')
+    expect(wrapper.findAll('[data-testid="log-line"]')).toHaveLength(1)
+  })
+
+  it('follows the latest row when logs first arrive and when already near the bottom', async () => {
+    const wrapper = mount(FlashLogPanel, { props: { lines: [], streamDisconnected: false } })
+    const viewport = wrapper.get('[data-testid="log-viewport"]')
+    const metrics = { top: 0, height: 54, total: 100 * 18 }
+    mockLogGeometry(viewport.element, metrics)
+
+    const lines = Array.from({ length: 100 }, (_, index) => `line-${index}`)
+    await wrapper.setProps({ lines })
+    await wrapper.vm.$nextTick()
+    expect(metrics.top).toBe(metrics.total - metrics.height)
+    expect(wrapper.text()).toContain('line-99')
+
+    metrics.top = metrics.total - metrics.height - 18
+    await viewport.trigger('scroll')
+    metrics.total += 18
+    await wrapper.setProps({ lines: [...lines, 'line-100'] })
+    await wrapper.vm.$nextTick()
+    expect(metrics.top).toBe(metrics.total - metrics.height)
+    expect(wrapper.text()).toContain('line-100')
+  })
+
+  it('preserves an upstream position on append and exposes a jump-to-latest recovery', async () => {
+    const lines = Array.from({ length: 100 }, (_, index) => `line-${index}`)
+    const wrapper = mount(FlashLogPanel, { props: { lines, streamDisconnected: false } })
+    const viewport = wrapper.get('[data-testid="log-viewport"]')
+    const metrics = { top: 40 * 18, height: 54, total: 100 * 18 }
+    mockLogGeometry(viewport.element, metrics)
+    await viewport.trigger('scroll')
+
+    metrics.total += 18
+    await wrapper.setProps({ lines: [...lines, 'line-100'] })
+    await wrapper.vm.$nextTick()
+    expect(metrics.top).toBe(40 * 18)
+    expect(wrapper.get('[data-testid="jump-latest"]').isVisible()).toBe(true)
+
+    await wrapper.get('[data-testid="jump-latest"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(metrics.top).toBe(metrics.total - metrics.height)
+    expect(wrapper.find('[data-testid="jump-latest"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('line-100')
   })
 
   it('opens the visually hidden file input from a keyboard-focusable trigger', async () => {
