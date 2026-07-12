@@ -42,10 +42,18 @@ async def _authenticate(websocket: WebSocket, auth_token: Optional[str]) -> bool
         return True
     try:
         message = await asyncio.wait_for(
-            websocket.receive_text(), timeout=AUTH_TIMEOUT_SECONDS,
+            websocket.receive(), timeout=AUTH_TIMEOUT_SECONDS,
         )
-        auth = json.loads(message)
-    except (asyncio.TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+    except asyncio.TimeoutError:
+        return False
+    if message.get("type") != "websocket.receive":
+        return False
+    text = message.get("text")
+    if not isinstance(text, str):
+        return False
+    try:
+        auth = json.loads(text)
+    except json.JSONDecodeError:
         return False
     if not isinstance(auth, dict):
         return False

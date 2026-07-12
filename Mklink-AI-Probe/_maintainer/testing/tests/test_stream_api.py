@@ -131,6 +131,20 @@ def test_websocket_rejects_invalid_auth_token_with_policy_close(auth_message):
     assert app.state.stream_registry["rtt"].stats().active_clients == 0
 
 
+@pytest.mark.parametrize(
+    "auth_payload", [b"", b"binary", b'{"token":"secret"}', b"\x00\xff"],
+)
+def test_websocket_rejects_binary_auth_frame_with_policy_close(auth_payload):
+    app = create_app(auth_token="secret", project_root=".")
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/streams/rtt") as websocket:
+            websocket.send_bytes(auth_payload)
+            with pytest.raises(WebSocketDisconnect) as error:
+                websocket.receive_bytes()
+    assert error.value.code == 1008
+    assert app.state.stream_registry["rtt"].stats().active_clients == 0
+
+
 def test_fanout_clients_share_publish_timestamp_and_batch_metadata(
     client, app, monkeypatch,
 ):
