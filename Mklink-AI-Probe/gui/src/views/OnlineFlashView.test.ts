@@ -81,6 +81,22 @@ class FakeEventSource {
 const dashStub = { template: '<div />', props: ['deviceConnected'] }
 
 describe('online flash navigation and workspace', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn(), clear: vi.fn() })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const value = url.endsWith('/packs/status')
+        ? { last_error: null, index_available: false, target_count: 0 }
+        : []
+      return new Response(JSON.stringify(value), { status: 200 })
+    }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   it('registers the hash-router online flash route', () => {
     const route = router.getRoutes().find(candidate => candidate.name === 'online-flash')
 
@@ -205,6 +221,16 @@ describe('useOnlineFlashApi', () => {
     expect(inspectOptions?.body).toBeInstanceOf(FormData)
     expect(new Headers(importOptions?.headers).has('Content-Type')).toBe(false)
     expect(new Headers(inspectOptions?.headers).has('Content-Type')).toBe(false)
+  })
+
+  it('forwards preview abort signals to fetch', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{}', { status: 200 }))
+    const controller = new AbortController()
+    const api = await onlineFlashApi()
+
+    await api.previewImage('image', 0, 4096, controller.signal)
+
+    expect(vi.mocked(fetch).mock.calls[0][1]?.signal).toBe(controller.signal)
   })
 
   it('posts job JSON and addresses job endpoints', async () => {
@@ -378,3 +404,235 @@ function consumePackResponse(response: PackOperationResponse): string[] {
   }
   return [...events, 'target_count' in result ? String(result.target_count) : 'updated']
 }
+
+const probeFixture = {
+  unique_id: 'mklink-1', vendor_name: 'MuseLab', product_name: 'MKLink',
+  description: 'MKLink CMSIS-DAP', vid: 0x34b7, pid: 0x0001, serial_number: 'ABC',
+}
+
+const installedTarget = {
+  part_number: 'HPM5300', vendor: 'HPMicro', pack_id: 'HPMicro.HPM_SDK',
+  pack_version: '1.0.0', installed: true, source: 'installed',
+}
+
+function viewFetch(targets = [installedTarget]) {
+  return vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    const url = String(input)
+    const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
+    if (url.endsWith('/probes')) return json([probeFixture])
+    if (url.includes('/targets?')) return json(targets)
+    if (url.endsWith('/packs/status')) return json({ last_error: null, index_available: true, target_count: targets.length })
+    if (url.endsWith('/packs/install')) return json({
+      result: { status: 'installed', part_number: JSON.parse(String(options?.body)).part_number },
+      events: [{ type: 'progress', progress: 1 }],
+    })
+    if (url.endsWith('/images/inspect')) return json({
+      image_id: 'image-1', file_name: 'firmware.bin', format: 'bin', size: 32,
+      sha256: 'abc123', start: 0x80000000, end: 0x80000020,
+      segments: [{ start: 0x80000000, end: 0x80000020 }], base_address: 0x80000000,
+    })
+    if (url.includes('/preview?')) return json({
+      address: 0x80000000, length: 32, data_base64: btoa('\x41'.repeat(32)), present: Array(32).fill(true),
+    })
+    if (url.endsWith('/jobs') && options?.method === 'POST') return json({
+      job_id: 'job-1',
+      job: {
+        job_id: 'job-1', state: 'queued', actions: ['program'], image_id: 'image-1',
+        created_at: 1, updated_at: 1, probe_id: 'mklink-1', target_part: 'HPM5300',
+        frequency: 1000000, connect_mode: 'halt', reset_mode: 'default', file_path: null,
+        image_format: 'bin', image_start: 0x80000000, image_end: 0x80000020,
+        image_size: 32, image_sha256: 'abc123', current_action: null, stage_progress: 0,
+        total_progress: 0, speed_bytes_per_second: 0, elapsed_seconds: 0,
+        error_code: null, error_message: null,
+      },
+    })
+    if (url.endsWith('/jobs/job-1/stop')) return json({ state: 'stopping', job_id: 'job-1' })
+    throw new Error(`Unexpected request: ${url}`)
+  })
+}
+
+async function chooseFirmware(wrapper: ReturnType<typeof mount>, name = 'firmware.bin') {
+  const input = wrapper.get('[data-testid="firmware-input"]')
+  Object.defineProperty(input.element, 'files', {
+    configurable: true,
+    value: [new File(['firmware'], name)],
+  })
+  await input.trigger('change')
+}
+
+describe('online flash task workspace behavior', () => {
+  beforeEach(() => {
+    FakeEventSource.instances = []
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+      clear: () => storage.clear(),
+    })
+    vi.stubGlobal('fetch', viewFetch())
+    vi.stubGlobal('EventSource', FakeEventSource)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('rejects an invalid BIN base and keeps start disabled until server inspection succeeds', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('80000000')
+
+    expect(wrapper.get('[data-testid="base-error"]').text()).toContain('0x')
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    wrapper.unmount()
+  })
+
+  it('aborts and ignores an in-flight inspection when the BIN base changes', async () => {
+    const fallback = viewFetch()
+    let inspectionSignal: AbortSignal | null = null
+    let resolveInspection!: (response: Response) => void
+    const pendingInspection = new Promise<Response>(resolve => { resolveInspection = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/images/inspect')) {
+        inspectionSignal = options?.signal ?? null
+        return pendingInspection
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
+
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80001000')
+    expect(inspectionSignal?.aborted).toBe(true)
+    resolveInspection(new Response(JSON.stringify({
+      image_id: 'stale-image', file_name: 'firmware.bin', format: 'bin', size: 32,
+      sha256: 'stale', start: 0x80000000, end: 0x80000020,
+      segments: [{ start: 0x80000000, end: 0x80000020 }], base_address: 0x80000000,
+    }), { status: 200 }))
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('stale-image')
+    wrapper.unmount()
+  })
+
+  it('confirms and installs an uninstalled exact target before marking it ready', async () => {
+    const missing = { ...installedTarget, installed: false, source: 'index' }
+    vi.stubGlobal('fetch', viewFetch([missing]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="pack-status"]').text()).toContain('已安装'))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('下载'))
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/packs/install'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('debounces target searches without relying on real-time sleeps', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(await onlineFlashView())
+    const initialSearchCount = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/targets?')).length
+
+    await wrapper.get('input[aria-label="搜索器件"]').setValue('HPM 53')
+    await vi.advanceTimersByTimeAsync(299)
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('q=HPM+53'))).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('q=HPM+53'))).toHaveLength(1)
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/targets?')).length).toBe(initialSearchCount + 1)
+    wrapper.unmount()
+  })
+
+  it('replays from sequence zero, deduplicates logs, and explicitly reconnects after a stream error', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    const source = FakeEventSource.instances[0]
+    const log = { job_id: 'job-1', sequence: 1, timestamp: 1, event: 'log', message: 'programming', state: null, progress: null }
+
+    expect(source.url).toContain('after=0')
+    source.emit('log', log)
+    source.emit('log', log)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('[data-testid="log-line"]').filter(line => line.text().includes('programming'))).toHaveLength(1)
+
+    source.emitNativeError()
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="reconnect-stream"]').trigger('click')
+    expect(FakeEventSource.instances[1].url).toContain('after=1')
+    wrapper.unmount()
+  })
+
+  it('shows STOPPING and waits for a terminal event after stop', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('STOPPING')
+    expect(wrapper.text()).toContain('等待探针安全停止')
+    expect(wrapper.get('[data-testid="stop-job"]').attributes('disabled')).toBeDefined()
+    expect(FakeEventSource.instances[0].closed).toBe(false)
+
+    FakeEventSource.instances[0].emit('state', {
+      job_id: 'job-1', sequence: 2, timestamp: 2, event: 'state', message: '', state: 'stopped', progress: 1,
+    })
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="job-state"]').text()).toContain('已停止'))
+    wrapper.unmount()
+  })
+
+  it('persists settings but never File data or an opaque image snapshot', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await wrapper.get('[data-testid="frequency"]').setValue('4000000')
+    await chooseFirmware(wrapper)
+    const stored = localStorage.getItem('mklink.onlineFlash.settings') ?? ''
+
+    expect(stored).toContain('4000000')
+    expect(stored).not.toContain('firmware')
+    expect(stored).not.toContain('image_id')
+    wrapper.unmount()
+  })
+
+  it('requires explicit confirmation for chip erase and keeps sectors disabled without reliable geometry', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await wrapper.get('[data-testid="chip-erase"]').trigger('click')
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('全片擦除'))
+    expect(wrapper.get('[data-testid="select-all-sectors"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="range-erase"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('扇区几何信息不可验证')
+    wrapper.unmount()
+  })
+})

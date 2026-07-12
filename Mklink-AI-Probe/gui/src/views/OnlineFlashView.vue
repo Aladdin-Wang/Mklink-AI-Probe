@@ -1,86 +1,251 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
+import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
+import FlashMapPanel from '../components/online-flash/FlashMapPanel.vue'
+import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
+import ProbeSettingsPanel from '../components/online-flash/ProbeSettingsPanel.vue'
+import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
+import { HexPreviewModel, type FormattedHexRow } from '../lib/hexPreview'
+import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnlineFlashApi'
+import type { ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
+
+const STORAGE_KEY = 'mklink.onlineFlash.settings'
+const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
+const api = useOnlineFlashApi()
+
+interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string }
+function savedSettings(): SavedSettings {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as SavedSettings } catch { return {} }
+}
+const saved = savedSettings()
+
+const probes = ref<ProbeRecord[]>([])
+const probeId = ref('')
+const probeBusy = ref(false)
+const probeError = ref('')
+const frequency = ref(saved.frequency ?? 1_000_000)
+const connectMode = ref(saved.connectMode ?? 'halt')
+const resetMode = ref(saved.resetMode ?? 'default')
+const targets = ref<TargetRecord[]>([])
+const selectedTarget = ref<TargetRecord | null>(null)
+const desiredPart = ref(saved.targetPart ?? '')
+const packStatus = ref<PackStatus | null>(null)
+const packBusy = ref(false)
+const packProgress = ref(0)
+const packError = ref('')
+const firmware = ref<File | null>(null)
+const baseAddress = ref('0x80000000')
+const inspection = ref<ImageInspection | null>(null)
+const inspectBusy = ref(false)
+const inspectError = ref('')
+const rows = ref<FormattedHexRow[]>([])
+const paddingTop = ref(0)
+const paddingBottom = ref(0)
+const actions = ref<JobAction[]>(['connect', 'erase', 'program', 'verify', 'reset', 'disconnect'])
+const jobId = ref('')
+const jobState = ref<JobState | null>(null)
+const stageProgress = ref(0)
+const totalProgress = ref(0)
+const logs = ref<string[]>([])
+const lastSequence = ref(0)
+const streamDisconnected = ref(false)
+let subscription: JobSubscription | null = null
+let inspectionController: AbortController | null = null
+
+const preview = new HexPreviewModel((imageId, offset, length, signal) => api.previewImage(imageId, offset, length, signal))
+const isBin = computed(() => firmware.value?.name.toLowerCase().endsWith('.bin') ?? false)
+const parsedBase = computed(() => {
+  if (!isBin.value) return null
+  if (!/^0x[0-9a-f]+$/i.test(baseAddress.value)) return null
+  const value = Number.parseInt(baseAddress.value.slice(2), 16)
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff ? value : null
+})
+const baseError = computed(() => isBin.value && parsedBase.value === null ? 'BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）' : '')
+const active = computed(() => !!jobId.value && !!jobState.value && !TERMINAL.has(jobState.value))
+const stopping = computed(() => jobState.value === 'stopping')
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !packBusy.value && !inspectBusy.value && actions.value.length > 0)
+const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !active.value)
+
+function message(error: unknown): string {
+  if (error instanceof OnlineFlashApiError) {
+    const prefix = error.code ? `${error.code} · ` : ''
+    return `${prefix}${error.message}`
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function persist(): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    targetPart: selectedTarget.value?.part_number || desiredPart.value,
+    frequency: frequency.value,
+    connectMode: connectMode.value,
+    resetMode: resetMode.value,
+  }))
+}
+watch([frequency, connectMode, resetMode, desiredPart], persist)
+
+async function refreshProbes(): Promise<void> {
+  probeBusy.value = true; probeError.value = ''
+  try {
+    probes.value = await api.listProbes()
+    if (!probes.value.some(item => item.unique_id === probeId.value)) probeId.value = probes.value[0]?.unique_id ?? ''
+  } catch (error) { probeError.value = message(error) } finally { probeBusy.value = false }
+}
+
+async function searchTargets(query = ''): Promise<void> {
+  packError.value = ''
+  try {
+    targets.value = await api.searchTargets(query, { limit: 100 })
+    const exact = targets.value.find(target => target.part_number === desiredPart.value)
+    if (exact?.installed) selectedTarget.value = exact
+  } catch (error) { packError.value = message(error) }
+}
+
+function applyPackProgress(events: Awaited<ReturnType<typeof api.installPack>>['events']): void {
+  for (const event of events) {
+    if (event.type === 'log') appendLog(`[PACK] ${event.message}`)
+    else packProgress.value = 'progress' in event ? event.progress : event.total ? event.current / event.total : 0
+  }
+}
+
+async function selectTarget(target: TargetRecord): Promise<void> {
+  if (active.value) return
+  desiredPart.value = target.part_number
+  resetInspection()
+  selectedTarget.value = null
+  if (!target.installed) {
+    if (!confirm(`器件 ${target.part_number} 尚未安装。是否联网下载对应 Pack？`)) return
+    packBusy.value = true; packProgress.value = 0; packError.value = ''
+    try {
+      const response = await api.installPack(target.part_number)
+      applyPackProgress(response.events)
+      const ready = { ...target, installed: true, source: 'installed' }
+      targets.value = targets.value.map(item => item.part_number === ready.part_number ? ready : item)
+      selectedTarget.value = ready
+      await Promise.all([refreshPackStatus(), searchTargets(target.part_number)])
+      const refreshed = targets.value.find(item => item.part_number === ready.part_number && item.installed)
+      if (refreshed) selectedTarget.value = refreshed
+      else {
+        targets.value = targets.value.map(item => item.part_number === ready.part_number ? ready : item)
+        selectedTarget.value = ready
+      }
+    } catch (error) { packError.value = message(error) } finally { packBusy.value = false }
+  } else selectedTarget.value = target
+  persist()
+}
+
+async function refreshPackStatus(): Promise<void> {
+  try { packStatus.value = await api.getPackStatus() } catch (error) { packError.value = message(error) }
+}
+async function updatePackIndex(): Promise<void> {
+  packBusy.value = true; packProgress.value = 0; packError.value = ''
+  try { const response = await api.updatePackIndex(); applyPackProgress(response.events); await Promise.all([refreshPackStatus(), searchTargets('')]) }
+  catch (error) { packError.value = message(error) } finally { packBusy.value = false }
+}
+async function cancelPack(): Promise<void> { try { await api.cancelPackOperation() } catch (error) { packError.value = message(error) } }
+
+function resetInspection(): void {
+  inspectionController?.abort()
+  inspectionController = null
+  inspectBusy.value = false
+  inspection.value = null; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
+}
+function setFirmware(file: File | null): void { firmware.value = file; resetInspection() }
+function setBase(value: string): void { if (value !== baseAddress.value) { baseAddress.value = value; resetInspection() } }
+
+async function inspectImage(): Promise<void> {
+  if (!firmware.value || !selectedTarget.value?.installed || baseError.value) {
+    inspectError.value = !selectedTarget.value?.installed ? '请先选择已安装的精确器件型号' : baseError.value || '请选择固件'
+    return
+  }
+  resetInspection(); inspectBusy.value = true; inspectError.value = ''
+  const controller = new AbortController()
+  inspectionController = controller
+  try {
+    const result = await api.inspectImage(firmware.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
+    if (controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
+    if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error('服务端返回的镜像地址范围无效')
+    inspection.value = result
+    preview.setSource({ imageId: result.image_id, start: result.start, size: result.end - result.start })
+    await loadVisible(0, 360)
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `固件检查失败：${message(error)}`
+  } finally {
+    if (inspectionController === controller) { inspectionController = null; inspectBusy.value = false }
+  }
+}
+
+async function loadVisible(scrollTop: number, height: number): Promise<void> {
+  if (!inspection.value) return
+  const range = preview.visibleRange(scrollTop, height, 20)
+  paddingTop.value = range.paddingTop; paddingBottom.value = range.paddingBottom
+  try { rows.value = await preview.loadRows(range.startRow, range.endRow) }
+  catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `预览加载失败：${message(error)}` }
+}
+
+function appendLog(line: string): void { logs.value.push(line); if (logs.value.length > 5000) logs.value.splice(0, logs.value.length - 5000) }
+function subscribe(after = lastSequence.value): void {
+  subscription?.close(); streamDisconnected.value = false
+  subscription = api.subscribeJob(jobId.value, after, receiveEvent, error => {
+    streamDisconnected.value = true
+    appendLog(`[SSE:${error.code}] ${error.message}`)
+  })
+}
+function receiveEvent(event: JobStreamEvent): void {
+  if (!('sequence' in event)) { appendLog(`[SSE:${event.code}] ${event.message}`); return }
+  if (event.sequence <= lastSequence.value) return
+  lastSequence.value = event.sequence
+  const jobEvent = event as JobEvent
+  if (jobEvent.state) jobState.value = jobEvent.state
+  if (jobEvent.progress !== null) {
+    stageProgress.value = jobEvent.progress
+    if (jobEvent.event === 'progress') totalProgress.value = Math.max(totalProgress.value, jobEvent.progress)
+  }
+  if (jobEvent.message) appendLog(`[${jobEvent.sequence}] ${jobEvent.message}`)
+  if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null }
+}
+
+async function startJob(customActions = actions.value, sectorAddresses: number[] = []): Promise<void> {
+  if (!probeId.value || !selectedTarget.value?.installed || (customActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  try {
+    logs.value = []; lastSequence.value = 0; stageProgress.value = 0; totalProgress.value = 0
+    const result = await api.createJob({ actions: customActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: sectorAddresses })
+    jobId.value = result.job_id; jobState.value = result.job.state
+    appendLog(`[JOB] 已创建 ${result.job_id}`); subscribe(0)
+  } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
+}
+async function stopJob(): Promise<void> {
+  if (!jobId.value || stopping.value) return
+  jobState.value = 'stopping'; appendLog('[JOB] STOPPING：等待探针安全停止')
+  try {
+    const snapshot = await api.stopJob(jobId.value)
+    if (TERMINAL.has(snapshot.state)) jobState.value = snapshot.state
+  }
+  catch (error) { appendLog(`[ERROR] 停止请求失败：${message(error)}`) }
+}
+function chipErase(): void { if (confirm('全片擦除将永久删除芯片中的全部闪存内容，确定继续？')) void startJob(['connect', 'erase', 'disconnect']) }
+function selectedErase(): void { if (confirm('确定擦除所选扇区？')) void startJob(['connect', 'erase', 'disconnect'], []) }
+
+onMounted(() => { void Promise.all([refreshProbes(), refreshPackStatus(), searchTargets(desiredPart.value)]) })
+onBeforeUnmount(() => { subscription?.close(); preview.setSource(null) })
+</script>
+
 <template>
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
-      <h2>烧录设置</h2>
-      <p>选择调试器与目标芯片</p>
+      <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
+      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :progress="packProgress" :error="packError" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
-      <h2>固件</h2>
-      <p>检查固件并创建在线烧录任务</p>
+      <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @inspect="inspectImage" @scroll="loadVisible" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="actions = $event" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map">
-      <h2>Flash Map</h2>
-      <p>镜像地址与扇区范围</p>
-    </aside>
-    <section class="workspace-zone logs-zone" data-zone="logs">
-      <h2>任务日志</h2>
-      <p>等待在线烧录任务</p>
-    </section>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :geometry-reliable="false" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" /></aside>
+    <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
   </div>
 </template>
 
 <style scoped>
-.online-flash-grid {
-  --workspace-bg: #15181d;
-  --workspace-surface: #1d2229;
-  --workspace-border: #303741;
-  --workspace-text: #e6e9ed;
-  --workspace-muted: #929ba7;
-  min-height: 100%;
-  display: grid;
-  grid-template-columns: minmax(210px, 0.8fr) minmax(360px, 1.7fr) minmax(220px, 0.9fr);
-  grid-template-rows: minmax(340px, 1fr) minmax(160px, 0.45fr);
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--radius);
-  background: var(--workspace-bg);
-  color: var(--workspace-text);
-}
-
-.workspace-zone {
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--workspace-border);
-  border-radius: var(--radius);
-  background: var(--workspace-surface);
-}
-
-.workspace-zone h2 {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.workspace-zone p {
-  margin: 0;
-  color: var(--workspace-muted);
-  font-size: 12px;
-}
-
-.logs-zone {
-  grid-column: 1 / -1;
-  font-family: var(--font-mono);
-}
-
-@media (max-width: 1050px) {
-  .online-flash-grid {
-    grid-template-columns: minmax(200px, 0.8fr) minmax(360px, 1.5fr);
-  }
-
-  .flash-map-zone {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 720px) {
-  .online-flash-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
-  }
-
-  .flash-map-zone,
-  .logs-zone {
-    grid-column: auto;
-  }
-}
+.online-flash-grid{--of-bg:#11151a;--of-surface:#1d2229;--of-input:#252b33;--of-border:#343c46;--of-text:#e6e9ed;--of-muted:#929ba7;--of-accent:#58a6d6;--of-danger:#f07178;--of-danger-bg:#3b2428;--of-ok:#65c18c;--of-ok-bg:#20372d;--of-warn:#d8ad62;--of-mono:var(--mono,ui-monospace,Consolas,monospace);min-height:660px;display:grid;grid-template-columns:minmax(230px,.85fr) minmax(520px,1.9fr) minmax(240px,.9fr);grid-template-rows:minmax(490px,1fr) 185px;gap:10px;padding:10px;border-radius:var(--radius,7px);background:var(--of-bg);color:var(--of-text);text-align:left;font-size:12px}.workspace-zone{min-width:0;overflow:hidden;border:1px solid var(--of-border);border-radius:7px;background:var(--of-surface)}.settings-zone{overflow:auto}.firmware-zone{display:flex;flex-direction:column}.firmware-zone :deep(.hex-scroll){flex:1}.logs-zone{grid-column:1/-1;font-family:var(--of-mono)}@media(max-width:1050px){.online-flash-grid{grid-template-columns:minmax(220px,.8fr) minmax(500px,1.6fr)}.flash-map-zone{grid-column:1/-1}.logs-zone{grid-column:1/-1}}@media(max-width:760px){.online-flash-grid{grid-template-columns:1fr;grid-template-rows:none}.flash-map-zone,.logs-zone{grid-column:auto}.firmware-zone{min-height:560px}}
 </style>

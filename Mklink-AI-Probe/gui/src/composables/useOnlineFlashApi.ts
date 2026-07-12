@@ -160,6 +160,7 @@ export function useOnlineFlashApi() {
     file: File,
     partNumber: string,
     baseAddress?: number | string | null,
+    signal?: AbortSignal,
   ): Promise<ImageInspection> {
     const body = new FormData()
     body.append('file', file)
@@ -167,12 +168,17 @@ export function useOnlineFlashApi() {
     if (baseAddress !== undefined && baseAddress !== null) {
       body.append('base_address', String(baseAddress))
     }
-    return request('/images/inspect', { method: 'POST', body })
+    return request('/images/inspect', { method: 'POST', body, signal })
   }
 
-  function previewImage(imageId: string, offset = 0, length = 4096): Promise<PreviewPage> {
+  function previewImage(
+    imageId: string,
+    offset = 0,
+    length = 4096,
+    signal?: AbortSignal,
+  ): Promise<PreviewPage> {
     const params = new URLSearchParams({ offset: String(offset), length: String(length) })
-    return request(`/images/${encoded(imageId)}/preview?${params.toString()}`)
+    return request(`/images/${encoded(imageId)}/preview?${params.toString()}`, { signal })
   }
 
   function createJob(job: JobRequest): Promise<JobCreateResult> {
