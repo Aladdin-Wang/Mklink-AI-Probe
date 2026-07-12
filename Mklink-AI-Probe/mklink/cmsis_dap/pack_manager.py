@@ -13,6 +13,11 @@ import uuid
 
 from .errors import FlashError, FlashErrorCode
 from .pack_lock import PackRootLock
+from .process_guard import (
+    attach_parent_death_guard,
+    guarded_process_command,
+    parent_death_popen_kwargs,
+)
 from .paths import PackPaths
 
 
@@ -113,6 +118,7 @@ class SubprocessPackWorker:
         payload: Dict[str, object],
         on_event: EventCallback,
     ) -> Dict[str, object]:
+        process_guard = None
         staging = (self._paths.staging_dir / uuid.uuid4().hex).resolve()
         if staging.parent != self._paths.staging_dir.resolve():
             raise FlashError(
@@ -135,13 +141,17 @@ class SubprocessPackWorker:
             self._active_staging_dir = staging
             try:
                 process = subprocess.Popen(
-                    [sys.executable, "-m", "mklink.cmsis_dap.pack_worker"],
+                    guarded_process_command(
+                        [sys.executable, "-m", "mklink.cmsis_dap.pack_worker"]
+                    ),
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
                     encoding="utf-8",
+                    **parent_death_popen_kwargs(),
                 )
+                process_guard = attach_parent_death_guard(process)
             except BaseException:
                 self._active_staging_dir = None
                 raise
@@ -200,6 +210,8 @@ class SubprocessPackWorker:
                 if self._process is process:
                     self._process = None
                 self._cancel_requested = False
+            if process_guard is not None:
+                process_guard.close()
 
     def cancel(self) -> None:
         with self._lock:
@@ -540,13 +552,14 @@ class PackManager:
 
     def cancel(self) -> None:
         with self._active_lock:
-            if self._phase not in ("waiting-lock", "worker"):
+            if self._phase not in ("waiting-lock", "worker", "removing"):
                 return
             operation_token = self._operation_token
             self._cancel_requested = True
             self._cancel_event.set()
             waiting = self._phase == "waiting-lock"
-        if waiting:
+            worker_active = self._phase == "worker"
+        if waiting or not worker_active:
             return
         cancel = getattr(self._worker, "cancel", None)
         if callable(cancel):
@@ -626,8 +639,35 @@ class PackManager:
         version: str,
         in_use: Optional[Callable[[str, str], bool]] = None,
     ) -> None:
-        with self._root_lock.hold(timeout=self._lock_timeout):
-            self._remove_locked(vendor, pack, version, in_use)
+        with self._active_lock:
+            if self._phase != "idle":
+                raise FlashError(FlashErrorCode.PROBE_BUSY, "pack worker is busy")
+            self._active = True
+            self._phase = "waiting-lock"
+            self._operation_token += 1
+            operation_token = self._operation_token
+            self._cancel_requested = False
+            self._cancel_event.clear()
+        try:
+            with self._root_lock.hold(
+                cancel_event=self._cancel_event,
+                timeout=self._lock_timeout,
+            ):
+                with self._active_lock:
+                    if self._cancel_event.is_set():
+                        raise FlashError(
+                            FlashErrorCode.USER_ABORT,
+                            "pack operation cancelled",
+                        )
+                    self._phase = "removing"
+                self._remove_locked(vendor, pack, version, in_use)
+        finally:
+            with self._active_lock:
+                if self._operation_token == operation_token:
+                    self._active = False
+                    self._phase = "idle"
+                    self._cancel_requested = False
+                    self._cancel_event.clear()
 
     def _remove_locked(
         self,
@@ -636,6 +676,7 @@ class PackManager:
         version: str,
         in_use: Optional[Callable[[str, str], bool]] = None,
     ) -> None:
+        self._raise_if_cancelled()
         self._recover_root_transaction()
         if not all(isinstance(value, str) and value for value in (vendor, pack, version)):
             raise ValueError("vendor, pack, and version must be non-empty strings")
@@ -649,6 +690,7 @@ class PackManager:
             raise FlashError(FlashErrorCode.PROBE_BUSY, "pack version is in use")
 
         with self._state_lock:
+            self._raise_if_cancelled()
             state = self._read_state()
             installed = state["installed"]
             versions = installed.get(pack_id)
@@ -685,6 +727,7 @@ class PackManager:
             backup = None  # type: Optional[Path]
             remove_dir = None  # type: Optional[Path]
             if target.is_file():
+                self._raise_if_cancelled()
                 staging_root = _resolved_child(
                     self.paths.staging_dir,
                     self.paths.root,
@@ -704,6 +747,7 @@ class PackManager:
                 backup = verified_remove / "pack.backup"
                 os.replace(str(target), str(backup))
             try:
+                self._raise_if_cancelled()
                 self._write_state(new_state)
             except BaseException:
                 if backup is not None and backup.is_file():
@@ -717,6 +761,10 @@ class PackManager:
                 target.parent.rmdir()
             except OSError:
                 pass
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_event.is_set():
+            raise FlashError(FlashErrorCode.USER_ABORT, "pack operation cancelled")
 
     def _recover_root_transaction(self) -> None:
         from .pack_worker import WorkerFailure, recover_pending_transaction

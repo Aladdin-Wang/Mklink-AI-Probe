@@ -1,5 +1,8 @@
 import threading
 import time
+import subprocess
+import sys
+from pathlib import Path
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import pytest
@@ -789,6 +792,37 @@ def test_shutdown_waits_gracefully_when_active_job_finishes_within_timeout():
         manager.shutdown(wait=True)
     assert completed is True
     assert manager.get(job_id).state is JobState.STOPPED
+
+
+def test_timed_out_shutdown_does_not_block_interpreter_exit(tmp_path):
+    marker = tmp_path / "shutdown-returned"
+    script = (
+        "import sys,threading; from pathlib import Path; "
+        "from mklink.cmsis_dap.jobs import OnlineFlashJobManager; "
+        "from mklink.cmsis_dap.models import JobRequest; "
+        "from mklink.remote.resource_manager import ResourceManager; "
+        "started=threading.Event(); blocker=threading.Event(); "
+        "Backend=type('Backend',(),{"
+        "'connect':lambda self,**kw:(started.set(),blocker.wait())[1],"
+        "'disconnect':lambda self:None}); "
+        "manager=OnlineFlashJobManager(Backend,ResourceManager()); "
+        "manager.start(JobRequest(actions=('connect','disconnect'))); "
+        "assert started.wait(1); assert manager.shutdown(timeout=0.05) is False; "
+        "Path(sys.argv[1]).write_text('returned')"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(marker)],
+        cwd=str(Path(__file__).resolve().parents[3]),
+    )
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+        pytest.fail("interpreter stayed alive after bounded shutdown returned")
+
+    assert process.returncode == 0
+    assert marker.read_text(encoding="utf-8") == "returned"
 
 
 def test_queued_stop_holds_admission_until_work_item_is_drained():

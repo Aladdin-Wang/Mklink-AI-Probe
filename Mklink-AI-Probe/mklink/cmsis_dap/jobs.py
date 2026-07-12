@@ -6,11 +6,12 @@ import threading
 import time
 import uuid
 from collections import deque
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import Callable, Deque, Dict, List, Optional
 
 from .errors import FlashError, FlashErrorCode
+from .daemon_executor import DaemonSingleExecutor
 from .models import (
     ImageInspection,
     JobEvent,
@@ -88,7 +89,7 @@ class OnlineFlashJobManager:
         self._completed: Deque[str] = deque()
         self._active_id: Optional[str] = None
         self._condition = threading.Condition(threading.RLock())
-        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._executor = DaemonSingleExecutor()
         self._shutdown = False
 
     def start(self, request: JobRequest) -> str:

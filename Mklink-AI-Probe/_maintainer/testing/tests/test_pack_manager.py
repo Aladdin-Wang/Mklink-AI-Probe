@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import threading
@@ -263,6 +264,54 @@ def test_pack_root_lock_serializes_an_independent_process(tmp_path):
     ).update_index(lambda _event: None)["status"] == "updated"
 
 
+def test_parent_death_guard_kills_worker_before_competitor_gets_lock(tmp_path):
+    marker = tmp_path / "worker-writes"
+    pid_file = tmp_path / "worker.pid"
+    parent_script = (
+        "import os,subprocess,sys,time; from pathlib import Path; "
+        "from mklink.cmsis_dap.pack_lock import PackRootLock; "
+        "from mklink.cmsis_dap.process_guard import ("
+        "attach_parent_death_guard,guarded_process_command,parent_death_popen_kwargs); "
+        "root=Path(sys.argv[1]); lock=PackRootLock(root); lock.acquire(timeout=1); "
+        "child_code=\"import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
+        "[(p.open('ab').write(b'x'),time.sleep(0.01)) for _ in iter(int,1)]\"; "
+        "child=subprocess.Popen(guarded_process_command([sys.executable,'-c',child_code,str(root/'worker-writes')]),"
+        "**parent_death_popen_kwargs()); guard=attach_parent_death_guard(child); "
+        "(root/'worker.pid').write_text(str(child.pid)); time.sleep(0.15); os._exit(9)"
+    )
+    parent = subprocess.Popen(
+        [sys.executable, "-c", parent_script, str(tmp_path)],
+        cwd=str(Path(__file__).resolve().parents[3]),
+    )
+    child_pid = None
+    try:
+        parent.wait(timeout=3)
+        assert parent.returncode == 9
+        child_pid = int(pid_file.read_text(encoding="utf-8"))
+        from mklink.cmsis_dap.pack_lock import PackRootLock
+
+        competitor = PackRootLock(tmp_path)
+        competitor.acquire(timeout=1)
+        try:
+            before = marker.stat().st_size
+            time.sleep(0.25)
+            after = marker.stat().st_size
+        finally:
+            competitor.release()
+        assert after == before
+        with pytest.raises(OSError):
+            os.kill(child_pid, 0)
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+            parent.wait(timeout=2)
+        if child_pid is not None:
+            try:
+                os.kill(child_pid, signal.SIGTERM)
+            except OSError:
+                pass
+
+
 def test_remove_recovers_pending_transaction_while_holding_root_lock(tmp_path):
     paths = PackPaths(tmp_path)
     paths.root.mkdir(parents=True, exist_ok=True)
@@ -276,6 +325,94 @@ def test_remove_recovers_pending_transaction_while_holding_root_lock(tmp_path):
         )
 
     assert captured.value.code is FlashErrorCode.PACK_INTEGRITY_ERROR
+
+
+def test_waiting_remove_can_be_cancelled_without_later_deleting_pack(tmp_path):
+    paths = PackPaths(tmp_path)
+    pack_path = _pack_path(paths, "Vendor", "Pack", "1.0.0")
+    pack_path.parent.mkdir(parents=True)
+    pack_path.write_bytes(b"keep")
+    paths.state_file.write_text(
+        json.dumps(
+            {"installed": {"Vendor.Pack": {"1.0.0": str(pack_path)}}}
+        ),
+        encoding="utf-8",
+    )
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    remove_errors = []
+
+    class BlockingWorker:
+        def run(self, command, payload, on_event):
+            first_entered.set()
+            assert release_first.wait(2)
+            return {"status": "updated", "target_count": 1}
+
+        def cancel(self):
+            return None
+
+    holder = PackManager(tmp_path, worker=BlockingWorker())
+    remover = PackManager(tmp_path, worker=FakeWorker())
+    holder_thread = threading.Thread(
+        target=lambda: holder.update_index(lambda _event: None)
+    )
+
+    def remove():
+        try:
+            remover.remove("Vendor", "Pack", "1.0.0")
+        except BaseException as error:
+            remove_errors.append(error)
+
+    remove_thread = threading.Thread(target=remove)
+    holder_thread.start()
+    assert first_entered.wait(1)
+    remove_thread.start()
+    time.sleep(0.1)
+    try:
+        assert remove_thread.is_alive()
+        remover.cancel()
+        remove_thread.join(1)
+        assert not remove_thread.is_alive()
+        assert len(remove_errors) == 1
+        assert isinstance(remove_errors[0], FlashError)
+        assert remove_errors[0].code is FlashErrorCode.USER_ABORT
+        assert pack_path.read_bytes() == b"keep"
+    finally:
+        release_first.set()
+        holder_thread.join(2)
+        remove_thread.join(2)
+    assert pack_path.read_bytes() == b"keep"
+
+
+def test_remove_rejects_concurrent_operation_on_same_manager_immediately(tmp_path):
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingWorker:
+        def run(self, command, payload, on_event):
+            entered.set()
+            assert release.wait(2)
+            return {"status": "updated", "target_count": 1}
+
+        def cancel(self):
+            return None
+
+    manager = PackManager(tmp_path, worker=BlockingWorker(), lock_timeout=1)
+    thread = threading.Thread(
+        target=lambda: manager.update_index(lambda _event: None)
+    )
+    thread.start()
+    assert entered.wait(1)
+    try:
+        started = time.monotonic()
+        with pytest.raises(FlashError) as captured:
+            manager.remove("Vendor", "Pack", "1.0.0")
+        elapsed = time.monotonic() - started
+        assert captured.value.code is FlashErrorCode.PROBE_BUSY
+        assert elapsed < 0.1
+    finally:
+        release.set()
+        thread.join(2)
 
 
 def test_cancel_removes_staging(tmp_path):
