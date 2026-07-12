@@ -107,7 +107,19 @@ def test_websocket_accepts_existing_server_auth_token(monkeypatch):
             assert decode_frame(websocket.receive_bytes()).payload == b"ok"
 
 
-@pytest.mark.parametrize("auth_message", [{"token": "wrong"}, {}])
+@pytest.mark.parametrize(
+    "auth_message",
+    [
+        {"token": "wrong"},
+        {},
+        [],
+        None,
+        "secret",
+        {"params": []},
+        {"params": None},
+        {"params": "secret"},
+    ],
+)
 def test_websocket_rejects_invalid_auth_token_with_policy_close(auth_message):
     app = create_app(auth_token="secret", project_root=".")
     with TestClient(app) as client:
@@ -117,6 +129,28 @@ def test_websocket_rejects_invalid_auth_token_with_policy_close(auth_message):
                 websocket.receive_bytes()
     assert error.value.code == 1008
     assert app.state.stream_registry["rtt"].stats().active_clients == 0
+
+
+def test_fanout_clients_share_publish_timestamp_and_batch_metadata(
+    client, app, monkeypatch,
+):
+    from mklink.remote import stream_api
+
+    monkeypatch.setattr(stream_api, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
+    hub = app.state.stream_registry["vofa"]
+    with (
+        client.websocket_connect("/ws/streams/vofa") as first,
+        client.websocket_connect("/ws/streams/vofa") as second,
+    ):
+        assert decode_frame(first.receive_bytes()).stream_type is StreamType.CONTROL
+        assert decode_frame(second.receive_bytes()).stream_type is StreamType.CONTROL
+        expected_sequence = hub.publish(b"shared", item_count=5)
+        first_frame = decode_frame(first.receive_bytes())
+        second_frame = decode_frame(second.receive_bytes())
+
+    assert first_frame.sequence == second_frame.sequence == expected_sequence
+    assert first_frame.item_count == second_frame.item_count == 5
+    assert first_frame.timestamp_ns == second_frame.timestamp_ns
 
 
 def test_websocket_rejects_unknown_stream_with_policy_close(client):

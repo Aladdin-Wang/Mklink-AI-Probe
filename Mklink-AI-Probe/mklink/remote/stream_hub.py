@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Set, Tuple, Union
 
 
@@ -18,6 +19,7 @@ class StreamBatch:
     payload: bytes
     sequence: int
     item_count: int
+    timestamp_ns: int = field(default_factory=time.time_ns)
 
     def __bytes__(self) -> bytes:
         return self.payload

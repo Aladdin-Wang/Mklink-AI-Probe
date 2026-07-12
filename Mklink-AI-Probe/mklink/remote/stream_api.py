@@ -47,7 +47,12 @@ async def _authenticate(websocket: WebSocket, auth_token: Optional[str]) -> bool
         auth = json.loads(message)
     except (asyncio.TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
         return False
-    token = auth.get("token") or auth.get("params", {}).get("token")
+    if not isinstance(auth, dict):
+        return False
+    params = auth.get("params")
+    if not isinstance(params, dict):
+        params = {}
+    token = auth.get("token") or params.get("token")
     return token == auth_token
 
 
@@ -59,7 +64,7 @@ def _encoded_data_frame(
         flags=0,
         stream_id=int(stream_type),
         sequence=batch.sequence,
-        timestamp_ns=time.time_ns(),
+        timestamp_ns=batch.timestamp_ns,
         item_count=batch.item_count,
         payload=batch.payload,
     ))

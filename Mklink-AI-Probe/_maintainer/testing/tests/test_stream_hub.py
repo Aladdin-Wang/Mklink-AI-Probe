@@ -4,7 +4,15 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from mklink.remote.stream_hub import StreamHub
+from mklink.remote.stream_hub import StreamBatch, StreamHub
+
+
+def test_stream_batch_freezes_a_publish_timestamp():
+    first = StreamBatch(b"one", 1, 1)
+    second = StreamBatch(b"two", 2, 1)
+
+    assert first.timestamp_ns > 0
+    assert second.timestamp_ns >= first.timestamp_ns
 
 
 def test_each_subscriber_has_an_independent_bounded_queue():
