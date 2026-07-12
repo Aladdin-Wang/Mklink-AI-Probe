@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-07-12T17:30:00+08:00",
+  "repository": {
+    "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
+    "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
+    "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
+    "branch": "feature/online-flash-streaming",
+    "head": "c1346f3",
+    "remote_head": "05eda14",
+    "working_tree": "clean at Task 3 implementation commit; review in progress"
+  },
+  "mission": {
+    "product": "MKLink 专用嵌入式上位机",
+    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；原烧录页命名为脱机烧录，新建在线烧录页；支持 BIN 与 HEX；CMSIS-Pack 索引完整、DFP 按需下载到用户缓存。",
+    "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以探针稳定极限采集，目标尽量达到或超过 10 kSamples/s；可见曲线统一限制为 30 FPS。"
+  },
+  "current_session": {
+    "status": "in_progress",
+    "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
+    "current_task": "Task 3 authenticated binary WebSocket final review",
+    "latest_commit": "c1346f3 feat: expose binary stream websocket",
+    "task_3_implementation": "complete; spec and quality reviews still required before push",
+    "stop_rule": "Do not start Task 4 until Task 3 spec review and quality review are both APPROVED."
+  },
+  "milestones": [
+    {
+      "name": "Online flash Tasks 1-12",
+      "status": "complete",
+      "range_end": "037514b",
+      "evidence": "docs/verification/online-flash-hil.md",
+      "review": "final spec and quality APPROVED"
+    },
+    {
+      "name": "High-throughput Task 1 binary protocol",
+      "status": "complete",
+      "commits": ["00be35f"],
+      "tests": "Python 10 passed; TypeScript 8 passed",
+      "review": "spec and quality APPROVED"
+    },
+    {
+      "name": "High-throughput Task 2 bounded StreamHub",
+      "status": "complete",
+      "commits": ["082472b", "b8e8bb0", "05eda14"],
+      "tests": "focused 39 passed; full Python 427 passed",
+      "review": "spec and quality APPROVED",
+      "notes": "Unique owner loop, immutable batch, generation/pending callback lifecycle, stale callback isolation."
+    },
+    {
+      "name": "High-throughput Task 3 authenticated binary WebSocket",
+      "status": "implemented_review_pending",
+      "commits": ["c1346f3"],
+      "tests": "focused 13 passed x5; related 54 passed; full Python 440 passed",
+      "review": "spec review running; quality review not started"
+    },
+    {
+      "name": "High-throughput Tasks 4-9",
+      "status": "pending",
+      "notes": "Worker typed ring buffer; min/max envelope and 30 FPS scheduler; SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification."
+    }
+  ],
+  "verification": [
+    {
+      "area": "Online flash automated",
+      "result": "Python 388 passed; GUI 69 passed; Vite 134 modules; no tracked or bundled .pack"
+    },
+    {
+      "area": "Online flash HIL",
+      "result": "MKLink filter, Pack index, on-demand GD32 DFP, restart cache, STM32F103RC HEX/BIN program+verify, expected VERIFY_FAIL, cooperative stop, VOFA PROBE_BUSY handoff, target boot firmware restored",
+      "probe": "MicroKeenV4/***1A91"
+    },
+    {
+      "area": "Tauri",
+      "result": "release EXE 11132928 bytes and MSI 47554560 bytes generated locally; NSIS not generated because official nsis-3.11.zip download timed out"
+    },
+    {
+      "area": "Current Python baseline",
+      "result": "440 passed after Task 3 implementation"
+    }
+  ],
+  "decisions": [
+    "Only MKLink-exposed CMSIS-DAP is supported by the online flash UI.",
+    "BIN requires an explicit base address; HEX uses embedded mappings.",
+    "CMSIS-Pack catalog is complete but DFP files are downloaded on demand and never committed or bundled.",
+    "High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.",
+    "Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.",
+    "Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.",
+    "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
+  ],
+  "hardware": {
+    "probe": "MicroKeenV4/***1A91 connected",
+    "online_flash_project": "E:/PHDZ/PROJECT/liu/STM32F103_test/STM32F103_BOOT/MDK-ARM",
+    "stream_hil_project": "E:/PHDZ/PROJECT/liu/STM32F103_test/STM32F103RC/project.uvprojx",
+    "keil_root": "D:/Users/<redacted>/AppData/Local/Keil_v5",
+    "stream_target": "STM32F103RC",
+    "permission": "User permits adding test firmware code, compiling with Keil, flashing, and testing VOFA/SystemView/variable reads."
+  },
+  "known_limits": [
+    "Physical target power loss, probe unplug, SWD wire disconnect, second non-MKLink probe comparison, and physical network disconnect were not executed.",
+    "NSIS bundle remains unavailable because the official NSIS tool download timed out; EXE and MSI succeeded.",
+    "GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.",
+    "Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.",
+    "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
+  ],
+  "next_actions": [
+    "Finish Task 3 spec review for c1346f3; fix and re-review any findings.",
+    "Run an independent Task 3 quality review; require APPROVED before push.",
+    "Push feature/online-flash-streaming after Task 3 approval and memory commit.",
+    "Execute high-throughput Task 4 with strict TDD: typed ring buffer, decoder Worker, stream client, useBinaryStream.",
+    "Continue Tasks 5-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
+    "Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims."
+  ],
+  "continuation_protocol": [
+    "Run: python scripts/ai_memory.py validate",
+    "Read: docs/ai/CURRENT_HANDOFF.md and the active plan",
+    "Run: git status --short and git log -12 --oneline; reconcile with repository.head",
+    "Resume current_task before starting later tasks",
+    "Before ending: update project-memory.json, run render, validate, tests proportional to changes, git diff --check, commit, and push"
+  ]
+}
