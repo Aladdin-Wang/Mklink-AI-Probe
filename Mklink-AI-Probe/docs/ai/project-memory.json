@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-12T17:55:00+08:00",
+  "updated_at": "2026-07-12T18:10:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "d8029d8",
-    "remote_head": "05eda14",
-    "working_tree": "clean after pushed memory checkpoint; Task 3 quality review requested one fix"
+    "head": "398ed7b",
+    "remote_head": "febcc73",
+    "working_tree": "clean before Task 3 completion memory refresh"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,10 +18,10 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
-    "current_task": "Fix Task 3 binary authentication frame handling, then re-run quality review",
-    "latest_commit": "d8029d8 fix: harden binary stream metadata",
-    "task_3_implementation": "final spec APPROVED; quality CHANGES_REQUESTED for binary auth frames raising KeyError instead of close 1008",
-    "stop_rule": "Do not start Task 4 until Task 3 spec review and quality review are both APPROVED."
+    "current_task": "High-throughput Task 4: Worker-owned typed ring buffer and binary stream client",
+    "latest_commit": "398ed7b fix: reject binary stream auth frames",
+    "task_3_implementation": "complete; final spec and quality reviews APPROVED",
+    "stop_rule": "Execute Task 4 with strict TDD and require spec then quality review before Task 5."
   },
   "milestones": [
     {
@@ -48,11 +48,11 @@
     },
     {
       "name": "High-throughput Task 3 authenticated binary WebSocket",
-      "status": "quality_changes_requested",
-      "commits": ["c1346f3", "d8029d8"],
-      "tests": "Task 1-3 focused 60 passed; full Python 448 passed; Task 2-3 reviewer rerun 50 passed",
-      "review": "final spec APPROVED; quality CHANGES_REQUESTED for binary authentication frame handling",
-      "notes": "JSON auth shapes close 1008 and fan-out metadata is shared. Remaining defect: websocket.receive_text() raises KeyError('text') on a binary auth frame; use receive() or equivalent type check so non-text auth closes 1008, add regression, then re-review."
+      "status": "complete",
+      "commits": ["c1346f3", "d8029d8", "398ed7b"],
+      "tests": "Task 1-3 focused 64 passed; stream API 24 passed x5; full Python 452 passed",
+      "review": "final spec and quality APPROVED",
+      "notes": "Invalid JSON shapes and binary authentication frames close 1008 without leaks; sequence, item_count, and timestamp_ns are shared per fan-out batch."
     },
     {
       "name": "High-throughput Tasks 4-9",
@@ -76,7 +76,7 @@
     },
     {
       "area": "Current Python baseline",
-      "result": "448 passed after Task 3 spec fixes"
+      "result": "452 passed after Task 3 final quality fix"
     }
   ],
   "decisions": [
@@ -101,16 +101,12 @@
     "NSIS bundle remains unavailable because the official NSIS tool download timed out; EXE and MSI succeeded.",
     "GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.",
     "Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.",
-    "Task 3 quality finding: a binary authentication frame currently causes KeyError('text')/ClosedResourceError instead of policy close 1008; active_clients remains zero. This is the immediate next fix.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Add a RED WebSocket test that sends a binary authentication frame and expects close code 1008 with active_clients zero.",
-    "Fix stream_api authentication input using websocket.receive() with explicit text-message validation (or an equivalent safe boundary); do not merely catch KeyError.",
-    "Run Task 1-3 focused tests, full pytest, and the original quality reproduction; obtain quality APPROVED.",
-    "After approval, mark Task 3 complete, refresh both memory files, and push.",
-    "Push feature/online-flash-streaming after Task 3 approval and memory commit.",
-    "Execute high-throughput Task 4 with strict TDD: typed ring buffer, decoder Worker, stream client, useBinaryStream.",
+    "Push the Task 3 completion and refreshed project memory to feature/online-flash-streaming.",
+    "Execute high-throughput Task 4 with strict TDD: typed ring buffer, decoder Worker, stream client, and useBinaryStream.",
+    "Require Task 4 spec review and quality review before starting Task 5.",
     "Continue Tasks 5-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
     "Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims."
   ],

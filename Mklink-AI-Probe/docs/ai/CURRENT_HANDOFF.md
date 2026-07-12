@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-12T17:55:00+08:00`
+- 更新时间：`2026-07-12T18:10:00+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`d8029d8`
-- 远端 HEAD：`05eda14`
-- 工作树：clean after pushed memory checkpoint; Task 3 quality review requested one fix
-- 当前任务：Fix Task 3 binary authentication frame handling, then re-run quality review
+- HEAD：`398ed7b`
+- 远端 HEAD：`febcc73`
+- 工作树：clean before Task 3 completion memory refresh
+- 当前任务：High-throughput Task 4: Worker-owned typed ring buffer and binary stream client
 - 状态：`in_progress`
 
 ## 里程碑
@@ -17,7 +17,7 @@
 - **Online flash Tasks 1-12** — `complete`。docs/verification/online-flash-hil.md
 - **High-throughput Task 1 binary protocol** — `complete`。Python 10 passed; TypeScript 8 passed
 - **High-throughput Task 2 bounded StreamHub** — `complete`。Unique owner loop, immutable batch, generation/pending callback lifecycle, stale callback isolation.
-- **High-throughput Task 3 authenticated binary WebSocket** — `quality_changes_requested`。JSON auth shapes close 1008 and fan-out metadata is shared. Remaining defect: websocket.receive_text() raises KeyError('text') on a binary auth frame; use receive() or equivalent type check so non-text auth closes 1008, add regression, then re-review.
+- **High-throughput Task 3 authenticated binary WebSocket** — `complete`。Invalid JSON shapes and binary authentication frames close 1008 without leaks; sequence, item_count, and timestamp_ns are shared per fan-out batch.
 - **High-throughput Tasks 4-9** — `pending`。Worker typed ring buffer; min/max envelope and 30 FPS scheduler; SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification.
 
 ## 验证证据
@@ -25,7 +25,7 @@
 - **Online flash automated**：Python 388 passed; GUI 69 passed; Vite 134 modules; no tracked or bundled .pack
 - **Online flash HIL**：MKLink filter, Pack index, on-demand GD32 DFP, restart cache, STM32F103RC HEX/BIN program+verify, expected VERIFY_FAIL, cooperative stop, VOFA PROBE_BUSY handoff, target boot firmware restored
 - **Tauri**：release EXE 11132928 bytes and MSI 47554560 bytes generated locally; NSIS not generated because official nsis-3.11.zip download timed out
-- **Current Python baseline**：448 passed after Task 3 spec fixes
+- **Current Python baseline**：452 passed after Task 3 final quality fix
 
 ## 架构决策
 
@@ -48,14 +48,11 @@
 
 ## 下一动作
 
-1. Add a RED WebSocket test that sends a binary authentication frame and expects close code 1008 with active_clients zero.
-2. Fix stream_api authentication input using websocket.receive() with explicit text-message validation (or an equivalent safe boundary); do not merely catch KeyError.
-3. Run Task 1-3 focused tests, full pytest, and the original quality reproduction; obtain quality APPROVED.
-4. After approval, mark Task 3 complete, refresh both memory files, and push.
-5. Push feature/online-flash-streaming after Task 3 approval and memory commit.
-6. Execute high-throughput Task 4 with strict TDD: typed ring buffer, decoder Worker, stream client, useBinaryStream.
-7. Continue Tasks 5-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.
-8. Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims.
+1. Push the Task 3 completion and refreshed project memory to feature/online-flash-streaming.
+2. Execute high-throughput Task 4 with strict TDD: typed ring buffer, decoder Worker, stream client, and useBinaryStream.
+3. Require Task 4 spec review and quality review before starting Task 5.
+4. Continue Tasks 5-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.
+5. Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims.
 
 ## 已知限制
 
@@ -63,7 +60,6 @@
 - NSIS bundle remains unavailable because the official NSIS tool download timed out; EXE and MSI succeeded.
 - GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.
 - Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.
-- Task 3 quality finding: a binary authentication frame currently causes KeyError('text')/ClosedResourceError instead of policy close 1008; active_clients remains zero. This is the immediate next fix.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
 
 ## 延续协议
