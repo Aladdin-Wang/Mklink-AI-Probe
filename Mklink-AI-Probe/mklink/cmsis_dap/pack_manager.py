@@ -14,9 +14,8 @@ import uuid
 from .errors import FlashError, FlashErrorCode
 from .pack_lock import PackRootLock
 from .process_guard import (
-    attach_parent_death_guard,
+    attach_and_release_guarded_process,
     guarded_process_command,
-    parent_death_popen_kwargs,
 )
 from .paths import PackPaths
 
@@ -149,9 +148,8 @@ class SubprocessPackWorker:
                     stderr=subprocess.PIPE,
                     text=True,
                     encoding="utf-8",
-                    **parent_death_popen_kwargs(),
                 )
-                process_guard = attach_parent_death_guard(process)
+                process_guard = attach_and_release_guarded_process(process)
             except BaseException:
                 self._active_staging_dir = None
                 raise

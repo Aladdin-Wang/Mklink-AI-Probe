@@ -264,6 +264,50 @@ def test_pack_root_lock_serializes_an_independent_process(tmp_path):
     ).update_index(lambda _event: None)["status"] == "updated"
 
 
+def test_pack_root_lock_reentrant_release_keeps_outer_lock_held(tmp_path):
+    from mklink.cmsis_dap.pack_lock import PackRootLock
+
+    outer = PackRootLock(tmp_path)
+    nested = PackRootLock(tmp_path)
+    outer.acquire(timeout=1)
+    nested.acquire(timeout=1)
+
+    def competitor_result():
+        outcomes = []
+
+        def compete():
+            lock = PackRootLock(tmp_path)
+            try:
+                lock.acquire(timeout=0.1)
+            except FlashError as error:
+                outcomes.append(error.code)
+            else:
+                outcomes.append("acquired")
+                lock.release()
+
+        thread = threading.Thread(target=compete)
+        thread.start()
+        thread.join(1)
+        assert not thread.is_alive()
+        return outcomes[0]
+
+    try:
+        assert competitor_result() is FlashErrorCode.PROBE_BUSY
+        nested.release()
+        assert competitor_result() is FlashErrorCode.PROBE_BUSY
+        outer.release()
+        assert competitor_result() == "acquired"
+    finally:
+        try:
+            nested.release()
+        except RuntimeError:
+            pass
+        try:
+            outer.release()
+        except RuntimeError:
+            pass
+
+
 def test_parent_death_guard_kills_worker_before_competitor_gets_lock(tmp_path):
     marker = tmp_path / "worker-writes"
     pid_file = tmp_path / "worker.pid"
@@ -271,12 +315,12 @@ def test_parent_death_guard_kills_worker_before_competitor_gets_lock(tmp_path):
         "import os,subprocess,sys,time; from pathlib import Path; "
         "from mklink.cmsis_dap.pack_lock import PackRootLock; "
         "from mklink.cmsis_dap.process_guard import ("
-        "attach_parent_death_guard,guarded_process_command,parent_death_popen_kwargs); "
+        "attach_and_release_guarded_process,guarded_process_command); "
         "root=Path(sys.argv[1]); lock=PackRootLock(root); lock.acquire(timeout=1); "
         "child_code=\"import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
         "[(p.open('ab').write(b'x'),time.sleep(0.01)) for _ in iter(int,1)]\"; "
         "child=subprocess.Popen(guarded_process_command([sys.executable,'-c',child_code,str(root/'worker-writes')]),"
-        "**parent_death_popen_kwargs()); guard=attach_parent_death_guard(child); "
+        "stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True); guard=attach_and_release_guarded_process(child); "
         "(root/'worker.pid').write_text(str(child.pid)); time.sleep(0.15); os._exit(9)"
     )
     parent = subprocess.Popen(
@@ -310,6 +354,101 @@ def test_parent_death_guard_kills_worker_before_competitor_gets_lock(tmp_path):
                 os.kill(child_pid, signal.SIGTERM)
             except OSError:
                 pass
+
+
+def test_guard_wrapper_exits_without_exec_when_parent_dies_before_attach(tmp_path):
+    marker = tmp_path / "must-not-write"
+    pid_file = tmp_path / "wrapper.pid"
+    parent_script = (
+        "import os,subprocess,sys,time; from pathlib import Path; "
+        "from mklink.cmsis_dap.pack_lock import PackRootLock; "
+        "from mklink.cmsis_dap.process_guard import guarded_process_command; "
+        "root=Path(sys.argv[1]); PackRootLock(root).acquire(timeout=1); "
+        "code=\"from pathlib import Path; import sys; Path(sys.argv[1]).write_text('leak')\"; "
+        "wrapper=subprocess.Popen(guarded_process_command([sys.executable,'-c',code,str(root/'must-not-write')]),stdin=subprocess.PIPE,text=True); "
+        "(root/'wrapper.pid').write_text(str(wrapper.pid)); time.sleep(0.15); os._exit(11)"
+    )
+    parent = subprocess.Popen(
+        [sys.executable, "-c", parent_script, str(tmp_path)],
+        cwd=str(Path(__file__).resolve().parents[3]),
+    )
+    wrapper_pid = None
+    try:
+        parent.wait(timeout=3)
+        assert parent.returncode == 11
+        wrapper_pid = int(pid_file.read_text(encoding="utf-8"))
+        from mklink.cmsis_dap.pack_lock import PackRootLock
+
+        competitor = PackRootLock(tmp_path)
+        competitor.acquire(timeout=1)
+        competitor.release()
+        time.sleep(0.2)
+        assert not marker.exists()
+        with pytest.raises(OSError):
+            os.kill(wrapper_pid, 0)
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+            parent.wait(timeout=2)
+        if wrapper_pid is not None:
+            try:
+                os.kill(wrapper_pid, signal.SIGTERM)
+            except OSError:
+                pass
+
+
+def test_guard_wrapper_executes_only_after_attach_and_go(tmp_path):
+    from mklink.cmsis_dap.process_guard import (
+        attach_and_release_guarded_process,
+        guarded_process_command,
+    )
+
+    marker = tmp_path / "started-after-go"
+    code = "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('go')"
+    process = subprocess.Popen(
+        guarded_process_command([sys.executable, "-c", code, str(marker)]),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    guard = None
+    try:
+        time.sleep(0.15)
+        assert not marker.exists()
+        guard = attach_and_release_guarded_process(process)
+        process.wait(timeout=2)
+        assert marker.read_text(encoding="utf-8") == "go"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+        if guard is not None:
+            guard.close()
+
+
+def test_guard_attach_failure_is_fail_closed_and_leaves_no_worker(tmp_path):
+    from mklink.cmsis_dap.process_guard import (
+        attach_and_release_guarded_process,
+        guarded_process_command,
+    )
+
+    marker = tmp_path / "must-not-start"
+    code = "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('bad')"
+    process = subprocess.Popen(
+        guarded_process_command([sys.executable, "-c", code, str(marker)]),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    def fail_attach(_process):
+        raise OSError("attach failed")
+
+    with pytest.raises(OSError, match="attach failed"):
+        attach_and_release_guarded_process(process, guard_factory=fail_attach)
+
+    assert process.poll() is not None
+    assert not marker.exists()
 
 
 def test_remove_recovers_pending_transaction_while_holding_root_lock(tmp_path):

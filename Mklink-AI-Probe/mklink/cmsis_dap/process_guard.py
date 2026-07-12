@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-from typing import Dict, List, Sequence
+from typing import List, Sequence
 
 
 class _NullGuard:
@@ -12,26 +13,64 @@ class _NullGuard:
         return None
 
 
-def parent_death_popen_kwargs() -> Dict[str, object]:
-    return {}
+_GO_TOKEN = "MKLINK-PROCESS-GUARD-GO\n"
+_READY_TOKEN = "MKLINK-PROCESS-GUARD-READY\n"
+_REAL_POPEN = subprocess.Popen
 
 
 def guarded_process_command(command: Sequence[str]) -> List[str]:
     values = [str(value) for value in command]
-    if os.name == "posix" and sys.platform.startswith("linux"):
-        return [
-            sys.executable,
-            "-m",
-            "mklink.cmsis_dap.process_guard_exec",
-            str(os.getpid()),
-        ] + values
-    return values
+    return [
+        sys.executable,
+        "-m",
+        "mklink.cmsis_dap.process_guard_exec",
+        str(os.getpid()),
+    ] + values
 
 
 def attach_parent_death_guard(process):
-    if os.name != "nt" or not hasattr(process, "_handle"):
+    if os.name != "nt":
         return _NullGuard()
+    if not isinstance(process, _REAL_POPEN):
+        return _NullGuard()
+    if not hasattr(process, "_handle"):
+        raise OSError("Windows process handle is unavailable")
     return _WindowsJobGuard(process)
+
+
+def attach_and_release_guarded_process(
+    process,
+    guard_factory=attach_parent_death_guard,
+):
+    """Attach parent-death protection, then release a real wrapper to exec."""
+    if not isinstance(process, _REAL_POPEN):
+        return _NullGuard()
+    guard = None
+    try:
+        guard = guard_factory(process)
+        if process.stdin is None:
+            raise OSError("guarded process requires a stdin pipe")
+        if process.stdout is None:
+            raise OSError("guarded process requires a stdout pipe")
+        process.stdin.write(_GO_TOKEN)
+        process.stdin.flush()
+        if process.stdout.readline() != _READY_TOKEN:
+            raise OSError("guarded process did not acknowledge GO")
+        return guard
+    except BaseException:
+        if guard is not None:
+            guard.close()
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+        except Exception:
+            pass
+        raise
 
 
 class _WindowsJobGuard:
