@@ -44,7 +44,7 @@ Rust 使用 `%TEMP%` 中的官方 rustup 临时工具链，MSVC Build Tools 与 
 - **非 MKLink 对照探针不可用**：现场只枚举到一只 MKLink CMSIS-DAP；过滤逻辑有自动化测试，双探针对照仍待补。
 - **物理断网未执行**：已验证服务重启后使用本地缓存，但没有修改机器网络状态。
 - **NSIS 未生成**：EXE 与 MSI 已成功；NSIS 工具包从 Tauri 官方 GitHub release 下载时触发全局超时，未把部分下载当作成功。
-- **端口自动发现阻塞已修复**：真机验证发现 `GET /api/ports/discover` 的同步扫描会阻塞事件循环；提交 `e525428` 将扫描移到默认 executor。并发回归证明扫描期间 health 仍可响应，规格与质量审查均 APPROVED。
+- **端口自动发现阻塞已修复**：真机验证发现 `GET /api/ports/discover` 的同步扫描会阻塞事件循环；提交 `e525428` 将扫描移到默认 executor，并发回归证明扫描期间 health 仍可响应。
 
 ## 可重复命令要点
 
