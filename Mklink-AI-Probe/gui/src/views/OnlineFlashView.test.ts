@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import App from '../App.vue'
 import router from '../router'
+import type { PackOperationResponse } from '../types/onlineFlash'
 import DashboardView from './DashboardView.vue'
 
 async function onlineFlashView() {
@@ -119,11 +120,11 @@ describe('online flash navigation and workspace', () => {
   it('mounts the stable four-zone workspace landmarks', async () => {
     const wrapper = mount(await onlineFlashView())
 
-    expect(wrapper.get('.online-flash-grid').exists()).toBe(true)
-    expect(wrapper.get('aside[data-zone="settings"]').exists()).toBe(true)
-    expect(wrapper.get('main[data-zone="firmware"]').exists()).toBe(true)
-    expect(wrapper.get('aside[data-zone="flash-map"]').exists()).toBe(true)
-    expect(wrapper.get('section[data-zone="logs"]').exists()).toBe(true)
+    expect(wrapper.find('.online-flash-grid').exists()).toBe(true)
+    expect(wrapper.find('aside[data-zone="settings"]').exists()).toBe(true)
+    expect(wrapper.find('main[data-zone="firmware"]').exists()).toBe(true)
+    expect(wrapper.find('aside[data-zone="flash-map"]').exists()).toBe(true)
+    expect(wrapper.find('section[data-zone="logs"]').exists()).toBe(true)
   })
 })
 
@@ -201,6 +202,46 @@ describe('useOnlineFlashApi', () => {
     }))
   })
 
+  it('returns consumable adapter and default-worker Pack variants', async () => {
+    const fixtures = [
+      {
+        result: { status: 'installed', part_number: 'STM32F103RC' },
+        events: [{ type: 'progress', progress: 0.5 }],
+      },
+      {
+        result: { status: 'installed', pack_id: 'Keil.STM32F1xx_DFP', version: '2.4.1' },
+        events: [{ type: 'progress', current: 1, total: 2 }],
+      },
+      {
+        result: { status: 'updated' },
+        events: [{ type: 'log', message: 'updated' }],
+      },
+      {
+        result: { status: 'updated', target_count: 42 },
+        events: [],
+      },
+    ] satisfies PackOperationResponse[]
+    const pending = [...fixtures]
+    vi.mocked(fetch).mockImplementation(async () => (
+      new Response(JSON.stringify(pending.shift()), { status: 200 })
+    ))
+    const api = await onlineFlashApi()
+
+    const responses = [
+      await api.installPack('STM32F103RC'),
+      await api.installPack('STM32F103RC'),
+      await api.updatePackIndex(),
+      await api.updatePackIndex(),
+    ]
+
+    expect(responses.map(consumePackResponse)).toEqual([
+      ['0.5', 'STM32F103RC'],
+      ['1/2', 'Keil.STM32F1xx_DFP@2.4.1'],
+      ['updated', 'updated'],
+      ['42'],
+    ])
+  })
+
   it('subscribes after a sequence, parses named events and can close the stream', async () => {
     const onEvent = vi.fn()
     const subscription = (await onlineFlashApi()).subscribeJob('job/1', 12, onEvent)
@@ -220,3 +261,17 @@ describe('useOnlineFlashApi', () => {
     expect(source.closed).toBe(true)
   })
 })
+
+function consumePackResponse(response: PackOperationResponse): string[] {
+  const events = response.events.map(event => {
+    if (event.type === 'log') return event.message
+    if ('progress' in event) return String(event.progress)
+    return `${event.current}/${event.total}`
+  })
+  const result = response.result
+  if (result.status === 'installed') {
+    if ('part_number' in result) return [...events, result.part_number]
+    return [...events, `${result.pack_id}@${result.version}`]
+  }
+  return [...events, 'target_count' in result ? String(result.target_count) : 'updated']
+}

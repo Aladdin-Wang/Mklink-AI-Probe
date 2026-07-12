@@ -122,11 +122,18 @@ export interface JobStreamError {
 
 export type JobStreamEvent = JobEvent | JobStreamError
 
-export interface PackProgressEvent {
+export interface PackFractionProgressEvent {
+  type: 'progress'
+  progress: number
+}
+
+export interface PackCountProgressEvent {
   type: 'progress'
   current: number
   total: number
 }
+
+export type PackProgressEvent = PackFractionProgressEvent | PackCountProgressEvent
 
 export interface PackLogEvent {
   type: 'log'
@@ -135,16 +142,30 @@ export interface PackLogEvent {
 
 export type PackEvent = PackProgressEvent | PackLogEvent
 
-export interface PackInstalledResult {
+export interface PackInstalledPartResult {
+  status: 'installed'
+  part_number: string
+}
+
+export interface PackInstalledVersionResult {
   status: 'installed'
   pack_id: string
   version: string
 }
 
-export interface PackIndexResult {
+export type PackInstalledResult = PackInstalledPartResult | PackInstalledVersionResult
+
+export interface PackIndexUpdatedResult {
+  status: 'updated'
+  target_count?: never
+}
+
+export interface PackIndexCountResult {
   status: 'updated'
   target_count: number
 }
+
+export type PackIndexResult = PackIndexUpdatedResult | PackIndexCountResult
 
 export type PackOperationResult = PackInstalledResult | PackIndexResult
 
