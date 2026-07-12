@@ -12,6 +12,8 @@ import type { ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, Jo
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
+const CANONICAL_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
+const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
 const api = useOnlineFlashApi()
 
 interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string }
@@ -42,7 +44,7 @@ const inspectError = ref('')
 const rows = ref<FormattedHexRow[]>([])
 const paddingTop = ref(0)
 const paddingBottom = ref(0)
-const actions = ref<JobAction[]>(['connect', 'erase', 'program', 'verify', 'reset', 'disconnect'])
+const actions = ref<JobAction[]>([...CANONICAL_ACTIONS])
 const jobId = ref('')
 const jobState = ref<JobState | null>(null)
 const stageProgress = ref(0)
@@ -52,6 +54,7 @@ const lastSequence = ref(0)
 const streamDisconnected = ref(false)
 let subscription: JobSubscription | null = null
 let inspectionController: AbortController | null = null
+let viewportGeneration = 0
 
 const preview = new HexPreviewModel((imageId, offset, length, signal) => api.previewImage(imageId, offset, length, signal))
 const isBin = computed(() => firmware.value?.name.toLowerCase().endsWith('.bin') ?? false)
@@ -64,7 +67,22 @@ const parsedBase = computed(() => {
 const baseError = computed(() => isBin.value && parsedBase.value === null ? 'BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）' : '')
 const active = computed(() => !!jobId.value && !!jobState.value && !TERMINAL.has(jobState.value))
 const stopping = computed(() => jobState.value === 'stopping')
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !packBusy.value && !inspectBusy.value && actions.value.length > 0)
+function canonicalActions(values: readonly JobAction[]): JobAction[] {
+  const selected = new Set(values)
+  selected.add('connect'); selected.add('disconnect')
+  return CANONICAL_ACTIONS.filter(action => selected.has(action))
+}
+function actionsAreValid(values: readonly JobAction[]): boolean {
+  const canonical = canonicalActions(values)
+  return values.length === new Set(values).size
+    && values.length === canonical.length
+    && values.every((value, index) => value === canonical[index])
+    && values[0] === 'connect'
+    && values.at(-1) === 'disconnect'
+    && values.some(action => FLASH_ACTIONS.has(action))
+}
+function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value))
 const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !active.value)
 
 function message(error: unknown): string {
@@ -120,15 +138,17 @@ async function selectTarget(target: TargetRecord): Promise<void> {
     try {
       const response = await api.installPack(target.part_number)
       applyPackProgress(response.events)
-      const ready = { ...target, installed: true, source: 'installed' }
-      targets.value = targets.value.map(item => item.part_number === ready.part_number ? ready : item)
-      selectedTarget.value = ready
+      const result = response.result
+      if (result.status === 'installed') {
+        const installedPack = 'part_number' in result ? result.part_number : `${result.pack_id}@${result.version}`
+        appendLog(`[PACK] 已安装 ${installedPack}`)
+      }
       await Promise.all([refreshPackStatus(), searchTargets(target.part_number)])
-      const refreshed = targets.value.find(item => item.part_number === ready.part_number && item.installed)
+      const refreshed = targets.value.find(item => item.part_number === target.part_number && item.installed)
       if (refreshed) selectedTarget.value = refreshed
       else {
-        targets.value = targets.value.map(item => item.part_number === ready.part_number ? ready : item)
-        selectedTarget.value = ready
+        selectedTarget.value = null
+        packError.value = `Pack 安装完成，但安装后索引仍未确认 ${target.part_number} 已安装，请刷新索引后重试。`
       }
     } catch (error) { packError.value = message(error) } finally { packBusy.value = false }
   } else selectedTarget.value = target
@@ -146,6 +166,7 @@ async function updatePackIndex(): Promise<void> {
 async function cancelPack(): Promise<void> { try { await api.cancelPackOperation() } catch (error) { packError.value = message(error) } }
 
 function resetInspection(): void {
+  viewportGeneration += 1
   inspectionController?.abort()
   inspectionController = null
   inspectBusy.value = false
@@ -178,10 +199,15 @@ async function inspectImage(): Promise<void> {
 
 async function loadVisible(scrollTop: number, height: number): Promise<void> {
   if (!inspection.value) return
+  const generation = ++viewportGeneration
   const range = preview.visibleRange(scrollTop, height, 20)
   paddingTop.value = range.paddingTop; paddingBottom.value = range.paddingBottom
-  try { rows.value = await preview.loadRows(range.startRow, range.endRow) }
-  catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `预览加载失败：${message(error)}` }
+  try {
+    const nextRows = await preview.loadRows(range.startRow, range.endRow)
+    if (generation === viewportGeneration) rows.value = nextRows
+  } catch (error) {
+    if (generation === viewportGeneration && !(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `预览加载失败：${message(error)}`
+  }
 }
 
 function appendLog(line: string): void { logs.value.push(line); if (logs.value.length > 5000) logs.value.splice(0, logs.value.length - 5000) }
@@ -193,24 +219,32 @@ function subscribe(after = lastSequence.value): void {
   })
 }
 function receiveEvent(event: JobStreamEvent): void {
-  if (!('sequence' in event)) { appendLog(`[SSE:${event.code}] ${event.message}`); return }
+  if (!('sequence' in event)) {
+    streamDisconnected.value = true
+    appendLog(`[SSE:${event.code}] ${event.message}`)
+    return
+  }
   if (event.sequence <= lastSequence.value) return
   lastSequence.value = event.sequence
   const jobEvent = event as JobEvent
-  if (jobEvent.state) jobState.value = jobEvent.state
-  if (jobEvent.progress !== null) {
-    stageProgress.value = jobEvent.progress
-    if (jobEvent.event === 'progress') totalProgress.value = Math.max(totalProgress.value, jobEvent.progress)
+  if (jobEvent.state) {
+    jobState.value = jobEvent.state
+    if (jobEvent.event === 'state') stageProgress.value = TERMINAL.has(jobEvent.state) ? 1 : 0
+  }
+  if (jobEvent.event === 'progress' && jobEvent.progress !== null) {
+    stageProgress.value = 1
+    totalProgress.value = Math.max(totalProgress.value, jobEvent.progress)
   }
   if (jobEvent.message) appendLog(`[${jobEvent.sequence}] ${jobEvent.message}`)
   if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null }
 }
 
 async function startJob(customActions = actions.value, sectorAddresses: number[] = []): Promise<void> {
-  if (!probeId.value || !selectedTarget.value?.installed || (customActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  const orderedActions = canonicalActions(customActions)
+  if (!probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
   try {
     logs.value = []; lastSequence.value = 0; stageProgress.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: customActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: sectorAddresses })
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: sectorAddresses })
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(`[JOB] 已创建 ${result.job_id}`); subscribe(0)
   } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
@@ -220,7 +254,9 @@ async function stopJob(): Promise<void> {
   jobState.value = 'stopping'; appendLog('[JOB] STOPPING：等待探针安全停止')
   try {
     const snapshot = await api.stopJob(jobId.value)
-    if (TERMINAL.has(snapshot.state)) jobState.value = snapshot.state
+    if ((!jobState.value || !TERMINAL.has(jobState.value)) && TERMINAL.has(snapshot.state)) {
+      jobState.value = snapshot.state
+    }
   }
   catch (error) { appendLog(`[ERROR] 停止请求失败：${message(error)}`) }
 }
@@ -239,7 +275,7 @@ onBeforeUnmount(() => { subscription?.close(); preview.setSource(null) })
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @inspect="inspectImage" @scroll="loadVisible" />
-      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="actions = $event" @start="startJob()" @stop="stopJob" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
     <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :geometry-reliable="false" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>

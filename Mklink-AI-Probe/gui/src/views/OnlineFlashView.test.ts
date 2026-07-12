@@ -460,6 +460,17 @@ async function chooseFirmware(wrapper: ReturnType<typeof mount>, name = 'firmwar
   await input.trigger('change')
 }
 
+async function readyAndStart(wrapper: ReturnType<typeof mount>) {
+  await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+  await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+  await chooseFirmware(wrapper)
+  await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+  await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+  await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+  await wrapper.get('[data-testid="start-job"]').trigger('click')
+  await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+}
+
 describe('online flash task workspace behavior', () => {
   beforeEach(() => {
     FakeEventSource.instances = []
@@ -532,17 +543,19 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
-  it('confirms and installs an uninstalled exact target before marking it ready', async () => {
+  it('does not trust an install response when refreshed exact target remains uninstalled', async () => {
     const missing = { ...installedTarget, installed: false, source: 'index' }
     vi.stubGlobal('fetch', viewFetch([missing]))
     const wrapper = mount(await onlineFlashView())
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
 
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
-    await vi.waitFor(() => expect(wrapper.get('[data-testid="pack-status"]').text()).toContain('已安装'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('安装后索引仍未确认'))
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('下载'))
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/packs/install'))).toBe(true)
+    expect(wrapper.get('[data-testid="pack-status"]').text()).toContain('未就绪')
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -584,6 +597,131 @@ describe('online flash task workspace behavior', () => {
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="reconnect-stream"]').trigger('click')
     expect(FakeEventSource.instances[1].url).toContain('after=1')
+    wrapper.unmount()
+  })
+
+  it('makes a server-named SSE error reconnectable from the last sequence', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    const source = FakeEventSource.instances[0]
+    source.emit('log', { job_id: 'job-1', sequence: 7, timestamp: 1, event: 'log', message: 'checkpoint', state: null, progress: null })
+    source.emit('error', { code: 'BACKEND_LOST', message: 'worker stream ended' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('BACKEND_LOST')
+    await wrapper.get('[data-testid="reconnect-stream"]').trigger('click')
+    expect(FakeEventSource.instances[1].url).toContain('after=7')
+    wrapper.unmount()
+  })
+
+  it('keeps the newest viewport rows when preview requests resolve out of order', async () => {
+    const fallback = viewFetch()
+    let resolveOld!: (response: Response) => void
+    let resolveNew!: (response: Response) => void
+    const oldPage = new Promise<Response>(resolve => { resolveOld = resolve })
+    const newPage = new Promise<Response>(resolve => { resolveNew = resolve })
+    const previewResponse = (character: string, address: number) => new Response(JSON.stringify({
+      address, length: 4096, data_base64: btoa(character.repeat(4096)), present: Array(4096).fill(true),
+    }), { status: 200 })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images/inspect')) return Promise.resolve(new Response(JSON.stringify({
+        image_id: 'large-image', file_name: 'firmware.bin', format: 'bin', size: 16384,
+        sha256: 'large', start: 0x80000000, end: 0x80004000,
+        segments: [{ start: 0x80000000, end: 0x80004000 }], base_address: 0x80000000,
+      }), { status: 200 }))
+      if (url.includes('/preview?')) {
+        const offset = Number(new URL(url, 'http://local').searchParams.get('offset'))
+        if (offset === 0) return Promise.resolve(previewResponse('A', 0x80000000))
+        if (offset === 4096) return oldPage
+        if (offset === 8192) return newPage
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('AAAAAAAA'))
+    const scroller = wrapper.get('.hex-scroll')
+    Object.defineProperty(scroller.element, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(scroller.element, 'scrollTop', { configurable: true, writable: true, value: 6000 })
+    await scroller.trigger('scroll')
+    ;(scroller.element as HTMLElement).scrollTop = 12000
+    await scroller.trigger('scroll')
+
+    resolveNew(previewResponse('N', 0x80002000))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('NNNNNNNN'))
+    resolveOld(previewResponse('O', 0x80001000))
+    for (let index = 0; index < 100; index += 1) await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('NNNNNNNN')
+    expect(wrapper.text()).not.toContain('OOOOOOOO')
+    wrapper.unmount()
+  })
+
+  it('submits canonical actions and keeps connect/disconnect mandatory', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    const choices = wrapper.findAll('.action-choices label')
+    expect(choices[0].get('input').attributes('disabled')).toBeDefined()
+    expect(choices.at(-1)?.get('input').attributes('disabled')).toBeDefined()
+    await choices[1].get('input').setValue(false)
+    await choices[3].get('input').setValue(false)
+    await choices[1].get('input').setValue(true)
+    await choices[3].get('input').setValue(true)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
+
+    expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual(['connect', 'erase', 'program', 'verify', 'reset', 'disconnect'])
+    wrapper.unmount()
+  })
+
+  it('does not let a late stop response overwrite an SSE success terminal', async () => {
+    const fallback = viewFetch()
+    let resolveStop!: (response: Response) => void
+    const pendingStop = new Promise<Response>(resolve => { resolveStop = resolve })
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => (
+      String(input).endsWith('/jobs/job-1/stop') ? pendingStop : fallback(input, options)
+    )))
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    FakeEventSource.instances[0].emit('state', {
+      job_id: 'job-1', sequence: 9, timestamp: 2, event: 'state', message: '', state: 'succeeded', progress: 1,
+    })
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="job-state"]').text()).toContain('SUCCEEDED'))
+    resolveStop(new Response(JSON.stringify({ state: 'stopped', job_id: 'job-1' }), { status: 200 }))
+    for (let index = 0; index < 10; index += 1) await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('SUCCEEDED')
+    expect(wrapper.find('.waiting').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not mirror total job progress into stage progress', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    FakeEventSource.instances[0].emit('progress', {
+      job_id: 'job-1', sequence: 3, timestamp: 2, event: 'progress', message: '', state: 'programming', progress: 0.4,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="total-progress"]').attributes('value')).toBe('0.4')
+    expect(wrapper.get('[data-testid="stage-progress"]').attributes('value')).toBe('1')
+    FakeEventSource.instances[0].emit('state', {
+      job_id: 'job-1', sequence: 4, timestamp: 3, event: 'state', message: '', state: 'verifying', progress: null,
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="stage-progress"]').attributes('value')).toBe('0')
     wrapper.unmount()
   })
 
