@@ -968,16 +968,31 @@ class SuperWatchStreamManager:
         self._interval = 0.1  # 100ms default
         self._device = None
         self._runtime = None
-        # One re-entrant lock owns the runtime layout, memory read, pending
-        # sample rows, and metadata transition as one atomic data-plane unit.
+        # One re-entrant lock owns runtime layout snapshots, pending sample
+        # rows, and metadata transitions. Hardware reads happen outside it.
         self._read_lock = threading.RLock()
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
         self._pending_samples: list[tuple[float, ...]] = []
-        self._metadata_version = 0
-        self._published_metadata_signature = None
+        # Empty layout version 1 is the immutable bootstrap replay for clients
+        # that subscribe before a runtime is prepared.  Cache replacement is
+        # one reference assignment, so readers never observe payload/snapshot
+        # from different layouts.
+        empty_channels_json = "[]"
+        self._metadata_version = 1
+        self._published_metadata_signature = empty_channels_json
+        self._metadata_cache = (
+            encode_superwatch_metadata(1, []),
+            empty_channels_json,
+            1,
+        )
+        self._metadata_publish_lock = threading.Lock()
         self._last_metadata_publish_monotonic = 0.0
+        self._config_generation = 0
+        self._completed_read_cycles = 0
+        self._dropped_read_cycles = 0
+        self._read_errors = 0
         self._binary_dropped_batches = 0
         self._binary_dropped_items = 0
         self.set_stream_hub(stream_hub)
@@ -995,7 +1010,18 @@ class SuperWatchStreamManager:
             self._stream_hub = None
 
     def _publish_subscriber_metadata(self) -> None:
-        self.publish_metadata(force=True)
+        # Called synchronously by StreamHub.subscribe(), potentially from the
+        # asyncio event-loop thread.  It must never acquire the layout/read lock.
+        with self._metadata_publish_lock:
+            payload, _snapshot_json, _version = self._metadata_cache
+            stream_hub = self._stream_hub
+            if stream_hub is not None:
+                stream_hub.publish(
+                    payload,
+                    item_count=0,
+                    flags=SUPERWATCH_METADATA_JSON,
+                    stream_type=StreamType.SUPERWATCH,
+                )
 
     @property
     def running(self) -> bool:
@@ -1025,7 +1051,7 @@ class SuperWatchStreamManager:
                 port=getattr(device, "_port", None),
                 read_lock=self._read_lock,
             )
-            self._publish_metadata_locked()
+            self._rebuild_metadata_cache_locked(publish=True)
 
     def start(self, device) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -1047,26 +1073,45 @@ class SuperWatchStreamManager:
             try:
                 while not stop_event.is_set():
                     with self._read_lock:
-                        can_sample = (
+                        if (
                             self._collecting.is_set()
                             and self._runtime is not None
                             and bool(self._runtime.items)
-                        )
-                    if not can_sample:
+                        ):
+                            runtime = self._runtime
+                            blocks = tuple(runtime.blocks)
+                            items = tuple(runtime.items)
+                            config_generation = self._config_generation
+                            origin_us = self._origin_us
+                        else:
+                            runtime = None
+                    if runtime is None:
                         time.sleep(0.5)
                         continue
                     t0 = time.monotonic()
                     try:
                         from mklink.superwatch import sample_blocks
+                        result = sample_blocks(
+                            blocks,
+                            origin_us=origin_us,
+                            bridge=device._bridge,
+                        )
                         with self._read_lock:
-                            result = sample_blocks(
-                                self._runtime.blocks,
-                                origin_us=self._origin_us,
-                                bridge=device._bridge,
-                            )
-                            self._origin_us = result.origin_us
-                            self._publish_sample_points_locked(result.points)
+                            if (
+                                runtime is not self._runtime
+                                or config_generation != self._config_generation
+                            ):
+                                self._dropped_read_cycles += 1
+                            else:
+                                self._origin_us = result.origin_us
+                                self._publish_sample_points_locked(
+                                    result.points,
+                                    names=tuple(item.name for item in items),
+                                )
+                                self._completed_read_cycles += 1
                     except Exception as e:
+                        with self._read_lock:
+                            self._read_errors += 1
                         logger.debug("SuperWatch poll error: %s", e)
                         self._bridge.put({"event": "error", "message": str(e)})
                     elapsed = time.monotonic() - t0
@@ -1105,7 +1150,7 @@ class SuperWatchStreamManager:
                 return {"error": "SuperWatch not started"}
             self._flush_binary_batch_locked()
             result = self._runtime.add(name)
-            self._publish_metadata_locked()
+            self._rebuild_metadata_cache_locked(publish=True)
             return {"item": result}
 
     def remove_watch(self, name: str) -> dict:
@@ -1114,39 +1159,64 @@ class SuperWatchStreamManager:
                 return {"error": "SuperWatch not started"}
             self._flush_binary_batch_locked()
             result = self._runtime.remove(name)
-            self._publish_metadata_locked()
+            self._rebuild_metadata_cache_locked(publish=True)
             return {"item": result}
 
     def publish_metadata(self, *, force: bool = False) -> int:
         with self._read_lock:
-            return self._publish_metadata_locked(force=force)
+            return self._rebuild_metadata_cache_locked(publish=force)
 
-    def _publish_metadata_locked(self, *, force: bool = False) -> int:
+    def _rebuild_metadata_cache_locked(self, *, publish: bool = False) -> int:
         channels = self._list_watches_locked()
         signature = json.dumps(channels, sort_keys=True, default=str)
-        if not force and signature == self._published_metadata_signature:
-            return self._metadata_version
-        changed = signature != self._published_metadata_signature
-        self._published_metadata_signature = signature
-        if changed:
-            self._metadata_version += 1
-        self._last_metadata_publish_monotonic = time.monotonic()
-        if self._stream_hub is not None:
-            self._stream_hub.publish(
-                encode_superwatch_metadata(self._metadata_version, channels),
-                item_count=0, flags=SUPERWATCH_METADATA_JSON,
-                stream_type=StreamType.SUPERWATCH,
+        snapshot_json = json.dumps(channels, separators=(",", ":"), default=str)
+        with self._metadata_publish_lock:
+            changed = signature != self._published_metadata_signature
+            if changed:
+                self._metadata_version += 1
+                self._config_generation += 1
+            payload = encode_superwatch_metadata(self._metadata_version, channels)
+            self._published_metadata_signature = signature
+            self._metadata_cache = (
+                payload,
+                snapshot_json,
+                self._metadata_version,
             )
+            if (changed or publish) and self._stream_hub is not None:
+                self._stream_hub.publish(
+                    payload,
+                    item_count=0,
+                    flags=SUPERWATCH_METADATA_JSON,
+                    stream_type=StreamType.SUPERWATCH,
+                )
+        self._last_metadata_publish_monotonic = time.monotonic()
         return self._metadata_version
+
+    def _publish_cached_metadata(self) -> int:
+        with self._metadata_publish_lock:
+            payload, _snapshot_json, version = self._metadata_cache
+            stream_hub = self._stream_hub
+            if stream_hub is not None:
+                stream_hub.publish(
+                    payload,
+                    item_count=0,
+                    flags=SUPERWATCH_METADATA_JSON,
+                    stream_type=StreamType.SUPERWATCH,
+                )
+            self._last_metadata_publish_monotonic = time.monotonic()
+            return version
 
     def publish_sample_points(self, points) -> bool:
         with self._read_lock:
             return self._publish_sample_points_locked(points)
 
-    def _publish_sample_points_locked(self, points) -> bool:
-        if self._runtime is None or not self._runtime.items:
+    def _publish_sample_points_locked(self, points, *, names=None) -> bool:
+        if names is None:
+            if self._runtime is None or not self._runtime.items:
+                return False
+            names = tuple(item.name for item in self._runtime.items)
+        if not names:
             return False
-        names = [item.name for item in self._runtime.items]
         merged = {}
         for point in points:
             for name in names:
@@ -1160,9 +1230,8 @@ class SuperWatchStreamManager:
             return False
         if not all(math.isfinite(value) for value in row):
             return False
-        self._publish_metadata_locked(
-            force=time.monotonic() - self._last_metadata_publish_monotonic >= 1.0,
-        )
+        if time.monotonic() - self._last_metadata_publish_monotonic >= 1.0:
+            self._publish_cached_metadata()
         self._pending_samples.append(row)
         if len(self._pending_samples) >= self._batch_samples:
             self._flush_binary_batch_locked()
@@ -1217,22 +1286,25 @@ class SuperWatchStreamManager:
             state = "paused"
         else:
             state = "stopped"
-        with self._read_lock:
-            return {
-                "state": state,
-                "interval": self._interval,
-                "items": self._list_watches_locked(),
-                "metadata_version": self._metadata_version,
-                "binary_drops": {
-                    "batches": self._binary_dropped_batches,
-                    "items": self._binary_dropped_items,
-                },
-                "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
-            }
+        _payload, snapshot_json, metadata_version = self._metadata_cache
+        return {
+            "state": state,
+            "interval": self._interval,
+            "items": json.loads(snapshot_json),
+            "metadata_version": metadata_version,
+            "read_cycles": self._completed_read_cycles,
+            "read_drops": self._dropped_read_cycles,
+            "read_errors": self._read_errors,
+            "binary_drops": {
+                "batches": self._binary_dropped_batches,
+                "items": self._binary_dropped_items,
+            },
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
+        }
 
     def list_watches(self) -> list[dict]:
-        with self._read_lock:
-            return self._list_watches_locked()
+        _payload, snapshot_json, _version = self._metadata_cache
+        return json.loads(snapshot_json)
 
     def _list_watches_locked(self) -> list[dict]:
         if self._runtime is None:
@@ -1253,9 +1325,14 @@ class SuperWatchStreamManager:
     async def sse_generator(self):
         q = self._bridge.add_client()
         # Send initial channel metadata for already-added variables
-        if self._runtime and self._runtime.items:
-            from mklink.superwatch import make_channel_metadata
-            meta = make_channel_metadata(self._runtime.items)
+        items = self.list_watches()
+        if items:
+            meta = {
+                item["name"]: {
+                    key: value for key, value in item.items() if key != "name"
+                }
+                for item in items
+            }
             yield _sse_json({"event": "channel_metadata", "channels": meta})
         state = "running" if self._collecting.is_set() else ("paused" if self._running else "stopped")
         yield _sse_json({"event": "state_change", "state": state, "items": self.list_watches()})

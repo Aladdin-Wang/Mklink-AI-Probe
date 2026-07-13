@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import sys
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -497,6 +498,43 @@ def test_old_dashboard_failure_callback_cannot_release_new_generation():
 
     new_callback(RuntimeError("current failure"))
     assert state["resource_manager"].get_status() == {}
+
+
+def test_dashboard_start_resource_acquisition_does_not_block_event_loop(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+
+    acquisition_started = threading.Event()
+
+    def blocking_acquire(_state, dashboard):
+        assert dashboard == "superwatch"
+        acquisition_started.set()
+        time.sleep(0.2)
+        return []
+
+    monkeypatch.setattr(
+        "mklink.remote.api.acquire_dashboard_resources", blocking_acquire,
+    )
+    manager = SimpleNamespace(running=False)
+    state = {"resource_manager": SimpleNamespace(release=lambda _owner: None)}
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        heartbeat_start = loop.time()
+
+        async def heartbeat_probe():
+            await asyncio.sleep(0.01)
+            return loop.time() - heartbeat_start
+
+        heartbeat = asyncio.create_task(heartbeat_probe())
+        start = asyncio.create_task(start_dashboard_manager(
+            state, "superwatch", manager, lambda: None,
+        ))
+        heartbeat_elapsed, _result = await asyncio.gather(heartbeat, start)
+        return heartbeat_elapsed
+
+    heartbeat_elapsed = asyncio.run(scenario())
+    assert acquisition_started.is_set()
+    assert heartbeat_elapsed < 0.05
 
 
 @pytest.mark.parametrize("dashboard", ["rtt", "systemview", "superwatch", "vofa"])

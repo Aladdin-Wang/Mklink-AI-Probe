@@ -212,7 +212,7 @@ def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
                             source="ram", enum_values=None, metadata={}),
         ])
 
-        assert manager.publish_metadata() == 1
+        assert manager.publish_metadata() == 2
         assert manager.publish_sample_points([
             {"_t": 0.0, "a": 1.0}, {"_t": 0.0, "b": 2},
         ])
@@ -225,7 +225,7 @@ def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
         assert metadata.stream_type is StreamType.SUPERWATCH
         assert metadata.flags == SUPERWATCH_METADATA_JSON
         decoded_meta = decode_superwatch_metadata(metadata.payload)
-        assert decoded_meta["version"] == 1
+        assert decoded_meta["version"] == 2
         assert [channel["name"] for channel in decoded_meta["channels"]] == ["a", "b"]
         assert samples.flags == SUPERWATCH_SAMPLE_MAJOR_FLOAT32
         assert decode_waveform_samples(samples.payload, 2, 2) == ((1.0, 2.0), (3.0, 4.0))
@@ -300,23 +300,67 @@ def test_superwatch_stop_flushes_a_partial_batch():
     asyncio.run(scenario())
 
 
-def test_superwatch_poll_and_add_share_one_layout_lock(monkeypatch):
-    hub = StreamHub(max_batches_per_client=16)
+def test_superwatch_subscribe_replays_cached_metadata_without_waiting_for_read(monkeypatch):
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=16)
+        manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
+        manager._runtime = _MutableWatchRuntime()
+        manager.publish_metadata()
+        sample_started = threading.Event()
+
+        def sample_blocks(blocks, **_kwargs):
+            assert tuple(blocks) == ("a",)
+            sample_started.set()
+            time.sleep(0.2)
+            return SimpleNamespace(origin_us=1, points=[{"a": 1.0}])
+
+        monkeypatch.setattr("mklink.superwatch.sample_blocks", sample_blocks)
+        manager.set_interval(1.0)
+        manager.start(SimpleNamespace(_bridge=object()))
+        try:
+            assert await asyncio.to_thread(sample_started.wait, 1.0)
+            loop = asyncio.get_running_loop()
+            heartbeat_start = loop.time()
+            heartbeat = asyncio.create_task(asyncio.sleep(0.01))
+            subscribe_start = loop.time()
+            queue = hub.subscribe()
+            subscribe_elapsed = loop.time() - subscribe_start
+            await heartbeat
+            heartbeat_elapsed = loop.time() - heartbeat_start
+            metadata = await asyncio.wait_for(queue.get(), timeout=0.05)
+            assert metadata.flags == SUPERWATCH_METADATA_JSON
+            assert decode_superwatch_metadata(metadata.payload)["channels"][0]["name"] == "a"
+            hub.unsubscribe(queue)
+        finally:
+            await asyncio.to_thread(manager.stop)
+
+        assert subscribe_elapsed < 0.05
+        assert heartbeat_elapsed < 0.05
+
+    asyncio.run(scenario())
+
+
+def test_superwatch_layout_change_does_not_wait_for_read_and_discards_stale_cycle(monkeypatch):
+    hub = _RecordingHub()
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
     runtime = _MutableWatchRuntime()
     manager._runtime = runtime
+    manager.publish_metadata()
     sample_started = threading.Event()
     release_sample = threading.Event()
+    sample_finished = threading.Event()
     add_finished = threading.Event()
 
     def sample_blocks(blocks, **_kwargs):
-        assert blocks == ["a"]
+        assert tuple(blocks) == ("a",)
         sample_started.set()
         assert release_sample.wait(1.0)
+        sample_finished.set()
         return SimpleNamespace(origin_us=1, points=[{"a": 1.0}])
 
     monkeypatch.setattr("mklink.superwatch.sample_blocks", sample_blocks)
     device = SimpleNamespace(_bridge=object())
+    manager.set_interval(1.0)
     manager.start(device)
     assert sample_started.wait(1.0)
 
@@ -324,13 +368,21 @@ def test_superwatch_poll_and_add_share_one_layout_lock(monkeypatch):
         target=lambda: (manager.add_watch("b"), add_finished.set()), daemon=True,
     )
     add_thread.start()
-    add_was_blocked = not add_finished.wait(0.05)
+    add_completed_without_read = add_finished.wait(0.05)
     release_sample.set()
     assert add_finished.wait(1.0)
-    add_thread.join(timeout=1.0)
+    assert sample_finished.wait(1.0)
     manager.stop()
+    add_thread.join(timeout=1.0)
     assert not add_thread.is_alive()
-    assert add_was_blocked
+    assert add_completed_without_read
+    assert not any(
+        batch.flags == SUPERWATCH_SAMPLE_MAJOR_FLOAT32
+        for batch in hub.snapshot()
+    )
+    status = manager.get_status()
+    assert status["read_cycles"] == 0
+    assert status["read_drops"] == 1
 
 
 def test_superwatch_concurrent_poll_add_remove_pressure_keeps_batches_aligned(monkeypatch):
@@ -354,6 +406,9 @@ def test_superwatch_concurrent_poll_add_remove_pressure_keeps_batches_aligned(mo
         for _ in range(100):
             manager.add_watch("b")
             manager.remove_watch("b")
+        deadline = time.monotonic() + 1.0
+        while manager.get_status()["read_cycles"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.001)
     finally:
         manager.stop()
 
@@ -368,6 +423,7 @@ def test_superwatch_concurrent_poll_add_remove_pressure_keeps_batches_aligned(mo
             sample_channel_counts.add(active_channel_count)
     assert sampled > 0
     assert sample_channel_counts
+    assert manager.get_status()["read_drops"] > 0
     assert manager.get_status()["binary_drops"] == {"batches": 0, "items": 0}
 
 
@@ -379,13 +435,13 @@ def test_superwatch_republishes_current_metadata_for_late_subscribers():
             SimpleNamespace(name="a", type_name="float", size=4, address=0x20000000,
                             source="ram", enum_values=None, metadata={}),
         ])
-        assert manager.publish_metadata() == 1
+        assert manager.publish_metadata() == 2
         queue = hub.subscribe()
         metadata = await asyncio.wait_for(queue.get(), timeout=0.1)
         assert manager.publish_sample_points([{"a": 1.0}])
         sample = await queue.get()
         assert metadata.flags == SUPERWATCH_METADATA_JSON
-        assert decode_superwatch_metadata(metadata.payload)["version"] == 1
+        assert decode_superwatch_metadata(metadata.payload)["version"] == 2
         assert sample.flags == SUPERWATCH_SAMPLE_MAJOR_FLOAT32
         hub.unsubscribe(queue)
 

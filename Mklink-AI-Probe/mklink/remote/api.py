@@ -272,7 +272,10 @@ async def start_dashboard_manager(
         if manager.running:
             return "already_running", []
         raise DashboardStopPending(dashboard)
-    stopped = acquire_dashboard_resources(state, dashboard)
+    loop = asyncio.get_event_loop()
+    stopped = await loop.run_in_executor(
+        None, acquire_dashboard_resources, state, dashboard,
+    )
     setter = getattr(manager, "set_start_failure_callback", None)
     if callable(setter):
         generation = object()
@@ -284,7 +287,6 @@ async def start_dashboard_manager(
 
         setter(release_failed_start)
     try:
-        loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, start_call)
     except Exception:
         state["resource_manager"].release(f"user:dashboard:{dashboard}")
@@ -1295,29 +1297,41 @@ def create_app(
     @app.post("/api/dash/superwatch/stop")
     async def superwatch_stop():
         managers = get_managers()
-        stop_dashboard_manager(_state, "superwatch", managers["superwatch"])
+        await run_in_threadpool(
+            stop_dashboard_manager,
+            _state,
+            "superwatch",
+            managers["superwatch"],
+        )
         return {"status": "stopped"}
 
     @app.post("/api/dash/superwatch/add")
     async def superwatch_add(name: str = Body(..., embed=True)):
         managers = get_managers()
         sw = managers["superwatch"]
-        if sw._runtime is None and _state["device"] and _state["device"].connected:
-            sw.prepare(_state["device"])
-        return sw.add_watch(name)
+        def prepare_and_add():
+            if sw._runtime is None and _state["device"] and _state["device"].connected:
+                sw.prepare(_state["device"])
+            return sw.add_watch(name)
+
+        return await run_in_threadpool(prepare_and_add)
 
     @app.post("/api/dash/superwatch/remove")
     async def superwatch_remove(name: str = Body(..., embed=True)):
         managers = get_managers()
         sw = managers["superwatch"]
-        if sw._runtime is None and _state["device"] and _state["device"].connected:
-            sw.prepare(_state["device"])
-        return sw.remove_watch(name)
+        def prepare_and_remove():
+            if sw._runtime is None and _state["device"] and _state["device"].connected:
+                sw.prepare(_state["device"])
+            return sw.remove_watch(name)
+
+        return await run_in_threadpool(prepare_and_remove)
 
     @app.get("/api/dash/superwatch/items")
     async def superwatch_items():
         managers = get_managers()
-        return {"items": managers["superwatch"].list_watches()}
+        items = await run_in_threadpool(managers["superwatch"].list_watches)
+        return {"items": items}
 
     @app.get("/api/dash/superwatch/inspect")
     async def superwatch_inspect(name: str):
@@ -1354,7 +1368,7 @@ def create_app(
     @app.get("/api/dash/superwatch/status")
     async def superwatch_status():
         managers = get_managers()
-        return managers["superwatch"].get_status()
+        return await run_in_threadpool(managers["superwatch"].get_status)
 
     # ===================================================================
     # Integrated Dashboard SSE — Serial Monitor

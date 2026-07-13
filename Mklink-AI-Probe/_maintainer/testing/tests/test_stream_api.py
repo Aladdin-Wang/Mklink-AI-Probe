@@ -218,6 +218,48 @@ def test_publish_from_external_thread_wakes_websocket(client, app, monkeypatch):
     assert frame.item_count == 3
 
 
+@pytest.mark.parametrize(
+    ("request_method", "path", "request_kwargs", "manager_method"),
+    [
+        ("post", "/api/dash/superwatch/add", {"json": {"name": "a"}}, "add_watch"),
+        ("post", "/api/dash/superwatch/remove", {"json": {"name": "a"}}, "remove_watch"),
+        ("get", "/api/dash/superwatch/status", {}, "get_status"),
+    ],
+)
+def test_superwatch_locking_api_work_does_not_block_health(
+    client, monkeypatch, request_method, path, request_kwargs, manager_method,
+):
+    from mklink.remote.dashboards import get_managers
+
+    manager = get_managers()["superwatch"]
+    operation_started = threading.Event()
+    responses = []
+
+    def blocking_operation(*_args, **_kwargs):
+        operation_started.set()
+        time.sleep(0.2)
+        return {"state": "done"}
+
+    monkeypatch.setattr(manager, manager_method, blocking_operation)
+    operation = threading.Thread(
+        target=lambda: responses.append(
+            getattr(client, request_method)(path, **request_kwargs)
+        ),
+        daemon=True,
+    )
+    operation.start()
+    assert operation_started.wait(1.0)
+    started = time.perf_counter()
+    health = client.get("/api/health")
+    health_elapsed = time.perf_counter() - started
+    operation.join(timeout=1.0)
+
+    assert not operation.is_alive()
+    assert health.status_code == 200
+    assert health_elapsed < 0.05
+    assert responses[0].status_code == 200
+
+
 def test_send_failure_unsubscribes_client(monkeypatch):
     from mklink.remote.stream_api import stream_websocket
     from mklink.remote.stream_hub import StreamHub
