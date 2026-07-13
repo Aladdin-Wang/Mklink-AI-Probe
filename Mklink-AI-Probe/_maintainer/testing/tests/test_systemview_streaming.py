@@ -149,3 +149,21 @@ def test_slow_browser_drops_live_batches_without_truncating_recording():
         assert latest.sequence == stats.last_sequence
 
     asyncio.run(scenario())
+
+
+def test_status_separates_target_overflow_from_parser_framing_drops():
+    manager = SystemViewStreamManager()
+    manager._parser = manager._create_parser()
+
+    manager._process_events([
+        {"kind": "overflow", "drop_count": 100, "t_ticks": 1},
+        {"kind": "overflow", "drop_count": 107, "t_ticks": 2},
+    ], now=123.0)
+
+    status = manager.get_status()
+    assert status["target_overflow_events"] == 2
+    assert status["target_drop_count_baseline"] == 100
+    assert status["target_drop_count"] == 107
+    assert status["target_dropped_packets_since_baseline"] == 7
+    assert status["parser_dropped_bytes"] == 0
+    assert status["parser_dropped_packets"] == 0

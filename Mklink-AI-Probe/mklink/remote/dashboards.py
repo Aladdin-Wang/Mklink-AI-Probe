@@ -466,6 +466,9 @@ class SystemViewStreamManager:
         self._recording_path = ""
         self._recording_summary_path = ""
         self._recording_error = ""
+        self._target_overflow_events = 0
+        self._target_drop_count_baseline: int | None = None
+        self._target_drop_count: int | None = None
         self._start_failure_callback = None
 
     @property
@@ -507,6 +510,9 @@ class SystemViewStreamManager:
         self._recording_path = ""
         self._recording_summary_path = ""
         self._recording_error = ""
+        self._target_overflow_events = 0
+        self._target_drop_count_baseline = None
+        self._target_drop_count = None
         self._parser = self._create_parser(device)
         failure_callback = self._start_failure_callback
 
@@ -599,6 +605,7 @@ class SystemViewStreamManager:
         """Record every event, then publish bounded live binary batches."""
         if not events:
             return
+        self._observe_target_overflows(events)
         self._stats["events"] += len(events)
         # Durable recording is deliberately ahead of all bounded live paths.
         self._record_events(events)
@@ -620,6 +627,19 @@ class SystemViewStreamManager:
                 "history_size": len(self._history),
                 **self._status_meta(),
             })
+
+    def _observe_target_overflows(self, events: list[dict]) -> None:
+        for event in events:
+            if event.get("kind") != "overflow":
+                continue
+            drop_count = event.get("drop_count")
+            if not isinstance(drop_count, int) or isinstance(drop_count, bool):
+                continue
+            drop_count &= 0xFFFFFFFF
+            self._target_overflow_events += 1
+            if self._target_drop_count_baseline is None:
+                self._target_drop_count_baseline = drop_count
+            self._target_drop_count = drop_count
 
     def _create_parser(self, device=None):
         from mklink.systemview_parser import SystemViewParser
@@ -784,11 +804,25 @@ class SystemViewStreamManager:
                 "cpu_freq_source": self._cpu_freq_source,
                 "dropped_bytes": getattr(self._parser, "dropped_bytes", 0),
                 "dropped_packets": getattr(self._parser, "dropped_packets", 0),
+                **self._target_overflow_status(),
             })
         except Exception as e:
             self._recording_error = str(e)
         finally:
             self._recording = None
+
+    def _target_overflow_status(self) -> dict:
+        baseline = self._target_drop_count_baseline
+        current = self._target_drop_count
+        since_baseline = 0
+        if baseline is not None and current is not None:
+            since_baseline = (current - baseline) & 0xFFFFFFFF
+        return {
+            "target_overflow_events": self._target_overflow_events,
+            "target_drop_count_baseline": baseline,
+            "target_drop_count": current,
+            "target_dropped_packets_since_baseline": since_baseline,
+        }
 
     def _status_meta(self) -> dict:
         p = self._parser
@@ -800,6 +834,9 @@ class SystemViewStreamManager:
                 "cpu_freq_source": "",
                 "dropped_bytes": 0,
                 "dropped_packets": 0,
+                "parser_dropped_bytes": 0,
+                "parser_dropped_packets": 0,
+                **self._target_overflow_status(),
                 "task_names": {},
                 "isr_names": {},
                 "recording_path": self._recording_path,
@@ -813,6 +850,9 @@ class SystemViewStreamManager:
             "cpu_freq_source": self._cpu_freq_source,
             "dropped_bytes": p.dropped_bytes,
             "dropped_packets": p.dropped_packets,
+            "parser_dropped_bytes": p.dropped_bytes,
+            "parser_dropped_packets": p.dropped_packets,
+            **self._target_overflow_status(),
             "task_names": dict(p._task_names),
             "isr_names": dict(p._isr_names),
             "recording_path": self._recording_path,
