@@ -479,6 +479,11 @@ class SystemViewStreamManager:
         self._target_drop_count_baseline: int | None = None
         self._target_drop_count: int | None = None
         self._start_failure_callback = None
+        self._startup_progress_timeout_s = 3.0
+        self._startup_progress_min_bytes = 4096
+        self._progress_state = "idle"
+        self._progress_error = ""
+        self._raw_bytes_without_events = 0
 
     @property
     def running(self) -> bool:
@@ -522,6 +527,9 @@ class SystemViewStreamManager:
         self._target_overflow_events = 0
         self._target_drop_count_baseline = None
         self._target_drop_count = None
+        self._progress_state = "starting"
+        self._progress_error = ""
+        self._raw_bytes_without_events = 0
         self._parser = self._create_parser(device)
         failure_callback = self._start_failure_callback
 
@@ -540,6 +548,7 @@ class SystemViewStreamManager:
                 )
                 start_time = time.time()
                 empty_cycles = 0
+                no_event_started = None
                 while not stop_event.is_set():
                     if time.time() - start_time > duration:
                         break
@@ -571,6 +580,25 @@ class SystemViewStreamManager:
                     self._stats["bytes"] += len(raw)
                     now = time.time()
                     evs = self._parser.feed(raw)
+                    if evs:
+                        self._progress_state = "streaming"
+                        self._raw_bytes_without_events = 0
+                        no_event_started = None
+                    else:
+                        self._raw_bytes_without_events += len(raw)
+                        if no_event_started is None:
+                            no_event_started = time.monotonic()
+                        no_event_elapsed = time.monotonic() - no_event_started
+                        if (
+                            no_event_elapsed >= self._startup_progress_timeout_s
+                            and self._raw_bytes_without_events
+                            >= self._startup_progress_min_bytes
+                        ):
+                            raise RuntimeError(
+                                "SystemView raw bytes are arriving but no decodable "
+                                "events were found; the target sync packet may have "
+                                "been overwritten"
+                            )
                     self._note_init_cpu_freq(evs)
                     self._ensure_event_time_fields(evs)
                     self._maybe_resolve_task_names(
@@ -581,9 +609,10 @@ class SystemViewStreamManager:
                     self._process_events(evs, now=now)
             except Exception as e:
                 logger.error("SystemView stream error: %s", e)
+                self._progress_state = "error"
+                self._progress_error = str(e)
                 self._bridge.put({"event": "error", "message": str(e)})
-                if not initialized:
-                    start_failure = e
+                start_failure = e
             finally:
                 try:
                     device.systemview_stop()
@@ -596,6 +625,8 @@ class SystemViewStreamManager:
                 try:
                     if getattr(self, "_generation", None) is generation:
                         self._running = False
+                        if self._progress_state != "error":
+                            self._progress_state = "stopped"
                         try:
                             self._bridge.put({"event": "stopped"})
                         finally:
@@ -845,6 +876,9 @@ class SystemViewStreamManager:
                 "dropped_packets": 0,
                 "parser_dropped_bytes": 0,
                 "parser_dropped_packets": 0,
+                "progress_state": self._progress_state,
+                "progress_error": self._progress_error,
+                "raw_bytes_without_events": self._raw_bytes_without_events,
                 **self._target_overflow_status(),
                 "task_names": {},
                 "isr_names": {},
@@ -861,6 +895,9 @@ class SystemViewStreamManager:
             "dropped_packets": p.dropped_packets,
             "parser_dropped_bytes": p.dropped_bytes,
             "parser_dropped_packets": p.dropped_packets,
+            "progress_state": self._progress_state,
+            "progress_error": self._progress_error,
+            "raw_bytes_without_events": self._raw_bytes_without_events,
             **self._target_overflow_status(),
             "task_names": dict(p._task_names),
             "isr_names": dict(p._isr_names),

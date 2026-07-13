@@ -1,5 +1,6 @@
 import asyncio
 import struct
+import time
 
 import pytest
 
@@ -167,3 +168,56 @@ def test_status_separates_target_overflow_from_parser_framing_drops():
     assert status["target_dropped_packets_since_baseline"] == 7
     assert status["parser_dropped_bytes"] == 0
     assert status["parser_dropped_packets"] == 0
+
+
+def test_raw_bytes_without_decodable_events_fail_with_sync_diagnostic():
+    class Device:
+        def __init__(self):
+            self.stop_calls = 0
+
+        def systemview_start(self, *_args, **_kwargs):
+            return {}
+
+        def systemview_read_bytes(self, **_kwargs):
+            time.sleep(0.002)
+            return b"\x01" * 64
+
+        def systemview_stop(self):
+            self.stop_calls += 1
+
+    device = Device()
+    manager = SystemViewStreamManager()
+
+    class Parser:
+        synced = False
+        abs_time = 0
+        cpu_freq = 0
+        dropped_bytes = 0
+        dropped_packets = 0
+        _task_names = {}
+        _isr_names = {}
+
+        @staticmethod
+        def feed(_raw):
+            return []
+
+    manager._create_parser = lambda _device=None: Parser()
+    manager._startup_progress_timeout_s = 0.01
+    manager._startup_progress_min_bytes = 128
+    manager._start_recording = lambda *_args, **_kwargs: None
+    failure = []
+    manager.set_start_failure_callback(failure.append)
+
+    manager.start(device)
+    deadline = time.monotonic() + 1.0
+    while manager.running and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+    status = manager.get_status()
+    assert status["running"] is False
+    assert status["progress_state"] == "error"
+    assert "no decodable events" in status["progress_error"]
+    assert "sync" in status["progress_error"].lower()
+    assert status["raw_bytes_without_events"] >= 128
+    assert device.stop_calls == 1
+    assert failure and failure[0] is not None
