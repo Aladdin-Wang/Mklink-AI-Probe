@@ -102,27 +102,21 @@ async def _next_delivery(
 
     delivery = asyncio.create_task(queue.get())
     completion = asyncio.create_task(deliveries_complete.wait())
-    done, _ = await asyncio.wait(
-        (delivery, completion),
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    if delivery in done:
-        if not completion.done():
-            completion.cancel()
-            try:
-                await completion
-            except asyncio.CancelledError:
-                pass
-        return delivery.result()
-
-    if queue.empty():
-        delivery.cancel()
-        try:
-            await delivery
-        except asyncio.CancelledError:
-            pass
-        return None
-    return await delivery
+    try:
+        done, _ = await asyncio.wait(
+            (delivery, completion),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if delivery in done:
+            return delivery.result()
+        if queue.empty():
+            return None
+        return await delivery
+    finally:
+        for task in (delivery, completion):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(delivery, completion, return_exceptions=True)
 
 
 async def _run_async(
@@ -140,6 +134,7 @@ async def _run_async(
     batch_items = max(1, math.ceil(rate / TARGET_BATCHES_PER_SECOND))
     producer_errors: list[BaseException] = []
     start_gate = threading.Event()
+    stop_event = threading.Event()
     deliveries_complete = asyncio.Event()
 
     def produce() -> None:
@@ -147,7 +142,7 @@ async def _run_async(
             start_gate.wait()
             start = time.perf_counter()
             produced = 0
-            while produced < target_items:
+            while produced < target_items and not stop_event.is_set():
                 count = min(batch_items, target_items - produced)
                 hub.publish_threadsafe(
                     loop,
@@ -159,11 +154,11 @@ async def _run_async(
                     break
                 deadline = start + produced / rate
                 remaining = deadline - time.perf_counter()
-                if remaining > 0:
-                    time.sleep(remaining)
+                if remaining > 0 and stop_event.wait(remaining):
+                    return
             remaining = start + duration - time.perf_counter()
             if remaining > 0:
-                time.sleep(remaining)
+                stop_event.wait(remaining)
         except BaseException as exc:  # propagate acquisition-thread failures
             producer_errors.append(exc)
         finally:
@@ -244,12 +239,15 @@ async def _run_async(
                 queue.task_done()
         await queue.join()
     finally:
-        producer.join(timeout=max(1.0, duration + 1.0))
-        hub.unsubscribe(queue)
+        stop_event.set()
+        producer.join(timeout=1.0)
+        try:
+            if producer.is_alive():
+                raise RuntimeError("acquisition thread did not stop")
+        finally:
+            hub.unsubscribe(queue)
 
     elapsed = time.perf_counter() - started
-    if producer.is_alive():
-        raise RuntimeError("acquisition thread did not stop")
     if producer_errors:
         raise RuntimeError("acquisition thread failed") from producer_errors[0]
 

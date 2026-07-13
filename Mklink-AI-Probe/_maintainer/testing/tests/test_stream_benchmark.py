@@ -1,3 +1,5 @@
+import asyncio
+import threading
 import time
 from dataclasses import replace
 
@@ -10,6 +12,48 @@ from _maintainer.testing.performance.stream_benchmark import (
     run_benchmark,
 )
 from mklink.remote.stream_protocol import decode_frame
+
+
+@pytest.mark.parametrize("duration", [600.0, 1800.0])
+def test_async_cancellation_stops_producer_and_reaps_wait_tasks(duration):
+    async def exercise():
+        current = asyncio.current_task()
+        existing_threads = {thread.ident for thread in threading.enumerate()}
+        benchmark = asyncio.create_task(
+            stream_benchmark._run_async(
+                "vofa",
+                1,
+                duration,
+                1,
+                decode_frame,
+                lambda stats: stats,
+            )
+        )
+        await asyncio.sleep(0.05)
+        started = time.perf_counter()
+        benchmark.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await benchmark
+
+        cancel_elapsed = time.perf_counter() - started
+        await asyncio.sleep(0)
+        leaked_tasks = [
+            task
+            for task in asyncio.all_tasks()
+            if task is not current and not task.done()
+        ]
+        leaked_producers = [
+            thread
+            for thread in threading.enumerate()
+            if thread.ident not in existing_threads
+            and thread.name == "stream-benchmark-acquisition"
+        ]
+        assert cancel_elapsed < 0.2
+        assert leaked_tasks == []
+        assert leaked_producers == []
+
+    asyncio.run(exercise())
 
 
 def test_repeated_decoded_batch_sequence_is_corruption():
