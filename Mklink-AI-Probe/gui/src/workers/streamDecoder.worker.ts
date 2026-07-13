@@ -253,9 +253,7 @@ export class StreamDecoder {
       const deltaUs = view.getFloat64(offset + 24, true)
       const aux0 = view.getFloat64(offset + 32, true)
       const aux1 = view.getFloat64(offset + 40, true)
-      if (((flags & SYSTEMVIEW_HAS_TIME_US) && !Number.isFinite(timeUs))
-        || ((flags & SYSTEMVIEW_HAS_DELTA_US) && !Number.isFinite(deltaUs))
-        || !Number.isFinite(aux0) || !Number.isFinite(aux1)) {
+      if (![timeUs, deltaUs, aux0, aux1].every(Number.isFinite)) {
         throw new RangeError('SystemView numeric fields must be finite')
       }
       const event: SystemViewEvent = { kind }

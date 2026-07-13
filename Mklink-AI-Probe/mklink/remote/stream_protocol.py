@@ -227,6 +227,11 @@ def decode_systemview_events(payload: bytes) -> list[dict]:
         kind, flags, reserved, context_id, ticks, time_us, delta_us, aux0, aux1 = (
             SYSTEMVIEW_EVENT_RECORD.unpack_from(payload, offset)
         )
+        if not all(
+            math.isfinite(value)
+            for value in (time_us, delta_us, aux0, aux1)
+        ):
+            raise ValueError("SystemView numeric fields must be finite")
         if (flags & ~(SYSTEMVIEW_HAS_TICKS | SYSTEMVIEW_HAS_TIME_US | SYSTEMVIEW_HAS_DELTA_US)
                 or reserved != 0 or kind not in SYSTEMVIEW_EVENT_NAMES):
             raise ValueError("malformed SystemView event record")

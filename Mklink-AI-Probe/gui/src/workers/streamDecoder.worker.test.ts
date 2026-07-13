@@ -38,6 +38,8 @@ function systemViewRecords(...records: Array<{
   ticks: bigint
   timeUs: number
   deltaUs?: number
+  aux0?: number
+  aux1?: number
   flags?: number
   reserved?: number
 }>): Uint8Array {
@@ -52,6 +54,8 @@ function systemViewRecords(...records: Array<{
     view.setBigUint64(offset + 8, record.ticks, true)
     view.setFloat64(offset + 16, record.timeUs, true)
     view.setFloat64(offset + 24, record.deltaUs ?? 0, true)
+    view.setFloat64(offset + 32, record.aux0 ?? 0, true)
+    view.setFloat64(offset + 40, record.aux1 ?? 0, true)
   })
   return bytes
 }
@@ -123,13 +127,22 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
   })
 
-  it('rejects non-finite SystemView timestamps without partially accepting the frame', () => {
+  it.each(
+    ([0, 0x07] as const).flatMap(flags =>
+      ([16, 24, 32, 40] as const).flatMap(slotOffset =>
+        [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY].map(value => ({
+          flags, slotOffset, value,
+        })),
+      ),
+    ),
+  )('rejects non-finite slot $slotOffset with flags $flags atomically', ({ flags, slotOffset, value }) => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
     const payload = systemViewRecords(
       { kind: 4, taskId: 1, ticks: 1n, timeUs: 1 },
-      { kind: 5, taskId: 1, ticks: 2n, timeUs: Number.NaN },
+      { kind: 5, taskId: 1, ticks: 2n, timeUs: 2, flags },
     )
+    new DataView(payload.buffer).setFloat64(48 + slotOffset, value, true)
     decoder.handle({
       type: 'frame', buffer: frame(1n, 2, payload, StreamType.SYSTEMVIEW),
       connectionGeneration: 1, frameTicket: 1,

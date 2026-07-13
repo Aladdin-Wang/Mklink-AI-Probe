@@ -1,4 +1,5 @@
 import asyncio
+import struct
 
 import pytest
 
@@ -44,12 +45,34 @@ def test_systemview_fixed_records_round_trip_and_reject_malformed_payload():
         decode_systemview_events(malformed_flags)
 
 
+@pytest.mark.parametrize("flags", [0, 0x07], ids=["flags-off", "flags-on"])
+@pytest.mark.parametrize("slot_offset", [16, 24, 32, 40], ids=["time", "delta", "aux0", "aux1"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "pos-inf", "neg-inf"])
+def test_decoder_rejects_non_finite_double_slots_regardless_of_flags(
+    flags, slot_offset, value
+):
+    payload = bytearray(encode_systemview_events([
+        {"kind": "task_info", "task_id": 1, "t_ticks": 1, "t_us": 1.0,
+         "cpu_delta_us": 0.5, "prio": 3, "stack_size": 1024}
+    ]))
+    payload[1] = flags
+    struct.pack_into("<d", payload, slot_offset, value)
+
+    with pytest.raises(ValueError, match="finite"):
+        decode_systemview_events(payload)
+
+
 def test_unknown_systemview_kind_is_rejected_instead_of_silently_corrupted():
     with pytest.raises(ValueError, match="unknown SystemView event kind"):
         encode_systemview_events([{"kind": "future_event", "t_ticks": 1}])
 
+
+
+@pytest.mark.parametrize("field", ["t_us", "cpu_delta_us", "prio", "stack_size"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_encoder_rejects_non_finite_double_fields(field, value):
     with pytest.raises(ValueError, match="finite"):
-        encode_systemview_events([{"kind": "idle", "t_us": float("nan")}])
+        encode_systemview_events([{"kind": "task_info", "task_id": 1, field: value}])
 
 
 def test_length_prefixed_parser_events_use_a_generic_fixed_record():
