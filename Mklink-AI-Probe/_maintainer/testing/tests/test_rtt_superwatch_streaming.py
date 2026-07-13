@@ -203,6 +203,49 @@ def test_rtt_auto_detects_csv_rows_before_publishing_waveform_batches():
     asyncio.run(scenario())
 
 
+def test_rtt_default_batches_keep_12khz_dual_stream_below_100_frames_per_second():
+    hub = _RecordingHub()
+    manager = RttStreamManager(stream_hub=hub)
+
+    manager.feed_rtt_bytes(b"1,2,3,4\n" * 12_000)
+    manager.flush_pending()
+
+    batches = hub.snapshot()
+    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
+    assert sum(batch.item_count for batch in raw) == 12_000
+    assert sum(batch.item_count for batch in waveform) == 12_000
+    assert len(raw) + len(waveform) <= 100
+
+
+def test_rtt_manager_stop_closes_the_device_stream_session():
+    read_started = threading.Event()
+
+    class Device:
+        def __init__(self):
+            self.stop_calls = 0
+
+        def rtt_start(self, *_args, **_kwargs):
+            pass
+
+        def rtt_read(self, **_kwargs):
+            read_started.set()
+            time.sleep(0.002)
+            return b""
+
+        def rtt_stop(self):
+            self.stop_calls += 1
+
+    device = Device()
+    manager = RttStreamManager()
+    manager.start(device)
+    assert read_started.wait(timeout=1.0)
+
+    manager.stop()
+
+    assert device.stop_calls == 1
+
+
 def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
     async def scenario():
         hub = StreamHub(max_batches_per_client=8)

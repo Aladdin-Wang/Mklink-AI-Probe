@@ -196,8 +196,8 @@ class RttStreamManager:
     """Manages RTT streaming sessions with SSE output."""
 
     def __init__(
-        self, stream_hub=None, *, raw_batch_lines: int = 64,
-        waveform_batch_samples: int = 32,
+        self, stream_hub=None, *, raw_batch_lines: int = 256,
+        waveform_batch_samples: int = 256,
     ):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
@@ -366,6 +366,10 @@ class RttStreamManager:
                 if not initialized:
                     start_failure = e
             finally:
+                try:
+                    device.rtt_stop()
+                except Exception as e:
+                    logger.warning("RTT device stop failed: %s", e)
                 self.flush_pending(final=True)
                 try:
                     if getattr(self, "_generation", None) is generation:
