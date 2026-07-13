@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-12T19:00:00+08:00`
+- 更新时间：`2026-07-13T10:00:00+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`ad8d787`
-- 远端 HEAD：`b47ac3b`
-- 工作树：clean before Task 4 completion memory refresh
-- 当前任务：High-throughput Task 5: min/max envelope, shared 30 FPS scheduler, and transport benchmark
+- HEAD：`85bc178`
+- 远端 HEAD：`eacbccc`
+- 工作树：clean before Task 5 completion memory refresh
+- 当前任务：High-throughput Task 6: migrate SystemView to binary streaming
 - 状态：`in_progress`
 
 ## 里程碑
@@ -19,7 +19,8 @@
 - **High-throughput Task 2 bounded StreamHub** — `complete`。Unique owner loop, immutable batch, generation/pending callback lifecycle, stale callback isolation.
 - **High-throughput Task 3 authenticated binary WebSocket** — `complete`。Invalid JSON shapes and binary authentication frames close 1008 without leaks; sequence, item_count, and timestamp_ns are shared per fan-out batch.
 - **High-throughput Task 4 Worker-owned stream buffers** — `complete`。Fixed-capacity typed ring, transferable Worker frames, bounded reconnect lifecycle, and generation/ticket readiness acknowledgements isolate stale sockets.
-- **High-throughput Tasks 5-9** — `pending`。Min/max envelope and 30 FPS scheduler; SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification.
+- **High-throughput Task 5 envelope, scheduler, and benchmark** — `complete`。Typed min/max envelope, one 30 FPS scheduler, strict sequence/drop accounting, responsive cancellation, and deterministic sample-rate benchmark.
+- **High-throughput Tasks 6-9** — `pending`。SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification.
 
 ## 验证证据
 
@@ -27,7 +28,8 @@
 - **Online flash HIL**：MKLink filter, Pack index, on-demand GD32 DFP, restart cache, STM32F103RC HEX/BIN program+verify, expected VERIFY_FAIL, cooperative stop, VOFA PROBE_BUSY handoff, target boot firmware restored
 - **Tauri**：release EXE 11132928 bytes and MSI 47554560 bytes generated locally; NSIS not generated because official nsis-3.11.zip download timed out
 - **Current Python baseline**：452 passed after Task 3 final quality fix
-- **Current GUI baseline**：98 tests passed and Vite production build transformed 134 modules after Task 4 final quality fix
+- **Current GUI baseline**：109 tests passed and Vite production build transformed 134 modules after Task 5 final quality fix
+- **Task 5 local transport benchmark**：10 seconds at 10 kSamples/s and 8 channels produced/consumed 100000/100000 with zero drops and sequence errors; elapsed 10.001s; responsive 1800-second cancellation; real overflow accounting matched exactly
 
 ## 架构决策
 
@@ -50,10 +52,10 @@
 
 ## 下一动作
 
-1. Push the Task 4 completion and refreshed project memory to feature/online-flash-streaming.
-2. Execute high-throughput Task 5 with strict TDD: min/max envelope, shared 30 FPS scheduler, and deterministic transport benchmark.
-3. Require Task 5 spec review and quality review before starting Task 6.
-4. Continue Tasks 6-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.
+1. Push the Task 5 completion and refreshed project memory to feature/online-flash-streaming.
+2. Execute high-throughput Task 6 with strict TDD: SystemView backend batching, binary client migration, interval-envelope timeline, and 5 Hz event table.
+3. Require Task 6 spec review and quality review before starting Task 7.
+4. Continue Tasks 7-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.
 5. Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims.
 
 ## 已知限制

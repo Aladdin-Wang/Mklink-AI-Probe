@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-12T19:00:00+08:00",
+  "updated_at": "2026-07-13T10:00:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "ad8d787",
-    "remote_head": "b47ac3b",
-    "working_tree": "clean before Task 4 completion memory refresh"
+    "head": "85bc178",
+    "remote_head": "eacbccc",
+    "working_tree": "clean before Task 5 completion memory refresh"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,11 +18,12 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
-    "current_task": "High-throughput Task 5: min/max envelope, shared 30 FPS scheduler, and transport benchmark",
-    "latest_commit": "ad8d787 fix: isolate stream readiness acknowledgements",
+    "current_task": "High-throughput Task 6: migrate SystemView to binary streaming",
+    "latest_commit": "85bc178 fix: make stream benchmark cancellation responsive",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
-    "stop_rule": "Execute Task 5 with strict TDD and require spec then quality review before Task 6."
+    "task_5_implementation": "complete; final spec and quality reviews APPROVED",
+    "stop_rule": "Execute Task 6 with strict TDD and require spec then quality review before Task 7."
   },
   "milestones": [
     {
@@ -64,9 +65,17 @@
       "notes": "Fixed-capacity typed ring, transferable Worker frames, bounded reconnect lifecycle, and generation/ticket readiness acknowledgements isolate stale sockets."
     },
     {
-      "name": "High-throughput Tasks 5-9",
+      "name": "High-throughput Task 5 envelope, scheduler, and benchmark",
+      "status": "complete",
+      "commits": ["cd9370b", "9d23045", "85bc178"],
+      "tests": "Benchmark 14 passed; envelope/scheduler 11 passed; GUI full 109 passed; Python stream 78 passed",
+      "review": "final spec and quality APPROVED",
+      "notes": "Typed min/max envelope, one 30 FPS scheduler, strict sequence/drop accounting, responsive cancellation, and deterministic sample-rate benchmark."
+    },
+    {
+      "name": "High-throughput Tasks 6-9",
       "status": "pending",
-      "notes": "Min/max envelope and 30 FPS scheduler; SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification."
+      "notes": "SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification."
     }
   ],
   "verification": [
@@ -89,7 +98,11 @@
     },
     {
       "area": "Current GUI baseline",
-      "result": "98 tests passed and Vite production build transformed 134 modules after Task 4 final quality fix"
+      "result": "109 tests passed and Vite production build transformed 134 modules after Task 5 final quality fix"
+    },
+    {
+      "area": "Task 5 local transport benchmark",
+      "result": "10 seconds at 10 kSamples/s and 8 channels produced/consumed 100000/100000 with zero drops and sequence errors; elapsed 10.001s; responsive 1800-second cancellation; real overflow accounting matched exactly"
     }
   ],
   "decisions": [
@@ -117,10 +130,10 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Push the Task 4 completion and refreshed project memory to feature/online-flash-streaming.",
-    "Execute high-throughput Task 5 with strict TDD: min/max envelope, shared 30 FPS scheduler, and deterministic transport benchmark.",
-    "Require Task 5 spec review and quality review before starting Task 6.",
-    "Continue Tasks 6-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
+    "Push the Task 5 completion and refreshed project memory to feature/online-flash-streaming.",
+    "Execute high-throughput Task 6 with strict TDD: SystemView backend batching, binary client migration, interval-envelope timeline, and 5 Hz event table.",
+    "Require Task 6 spec review and quality review before starting Task 7.",
+    "Continue Tasks 7-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
     "Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims."
   ],
   "continuation_protocol": [
