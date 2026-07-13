@@ -21,6 +21,7 @@ class StreamBatch:
     item_count: int
     timestamp_ns: int = field(default_factory=time.time_ns)
     flags: int = 0
+    stream_type: object = None
 
     def __bytes__(self) -> bytes:
         return self.payload
@@ -107,9 +108,12 @@ class StreamHub:
                 self._release_owner_if_idle()
         return True
 
-    def publish(self, batch: BytesLike, item_count: int, flags: int = 0) -> int:
+    def publish(
+        self, batch: BytesLike, item_count: int, flags: int = 0,
+        stream_type=None,
+    ) -> int:
         with self._publish_lock:
-            published = self._prepare_batch(batch, item_count, flags)
+            published = self._prepare_batch(batch, item_count, flags, stream_type)
             self._schedule_delivery(published)
         return published.sequence
 
@@ -119,6 +123,7 @@ class StreamHub:
         batch: BytesLike,
         item_count: int = 0,
         flags: int = 0,
+        stream_type=None,
     ) -> int:
         with self._publish_lock:
             with self._lock:
@@ -126,7 +131,7 @@ class StreamHub:
                     self._require_owner_loop(loop)
                     if loop.is_closed():
                         raise RuntimeError("owner event loop is closed")
-            published = self._prepare_batch(batch, item_count, flags)
+            published = self._prepare_batch(batch, item_count, flags, stream_type)
             self._schedule_delivery(published)
         return published.sequence
 
@@ -152,6 +157,7 @@ class StreamHub:
 
     def _prepare_batch(
         self, batch: BytesLike, item_count: int, flags: int = 0,
+        stream_type=None,
     ) -> StreamBatch:
         if not isinstance(batch, (bytes, bytearray, memoryview)):
             raise TypeError("batch must be bytes-like")
@@ -163,6 +169,12 @@ class StreamHub:
             raise TypeError("flags must be an integer")
         if not 0 <= flags <= 0xFF:
             raise ValueError("flags must fit in one byte")
+        if stream_type is not None:
+            from mklink.remote.stream_protocol import StreamType
+            try:
+                stream_type = StreamType(stream_type)
+            except ValueError as exc:
+                raise ValueError("unknown stream type override") from exc
         payload = bytes(batch)
         with self._lock:
             self._last_sequence += 1
@@ -170,7 +182,9 @@ class StreamHub:
             self._produced_items += item_count
             self._produced_bytes += len(payload)
             sequence = self._last_sequence
-        return StreamBatch(payload, sequence, item_count, flags=flags)
+        return StreamBatch(
+            payload, sequence, item_count, flags=flags, stream_type=stream_type,
+        )
 
     def _schedule_delivery(self, batch: StreamBatch) -> None:
         with self._lock:

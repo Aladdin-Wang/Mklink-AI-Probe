@@ -12,6 +12,9 @@ export const StreamType = {
 } as const
 
 export const WAVEFORM_SAMPLE_MAJOR_FLOAT32 = 0x01
+export const RTT_RAW_UTF8_LINES = 0x01
+export const SUPERWATCH_SAMPLE_MAJOR_FLOAT32 = 0x01
+export const SUPERWATCH_METADATA_JSON = 0x02
 
 export type StreamType = (typeof StreamType)[keyof typeof StreamType]
 

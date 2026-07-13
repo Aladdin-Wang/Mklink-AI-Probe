@@ -34,6 +34,22 @@ function floats(...values: number[]): Uint8Array {
   return new Uint8Array(Float32Array.from(values).buffer)
 }
 
+function rttLines(...lines: Array<{ timestampNs: bigint; level: number; text: string }>): Uint8Array {
+  const encoder = new TextEncoder()
+  const encoded = lines.map(line => ({ ...line, bytes: encoder.encode(line.text) }))
+  const payload = new Uint8Array(encoded.reduce((size, line) => size + 13 + line.bytes.length, 0))
+  const view = new DataView(payload.buffer)
+  let offset = 0
+  for (const line of encoded) {
+    view.setBigUint64(offset, line.timestampNs, true)
+    view.setUint8(offset + 8, line.level)
+    view.setUint32(offset + 9, line.bytes.length, true)
+    payload.set(line.bytes, offset + 13)
+    offset += 13 + line.bytes.length
+  }
+  return payload
+}
+
 function systemViewRecords(...records: Array<{
   kind: number
   taskId: number
@@ -89,6 +105,214 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('decodes RTT raw records with UTF-8 line metadata and preserves batch order', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 2, rttLines(
+        { timestampNs: 10n, level: 0, text: 'hello' },
+        { timestampNs: 20n, level: 1, text: '温度=25' },
+      ), StreamType.RTT_RAW, 20n, 0x01),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    expect(messages.find(message => message.type === 'rtt-lines')).toEqual({
+      type: 'rtt-lines', sequence: 1n,
+      lines: [
+        { timestampNs: 10n, level: 'raw', text: 'hello' },
+        { timestampNs: 20n, level: 'data', text: '温度=25' },
+      ],
+    })
+  })
+
+  it.each([
+    ['unknown flags', 0x02, rttLines({ timestampNs: 1n, level: 0, text: 'x' })],
+    ['invalid level', 0x01, rttLines({ timestampNs: 1n, level: 9, text: 'x' })],
+    ['truncated record', 0x01, new Uint8Array(12)],
+    ['invalid UTF-8', 0x01, Uint8Array.from([1,0,0,0,0,0,0,0,0,1,0,0,0,0xff])],
+  ])('rejects malformed RTT %s atomically', (_name, flags, payload) => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 1, payload, StreamType.RTT_RAW, 1n, flags as number),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 1, rttLines(
+        { timestampNs: 2n, level: 0, text: 'ok' },
+      ), StreamType.RTT_RAW, 2n, 0x01),
+      connectionGeneration: 1, frameTicket: 2,
+    })
+    expect(messages.find(message => message.type === 'rtt-lines')).toMatchObject({
+      type: 'rtt-lines', sequence: 1n,
+    })
+  })
+
+  it('applies versioned SuperWatch metadata independently from sample batches', () => {
+    const { decoder, messages, transfers } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      version: 1, channels: [{ name: 'a', type: 'float' }, { name: 'b', type: 'uint32_t' }],
+    }))
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(2n, 2, floats(1, 2, 3, 4), StreamType.SUPERWATCH, 2n, 0x01),
+      connectionGeneration: 1, frameTicket: 2,
+    })
+    expect(messages.find(message => message.type === 'superwatch-metadata')).toEqual({
+      type: 'superwatch-metadata', version: 1,
+      channels: [{ name: 'a', type: 'float' }, { name: 'b', type: 'uint32_t' }],
+    })
+    const batch = messages.find(message => message.type === 'waveform-batch')
+    expect(batch).toMatchObject({ type: 'waveform-batch', itemCount: 2, channelCount: 2 })
+    if (batch?.type !== 'waveform-batch') throw new Error('expected batch')
+    expect(Array.from(new Float32Array(batch.values))).toEqual([1, 2, 3, 4])
+    expect(transfers[messages.indexOf(batch)]).toEqual([batch.values, batch.times])
+  })
+
+  it('rejects stale metadata, nonfinite samples, bad flags, and reset clears versions', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = (version: number) => new TextEncoder().encode(JSON.stringify({
+      version, channels: [{ name: 'a' }],
+    }))
+    const send = (sequence: bigint, flags: number, payload: Uint8Array, itemCount = 0) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, itemCount, payload, StreamType.SUPERWATCH, 1n, flags),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(1n, 0x02, metadata(2))
+    send(2n, 0x02, metadata(1))
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    send(2n, 0x01, floats(Number.NaN), 1)
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    send(2n, 0x03, floats(1), 1)
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    decoder.handle({ type: 'reset' })
+    send(1n, 0x02, metadata(1))
+    expect(messages.filter(message => message.type === 'superwatch-metadata').at(-1)).toMatchObject({
+      type: 'superwatch-metadata', version: 1,
+    })
+  })
+
+  it('clears buffered samples when same-count SuperWatch metadata is renamed', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = (version: number, name: string) => new TextEncoder().encode(JSON.stringify({
+      version, channels: [{ name }],
+    }))
+    const send = (sequence: bigint, flags: number, payload: Uint8Array, itemCount = 0) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, itemCount, payload, StreamType.SUPERWATCH, sequence, flags),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(1n, 0x02, metadata(1, 'old'))
+    send(2n, 0x01, floats(9), 1)
+    expect(messages.filter(message => message.type === 'telemetry').at(-1)).toMatchObject({
+      bufferedSamples: 1,
+    })
+    send(3n, 0x02, metadata(2, 'new'))
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 0 })
+  })
+
+  it('processes an accelerated 60-second 10 kHz RTT line stream without retaining raw text', () => {
+    const targetLines = 60 * 10_000
+    const batchLines = 100
+    let receivedLines = 0
+    let errors = 0
+    let acceptedFrames = 0
+    let bufferedSamples = 0
+    const decoder = new StreamDecoder(message => {
+      if (message.type === 'rtt-lines') receivedLines += message.lines.length
+      if (message.type === 'error') errors++
+      if (message.type === 'telemetry') {
+        acceptedFrames = message.acceptedFrames
+        bufferedSamples = message.bufferedSamples
+      }
+    })
+    decoder.handle({ type: 'configure', capacity: 200_000, channelCount: 1 })
+    const started = performance.now()
+    for (let first = 0; first < targetLines; first += batchLines) {
+      const count = Math.min(batchLines, targetLines - first)
+      const payload = rttLines(...Array.from({ length: count }, (_, index) => ({
+        timestampNs: BigInt(first + index + 1) * 100_000n,
+        level: index % 2,
+        text: `sample=${first + index}`,
+      })))
+      const sequence = BigInt(first / batchLines + 1)
+      decoder.handle({
+        type: 'frame', buffer: frame(
+          sequence, count, payload, StreamType.RTT_RAW,
+          BigInt(first + count) * 100_000n, 0x01,
+        ), connectionGeneration: 1, frameTicket: Number(sequence),
+      })
+    }
+    const elapsedMs = performance.now() - started
+    expect(errors).toBe(0)
+    expect(receivedLines).toBe(targetLines)
+    expect(acceptedFrames).toBe(targetLines / batchLines)
+    expect(bufferedSamples).toBe(0)
+    expect(elapsedMs).toBeLessThan(60_000)
+  }, 70_000)
+
+  it('processes accelerated 60-second 10 kHz x8 SuperWatch data with bounded envelopes', () => {
+    const targetSamples = 60 * 10_000
+    const channelCount = 8
+    const batchSamples = 2_000
+    let errors = 0
+    let acceptedFrames = 0
+    let bufferedSamples = 0
+    let maxEnvelopePoints = 0
+    let envelopes = 0
+    const decoder = new StreamDecoder(message => {
+      if (message.type === 'error') errors++
+      if (message.type === 'telemetry') {
+        acceptedFrames = message.acceptedFrames
+        bufferedSamples = message.bufferedSamples
+      }
+      if (message.type === 'render-envelope') {
+        envelopes++
+        maxEnvelopePoints = Math.max(maxEnvelopePoints, message.pointCount)
+      }
+    })
+    decoder.handle({ type: 'configure', capacity: 200_000, channelCount: 1 })
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      version: 1,
+      channels: Array.from({ length: channelCount }, (_, index) => ({ name: `S${index}` })),
+    }))
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    let requestId = 0
+    const started = performance.now()
+    for (let first = 0; first < targetSamples; first += batchSamples) {
+      const values = new Float32Array(batchSamples * channelCount)
+      for (let index = 0; index < values.length; index++) values[index] = (first + index) % 10_000
+      const sequence = BigInt(first / batchSamples + 2)
+      const endMs = (first + batchSamples) / 10_000 * 1_000
+      decoder.handle({
+        type: 'frame', buffer: frame(
+          sequence, batchSamples, new Uint8Array(values.buffer), StreamType.SUPERWATCH,
+          BigInt(Math.round(endMs * 1_000_000)), 0x01,
+        ), connectionGeneration: 1, frameTicket: Number(sequence),
+      })
+      for (let request = 0; request < 6; request++) {
+        decoder.handle({
+          type: 'visible-range', requestId: ++requestId,
+          start: Math.max(0, endMs - 1_000), end: endMs, pixelWidth: 320,
+        })
+      }
+    }
+    const elapsedMs = performance.now() - started
+    expect(errors).toBe(0)
+    expect(acceptedFrames).toBe(1 + targetSamples / batchSamples)
+    expect(bufferedSamples).toBe(200_000)
+    expect(envelopes).toBe(60 * 30)
+    expect(maxEnvelopePoints).toBeLessThanOrEqual(2 * 320 * channelCount)
+    expect(elapsedMs).toBeLessThan(60_000)
+  }, 70_000)
   it('emits each VOFA sample-major batch as a transferable typed envelope', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })

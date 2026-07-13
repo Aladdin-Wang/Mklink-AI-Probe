@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     telemetry: null as ReturnType<typeof shallowRef<unknown>> | null,
     state: null as ReturnType<typeof shallowRef<unknown>> | null,
     error: null as ReturnType<typeof shallowRef<unknown>> | null,
+    superwatchMetadata: null as ReturnType<typeof shallowRef<unknown>> | null,
     start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
     requestVisibleRange: vi.fn(),
   },
@@ -184,6 +185,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     mocks.binary.telemetry = shallowRef(null)
     mocks.binary.state = shallowRef({ phase: 'stopped' })
     mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
     mocks.useBinaryStream.mockReturnValue(mocks.binary)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -212,12 +214,33 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(mocks.schedulerInstances[0].dispose).toHaveBeenCalledOnce()
   })
 
-  it('keeps SuperWatch on its legacy transport', () => {
+  it('migrates SuperWatch to its binary stream and shared scheduler', async () => {
     const wrapper = mount(WaveformViewer, {
       props: { mode: 'SuperWatch', deviceConnected: true },
     })
-    expect(mocks.useBinaryStream).not.toHaveBeenCalled()
-    expect(mocks.schedulerInstances).toHaveLength(0)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mocks.useBinaryStream).toHaveBeenCalledWith('superwatch', expect.any(Object))
+    expect(mocks.binary.start).toHaveBeenCalledOnce()
+    expect(mocks.binary.configure).not.toHaveBeenCalled()
+    expect(mocks.schedulerInstances[0].start).toHaveBeenCalledOnce()
+    wrapper.unmount()
+    expect(mocks.binary.stop).toHaveBeenCalledOnce()
+  })
+
+  it('resets SuperWatch Worker and viewer state at collection boundaries', async () => {
+    const resetBinaryStream = vi.fn()
+    ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
+    const wrapper = mount(WaveformViewer, {
+      props: { mode: 'SuperWatch', deviceConnected: true },
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    mocks.binary.reset.mockClear()
+    ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
+
+    window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
+
+    expect(mocks.binary.reset).toHaveBeenCalledOnce()
+    expect(resetBinaryStream).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 

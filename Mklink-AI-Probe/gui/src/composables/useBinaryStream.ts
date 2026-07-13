@@ -25,6 +25,8 @@ export interface UseBinaryStreamOptions {
 type RenderEnvelope = Extract<WorkerOutput, { type: 'render-envelope' }>
 type SystemViewVisible = Extract<WorkerOutput, { type: 'systemview-visible' }>
 type WaveformBatch = Extract<WorkerOutput, { type: 'waveform-batch' }>
+type RttLines = Extract<WorkerOutput, { type: 'rtt-lines' }>
+type SuperWatchMetadata = Extract<WorkerOutput, { type: 'superwatch-metadata' }>
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -51,6 +53,8 @@ export function useBinaryStream(
   const envelope = shallowRef<RenderEnvelope | null>(null)
   const systemViewVisible = shallowRef<SystemViewVisible | null>(null)
   const waveformBatch = shallowRef<WaveformBatch | null>(null)
+  const rttLines = shallowRef<RttLines | null>(null)
+  const superwatchMetadata = shallowRef<SuperWatchMetadata | null>(null)
   const error = ref<string | null>(null)
 
   function onState(next: StreamClientState): void {
@@ -74,6 +78,12 @@ export function useBinaryStream(
         break
       case 'waveform-batch':
         waveformBatch.value = message
+        break
+      case 'rtt-lines':
+        rttLines.value = message
+        break
+      case 'superwatch-metadata':
+        superwatchMetadata.value = message
         break
       case 'error':
         error.value = message.message
@@ -105,6 +115,8 @@ export function useBinaryStream(
     envelope.value = null
     systemViewVisible.value = null
     waveformBatch.value = null
+    rttLines.value = null
+    superwatchMetadata.value = null
     error.value = null
     client.reset()
   }
@@ -114,6 +126,7 @@ export function useBinaryStream(
     telemetry.value = null
     envelope.value = null
     waveformBatch.value = null
+    superwatchMetadata.value = null
     client.configure(options.capacity, nextChannelCount)
   }
 
@@ -138,6 +151,8 @@ export function useBinaryStream(
     envelope: readonly(envelope),
     systemViewVisible: readonly(systemViewVisible),
     waveformBatch: readonly(waveformBatch),
+    rttLines: readonly(rttLines),
+    superwatchMetadata: readonly(superwatchMetadata),
     error: readonly(error),
     start,
     stop,

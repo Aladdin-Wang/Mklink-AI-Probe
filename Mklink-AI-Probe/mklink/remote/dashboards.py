@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import codecs
 from collections import deque
 import json
 import logging
@@ -27,7 +28,18 @@ import threading
 import time
 from typing import Any, Generator
 
-from mklink.remote.stream_protocol import encode_systemview_events
+from mklink.remote.stream_protocol import (
+    RTT_RAW_UTF8_LINES,
+    SUPERWATCH_METADATA_JSON,
+    SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
+    WAVEFORM_SAMPLE_MAJOR_FLOAT32,
+    RttLine,
+    StreamType,
+    encode_rtt_lines,
+    encode_superwatch_metadata,
+    encode_systemview_events,
+    encode_waveform_samples,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +151,45 @@ class AsyncBridge:
 
 
 # ---------------------------------------------------------------------------
-# RTT SSE Generator
+# RTT streaming
 # ---------------------------------------------------------------------------
+
+
+class _RttLineAssembler:
+    """Incrementally decode UTF-8 and split LF/CRLF without losing tails."""
+
+    def __init__(self):
+        self.reset()
+
+    def feed(self, chunk: bytes, *, final: bool = False) -> list[str]:
+        if not isinstance(chunk, (bytes, bytearray, memoryview)):
+            raise TypeError("RTT chunks must be bytes-like")
+        self._text += self._decoder.decode(bytes(chunk), final=final)
+        lines = []
+        while True:
+            newline = self._text.find("\n")
+            if newline < 0:
+                break
+            line = self._text[:newline]
+            self._text = self._text[newline + 1:]
+            lines.append(line[:-1] if line.endswith("\r") else line)
+        if final:
+            if self._text:
+                lines.append(self._text[:-1] if self._text.endswith("\r") else self._text)
+            self.reset()
+        return lines
+
+    def reset(self) -> None:
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._text = ""
 
 class RttStreamManager:
     """Manages RTT streaming sessions with SSE output."""
 
-    def __init__(self):
+    def __init__(
+        self, stream_hub=None, *, raw_batch_lines: int = 64,
+        waveform_batch_samples: int = 32,
+    ):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -154,10 +198,20 @@ class RttStreamManager:
         self._stop_event = threading.Event()
         self._history: list[dict] = []
         self._max_history = 500
-        self._parser = None
+        from mklink.rtt_viewer import RttLineParser
+        self._parser = RttLineParser("kv")
+        self._parser_auto_detect_done = False
+        self._parser_auto_detect_attempts = 0
         self._interval = 0.0
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._start_failure_callback = None
+        self._stream_hub = stream_hub
+        self._raw_batch_lines = max(1, int(raw_batch_lines))
+        self._waveform_batch_samples = max(1, int(waveform_batch_samples))
+        self._line_assembler = _RttLineAssembler()
+        self._pending_raw: list[RttLine] = []
+        self._pending_numeric: list[tuple[float, ...]] = []
+        self._numeric_channels: tuple[str, ...] = ()
 
     @property
     def running(self) -> bool:
@@ -169,6 +223,78 @@ class RttStreamManager:
 
     def set_start_failure_callback(self, callback) -> None:
         self._start_failure_callback = callback
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
+
+    def detach_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is stream_hub:
+            self._stream_hub = None
+
+    def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
+        for raw_line in self._line_assembler.feed(chunk, final=final):
+            line = raw_line.strip()
+            if not line:
+                continue
+            timestamp_ns = time.time_ns()
+            if not self._parser_auto_detect_done:
+                from mklink.rtt_viewer import RttLineParser
+                detected = RttLineParser.auto_detect([line])
+                if detected.strategy != self._parser.strategy:
+                    self._parser = detected
+                self._parser_auto_detect_attempts += 1
+                self._parser_auto_detect_done = self._parser_auto_detect_attempts >= 10
+            parsed = self._parser.parse(line) if self._parser is not None else None
+            self._stats["raw_lines"] += 1
+            self._pending_raw.append(RttLine(
+                timestamp_ns, "data" if parsed else "raw", line,
+            ))
+            if len(self._pending_raw) >= self._raw_batch_lines:
+                self._flush_raw_batch()
+            if parsed:
+                parsed["_t"] = timestamp_ns / 1_000_000_000.0
+                self._stats["parsed_lines"] += 1
+                self._history.append(parsed)
+                if len(self._history) > self._max_history:
+                    del self._history[:-self._max_history]
+                channels = tuple(sorted(key for key in parsed if not key.startswith("_")))
+                if channels and all(math.isfinite(float(parsed[key])) for key in channels):
+                    if self._numeric_channels != channels:
+                        self._numeric_channels = channels
+                        self._pending_numeric.clear()
+                    self._pending_numeric.append(tuple(float(parsed[key]) for key in channels))
+                    if len(self._pending_numeric) >= self._waveform_batch_samples:
+                        self._flush_raw_batch()
+                        self._flush_numeric_batch()
+
+    def _flush_raw_batch(self) -> None:
+        if not self._pending_raw:
+            return
+        pending = self._pending_raw
+        self._pending_raw = []
+        if self._stream_hub is not None:
+            self._stream_hub.publish(
+                encode_rtt_lines(pending), item_count=len(pending),
+                flags=RTT_RAW_UTF8_LINES, stream_type=StreamType.RTT_RAW,
+            )
+
+    def _flush_numeric_batch(self) -> None:
+        if not self._pending_numeric:
+            return
+        pending = self._pending_numeric
+        self._pending_numeric = []
+        if self._stream_hub is not None:
+            self._stream_hub.publish(
+                encode_waveform_samples(pending), item_count=len(pending),
+                flags=WAVEFORM_SAMPLE_MAJOR_FLOAT32,
+                stream_type=StreamType.WAVEFORM,
+            )
+
+    def flush_pending(self, *, final: bool = False) -> None:
+        if final:
+            self.feed_rtt_bytes(b"", final=True)
+        self._flush_raw_batch()
+        self._flush_numeric_batch()
 
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 1024,
@@ -187,10 +313,16 @@ class RttStreamManager:
         self._running = True
         self._history.clear()
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
+        self._line_assembler.reset()
+        self._pending_raw.clear()
+        self._pending_numeric.clear()
+        self._numeric_channels = ()
 
         # Auto-detect parser strategy from initial RTT output
         from mklink.rtt_viewer import RttLineParser
         self._parser = RttLineParser("kv")  # will auto-detect on first lines
+        self._parser_auto_detect_done = False
+        self._parser_auto_detect_attempts = 0
         failure_callback = self._start_failure_callback
 
         def _poll():
@@ -201,8 +333,6 @@ class RttStreamManager:
                                  search_size=search_size)
                 initialized = True
                 start_time = time.time()
-                sample_lines = []
-
                 while not stop_event.is_set():
                     if time.time() - start_time > duration:
                         break
@@ -219,31 +349,9 @@ class RttStreamManager:
                     if not text or not text.strip():
                         continue
 
-                    now = time.time()
-                    for line in text.splitlines():
-                        line = line.strip()
-                        if not line:
-                            continue
-                        self._stats["raw_lines"] += 1
-
-                        # Collect samples for auto-detection
-                        if len(sample_lines) < 20:
-                            sample_lines.append(line)
-                            if len(sample_lines) == 20:
-                                self._parser = RttLineParser.auto_detect(sample_lines)
-
-                        parsed = self._parser.parse(line)
-                        if parsed is not None:
-                            parsed["_t"] = now
-                            self._stats["parsed_lines"] += 1
-                            self._bridge.put({"event": "data", **parsed})
-                            # History ring buffer
-                            self._history.append(parsed)
-                            if len(self._history) > self._max_history:
-                                self._history = self._history[-self._max_history:]
-                        else:
-                            # Raw line event
-                            self._bridge.put({"event": "raw", "line": line, "_t": now})
+                    chunk = text if isinstance(text, bytes) else str(text).encode("utf-8")
+                    self.feed_rtt_bytes(chunk)
+                    self._flush_raw_batch()
 
             except Exception as e:
                 logger.error("RTT stream error: %s", e)
@@ -251,6 +359,7 @@ class RttStreamManager:
                 if not initialized:
                     start_failure = e
             finally:
+                self.flush_pending(final=True)
                 try:
                     if getattr(self, "_generation", None) is generation:
                         self._running = False
@@ -276,6 +385,7 @@ class RttStreamManager:
             if thread.is_alive():
                 raise TimeoutError("RTT worker thread is still active")
         self._running = False
+        self.flush_pending(final=True)
         if self._thread is thread:
             self._thread = None
         return True
@@ -296,6 +406,8 @@ class RttStreamManager:
             "clients": self._bridge.client_count,
             "stats": self._stats,
             "history_size": len(self._history),
+            "numeric_channels": list(self._numeric_channels),
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 
     async def sse_generator(self):
@@ -849,7 +961,7 @@ class SuperWatchStreamManager:
     efficient block-based memory reads.
     """
 
-    def __init__(self):
+    def __init__(self, stream_hub=None, *, batch_samples: int = 32):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -860,6 +972,19 @@ class SuperWatchStreamManager:
         self._runtime = None
         self._read_lock = threading.Lock()
         self._origin_us: int | None = None
+        self._stream_hub = stream_hub
+        self._batch_samples = max(1, int(batch_samples))
+        self._pending_samples: list[tuple[float, ...]] = []
+        self._metadata_version = 0
+        self._published_metadata_signature = None
+        self._last_metadata_publish_monotonic = 0.0
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
+
+    def detach_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is stream_hub:
+            self._stream_hub = None
 
     @property
     def running(self) -> bool:
@@ -888,6 +1013,7 @@ class SuperWatchStreamManager:
             port=getattr(device, "_port", None),
             read_lock=self._read_lock,
         )
+        self.publish_metadata()
 
     def start(self, device) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -902,6 +1028,7 @@ class SuperWatchStreamManager:
         self._collecting.set()
         self._running = True
         self._origin_us = None
+        self._pending_samples.clear()
 
         def _poll():
             try:
@@ -919,8 +1046,7 @@ class SuperWatchStreamManager:
                                 bridge=device._bridge,
                             )
                         self._origin_us = result.origin_us
-                        for point in result.points:
-                            self._bridge.put({"event": "data", **point})
+                        self.publish_sample_points(result.points)
                     except Exception as e:
                         logger.debug("SuperWatch poll error: %s", e)
                         self._bridge.put({"event": "error", "message": str(e)})
@@ -931,6 +1057,7 @@ class SuperWatchStreamManager:
                 logger.error("SuperWatch stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
             finally:
+                self._flush_binary_batch()
                 if getattr(self, "_generation", None) is generation:
                     self._running = False
                     self._bridge.put({"event": "stopped"})
@@ -948,6 +1075,7 @@ class SuperWatchStreamManager:
             if thread.is_alive():
                 raise TimeoutError("SuperWatch worker thread is still active")
         self._running = False
+        self._flush_binary_batch()
         if self._thread is thread:
             self._thread = None
         return True
@@ -956,13 +1084,70 @@ class SuperWatchStreamManager:
         if self._runtime is None:
             return {"error": "SuperWatch not started"}
         result = self._runtime.add(name)
+        self.publish_metadata()
         return {"item": result}
 
     def remove_watch(self, name: str) -> dict:
         if self._runtime is None:
             return {"error": "SuperWatch not started"}
         result = self._runtime.remove(name)
+        self.publish_metadata()
         return {"item": result}
+
+    def publish_metadata(self, *, force: bool = False) -> int:
+        channels = self.list_watches()
+        signature = json.dumps(channels, sort_keys=True, default=str)
+        if not force and signature == self._published_metadata_signature:
+            return self._metadata_version
+        changed = signature != self._published_metadata_signature
+        self._published_metadata_signature = signature
+        if changed:
+            self._metadata_version += 1
+        self._last_metadata_publish_monotonic = time.monotonic()
+        if self._stream_hub is not None:
+            self._stream_hub.publish(
+                encode_superwatch_metadata(self._metadata_version, channels),
+                item_count=0, flags=SUPERWATCH_METADATA_JSON,
+                stream_type=StreamType.SUPERWATCH,
+            )
+        return self._metadata_version
+
+    def publish_sample_points(self, points) -> bool:
+        if self._runtime is None or not self._runtime.items:
+            return False
+        names = [item.name for item in self._runtime.items]
+        merged = {}
+        for point in points:
+            for name in names:
+                if name in point:
+                    merged[name] = point[name]
+        if any(name not in merged for name in names):
+            return False
+        try:
+            row = tuple(float(merged[name]) for name in names)
+        except (TypeError, ValueError):
+            return False
+        if not all(math.isfinite(value) for value in row):
+            return False
+        self.publish_metadata(
+            force=time.monotonic() - self._last_metadata_publish_monotonic >= 1.0,
+        )
+        self._pending_samples.append(row)
+        if len(self._pending_samples) >= self._batch_samples:
+            self._flush_binary_batch()
+        return True
+
+    def _flush_binary_batch(self) -> None:
+        if not self._pending_samples:
+            return
+        pending = self._pending_samples
+        self._pending_samples = []
+        if self._stream_hub is not None:
+            self._stream_hub.publish(
+                encode_waveform_samples(pending), item_count=len(pending),
+                flags=SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
+                stream_type=StreamType.SUPERWATCH,
+            )
 
     def search(self, query: str) -> list[dict]:
         if self._runtime is None:
@@ -993,6 +1178,8 @@ class SuperWatchStreamManager:
             "state": state,
             "interval": self._interval,
             "items": self.list_watches(),
+            "metadata_version": self._metadata_version,
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 
     def list_watches(self) -> list[dict]:

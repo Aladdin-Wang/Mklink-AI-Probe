@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import math
+import json
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -16,6 +17,13 @@ MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
 
 # WAVEFORM payload is little-endian Float32 in sample-major order.
 WAVEFORM_SAMPLE_MAJOR_FLOAT32 = 0x01
+RTT_RAW_UTF8_LINES = 0x01
+SUPERWATCH_SAMPLE_MAJOR_FLOAT32 = 0x01
+SUPERWATCH_METADATA_JSON = 0x02
+
+RTT_LINE_RECORD = struct.Struct("<QBI")
+RTT_LEVELS = {"raw": 0, "data": 1, "warning": 2, "error": 3}
+RTT_LEVEL_NAMES = {value: name for name, value in RTT_LEVELS.items()}
 
 # SystemView v1 events are fixed-size so producers and browser Workers can
 # process batches without JSON allocation or another serialization package.
@@ -76,6 +84,111 @@ class Frame:
     timestamp_ns: int
     item_count: int
     payload: bytes
+
+
+@dataclass(frozen=True)
+class RttLine:
+    timestamp_ns: int
+    level: str
+    text: str
+
+
+def encode_waveform_samples(samples) -> bytes:
+    """Encode complete numeric rows as little-endian sample-major Float32."""
+    rows = [tuple(row) for row in samples]
+    if not rows:
+        return b""
+    channel_count = len(rows[0])
+    if channel_count <= 0 or any(len(row) != channel_count for row in rows):
+        raise ValueError("waveform samples must have one stable channel count")
+    values = []
+    for row in rows:
+        for value in row:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("waveform values must be numeric")
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("waveform values must be finite")
+            values.append(number)
+    return struct.pack(f"<{len(values)}f", *values)
+
+
+def decode_waveform_samples(payload: bytes, item_count: int, channel_count: int):
+    """Test/reference decoder for the common sample-major Float32 layout."""
+    if item_count < 0 or channel_count <= 0:
+        raise ValueError("invalid waveform dimensions")
+    expected = item_count * channel_count * 4
+    if len(payload) != expected:
+        raise ValueError("waveform payload length does not match dimensions")
+    values = struct.unpack(f"<{item_count * channel_count}f", payload)
+    return tuple(
+        tuple(values[row * channel_count:(row + 1) * channel_count])
+        for row in range(item_count)
+    )
+
+
+def encode_rtt_lines(lines) -> bytes:
+    """Encode UTF-8 RTT lines with timestamp and level metadata."""
+    payload = bytearray()
+    for line in lines:
+        timestamp_ns = int(line.timestamp_ns)
+        if not 0 <= timestamp_ns <= 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("RTT line timestamp must be an unsigned 64-bit integer")
+        try:
+            level = RTT_LEVELS[line.level]
+        except KeyError as exc:
+            raise ValueError(f"unknown RTT line level: {line.level!r}") from exc
+        encoded = str(line.text).encode("utf-8")
+        payload.extend(RTT_LINE_RECORD.pack(timestamp_ns, level, len(encoded)))
+        payload.extend(encoded)
+    return bytes(payload)
+
+
+def decode_rtt_lines(payload: bytes, item_count: int) -> tuple[RttLine, ...]:
+    """Decode and strictly validate one RTT_RAW v1 payload."""
+    if item_count < 0:
+        raise ValueError("RTT item count must not be negative")
+    offset = 0
+    lines = []
+    for _ in range(item_count):
+        if len(payload) - offset < RTT_LINE_RECORD.size:
+            raise ValueError("truncated RTT line metadata")
+        timestamp_ns, level_value, length = RTT_LINE_RECORD.unpack_from(payload, offset)
+        offset += RTT_LINE_RECORD.size
+        if level_value not in RTT_LEVEL_NAMES or length > len(payload) - offset:
+            raise ValueError("invalid RTT line metadata")
+        try:
+            text = payload[offset:offset + length].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ValueError("RTT line payload is not valid UTF-8") from exc
+        offset += length
+        lines.append(RttLine(timestamp_ns, RTT_LEVEL_NAMES[level_value], text))
+    if offset != len(payload):
+        raise ValueError("RTT payload has trailing bytes")
+    return tuple(lines)
+
+
+def encode_superwatch_metadata(version: int, channels) -> bytes:
+    if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
+        raise ValueError("SuperWatch metadata version must be positive")
+    document = {"version": version, "channels": list(channels)}
+    return json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def decode_superwatch_metadata(payload: bytes) -> dict:
+    try:
+        document = json.loads(payload.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid SuperWatch metadata JSON") from exc
+    if (
+        not isinstance(document, dict)
+        or isinstance(document.get("version"), bool)
+        or not isinstance(document.get("version"), int)
+        or document["version"] <= 0
+        or not isinstance(document.get("channels"), list)
+    ):
+        raise ValueError("invalid SuperWatch metadata document")
+    return document
 
 
 def encode_frame(frame: Frame) -> bytes:

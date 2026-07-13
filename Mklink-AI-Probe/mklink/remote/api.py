@@ -392,14 +392,20 @@ def create_app(
     stream_types = dict(stream_api.STREAM_TYPES)
     app.state.stream_registry = stream_registry
     app.state.stream_types = stream_types
-    systemview_manager = get_managers()["systemview"]
+    dashboard_managers = get_managers()
+    systemview_manager = dashboard_managers["systemview"]
     set_stream_hub = getattr(systemview_manager, "set_stream_hub", None)
     if callable(set_stream_hub):
         set_stream_hub(stream_registry["systemview"])
-    vofa_manager = get_managers()["vofa"]
+    vofa_manager = dashboard_managers["vofa"]
     set_vofa_stream_hub = getattr(vofa_manager, "set_stream_hub", None)
     if callable(set_vofa_stream_hub):
         set_vofa_stream_hub(stream_registry["vofa"])
+    for stream_name in ("rtt", "superwatch"):
+        manager = dashboard_managers[stream_name]
+        setter = getattr(manager, "set_stream_hub", None)
+        if callable(setter):
+            setter(stream_registry[stream_name])
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
@@ -422,13 +428,16 @@ def create_app(
     app.add_event_handler("shutdown", shutdown_online_flash)
 
     async def shutdown_stream_producers() -> None:
-        detach_vofa_hub = getattr(vofa_manager, "detach_stream_hub", None)
-        vofa_hub = stream_registry["vofa"]
-        if getattr(vofa_manager, "_stream_hub", None) is vofa_hub:
-            if getattr(vofa_manager, "running", False):
-                await run_in_threadpool(vofa_manager.stop)
-            if callable(detach_vofa_hub):
-                detach_vofa_hub(vofa_hub)
+        for stream_name in ("vofa", "rtt", "superwatch"):
+            manager = dashboard_managers[stream_name]
+            hub = stream_registry[stream_name]
+            if getattr(manager, "_stream_hub", None) is not hub:
+                continue
+            if getattr(manager, "running", False):
+                await run_in_threadpool(manager.stop)
+            detach = getattr(manager, "detach_stream_hub", None)
+            if callable(detach):
+                detach(hub)
 
     app.add_event_handler("shutdown", shutdown_stream_producers)
 

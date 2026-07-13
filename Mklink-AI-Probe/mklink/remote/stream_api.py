@@ -67,8 +67,9 @@ async def _authenticate(websocket: WebSocket, auth_token: Optional[str]) -> bool
 def _encoded_data_frame(
     stream_type: StreamType, batch,
 ) -> bytes:
+    batch_stream_type = batch.stream_type or stream_type
     return encode_frame(Frame(
-        stream_type=stream_type,
+        stream_type=batch_stream_type,
         flags=batch.flags,
         stream_id=int(stream_type),
         sequence=batch.sequence,

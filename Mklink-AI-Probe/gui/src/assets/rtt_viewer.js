@@ -452,7 +452,7 @@ function sseOnOpen() {
   swTimeOrigin = null;
   for (var k in FIELDS) { if (FIELDS[k] && FIELDS[k].ringBuf) FIELDS[k].ringBuf.clear(); }
 }
-var es = CONFIG.mode === 'VOFA' ? null : new EventSource(API_STREAM);
+var es = (CONFIG.mode === 'VOFA' || CONFIG.mode === 'SuperWatch') ? null : new EventSource(API_STREAM);
 if (es) {
   es.onmessage = sseOnMessage;
   es.onerror = sseOnError;
@@ -468,6 +468,7 @@ var estimatedInterval = 0;
 var estimatedRate = 0;
 var IS_VOFA_MODE = CONFIG.mode === 'VOFA';
 var IS_SUPERWATCH_MODE = CONFIG.mode === 'SuperWatch';
+var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;
 var timeUnit = 'ms';
 // Initialize UI to stopped state
 updateCollectionUI('stopped');
@@ -638,7 +639,7 @@ document.getElementById('btn-start').addEventListener('click', function() {
       updateCollectionUI('running');
       notifyVofaStreamState('running');
       // Reconnect SSE if needed
-      if (!IS_VOFA_MODE && (!es || es.readyState === EventSource.CLOSED)) {
+      if (!IS_BINARY_WAVEFORM_MODE && (!es || es.readyState === EventSource.CLOSED)) {
         if (es) es.close();
         es = new EventSource(API_STREAM);
         es.onmessage = sseOnMessage;
@@ -2143,7 +2144,7 @@ function processPoint(point) {
   }
 }
 
-// VOFA binary bridge: Worker messages arrive as one transferable,
+// Binary waveform bridge: Worker messages arrive as one transferable,
 // sample-major Float32 batch. Collection updates typed rings immediately;
 // WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
 var binaryChannelNames = [];
@@ -2156,7 +2157,7 @@ var binaryChannelIndex = {};
 var binaryLastUiPaint = -Infinity;
 
 function configureBinaryChannels(channels) {
-  if (!IS_VOFA_MODE || !Array.isArray(channels)) return;
+  if (!IS_BINARY_WAVEFORM_MODE || !Array.isArray(channels)) return;
   var metadata = {};
   var nextNames = [];
   var signatureRows = [];
@@ -2238,7 +2239,7 @@ function configureBinaryChannels(channels) {
 }
 
 function acceptBinaryBatch(batch, channels) {
-  if (!IS_VOFA_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
+  if (!IS_BINARY_WAVEFORM_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
   if (channels) configureBinaryChannels(channels);
   if (!binaryChannelNames.length || batch.channelCount !== binaryChannelNames.length) return false;
   if (binaryLastSequence !== null && batch.sequence <= binaryLastSequence) return false;
@@ -2279,7 +2280,7 @@ function acceptBinaryBatch(batch, channels) {
 }
 
 function getBinaryVisibleRange() {
-  if (!IS_VOFA_MODE || binaryTimeOrigin === null) return null;
+  if (!IS_BINARY_WAVEFORM_MODE || binaryTimeOrigin === null) return null;
   var range = getVisibleTimeRange();
   var pixelWidth = Math.max(1, Math.floor(canvas.clientWidth || 1));
   return {
@@ -2314,7 +2315,7 @@ function parseBinaryEnvelope(envelope) {
 }
 
 function renderBinaryEnvelope(envelope) {
-  if (!IS_VOFA_MODE) return false;
+  if (!IS_BINARY_WAVEFORM_MODE) return false;
   var parsed = parseBinaryEnvelope(envelope);
   if (!parsed) return false;
   binaryEnvelope = parsed;
@@ -2332,7 +2333,7 @@ function renderBinaryEnvelope(envelope) {
 }
 
 function resetBinaryStream() {
-  if (!IS_VOFA_MODE) return;
+  if (!IS_BINARY_WAVEFORM_MODE) return;
   binaryTimeOrigin = null;
   binaryLastTimestamp = null;
   binaryLastSequence = null;
@@ -2344,7 +2345,7 @@ function resetBinaryStream() {
 }
 
 function updateBinaryHealth(health) {
-  if (!IS_VOFA_MODE || !health) return;
+  if (!IS_BINARY_WAVEFORM_MODE || !health) return;
   var stateBadge = document.getElementById('transport-state-badge');
   var healthBadge = document.getElementById('transport-health-badge');
   var phase = String(health.phase || 'stopped');
@@ -2375,7 +2376,7 @@ function updateBinaryHealth(health) {
 }
 
 function renderBinaryFrame() {
-  if (!IS_VOFA_MODE || paused) return;
+  if (!IS_BINARY_WAVEFORM_MODE || paused) return;
   drawChart();
   drawMinimap();
   updateUI();
@@ -2384,7 +2385,7 @@ function renderBinaryFrame() {
 
 if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
-  var binaryViewer = window.__waveformViewers.VOFA || {};
+  var binaryViewer = window.__waveformViewers[CONFIG.mode] || {};
   binaryViewer.configureBinaryChannels = configureBinaryChannels;
   binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
   binaryViewer.getBinaryVisibleRange = getBinaryVisibleRange;
@@ -2395,7 +2396,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
   binaryViewer.es = es;
-  window.__waveformViewers.VOFA = binaryViewer;
+  window.__waveformViewers[CONFIG.mode] = binaryViewer;
 }
 
 // ============================================================

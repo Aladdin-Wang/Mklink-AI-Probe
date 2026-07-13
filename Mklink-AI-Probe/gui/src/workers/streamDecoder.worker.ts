@@ -1,5 +1,6 @@
 import {
-  decodeFrame, StreamType, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
+  decodeFrame, RTT_RAW_UTF8_LINES, StreamType, SUPERWATCH_METADATA_JSON,
+  SUPERWATCH_SAMPLE_MAJOR_FLOAT32, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
 } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
 import {
@@ -35,6 +36,16 @@ export interface StreamTelemetry {
 export type WorkerOutput =
   | { type: 'channels'; channelCount: number }
   | StreamTelemetry
+  | {
+      type: 'rtt-lines'
+      sequence: bigint
+      lines: Array<{ timestampNs: bigint; level: 'raw' | 'data' | 'warning' | 'error'; text: string }>
+    }
+  | {
+      type: 'superwatch-metadata'
+      version: number
+      channels: Array<Record<string, unknown> & { name: string }>
+    }
   | {
       type: 'waveform-batch'
       sequence: bigint
@@ -98,6 +109,8 @@ export interface SystemViewEvent {
 
 const SYSTEMVIEW_RECORD_SIZE = 48
 const MAX_WAVEFORM_CHANNELS = 64
+const RTT_LINE_HEADER_SIZE = 13
+const RTT_LEVEL_NAMES = ['raw', 'data', 'warning', 'error'] as const
 const SYSTEMVIEW_HAS_TICKS = 0x01
 const SYSTEMVIEW_HAS_TIME_US = 0x02
 const SYSTEMVIEW_HAS_DELTA_US = 0x04
@@ -147,6 +160,7 @@ export class StreamDecoder {
   private lastNumericTimestampMs: number | null = null
   private lastNumericSpacingMs: number | null = null
   private timeIndexScratch: Int32Array | null = null
+  private superwatchMetadataVersion = 0
 
   constructor(post: PostOutput) {
     this.post = post
@@ -187,6 +201,7 @@ export class StreamDecoder {
       this.latestSystemViewTick = 0n
       this.lastNumericTimestampMs = null
       this.lastNumericSpacingMs = null
+      this.superwatchMetadataVersion = 0
       this.clearTelemetry()
       this.post({ type: 'channels', channelCount })
       this.post(this.telemetry())
@@ -220,14 +235,127 @@ export class StreamDecoder {
         this.appendSystemViewFrame(decoded.sequence, decoded.itemCount, decoded.payload)
       } else if (decoded.streamType === StreamType.WAVEFORM) {
         this.acceptWaveformFrame(decoded)
+      } else if (decoded.streamType === StreamType.RTT_RAW) {
+        this.acceptRttRawFrame(decoded)
+      } else if (decoded.streamType === StreamType.SUPERWATCH) {
+        this.acceptSuperWatchFrame(decoded)
       } else {
-        this.appendNumericFrame(decoded.sequence, decoded.timestampNs, decoded.itemCount, decoded.payload)
+        throw new RangeError('unsupported stream frame type')
       }
       this.acceptedFrames += 1
       this.post(this.telemetry(connectionGeneration, frameTicket))
     } catch (error) {
       this.error('INVALID_FRAME', error, connectionGeneration, frameTicket)
     }
+  }
+
+  private requireNextSequence(sequence: bigint, label: string): void {
+    if (sequence <= 0n || (this.lastDataSequence !== null && sequence <= this.lastDataSequence)) {
+      throw new RangeError(`${label} sequence must increase strictly`)
+    }
+  }
+
+  private commitSequence(sequence: bigint): void {
+    if (this.lastDataSequence !== null && sequence > this.lastDataSequence + 1n) {
+      this.transportDroppedBatches += Number(sequence - this.lastDataSequence - 1n)
+    }
+    this.lastDataSequence = sequence
+  }
+
+  private acceptRttRawFrame(decoded: StreamFrame): void {
+    if (decoded.flags !== RTT_RAW_UTF8_LINES) {
+      throw new RangeError('RTT_RAW payload must use UTF-8 line records')
+    }
+    this.requireNextSequence(decoded.sequence, 'RTT_RAW')
+    const bytes = new Uint8Array(decoded.payload)
+    const view = new DataView(decoded.payload)
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    const lines: Array<{
+      timestampNs: bigint; level: 'raw' | 'data' | 'warning' | 'error'; text: string
+    }> = []
+    let offset = 0
+    for (let index = 0; index < decoded.itemCount; index++) {
+      if (bytes.byteLength - offset < RTT_LINE_HEADER_SIZE) {
+        throw new RangeError('truncated RTT line metadata')
+      }
+      const timestampNs = view.getBigUint64(offset, true)
+      const level = RTT_LEVEL_NAMES[view.getUint8(offset + 8)]
+      const length = view.getUint32(offset + 9, true)
+      offset += RTT_LINE_HEADER_SIZE
+      if (!level || length > bytes.byteLength - offset) {
+        throw new RangeError('invalid RTT line metadata')
+      }
+      const text = decoder.decode(bytes.subarray(offset, offset + length))
+      offset += length
+      lines.push({ timestampNs, level, text })
+    }
+    if (offset !== bytes.byteLength) throw new RangeError('RTT line payload has trailing bytes')
+    this.commitSequence(decoded.sequence)
+    this.post({ type: 'rtt-lines', sequence: decoded.sequence, lines })
+  }
+
+  private acceptSuperWatchFrame(decoded: StreamFrame): void {
+    this.requireNextSequence(decoded.sequence, 'SuperWatch')
+    if (decoded.flags === SUPERWATCH_METADATA_JSON) {
+      if (decoded.itemCount !== 0) throw new RangeError('SuperWatch metadata item count must be zero')
+      const document = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decoded.payload)) as {
+        version?: unknown; channels?: unknown
+      }
+      if (!Number.isSafeInteger(document.version) || (document.version as number) <= this.superwatchMetadataVersion
+        || !Array.isArray(document.channels) || document.channels.length > MAX_WAVEFORM_CHANNELS) {
+        throw new RangeError('invalid or stale SuperWatch metadata')
+      }
+      const names = new Set<string>()
+      const channels = document.channels.map(channel => {
+        if (!channel || typeof channel !== 'object' || Array.isArray(channel)) {
+          throw new TypeError('SuperWatch channel metadata must be objects')
+        }
+        const clone = { ...(channel as Record<string, unknown>) }
+        if (typeof clone.name !== 'string' || !clone.name.trim() || names.has(clone.name)) {
+          throw new RangeError('SuperWatch channel names must be unique non-empty strings')
+        }
+        names.add(clone.name)
+        return clone as Record<string, unknown> & { name: string }
+      })
+      const version = document.version as number
+      const currentRing = this.ring as TypedRingBuffer
+      const nextCount = Math.max(1, channels.length)
+      const nextRing = new TypedRingBuffer(currentRing.capacity, nextCount)
+      this.ring = nextRing
+      this.superwatchMetadataVersion = version
+      this.lastNumericTimestampMs = null
+      this.lastNumericSpacingMs = null
+      this.commitSequence(decoded.sequence)
+      if (nextCount !== currentRing.channelCount) this.post({ type: 'channels', channelCount: nextCount })
+      this.post({ type: 'superwatch-metadata', version, channels })
+      return
+    }
+    if (decoded.flags !== SUPERWATCH_SAMPLE_MAJOR_FLOAT32 || this.superwatchMetadataVersion <= 0) {
+      throw new RangeError('SuperWatch samples require current metadata and sample-major Float32')
+    }
+    const ring = this.ring as TypedRingBuffer
+    const expectedBytes = decoded.itemCount * ring.channelCount * Float32Array.BYTES_PER_ELEMENT
+    if (decoded.itemCount <= 0 || decoded.payload.byteLength !== expectedBytes) {
+      throw new RangeError('SuperWatch payload does not match metadata channel alignment')
+    }
+    const values = new Float32Array(decoded.payload)
+    for (let index = 0; index < values.length; index++) {
+      if (!Number.isFinite(values[index])) throw new RangeError('SuperWatch samples must be finite')
+    }
+    const timestampMs = Number(decoded.timestampNs) / 1_000_000
+    if (!Number.isFinite(timestampMs)) throw new RangeError('SuperWatch timestamp is outside numeric range')
+    const timing = this.buildMonotonicTimes(timestampMs, decoded.itemCount)
+    ring.appendBatch(timing.times, values)
+    this.lastNumericTimestampMs = timing.lastTimestamp
+    this.lastNumericSpacingMs = timing.spacing
+    this.commitSequence(decoded.sequence)
+    const output: Extract<WorkerOutput, { type: 'waveform-batch' }> = {
+      type: 'waveform-batch', sequence: decoded.sequence,
+      timestampNs: decoded.timestampNs, itemCount: decoded.itemCount,
+      channelCount: ring.channelCount, layout: 'sample-major-float32',
+      values: decoded.payload, times: timing.times.buffer as ArrayBuffer,
+    }
+    this.post(output, [output.values, output.times])
   }
 
   private acceptWaveformFrame(decoded: StreamFrame): void {
@@ -344,34 +472,6 @@ export class StreamDecoder {
         : times[index - 1] + ulpStep
     }
     return { times, lastTimestamp: times[itemCount - 1], spacing }
-  }
-
-  private appendNumericFrame(
-    sequence: bigint,
-    timestampNs: bigint,
-    itemCount: number,
-    payload: ArrayBuffer,
-  ): void {
-    const ring = this.ring as TypedRingBuffer
-    const expectedBytes = itemCount * ring.channelCount * Float32Array.BYTES_PER_ELEMENT
-    if (payload.byteLength !== expectedBytes) {
-      throw new RangeError(
-        `numeric payload must be sample-major (${itemCount} samples x ${ring.channelCount} channels)`,
-      )
-    }
-    if (this.lastDataSequence !== null && sequence > this.lastDataSequence + 1n) {
-      const gap = sequence - this.lastDataSequence - 1n
-      this.transportDroppedBatches += Number(gap)
-    }
-    this.lastDataSequence = sequence
-
-    const batchMilliseconds = Number(timestampNs) / 1_000_000
-    const timestamps = new Float64Array(itemCount)
-    timestamps.fill(batchMilliseconds)
-    // V1 has only one batch timestamp. Equal per-sample keys preserve order in
-    // the ring without inventing a sampling period; producers may extend the
-    // protocol with real sample timing later.
-    ring.appendBatch(timestamps, new Float32Array(payload))
   }
 
   private noteDataSequence(sequence: bigint): void {
@@ -646,6 +746,7 @@ export class StreamDecoder {
     this.latestSystemViewTick = 0n
     this.lastNumericTimestampMs = null
     this.lastNumericSpacingMs = null
+    this.superwatchMetadataVersion = 0
     this.clearTelemetry()
     this.post(this.telemetry())
   }
