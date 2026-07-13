@@ -24,6 +24,7 @@ from collections import deque
 import json
 import logging
 import math
+import struct
 import threading
 import time
 from typing import Any, Generator
@@ -1749,6 +1750,9 @@ class VofaStreamManager:
         self._read_errors = 0
         self._rate_timestamps = deque()
         self._actual_rate = 0.0
+        self._acquisition_mode = "idle"
+        self._stream_integrity: dict[str, int] = {}
+        self._dump_restart = threading.Event()
 
     @property
     def running(self) -> bool:
@@ -1782,11 +1786,13 @@ class VofaStreamManager:
         self._read_errors = 0
         self._rate_timestamps.clear()
         self._actual_rate = 0.0
+        self._acquisition_mode = "idle"
+        self._stream_integrity = {}
+        self._dump_restart.clear()
 
-    def collect_cycle(self, device) -> bool:
-        import struct as _struct
-
-        unpack = {
+    @staticmethod
+    def _unpack_spec(type_name: str) -> tuple[str, int]:
+        return {
             "float": ("<f", 4), "fp32": ("<f", 4),
             "int32_t": ("<i", 4), "int32": ("<i", 4),
             "uint32_t": ("<I", 4), "uint32": ("<I", 4),
@@ -1795,23 +1801,9 @@ class VofaStreamManager:
             "int8_t": ("<b", 1), "int8": ("<b", 1),
             "uint8_t": ("<B", 1), "uint8": ("<B", 1),
             "bool": ("<?", 1), "boolean": ("<?", 1),
-        }
-        values = [None] * len(self._channels)
-        try:
-            for group in self._read_groups:
-                raw = device.read_memory(group.address, group.size)
-                self._completed_reads += 1
-                if len(raw) != group.size:
-                    raise ValueError("non-exact VOFA memory read")
-                for channel in group.channels:
-                    fmt, width = unpack.get(channel.type_name, ("<f", 4))
-                    start = channel.offset
-                    values[channel.channel_index] = _struct.unpack(
-                        fmt, raw[start:start + width],
-                    )[0]
-        except Exception:
-            self._read_errors += 1
-            return False
+        }.get(type_name, ("<f", 4))
+
+    def _accept_values(self, values: list) -> bool:
         if any(value is None for value in values):
             self._read_errors += 1
             return False
@@ -1845,6 +1837,51 @@ class VofaStreamManager:
         if len(self._pending_samples) >= self._batch_samples:
             self._flush_binary_batch()
         return True
+
+    def _accept_dump_frame(self, frame: dict) -> bool:
+        from mklink.dump_memory import FLAG_REGION_ERROR
+
+        if int(frame.get("flags", 0)) & FLAG_REGION_ERROR:
+            self._read_errors += 1
+            return False
+        values = [None] * len(self._channels)
+        regions = dict(frame.get("regions", []))
+        try:
+            for region_index, group in enumerate(self._read_groups):
+                raw = regions.get(region_index)
+                if raw is None or len(raw) != group.size:
+                    raise ValueError("non-exact VOFA dump-memory region")
+                for channel in group.channels:
+                    fmt, width = self._unpack_spec(channel.type_name)
+                    start = channel.offset
+                    values[channel.channel_index] = struct.unpack(
+                        fmt, raw[start:start + width],
+                    )[0]
+        except Exception:
+            self._read_errors += 1
+            return False
+        return self._accept_values(values)
+
+    def collect_cycle(self, device) -> bool:
+        import struct as _struct
+
+        values = [None] * len(self._channels)
+        try:
+            for group in self._read_groups:
+                raw = device.read_memory(group.address, group.size)
+                self._completed_reads += 1
+                if len(raw) != group.size:
+                    raise ValueError("non-exact VOFA memory read")
+                for channel in group.channels:
+                    fmt, width = self._unpack_spec(channel.type_name)
+                    start = channel.offset
+                    values[channel.channel_index] = _struct.unpack(
+                        fmt, raw[start:start + width],
+                    )[0]
+        except Exception:
+            self._read_errors += 1
+            return False
+        return self._accept_values(values)
 
     def publish_samples(self, samples) -> None:
         from mklink.vofa_viewer import (
@@ -1891,13 +1928,46 @@ class VofaStreamManager:
 
         def _poll():
             try:
-                while not stop_event.is_set():
-                    if not self._paused.is_set():
-                        stop_event.wait(self._interval)
-                        continue
+                bridge = getattr(device, "_bridge", None)
+                if bridge is not None and 0 < len(self._read_groups) <= 16:
+                    from mklink.dump_memory import DumpMemoryStreamSession
 
-                    self.collect_cycle(device)
-                    stop_event.wait(self._interval)
+                    self._acquisition_mode = "dump-memory"
+                    region_pairs = [
+                        (group.address, group.size) for group in self._read_groups
+                    ]
+                    while not stop_event.is_set():
+                        self._dump_restart.clear()
+                        session = DumpMemoryStreamSession(
+                            bridge, region_pairs, self._interval,
+                        )
+                        try:
+                            session.start()
+                            while (
+                                not stop_event.is_set()
+                                and not self._dump_restart.is_set()
+                            ):
+                                frames = session.read_frames(max_bytes=1024 * 1024)
+                                self._stream_integrity = session.stats
+                                if not frames:
+                                    stop_event.wait(0.0005)
+                                    continue
+                                if not self._paused.is_set():
+                                    continue
+                                for frame in frames:
+                                    self._accept_dump_frame(frame)
+                        finally:
+                            session.stop()
+                            self._stream_integrity = session.stats
+                else:
+                    self._acquisition_mode = "read-memory"
+                    while not stop_event.is_set():
+                        if not self._paused.is_set():
+                            stop_event.wait(self._interval)
+                            continue
+
+                        self.collect_cycle(device)
+                        stop_event.wait(self._interval)
 
             except Exception as e:
                 logger.error("VOFA stream error: %s", e)
@@ -1936,6 +2006,7 @@ class VofaStreamManager:
 
     def set_interval(self, interval: float) -> float:
         self._interval = normalize_vofa_interval(interval)
+        self._dump_restart.set()
         return self._interval
 
     def get_status(self) -> dict:
@@ -1950,6 +2021,8 @@ class VofaStreamManager:
             "completed_reads": self._completed_reads,
             "read_errors": self._read_errors,
             "actual_rate": round(self._actual_rate, 6),
+            "acquisition_mode": self._acquisition_mode,
+            "stream_integrity": dict(self._stream_integrity),
             "layout": "sample-major-float32",
         }
 

@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import math
 import struct
 import threading
@@ -18,6 +19,7 @@ from mklink.vofa_viewer import (
     encode_vofa_samples,
     normalize_vofa_channels,
 )
+from mklink.dump_memory import MAGIC
 
 
 def _channels(count=3):
@@ -26,6 +28,50 @@ def _channels(count=3):
          "type": "float", "size": 4}
         for index in range(count)
     ]
+
+
+def _dump_frame(timestamp_us, payload, *, flags=0):
+    region = b"\x00" + struct.pack("<H", len(payload)) + payload
+    length = 19 + len(region) + 6
+    body = MAGIC + struct.pack("<QHB", timestamp_us, length, 1) + region + struct.pack("<H", flags)
+    return body + struct.pack("<I", binascii.crc32(body) & 0xFFFFFFFF)
+
+
+def test_running_manager_uses_probe_dump_stream_and_exposes_integrity_metrics():
+    class Bridge:
+        def __init__(self):
+            self.chunks = [b"junk" + _dump_frame(100, struct.pack("<f", 7.25))]
+            self.writes = []
+
+        def _enter_stream(self, state):
+            self.state = state
+
+        def _write_raw(self, data):
+            self.writes.append(data)
+
+        def drain_stream_bytes(self, max_bytes=None):
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def _exit_stream(self):
+            return ""
+
+    bridge = Bridge()
+    device = type("Device", (), {"_bridge": bridge})()
+    manager = VofaStreamManager(batch_samples=1)
+    manager.start(device, _channels(1), interval=0.0001)
+    deadline = time.perf_counter() + 1.0
+    while manager.get_status()["completed_samples"] < 1 and time.perf_counter() < deadline:
+        time.sleep(0.001)
+    manager.stop()
+
+    status = manager.get_status()
+    assert status["acquisition_mode"] == "dump-memory"
+    assert status["completed_samples"] == 1
+    assert status["stream_integrity"]["parser_dropped_bytes"] == 4
+    assert status["stream_integrity"]["parser_crc_errors"] == 0
+    assert manager._history[-1]["ch0"] == pytest.approx(7.25)
+    assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.0001)\n"
+    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
 
 
 def test_sample_major_payload_preserves_10000_ids_and_channel_alignment():
