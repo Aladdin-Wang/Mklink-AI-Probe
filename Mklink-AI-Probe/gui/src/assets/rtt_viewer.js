@@ -2049,6 +2049,7 @@ function processPoint(point) {
 // sample-major Float32 batch. Collection updates typed rings immediately;
 // WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
 var binaryChannelNames = [];
+var binaryChannelSignature = null;
 var binaryTimeOrigin = null;
 var binaryLastTimestamp = null;
 var binaryLastSequence = null;
@@ -2056,24 +2057,82 @@ var binaryLastSequence = null;
 function configureBinaryChannels(channels) {
   if (!IS_VOFA_MODE || !Array.isArray(channels)) return;
   var metadata = {};
-  binaryChannelNames = [];
+  var nextNames = [];
+  var signatureRows = [];
   for (var i = 0; i < channels.length; i++) {
     var channel = channels[i] || {};
     var name = channel.name || String(channel.addr !== undefined ? channel.addr : i);
-    binaryChannelNames.push(name);
+    nextNames.push(name);
     metadata[name] = {
       type: channel.type || 'float',
       size: channel.size || 4,
       address: channel.addr,
       unit: channel.unit || ''
     };
+    signatureRows.push([
+      name, metadata[name].type, metadata[name].size,
+      metadata[name].address, metadata[name].unit
+    ]);
   }
-  if (binaryChannelNames.length) applyChannelMetadata(metadata, false);
+  var nextSignature = JSON.stringify(signatureRows);
+  if (nextSignature === binaryChannelSignature) return;
+
+  // VOFA channel status is a complete ordered snapshot. Replace it in one
+  // synchronous step so a same-count rename cannot leave stale rings or
+  // metadata paired with the new binary column order.
+  for (var oldName in FIELDS) {
+    if (!FIELDS.hasOwnProperty(oldName)) continue;
+    if (FIELDS[oldName].ringBuf) FIELDS[oldName].ringBuf.clear();
+    delete FIELDS[oldName];
+  }
+  for (var metadataName in CHANNEL_METADATA) {
+    if (CHANNEL_METADATA.hasOwnProperty(metadataName)) {
+      delete CHANNEL_METADATA[metadataName];
+    }
+  }
+  markFieldOrderDirty();
+  _watchStructGen++;
+  channelYState = {};
+  _inspectCache = {};
+  _expandedRows = {};
+  _watchWrittenValues = {};
+  _removedChannels = {};
+  selectedChannel = null;
+  timelineView.zoom = 1;
+  timelineView.offset = 0;
+  hoverProbe.active = false;
+
+  triggerSettings.enabled = false;
+  triggerSettings.source = '';
+  resetTrigger();
+  var triggerEnable = document.getElementById('trigger-enable-btn');
+  if (triggerEnable) triggerEnable.classList.remove('active');
+  var triggerSource = document.getElementById('trigger-source');
+  if (triggerSource) triggerSource.value = '';
+
+  cursorState.enabled = false;
+  cursorState.a = null;
+  cursorState.b = null;
+  cursorState.dragging = null;
+  cursorReadout.textContent = '';
+  if (cursorMeasurePanel) cursorMeasurePanel.style.display = 'none';
+  var cursorToggle = document.getElementById('btn-cursor-toggle');
+  if (cursorToggle) cursorToggle.classList.remove('active');
+  var cursorMode = document.getElementById('btn-cursor-mode');
+  if (cursorMode) cursorMode.style.display = 'none';
+
+  binaryChannelNames = nextNames;
+  binaryChannelSignature = nextSignature;
+  binaryTimeOrigin = null;
+  binaryLastTimestamp = null;
+  binaryLastSequence = null;
+  applyChannelMetadata(metadata, false);
+  updateTriggerSourceOptions();
 }
 
 function acceptBinaryBatch(batch, channels) {
   if (!IS_VOFA_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
-  if (channels && channels.length !== binaryChannelNames.length) configureBinaryChannels(channels);
+  if (channels) configureBinaryChannels(channels);
   if (!binaryChannelNames.length || batch.channelCount !== binaryChannelNames.length) return false;
   if (binaryLastSequence !== null && batch.sequence <= binaryLastSequence) return false;
   binaryLastSequence = batch.sequence;
@@ -2838,18 +2897,26 @@ function updateCursorReadout() {
 }
 
 function sampleValueAt(ringBuf, t) {
-  var pts = ringBuf.toArray();
-  if (!pts.length) return null;
-  var best = null;
-  var bestDist = Infinity;
-  for (var i = 0; i < pts.length; i++) {
-    var d = Math.abs(pts[i].t - t);
-    if (d < bestDist) {
-      bestDist = d;
-      best = pts[i];
-    }
+  var count = ringBuf ? ringBuf.count : 0;
+  if (count < 1) return null;
+  var firstTime = ringBuf.timeAt(0);
+  if (t <= firstTime) return ringBuf.valueAt(0);
+  var lastIndex = count - 1;
+  var lastTime = ringBuf.timeAt(lastIndex);
+  if (t >= lastTime) return ringBuf.valueAt(lastIndex);
+
+  // Ring timestamps are logical-order monotonic. Find the first sample at or
+  // after t without materializing point objects, then compare its predecessor.
+  var low = 1, high = lastIndex;
+  while (low < high) {
+    var mid = low + ((high - low) >> 1);
+    if (ringBuf.timeAt(mid) < t) low = mid + 1;
+    else high = mid;
   }
-  return best ? best.y : null;
+  var before = low - 1;
+  return (t - ringBuf.timeAt(before) <= ringBuf.timeAt(low) - t)
+    ? ringBuf.valueAt(before)
+    : ringBuf.valueAt(low);
 }
 
 function syncCursorOverlay(id, cursor, tx, leftBound, rightBound) {

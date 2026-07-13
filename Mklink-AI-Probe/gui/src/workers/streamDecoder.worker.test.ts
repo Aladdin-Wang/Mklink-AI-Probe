@@ -115,22 +115,25 @@ describe('StreamDecoder worker controller', () => {
     expect(transfers[messages.indexOf(batch)]).toEqual([batch.values])
   })
 
-  it('rejects an unknown VOFA layout flag before mutating the typed ring', () => {
-    const { decoder, messages } = setup()
-    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
-    decoder.handle({
-      type: 'frame',
-      buffer: frame(1n, 1, floats(9), StreamType.WAVEFORM, 1_000_000n, 0x02),
-      connectionGeneration: 1,
-      frameTicket: 1,
-    })
-    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+  it.each([0x02, 0x03])(
+    'rejects unknown VOFA layout flags 0x%s before mutating the typed ring',
+    flags => {
+      const { decoder, messages } = setup()
+      decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+      decoder.handle({
+        type: 'frame',
+        buffer: frame(1n, 1, floats(9), StreamType.WAVEFORM, 1_000_000n, flags),
+        connectionGeneration: 1,
+        frameTicket: 1,
+      })
+      expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
 
-    decoder.handle({
-      type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 10,
-    })
-    expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', sampleCount: 0 })
-  })
+      decoder.handle({
+        type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 10,
+      })
+      expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', sampleCount: 0 })
+    },
+  )
 
   it('uses VOFA frame metadata to reconfigure a changed channel count', () => {
     const { decoder, messages } = setup()

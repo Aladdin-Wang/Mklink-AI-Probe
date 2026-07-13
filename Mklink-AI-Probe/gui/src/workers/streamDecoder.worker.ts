@@ -212,7 +212,7 @@ export class StreamDecoder {
         if (decoded.streamType === StreamType.WAVEFORM) {
           if (
             decoded.flags !== 0
-            && (decoded.flags & WAVEFORM_SAMPLE_MAJOR_FLOAT32) === 0
+            && decoded.flags !== WAVEFORM_SAMPLE_MAJOR_FLOAT32
           ) {
             throw new RangeError('VOFA waveform payload must be sample-major Float32')
           }

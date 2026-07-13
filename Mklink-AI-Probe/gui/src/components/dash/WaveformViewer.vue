@@ -33,9 +33,9 @@ const vofaScheduler = binary
 function onVofaChannels(event: Event): void {
   if (!binary || disposed) return
   const channels = (event as CustomEvent<unknown>).detail
-  if (!Array.isArray(channels) || channels.length === 0) return
+  if (!Array.isArray(channels)) return
   vofaChannels = channels
-  binary.configure(channels.length)
+  binary.configure(Math.max(1, channels.length))
   ;(window as any).__waveformViewers?.VOFA?.configureBinaryChannels?.(channels)
 }
 

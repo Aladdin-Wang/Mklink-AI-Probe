@@ -21,6 +21,85 @@ const mocks = vi.hoisted(() => ({
   }>,
 }))
 
+const viewerSource = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/assets/rtt_viewer.js'), 'utf8',
+)
+
+function canvasContext(): CanvasRenderingContext2D {
+  const gradient = { addColorStop: vi.fn() }
+  return new Proxy({} as CanvasRenderingContext2D, {
+    get(target, property) {
+      if (property === 'measureText') return () => ({ width: 10 })
+      if (property === 'createLinearGradient') return () => gradient
+      if (!(property in target)) return () => undefined
+      return target[property as keyof CanvasRenderingContext2D]
+    },
+    set(target, property, value) {
+      ;(target as any)[property] = value
+      return true
+    },
+  })
+}
+
+async function loadRttViewerRuntime(mode: 'VOFA' | 'SuperWatch' = 'VOFA') {
+  const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValue(canvasContext())
+  const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockReturnValue({
+      x: 0, y: 0, width: 800, height: 400, top: 0, right: 800,
+      bottom: 400, left: 0, toJSON: () => ({}),
+    })
+  const widthSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
+    .mockReturnValue(800)
+  const heightSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get')
+    .mockReturnValue(400)
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.stubGlobal('EventSource', class {
+    static CLOSED = 2
+    readyState = 1
+    close() {}
+  })
+  vi.stubGlobal('t', (key: string) => key)
+  ;(globalThis as any).CONFIG = {
+    maxPoints: 4, title: 'test', mode, lang: 'en', deviceConnected: true,
+  }
+  ;(window as any).__ringToArrayCalls = 0
+  const wrapper = mount(WaveformViewer, { props: { mode, deviceConnected: true } })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const host = wrapper.element
+  host.querySelectorAll('script[src]').forEach(script => script.remove())
+  document.body.appendChild(host)
+  const instrumented = viewerSource.replace(
+    'RingBuffer.prototype.toArray = function() {',
+    'RingBuffer.prototype.toArray = function() { window.__ringToArrayCalls++;',
+  ) + `
+window.__rttTestProbe = {
+  fields: function() { return FIELDS; },
+  metadata: function() { return CHANNEL_METADATA; },
+  binary: function() { return {
+    names: binaryChannelNames.slice(), timeOrigin: binaryTimeOrigin,
+    lastTimestamp: binaryLastTimestamp, lastSequence: binaryLastSequence
+  }; },
+  trigger: triggerSettings,
+  cursor: cursorState,
+  applyMetadata: applyChannelMetadata
+};`
+  new Function(instrumented).call(window)
+  return {
+    wrapper,
+    viewer: (window as any).__waveformViewers.VOFA as any,
+    probe: (window as any).__rttTestProbe as any,
+    cleanup() {
+      wrapper.unmount()
+      host.remove()
+      contextSpy.mockRestore()
+      rectSpy.mockRestore()
+      widthSpy.mockRestore()
+      heightSpy.mockRestore()
+    },
+  }
+}
+
 vi.mock('../../composables/useBinaryStream', () => ({
   useBinaryStream: mocks.useBinaryStream,
 }))
@@ -133,6 +212,12 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(mocks.binary.configure).toHaveBeenCalledWith(3)
     expect(configureBinaryChannels).toHaveBeenCalledWith(channels)
 
+    mocks.binary.configure.mockClear()
+    configureBinaryChannels.mockClear()
+    window.dispatchEvent(new CustomEvent('mklink:vofa-channels', { detail: [] }))
+    expect(mocks.binary.configure).toHaveBeenCalledWith(1)
+    expect(configureBinaryChannels).toHaveBeenCalledWith([])
+
     wrapper.unmount()
     mocks.binary.configure.mockClear()
     window.dispatchEvent(new CustomEvent('mklink:vofa-channels', { detail: [{ name: 'late' }] }))
@@ -141,7 +226,7 @@ describe('WaveformViewer VOFA binary transport', () => {
 })
 
 describe('VOFA viewer hot path source guard', () => {
-  const source = fs.readFileSync(path.resolve(process.cwd(), 'src/assets/rtt_viewer.js'), 'utf8')
+  const source = viewerSource
 
   it('does not append DOM text, copy rings, or sort fields on each VOFA frame', () => {
     const processPoint = source.match(/function processPoint\(point\)[\s\S]*?\n}\n\n\/\//)?.[0] ?? ''
@@ -158,5 +243,100 @@ describe('VOFA viewer hot path source guard', () => {
       'serializeState', 'deserializeState', 'exportCSV', 'exportPNG',
       'checkTrigger', 'cursor-a', 'cursor-b',
     ]) expect(source).toContain(token)
+  })
+})
+
+describe('VOFA viewer typed-ring runtime', () => {
+  it('renders wrapped multi-channel cursor data without copying either ring', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const send = (sequence: bigint, timestampNs: bigint, values: number[]) =>
+        runtime.viewer.acceptBinaryBatch({
+          sequence, timestampNs, itemCount: values.length / 2, channelCount: 2,
+          layout: 'sample-major-float32', values: Float32Array.from(values).buffer,
+        })
+      send(1n, 10_000_000_000n, [1, 10, 2, 20])
+      send(2n, 12_000_000_000n, [3, 30, 4, 40, 5, 50, 6, 60])
+      send(3n, 14_000_000_000n, [7, 70, 8, 80, 9, 90, 10, 100])
+      runtime.probe.cursor.enabled = true
+      runtime.probe.cursor.mode = 'value'
+      runtime.probe.cursor.a = { t: 2.6 }
+      runtime.probe.cursor.b = { t: 3.9 }
+      ;(window as any).__ringToArrayCalls = 0
+
+      runtime.viewer.renderBinaryFrame()
+
+      expect((window as any).__ringToArrayCalls).toBe(0)
+      expect(runtime.probe.fields().A.ringBuf.count).toBe(4)
+      expect(runtime.probe.fields().A.ringBuf.timeAt(0)).toBeCloseTo(2.5)
+      expect(runtime.probe.fields().A.ringBuf.valueAt(3)).toBe(10)
+      expect(document.getElementById('cursor-readout')?.textContent).toContain('A d=3.00')
+      expect(document.getElementById('cursor-readout')?.textContent).toContain('B d=30.00')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('replaces same-count and changed-count VOFA channel snapshots atomically', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 10n, timestampNs: 1_000_000_000n, itemCount: 1, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2).buffer,
+      })).toBe(true)
+      runtime.probe.trigger.enabled = true
+      runtime.probe.trigger.source = 'A'
+      runtime.probe.cursor.enabled = true
+      runtime.probe.cursor.a = { t: 0 }
+      runtime.probe.cursor.b = { t: 1 }
+
+      runtime.viewer.configureBinaryChannels([{ name: 'C' }, { name: 'D' }])
+
+      expect(Object.keys(runtime.probe.fields()).sort()).toEqual(['C', 'D'])
+      expect(Object.keys(runtime.probe.metadata()).sort()).toEqual(['C', 'D'])
+      expect(runtime.probe.binary()).toEqual({
+        names: ['C', 'D'], timeOrigin: null, lastTimestamp: null, lastSequence: null,
+      })
+      expect(runtime.probe.trigger).toMatchObject({ enabled: false, source: '', state: 'idle' })
+      expect(runtime.probe.cursor).toMatchObject({ enabled: false, a: null, b: null })
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_000_000_000n, itemCount: 1, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(3, 4).buffer,
+      })).toBe(true)
+
+      runtime.probe.metadata().C.legacy = 'stale'
+      runtime.probe.fields().C.thresholds = { warnHigh: 1 }
+      runtime.viewer.configureBinaryChannels([
+        { name: 'C', type: 'uint32_t', addr: 0x20000000 },
+        { name: 'D' },
+      ])
+      expect(runtime.probe.metadata().C).toEqual({
+        type: 'uint32_t', size: 4, address: 0x20000000, unit: '',
+      })
+      expect(runtime.probe.fields().C.thresholds).toBeNull()
+
+      runtime.viewer.configureBinaryChannels([{ name: 'E' }])
+      expect(Object.keys(runtime.probe.fields())).toEqual(['E'])
+      expect(runtime.probe.binary().names).toEqual(['E'])
+      runtime.viewer.configureBinaryChannels([])
+      expect(Object.keys(runtime.probe.fields())).toEqual([])
+      expect(Object.keys(runtime.probe.metadata())).toEqual([])
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps SuperWatch incremental metadata updates non-purging', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.probe.applyMetadata({ A: { type: 'float' } }, false)
+      runtime.probe.applyMetadata({ B: { type: 'float' } }, false)
+      expect(Object.keys(runtime.probe.fields()).sort()).toEqual(['A', 'B'])
+      expect(Object.keys(runtime.probe.metadata()).sort()).toEqual(['A', 'B'])
+    } finally {
+      runtime.cleanup()
+    }
   })
 })
