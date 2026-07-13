@@ -42,6 +42,14 @@ from mklink.remote.stream_protocol import (
     encode_waveform_samples,
 )
 
+
+def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dict[str, int]:
+    """Combine completed-session counters with one active session snapshot."""
+    return {
+        key: int(base.get(key, 0)) + int(current.get(key, 0))
+        for key in base.keys() | current.keys()
+    }
+
 logger = logging.getLogger(__name__)
 
 
@@ -1036,6 +1044,9 @@ class SuperWatchStreamManager:
         self._read_errors = 0
         self._binary_dropped_batches = 0
         self._binary_dropped_items = 0
+        self._acquisition_mode = "idle"
+        self._stream_integrity: dict[str, int] = {}
+        self._dump_restart = threading.Event()
         self.set_stream_hub(stream_hub)
 
     def set_stream_hub(self, stream_hub) -> None:
@@ -1105,6 +1116,7 @@ class SuperWatchStreamManager:
         self._stop_event = stop_event
         self._generation = generation
         self._collecting.set()
+        self._dump_restart.clear()
         self._running = True
         with self._read_lock:
             self._origin_us = None
@@ -1129,6 +1141,80 @@ class SuperWatchStreamManager:
                     if runtime is None:
                         time.sleep(0.5)
                         continue
+                    bridge = getattr(device, "_bridge", None)
+                    supports_dump = bridge is not None and all(
+                        callable(getattr(bridge, name, None))
+                        for name in (
+                            "_enter_stream", "_write_raw",
+                            "drain_stream_bytes", "_exit_stream",
+                        )
+                    )
+                    if supports_dump and 0 < len(blocks) <= 16:
+                        from mklink.dump_memory import (
+                            DumpMemoryStreamSession,
+                            decode_frame_to_points,
+                        )
+
+                        self._acquisition_mode = "dump-memory"
+                        region_pairs = [(block.address, block.size) for block in blocks]
+                        block_addresses = [
+                            (
+                                block.address,
+                                block.size,
+                                [
+                                    (
+                                        item.name,
+                                        item.type_name,
+                                        item.address - block.address,
+                                        item.enum_values,
+                                    )
+                                    for item in block.items
+                                ],
+                            )
+                            for block in blocks
+                        ]
+                        session = DumpMemoryStreamSession(
+                            bridge, region_pairs, max(0.000001, self._interval),
+                        )
+                        completed_integrity = dict(self._stream_integrity)
+                        try:
+                            session.start()
+                            while (
+                                not stop_event.is_set()
+                                and config_generation == self._config_generation
+                                and not self._dump_restart.is_set()
+                            ):
+                                frames = session.read_frames(max_bytes=1024 * 1024)
+                                self._stream_integrity = _sum_counter_snapshots(
+                                    completed_integrity, session.stats,
+                                )
+                                if not frames:
+                                    stop_event.wait(0.0005)
+                                    continue
+                                if not self._collecting.is_set():
+                                    continue
+                                for frame in frames:
+                                    points, origin_us = decode_frame_to_points(
+                                        frame, block_addresses, origin_us,
+                                    )
+                                    with self._read_lock:
+                                        if config_generation != self._config_generation:
+                                            self._dropped_read_cycles += 1
+                                            break
+                                        self._origin_us = origin_us
+                                        if self._publish_sample_points_locked(
+                                            points,
+                                            names=tuple(item.name for item in items),
+                                        ):
+                                            self._completed_read_cycles += 1
+                        finally:
+                            session.stop()
+                            self._stream_integrity = _sum_counter_snapshots(
+                                completed_integrity, session.stats,
+                            )
+                            self._dump_restart.clear()
+                        continue
+                    self._acquisition_mode = "read-memory"
                     t0 = time.monotonic()
                     try:
                         from mklink.superwatch import sample_blocks
@@ -1318,6 +1404,7 @@ class SuperWatchStreamManager:
 
     def set_interval(self, interval: float) -> float:
         self._interval = max(0.0, min(60.0, interval))
+        self._dump_restart.set()
         return self._interval
 
     def get_status(self) -> dict:
@@ -1340,6 +1427,8 @@ class SuperWatchStreamManager:
                 "batches": self._binary_dropped_batches,
                 "items": self._binary_dropped_items,
             },
+            "acquisition_mode": self._acquisition_mode,
+            "stream_integrity": dict(self._stream_integrity),
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 
@@ -1941,6 +2030,7 @@ class VofaStreamManager:
                         session = DumpMemoryStreamSession(
                             bridge, region_pairs, self._interval,
                         )
+                        completed_integrity = dict(self._stream_integrity)
                         try:
                             session.start()
                             while (
@@ -1948,7 +2038,9 @@ class VofaStreamManager:
                                 and not self._dump_restart.is_set()
                             ):
                                 frames = session.read_frames(max_bytes=1024 * 1024)
-                                self._stream_integrity = session.stats
+                                self._stream_integrity = _sum_counter_snapshots(
+                                    completed_integrity, session.stats,
+                                )
                                 if not frames:
                                     stop_event.wait(0.0005)
                                     continue
@@ -1958,7 +2050,9 @@ class VofaStreamManager:
                                     self._accept_dump_frame(frame)
                         finally:
                             session.stop()
-                            self._stream_integrity = session.stats
+                            self._stream_integrity = _sum_counter_snapshots(
+                                completed_integrity, session.stats,
+                            )
                 else:
                     self._acquisition_mode = "read-memory"
                     while not stop_event.is_set():

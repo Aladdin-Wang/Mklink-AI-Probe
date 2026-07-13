@@ -1,4 +1,6 @@
 import asyncio
+import binascii
+import struct
 import threading
 import time
 from types import SimpleNamespace
@@ -6,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from mklink.remote.dashboards import RttStreamManager, SuperWatchStreamManager
+from mklink.dump_memory import MAGIC
 from mklink.remote.stream_hub import StreamHub
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
@@ -492,3 +495,59 @@ def test_app_injects_and_shuts_down_rtt_and_superwatch_hubs(monkeypatch):
         manager = managers[name]
         assert name in stopped
         assert manager._stream_hub is not hubs[name]
+def _dump_frame(timestamp_us, payload):
+    region = b"\x00" + struct.pack("<H", len(payload)) + payload
+    length = 19 + len(region) + 6
+    body = MAGIC + struct.pack("<QHB", timestamp_us, length, 1) + region + b"\x00\x00"
+    return body + struct.pack("<I", binascii.crc32(body) & 0xFFFFFFFF)
+
+
+def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
+    item = SimpleNamespace(
+        name="value", type_name="float", size=4, address=0x20000000,
+        source="ram", enum_values=None, metadata={},
+    )
+    block = SimpleNamespace(address=0x20000000, size=4, items=[item])
+    runtime = SimpleNamespace(items=[item], blocks=[block])
+
+    class Bridge:
+        def __init__(self):
+            self.chunks = [b"text" + _dump_frame(10, struct.pack("<f", 4.5))]
+            self.writes = []
+
+        def _enter_stream(self, state):
+            self.state = state
+
+        def _write_raw(self, data):
+            self.writes.append(data)
+
+        def drain_stream_bytes(self, max_bytes=None):
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def _exit_stream(self):
+            return ""
+
+    hub = StreamHub(max_batches_per_client=4)
+    manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
+    manager._runtime = runtime
+    bridge = Bridge()
+    manager.start(SimpleNamespace(_bridge=bridge))
+    deadline = time.perf_counter() + 1.0
+    while manager.get_status()["read_cycles"] < 1 and time.perf_counter() < deadline:
+        time.sleep(0.001)
+    manager.set_interval(0.001)
+    restart_deadline = time.perf_counter() + 1.0
+    expected_restart = b"cmd.dump_memory(0x20000000, 4, 0.001)\n"
+    while expected_restart not in bridge.writes and time.perf_counter() < restart_deadline:
+        time.sleep(0.001)
+    manager.stop()
+
+    status = manager.get_status()
+    assert status["acquisition_mode"] == "dump-memory"
+    assert status["read_cycles"] == 1
+    assert status["stream_integrity"]["parser_dropped_bytes"] == 4
+    assert status["stream_integrity"]["parser_crc_errors"] == 0
+    assert hub.stats().produced_items == 1
+    assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.1)\n"
+    assert expected_restart in bridge.writes
+    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
