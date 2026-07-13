@@ -1612,6 +1612,11 @@ def create_app(
                 status_code=400,
                 detail="VOFA channels are required before starting",
             )
+        from mklink.vofa_viewer import normalize_vofa_channels
+        try:
+            channels = normalize_vofa_channels(channels)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         status, stopped = await start_dashboard_manager(
             _state,
             "vofa",

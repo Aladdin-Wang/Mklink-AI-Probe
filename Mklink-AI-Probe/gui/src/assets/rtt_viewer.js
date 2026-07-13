@@ -431,18 +431,19 @@ if (IS_SUPERWATCH_MODE) {
   }
 }
 
-function updateSampleRateBadge(interval, rate) {
+function updateSampleRateBadge(interval, rate, allowIntervalEstimate) {
   if (Number.isFinite(Number(interval)) && Number(interval) > 0) {
     estimatedInterval = Number(interval);
   }
-  if (Number.isFinite(Number(rate)) && Number(rate) > 0) {
+  var hasReportedRate = Number.isFinite(Number(rate)) && Number(rate) >= 0;
+  if (hasReportedRate) {
     estimatedRate = Number(rate);
-  } else if (estimatedInterval > 0) {
+  } else if (allowIntervalEstimate !== false && estimatedInterval > 0) {
     estimatedRate = 1 / estimatedInterval;
   }
   var badge = document.getElementById('sample-rate-badge');
   if (!badge) return;
-  if (estimatedRate > 0) {
+  if (estimatedRate > 0 || (allowIntervalEstimate === false && hasReportedRate)) {
     badge.textContent = 'rate ' + estimatedRate.toFixed(2) + ' Hz / ' + (estimatedInterval * 1000).toFixed(1) + ' ms';
   } else {
     badge.textContent = 'rate -- Hz';
@@ -473,6 +474,11 @@ function notifyVofaChannels() {
   }));
 }
 
+function notifyVofaStreamState(state) {
+  if (!IS_VOFA_MODE || typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: state }));
+}
+
 function apiErrorMessage(payload, status) {
   if (payload && payload.detail) {
     if (typeof payload.detail === 'string') return payload.detail;
@@ -500,7 +506,8 @@ function syncDashboardStatus(d) {
     nextState = d.running ? (d.paused ? 'paused' : 'running') : 'stopped';
   }
   updateCollectionUI(nextState || 'stopped');
-  updateSampleRateBadge(d.estimated_interval, d.estimated_rate);
+  if (IS_VOFA_MODE) updateSampleRateBadge(d.interval, d.actual_rate, false);
+  else updateSampleRateBadge(d.estimated_interval, d.estimated_rate, true);
   applyChannelMetadata(d.channel_metadata || {});
   if (d.interval !== undefined && d.interval > 0) {
     currentInterval = d.interval;
@@ -575,6 +582,7 @@ document.getElementById('btn-start').addEventListener('click', function() {
         notifyVofaChannels();
       }
       updateCollectionUI('running');
+      notifyVofaStreamState('running');
       // Reconnect SSE if needed
       if (!IS_VOFA_MODE && (!es || es.readyState === EventSource.CLOSED)) {
         if (es) es.close();
@@ -600,7 +608,10 @@ document.getElementById('btn-stop').addEventListener('click', function() {
   if (!confirm('Stop data collection? This will end the session.')) return;
   fetch(API_CTRL + 'stop', {method:'POST'})
     .then(function(r){return r.json()})
-    .then(function(d){updateCollectionUI('stopped')})
+    .then(function(d){
+      updateCollectionUI('stopped');
+      notifyVofaStreamState('stopped');
+    })
     .catch(function(){});
 });
 document.getElementById('btn-apply-buffer').addEventListener('click', function() {
@@ -642,23 +653,40 @@ var rawLogPanel = document.getElementById('raw-log-panel');
 var rawLogEl = document.getElementById('raw-log');
 var rawLogCountEl = document.getElementById('raw-log-count');
 var rawLogOpen = false;
-var rawLogLines = [];
+var RAW_LOG_CAPACITY = 5000;
+var rawLogLines = new Array(RAW_LOG_CAPACITY);
+var rawLogHead = 0;
+var rawLogStoredCount = 0;
 var rawLogLastPaint = 0;
+
+function rawLogSnapshot() {
+  var snapshot = new Array(rawLogStoredCount);
+  for (var i = 0; i < rawLogStoredCount; i++) {
+    snapshot[i] = rawLogLines[(rawLogHead + i) % RAW_LOG_CAPACITY];
+  }
+  return snapshot;
+}
 
 function paintRawLog(force) {
   if (!rawLogOpen) return;
   var now = performance.now();
   if (!force && now - rawLogLastPaint < 100) return;
   rawLogLastPaint = now;
-  rawLogEl.textContent = rawLogLines.join('\n') + (rawLogLines.length ? '\n' : '');
+  var snapshot = rawLogSnapshot();
+  rawLogEl.textContent = snapshot.join('\n') + (snapshot.length ? '\n' : '');
+  rawLogCountEl.textContent = rawLogLineCount + ' lines';
   rawLogEl.scrollTop = rawLogEl.scrollHeight;
 }
 
 function appendRawLogLine(line) {
-  rawLogLines.push(line);
-  if (rawLogLines.length > 5000) rawLogLines.splice(0, rawLogLines.length - 5000);
+  if (rawLogStoredCount < RAW_LOG_CAPACITY) {
+    rawLogLines[(rawLogHead + rawLogStoredCount) % RAW_LOG_CAPACITY] = line;
+    rawLogStoredCount++;
+  } else {
+    rawLogLines[rawLogHead] = line;
+    rawLogHead = (rawLogHead + 1) % RAW_LOG_CAPACITY;
+  }
   rawLogLineCount++;
-  rawLogCountEl.textContent = rawLogLineCount + ' lines';
   paintRawLog(false);
 }
 
@@ -679,7 +707,9 @@ rawLogPanel.querySelector('.panel-header').addEventListener('click', function(e)
 document.getElementById('raw-log-close').addEventListener('click', function() { setRawLogOpen(false); });
 document.getElementById('raw-log-clear').addEventListener('click', function() {
   rawLogEl.textContent = '';
-  rawLogLines = [];
+  rawLogLines = new Array(RAW_LOG_CAPACITY);
+  rawLogHead = 0;
+  rawLogStoredCount = 0;
   rawLogLineCount = 0;
   rawLogCountEl.textContent = '0 lines';
 });
@@ -2053,6 +2083,9 @@ var binaryChannelSignature = null;
 var binaryTimeOrigin = null;
 var binaryLastTimestamp = null;
 var binaryLastSequence = null;
+var binaryEnvelope = null;
+var binaryChannelIndex = {};
+var binaryLastUiPaint = -Infinity;
 
 function configureBinaryChannels(channels) {
   if (!IS_VOFA_MODE || !Array.isArray(channels)) return;
@@ -2122,10 +2155,16 @@ function configureBinaryChannels(channels) {
   if (cursorMode) cursorMode.style.display = 'none';
 
   binaryChannelNames = nextNames;
+  binaryChannelIndex = {};
+  for (var channelIndex = 0; channelIndex < nextNames.length; channelIndex++) {
+    binaryChannelIndex[nextNames[channelIndex]] = channelIndex;
+  }
   binaryChannelSignature = nextSignature;
   binaryTimeOrigin = null;
   binaryLastTimestamp = null;
   binaryLastSequence = null;
+  binaryEnvelope = null;
+  binaryLastUiPaint = -Infinity;
   applyChannelMetadata(metadata, false);
   updateTriggerSourceOptions();
 }
@@ -2135,26 +2174,24 @@ function acceptBinaryBatch(batch, channels) {
   if (channels) configureBinaryChannels(channels);
   if (!binaryChannelNames.length || batch.channelCount !== binaryChannelNames.length) return false;
   if (binaryLastSequence !== null && batch.sequence <= binaryLastSequence) return false;
-  binaryLastSequence = batch.sequence;
   var values = new Float32Array(batch.values);
   if (values.length !== batch.itemCount * batch.channelCount) return false;
-
-  var batchSeconds = Number(batch.timestampNs) / 1000000000;
-  if (!Number.isFinite(batchSeconds)) return false;
-  if (binaryTimeOrigin === null || batchSeconds < binaryTimeOrigin) {
-    binaryTimeOrigin = batchSeconds;
-    for (var clearIndex = 0; clearIndex < binaryChannelNames.length; clearIndex++) {
-      var clearField = FIELDS[binaryChannelNames[clearIndex]];
-      if (clearField && clearField.ringBuf) clearField.ringBuf.clear();
-    }
+  if (!batch.times || batch.times.byteLength !== batch.itemCount * 8) return false;
+  var times = new Float64Array(batch.times);
+  var previousTimeMs = -Infinity;
+  for (var validateIndex = 0; validateIndex < times.length; validateIndex++) {
+    if (!Number.isFinite(times[validateIndex]) || times[validateIndex] <= previousTimeMs) return false;
+    previousTimeMs = times[validateIndex];
   }
-  var sampleStep = estimatedRate > 0 ? 1 / estimatedRate : 0;
-  var firstSeconds = batchSeconds - Math.max(0, batch.itemCount - 1) * sampleStep;
+  if (!times.length) return false;
+
+  if (binaryTimeOrigin === null) binaryTimeOrigin = times[0] / 1000;
   for (var sample = 0; sample < batch.itemCount; sample++) {
-    var viewTime = firstSeconds + sample * sampleStep - binaryTimeOrigin;
+    var sampleSeconds = times[sample] / 1000;
+    var viewTime = sampleSeconds - binaryTimeOrigin;
     var capture = null;
     if (triggerSettings.enabled) {
-      capture = { _t: firstSeconds + sample * sampleStep, _viewT: viewTime };
+      capture = { _t: sampleSeconds, _viewT: viewTime };
       for (var captureChannel = 0; captureChannel < batch.channelCount; captureChannel++) {
         capture[binaryChannelNames[captureChannel]] = values[sample * batch.channelCount + captureChannel];
       }
@@ -2167,19 +2204,106 @@ function acceptBinaryBatch(batch, channels) {
       field.ringBuf.push(viewTime, values[sample * batch.channelCount + channelIndex]);
     }
   }
+  binaryLastSequence = batch.sequence;
+  binaryLastTimestamp = times[times.length - 1] / 1000;
+  appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
+  return true;
+}
 
-  if (binaryLastTimestamp !== null && batchSeconds > binaryLastTimestamp) {
-    var measured = batch.itemCount / (batchSeconds - binaryLastTimestamp);
-    if (Number.isFinite(measured) && measured > 0) {
-      estimatedRate = estimatedRate > 0 ? estimatedRate * 0.8 + measured * 0.2 : measured;
-      estimatedInterval = 1 / estimatedRate;
-      updateSampleRateBadge(estimatedInterval, estimatedRate);
+function getBinaryVisibleRange() {
+  if (!IS_VOFA_MODE || binaryTimeOrigin === null) return null;
+  var range = getVisibleTimeRange();
+  var pixelWidth = Math.max(1, Math.floor(canvas.clientWidth || 1));
+  return {
+    start: (binaryTimeOrigin + range.tMin) * 1000,
+    end: (binaryTimeOrigin + range.tMax) * 1000,
+    pixelWidth: pixelWidth
+  };
+}
+
+function parseBinaryEnvelope(envelope) {
+  if (!envelope || envelope.mode !== 'min-max-v1' ||
+      envelope.timestampKind !== 'sample-milliseconds' ||
+      envelope.channelCount !== binaryChannelNames.length ||
+      envelope.pointCount > 2 * envelope.pixelWidth * envelope.channelCount) return null;
+  var times = new Float64Array(envelope.times);
+  var timeIndices = new Uint32Array(envelope.timeIndices);
+  var values = new Float32Array(envelope.values);
+  var offsets = new Uint32Array(envelope.channelOffsets);
+  if (timeIndices.length !== envelope.pointCount || values.length !== envelope.pointCount ||
+      offsets.length !== envelope.channelCount + 1 || offsets[0] !== 0 ||
+      offsets[offsets.length - 1] !== envelope.pointCount) return null;
+  for (var channel = 0; channel < envelope.channelCount; channel++) {
+    if (offsets[channel] > offsets[channel + 1]) return null;
+  }
+  for (var point = 0; point < envelope.pointCount; point++) {
+    if (timeIndices[point] >= times.length || !Number.isFinite(values[point])) return null;
+  }
+  for (var time = 0; time < times.length; time++) {
+    if (!Number.isFinite(times[time])) return null;
+  }
+  return { times: times, timeIndices: timeIndices, values: values, offsets: offsets };
+}
+
+function renderBinaryEnvelope(envelope) {
+  if (!IS_VOFA_MODE) return false;
+  var parsed = parseBinaryEnvelope(envelope);
+  if (!parsed) return false;
+  binaryEnvelope = parsed;
+  if (!paused) {
+    drawChart();
+    drawMinimap();
+    var now = performance.now();
+    if (now - binaryLastUiPaint >= 100) {
+      binaryLastUiPaint = now;
+      updateUI();
+      updateWatchTable();
     }
   }
-  binaryLastTimestamp = batchSeconds;
-  appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
-  updateTriggerSourceOptions();
   return true;
+}
+
+function resetBinaryStream() {
+  if (!IS_VOFA_MODE) return;
+  binaryTimeOrigin = null;
+  binaryLastTimestamp = null;
+  binaryLastSequence = null;
+  binaryEnvelope = null;
+  for (var channel = 0; channel < binaryChannelNames.length; channel++) {
+    var field = FIELDS[binaryChannelNames[channel]];
+    if (field && field.ringBuf) field.ringBuf.clear();
+  }
+}
+
+function updateBinaryHealth(health) {
+  if (!IS_VOFA_MODE || !health) return;
+  var stateBadge = document.getElementById('transport-state-badge');
+  var healthBadge = document.getElementById('transport-health-badge');
+  var phase = String(health.phase || 'stopped');
+  if (stateBadge) {
+    stateBadge.textContent = 'transport ' + phase +
+      (health.reconnectDelayMs ? ' (' + health.reconnectDelayMs + ' ms)' : '');
+    stateBadge.className = 'badge ' + (
+      phase === 'connected' ? 'badge-ok' :
+      phase === 'error' ? 'badge-err' :
+      phase === 'stopped' ? 'badge-info' : 'badge-warn'
+    );
+    if (health.error) stateBadge.title = String(health.error);
+    else stateBadge.removeAttribute('title');
+  }
+  if (healthBadge) {
+    var transportDroppedBatches = Math.max(0, Number(health.transportDroppedBatches) || 0);
+    var backendDroppedBatches = Math.max(0, Number(health.backendDroppedBatches) || 0);
+    var backendDroppedItems = Math.max(0, Number(health.backendDroppedItems) || 0);
+    var bufferedSamples = Math.max(0, Number(health.bufferedSamples) || 0);
+    healthBadge.textContent = 'transport ' + transportDroppedBatches +
+      ' / backend ' + backendDroppedBatches + '/' + backendDroppedItems +
+      ' / buffer ' + bufferedSamples;
+    healthBadge.className = 'badge ' + (
+      transportDroppedBatches || backendDroppedBatches || backendDroppedItems
+        ? 'badge-warn' : 'badge-info'
+    );
+  }
 }
 
 function renderBinaryFrame() {
@@ -2195,6 +2319,10 @@ if (typeof window !== 'undefined') {
   var binaryViewer = window.__waveformViewers.VOFA || {};
   binaryViewer.configureBinaryChannels = configureBinaryChannels;
   binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
+  binaryViewer.getBinaryVisibleRange = getBinaryVisibleRange;
+  binaryViewer.renderBinaryEnvelope = renderBinaryEnvelope;
+  binaryViewer.resetBinaryStream = resetBinaryStream;
+  binaryViewer.updateBinaryHealth = updateBinaryHealth;
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
   binaryViewer.es = es;
@@ -2317,7 +2445,12 @@ function drawChart() {
 
   // Count visible channels
   var visChNames = sortedFieldNames().filter(function(k) {
-    return FIELDS[k].visible && FIELDS[k].ringBuf.count >= 2;
+    if (!FIELDS[k].visible) return false;
+    var envelopeIndex = binaryChannelIndex[k];
+    if (IS_VOFA_MODE && binaryEnvelope && envelopeIndex !== undefined) {
+      return binaryEnvelope.offsets[envelopeIndex + 1] - binaryEnvelope.offsets[envelopeIndex] >= 2;
+    }
+    return FIELDS[k].ringBuf.count >= 2;
   });
   var mr = 16, mt = 8, mb = 32, ml = 16;
   var pw = W - ml - mr;
@@ -2384,11 +2517,26 @@ function drawChart() {
     ctx.beginPath();
     var started = false;
     var ring = meta.ringBuf;
-    for (var i = 0; i < ring.count; i++) {
-      var sx = tx(ring.timeAt(i)), sy = tyForChannel(ring.valueAt(i), name);
-      if (sx < ml - 10 || sx > ml + pw + 10) continue;
-      if (!started) { ctx.moveTo(sx, sy); started = true; }
-      else ctx.lineTo(sx, sy);
+    var envelopeChannel = binaryChannelIndex[name];
+    if (IS_VOFA_MODE && binaryEnvelope && envelopeChannel !== undefined) {
+      var envelopeStart = binaryEnvelope.offsets[envelopeChannel];
+      var envelopeEnd = binaryEnvelope.offsets[envelopeChannel + 1];
+      for (var envelopePoint = envelopeStart; envelopePoint < envelopeEnd; envelopePoint++) {
+        var timeIndex = binaryEnvelope.timeIndices[envelopePoint];
+        var envelopeTime = binaryEnvelope.times[timeIndex] / 1000 - binaryTimeOrigin;
+        var envelopeX = tx(envelopeTime);
+        var envelopeY = tyForChannel(binaryEnvelope.values[envelopePoint], name);
+        if (envelopeX < ml - 10 || envelopeX > ml + pw + 10) continue;
+        if (!started) { ctx.moveTo(envelopeX, envelopeY); started = true; }
+        else ctx.lineTo(envelopeX, envelopeY);
+      }
+    } else {
+      for (var i = 0; i < ring.count; i++) {
+        var sx = tx(ring.timeAt(i)), sy = tyForChannel(ring.valueAt(i), name);
+        if (sx < ml - 10 || sx > ml + pw + 10) continue;
+        if (!started) { ctx.moveTo(sx, sy); started = true; }
+        else ctx.lineTo(sx, sy);
+      }
     }
     ctx.stroke();
   }
@@ -2961,19 +3109,32 @@ function drawMinimap() {
     minimapCtx.strokeStyle = meta.color;
     minimapCtx.lineWidth = 1;
     minimapCtx.beginPath();
-    // Downsample for minimap performance
     var ring = meta.ringBuf;
-    var step = Math.max(1, Math.floor(ring.count / W));
     var started = false;
-    for (var i = 0; i < ring.count; i += step) {
-      var px = mtx(ring.timeAt(i));
-      // Normalize Y to minimap height
-      var bufMin = Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min : 0;
-      var bufMax = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1;
-      var yRange = bufMax - bufMin || 1;
-      var py = H - ((ring.valueAt(i) - bufMin) / yRange) * (H - 4) - 2;
-      if (!started) { minimapCtx.moveTo(px, py); started = true; }
-      else minimapCtx.lineTo(px, py);
+    var bufMin = Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min : 0;
+    var bufMax = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1;
+    var yRange = bufMax - bufMin || 1;
+    var minimapChannel = binaryChannelIndex[names[ni]];
+    if (IS_VOFA_MODE && binaryEnvelope && minimapChannel !== undefined) {
+      var minimapStart = binaryEnvelope.offsets[minimapChannel];
+      var minimapEnd = binaryEnvelope.offsets[minimapChannel + 1];
+      for (var minimapPoint = minimapStart; minimapPoint < minimapEnd; minimapPoint++) {
+        var minimapTimeIndex = binaryEnvelope.timeIndices[minimapPoint];
+        var minimapTime = binaryEnvelope.times[minimapTimeIndex] / 1000 - binaryTimeOrigin;
+        var envelopePx = mtx(minimapTime);
+        var envelopePy = H - ((binaryEnvelope.values[minimapPoint] - bufMin) / yRange) * (H - 4) - 2;
+        if (!started) { minimapCtx.moveTo(envelopePx, envelopePy); started = true; }
+        else minimapCtx.lineTo(envelopePx, envelopePy);
+      }
+    } else {
+      // Downsample for minimap performance
+      var step = Math.max(1, Math.floor(ring.count / W));
+      for (var i = 0; i < ring.count; i += step) {
+        var px = mtx(ring.timeAt(i));
+        var py = H - ((ring.valueAt(i) - bufMin) / yRange) * (H - 4) - 2;
+        if (!started) { minimapCtx.moveTo(px, py); started = true; }
+        else minimapCtx.lineTo(px, py);
+      }
     }
     minimapCtx.stroke();
   }

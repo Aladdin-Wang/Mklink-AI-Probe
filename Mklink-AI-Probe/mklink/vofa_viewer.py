@@ -100,30 +100,30 @@ def decode_vofa_samples(payload: bytes, channel_count: int) -> list[tuple[float,
 def build_vofa_read_groups(
     channels: list[dict], *, max_block_size: int = VOFA_MAX_READ_BLOCK,
 ) -> list[VofaReadGroup]:
-    """Group exactly contiguous/overlapping addresses into safe RAM reads."""
-    if max_block_size <= 0:
-        raise ValueError("max_block_size must be positive")
+    """Group channels into 4-byte-aligned, bounded target reads."""
+    if max_block_size < 4:
+        raise ValueError("max_block_size must allow one aligned word")
+    channels = normalize_vofa_channels(channels)
     normalized = []
     for index, channel in enumerate(channels):
         address = channel["addr"]
-        if isinstance(address, str):
-            address = int(address, 0)
-        size = int(channel.get("size", 4))
-        if size <= 0 or size > max_block_size:
+        size = channel["size"]
+        aligned_start = address & ~0x3
+        aligned_end = (address + size + 3) & ~0x3
+        if aligned_end - aligned_start > max_block_size:
             raise ValueError("VOFA channel size exceeds the safe read limit")
         normalized.append((
-            int(address), size, index, str(channel.get("type", "float")),
+            aligned_start, aligned_end, address, size, index, channel["type"],
         ))
     normalized.sort(key=lambda item: (item[0], item[2]))
     groups = []
     pending = []
     group_start = group_end = None
-    for address, size, index, type_name in normalized:
-        channel_end = address + size
+    for aligned_start, aligned_end, address, size, index, type_name in normalized:
         can_join = (
             group_start is not None
-            and address <= group_end
-            and max(group_end, channel_end) - group_start <= max_block_size
+            and aligned_start <= group_end
+            and max(group_end, aligned_end) - group_start <= max_block_size
         )
         if not can_join and pending:
             groups.append(VofaReadGroup(
@@ -132,9 +132,9 @@ def build_vofa_read_groups(
             pending = []
             group_start = group_end = None
         if group_start is None:
-            group_start, group_end = address, channel_end
+            group_start, group_end = aligned_start, aligned_end
         else:
-            group_end = max(group_end, channel_end)
+            group_end = max(group_end, aligned_end)
         pending.append(VofaChannelRead(index, address - group_start, size, type_name))
     if pending:
         groups.append(VofaReadGroup(
@@ -151,6 +151,54 @@ def normalize_vofa_type(type_token: str) -> dict[str, int | str] | None:
         return None
     info = VOFA_TYPE_INFO[canonical]
     return {"input": type_token, "type": info["type"], "size": info["size"]}
+
+
+def normalize_vofa_channels(channels: list[dict]) -> list[dict]:
+    """Validate and canonicalize one complete VOFA channel snapshot."""
+    if not isinstance(channels, list) or not 1 <= len(channels) <= 64:
+        raise ValueError("VOFA channel count must be between 1 and 64")
+    normalized = []
+    names = set()
+    for index, channel in enumerate(channels):
+        if not isinstance(channel, dict):
+            raise ValueError(f"VOFA channel {index} must be an object")
+        try:
+            raw_address = channel["addr"]
+            if isinstance(raw_address, bool):
+                raise ValueError
+            address = int(raw_address, 0) if isinstance(raw_address, str) else int(raw_address)
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"VOFA channel {index} has an invalid 32-bit address") from None
+        type_token = str(channel.get("type", "float"))
+        type_info = normalize_vofa_type(type_token)
+        if type_info is None:
+            raise ValueError(f"VOFA channel {index} uses unsupported type {type_token!r}")
+        canonical_size = int(type_info["size"])
+        try:
+            size = int(channel.get("size", canonical_size))
+        except (TypeError, ValueError):
+            raise ValueError(f"VOFA channel {index} has an invalid size") from None
+        if size != canonical_size:
+            raise ValueError(
+                f"VOFA channel {index} size {size} does not match "
+                f"{type_info['type']} size {canonical_size}"
+            )
+        if address < 0 or address > 0xFFFFFFFF or address + size > 0x100000000:
+            raise ValueError(f"VOFA channel {index} exceeds the 32-bit address space")
+        default_name = f"0x{address:08x}"
+        name = str(channel.get("name", default_name)).strip()
+        if not name:
+            raise ValueError(f"VOFA channel {index} name must not be empty")
+        if name in names:
+            raise ValueError("VOFA channel names must be unique")
+        names.add(name)
+        normalized.append({
+            "name": name,
+            "addr": address,
+            "type": str(type_info["type"]),
+            "size": canonical_size,
+        })
+    return normalized
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections import deque
 import json
 import logging
 import math
@@ -1379,7 +1380,7 @@ class VofaStreamManager:
         self._completed_samples = 0
         self._completed_reads = 0
         self._read_errors = 0
-        self._rate_started_at = self._clock()
+        self._rate_timestamps = deque()
         self._actual_rate = 0.0
 
     @property
@@ -1398,27 +1399,19 @@ class VofaStreamManager:
             self._stream_hub = None
 
     def configure(self, channels: list[dict], interval: float | None = None) -> None:
-        from mklink.vofa_viewer import build_vofa_read_groups
+        from mklink.vofa_viewer import build_vofa_read_groups, normalize_vofa_channels
 
-        self._channels = []
-        for ch in channels:
-            addr = ch["addr"]
-            if isinstance(addr, str):
-                addr = int(addr, 0)
-            self._channels.append({
-                "name": ch.get("name", f"0x{addr:08x}"),
-                "addr": addr,
-                "type": ch.get("type", "float"),
-                "size": int(ch.get("size", 4)),
-            })
+        normalized = normalize_vofa_channels(channels)
+        read_groups = build_vofa_read_groups(normalized)
+        self._channels = normalized
         if interval is not None:
             self._interval = max(float(interval), 0.000001)
-        self._read_groups = build_vofa_read_groups(self._channels)
+        self._read_groups = read_groups
         self._pending_samples.clear()
         self._completed_samples = 0
         self._completed_reads = 0
         self._read_errors = 0
-        self._rate_started_at = self._clock()
+        self._rate_timestamps.clear()
         self._actual_rate = 0.0
 
     def collect_cycle(self, device) -> bool:
@@ -1439,8 +1432,8 @@ class VofaStreamManager:
             for group in self._read_groups:
                 raw = device.read_memory(group.address, group.size)
                 self._completed_reads += 1
-                if len(raw) < group.size:
-                    raise ValueError("short VOFA memory read")
+                if len(raw) != group.size:
+                    raise ValueError("non-exact VOFA memory read")
                 for channel in group.channels:
                     fmt, width = unpack.get(channel.type_name, ("<f", 4))
                     start = channel.offset
@@ -1458,8 +1451,18 @@ class VofaStreamManager:
             for number in (float(value) for value in values)
         )
         self._completed_samples += 1
-        elapsed = self._clock() - self._rate_started_at
-        self._actual_rate = self._completed_samples / elapsed if elapsed > 0 else 0.0
+        completed_at = self._clock()
+        self._rate_timestamps.append(completed_at)
+        cutoff = completed_at - 1.0
+        while self._rate_timestamps and self._rate_timestamps[0] < cutoff:
+            self._rate_timestamps.popleft()
+        if len(self._rate_timestamps) >= 2:
+            elapsed = self._rate_timestamps[-1] - self._rate_timestamps[0]
+            self._actual_rate = (
+                (len(self._rate_timestamps) - 1) / elapsed if elapsed > 0 else 0.0
+            )
+        else:
+            self._actual_rate = 0.0
         point = {"_t": time.time()}
         point.update({
             channel["name"]: sample[index]
@@ -1554,8 +1557,12 @@ class VofaStreamManager:
 
     def pause(self) -> None:
         self._paused.clear()
+        self._rate_timestamps.clear()
+        self._actual_rate = 0.0
 
     def resume(self) -> None:
+        self._rate_timestamps.clear()
+        self._actual_rate = 0.0
         self._paused.set()
 
     def set_interval(self, interval: float) -> float:

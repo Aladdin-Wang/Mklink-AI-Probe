@@ -67,4 +67,45 @@ describe('TypedRingBuffer', () => {
       values: new Float32Array(2),
     })).toThrow(/destination/)
   })
+
+  it('selects per-channel min/max points with one bounded shared logical index set', () => {
+    const buffer = new TypedRingBuffer(10, 2)
+    buffer.appendBatch(
+      Float64Array.from({ length: 10 }, (_, index) => index),
+      Float32Array.from({ length: 20 }, (_, index) => {
+        const sample = Math.floor(index / 2)
+        const channel = index % 2
+        if (channel === 0 && sample === 1) return 100
+        if (channel === 0 && sample === 2) return -100
+        if (channel === 1 && sample === 6) return 200
+        if (channel === 1 && sample === 8) return -200
+        return sample
+      }),
+    )
+
+    const selected = buffer.selectMinMaxEnvelope(0, 9, 2)
+    const indices = Array.from(selected.logicalIndices.slice(0, selected.pointCount))
+    const offsets = Array.from(selected.channelOffsets)
+
+    expect(selected.candidateSampleCount).toBe(10)
+    expect(selected.pointCount).toBeLessThanOrEqual(2 * 2 * 2)
+    expect(offsets).toHaveLength(3)
+    expect(indices.slice(offsets[0], offsets[1])).toEqual(expect.arrayContaining([1, 2]))
+    expect(indices.slice(offsets[1], offsets[2])).toEqual(expect.arrayContaining([6, 8]))
+  })
+
+  it('uses logical-order binary search and remains bounded after wrap', () => {
+    const buffer = new TypedRingBuffer(5, 1)
+    buffer.appendBatch(
+      Float64Array.of(1, 2, 3, 4, 5, 6, 7),
+      Float32Array.of(1, 2, 3, 40, -50, 6, 7),
+    )
+
+    const selected = buffer.selectMinMaxEnvelope(4, 7, 1)
+    const indices = Array.from(selected.logicalIndices.slice(0, selected.pointCount))
+
+    expect(selected.candidateSampleCount).toBe(4)
+    expect(selected.pointCount).toBeLessThanOrEqual(2)
+    expect(indices.map(index => buffer.valueAt(index, 0))).toEqual([40, -50])
+  })
 })

@@ -21,22 +21,59 @@ const binary = props.mode === 'VOFA'
   ? useBinaryStream('vofa', { capacity: 200000, channelCount: 1 })
   : null
 let vofaChannels: Array<Record<string, unknown>> = []
+let vofaChannelSignature: string | null = null
 let pendingBatch: Extract<WorkerOutput, { type: 'waveform-batch' }> | null = null
+let visibleRequestId = 0
+let previousTransportPhase = 'stopped'
 let disposed = false
 const vofaScheduler = binary
   ? new RenderScheduler(() => {
       const viewer = (window as any).__waveformViewers?.VOFA
-      viewer?.renderBinaryFrame?.()
+      const range = viewer?.getBinaryVisibleRange?.()
+      if (!range) return
+      const { start, end, pixelWidth } = range
+      if (![start, end, pixelWidth].every(Number.isFinite) || pixelWidth < 1) return
+      binary.requestVisibleRange(++visibleRequestId, start, end, pixelWidth)
     })
   : null
 
-function onVofaChannels(event: Event): void {
+function channelSignature(channels: Array<Record<string, unknown>>): string {
+  return JSON.stringify(channels.map((channel, index) => [
+    channel.name ?? channel.addr ?? channel.address ?? index,
+    channel.type ?? 'float', channel.size ?? 4,
+    channel.addr ?? channel.address ?? null, channel.unit ?? '',
+  ]))
+}
+
+function applyVofaChannels(channels: Array<Record<string, unknown>>): void {
   if (!binary || disposed) return
-  const channels = (event as CustomEvent<unknown>).detail
-  if (!Array.isArray(channels)) return
+  const signature = channelSignature(channels)
+  if (signature === vofaChannelSignature) return
+  vofaChannelSignature = signature
   vofaChannels = channels
+  visibleRequestId++
+  pendingBatch = null
   binary.configure(Math.max(1, channels.length))
   ;(window as any).__waveformViewers?.VOFA?.configureBinaryChannels?.(channels)
+}
+
+function onVofaChannels(event: Event): void {
+  const channels = (event as CustomEvent<unknown>).detail
+  if (!Array.isArray(channels)) return
+  applyVofaChannels(channels as Array<Record<string, unknown>>)
+}
+
+function resetVofaSession(): void {
+  if (!binary || disposed) return
+  visibleRequestId++
+  pendingBatch = null
+  binary.reset()
+  ;(window as any).__waveformViewers?.VOFA?.resetBinaryStream?.()
+}
+
+function onVofaStreamState(event: Event): void {
+  const state = (event as CustomEvent<unknown>).detail
+  if (state === 'running' || state === 'stopped') resetVofaSession()
 }
 
 watch(() => binary?.waveformBatch.value ?? null, batch => {
@@ -51,6 +88,32 @@ watch(() => binary?.waveformBatch.value ?? null, batch => {
   vofaScheduler?.invalidate('data')
 })
 
+watch(() => binary?.envelope.value ?? null, envelope => {
+  if (!envelope || props.mode !== 'VOFA' || envelope.requestId !== visibleRequestId) return
+  ;(window as any).__waveformViewers?.VOFA?.renderBinaryEnvelope?.(envelope)
+})
+
+watch([
+  () => binary?.state.value ?? null,
+  () => binary?.telemetry.value ?? null,
+  () => binary?.error.value ?? null,
+], ([state, telemetry, error]) => {
+  if (!binary || !state) return
+  if (state.phase === 'reconnecting' && previousTransportPhase !== 'reconnecting') {
+    resetVofaSession()
+  }
+  previousTransportPhase = state.phase
+  ;(window as any).__waveformViewers?.VOFA?.updateBinaryHealth?.({
+    phase: state.phase,
+    reconnectDelayMs: state.reconnectDelayMs,
+    bufferedSamples: telemetry?.bufferedSamples ?? 0,
+    transportDroppedBatches: telemetry?.transportDroppedBatches ?? 0,
+    backendDroppedBatches: telemetry?.backendDroppedBatches ?? 0,
+    backendDroppedItems: telemetry?.backendDroppedItems ?? 0,
+    error: state.phase === 'connected' || state.phase === 'stopped' ? null : error,
+  })
+})
+
 onMounted(() => {
   if (!container.value) return
   const el = container.value
@@ -62,13 +125,13 @@ onMounted(() => {
   injectScripts(el, props.mode)
   if (binary) {
     window.addEventListener('mklink:vofa-channels', onVofaChannels)
+    window.addEventListener('mklink:vofa-stream-state', onVofaStreamState)
     vofaScheduler?.start()
     void fetch('/api/dash/vofa/status')
       .then(response => response.ok ? response.json() : null)
       .then(status => {
         if (!status || disposed) return
-        vofaChannels = Array.isArray(status.channels) ? status.channels : []
-        binary.configure(Math.max(1, vofaChannels.length))
+        applyVofaChannels(Array.isArray(status.channels) ? status.channels : [])
         binary.start()
       })
       .catch(() => {
@@ -87,6 +150,7 @@ onUnmounted(() => {
   binary?.stop()
   vofaScheduler?.dispose()
   window.removeEventListener('mklink:vofa-channels', onVofaChannels)
+  window.removeEventListener('mklink:vofa-stream-state', onVofaStreamState)
   // Close EventSource if running
   try {
     const viewers = (window as any).__waveformViewers
@@ -106,6 +170,8 @@ function buildTemplate(mode: string): string {
   <span id="conn-status" class="badge badge-ok" data-i18n="live">live</span>
   <span id="pts-count" class="badge badge-info">0 pts</span>
   <span id="sample-rate-badge" class="badge badge-info">rate -- Hz</span>
+  <span id="transport-state-badge" class="badge badge-info">transport stopped</span>
+  <span id="transport-health-badge" class="badge badge-info">transport 0 / backend 0/0 / buffer 0</span>
   <div class="header-actions">
     <button id="btn-lang-toggle" class="panel-btn" title="中文/English">中/En</button>
     <button id="btn-cursor-toggle" class="panel-btn" data-i18n-title="cursors_tip" data-i18n="cursors">Cursors</button>

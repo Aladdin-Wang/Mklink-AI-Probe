@@ -112,7 +112,11 @@ describe('StreamDecoder worker controller', () => {
       layout: 'sample-major-float32',
     })
     expect(Array.from(new Float32Array(batch.values))).toEqual([1, 10, 2, 20, 3, 30])
-    expect(transfers[messages.indexOf(batch)]).toEqual([batch.values])
+    const times = new Float64Array((batch as any).times)
+    expect(times).toHaveLength(3)
+    expect(times[0]).toBeLessThan(times[1])
+    expect(times[1]).toBeLessThan(times[2])
+    expect(transfers[messages.indexOf(batch)]).toEqual([batch.values, (batch as any).times])
   })
 
   it.each([0x02, 0x03])(
@@ -131,7 +135,7 @@ describe('StreamDecoder worker controller', () => {
       decoder.handle({
         type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 10,
       })
-      expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', sampleCount: 0 })
+      expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', pointCount: 0 })
     },
   )
 
@@ -153,6 +157,124 @@ describe('StreamDecoder worker controller', () => {
     expect(messages).toContainEqual({ type: 'channels', channelCount: 2 })
     expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 2 })
   })
+
+  it.each([
+    {
+      name: 'unknown flags',
+      invalid: () => frame(2n, 1, floats(9), StreamType.WAVEFORM, 2_000_000n, 0x03),
+    },
+    {
+      name: 'misaligned length',
+      invalid: () => frame(2n, 2, floats(9), StreamType.WAVEFORM, 2_000_000n, 0x01),
+    },
+    {
+      name: 'more than 64 channels',
+      invalid: () => frame(
+        2n, 1, floats(...Array.from({ length: 65 }, (_, index) => index)),
+        StreamType.WAVEFORM, 2_000_000n, 0x01,
+      ),
+    },
+    {
+      name: 'non-finite dynamic channel payload',
+      invalid: () => frame(2n, 1, floats(9, Number.NaN), StreamType.WAVEFORM, 2_000_000n, 0x01),
+    },
+    {
+      name: 'duplicate sequence',
+      invalid: () => frame(1n, 1, floats(9), StreamType.WAVEFORM, 2_000_000n, 0x01),
+    },
+  ])('rejects $name before changing sequence, configuration, telemetry, or ring', ({ invalid }) => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        1n, 2, floats(1, 2), StreamType.WAVEFORM, 1_000_000n, 0x01,
+      ), connectionGeneration: 1, frameTicket: 1,
+    })
+    const telemetryBefore = messages.filter(message => message.type === 'telemetry').at(-1)
+    const channelMessagesBefore = messages.filter(message => message.type === 'channels').length
+
+    decoder.handle({
+      type: 'frame', buffer: invalid(), connectionGeneration: 1, frameTicket: 2,
+    })
+
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    expect(messages.filter(message => message.type === 'telemetry').at(-1)).toEqual(telemetryBefore)
+    expect(messages.filter(message => message.type === 'channels')).toHaveLength(channelMessagesBefore)
+    decoder.handle({ type: 'visible-range', requestId: 90, start: -1, end: 10, pixelWidth: 10 })
+    const visible = messages.at(-1) as any
+    expect(visible).toMatchObject({
+      type: 'render-envelope', mode: 'min-max-v1', channelCount: 1, pointCount: 2,
+    })
+    expect(Array.from(new Float32Array(visible.values))).toEqual([1, 2])
+  })
+
+  it('assigns strictly monotonic sample times across repeated timestamps, gaps, and wrap', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 4, channelCount: 1 })
+    const emittedTimes: number[] = []
+    const send = (sequence: bigint, timestampNs: bigint, values: number[]) => {
+      decoder.handle({
+        type: 'frame', buffer: frame(
+          sequence, values.length, floats(...values), StreamType.WAVEFORM, timestampNs, 0x01,
+        ), connectionGeneration: 1, frameTicket: Number(sequence),
+      })
+      const batch = messages.filter(message => message.type === 'waveform-batch').at(-1) as any
+      emittedTimes.push(...new Float64Array(batch.times))
+    }
+    send(1n, 1_000_000n, [1, 2])
+    send(2n, 1_000_000n, [3, 4])
+    send(3n, 100_000_000_000n, [5, 6])
+    send(4n, 100_001_000_000n, [7, 8])
+
+    expect(emittedTimes.every((time, index) => index === 0 || time > emittedTimes[index - 1]))
+      .toBe(true)
+    decoder.handle({
+      type: 'visible-range', requestId: 91,
+      start: emittedTimes[0], end: emittedTimes.at(-1)!, pixelWidth: 10,
+    })
+    const visible = messages.at(-1) as any
+    const selectedTimes = new Float64Array(visible.times)
+    expect(Array.from(selectedTimes).every(
+      (time, index) => index === 0 || time > selectedTimes[index - 1],
+    )).toBe(true)
+  })
+
+  it('bounds a 200k x 8 numeric visible envelope to two points per pixel and channel', () => {
+    const { decoder, messages } = setup()
+    const channelCount = 8
+    const sampleCount = 200_000
+    const batchSamples = 2_000
+    decoder.handle({ type: 'configure', capacity: sampleCount, channelCount })
+    for (let base = 0; base < sampleCount; base += batchSamples) {
+      const values = new Float32Array(batchSamples * channelCount)
+      for (let sample = 0; sample < batchSamples; sample += 1) {
+        for (let channel = 0; channel < channelCount; channel += 1) {
+          values[sample * channelCount + channel] = Math.sin((base + sample) / (channel + 1))
+        }
+      }
+      const sequence = BigInt(base / batchSamples + 1)
+      decoder.handle({
+        type: 'frame', buffer: frame(
+          sequence, batchSamples, new Uint8Array(values.buffer), StreamType.WAVEFORM,
+          BigInt(base + batchSamples) * 1_000_000n, 0x01,
+        ), connectionGeneration: 1, frameTicket: Number(sequence),
+      })
+    }
+    decoder.handle({
+      type: 'visible-range', requestId: 92, start: 0, end: sampleCount, pixelWidth: 320,
+    })
+
+    const visible = messages.at(-1) as any
+    expect(visible).toMatchObject({
+      type: 'render-envelope', mode: 'min-max-v1', channelCount,
+      candidateSampleCount: sampleCount,
+    })
+    expect(visible.pointCount).toBeLessThanOrEqual(2 * 320 * channelCount)
+    expect(new Uint32Array(visible.channelOffsets)).toHaveLength(channelCount + 1)
+    expect(new Uint32Array(visible.timeIndices)).toHaveLength(visible.pointCount)
+    expect(new Float32Array(visible.values)).toHaveLength(visible.pointCount)
+    expect(new Float64Array(visible.times).length).toBeLessThanOrEqual(visible.pointCount)
+  }, 15_000)
   it('preserves ticks above Number.MAX_SAFE_INTEGER and exposes relative plot coordinates', () => {
     const { decoder, messages } = setup()
     const origin = 9_007_199_254_740_993n
@@ -318,7 +440,7 @@ describe('StreamDecoder worker controller', () => {
     })
     expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
     decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 100 })
-    expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', sampleCount: 0 })
+    expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', pointCount: 0 })
   })
 
   it('splits task intervals around nested ISR execution and resumes after outer exit', () => {
@@ -402,22 +524,27 @@ describe('StreamDecoder worker controller', () => {
       connectionGeneration: 1,
       frameTicket: 1,
     })
-    decoder.handle({ type: 'visible-range', requestId: 7, start: 5, end: 5, pixelWidth: 320 })
+    decoder.handle({ type: 'visible-range', requestId: 7, start: 0, end: 5, pixelWidth: 320 })
 
     const envelope = messages.at(-1)
     expect(envelope).toMatchObject({
       type: 'render-envelope',
-      mode: 'raw-visible',
+      mode: 'min-max-v1',
       requestId: 7,
       pixelWidth: 320,
       channelCount: 2,
-      sampleCount: 3,
-      timestampKind: 'batch-milliseconds',
+      pointCount: 4,
+      candidateSampleCount: 3,
+      timestampKind: 'sample-milliseconds',
     })
     if (envelope?.type !== 'render-envelope') throw new Error('expected envelope')
-    expect(Array.from(new Float64Array(envelope.times))).toEqual([5, 5, 5])
-    expect(Array.from(new Float32Array(envelope.values))).toEqual([1, 10, 2, 20, 3, 30])
-    expect(transfers.at(-1)).toEqual([envelope.times, envelope.values])
+    expect(Array.from(new Uint32Array(envelope.channelOffsets))).toEqual([0, 2, 4])
+    expect(Array.from(new Float64Array(envelope.times))).toEqual([4.999998, 5])
+    expect(Array.from(new Uint32Array(envelope.timeIndices))).toEqual([0, 1, 0, 1])
+    expect(Array.from(new Float32Array(envelope.values))).toEqual([1, 3, 10, 30])
+    expect(transfers.at(-1)).toEqual([
+      envelope.channelOffsets, envelope.times, envelope.timeIndices, envelope.values,
+    ])
   })
 
   it('keeps transport sequence gaps separate from backend-reported drops', () => {

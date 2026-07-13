@@ -4,13 +4,19 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, shallowRef } from 'vue'
 import WaveformViewer from './WaveformViewer.vue'
+import { StreamType } from '../../lib/stream/protocol'
+import { StreamDecoder, type WorkerOutput } from '../../workers/streamDecoder.worker'
 
 const mocks = vi.hoisted(() => ({
   useBinaryStream: vi.fn(),
   binary: {
     waveformBatch: null as ReturnType<typeof shallowRef<unknown>> | null,
+    envelope: null as ReturnType<typeof shallowRef<unknown>> | null,
     telemetry: null as ReturnType<typeof shallowRef<unknown>> | null,
+    state: null as ReturnType<typeof shallowRef<unknown>> | null,
+    error: null as ReturnType<typeof shallowRef<unknown>> | null,
     start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
+    requestVisibleRange: vi.fn(),
   },
   schedulerInstances: [] as Array<{
     start: ReturnType<typeof vi.fn>
@@ -25,13 +31,38 @@ const viewerSource = fs.readFileSync(
   path.resolve(process.cwd(), 'src/assets/rtt_viewer.js'), 'utf8',
 )
 
+function waveformFrame(
+  sequence: bigint, itemCount: number, timestampNs: bigint, payload: Float32Array,
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(36 + payload.byteLength)
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  bytes.set([0x4d, 0x4b, 0x53, 0x54])
+  view.setUint8(4, 1)
+  view.setUint8(5, StreamType.WAVEFORM)
+  view.setUint8(6, 1)
+  view.setUint8(7, 36)
+  view.setUint32(8, StreamType.WAVEFORM, true)
+  view.setBigUint64(12, sequence, true)
+  view.setBigUint64(20, timestampNs, true)
+  view.setUint32(28, itemCount, true)
+  view.setUint32(32, payload.byteLength, true)
+  bytes.set(new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength), 36)
+  return buffer
+}
+
 function canvasContext(): CanvasRenderingContext2D {
   const gradient = { addColorStop: vi.fn() }
+  const noop = () => undefined
+  const visitPoint = () => { (window as any).__canvasPointVisits++ }
   return new Proxy({} as CanvasRenderingContext2D, {
     get(target, property) {
       if (property === 'measureText') return () => ({ width: 10 })
       if (property === 'createLinearGradient') return () => gradient
-      if (!(property in target)) return () => undefined
+      if (property === 'moveTo' || property === 'lineTo') {
+        return visitPoint
+      }
+      if (!(property in target)) return noop
       return target[property as keyof CanvasRenderingContext2D]
     },
     set(target, property, value) {
@@ -41,7 +72,12 @@ function canvasContext(): CanvasRenderingContext2D {
   })
 }
 
-async function loadRttViewerRuntime(mode: 'VOFA' | 'SuperWatch' = 'VOFA') {
+async function loadRttViewerRuntime(
+  mode: 'VOFA' | 'SuperWatch' = 'VOFA', capacity = 4,
+) {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true, json: async () => ({ running: false, channels: [] }),
+  }))
   const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
     .mockReturnValue(canvasContext())
   const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
@@ -61,9 +97,11 @@ async function loadRttViewerRuntime(mode: 'VOFA' | 'SuperWatch' = 'VOFA') {
   })
   vi.stubGlobal('t', (key: string) => key)
   ;(globalThis as any).CONFIG = {
-    maxPoints: 4, title: 'test', mode, lang: 'en', deviceConnected: true,
+    maxPoints: capacity, title: 'test', mode, lang: 'en', deviceConnected: true,
   }
   ;(window as any).__ringToArrayCalls = 0
+  ;(window as any).__ringPointVisits = 0
+  ;(window as any).__canvasPointVisits = 0
   const wrapper = mount(WaveformViewer, { props: { mode, deviceConnected: true } })
   await new Promise(resolve => setTimeout(resolve, 0))
   const host = wrapper.element
@@ -72,6 +110,12 @@ async function loadRttViewerRuntime(mode: 'VOFA' | 'SuperWatch' = 'VOFA') {
   const instrumented = viewerSource.replace(
     'RingBuffer.prototype.toArray = function() {',
     'RingBuffer.prototype.toArray = function() { window.__ringToArrayCalls++;',
+  ).replace(
+    'RingBuffer.prototype.timeAt = function(logicalIndex) {',
+    'RingBuffer.prototype.timeAt = function(logicalIndex) { window.__ringPointVisits++;',
+  ).replace(
+    'RingBuffer.prototype.valueAt = function(logicalIndex) {',
+    'RingBuffer.prototype.valueAt = function(logicalIndex) { window.__ringPointVisits++;',
   ) + `
 window.__rttTestProbe = {
   fields: function() { return FIELDS; },
@@ -82,7 +126,13 @@ window.__rttTestProbe = {
   }; },
   trigger: triggerSettings,
   cursor: cursorState,
-  applyMetadata: applyChannelMetadata
+  applyMetadata: applyChannelMetadata,
+  appendRawLog: appendRawLogLine,
+  setRawLogOpen: setRawLogOpen,
+  rawLogState: function() { return {
+    count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
+  }; },
+  syncStatus: syncDashboardStatus
 };`
   new Function(instrumented).call(window)
   return {
@@ -122,7 +172,10 @@ describe('WaveformViewer VOFA binary transport', () => {
     vi.clearAllMocks()
     mocks.schedulerInstances.length = 0
     mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
     mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
     mocks.useBinaryStream.mockReturnValue(mocks.binary)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -173,18 +226,24 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(mocks.binary.start).not.toHaveBeenCalled()
   })
 
-  it('bridges typed Worker batches without scheduling one render per sample', async () => {
+  it('requests one bounded visible envelope per scheduled frame and renders its response', async () => {
     const acceptBinaryBatch = vi.fn()
-    const renderBinaryFrame = vi.fn()
-    ;(window as any).__waveformViewers.VOFA = { acceptBinaryBatch, renderBinaryFrame }
+    const getBinaryVisibleRange = vi.fn(() => ({ start: 10, end: 20, pixelWidth: 640 }))
+    const renderBinaryEnvelope = vi.fn()
+    ;(window as any).__waveformViewers.VOFA = {
+      acceptBinaryBatch, getBinaryVisibleRange, renderBinaryEnvelope,
+    }
     const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
     await new Promise(resolve => setTimeout(resolve, 0))
-    ;(window as any).__waveformViewers.VOFA = { acceptBinaryBatch, renderBinaryFrame }
+    ;(window as any).__waveformViewers.VOFA = {
+      acceptBinaryBatch, getBinaryVisibleRange, renderBinaryEnvelope,
+    }
 
     const batch = {
       type: 'waveform-batch', sequence: 1n, timestampNs: 1_000_000n,
       itemCount: 2, channelCount: 2, layout: 'sample-major-float32',
       values: Float32Array.of(1, 10, 2, 20).buffer,
+      times: Float64Array.of(1, 2).buffer,
     }
     if (!mocks.binary.waveformBatch) throw new Error('missing batch ref')
     mocks.binary.waveformBatch.value = batch
@@ -193,9 +252,21 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(acceptBinaryBatch).toHaveBeenCalledOnce()
     expect(mocks.schedulerInstances[0].recordCollection).toHaveBeenCalledWith(2)
     expect(mocks.schedulerInstances[0].invalidate).toHaveBeenCalledWith('data')
-    expect(renderBinaryFrame).not.toHaveBeenCalled()
     mocks.schedulerInstances[0].render()
-    expect(renderBinaryFrame).toHaveBeenCalledOnce()
+    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledWith(expect.any(Number), 10, 20, 640)
+    const requestId = mocks.binary.requestVisibleRange.mock.calls[0][0]
+
+    const envelope = {
+      type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+      requestId, pixelWidth: 640, channelCount: 2, pointCount: 2,
+      candidateSampleCount: 2, channelOffsets: Uint32Array.of(0, 1, 2).buffer,
+      times: Float64Array.of(1, 2).buffer, timeIndices: Uint32Array.of(0, 1).buffer,
+      values: Float32Array.of(1, 20).buffer,
+    }
+    if (!mocks.binary.envelope) throw new Error('missing envelope ref')
+    mocks.binary.envelope.value = envelope
+    await nextTick()
+    expect(renderBinaryEnvelope).toHaveBeenCalledWith(envelope)
     wrapper.unmount()
   })
 
@@ -223,6 +294,79 @@ describe('WaveformViewer VOFA binary transport', () => {
     window.dispatchEvent(new CustomEvent('mklink:vofa-channels', { detail: [{ name: 'late' }] }))
     expect(mocks.binary.configure).not.toHaveBeenCalled()
   })
+
+  it('does not reset Worker storage for an identical channel snapshot', async () => {
+    const configureBinaryChannels = vi.fn()
+    ;(window as any).__waveformViewers.VOFA = { configureBinaryChannels }
+    const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    mocks.binary.configure.mockClear()
+    configureBinaryChannels.mockClear()
+    ;(window as any).__waveformViewers.VOFA = { configureBinaryChannels }
+    const unchanged = [
+      { name: 'id', addr: 0x20000000, type: 'uint32_t', size: 4 },
+      { name: 'value', addr: 0x20000004, type: 'float', size: 4 },
+    ]
+
+    window.dispatchEvent(new CustomEvent('mklink:vofa-channels', { detail: unchanged }))
+
+    expect(mocks.binary.configure).not.toHaveBeenCalled()
+    expect(configureBinaryChannels).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('resets Worker and viewer state at reconnect and collection session boundaries', async () => {
+    const resetBinaryStream = vi.fn()
+    const updateBinaryHealth = vi.fn()
+    ;(window as any).__waveformViewers.VOFA = { resetBinaryStream, updateBinaryHealth }
+    const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    mocks.binary.reset.mockClear()
+    ;(window as any).__waveformViewers.VOFA = { resetBinaryStream, updateBinaryHealth }
+    if (!mocks.binary.state || !mocks.binary.error) throw new Error('missing state refs')
+
+    mocks.binary.error.value = 'old socket error'
+    mocks.binary.state.value = { phase: 'reconnecting', reconnectDelayMs: 250 }
+    await nextTick()
+    expect(mocks.binary.reset).toHaveBeenCalledOnce()
+    expect(resetBinaryStream).toHaveBeenCalledOnce()
+
+    window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
+    expect(mocks.binary.reset).toHaveBeenCalledTimes(2)
+    expect(resetBinaryStream).toHaveBeenCalledTimes(2)
+
+    mocks.binary.state.value = { phase: 'connected' }
+    await nextTick()
+    expect(updateBinaryHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 'connected', error: null,
+    }))
+    wrapper.unmount()
+  })
+
+  it('bridges connection, drop, and buffer telemetry into viewer health', async () => {
+    const updateBinaryHealth = vi.fn()
+    ;(window as any).__waveformViewers.VOFA = { updateBinaryHealth }
+    const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    ;(window as any).__waveformViewers.VOFA = { updateBinaryHealth }
+    if (!mocks.binary.state || !mocks.binary.telemetry || !mocks.binary.error) {
+      throw new Error('missing health refs')
+    }
+    mocks.binary.state.value = { phase: 'reconnecting', reconnectDelayMs: 500 }
+    mocks.binary.telemetry.value = {
+      bufferedSamples: 1234, transportDroppedBatches: 2,
+      backendDroppedBatches: 3, backendDroppedItems: 40,
+    }
+    mocks.binary.error.value = 'socket lost'
+    await nextTick()
+
+    expect(updateBinaryHealth).toHaveBeenLastCalledWith({
+      phase: 'reconnecting', reconnectDelayMs: 500, bufferedSamples: 1234,
+      transportDroppedBatches: 2, backendDroppedBatches: 3,
+      backendDroppedItems: 40, error: 'socket lost',
+    })
+    wrapper.unmount()
+  })
 })
 
 describe('VOFA viewer hot path source guard', () => {
@@ -247,15 +391,259 @@ describe('VOFA viewer hot path source guard', () => {
 })
 
 describe('VOFA viewer typed-ring runtime', () => {
+  it('keeps closed raw logs DOM-cold and paints its fixed ring at no more than 10 Hz', async () => {
+    const runtime = await loadRttViewerRuntime()
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      const raw = document.getElementById('raw-log')!
+      const count = document.getElementById('raw-log-count')!
+      let writes = 0
+      let rawText = raw.textContent
+      let countText = count.textContent
+      Object.defineProperty(raw, 'textContent', {
+        configurable: true, get: () => rawText,
+        set: value => { writes++; rawText = String(value) },
+      })
+      Object.defineProperty(count, 'textContent', {
+        configurable: true, get: () => countText,
+        set: value => { writes++; countText = String(value) },
+      })
+      for (let index = 0; index < 5001; index++) runtime.probe.appendRawLog(`line-${index}`)
+      expect(writes).toBe(0)
+      expect(runtime.probe.rawLogState()).toMatchObject({ count: 5000, total: 5001 })
+      expect(runtime.probe.rawLogState().lines.slice(0, 2)).toEqual(['line-1', 'line-2'])
+
+      runtime.probe.setRawLogOpen(true)
+      writes = 0
+      for (let index = 0; index < 100; index++) runtime.probe.appendRawLog(`burst-${index}`)
+      expect(writes).toBe(0)
+      now.mockReturnValue(101)
+      runtime.probe.appendRawLog('paint')
+      expect(writes).toBe(2)
+    } finally {
+      now.mockRestore()
+      runtime.cleanup()
+    }
+  })
+
+  it('shows backend actual rate and binary transport health without interval estimation', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.probe.syncStatus({ running: true, interval: 0.1, actual_rate: 9.75, channels: [] })
+      expect(document.getElementById('sample-rate-badge')?.textContent).toContain('9.75 Hz')
+      runtime.probe.syncStatus({ running: false, interval: 0.1, actual_rate: 0, channels: [] })
+      expect(document.getElementById('sample-rate-badge')?.textContent).toContain('0.00 Hz')
+
+      runtime.viewer.updateBinaryHealth({
+        phase: 'connected', bufferedSamples: 200000, transportDroppedBatches: 1,
+        backendDroppedBatches: 3, backendDroppedItems: 80, error: null,
+      })
+      expect(document.getElementById('transport-state-badge')?.textContent).toContain('connected')
+      expect(document.getElementById('transport-health-badge')?.textContent).toContain('transport 1')
+      expect(document.getElementById('transport-health-badge')?.textContent).toContain('backend 3/80')
+      expect(document.getElementById('transport-health-badge')?.textContent).toContain('buffer 200000')
+      expect(document.getElementById('transport-health-badge')?.className).toContain('badge-warn')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('sustains a 60-second 10 kHz x 8 Worker/viewer run with 30 FPS bounded envelopes', async () => {
+    const durationSeconds = 60
+    const sampleRate = 10_000
+    const channelCount = 8
+    const batchSamples = 2_000
+    const pixelWidth = 320
+    const runtime = await loadRttViewerRuntime('VOFA', 200_000)
+    try {
+      runtime.viewer.configureBinaryChannels(
+        Array.from({ length: channelCount }, (_, index) => ({ name: `P${index}` })),
+      )
+      let errors = 0
+      let rejectedBatches = 0
+      let acceptedFrames = 0
+      let bufferedSamples = 0
+      let transportDroppedBatches = 0
+      let backendDroppedBatches = 0
+      let backendDroppedItems = 0
+      let renderRequests = 0
+      let maxPointCount = 0
+      let maxCandidateSamples = 0
+      let maxRingVisits = 0
+      let maxCanvasVisits = 0
+      const decoder = new StreamDecoder((message: WorkerOutput) => {
+        if (message.type === 'error') errors++
+        if (message.type === 'telemetry') {
+          acceptedFrames = message.acceptedFrames
+          bufferedSamples = message.bufferedSamples
+          transportDroppedBatches = message.transportDroppedBatches
+          backendDroppedBatches = message.backendDroppedBatches
+          backendDroppedItems = message.backendDroppedItems
+        }
+        if (message.type === 'waveform-batch' && !runtime.viewer.acceptBinaryBatch(message)) {
+          rejectedBatches++
+        }
+        if (message.type === 'render-envelope') {
+          renderRequests++
+          maxPointCount = Math.max(maxPointCount, message.pointCount)
+          maxCandidateSamples = Math.max(maxCandidateSamples, message.candidateSampleCount)
+          ;(window as any).__ringPointVisits = 0
+          ;(window as any).__canvasPointVisits = 0
+          if (!runtime.viewer.renderBinaryEnvelope(message)) errors++
+          maxRingVisits = Math.max(maxRingVisits, (window as any).__ringPointVisits)
+          maxCanvasVisits = Math.max(maxCanvasVisits, (window as any).__canvasPointVisits)
+        }
+      })
+      decoder.handle({ type: 'configure', capacity: 200_000, channelCount })
+      const raw = document.getElementById('raw-log')!
+      const rawCount = document.getElementById('raw-log-count')!
+      let rawDomWrites = 0
+      let rawText = raw.textContent
+      let rawCountText = rawCount.textContent
+      Object.defineProperty(raw, 'textContent', {
+        configurable: true, get: () => rawText,
+        set: value => { rawDomWrites++; rawText = String(value) },
+      })
+      Object.defineProperty(rawCount, 'textContent', {
+        configurable: true, get: () => rawCountText,
+        set: value => { rawDomWrites++; rawCountText = String(value) },
+      })
+      const baseline = process.memoryUsage()
+      let peakHeap = baseline.heapUsed
+      let seed = 0x12345678
+      let requestId = 0
+      const batchCount = durationSeconds * sampleRate / batchSamples
+      const requestsPerBatch = 30 * batchSamples / sampleRate
+      const started = performance.now()
+      for (let batch = 0; batch < batchCount; batch++) {
+        const values = new Float32Array(batchSamples * channelCount)
+        for (let index = 0; index < values.length; index++) {
+          seed ^= seed << 13
+          seed ^= seed >>> 17
+          seed ^= seed << 5
+          values[index] = (seed >>> 0) / 0xffffffff * 2 - 1
+        }
+        const endMs = (batch + 1) * batchSamples / sampleRate * 1_000
+        decoder.handle({
+          type: 'frame',
+          buffer: waveformFrame(BigInt(batch + 1), batchSamples, BigInt(Math.round(endMs * 1_000_000)), values),
+          connectionGeneration: 1,
+          frameTicket: batch + 1,
+        })
+        for (let render = 0; render < requestsPerBatch; render++) {
+          decoder.handle({
+            type: 'visible-range', requestId: ++requestId,
+            start: Math.max(0, endMs - 1_000), end: endMs, pixelWidth,
+          })
+        }
+        peakHeap = Math.max(peakHeap, process.memoryUsage().heapUsed)
+      }
+      const elapsedMs = performance.now() - started
+      const finalMemory = process.memoryUsage()
+      console.info('[vofa-60s-gate]', JSON.stringify({
+        elapsedMs: Math.round(elapsedMs), acceptedFrames, bufferedSamples,
+        renderRequests, maxCandidateSamples, maxPointCount,
+        maxRingVisits, maxCanvasVisits, rawDomWrites, errors, rejectedBatches,
+        transportDroppedBatches, backendDroppedBatches, backendDroppedItems,
+        peakHeapGrowth: peakHeap - baseline.heapUsed,
+        arrayBufferGrowth: finalMemory.arrayBuffers - baseline.arrayBuffers,
+      }))
+
+      expect(errors).toBe(0)
+      expect(rejectedBatches).toBe(0)
+      expect(transportDroppedBatches).toBe(0)
+      expect(backendDroppedBatches).toBe(0)
+      expect(backendDroppedItems).toBe(0)
+      expect(acceptedFrames).toBe(batchCount)
+      expect(bufferedSamples).toBe(200_000)
+      expect(rawDomWrites).toBe(0)
+      expect(renderRequests).toBe(durationSeconds * 30)
+      expect(maxCandidateSamples).toBeLessThanOrEqual(sampleRate + batchSamples)
+      expect(maxPointCount).toBeLessThanOrEqual(2 * pixelWidth * channelCount)
+      expect(maxRingVisits).toBe(0)
+      expect(maxCanvasVisits).toBeLessThanOrEqual(2 * maxPointCount + 100)
+      expect(elapsedMs).toBeLessThan(60_000)
+      expect(peakHeap - baseline.heapUsed).toBeLessThan(192 * 1024 * 1024)
+      expect(finalMemory.arrayBuffers - baseline.arrayBuffers).toBeLessThan(128 * 1024 * 1024)
+    } finally {
+      runtime.cleanup()
+    }
+  }, 90_000)
+
+  it('renders a 200k x 8 snapshot from a bounded envelope without scanning rings', async () => {
+    const sampleCount = 200_000
+    const channelCount = 8
+    const pixelWidth = 800
+    const runtime = await loadRttViewerRuntime('VOFA', sampleCount)
+    try {
+      const channels = Array.from({ length: channelCount }, (_, index) => ({ name: `C${index}` }))
+      runtime.viewer.configureBinaryChannels(channels)
+      const times = new Float64Array(sampleCount)
+      const values = new Float32Array(sampleCount * channelCount)
+      for (let sample = 0; sample < sampleCount; sample++) {
+        times[sample] = sample / 10
+        for (let channel = 0; channel < channelCount; channel++) {
+          values[sample * channelCount + channel] = sample + channel
+        }
+      }
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 20_000_000_000n, itemCount: sampleCount,
+        channelCount, layout: 'sample-major-float32', values: values.buffer,
+        times: times.buffer,
+      })).toBe(true)
+
+      const pointsPerChannel = 2 * pixelWidth
+      const pointCount = pointsPerChannel * channelCount
+      const selectedTimes = Float64Array.from(
+        { length: pointsPerChannel }, (_, index) => index * 100,
+      )
+      const timeIndices = new Uint32Array(pointCount)
+      const envelopeValues = new Float32Array(pointCount)
+      const channelOffsets = new Uint32Array(channelCount + 1)
+      for (let channel = 0; channel < channelCount; channel++) {
+        channelOffsets[channel] = channel * pointsPerChannel
+        for (let point = 0; point < pointsPerChannel; point++) {
+          const offset = channel * pointsPerChannel + point
+          timeIndices[offset] = point
+          envelopeValues[offset] = point + channel
+        }
+      }
+      channelOffsets[channelCount] = pointCount
+      ;(window as any).__ringPointVisits = 0
+      ;(window as any).__canvasPointVisits = 0
+
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth, channelCount, pointCount,
+        candidateSampleCount: sampleCount, times: selectedTimes.buffer,
+        timeIndices: timeIndices.buffer, values: envelopeValues.buffer,
+        channelOffsets: channelOffsets.buffer,
+      })
+
+      expect(pointCount).toBeLessThanOrEqual(2 * pixelWidth * channelCount)
+      expect((window as any).__ringPointVisits).toBe(0)
+      expect((window as any).__canvasPointVisits).toBeLessThanOrEqual(2 * pointCount + 100)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('renders wrapped multi-channel cursor data without copying either ring', async () => {
     const runtime = await loadRttViewerRuntime()
     try {
       runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
-      const send = (sequence: bigint, timestampNs: bigint, values: number[]) =>
-        runtime.viewer.acceptBinaryBatch({
-          sequence, timestampNs, itemCount: values.length / 2, channelCount: 2,
+      const send = (sequence: bigint, timestampNs: bigint, values: number[]) => {
+        const itemCount = values.length / 2
+        const endMs = Number(timestampNs) / 1_000_000
+        const times = sequence === 1n
+          ? Float64Array.of(endMs - 0.001, endMs)
+          : Float64Array.from({ length: itemCount }, (_, index) => endMs - (itemCount - 1 - index) * 500)
+        return runtime.viewer.acceptBinaryBatch({
+          sequence, timestampNs, itemCount, channelCount: 2,
           layout: 'sample-major-float32', values: Float32Array.from(values).buffer,
+          times: times.buffer,
         })
+      }
       send(1n, 10_000_000_000n, [1, 10, 2, 20])
       send(2n, 12_000_000_000n, [3, 30, 4, 40, 5, 50, 6, 60])
       send(3n, 14_000_000_000n, [7, 70, 8, 80, 9, 90, 10, 100])
@@ -285,12 +673,17 @@ describe('VOFA viewer typed-ring runtime', () => {
       expect(runtime.viewer.acceptBinaryBatch({
         sequence: 10n, timestampNs: 1_000_000_000n, itemCount: 1, channelCount: 2,
         layout: 'sample-major-float32', values: Float32Array.of(1, 2).buffer,
+        times: Float64Array.of(1000).buffer,
       })).toBe(true)
       runtime.probe.trigger.enabled = true
       runtime.probe.trigger.source = 'A'
       runtime.probe.cursor.enabled = true
       runtime.probe.cursor.a = { t: 0 }
       runtime.probe.cursor.b = { t: 1 }
+
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      expect(runtime.probe.fields().A.ringBuf.count).toBe(1)
+      expect(runtime.probe.trigger).toMatchObject({ enabled: true, source: 'A' })
 
       runtime.viewer.configureBinaryChannels([{ name: 'C' }, { name: 'D' }])
 
@@ -304,6 +697,7 @@ describe('VOFA viewer typed-ring runtime', () => {
       expect(runtime.viewer.acceptBinaryBatch({
         sequence: 1n, timestampNs: 2_000_000_000n, itemCount: 1, channelCount: 2,
         layout: 'sample-major-float32', values: Float32Array.of(3, 4).buffer,
+        times: Float64Array.of(2000).buffer,
       })).toBe(true)
 
       runtime.probe.metadata().C.legacy = 'stale'
@@ -323,6 +717,34 @@ describe('VOFA viewer typed-ring runtime', () => {
       runtime.viewer.configureBinaryChannels([])
       expect(Object.keys(runtime.probe.fields())).toEqual([])
       expect(Object.keys(runtime.probe.metadata())).toEqual([])
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('resets binary sequence, envelope, and rings without changing channel metadata', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const channels = [{ name: 'A', type: 'float', unit: 'V' }]
+      runtime.viewer.configureBinaryChannels(channels)
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 10n, timestampNs: 1_000_000_000n, itemCount: 1, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(7).buffer,
+        times: Float64Array.of(1000).buffer,
+      })).toBe(true)
+
+      runtime.viewer.resetBinaryStream()
+
+      expect(runtime.probe.fields().A.ringBuf.count).toBe(0)
+      expect(runtime.probe.metadata().A).toMatchObject({ type: 'float', unit: 'V' })
+      expect(runtime.probe.binary()).toEqual({
+        names: ['A'], timeOrigin: null, lastTimestamp: null, lastSequence: null,
+      })
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_000_000_000n, itemCount: 1, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(8).buffer,
+        times: Float64Array.of(2000).buffer,
+      })).toBe(true)
     } finally {
       runtime.cleanup()
     }

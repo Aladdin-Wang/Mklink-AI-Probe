@@ -1,5 +1,5 @@
 import {
-  decodeFrame, StreamType, WAVEFORM_SAMPLE_MAJOR_FLOAT32,
+  decodeFrame, StreamType, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
 } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
 import {
@@ -43,16 +43,20 @@ export type WorkerOutput =
       channelCount: number
       layout: 'sample-major-float32'
       values: ArrayBuffer
+      times: ArrayBuffer
     }
   | {
       type: 'render-envelope'
-      mode: 'raw-visible'
-      timestampKind: 'batch-milliseconds'
+      mode: 'min-max-v1'
+      timestampKind: 'sample-milliseconds'
       requestId: number
       pixelWidth: number
       channelCount: number
-      sampleCount: number
+      pointCount: number
+      candidateSampleCount: number
+      channelOffsets: ArrayBuffer
       times: ArrayBuffer
+      timeIndices: ArrayBuffer
       values: ArrayBuffer
     }
   | {
@@ -140,6 +144,9 @@ export class StreamDecoder {
   private isrDepth = 0
   private tickOrigin: bigint | null = null
   private latestSystemViewTick = 0n
+  private lastNumericTimestampMs: number | null = null
+  private lastNumericSpacingMs: number | null = null
+  private timeIndexScratch: Int32Array | null = null
 
   constructor(post: PostOutput) {
     this.post = post
@@ -169,6 +176,7 @@ export class StreamDecoder {
   private configure(capacity: number, channelCount: number): void {
     try {
       this.ring = new TypedRingBuffer(capacity, channelCount)
+      this.timeIndexScratch = new Int32Array(capacity)
       this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
       this.systemViewIntervals = new SystemViewIntervalRing(capacity)
       this.systemViewMode = false
@@ -177,6 +185,8 @@ export class StreamDecoder {
       this.isrDepth = 0
       this.tickOrigin = null
       this.latestSystemViewTick = 0n
+      this.lastNumericTimestampMs = null
+      this.lastNumericSpacingMs = null
       this.clearTelemetry()
       this.post({ type: 'channels', channelCount })
       this.post(this.telemetry())
@@ -208,53 +218,132 @@ export class StreamDecoder {
         this.updateBackendDrops(decoded.payload)
       } else if (decoded.streamType === StreamType.SYSTEMVIEW) {
         this.appendSystemViewFrame(decoded.sequence, decoded.itemCount, decoded.payload)
+      } else if (decoded.streamType === StreamType.WAVEFORM) {
+        this.acceptWaveformFrame(decoded)
       } else {
-        if (decoded.streamType === StreamType.WAVEFORM) {
-          if (
-            decoded.flags !== 0
-            && decoded.flags !== WAVEFORM_SAMPLE_MAJOR_FLOAT32
-          ) {
-            throw new RangeError('VOFA waveform payload must be sample-major Float32')
-          }
-          if (decoded.itemCount > 0) {
-            const sampleBytes = decoded.itemCount * Float32Array.BYTES_PER_ELEMENT
-            if (decoded.payload.byteLength % sampleBytes !== 0) {
-              throw new RangeError('VOFA payload is not aligned to complete Float32 samples')
-            }
-            const inferredChannelCount = decoded.payload.byteLength / sampleBytes
-            if (
-              !Number.isInteger(inferredChannelCount)
-              || inferredChannelCount <= 0
-              || inferredChannelCount > MAX_WAVEFORM_CHANNELS
-            ) {
-              throw new RangeError('VOFA payload channel count is outside the supported range')
-            }
-            if (inferredChannelCount !== this.ring.channelCount) {
-              this.configure(this.ring.capacity, inferredChannelCount)
-            }
-          } else if (decoded.payload.byteLength !== 0) {
-            throw new RangeError('empty VOFA batches must not contain payload bytes')
-          }
-        }
         this.appendNumericFrame(decoded.sequence, decoded.timestampNs, decoded.itemCount, decoded.payload)
-        if (decoded.streamType === StreamType.WAVEFORM) {
-          const output: Extract<WorkerOutput, { type: 'waveform-batch' }> = {
-            type: 'waveform-batch',
-            sequence: decoded.sequence,
-            timestampNs: decoded.timestampNs,
-            itemCount: decoded.itemCount,
-            channelCount: this.ring.channelCount,
-            layout: 'sample-major-float32',
-            values: decoded.payload,
-          }
-          this.post(output, [output.values])
-        }
       }
       this.acceptedFrames += 1
       this.post(this.telemetry(connectionGeneration, frameTicket))
     } catch (error) {
       this.error('INVALID_FRAME', error, connectionGeneration, frameTicket)
     }
+  }
+
+  private acceptWaveformFrame(decoded: StreamFrame): void {
+    const currentRing = this.ring as TypedRingBuffer
+    if (decoded.flags !== 0 && decoded.flags !== WAVEFORM_SAMPLE_MAJOR_FLOAT32) {
+      throw new RangeError('VOFA waveform payload must be sample-major Float32')
+    }
+    if (decoded.sequence <= 0n || (
+      this.lastDataSequence !== null && decoded.sequence <= this.lastDataSequence
+    )) {
+      throw new RangeError('VOFA sequence must increase strictly')
+    }
+
+    let channelCount = currentRing.channelCount
+    if (decoded.itemCount > 0) {
+      const sampleBytes = decoded.itemCount * Float32Array.BYTES_PER_ELEMENT
+      if (decoded.payload.byteLength % sampleBytes !== 0) {
+        throw new RangeError('VOFA payload is not aligned to complete Float32 samples')
+      }
+      channelCount = decoded.payload.byteLength / sampleBytes
+      if (
+        !Number.isSafeInteger(channelCount)
+        || channelCount <= 0
+        || channelCount > MAX_WAVEFORM_CHANNELS
+      ) {
+        throw new RangeError('VOFA payload channel count is outside the supported range')
+      }
+    } else if (decoded.payload.byteLength !== 0) {
+      throw new RangeError('empty VOFA batches must not contain payload bytes')
+    }
+    const expectedBytes = decoded.itemCount * channelCount * Float32Array.BYTES_PER_ELEMENT
+    if (decoded.payload.byteLength !== expectedBytes) {
+      throw new RangeError('VOFA payload length does not match its sample and channel counts')
+    }
+    const values = new Float32Array(decoded.payload)
+    for (let index = 0; index < values.length; index += 1) {
+      if (!Number.isFinite(values[index])) {
+        throw new RangeError('VOFA payload values must all be finite')
+      }
+    }
+    const batchMilliseconds = Number(decoded.timestampNs) / 1_000_000
+    if (!Number.isFinite(batchMilliseconds)) {
+      throw new RangeError('VOFA batch timestamp is outside the numeric range')
+    }
+    const timing = this.buildMonotonicTimes(batchMilliseconds, decoded.itemCount)
+    const nextRing = channelCount === currentRing.channelCount
+      ? currentRing
+      : new TypedRingBuffer(currentRing.capacity, channelCount)
+
+    // Commit only after the entire frame, its dynamic configuration, values,
+    // sequence, and timestamps have validated successfully.
+    nextRing.appendBatch(timing.times, values)
+    const channelChanged = nextRing !== currentRing
+    if (channelChanged) {
+      this.ring = nextRing
+      this.post({ type: 'channels', channelCount })
+    }
+    if (this.lastDataSequence !== null && decoded.sequence > this.lastDataSequence + 1n) {
+      this.transportDroppedBatches += Number(decoded.sequence - this.lastDataSequence - 1n)
+    }
+    this.lastDataSequence = decoded.sequence
+    this.lastNumericTimestampMs = timing.lastTimestamp
+    this.lastNumericSpacingMs = timing.spacing
+    const output: Extract<WorkerOutput, { type: 'waveform-batch' }> = {
+      type: 'waveform-batch',
+      sequence: decoded.sequence,
+      timestampNs: decoded.timestampNs,
+      itemCount: decoded.itemCount,
+      channelCount,
+      layout: 'sample-major-float32',
+      values: decoded.payload,
+      times: timing.times.buffer as ArrayBuffer,
+    }
+    this.post(output, [output.values, output.times])
+  }
+
+  private buildMonotonicTimes(
+    batchMilliseconds: number,
+    itemCount: number,
+  ): { times: Float64Array; lastTimestamp: number | null; spacing: number | null } {
+    const times = new Float64Array(itemCount)
+    if (itemCount === 0) {
+      return {
+        times,
+        lastTimestamp: this.lastNumericTimestampMs,
+        spacing: this.lastNumericSpacingMs,
+      }
+    }
+    const previous = this.lastNumericTimestampMs
+    const ulpStep = Math.max(
+      0.000001,
+      Math.abs(previous ?? batchMilliseconds) * Number.EPSILON * 4,
+    )
+    let spacing = ulpStep
+    let first = batchMilliseconds - spacing * (itemCount - 1)
+    if (previous !== null) {
+      const observed = (batchMilliseconds - previous) / itemCount
+      if (observed > 0) {
+        const pauseSafeMaximum = this.lastNumericSpacingMs === null
+          ? observed
+          : Math.max(ulpStep, this.lastNumericSpacingMs * 4)
+        spacing = Math.max(ulpStep, Math.min(observed, pauseSafeMaximum))
+        first = batchMilliseconds - spacing * (itemCount - 1)
+        if (first <= previous) first = previous + spacing
+      } else {
+        spacing = Math.max(ulpStep, this.lastNumericSpacingMs ?? ulpStep)
+        first = previous + spacing
+      }
+    }
+    for (let index = 0; index < itemCount; index += 1) {
+      const candidate = first + spacing * index
+      times[index] = index === 0 || candidate > times[index - 1]
+        ? candidate
+        : times[index - 1] + ulpStep
+    }
+    return { times, lastTimestamp: times[itemCount - 1], spacing }
   }
 
   private appendNumericFrame(
@@ -429,22 +518,63 @@ export class StreamDecoder {
       this.systemViewVisibleRange(message)
       return
     }
-    const visibleLength = this.ring.visibleRangeLength(message.start, message.end)
-    const times = new Float64Array(visibleLength)
-    const values = new Float32Array(visibleLength * this.ring.channelCount)
-    const count = this.ring.copyVisibleRange(message.start, message.end, { times, values })
+    const selection = this.ring.selectMinMaxEnvelope(
+      message.start, message.end, message.pixelWidth,
+    )
+    const selectedLogical = selection.logicalIndices.subarray(0, selection.pointCount)
+    const timeIndexByLogical = this.timeIndexScratch as Int32Array
+    let firstLogical = this.ring.length
+    let lastLogical = -1
+    for (let point = 0; point < selectedLogical.length; point += 1) {
+      const logical = selectedLogical[point]
+      timeIndexByLogical[logical] = -1
+      firstLogical = Math.min(firstLogical, logical)
+      lastLogical = Math.max(lastLogical, logical)
+    }
+    let uniqueCount = 0
+    for (let logical = firstLogical; logical <= lastLogical; logical += 1) {
+      if (timeIndexByLogical[logical] === -1) {
+        timeIndexByLogical[logical] = ++uniqueCount
+      }
+    }
+    const times = new Float64Array(uniqueCount)
+    for (let logical = firstLogical; logical <= lastLogical; logical += 1) {
+      const oneBasedTimeIndex = timeIndexByLogical[logical]
+      if (oneBasedTimeIndex > 0) {
+        times[oneBasedTimeIndex - 1] = this.ring.timeAt(logical)
+      }
+    }
+    const timeIndices = new Uint32Array(selection.pointCount)
+    const values = new Float32Array(selection.pointCount)
+    for (let channel = 0; channel < this.ring.channelCount; channel += 1) {
+      const first = selection.channelOffsets[channel]
+      const afterLast = selection.channelOffsets[channel + 1]
+      for (let point = first; point < afterLast; point += 1) {
+        const logical = selectedLogical[point]
+        timeIndices[point] = timeIndexByLogical[logical] - 1
+        values[point] = this.ring.valueAt(logical, channel)
+      }
+    }
+    for (let point = 0; point < selectedLogical.length; point += 1) {
+      timeIndexByLogical[selectedLogical[point]] = 0
+    }
     const output: Extract<WorkerOutput, { type: 'render-envelope' }> = {
       type: 'render-envelope',
-      mode: 'raw-visible',
-      timestampKind: 'batch-milliseconds',
+      mode: 'min-max-v1',
+      timestampKind: 'sample-milliseconds',
       requestId: message.requestId,
       pixelWidth: message.pixelWidth,
       channelCount: this.ring.channelCount,
-      sampleCount: count,
+      pointCount: selection.pointCount,
+      candidateSampleCount: selection.candidateSampleCount,
+      channelOffsets: selection.channelOffsets.buffer as ArrayBuffer,
       times: times.buffer,
+      timeIndices: timeIndices.buffer,
       values: values.buffer,
     }
-    this.post(output, [output.times, output.values])
+    this.post(output, [
+      output.channelOffsets, output.times, output.timeIndices, output.values,
+    ])
   }
 
   private systemViewVisibleRange(message: Extract<WorkerInput, { type: 'visible-range' }>): void {
@@ -514,6 +644,8 @@ export class StreamDecoder {
     this.isrDepth = 0
     this.tickOrigin = null
     this.latestSystemViewTick = 0n
+    this.lastNumericTimestampMs = null
+    this.lastNumericSpacingMs = null
     this.clearTelemetry()
     this.post(this.telemetry())
   }
