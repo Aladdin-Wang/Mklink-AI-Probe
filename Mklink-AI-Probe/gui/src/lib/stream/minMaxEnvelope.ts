@@ -42,6 +42,9 @@ export function minMaxEnvelope(
   const maxima = new Float32Array(pixelWidth)
   const occupied = new Uint8Array(pixelWidth)
   const duration = end - start
+  if (!Number.isFinite(duration)) {
+    throw new RangeError('visible range duration must be finite')
+  }
 
   for (let index = 0; index < times.length; index += 1) {
     const timestamp = times[index]

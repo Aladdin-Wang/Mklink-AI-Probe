@@ -12,14 +12,18 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from mklink.remote.stream_hub import StreamBatch, StreamHub  # noqa: E402
+from mklink.remote.stream_hub import (  # noqa: E402
+    StreamBatch,
+    StreamHub,
+    StreamHubStats,
+)
 from mklink.remote.stream_protocol import (  # noqa: E402
     Frame,
     StreamType,
@@ -36,6 +40,8 @@ STREAM_TYPES = {
 }
 TARGET_BATCHES_PER_SECOND = 100
 QUEUE_BATCH_CAPACITY = 64
+FrameRoundTrip = Callable[[bytes], Frame]
+StatsTransform = Callable[[StreamHubStats], StreamHubStats]
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,25 @@ class BenchmarkResult:
     bytes_per_sec: float
     peak_queue_depth: int
     elapsed: float
+
+    @property
+    def exit_code(self) -> int:
+        return 1 if self.sequence_errors or self.unreported_drops else 0
+
+
+def _loss_mismatch(
+    *,
+    produced_batches: int,
+    consumed_batches: int,
+    produced_items: int,
+    consumed_items: int,
+    reported_batches: int,
+    reported_items: int,
+) -> int:
+    """Return nonzero when either loss counter disagrees with observation."""
+    batch_difference = (produced_batches - consumed_batches) - reported_batches
+    item_difference = (produced_items - consumed_items) - reported_items
+    return abs(batch_difference) + abs(item_difference)
 
 
 def _payload(first_sequence: int, item_count: int, channels: int) -> bytes:
@@ -65,20 +90,57 @@ def _payload(first_sequence: int, item_count: int, channels: int) -> bytes:
     return bytes(payload)
 
 
+async def _next_delivery(
+    queue: asyncio.Queue,
+    deliveries_complete: asyncio.Event,
+) -> StreamBatch | None:
+    """Wait for a batch or the FIFO completion callback without polling."""
+    if deliveries_complete.is_set():
+        if queue.empty():
+            return None
+        return queue.get_nowait()
+
+    delivery = asyncio.create_task(queue.get())
+    completion = asyncio.create_task(deliveries_complete.wait())
+    done, _ = await asyncio.wait(
+        (delivery, completion),
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    if delivery in done:
+        if not completion.done():
+            completion.cancel()
+            try:
+                await completion
+            except asyncio.CancelledError:
+                pass
+        return delivery.result()
+
+    if queue.empty():
+        delivery.cancel()
+        try:
+            await delivery
+        except asyncio.CancelledError:
+            pass
+        return None
+    return await delivery
+
+
 async def _run_async(
     stream: str,
     rate: int,
     duration: float,
     channels: int,
+    frame_round_trip: FrameRoundTrip,
+    stats_transform: StatsTransform,
 ) -> BenchmarkResult:
     hub = StreamHub(max_batches_per_client=QUEUE_BATCH_CAPACITY)
     queue = hub.subscribe()
     loop = asyncio.get_running_loop()
     target_items = max(1, math.ceil(rate * duration))
     batch_items = max(1, math.ceil(rate / TARGET_BATCHES_PER_SECOND))
-    producer_done = threading.Event()
     producer_errors: list[BaseException] = []
     start_gate = threading.Event()
+    deliveries_complete = asyncio.Event()
 
     def produce() -> None:
         try:
@@ -93,14 +155,19 @@ async def _run_async(
                     item_count=count,
                 )
                 produced += count
+                if produced >= target_items:
+                    break
                 deadline = start + produced / rate
                 remaining = deadline - time.perf_counter()
                 if remaining > 0:
-                    producer_done.wait(remaining)
+                    time.sleep(remaining)
+            remaining = start + duration - time.perf_counter()
+            if remaining > 0:
+                time.sleep(remaining)
         except BaseException as exc:  # propagate acquisition-thread failures
             producer_errors.append(exc)
         finally:
-            producer_done.set()
+            loop.call_soon_threadsafe(deliveries_complete.set)
 
     producer = threading.Thread(
         target=produce,
@@ -112,53 +179,70 @@ async def _run_async(
     start_gate.set()
 
     consumed_items = 0
+    consumed_batches = 0
     encoded_bytes = 0
     sequence_errors = 0
+    first_batch_sequence: int | None = None
+    previous_batch_sequence: int | None = None
+    observed_batch_gaps = 0
+    first_item_sequence: int | None = None
     previous_item_sequence: int | None = None
+    observed_item_gaps = 0
     record = struct.Struct(f"<Q{channels}f")
 
     try:
         while True:
-            if producer_done.is_set() and queue.empty():
-                # Let any final call_soon_threadsafe delivery run before exit.
-                await asyncio.sleep(0)
-                if queue.empty():
-                    break
-            try:
-                batch = await asyncio.wait_for(queue.get(), timeout=0.05)
-            except asyncio.TimeoutError:
-                continue
+            batch = await _next_delivery(queue, deliveries_complete)
+            if batch is None:
+                break
             try:
                 if not isinstance(batch, StreamBatch):
                     sequence_errors += 1
                     continue
-                wire = encode_frame(
-                    Frame(
-                        stream_type=STREAM_TYPES[stream],
-                        flags=0,
-                        stream_id=1,
-                        sequence=batch.sequence,
-                        timestamp_ns=batch.timestamp_ns,
-                        item_count=batch.item_count,
-                        payload=batch.payload,
-                    )
+                consumed_batches += 1
+                frame = Frame(
+                    stream_type=STREAM_TYPES[stream],
+                    flags=0,
+                    stream_id=1,
+                    sequence=batch.sequence,
+                    timestamp_ns=batch.timestamp_ns,
+                    item_count=batch.item_count,
+                    payload=batch.payload,
                 )
-                decoded = decode_frame(wire)
+                wire = encode_frame(frame)
+                decoded = frame_round_trip(wire)
                 encoded_bytes += len(wire)
+                if decoded.sequence != batch.sequence:
+                    sequence_errors += 1
+                if first_batch_sequence is None:
+                    first_batch_sequence = decoded.sequence
+                elif previous_batch_sequence is not None:
+                    if decoded.sequence <= previous_batch_sequence:
+                        sequence_errors += 1
+                    else:
+                        observed_batch_gaps += (
+                            decoded.sequence - previous_batch_sequence - 1
+                        )
+                previous_batch_sequence = decoded.sequence
                 if len(decoded.payload) != decoded.item_count * record.size:
                     sequence_errors += 1
                     continue
                 for offset in range(0, len(decoded.payload), record.size):
                     item_sequence = record.unpack_from(decoded.payload, offset)[0]
-                    if (
-                        previous_item_sequence is not None
-                        and item_sequence <= previous_item_sequence
-                    ):
-                        sequence_errors += 1
+                    if first_item_sequence is None:
+                        first_item_sequence = item_sequence
+                    elif previous_item_sequence is not None:
+                        if item_sequence <= previous_item_sequence:
+                            sequence_errors += 1
+                        else:
+                            observed_item_gaps += (
+                                item_sequence - previous_item_sequence - 1
+                            )
                     previous_item_sequence = item_sequence
                     consumed_items += 1
             finally:
                 queue.task_done()
+        await queue.join()
     finally:
         producer.join(timeout=max(1.0, duration + 1.0))
         hub.unsubscribe(queue)
@@ -169,9 +253,40 @@ async def _run_async(
     if producer_errors:
         raise RuntimeError("acquisition thread failed") from producer_errors[0]
 
-    stats = hub.stats()
-    missing_items = max(0, stats.produced_items - consumed_items)
-    unreported_drops = max(0, missing_items - stats.dropped_items)
+    stats = stats_transform(hub.stats())
+    if first_batch_sequence is None:
+        observed_missing_batches = stats.produced_batches
+    else:
+        observed_missing_batches = first_batch_sequence - 1 + observed_batch_gaps
+        if previous_batch_sequence is not None:
+            if previous_batch_sequence > stats.produced_batches:
+                sequence_errors += 1
+            else:
+                observed_missing_batches += (
+                    stats.produced_batches - previous_batch_sequence
+                )
+    if first_item_sequence is None:
+        observed_missing_items = stats.produced_items
+    else:
+        observed_missing_items = first_item_sequence + observed_item_gaps
+        if previous_item_sequence is not None:
+            if previous_item_sequence >= stats.produced_items:
+                if previous_item_sequence != stats.produced_items - 1:
+                    sequence_errors += 1
+            else:
+                observed_missing_items += (
+                    stats.produced_items - previous_item_sequence - 1
+                )
+    unreported_drops = _loss_mismatch(
+        produced_batches=stats.produced_batches,
+        consumed_batches=consumed_batches,
+        produced_items=stats.produced_items,
+        consumed_items=consumed_items,
+        reported_batches=stats.dropped_batches,
+        reported_items=stats.dropped_items,
+    )
+    unreported_drops += abs(observed_missing_batches - stats.dropped_batches)
+    unreported_drops += abs(observed_missing_items - stats.dropped_items)
     return BenchmarkResult(
         produced_items=stats.produced_items,
         consumed_items=consumed_items,
@@ -190,6 +305,8 @@ def run_benchmark(
     rate: int,
     duration: float,
     channels: int = 1,
+    _frame_round_trip: FrameRoundTrip | None = None,
+    _stats_transform: StatsTransform | None = None,
 ) -> BenchmarkResult:
     """Run the benchmark; ``rate`` is aggregate samples per second."""
     if stream not in STREAM_TYPES:
@@ -200,7 +317,18 @@ def run_benchmark(
         raise ValueError("duration must be a positive finite number of seconds")
     if isinstance(channels, bool) or not isinstance(channels, int) or channels <= 0:
         raise ValueError("channels must be a positive integer")
-    return asyncio.run(_run_async(stream, rate, duration, channels))
+    frame_round_trip = _frame_round_trip or decode_frame
+    stats_transform = _stats_transform or (lambda stats: stats)
+    return asyncio.run(
+        _run_async(
+            stream,
+            rate,
+            duration,
+            channels,
+            frame_round_trip,
+            stats_transform,
+        )
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -225,7 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({"error": str(exc)}, separators=(",", ":")))
         return 2
     print(json.dumps(asdict(result), separators=(",", ":"), sort_keys=True))
-    return 1 if result.sequence_errors or result.unreported_drops else 0
+    return result.exit_code
 
 
 if __name__ == "__main__":

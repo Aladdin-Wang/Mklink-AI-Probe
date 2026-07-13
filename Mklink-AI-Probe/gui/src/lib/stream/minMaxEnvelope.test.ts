@@ -79,6 +79,16 @@ describe('minMaxEnvelope', () => {
       .toThrow(/range/)
   })
 
+  it('rejects finite endpoints whose duration overflows', () => {
+    expect(() => minMaxEnvelope(
+      Float64Array.of(-Number.MAX_VALUE, Number.MAX_VALUE),
+      Float32Array.of(1, 2),
+      -Number.MAX_VALUE,
+      Number.MAX_VALUE,
+      2,
+    )).toThrow(/duration/)
+  })
+
   it('ignores samples with non-finite timestamps or values', () => {
     const envelope = minMaxEnvelope(
       Float64Array.of(0, Number.NaN, 1, Number.POSITIVE_INFINITY, 2),
