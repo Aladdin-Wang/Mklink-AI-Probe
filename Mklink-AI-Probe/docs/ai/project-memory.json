@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T10:00:00+08:00",
+  "updated_at": "2026-07-13T14:00:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "85bc178",
-    "remote_head": "eacbccc",
-    "working_tree": "clean before Task 5 completion memory refresh"
+    "head": "2b304b8",
+    "remote_head": "4cc8075",
+    "working_tree": "clean before Task 6 completion memory refresh"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,12 +18,13 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
-    "current_task": "High-throughput Task 6: migrate SystemView to binary streaming",
-    "latest_commit": "85bc178 fix: make stream benchmark cancellation responsive",
+    "current_task": "High-throughput Task 7: migrate VOFA waveform acquisition to binary streaming",
+    "latest_commit": "2b304b8 fix: select SystemView event time units",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
-    "stop_rule": "Execute Task 6 with strict TDD and require spec then quality review before Task 7."
+    "task_6_implementation": "complete; final spec and quality reviews APPROVED",
+    "stop_rule": "Execute Task 7 with strict TDD and require spec then quality review before Task 8."
   },
   "milestones": [
     {
@@ -73,9 +74,17 @@
       "notes": "Typed min/max envelope, one 30 FPS scheduler, strict sequence/drop accounting, responsive cancellation, and deterministic sample-rate benchmark."
     },
     {
-      "name": "High-throughput Tasks 6-9",
+      "name": "High-throughput Task 6 SystemView binary migration",
+      "status": "complete",
+      "commits": ["71e877f", "5fda737", "83ee6e8", "2b304b8"],
+      "tests": "Python full 507 passed; GUI full 153 passed; Vite build 137 modules; final focused frontend 52 and backend 41 passed",
+      "review": "final spec and quality APPROVED",
+      "notes": "Recording-first fixed 48-byte events, bounded O(1) Worker rings, nested ISR contexts, exact BigInt ticks, pixel-bounded interval envelopes, binary UI at 30 FPS and event table at 5 Hz."
+    },
+    {
+      "name": "High-throughput Tasks 7-9",
       "status": "pending",
-      "notes": "SystemView, VOFA, RTT, SuperWatch migrations; performance and HIL qualification."
+      "notes": "VOFA, RTT, SuperWatch migrations; performance and HIL qualification."
     }
   ],
   "verification": [
@@ -94,15 +103,19 @@
     },
     {
       "area": "Current Python baseline",
-      "result": "452 passed after Task 3 final quality fix"
+      "result": "507 passed after Task 6 final quality fixes"
     },
     {
       "area": "Current GUI baseline",
-      "result": "109 tests passed and Vite production build transformed 134 modules after Task 5 final quality fix"
+      "result": "153 tests passed and Vite production build transformed 137 modules after Task 6 final quality fix"
     },
     {
       "area": "Task 5 local transport benchmark",
       "result": "10 seconds at 10 kSamples/s and 8 channels produced/consumed 100000/100000 with zero drops and sequence errors; elapsed 10.001s; responsive 1800-second cancellation; real overflow accounting matched exactly"
+    },
+    {
+      "area": "Task 6 SystemView soak",
+      "result": "Hub/codec 600 seconds at 50 kEvents/s consumed 30000000/30000000 fixed 48-byte events with zero drops/errors, 2.4036 MB/s, queue high-water 1, RSS growth 430080 bytes; realistic Worker 60 seconds processed 3000000 events at 50002.8 events/s with fixed 100000 buffer, 30 FPS visible requests, output <=1600 for 800 pixels, zero errors"
     }
   ],
   "decisions": [
@@ -130,10 +143,10 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Push the Task 5 completion and refreshed project memory to feature/online-flash-streaming.",
-    "Execute high-throughput Task 6 with strict TDD: SystemView backend batching, binary client migration, interval-envelope timeline, and 5 Hz event table.",
-    "Require Task 6 spec review and quality review before starting Task 7.",
-    "Continue Tasks 7-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
+    "Push the Task 6 completion and refreshed project memory to feature/online-flash-streaming.",
+    "Execute high-throughput Task 7 with strict TDD: VOFA source batching, binary Worker path, typed waveform rendering, and 10 kSamples/s soak.",
+    "Require Task 7 spec review and quality review before starting Task 8.",
+    "Continue Tasks 8-9 in order, preserving 30 FPS render cap and measuring actual MKLink stable acquisition rate.",
     "Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims."
   ],
   "continuation_protocol": [
