@@ -132,7 +132,10 @@ window.__rttTestProbe = {
   rawLogState: function() { return {
     count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
   }; },
-  syncStatus: syncDashboardStatus
+  syncStatus: syncDashboardStatus,
+  RingBuffer: RingBuffer,
+  hover: hoverProbe,
+  channelYState: function() { return channelYState; }
 };`
   new Function(instrumented).call(window)
   return {
@@ -391,6 +394,97 @@ describe('VOFA viewer hot path source guard', () => {
 })
 
 describe('VOFA viewer typed-ring runtime', () => {
+  it('finds the first nearest logical sample for empty, repeated, and wrapped rings', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const RingBuffer = runtime.probe.RingBuffer
+      const empty = new RingBuffer(4)
+      expect(empty.nearestSample(1)).toBeNull()
+
+      const repeated = new RingBuffer(5)
+      repeated.push(1, 10)
+      repeated.push(2, 20)
+      repeated.push(2, 21)
+      repeated.push(3, 30)
+      expect(repeated.nearestSample(2)).toEqual({ index: 1, time: 2, value: 20, distance: 0 })
+      expect(repeated.nearestSample(2.5)).toEqual({ index: 1, time: 2, value: 20, distance: 0.5 })
+
+      const wrapped = new RingBuffer(4)
+      for (let time = 1; time <= 6; time++) wrapped.push(time, time * 10)
+      expect(wrapped.nearestSample(4.4)).toEqual({
+        index: 1, time: 4, value: 40, distance: expect.closeTo(0.4),
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('bounds 200k x 8 hover and ctrl-wheel lookups to logarithmic ring visits', async () => {
+    const sampleCount = 200_000
+    const channelCount = 8
+    const runtime = await loadRttViewerRuntime('VOFA', sampleCount)
+    try {
+      const channels = Array.from({ length: channelCount }, (_, index) => ({ name: `I${index}` }))
+      runtime.viewer.configureBinaryChannels(channels)
+      const times = new Float64Array(sampleCount)
+      const values = new Float32Array(sampleCount * channelCount)
+      for (let sample = 0; sample < sampleCount; sample++) {
+        times[sample] = sample / 10
+        for (let channel = 0; channel < channelCount; channel++) {
+          values[sample * channelCount + channel] = sample + channel / 10
+        }
+      }
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 20_000_000_000n, itemCount: sampleCount,
+        channelCount, layout: 'sample-major-float32', values: values.buffer,
+        times: times.buffer,
+      })).toBe(true)
+
+      const envelopeTimes = Float64Array.of(times[0], times[sampleCount - 1])
+      const pointCount = channelCount * 2
+      const timeIndices = new Uint32Array(pointCount)
+      const envelopeValues = new Float32Array(pointCount)
+      const channelOffsets = new Uint32Array(channelCount + 1)
+      for (let channel = 0; channel < channelCount; channel++) {
+        const offset = channel * 2
+        channelOffsets[channel] = offset
+        timeIndices[offset] = 0
+        timeIndices[offset + 1] = 1
+        envelopeValues[offset] = channel / 10
+        envelopeValues[offset + 1] = sampleCount - 1 + channel / 10
+      }
+      channelOffsets[channelCount] = pointCount
+      expect(runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 800, channelCount, pointCount,
+        candidateSampleCount: sampleCount, times: envelopeTimes.buffer,
+        timeIndices: timeIndices.buffer, values: envelopeValues.buffer,
+        channelOffsets: channelOffsets.buffer,
+      })).toBe(true)
+
+      const canvas = document.getElementById('chart') as HTMLCanvasElement
+      runtime.probe.hover.active = true
+      ;(window as any).__ringPointVisits = 0
+      canvas.onmousemove?.({ clientX: 400, clientY: 200 } as MouseEvent)
+      const hoverVisits = (window as any).__ringPointVisits
+      expect(hoverVisits).toBeLessThanOrEqual(channelCount * 48)
+      expect(document.getElementById('tooltip')?.textContent).toContain('I0')
+
+      ;(window as any).__ringPointVisits = 0
+      canvas.onwheel?.({
+        clientX: 400, clientY: 200, ctrlKey: true, shiftKey: false,
+        deltaY: -1, preventDefault: vi.fn(),
+      } as unknown as WheelEvent)
+      const wheelVisits = (window as any).__ringPointVisits
+      console.info('[vofa-interaction-gate]', JSON.stringify({ hoverVisits, wheelVisits }))
+      expect(wheelVisits).toBeLessThanOrEqual(channelCount * 48)
+      expect(runtime.probe.channelYState().I0.zoom).toBe(1.25)
+      expect(runtime.probe.channelYState().I1.zoom).toBe(1)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('keeps closed raw logs DOM-cold and paints its fixed ring at no more than 10 Hz', async () => {
     const runtime = await loadRttViewerRuntime()
     const now = vi.spyOn(performance, 'now').mockReturnValue(0)

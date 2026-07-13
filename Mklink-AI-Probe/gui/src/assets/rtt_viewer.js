@@ -75,6 +75,40 @@ RingBuffer.prototype.valueAt = function(logicalIndex) {
   return this.buffer[idx + 1];
 };
 
+RingBuffer.prototype.lowerBoundTime = function(target) {
+  var low = 0, high = this.count;
+  while (low < high) {
+    var middle = low + ((high - low) >> 1);
+    if (this.timeAt(middle) < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+};
+
+RingBuffer.prototype.nearestSample = function(target) {
+  if (this.count < 1 || !Number.isFinite(target)) return null;
+  var after = this.lowerBoundTime(target);
+  var selected;
+  if (after <= 0) selected = 0;
+  else if (after >= this.count) selected = this.count - 1;
+  else {
+    var before = after - 1;
+    selected = target - this.timeAt(before) <= this.timeAt(after) - target
+      ? before : after;
+  }
+
+  // Preserve the former linear scan's first-match behavior when logical
+  // timestamps repeat, without walking backward through an arbitrary run.
+  var selectedTime = this.timeAt(selected);
+  selected = this.lowerBoundTime(selectedTime);
+  return {
+    index: selected,
+    time: selectedTime,
+    value: this.valueAt(selected),
+    distance: Math.abs(selectedTime - target)
+  };
+};
+
 RingBuffer.prototype.getRange = function(startIdx, endIdx) {
   var result = [];
   var len = Math.min(endIdx, this.count);
@@ -2703,11 +2737,9 @@ function drawChart() {
     for (var k in FIELDS) {
       var hoverRing = FIELDS[k].ringBuf;
       if (!FIELDS[k].visible || hoverRing.count < 1) continue;
-      var bestY = null, bestDist = Infinity;
-      for (var i = 0; i < hoverRing.count; i++) {
-        var d = Math.abs(hoverRing.timeAt(i) - hoverT);
-        if (d < bestDist) { bestDist = d; bestY = hoverRing.valueAt(i); }
-      }
+      var hoverSample = hoverRing.nearestSample(hoverT);
+      var bestY = hoverSample ? hoverSample.value : null;
+      var bestDist = hoverSample ? hoverSample.distance : Infinity;
       if (bestY !== null && bestDist < (tMax - tMin) / pw * 15) {
         var tipVal = formatTypedValue(bestY, FIELDS[k]);
         var enumName = _resolveEnumName(k, bestY);
@@ -2758,9 +2790,10 @@ function drawChart() {
       for (var k in FIELDS) {
         if (!FIELDS[k].visible) continue;
         var zoomRing = FIELDS[k].ringBuf;
-        for (var i = 0; i < zoomRing.count; i++) {
-          var d = Math.abs(zoomRing.timeAt(i) - hoverT);
-          if (d < closestDist) { closestDist = d; closestChannel = k; }
+        var zoomSample = zoomRing.nearestSample(hoverT);
+        if (zoomSample && zoomSample.distance < closestDist) {
+          closestDist = zoomSample.distance;
+          closestChannel = k;
         }
       }
       if (closestChannel) {
