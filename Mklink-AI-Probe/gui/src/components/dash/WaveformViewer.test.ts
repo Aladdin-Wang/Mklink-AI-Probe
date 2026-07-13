@@ -102,6 +102,7 @@ async function loadRttViewerRuntime(
   ;(window as any).__ringToArrayCalls = 0
   ;(window as any).__ringPointVisits = 0
   ;(window as any).__canvasPointVisits = 0
+  ;(window as any).__watchTableUpdates = 0
   const wrapper = mount(WaveformViewer, { props: { mode, deviceConnected: true } })
   await new Promise(resolve => setTimeout(resolve, 0))
   const host = wrapper.element
@@ -116,6 +117,9 @@ async function loadRttViewerRuntime(
   ).replace(
     'RingBuffer.prototype.valueAt = function(logicalIndex) {',
     'RingBuffer.prototype.valueAt = function(logicalIndex) { window.__ringPointVisits++;',
+  ).replace(
+    'function updateWatchTable() {',
+    'function updateWatchTable() { window.__watchTableUpdates++;',
   ) + `
 window.__rttTestProbe = {
   fields: function() { return FIELDS; },
@@ -346,6 +350,69 @@ describe('WaveformViewer VOFA binary transport', () => {
     wrapper.unmount()
   })
 
+  it('polls measured status at 1 Hz without reconfiguring and ignores late stopped responses', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveLate!: (value: unknown) => void
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            running: true, actual_rate: 0, interval: 0.001,
+            channels: [{ name: 'id', addr: 0x20000000, type: 'uint32_t', size: 4 }],
+          }),
+        })
+        .mockReturnValueOnce(new Promise(resolve => { resolveLate = resolve }))
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ running: true, actual_rate: 12_345, interval: 0.001, channels: [] }),
+        })
+      vi.stubGlobal('fetch', fetchMock)
+      const updateAcquisitionStatus = vi.fn()
+      ;(window as any).__waveformViewers.VOFA = { updateAcquisitionStatus }
+      const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+      await nextTick()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(mocks.binary.start).toHaveBeenCalledOnce()
+      expect(mocks.binary.configure).toHaveBeenCalledOnce()
+      expect(updateAcquisitionStatus).toHaveBeenLastCalledWith(expect.objectContaining({ actual_rate: 0 }))
+
+      await vi.advanceTimersByTimeAsync(999)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+
+      window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
+      resolveLate({
+        ok: true,
+        json: async () => ({ running: true, actual_rate: 99_999, interval: 0.001, channels: [] }),
+      })
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+      expect(updateAcquisitionStatus).not.toHaveBeenCalledWith(
+        expect.objectContaining({ actual_rate: 99_999 }),
+      )
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+
+      window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'running' }))
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(updateAcquisitionStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({ actual_rate: 12_345 }),
+      )
+      expect(mocks.binary.start).toHaveBeenCalledOnce()
+      expect(mocks.binary.configure).toHaveBeenCalledOnce()
+
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('bridges connection, drop, and buffer telemetry into viewer health', async () => {
     const updateBinaryHealth = vi.fn()
     ;(window as any).__waveformViewers.VOFA = { updateBinaryHealth }
@@ -394,6 +461,35 @@ describe('VOFA viewer hot path source guard', () => {
 })
 
 describe('VOFA viewer typed-ring runtime', () => {
+  it('updates the VOFA watch table at no more than 5 Hz while envelopes render at 30 FPS', async () => {
+    const runtime = await loadRttViewerRuntime()
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2).buffer,
+        times: Float64Array.of(0, 1).buffer,
+      })).toBe(true)
+      const envelope = {
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 100, channelCount: 1, pointCount: 2,
+        candidateSampleCount: 2, times: Float64Array.of(0, 1).buffer,
+        timeIndices: Uint32Array.of(0, 1).buffer, values: Float32Array.of(1, 2).buffer,
+        channelOffsets: Uint32Array.of(0, 2).buffer,
+      }
+      ;(window as any).__watchTableUpdates = 0
+      for (let frame = 0; frame < 30; frame++) {
+        now.mockReturnValue(frame * (1_000 / 30))
+        runtime.viewer.renderBinaryEnvelope(envelope)
+      }
+      expect((window as any).__watchTableUpdates).toBeLessThanOrEqual(5)
+    } finally {
+      now.mockRestore()
+      runtime.cleanup()
+    }
+  })
+
   it('finds the first nearest logical sample for empty, repeated, and wrapped rings', async () => {
     const runtime = await loadRttViewerRuntime()
     try {
@@ -413,6 +509,87 @@ describe('VOFA viewer typed-ring runtime', () => {
       for (let time = 1; time <= 6; time++) wrapped.push(time, time * 10)
       expect(wrapped.nearestSample(4.4)).toEqual({
         index: 1, time: 4, value: 40, distance: expect.closeTo(0.4),
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('maintains exact extrema without full rescans during 200k x 8 ramp overwrite', async () => {
+    const capacity = 200_000
+    const channelCount = 8
+    const appended = 512
+    const runtime = await loadRttViewerRuntime('VOFA', capacity)
+    try {
+      const channels = Array.from({ length: channelCount }, (_, index) => ({ name: `R${index}` }))
+      runtime.viewer.configureBinaryChannels(channels)
+      const initialTimes = new Float64Array(capacity)
+      const initialValues = new Float32Array(capacity * channelCount)
+      for (let sample = 0; sample < capacity; sample++) {
+        initialTimes[sample] = sample
+        for (let channel = 0; channel < channelCount; channel++) {
+          initialValues[sample * channelCount + channel] = sample + channel / 10
+        }
+      }
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 200_000_000_000n, itemCount: capacity,
+        channelCount, layout: 'sample-major-float32', values: initialValues.buffer,
+        times: initialTimes.buffer,
+      })).toBe(true)
+
+      let fullRescans = 0
+      for (const channel of channels) {
+        runtime.probe.fields()[channel.name].ringBuf.recomputeStats = () => { fullRescans++ }
+      }
+      const nextTimes = new Float64Array(appended)
+      const nextValues = new Float32Array(appended * channelCount)
+      for (let sample = 0; sample < appended; sample++) {
+        nextTimes[sample] = capacity + sample
+        for (let channel = 0; channel < channelCount; channel++) {
+          nextValues[sample * channelCount + channel] = capacity + sample + channel / 10
+        }
+      }
+      const started = performance.now()
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 200_512_000_000n, itemCount: appended,
+        channelCount, layout: 'sample-major-float32', values: nextValues.buffer,
+        times: nextTimes.buffer,
+      })).toBe(true)
+      const elapsedMs = performance.now() - started
+
+      expect(fullRescans).toBe(0)
+      for (let channel = 0; channel < channelCount; channel++) {
+        const ring = runtime.probe.fields()[`R${channel}`].ringBuf
+        expect(ring.count).toBe(capacity)
+        expect(ring._min).toBe(Math.fround(appended + channel / 10))
+        expect(ring._max).toBe(Math.fround(capacity + appended - 1 + channel / 10))
+      }
+      expect(elapsedMs).toBeLessThan(500)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps legacy NaN extrema semantics across overwrite and clear', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const RingBuffer = runtime.probe.RingBuffer
+      const ring = new RingBuffer(3)
+      ring.push(1, Number.NaN)
+      ring.push(2, 5)
+      ring.push(3, -2)
+      expect({ min: ring._min, max: ring._max, count: ring._count }).toEqual({
+        min: -2, max: 5, count: 2,
+      })
+      ring.push(4, 7)
+      ring.push(5, Number.NaN)
+      ring.push(6, 9)
+      expect({ min: ring._min, max: ring._max, count: ring._count }).toEqual({
+        min: 7, max: 9, count: 2,
+      })
+      ring.clear()
+      expect({ min: ring._min, max: ring._max, count: ring._count }).toEqual({
+        min: Infinity, max: -Infinity, count: 0,
       })
     } finally {
       runtime.cleanup()

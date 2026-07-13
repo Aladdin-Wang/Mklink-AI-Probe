@@ -14,10 +14,22 @@ function RingBuffer(capacity) {
   this._max = -Infinity;
   this._sum = 0;
   this._count = 0;
+  // Fixed-capacity monotonic deques keep exact finite extrema under overwrite.
+  // Sequence IDs make eviction independent from physical ring wrap.
+  this._nextSequence = 0;
+  this._minValues = new Float64Array(capacity);
+  this._minSequences = new Float64Array(capacity);
+  this._minHead = 0;
+  this._minCount = 0;
+  this._maxValues = new Float64Array(capacity);
+  this._maxSequences = new Float64Array(capacity);
+  this._maxHead = 0;
+  this._maxCount = 0;
 }
 
 RingBuffer.prototype.push = function(t, v) {
   var idx = this.head * 2;
+  var sequence = this._nextSequence++;
   // If buffer is full, advance tail (overwrite oldest)
   if (this.count >= this.capacity) {
     // Subtract oldest from stats
@@ -26,11 +38,15 @@ RingBuffer.prototype.push = function(t, v) {
     if (Number.isFinite(oldV)) {
       this._sum -= oldV;
       this._count--;
-      // If evicted value was a min/max extreme, recompute from remaining data
-      if (oldV <= this._min || oldV >= this._max) {
-        // Defer recompute until after new value is written
-        this._needRecompute = true;
-      }
+    }
+    var evictedSequence = sequence - this.capacity;
+    while (this._minCount > 0 && this._minSequences[this._minHead] <= evictedSequence) {
+      this._minHead = (this._minHead + 1) % this.capacity;
+      this._minCount--;
+    }
+    while (this._maxCount > 0 && this._maxSequences[this._maxHead] <= evictedSequence) {
+      this._maxHead = (this._maxHead + 1) % this.capacity;
+      this._maxCount--;
     }
     this.tail = (this.tail + 1) % this.capacity;
   } else {
@@ -42,16 +58,31 @@ RingBuffer.prototype.push = function(t, v) {
 
   // Update stats incrementally
   if (Number.isFinite(v)) {
-    if (v < this._min) this._min = v;
-    if (v > this._max) this._max = v;
+    while (this._minCount > 0) {
+      var minTail = (this._minHead + this._minCount - 1) % this.capacity;
+      if (this._minValues[minTail] < v) break;
+      this._minCount--;
+    }
+    var minInsert = (this._minHead + this._minCount) % this.capacity;
+    this._minValues[minInsert] = v;
+    this._minSequences[minInsert] = sequence;
+    this._minCount++;
+
+    while (this._maxCount > 0) {
+      var maxTail = (this._maxHead + this._maxCount - 1) % this.capacity;
+      if (this._maxValues[maxTail] > v) break;
+      this._maxCount--;
+    }
+    var maxInsert = (this._maxHead + this._maxCount) % this.capacity;
+    this._maxValues[maxInsert] = v;
+    this._maxSequences[maxInsert] = sequence;
+    this._maxCount++;
+
     this._sum += v;
     this._count++;
   }
-  // Deferred recompute when old min/max was evicted and new value doesn't cover it
-  if (this._needRecompute) {
-    this._needRecompute = false;
-    this.recomputeStats();
-  }
+  this._min = this._minCount > 0 ? this._minValues[this._minHead] : Infinity;
+  this._max = this._maxCount > 0 ? this._maxValues[this._maxHead] : -Infinity;
 };
 
 RingBuffer.prototype.toArray = function() {
@@ -131,24 +162,13 @@ RingBuffer.prototype.oldest = function() {
   return { t: this.buffer[idx], y: this.buffer[idx + 1] };
 };
 
-RingBuffer.prototype.recomputeStats = function() {
-  this._min = Infinity; this._max = -Infinity;
-  this._sum = 0; this._count = 0;
-  for (var i = 0; i < this.count; i++) {
-    var idx = ((this.tail + i) % this.capacity) * 2;
-    var v = this.buffer[idx + 1];
-    if (Number.isFinite(v)) {
-      if (v < this._min) this._min = v;
-      if (v > this._max) this._max = v;
-      this._sum += v; this._count++;
-    }
-  }
-};
 RingBuffer.prototype.clear = function() {
   this.head = 0; this.tail = 0; this.count = 0;
   this._min = Infinity; this._max = -Infinity;
   this._sum = 0; this._count = 0;
-  this._needRecompute = false;
+  this._nextSequence = 0;
+  this._minHead = 0; this._minCount = 0;
+  this._maxHead = 0; this._maxCount = 0;
 };
 
 // ============================================================
@@ -2288,7 +2308,7 @@ function renderBinaryEnvelope(envelope) {
     drawChart();
     drawMinimap();
     var now = performance.now();
-    if (now - binaryLastUiPaint >= 100) {
+    if (now - binaryLastUiPaint >= 200) {
       binaryLastUiPaint = now;
       updateUI();
       updateWatchTable();
@@ -2357,6 +2377,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.renderBinaryEnvelope = renderBinaryEnvelope;
   binaryViewer.resetBinaryStream = resetBinaryStream;
   binaryViewer.updateBinaryHealth = updateBinaryHealth;
+  binaryViewer.updateAcquisitionStatus = syncDashboardStatus;
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
   binaryViewer.es = es;

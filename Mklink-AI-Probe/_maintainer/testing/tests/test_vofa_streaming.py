@@ -1,6 +1,8 @@
 import asyncio
 import math
 import struct
+import threading
+import time
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -240,6 +242,142 @@ def test_invalid_api_configuration_is_rejected_before_leasing_or_starting():
         assert response.status_code == 422
         start.assert_not_called()
         assert app.state.mklink_state["resource_manager"].get_status() == {}
+
+
+@pytest.mark.parametrize("interval", [math.nan, math.inf, -math.inf, 0.0, -1.0, 60.000001])
+def test_manager_rejects_invalid_interval_atomically(interval):
+    manager = VofaStreamManager()
+    manager.configure(_channels(1), interval=0.25)
+    before = manager.get_status()
+
+    with pytest.raises(ValueError, match="interval"):
+        manager.configure(_channels(2), interval=interval)
+    with pytest.raises(ValueError, match="interval"):
+        manager.set_interval(interval)
+
+    after = manager.get_status()
+    assert after["interval"] == before["interval"]
+    assert after["channels"] == before["channels"]
+
+
+@pytest.mark.parametrize("raw_interval", ["NaN", "Infinity", "-Infinity", "0", "-1", "60.000001"])
+def test_interval_api_rejects_raw_invalid_numbers_before_lease_or_thread(raw_interval):
+    from mklink.remote.dashboards import get_managers
+
+    app = create_app(auth_token=None, project_root=".")
+    app.state.mklink_state["device"] = type("Device", (), {"connected": True})()
+    manager = get_managers()["vofa"]
+    manager.stop()
+    manager.configure(_channels(1), interval=0.25)
+    before = manager.get_status()
+    channels_json = '[{"name":"c0","addr":536870912,"type":"float","size":4}]'
+
+    with patch.object(manager, "start") as start, TestClient(app) as client:
+        start_response = client.post(
+            "/api/dash/vofa/start",
+            content=f'{{"channels":{channels_json},"interval":{raw_interval}}}',
+            headers={"Content-Type": "application/json"},
+        )
+        interval_response = client.post(
+            "/api/dash/vofa/interval",
+            content=f'{{"interval":{raw_interval}}}',
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert start_response.status_code == 422
+        assert interval_response.status_code == 422
+        start.assert_not_called()
+        assert app.state.mklink_state["resource_manager"].get_status() == {}
+        after = manager.get_status()
+        assert after["interval"] == before["interval"]
+        assert after["channels"] == before["channels"]
+
+
+def test_paused_60_second_interval_stop_is_interruptible():
+    manager = VofaStreamManager(batch_samples=1)
+
+    class Device:
+        def read_memory(self, address, size):
+            return bytes(size)
+
+    real_sleep = time.sleep
+    blocked_sleep = threading.Event()
+
+    def legacy_sleep(seconds):
+        if seconds >= 60:
+            blocked_sleep.wait(1.0)
+        else:
+            real_sleep(seconds)
+
+    error = None
+    with patch("mklink.remote.dashboards.time.sleep", side_effect=legacy_sleep):
+        manager.start(Device(), _channels(1), interval=0.001)
+        deadline = time.perf_counter() + 1.0
+        while manager.get_status()["completed_samples"] < 2 and time.perf_counter() < deadline:
+            real_sleep(0.001)
+        manager.pause()
+        manager.set_interval(60.0)
+        real_sleep(0.02)
+        started = time.perf_counter()
+        try:
+            manager.stop(timeout=0.1)
+        except Exception as exc:  # captured so the legacy sleeper can be released and joined
+            error = exc
+        elapsed = time.perf_counter() - started
+        blocked_sleep.set()
+        if manager._thread is not None and manager._thread.is_alive():
+            manager.stop(timeout=1.0)
+
+    assert error is None
+    assert elapsed < 0.2
+    assert manager._thread is None
+
+
+def test_paused_stop_endpoint_releases_lease_without_waiting_for_long_interval():
+    from mklink.remote.dashboards import get_managers
+
+    class Device:
+        connected = True
+
+        def read_memory(self, address, size):
+            return bytes(size)
+
+    app = create_app(auth_token=None, project_root=".")
+    app.state.mklink_state["device"] = Device()
+    manager = get_managers()["vofa"]
+    manager.stop()
+    real_sleep = time.sleep
+    blocked_sleep = threading.Event()
+
+    def legacy_sleep(seconds):
+        if seconds >= 60:
+            blocked_sleep.wait(1.0)
+        else:
+            real_sleep(seconds)
+
+    try:
+        with patch("mklink.remote.dashboards.time.sleep", side_effect=legacy_sleep), TestClient(app) as client:
+            start = client.post("/api/dash/vofa/start", json={
+                "channels": _channels(1), "interval": 0.001,
+            })
+            assert start.status_code == 200
+            deadline = time.perf_counter() + 1.0
+            while manager.get_status()["completed_samples"] < 2 and time.perf_counter() < deadline:
+                real_sleep(0.001)
+            assert client.post("/api/dash/vofa/pause").status_code == 200
+            assert client.post("/api/dash/vofa/interval", json={"interval": 60.0}).status_code == 200
+            real_sleep(0.02)
+
+            started = time.perf_counter()
+            stopped = client.post("/api/dash/vofa/stop")
+            elapsed = time.perf_counter() - started
+            assert stopped.status_code == 200
+            assert elapsed < 0.2
+            assert app.state.mklink_state["resource_manager"].get_status() == {}
+    finally:
+        blocked_sleep.set()
+        if manager._thread is not None and manager._thread.is_alive():
+            manager.stop(timeout=1.0)
 
 
 def test_slow_subscriber_reports_only_explicit_hub_drops_for_id_batches():

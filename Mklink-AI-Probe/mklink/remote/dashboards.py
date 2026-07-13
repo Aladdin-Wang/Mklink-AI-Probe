@@ -1348,6 +1348,17 @@ class ModbusStreamManager:
 # VOFA+ JustFloat SSE Generator
 # ---------------------------------------------------------------------------
 
+def normalize_vofa_interval(interval: float) -> float:
+    """Return a finite supported VOFA interval without silently accepting invalid input."""
+    try:
+        value = float(interval)
+    except (TypeError, ValueError):
+        raise ValueError("VOFA interval must be a finite number") from None
+    if not math.isfinite(value) or value <= 0 or value > 60.0:
+        raise ValueError("VOFA interval must be finite and in the range (0, 60]")
+    return max(0.000001, value)
+
+
 class VofaStreamManager:
     """Manages VOFA+ JustFloat variable streaming via memory reads.
 
@@ -1401,11 +1412,13 @@ class VofaStreamManager:
     def configure(self, channels: list[dict], interval: float | None = None) -> None:
         from mklink.vofa_viewer import build_vofa_read_groups, normalize_vofa_channels
 
+        normalized_interval = (
+            self._interval if interval is None else normalize_vofa_interval(interval)
+        )
         normalized = normalize_vofa_channels(channels)
         read_groups = build_vofa_read_groups(normalized)
         self._channels = normalized
-        if interval is not None:
-            self._interval = max(float(interval), 0.000001)
+        self._interval = normalized_interval
         self._read_groups = read_groups
         self._pending_samples.clear()
         self._completed_samples = 0
@@ -1524,7 +1537,7 @@ class VofaStreamManager:
             try:
                 while not stop_event.is_set():
                     if not self._paused.is_set():
-                        time.sleep(self._interval)
+                        stop_event.wait(self._interval)
                         continue
 
                     self.collect_cycle(device)
@@ -1566,7 +1579,7 @@ class VofaStreamManager:
         self._paused.set()
 
     def set_interval(self, interval: float) -> float:
-        self._interval = max(0.000001, min(60.0, interval))
+        self._interval = normalize_vofa_interval(interval)
         return self._interval
 
     def get_status(self) -> dict:

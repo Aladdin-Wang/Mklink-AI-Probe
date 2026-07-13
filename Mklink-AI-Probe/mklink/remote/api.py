@@ -1603,6 +1603,11 @@ def create_app(
         """
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
+        from mklink.remote.dashboards import normalize_vofa_interval
+        try:
+            interval = normalize_vofa_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         vm = managers["vofa"]
         if not channels:
@@ -1651,7 +1656,10 @@ def create_app(
     @app.post("/api/dash/vofa/interval")
     async def vofa_interval(interval: float = Body(..., embed=True)):
         managers = get_managers()
-        actual = managers["vofa"].set_interval(interval)
+        try:
+            actual = managers["vofa"].set_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"interval": actual}
 
     # ===================================================================

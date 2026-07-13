@@ -25,6 +25,9 @@ let vofaChannelSignature: string | null = null
 let pendingBatch: Extract<WorkerOutput, { type: 'waveform-batch' }> | null = null
 let visibleRequestId = 0
 let previousTransportPhase = 'stopped'
+let statusPollTimer: ReturnType<typeof setTimeout> | null = null
+let statusPollGeneration = 0
+let latestVofaStatus: Record<string, unknown> | null = null
 let disposed = false
 const vofaScheduler = binary
   ? new RenderScheduler(() => {
@@ -71,9 +74,51 @@ function resetVofaSession(): void {
   ;(window as any).__waveformViewers?.VOFA?.resetBinaryStream?.()
 }
 
+function stopVofaStatusPolling(): void {
+  statusPollGeneration++
+  if (statusPollTimer !== null) {
+    clearTimeout(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
+async function pollVofaStatus(generation: number, startTransport: boolean): Promise<void> {
+  let status: Record<string, unknown> | null = null
+  try {
+    const response = await fetch('/api/dash/vofa/status')
+    status = response.ok ? await response.json() : null
+  } catch { /* retry on the bounded cadence below */ }
+  if (disposed || generation !== statusPollGeneration) return
+  if (status) {
+    latestVofaStatus = status
+    if (startTransport) {
+      applyVofaChannels(Array.isArray(status.channels) ? status.channels : [])
+    }
+    ;(window as any).__waveformViewers?.VOFA?.updateAcquisitionStatus?.(status)
+  }
+  if (startTransport) binary?.start()
+  statusPollTimer = setTimeout(() => {
+    statusPollTimer = null
+    void pollVofaStatus(generation, false)
+  }, 1_000)
+}
+
+function startVofaStatusPolling(startTransport: boolean): void {
+  if (!binary || disposed) return
+  stopVofaStatusPolling()
+  const generation = statusPollGeneration
+  void pollVofaStatus(generation, startTransport)
+}
+
 function onVofaStreamState(event: Event): void {
   const state = (event as CustomEvent<unknown>).detail
-  if (state === 'running' || state === 'stopped') resetVofaSession()
+  if (state === 'running') {
+    resetVofaSession()
+    startVofaStatusPolling(false)
+  } else if (state === 'stopped') {
+    resetVofaSession()
+    stopVofaStatusPolling()
+  }
 }
 
 watch(() => binary?.waveformBatch.value ?? null, batch => {
@@ -127,16 +172,7 @@ onMounted(() => {
     window.addEventListener('mklink:vofa-channels', onVofaChannels)
     window.addEventListener('mklink:vofa-stream-state', onVofaStreamState)
     vofaScheduler?.start()
-    void fetch('/api/dash/vofa/status')
-      .then(response => response.ok ? response.json() : null)
-      .then(status => {
-        if (!status || disposed) return
-        applyVofaChannels(Array.isArray(status.channels) ? status.channels : [])
-        binary.start()
-      })
-      .catch(() => {
-        if (!disposed) binary.start()
-      })
+    startVofaStatusPolling(true)
   }
 })
 
@@ -147,6 +183,7 @@ watch(() => props.deviceConnected, (val) => {
 
 onUnmounted(() => {
   disposed = true
+  stopVofaStatusPolling()
   binary?.stop()
   vofaScheduler?.dispose()
   window.removeEventListener('mklink:vofa-channels', onVofaChannels)
@@ -413,6 +450,7 @@ function loadViewerScript(el: HTMLDivElement) {
     }
     if (props.mode === 'VOFA' && viewers?.VOFA) {
       viewers.VOFA.configureBinaryChannels?.(vofaChannels)
+      if (latestVofaStatus) viewers.VOFA.updateAcquisitionStatus?.(latestVofaStatus)
       if (pendingBatch) {
         viewers.VOFA.acceptBinaryBatch?.(pendingBatch, vofaChannels)
         pendingBatch = null
