@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T18:00:00+08:00",
+  "updated_at": "2026-07-14T02:16:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "ecaa614",
-    "remote_head": "f5fdf7e",
-    "working_tree": "clean before Task 7 completion memory refresh"
+    "head": "426d6a7",
+    "remote_head": "30f5612",
+    "working_tree": "clean before Task 8 completion memory refresh"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,14 +18,15 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
-    "current_task": "High-throughput Task 8: migrate RTT and SuperWatch and virtualize logs",
-    "latest_commit": "ecaa614 fix: preserve zero interval acquisition contract",
+    "current_task": "High-throughput Task 9: performance gates, MKLink HIL, and release verification",
+    "latest_commit": "426d6a7 fix: roll back failed dashboard side effects",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
     "task_6_implementation": "complete; final spec and quality reviews APPROVED",
     "task_7_implementation": "complete; final spec and quality reviews APPROVED",
-    "stop_rule": "Execute Task 8 with strict TDD and require spec then quality review before Task 9."
+    "task_8_implementation": "complete; final spec and quality reviews APPROVED",
+    "stop_rule": "Execute Task 9 with strict evidence boundaries: automated performance gates, real MKLink/STM32F103RC HIL, packaged-app smoke, final spec and quality review."
   },
   "milestones": [
     {
@@ -91,9 +92,18 @@
       "notes": "Validated aligned source reads, atomic sample-major batches, Worker min/max envelopes, O(1) extrema and O(log N) interactions, bounded DOM work, live telemetry, pause-safe rates, and SuperWatch legacy isolation."
     },
     {
-      "name": "High-throughput Tasks 8-9",
+      "name": "High-throughput Task 8 RTT and SuperWatch binary migration",
+      "status": "complete",
+      "commits": ["2b4c060", "70dbe6c", "5d02f90", "2344a77", "11325f1", "426d6a7"],
+      "tests": "Python full 570 passed; GUI full 217 passed; Vite build 140 modules; final focused backend 93 passed",
+      "review": "final spec and quality APPROVED",
+      "evidence": "docs/verification/task8-rtt-superwatch-synthetic.md",
+      "notes": "RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks."
+    },
+    {
+      "name": "High-throughput Task 9 performance and HIL qualification",
       "status": "pending",
-      "notes": "RTT and SuperWatch migration, virtual logs, final performance and HIL qualification."
+      "notes": "Add CI performance gates, measure SystemView/VOFA/RTT/SuperWatch on the connected MKLink and STM32F103RC, verify packaged Tauri application, document measured limits, and push final evidence."
     }
   ],
   "verification": [
@@ -112,11 +122,11 @@
     },
     {
       "area": "Current Python baseline",
-      "result": "544 passed after Task 7 final quality fixes"
+      "result": "570 passed after Task 8 final cancellation and side-effect rollback fixes"
     },
     {
       "area": "Current GUI baseline",
-      "result": "192 tests passed and Vite production build transformed 137 modules after Task 7 final quality fix"
+      "result": "217 tests passed and Vite production build transformed 140 modules after Task 8 final quality fix"
     },
     {
       "area": "Task 5 local transport benchmark",
@@ -129,6 +139,10 @@
     {
       "area": "Task 7 VOFA synthetic qualification",
       "result": "Python synthetic transport 1800 seconds at 10 kSamples/s and 8 channels consumed 18000000/18000000 with zero drops/errors and working-set growth 40960 bytes. Accelerated jsdom same-thread harness processed 60 seconds of data (600000 samples), 1800 visible requests, output <=5120 for 320 pixels x 8 channels, zero ring full scans/drops/errors; this is not wall-clock browser, WebSocket, Web Worker, Python backend, or HIL evidence."
+    },
+    {
+      "area": "Task 8 RTT and SuperWatch synthetic qualification",
+      "result": "Python local StreamHub/codec soaks ran 600 seconds each at 10 k records/s: RTT consumed 6000000/6000000 with zero drops/sequence errors at 123599.7 B/s and queue high-water 1; SuperWatch 8-channel consumed 6000000/6000000 with zero drops/sequence errors at 403599.4 B/s and queue high-water 1. Accelerated jsdom same-thread gates processed RTT 6000 records with a 5000-line bound and DOM below 40 rows, and SuperWatch 600000 x 8 samples with a 200000-sample ring and envelope <=5120 values. These are not real wall-clock browser, WebSocket, Web Worker, packaged application, or MKLink HIL results."
     }
   ],
   "decisions": [
@@ -156,11 +170,11 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Push the Task 7 completion and refreshed project memory to feature/online-flash-streaming.",
-    "Execute high-throughput Task 8 with strict TDD: RTT raw binary batches, SuperWatch sample batches, bounded VirtualLogPanel, and component migration.",
-    "Require Task 8 spec review and quality review before starting Task 9.",
+    "Commit and push the Task 8 completion memory to feature/online-flash-streaming.",
+    "Add and run the short Task 9 10 kSamples/s pytest performance gate, full Python/GUI regression suites, and production build.",
     "Execute Task 9 performance gates and MKLink/STM32F103RC HIL, preserving 30 FPS render cap and measuring actual stable acquisition rate.",
-    "Use STM32F103RC project and Keil for final VOFA/SystemView/read-variable HIL; record measured rates and drops, not inferred claims."
+    "Use STM32F103RC project and Keil for final VOFA/SystemView/RTT/SuperWatch/read-variable HIL; record measured rates and drops, not inferred claims.",
+    "Build the Tauri release, run a packaged-app hardware smoke, complete final spec and quality reviews, refresh memory, and push."
   ],
   "continuation_protocol": [
     "Run: python scripts/ai_memory.py validate",
