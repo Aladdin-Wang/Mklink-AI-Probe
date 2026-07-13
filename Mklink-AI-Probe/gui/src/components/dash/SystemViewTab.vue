@@ -583,6 +583,7 @@ const tableEvents = computed(() => eventList.value.slice(-120))
 const eventRows = computed(() => buildSystemViewEventRows(tableEvents.value, {
   firstIndex: Math.max(1, totalEventCount.value - tableEvents.value.length + 1),
   formatTime: value => fmtTime(value),
+  preferExactTicks: !meta.cpuFreq,
 }))
 const runtimeRows = computed(() => computeRuntimeRows(Object.values(taskStats), intervals.value))
 const contextRows = computed(() => computeContextRows(Object.values(taskStats)))

@@ -143,4 +143,18 @@ describe('systemViewMetrics', () => {
 
     expect(row.time.replaceAll(',', '')).toBe('9007199254740993 tk')
   })
+
+  it('formats event time when exact ticks are not preferred', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 1.25,
+      t_ticks_exact: '9007199254740993',
+      task_id: 1,
+    }], {
+      preferExactTicks: false,
+      formatTime: value => `${value.toFixed(6)}s`,
+    })
+
+    expect(row.time).toBe('1.250000s')
+  })
 })

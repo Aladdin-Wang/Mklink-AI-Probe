@@ -52,6 +52,7 @@ export interface SystemViewEventRow {
 export interface SystemViewEventRowOptions {
   firstIndex?: number
   formatTime?: (value: number) => string
+  preferExactTicks?: boolean
 }
 
 export function computeTaskRows(tasks: SystemViewTaskRuntime[]): SystemViewTaskRow[] {
@@ -129,6 +130,7 @@ export function buildSystemViewEventRows(
 ): SystemViewEventRow[] {
   const firstIndex = options.firstIndex ?? 1
   const formatTime = options.formatTime || ((value: number) => String(value))
+  const preferExactTicks = options.preferExactTicks ?? true
 
   return events.map((event, offset) => {
     const kind = String(event.kind || 'event')
@@ -139,9 +141,13 @@ export function buildSystemViewEventRows(
 
     return {
       index: firstIndex + offset,
-      time: typeof event.t_ticks_exact === 'string'
+      time: preferExactTicks && typeof event.t_ticks_exact === 'string'
         ? `${BigInt(event.t_ticks_exact).toLocaleString()} tk`
-        : typeof event.t === 'number' ? formatTime(event.t) : '',
+        : typeof event.t === 'number'
+          ? formatTime(event.t)
+          : typeof event.t_ticks_exact === 'string'
+            ? `${BigInt(event.t_ticks_exact).toLocaleString()} tk`
+            : '',
       context,
       event: labelEvent(kind),
       resource: resourceForEvent(event, kind),

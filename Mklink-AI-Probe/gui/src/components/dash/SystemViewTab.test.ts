@@ -1,5 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref, shallowRef } from 'vue'
 import SystemViewTab from './SystemViewTab.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ vi.mock('../../composables/useResourceStatus', () => ({
 vi.mock('../../lib/svTimeline', () => ({
   SvTimeline: class {
     setData() {}
+    setTickOrigin() {}
     setPrefilteredIntervals() {}
     setWindowSize() {}
     reset() {}
@@ -54,8 +56,11 @@ function deferred<T>() {
 describe('SystemViewTab asynchronous lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.dash.state.value = 'idle'
-    mocks.status.data.value = []
+    mocks.dash.state = ref('idle') as typeof mocks.dash.state
+    mocks.dash.error = ref(null) as typeof mocks.dash.error
+    mocks.status.data = shallowRef([]) as typeof mocks.status.data
+    mocks.binary.telemetry = shallowRef(null) as typeof mocks.binary.telemetry
+    mocks.binary.systemViewVisible = shallowRef(null) as typeof mocks.binary.systemViewVisible
     mocks.dash.stop.mockResolvedValue(undefined)
     mocks.checkConflict.mockResolvedValue([])
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
@@ -107,5 +112,64 @@ describe('SystemViewTab asynchronous lifecycle', () => {
 
     expect(mocks.status.connect).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()
+  })
+})
+
+function publishVisibleEvent(cpuFreq: number) {
+  mocks.status.data.value = cpuFreq > 0 ? [{ _streamSeq: 1, cpu_freq: cpuFreq }] as never[] : []
+  mocks.binary.systemViewVisible.value = {
+    type: 'systemview-visible',
+    requestId: 0,
+    intervalCount: 0,
+    candidateIntervalCount: 0,
+    eventCount: 1,
+    latestTime: 1,
+    tickOrigin: 9007199254740992n,
+    taskIds: new Uint32Array().buffer,
+    starts: new Float64Array().buffer,
+    ends: new Float64Array().buffer,
+    startTicks: new BigUint64Array().buffer,
+    endTicks: new BigUint64Array().buffer,
+    events: [{
+      kind: 'task_start_exec',
+      task_id: 1,
+      t_ticks: 9007199254740993n,
+      t_ticks_exact: '9007199254740993',
+      t_relative: 1,
+    }],
+  } as never
+}
+
+describe('SystemViewTab event time units', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.dash.state = ref('idle') as typeof mocks.dash.state
+    mocks.dash.error = ref(null) as typeof mocks.dash.error
+    mocks.status.data = shallowRef([]) as typeof mocks.status.data
+    mocks.binary.telemetry = shallowRef(null) as typeof mocks.binary.telemetry
+    mocks.binary.systemViewVisible = shallowRef(null) as typeof mocks.binary.systemViewVisible
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    mocks.dash.stop.mockResolvedValue(undefined)
+    mocks.checkConflict.mockResolvedValue([])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
+  })
+
+  it('shows formatted seconds when CPU frequency is known', async () => {
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    publishVisibleEvent(1_000_000)
+    await nextTick()
+
+    expect(wrapper.find('.sv-events-table tbody tr td:nth-child(2)').text()).toBe('0.000001s')
+    wrapper.unmount()
+  })
+
+  it('shows the exact tick string when CPU frequency is unknown', async () => {
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    publishVisibleEvent(0)
+    await nextTick()
+
+    expect(wrapper.find('.sv-events-table tbody tr td:nth-child(2)').text().replaceAll(',', ''))
+      .toBe('9007199254740993 tk')
+    wrapper.unmount()
   })
 })
