@@ -537,6 +537,166 @@ def test_dashboard_start_resource_acquisition_does_not_block_event_loop(monkeypa
     assert heartbeat_elapsed < 0.05
 
 
+def test_dashboard_start_cancel_during_acquisition_releases_late_lease(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+    from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+
+    resource_manager = ResourceManager()
+    state = {"resource_manager": resource_manager}
+    manager = SimpleNamespace(running=False)
+    acquisition_started = threading.Event()
+    release_acquisition = threading.Event()
+    acquisition_finished = threading.Event()
+    start_calls = []
+
+    def delayed_acquire(_state, dashboard):
+        acquisition_started.set()
+        assert release_acquisition.wait(1.0)
+        _state["resource_manager"].acquire_many(
+            [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+            f"user:dashboard:{dashboard}",
+        )
+        acquisition_finished.set()
+        return []
+
+    monkeypatch.setattr(
+        "mklink.remote.api.acquire_dashboard_resources", delayed_acquire,
+    )
+
+    async def scenario():
+        task = asyncio.create_task(start_dashboard_manager(
+            state, "superwatch", manager, lambda: start_calls.append(True),
+        ))
+        assert await asyncio.to_thread(acquisition_started.wait, 1.0)
+        task.cancel()
+        release_acquisition.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await asyncio.to_thread(acquisition_finished.wait, 1.0)
+
+    asyncio.run(scenario())
+    assert start_calls == []
+    assert resource_manager.get_status() == {}
+
+
+def test_dashboard_start_cancel_during_start_stops_late_success_and_releases(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+    from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+
+    class Manager:
+        running = False
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+            self.running = False
+
+    manager = Manager()
+    resource_manager = ResourceManager()
+    state = {"resource_manager": resource_manager}
+    start_started = threading.Event()
+    release_start = threading.Event()
+    start_finished = threading.Event()
+
+    def acquire(_state, dashboard):
+        _state["resource_manager"].acquire_many(
+            [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+            f"user:dashboard:{dashboard}",
+        )
+        return []
+
+    def delayed_start():
+        start_started.set()
+        assert release_start.wait(1.0)
+        manager.running = True
+        start_finished.set()
+
+    monkeypatch.setattr("mklink.remote.api.acquire_dashboard_resources", acquire)
+
+    async def scenario():
+        task = asyncio.create_task(start_dashboard_manager(
+            state, "superwatch", manager, delayed_start,
+        ))
+        assert await asyncio.to_thread(start_started.wait, 1.0)
+        task.cancel()
+        release_start.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await asyncio.to_thread(start_finished.wait, 1.0)
+
+    asyncio.run(scenario())
+    assert manager.stop_calls == 1
+    assert not manager.running
+    assert resource_manager.get_status() == {}
+
+
+def test_dashboard_start_cancel_and_shutdown_cleanup_once_without_leak(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+    from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+
+    class CountingResourceManager(ResourceManager):
+        def __init__(self):
+            super().__init__()
+            self.release_calls = []
+
+        def release(self, owner):
+            self.release_calls.append(owner)
+            return super().release(owner)
+
+    class Manager:
+        running = False
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+            self.running = False
+
+    manager = Manager()
+    resource_manager = CountingResourceManager()
+    state = {"resource_manager": resource_manager}
+    start_started = threading.Event()
+    allow_shutdown = threading.Event()
+    shutdown_done = threading.Event()
+
+    def acquire(_state, dashboard):
+        _state["resource_manager"].acquire_many(
+            [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+            f"user:dashboard:{dashboard}",
+        )
+        return []
+
+    def delayed_start():
+        manager.running = True
+        start_started.set()
+        assert shutdown_done.wait(1.0)
+
+    def shutdown_manager():
+        assert allow_shutdown.wait(1.0)
+        manager.stop()
+        shutdown_done.set()
+
+    monkeypatch.setattr("mklink.remote.api.acquire_dashboard_resources", acquire)
+    shutdown = threading.Thread(target=shutdown_manager, daemon=True)
+    shutdown.start()
+
+    async def scenario():
+        task = asyncio.create_task(start_dashboard_manager(
+            state, "superwatch", manager, delayed_start,
+        ))
+        assert await asyncio.to_thread(start_started.wait, 1.0)
+        task.cancel()
+        allow_shutdown.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    shutdown.join(timeout=1.0)
+    assert not shutdown.is_alive()
+    assert manager.stop_calls == 1
+    assert resource_manager.release_calls == ["user:dashboard:superwatch"]
+    assert resource_manager.get_status() == {}
+
+
 @pytest.mark.parametrize("dashboard", ["rtt", "systemview", "superwatch", "vofa"])
 def test_dashboard_stop_releases_leases_even_when_manager_stop_raises(dashboard):
     from mklink.remote.resource_manager import ResourceGroup

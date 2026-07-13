@@ -267,15 +267,56 @@ def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[s
 async def start_dashboard_manager(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
-    """Start a dashboard after leasing, releasing leases on start failure."""
+    """Start a dashboard as a cancellation-safe acquire/start transaction.
+
+    Cancellation is delivered only after the in-flight executor phase settles
+    and its lease/manager effects have been rolled back.  Waiting remains
+    asynchronous; the event loop never joins a hardware worker directly.
+    """
     if _dashboard_worker_alive(manager):
         if manager.running:
             return "already_running", []
         raise DashboardStopPending(dashboard)
-    loop = asyncio.get_event_loop()
-    stopped = await loop.run_in_executor(
+    loop = asyncio.get_running_loop()
+    owner = f"user:dashboard:{dashboard}"
+    release_lock = threading.Lock()
+    owner_released = False
+
+    def release_owner_once():
+        nonlocal owner_released
+        with release_lock:
+            if owner_released:
+                return []
+            owner_released = True
+            return state["resource_manager"].release(owner)
+
+    def rollback_started_manager():
+        error = None
+        try:
+            manager.stop()
+        except Exception as exc:
+            error = exc
+        if _dashboard_worker_alive(manager):
+            raise DashboardStopPending(dashboard) from error
+        release_owner_once()
+        if error is not None:
+            raise error
+
+    acquire_future = loop.run_in_executor(
         None, acquire_dashboard_resources, state, dashboard,
     )
+    try:
+        stopped = await asyncio.shield(acquire_future)
+    except asyncio.CancelledError:
+        try:
+            await _wait_executor_completion(acquire_future)
+        except (Exception, asyncio.CancelledError):
+            pass
+        release_owner_once()
+        raise
+    except Exception:
+        release_owner_once()
+        raise
     setter = getattr(manager, "set_start_failure_callback", None)
     if callable(setter):
         generation = object()
@@ -283,15 +324,46 @@ async def start_dashboard_manager(
 
         def release_failed_start(_error):
             if getattr(manager, "_api_start_generation", None) is generation:
-                state["resource_manager"].release(f"user:dashboard:{dashboard}")
+                release_owner_once()
 
         setter(release_failed_start)
+    start_future = loop.run_in_executor(None, start_call)
     try:
-        await loop.run_in_executor(None, start_call)
+        await asyncio.shield(start_future)
+    except asyncio.CancelledError:
+        start_succeeded = False
+        try:
+            await _wait_executor_completion(start_future)
+            start_succeeded = True
+        except (Exception, asyncio.CancelledError):
+            pass
+        if start_succeeded and _dashboard_worker_alive(manager):
+            cleanup_future = loop.run_in_executor(
+                None, rollback_started_manager,
+            )
+            try:
+                await _wait_executor_completion(cleanup_future)
+            except (Exception, asyncio.CancelledError):
+                pass
+        else:
+            release_owner_once()
+        raise
     except Exception:
-        state["resource_manager"].release(f"user:dashboard:{dashboard}")
+        release_owner_once()
         raise
     return "started", stopped
+
+
+async def _wait_executor_completion(future):
+    """Await an executor future despite repeated cancellation requests."""
+    while True:
+        if future.done():
+            return future.result()
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            if future.done():
+                return future.result()
 
 
 def stop_dashboard_manager(state: dict[str, Any], dashboard: str, manager) -> None:
