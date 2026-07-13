@@ -10,6 +10,28 @@ GUI 与 Tauri 桌面应用依赖安装详见 [references/install.md](install.md)
 
 ## Web GUI（浏览器模式）
 
+### High-rate binary stream data plane
+
+SystemView, VOFA, RTT, and SuperWatch high-rate payloads are delivered through
+`/ws/streams/{name}` as versioned binary frames. REST and SSE remain control or
+legacy low-rate paths; clients must not use their copied event arrays for the
+high-rate render loop. The browser transfers each `ArrayBuffer` to a Worker,
+which owns bounded typed rings and reports transport gaps separately from
+backend-reported drops.
+
+Visible charts are decimated to a min/max pixel envelope and scheduled at no
+more than 30 FPS. Pausing a chart or hiding the document suppresses render work
+without stopping acquisition. Use the short transport gate before release:
+
+```powershell
+python -m pytest _maintainer/testing/tests/test_stream_performance.py -q
+```
+
+This ten-second local gate targets 10,000 aggregate samples/s and is not MKLink
+HIL. For physical rate sweeps, 30-minute zero-drop soaks, packaged-app checks,
+and the required evidence fields, follow
+[`docs/verification/high-throughput-streams.md`](../docs/verification/high-throughput-streams.md).
+
 ### serve — 远程调试服务器
 
 ```powershell

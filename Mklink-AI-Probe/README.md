@@ -89,6 +89,19 @@ python -m mklink gui
 cd gui && npx tauri dev
 ```
 
+### High-throughput GUI streams
+
+SystemView, VOFA, RTT, and SuperWatch use an authenticated, versioned binary
+WebSocket data plane. A Web Worker owns fixed-capacity typed buffers, while a
+shared scheduler limits visible canvas work to 30 FPS. Pausing rendering or
+hiding a tab does not pause acquisition; backend and frontend loss counters
+remain independent.
+
+The short release gate sustains 10,000 aggregate samples/s for ten real seconds
+with no sequence error or unreported loss. This local gate is not a claim about
+the probe or target. Physical limits and packaged-app measurements are recorded
+in [the high-throughput qualification report](docs/verification/high-throughput-streams.md).
+
 ### 在线烧录与脱机烧录
 
 - **在线烧录**：打开 GUI 的 `/online-flash` 页，由主机通过 pyOCD/CMSIS-DAP 实时控制 **MKLink** 探针；支持目标搜索、CMSIS-Pack 按需下载、HEX/BIN 预览、擦除、编程、校验和复位。在线探针列表只接受 MKLink CMSIS-DAP，不会把其他厂商的 CMSIS-DAP 当作可选设备。
