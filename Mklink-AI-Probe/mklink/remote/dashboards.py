@@ -266,13 +266,15 @@ class RttStreamManager:
                     del self._history[:-self._max_history]
                 channels = tuple(sorted(key for key in parsed if not key.startswith("_")))
                 if channels and all(math.isfinite(float(parsed[key])) for key in channels):
-                    if self._numeric_channels != channels:
+                    if not self._numeric_channels:
                         self._numeric_channels = channels
-                        self._pending_numeric.clear()
-                    self._pending_numeric.append(tuple(float(parsed[key]) for key in channels))
-                    if len(self._pending_numeric) >= self._waveform_batch_samples:
-                        self._flush_raw_batch()
-                        self._flush_numeric_batch()
+                    if self._numeric_channels == channels:
+                        self._pending_numeric.append(
+                            tuple(float(parsed[key]) for key in channels)
+                        )
+                        if len(self._pending_numeric) >= self._waveform_batch_samples:
+                            self._flush_raw_batch()
+                            self._flush_numeric_batch()
 
     def _flush_raw_batch(self) -> None:
         if not self._pending_raw:

@@ -218,6 +218,25 @@ def test_rtt_default_batches_keep_12khz_dual_stream_below_100_frames_per_second(
     assert len(raw) + len(waveform) <= 100
 
 
+def test_rtt_marker_lines_do_not_reset_stable_csv_waveform_layout():
+    hub = _RecordingHub()
+    manager = RttStreamManager(
+        stream_hub=hub, raw_batch_lines=256, waveform_batch_samples=256,
+    )
+
+    for index in range(3):
+        manager.feed_rtt_bytes(b"1,2,3,4\n" * 120)
+        manager.feed_rtt_bytes(f"M,{index},{index},0\n".encode())
+    manager.flush_pending()
+
+    batches = hub.snapshot()
+    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
+    assert sum(batch.item_count for batch in raw) == 363
+    assert sum(batch.item_count for batch in waveform) == 360
+    assert manager.get_status()["numeric_channels"] == ["v0", "v1", "v2", "v3"]
+
+
 def test_rtt_manager_stop_closes_the_device_stream_session():
     read_started = threading.Event()
 
