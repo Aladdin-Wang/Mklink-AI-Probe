@@ -697,6 +697,140 @@ def test_dashboard_start_cancel_and_shutdown_cleanup_once_without_leak(monkeypat
     assert resource_manager.get_status() == {}
 
 
+def test_dashboard_start_cancel_rolls_back_worker_started_before_late_error(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+    from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+
+    class CountingResourceManager(ResourceManager):
+        def __init__(self):
+            super().__init__()
+            self.release_calls = []
+
+        def release(self, owner):
+            self.release_calls.append(owner)
+            return super().release(owner)
+
+    class Manager:
+        running = False
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+            self.running = False
+
+    manager = Manager()
+    resource_manager = CountingResourceManager()
+    state = {"resource_manager": resource_manager}
+    start_started = threading.Event()
+    finish_start = threading.Event()
+
+    def acquire(_state, dashboard):
+        _state["resource_manager"].acquire_many(
+            [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+            f"user:dashboard:{dashboard}",
+        )
+        return []
+
+    def start_then_fail():
+        start_started.set()
+        assert finish_start.wait(1.0)
+        manager.running = True
+        raise RuntimeError("late start failure")
+
+    monkeypatch.setattr("mklink.remote.api.acquire_dashboard_resources", acquire)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        loop_errors = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(
+            lambda _loop, context: loop_errors.append(context),
+        )
+        try:
+            task = asyncio.create_task(start_dashboard_manager(
+                state, "superwatch", manager, start_then_fail,
+            ))
+            assert await asyncio.to_thread(start_started.wait, 1.0)
+            task.cancel()
+            finish_start.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.sleep(0)
+            return loop_errors
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    loop_errors = asyncio.run(scenario())
+    assert manager.stop_calls == 1
+    assert not manager.running
+    assert resource_manager.release_calls == ["user:dashboard:superwatch"]
+    assert resource_manager.get_status() == {}
+    assert loop_errors == []
+
+
+def test_dashboard_start_exception_rolls_back_worker_side_effect_once(monkeypatch):
+    from mklink.remote.api import start_dashboard_manager
+    from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+
+    class CountingResourceManager(ResourceManager):
+        def __init__(self):
+            super().__init__()
+            self.release_calls = []
+
+        def release(self, owner):
+            self.release_calls.append(owner)
+            return super().release(owner)
+
+    class Manager:
+        running = False
+        stop_calls = 0
+
+        def stop(self):
+            self.stop_calls += 1
+            self.running = False
+
+    manager = Manager()
+    resource_manager = CountingResourceManager()
+    state = {"resource_manager": resource_manager}
+
+    def acquire(_state, dashboard):
+        _state["resource_manager"].acquire_many(
+            [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+            f"user:dashboard:{dashboard}",
+        )
+        return []
+
+    def start_then_fail():
+        manager.running = True
+        raise RuntimeError("start failed after worker launch")
+
+    monkeypatch.setattr("mklink.remote.api.acquire_dashboard_resources", acquire)
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        loop_errors = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(
+            lambda _loop, context: loop_errors.append(context),
+        )
+        try:
+            with pytest.raises(RuntimeError, match="worker launch"):
+                await start_dashboard_manager(
+                    state, "superwatch", manager, start_then_fail,
+                )
+            await asyncio.sleep(0)
+            return loop_errors
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    loop_errors = asyncio.run(scenario())
+    assert manager.stop_calls == 1
+    assert not manager.running
+    assert resource_manager.release_calls == ["user:dashboard:superwatch"]
+    assert resource_manager.get_status() == {}
+    assert loop_errors == []
+
+
 @pytest.mark.parametrize("dashboard", ["rtt", "systemview", "superwatch", "vofa"])
 def test_dashboard_stop_releases_leases_even_when_manager_stop_raises(dashboard):
     from mklink.remote.resource_manager import ResourceGroup

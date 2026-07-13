@@ -291,6 +291,9 @@ async def start_dashboard_manager(
             return state["resource_manager"].release(owner)
 
     def rollback_started_manager():
+        if not _dashboard_worker_alive(manager):
+            release_owner_once()
+            return
         error = None
         try:
             manager.stop()
@@ -302,21 +305,32 @@ async def start_dashboard_manager(
         if error is not None:
             raise error
 
+    async def rollback_start_effects():
+        if _dashboard_worker_alive(manager):
+            cleanup_future = loop.run_in_executor(
+                None, rollback_started_manager,
+            )
+            cleanup_phase = asyncio.create_task(
+                _capture_executor_outcome(cleanup_future)
+            )
+            await _wait_executor_completion(cleanup_phase)
+        else:
+            release_owner_once()
+
     acquire_future = loop.run_in_executor(
         None, acquire_dashboard_resources, state, dashboard,
     )
+    acquire_phase = asyncio.create_task(_capture_executor_outcome(acquire_future))
     try:
-        stopped = await asyncio.shield(acquire_future)
+        acquire_ok, acquire_result = await asyncio.shield(acquire_phase)
     except asyncio.CancelledError:
-        try:
-            await _wait_executor_completion(acquire_future)
-        except (Exception, asyncio.CancelledError):
-            pass
+        await _wait_executor_completion(acquire_phase)
         release_owner_once()
         raise
-    except Exception:
+    if not acquire_ok:
         release_owner_once()
-        raise
+        raise acquire_result
+    stopped = acquire_result
     setter = getattr(manager, "set_start_failure_callback", None)
     if callable(setter):
         generation = object()
@@ -328,30 +342,25 @@ async def start_dashboard_manager(
 
         setter(release_failed_start)
     start_future = loop.run_in_executor(None, start_call)
+    start_phase = asyncio.create_task(_capture_executor_outcome(start_future))
     try:
-        await asyncio.shield(start_future)
+        start_ok, start_result = await asyncio.shield(start_phase)
     except asyncio.CancelledError:
-        start_succeeded = False
-        try:
-            await _wait_executor_completion(start_future)
-            start_succeeded = True
-        except (Exception, asyncio.CancelledError):
-            pass
-        if start_succeeded and _dashboard_worker_alive(manager):
-            cleanup_future = loop.run_in_executor(
-                None, rollback_started_manager,
-            )
-            try:
-                await _wait_executor_completion(cleanup_future)
-            except (Exception, asyncio.CancelledError):
-                pass
-        else:
-            release_owner_once()
+        await _wait_executor_completion(start_phase)
+        await rollback_start_effects()
         raise
-    except Exception:
-        release_owner_once()
-        raise
+    if not start_ok:
+        await rollback_start_effects()
+        raise start_result
     return "started", stopped
+
+
+async def _capture_executor_outcome(future):
+    """Normalize executor completion so a cancelled shield cannot log errors."""
+    try:
+        return True, await future
+    except BaseException as exc:
+        return False, exc
 
 
 async def _wait_executor_completion(future):
