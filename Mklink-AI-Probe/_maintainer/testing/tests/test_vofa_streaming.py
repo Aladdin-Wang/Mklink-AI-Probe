@@ -244,7 +244,7 @@ def test_invalid_api_configuration_is_rejected_before_leasing_or_starting():
         assert app.state.mklink_state["resource_manager"].get_status() == {}
 
 
-@pytest.mark.parametrize("interval", [math.nan, math.inf, -math.inf, 0.0, -1.0, 60.000001])
+@pytest.mark.parametrize("interval", [math.nan, math.inf, -math.inf, -1.0, 60.000001])
 def test_manager_rejects_invalid_interval_atomically(interval):
     manager = VofaStreamManager()
     manager.configure(_channels(1), interval=0.25)
@@ -260,7 +260,16 @@ def test_manager_rejects_invalid_interval_atomically(interval):
     assert after["channels"] == before["channels"]
 
 
-@pytest.mark.parametrize("raw_interval", ["NaN", "Infinity", "-Infinity", "0", "-1", "60.000001"])
+def test_manager_normalizes_zero_interval_to_fastest_supported_value():
+    manager = VofaStreamManager()
+
+    manager.configure(_channels(1), interval=0)
+    assert manager.get_status()["interval"] == pytest.approx(0.000001)
+    assert manager.set_interval(0) == pytest.approx(0.000001)
+    assert manager.get_status()["interval"] == pytest.approx(0.000001)
+
+
+@pytest.mark.parametrize("raw_interval", ["NaN", "Infinity", "-Infinity", "-1", "60.000001"])
 def test_interval_api_rejects_raw_invalid_numbers_before_lease_or_thread(raw_interval):
     from mklink.remote.dashboards import get_managers
 
@@ -291,6 +300,53 @@ def test_interval_api_rejects_raw_invalid_numbers_before_lease_or_thread(raw_int
         after = manager.get_status()
         assert after["interval"] == before["interval"]
         assert after["channels"] == before["channels"]
+
+
+def test_zero_interval_api_normalizes_before_start_and_reports_current_interval():
+    from mklink.remote.dashboards import get_managers, normalize_vofa_interval
+
+    app = create_app(auth_token=None, project_root=".")
+    app.state.mklink_state["device"] = type("Device", (), {"connected": True})()
+    manager = get_managers()["vofa"]
+    manager.stop()
+    manager.configure(_channels(1), interval=0.25)
+    resource_manager = app.state.mklink_state["resource_manager"]
+    acquire_many = resource_manager.acquire_many
+    events = []
+
+    def record_normalize(interval):
+        events.append("normalize")
+        return normalize_vofa_interval(interval)
+
+    def record_acquire(*args, **kwargs):
+        events.append("lease")
+        return acquire_many(*args, **kwargs)
+
+    with (
+        patch.object(manager, "start") as start,
+        patch(
+            "mklink.remote.dashboards.normalize_vofa_interval",
+            side_effect=record_normalize,
+        ),
+        patch.object(resource_manager, "acquire_many", side_effect=record_acquire),
+        TestClient(app) as client,
+    ):
+        start_response = client.post("/api/dash/vofa/start", json={
+            "channels": _channels(1), "interval": 0,
+        })
+        assert start_response.status_code == 200
+        assert events[:2] == ["normalize", "lease"]
+        start.assert_called_once()
+        assert start.call_args.args[2] == pytest.approx(0.000001)
+
+        interval_response = client.post(
+            "/api/dash/vofa/interval", json={"interval": 0},
+        )
+        assert interval_response.status_code == 200
+        assert interval_response.json()["interval"] == pytest.approx(0.000001)
+        status_response = client.get("/api/dash/vofa/status")
+        assert status_response.status_code == 200
+        assert status_response.json()["interval"] == pytest.approx(0.000001)
 
 
 def test_paused_60_second_interval_stop_is_interruptible():

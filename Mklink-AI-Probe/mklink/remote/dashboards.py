@@ -1354,8 +1354,8 @@ def normalize_vofa_interval(interval: float) -> float:
         value = float(interval)
     except (TypeError, ValueError):
         raise ValueError("VOFA interval must be a finite number") from None
-    if not math.isfinite(value) or value <= 0 or value > 60.0:
-        raise ValueError("VOFA interval must be finite and in the range (0, 60]")
+    if not math.isfinite(value) or value < 0 or value > 60.0:
+        raise ValueError("VOFA interval must be finite and in the range [0, 60]")
     return max(0.000001, value)
 
 

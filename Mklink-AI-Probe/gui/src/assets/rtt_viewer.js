@@ -687,9 +687,23 @@ document.getElementById('btn-apply-interval').addEventListener('click', function
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({interval: val})
   })
-    .then(function(r){return r.json()})
-    .then(function(d){currentInterval = d.interval})
-    .catch(function(){});
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok) throw new Error(apiErrorMessage(d, r.status));
+        var normalized = Number(d.interval);
+        if (!Number.isFinite(normalized) || normalized <= 0 || normalized > 60) {
+          throw new Error('Invalid interval response');
+        }
+        return normalized;
+      });
+    })
+    .then(function(normalized){
+      currentInterval = normalized;
+      document.getElementById('interval-input').value = String(normalized);
+    })
+    .catch(function(err){
+      showControlError(err && err.message ? err.message : t('error'));
+    });
 });
 
 // Sync initial state from server

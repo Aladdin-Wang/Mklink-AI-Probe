@@ -137,6 +137,7 @@ window.__rttTestProbe = {
     count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
   }; },
   syncStatus: syncDashboardStatus,
+  currentInterval: function() { return currentInterval; },
   RingBuffer: RingBuffer,
   hover: hoverProbe,
   channelYState: function() { return channelYState; }
@@ -218,6 +219,51 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(mocks.useBinaryStream).not.toHaveBeenCalled()
     expect(mocks.schedulerInstances).toHaveLength(0)
     wrapper.unmount()
+  })
+
+  it('preserves the previous interval and shows the API detail when an update fails', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.probe.syncStatus({ running: true, interval: 0.25, channels: [] })
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({ detail: 'VOFA interval is invalid' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const input = document.getElementById('interval-input') as HTMLInputElement
+      input.value = '0.5'
+      document.getElementById('btn-apply-interval')?.click()
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+
+      expect(runtime.probe.currentInterval()).toBe(0.25)
+      expect(document.getElementById('conn-status')?.textContent).toBe('VOFA interval is invalid')
+      expect(document.getElementById('conn-status')?.className).toContain('badge-err')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('uses the normalized server interval when zero requests fastest acquisition', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.probe.syncStatus({ running: true, interval: 0.25, channels: [] })
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ interval: 0.000001 }),
+      }))
+      const input = document.getElementById('interval-input') as HTMLInputElement
+      expect(input.min).toBe('0')
+      input.value = '0'
+      document.getElementById('btn-apply-interval')?.click()
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+
+      expect(runtime.probe.currentInterval()).toBe(0.000001)
+      expect(input.value).toBe('0.000001')
+    } finally {
+      runtime.cleanup()
+    }
   })
 
   it('does not start a late VOFA stream after the component unmounts', async () => {
