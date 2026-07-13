@@ -233,6 +233,52 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.some(message => message.type === 'error')).toBe(false)
   })
 
+  it('resets stream session for a newer connection generation and rejects late old frames', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const send = (sequence: bigint, generation: number, ticket: number, text: string) => decoder.handle({
+      type: 'frame',
+      buffer: frame(sequence, 1, rttLines({
+        timestampNs: sequence, level: 0, text,
+      }), StreamType.RTT_RAW, sequence, 0x01),
+      connectionGeneration: generation,
+      frameTicket: ticket,
+    })
+
+    send(10n, 1, 1, 'generation-one')
+    send(1n, 2, 1, 'generation-two')
+    send(11n, 1, 2, 'late-generation-one')
+
+    expect(messages.filter(message => message.type === 'rtt-lines')).toEqual([
+      expect.objectContaining({ sequence: 10n, lines: [expect.objectContaining({ text: 'generation-one' })] }),
+      expect.objectContaining({ sequence: 1n, lines: [expect.objectContaining({ text: 'generation-two' })] }),
+    ])
+    expect(messages.at(-1)).toMatchObject({
+      type: 'error', code: 'INVALID_FRAME', connectionGeneration: 1, frameTicket: 2,
+    })
+    expect(messages.filter(message => message.type === 'telemetry').at(-1)).toMatchObject({
+      acceptedFrames: 1, lastSequence: 1n, acceptedConnectionGeneration: 2,
+    })
+  })
+
+  it('accepts current SuperWatch metadata replay after generation reset', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      version: 1, channels: [{ name: 'a' }],
+    }))
+    decoder.handle({
+      type: 'frame', buffer: frame(9n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 2n, 0x02),
+      connectionGeneration: 2, frameTicket: 1,
+    })
+    expect(messages.filter(message => message.type === 'superwatch-metadata')).toHaveLength(2)
+    expect(messages.some(message => message.type === 'error')).toBe(false)
+  })
+
   it('processes an accelerated 60-second 10 kHz RTT line stream without retaining raw text', () => {
     const targetLines = 60 * 10_000
     const batchLines = 100

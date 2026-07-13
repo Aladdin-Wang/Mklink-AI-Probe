@@ -344,7 +344,7 @@ class RttStreamManager:
                         time.sleep(0.1)
                         continue
 
-                    if not text or not text.strip():
+                    if text is None or text == b"" or text == "":
                         continue
 
                     chunk = text if isinstance(text, bytes) else str(text).encode("utf-8")
@@ -968,7 +968,9 @@ class SuperWatchStreamManager:
         self._interval = 0.1  # 100ms default
         self._device = None
         self._runtime = None
-        self._read_lock = threading.Lock()
+        # One re-entrant lock owns the runtime layout, memory read, pending
+        # sample rows, and metadata transition as one atomic data-plane unit.
+        self._read_lock = threading.RLock()
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
@@ -976,6 +978,8 @@ class SuperWatchStreamManager:
         self._metadata_version = 0
         self._published_metadata_signature = None
         self._last_metadata_publish_monotonic = 0.0
+        self._binary_dropped_batches = 0
+        self._binary_dropped_items = 0
         self.set_stream_hub(stream_hub)
 
     def set_stream_hub(self, stream_hub) -> None:
@@ -999,28 +1003,29 @@ class SuperWatchStreamManager:
 
     def prepare(self, device) -> None:
         """Build runtime from DWARF info so search/add work before collection starts."""
-        if self._runtime is not None:
-            return
-        self._device = device
-        dwarf_info = getattr(device, "_dwarf_info", None)
-        svd_registers = {}
-        try:
-            from mklink.superwatch import find_project_svd, load_svd_registers
-            project_root = getattr(device, "_project_root", ".")
-            svd_path = find_project_svd(project_root)
-            if svd_path:
-                svd_registers = load_svd_registers(svd_path)
-        except Exception:
-            pass
-        from mklink.superwatch import SuperWatchRuntime
-        self._runtime = SuperWatchRuntime(
-            items=[],
-            dwarf_info=dwarf_info,
-            svd_registers=svd_registers,
-            port=getattr(device, "_port", None),
-            read_lock=self._read_lock,
-        )
-        self.publish_metadata()
+        with self._read_lock:
+            if self._runtime is not None:
+                return
+            self._device = device
+            dwarf_info = getattr(device, "_dwarf_info", None)
+            svd_registers = {}
+            try:
+                from mklink.superwatch import find_project_svd, load_svd_registers
+                project_root = getattr(device, "_project_root", ".")
+                svd_path = find_project_svd(project_root)
+                if svd_path:
+                    svd_registers = load_svd_registers(svd_path)
+            except Exception:
+                pass
+            from mklink.superwatch import SuperWatchRuntime
+            self._runtime = SuperWatchRuntime(
+                items=[],
+                dwarf_info=dwarf_info,
+                svd_registers=svd_registers,
+                port=getattr(device, "_port", None),
+                read_lock=self._read_lock,
+            )
+            self._publish_metadata_locked()
 
     def start(self, device) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -1034,13 +1039,20 @@ class SuperWatchStreamManager:
         self._generation = generation
         self._collecting.set()
         self._running = True
-        self._origin_us = None
-        self._pending_samples.clear()
+        with self._read_lock:
+            self._origin_us = None
+            self._flush_binary_batch_locked()
 
         def _poll():
             try:
                 while not stop_event.is_set():
-                    if not self._collecting.is_set() or not self._runtime.items:
+                    with self._read_lock:
+                        can_sample = (
+                            self._collecting.is_set()
+                            and self._runtime is not None
+                            and bool(self._runtime.items)
+                        )
+                    if not can_sample:
                         time.sleep(0.5)
                         continue
                     t0 = time.monotonic()
@@ -1052,8 +1064,8 @@ class SuperWatchStreamManager:
                                 origin_us=self._origin_us,
                                 bridge=device._bridge,
                             )
-                        self._origin_us = result.origin_us
-                        self.publish_sample_points(result.points)
+                            self._origin_us = result.origin_us
+                            self._publish_sample_points_locked(result.points)
                     except Exception as e:
                         logger.debug("SuperWatch poll error: %s", e)
                         self._bridge.put({"event": "error", "message": str(e)})
@@ -1088,21 +1100,29 @@ class SuperWatchStreamManager:
         return True
 
     def add_watch(self, name: str) -> dict:
-        if self._runtime is None:
-            return {"error": "SuperWatch not started"}
-        result = self._runtime.add(name)
-        self.publish_metadata()
-        return {"item": result}
+        with self._read_lock:
+            if self._runtime is None:
+                return {"error": "SuperWatch not started"}
+            self._flush_binary_batch_locked()
+            result = self._runtime.add(name)
+            self._publish_metadata_locked()
+            return {"item": result}
 
     def remove_watch(self, name: str) -> dict:
-        if self._runtime is None:
-            return {"error": "SuperWatch not started"}
-        result = self._runtime.remove(name)
-        self.publish_metadata()
-        return {"item": result}
+        with self._read_lock:
+            if self._runtime is None:
+                return {"error": "SuperWatch not started"}
+            self._flush_binary_batch_locked()
+            result = self._runtime.remove(name)
+            self._publish_metadata_locked()
+            return {"item": result}
 
     def publish_metadata(self, *, force: bool = False) -> int:
-        channels = self.list_watches()
+        with self._read_lock:
+            return self._publish_metadata_locked(force=force)
+
+    def _publish_metadata_locked(self, *, force: bool = False) -> int:
+        channels = self._list_watches_locked()
         signature = json.dumps(channels, sort_keys=True, default=str)
         if not force and signature == self._published_metadata_signature:
             return self._metadata_version
@@ -1120,6 +1140,10 @@ class SuperWatchStreamManager:
         return self._metadata_version
 
     def publish_sample_points(self, points) -> bool:
+        with self._read_lock:
+            return self._publish_sample_points_locked(points)
+
+    def _publish_sample_points_locked(self, points) -> bool:
         if self._runtime is None or not self._runtime.items:
             return False
         names = [item.name for item in self._runtime.items]
@@ -1136,25 +1160,37 @@ class SuperWatchStreamManager:
             return False
         if not all(math.isfinite(value) for value in row):
             return False
-        self.publish_metadata(
+        self._publish_metadata_locked(
             force=time.monotonic() - self._last_metadata_publish_monotonic >= 1.0,
         )
         self._pending_samples.append(row)
         if len(self._pending_samples) >= self._batch_samples:
-            self._flush_binary_batch()
+            self._flush_binary_batch_locked()
         return True
 
-    def _flush_binary_batch(self) -> None:
+    def _flush_binary_batch(self) -> bool:
+        with self._read_lock:
+            return self._flush_binary_batch_locked()
+
+    def _flush_binary_batch_locked(self) -> bool:
         if not self._pending_samples:
-            return
+            return True
         pending = self._pending_samples
         self._pending_samples = []
-        if self._stream_hub is not None:
+        try:
+            if self._stream_hub is None:
+                raise RuntimeError("SuperWatch binary stream hub is unavailable")
             self._stream_hub.publish(
                 encode_waveform_samples(pending), item_count=len(pending),
                 flags=SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
                 stream_type=StreamType.SUPERWATCH,
             )
+        except Exception as exc:
+            self._binary_dropped_batches += 1
+            self._binary_dropped_items += len(pending)
+            logger.warning("SuperWatch binary batch dropped: %s", exc)
+            return False
+        return True
 
     def search(self, query: str) -> list[dict]:
         if self._runtime is None:
@@ -1181,15 +1217,24 @@ class SuperWatchStreamManager:
             state = "paused"
         else:
             state = "stopped"
-        return {
-            "state": state,
-            "interval": self._interval,
-            "items": self.list_watches(),
-            "metadata_version": self._metadata_version,
-            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
-        }
+        with self._read_lock:
+            return {
+                "state": state,
+                "interval": self._interval,
+                "items": self._list_watches_locked(),
+                "metadata_version": self._metadata_version,
+                "binary_drops": {
+                    "batches": self._binary_dropped_batches,
+                    "items": self._binary_dropped_items,
+                },
+                "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
+            }
 
     def list_watches(self) -> list[dict]:
+        with self._read_lock:
+            return self._list_watches_locked()
+
+    def _list_watches_locked(self) -> list[dict]:
         if self._runtime is None:
             return []
         from mklink.superwatch import make_channel_metadata

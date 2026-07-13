@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref, shallowRef } from 'vue'
 import { nextTick } from 'vue'
+import { StreamType } from '../../lib/stream/protocol'
+import { StreamDecoder } from '../../workers/streamDecoder.worker'
 import RttViewTab from './RttViewTab.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +38,8 @@ vi.mock('../../lib/stream/renderScheduler', () => ({
 }))
 
 describe('RttViewTab binary migration', () => {
+  afterEach(() => vi.useRealTimers())
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.binary.rttLines = shallowRef(null)
@@ -70,6 +74,54 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('bounds an accelerated RTT record to Worker to VirtualLog pipeline at 5000 lines', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    const lineCount = 6000
+    const encoder = new TextEncoder()
+    const encoded = Array.from({ length: lineCount }, (_, index) => encoder.encode(`line-${index + 1}`))
+    const payload = new Uint8Array(encoded.reduce((size, line) => size + 13 + line.length, 0))
+    const payloadView = new DataView(payload.buffer)
+    let offset = 0
+    encoded.forEach((line, index) => {
+      payloadView.setBigUint64(offset, BigInt(index + 1), true)
+      payloadView.setUint8(offset + 8, 0)
+      payloadView.setUint32(offset + 9, line.length, true)
+      payload.set(line, offset + 13)
+      offset += 13 + line.length
+    })
+    const buffer = new ArrayBuffer(36 + payload.byteLength)
+    const bytes = new Uint8Array(buffer)
+    const view = new DataView(buffer)
+    bytes.set([0x4d, 0x4b, 0x53, 0x54])
+    view.setUint8(4, 1)
+    view.setUint8(5, StreamType.RTT_RAW)
+    view.setUint8(6, 1)
+    view.setUint8(7, 36)
+    view.setUint32(8, StreamType.RTT_RAW, true)
+    view.setBigUint64(12, 1n, true)
+    view.setBigUint64(20, BigInt(lineCount), true)
+    view.setUint32(28, lineCount, true)
+    view.setUint32(32, payload.byteLength, true)
+    bytes.set(payload, 36)
+    const decoder = new StreamDecoder(message => {
+      if (message.type === 'rtt-lines') mocks.binary.rttLines.value = message
+    })
+    decoder.handle({ type: 'configure', capacity: 200_000, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer, connectionGeneration: 1, frameTicket: 1,
+    })
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await nextTick()
+
+    const panel = wrapper.findComponent({ name: 'VirtualLogPanel' })
+    expect((panel.vm as any).retainedCount).toBe(5000)
+    expect((panel.vm as any).firstLineNumber).toBe(1001)
+    expect(panel.findAll('.virtual-log-row').length).toBeLessThan(40)
     wrapper.unmount()
   })
 })

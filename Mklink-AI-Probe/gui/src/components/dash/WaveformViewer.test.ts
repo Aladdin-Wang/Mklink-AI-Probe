@@ -52,6 +52,27 @@ function waveformFrame(
   return buffer
 }
 
+function superwatchFrame(
+  sequence: bigint, itemCount: number, timestampNs: bigint,
+  payload: Uint8Array, flags: 1 | 2,
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(36 + payload.byteLength)
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  bytes.set([0x4d, 0x4b, 0x53, 0x54])
+  view.setUint8(4, 1)
+  view.setUint8(5, StreamType.SUPERWATCH)
+  view.setUint8(6, flags)
+  view.setUint8(7, 36)
+  view.setUint32(8, StreamType.SUPERWATCH, true)
+  view.setBigUint64(12, sequence, true)
+  view.setBigUint64(20, timestampNs, true)
+  view.setUint32(28, itemCount, true)
+  view.setUint32(32, payload.byteLength, true)
+  bytes.set(payload, 36)
+  return buffer
+}
+
 function canvasContext(): CanvasRenderingContext2D {
   const gradient = { addColorStop: vi.fn() }
   const noop = () => undefined
@@ -146,7 +167,7 @@ window.__rttTestProbe = {
   new Function(instrumented).call(window)
   return {
     wrapper,
-    viewer: (window as any).__waveformViewers.VOFA as any,
+    viewer: (window as any).__waveformViewers[mode] as any,
     probe: (window as any).__rttTestProbe as any,
     cleanup() {
       wrapper.unmount()
@@ -243,6 +264,61 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(resetBinaryStream).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
+
+  it.each(['VOFA', 'SuperWatch'] as const)(
+    'dispatches real %s script start/stop boundaries and clears binary data',
+    async mode => {
+      const runtime = await loadRttViewerRuntime(mode)
+      const states: string[] = []
+      const onState = (event: Event) => states.push(String((event as CustomEvent).detail))
+      window.addEventListener('mklink:vofa-stream-state', onState)
+      vi.stubGlobal('confirm', () => true)
+      try {
+        runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+        expect(runtime.viewer.acceptBinaryBatch({
+          sequence: 10n, timestampNs: 1_000_000_000n, itemCount: 1, channelCount: 1,
+          layout: 'sample-major-float32', values: Float32Array.of(9).buffer,
+          times: Float64Array.of(1000).buffer,
+        })).toBe(true)
+        expect(runtime.probe.fields().A.ringBuf.count).toBe(1)
+        mocks.binary.reset.mockClear()
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => mode === 'VOFA'
+            ? { status: 'running', channels: [{ name: 'A', addr: 0x20000000 }] }
+            : { status: 'running', items: [{ name: 'A' }] },
+        }))
+
+        document.getElementById('btn-start')?.click()
+        for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+        expect(states).toEqual(['running'])
+        expect(mocks.binary.reset).toHaveBeenCalledTimes(1)
+        expect(Object.values(runtime.probe.fields()).every(
+          (field: any) => field.ringBuf.count === 0,
+        )).toBe(true)
+        expect(runtime.probe.binary()).toMatchObject({
+          timeOrigin: null, lastTimestamp: null, lastSequence: null,
+        })
+
+        runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+        expect(runtime.viewer.acceptBinaryBatch({
+          sequence: 1n, timestampNs: 2_000_000_000n, itemCount: 1, channelCount: 1,
+          layout: 'sample-major-float32', values: Float32Array.of(10).buffer,
+          times: Float64Array.of(2000).buffer,
+        })).toBe(true)
+        document.getElementById('btn-stop')?.click()
+        for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+        expect(states).toEqual(['running', 'stopped'])
+        expect(mocks.binary.reset).toHaveBeenCalledTimes(2)
+        expect(Object.values(runtime.probe.fields()).every(
+          (field: any) => field.ringBuf.count === 0,
+        )).toBe(true)
+      } finally {
+        window.removeEventListener('mklink:vofa-stream-state', onState)
+        runtime.cleanup()
+      }
+    },
+  )
 
   it('preserves the previous interval and shows the API detail when an update fails', async () => {
     const runtime = await loadRttViewerRuntime()
@@ -526,6 +602,11 @@ describe('VOFA viewer hot path source guard', () => {
       'serializeState', 'deserializeState', 'exportCSV', 'exportPNG',
       'checkTrigger', 'cursor-a', 'cursor-b',
     ]) expect(source).toContain(token)
+  })
+
+  it('limits collection-boundary resets to VOFA and SuperWatch binary modes', () => {
+    expect(source).toContain('var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;')
+    expect(source).toContain("if (!IS_BINARY_WAVEFORM_MODE || typeof window === 'undefined'")
   })
 })
 
@@ -905,6 +986,86 @@ describe('VOFA viewer typed-ring runtime', () => {
       expect(elapsedMs).toBeLessThan(60_000)
       expect(peakHeap - baseline.heapUsed).toBeLessThan(192 * 1024 * 1024)
       expect(finalMemory.arrayBuffers - baseline.arrayBuffers).toBeLessThan(128 * 1024 * 1024)
+    } finally {
+      runtime.cleanup()
+    }
+  }, 90_000)
+
+  it('runs an accelerated 60-second SuperWatch metadata/sample Worker/viewer envelope gate', async () => {
+    const durationSeconds = 60
+    const sampleRate = 10_000
+    const channelCount = 8
+    const batchSamples = 2_000
+    const pixelWidth = 320
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch', 200_000)
+    try {
+      let errors = 0
+      let rejectedBatches = 0
+      let bufferedSamples = 0
+      let renderRequests = 0
+      let maxPointCount = 0
+      const decoder = new StreamDecoder((message: WorkerOutput) => {
+        if (message.type === 'error') errors++
+        if (message.type === 'superwatch-metadata') {
+          runtime.viewer.configureBinaryChannels(message.channels)
+        }
+        if (message.type === 'waveform-batch' && !runtime.viewer.acceptBinaryBatch(message)) {
+          rejectedBatches++
+        }
+        if (message.type === 'telemetry') bufferedSamples = message.bufferedSamples
+        if (message.type === 'render-envelope') {
+          renderRequests++
+          maxPointCount = Math.max(maxPointCount, message.pointCount)
+          if (!runtime.viewer.renderBinaryEnvelope(message)) errors++
+        }
+      })
+      decoder.handle({ type: 'configure', capacity: 200_000, channelCount: 1 })
+      const metadata = new TextEncoder().encode(JSON.stringify({
+        version: 1,
+        channels: Array.from({ length: channelCount }, (_, index) => ({ name: `S${index}` })),
+      }))
+      decoder.handle({
+        type: 'frame',
+        buffer: superwatchFrame(1n, 0, 1n, metadata, 2),
+        connectionGeneration: 1, frameTicket: 1,
+      })
+      const batchCount = durationSeconds * sampleRate / batchSamples
+      for (let batch = 0; batch < batchCount; batch++) {
+        const values = new Float32Array(batchSamples * channelCount)
+        for (let index = 0; index < values.length; index++) {
+          values[index] = (batch * batchSamples + index) % 10_000
+        }
+        const endMs = (batch + 1) * batchSamples / sampleRate * 1_000
+        decoder.handle({
+          type: 'frame',
+          buffer: superwatchFrame(
+            BigInt(batch + 2), batchSamples, BigInt(Math.round(endMs * 1_000_000)),
+            new Uint8Array(values.buffer), 1,
+          ),
+          connectionGeneration: 1, frameTicket: batch + 2,
+        })
+      }
+      decoder.handle({
+        type: 'visible-range', requestId: 1,
+        start: durationSeconds * 1_000 - 1_000,
+        end: durationSeconds * 1_000,
+        pixelWidth,
+      })
+
+      expect(errors).toBe(0)
+      expect(rejectedBatches).toBe(0)
+      expect(bufferedSamples).toBe(200_000)
+      expect(runtime.probe.fields().S0.ringBuf.count).toBe(200_000)
+      expect(renderRequests).toBe(1)
+      expect(maxPointCount).toBeLessThanOrEqual(2 * pixelWidth * channelCount)
     } finally {
       runtime.cleanup()
     }

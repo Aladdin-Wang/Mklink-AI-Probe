@@ -162,6 +162,7 @@ export class StreamDecoder {
   private timeIndexScratch: Int32Array | null = null
   private superwatchMetadataVersion = 0
   private superwatchMetadataSignature: string | null = null
+  private activeConnectionGeneration: number | null = null
 
   constructor(post: PostOutput) {
     this.post = post
@@ -204,6 +205,7 @@ export class StreamDecoder {
       this.lastNumericSpacingMs = null
       this.superwatchMetadataVersion = 0
       this.superwatchMetadataSignature = null
+      this.activeConnectionGeneration = null
       this.clearTelemetry()
       this.post({ type: 'channels', channelCount })
       this.post(this.telemetry())
@@ -229,6 +231,19 @@ export class StreamDecoder {
         || frameTicket <= 0
       ) {
         throw new RangeError('frame connection generation and ticket must be positive integers')
+      }
+      if (
+        this.activeConnectionGeneration !== null
+        && connectionGeneration < this.activeConnectionGeneration
+      ) {
+        throw new RangeError('frame belongs to a stale connection generation')
+      }
+      if (
+        this.activeConnectionGeneration === null
+        || connectionGeneration > this.activeConnectionGeneration
+      ) {
+        this.resetSession()
+        this.activeConnectionGeneration = connectionGeneration
       }
       const decoded = decodeFrame(buffer)
       if (decoded.streamType === StreamType.CONTROL) {
@@ -750,6 +765,12 @@ export class StreamDecoder {
   }
 
   private reset(): void {
+    this.resetSession()
+    this.activeConnectionGeneration = null
+    this.post(this.telemetry())
+  }
+
+  private resetSession(): void {
     this.ring?.reset()
     this.systemViewMode = false
     this.systemViewEvents?.clear()
@@ -764,7 +785,6 @@ export class StreamDecoder {
     this.superwatchMetadataVersion = 0
     this.superwatchMetadataSignature = null
     this.clearTelemetry()
-    this.post(this.telemetry())
   }
 
   private clearTelemetry(): void {

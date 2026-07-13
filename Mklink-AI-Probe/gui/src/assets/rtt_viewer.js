@@ -530,7 +530,7 @@ function notifyVofaChannels() {
 }
 
 function notifyVofaStreamState(state) {
-  if (!IS_VOFA_MODE || typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
+  if (!IS_BINARY_WAVEFORM_MODE || typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
   window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: state }));
 }
 
