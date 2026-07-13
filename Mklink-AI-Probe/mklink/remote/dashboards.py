@@ -1354,7 +1354,13 @@ class VofaStreamManager:
     and streams the data via SSE for the VofaTab chart.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        stream_hub=None,
+        *,
+        batch_samples: int = 32,
+        clock=time.perf_counter,
+    ):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -1365,6 +1371,16 @@ class VofaStreamManager:
         self._interval: float = 0.1  # seconds
         self._history: list[dict] = []
         self._max_history = 500
+        self._stream_hub = stream_hub
+        self._batch_samples = max(1, int(batch_samples))
+        self._clock = clock
+        self._read_groups = []
+        self._pending_samples: list[tuple[float, ...]] = []
+        self._completed_samples = 0
+        self._completed_reads = 0
+        self._read_errors = 0
+        self._rate_started_at = self._clock()
+        self._actual_rate = 0.0
 
     @property
     def running(self) -> bool:
@@ -1373,6 +1389,111 @@ class VofaStreamManager:
     @property
     def paused(self) -> bool:
         return not self._paused.is_set()
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
+
+    def detach_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is stream_hub:
+            self._stream_hub = None
+
+    def configure(self, channels: list[dict], interval: float | None = None) -> None:
+        from mklink.vofa_viewer import build_vofa_read_groups
+
+        self._channels = []
+        for ch in channels:
+            addr = ch["addr"]
+            if isinstance(addr, str):
+                addr = int(addr, 0)
+            self._channels.append({
+                "name": ch.get("name", f"0x{addr:08x}"),
+                "addr": addr,
+                "type": ch.get("type", "float"),
+                "size": int(ch.get("size", 4)),
+            })
+        if interval is not None:
+            self._interval = max(float(interval), 0.000001)
+        self._read_groups = build_vofa_read_groups(self._channels)
+        self._pending_samples.clear()
+        self._completed_samples = 0
+        self._completed_reads = 0
+        self._read_errors = 0
+        self._rate_started_at = self._clock()
+        self._actual_rate = 0.0
+
+    def collect_cycle(self, device) -> bool:
+        import struct as _struct
+
+        unpack = {
+            "float": ("<f", 4), "fp32": ("<f", 4),
+            "int32_t": ("<i", 4), "int32": ("<i", 4),
+            "uint32_t": ("<I", 4), "uint32": ("<I", 4),
+            "int16_t": ("<h", 2), "int16": ("<h", 2),
+            "uint16_t": ("<H", 2), "uint16": ("<H", 2),
+            "int8_t": ("<b", 1), "int8": ("<b", 1),
+            "uint8_t": ("<B", 1), "uint8": ("<B", 1),
+            "bool": ("<?", 1), "boolean": ("<?", 1),
+        }
+        values = [None] * len(self._channels)
+        try:
+            for group in self._read_groups:
+                raw = device.read_memory(group.address, group.size)
+                self._completed_reads += 1
+                if len(raw) < group.size:
+                    raise ValueError("short VOFA memory read")
+                for channel in group.channels:
+                    fmt, width = unpack.get(channel.type_name, ("<f", 4))
+                    start = channel.offset
+                    values[channel.channel_index] = _struct.unpack(
+                        fmt, raw[start:start + width],
+                    )[0]
+        except Exception:
+            self._read_errors += 1
+            return False
+        if any(value is None for value in values):
+            self._read_errors += 1
+            return False
+        sample = tuple(
+            number if math.isfinite(number) else 0.0
+            for number in (float(value) for value in values)
+        )
+        self._completed_samples += 1
+        elapsed = self._clock() - self._rate_started_at
+        self._actual_rate = self._completed_samples / elapsed if elapsed > 0 else 0.0
+        point = {"_t": time.time()}
+        point.update({
+            channel["name"]: sample[index]
+            for index, channel in enumerate(self._channels)
+        })
+        self._bridge.put({"event": "data", **point})
+        self._history.append(point)
+        if len(self._history) > self._max_history:
+            del self._history[:-self._max_history]
+        self._pending_samples.append(sample)
+        if len(self._pending_samples) >= self._batch_samples:
+            self._flush_binary_batch()
+        return True
+
+    def publish_samples(self, samples) -> None:
+        from mklink.vofa_viewer import (
+            VOFA_SAMPLE_MAJOR_FLOAT32,
+            encode_vofa_samples,
+        )
+
+        rows = [tuple(row) for row in samples]
+        if not rows or self._stream_hub is None:
+            return
+        self._stream_hub.publish(
+            encode_vofa_samples(rows), item_count=len(rows),
+            flags=VOFA_SAMPLE_MAJOR_FLOAT32,
+        )
+
+    def _flush_binary_batch(self) -> None:
+        if not self._pending_samples:
+            return
+        pending = self._pending_samples
+        self._pending_samples = []
+        self.publish_samples(pending)
 
     def start(self, device, channels: list[dict], interval: float = 0.1) -> None:
         """Start VOFA polling.
@@ -1387,22 +1508,7 @@ class VofaStreamManager:
                 return
             raise RuntimeError("VOFA worker thread is still active")
 
-        import struct as _struct
-        self._channels = []
-        for ch in channels:
-            addr = ch["addr"]
-            if isinstance(addr, str):
-                addr = int(addr, 0)
-            ch_type = ch.get("type", "float")
-            size = ch.get("size", 4)
-            self._channels.append({
-                "name": ch.get("name", f"0x{addr:08x}"),
-                "addr": addr,
-                "type": ch_type,
-                "size": size,
-            })
-
-        self._interval = max(interval, 0.01)
+        self.configure(channels, interval)
         stop_event = threading.Event()
         generation = object()
         self._stop_event = stop_event
@@ -1411,15 +1517,6 @@ class VofaStreamManager:
         self._running = True
         self._history.clear()
 
-        _TYPE_UNPACK = {
-            "float": ("<f", 4), "fp32": ("<f", 4),
-            "int32_t": ("<i", 4), "int32": ("<i", 4),
-            "uint32_t": ("<I", 4), "uint32": ("<I", 4),
-            "int16_t": ("<h", 2), "int16": ("<h", 2),
-            "uint16_t": ("<H", 2), "uint16": ("<H", 2),
-            "int8_t": ("<b", 1), "uint8_t": ("<B", 1),
-        }
-
         def _poll():
             try:
                 while not stop_event.is_set():
@@ -1427,29 +1524,7 @@ class VofaStreamManager:
                         time.sleep(self._interval)
                         continue
 
-                    now = time.time()
-                    point: dict[str, Any] = {"_t": now}
-
-                    for ch in self._channels:
-                        try:
-                            raw = device.read_memory(ch["addr"], ch["size"])
-                            fmt_info = _TYPE_UNPACK.get(ch["type"])
-                            if fmt_info:
-                                val = _struct.unpack(fmt_info[0], raw[:fmt_info[1]])[0]
-                            else:
-                                val = _struct.unpack("<f", raw[:4])[0]
-                            if isinstance(val, float) and not math.isfinite(val):
-                                val = 0.0
-                            point[ch["name"]] = val
-                        except Exception:
-                            pass
-
-                    if any(k != "_t" for k in point):
-                        self._bridge.put({"event": "data", **point})
-                        self._history.append(point)
-                        if len(self._history) > self._max_history:
-                            self._history = self._history[-self._max_history:]
-
+                    self.collect_cycle(device)
                     stop_event.wait(self._interval)
 
             except Exception as e:
@@ -1472,6 +1547,7 @@ class VofaStreamManager:
             if thread.is_alive():
                 raise TimeoutError("VOFA worker thread is still active")
         self._running = False
+        self._flush_binary_batch()
         if self._thread is thread:
             self._thread = None
         return True
@@ -1483,7 +1559,7 @@ class VofaStreamManager:
         self._paused.set()
 
     def set_interval(self, interval: float) -> float:
-        self._interval = max(0.0, min(60.0, interval))
+        self._interval = max(0.000001, min(60.0, interval))
         return self._interval
 
     def get_status(self) -> dict:
@@ -1494,6 +1570,11 @@ class VofaStreamManager:
             "interval": self._interval,
             "clients": self._bridge.client_count,
             "history_size": len(self._history),
+            "completed_samples": self._completed_samples,
+            "completed_reads": self._completed_reads,
+            "read_errors": self._read_errors,
+            "actual_rate": round(self._actual_rate, 6),
+            "layout": "sample-major-float32",
         }
 
     async def sse_generator(self):

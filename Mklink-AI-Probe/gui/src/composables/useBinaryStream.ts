@@ -9,6 +9,7 @@ export interface BinaryStreamClient {
   start(): void
   stop(): void
   reset(): void
+  configure(capacity: number, channelCount: number): void
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
   dispose(): void
 }
@@ -23,6 +24,7 @@ export interface UseBinaryStreamOptions {
 
 type RenderEnvelope = Extract<WorkerOutput, { type: 'render-envelope' }>
 type SystemViewVisible = Extract<WorkerOutput, { type: 'systemview-visible' }>
+type WaveformBatch = Extract<WorkerOutput, { type: 'waveform-batch' }>
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -48,6 +50,7 @@ export function useBinaryStream(
   const channelCount = ref(options.channelCount)
   const envelope = shallowRef<RenderEnvelope | null>(null)
   const systemViewVisible = shallowRef<SystemViewVisible | null>(null)
+  const waveformBatch = shallowRef<WaveformBatch | null>(null)
   const error = ref<string | null>(null)
 
   function onState(next: StreamClientState): void {
@@ -68,6 +71,9 @@ export function useBinaryStream(
         break
       case 'systemview-visible':
         systemViewVisible.value = message
+        break
+      case 'waveform-batch':
+        waveformBatch.value = message
         break
       case 'error':
         error.value = message.message
@@ -98,8 +104,17 @@ export function useBinaryStream(
     telemetry.value = null
     envelope.value = null
     systemViewVisible.value = null
+    waveformBatch.value = null
     error.value = null
     client.reset()
+  }
+
+  function configure(nextChannelCount: number): void {
+    channelCount.value = nextChannelCount
+    telemetry.value = null
+    envelope.value = null
+    waveformBatch.value = null
+    client.configure(options.capacity, nextChannelCount)
   }
 
   function requestVisibleRange(
@@ -122,10 +137,12 @@ export function useBinaryStream(
     channelCount: readonly(channelCount),
     envelope: readonly(envelope),
     systemViewVisible: readonly(systemViewVisible),
+    waveformBatch: readonly(waveformBatch),
     error: readonly(error),
     start,
     stop,
     reset,
+    configure,
     requestVisibleRange,
   }
 }

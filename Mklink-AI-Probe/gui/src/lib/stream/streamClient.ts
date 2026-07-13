@@ -128,6 +128,15 @@ export class StreamClient {
     this.worker.postMessage({ type: 'reset' } satisfies WorkerInput)
   }
 
+  configure(capacity: number, channelCount: number): void {
+    if (this.disposed) return
+    requirePositiveInteger('capacity', capacity)
+    requirePositiveInteger('channelCount', channelCount)
+    this.worker.postMessage({
+      type: 'configure', capacity, channelCount,
+    } satisfies WorkerInput)
+  }
+
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void {
     if (this.disposed) return
     this.worker.postMessage({

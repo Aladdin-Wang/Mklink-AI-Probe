@@ -20,6 +20,7 @@ class StreamBatch:
     sequence: int
     item_count: int
     timestamp_ns: int = field(default_factory=time.time_ns)
+    flags: int = 0
 
     def __bytes__(self) -> bytes:
         return self.payload
@@ -106,9 +107,9 @@ class StreamHub:
                 self._release_owner_if_idle()
         return True
 
-    def publish(self, batch: BytesLike, item_count: int) -> int:
+    def publish(self, batch: BytesLike, item_count: int, flags: int = 0) -> int:
         with self._publish_lock:
-            published = self._prepare_batch(batch, item_count)
+            published = self._prepare_batch(batch, item_count, flags)
             self._schedule_delivery(published)
         return published.sequence
 
@@ -117,6 +118,7 @@ class StreamHub:
         loop: asyncio.AbstractEventLoop,
         batch: BytesLike,
         item_count: int = 0,
+        flags: int = 0,
     ) -> int:
         with self._publish_lock:
             with self._lock:
@@ -124,7 +126,7 @@ class StreamHub:
                     self._require_owner_loop(loop)
                     if loop.is_closed():
                         raise RuntimeError("owner event loop is closed")
-            published = self._prepare_batch(batch, item_count)
+            published = self._prepare_batch(batch, item_count, flags)
             self._schedule_delivery(published)
         return published.sequence
 
@@ -148,13 +150,19 @@ class StreamHub:
     def status_frame(self) -> StreamHubStats:
         return self.stats()
 
-    def _prepare_batch(self, batch: BytesLike, item_count: int) -> StreamBatch:
+    def _prepare_batch(
+        self, batch: BytesLike, item_count: int, flags: int = 0,
+    ) -> StreamBatch:
         if not isinstance(batch, (bytes, bytearray, memoryview)):
             raise TypeError("batch must be bytes-like")
         if isinstance(item_count, bool) or not isinstance(item_count, int):
             raise TypeError("item_count must be an integer")
         if item_count < 0:
             raise ValueError("item_count must not be negative")
+        if isinstance(flags, bool) or not isinstance(flags, int):
+            raise TypeError("flags must be an integer")
+        if not 0 <= flags <= 0xFF:
+            raise ValueError("flags must fit in one byte")
         payload = bytes(batch)
         with self._lock:
             self._last_sequence += 1
@@ -162,7 +170,7 @@ class StreamHub:
             self._produced_items += item_count
             self._produced_bytes += len(payload)
             sequence = self._last_sequence
-        return StreamBatch(payload, sequence, item_count)
+        return StreamBatch(payload, sequence, item_count, flags=flags)
 
     def _schedule_delivery(self, batch: StreamBatch) -> None:
         with self._lock:

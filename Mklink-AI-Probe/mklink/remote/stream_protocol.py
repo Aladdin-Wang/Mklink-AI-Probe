@@ -14,6 +14,9 @@ HEADER = struct.Struct("<4sBBBBIQQII")
 HEADER_SIZE = HEADER.size
 MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
 
+# WAVEFORM payload is little-endian Float32 in sample-major order.
+WAVEFORM_SAMPLE_MAJOR_FLOAT32 = 0x01
+
 # SystemView v1 events are fixed-size so producers and browser Workers can
 # process batches without JSON allocation or another serialization package.
 SYSTEMVIEW_EVENT_RECORD = struct.Struct("<BBHIQdddd")

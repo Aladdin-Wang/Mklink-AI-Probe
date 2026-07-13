@@ -69,7 +69,7 @@ def _encoded_data_frame(
 ) -> bytes:
     return encode_frame(Frame(
         stream_type=stream_type,
-        flags=0,
+        flags=batch.flags,
         stream_id=int(stream_type),
         sequence=batch.sequence,
         timestamp_ns=batch.timestamp_ns,

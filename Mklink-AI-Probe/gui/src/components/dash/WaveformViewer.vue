@@ -4,6 +4,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useBinaryStream } from '../../composables/useBinaryStream'
+import { RenderScheduler } from '../../lib/stream/renderScheduler'
+import type { WorkerOutput } from '../../workers/streamDecoder.worker'
 import '../../assets/rtt_viewer.css'
 import i18nUrl from '../../assets/rtt_i18n.js?url'
 import viewerUrl from '../../assets/rtt_viewer.js?url'
@@ -14,6 +17,39 @@ const props = defineProps<{
 }>()
 
 const container = ref<HTMLDivElement>()
+const binary = props.mode === 'VOFA'
+  ? useBinaryStream('vofa', { capacity: 200000, channelCount: 1 })
+  : null
+let vofaChannels: Array<Record<string, unknown>> = []
+let pendingBatch: Extract<WorkerOutput, { type: 'waveform-batch' }> | null = null
+let disposed = false
+const vofaScheduler = binary
+  ? new RenderScheduler(() => {
+      const viewer = (window as any).__waveformViewers?.VOFA
+      viewer?.renderBinaryFrame?.()
+    })
+  : null
+
+function onVofaChannels(event: Event): void {
+  if (!binary || disposed) return
+  const channels = (event as CustomEvent<unknown>).detail
+  if (!Array.isArray(channels) || channels.length === 0) return
+  vofaChannels = channels
+  binary.configure(channels.length)
+  ;(window as any).__waveformViewers?.VOFA?.configureBinaryChannels?.(channels)
+}
+
+watch(() => binary?.waveformBatch.value ?? null, batch => {
+  if (!batch || props.mode !== 'VOFA') return
+  pendingBatch = batch
+  const viewer = (window as any).__waveformViewers?.VOFA
+  if (viewer?.acceptBinaryBatch) {
+    viewer.acceptBinaryBatch(batch, vofaChannels)
+    pendingBatch = null
+  }
+  vofaScheduler?.recordCollection(batch.itemCount)
+  vofaScheduler?.invalidate('data')
+})
 
 onMounted(() => {
   if (!container.value) return
@@ -24,6 +60,21 @@ onMounted(() => {
 
   // 2. Inject CONFIG + load scripts
   injectScripts(el, props.mode)
+  if (binary) {
+    window.addEventListener('mklink:vofa-channels', onVofaChannels)
+    vofaScheduler?.start()
+    void fetch('/api/dash/vofa/status')
+      .then(response => response.ok ? response.json() : null)
+      .then(status => {
+        if (!status || disposed) return
+        vofaChannels = Array.isArray(status.channels) ? status.channels : []
+        binary.configure(Math.max(1, vofaChannels.length))
+        binary.start()
+      })
+      .catch(() => {
+        if (!disposed) binary.start()
+      })
+  }
 })
 
 watch(() => props.deviceConnected, (val) => {
@@ -32,6 +83,10 @@ watch(() => props.deviceConnected, (val) => {
 })
 
 onUnmounted(() => {
+  disposed = true
+  binary?.stop()
+  vofaScheduler?.dispose()
+  window.removeEventListener('mklink:vofa-channels', onVofaChannels)
   // Close EventSource if running
   try {
     const viewers = (window as any).__waveformViewers
@@ -289,6 +344,13 @@ function loadViewerScript(el: HTMLDivElement) {
       viewers[props.mode] = { es: (window as any).es }
     } else if (viewers?.[props.mode]) {
       viewers[props.mode].es = (window as any).es
+    }
+    if (props.mode === 'VOFA' && viewers?.VOFA) {
+      viewers.VOFA.configureBinaryChannels?.(vofaChannels)
+      if (pendingBatch) {
+        viewers.VOFA.acceptBinaryBatch?.(pendingBatch, vofaChannels)
+        pendingBatch = null
+      }
     }
   }
   el.appendChild(viewerScript)

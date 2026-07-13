@@ -1,4 +1,6 @@
-import { decodeFrame, StreamType } from '../lib/stream/protocol'
+import {
+  decodeFrame, StreamType, WAVEFORM_SAMPLE_MAJOR_FLOAT32,
+} from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
 import {
   safeTickDifference,
@@ -33,6 +35,15 @@ export interface StreamTelemetry {
 export type WorkerOutput =
   | { type: 'channels'; channelCount: number }
   | StreamTelemetry
+  | {
+      type: 'waveform-batch'
+      sequence: bigint
+      timestampNs: bigint
+      itemCount: number
+      channelCount: number
+      layout: 'sample-major-float32'
+      values: ArrayBuffer
+    }
   | {
       type: 'render-envelope'
       mode: 'raw-visible'
@@ -82,6 +93,7 @@ export interface SystemViewEvent {
 }
 
 const SYSTEMVIEW_RECORD_SIZE = 48
+const MAX_WAVEFORM_CHANNELS = 64
 const SYSTEMVIEW_HAS_TICKS = 0x01
 const SYSTEMVIEW_HAS_TIME_US = 0x02
 const SYSTEMVIEW_HAS_DELTA_US = 0x04
@@ -197,7 +209,46 @@ export class StreamDecoder {
       } else if (decoded.streamType === StreamType.SYSTEMVIEW) {
         this.appendSystemViewFrame(decoded.sequence, decoded.itemCount, decoded.payload)
       } else {
+        if (decoded.streamType === StreamType.WAVEFORM) {
+          if (
+            decoded.flags !== 0
+            && (decoded.flags & WAVEFORM_SAMPLE_MAJOR_FLOAT32) === 0
+          ) {
+            throw new RangeError('VOFA waveform payload must be sample-major Float32')
+          }
+          if (decoded.itemCount > 0) {
+            const sampleBytes = decoded.itemCount * Float32Array.BYTES_PER_ELEMENT
+            if (decoded.payload.byteLength % sampleBytes !== 0) {
+              throw new RangeError('VOFA payload is not aligned to complete Float32 samples')
+            }
+            const inferredChannelCount = decoded.payload.byteLength / sampleBytes
+            if (
+              !Number.isInteger(inferredChannelCount)
+              || inferredChannelCount <= 0
+              || inferredChannelCount > MAX_WAVEFORM_CHANNELS
+            ) {
+              throw new RangeError('VOFA payload channel count is outside the supported range')
+            }
+            if (inferredChannelCount !== this.ring.channelCount) {
+              this.configure(this.ring.capacity, inferredChannelCount)
+            }
+          } else if (decoded.payload.byteLength !== 0) {
+            throw new RangeError('empty VOFA batches must not contain payload bytes')
+          }
+        }
         this.appendNumericFrame(decoded.sequence, decoded.timestampNs, decoded.itemCount, decoded.payload)
+        if (decoded.streamType === StreamType.WAVEFORM) {
+          const output: Extract<WorkerOutput, { type: 'waveform-batch' }> = {
+            type: 'waveform-batch',
+            sequence: decoded.sequence,
+            timestampNs: decoded.timestampNs,
+            itemCount: decoded.itemCount,
+            channelCount: this.ring.channelCount,
+            layout: 'sample-major-float32',
+            values: decoded.payload,
+          }
+          this.post(output, [output.values])
+        }
       }
       this.acceptedFrames += 1
       this.post(this.telemetry(connectionGeneration, frameTicket))

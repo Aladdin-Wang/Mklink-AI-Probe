@@ -63,6 +63,18 @@ RingBuffer.prototype.toArray = function() {
   return result;
 };
 
+RingBuffer.prototype.timeAt = function(logicalIndex) {
+  if (logicalIndex < 0 || logicalIndex >= this.count) return NaN;
+  var idx = ((this.tail + logicalIndex) % this.capacity) * 2;
+  return this.buffer[idx];
+};
+
+RingBuffer.prototype.valueAt = function(logicalIndex) {
+  if (logicalIndex < 0 || logicalIndex >= this.count) return NaN;
+  var idx = ((this.tail + logicalIndex) % this.capacity) * 2;
+  return this.buffer[idx + 1];
+};
+
 RingBuffer.prototype.getRange = function(startIdx, endIdx) {
   var result = [];
   var len = Math.min(endIdx, this.count);
@@ -141,6 +153,17 @@ window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
 // State
 // ============================================================
 var FIELDS = {};
+var FIELD_ORDER = [];
+var fieldOrderDirty = true;
+function markFieldOrderDirty() { fieldOrderDirty = true; }
+function sortedFieldNames() {
+  if (fieldOrderDirty) {
+    FIELD_ORDER = Object.keys(FIELDS);
+    FIELD_ORDER.sort();
+    fieldOrderDirty = false;
+  }
+  return FIELD_ORDER;
+}
 var CHANNEL_METADATA = {};
 var colorIdx = 0;
 var paused = false;
@@ -375,10 +398,12 @@ function sseOnOpen() {
   swTimeOrigin = null;
   for (var k in FIELDS) { if (FIELDS[k] && FIELDS[k].ringBuf) FIELDS[k].ringBuf.clear(); }
 }
-var es = new EventSource(API_STREAM);
-es.onmessage = sseOnMessage;
-es.onerror = sseOnError;
-es.onopen = sseOnOpen;
+var es = CONFIG.mode === 'VOFA' ? null : new EventSource(API_STREAM);
+if (es) {
+  es.onmessage = sseOnMessage;
+  es.onerror = sseOnError;
+  es.onopen = sseOnOpen;
+}
 
 // ============================================================
 // Collection control (Start/Pause/Stop + Interval)
@@ -441,6 +466,13 @@ function normalizeVofaChannels(channels) {
   return out;
 }
 
+function notifyVofaChannels() {
+  if (!IS_VOFA_MODE || typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('mklink:vofa-channels', {
+    detail: vofaChannels.slice()
+  }));
+}
+
 function apiErrorMessage(payload, status) {
   if (payload && payload.detail) {
     if (typeof payload.detail === 'string') return payload.detail;
@@ -461,6 +493,7 @@ function syncDashboardStatus(d) {
   if (!d) return;
   if (IS_VOFA_MODE && Array.isArray(d.channels)) {
     vofaChannels = normalizeVofaChannels(d.channels);
+    notifyVofaChannels();
   }
   var nextState = d.state;
   if (!nextState && d.running !== undefined) {
@@ -539,10 +572,11 @@ document.getElementById('btn-start').addEventListener('click', function() {
     .then(function(d){
       if (IS_VOFA_MODE && Array.isArray(d.channels)) {
         vofaChannels = normalizeVofaChannels(d.channels);
+        notifyVofaChannels();
       }
       updateCollectionUI('running');
       // Reconnect SSE if needed
-      if (!es || es.readyState === EventSource.CLOSED) {
+      if (!IS_VOFA_MODE && (!es || es.readyState === EventSource.CLOSED)) {
         if (es) es.close();
         es = new EventSource(API_STREAM);
         es.onmessage = sseOnMessage;
@@ -608,11 +642,31 @@ var rawLogPanel = document.getElementById('raw-log-panel');
 var rawLogEl = document.getElementById('raw-log');
 var rawLogCountEl = document.getElementById('raw-log-count');
 var rawLogOpen = false;
+var rawLogLines = [];
+var rawLogLastPaint = 0;
+
+function paintRawLog(force) {
+  if (!rawLogOpen) return;
+  var now = performance.now();
+  if (!force && now - rawLogLastPaint < 100) return;
+  rawLogLastPaint = now;
+  rawLogEl.textContent = rawLogLines.join('\n') + (rawLogLines.length ? '\n' : '');
+  rawLogEl.scrollTop = rawLogEl.scrollHeight;
+}
+
+function appendRawLogLine(line) {
+  rawLogLines.push(line);
+  if (rawLogLines.length > 5000) rawLogLines.splice(0, rawLogLines.length - 5000);
+  rawLogLineCount++;
+  rawLogCountEl.textContent = rawLogLineCount + ' lines';
+  paintRawLog(false);
+}
 
 function setRawLogOpen(open) {
   rawLogOpen = open;
   rawLogPanel.dataset.open = open ? 'true' : 'false';
   if (open) {
+    paintRawLog(true);
     resize(); resizeMinimap(); drawChart();
   }
 }
@@ -625,6 +679,7 @@ rawLogPanel.querySelector('.panel-header').addEventListener('click', function(e)
 document.getElementById('raw-log-close').addEventListener('click', function() { setRawLogOpen(false); });
 document.getElementById('raw-log-clear').addEventListener('click', function() {
   rawLogEl.textContent = '';
+  rawLogLines = [];
   rawLogLineCount = 0;
   rawLogCountEl.textContent = '0 lines';
 });
@@ -1180,7 +1235,7 @@ function _rebuildWatchTable() {
   var tbody = document.getElementById('watch-tbody');
   // Skip rebuild if any row is being edited (dblclick editing in progress)
   if (tbody.querySelector('tr.watch-editing')) return;
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   console.log('[rebuildWatch] names=' + names.join(', ') + ' expanded=' + Object.keys(_expandedRows).join(','));
   var html = '';
   for (var i = 0; i < names.length; i++) {
@@ -1357,7 +1412,7 @@ function _bindWatchDelegates(tbody) {
 
 function updateWatchTable() {
   var tbody = document.getElementById('watch-tbody');
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   document.getElementById('watch-count').textContent = names.length + ' ch';
   renderWatchHeader();
 
@@ -1464,6 +1519,7 @@ function removeWatchChannel(name) {
   if (FIELDS[name]) {
     if (FIELDS[name].ringBuf) FIELDS[name].ringBuf.clear();
     delete FIELDS[name];
+    markFieldOrderDirty();
   }
   delete CHANNEL_METADATA[name];
   _watchStructGen++;
@@ -1491,6 +1547,7 @@ function applyChannelMetadata(channels, purge) {
         precision: 2,
         thresholds: null
       };
+      markFieldOrderDirty();
       _watchStructGen++;
     }
     if (FIELDS[name]) {
@@ -1515,6 +1572,7 @@ function applyChannelMetadata(channels, purge) {
       _removedChannels[removed[ri]] = true;
       if (FIELDS[removed[ri]] && FIELDS[removed[ri]].ringBuf) FIELDS[removed[ri]].ringBuf.clear();
       delete FIELDS[removed[ri]];
+      markFieldOrderDirty();
       delete CHANNEL_METADATA[removed[ri]];
     }
     if (removed.length > 0) _watchStructGen++;
@@ -1793,7 +1851,7 @@ function deserializeState(json) {
 // CSV/PNG export
 // ============================================================
 function exportCSV() {
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   if (names.length === 0) return;
   var csvCfg = window._csvExportConfig || { includeTimestamp: true, delimiter: ',', filename: 'jscope_export.csv' };
   var delim = csvCfg.delimiter || ',';
@@ -1936,6 +1994,7 @@ function processPoint(point) {
         precision: 2,
         thresholds: null
       };
+      markFieldOrderDirty();
       if (CHANNEL_METADATA[k]) {
         if (CHANNEL_METADATA[k].type !== undefined) FIELDS[k].type = CHANNEL_METADATA[k].type;
         if (CHANNEL_METADATA[k].size !== undefined) FIELDS[k].size = CHANNEL_METADATA[k].size;
@@ -1953,10 +2012,7 @@ function processPoint(point) {
   }
 
   // Raw log
-  rawLogLineCount++;
-  rawLogEl.textContent += JSON.stringify(point) + '\n';
-  rawLogCountEl.textContent = rawLogLineCount + ' lines';
-  if (rawLogOpen) rawLogEl.scrollTop = rawLogEl.scrollHeight;
+  appendRawLogLine(JSON.stringify(point));
 
   updateTriggerSourceOptions();
   if (point._t) {
@@ -1987,6 +2043,103 @@ function processPoint(point) {
       }
     });
   }
+}
+
+// VOFA binary bridge: Worker messages arrive as one transferable,
+// sample-major Float32 batch. Collection updates typed rings immediately;
+// WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
+var binaryChannelNames = [];
+var binaryTimeOrigin = null;
+var binaryLastTimestamp = null;
+var binaryLastSequence = null;
+
+function configureBinaryChannels(channels) {
+  if (!IS_VOFA_MODE || !Array.isArray(channels)) return;
+  var metadata = {};
+  binaryChannelNames = [];
+  for (var i = 0; i < channels.length; i++) {
+    var channel = channels[i] || {};
+    var name = channel.name || String(channel.addr !== undefined ? channel.addr : i);
+    binaryChannelNames.push(name);
+    metadata[name] = {
+      type: channel.type || 'float',
+      size: channel.size || 4,
+      address: channel.addr,
+      unit: channel.unit || ''
+    };
+  }
+  if (binaryChannelNames.length) applyChannelMetadata(metadata, false);
+}
+
+function acceptBinaryBatch(batch, channels) {
+  if (!IS_VOFA_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
+  if (channels && channels.length !== binaryChannelNames.length) configureBinaryChannels(channels);
+  if (!binaryChannelNames.length || batch.channelCount !== binaryChannelNames.length) return false;
+  if (binaryLastSequence !== null && batch.sequence <= binaryLastSequence) return false;
+  binaryLastSequence = batch.sequence;
+  var values = new Float32Array(batch.values);
+  if (values.length !== batch.itemCount * batch.channelCount) return false;
+
+  var batchSeconds = Number(batch.timestampNs) / 1000000000;
+  if (!Number.isFinite(batchSeconds)) return false;
+  if (binaryTimeOrigin === null || batchSeconds < binaryTimeOrigin) {
+    binaryTimeOrigin = batchSeconds;
+    for (var clearIndex = 0; clearIndex < binaryChannelNames.length; clearIndex++) {
+      var clearField = FIELDS[binaryChannelNames[clearIndex]];
+      if (clearField && clearField.ringBuf) clearField.ringBuf.clear();
+    }
+  }
+  var sampleStep = estimatedRate > 0 ? 1 / estimatedRate : 0;
+  var firstSeconds = batchSeconds - Math.max(0, batch.itemCount - 1) * sampleStep;
+  for (var sample = 0; sample < batch.itemCount; sample++) {
+    var viewTime = firstSeconds + sample * sampleStep - binaryTimeOrigin;
+    var capture = null;
+    if (triggerSettings.enabled) {
+      capture = { _t: firstSeconds + sample * sampleStep, _viewT: viewTime };
+      for (var captureChannel = 0; captureChannel < batch.channelCount; captureChannel++) {
+        capture[binaryChannelNames[captureChannel]] = values[sample * batch.channelCount + captureChannel];
+      }
+      if (!checkTrigger(capture)) continue;
+    }
+    for (var channelIndex = 0; channelIndex < batch.channelCount; channelIndex++) {
+      var name = binaryChannelNames[channelIndex];
+      var field = FIELDS[name];
+      if (!field || !field.ringBuf) continue;
+      field.ringBuf.push(viewTime, values[sample * batch.channelCount + channelIndex]);
+    }
+  }
+
+  if (binaryLastTimestamp !== null && batchSeconds > binaryLastTimestamp) {
+    var measured = batch.itemCount / (batchSeconds - binaryLastTimestamp);
+    if (Number.isFinite(measured) && measured > 0) {
+      estimatedRate = estimatedRate > 0 ? estimatedRate * 0.8 + measured * 0.2 : measured;
+      estimatedInterval = 1 / estimatedRate;
+      updateSampleRateBadge(estimatedInterval, estimatedRate);
+    }
+  }
+  binaryLastTimestamp = batchSeconds;
+  appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
+  updateTriggerSourceOptions();
+  return true;
+}
+
+function renderBinaryFrame() {
+  if (!IS_VOFA_MODE || paused) return;
+  drawChart();
+  drawMinimap();
+  updateUI();
+  updateWatchTable();
+}
+
+if (typeof window !== 'undefined') {
+  if (!window.__waveformViewers) window.__waveformViewers = {};
+  var binaryViewer = window.__waveformViewers.VOFA || {};
+  binaryViewer.configureBinaryChannels = configureBinaryChannels;
+  binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
+  binaryViewer.renderBinaryFrame = renderBinaryFrame;
+  binaryViewer.setDeviceConnected = setDeviceConnected;
+  binaryViewer.es = es;
+  window.__waveformViewers.VOFA = binaryViewer;
 }
 
 // ============================================================
@@ -2104,7 +2257,7 @@ function drawChart() {
   }
 
   // Count visible channels
-  var visChNames = Object.keys(FIELDS).sort().filter(function(k) {
+  var visChNames = sortedFieldNames().filter(function(k) {
     return FIELDS[k].visible && FIELDS[k].ringBuf.count >= 2;
   });
   var mr = 16, mt = 8, mb = 32, ml = 16;
@@ -2161,7 +2314,7 @@ function drawChart() {
   ctx.rect(ml, mt, pw, ph);
   ctx.clip();
 
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   for (var ni = 0; ni < names.length; ni++) {
     var name = names[ni];
     var meta = FIELDS[name];
@@ -2171,10 +2324,9 @@ function drawChart() {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     var started = false;
-    var pts = meta.ringBuf.toArray();
-    for (var i = 0; i < pts.length; i++) {
-      var p = pts[i];
-      var sx = tx(p.t), sy = tyForChannel(p.y, name);
+    var ring = meta.ringBuf;
+    for (var i = 0; i < ring.count; i++) {
+      var sx = tx(ring.timeAt(i)), sy = tyForChannel(ring.valueAt(i), name);
       if (sx < ml - 10 || sx > ml + pw + 10) continue;
       if (!started) { ctx.moveTo(sx, sy); started = true; }
       else ctx.lineTo(sx, sy);
@@ -2342,16 +2494,16 @@ function drawChart() {
     var hoverT = tMin + (mx - ml) / pw * (tMax - tMin);
     var lines = ['<span class="tooltip-row" style="color:var(--dim);font-size:11px">' + escapeHtml(formatTimeAxisValue(hoverT)) + '</span>'];
     for (var k in FIELDS) {
-      var pts = FIELDS[k].ringBuf.toArray();
-      if (!FIELDS[k].visible || pts.length < 1) continue;
-      var best = null, bestDist = Infinity;
-      for (var i = 0; i < pts.length; i++) {
-        var d = Math.abs(pts[i].t - hoverT);
-        if (d < bestDist) { bestDist = d; best = pts[i]; }
+      var hoverRing = FIELDS[k].ringBuf;
+      if (!FIELDS[k].visible || hoverRing.count < 1) continue;
+      var bestY = null, bestDist = Infinity;
+      for (var i = 0; i < hoverRing.count; i++) {
+        var d = Math.abs(hoverRing.timeAt(i) - hoverT);
+        if (d < bestDist) { bestDist = d; bestY = hoverRing.valueAt(i); }
       }
-      if (best && bestDist < (tMax - tMin) / pw * 15) {
-        var tipVal = formatTypedValue(best.y, FIELDS[k]);
-        var enumName = _resolveEnumName(k, best.y);
+      if (bestY !== null && bestDist < (tMax - tMin) / pw * 15) {
+        var tipVal = formatTypedValue(bestY, FIELDS[k]);
+        var enumName = _resolveEnumName(k, bestY);
         if (enumName) tipVal = enumName + ' (' + tipVal + ')';
         lines.push(
           '<span class="tooltip-row">' +
@@ -2398,9 +2550,9 @@ function drawChart() {
       var closestDist = Infinity;
       for (var k in FIELDS) {
         if (!FIELDS[k].visible) continue;
-        var pts = FIELDS[k].ringBuf.toArray();
-        for (var i = 0; i < pts.length; i++) {
-          var d = Math.abs(pts[i].t - hoverT);
+        var zoomRing = FIELDS[k].ringBuf;
+        for (var i = 0; i < zoomRing.count; i++) {
+          var d = Math.abs(zoomRing.timeAt(i) - hoverT);
           if (d < closestDist) { closestDist = d; closestChannel = k; }
         }
       }
@@ -2614,7 +2766,7 @@ function updateCursorReadout() {
   }
   var dt = Math.abs(cursorState.b.t - cursorState.a.t);
   var freq = dt > 0 ? (1 / dt).toFixed(2) : '-';
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   var deltaLimit = (window.innerWidth <= 640) ? 2 : 6;
 
   // Minimap compact readout
@@ -2734,7 +2886,7 @@ function drawMinimap() {
   function mtx(v) { return (v - full.tMin) / range * W; }
 
   // Draw data traces
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   minimapCtx.globalAlpha = 0.4;
   for (var ni = 0; ni < names.length; ni++) {
     var meta = FIELDS[names[ni]];
@@ -2742,17 +2894,17 @@ function drawMinimap() {
     minimapCtx.strokeStyle = meta.color;
     minimapCtx.lineWidth = 1;
     minimapCtx.beginPath();
-    var pts = meta.ringBuf.toArray();
     // Downsample for minimap performance
-    var step = Math.max(1, Math.floor(pts.length / W));
+    var ring = meta.ringBuf;
+    var step = Math.max(1, Math.floor(ring.count / W));
     var started = false;
-    for (var i = 0; i < pts.length; i += step) {
-      var px = mtx(pts[i].t);
+    for (var i = 0; i < ring.count; i += step) {
+      var px = mtx(ring.timeAt(i));
       // Normalize Y to minimap height
       var bufMin = Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min : 0;
       var bufMax = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1;
       var yRange = bufMax - bufMin || 1;
-      var py = H - ((pts[i].y - bufMin) / yRange) * (H - 4) - 2;
+      var py = H - ((ring.valueAt(i) - bufMin) / yRange) * (H - 4) - 2;
       if (!started) { minimapCtx.moveTo(px, py); started = true; }
       else minimapCtx.lineTo(px, py);
     }
@@ -2824,7 +2976,7 @@ function updateUI() {
   var sel = document.getElementById('var-selector');
   var existing = {};
   sel.querySelectorAll('.chip').forEach(function(c) { existing[c.dataset.name] = c; });
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     var meta = FIELDS[name];
@@ -2940,7 +3092,7 @@ function superwatchSearch(query) {
 }
 
 function superwatchInspectSelected() {
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   var name = selectedChannel || (names.length ? names[0] : '');
   if (!name) return;
   fetch(API_SW + 'inspect?name=' + encodeURIComponent(name))
@@ -3072,7 +3224,7 @@ function readInputNumber(id) {
 function populateThresholdChannels(preferred) {
   var sel = document.getElementById('threshold-channel');
   if (!sel) return;
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   var current = preferred || sel.value || names[0] || '';
   sel.innerHTML = '';
   for (var i = 0; i < names.length; i++) {
@@ -3146,7 +3298,7 @@ function updateTriggerStateBadge() {
 function updateTriggerSourceOptions() {
   var sel = document.getElementById('trigger-source');
   var current = sel.value;
-  var names = Object.keys(FIELDS).sort();
+  var names = sortedFieldNames();
   sel.innerHTML = '<option value="">--</option>';
   for (var i = 0; i < names.length; i++) {
     var opt = document.createElement('option');

@@ -9,12 +9,16 @@ Zero new Python dependencies.
 from __future__ import annotations
 
 import atexit
+from dataclasses import dataclass
+import math
 import signal
 import struct
 import sys
 import threading
 import time
 import webbrowser
+
+from mklink.remote.stream_protocol import WAVEFORM_SAMPLE_MAJOR_FLOAT32
 
 VOFA_TYPE_INFO = {
     "int8_t": {"type": "int8_t", "size": 1},
@@ -39,6 +43,104 @@ _VOFA_TYPE_ALIASES = {
 }
 
 _VOFA_TYPE_TOKENS = set(_VOFA_TYPE_ALIASES)
+
+# WAVEFORM frame flag bit 0: payload is little-endian Float32 values in
+# sample-major order: sample0.channel0..N, sample1.channel0..N, ... .
+VOFA_SAMPLE_MAJOR_FLOAT32 = WAVEFORM_SAMPLE_MAJOR_FLOAT32
+VOFA_MAX_READ_BLOCK = 2048
+
+
+@dataclass(frozen=True)
+class VofaChannelRead:
+    channel_index: int
+    offset: int
+    size: int
+    type_name: str
+
+
+@dataclass(frozen=True)
+class VofaReadGroup:
+    address: int
+    size: int
+    channels: tuple[VofaChannelRead, ...]
+
+
+def encode_vofa_samples(samples) -> bytes:
+    """Encode rows of numeric channel values as sample-major Float32."""
+    rows = [tuple(row) for row in samples]
+    if not rows:
+        return b""
+    channel_count = len(rows[0])
+    if channel_count <= 0 or any(len(row) != channel_count for row in rows):
+        raise ValueError("VOFA samples must have one consistent channel count")
+    values = []
+    for row in rows:
+        for value in row:
+            number = float(value)
+            if not math.isfinite(number):
+                number = 0.0
+            values.append(number)
+    return struct.pack(f"<{len(values)}f", *values)
+
+
+def decode_vofa_samples(payload: bytes, channel_count: int) -> list[tuple[float, ...]]:
+    """Decode a sample-major Float32 payload (used by tests/clients)."""
+    if channel_count <= 0:
+        raise ValueError("channel_count must be positive")
+    row_size = channel_count * 4
+    if len(payload) % row_size:
+        raise ValueError("VOFA payload is not aligned to complete samples")
+    values = struct.unpack(f"<{len(payload) // 4}f", payload) if payload else ()
+    return [
+        tuple(values[index:index + channel_count])
+        for index in range(0, len(values), channel_count)
+    ]
+
+
+def build_vofa_read_groups(
+    channels: list[dict], *, max_block_size: int = VOFA_MAX_READ_BLOCK,
+) -> list[VofaReadGroup]:
+    """Group exactly contiguous/overlapping addresses into safe RAM reads."""
+    if max_block_size <= 0:
+        raise ValueError("max_block_size must be positive")
+    normalized = []
+    for index, channel in enumerate(channels):
+        address = channel["addr"]
+        if isinstance(address, str):
+            address = int(address, 0)
+        size = int(channel.get("size", 4))
+        if size <= 0 or size > max_block_size:
+            raise ValueError("VOFA channel size exceeds the safe read limit")
+        normalized.append((
+            int(address), size, index, str(channel.get("type", "float")),
+        ))
+    normalized.sort(key=lambda item: (item[0], item[2]))
+    groups = []
+    pending = []
+    group_start = group_end = None
+    for address, size, index, type_name in normalized:
+        channel_end = address + size
+        can_join = (
+            group_start is not None
+            and address <= group_end
+            and max(group_end, channel_end) - group_start <= max_block_size
+        )
+        if not can_join and pending:
+            groups.append(VofaReadGroup(
+                group_start, group_end - group_start, tuple(pending),
+            ))
+            pending = []
+            group_start = group_end = None
+        if group_start is None:
+            group_start, group_end = address, channel_end
+        else:
+            group_end = max(group_end, channel_end)
+        pending.append(VofaChannelRead(index, address - group_start, size, type_name))
+    if pending:
+        groups.append(VofaReadGroup(
+            group_start, group_end - group_start, tuple(pending),
+        ))
+    return groups
 
 
 def normalize_vofa_type(type_token: str) -> dict[str, int | str] | None:

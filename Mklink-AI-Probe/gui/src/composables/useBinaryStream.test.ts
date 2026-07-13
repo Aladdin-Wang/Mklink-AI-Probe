@@ -15,6 +15,7 @@ describe('useBinaryStream', () => {
       start: vi.fn(),
       stop: vi.fn(),
       reset: vi.fn(),
+      configure: vi.fn(),
       requestVisibleRange: vi.fn(),
       dispose: vi.fn(),
     }
@@ -58,6 +59,17 @@ describe('useBinaryStream', () => {
     expect(api?.connected.value).toBe(true)
     expect(api?.telemetry.value?.bufferedSamples).toBe(10)
 
+    const values = Float32Array.of(1, 10, 2, 20).buffer
+    options?.onWorkerMessage?.({
+      type: 'waveform-batch', sequence: 1n, timestampNs: 10n,
+      itemCount: 2, channelCount: 2, layout: 'sample-major-float32', values,
+    } satisfies WorkerOutput)
+    await nextTick()
+    expect(api?.waveformBatch.value?.itemCount).toBe(2)
+
+    api?.configure(4)
+    expect(client.configure).toHaveBeenCalledWith(1000, 4)
+
     api?.requestVisibleRange(4, 1, 2, 300)
     expect(client.requestVisibleRange).toHaveBeenCalledWith(4, 1, 2, 300)
     wrapper.unmount()
@@ -68,6 +80,7 @@ describe('useBinaryStream', () => {
     let options: StreamClientOptions | undefined
     const client: BinaryStreamClient = {
       start: vi.fn(), stop: vi.fn(), reset: vi.fn(),
+      configure: vi.fn(),
       requestVisibleRange: vi.fn(), dispose: vi.fn(),
     }
     let api: ReturnType<typeof useBinaryStream> | undefined

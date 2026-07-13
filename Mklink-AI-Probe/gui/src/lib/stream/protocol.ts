@@ -11,6 +11,8 @@ export const StreamType = {
   CONTROL: 255,
 } as const
 
+export const WAVEFORM_SAMPLE_MAJOR_FLOAT32 = 0x01
+
 export type StreamType = (typeof StreamType)[keyof typeof StreamType]
 
 export interface StreamFrame {

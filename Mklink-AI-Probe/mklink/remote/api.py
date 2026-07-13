@@ -396,6 +396,10 @@ def create_app(
     set_stream_hub = getattr(systemview_manager, "set_stream_hub", None)
     if callable(set_stream_hub):
         set_stream_hub(stream_registry["systemview"])
+    vofa_manager = get_managers()["vofa"]
+    set_vofa_stream_hub = getattr(vofa_manager, "set_stream_hub", None)
+    if callable(set_vofa_stream_hub):
+        set_vofa_stream_hub(stream_registry["vofa"])
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
@@ -416,6 +420,17 @@ def create_app(
         )
 
     app.add_event_handler("shutdown", shutdown_online_flash)
+
+    async def shutdown_stream_producers() -> None:
+        detach_vofa_hub = getattr(vofa_manager, "detach_stream_hub", None)
+        vofa_hub = stream_registry["vofa"]
+        if getattr(vofa_manager, "_stream_hub", None) is vofa_hub:
+            if getattr(vofa_manager, "running", False):
+                await run_in_threadpool(vofa_manager.stop)
+            if callable(detach_vofa_hub):
+                detach_vofa_hub(vofa_hub)
+
+    app.add_event_handler("shutdown", shutdown_stream_producers)
 
     @app.exception_handler(ResourceError)
     async def resource_error_handler(_request, error):

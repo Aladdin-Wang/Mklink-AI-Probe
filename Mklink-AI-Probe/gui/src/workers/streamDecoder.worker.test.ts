@@ -11,6 +11,7 @@ function frame(
   payload: Uint8Array,
   streamType = StreamType.WAVEFORM,
   timestampNs = 1_000_000_000n,
+  flags = 0,
 ): ArrayBuffer {
   const buffer = new ArrayBuffer(36 + payload.byteLength)
   const bytes = new Uint8Array(buffer)
@@ -18,6 +19,7 @@ function frame(
   const view = new DataView(buffer)
   view.setUint8(4, 1)
   view.setUint8(5, streamType)
+  view.setUint8(6, flags)
   view.setUint8(7, 36)
   view.setUint32(8, streamType, true)
   view.setBigUint64(12, sequence, true)
@@ -87,6 +89,67 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('emits each VOFA sample-major batch as a transferable typed envelope', () => {
+    const { decoder, messages, transfers } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })
+    decoder.handle({
+      type: 'frame',
+      buffer: frame(
+        7n, 3, floats(1, 10, 2, 20, 3, 30),
+        StreamType.WAVEFORM, 5_000_000n, 0x01,
+      ),
+      connectionGeneration: 1,
+      frameTicket: 1,
+    })
+
+    const batch = messages.find(message => message.type === 'waveform-batch')
+    if (batch?.type !== 'waveform-batch') throw new Error('expected waveform batch')
+    expect(batch).toMatchObject({
+      sequence: 7n,
+      timestampNs: 5_000_000n,
+      itemCount: 3,
+      channelCount: 2,
+      layout: 'sample-major-float32',
+    })
+    expect(Array.from(new Float32Array(batch.values))).toEqual([1, 10, 2, 20, 3, 30])
+    expect(transfers[messages.indexOf(batch)]).toEqual([batch.values])
+  })
+
+  it('rejects an unknown VOFA layout flag before mutating the typed ring', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame',
+      buffer: frame(1n, 1, floats(9), StreamType.WAVEFORM, 1_000_000n, 0x02),
+      connectionGeneration: 1,
+      frameTicket: 1,
+    })
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+
+    decoder.handle({
+      type: 'visible-range', requestId: 1, start: 0, end: 10, pixelWidth: 10,
+    })
+    expect(messages.at(-1)).toMatchObject({ type: 'render-envelope', sampleCount: 0 })
+  })
+
+  it('uses VOFA frame metadata to reconfigure a changed channel count', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame',
+      buffer: frame(
+        1n, 2, floats(1, 10, 2, 20), StreamType.WAVEFORM,
+        1_000_000n, 0x01,
+      ),
+      connectionGeneration: 1,
+      frameTicket: 1,
+    })
+
+    const batch = messages.find(message => message.type === 'waveform-batch')
+    expect(batch).toMatchObject({ type: 'waveform-batch', channelCount: 2, itemCount: 2 })
+    expect(messages).toContainEqual({ type: 'channels', channelCount: 2 })
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 2 })
+  })
   it('preserves ticks above Number.MAX_SAFE_INTEGER and exposes relative plot coordinates', () => {
     const { decoder, messages } = setup()
     const origin = 9_007_199_254_740_993n
