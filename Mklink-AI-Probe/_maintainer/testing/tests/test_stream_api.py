@@ -23,6 +23,8 @@ def client(app):
 
 
 def test_create_app_has_an_independent_typed_stream_registry():
+    from mklink.remote.dashboards import get_managers
+
     first = create_app(auth_token=None, project_root=".")
     second = create_app(auth_token=None, project_root=".")
 
@@ -41,6 +43,7 @@ def test_create_app_has_an_independent_typed_stream_registry():
         is not second.state.stream_registry[name]
         for name in first.state.stream_registry
     )
+    assert get_managers()["systemview"]._stream_hub is second.state.stream_registry["systemview"]
 
 
 @pytest.mark.parametrize(

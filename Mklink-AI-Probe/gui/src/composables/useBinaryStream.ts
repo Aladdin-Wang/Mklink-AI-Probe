@@ -22,6 +22,7 @@ export interface UseBinaryStreamOptions {
 }
 
 type RenderEnvelope = Extract<WorkerOutput, { type: 'render-envelope' }>
+type SystemViewVisible = Extract<WorkerOutput, { type: 'systemview-visible' }>
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -46,6 +47,7 @@ export function useBinaryStream(
   const telemetry = shallowRef<StreamTelemetry | null>(null)
   const channelCount = ref(options.channelCount)
   const envelope = shallowRef<RenderEnvelope | null>(null)
+  const systemViewVisible = shallowRef<SystemViewVisible | null>(null)
   const error = ref<string | null>(null)
 
   function onState(next: StreamClientState): void {
@@ -63,6 +65,9 @@ export function useBinaryStream(
         break
       case 'render-envelope':
         envelope.value = message
+        break
+      case 'systemview-visible':
+        systemViewVisible.value = message
         break
       case 'error':
         error.value = message.message
@@ -92,6 +97,7 @@ export function useBinaryStream(
   function reset(): void {
     telemetry.value = null
     envelope.value = null
+    systemViewVisible.value = null
     error.value = null
     client.reset()
   }
@@ -115,6 +121,7 @@ export function useBinaryStream(
     telemetry: readonly(telemetry),
     channelCount: readonly(channelCount),
     envelope: readonly(envelope),
+    systemViewVisible: readonly(systemViewVisible),
     error: readonly(error),
     start,
     stop,

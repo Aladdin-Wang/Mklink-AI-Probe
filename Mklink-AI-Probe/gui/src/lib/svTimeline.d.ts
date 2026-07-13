@@ -18,6 +18,7 @@ export class SvTimeline {
   viewEnd: number | null
   constructor(roots: SvTimelineRoots, data: SvTimelineData)
   setData(intervals: SvTimelineData['intervals']): void
+  setPrefilteredIntervals(intervals: SvTimelineData['intervals']): void
   setWindowSize(windowSize: number): void
   setFollowMode(enabled: boolean): void
   reset(): void

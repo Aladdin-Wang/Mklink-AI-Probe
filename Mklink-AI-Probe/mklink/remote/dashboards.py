@@ -26,6 +26,8 @@ import threading
 import time
 from typing import Any, Generator
 
+from mklink.remote.stream_protocol import encode_systemview_events
+
 logger = logging.getLogger(__name__)
 
 
@@ -329,7 +331,7 @@ class SystemViewStreamManager:
     over SSE for the RTOS-Trace dashboard.
     """
 
-    def __init__(self):
+    def __init__(self, stream_hub=None):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -341,6 +343,8 @@ class SystemViewStreamManager:
         self._history_buffer_us = 60_000_000
         self._history_replay_limit = 500
         self._live_batch_limit = 500
+        self._stream_hub = stream_hub
+        self._last_status_publish = 0.0
         self._parser = None
         self._stats = {"events": 0, "bytes": 0}
         self._resolved_task_names: dict[int, str] = {}
@@ -363,6 +367,9 @@ class SystemViewStreamManager:
 
     def set_start_failure_callback(self, callback) -> None:
         self._start_failure_callback = callback
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
 
     def start(self, device, *, addr: str | None = None, channel: int = 1,
               mode: int = 0, search_size: int = 1024,
@@ -445,21 +452,7 @@ class SystemViewStreamManager:
                         mode=mode, search_size=search_size,
                     )
                     self._apply_task_names(evs)
-                    self._stats["events"] += len(evs)
-                    self._record_events(evs)
-                    self._history.extend(evs)
-                    self._trim_history()
-                    # batch SSE：1 条消息含所有 events（减少 EventSource onmessage 次数
-                    # 从 N/周期 → 1/周期），GUI 一次 ingest。限 100/周期避免单条过大。
-                    batch = [{**ev, "_t": now} for ev in evs[-self._live_batch_limit:]]
-                    if batch:
-                        self._bridge.put({
-                            "event": "batch",
-                            "events": batch,
-                            "stats": dict(self._stats),
-                            "history_size": len(self._history),
-                            **self._status_meta(),
-                        })
+                    self._process_events(evs, now=now)
             except Exception as e:
                 logger.error("SystemView stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
@@ -490,6 +483,32 @@ class SystemViewStreamManager:
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
+
+    def _process_events(self, events: list[dict], *, now: float) -> None:
+        """Record every event, then publish bounded live binary batches."""
+        if not events:
+            return
+        self._stats["events"] += len(events)
+        # Durable recording is deliberately ahead of all bounded live paths.
+        self._record_events(events)
+        self._history.extend(events)
+        self._trim_history()
+
+        if self._stream_hub is not None:
+            for offset in range(0, len(events), self._live_batch_limit):
+                batch = events[offset:offset + self._live_batch_limit]
+                self._stream_hub.publish(
+                    encode_systemview_events(batch), item_count=len(batch)
+                )
+
+        if now - self._last_status_publish >= 1.0:
+            self._last_status_publish = now
+            self._bridge.put({
+                "event": "status",
+                "stats": dict(self._stats),
+                "history_size": len(self._history),
+                **self._status_meta(),
+            })
 
     def _create_parser(self, device=None):
         from mklink.systemview_parser import SystemViewParser
@@ -802,8 +821,6 @@ class SystemViewStreamManager:
         """Async SSE generator for FastAPI StreamingResponse."""
         q = self._bridge.add_client()
         yield _sse_json({"event": "status", **self.get_status()})
-        if self._history:
-            yield _sse_json({"event": "history", "points": self._history[-self._history_replay_limit:]})
         try:
             while self.running or self.paused:
                 try:

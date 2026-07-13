@@ -58,7 +58,10 @@ export class SvTimeline {
   setData(intervals) {
     // 缓冲溢出丢包会在时间轴上留下巨大假缺口（abs_time 跳变），把真实活动压到
     // 一小撮。先剔到最密连续段再渲染。
-    intervals = this._filterContinuous(intervals || []);
+    this._acceptData(this._filterContinuous(intervals || []));
+  }
+
+  _acceptData(intervals) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
     this._hadIntervals = intervals.length > 0;
@@ -103,6 +106,12 @@ export class SvTimeline {
     this._draw();
     this._updateStatus();
     if (shouldFollow && !viewInvalid && hadIntervalsBefore) this._scheduleFollow();
+  }
+
+  // Live workers already filter the requested visible range. This entrypoint
+  // deliberately avoids slicing/sorting the retained 50k interval history.
+  setPrefilteredIntervals(intervals) {
+    this._acceptData(intervals || []);
   }
 
   _mergeTasks(run, names) {

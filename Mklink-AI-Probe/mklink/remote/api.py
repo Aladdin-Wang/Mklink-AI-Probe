@@ -386,11 +386,16 @@ def create_app(
     app.state.mklink_state = _state
 
     from mklink.remote import stream_api
+    from mklink.remote.dashboards import get_managers
 
     stream_registry = stream_api.create_stream_registry()
     stream_types = dict(stream_api.STREAM_TYPES)
     app.state.stream_registry = stream_registry
     app.state.stream_types = stream_types
+    systemview_manager = get_managers()["systemview"]
+    set_stream_hub = getattr(systemview_manager, "set_stream_hub", None)
+    if callable(set_stream_hub):
+        set_stream_hub(stream_registry["systemview"])
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
