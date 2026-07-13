@@ -65,6 +65,22 @@ def test_rtt_invalid_utf8_is_replaced_and_empty_final_tail_is_not_emitted():
     asyncio.run(scenario())
 
 
+def test_rtt_raw_records_preserve_whitespace_and_empty_line_boundaries():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=4)
+        queue = hub.subscribe()
+        manager = RttStreamManager(stream_hub=hub, raw_batch_lines=8)
+        manager.feed_rtt_bytes(b"  padded  \r\n\n")
+        manager.flush_pending(final=True)
+        batch = await queue.get()
+        assert [line.text for line in decode_rtt_lines(batch.payload, 2)] == [
+            "  padded  ", "",
+        ]
+        hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
 def test_rtt_parsed_numeric_rows_can_publish_waveform_batches():
     async def scenario():
         hub = StreamHub(max_batches_per_client=4)
@@ -157,10 +173,9 @@ def test_superwatch_republishes_current_metadata_for_late_subscribers():
                             source="ram", enum_values=None, metadata={}),
         ])
         assert manager.publish_metadata() == 1
-        manager._last_metadata_publish_monotonic -= 2.0
         queue = hub.subscribe()
+        metadata = await asyncio.wait_for(queue.get(), timeout=0.1)
         assert manager.publish_sample_points([{"a": 1.0}])
-        metadata = await queue.get()
         sample = await queue.get()
         assert metadata.flags == SUPERWATCH_METADATA_JSON
         assert decode_superwatch_metadata(metadata.payload)["version"] == 1

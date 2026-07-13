@@ -64,6 +64,10 @@ def test_websocket_sends_binary_batch_with_hub_metadata(
     hub = app.state.stream_registry[stream_name]
     with client.websocket_connect(f"/ws/streams/{stream_name}") as websocket:
         assert decode_frame(websocket.receive_bytes()).stream_type is StreamType.CONTROL
+        if stream_name == "superwatch":
+            metadata = decode_frame(websocket.receive_bytes())
+            assert metadata.stream_type is StreamType.SUPERWATCH
+            assert metadata.flags == 0x02
         expected_sequence = hub.publish(b"payload", item_count=7)
         frame = decode_frame(websocket.receive_bytes())
 
@@ -202,6 +206,9 @@ def test_publish_from_external_thread_wakes_websocket(client, app, monkeypatch):
     )
     with client.websocket_connect("/ws/streams/superwatch") as websocket:
         assert decode_frame(websocket.receive_bytes()).stream_type is StreamType.CONTROL
+        metadata = decode_frame(websocket.receive_bytes())
+        assert metadata.stream_type is StreamType.SUPERWATCH
+        assert metadata.flags == 0x02
         publisher.start()
         frame = decode_frame(websocket.receive_bytes())
         publisher.join(timeout=1)

@@ -234,20 +234,18 @@ class RttStreamManager:
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
         for raw_line in self._line_assembler.feed(chunk, final=final):
             line = raw_line.strip()
-            if not line:
-                continue
             timestamp_ns = time.time_ns()
-            if not self._parser_auto_detect_done:
+            if line and not self._parser_auto_detect_done:
                 from mklink.rtt_viewer import RttLineParser
                 detected = RttLineParser.auto_detect([line])
                 if detected.strategy != self._parser.strategy:
                     self._parser = detected
                 self._parser_auto_detect_attempts += 1
                 self._parser_auto_detect_done = self._parser_auto_detect_attempts >= 10
-            parsed = self._parser.parse(line) if self._parser is not None else None
+            parsed = self._parser.parse(line) if line and self._parser is not None else None
             self._stats["raw_lines"] += 1
             self._pending_raw.append(RttLine(
-                timestamp_ns, "data" if parsed else "raw", line,
+                timestamp_ns, "data" if parsed else "raw", raw_line,
             ))
             if len(self._pending_raw) >= self._raw_batch_lines:
                 self._flush_raw_batch()
@@ -978,13 +976,22 @@ class SuperWatchStreamManager:
         self._metadata_version = 0
         self._published_metadata_signature = None
         self._last_metadata_publish_monotonic = 0.0
+        self.set_stream_hub(stream_hub)
 
     def set_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is not None and self._stream_hub is not stream_hub:
+            self._stream_hub.set_subscribe_callback(None)
         self._stream_hub = stream_hub
+        if stream_hub is not None:
+            stream_hub.set_subscribe_callback(self._publish_subscriber_metadata)
 
     def detach_stream_hub(self, stream_hub) -> None:
         if self._stream_hub is stream_hub:
+            stream_hub.set_subscribe_callback(None)
             self._stream_hub = None
+
+    def _publish_subscriber_metadata(self) -> None:
+        self.publish_metadata(force=True)
 
     @property
     def running(self) -> bool:

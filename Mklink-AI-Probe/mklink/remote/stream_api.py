@@ -113,6 +113,13 @@ async def stream_websocket(
         await websocket.close(code=1008, reason="Unauthorized")
         return
 
+    # Keep the CONTROL frame as the subscription-ready barrier before a
+    # producer's subscribe callback can enqueue retained metadata.
+    try:
+        await websocket.send_bytes(_encoded_status_frame(stream_type, hub))
+    except Exception as exc:
+        logger.debug("Binary stream WebSocket closed before subscribe: %s", exc)
+        return
     queue = hub.subscribe()
     try:
         while True:

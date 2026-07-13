@@ -216,6 +216,23 @@ describe('StreamDecoder worker controller', () => {
     expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 0 })
   })
 
+  it('accepts an identical same-version SuperWatch metadata replay without clearing samples', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      version: 1, channels: [{ name: 'a', type: 'float' }],
+    }))
+    const send = (sequence: bigint, flags: number, payload: Uint8Array, itemCount = 0) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, itemCount, payload, StreamType.SUPERWATCH, sequence, flags),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(1n, 0x02, metadata)
+    send(2n, 0x01, floats(9), 1)
+    send(3n, 0x02, metadata)
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 1 })
+    expect(messages.some(message => message.type === 'error')).toBe(false)
+  })
+
   it('processes an accelerated 60-second 10 kHz RTT line stream without retaining raw text', () => {
     const targetLines = 60 * 10_000
     const batchLines = 100

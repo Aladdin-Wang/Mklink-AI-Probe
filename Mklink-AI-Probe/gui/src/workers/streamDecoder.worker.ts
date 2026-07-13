@@ -161,6 +161,7 @@ export class StreamDecoder {
   private lastNumericSpacingMs: number | null = null
   private timeIndexScratch: Int32Array | null = null
   private superwatchMetadataVersion = 0
+  private superwatchMetadataSignature: string | null = null
 
   constructor(post: PostOutput) {
     this.post = post
@@ -202,6 +203,7 @@ export class StreamDecoder {
       this.lastNumericTimestampMs = null
       this.lastNumericSpacingMs = null
       this.superwatchMetadataVersion = 0
+      this.superwatchMetadataSignature = null
       this.clearTelemetry()
       this.post({ type: 'channels', channelCount })
       this.post(this.telemetry())
@@ -301,9 +303,9 @@ export class StreamDecoder {
       const document = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decoded.payload)) as {
         version?: unknown; channels?: unknown
       }
-      if (!Number.isSafeInteger(document.version) || (document.version as number) <= this.superwatchMetadataVersion
+      if (!Number.isSafeInteger(document.version) || (document.version as number) <= 0
         || !Array.isArray(document.channels) || document.channels.length > MAX_WAVEFORM_CHANNELS) {
-        throw new RangeError('invalid or stale SuperWatch metadata')
+        throw new RangeError('invalid SuperWatch metadata')
       }
       const names = new Set<string>()
       const channels = document.channels.map(channel => {
@@ -318,11 +320,24 @@ export class StreamDecoder {
         return clone as Record<string, unknown> & { name: string }
       })
       const version = document.version as number
+      const signature = JSON.stringify(channels)
+      if (version < this.superwatchMetadataVersion || (
+        version === this.superwatchMetadataVersion
+        && signature !== this.superwatchMetadataSignature
+      )) {
+        throw new RangeError('stale or conflicting SuperWatch metadata')
+      }
+      if (version === this.superwatchMetadataVersion) {
+        this.commitSequence(decoded.sequence)
+        this.post({ type: 'superwatch-metadata', version, channels })
+        return
+      }
       const currentRing = this.ring as TypedRingBuffer
       const nextCount = Math.max(1, channels.length)
       const nextRing = new TypedRingBuffer(currentRing.capacity, nextCount)
       this.ring = nextRing
       this.superwatchMetadataVersion = version
+      this.superwatchMetadataSignature = signature
       this.lastNumericTimestampMs = null
       this.lastNumericSpacingMs = null
       this.commitSequence(decoded.sequence)
@@ -747,6 +762,7 @@ export class StreamDecoder {
     this.lastNumericTimestampMs = null
     this.lastNumericSpacingMs = null
     this.superwatchMetadataVersion = 0
+    this.superwatchMetadataSignature = null
     this.clearTelemetry()
     this.post(this.telemetry())
   }

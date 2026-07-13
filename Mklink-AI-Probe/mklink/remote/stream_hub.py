@@ -6,7 +6,7 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Optional, Set, Tuple, Union
 
 
 BytesLike = Union[bytes, bytearray, memoryview]
@@ -81,6 +81,16 @@ class StreamHub:
         self._dropped_items = 0
         self._dropped_bytes = 0
         self._queue_high_water_mark = 0
+        self._subscribe_callback: Optional[Callable[[], None]] = None
+
+    def set_subscribe_callback(
+        self, callback: Optional[Callable[[], None]],
+    ) -> None:
+        if callback is not None and not callable(callback):
+            raise TypeError("subscribe callback must be callable")
+        with self._publish_lock:
+            with self._lock:
+                self._subscribe_callback = callback
 
     def subscribe(self) -> asyncio.Queue:
         loop = self._running_loop()
@@ -91,6 +101,13 @@ class StreamHub:
             with self._lock:
                 self._bind_or_require_owner_loop(loop)
                 self._subscribers.add(queue)
+                callback = self._subscribe_callback
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                self.unsubscribe(queue)
+                raise
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> bool:
