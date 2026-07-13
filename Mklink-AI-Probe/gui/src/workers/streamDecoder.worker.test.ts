@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { StreamType } from '../lib/stream/protocol'
 import {
   StreamDecoder,
@@ -60,6 +60,22 @@ function systemViewRecords(...records: Array<{
   return bytes
 }
 
+function systemViewTaskPairs(firstTask: number, pairCount: number, firstTick: bigint): Uint8Array {
+  const bytes = new Uint8Array(pairCount * 2 * 48)
+  const view = new DataView(bytes.buffer)
+  for (let pair = 0; pair < pairCount; pair++) {
+    for (let edge = 0; edge < 2; edge++) {
+      const offset = (pair * 2 + edge) * 48
+      const tick = firstTick + BigInt(pair * 2 + edge)
+      view.setUint8(offset, edge === 0 ? 4 : 5)
+      view.setUint8(offset + 1, 0x01)
+      view.setUint32(offset + 4, firstTask + pair, true)
+      view.setBigUint64(offset + 8, tick, true)
+    }
+  }
+  return bytes
+}
+
 function setup() {
   const messages: WorkerOutput[] = []
   const transfers: Transferable[][] = []
@@ -71,6 +87,93 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('preserves ticks above Number.MAX_SAFE_INTEGER and exposes relative plot coordinates', () => {
+    const { decoder, messages } = setup()
+    const origin = 9_007_199_254_740_993n
+    decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    decoder.handle({
+      type: 'frame',
+      buffer: frame(1n, 2, systemViewRecords(
+        { kind: 4, taskId: 7, ticks: origin, timeUs: 0, flags: 0x01 },
+        { kind: 5, taskId: 7, ticks: origin + 10n, timeUs: 0, flags: 0x01 },
+      ), StreamType.SYSTEMVIEW),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 20, pixelWidth: 100 })
+
+    const visible = messages.at(-1)
+    if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
+    expect(visible.tickOrigin).toBe(origin)
+    expect(visible.latestTime).toBe(10)
+    expect(Array.from(new Float64Array(visible.starts))).toEqual([0])
+    expect(Array.from(new Float64Array(visible.ends))).toEqual([10])
+    expect(Array.from(new BigUint64Array(visible.startTicks))).toEqual([origin])
+    expect(Array.from(new BigUint64Array(visible.endTicks))).toEqual([origin + 10n])
+    expect(visible.events[0]).toMatchObject({
+      t_ticks: origin, t_ticks_exact: origin.toString(), t_relative: 0,
+    })
+  })
+
+  it('bounds interval envelopes to two records per pixel and scans only visible candidates', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 4_000, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        1n, 2_000, systemViewTaskPairs(1, 1_000, 1_000n), StreamType.SYSTEMVIEW,
+      ), connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({ type: 'visible-range', requestId: 2, start: 1_800, end: 2_000, pixelWidth: 10 })
+
+    const visible = messages.at(-1)
+    expect(visible).toMatchObject({ type: 'systemview-visible' })
+    if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
+    expect(visible.candidateIntervalCount).toBeLessThanOrEqual(102)
+    expect(visible.intervalCount).toBeLessThanOrEqual(20)
+  })
+
+  it('keeps full-capacity append O(1) without Array.splice during 500 more batches', () => {
+    const { decoder, messages } = setup()
+    const splice = vi.spyOn(Array.prototype, 'splice')
+    let spliceCalls = 0
+    decoder.handle({ type: 'configure', capacity: 100_000, channelCount: 1 })
+    let sequence = 1n
+    let tick = 1n
+    const started = performance.now()
+    try {
+      for (let batch = 0; batch < 200; batch++) {
+        const payload = systemViewTaskPairs(1, 250, tick)
+        decoder.handle({
+          type: 'frame', buffer: frame(sequence++, 500, payload, StreamType.SYSTEMVIEW),
+          connectionGeneration: 1, frameTicket: Number(sequence),
+        })
+        tick += 500n
+      }
+      for (let batch = 0; batch < 500; batch++) {
+        const payload = systemViewTaskPairs(1, 250, tick)
+        decoder.handle({
+          type: 'frame', buffer: frame(sequence++, 500, payload, StreamType.SYSTEMVIEW),
+          connectionGeneration: 1, frameTicket: Number(sequence),
+        })
+        tick += 500n
+      }
+    } finally {
+      spliceCalls = splice.mock.calls.length
+      splice.mockRestore()
+    }
+    expect(spliceCalls).toBe(0)
+    expect(performance.now() - started).toBeLessThan(5_000)
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 100_000 })
+    const latestOffset = Number(tick - 1n - 1n)
+    decoder.handle({
+      type: 'visible-range', requestId: 99,
+      start: latestOffset - 100, end: latestOffset, pixelWidth: 10,
+    })
+    const visible = messages.at(-1)
+    if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
+    expect(visible.candidateIntervalCount).toBeLessThanOrEqual(52)
+    expect(visible.intervalCount).toBeLessThanOrEqual(20)
+  }, 10_000)
+
   it('decodes SystemView records and returns only prefiltered visible intervals', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
@@ -85,7 +188,7 @@ describe('StreamDecoder worker controller', () => {
       connectionGeneration: 1,
       frameTicket: 1,
     })
-    decoder.handle({ type: 'visible-range', requestId: 9, start: 25, end: 55, pixelWidth: 400 })
+    decoder.handle({ type: 'visible-range', requestId: 9, start: 15, end: 45, pixelWidth: 400 })
 
     const visible = messages.at(-1)
     expect(visible).toMatchObject({
@@ -93,8 +196,8 @@ describe('StreamDecoder worker controller', () => {
     })
     if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
     expect(Array.from(new Uint32Array(visible.taskIds))).toEqual([2])
-    expect(Array.from(new Float64Array(visible.starts))).toEqual([30])
-    expect(Array.from(new Float64Array(visible.ends))).toEqual([50])
+    expect(Array.from(new Float64Array(visible.starts))).toEqual([20])
+    expect(Array.from(new Float64Array(visible.ends))).toEqual([40])
     expect(transfers.at(-1)).toEqual([
       visible.taskIds, visible.starts, visible.ends, visible.startTicks, visible.endTicks,
     ])
@@ -172,8 +275,8 @@ describe('StreamDecoder worker controller', () => {
     const visible = messages.at(-1)
     if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
     expect(Array.from(new Uint32Array(visible.taskIds))).toEqual([7, 7])
-    expect(Array.from(new Float64Array(visible.starts))).toEqual([10, 30])
-    expect(Array.from(new Float64Array(visible.ends))).toEqual([20, 40])
+    expect(Array.from(new Float64Array(visible.starts))).toEqual([0, 20])
+    expect(Array.from(new Float64Array(visible.ends))).toEqual([10, 30])
   })
 
   it('breaks interval pairing across a dropped batch and reset clears pending context', () => {

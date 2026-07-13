@@ -1,5 +1,10 @@
 import { decodeFrame, StreamType } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
+import {
+  safeTickDifference,
+  SystemViewEventRing,
+  SystemViewIntervalRing,
+} from '../lib/stream/systemViewRing'
 
 export type WorkerInput =
   | { type: 'configure'; capacity: number; channelCount: number }
@@ -50,8 +55,10 @@ export type WorkerOutput =
       type: 'systemview-visible'
       requestId: number
       intervalCount: number
+      candidateIntervalCount: number
       eventCount: number
       latestTime: number
+      tickOrigin: bigint
       taskIds: ArrayBuffer
       starts: ArrayBuffer
       ends: ArrayBuffer
@@ -64,20 +71,14 @@ export interface SystemViewEvent {
   kind: string
   task_id?: number
   isr_id?: number
-  t_ticks?: number
+  t_ticks?: bigint
+  t_ticks_exact?: string
+  t_relative?: number
   t_us?: number
   cpu_delta_us?: number
   prio?: number
   cause?: number
   event_id?: number
-}
-
-interface SystemViewInterval {
-  taskId: number
-  start: number
-  end: number
-  startTick: bigint
-  endTick: bigint
 }
 
 const SYSTEMVIEW_RECORD_SIZE = 48
@@ -119,14 +120,14 @@ export class StreamDecoder {
   private backendDroppedItems = 0
   private backendDroppedBytes = 0
   private acceptedFrames = 0
-  private capacity = 0
   private systemViewMode = false
-  private systemViewEvents: SystemViewEvent[] = []
-  private systemViewIntervals: SystemViewInterval[] = []
-  private currentTask: { taskId: number; start: number; tick: bigint } | null = null
+  private systemViewEvents: SystemViewEventRing<SystemViewEvent> | null = null
+  private systemViewIntervals: SystemViewIntervalRing | null = null
+  private currentTask: { taskId: number; tick: bigint } | null = null
   private suspendedTask: { taskId: number } | null = null
   private isrDepth = 0
-  private latestSystemViewTime = 0
+  private tickOrigin: bigint | null = null
+  private latestSystemViewTick = 0n
 
   constructor(post: PostOutput) {
     this.post = post
@@ -156,7 +157,14 @@ export class StreamDecoder {
   private configure(capacity: number, channelCount: number): void {
     try {
       this.ring = new TypedRingBuffer(capacity, channelCount)
-      this.capacity = capacity
+      this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
+      this.systemViewIntervals = new SystemViewIntervalRing(capacity)
+      this.systemViewMode = false
+      this.currentTask = null
+      this.suspendedTask = null
+      this.isrDepth = 0
+      this.tickOrigin = null
+      this.latestSystemViewTick = 0n
       this.clearTelemetry()
       this.post({ type: 'channels', channelCount })
       this.post(this.telemetry())
@@ -257,7 +265,10 @@ export class StreamDecoder {
         throw new RangeError('SystemView numeric fields must be finite')
       }
       const event: SystemViewEvent = { kind }
-      if (flags & SYSTEMVIEW_HAS_TICKS) event.t_ticks = Number(ticks)
+      if (flags & SYSTEMVIEW_HAS_TICKS) {
+        event.t_ticks = ticks
+        event.t_ticks_exact = ticks.toString()
+      }
       if (flags & SYSTEMVIEW_HAS_TIME_US) event.t_us = timeUs
       if (flags & SYSTEMVIEW_HAS_DELTA_US) event.cpu_delta_us = deltaUs
       if ([4, 5, 6, 7, 8, 9, 21, 29].includes(kindId)) event.task_id = contextId
@@ -276,58 +287,53 @@ export class StreamDecoder {
       this.abandonSystemViewContext()
     }
     this.systemViewMode = true
+    if (decodedEvents.length && this.tickOrigin === null) {
+      this.tickOrigin = decodedEvents[0].ticks
+    }
     for (const decoded of decodedEvents) {
       this.ingestSystemViewEvent(decoded.event, decoded.ticks)
     }
-    this.trimSystemViewBuffers()
   }
 
   private ingestSystemViewEvent(event: SystemViewEvent, ticks: bigint): void {
-    const time = event.t_us ?? event.t_ticks ?? 0
-    this.latestSystemViewTime = Math.max(this.latestSystemViewTime, time)
+    if (ticks > this.latestSystemViewTick) this.latestSystemViewTick = ticks
     if (event.kind === 'task_start_exec' && event.task_id !== undefined) {
       this.suspendedTask = null
       this.isrDepth = 0
-      this.closeCurrentSystemViewInterval(time, ticks)
-      this.currentTask = { taskId: event.task_id, start: time, tick: ticks }
+      this.closeCurrentSystemViewInterval(ticks)
+      this.currentTask = { taskId: event.task_id, tick: ticks }
     } else if (
       (event.kind === 'task_stop_exec' || event.kind === 'task_stop_ready')
       && event.task_id === this.currentTask?.taskId
     ) {
-      this.closeCurrentSystemViewInterval(time, ticks)
+      this.closeCurrentSystemViewInterval(ticks)
       if (this.suspendedTask?.taskId === event.task_id) this.suspendedTask = null
     } else if (event.kind === 'isr_enter') {
       if (this.isrDepth === 0 && this.currentTask) {
         this.suspendedTask = { taskId: this.currentTask.taskId }
-        this.closeCurrentSystemViewInterval(time, ticks)
+        this.closeCurrentSystemViewInterval(ticks)
       }
       this.isrDepth += 1
     } else if (event.kind === 'isr_exit') {
       if (this.isrDepth > 0) this.isrDepth -= 1
       if (this.isrDepth === 0 && this.suspendedTask) {
-        this.currentTask = { taskId: this.suspendedTask.taskId, start: time, tick: ticks }
+        this.currentTask = { taskId: this.suspendedTask.taskId, tick: ticks }
         this.suspendedTask = null
       }
     } else if (event.kind === 'isr_to_scheduler' || event.kind === 'overflow') {
       this.abandonSystemViewContext()
     } else if (event.kind === 'idle') {
-      this.closeCurrentSystemViewInterval(time, ticks)
+      this.closeCurrentSystemViewInterval(ticks)
       this.suspendedTask = null
       this.isrDepth = 0
     }
-    this.systemViewEvents.push(event)
+    this.systemViewEvents?.append(event, ticks)
   }
 
-  private closeCurrentSystemViewInterval(end: number, endTick: bigint): void {
+  private closeCurrentSystemViewInterval(endTick: bigint): void {
     const current = this.currentTask
-    if (current && end > current.start) {
-      this.systemViewIntervals.push({
-        taskId: current.taskId,
-        start: current.start,
-        end,
-        startTick: current.tick,
-        endTick,
-      })
+    if (current && endTick > current.tick) {
+      this.systemViewIntervals?.append(current.taskId, current.tick, endTick)
     }
     this.currentTask = null
   }
@@ -336,15 +342,6 @@ export class StreamDecoder {
     this.currentTask = null
     this.suspendedTask = null
     this.isrDepth = 0
-  }
-
-  private trimSystemViewBuffers(): void {
-    if (this.systemViewEvents.length > this.capacity) {
-      this.systemViewEvents.splice(0, this.systemViewEvents.length - this.capacity)
-    }
-    if (this.systemViewIntervals.length > this.capacity) {
-      this.systemViewIntervals.splice(0, this.systemViewIntervals.length - this.capacity)
-    }
   }
 
   private updateBackendDrops(payload: ArrayBuffer): void {
@@ -400,37 +397,56 @@ export class StreamDecoder {
   }
 
   private systemViewVisibleRange(message: Extract<WorkerInput, { type: 'visible-range' }>): void {
-    const visible = this.systemViewIntervals.filter(
-      interval => interval.end >= message.start && interval.start <= message.end,
-    )
-    const taskIds = new Uint32Array(visible.length)
-    const starts = new Float64Array(visible.length)
-    const ends = new Float64Array(visible.length)
-    const startTicks = new BigUint64Array(visible.length)
-    const endTicks = new BigUint64Array(visible.length)
-    visible.forEach((interval, index) => {
-      taskIds[index] = interval.taskId
-      starts[index] = interval.start
-      ends[index] = interval.end
-      startTicks[index] = interval.startTick
-      endTicks[index] = interval.endTick
-    })
-    const events = this.systemViewEvents.filter(event => {
-      const time = event.t_us ?? event.t_ticks ?? 0
-      return time >= message.start && time <= message.end
-    })
+    const origin = this.tickOrigin ?? 0n
+    const rangeStart = origin + BigInt(Math.floor(message.start))
+    const rangeEnd = origin + BigInt(Math.floor(message.end))
+    const intervalRing = this.systemViewIntervals as SystemViewIntervalRing
+    const selection = intervalRing.selectEnvelope(rangeStart, rangeEnd, message.pixelWidth)
+    const taskIds = new Uint32Array(selection.count)
+    const starts = new Float64Array(selection.count)
+    const ends = new Float64Array(selection.count)
+    const startTicks = new BigUint64Array(selection.count)
+    const endTicks = new BigUint64Array(selection.count)
+    for (let outputIndex = 0; outputIndex < selection.count; outputIndex++) {
+      const logical = selection.logicalIndices[outputIndex]
+      const startTick = intervalRing.startTickAt(logical)
+      const endTick = intervalRing.endTickAt(logical)
+      taskIds[outputIndex] = intervalRing.taskIdAt(logical)
+      starts[outputIndex] = safeTickDifference(startTick, origin)
+      ends[outputIndex] = safeTickDifference(endTick, origin)
+      startTicks[outputIndex] = startTick
+      endTicks[outputIndex] = endTick
+    }
+
+    const eventRing = this.systemViewEvents as SystemViewEventRing<SystemViewEvent>
+    const firstEvent = eventRing.lowerBound(rangeStart)
+    const afterLastEvent = eventRing.upperBound(rangeEnd)
+    const eventCount = afterLastEvent - firstEvent
+    const outputFirst = Math.max(firstEvent, afterLastEvent - 120)
+    const events: SystemViewEvent[] = []
+    for (let logical = outputFirst; logical < afterLastEvent; logical++) {
+      const tick = eventRing.tickAt(logical)
+      events.push({
+        ...eventRing.eventAt(logical),
+        t_ticks: tick,
+        t_ticks_exact: tick.toString(),
+        t_relative: safeTickDifference(tick, origin),
+      })
+    }
     const output: Extract<WorkerOutput, { type: 'systemview-visible' }> = {
       type: 'systemview-visible',
       requestId: message.requestId,
-      intervalCount: visible.length,
-      eventCount: events.length,
-      latestTime: this.latestSystemViewTime,
+      intervalCount: selection.count,
+      candidateIntervalCount: selection.candidateCount,
+      eventCount,
+      latestTime: safeTickDifference(this.latestSystemViewTick, origin),
+      tickOrigin: origin,
       taskIds: taskIds.buffer,
       starts: starts.buffer,
       ends: ends.buffer,
       startTicks: startTicks.buffer,
       endTicks: endTicks.buffer,
-      events: events.slice(-120),
+      events,
     }
     this.post(output, [
       output.taskIds, output.starts, output.ends, output.startTicks, output.endTicks,
@@ -440,12 +456,13 @@ export class StreamDecoder {
   private reset(): void {
     this.ring?.reset()
     this.systemViewMode = false
-    this.systemViewEvents = []
-    this.systemViewIntervals = []
+    this.systemViewEvents?.clear()
+    this.systemViewIntervals?.clear()
     this.currentTask = null
     this.suspendedTask = null
     this.isrDepth = 0
-    this.latestSystemViewTime = 0
+    this.tickOrigin = null
+    this.latestSystemViewTick = 0n
     this.clearTelemetry()
     this.post(this.telemetry())
   }
@@ -468,7 +485,7 @@ export class StreamDecoder {
       acceptedFrames: this.acceptedFrames,
       acceptedConnectionGeneration,
       acceptedFrameTicket,
-      bufferedSamples: this.systemViewMode ? this.systemViewEvents.length : (this.ring?.length ?? 0),
+      bufferedSamples: this.systemViewMode ? (this.systemViewEvents?.length ?? 0) : (this.ring?.length ?? 0),
       transportDroppedBatches: this.transportDroppedBatches,
       backendDroppedBatches: this.backendDroppedBatches,
       backendDroppedItems: this.backendDroppedItems,

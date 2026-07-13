@@ -150,6 +150,26 @@ def _systemview_number(event: dict, *names: str) -> float:
     return 0.0
 
 
+def _systemview_context_id(event: dict) -> int:
+    for name in (
+        "task_id", "isr_id", "resource_id", "timer_id",
+        "user_id", "module_id", "event_id",
+    ):
+        if name not in event or event[name] is None:
+            continue
+        value = event[name]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 0 <= value <= 0xFFFFFFFF
+        ):
+            raise ValueError(
+                "SystemView context id must be an unsigned 32-bit integer"
+            )
+        return value
+    return 0
+
+
 def encode_systemview_events(events) -> bytes:
     """Encode decoded SystemView dictionaries as fixed 48-byte v1 records."""
     payload = bytearray(SYSTEMVIEW_EVENT_RECORD_SIZE * len(events))
@@ -188,10 +208,11 @@ def encode_systemview_events(events) -> bytes:
             flags |= SYSTEMVIEW_HAS_DELTA_US
         else:
             delta_us = 0.0
-        context_id = raw_event_id if raw_event_id is not None else int(_systemview_number(
-            event, "task_id", "isr_id", "resource_id", "timer_id",
-            "user_id", "module_id", "event_id",
-        ))
+        context_id = (
+            raw_event_id
+            if raw_event_id is not None
+            else _systemview_context_id(event)
+        )
         if not 0 <= context_id <= 0xFFFFFFFF:
             raise ValueError("SystemView context id must be an unsigned 32-bit integer")
         aux0 = _systemview_number(

@@ -132,4 +132,15 @@ describe('systemViewMetrics', () => {
       },
     ])
   })
+
+  it('renders exact tick text instead of a rounded Number timestamp', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 0,
+      t_ticks_exact: '9007199254740993',
+      task_id: 1,
+    }])
+
+    expect(row.time.replaceAll(',', '')).toBe('9007199254740993 tk')
+  })
 })

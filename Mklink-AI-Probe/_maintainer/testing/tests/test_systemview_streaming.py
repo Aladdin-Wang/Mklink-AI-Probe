@@ -66,6 +66,9 @@ def test_unknown_systemview_kind_is_rejected_instead_of_silently_corrupted():
     with pytest.raises(ValueError, match="unknown SystemView event kind"):
         encode_systemview_events([{"kind": "future_event", "t_ticks": 1}])
 
+    with pytest.raises(ValueError, match="context id must be an unsigned 32-bit integer"):
+        encode_systemview_events([{"kind": "task_start_exec", "task_id": 1.5}])
+
 
 
 @pytest.mark.parametrize("field", ["t_us", "cpu_delta_us", "prio", "stack_size"])

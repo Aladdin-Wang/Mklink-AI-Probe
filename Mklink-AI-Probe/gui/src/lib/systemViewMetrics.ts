@@ -139,7 +139,9 @@ export function buildSystemViewEventRows(
 
     return {
       index: firstIndex + offset,
-      time: typeof event.t === 'number' ? formatTime(event.t) : '',
+      time: typeof event.t_ticks_exact === 'string'
+        ? `${BigInt(event.t_ticks_exact).toLocaleString()} tk`
+        : typeof event.t === 'number' ? formatTime(event.t) : '',
       context,
       event: labelEvent(kind),
       resource: resourceForEvent(event, kind),

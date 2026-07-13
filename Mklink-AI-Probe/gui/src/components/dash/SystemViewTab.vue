@@ -234,7 +234,7 @@ const { checkConflict } = useResourceStatus()
 
 // ---- 状态 ----
 interface TaskStat { id: number; name: string; color: string; runUs: number; switches: number; prio?: number }
-interface TaskInterval { taskId: number; start: number; end: number; startTk?: number; endTk?: number }
+interface TaskInterval { taskId: number; start: number; end: number; startTk?: number | bigint; endTk?: number | bigint }
 interface SystemViewLogItem { path: string; summary_path?: string }
 
 const PALETTE = ['#5b8cff', '#21c7a8', '#f5a623', '#e056fd', '#ff7675', '#fdcb6e',
@@ -272,6 +272,8 @@ const importError = ref(false)
 const latestLog = ref<SystemViewLogItem | null>(null)
 let importAbort: AbortController | null = null
 let connectTimer: ReturnType<typeof setTimeout> | null = null
+let mounted = false
+let operationGeneration = 0
 
 // ---- 交互式 canvas 时间轴 ----
 const tlCanvas = ref<HTMLCanvasElement | null>(null)
@@ -281,7 +283,8 @@ const tlVcpu = ref<HTMLDivElement | null>(null)
 let tlInstance: SvTimeline | null = null
 let renderScheduler: RenderScheduler | null = null
 let visibleRequestId = 0
-let latestBinaryTime = 0
+let latestBinaryTime: number | null = null
+let binaryTickOrigin = 0n
 let lastTableUpdate = Number.NEGATIVE_INFINITY
 const TABLE_UPDATE_INTERVAL_MS = 200
 
@@ -298,6 +301,8 @@ function tlGetIntervals() {
 function tlReset() { tlInstance?.reset() }
 
 onMounted(() => {
+  mounted = true
+  const generation = ++operationGeneration
   refreshLogList()
   if (tlCanvas.value && tlTip.value && tlLegend.value && tlVcpu.value) {
     tlInstance = new SvTimeline(
@@ -306,6 +311,7 @@ onMounted(() => {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
         tickHz: meta.cpuFreq || undefined,
+        tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
       },
@@ -316,13 +322,19 @@ onMounted(() => {
       tlInstance?.setData(tlGetIntervals())
       return
     }
-    const end = latestBinaryTime || Number.MAX_SAFE_INTEGER
-    binaryStream.requestVisibleRange(++visibleRequestId, Math.max(0, end - windowUs.value), end, tlCanvas.value?.clientWidth || 800)
+    const end = latestBinaryTime ?? Number.MAX_SAFE_INTEGER
+    const windowTicks = meta.cpuFreq
+      ? windowUs.value * meta.cpuFreq / 1_000_000
+      : windowUs.value
+    const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
+    binaryStream.requestVisibleRange(++visibleRequestId, start, end, tlCanvas.value?.clientWidth || 800)
   })
   renderScheduler.start()
-  reconnectRunningTrace()
+  reconnectRunningTrace(generation)
 })
 onUnmounted(() => {
+  mounted = false
+  operationGeneration++
   abortImport()
   cancelPendingConnect()
   disconnectStatus()
@@ -343,6 +355,10 @@ function cancelPendingConnect() {
     connectTimer = null
   }
 }
+
+function operationIsActive(generation: number): boolean {
+  return mounted && generation === operationGeneration
+}
 watch(intervals, () => { if (offlineMode.value) scheduleTimelineFlush() })
 watch(windowUs, () => {
   tlInstance?.setWindowSize(windowUs.value)
@@ -358,6 +374,7 @@ watch(() => meta.cpuFreq, () => {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
         tickHz: meta.cpuFreq || undefined,
+        tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
       },
@@ -465,12 +482,14 @@ function ingestEvents(events: any[], countEvents = true) {
   }
 }
 
-async function reconnectRunningTrace() {
+async function reconnectRunningTrace(generation: number) {
   if (offlineMode.value) return
   try {
     const status = await dash.getStatus()
+    if (!operationIsActive(generation)) return
     if (status?.running) {
       await dash.start()
+      if (!operationIsActive(generation)) return
       connectStatus()
       binaryStream.start()
     }
@@ -512,6 +531,8 @@ watch(binaryStream.telemetry, telemetry => {
 watch(binaryStream.systemViewVisible, visible => {
   if (!visible || offlineMode.value || visible.requestId !== visibleRequestId) return
   latestBinaryTime = visible.latestTime
+  binaryTickOrigin = visible.tickOrigin
+  const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
   const taskIds = new Uint32Array(visible.taskIds)
   const starts = new Float64Array(visible.starts)
   const ends = new Float64Array(visible.ends)
@@ -521,11 +542,13 @@ watch(binaryStream.systemViewVisible, visible => {
   Object.keys(taskStats).forEach(key => delete taskStats[Number(key)])
   for (let index = 0; index < visible.intervalCount; index++) {
     const task = ensureTask(taskIds[index])
-    task.runUs += ends[index] - starts[index]
+    const start = starts[index] * tickScale
+    const end = ends[index] * tickScale
+    task.runUs += end - start
     task.switches++
     nextIntervals.push({
-      taskId: taskIds[index], start: starts[index], end: ends[index],
-      startTk: Number(startTicks[index]), endTk: Number(endTicks[index]),
+      taskId: taskIds[index], start, end,
+      startTk: startTicks[index], endTk: endTicks[index],
     })
   }
   for (const event of visible.events) {
@@ -534,7 +557,8 @@ watch(binaryStream.systemViewVisible, visible => {
     }
   }
   intervals.value = nextIntervals
-  lastT = visible.latestTime
+  lastT = visible.latestTime * tickScale
+  tlInstance?.setTickOrigin(binaryTickOrigin)
   tlInstance?.setPrefilteredIntervals(tlGetIntervals())
 
   const now = performance.now()
@@ -544,7 +568,7 @@ watch(binaryStream.systemViewVisible, visible => {
       ...event,
       task_name: event.task_id === undefined ? undefined : taskNameFromMeta(event.task_id),
       isr_name: event.isr_id === undefined ? undefined : isrNameFromMeta(event.isr_id),
-      t: event.t_us ?? event.t_ticks ?? 0,
+      t: event.t_us ?? (event.t_relative ?? 0) * tickScale,
       tk: event.t_ticks,
     }))
     analysisBufferCount.value = binaryStream.telemetry.value?.bufferedSamples || 0
@@ -599,7 +623,8 @@ function clearAll() {
   intervalState = { currentTaskId: null, currentStart: null }
   totalEventCount.value = 0
   idleUs.value = 0; firstT = 0; lastT = 0; lastStreamSeq = 0
-  latestBinaryTime = 0
+  latestBinaryTime = null
+  binaryTickOrigin = 0n
   lastTableUpdate = Number.NEGATIVE_INFINITY
   meta.synced = false
   meta.dropped = 0
@@ -642,6 +667,7 @@ async function onImportFileChange(event: Event) {
 }
 
 async function importLogFile(file: File) {
+  operationGeneration++
   abortImport()
   cancelPendingConnect()
   const controller = new AbortController()
@@ -729,6 +755,7 @@ function isAbortError(value: unknown): boolean {
 }
 
 async function onStart() {
+  const generation = ++operationGeneration
   abortImport()
   cancelPendingConnect()
   offlineMode.value = false
@@ -737,23 +764,28 @@ async function onStart() {
   importError.value = false
   latestLog.value = null
   const conflicts = await checkConflict('systemview')
+  if (!operationIsActive(generation)) return
   if (conflicts.length > 0) {
     const names = conflicts.map(c => c).join('、')
     if (!confirm(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`)) return
   }
   clearAll()
   await dash.start()
+  if (!operationIsActive(generation)) return
   connectTimer = setTimeout(() => {
     connectTimer = null
+    if (!operationIsActive(generation)) return
     connectStatus()
     binaryStream.start()
   }, 500)
 }
 async function onStop() {
+  const generation = ++operationGeneration
   cancelPendingConnect()
   disconnectStatus()
   binaryStream.stop()
   await dash.stop()
+  if (!operationIsActive(generation)) return
   await refreshLogList()
 }
 </script>
