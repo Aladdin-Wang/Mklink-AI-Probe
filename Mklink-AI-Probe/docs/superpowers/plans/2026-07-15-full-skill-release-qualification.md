@@ -582,7 +582,7 @@ git commit -m "build: generate release asset manifests"
 
 ## Task 7: Run the Complete Automated Regression Gate
 
-- [ ] **Step 1: Install/check dependencies**
+- [x] **Step 1: Install/check dependencies**
 
 ```powershell
 python -m pip install -e ".[gui,test,e2e,hil]"
@@ -592,7 +592,7 @@ Set-Location ..
 python skills/tauri-gui-builder/scripts/build.py --check
 ```
 
-- [ ] **Step 2: Run Python, GUI, Node, and Rust suites**
+- [x] **Step 2: Run Python, GUI, Node, and Rust suites**
 
 ```powershell
 python -m pytest -q
@@ -608,7 +608,7 @@ python scripts/ai_memory.py validate
 git diff --check
 ```
 
-- [ ] **Step 3: Run security and artifact scans**
+- [x] **Step 3: Run security and artifact scans**
 
 ```powershell
 git ls-files '*.pack' '*.hex' '*.bin' '*.axf' '*.exe' '*.msi' '*.log'
@@ -620,14 +620,14 @@ Expected: no tracked/bundled Pack or firmware; no unmasked hardware/username
 data in new evidence. Existing synthetic COM test fixtures are excluded from
 the staged-release scan rather than altered.
 
-- [ ] **Step 4: Record automated results in the report**
+- [x] **Step 4: Record automated results in the report**
 
 Create `docs/verification/full-skill-release-v0.1.0-rc.1.md` with the sections
 defined by the design. Record exact pass counts, durations, build module count,
 Rust results, and known pre-existing warnings. Omit not-yet-executed HIL rows;
 append them only after the corresponding command has produced evidence.
 
-- [ ] **Step 5: Commit the automated checkpoint**
+- [x] **Step 5: Commit the automated checkpoint**
 
 ```powershell
 git add -- docs/verification/full-skill-release-v0.1.0-rc.1.md
