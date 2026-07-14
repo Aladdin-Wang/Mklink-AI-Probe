@@ -16,7 +16,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 <template>
   <section class="target-panel">
     <div class="title-row"><h3>器件选择</h3><span data-testid="pack-status" class="badge" :class="selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? 'ok' : ''">{{ selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? '已安装' : '未就绪' }}</span></div>
-    <input v-model="query" type="search" placeholder="搜索型号 / 厂商 / 系列" aria-label="搜索器件">
+    <input v-model="query" data-testid="target-search" type="search" placeholder="搜索型号 / 厂商 / 系列" aria-label="搜索器件">
     <div class="target-list">
       <button v-for="target in targets" :key="target.part_number" :data-testid="`target-${target.part_number}`" :disabled="busy" :class="{ active: selectedPart === target.part_number }" @click="emit('select', target)">
         <strong>{{ target.part_number }}</strong><small>{{ target.vendor }} · {{ target.pack_id || '内置' }}</small><span>{{ target.installed ? '已安装' : '需下载 Pack' }}</span>
@@ -24,7 +24,7 @@ onBeforeUnmount(() => clearTimeout(timer))
     </div>
     <div v-if="busy" class="pack-progress"><progress :value="progress" max="1"/><span>{{ Math.round(progress * 100) }}%</span><button data-testid="pack-cancel" :disabled="cancelPending" @click="emit('cancel')">{{ cancelPending ? '取消中…' : '取消' }}</button></div>
     <p v-if="error" class="error">{{ error }}</p>
-    <div class="pack-footer"><span>索引 {{ status?.index_available ? '可用' : '不可用' }} · {{ status?.target_count ?? 0 }} 型号</span><button :disabled="busy" @click="emit('updateIndex')">更新索引</button></div>
+    <div class="pack-footer"><span>索引 {{ status?.index_available ? '可用' : '不可用' }} · {{ status?.target_count ?? 0 }} 型号</span><button data-testid="pack-update-index" :disabled="busy" @click="emit('updateIndex')">更新索引</button></div>
   </section>
 </template>
 

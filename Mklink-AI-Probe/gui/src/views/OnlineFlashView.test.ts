@@ -934,6 +934,14 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.text()).toContain('扇区几何信息不可验证')
     wrapper.unmount()
   })
+  it('exposes stable packaged-HIL selectors', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="probe-select"]').exists()).toBe(true))
+
+    expect(wrapper.find('[data-testid="target-search"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="pack-update-index"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 describe('online flash component quality', () => {

@@ -293,7 +293,7 @@ git commit -m "build: make RC bundles self-contained"
 - Modify: `gui/src/components/online-flash/TargetPackPanel.vue`
 - Modify: `gui/src/views/OnlineFlashView.test.ts`
 
-- [ ] **Step 1: Write failing selector tests**
+- [x] **Step 1: Write failing selector tests**
 
 Extend `OnlineFlashView.test.ts`:
 
@@ -307,7 +307,7 @@ it('exposes stable packaged-HIL selectors', async () => {
 })
 ```
 
-- [ ] **Step 2: Run the focused GUI test and verify RED**
+- [x] **Step 2: Run the focused GUI test and verify RED**
 
 ```powershell
 Set-Location gui
@@ -318,14 +318,14 @@ Set-Location ..
 
 Expected: the three selectors are absent.
 
-- [ ] **Step 3: Add the minimal selectors**
+- [x] **Step 3: Add the minimal selectors**
 
 Add `data-testid="probe-select"` to the MKLink `<select>`,
 `data-testid="target-search"` to the target search input, and
 `data-testid="pack-update-index"` to the index update button. Do not change
 their behavior or layout.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 Set-Location gui

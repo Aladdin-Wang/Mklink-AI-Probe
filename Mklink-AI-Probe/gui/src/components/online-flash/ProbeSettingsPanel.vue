@@ -24,7 +24,7 @@ defineEmits<{
   <section class="panel-block">
     <div class="panel-title"><span>设备接入</span><button :disabled="busy" @click="$emit('refresh')">刷新</button></div>
     <label>MKLink 探针
-      <select :value="selectedId" :disabled="busy" @change="$emit('update:selectedId', ($event.target as HTMLSelectElement).value)">
+      <select data-testid="probe-select" :value="selectedId" :disabled="busy" @change="$emit('update:selectedId', ($event.target as HTMLSelectElement).value)">
         <option value="">请选择探针</option>
         <option v-for="probe in probes" :key="probe.unique_id" :value="probe.unique_id">
           {{ probe.product_name }} · {{ probe.serial_number || probe.unique_id }}
