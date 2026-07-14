@@ -636,7 +636,7 @@ git commit -m "test: record RC automated qualification"
 
 ## Task 8: Run Core MKLink HIL and Restore the Target
 
-- [ ] **Step 1: Establish the stream fixture and symbol map**
+- [x] **Step 1: Establish the stream fixture and symbol map**
 
 ```powershell
 $StreamRoot = 'E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC'
@@ -651,7 +651,7 @@ python -m mklink memmap --source $StreamAxF --json
 
 Record only masked probe identity and aggregate symbol/memory results.
 
-- [ ] **Step 2: Build and flash the stream fixture with Keil**
+- [x] **Step 2: Build and flash the stream fixture with Keil**
 
 Use the installed Keil executable under
 `D:\Users\<redacted>\AppData\Local\Keil_v5`. Locate `UV4.exe` without printing
@@ -666,7 +666,7 @@ python -m mklink flash --project-root $StreamRoot
 Require zero build errors. Existing warnings are recorded by count and not
 silently omitted.
 
-- [ ] **Step 3: Run core reads, safe write/readback, and debug smoke**
+- [x] **Step 3: Run core reads, safe write/readback, and debug smoke**
 
 Use the AXF-derived address of `mklink_rtt_test_arm` as the safe fixture word:
 
@@ -687,7 +687,7 @@ If CLI syntax differs, use each command's `--help` and record the exact accepted
 form. End by writing zero to all `mklink_*_test_arm` controls, clearing all
 breakpoints, resuming, and resetting the target.
 
-- [ ] **Step 4: Verify cleanup**
+- [x] **Step 4: Verify cleanup**
 
 ```powershell
 python -m mklink resources status
@@ -696,7 +696,7 @@ python -m mklink watch mklink_rtt_test_arm,mklink_sv_test_arm --source $StreamAx
 
 Require zero armed controls and no owners.
 
-- [ ] **Step 5: Add sanitized core HIL results and commit**
+- [x] **Step 5: Add sanitized core HIL results and commit**
 
 ```powershell
 git add -- docs/verification/full-skill-release-v0.1.0-rc.1.md docs/verification/artifacts/rc1-core-mklink.json
