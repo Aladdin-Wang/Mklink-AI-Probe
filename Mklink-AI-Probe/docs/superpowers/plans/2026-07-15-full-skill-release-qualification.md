@@ -435,7 +435,7 @@ git commit -m "test: qualify four packaged stream modes"
 - Create: `_maintainer/testing/performance/packaged_online_flash_probe.cjs`
 - Create: `_maintainer/testing/performance/packaged_online_flash_probe.test.cjs`
 
-- [ ] **Step 1: Write failing predicate and lifecycle tests**
+- [x] **Step 1: Write failing predicate and lifecycle tests**
 
 Define the desired exports in the tests:
 
@@ -466,7 +466,7 @@ ordered SSE state progression, expected error code when applicable, disconnected
 probe, zero `target_debug` owner, restored boot hash/verify, zero console errors,
 and CDP/browser cleanup.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 node --test _maintainer/testing/performance/packaged_online_flash_probe.test.cjs
@@ -474,7 +474,7 @@ node --test _maintainer/testing/performance/packaged_online_flash_probe.test.cjs
 
 Expected: module/import failure.
 
-- [ ] **Step 3: Implement the probe**
+- [x] **Step 3: Implement the probe**
 
 The executable accepts:
 
@@ -500,7 +500,7 @@ Use `try/finally` to stop an active job, disconnect, release resources, restore
 the designated boot image when the scenario requests it, and close CDP. Print
 one sanitized JSON object to stdout and set `process.exitCode`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 node --test _maintainer/testing/performance/packaged_online_flash_probe.test.cjs
