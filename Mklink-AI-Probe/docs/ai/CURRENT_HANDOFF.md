@@ -4,11 +4,11 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T00:44:59+08:00`
+- 更新时间：`2026-07-15T01:00:45+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`c3a8b1e`
-- 远端 HEAD：`c3a8b1e verified before the release-qualification design checkpoint`
-- 工作树：Full-skill v0.1.0-rc.1 release-qualification design and memory update are pending commit
+- HEAD：`fad1227`
+- 远端 HEAD：`c3a8b1e; approved design commit fad1227 and the implementation plan are not yet pushed`
+- 工作树：Full-skill v0.1.0-rc.1 implementation plan and memory update are pending commit
 - 当前任务：Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease
 - 状态：`in_progress`
 
@@ -61,8 +61,8 @@
 
 ## 下一动作
 
-1. Create and self-review the detailed implementation plan from the approved release-qualification specification.
-2. Execute the plan autonomously through hardware qualification, installer validation, and GitHub prerelease publication.
+1. Execute Task 1 of docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md using TDD: make the installed Tauri application prefer its bundled sidecar.
+2. Continue autonomously through hardware qualification, installer validation, review, and GitHub prerelease publication.
 3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制

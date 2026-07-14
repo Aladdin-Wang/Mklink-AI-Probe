@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-15T00:44:59+08:00",
+  "updated_at": "2026-07-15T01:00:45+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "c3a8b1e",
-    "remote_head": "c3a8b1e verified before the release-qualification design checkpoint",
-    "working_tree": "Full-skill v0.1.0-rc.1 release-qualification design and memory update are pending commit"
+    "head": "fad1227",
+    "remote_head": "c3a8b1e; approved design commit fad1227 and the implementation plan are not yet pushed",
+    "working_tree": "Full-skill v0.1.0-rc.1 implementation plan and memory update are pending commit"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -17,9 +17,9 @@
   },
   "current_session": {
     "status": "in_progress",
-    "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
+    "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
     "current_task": "Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease",
-    "latest_commit": "c3a8b1e docs: finalize Task 9 handoff",
+    "latest_commit": "fad1227 docs: define full-skill RC qualification",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -27,7 +27,7 @@
     "task_7_implementation": "complete; final spec and quality reviews APPROVED",
     "task_8_implementation": "complete; final spec and quality reviews APPROVED",
     "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
-    "release_qualification": "Design and written specification approved by the user; implementation planning is next, followed by autonomous execution.",
+    "release_qualification": "Design and written specification approved; 13-task/72-step implementation plan written and self-reviewed; Task 1 bundled-sidecar runtime fix is next.",
     "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
   "milestones": [
@@ -188,8 +188,8 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Create and self-review the detailed implementation plan from the approved release-qualification specification.",
-    "Execute the plan autonomously through hardware qualification, installer validation, and GitHub prerelease publication.",
+    "Execute Task 1 of docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md using TDD: make the installed Tauri application prefer its bundled sidecar.",
+    "Continue autonomously through hardware qualification, installer validation, review, and GitHub prerelease publication.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
   "continuation_protocol": [
