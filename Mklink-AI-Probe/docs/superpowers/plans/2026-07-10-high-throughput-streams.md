@@ -603,7 +603,7 @@ npx tauri build
 
 Expected: build exits 0. Install or launch the packaged application and run a five-minute hardware stream. PASS requires the hashed Worker and binary WebSocket assets, exact WebSocket/Worker data-frame parity, final sequence agreement, zero frontend and backend loss, visible rendering at or below 30 FPS, zero console errors, and `finally` cleanup proving the backend stopped, active clients are zero, the RTT resource owner is absent, and target-dearm memory readback succeeded.
 
-- [ ] **Step 6: Final commit and push**
+- [x] **Step 6: Final commit and push**
 
 ```powershell
 Set-Location ..

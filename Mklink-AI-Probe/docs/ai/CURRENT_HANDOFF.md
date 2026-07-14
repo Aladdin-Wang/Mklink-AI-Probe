@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T00:15:53+08:00`
+- 更新时间：`2026-07-15T00:19:43+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`ffa06d2`
-- 远端 HEAD：`d47e45d verified by git ls-remote before the Task 9 final push`
-- 工作树：Task 9 lifecycle fixes, strict browser/Tauri gates, refreshed evidence, dist, docs, and memory are verified and pending final commit/push
+- HEAD：`cc8282f`
+- 远端 HEAD：`cc8282f verified after the Task 9 deliverable push`
+- 工作树：Task 9 deliverable is committed and pushed; only this final memory/plan checkpoint is pending
 - 当前任务：High-throughput Task 9: performance gates, MKLink HIL, and release verification
-- 状态：`in_progress`
+- 状态：`complete`
 
 ## 里程碑
 
@@ -23,7 +23,7 @@
 - **High-throughput Task 6 SystemView binary migration** — `complete`。Recording-first fixed 48-byte events, bounded O(1) Worker rings, nested ISR contexts, exact BigInt ticks, pixel-bounded interval envelopes, binary UI at 30 FPS and event table at 5 Hz.
 - **High-throughput Task 7 VOFA binary migration** — `complete`。Validated aligned source reads, atomic sample-major batches, Worker min/max envelopes, O(1) extrema and O(log N) interactions, bounded DOM work, live telemetry, pause-safe rates, and SuperWatch legacy isolation.
 - **High-throughput Task 8 RTT and SuperWatch binary migration** — `complete`。RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks.
-- **High-throughput Task 9 performance and HIL qualification** — `implementation_complete_commit_pending`。All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Commit/push remain.
+- **High-throughput Task 9 performance and HIL qualification** — `complete`。All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed.
 
 ## 验证证据
 
@@ -61,9 +61,8 @@
 
 ## 下一动作
 
-1. Commit and push the verified Task 9 frontend fixes, browser/Tauri artifacts, verification matrix, final dist, and refreshed AI memory.
-2. After the push succeeds, mark plan Step 6 complete and record the confirmed local and remote commit.
-3. Optionally repeat hidden-document HIL on a browser/platform that can prove document.hidden=true; do not upgrade the current not-established result without evidence.
+1. No required Task 9 actions remain; begin a new plan before further feature work.
+2. Optionally repeat hidden-document HIL on a browser/platform that can prove document.hidden=true; do not upgrade the current not-established result without evidence.
 
 ## 已知限制
 
