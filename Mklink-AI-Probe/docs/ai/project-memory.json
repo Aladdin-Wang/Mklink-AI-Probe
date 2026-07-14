@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-15T00:19:43+08:00",
+  "updated_at": "2026-07-15T00:44:59+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "cc8282f",
-    "remote_head": "cc8282f verified after the Task 9 deliverable push",
-    "working_tree": "Task 9 deliverable is committed and pushed; only this final memory/plan checkpoint is pending"
+    "head": "c3a8b1e",
+    "remote_head": "c3a8b1e verified before the release-qualification design checkpoint",
+    "working_tree": "Full-skill v0.1.0-rc.1 release-qualification design and memory update are pending commit"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -16,10 +16,10 @@
     "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以经过验证的稳定负载采集，目标尽量达到或超过 10 kSamples/s；仅 RTT 建立了实测过载边界；可见曲线统一限制为 30 FPS。"
   },
   "current_session": {
-    "status": "complete",
+    "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-10-high-throughput-streams.md",
-    "current_task": "High-throughput Task 9: performance gates, MKLink HIL, and release verification",
-    "latest_commit": "cc8282f test: qualify high-throughput streams",
+    "current_task": "Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease",
+    "latest_commit": "c3a8b1e docs: finalize Task 9 handoff",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -27,7 +27,8 @@
     "task_7_implementation": "complete; final spec and quality reviews APPROVED",
     "task_8_implementation": "complete; final spec and quality reviews APPROVED",
     "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
-    "stop_rule": "Satisfied: Task 9 review, verification, commit, push, and durable handoff are complete."
+    "release_qualification": "Design and written specification approved by the user; implementation planning is next, followed by autonomous execution.",
+    "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
   "milestones": [
     {
@@ -187,8 +188,9 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "No required Task 9 actions remain; begin a new plan before further feature work.",
-    "Optionally repeat hidden-document HIL on a browser/platform that can prove document.hidden=true; do not upgrade the current not-established result without evidence."
+    "Create and self-review the detailed implementation plan from the approved release-qualification specification.",
+    "Execute the plan autonomously through hardware qualification, installer validation, and GitHub prerelease publication.",
+    "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
   "continuation_protocol": [
     "Run: python scripts/ai_memory.py validate",

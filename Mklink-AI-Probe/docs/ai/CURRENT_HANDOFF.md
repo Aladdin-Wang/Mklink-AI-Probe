@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T00:19:43+08:00`
+- 更新时间：`2026-07-15T00:44:59+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`cc8282f`
-- 远端 HEAD：`cc8282f verified after the Task 9 deliverable push`
-- 工作树：Task 9 deliverable is committed and pushed; only this final memory/plan checkpoint is pending
-- 当前任务：High-throughput Task 9: performance gates, MKLink HIL, and release verification
-- 状态：`complete`
+- HEAD：`c3a8b1e`
+- 远端 HEAD：`c3a8b1e verified before the release-qualification design checkpoint`
+- 工作树：Full-skill v0.1.0-rc.1 release-qualification design and memory update are pending commit
+- 当前任务：Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -61,8 +61,9 @@
 
 ## 下一动作
 
-1. No required Task 9 actions remain; begin a new plan before further feature work.
-2. Optionally repeat hidden-document HIL on a browser/platform that can prove document.hidden=true; do not upgrade the current not-established result without evidence.
+1. Create and self-review the detailed implementation plan from the approved release-qualification specification.
+2. Execute the plan autonomously through hardware qualification, installer validation, and GitHub prerelease publication.
+3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 
