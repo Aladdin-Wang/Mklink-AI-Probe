@@ -705,7 +705,7 @@ git commit -m "test: qualify RC core MKLink functions"
 
 ## Task 9: Run Packaged Online-Flash HIL
 
-- [ ] **Step 1: Prepare immutable test inputs outside Git**
+- [x] **Step 1: Prepare immutable test inputs outside Git**
 
 ```powershell
 $FlashRoot = 'E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103_BOOT\MDK-ARM'
@@ -719,7 +719,7 @@ $bytes[0] = $bytes[0] -bxor 0xFF
 
 The temporary mismatch image is never committed or uploaded.
 
-- [ ] **Step 2: Build a pre-install release application and launch CDP**
+- [x] **Step 2: Build a pre-install release application and launch CDP**
 
 ```powershell
 python skills/tauri-gui-builder/scripts/build.py --bundle
@@ -749,7 +749,7 @@ npm install --no-save --package-lock=false playwright-core
 Set-Location ..
 ```
 
-- [ ] **Step 3: Execute required online-flash scenarios**
+- [x] **Step 3: Execute required online-flash scenarios**
 
 Run `packaged_online_flash_probe.cjs` separately for:
 
@@ -785,7 +785,7 @@ program/verify/reset PASS, mismatch `VERIFY_FAIL`, cooperative `stopped`,
 `PROBE_BUSY` while VOFA owns the resource, success after handoff, Pack status
 and cache reuse, and final boot restore/verify.
 
-- [ ] **Step 4: Validate artifacts and cleanup**
+- [x] **Step 4: Validate artifacts and cleanup**
 
 ```powershell
 Get-ChildItem docs/verification/artifacts/rc1-online-flash-*.json | ForEach-Object { Get-Content -Raw $_ | ConvertFrom-Json | Out-Null }
@@ -794,7 +794,7 @@ Invoke-RestMethod http://127.0.0.1:8765/api/resources/status
 
 Close Tauri and require sidecar exit and port 8765 release.
 
-- [ ] **Step 5: Update the report and commit**
+- [x] **Step 5: Update the report and commit**
 
 ```powershell
 git add -- docs/verification/full-skill-release-v0.1.0-rc.1.md docs/verification/artifacts/rc1-online-flash-*.json

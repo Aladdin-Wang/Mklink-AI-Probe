@@ -5,6 +5,9 @@ const assert = require('node:assert/strict')
 const {
   evaluateOnlineFlashGate,
   runOnlineFlashLifecycle,
+  sanitizedFailure,
+  setActionSelection,
+  targetRecordFor,
 } = require('./packaged_online_flash_probe.cjs')
 
 function cleanOnlineFlashMetrics() {
@@ -108,4 +111,50 @@ test('online flash lifecycle closes CDP after cleanup failure without hiding it'
     /cleanup failed/,
   )
   assert.equal(closed, true)
+})
+
+test('online flash failure output exposes only the sanitized stage', () => {
+  assert.deepEqual(sanitizedFailure('target-selection'), {
+    schemaVersion: 1,
+    gate: 'packaged_tauri_online_flash_hil',
+    result: 'error',
+    stage: 'target-selection',
+    error: 'online flash scenario failed; inspect local runtime logs',
+  })
+})
+
+test('online flash target selection accepts catalog-normalized part-number case', () => {
+  const target = targetRecordFor([
+    { part_number: 'stm32f103rc', installed: true },
+  ], 'STM32F103RC')
+
+  assert.equal(target.part_number, 'stm32f103rc')
+  assert.equal(target.installed, true)
+})
+
+test('online flash action selection applies checkbox changes sequentially', async () => {
+  const order = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
+  const checked = new Map(order.map(action => [action, true]))
+  const changed = []
+  const inputs = {
+    async count() { return order.length },
+    nth(index) {
+      const action = order[index]
+      return {
+        async isDisabled() { return action === 'connect' || action === 'disconnect' },
+        async isChecked() { return checked.get(action) },
+        async setChecked(value) {
+          changed.push(action)
+          checked.set(action, value)
+          await Promise.resolve()
+        },
+      }
+    },
+  }
+  const page = { locator: () => inputs }
+
+  await setActionSelection(page, ['connect', 'verify', 'disconnect'])
+
+  assert.deepEqual(changed, ['erase', 'program', 'reset'])
+  assert.deepEqual(order.filter(action => checked.get(action)), ['connect', 'verify', 'disconnect'])
 })

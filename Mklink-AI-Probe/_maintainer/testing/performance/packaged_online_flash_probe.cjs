@@ -7,6 +7,23 @@ const fs = require('node:fs')
 const TERMINAL_STATES = new Set(['succeeded', 'failed', 'stopped'])
 const SCENARIOS = new Set(['hex', 'bin', 'verify-fail', 'stop', 'probe-busy', 'restore'])
 const ACTION_ORDER = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
+let currentStage = 'startup'
+let failureStage = null
+
+function sanitizedFailure(stage) {
+  return {
+    schemaVersion: 1,
+    gate: 'packaged_tauri_online_flash_hil',
+    result: 'error',
+    stage,
+    error: 'online flash scenario failed; inspect local runtime logs',
+  }
+}
+
+function targetRecordFor(targets, requestedPart) {
+  const normalized = String(requestedPart).toLowerCase()
+  return targets.find(item => String(item?.part_number || '').toLowerCase() === normalized)
+}
 
 function orderedSubsequence(observed, required) {
   let cursor = 0
@@ -132,14 +149,16 @@ function scenarioDefinition(scenario, env) {
 }
 
 async function setActionSelection(page, selectedActions) {
-  await page.locator('.action-choices input[type="checkbox"]').evaluateAll((inputs, selected) => {
-    const order = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
-    inputs.forEach((input, index) => {
-      const desired = selected.includes(order[index])
-      if (!input.disabled && input.checked !== desired) input.click()
-    })
-  }, selectedActions)
-  await page.waitForTimeout(50)
+  const inputs = page.locator('.action-choices input[type="checkbox"]')
+  const selected = new Set(selectedActions)
+  const count = await inputs.count()
+  for (let index = 0; index < count; index += 1) {
+    const input = inputs.nth(index)
+    const desired = selected.has(ACTION_ORDER[index])
+    if (!await input.isDisabled() && await input.isChecked() !== desired) {
+      await input.setChecked(desired)
+    }
+  }
 }
 
 async function waitForTerminal(baseUrl, jobId, timeoutMs = 180_000) {
@@ -209,10 +228,12 @@ async function startUiJob(page) {
 }
 
 async function configureOnlineFlashPage(page, baseUrl, definition, targetPart, baseAddress) {
+  currentStage = 'route-navigation'
   await page.evaluate(() => { window.location.hash = '#/online-flash' })
   await page.waitForFunction(() => window.location.hash.startsWith('#/online-flash'))
   await page.locator('.online-flash-grid').waitFor({ state: 'visible' })
 
+  currentStage = 'probe-selection'
   const probes = await apiJson(baseUrl, '/api/online-flash/probes')
   if (!Array.isArray(probes) || probes.length === 0) throw new Error('no MKLink CMSIS-DAP probe found')
   const probeSelect = page.getByTestId('probe-select')
@@ -223,15 +244,20 @@ async function configureOnlineFlashPage(page, baseUrl, definition, targetPart, b
   })
   await probeSelect.selectOption({ index: 1 })
 
+  currentStage = 'target-selection'
   const search = page.getByTestId('target-search')
   await search.fill(targetPart)
-  const target = page.getByTestId(`target-${targetPart}`)
-  await target.waitFor({ state: 'visible', timeout: 60_000 })
   const targetsBefore = await apiJson(baseUrl, `/api/online-flash/targets?q=${encodeURIComponent(targetPart)}&limit=100`)
-  const targetWasInstalled = targetsBefore.some(item => item.part_number === targetPart && item.installed)
+  const targetRecord = targetRecordFor(targetsBefore, targetPart)
+  if (!targetRecord) throw new Error('requested target was not returned by the target catalog')
+  const resolvedPart = targetRecord.part_number
+  const target = page.getByTestId(`target-${resolvedPart}`)
+  await target.waitFor({ state: 'visible', timeout: 60_000 })
+  const targetWasInstalled = Boolean(targetRecord.installed)
   await target.click()
-  await page.waitForFunction(part => document.querySelector(`[data-testid="target-${part}"]`)?.classList.contains('active'), targetPart, { timeout: 180_000 })
+  await page.waitForFunction(part => document.querySelector(`[data-testid="target-${part}"]`)?.classList.contains('active'), resolvedPart, { timeout: 180_000 })
 
+  currentStage = 'image-inspection'
   const inspectResponsePromise = page.waitForResponse(response => (
     response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/online-flash/images/inspect'
@@ -243,6 +269,7 @@ async function configureOnlineFlashPage(page, baseUrl, definition, targetPart, b
   if (!inspectResponse.ok()) throw new Error(`firmware inspection failed: HTTP_${inspectResponse.status()}`)
   const inspection = await inspectResponse.json()
   await page.locator('.metadata').waitFor({ state: 'visible' })
+  currentStage = 'action-selection'
   await setActionSelection(page, definition.actions)
 
   const targetsAfter = await apiJson(baseUrl, `/api/online-flash/targets?q=${encodeURIComponent(targetPart)}&installed=true&limit=100`)
@@ -251,13 +278,15 @@ async function configureOnlineFlashPage(page, baseUrl, definition, targetPart, b
     probes,
     probeSelected: Boolean(await probeSelect.inputValue()),
     targetWasInstalled,
-    targetInstalled: targetsAfter.some(item => item.part_number === targetPart && item.installed),
+    targetInstalled: Boolean(targetRecordFor(targetsAfter, targetPart)?.installed),
     packStatus,
     inspection,
   }
 }
 
 async function main() {
+  failureStage = null
+  currentStage = 'environment'
   const scenario = String(process.env.MKLINK_ONLINE_FLASH_SCENARIO || '').toLowerCase()
   if (!SCENARIOS.has(scenario)) throw new Error('MKLINK_ONLINE_FLASH_SCENARIO is invalid')
   const playwrightPath = process.env.PLAYWRIGHT_CORE_PATH
@@ -275,10 +304,12 @@ async function main() {
   const baseUrl = process.env.MKLINK_GUI_URL || 'http://127.0.0.1:8765'
   const cdpUrl = process.env.TAURI_CDP_URL || 'http://127.0.0.1:9223'
   const { chromium } = require(playwrightPath)
+  currentStage = 'cdp-connect'
   const browser = await chromium.connectOverCDP(cdpUrl)
   const context = browser.contexts()[0]
   const page = context?.pages()[0]
   if (!page) throw new Error('no Tauri WebView page exposed by CDP')
+  currentStage = 'page-instrumentation'
   page.setDefaultTimeout(30_000)
   page.on('dialog', dialog => dialog.accept())
   await page.addInitScript(() => {
@@ -302,16 +333,20 @@ async function main() {
   const consoleErrors = []
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
   page.on('pageerror', error => consoleErrors.push(String(error)))
+  currentStage = 'page-reload'
   await page.reload({ waitUntil: 'domcontentloaded' })
 
   let activeJobId = null
   let vofaHeld = false
   const metrics = await runOnlineFlashLifecycle(async () => {
+    try {
     const configured = await configureOnlineFlashPage(page, baseUrl, definition, targetPart, baseAddress)
     if (definition.holdWithVofa) {
+      currentStage = 'vofa-resource-hold'
       await acquireVofaOwner(baseUrl, targetPart)
       vofaHeld = true
     }
+    currentStage = 'job-start'
     const created = await startUiJob(page)
     activeJobId = created.job_id
     if (definition.stop) {
@@ -322,19 +357,23 @@ async function main() {
       })
       await page.getByTestId('stop-job').click()
     }
+    currentStage = 'job-terminal-wait'
     const terminal = await waitForTerminal(baseUrl, activeJobId)
     activeJobId = null
     let handoffSucceeded = null
     if (definition.handoffRequired) {
+      currentStage = 'resource-handoff'
       await stopVofaAndDisconnect(baseUrl)
       vofaHeld = false
       if (await waitForTargetDebugRelease(baseUrl)) throw new Error('target_debug remained owned after VOFA handoff')
+      currentStage = 'handoff-job-start'
       const handoff = await startUiJob(page)
       activeJobId = handoff.job_id
       const handoffTerminal = await waitForTerminal(baseUrl, activeJobId)
       activeJobId = null
       handoffSucceeded = handoffTerminal.state === 'succeeded'
     }
+    currentStage = 'ui-terminal-check'
     await page.waitForFunction(() => {
       const start = document.querySelector('[data-testid="start-job"]')
       const stop = document.querySelector('[data-testid="stop-job"]')
@@ -374,7 +413,12 @@ async function main() {
       restoreVerifySucceeded: definition.restoreRequired ? terminal.state === 'succeeded' : null,
       consoleErrors,
     }
+    } catch (error) {
+      failureStage = currentStage
+      throw error
+    }
   }, async () => {
+    currentStage = 'cleanup'
     if (activeJobId) {
       await apiJson(baseUrl, `/api/online-flash/jobs/${encodeURIComponent(activeJobId)}/stop`, jsonRequest('POST')).catch(() => {})
       await waitForTerminal(baseUrl, activeJobId, 30_000).catch(() => {})
@@ -440,14 +484,15 @@ async function main() {
 
 if (require.main === module) {
   main().catch(() => {
-    console.error(JSON.stringify({
-      schemaVersion: 1,
-      gate: 'packaged_tauri_online_flash_hil',
-      result: 'error',
-      error: 'online flash scenario failed; inspect local runtime logs',
-    }, null, 2))
+    console.error(JSON.stringify(sanitizedFailure(failureStage || currentStage), null, 2))
     process.exitCode = 1
   })
 }
 
-module.exports = { evaluateOnlineFlashGate, runOnlineFlashLifecycle }
+module.exports = {
+  evaluateOnlineFlashGate,
+  runOnlineFlashLifecycle,
+  sanitizedFailure,
+  setActionSelection,
+  targetRecordFor,
+}

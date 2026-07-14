@@ -74,3 +74,26 @@ def test_bundle_config_uses_numeric_installer_version_and_restores(builder, tmp_
         assert '"externalBin"' in patched
 
     assert config.read_bytes() == original
+
+
+def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeypatch, tmp_path):
+    builder.SKILL_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "gui" / "src-tauri"
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output = tmp_path / "dist" / "mklink-sidecar.exe"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"sidecar")
+        return 0
+
+    monkeypatch.setattr(builder, "run", fake_run)
+
+    assert builder.build_sidecar(force=True) is True
+
+    pairs = [commands[0][index:index + 2] for index in range(len(commands[0]) - 1)]
+    assert ["--collect-all", "pyocd"] in pairs
+    assert ["--copy-metadata", "pyocd"] in pairs
+    assert ["--collect-all", "cmsis_pack_manager"] in pairs
+    assert ["--collect-all", "hid"] in pairs

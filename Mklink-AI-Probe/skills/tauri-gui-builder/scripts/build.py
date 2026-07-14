@@ -114,6 +114,10 @@ def build_sidecar(force=False):
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
         "--collect-all", "mklink",
+        "--collect-all", "pyocd",
+        "--copy-metadata", "pyocd",
+        "--collect-all", "cmsis_pack_manager",
+        "--collect-all", "hid",
         "-p", str(SKILL_DIR),
         str(SKILL_DIR / "mklink" / "__main__.py"),
     ], cwd=str(SKILL_DIR))
