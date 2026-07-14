@@ -4,7 +4,7 @@ from pathlib import Path
 
 from mklink.cli import _cli_project_init, _detect_hpm_segger_project
 from mklink.hpm_config import HPM_BOARD_FLASH_CFG
-from mklink.project_config import load_config, load_project_info
+from mklink.project_config import load_config, load_project_info, save_config
 
 
 def _write_cmake_cache(path: Path, *, board: str, project: str = "hello_world"):
@@ -66,3 +66,19 @@ def test_project_init_preserves_hpm_cmake_ide_type(tmp_path: Path, monkeypatch):
 
     assert load_project_info(str(tmp_path))["ide_type"] == "HPM SDK CMake"
     assert load_config(str(tmp_path))["ide_type"] == "HPM SDK CMake"
+
+
+def test_project_init_reuses_saved_port_without_scanning(tmp_path: Path, monkeypatch):
+    build = tmp_path / "hpm6e00evk_flash_xip_debug"
+    _write_cmake_cache(build / "CMakeCache.txt", board="hpm6e00evk")
+    _write_output_files(build / "output")
+    save_config(str(tmp_path), {"com_port": "COM227"})
+
+    def unexpected_scan():
+        raise AssertionError("configured project must not scan every serial port")
+
+    monkeypatch.setattr("mklink.discovery.find_mklink_cdc_port", unexpected_scan)
+
+    _cli_project_init(str(tmp_path))
+
+    assert load_config(str(tmp_path))["com_port"] == "COM227"

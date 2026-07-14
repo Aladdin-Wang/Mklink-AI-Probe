@@ -94,7 +94,18 @@ def find_mklink_cdc_port() -> str | None:
             return port_info.device
 
     # 单轮扫描，每端口2步确认
-    for port_info in ports:
+    # Probe physical USB serial ports first. Bluetooth RFCOMM opens can block
+    # for tens of seconds and cannot be an MKLink CDC interface.
+    probe_candidates = [
+        port_info for port_info in ports
+        if not str(getattr(port_info, "hwid", "") or "").upper().startswith("BTHENUM")
+    ]
+    probe_candidates.sort(key=lambda port_info: 0 if (
+        getattr(port_info, "vid", None) is not None
+        or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
+    ) else 1)
+
+    for port_info in probe_candidates:
         if _probe_port(port_info.device):
             return port_info.device
 

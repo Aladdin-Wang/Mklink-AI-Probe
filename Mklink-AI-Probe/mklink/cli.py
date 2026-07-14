@@ -227,7 +227,7 @@ def _cli_project_init(project_root: str):
     from mklink.profiles import load_mcu_profiles, match_mcu_by_device
     from mklink.project_config import (
         save_config, save_project_info, save_rtt_config, save_toolchain_config,
-        is_configured,
+        is_configured, load_config,
     )
     from mklink.discovery import (
         check_flm_on_microkeen, copy_flm_to_microkeen, resolve_keil_flm_path,
@@ -280,7 +280,8 @@ def _cli_project_init(project_root: str):
     device_name = project_info.get("device", "")
     mcu_key = match_mcu_by_device(device_name, profiles)
     mcu_detect_result = None
-    com_port = None
+    configured_port = (load_config(project_root) or {}).get("com_port")
+    com_port = str(configured_port).strip() if configured_port else None
     is_hpm_project = (
         str(project_info.get("vendor", "")).lower() == "hpmicro"
         or str(project_info.get("board", "")).lower().startswith("hpm")

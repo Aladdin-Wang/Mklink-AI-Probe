@@ -61,6 +61,7 @@ class DwarfInfo:
     typedefs: dict[int, tuple[str, int | None]] = field(default_factory=dict)
     pointers: dict[int, tuple[int | None, int]] = field(default_factory=dict)
     arrays: dict[int, tuple[int | None, int]] = field(default_factory=dict)
+    qualifiers: dict[int, int | None] = field(default_factory=dict)
 
 
 _DIE_RE = re.compile(r"^\s*<(\d+)><([0-9a-fA-F]+)>:\s+.*\((DW_TAG_[^)]+)\)")
@@ -153,6 +154,13 @@ def parse_dwarf_info_output(output: str) -> DwarfInfo:
             info.pointers[off] = (type_ref, size or 4)
         elif tag == "DW_TAG_array_type":
             info.arrays[off] = (type_ref, size)
+        elif tag in {
+            "DW_TAG_atomic_type",
+            "DW_TAG_const_type",
+            "DW_TAG_restrict_type",
+            "DW_TAG_volatile_type",
+        }:
+            info.qualifiers[off] = type_ref
         elif tag == "DW_TAG_structure_type" and name:
             st = DwarfStruct(name=name, offset=off, size=size)
             for child in die["children"]:
@@ -221,6 +229,8 @@ def resolve_type_name(info: DwarfInfo, type_offset: int | None) -> tuple[str, in
         ref, size = info.arrays[type_offset]
         base, elem_size = resolve_type_name(info, ref)
         return (base + "[]", size or elem_size)
+    if type_offset in info.qualifiers:
+        return resolve_type_name(info, info.qualifiers[type_offset])
     for st in info.structs.values():
         if st.offset == type_offset:
             return (st.name, st.size)
@@ -277,6 +287,7 @@ def load_dwarf_info(source: str, *, use_cache: bool = True) -> DwarfInfo:
 
 def _info_to_json(info: DwarfInfo) -> dict:
     return {
+        "schema_version": 2,
         "structs": {k: {"name": v.name, "offset": v.offset, "size": v.size, "members": [m.__dict__ for m in v.members]} for k, v in info.structs.items()},
         "enums": {k: {"name": v.name, "offset": v.offset, "size": v.size, "values": v.values} for k, v in info.enums.items()},
         "variables": {k: v.__dict__ for k, v in info.variables.items()},
@@ -284,10 +295,13 @@ def _info_to_json(info: DwarfInfo) -> dict:
         "typedefs": {str(k): v for k, v in info.typedefs.items()},
         "pointers": {str(k): v for k, v in info.pointers.items()},
         "arrays": {str(k): v for k, v in info.arrays.items()},
+        "qualifiers": {str(k): v for k, v in info.qualifiers.items()},
     }
 
 
 def _info_from_json(data: dict) -> DwarfInfo:
+    if data.get("schema_version") != 2:
+        raise ValueError("unsupported DWARF cache schema")
     info = DwarfInfo()
     info.structs = {
         k: DwarfStruct(v["name"], v["offset"], v.get("size", 0), [DwarfMember(**m) for m in v.get("members", [])])
@@ -302,4 +316,5 @@ def _info_from_json(data: dict) -> DwarfInfo:
     info.typedefs = {int(k): tuple(v) for k, v in data.get("typedefs", {}).items()}
     info.pointers = {int(k): tuple(v) for k, v in data.get("pointers", {}).items()}
     info.arrays = {int(k): tuple(v) for k, v in data.get("arrays", {}).items()}
+    info.qualifiers = {int(k): v for k, v in data.get("qualifiers", {}).items()}
     return info
