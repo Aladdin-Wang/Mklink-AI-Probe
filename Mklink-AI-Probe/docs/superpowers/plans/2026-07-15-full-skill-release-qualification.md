@@ -54,7 +54,7 @@ E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1
 **Files:**
 - Modify: `gui/src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add failing Rust tests for launch selection**
+- [x] **Step 1: Add failing Rust tests for launch selection**
 
 Add these tests inside the existing `#[cfg(test)]` module, creating the module
 at the bottom of `lib.rs` if absent:
@@ -85,7 +85,7 @@ fn missing_sidecar_and_python_is_an_error() {
 }
 ```
 
-- [ ] **Step 2: Run the Rust test and verify RED**
+- [x] **Step 2: Run the Rust test and verify RED**
 
 ```powershell
 Set-Location gui/src-tauri
@@ -96,7 +96,7 @@ Set-Location ../..
 Expected: compile failure because `SidecarLaunch` and
 `choose_sidecar_launch` do not exist.
 
-- [ ] **Step 3: Implement the minimal launch model**
+- [x] **Step 3: Implement the minimal launch model**
 
 Add above `spawn_sidecar`:
 
@@ -141,7 +141,7 @@ fn resolve_sidecar_launch() -> Result<SidecarLaunch, String> {
 }
 ```
 
-- [ ] **Step 4: Run Rust tests and checks**
+- [x] **Step 4: Run Rust tests and checks**
 
 ```powershell
 Set-Location gui/src-tauri
@@ -152,7 +152,7 @@ Set-Location ../..
 
 Expected: all Rust tests and checks pass.
 
-- [ ] **Step 5: Commit the runtime fix**
+- [x] **Step 5: Commit the runtime fix**
 
 ```powershell
 git add -- gui/src-tauri/src/lib.rs

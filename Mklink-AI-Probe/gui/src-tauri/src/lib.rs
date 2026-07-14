@@ -4,14 +4,14 @@ use std::sync::Mutex;
 use tauri::{Manager, State};
 
 #[cfg(target_os = "windows")]
+use windows::core::PCWSTR;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HANDLE;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::HANDLE;
-#[cfg(target_os = "windows")]
-use windows::core::PCWSTR;
 
 /// Thread-safe wrapper for Windows HANDLE — raw pointers are not Send/Sync.
 #[cfg(target_os = "windows")]
@@ -33,6 +33,31 @@ const MAX_RESTARTS: u32 = 5;
 const HEALTH_CHECK_INTERVAL_SECS: u64 = 5;
 const MAX_CONSECUTIVE_FAILS: u32 = 3;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SidecarLaunch {
+    Bundled(std::path::PathBuf),
+    Python(String),
+}
+
+fn choose_sidecar_launch(
+    bundled: Option<std::path::PathBuf>,
+    python: Option<String>,
+) -> Result<SidecarLaunch, String> {
+    if let Some(path) = bundled {
+        return Ok(SidecarLaunch::Bundled(path));
+    }
+    if let Some(command) = python {
+        return Ok(SidecarLaunch::Python(command));
+    }
+    Err("No bundled sidecar or Python runtime is available".into())
+}
+
+fn find_bundled_sidecar() -> Option<std::path::PathBuf> {
+    let directory = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let candidate = directory.join("mklink-sidecar.exe");
+    candidate.is_file().then_some(candidate)
+}
+
 fn find_python() -> Option<String> {
     for name in &["python", "python3"] {
         if which_exists(name) {
@@ -40,6 +65,10 @@ fn find_python() -> Option<String> {
         }
     }
     None
+}
+
+fn resolve_sidecar_launch() -> Result<SidecarLaunch, String> {
+    choose_sidecar_launch(find_bundled_sidecar(), find_python())
 }
 
 #[cfg(target_os = "windows")]
@@ -72,14 +101,17 @@ fn create_kill_on_close_job() -> Result<JobHandle, String> {
         let job = CreateJobObjectW(None, PCWSTR::null())
             .map_err(|e| format!("CreateJobObjectW failed: {}", e))?;
 
-        let mut info = windows::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        let mut info =
+            windows::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 
         SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
             &info as *const _ as *const _,
-            std::mem::size_of::<windows::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            std::mem::size_of::<
+                windows::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            >() as u32,
         )
         .map_err(|e| format!("SetInformationJobObject failed: {}", e))?;
 
@@ -90,8 +122,8 @@ fn create_kill_on_close_job() -> Result<JobHandle, String> {
 /// Assign a child process to the job object so it dies when we die.
 #[cfg(target_os = "windows")]
 fn assign_to_job(job: &JobHandle, child: &Child) -> Result<(), String> {
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
     use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
 
     unsafe {
         let proc_handle = OpenProcess(PROCESS_ALL_ACCESS, false, child.id())
@@ -105,16 +137,23 @@ fn assign_to_job(job: &JobHandle, child: &Child) -> Result<(), String> {
     }
 }
 
-fn spawn_sidecar(python: &str, port: u16, project_root: &str) -> Result<Child, String> {
+fn spawn_sidecar(launch: &SidecarLaunch, port: u16, project_root: &str) -> Result<Child, String> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
     // CREATE_NO_WINDOW = 0x08000000 — prevents Python console window from flashing
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    Command::new(python)
+    let (mut command, label) = match launch {
+        SidecarLaunch::Bundled(path) => (Command::new(path), path.to_string_lossy().into_owned()),
+        SidecarLaunch::Python(python) => {
+            let mut command = Command::new(python);
+            command.args(["-m", "mklink"]);
+            (command, python.clone())
+        }
+    };
+
+    command
         .args([
-            "-m",
-            "mklink",
             "serve",
             "--host",
             "127.0.0.1",
@@ -128,7 +167,7 @@ fn spawn_sidecar(python: &str, port: u16, project_root: &str) -> Result<Child, S
         .stderr(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
-        .map_err(|e| format!("Failed to start sidecar ({}): {}", python, e))
+        .map_err(|e| format!("Failed to start sidecar ({}): {}", label, e))
 }
 
 /// Minimal HTTP health check using raw TCP — no external deps needed.
@@ -199,8 +238,8 @@ fn start_sidecar(
     let port = port.unwrap_or(state.port);
     let project_root = project_root.unwrap_or_else(|| state.project_root.clone());
 
-    let python = find_python().ok_or("Python not found on PATH")?;
-    let child = spawn_sidecar(&python, port, &project_root)?;
+    let launch = resolve_sidecar_launch()?;
+    let child = spawn_sidecar(&launch, port, &project_root)?;
 
     #[cfg(target_os = "windows")]
     {
@@ -296,20 +335,23 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
 
             // Check if port is already in use — no point restarting if so
             if check_health(state.port) {
-                eprintln!("[tauri] port {} already in use, skipping restart", state.port);
+                eprintln!(
+                    "[tauri] port {} already in use, skipping restart",
+                    state.port
+                );
                 restart_count = restart_count.saturating_sub(1); // don't count this
                 continue;
             }
 
-            let python = match find_python() {
-                Some(p) => p,
-                None => {
-                    eprintln!("[tauri] python not found, cannot restart");
+            let launch = match resolve_sidecar_launch() {
+                Ok(launch) => launch,
+                Err(error) => {
+                    eprintln!("[tauri] cannot resolve sidecar: {}", error);
                     continue;
                 }
             };
 
-            match spawn_sidecar(&python, state.port, &state.project_root) {
+            match spawn_sidecar(&launch, state.port, &state.project_root) {
                 Ok(child) => {
                     #[cfg(target_os = "windows")]
                     {
@@ -424,4 +466,33 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_sidecar_wins_over_python() {
+        let bundled = std::path::PathBuf::from(r"C:\Program Files\Mklink\mklink-sidecar.exe");
+        assert_eq!(
+            choose_sidecar_launch(Some(bundled.clone()), Some("python".into()),).unwrap(),
+            SidecarLaunch::Bundled(bundled),
+        );
+    }
+
+    #[test]
+    fn python_is_only_the_development_fallback() {
+        assert_eq!(
+            choose_sidecar_launch(None, Some("python".into())).unwrap(),
+            SidecarLaunch::Python("python".into()),
+        );
+    }
+
+    #[test]
+    fn missing_sidecar_and_python_is_an_error() {
+        assert!(choose_sidecar_launch(None, None)
+            .unwrap_err()
+            .contains("No bundled sidecar or Python runtime"));
+    }
 }
