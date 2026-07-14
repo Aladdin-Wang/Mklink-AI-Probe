@@ -196,7 +196,7 @@ class RttStreamManager:
     """Manages RTT streaming sessions with SSE output."""
 
     def __init__(
-        self, stream_hub=None, *, raw_batch_lines: int = 256,
+        self, stream_hub=None, *, raw_batch_lines: int = 512,
         waveform_batch_samples: int = 256,
     ):
         self._bridge = AsyncBridge()

@@ -237,6 +237,24 @@ def test_rtt_marker_lines_do_not_reset_stable_csv_waveform_layout():
     assert manager.get_status()["numeric_channels"] == ["v0", "v1", "v2", "v3"]
 
 
+def test_rtt_default_marker_mix_stays_near_100fps_and_keeps_30hz_waveform():
+    hub = _RecordingHub()
+    manager = RttStreamManager(stream_hub=hub)
+
+    for index in range(100):
+        manager.feed_rtt_bytes(b"1,2,3,4\n" * 110)
+        manager.feed_rtt_bytes(f"M,{index},{index},0\n".encode())
+    manager.flush_pending()
+
+    batches = hub.snapshot()
+    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
+    assert sum(batch.item_count for batch in raw) == 11_100
+    assert sum(batch.item_count for batch in waveform) == 11_000
+    assert len(waveform) >= 30
+    assert len(raw) + len(waveform) <= 100
+
+
 def test_rtt_manager_stop_closes_the_device_stream_session():
     read_started = threading.Event()
 
