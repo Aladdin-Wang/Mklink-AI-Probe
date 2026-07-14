@@ -27,15 +27,18 @@ clock; it is not a measured packaged-app frame rate.
 ## MKLink HIL matrix
 
 Target qualification uses the connected MKLink and STM32F103RC test project.
-For each stream, increase the requested acquisition rate until a loss counter
-changes, then repeat the highest zero-drop rate for 30 wall-clock minutes.
+The 30-minute rows report qualified stable zero-drop rates. RTT also has a
+measured overload boundary. VOFA and SuperWatch use the fastest supported
+request period (10 us), where MKLink throughput plateaus near 8 kSamples/s;
+SystemView uses the qualified pairs=2/tick load. These three are not claimed as
+drop-bounded maxima because a higher failing point was not retained.
 
-| Stream | Probe firmware | SWD | Channels/events | Highest zero-drop rate | 30 min items | Bytes/s | Backend drops | Frontend drops | Peak memory | Render FPS | Paused/hidden acquisition | Evidence scope |
+| Stream | Probe firmware | SWD | Channels/events | Qualified stable zero-drop rate | 30 min items | Bytes/s | Backend drops | Frontend drops | Peak memory | Render FPS | Paused/hidden acquisition | Evidence scope |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
-| SystemView | V4.3.4 | 1 MHz | host-armed user-event pairs=2/tick | 20,093.43 events/s | 36,171,279 | 966,024.77 | 0 | pending browser gate | pending | pending browser gate | pending browser gate | backend HIL PASS |
-| VOFA | V4.3.4 | 1 MHz | 2 | 8,044.33 samples/s | 14,479,808 | 73,404.55 | 0 | pending browser gate | pending | pending browser gate | pending browser gate | backend HIL PASS |
-| RTT | V4.3.4 | 1 MHz | 4 numeric + raw log | 12,997.51 samples/s | 23,395,840 | 474,932.82 | 0 | pending browser gate | 70,324,224 B | pending browser gate | pending browser gate | backend HIL PASS |
-| SuperWatch | V4.3.4 | 1 MHz | 2 | 8,023.71 samples/s | 14,442,688 | 73,477.36 | 0 | pending browser gate | pending | pending browser gate | pending browser gate | backend HIL PASS |
+| SystemView | V4.3.4 | 1 MHz | qualified backend load: pairs=2/tick; frontend: pairs=1/tick | 20,093.43 events/s | 36,171,279 | 966,024.77 | 0 measured increment | 0 | 798,273,536 B | 25.68 visible / 25.73 resumed | pause PASS; hidden not established | backend + Edge visible/pause PASS; hidden N/E |
+| VOFA | V4.3.4 | 1 MHz | 2 | 8,044.33 samples/s | 14,479,808 | 73,404.55 | 0 | 0 | 736,600,064 B | 25.98 visible / 25.56 resumed | pause PASS; hidden not established | backend + Edge visible/pause PASS; hidden N/E |
+| RTT | V4.3.4 | 1 MHz | 4 numeric + raw log | 12,997.51 samples/s | 23,395,840 | 474,932.82 | 0 | 0 | 709,496,832 B | 5.10 visible / 4.92 resumed | pause PASS; hidden not established | backend + Edge visible/pause PASS; hidden N/E |
+| SuperWatch | V4.3.4 | 1 MHz | 2 | 8,023.71 samples/s | 14,442,688 | 73,477.36 | 0 | 0 | 733,954,048 B | 25.98 visible / 25.97 resumed | pause PASS; hidden not established | backend + Edge visible/pause PASS; hidden N/E |
 
 The committed report must contain only the masked probe identity, firmware
 version, STM32F103RC, configured SWD frequency, aggregate samples/events per
@@ -50,6 +53,33 @@ The backend HIL artifacts are
 [SuperWatch](artifacts/superwatch-ws-30min-2026-07-14.json). All four used
 one authenticated binary WebSocket for the complete timed window and report
 zero sequence gaps and zero stream-specific backend loss increments.
+
+The real Edge frontend artifacts are
+[SystemView](artifacts/edge-systemview-browser-2026-07-14.json),
+[VOFA](artifacts/edge-vofa-browser-2026-07-14.json),
+[RTT](artifacts/edge-rtt-browser-2026-07-14.json), and
+[SuperWatch](artifacts/edge-superwatch-browser-2026-07-14.json). Each gate
+loaded the hashed Worker and binary WebSocket, observed real target data,
+kept acquisition and Worker counters advancing during a five-second render
+pause, rendered zero target Canvas frames while paused, resumed without
+sequence or transport loss. The SystemView, VOFA, and SuperWatch gates also
+captured zero-client/resource cleanup. The original RTT Edge run did not
+capture cleanup; its stale session was stopped and dearmed before later gates,
+and the committed probe now verifies stop, dearm readback, zero clients, and
+resource release in `finally`. SystemView startup/SYNC loss is reported as a frozen warm-up baseline;
+the visible, pause, and resume intervals all have zero target/parser/backend
+loss increments.
+
+The RTT Edge run predates the final strict integrity predicate. Its artifact
+separates the captured run evidence from the later probe hardening: the current
+probe explicitly counts frontend sequence errors and checks Worker transport,
+Worker-reported backend, and backend batch/item/byte loss before PASS.
+
+Edge 130 did not support `Emulation.setPageVisibilityOverride`, and bringing a
+second tab to the foreground did not change the tested tab to
+`document.hidden=true`. Therefore hidden-tab HIL is uniformly recorded as
+`not-established`, not PASS. Hidden-document scheduling remains covered by
+the deterministic `RenderScheduler` test.
 
 RTT qualification used a test-firmware-only 16 KiB channel-0 up buffer. The
 original 1 KiB buffer exposed target scheduling jitter: burst 11 sustained
@@ -77,7 +107,7 @@ only HIL.
 The packaged Tauri gate is:
 
 ```powershell
-python scripts/build.py --check
+python skills/tauri-gui-builder/scripts/build.py --check
 Set-Location gui
 npx tauri build
 ```
@@ -86,6 +116,20 @@ Install or launch the produced bundle, then run one physical stream for five
 wall-clock minutes. Confirm that the hashed Worker asset and binary WebSocket
 load from the packaged application. Build products and raw captures remain
 untracked.
+
+The release build produced the Windows executable, MSI, and NSIS bundles. A
+  real packaged WebView2 RTT session then ran for 300.027 seconds through the
+  Tauri asset origin and hashed Worker: 31,010 WebSocket data frames matched
+  31,010 Worker-accepted frames, both ended at sequence 34,334, and carried
+  7,832,827 items. The run retained 200,000 Worker samples, rendered at 5.27 FPS,
+  reported zero backend/frontend/sequence loss and zero console errors, then
+  finished with the backend stopped, zero active clients, no RTT resource owner,
+  and successful target-dearm readback. See
+[tauri-rtt-5min-2026-07-14.json](artifacts/tauri-rtt-5min-2026-07-14.json).
+The committed probe performs stop, dearm, readback, client cleanup, and resource-
+owner verification in `finally`. Exact WebSocket/Worker frame parity, final
+sequence agreement, transport/backend loss, render FPS, console state, and every
+cleanup result are required by one PASS predicate.
 
 ## Regression commands
 

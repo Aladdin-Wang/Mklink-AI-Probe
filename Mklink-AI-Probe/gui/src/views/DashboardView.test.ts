@@ -141,6 +141,28 @@ describe('DashboardView layout classes', () => {
     expect(wrapper.get('.card').classes()).toContain('card-systemview')
   })
 
+  it('can open directly on the SuperWatch tab from the route query', () => {
+    routerMock.query = { tab: 'superwatch' }
+
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: { template: '<div class="superwatch-route-probe" />', props: ['deviceConnected'] },
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          VofaTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.find('.superwatch-route-probe').exists()).toBe(true)
+  })
+
   it('reconnects SystemView control and binary streams when opening a running trace', () => {
     const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
 

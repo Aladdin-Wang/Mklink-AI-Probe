@@ -15,12 +15,12 @@
       <div class="sv-toolbar">
         <ControlToolbar
           v-if="!offlineMode"
-          :state="dash.state.value"
+          :state="toolbarState"
           :error="dash.error.value"
           :device-connected="deviceConnected"
           @start="onStart"
-          @pause="dash.pause()"
-          @resume="dash.resume()"
+          @pause="onPauseRender"
+          @resume="onResumeRender"
           @stop="onStop"
         />
         <button v-else class="btn-clear sv-mode-btn" @click="returnToLive">实时</button>
@@ -230,6 +230,10 @@ const { data: statusData, connect: connectStatus, disconnect: disconnectStatus }
   passthroughEvents: ['status'],
 })
 const binaryStream = useBinaryStream('systemview', { capacity: 100_000, channelCount: 1 })
+const renderPaused = ref(false)
+const toolbarState = computed(() => (
+  dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+))
 const { checkConflict } = useResourceStatus()
 
 // ---- 状态 ----
@@ -314,6 +318,7 @@ onMounted(() => {
         tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
+        renderPaused: renderPaused.value,
       },
     )
   }
@@ -377,6 +382,7 @@ watch(() => meta.cpuFreq, () => {
         tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
+        renderPaused: renderPaused.value,
       },
     )
   }
@@ -529,7 +535,7 @@ watch(binaryStream.telemetry, telemetry => {
 })
 
 watch(binaryStream.systemViewVisible, visible => {
-  if (!visible || offlineMode.value || visible.requestId !== visibleRequestId) return
+  if (!visible || renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
   latestBinaryTime = visible.latestTime
   binaryTickOrigin = visible.tickOrigin
   const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
@@ -675,6 +681,9 @@ async function importLogFile(file: File) {
   importAbort = controller
   disconnectStatus()
   binaryStream.stop()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   if (dash.state.value !== 'idle') {
     await dash.stop()
   }
@@ -771,6 +780,9 @@ async function onStart() {
     if (!confirm(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`)) return
   }
   clearAll()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   await dash.start()
   if (!operationIsActive(generation)) return
   connectTimer = setTimeout(() => {
@@ -780,11 +792,26 @@ async function onStart() {
     binaryStream.start()
   }, 500)
 }
+function onPauseRender() {
+  renderPaused.value = true
+  visibleRequestId++
+  renderScheduler?.stop()
+  tlInstance?.pauseRendering()
+}
+function onResumeRender() {
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
+  renderScheduler?.invalidate('data')
+}
 async function onStop() {
   const generation = ++operationGeneration
   cancelPendingConnect()
   disconnectStatus()
   binaryStream.stop()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   await dash.stop()
   if (!operationIsActive(generation)) return
   await refreshLogList()

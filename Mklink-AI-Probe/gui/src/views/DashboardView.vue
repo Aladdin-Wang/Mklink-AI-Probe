@@ -115,7 +115,7 @@ const {
 } = useMklinkApi()
 const toast = useToast()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
-const dashboardTabs = new Set(['rtt', 'watch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
+const dashboardTabs = new Set(['rtt', 'superwatch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
 const flashing = ref(false)

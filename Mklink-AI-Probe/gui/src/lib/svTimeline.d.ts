@@ -13,6 +13,7 @@ export interface SvTimelineData {
   follow?: boolean
   windowSize?: number
   tickOrigin?: bigint
+  renderPaused?: boolean
 }
 export class SvTimeline {
   viewStart: number | null
@@ -23,6 +24,8 @@ export class SvTimeline {
   setWindowSize(windowSize: number): void
   setTickOrigin(tickOrigin: bigint): void
   setFollowMode(enabled: boolean): void
+  pauseRendering(): void
+  resumeRendering(): void
   reset(): void
   toggleTask(tid: number): void
   destroy(): void

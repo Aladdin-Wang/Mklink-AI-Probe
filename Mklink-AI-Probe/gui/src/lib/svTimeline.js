@@ -29,6 +29,8 @@ export function exactTickFromOffset(origin, offset) {
   return (origin + BigInt(Math.round(offset))).toString();
 }
 
+const FOLLOW_FRAME_INTERVAL_MS = 1000 / 30;
+
 export class SvTimeline {
   constructor(roots, data) {
     this.roots = roots;
@@ -57,6 +59,8 @@ export class SvTimeline {
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followEase = 0.22;
     this._followRaf = 0;
+    this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._renderPaused = (data && data.renderPaused) === true;
     this.setData((data && data.intervals) || []);
     this._bind();
     this._resize();
@@ -111,8 +115,8 @@ export class SvTimeline {
       }
     }
     this._layout();
-    this._draw();
-    this._updateStatus();
+    const drew = shouldFollow ? this._drawLive() : (this._draw(), true);
+    if (drew) this._updateStatus();
     if (shouldFollow && !viewInvalid && hadIntervalsBefore) this._scheduleFollow();
   }
 
@@ -190,11 +194,23 @@ export class SvTimeline {
     }
   }
 
+  _drawLive(timestamp = performance.now()) {
+    if (this._renderPaused) return false;
+    const lastRender = Number.isFinite(this._lastLiveRender)
+      ? this._lastLiveRender
+      : Number.NEGATIVE_INFINITY;
+    if (timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
+    this._lastLiveRender = timestamp;
+    this._draw();
+    return true;
+  }
+
   _scheduleFollow() {
-    if (!this.follow || this.windowSize <= 0 || this._followRaf) return;
-    const step = () => {
+    if (this._renderPaused || !this.follow || this.windowSize <= 0 || this._followRaf) return;
+    const step = (timestamp) => {
       this._followRaf = 0;
-      if (!this.follow || this.windowSize <= 0) return;
+      if (this._renderPaused || !this.follow || this.windowSize <= 0) return;
+      const now = Number.isFinite(timestamp) ? timestamp : performance.now();
       const target = this._targetFollowRange();
       const currentEnd = Number.isFinite(this.viewEnd) ? this.viewEnd : target.end;
       const delta = target.end - currentEnd;
@@ -205,8 +221,7 @@ export class SvTimeline {
         this.viewEnd = currentEnd + delta * this.followEase;
         this.viewStart = this.viewEnd - this.windowSize;
       }
-      this._draw();
-      this._updateStatus();
+      if (this._drawLive(now)) this._updateStatus();
       if (Math.abs(target.end - this.viewEnd) >= 0.5) {
         this._followRaf = requestAnimationFrame(step);
       }
@@ -214,13 +229,35 @@ export class SvTimeline {
     this._followRaf = requestAnimationFrame(step);
   }
 
+  pauseRendering() {
+    this._renderPaused = true;
+    if (this._followRaf) {
+      cancelAnimationFrame(this._followRaf);
+      this._followRaf = 0;
+    }
+  }
+
+  resumeRendering() {
+    if (!this._renderPaused) return;
+    this._renderPaused = false;
+    this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._layout();
+    if (this._drawLive()) this._updateStatus();
+    this._scheduleFollow();
+  }
+
   _layout() {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
     const cssH = this.rulerH + this.lanes.length * this.laneH + 4;
-    this.canvas.width = cssW * dpr; this.canvas.height = cssH * dpr;
-    this.canvas.style.height = cssH + 'px';
+    if (!this._renderPaused) {
+      const width = cssW * dpr;
+      const height = cssH * dpr;
+      if (this.canvas.width !== width) this.canvas.width = width;
+      if (this.canvas.height !== height) this.canvas.height = height;
+      this.canvas.style.height = cssH + 'px';
+    }
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.W = cssW; this.H = cssH;
     this.plotX0 = this.nameColW;
@@ -228,7 +265,10 @@ export class SvTimeline {
     this.plotW = this.plotX1 - this.plotX0;
   }
 
-  _resize = () => { this._layout(); this._draw(); }
+  _resize = () => {
+    this._layout();
+    if (!this._renderPaused) this._draw();
+  }
 
   _filterContinuous(intervals) {
     if (intervals.length < 8) return intervals;
@@ -353,6 +393,7 @@ export class SvTimeline {
   }
 
   _draw() {
+    if (this._renderPaused) return;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.font = '11px -apple-system,Segoe UI,Roboto,sans-serif';

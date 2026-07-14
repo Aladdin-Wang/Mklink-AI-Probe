@@ -159,6 +159,9 @@ window.__rttTestProbe = {
     count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
   }; },
   syncStatus: syncDashboardStatus,
+  collectionState: function() { return {
+    state: collectionState, paused: paused, renderPaused: renderPaused
+  }; },
   currentInterval: function() { return currentInterval; },
   RingBuffer: RingBuffer,
   hover: hoverProbe,
@@ -607,6 +610,40 @@ describe('VOFA viewer hot path source guard', () => {
   it('limits collection-boundary resets to VOFA and SuperWatch binary modes', () => {
     expect(source).toContain('var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;')
     expect(source).toContain("if (!IS_BINARY_WAVEFORM_MODE || typeof window === 'undefined'")
+  })
+
+  it('pauses only rendering without calling the backend pause endpoint', () => {
+    const pauseHandler = source.match(/document\.getElementById\('btn-pause'\)\.addEventListener[\s\S]*?\n}\);/)?.[0] ?? ''
+    expect(pauseHandler).toContain("updateCollectionUI(renderPaused ? 'paused' : 'running')")
+    expect(pauseHandler).not.toContain("API_CTRL + action")
+    expect(pauseHandler).not.toContain("fetch(")
+  })
+
+  it('clears a stale render pause before starting a new acquisition', () => {
+    const startHandler = source.match(/document\.getElementById\('btn-start'\)\.addEventListener[\s\S]*?\n}\);/)?.[0] ?? ''
+    expect(startHandler).toContain('renderPaused = false;')
+  })
+
+  it('does not let SuperWatch status polling cancel a local render pause', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+      document.getElementById('btn-pause')!.click()
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'paused', paused: true, renderPaused: true })
+
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'paused', paused: true, renderPaused: true })
+    } finally {
+      runtime.cleanup()
+    }
   })
 })
 

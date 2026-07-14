@@ -106,4 +106,125 @@ describe('SvTimeline continuous filtering', () => {
 
     expect(timeline._draw).not.toHaveBeenCalled()
   })
+
+  it('caps live follow animation draws at 30 FPS', () => {
+    const callbacks = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn(callback => {
+      callbacks.push(callback)
+      return callbacks.length
+    }))
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      follow: true,
+      windowSize: 100,
+      followEase: 0.22,
+      _followRaf: 0,
+      _lastFollowRender: Number.NEGATIVE_INFINITY,
+      tMin: 0,
+      tMax: 1_000,
+      viewStart: 0,
+      viewEnd: 100,
+      _draw: vi.fn(),
+      _updateStatus: vi.fn(),
+    })
+
+    timeline._scheduleFollow()
+    callbacks.shift()(0)
+    callbacks.shift()(8)
+    callbacks.shift()(34)
+
+    expect(timeline._draw).toHaveBeenCalledTimes(2)
+    vi.unstubAllGlobals()
+  })
+
+  it('shares one 30 FPS budget between live data and follow animation', () => {
+    const callbacks = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn(callback => {
+      callbacks.push(callback)
+      return callbacks.length
+    }))
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      follow: true,
+      windowSize: 100,
+      followEase: 0.22,
+      _followRaf: 0,
+      _lastLiveRender: Number.NEGATIVE_INFINITY,
+      tMin: 0,
+      tMax: 1_000,
+      viewStart: 0,
+      viewEnd: 100,
+      _draw: vi.fn(),
+      _updateStatus: vi.fn(),
+    })
+
+    timeline._drawLive(0)
+    timeline._scheduleFollow()
+    callbacks.shift()(8)
+
+    expect(timeline._draw).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('cancels follow rendering while paused and resumes without changing follow mode', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      follow: true,
+      windowSize: 100,
+      _followRaf: 7,
+      _lastLiveRender: 0,
+      _draw: vi.fn(),
+      _updateStatus: vi.fn(),
+      _scheduleFollow: vi.fn(),
+      _layout: vi.fn(),
+    })
+    const cancel = vi.fn()
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+
+    timeline.pauseRendering()
+    expect(cancel).toHaveBeenCalledWith(7)
+    expect(timeline._drawLive(100)).toBe(false)
+    expect(timeline.follow).toBe(true)
+
+    timeline.resumeRendering()
+    expect(timeline._layout).toHaveBeenCalledOnce()
+    expect(timeline._draw).toHaveBeenCalledOnce()
+    expect(timeline._scheduleFollow).toHaveBeenCalledOnce()
+    expect(timeline.follow).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('does not draw while an initially paused timeline is constructed or resized', () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 321
+    canvas.height = 123
+    const context = new Proxy({
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      measureText: vi.fn(() => ({ width: 0 })),
+    }, {
+      get(target, property) {
+        if (!(property in target)) target[property] = vi.fn()
+        return target[property]
+      },
+    })
+    canvas.getContext = vi.fn(() => context)
+    const timeline = new SvTimeline(
+      { canvas },
+      {
+        intervals: [],
+        follow: true,
+        windowSize: 100,
+        renderPaused: true,
+      },
+    )
+
+    window.dispatchEvent(new Event('resize'))
+    timeline.setData([{ tid: 1, name: 'main', start: 0, end: 10 }])
+
+    expect(context.clearRect).not.toHaveBeenCalled()
+    expect(canvas.width).toBe(321)
+    expect(canvas.height).toBe(123)
+    timeline.destroy()
+  })
 })

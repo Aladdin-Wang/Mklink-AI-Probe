@@ -221,6 +221,7 @@ function sortedFieldNames() {
 var CHANNEL_METADATA = {};
 var colorIdx = 0;
 var paused = false;
+var renderPaused = false;
 var tStart = 0;
 var rawLogLineCount = 0;
 var vofaChannels = [];
@@ -557,8 +558,11 @@ function syncDashboardStatus(d) {
     notifyVofaChannels();
   }
   var nextState = d.state;
+  if (IS_BINARY_WAVEFORM_MODE && renderPaused && nextState === 'running') {
+    nextState = 'paused';
+  }
   if (!nextState && d.running !== undefined) {
-    nextState = d.running ? (d.paused ? 'paused' : 'running') : 'stopped';
+    nextState = d.running ? (renderPaused ? 'paused' : 'running') : 'stopped';
   }
   updateCollectionUI(nextState || 'stopped');
   if (IS_VOFA_MODE) updateSampleRateBadge(d.interval, d.actual_rate, false);
@@ -616,6 +620,7 @@ if (typeof window !== 'undefined') {
 
 document.getElementById('btn-start').addEventListener('click', function() {
   if (typeof CONFIG !== 'undefined' && CONFIG.deviceConnected === false) return;
+  renderPaused = false;
   var opts = {method:'POST'};
   if (IS_VOFA_MODE && vofaChannels.length > 0) {
     opts.headers = {'Content-Type': 'application/json'};
@@ -653,17 +658,16 @@ document.getElementById('btn-start').addEventListener('click', function() {
     });
 });
 document.getElementById('btn-pause').addEventListener('click', function() {
-  var action = (collectionState === 'paused') ? 'resume' : 'pause';
-  fetch(API_CTRL + action, {method:'POST'})
-    .then(function(r){return r.json()})
-    .then(function(d){updateCollectionUI(d.status)})
-    .catch(function(){});
+  if (collectionState === 'stopped') return;
+  renderPaused = collectionState !== 'paused';
+  updateCollectionUI(renderPaused ? 'paused' : 'running');
 });
 document.getElementById('btn-stop').addEventListener('click', function() {
   if (!confirm('Stop data collection? This will end the session.')) return;
   fetch(API_CTRL + 'stop', {method:'POST'})
     .then(function(r){return r.json()})
     .then(function(d){
+      renderPaused = false;
       updateCollectionUI('stopped');
       notifyVofaStreamState('stopped');
     })
@@ -3822,9 +3826,11 @@ document.addEventListener('keydown', function(e) {
   if (helpOpen) return;
   if (e.key === 'p' || e.key === 'P') {
     if (collectionState === 'running') {
-      fetch(API_CTRL + 'pause', {method:'POST'}).then(function(r){return r.json()}).then(function(d){updateCollectionUI(d.status)}).catch(function(){});
+      renderPaused = true;
+      updateCollectionUI('paused');
     } else if (collectionState === 'paused') {
-      fetch(API_CTRL + 'resume', {method:'POST'}).then(function(r){return r.json()}).then(function(d){updateCollectionUI(d.status)}).catch(function(){});
+      renderPaused = false;
+      updateCollectionUI('running');
     }
   }
   if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey && !e.altKey) {

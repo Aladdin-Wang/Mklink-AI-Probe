@@ -4,9 +4,9 @@
     <template v-else>
       <div class="rtt-view-toolbar">
         <ControlToolbar
-          :state="dash.state.value" :error="dash.error.value"
+          :state="toolbarState" :error="dash.error.value"
           :device-connected="deviceConnected"
-          @start="onStart" @pause="dash.pause()" @resume="dash.resume()" @stop="onStop"
+          @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
         />
         <span class="line-count">{{ retainedCount }} 行</span>
         <span class="stream-health">
@@ -38,6 +38,10 @@ const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const chart = ref<HTMLCanvasElement | null>(null)
 const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
+const renderPaused = ref(false)
+const toolbarState = computed(() => (
+  dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+))
 let requestId = 0
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
@@ -51,7 +55,7 @@ const scheduler = new RenderScheduler(() => {
 })
 
 watch(() => binary.rttLines.value, batch => {
-  if (!batch) return
+  if (!batch || renderPaused.value) return
   logPanel.value?.append(batch.lines.map(line => ({
     time: line.timestampNs, level: line.level, text: line.text,
   } satisfies VirtualLogInput)))
@@ -65,7 +69,7 @@ watch(() => binary.waveformBatch.value, batch => {
 })
 
 watch(() => binary.envelope.value, envelope => {
-  if (!envelope || envelope.requestId !== requestId) return
+  if (!envelope || renderPaused.value || envelope.requestId !== requestId) return
   drawEnvelope(envelope)
 })
 
@@ -118,12 +122,27 @@ async function onStart(): Promise<void> {
   const conflicts = await checkConflict('rtt')
   if (conflicts.length && !confirm(`启动 RTT 将停止 ${conflicts.join('、')}，确认？`)) return
   clearLogs()
+  renderPaused.value = false
+  scheduler.start()
   binary.reset()
   await dash.start()
   if (!disposed) binary.start()
 }
 
+function onPauseRender(): void {
+  renderPaused.value = true
+  requestId++
+  scheduler.stop()
+}
+
+function onResumeRender(): void {
+  renderPaused.value = false
+  scheduler.start()
+  scheduler.invalidate('data')
+}
+
 async function onStop(): Promise<void> {
+  renderPaused.value = false
   binary.stop()
   await dash.stop()
 }

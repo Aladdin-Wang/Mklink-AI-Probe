@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(), stop: vi.fn(), pause: vi.fn(), resume: vi.fn(),
   },
   checkConflict: vi.fn(),
+  scheduler: {
+    start: vi.fn(), stop: vi.fn(), invalidate: vi.fn(),
+    recordCollection: vi.fn(), dispose: vi.fn(),
+  },
 }))
 
 vi.mock('../../composables/useBinaryStream', () => ({ useBinaryStream: mocks.useBinaryStream }))
@@ -34,7 +38,13 @@ vi.mock('../../composables/useResourceStatus', () => ({
   useResourceStatus: () => ({ checkConflict: mocks.checkConflict }),
 }))
 vi.mock('../../lib/stream/renderScheduler', () => ({
-  RenderScheduler: class { start() {} invalidate() {} recordCollection() {} dispose() {} },
+  RenderScheduler: class {
+    start = mocks.scheduler.start
+    stop = mocks.scheduler.stop
+    invalidate = mocks.scheduler.invalidate
+    recordCollection = mocks.scheduler.recordCollection
+    dispose = mocks.scheduler.dispose
+  },
 }))
 
 describe('RttViewTab binary migration', () => {
@@ -74,6 +84,63 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('pauses only rendering while binary acquisition remains active', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    expect(mocks.scheduler.stop).toHaveBeenCalled()
+    expect(mocks.dash.pause).not.toHaveBeenCalled()
+    expect(mocks.binary.stop).not.toHaveBeenCalled()
+    mocks.binary.rttLines.value = {
+      type: 'rtt-lines', sequence: 1n,
+      lines: [{ timestampNs: 1n, level: 'raw', text: 'paused-line' }],
+    }
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(0)
+
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(2)
+    expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
+    expect(mocks.dash.resume).not.toHaveBeenCalled()
+    expect(mocks.binary.start).not.toHaveBeenCalled()
+    mocks.binary.rttLines.value = {
+      type: 'rtt-lines', sequence: 2n,
+      lines: [{ timestampNs: 2n, level: 'raw', text: 'resumed-line' }],
+    }
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await nextTick()
+    expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('ignores an in-flight envelope that arrives after render pause', async () => {
+    const clearRect = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      setTransform: vi.fn(), clearRect, beginPath: vi.fn(), moveTo: vi.fn(),
+      lineTo: vi.fn(), stroke: vi.fn(), strokeStyle: '',
+    } as unknown as CanvasRenderingContext2D)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    mocks.binary.envelope.value = {
+      type: 'render-envelope', requestId: 0, channelCount: 1, pointCount: 2,
+      values: Float32Array.of(1, 2).buffer,
+      channelOffsets: Uint32Array.of(0, 2).buffer,
+    }
+    await nextTick()
+
+    expect(clearRect).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

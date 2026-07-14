@@ -20,6 +20,16 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(), stop: vi.fn(), reset: vi.fn(), requestVisibleRange: vi.fn(),
   },
   checkConflict: vi.fn(),
+  scheduler: {
+    start: vi.fn(), stop: vi.fn(), invalidate: vi.fn(),
+    recordCollection: vi.fn(), dispose: vi.fn(),
+  },
+  timeline: {
+    construct: vi.fn(),
+    pauseRendering: vi.fn(), resumeRendering: vi.fn(),
+    setPrefilteredIntervals: vi.fn(),
+  },
+  importLog: vi.fn(),
 }))
 
 vi.mock('../../composables/useDashboard', () => ({ useDashboard: () => mocks.dash }))
@@ -30,21 +40,28 @@ vi.mock('../../composables/useResourceStatus', () => ({
 }))
 vi.mock('../../lib/svTimeline', () => ({
   SvTimeline: class {
+    constructor(_roots: unknown, data: unknown) { mocks.timeline.construct(data) }
     setData() {}
     setTickOrigin() {}
-    setPrefilteredIntervals() {}
+    setPrefilteredIntervals = mocks.timeline.setPrefilteredIntervals
     setWindowSize() {}
+    pauseRendering = mocks.timeline.pauseRendering
+    resumeRendering = mocks.timeline.resumeRendering
     reset() {}
     destroy() {}
   },
 }))
 vi.mock('../../lib/stream/renderScheduler', () => ({
   RenderScheduler: class {
-    start() {}
-    invalidate() {}
-    recordCollection() {}
-    dispose() {}
+    start = mocks.scheduler.start
+    stop = mocks.scheduler.stop
+    invalidate = mocks.scheduler.invalidate
+    recordCollection = mocks.scheduler.recordCollection
+    dispose = mocks.scheduler.dispose
   },
+}))
+vi.mock('../../lib/systemViewImport', () => ({
+  importSystemViewJsonl: mocks.importLog,
 }))
 
 function deferred<T>() {
@@ -63,6 +80,7 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     mocks.binary.systemViewVisible = shallowRef(null) as typeof mocks.binary.systemViewVisible
     mocks.dash.stop.mockResolvedValue(undefined)
     mocks.checkConflict.mockResolvedValue([])
+    mocks.importLog.mockResolvedValue({ events: 0, skipped: 0, parseErrors: 0 })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
   })
 
@@ -112,6 +130,91 @@ describe('SystemViewTab asynchronous lifecycle', () => {
 
     expect(mocks.status.connect).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()
+  })
+
+  it('pauses only timeline rendering while Worker acquisition remains active', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    expect(mocks.scheduler.stop).toHaveBeenCalled()
+    expect(mocks.timeline.pauseRendering).toHaveBeenCalled()
+    expect(mocks.dash.pause).not.toHaveBeenCalled()
+    expect(mocks.binary.stop).not.toHaveBeenCalled()
+    publishVisibleEvent(72_000_000)
+    await nextTick()
+    expect(mocks.timeline.setPrefilteredIntervals).not.toHaveBeenCalled()
+
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(2)
+    expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
+    expect(mocks.timeline.resumeRendering).toHaveBeenCalled()
+    expect(mocks.dash.resume).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('constructs a replacement timeline already paused when the CPU clock changes', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    publishVisibleEvent(72_000_000)
+    await nextTick()
+
+    expect(mocks.timeline.construct).toHaveBeenLastCalledWith(
+      expect.objectContaining({ renderPaused: true }),
+    )
+    wrapper.unmount()
+  })
+
+  it('clears the timeline pause across stop and start lifecycle resets', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    await wrapper.get('.control-toolbar .btn-danger').trigger('click')
+    await flushPromises()
+    expect(mocks.timeline.resumeRendering).toHaveBeenCalledTimes(1)
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(2)
+
+    mocks.dash.state.value = 'idle'
+    await nextTick()
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.timeline.resumeRendering).toHaveBeenCalledTimes(2)
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('resumes rendering before importing an offline log from a paused trace', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File([''], 'trace.jsonl', { type: 'application/x-ndjson' })],
+    })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(mocks.timeline.resumeRendering).toHaveBeenCalled()
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(2)
+    expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
+    wrapper.unmount()
   })
 })
 
