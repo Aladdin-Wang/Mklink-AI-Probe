@@ -514,7 +514,7 @@ git commit -m "test: add packaged online flash HIL gate"
 - Create: `_maintainer/release/prepare_release.py`
 - Create: `_maintainer/testing/tests/test_release_manifest.py`
 
-- [ ] **Step 1: Write failing release-manifest tests**
+- [x] **Step 1: Write failing release-manifest tests**
 
 ```python
 def test_prepare_release_copies_named_assets_and_hashes_them(tmp_path):
@@ -546,13 +546,13 @@ def test_prepare_release_copies_named_assets_and_hashes_them(tmp_path):
 Also test that duplicate output names, missing inputs, and evidence outside
 `docs/verification/artifacts` are rejected.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 python -m pytest _maintainer/testing/tests/test_release_manifest.py -q
 ```
 
-- [ ] **Step 3: Implement the release preparer**
+- [x] **Step 3: Implement the release preparer**
 
 Provide `prepare_release(...)` and a CLI:
 
@@ -572,7 +572,7 @@ build time, platform, Python/Tauri versions, asset name/size/SHA-256, and
 evidence names. Emit `SHA256SUMS.txt` sorted by asset name. Do not include local
 source paths in either output.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 python -m pytest _maintainer/testing/tests/test_release_manifest.py -q
