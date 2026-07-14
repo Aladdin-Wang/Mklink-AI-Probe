@@ -146,11 +146,31 @@ def temporary_external_bin(config_path):
         config_path.write_bytes(original)
 
 
+@contextmanager
+def temporary_bundle_config(config_path):
+    """Apply bundle-only sidecar and numeric installer version settings."""
+    config_path = Path(config_path)
+    original = config_path.read_bytes()
+    data = json.loads(original.decode("utf-8"))
+    data["version"] = str(data.get("version", "0.0.0")).split("-", 1)[0]
+    data.setdefault("bundle", {})["externalBin"] = [
+        "binaries/mklink-sidecar"
+    ]
+    config_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        config_path.write_bytes(original)
+
+
 def build_release_bundle():
     """Build a bundle from the current source with a temporary sidecar config."""
     if not build_sidecar(force=True):
         raise SystemExit(1)
-    with temporary_external_bin(TAURI_DIR / "tauri.conf.json"):
+    with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
         build_tauri(bundle=True)
 
 

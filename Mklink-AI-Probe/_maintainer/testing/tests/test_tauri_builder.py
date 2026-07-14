@@ -61,3 +61,16 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     builder.build_release_bundle()
 
     assert calls == [True]
+
+
+def test_bundle_config_uses_numeric_installer_version_and_restores(builder, tmp_path):
+    config = tmp_path / "tauri.conf.json"
+    original = b'{"version":"0.1.0-rc.1","bundle":{"active":true}}\n'
+    config.write_bytes(original)
+
+    with builder.temporary_bundle_config(config):
+        patched = config.read_text(encoding="utf-8")
+        assert '"version": "0.1.0"' in patched
+        assert '"externalBin"' in patched
+
+    assert config.read_bytes() == original
