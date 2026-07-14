@@ -41,6 +41,7 @@ E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1
 - `skills/tauri-gui-builder/scripts/build.py` - force current-source sidecar builds and restore temporary Tauri config.
 - `gui/src-tauri/tauri.conf.json` - RC SemVer when supported by bundlers.
 - `gui/src-tauri/Cargo.toml` - RC SemVer.
+- `gui/src-tauri/Cargo.lock` - synchronized crate package version.
 - `pyproject.toml` - PEP 440 RC version.
 - `gui/src/components/online-flash/ProbeSettingsPanel.vue` - stable automation selector for the probe.
 - `gui/src/components/online-flash/TargetPackPanel.vue` - stable search/update selectors.
@@ -168,7 +169,7 @@ git commit -m "fix: launch bundled Tauri sidecar"
 - Modify: `gui/src-tauri/Cargo.toml`
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Write failing builder tests**
+- [x] **Step 1: Write failing builder tests**
 
 Load the builder with `importlib.util.spec_from_file_location`. Test a new
 context manager and sidecar freshness:
@@ -205,7 +206,7 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     assert calls == [True]
 ```
 
-- [ ] **Step 2: Run builder tests and verify RED**
+- [x] **Step 2: Run builder tests and verify RED**
 
 ```powershell
 python -m pytest _maintainer/testing/tests/test_tauri_builder.py -q
@@ -214,7 +215,7 @@ python -m pytest _maintainer/testing/tests/test_tauri_builder.py -q
 Expected: failures because `temporary_external_bin` and
 `build_release_bundle` do not exist.
 
-- [ ] **Step 3: Implement exact config restoration and forced rebuild**
+- [x] **Step 3: Implement exact config restoration and forced rebuild**
 
 Add:
 
@@ -244,7 +245,7 @@ Change `build_sidecar(force=False)` so `force=True` removes the cached target
 sidecar and PyInstaller `dist/mklink-sidecar.exe` before rebuilding. Route
 `--bundle` through `build_release_bundle()`.
 
-- [ ] **Step 4: Set release-candidate versions**
+- [x] **Step 4: Set release-candidate versions**
 
 Set:
 
@@ -267,7 +268,7 @@ If `cargo check` or the MSI bundle rejects prerelease SemVer, keep Cargo and
 Tauri at `0.1.0`, retain Python `0.1.0rc1`, and record the numeric-installer
 fallback in the report and release manifest.
 
-- [ ] **Step 5: Verify builder and version files**
+- [x] **Step 5: Verify builder and version files**
 
 ```powershell
 python -m pytest _maintainer/testing/tests/test_tauri_builder.py -q
@@ -278,10 +279,10 @@ Set-Location ../..
 git diff --check
 ```
 
-- [ ] **Step 6: Commit builder hardening**
+- [x] **Step 6: Commit builder hardening**
 
 ```powershell
-git add -- _maintainer/testing/tests/test_tauri_builder.py skills/tauri-gui-builder/scripts/build.py gui/src-tauri/tauri.conf.json gui/src-tauri/Cargo.toml pyproject.toml
+git add -- _maintainer/testing/tests/test_tauri_builder.py skills/tauri-gui-builder/scripts/build.py gui/src-tauri/tauri.conf.json gui/src-tauri/Cargo.toml gui/src-tauri/Cargo.lock pyproject.toml
 git commit -m "build: make RC bundles self-contained"
 ```
 

@@ -16,6 +16,8 @@ import os
 import shutil
 import argparse
 import platform
+import json
+from contextlib import contextmanager
 from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -87,10 +89,16 @@ def check_python_deps():
     return True
 
 
-def build_sidecar():
+def build_sidecar(force=False):
     """Build Python sidecar exe with PyInstaller."""
     sidecar_dir = TAURI_DIR / "binaries"
     sidecar_exe = sidecar_dir / "mklink-sidecar-x86_64-pc-windows-msvc.exe"
+    dist_dir = SKILL_DIR / "dist"
+    built = dist_dir / "mklink-sidecar.exe"
+
+    if force:
+        sidecar_exe.unlink(missing_ok=True)
+        built.unlink(missing_ok=True)
 
     if sidecar_exe.exists():
         print(f"[OK] Sidecar already exists: {sidecar_exe}")
@@ -102,23 +110,48 @@ def build_sidecar():
     except ImportError:
         run([sys.executable, "-m", "pip", "install", "pyinstaller"])
 
-    dist_dir = SKILL_DIR / "dist"
     run([
         sys.executable, "-m", "PyInstaller",
-        "--onefile", "--name", "mklink-sidecar",
+        "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
         "--collect-all", "mklink",
         "-p", str(SKILL_DIR),
         str(SKILL_DIR / "mklink" / "__main__.py"),
     ], cwd=str(SKILL_DIR))
 
     sidecar_dir.mkdir(parents=True, exist_ok=True)
-    built = dist_dir / "mklink-sidecar.exe"
     if built.exists():
         shutil.copy2(str(built), str(sidecar_exe))
         print(f"[OK] Sidecar copied to {sidecar_exe}")
         return True
     print("[FAIL] PyInstaller did not produce mklink-sidecar.exe")
     return False
+
+
+@contextmanager
+def temporary_external_bin(config_path):
+    """Add the release sidecar config and restore the exact original bytes."""
+    config_path = Path(config_path)
+    original = config_path.read_bytes()
+    data = json.loads(original.decode("utf-8"))
+    data.setdefault("bundle", {})["externalBin"] = [
+        "binaries/mklink-sidecar"
+    ]
+    config_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        config_path.write_bytes(original)
+
+
+def build_release_bundle():
+    """Build a bundle from the current source with a temporary sidecar config."""
+    if not build_sidecar(force=True):
+        raise SystemExit(1)
+    with temporary_external_bin(TAURI_DIR / "tauri.conf.json"):
+        build_tauri(bundle=True)
 
 
 def build_tauri(bundle=False):
@@ -211,19 +244,8 @@ def main():
     # Build
     if args.bundle:
         print("\n--- Building sidecar (PyInstaller) ---")
-        if not build_sidecar():
-            sys.exit(1)
-
-        # Restore externalBin in tauri.conf.json for bundling
-        conf = TAURI_DIR / "tauri.conf.json"
-        text = conf.read_text(encoding="utf-8")
-        if "externalBin" not in text:
-            text = text.replace(
-                '"icon":',
-                '"externalBin": ["binaries/mklink-sidecar"],\n    "icon":',
-            )
-            conf.write_text(text, encoding="utf-8")
-            print("[INFO] Added externalBin to tauri.conf.json for sidecar bundling")
+        build_release_bundle()
+        return
 
     print("\n--- Building Tauri application ---")
     build_tauri(bundle=args.bundle)

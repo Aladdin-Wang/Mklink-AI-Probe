@@ -1,0 +1,63 @@
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+
+BUILDER_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "skills"
+    / "tauri-gui-builder"
+    / "scripts"
+    / "build.py"
+)
+
+
+@pytest.fixture
+def builder():
+    spec = importlib.util.spec_from_file_location("mklink_tauri_builder", BUILDER_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_external_bin_patch_restores_exact_config(builder, tmp_path):
+    config = tmp_path / "tauri.conf.json"
+    original = b'{"bundle":{"active":true,"icon":[]}}\n'
+    config.write_bytes(original)
+
+    with builder.temporary_external_bin(config):
+        assert "externalBin" in config.read_text(encoding="utf-8")
+
+    assert config.read_bytes() == original
+
+
+def test_external_bin_patch_restores_after_failure(builder, tmp_path):
+    config = tmp_path / "tauri.conf.json"
+    original = b'{"bundle":{"active":true,"icon":[]}}'
+    config.write_bytes(original)
+
+    with pytest.raises(RuntimeError, match="build failed"):
+        with builder.temporary_external_bin(config):
+            raise RuntimeError("build failed")
+
+    assert config.read_bytes() == original
+
+
+def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
+    calls = []
+    builder.TAURI_DIR = tmp_path
+    (tmp_path / "tauri.conf.json").write_text(
+        '{"bundle":{"active":true,"icon":[]}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        builder,
+        "build_sidecar",
+        lambda force=False: calls.append(force) or True,
+    )
+    monkeypatch.setattr(builder, "build_tauri", lambda bundle=False: None)
+
+    builder.build_release_bundle()
+
+    assert calls == [True]
