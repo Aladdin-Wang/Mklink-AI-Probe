@@ -341,7 +341,7 @@ git commit -m "test: expose online flash HIL selectors"
 - Modify: `_maintainer/testing/performance/packaged_stream_probe.cjs`
 - Modify: `_maintainer/testing/performance/packaged_stream_probe.test.cjs`
 
-- [ ] **Step 1: Write failing stream-profile tests**
+- [x] **Step 1: Write failing stream-profile tests**
 
 Add tests for a new exported `streamProfile(name)` and duration-aware gate:
 
@@ -370,7 +370,7 @@ test('uses the requested wall-clock duration', () => {
 Update `cleanMetrics()` to carry `streamName`, `requiredDurationSeconds`, and a
 matching WebSocket path.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```powershell
 node --test _maintainer/testing/performance/packaged_stream_probe.test.cjs
@@ -379,7 +379,7 @@ node --test _maintainer/testing/performance/packaged_stream_probe.test.cjs
 Expected: `streamProfile` is missing and the gate still hardcodes five minutes
 and RTT.
 
-- [ ] **Step 3: Implement stream profiles**
+- [x] **Step 3: Implement stream profiles**
 
 Add one immutable profile table:
 
@@ -414,7 +414,7 @@ inside the installed GUI.
 Retain the existing strict parity, sequence, loss, FPS, cleanup, target-dearm,
 and `browser.close()` predicates. Export `streamProfile`.
 
-- [ ] **Step 4: Verify the generalized gate**
+- [x] **Step 4: Verify the generalized gate**
 
 ```powershell
 node --test _maintainer/testing/performance/browser_stream_probe.test.cjs _maintainer/testing/performance/frontend_stream_gate.test.cjs _maintainer/testing/performance/packaged_stream_probe.test.cjs
@@ -422,7 +422,7 @@ node --test _maintainer/testing/performance/browser_stream_probe.test.cjs _maint
 
 Expected: all Node release-harness tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- _maintainer/testing/performance/packaged_stream_probe.cjs _maintainer/testing/performance/packaged_stream_probe.test.cjs

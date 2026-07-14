@@ -9,10 +9,13 @@ const {
   cleanupAndDisconnect,
   evaluatePackagedGate,
   runWithCleanup,
+  streamProfile,
 } = require('./packaged_stream_probe.cjs')
 
 function cleanMetrics() {
   return {
+    streamName: 'rtt',
+    requiredDurationSeconds: 300,
     elapsedSeconds: 300,
     workerAssetUrls: ['http://tauri.localhost/assets/streamDecoder.worker-abc.js'],
     websocketUrls: ['ws://127.0.0.1:8765/ws/streams/rtt'],
@@ -41,6 +44,27 @@ function cleanMetrics() {
     consoleErrors: [],
   }
 }
+
+test('defines packaged profiles for all high-rate streams', () => {
+  assert.deepEqual(
+    ['rtt', 'systemview', 'vofa', 'superwatch']
+      .map(name => streamProfile(name).websocketName),
+    ['rtt', 'systemview', 'vofa', 'superwatch'],
+  )
+})
+
+test('rejects unknown packaged stream profiles', () => {
+  assert.throws(() => streamProfile('serial'), /unsupported packaged stream/)
+})
+
+test('uses the requested wall-clock duration', () => {
+  const metrics = cleanMetrics()
+  metrics.requiredDurationSeconds = 600
+  metrics.elapsedSeconds = 599.9
+  assert.equal(evaluatePackagedGate(metrics).pass, false)
+  metrics.elapsedSeconds = 600
+  assert.equal(evaluatePackagedGate(metrics).pass, true)
+})
 
 test('module import does not start the packaged HIL run', () => {
   const script = path.resolve(__dirname, 'packaged_stream_probe.cjs')

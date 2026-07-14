@@ -3,6 +3,35 @@
 
 const fs = require('node:fs')
 
+const STREAM_PROFILES = Object.freeze({
+  rtt: Object.freeze({
+    tab: 'RTT View', websocketName: 'rtt', apiName: 'rtt',
+    owner: 'user:dashboard:rtt', root: '.rtt-view-tab:visible',
+    start: '.control-toolbar .btn-primary', stop: '.control-toolbar .btn-danger',
+  }),
+  systemview: Object.freeze({
+    tab: 'RTOS Trace', websocketName: 'systemview', apiName: 'systemview',
+    owner: 'user:dashboard:systemview', root: '.sv-tab:visible',
+    start: '.control-toolbar .btn-primary', stop: '.control-toolbar .btn-danger',
+  }),
+  vofa: Object.freeze({
+    tab: 'VOFA+', websocketName: 'vofa', apiName: 'vofa',
+    owner: 'user:dashboard:vofa', root: '.waveform-viewer:visible',
+    start: '#btn-start', stop: '#btn-stop',
+  }),
+  superwatch: Object.freeze({
+    tab: 'SuperWatch', websocketName: 'superwatch', apiName: 'superwatch',
+    owner: 'user:dashboard:superwatch', root: '.waveform-viewer:visible',
+    start: '#btn-start', stop: '#btn-stop',
+  }),
+})
+
+function streamProfile(name) {
+  const profile = STREAM_PROFILES[name]
+  if (!profile) throw new Error(`unsupported packaged stream: ${name}`)
+  return profile
+}
+
 async function apiJson(baseUrl, path, options = {}) {
   let lastError
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -40,9 +69,9 @@ async function verifyMemoryWrites(baseUrl, writes) {
   return true
 }
 
-async function cleanupPackagedGate(baseUrl, toolbar, targetDearmWrites) {
-  try { await toolbar?.locator('.btn-danger').click({ timeout: 5_000 }) } catch { /* REST fallback below */ }
-  try { await apiJson(baseUrl, '/api/dash/rtt/stop', { method: 'POST' }) } catch { /* status check reports failure */ }
+async function cleanupPackagedGate(baseUrl, streamRoot, profile, targetDearmWrites) {
+  try { await streamRoot?.locator(profile.stop).click({ timeout: 5_000 }) } catch { /* REST fallback below */ }
+  try { await apiJson(baseUrl, `/api/dash/${profile.apiName}/stop`, { method: 'POST' }) } catch { /* status check reports failure */ }
   let targetDearmed = false
   try {
     await applyMemoryWrites(baseUrl, targetDearmWrites)
@@ -53,7 +82,7 @@ async function cleanupPackagedGate(baseUrl, toolbar, targetDearmWrites) {
   let resources = null
   let resourceStatusAvailable = false
   for (let attempt = 0; attempt < 10; attempt++) {
-    try { status = await apiJson(baseUrl, '/api/dash/rtt/status') } catch { status = {} }
+    try { status = await apiJson(baseUrl, `/api/dash/${profile.apiName}/status`) } catch { status = {} }
     try {
       resources = await apiJson(baseUrl, '/api/resources/status')
       resourceStatusAvailable = true
@@ -62,7 +91,7 @@ async function cleanupPackagedGate(baseUrl, toolbar, targetDearmWrites) {
       resourceStatusAvailable = false
     }
     const ownerPresent = resourceStatusAvailable
-      ? Object.values(resources).some(item => item?.owner === 'user:dashboard:rtt')
+      ? Object.values(resources).some(item => item?.owner === profile.owner)
       : null
     if (status.running === false
       && Number(status.stream?.active_clients || 0) === 0
@@ -75,7 +104,7 @@ async function cleanupPackagedGate(baseUrl, toolbar, targetDearmWrites) {
     activeClients: Number(status.stream?.active_clients || 0),
     resourceStatusAvailable,
     resourceOwnerPresent: resourceStatusAvailable
-      ? Object.values(resources).some(item => item?.owner === 'user:dashboard:rtt')
+      ? Object.values(resources).some(item => item?.owner === profile.owner)
       : null,
     targetDearmed,
   }
@@ -116,10 +145,10 @@ function evaluatePackagedGate(metrics) {
   const websocketUrls = metrics.websocketUrls || []
   const renderFps = metrics.elapsedSeconds > 0 ? metrics.canvasFrames / metrics.elapsedSeconds : 0
   const checks = {
-    fiveWallClockMinutes: metrics.elapsedSeconds >= 300,
+    requiredWallClockDuration: metrics.elapsedSeconds >= metrics.requiredDurationSeconds,
     tauriAssetOrigin: workerAssetUrls.some(url => url.startsWith('http://tauri.localhost/')),
     hashedWorker: workerAssetUrls.some(url => /streamDecoder\.worker-[\w-]+\.js/.test(url)),
-    binaryWebSocket: websocketUrls.some(url => url.includes('/ws/streams/rtt')),
+    binaryWebSocket: websocketUrls.some(url => url.includes(`/ws/streams/${metrics.streamName}`)),
     dataFrames: metrics.dataFrames > 0 && metrics.dataItems > 0,
     workerDecodedData: metrics.workerAcceptedFrames > 0 && metrics.workerBufferedSamples > 0,
     workerFrameParity: Number(metrics.workerAcceptedFrames) === Number(metrics.dataFrames),
@@ -152,7 +181,11 @@ async function main() {
   const { chromium } = require(playwrightPath)
   const cdpUrl = process.env.TAURI_CDP_URL || 'http://127.0.0.1:9223'
   const baseUrl = process.env.MKLINK_GUI_URL || 'http://127.0.0.1:8765'
-  const durationMs = Number(process.env.MKLINK_PACKAGED_DURATION_MS || 300_000)
+  const streamName = String(process.env.MKLINK_STREAM || 'rtt').toLowerCase()
+  const profile = streamProfile(streamName)
+  const durationMs = Number(process.env.MKLINK_PACKAGED_DURATION_MS || 600_000)
+  const prepareRequests = JSON.parse(process.env.MKLINK_STREAM_PREPARE_REQUESTS || '[]')
+  const startBodyText = process.env.MKLINK_STREAM_START_BODY
   const targetWrites = JSON.parse(process.env.MKLINK_TARGET_ARM_WRITES || '[]')
   const targetDearmWrites = JSON.parse(process.env.MKLINK_TARGET_DEARM_WRITES || '[]')
   const browser = await chromium.connectOverCDP(cdpUrl)
@@ -215,16 +248,34 @@ async function main() {
   const consoleErrors = []
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
   page.on('pageerror', error => consoleErrors.push(String(error)))
-  let toolbar = null
+  let streamRoot = null
   const lifecycle = await runWithCleanup(async () => {
+    for (const request of prepareRequests) {
+      const method = String(request.method || 'POST').toUpperCase()
+      const options = { method }
+      if (request.body !== undefined) {
+        options.headers = { 'content-type': 'application/json' }
+        options.body = JSON.stringify(request.body)
+      }
+      await apiJson(baseUrl, request.path, options)
+    }
     await page.reload({ waitUntil: 'domcontentloaded' })
     const dashboardTab = page.locator('.app-nav .nav-tab').nth(1)
     await dashboardTab.click()
     await page.waitForFunction(() => window.location.hash.startsWith('#/dashboard'))
-    toolbar = page.locator('.rtt-view-tab:visible .control-toolbar')
-    await toolbar.locator('button').first().waitFor({ state: 'visible' })
+    await page.evaluate(name => { window.location.hash = `#/dashboard?tab=${name}` }, streamName)
+    await page.waitForFunction(name => window.location.hash.includes(`tab=${name}`), streamName)
+    streamRoot = page.locator(profile.root)
+    await streamRoot.locator(profile.start).waitFor({ state: 'visible' })
     await applyMemoryWrites(baseUrl, targetWrites)
-    await toolbar.locator('.btn-primary').click()
+    if (startBodyText !== undefined) {
+      await apiJson(baseUrl, `/api/dash/${profile.apiName}/start`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(JSON.parse(startBodyText)),
+      })
+    } else {
+      await streamRoot.locator(profile.start).click()
+    }
     await page.waitForFunction(() => {
       const gate = window.__mklinkPackagedGate
       return gate?.dataFrames > 5
@@ -234,12 +285,14 @@ async function main() {
     }, null, { timeout: 60_000 })
     const startedAt = Date.now()
     const startGate = await page.evaluate(() => ({ ...window.__mklinkPackagedGate }))
-    const startStatus = await apiJson(baseUrl, '/api/dash/rtt/status')
+    const startStatus = await apiJson(baseUrl, `/api/dash/${profile.apiName}/status`)
     await page.waitForTimeout(durationMs)
     const endedAt = Date.now()
     const endGate = await page.evaluate(() => ({ ...window.__mklinkPackagedGate }))
-    const endStatus = await apiJson(baseUrl, '/api/dash/rtt/status')
+    const endStatus = await apiJson(baseUrl, `/api/dash/${profile.apiName}/status`)
     return {
+      streamName,
+      requiredDurationSeconds: durationMs / 1_000,
       elapsedSeconds: (endedAt - startedAt) / 1_000,
       workerAssetUrls: endGate.workerUrls,
       websocketUrls: endGate.websocketUrls,
@@ -261,7 +314,7 @@ async function main() {
       consoleErrors,
     }
   }, () => cleanupAndDisconnect(
-    () => cleanupPackagedGate(baseUrl, toolbar, targetDearmWrites),
+    () => cleanupPackagedGate(baseUrl, streamRoot, profile, targetDearmWrites),
     browser,
   ))
   const measured = lifecycle.value
@@ -280,7 +333,7 @@ async function main() {
     const evaluation = evaluatePackagedGate(measured)
     result = {
       schemaVersion: 1,
-      gate: 'packaged_tauri_rtt_five_minute_hil',
+      gate: `packaged_tauri_${streamName}_hil`,
       result: evaluation.pass ? 'pass' : 'fail',
       elapsedSeconds: measured.elapsedSeconds,
       checks: evaluation.checks,
@@ -308,7 +361,7 @@ async function main() {
     if (cleanupError) result.cleanupError = String(cleanupError)
   } else {
     result = {
-      schemaVersion: 1, gate: 'packaged_tauri_rtt_five_minute_hil', result: 'error',
+      schemaVersion: 1, gate: `packaged_tauri_${streamName}_hil`, result: 'error',
       error: String(primaryError || cleanupError || 'measurement unavailable'), cleanup, consoleErrors,
     }
     if (cleanupError) result.cleanupError = String(cleanupError)
@@ -319,9 +372,9 @@ async function main() {
 
 if (require.main === module) {
   main().catch(error => {
-    console.error(JSON.stringify({ schemaVersion: 1, gate: 'packaged_tauri_rtt_five_minute_hil', result: 'error', error: String(error) }, null, 2))
+    console.error(JSON.stringify({ schemaVersion: 1, gate: 'packaged_tauri_stream_hil', result: 'error', error: String(error) }, null, 2))
     process.exitCode = 1
   })
 }
 
-module.exports = { cleanupAndDisconnect, evaluatePackagedGate, runWithCleanup }
+module.exports = { cleanupAndDisconnect, evaluatePackagedGate, runWithCleanup, streamProfile }
