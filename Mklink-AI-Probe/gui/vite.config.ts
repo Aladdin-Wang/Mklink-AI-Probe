@@ -9,6 +9,8 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
+    // Memory gates use process.memoryUsage(); parallel files contaminate their baseline.
+    fileParallelism: false,
   },
   clearScreen: false,
   server: {
