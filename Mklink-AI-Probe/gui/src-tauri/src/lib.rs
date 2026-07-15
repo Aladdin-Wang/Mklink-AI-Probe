@@ -170,6 +170,41 @@ fn spawn_sidecar(launch: &SidecarLaunch, port: u16, project_root: &str) -> Resul
         .map_err(|e| format!("Failed to start sidecar ({}): {}", label, e))
 }
 
+fn retain_child_if_registered<T, E>(
+    mut child: T,
+    register: impl FnOnce(&T) -> Result<(), E>,
+    cleanup: impl FnOnce(&mut T),
+) -> Result<T, E> {
+    if let Err(error) = register(&child) {
+        cleanup(&mut child);
+        return Err(error);
+    }
+    Ok(child)
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_registered_sidecar(
+    state: &Sidecar,
+    launch: &SidecarLaunch,
+    port: u16,
+    project_root: &str,
+) -> Result<Child, String> {
+    let mut job_guard = state.job.lock().map_err(|e| e.to_string())?;
+    if job_guard.is_none() {
+        *job_guard = Some(create_kill_on_close_job()?);
+    }
+    let job = job_guard.as_ref().expect("job was initialized");
+    let child = spawn_sidecar(launch, port, project_root)?;
+    retain_child_if_registered(
+        child,
+        |child| assign_to_job(job, child),
+        |child| {
+            let _ = child.kill();
+            let _ = child.wait();
+        },
+    )
+}
+
 /// Minimal HTTP health check using raw TCP — no external deps needed.
 fn check_health(port: u16) -> bool {
     use std::io::{Read, Write};
@@ -239,18 +274,7 @@ fn start_sidecar(
     let project_root = project_root.unwrap_or_else(|| state.project_root.clone());
 
     let launch = resolve_sidecar_launch()?;
-    let child = spawn_sidecar(&launch, port, &project_root)?;
-
-    #[cfg(target_os = "windows")]
-    {
-        let mut job_guard = state.job.lock().map_err(|e| e.to_string())?;
-        if job_guard.is_none() {
-            *job_guard = Some(create_kill_on_close_job()?);
-        }
-        if let Some(ref job) = *job_guard {
-            let _ = assign_to_job(job, &child);
-        }
-    }
+    let child = spawn_registered_sidecar(state.inner(), &launch, port, &project_root)?;
 
     *guard = Some(child);
     Ok(port)
@@ -351,15 +375,13 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
                 }
             };
 
-            match spawn_sidecar(&launch, state.port, &state.project_root) {
+            match spawn_registered_sidecar(
+                state.inner(),
+                &launch,
+                state.port,
+                &state.project_root,
+            ) {
                 Ok(child) => {
-                    #[cfg(target_os = "windows")]
-                    {
-                        let job_guard = state.job.lock().unwrap();
-                        if let Some(ref job) = *job_guard {
-                            let _ = assign_to_job(job, &child);
-                        }
-                    }
                     let mut guard = state.child.lock().unwrap();
                     *guard = Some(child);
                     eprintln!("[tauri] sidecar restarted");
@@ -494,5 +516,27 @@ mod tests {
         assert!(choose_sidecar_launch(None, None)
             .unwrap_err()
             .contains("No bundled sidecar or Python runtime"));
+    }
+
+    #[test]
+    fn failed_child_registration_runs_cleanup() {
+        let mut cleaned = false;
+        let result = retain_child_if_registered(
+            "child",
+            |_| Err("job assignment failed"),
+            |_| cleaned = true,
+        );
+
+        assert_eq!(result.unwrap_err(), "job assignment failed");
+        assert!(cleaned);
+    }
+
+    #[test]
+    fn successful_child_registration_retains_child_without_cleanup() {
+        let mut cleaned = false;
+        let result = retain_child_if_registered("child", |_| Ok::<_, &str>(()), |_| cleaned = true);
+
+        assert_eq!(result.unwrap(), "child");
+        assert!(!cleaned);
     }
 }

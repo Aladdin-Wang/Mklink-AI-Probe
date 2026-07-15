@@ -4,8 +4,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
   evaluateOnlineFlashGate,
+  firstMismatchAddress,
   runOnlineFlashLifecycle,
   sanitizedFailure,
+  scenarioDefinition,
   setActionSelection,
   targetRecordFor,
 } = require('./packaged_online_flash_probe.cjs')
@@ -157,4 +159,32 @@ test('online flash action selection applies checkbox changes sequentially', asyn
 
   assert.deepEqual(changed, ['erase', 'program', 'reset'])
   assert.deepEqual(order.filter(action => checked.get(action)), ['connect', 'verify', 'disconnect'])
+})
+
+test('installed verify scenario is read-only and requires successful verify states', () => {
+  const definition = scenarioDefinition('verify', { hex: 'app.hex' })
+
+  assert.equal(definition.file, 'app.hex')
+  assert.deepEqual(definition.actions, ['connect', 'verify', 'disconnect'])
+  assert.equal(definition.terminal, 'succeeded')
+  assert.deepEqual(definition.states, [
+    'queued', 'connecting', 'verifying', 'disconnecting', 'succeeded',
+  ])
+})
+
+test('verify failure evidence extracts and requires the concrete first mismatch address', () => {
+  assert.equal(
+    firstMismatchAddress('verification mismatch at 0x08001234'),
+    '0x08001234',
+  )
+  assert.equal(firstMismatchAddress('verification failed'), null)
+
+  const metrics = cleanOnlineFlashMetrics()
+  metrics.expectedErrorCode = 'VERIFY_FAIL'
+  metrics.jobErrorCode = 'VERIFY_FAIL'
+  metrics.firstMismatchAddress = null
+  assert.equal(evaluateOnlineFlashGate(metrics).pass, false)
+
+  metrics.firstMismatchAddress = '0x08001234'
+  assert.equal(evaluateOnlineFlashGate(metrics).pass, true)
 })

@@ -8,7 +8,7 @@ import json
 import os
 import re
 import secrets
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -56,6 +56,7 @@ class OnlineFlashServices:
     probe_provider: Callable[[], Sequence[object]]
     target_memory_provider: Callable[[str], Sequence[MemoryRegion]]
     paths: object
+    image_targets: Dict[str, str] = field(default_factory=dict)
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
@@ -546,6 +547,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 inspection.image_id,
                 regions,
             )
+            services.image_targets[inspection.image_id] = target.part_number.casefold()
             payload = _json_primitive(inspection, hide_paths=True)
             payload["sector_operations_available"] = coverage.sector_operations_available
             payload["sectors"] = _json_primitive(coverage.sectors)
@@ -580,6 +582,34 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             if not body.image_id:
                 raise HTTPException(status_code=422, detail="program and verify require image_id")
             await _blocking(services.image_inspector.validate_unchanged, body.image_id)
+            if services.image_targets.get(body.image_id) != target.part_number.casefold():
+                _raise_http(FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "image inspection does not match the selected target",
+                ))
+        if "program" in body.actions:
+            if "erase" not in body.actions:
+                _raise_http(FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "program requires image-covered sector erase",
+                ))
+            regions = await _blocking(services.target_memory_provider, target.part_number)
+            coverage = await _blocking(
+                services.image_inspector.covered_sectors,
+                body.image_id,
+                regions,
+            )
+            expected_sectors = tuple(sector.address for sector in coverage.sectors)
+            if not coverage.sector_operations_available or not expected_sectors:
+                _raise_http(FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "reliable sector geometry is required for programming",
+                ))
+            if tuple(body.sector_addresses) != expected_sectors:
+                _raise_http(FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "erase sectors must exactly match the image-covered sectors",
+                ))
         job_request = JobRequest(
             actions=tuple(body.actions),
             image_id=body.image_id,

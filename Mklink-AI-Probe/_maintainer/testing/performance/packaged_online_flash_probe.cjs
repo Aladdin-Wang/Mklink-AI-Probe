@@ -5,7 +5,7 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 
 const TERMINAL_STATES = new Set(['succeeded', 'failed', 'stopped'])
-const SCENARIOS = new Set(['hex', 'bin', 'verify-fail', 'stop', 'probe-busy', 'restore'])
+const SCENARIOS = new Set(['hex', 'bin', 'verify', 'verify-fail', 'stop', 'probe-busy', 'restore'])
 const ACTION_ORDER = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 let currentStage = 'startup'
 let failureStage = null
@@ -34,6 +34,11 @@ function orderedSubsequence(observed, required) {
   return required.length === 0
 }
 
+function firstMismatchAddress(message) {
+  const match = String(message || '').match(/\bmismatch at (0x[0-9a-f]+)\b/i)
+  return match ? match[1] : null
+}
+
 function evaluateOnlineFlashGate(metrics) {
   const restoration = !metrics.restoreRequired
     || (metrics.restoredBootSha256 === metrics.expectedRestoreSha256
@@ -55,6 +60,8 @@ function evaluateOnlineFlashGate(metrics) {
     expectedErrorCode: metrics.expectedErrorCode == null
       ? metrics.jobErrorCode == null
       : metrics.jobErrorCode === metrics.expectedErrorCode,
+    firstMismatchAddress: metrics.expectedErrorCode !== 'VERIFY_FAIL'
+      || /^0x[0-9a-f]+$/i.test(String(metrics.firstMismatchAddress || '')),
     handoffSucceeded: metrics.handoffRequired !== true || metrics.handoffSucceeded === true,
     noActiveJob: metrics.activeJobPresent === false,
     targetDebugReleased: metrics.targetDebugOwnerPresent === false,
@@ -127,6 +134,14 @@ function scenarioDefinition(scenario, env) {
       actions: ['connect', 'verify', 'disconnect'],
       terminal: 'failed', errorCode: 'VERIFY_FAIL',
       states: ['queued', 'connecting', 'verifying', 'disconnecting', 'failed'],
+    }
+  }
+  if (scenario === 'verify') {
+    return {
+      file: env.hex,
+      actions: ['connect', 'verify', 'disconnect'],
+      terminal: 'succeeded',
+      states: ['queued', 'connecting', 'verifying', 'disconnecting', 'succeeded'],
     }
   }
   if (scenario === 'stop') {
@@ -404,6 +419,7 @@ async function main() {
       observedStates,
       requiredStates: definition.states,
       jobErrorCode: terminal.error_code,
+      firstMismatchAddress: firstMismatchAddress(terminal.error_message),
       expectedErrorCode: definition.errorCode || null,
       handoffRequired: definition.handoffRequired === true,
       handoffSucceeded,
@@ -461,6 +477,7 @@ async function main() {
       requiredStates: metrics.requiredStates,
       errorCode: metrics.jobErrorCode,
       expectedErrorCode: metrics.expectedErrorCode,
+      firstMismatchAddress: metrics.firstMismatchAddress,
       handoffSucceeded: metrics.handoffSucceeded,
     },
     pack: {
@@ -491,8 +508,10 @@ if (require.main === module) {
 
 module.exports = {
   evaluateOnlineFlashGate,
+  firstMismatchAddress,
   runOnlineFlashLifecycle,
   sanitizedFailure,
+  scenarioDefinition,
   setActionSelection,
   targetRecordFor,
 }

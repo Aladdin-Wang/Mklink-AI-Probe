@@ -477,12 +477,26 @@ def test_preview_defaults_to_4096_bytes(app, services):
     assert services.image_inspector.preview_length == 4096
 
 
+def inspect_hpm_image(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "4096"},
+        files={"file": ("fw.bin", b"abcd")},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
+    inspection = inspect_hpm_image(app)
     payload = {
-        "actions": ["connect", "program", "disconnect"],
+        "actions": ["connect", "erase", "program", "disconnect"],
         "probe_id": "mk",
         "target_part": "HPM5300",
-        "image_id": "image-1",
+        "image_id": inspection["image_id"],
+        "sector_addresses": [0x1000],
     }
     started = request(app, "POST", "/api/online-flash/jobs", json=payload)
     assert started.status_code == 200 and started.json()["job_id"] == "job-1"
@@ -493,6 +507,88 @@ def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
     assert active.json()["job_id"] == "job-1"
     missing = request(app, "GET", "/api/online-flash/jobs/missing")
     assert missing.status_code == 404
+
+
+def test_program_job_requires_covered_sector_erase(app):
+    inspection = inspect_hpm_image(app)
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "program", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspection["image_id"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "IMAGE_OUT_OF_RANGE"
+
+
+def test_program_job_recomputes_and_requires_exact_covered_sectors(app):
+    inspection = inspect_hpm_image(app)
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "program", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspection["image_id"],
+            "sector_addresses": [0x1100],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "IMAGE_OUT_OF_RANGE"
+
+
+def test_program_job_rejects_geometry_that_is_no_longer_reliable(app, services):
+    inspection = inspect_hpm_image(app)
+    services.image_inspector.covered_sectors = lambda image_id, regions: SectorCoverage((), False)
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "program", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspection["image_id"],
+            "sector_addresses": [0x1000],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "IMAGE_OUT_OF_RANGE"
+
+
+def test_job_rejects_image_inspected_for_a_different_target(app, services):
+    inspection = inspect_hpm_image(app)
+    services.catalog.search = lambda *args, **kwargs: [
+        TargetRecord("Other", "Vendor", installed=True)
+    ]
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "verify", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "Other",
+            "image_id": inspection["image_id"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
 
 
 def test_active_job_returns_200_null_when_idle(app):
