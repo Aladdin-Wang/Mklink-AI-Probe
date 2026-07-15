@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T00:54:22+08:00",
+  "updated_at": "2026-07-16T02:31:21+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "1a8a874",
-    "remote_head": "1a8a874; online-flash geometry and RTT layout fix pushed",
-    "working_tree": "Task 11 delivered; generated build caches remain untracked and Task 12 release asset preparation is next"
+    "head": "56f1df6",
+    "remote_head": "56f1df6; flash API and Windows sidecar safety fix pushed",
+    "working_tree": "Task 12 specification and quality reviews APPROVED; final release evidence and memory are pending the Task 13 release commit"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,8 +18,8 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
-    "current_task": "Task 12 prepare release assets and complete final reviews",
-    "latest_commit": "1a8a874 fix: harden online flash geometry and RTT layout",
+    "current_task": "Task 13 commit, refresh release metadata, tag, publish, and verify GitHub prerelease",
+    "latest_commit": "56f1df6 fix: enforce flash and sidecar safety",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -28,8 +28,9 @@
     "task_8_implementation": "complete; final spec and quality reviews APPROVED",
     "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
     "task_10_implementation": "complete and independently approved; all four ten-minute measurements and regenerated targetVerified/targetReset cleanup artifacts pass; SystemView Context corruption, Flash readback, and real MCU reset evidence gaps are fixed",
-    "task_11_implementation": "complete; final MSI/NSIS bundles built from 1a8a874, restricted-PATH runtime and both uninstall lifecycles pass, Pack caches are preserved, and independent code re-review is APPROVED",
-    "release_qualification": "Tasks 1-11 implemented and verified through 1a8a874. Release asset preparation, final publication review, tag, and GitHub prerelease remain.",
+    "task_11_implementation": "complete; final MSI/NSIS bundles rebuilt from 56f1df6, final NSIS installed-GUI verify and VERIFY_FAIL mismatch-address HIL pass, both restricted-PATH installer lifecycles pass, and Pack/user caches are preserved",
+    "task_12_implementation": "complete; 21 local release payloads and 18 sanitized JSON artifacts validate, SHA256SUMS is name-sorted, and final specification and quality reviews are APPROVED with no remaining findings",
+    "release_qualification": "Tasks 1-12 are implemented and verified through 56f1df6 plus the pending final report/memory commit. Final manifest refresh, cleanup, tag, GitHub prerelease upload, and downloaded-asset verification remain.",
     "pause_requested": "Resumed by user; the prior pause checkpoint is closed.",
     "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
@@ -125,11 +126,19 @@
     {
       "name": "Release qualification Task 11 Windows installer lifecycle",
       "status": "complete",
-      "code_commit": "1a8a874",
-      "tests": "Python 614 passed in 24.81s; GUI 18 files / 241 tests passed in 16.65s; focused GUI 54 passed; Vite 140 modules; NSIS and MSI install/health/uninstall passed",
+      "code_commit": "56f1df6",
+      "tests": "Python 618 passed in 24.91s; Node 51 passed; GUI 18 files / 241 tests passed in 16.66s; Vite 140 modules; Rust 5 passed; NSIS and MSI install/health/uninstall passed",
       "evidence": "docs/verification/full-skill-release-v0.1.0-rc.1.md and docs/verification/artifacts/rc1-installer.json",
-      "review": "independent re-review APPROVED; no Critical, Important, or Minor findings",
-      "notes": "Online-flash inspection returns FLM-derived sectors, supports variable-sector boundaries, defaults ordinary programming to covered-sector erase, blocks program/erase without reliable geometry, and retains explicit confirmed chip erase. Empty RTT text logs no longer occupy the page; the numeric curve Canvas remains. Final unsigned NSIS/MSI bundles are Python-independent; the NSIS fingerprint run additionally proves Pack/user caches are preserved."
+      "review": "final specification and quality re-reviews APPROVED; no Critical, Important, or Minor findings",
+      "notes": "The API binds inspected images to the selected target and recomputes reliable FLM coverage before program, requiring exact covered sectors. Windows Job creation/assignment failure cannot retain an untracked sidecar child. Final NSIS installed-GUI App HEX verify and expected VERIFY_FAIL at 0x08000000 pass without writing the target. Final unsigned MSI SHA-256 is 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS is 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f."
+    },
+    {
+      "name": "Release qualification Task 12 assets and final reviews",
+      "status": "complete",
+      "tests": "Python 618; Node 51; GUI 241; Vite 140 modules; Rust 5; cargo check; memory and diff validation",
+      "evidence": "21 external payloads, 18 rc1 JSON artifacts, TEST-REPORT.md, release-manifest.json, and SHA256SUMS.txt",
+      "review": "specification APPROVED and quality APPROVED; no remaining findings",
+      "notes": "Release metadata contains no local source paths. SHA256SUMS is sorted by asset name using casefold order. Task 13 must regenerate manifest.source_commit after the final release commit and upload every manifest-listed payload plus manifest/checksums."
     }
   ],
   "verification": [
@@ -192,15 +201,19 @@
     },
     {
       "area": "Current full automated baseline",
-      "result": "Python 614 passed in 24.81s; GUI 18 files / 241 tests passed in 16.65s; focused online-flash/RTT GUI 54 passed; Node online-flash harness 6 passed; Vite transformed 140 modules; prior Rust 3 passed and cargo check completed."
+      "result": "Python 618 passed in 24.91s; Node release harness 51 passed; GUI 18 files / 241 tests passed in 16.66s; Vite transformed 140 modules; Rust 5 passed and cargo check completed."
     },
     {
       "area": "Task 11 online-flash safety and installer lifecycle",
-      "result": "Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release the API port; the NSIS run additionally released CDP and preserved both Pack/user cache fingerprints."
+      "result": "Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final 56f1df6 NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release ports. Final installed NSIS App HEX verify succeeded read-only; expected VERIFY_FAIL reported first mismatch 0x08000000. NSIS uninstall preserved both Pack/user cache fingerprints."
     },
     {
       "area": "RTT View empty layout",
       "result": "The large black area was the empty virtual text log joined visually to the 160 px numeric Canvas. The text log now remains mounted but hidden until text arrives, so first-batch reception is preserved; installed DOM measured zero empty-log width/height and full GUI tests pass."
+    },
+    {
+      "area": "Task 12 release assets",
+      "result": "21 payload assets and 18 sanitized rc1 JSON files were copied to the external release directory. All sizes and SHA-256 values match the manifest; checksum lines are sorted by asset name. The complete Pack-index, uncached GigaDevice DFP 2.2.1 install, restart reuse, and final installed-runtime cache reuse are mapped into the report and rc1-pack-catalog-cache.json."
     }
   ],
   "decisions": [
@@ -210,7 +223,7 @@
     "High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.",
     "Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.",
     "Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.",
-    "Ordinary online-flash erase or program requires reliable FLM sector geometry and submits only image-covered sectors; whole-chip erase remains a separate explicit confirmation.",
+    "Ordinary online-flash program is enforced at both GUI and API boundaries: the inspected image is target-bound, reliable FLM coverage is recomputed, and erase sectors must exactly equal image-covered sectors; whole-chip erase remains a separate explicit confirmation.",
     "RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
@@ -229,12 +242,14 @@
     "GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.",
     "Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.",
     "The Windows RC executables and installers are unsigned and may show an unknown-publisher warning.",
+    "The first final-package restricted-environment teardown omitted SystemDrive in the test harness, so Windows created a literal test-cache directory after product processes and ports exited; the cache was removed and the corrected NSIS lifecycle rerun passed completely.",
     "Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Execute Task 12 local release asset preparation and verify release-manifest and SHA256SUMS against the final MSI/NSIS hashes.",
-    "Complete final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.",
+    "Commit and push the final reviewed RC source/report/memory checkpoint.",
+    "Regenerate release-manifest and SHA256SUMS with the final commit SHA, then clean repository-local build artifacts.",
+    "Create and push v0.1.0-rc.1, publish all 21 payloads plus manifest/checksums as a GitHub prerelease, and download/hash every asset.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
   "continuation_protocol": [

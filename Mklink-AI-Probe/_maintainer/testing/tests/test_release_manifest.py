@@ -53,9 +53,10 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
     assert all(len(asset["sha256"]) == 64 for asset in result["assets"])
     assert all(set(asset) == {"name", "size", "sha256"} for asset in result["assets"])
     assert (output / "release-manifest.json").is_file()
-    assert (output / "SHA256SUMS.txt").read_text(encoding="ascii").splitlines() == sorted(
-        f'{asset["sha256"]}  {asset["name"]}' for asset in result["assets"]
-    )
+    assets_by_name = sorted(result["assets"], key=lambda asset: asset["name"].casefold())
+    assert (output / "SHA256SUMS.txt").read_text(encoding="ascii").splitlines() == [
+        f'{asset["sha256"]}  {asset["name"]}' for asset in assets_by_name
+    ]
     manifest_text = (output / "release-manifest.json").read_text(encoding="utf-8")
     assert str(tmp_path) not in manifest_text
     assert json.loads(manifest_text) == result

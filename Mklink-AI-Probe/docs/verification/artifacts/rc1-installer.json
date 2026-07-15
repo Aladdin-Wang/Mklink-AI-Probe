@@ -2,23 +2,23 @@
   "schemaVersion": 1,
   "gate": "rc1_windows_installer_lifecycle",
   "result": "pass",
-  "sourceCommit": "1a8a874",
+  "sourceCommit": "56f1df6",
   "build": {
     "frontendModules": 140,
-    "elapsedSeconds": 106.5,
+    "elapsedSeconds": 172.1,
     "sourceVersion": "0.1.0-rc.1",
     "tauriConfigRestored": true,
     "artifacts": [
       {
         "kind": "msi",
         "bytes": 65138688,
-        "sha256": "c36b973b1b7b9c9fac38e772de14cf9fcd809bb2d5cfcfb9b150d8be10599bd5",
+        "sha256": "6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e",
         "signature": "NotSigned"
       },
       {
         "kind": "nsis",
-        "bytes": 63864016,
-        "sha256": "678f902ea07a3afb055e88fe941e6dd5f35fd9107b106b9a5b29f81accd4edcf",
+        "bytes": 63863800,
+        "sha256": "6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f",
         "signature": "NotSigned"
       }
     ]
@@ -52,6 +52,31 @@
     "allMeasuredDropsZero": true,
     "cleanupPassed": true
   },
+  "onlineFlashVerify": {
+    "buildStage": "final NSIS built from 56f1df6",
+    "scenario": "verify",
+    "imageFormat": "hex",
+    "imageStart": "0x08005000",
+    "imageSha256": "c0801cc3e4537ac00622c5488d734d41fce3d254a89372cc3939da94325a1ad0",
+    "terminalState": "succeeded",
+    "observedStates": [
+      "queued",
+      "connecting",
+      "verifying",
+      "disconnecting",
+      "succeeded"
+    ],
+    "consoleErrors": 0,
+    "activeJobPresentAfter": false,
+    "targetDebugOwnerPresentAfter": false
+  },
+  "verifyFailure": {
+    "buildStage": "final NSIS built from 56f1df6",
+    "errorCode": "VERIFY_FAIL",
+    "firstMismatchAddress": "0x08000000",
+    "activeJobPresentAfter": false,
+    "targetDebugOwnerPresentAfter": false
+  },
   "nsis": {
     "installExitCode": 0,
     "restrictedPathPythonDiscoverable": false,
@@ -76,6 +101,14 @@
     "apiPortReleased": true,
     "cdpPortUsed": false,
     "cacheFingerprintCompared": false
+  },
+  "initialRestrictedEnvironmentRetry": {
+    "cause": "test harness omitted SystemDrive from the restricted environment",
+    "productProcessesReleased": true,
+    "portsReleased": true,
+    "uninstallExitCode": 0,
+    "testCreatedCacheRemoved": true,
+    "finalRerunPassed": true
   },
   "limitations": [
     "The release candidate is unsigned.",

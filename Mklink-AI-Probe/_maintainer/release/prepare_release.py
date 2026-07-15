@@ -131,9 +131,10 @@ def prepare_release(
         json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
-    checksum_lines = sorted(
-        f'{asset["sha256"]}  {asset["name"]}' for asset in assets
-    )
+    checksum_lines = [
+        f'{asset["sha256"]}  {asset["name"]}'
+        for asset in sorted(assets, key=lambda item: str(item["name"]).casefold())
+    ]
     (output / "SHA256SUMS.txt").write_text(
         "\n".join(checksum_lines) + "\n", encoding="ascii"
     )

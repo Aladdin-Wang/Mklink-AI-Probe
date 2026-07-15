@@ -36,7 +36,7 @@ function orderedSubsequence(observed, required) {
 
 function firstMismatchAddress(message) {
   const match = String(message || '').match(/\bmismatch at (0x[0-9a-f]+)\b/i)
-  return match ? match[1] : null
+  return match ? `0x${match[1].slice(2).padStart(8, '0').toUpperCase()}` : null
 }
 
 function evaluateOnlineFlashGate(metrics) {

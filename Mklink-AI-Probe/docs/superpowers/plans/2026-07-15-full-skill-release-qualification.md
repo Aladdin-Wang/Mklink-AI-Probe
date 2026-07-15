@@ -997,43 +997,44 @@ git commit -m "test: qualify RC Windows installers"
 
 ## Task 12: Prepare Release Assets and Complete Reviews
 
-- [ ] **Step 1: Exclude the local release directory**
+- [x] **Step 1: Exclude the local release directory**
 
 Add `/release/` to the shared repository `.git/info/exclude` if absent. Do not
 edit `master` or add the release directory to Git.
 
-- [ ] **Step 2: Generate local assets**
+- [x] **Step 2: Generate local assets**
 
 Run `prepare_release.py` with the final MSI, NSIS, report, and selected sanitized
 RC JSON artifacts. Validate `release-manifest.json` and `SHA256SUMS.txt`, then
 rehash every copied asset and compare to the manifest.
 
-- [ ] **Step 3: Remove every pending marker and self-review the report**
+- [x] **Step 3: Resolve pending markers and self-review the report**
 
 ```powershell
-Select-String -Path docs/verification/full-skill-release-v0.1.0-rc.1.md -Pattern 'PENDING EXECUTION|NOT RUN'
+Select-String -Path docs/verification/full-skill-release-v0.1.0-rc.1.md -Pattern 'PENDING EXECUTION'
 ```
 
-Expected: no matches. Verify every mandatory design requirement maps to a report
+Expected: no matches. Honest conditional rows remain `NOT ESTABLISHED` with a
+`Not run` duration. Verify every mandatory design requirement maps to a report
 row and every failure/retry remains visible.
 
-- [ ] **Step 4: Request specification review**
+- [x] **Step 4: Request specification review**
 
 Reviewer checks the approved design line by line against source, tests,
 artifacts, report, cleanup, and asset manifest. Fix every Critical or Important
 finding and repeat review until `APPROVED`.
 
-- [ ] **Step 5: Request quality review**
+- [x] **Step 5: Request quality review**
 
 Reviewer checks runtime sidecar lifecycle, builder restoration, probe failure
 paths, HIL predicates, installer behavior, sanitization, and tests. Fix every
 Critical or Important finding and repeat review until `APPROVED`.
 
-- [ ] **Step 6: Run the final verification suite**
+- [x] **Step 6: Run the final verification suite**
 
 ```powershell
 python -m pytest -q
-node --test _maintainer/testing/performance/browser_stream_probe.test.cjs _maintainer/testing/performance/frontend_stream_gate.test.cjs _maintainer/testing/performance/packaged_stream_probe.test.cjs _maintainer/testing/performance/packaged_online_flash_probe.test.cjs
+node --test _maintainer/testing/performance/browser_stream_probe.test.cjs _maintainer/testing/performance/frontend_stream_gate.test.cjs _maintainer/testing/performance/packaged_stream_probe.test.cjs _maintainer/testing/performance/packaged_stream_cleanup.test.cjs _maintainer/testing/performance/packaged_online_flash_probe.test.cjs
 Set-Location gui
 npm test
 npm run build
@@ -1054,13 +1055,13 @@ committed sanitized evidence.
 
 ## Task 13: Commit, Push, Tag, Publish, and Verify GitHub
 
-- [ ] **Step 1: Update durable AI memory**
+- [x] **Step 1: Update durable AI memory**
 
 Record factual final test counts, four fresh ten-minute rates, installer results,
 release asset names/hashes, limitations, review approvals, target restoration,
 and next actions in `project-memory.json`. Render and validate the handoff.
 
-- [ ] **Step 2: Stage only the explicit release source/report set**
+- [x] **Step 2: Stage only the explicit release source/report set**
 
 Use explicit `git add --` path lists. Confirm no installer, Pack, firmware,
 username, full probe ID, COM port, raw log, screenshot, or cache is staged.
@@ -1072,7 +1073,15 @@ git commit -m "release: qualify v0.1.0-rc.1"
 git push origin feature/online-flash-streaming
 ```
 
-- [ ] **Step 4: Install/authenticate GitHub CLI without exposing credentials**
+- [ ] **Step 4: Regenerate release metadata from the final release commit**
+
+After Step 3, rerun `prepare_release.py` with `git rev-parse HEAD`, the final
+MSI/NSIS, final report, and every selected `rc1-*.json`. Rehash all copied
+payloads and require `release-manifest.json.source_commit` to equal HEAD. This
+post-commit refresh is mandatory so the manifest identifies the reviewed tag
+commit rather than the earlier binary-build or documentation checkpoint.
+
+- [ ] **Step 5: Install/authenticate GitHub CLI without exposing credentials**
 
 If `gh` is absent, install `GitHub.cli` with winget. If `gh auth status` is not
 authenticated, obtain the GitHub credential through `git credential fill`, pipe
@@ -1082,30 +1091,30 @@ remove the PowerShell variables. Never print the credential response.
 If the configured Git credential does not contain a GitHub API-capable token,
 this is the only credential blocker that may stop execution.
 
-- [ ] **Step 5: Create and push the annotated tag**
+- [ ] **Step 6: Create and push the annotated tag**
 
 ```powershell
 git tag -a v0.1.0-rc.1 -m "Mklink AI Probe v0.1.0-rc.1"
 git push origin v0.1.0-rc.1
 ```
 
-- [ ] **Step 6: Create the GitHub prerelease and upload assets**
+- [ ] **Step 7: Create the GitHub prerelease and upload every manifest asset**
 
 ```powershell
+$ReleaseDir = 'E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1'
+$Manifest = Get-Content -Raw "$ReleaseDir\release-manifest.json" | ConvertFrom-Json
+$Assets = @($Manifest.assets | ForEach-Object { Join-Path $ReleaseDir $_.name })
+$Assets += "$ReleaseDir\release-manifest.json", "$ReleaseDir\SHA256SUMS.txt"
 gh release create v0.1.0-rc.1 `
   --repo Aladdin-Wang/Mklink-AI-Probe `
-  --target feature/online-flash-streaming `
+  --verify-tag `
   --prerelease `
   --title 'Mklink AI Probe v0.1.0-rc.1' `
   --notes-file docs/verification/full-skill-release-v0.1.0-rc.1.md `
-  E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1\Mklink-AI-Probe-v0.1.0-rc.1-x64-Setup.exe `
-  E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1\Mklink-AI-Probe-v0.1.0-rc.1-x64.msi `
-  E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1\TEST-REPORT.md `
-  E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1\release-manifest.json `
-  E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1\SHA256SUMS.txt
+  @Assets
 ```
 
-- [ ] **Step 7: Verify remote commit, tag, release, and assets**
+- [ ] **Step 8: Verify remote commit, tag, release, and assets**
 
 Query Git and GitHub independently. Require:
 
@@ -1113,10 +1122,13 @@ Query Git and GitHub independently. Require:
 - tag target equals the reviewed final commit;
 - GitHub release is `prerelease=true`, `draft=false`;
 - every expected asset exists with the local byte size;
-- downloading each asset and hashing it matches `release-manifest.json`;
+- downloading every manifest-listed payload and hashing it matches
+  `release-manifest.json`; separately compare the uploaded manifest and checksum
+  file to their local byte size and SHA-256 because a manifest cannot hash
+  itself;
 - worktree is clean and ahead/behind is `0/0`.
 
-- [ ] **Step 8: Commit the final memory checkpoint if publication changed it**
+- [ ] **Step 9: Commit the final memory checkpoint if publication changed it**
 
 If remote release URLs or asset verification results were not known before the
 release commit, update only memory/handoff, validate, commit

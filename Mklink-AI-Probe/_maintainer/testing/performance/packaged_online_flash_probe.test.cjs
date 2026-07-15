@@ -177,6 +177,7 @@ test('verify failure evidence extracts and requires the concrete first mismatch 
     firstMismatchAddress('verification mismatch at 0x08001234'),
     '0x08001234',
   )
+  assert.equal(firstMismatchAddress('verification mismatch at 0x8000000'), '0x08000000')
   assert.equal(firstMismatchAddress('verification failed'), null)
 
   const metrics = cleanOnlineFlashMetrics()
