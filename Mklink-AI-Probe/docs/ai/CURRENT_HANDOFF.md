@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-16T02:31:21+08:00`
+- 更新时间：`2026-07-16T03:12:38+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`56f1df6`
-- 远端 HEAD：`56f1df6; flash API and Windows sidecar safety fix pushed`
-- 工作树：Task 12 specification and quality reviews APPROVED; final release evidence and memory are pending the Task 13 release commit
-- 当前任务：Task 13 commit, refresh release metadata, tag, publish, and verify GitHub prerelease
-- 状态：`in_progress`
+- HEAD：`v0.1.0-rc.1 -> 1c7c5aa; the final documentation commit contains this memory`
+- 远端 HEAD：`release tag and branch publication checkpoints pushed; final documentation push is the remaining action in this commit`
+- 工作树：generated repository-local artifacts removed; external release bundle retained; final handoff commit pending
+- 当前任务：v0.1.0-rc.1 published and independently verified; collect external tester feedback
+- 状态：`complete`
 
 ## 里程碑
 
@@ -27,6 +27,7 @@
 - **Release qualification Task 10 packaged stream gates** — `complete`。Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release.
 - **Release qualification Task 11 Windows installer lifecycle** — `complete`。The API binds inspected images to the selected target and recomputes reliable FLM coverage before program, requiring exact covered sectors. Windows Job creation/assignment failure cannot retain an untracked sidecar child. Final NSIS installed-GUI App HEX verify and expected VERIFY_FAIL at 0x08000000 pass without writing the target. Final unsigned MSI SHA-256 is 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS is 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f.
 - **Release qualification Task 12 assets and final reviews** — `complete`。Release metadata contains no local source paths. SHA256SUMS is sorted by asset name using casefold order. Task 13 must regenerate manifest.source_commit after the final release commit and upload every manifest-listed payload plus manifest/checksums.
+- **Release qualification Task 13 GitHub publication** — `complete`。MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f.
 
 ## 验证证据
 
@@ -48,6 +49,7 @@
 - **Task 11 online-flash safety and installer lifecycle**：Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final 56f1df6 NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release ports. Final installed NSIS App HEX verify succeeded read-only; expected VERIFY_FAIL reported first mismatch 0x08000000. NSIS uninstall preserved both Pack/user cache fingerprints.
 - **RTT View empty layout**：The large black area was the empty virtual text log joined visually to the 160 px numeric Canvas. The text log now remains mounted but hidden until text arrives, so first-batch reception is preserved; installed DOM measured zero empty-log width/height and full GUI tests pass.
 - **Task 12 release assets**：21 payload assets and 18 sanitized rc1 JSON files were copied to the external release directory. All sizes and SHA-256 values match the manifest; checksum lines are sorted by asset name. The complete Pack-index, uncached GigaDevice DFP 2.2.1 install, restart reuse, and final installed-runtime cache reuse are mapped into the report and rc1-pack-catalog-cache.json.
+- **Task 13 remote publication**：GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6.
 
 ## 架构决策
 
@@ -72,10 +74,9 @@
 
 ## 下一动作
 
-1. Commit and push the final reviewed RC source/report/memory checkpoint.
-2. Regenerate release-manifest and SHA256SUMS with the final commit SHA, then clean repository-local build artifacts.
-3. Create and push v0.1.0-rc.1, publish all 21 payloads plus manifest/checksums as a GitHub prerelease, and download/hash every asset.
-4. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
+1. Collect tester feedback from the v0.1.0-rc.1 GitHub prerelease and reproduce defects against the published hashes.
+2. For the next release, add code signing before promoting beyond prerelease.
+3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 

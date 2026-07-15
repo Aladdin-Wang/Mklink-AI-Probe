@@ -1046,7 +1046,7 @@ python scripts/ai_memory.py validate
 git diff --check
 ```
 
-- [ ] **Step 7: Clean generated repository-local artifacts**
+- [x] **Step 7: Clean generated repository-local artifacts**
 
 Delete `gui/node_modules`, `gui/src-tauri/target`, PyInstaller `build/dist`, all
 `__pycache__`, pytest caches, temporary logs, Pack files, firmware copies, and
@@ -1066,14 +1066,14 @@ and next actions in `project-memory.json`. Render and validate the handoff.
 Use explicit `git add --` path lists. Confirm no installer, Pack, firmware,
 username, full probe ID, COM port, raw log, screenshot, or cache is staged.
 
-- [ ] **Step 3: Commit and push the final RC checkpoint**
+- [x] **Step 3: Commit and push the final RC checkpoint**
 
 ```powershell
 git commit -m "release: qualify v0.1.0-rc.1"
 git push origin feature/online-flash-streaming
 ```
 
-- [ ] **Step 4: Regenerate release metadata from the final release commit**
+- [x] **Step 4: Regenerate release metadata from the final release commit**
 
 After Step 3, rerun `prepare_release.py` with `git rev-parse HEAD`, the final
 MSI/NSIS, final report, and every selected `rc1-*.json`. Rehash all copied
@@ -1081,7 +1081,7 @@ payloads and require `release-manifest.json.source_commit` to equal HEAD. This
 post-commit refresh is mandatory so the manifest identifies the reviewed tag
 commit rather than the earlier binary-build or documentation checkpoint.
 
-- [ ] **Step 5: Install/authenticate GitHub CLI without exposing credentials**
+- [x] **Step 5: Install/authenticate GitHub CLI without exposing credentials**
 
 If `gh` is absent, install `GitHub.cli` with winget. If `gh auth status` is not
 authenticated, obtain the GitHub credential through `git credential fill`, pipe
@@ -1091,14 +1091,14 @@ remove the PowerShell variables. Never print the credential response.
 If the configured Git credential does not contain a GitHub API-capable token,
 this is the only credential blocker that may stop execution.
 
-- [ ] **Step 6: Create and push the annotated tag**
+- [x] **Step 6: Create and push the annotated tag**
 
 ```powershell
 git tag -a v0.1.0-rc.1 -m "Mklink AI Probe v0.1.0-rc.1"
 git push origin v0.1.0-rc.1
 ```
 
-- [ ] **Step 7: Create the GitHub prerelease and upload every manifest asset**
+- [x] **Step 7: Create the GitHub prerelease and upload every manifest asset**
 
 ```powershell
 $ReleaseDir = 'E:\software\HPM5300\Mklink-AI-Probe\release\v0.1.0-rc.1'
@@ -1114,7 +1114,7 @@ gh release create v0.1.0-rc.1 `
   @Assets
 ```
 
-- [ ] **Step 8: Verify remote commit, tag, release, and assets**
+- [x] **Step 8: Verify remote commit, tag, release, and assets**
 
 Query Git and GitHub independently. Require:
 
@@ -1128,7 +1128,7 @@ Query Git and GitHub independently. Require:
   itself;
 - worktree is clean and ahead/behind is `0/0`.
 
-- [ ] **Step 9: Commit the final memory checkpoint if publication changed it**
+- [x] **Step 9: Commit the final memory checkpoint if publication changed it**
 
 If remote release URLs or asset verification results were not known before the
 release commit, update only memory/handoff, validate, commit

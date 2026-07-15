@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T02:31:21+08:00",
+  "updated_at": "2026-07-16T03:12:38+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "56f1df6",
-    "remote_head": "56f1df6; flash API and Windows sidecar safety fix pushed",
-    "working_tree": "Task 12 specification and quality reviews APPROVED; final release evidence and memory are pending the Task 13 release commit"
+    "head": "v0.1.0-rc.1 -> 1c7c5aa; the final documentation commit contains this memory",
+    "remote_head": "release tag and branch publication checkpoints pushed; final documentation push is the remaining action in this commit",
+    "working_tree": "generated repository-local artifacts removed; external release bundle retained; final handoff commit pending"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -16,10 +16,10 @@
     "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以经过验证的稳定负载采集，目标尽量达到或超过 10 kSamples/s；仅 RTT 建立了实测过载边界；可见曲线统一限制为 30 FPS。"
   },
   "current_session": {
-    "status": "in_progress",
+    "status": "complete",
     "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
-    "current_task": "Task 13 commit, refresh release metadata, tag, publish, and verify GitHub prerelease",
-    "latest_commit": "56f1df6 fix: enforce flash and sidecar safety",
+    "current_task": "v0.1.0-rc.1 published and independently verified; collect external tester feedback",
+    "latest_commit": "1c7c5aa release: qualify v0.1.0-rc.1 (release tag target)",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -30,7 +30,8 @@
     "task_10_implementation": "complete and independently approved; all four ten-minute measurements and regenerated targetVerified/targetReset cleanup artifacts pass; SystemView Context corruption, Flash readback, and real MCU reset evidence gaps are fixed",
     "task_11_implementation": "complete; final MSI/NSIS bundles rebuilt from 56f1df6, final NSIS installed-GUI verify and VERIFY_FAIL mismatch-address HIL pass, both restricted-PATH installer lifecycles pass, and Pack/user caches are preserved",
     "task_12_implementation": "complete; 21 local release payloads and 18 sanitized JSON artifacts validate, SHA256SUMS is name-sorted, and final specification and quality reviews are APPROVED with no remaining findings",
-    "release_qualification": "Tasks 1-12 are implemented and verified through 56f1df6 plus the pending final report/memory commit. Final manifest refresh, cleanup, tag, GitHub prerelease upload, and downloaded-asset verification remain.",
+    "task_13_implementation": "complete; 1c7c5aa tagged as v0.1.0-rc.1, GitHub prerelease published with 23 assets, every asset downloaded and SHA-256 verified, and local branch/tag/release state checked",
+    "release_qualification": "Complete. The reviewed release commit is 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6, the annotated tag and manifest identify that commit, and the GitHub prerelease is public and verified.",
     "pause_requested": "Resumed by user; the prior pause checkpoint is closed.",
     "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
@@ -139,6 +140,16 @@
       "evidence": "21 external payloads, 18 rc1 JSON artifacts, TEST-REPORT.md, release-manifest.json, and SHA256SUMS.txt",
       "review": "specification APPROVED and quality APPROVED; no remaining findings",
       "notes": "Release metadata contains no local source paths. SHA256SUMS is sorted by asset name using casefold order. Task 13 must regenerate manifest.source_commit after the final release commit and upload every manifest-listed payload plus manifest/checksums."
+    },
+    {
+      "name": "Release qualification Task 13 GitHub publication",
+      "status": "complete",
+      "release_commit": "1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6",
+      "tag": "v0.1.0-rc.1",
+      "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.0-rc.1",
+      "assets": "23 uploaded and downloaded: 21 manifest payloads plus release-manifest.json and SHA256SUMS.txt",
+      "verification": "prerelease=true, draft=false; remote sizes and all downloaded SHA-256 values match local metadata",
+      "notes": "MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f."
     }
   ],
   "verification": [
@@ -214,6 +225,10 @@
     {
       "area": "Task 12 release assets",
       "result": "21 payload assets and 18 sanitized rc1 JSON files were copied to the external release directory. All sizes and SHA-256 values match the manifest; checksum lines are sorted by asset name. The complete Pack-index, uncached GigaDevice DFP 2.2.1 install, restart reuse, and final installed-runtime cache reuse are mapped into the report and rc1-pack-catalog-cache.json."
+    },
+    {
+      "area": "Task 13 remote publication",
+      "result": "GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6."
     }
   ],
   "decisions": [
@@ -247,9 +262,8 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Commit and push the final reviewed RC source/report/memory checkpoint.",
-    "Regenerate release-manifest and SHA256SUMS with the final commit SHA, then clean repository-local build artifacts.",
-    "Create and push v0.1.0-rc.1, publish all 21 payloads plus manifest/checksums as a GitHub prerelease, and download/hash every asset.",
+    "Collect tester feedback from the v0.1.0-rc.1 GitHub prerelease and reproduce defects against the published hashes.",
+    "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
   "continuation_protocol": [
