@@ -11,6 +11,8 @@ import '../../assets/rtt_viewer.css'
 import i18nUrl from '../../assets/rtt_i18n.js?url'
 import viewerUrl from '../../assets/rtt_viewer.js?url'
 
+const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
   deviceConnected: boolean
@@ -84,7 +86,7 @@ function stopVofaStatusPolling(): void {
 async function pollVofaStatus(generation: number, startTransport: boolean): Promise<void> {
   let status: Record<string, unknown> | null = null
   try {
-    const response = await fetch(`/api/dash/${props.mode === 'VOFA' ? 'vofa' : 'superwatch'}/status`)
+    const response = await fetch(`${API_BASE}/api/dash/${props.mode === 'VOFA' ? 'vofa' : 'superwatch'}/status`)
     status = response.ok ? await response.json() : null
   } catch { /* retry on the bounded cadence below */ }
   if (disposed || generation !== statusPollGeneration) return
@@ -198,7 +200,7 @@ onUnmounted(() => {
   // Close EventSource if running
   try {
     const viewers = (window as any).__waveformViewers
-    if (viewers?.[props.mode]?.es) viewers[props.mode].es.close()
+    viewers?.[props.mode]?.dispose?.()
     if (viewers) delete viewers[props.mode]
   } catch { /* ignore */ }
   // Clear DOM
@@ -425,6 +427,7 @@ function injectScripts(el: HTMLDivElement, mode: string) {
       title: "MKLink ${mode}",
       mode: "${mode}",
       lang: "zh",
+      apiBase: ${JSON.stringify(API_BASE)},
       deviceConnected: ${props.deviceConnected}
     };
   `

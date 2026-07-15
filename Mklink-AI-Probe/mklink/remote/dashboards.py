@@ -916,6 +916,12 @@ class SystemViewStreamManager:
         p = self._parser
         if not p:
             return set()
+        # TASK_INFO already provides non-disruptive names. Do not stop and
+        # restart a live high-rate trace for later unknown IDs; those may be
+        # false-alignment candidates and are safer to display as hex values.
+        # RAM resolution remains a fallback only when startup names were lost.
+        if p._task_names:
+            return set()
         ram_base = _positive_int(getattr(p, "_ram_base", 0)) or 0x20000000
         ids: set[int] = set()
         for ev in events:
@@ -1017,6 +1023,7 @@ class SystemViewStreamManager:
             "clients": self._bridge.client_count,
             "stats": self._stats,
             "history_size": len(self._history),
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
             **self._status_meta(),
         }
 
@@ -2161,6 +2168,7 @@ class VofaStreamManager:
             "acquisition_mode": self._acquisition_mode,
             "stream_integrity": dict(self._stream_integrity),
             "layout": "sample-major-float32",
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 
     async def sse_generator(self):

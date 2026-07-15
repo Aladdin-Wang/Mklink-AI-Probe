@@ -26,6 +26,13 @@ def _events(count: int) -> list[dict]:
     ]
 
 
+def test_systemview_status_exposes_binary_stream_stats():
+    hub = StreamHub(max_batches_per_client=4)
+    manager = SystemViewStreamManager(stream_hub=hub)
+
+    assert manager.get_status()["stream"] == hub.stats().__dict__
+
+
 def test_systemview_fixed_records_round_trip_and_reject_malformed_payload():
     events = _events(3)
     payload = encode_systemview_events(events)
@@ -168,6 +175,18 @@ def test_status_separates_target_overflow_from_parser_framing_drops():
     assert status["target_dropped_packets_since_baseline"] == 7
     assert status["parser_dropped_bytes"] == 0
     assert status["parser_dropped_packets"] == 0
+
+
+def test_protocol_task_names_disable_disruptive_live_ram_name_resolution():
+    manager = SystemViewStreamManager()
+    manager._parser = manager._create_parser()
+    manager._parser._task_names[0x20001000] = "main"
+
+    unknown = manager._unknown_task_ids([
+        {"kind": "task_start_exec", "task_id": 0x20002000},
+    ])
+
+    assert unknown == set()
 
 
 def test_raw_bytes_without_decodable_events_fail_with_sync_diagnostic():

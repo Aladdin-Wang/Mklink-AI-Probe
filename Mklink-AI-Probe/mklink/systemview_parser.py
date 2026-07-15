@@ -107,9 +107,8 @@ _EVENT_SPECS: dict[int, tuple[str, list[tuple[str, str]]]] = {
     EVTID_TASK_START_READY: ("task_start_ready", [("id", "task_id")]),
     EVTID_TASK_STOP_READY:  ("task_stop_ready", [("id", "task_id"), ("u32", "cause")]),
     EVTID_TASK_CREATE:      ("task_create", [("id", "task_id")]),
-    EVTID_TASK_INFO:        ("task_info", [("id", "task_id"), ("str", "name"),
-                                          ("u32", "prio"), ("u32", "stack_base"),
-                                          ("u32", "stack_size")]),
+    EVTID_TASK_INFO:        ("task_info", [("id", "task_id"), ("u32", "prio"),
+                                          ("str", "name")]),
     EVTID_TRACE_START:      ("trace_start", []),
     EVTID_TRACE_STOP:       ("trace_stop", []),
     EVTID_SYSTIME_CYCLES:   ("systime_cycles", [("u32", "systime")]),
@@ -122,7 +121,7 @@ _EVENT_SPECS: dict[int, tuple[str, list[tuple[str, str]]]] = {
     EVTID_TIMER_ENTER:      ("timer_enter", [("u32", "timer_id")]),
     EVTID_TIMER_EXIT:       ("timer_exit", []),
     EVTID_STACK_INFO:       ("stack_info", [("id", "task_id"), ("u32", "stack_base"),
-                                            ("u32", "stack_size")]),
+                                            ("u32", "stack_size"), ("u32", "stack_end")]),
     EVTID_MODULEDESC:       ("moduledesc", [("u32", "module_id"), ("str", "desc")]),
     EVTID_INIT:             ("init", [("u32", "sys_freq"), ("u32", "cpu_freq"),
                                      ("u32", "ram_base"), ("u32", "id_shift")]),
@@ -338,9 +337,24 @@ class SystemViewParser:
                 field_vals, pos = self._decode_fields_need(fields, pos)
                 ev.update(field_vals)
 
+        invalid_task_info = False
+        if ev.get("kind") == "task_info":
+            name = ev.get("name")
+            invalid_task_info = (
+                not isinstance(name, str)
+                or not name.strip()
+                or len(name) > 32
+                or "\ufffd" in name
+                or not name.isprintable()
+            )
+
         # 3. 读末尾 delta 时间戳
         delta, pos = self._read_varint(pos)
         delta &= self._ts_mask   # 掩到时间源有效位（处理 <32 位硬件时间戳）
+        if invalid_task_info:
+            self._dropped_packets += 1
+            del self._buf[:pos]
+            return None
         # abs_time 保持单调（Python 大整数，不掩码）——避免 32 位 CYCCNT 每 ~25s
         # 翻卷导致 abs 时间在翻卷边界两侧乱跳、CPU%/区间计算失真。delta 本身正确，
         # 故累加值即真实流逝时间（跨多次翻卷也对）。

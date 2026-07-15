@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T01:00:45+08:00`
+- 更新时间：`2026-07-15T21:04:26+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`fad1227`
-- 远端 HEAD：`c3a8b1e; approved design commit fad1227 and the implementation plan are not yet pushed`
-- 工作树：Full-skill v0.1.0-rc.1 implementation plan and memory update are pending commit
-- 当前任务：Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease
+- HEAD：`f602857`
+- 远端 HEAD：`c3a8b1e; Task 10 packaged-stream checkpoint is not yet pushed`
+- 工作树：Task 10 implementation and evidence complete; final specification/quality reviews, commit, and push remain
+- 当前任务：Task 10 final specification and quality re-reviews, then explicit commit and push
 - 状态：`in_progress`
 
 ## 里程碑
@@ -24,6 +24,7 @@
 - **High-throughput Task 7 VOFA binary migration** — `complete`。Validated aligned source reads, atomic sample-major batches, Worker min/max envelopes, O(1) extrema and O(log N) interactions, bounded DOM work, live telemetry, pause-safe rates, and SuperWatch legacy isolation.
 - **High-throughput Task 8 RTT and SuperWatch binary migration** — `complete`。RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks.
 - **High-throughput Task 9 performance and HIL qualification** — `complete`。All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed.
+- **Release qualification Task 10 packaged stream gates** — `complete_pending_review_commit`。Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release.
 
 ## 验证证据
 
@@ -39,6 +40,9 @@
 - **Task 8 RTT and SuperWatch synthetic qualification**：Python local StreamHub/codec soaks ran 600 seconds each at 10 k records/s: RTT consumed 6000000/6000000 with zero drops/sequence errors at 123599.7 B/s and queue high-water 1; SuperWatch 8-channel consumed 6000000/6000000 with zero drops/sequence errors at 403599.4 B/s and queue high-water 1. Accelerated jsdom same-thread gates processed RTT 6000 records with a 5000-line bound and DOM below 40 rows, and SuperWatch 600000 x 8 samples with a 200000-sample ring and envelope <=5120 values. These are not real wall-clock browser, WebSocket, Web Worker, packaged application, or MKLink HIL results.
 - **Task 9 backend MKLink HIL**：Four authenticated binary WebSocket runs completed 1800 seconds each with zero measured sequence/backend loss: SystemView 20093.43 events/s, VOFA 8044.33 samples/s, RTT 12997.51 samples/s, SuperWatch 8023.71 samples/s. These are qualified stable rates; only RTT retained a measured overload boundary.
 - **Task 9 real Edge frontend HIL**：SystemView, VOFA, RTT, and SuperWatch loaded hashed Workers and binary WebSockets; visible and resumed rendering stayed <=30 FPS; pause kept backend and Worker collection advancing with zero Canvas frames and zero measured frontend/sequence/backend loss. Peak Edge process-tree working sets were 798273536, 736600064, 709496832, and 733954048 bytes respectively. Hidden state was not established on Edge 130 and is not claimed as HIL PASS.
+- **Task 10 packaged stream HIL**：Four 600-second packaged measurements pass with exact WebSocket/Worker parity, real canvas strokes, <=30.5 FPS, pause/resume evidence, zero measurement loss, and validated fixtures. Four regenerated cleanup artifacts independently prove target reflash, actual Flash readback, reset, zero controls, Tauri exit, and API/CDP port release.
+- **SystemView Context corruption**：Root causes fixed at protocol, RAM fallback, backend lifecycle, and GUI display boundaries. Focused Python 50 and GUI 8 tests pass. Fresh packaged HIL ran 20.657 seconds with 414568 events, zero parser drops, one valid protocol task name, zero invalid names, and complete cleanup.
+- **Current full automated baseline**：Python 611 passed in 26.41s; GUI 18 files / 238 tests passed in 18.14s; Node release harness 49 passed; Vite transformed 140 modules; Rust 3 passed and cargo check completed.
 
 ## 架构决策
 
@@ -61,9 +65,10 @@
 
 ## 下一动作
 
-1. Execute Task 1 of docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md using TDD: make the installed Tauri application prefer its bundled sidecar.
-2. Continue autonomously through hardware qualification, installer validation, review, and GitHub prerelease publication.
-3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
+1. Request final specification and quality re-reviews; only after both APPROVED, commit and push the explicit Task 10 file set.
+2. Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.
+3. Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.
+4. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 

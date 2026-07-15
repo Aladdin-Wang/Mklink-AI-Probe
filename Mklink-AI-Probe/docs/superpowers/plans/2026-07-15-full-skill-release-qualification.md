@@ -803,7 +803,33 @@ git commit -m "test: qualify packaged online flash"
 
 ## Task 10: Run Four Ten-Minute Packaged Stream Gates
 
-- [ ] **Step 1: Derive fixture writes from the AXF**
+**Task 10 source and evidence boundary:**
+
+- Modify: `mklink/systemview_parser.py`
+- Modify: `mklink/device.py`
+- Modify: `mklink/remote/dashboards.py`
+- Modify: `gui/src/assets/rtt_viewer.js`
+- Modify: `gui/src/components/dash/WaveformViewer.vue`
+- Modify: `gui/src/components/dash/WaveformViewer.test.ts`
+- Modify: `gui/src/components/dash/SystemViewTab.vue`
+- Modify: `gui/src/lib/systemViewMetrics.ts`
+- Modify: `gui/src/lib/systemViewMetrics.test.ts`
+- Create: `_maintainer/testing/tests/test_systemview_parser.py`
+- Create: `_maintainer/testing/tests/test_systemview_task_names.py`
+- Create: `_maintainer/testing/tests/test_device_flash_verify.py`
+- Modify: `_maintainer/testing/tests/test_systemview_streaming.py`
+- Modify: `_maintainer/testing/tests/test_vofa_streaming.py`
+- Modify: `_maintainer/testing/performance/packaged_stream_probe.cjs`
+- Modify: `_maintainer/testing/performance/packaged_stream_probe.test.cjs`
+- Create: `_maintainer/testing/performance/packaged_stream_cleanup.cjs`
+- Create: `_maintainer/testing/performance/packaged_stream_cleanup.test.cjs`
+- Modify: tracked generated `gui/dist/**`
+- Modify: `docs/verification/full-skill-release-v0.1.0-rc.1.md`
+- Modify: `docs/ai/project-memory.json`
+- Modify: generated `docs/ai/CURRENT_HANDOFF.md`
+- Modify/Create: `docs/verification/artifacts/rc1-packaged-*.json`
+
+- [x] **Step 1: Derive and verify fixtures from the AXF**
 
 Resolve addresses for:
 
@@ -816,29 +842,39 @@ vofa_test_sin
 vofa_test_tri
 ```
 
-Build temporary `MKLINK_TARGET_ARM_WRITES` and
-`MKLINK_TARGET_DEARM_WRITES` JSON values. Do not commit the addresses when they
-could expose raw local test configuration; the artifact records symbolic
-control names and masked addresses only.
+Build temporary `MKLINK_TARGET_ARM_WRITES`, `MKLINK_TARGET_DEARM_WRITES`, and
+`MKLINK_STREAM_FIXTURE` JSON values. Runtime writes include raw addresses only
+in environment variables; each write also carries `symbol`, `maskedAddress`,
+and numeric `value`. The harness must verify arm readback and emit only the
+sanitized fields.
 
-- [ ] **Step 2: Run RTT for 600 seconds**
+Fixture predicates are exact:
+
+- RTT: `mklink_rtt_burst_rows=13`, `mklink_rtt_test_arm=1`.
+- SystemView: `mklink_sv_user_event_pairs_per_tick=2`, `mklink_sv_test_arm=1`.
+- VOFA: `vofa_test_sin` and `vofa_test_tri`, interval `0.00001`, status
+  acquisition mode `dump-memory`.
+- SuperWatch: the same two symbols, interval `0.00001`, prepare requests for
+  both variables, and status acquisition mode `dump-memory`.
+
+- [x] **Step 2: Run RTT for 600 seconds**
 
 Set `MKLINK_STREAM=rtt`, `MKLINK_PACKAGED_DURATION_MS=600000`, arm burst 13,
 and run `packaged_stream_probe.cjs`. Require exact WebSocket/Worker frame and
 sequence parity, zero loss, 0 < FPS <= 30.5, pause collection, resume, stopped
 backend, zero clients/owner, dearm readback, and browser close.
 
-- [ ] **Step 3: Run SystemView for 600 seconds**
+- [x] **Step 3: Run SystemView for 600 seconds**
 
 Set `MKLINK_STREAM=systemview`, arm pairs=2/tick, and apply the same strict
 predicate using SystemView status, owner, and WebSocket names.
 
-- [ ] **Step 4: Run VOFA for 600 seconds**
+- [x] **Step 4: Run VOFA for 600 seconds**
 
 Set `MKLINK_STREAM=vofa`, configure `vofa_test_sin` and `vofa_test_tri` at the
 fastest supported 10 us request, and apply the same strict predicate.
 
-- [ ] **Step 5: Run SuperWatch for 600 seconds**
+- [x] **Step 5: Run SuperWatch for 600 seconds**
 
 Set `MKLINK_STREAM=superwatch`, configure the same two symbols with dump-memory
 sampling at the fastest supported request, and apply the same predicate.
@@ -854,19 +890,42 @@ if ($LASTEXITCODE -ne 0) { throw "packaged $($env:MKLINK_STREAM) gate failed" }
 Get-Content -Raw $artifact | ConvertFrom-Json | Out-Null
 ```
 
-- [ ] **Step 6: Compare against historical Task 9 evidence**
+After each measurement, run `packaged_stream_cleanup.cjs` to create a separate
+sanitized `rc1-packaged-<stream>-cleanup.json`. It must prove measurement-side
+browser close and target dearm, final firmware reflash/verify/reset, zeroed
+control readback, Tauri process exit, and API/CDP port release.
+
+- [x] **Step 6: Compare against historical Task 9 evidence**
 
 Record fresh RC rates, items, bytes/s, FPS, peak working set, and loss. Compare
 to the existing 30-minute rows without calling the ten-minute runs maxima or
 replacing the historical overload boundary.
 
-- [ ] **Step 7: Validate cleanup and commit**
+- [x] **Step 7: Validate cleanup and commit**
 
 Require all stream backends stopped, active clients zero, no resource owners,
 both target arm controls zero, Tauri/CDP closed, and target reset. Then:
 
 ```powershell
-git add -- docs/verification/full-skill-release-v0.1.0-rc.1.md docs/verification/artifacts/rc1-packaged-*.json
+git add -- `
+  mklink/systemview_parser.py mklink/device.py mklink/remote/dashboards.py `
+  gui/src/assets/rtt_viewer.js gui/src/components/dash/WaveformViewer.vue `
+  gui/src/components/dash/WaveformViewer.test.ts `
+  gui/src/components/dash/SystemViewTab.vue `
+  gui/src/lib/systemViewMetrics.ts gui/src/lib/systemViewMetrics.test.ts `
+  _maintainer/testing/tests/test_systemview_parser.py `
+  _maintainer/testing/tests/test_systemview_task_names.py `
+  _maintainer/testing/tests/test_device_flash_verify.py `
+  _maintainer/testing/tests/test_systemview_streaming.py `
+  _maintainer/testing/tests/test_vofa_streaming.py `
+  _maintainer/testing/performance/packaged_stream_probe.cjs `
+  _maintainer/testing/performance/packaged_stream_probe.test.cjs `
+  _maintainer/testing/performance/packaged_stream_cleanup.cjs `
+  _maintainer/testing/performance/packaged_stream_cleanup.test.cjs `
+  gui/dist docs/verification/full-skill-release-v0.1.0-rc.1.md `
+  docs/verification/artifacts/rc1-packaged-*.json `
+  docs/ai/project-memory.json docs/ai/CURRENT_HANDOFF.md `
+  docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md
 git commit -m "test: qualify RC packaged stream performance"
 ```
 

@@ -217,7 +217,12 @@ import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import { appendManyToLast } from '../../lib/boundedBuffer'
 import { takeNewStreamPoints } from '../../lib/streamCursor'
 import { ingestSystemViewIntervals, type SystemViewIntervalState } from '../../lib/systemViewIntervals'
-import { buildSystemViewEventRows, computeContextRows, computeRuntimeRows } from '../../lib/systemViewMetrics'
+import {
+  buildSystemViewEventRows,
+  computeContextRows,
+  computeRuntimeRows,
+  normalizeSystemViewName,
+} from '../../lib/systemViewMetrics'
 import { appendAndTrimEventsByTime, appendAndTrimRanges, filterRangesByWindow } from '../../lib/systemViewTimeBuffer'
 import { formatScheduleCount } from '../../lib/systemViewLabels'
 import { importSystemViewJsonl } from '../../lib/systemViewImport'
@@ -394,21 +399,24 @@ const MAX_INTERVALS = 50_000
 const ANALYSIS_BUFFER_US = 60_000_000
 
 function taskNameFromMeta(id: number): string {
-  return meta.taskNames[id] || meta.taskNames[String(id) as any] || ''
+  return normalizeSystemViewName(meta.taskNames[id] || meta.taskNames[String(id) as any])
 }
 
 function isrNameFromMeta(id: number): string {
-  return meta.isrNames[id] || meta.isrNames[String(id) as any] || ''
+  return normalizeSystemViewName(meta.isrNames[id] || meta.isrNames[String(id) as any])
 }
 
-function applyTaskNames(names: Record<number, string>) {
-  meta.taskNames = names
-  for (const [idText, name] of Object.entries(names)) {
+function applyTaskNames(names: Record<number, unknown>) {
+  const cleanNames: Record<number, string> = {}
+  for (const [idText, rawName] of Object.entries(names)) {
     const id = Number(idText)
+    const name = normalizeSystemViewName(rawName)
+    if (Number.isFinite(id) && name) cleanNames[id] = name
     if (Number.isFinite(id) && taskStats[id] && name) {
       taskStats[id].name = name
     }
   }
+  meta.taskNames = cleanNames
 }
 
 function colorFor(id: number): string {
@@ -418,10 +426,17 @@ function colorFor(id: number): string {
 }
 
 function ensureTask(id: number, name?: string): TaskStat {
+  const cleanName = normalizeSystemViewName(name)
   if (!taskStats[id]) {
-    taskStats[id] = { id, name: name || taskNameFromMeta(id), color: colorFor(id), runUs: 0, switches: 0 }
+    taskStats[id] = {
+      id,
+      name: cleanName || taskNameFromMeta(id),
+      color: colorFor(id),
+      runUs: 0,
+      switches: 0,
+    }
   }
-  const resolvedName = name || taskNameFromMeta(id)
+  const resolvedName = cleanName || taskNameFromMeta(id)
   if (resolvedName && !taskStats[id].name) taskStats[id].name = resolvedName
   return taskStats[id]
 }
@@ -736,7 +751,7 @@ function applyImportedMeta(record: Record<string, unknown>) {
     meta.dropped = Math.max(0, Number.isFinite(runtimeDropped) ? runtimeDropped : droppedBytes || 0) + Math.max(0, droppedPackets || 0)
   }
   if (record.task_names && typeof record.task_names === 'object' && !Array.isArray(record.task_names)) {
-    applyTaskNames(record.task_names as Record<number, string>)
+    applyTaskNames(record.task_names as Record<number, unknown>)
   }
   if (record.isr_names && typeof record.isr_names === 'object' && !Array.isArray(record.isr_names)) {
     meta.isrNames = record.isr_names as Record<number, string>

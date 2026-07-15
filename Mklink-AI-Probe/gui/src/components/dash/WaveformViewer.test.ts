@@ -31,6 +31,9 @@ const mocks = vi.hoisted(() => ({
 const viewerSource = fs.readFileSync(
   path.resolve(process.cwd(), 'src/assets/rtt_viewer.js'), 'utf8',
 )
+const componentSource = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/components/dash/WaveformViewer.vue'), 'utf8',
+)
 
 function waveformFrame(
   sequence: bigint, itemCount: number, timestampNs: bigint, payload: Float32Array,
@@ -590,6 +593,63 @@ describe('WaveformViewer VOFA binary transport', () => {
 describe('VOFA viewer hot path source guard', () => {
   const source = viewerSource
 
+  it('routes packaged waveform API calls through the configured backend origin', () => {
+    expect(componentSource).toContain("const API_BASE = import.meta.env.VITE_MKLINK_API || ''")
+    expect(componentSource).toContain('fetch(`${API_BASE}/api/dash/${')
+    expect(componentSource).toContain('apiBase: ${JSON.stringify(API_BASE)}')
+    expect(source).toContain("var API_BASE = CONFIG.apiBase || '';")
+    expect(source).toContain("var API_CTRL = API_BASE + '/api/dash/'")
+    expect(source).toContain("var API_SW = API_BASE + '/api/dash/superwatch/';")
+    expect(source).toContain("var API_SYMBOLS = API_BASE + '/api/symbols/';")
+  })
+
+  it('disposes global viewer observers and listeners when the Vue view unmounts', () => {
+    expect(componentSource).toContain('viewers?.[props.mode]?.dispose?.()')
+    expect(source).toContain('var viewerAbortController = new AbortController();')
+    expect(source).toContain('viewerResizeObserver.disconnect();')
+    expect(source).toContain('viewerAbortController.abort();')
+    expect(source).toContain('binaryViewer.dispose = disposeViewer;')
+  })
+
+  it('stops an active watch-column resize when the viewer is disposed', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      const resizer = document.querySelector(
+        '#watch-table thead .watch-col-resizer[data-col="name"]',
+      ) as HTMLElement | null
+      const header = document.querySelector(
+        '#watch-table thead th[data-col="name"]',
+      ) as HTMLElement | null
+      expect(resizer).not.toBeNull()
+      expect(header).not.toBeNull()
+
+      resizer?.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true,
+        clientX: 100,
+      }))
+      const widthBeforeDispose = header?.style.width
+      runtime.viewer.dispose()
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: 220,
+      }))
+      await new Promise(resolve => setTimeout(resolve, 20))
+
+      expect(header?.style.width).toBe(widthBeforeDispose)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('does not append DOM text, copy rings, or sort fields on each VOFA frame', () => {
     const processPoint = source.match(/function processPoint\(point\)[\s\S]*?\n}\n\n\/\//)?.[0] ?? ''
     const drawChart = source.match(/function drawChart\(\)[\s\S]*?\n}\n\n\/\//)?.[0] ?? ''
@@ -648,6 +708,27 @@ describe('VOFA viewer hot path source guard', () => {
 })
 
 describe('VOFA viewer typed-ring runtime', () => {
+  it('preserves configured waveform fields when status omits channel metadata', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const channels = [{ name: 'A' }, { name: 'B' }]
+      runtime.viewer.configureBinaryChannels(channels)
+
+      runtime.probe.syncStatus({ running: true, interval: 0.00001, channels })
+
+      expect(Object.keys(runtime.probe.fields())).toEqual(['A', 'B'])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_000_000n, itemCount: 2, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 10, 2, 20).buffer,
+        times: Float64Array.of(0, 1).buffer,
+      }, channels)).toBe(true)
+      expect(runtime.probe.fields().A.ringBuf.count).toBe(2)
+      expect(runtime.probe.fields().B.ringBuf.count).toBe(2)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('updates the VOFA watch table at no more than 5 Hz while envelopes render at 30 FPS', async () => {
     const runtime = await loadRttViewerRuntime()
     const now = vi.spyOn(performance, 'now').mockReturnValue(0)

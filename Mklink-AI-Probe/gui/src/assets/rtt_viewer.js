@@ -195,10 +195,16 @@ var RING_BUFFER_CAPACITY = MAX_POINTS; // Ring buffer capacity matches max point
 
 // API path configuration (adapted for FastAPI backend)
 var _dashType = CONFIG.mode.toLowerCase(); // 'superwatch' or 'vofa'
-var API_STREAM = '/api/dash/' + _dashType + '/stream';
-var API_CTRL = '/api/dash/' + _dashType + '/';
-var API_SW = '/api/dash/superwatch/';
-var API_SYMBOLS = '/api/symbols/';
+var API_BASE = CONFIG.apiBase || '';
+var API_STREAM = API_BASE + '/api/dash/' + _dashType + '/stream';
+var API_CTRL = API_BASE + '/api/dash/' + _dashType + '/';
+var API_SW = API_BASE + '/api/dash/superwatch/';
+var API_SYMBOLS = API_BASE + '/api/symbols/';
+var viewerAbortController = new AbortController();
+
+function addViewerGlobalListener(target, type, listener) {
+  target.addEventListener(type, listener, { signal: viewerAbortController.signal });
+}
 
 window.MAX_POINTS = MAX_POINTS;
 window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
@@ -240,6 +246,8 @@ for (var wci = 0; wci < WATCH_COLUMNS.length; wci++) {
   };
 }
 var watchColumnResize = null;
+var watchColumnResizeAbortController = null;
+var watchColumnResizeRafId = 0;
 
 function parseNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -367,7 +375,7 @@ function resize() {
   ctx.scale(dpr, dpr);
   return true;
 }
-window.addEventListener('resize', function() { resize(); drawChart(); });
+addViewerGlobalListener(window, 'resize', function() { resize(); drawChart(); });
 resize();
 
 // Minimap canvas setup
@@ -391,7 +399,8 @@ function resizeMinimap() {
 
 // Auto-resize when panel toggles
 var debugMain = document.getElementById('debug-main');
-new ResizeObserver(function() { resize(); resizeMinimap(); drawChart(); }).observe(debugMain);
+var viewerResizeObserver = new ResizeObserver(function() { resize(); resizeMinimap(); drawChart(); });
+viewerResizeObserver.observe(debugMain);
 document.getElementById('raw-log-panel').addEventListener('transitionend', function(e) {
   if (e.propertyName === 'height') { resize(); drawChart(); }
 });
@@ -567,7 +576,7 @@ function syncDashboardStatus(d) {
   updateCollectionUI(nextState || 'stopped');
   if (IS_VOFA_MODE) updateSampleRateBadge(d.interval, d.actual_rate, false);
   else updateSampleRateBadge(d.estimated_interval, d.estimated_rate, true);
-  applyChannelMetadata(d.channel_metadata || {});
+  if (d.channel_metadata !== undefined) applyChannelMetadata(d.channel_metadata);
   if (d.interval !== undefined && d.interval > 0) {
     currentInterval = d.interval;
     document.getElementById('interval-input').value = d.interval;
@@ -1047,6 +1056,7 @@ function watchColStyle(key) {
 function renderWatchHeader() {
   var row = document.getElementById('watch-table-head-row');
   if (!row) return;
+  stopWatchColumnResize();
   var html = '';
   // Delete button column at the front
   html += '<th class="watch-col-delete"></th>';
@@ -1104,32 +1114,47 @@ function _applyColumnWidthLive(key) {
   }
 }
 
+function stopWatchColumnResize() {
+  if (watchColumnResize) {
+    var th = document.querySelector(
+      '#watch-table thead th[data-col="' + watchColumnResize.key + '"]'
+    );
+    if (th) th.classList.remove('resizing');
+  }
+  watchColumnResize = null;
+  if (watchColumnResizeRafId) {
+    cancelAnimationFrame(watchColumnResizeRafId);
+    watchColumnResizeRafId = 0;
+  }
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  if (watchColumnResizeAbortController) {
+    var controller = watchColumnResizeAbortController;
+    watchColumnResizeAbortController = null;
+    controller.abort();
+  }
+}
+
 function bindWatchColumnResizers() {
   var resizers = document.querySelectorAll('.watch-col-resizer');
-  var _rafId = 0;
 
   function _onMove(e) {
     if (!watchColumnResize) return;
     var newW = watchColumnResize.startWidth + e.clientX - watchColumnResize.startX;
     setWatchColumnWidth(watchColumnResize.key, newW);
-    cancelAnimationFrame(_rafId);
-    _rafId = requestAnimationFrame(function() {
+    cancelAnimationFrame(watchColumnResizeRafId);
+    watchColumnResizeRafId = requestAnimationFrame(function() {
+      watchColumnResizeRafId = 0;
       if (watchColumnResize) _applyColumnWidthLive(watchColumnResize.key);
     });
   }
   function _onUp() {
-    if (!watchColumnResize) return;
-    var th = document.querySelector('#watch-table thead th[data-col="' + watchColumnResize.key + '"]');
-    if (th) th.classList.remove('resizing');
-    watchColumnResize = null;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', _onMove);
-    document.removeEventListener('mouseup', _onUp);
+    stopWatchColumnResize();
   }
   for (var i = 0; i < resizers.length; i++) {
     resizers[i].addEventListener('mousedown', function(e) {
       e.preventDefault();
+      stopWatchColumnResize();
       var key = this.dataset.col;
       watchColumnResize = {
         key: key,
@@ -1140,8 +1165,13 @@ function bindWatchColumnResizers() {
       if (th) th.classList.add('resizing');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
-      document.addEventListener('mousemove', _onMove);
-      document.addEventListener('mouseup', _onUp);
+      watchColumnResizeAbortController = new AbortController();
+      document.addEventListener('mousemove', _onMove, {
+        signal: watchColumnResizeAbortController.signal
+      });
+      document.addEventListener('mouseup', _onUp, {
+        signal: watchColumnResizeAbortController.signal
+      });
     });
   }
 }
@@ -2387,6 +2417,13 @@ function renderBinaryFrame() {
   updateWatchTable();
 }
 
+function disposeViewer() {
+  stopWatchColumnResize();
+  viewerResizeObserver.disconnect();
+  viewerAbortController.abort();
+  if (es) es.close();
+}
+
 if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
   var binaryViewer = window.__waveformViewers[CONFIG.mode] || {};
@@ -2399,6 +2436,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.updateAcquisitionStatus = syncDashboardStatus;
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
+  binaryViewer.dispose = disposeViewer;
   binaryViewer.es = es;
   window.__waveformViewers[CONFIG.mode] = binaryViewer;
 }
@@ -2988,21 +3026,21 @@ function drawChart() {
 // ============================================================
 // Module-scope event listeners (extracted from drawChart to prevent leak)
 // ============================================================
-document.addEventListener('keydown', function(e) {
+addViewerGlobalListener(document, 'keydown', function(e) {
   if (e.key === ' ' && !e.repeat && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     spaceHeld = true;
     canvas.style.cursor = 'grab';
     e.preventDefault();
   }
 });
-document.addEventListener('keyup', function(e) {
+addViewerGlobalListener(document, 'keyup', function(e) {
   if (e.key === ' ') {
     spaceHeld = false;
     canvas.style.cursor = '';
   }
 });
 
-window.addEventListener('mouseup', function(e) {
+addViewerGlobalListener(window, 'mouseup', function(e) {
   if (probeDownPos && !timelineView.dragging && !draggingTrigger && !cursorState.dragging) {
     var rect = canvas.getBoundingClientRect();
     var mx = e.clientX - rect.left;
@@ -3027,7 +3065,7 @@ window.addEventListener('mouseup', function(e) {
   canvas.style.cursor = spaceHeld ? 'grab' : '';
 });
 
-window.addEventListener('keydown', function(e) {
+addViewerGlobalListener(window, 'keydown', function(e) {
   if (e.key === 'Escape' && hoverProbe.active) {
     hoverProbe.active = false;
     tooltip.style.display = 'none';
@@ -3239,7 +3277,7 @@ function drawMinimap() {
     e.stopPropagation();
   };
 
-  window.addEventListener('mousemove', function(e) {
+  addViewerGlobalListener(window, 'mousemove', function(e) {
     if (!vpDragging) return;
     var mmRect = document.getElementById('minimap-wrap').getBoundingClientRect();
     var dx = (e.clientX - vpDragStartX) / mmRect.width;
@@ -3248,7 +3286,7 @@ function drawMinimap() {
     drawMinimap();
   });
 
-  window.addEventListener('mouseup', function() { vpDragging = false; });
+  addViewerGlobalListener(window, 'mouseup', function() { vpDragging = false; });
 
   minimapCanvas.onclick = function(e) {
     if (vpDragging) return;
@@ -3435,7 +3473,7 @@ document.getElementById('watch-columns-btn').addEventListener('click', function(
   e.stopPropagation();
 });
 
-document.addEventListener('click', function(e) {
+addViewerGlobalListener(document, 'click', function(e) {
   var menu = document.getElementById('watch-columns-menu');
   if (!menu || !menu.classList.contains('visible')) return;
   if (menu.contains(e.target) || e.target.id === 'watch-columns-btn') return;
@@ -3495,7 +3533,7 @@ if (IS_SUPERWATCH_MODE) {
     for (var i = 0; i < items.length; i++) items[i].classList.toggle('active', i === swActiveIdx);
   });
   // Close dropdown on outside click
-  document.addEventListener('click', function(e) {
+  addViewerGlobalListener(document, 'click', function(e) {
     if (!e.target.closest('#sw-search-wrap')) swDropdown.classList.remove('visible');
   });
   swTimeUnit.addEventListener('change', function() {
@@ -3822,7 +3860,7 @@ function appendTriggerPoint(point) {
 // Keyboard shortcuts
 // ============================================================
 var helpOpen = false;
-document.addEventListener('keydown', function(e) {
+addViewerGlobalListener(document, 'keydown', function(e) {
   if (helpOpen) return;
   if (e.key === 'p' || e.key === 'P') {
     if (collectionState === 'running') {
@@ -3899,7 +3937,7 @@ document.getElementById('project-load-input').addEventListener('change', functio
     if (e.target === overlay) closeHelp();
   });
 
-  document.addEventListener('keydown', function(e) {
+  addViewerGlobalListener(document, 'keydown', function(e) {
     if (e.key === 'Escape' && helpOpen) {
       e.preventDefault();
       closeHelp();

@@ -30,6 +30,13 @@ def _channels(count=3):
     ]
 
 
+def test_vofa_status_exposes_binary_stream_stats():
+    hub = StreamHub(max_batches_per_client=4)
+    manager = VofaStreamManager(stream_hub=hub)
+
+    assert manager.get_status()["stream"] == hub.stats().__dict__
+
+
 def _dump_frame(timestamp_us, payload, *, flags=0):
     region = b"\x00" + struct.pack("<H", len(payload)) + payload
     length = 19 + len(region) + 6

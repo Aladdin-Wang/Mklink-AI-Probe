@@ -47,6 +47,40 @@ class DeviceNotConnectedError(DeviceError):
     pass
 
 
+_RT_THREAD_NAME_RE = re.compile(rb"[A-Za-z_][A-Za-z0-9_.-]*")
+_RT_NAME_MAX_DEFAULT = 8
+_SRAM_START = 0x20000000
+_SRAM_END = 0x40000000
+_FLASH_VERIFY_CHUNK = 1024
+
+
+def _aligned_object_list_offset(name_max: int) -> int:
+    return (name_max + 2 + 3) & ~3
+
+
+def _is_sram_pointer(value: int) -> bool:
+    return _SRAM_START <= value < _SRAM_END and value % 4 == 0
+
+
+def _decode_rt_thread_name(raw: bytes, name_max: int) -> str | None:
+    """Decode a validated inline ``rt_object`` thread name."""
+    list_offset = _aligned_object_list_offset(name_max)
+    if len(raw) < list_offset + 8:
+        return None
+    if raw[name_max] & 0x7F != 0x01:  # RT_Object_Class_Thread
+        return None
+    next_ptr = int.from_bytes(raw[list_offset:list_offset + 4], "little")
+    prev_ptr = int.from_bytes(raw[list_offset + 4:list_offset + 8], "little")
+    if not _is_sram_pointer(next_ptr) or not _is_sram_pointer(prev_ptr):
+        return None
+    name_field = raw[:name_max]
+    nul = name_field.find(b"\x00")
+    candidate = name_field if nul < 0 else name_field[:nul]
+    if candidate and _RT_THREAD_NAME_RE.fullmatch(candidate):
+        return candidate.decode("ascii")
+    return None
+
+
 def initialize_target(
     bridge: Any,
     flash: Any,
@@ -416,10 +450,39 @@ class Device:
         if not result.get("success"):
             raise DeviceError(f"Flash failed: {result}")
 
+        result = dict(result)
+        result["verified"] = False
+        if verify:
+            self._verify_firmware_readback(firmware, flash_base)
+            result["verified"] = True
+
         if reset_after:
             self.reset()
 
         return result
+
+    def _verify_firmware_readback(self, firmware: str, flash_base: str) -> None:
+        path = Path(firmware)
+        if path.suffix.lower() == ".hex":
+            from intelhex import IntelHex
+
+            image = IntelHex(str(path))
+            regions = [
+                (start, bytes(image.tobinarray(start=start, end=end - 1)))
+                for start, end in image.segments()
+            ]
+        else:
+            regions = [(int(flash_base, 0), path.read_bytes())]
+
+        for start, expected in regions:
+            for offset in range(0, len(expected), _FLASH_VERIFY_CHUNK):
+                chunk = expected[offset:offset + _FLASH_VERIFY_CHUNK]
+                address = start + offset
+                actual = self.read_memory(address, len(chunk))
+                if actual != chunk:
+                    raise DeviceError(
+                        f"Flash verify failed at 0x{address:08X}"
+                    )
 
     def erase_chip(self) -> bool:
         self._require_connected()
@@ -435,9 +498,7 @@ class Device:
 
     def reset(self) -> None:
         self._require_connected()
-        self._bridge.send_command("cmd.set_beep_on()", timeout=3.0)
-        time.sleep(0.05)
-        self._bridge.send_command("cmd.set_beep_off()", timeout=3.0)
+        self._bridge.send_command("cmd.reset_chip()", timeout=10.0)
 
     def _get_mcu_profile(self) -> dict | None:
         from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode, match_mcu_by_device
@@ -776,28 +837,51 @@ class Device:
         """直接读 RT-Thread 线程名（不依赖开机 INIT 包）。
 
         task_id（解码器已还原为真实指针）即 ``rt_thread*``。RT-Thread 的
-        ``rt_thread`` 继承 ``rt_object``，``name[RT_NAME_MAX]`` 在 ``rt_object``
-        内（4.x 典型偏移 12：list[8]+type[1]+color[1]+flag[2]），版本间有差异。
-        故扫描候选偏移 [8..28]，对每处取以 ``\\0`` 结尾的 C 标识符（线程名如
-        ``idle/main/tshell``）；指针字段不会匹配标识符模式，故能准确锁定 name。
+        ``rt_thread`` 继承 ``rt_object``，对象以 ``name[RT_NAME_MAX]`` 开头，
+        紧随其后的 ``type`` 必须是 Thread（可带 Static 标志）。同时验证对象
+        类型和名称，避免把错误对齐产生的 task_id 指向的普通 RAM ASCII 片段
+        误报为线程名。
         """
-        import re
         self._require_connected()
-        name_re = re.compile(rb'^[A-Za-z_][A-Za-z0-9_]*')
+        name_max = Device._systemview_rt_name_max(self)
+        list_offset = _aligned_object_list_offset(name_max)
         names: dict[int, str] = {}
         for tid in task_ids:
-            for off in (0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48):
-                try:
-                    raw = self.read_memory(int(tid) + off, 8)
-                except Exception:
-                    break  # bridge 出错则放弃此 tid
-                nul = raw.find(b'\x00')
-                cand = raw if nul < 0 else raw[:nul]
-                m = name_re.match(cand)
-                if m and len(m.group()) >= 2:
-                    names[int(tid)] = m.group().decode('ascii')
-                    break
+            task_id = int(tid)
+            if not _is_sram_pointer(task_id):
+                continue
+            try:
+                raw = self.read_memory(task_id, list_offset + 8)
+            except Exception:
+                continue
+            name = _decode_rt_thread_name(raw, name_max)
+            if name:
+                names[task_id] = name
         return names
+
+    def _systemview_rt_name_max(self) -> int:
+        root = Path(getattr(self, "_project_root", "") or ".")
+        candidates = (
+            (
+                root / "rtconfig.h",
+                re.compile(r"^\s*#define\s+RT_NAME_MAX\s+(\d+)", re.M),
+            ),
+            (
+                root / ".config",
+                re.compile(r"^CONFIG_RT_NAME_MAX=(\d+)", re.M),
+            ),
+        )
+        for path, pattern in candidates:
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            match = pattern.search(content)
+            if match:
+                value = int(match.group(1))
+                if 1 <= value <= 64:
+                    return value
+        return _RT_NAME_MAX_DEFAULT
 
     # ------------------------------------------------------------------
     # Memory

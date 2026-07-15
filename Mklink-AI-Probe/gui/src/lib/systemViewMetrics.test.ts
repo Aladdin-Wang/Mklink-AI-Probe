@@ -75,6 +75,20 @@ describe('systemViewMetrics', () => {
     ])
   })
 
+  it('removes corrupted task names from context rows', () => {
+    const [row] = computeContextRows([
+      {
+        id: 0x20000018,
+        name: 'n_rx\ufffd\u0005corrupt',
+        color: '#1',
+        runUs: 10,
+        switches: 1,
+      },
+    ])
+
+    expect(row.name).toBe('')
+  })
+
   it('keeps legacy CPU rows sorted by total runtime', () => {
     expect(computeTaskRows([
       { id: 1, name: 'a', color: '#1', runUs: 10, switches: 1 },
@@ -131,6 +145,17 @@ describe('systemViewMetrics', () => {
         kind: 'idle',
       },
     ])
+  })
+
+  it('falls back to the task id for a corrupted event context name', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 10,
+      task_id: 0x20000018,
+      task_name: 'n_rx\ufffd\u0005corrupt',
+    }])
+
+    expect(row.context).toBe('0x20000018')
   })
 
   it('renders exact tick text instead of a rounded Number timestamp', () => {

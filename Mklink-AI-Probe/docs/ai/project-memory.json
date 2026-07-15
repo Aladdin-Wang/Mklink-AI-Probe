@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-15T01:00:45+08:00",
+  "updated_at": "2026-07-15T21:27:08+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "fad1227",
-    "remote_head": "c3a8b1e; approved design commit fad1227 and the implementation plan are not yet pushed",
-    "working_tree": "Full-skill v0.1.0-rc.1 implementation plan and memory update are pending commit"
+    "head": "f602857",
+    "remote_head": "c3a8b1e; Task 10 packaged-stream checkpoint is not yet pushed",
+    "working_tree": "Task 10 implementation and evidence complete; final specification/quality reviews, commit, and push remain"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,8 +18,8 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
-    "current_task": "Full-skill v0.1.0-rc.1 qualification, installer validation, report, and GitHub prerelease",
-    "latest_commit": "fad1227 docs: define full-skill RC qualification",
+    "current_task": "Task 10 approved; explicit commit and push in progress",
+    "latest_commit": "f602857 test: qualify packaged online flash",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -27,7 +27,9 @@
     "task_7_implementation": "complete; final spec and quality reviews APPROVED",
     "task_8_implementation": "complete; final spec and quality reviews APPROVED",
     "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
-    "release_qualification": "Design and written specification approved; 13-task/72-step implementation plan written and self-reviewed; Task 1 bundled-sidecar runtime fix is next.",
+    "task_10_implementation": "complete and independently approved; all four ten-minute measurements and regenerated targetVerified/targetReset cleanup artifacts pass; SystemView Context corruption, Flash readback, and real MCU reset evidence gaps are fixed",
+    "release_qualification": "Tasks 1-10 implemented. Task 10 final specification and quality re-reviews are APPROVED; commit and push are in progress. Installer lifecycle Tasks 11-13 remain.",
+    "pause_requested": "Resumed by user; the prior pause checkpoint is closed.",
     "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
   "milestones": [
@@ -109,6 +111,14 @@
       "evidence": "docs/verification/high-throughput-streams.md",
       "review": "final spec and quality re-reviews APPROVED",
       "notes": "All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed."
+    },
+    {
+      "name": "Release qualification Task 10 packaged stream gates",
+      "status": "complete_approved_pending_commit",
+      "tests": "Python 611 passed in 26.41s; GUI 238 passed in 18.14s; Node release harness 49 passed; Vite 140 modules; Rust 3 passed and cargo check passed",
+      "evidence": "docs/verification/full-skill-release-v0.1.0-rc.1.md and docs/verification/artifacts/rc1-packaged-*.json",
+      "review": "final specification and quality re-reviews APPROVED; no Critical, Important, or Minor findings",
+      "notes": "Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release."
     }
   ],
   "verification": [
@@ -160,6 +170,18 @@
     {
       "area": "Task 9 real Edge frontend HIL",
       "result": "SystemView, VOFA, RTT, and SuperWatch loaded hashed Workers and binary WebSockets; visible and resumed rendering stayed <=30 FPS; pause kept backend and Worker collection advancing with zero Canvas frames and zero measured frontend/sequence/backend loss. Peak Edge process-tree working sets were 798273536, 736600064, 709496832, and 733954048 bytes respectively. Hidden state was not established on Edge 130 and is not claimed as HIL PASS."
+    },
+    {
+      "area": "Task 10 packaged stream HIL",
+      "result": "Four 600-second packaged measurements pass with exact WebSocket/Worker parity, real canvas strokes, <=30.5 FPS, pause/resume evidence, zero measurement loss, and validated fixtures. Four regenerated cleanup artifacts independently prove target reflash, actual Flash readback, reset, zero controls, Tauri exit, and API/CDP port release."
+    },
+    {
+      "area": "SystemView Context corruption",
+      "result": "Root causes fixed at protocol, RAM fallback, backend lifecycle, and GUI display boundaries. Focused Python 50 and GUI 8 tests pass. Fresh packaged HIL ran 20.657 seconds with 414568 events, zero parser drops, one valid protocol task name, zero invalid names, and complete cleanup."
+    },
+    {
+      "area": "Current full automated baseline",
+      "result": "Python 611 passed in 26.41s; GUI 18 files / 238 tests passed in 18.14s; Node release harness 49 passed; Vite transformed 140 modules; Rust 3 passed and cargo check completed."
     }
   ],
   "decisions": [
@@ -188,8 +210,9 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Execute Task 1 of docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md using TDD: make the installed Tauri application prefer its bundled sidecar.",
-    "Continue autonomously through hardware qualification, installer validation, review, and GitHub prerelease publication.",
+    "Commit and push the explicit Task 10 file set, then update durable memory with the delivery commit.",
+    "Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.",
+    "Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
   "continuation_protocol": [

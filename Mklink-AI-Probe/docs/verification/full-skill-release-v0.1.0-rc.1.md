@@ -12,17 +12,19 @@ hardware, installer, or publication command completes.
 
 | Feature / scenario | Layer | Command | Expected | Actual | Duration | Status | Artifact / diagnostic | Cleanup / restoration |
 |---|---|---|---|---|---:|---|---|---|
-| Python package and backend | Automated regression | `python -m pytest -q` | Complete suite passes | 590 passed | 39.79 s | PASS | Pytest terminal summary | No hardware opened by tests |
-| Release Node harness | Automated regression | `node --test` on the four release harness test files | All predicates and lifecycle tests pass | 19 passed, 0 failed | 193.79 ms | PASS | Node test summary | Lifecycle tests prove browser cleanup paths |
+| Python package and backend, final Task 10 run | Automated regression | `python -m pytest -q` | Complete suite passes | 611 passed | 26.41 s | PASS | Pytest terminal summary | No hardware opened by tests |
+| Release Node harness, final Task 10 run | Automated regression | `node --test` on the five release harness test files | All predicates and lifecycle tests pass | 49 passed, 0 failed | 222.33 ms | PASS | Node test summary | Lifecycle tests prove browser and final cleanup paths |
 | GUI component/runtime suite, initial full run | Automated regression | `npm test` | 232 tests pass with the strict 192 MiB VOFA heap gate | 231 passed, 1 failed; process-wide peak heap growth was 225,903,976 bytes while transport, rendering, ring, and ArrayBuffer predicates passed | 15.83 s | FAIL | Root cause: parallel test files contaminated `process.memoryUsage()` used by the VOFA memory gate | Test process exited; no hardware state |
 | GUI memory-gate reproducer | Automated regression | Full `WaveformViewer.test.ts` in three fresh processes | The VOFA gate is stable without unrelated file activity | 34/34 passed in all three runs | 4.64-4.71 s each | PASS | Confirmed measurement contamination rather than retained VOFA data | Test processes exited |
-| GUI component/runtime suite after `e80d5e0` | Automated regression | `npm test` | All GUI tests pass with file-level isolation and unchanged 192 MiB threshold | 18 files, 232 tests passed | 16.18 s | PASS | Vitest `fileParallelism: false`; strict memory threshold retained | Test process exited; no hardware state |
-| Production frontend build | Automated regression | `npm run build` | Type check and production bundle succeed | 140 modules transformed; hashed Worker emitted | 371 ms | PASS | Vite production summary | Generated `gui/dist` remains untracked build output |
-| Tauri Rust unit tests | Automated regression | `cargo test` | Sidecar selection tests pass | 3 passed, 0 failed | 59.44 s | PASS | Rust test summary | Test processes exited |
-| Tauri Rust check | Automated regression | `cargo check` | Crate type-checks | Completed successfully | 0.71 s | PASS | One linker informational warning, listed below | No installed application created |
-| AI project memory | Automated regression | `python scripts/ai_memory.py validate` | Durable memory schema is valid | Project memory v1 valid | <1 s | PASS | Validator timestamp `2026-07-15T01:00:45+08:00` | No state change |
+| GUI component/runtime suite, final Task 10 run | Automated regression | `npm test` | All GUI tests pass with file-level isolation and unchanged 192 MiB threshold | 18 files, 238 tests passed | 18.14 s | PASS | Vitest `fileParallelism: false`; strict memory threshold retained | Test process exited; no hardware state |
+| Production frontend build | Automated regression | `npm run build` | Type check and production bundle succeed | 140 modules transformed; hashed Worker emitted | 431 ms | PASS | Vite production summary | Tracked generated `gui/dist` refreshed for the packaged application |
+| Tauri Rust unit tests | Automated regression | explicit local Cargo `test` | Sidecar selection tests pass | 3 passed, 0 failed | 6.68 s compile/test | PASS | Rust test summary | Test processes exited |
+| Tauri Rust check | Automated regression | explicit local Cargo `check` | Crate type-checks | Completed successfully | 0.87 s | PASS | One linker informational warning, listed below | No installed application created |
+| AI project memory | Automated regression | `python scripts/ai_memory.py validate` | Durable memory schema is valid | Project memory v1 valid before Task 10 update | <1 s | PASS | Validator timestamp updated with this checkpoint | No hardware state |
 | Source whitespace gate | Automated regression | `git diff --check` | No whitespace errors | No errors | <1 s | PASS | Git exit 0 | Not applicable |
 | Python regression after physical-HIL fixes | Automated regression | `python -m pytest -q` | Discovery, project-init, and DWARF fixes preserve the full suite | 593 passed | 24.90 s | PASS | Corrective commit `5d41382` | No hardware opened by tests |
+| SystemView protocol regressions | Automated regression | Focused parser/backend and GUI task-name tests | SEGGER `TASK_INFO`/`STACK_INFO` layouts decode exactly and false-alignment names are rejected | 50 Python tests and 8 GUI tests passed; task-name gate rejects control, replacement, surrogate, format, empty, overlong, and non-string values | <3 s aggregate | PASS | Raw-packet, RAM-object, backend lifecycle, and display fallback regressions | No hardware opened by tests |
+| Final firmware readback and reset regression | Automated regression | Focused `Device.flash`, `Device.reset`, and cleanup tests | `verify=true` reads back HEX/BIN regions before a real MCU reset and cleanup requires `targetVerified` | 6 Python tests plus 3 Node cleanup tests passed; covers multi-segment HEX, BIN, 1024-byte chunk tail, mismatch, skip-readback, and `cmd.reset_chip()` | <1 s aggregate | PASS | Unit tests and four regenerated physical cleanup artifacts | No hardware opened by unit tests |
 
 ## Core MKLink
 
@@ -59,6 +61,37 @@ hardware, installer, or publication command completes.
 | Probe busy and handoff | Packaged physical HIL | Scenario `probe-busy` | VOFA ownership yields `PROBE_BUSY`; retry succeeds after release | First job failed with `PROBE_BUSY`; handoff job completed program/verify/reset | Included above | PASS | [probe-busy artifact](artifacts/rc1-online-flash-probe-busy.json) | VOFA stopped; owner released |
 | Final boot restore | Packaged physical HIL | Scenario `restore` | Restore HEX, verify matching hash, and reset | Program and verify succeeded; restored SHA-256 matched expected SHA-256 | Included above | PASS | [restore artifact](artifacts/rc1-online-flash-restore.json) | Target restored; no owner or active job |
 | Desktop lifecycle cleanup | Packaged runtime | Close main window and poll process/listening-port state | Tauri and sidecar exit; ports 8765 and 9223 release | All processes exited and both listening ports released | 11.3 s | PASS | Lifecycle command summary | No remaining MKLink sidecar process |
+
+## Packaged Stream Performance
+
+Each mode used a fresh target program and a fresh packaged Tauri process. The
+ten-minute rates below are sustained release-candidate observations, not new
+maximum claims. The existing 30-minute backend rates remain the longer-duration
+reference: RTT 12.997 kHz, SystemView 20.093 kEvents/s, VOFA 8.044 kHz, and
+SuperWatch 8.024 kHz.
+
+| Feature / scenario | Layer | Command | Expected | Actual | Duration | Status | Artifact / diagnostic | Cleanup / restoration |
+|---|---|---|---|---|---:|---|---|---|
+| RTT packaged stream | Packaged physical HIL | `packaged_stream_probe.cjs`, mode `rtt` | Strict frame/sequence parity, real curve strokes, capped FPS, pause/resume, zero loss | 15,669,402 items at 26.090 kHz; 62,022 WebSocket/Worker frames matched; 12,568 strokes at 5.23 FPS; all loss counters zero | 600.583 s | PASS | [measurement](artifacts/rc1-packaged-rtt.json), [cleanup](artifacts/rc1-packaged-rtt-cleanup.json) | Browser closed; target dearmed, reprogrammed, read back, and reset; controls zero; Tauri and ports released |
+| SystemView packaged stream and Context names | Packaged physical HIL | Mode `systemview`, two user-event pairs/tick | Same transport/render predicates plus printable Context task names | 12,067,495 events at 20.091 kEvents/s; 25,953 frames matched; 61,026 strokes at 25.40 FPS; 1 protocol task name, 0 invalid; parser and stable-window loss zero | 600.632 s | PASS | [measurement](artifacts/rc1-packaged-systemview.json), [cleanup](artifacts/rc1-packaged-systemview-cleanup.json) | Browser closed; target dearmed, reprogrammed, read back, and reset; controls zero; Tauri and ports released |
+| SystemView Context fix short revalidation | Packaged physical HIL | Current packaged EXE, 20-second SystemView gate from the configured stream project | No corrupt Context names and complete transport/render cleanup | 414,568 events at 20.069 kEvents/s; 885 WebSocket/Worker frames matched; 0 parser drops; 1 task name and 0 invalid names | 20.657 s | PASS | Sanitized temporary gate output, intentionally not committed | Backend stopped, zero clients/owner, target dearmed, browser closed, process and ports released |
+| VOFA packaged stream | Packaged physical HIL | Mode `vofa`, two symbols, fastest supported 10 us request | Visible curves at <=30.5 FPS with collection continuing during render pause | 4,826,656 items at 8.037 kHz; 150,833 frames matched; 216,272 strokes at 25.72 FPS; all loss counters zero | 600.567 s | PASS | [measurement](artifacts/rc1-packaged-vofa.json), [cleanup](artifacts/rc1-packaged-vofa-cleanup.json) | Browser closed; target reprogrammed, read back, and reset; controls zero; Tauri and ports released |
+| SuperWatch packaged stream | Packaged physical HIL | Mode `superwatch`, two-symbol dump-memory sampling | Visible curves at <=30.5 FPS with strict transport and cleanup evidence | 4,736,448 items at 7.887 kHz; 148,611 frames matched; 216,412 strokes at 25.74 FPS; all loss counters zero | 600.569 s | PASS | [measurement](artifacts/rc1-packaged-superwatch.json), [cleanup](artifacts/rc1-packaged-superwatch-cleanup.json) | Browser closed; target reprogrammed, read back, and reset; controls zero; Tauri and ports released |
+
+SystemView produced an initial target-overflow baseline while attaching to the
+already active high-rate trace. The gate waited for those counters to stabilize
+before starting its 600-second measurement and then observed zero additional
+target overflow or dropped packets. The baseline is retained in the artifact
+and is not represented as stable-window loss.
+
+The Context corruption had three independent sources and defenses. The parser
+previously decoded `TASK_INFO` in the wrong field order and omitted the fourth
+`STACK_INFO` value, so later bytes could be interpreted as names. The RAM
+fallback also scanned arbitrary offsets and could accept unrelated ASCII such
+as `V1`. The corrected path follows the bundled SEGGER encoder exactly,
+requires an RT-Thread Thread object before accepting an inline RAM name, avoids
+disruptive RAM resolution once protocol names exist, and rejects invalid names
+again at the GUI boundary with a hexadecimal task-id fallback.
 
 ## Security And Artifact Scans
 

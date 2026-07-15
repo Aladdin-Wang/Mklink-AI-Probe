@@ -55,6 +55,14 @@ export interface SystemViewEventRowOptions {
   preferExactTicks?: boolean
 }
 
+export function normalizeSystemViewName(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const name = value.trim()
+  if (!name || [...name].length > 32 || name.includes('\ufffd')) return ''
+  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(name)) return ''
+  return name
+}
+
 export function computeTaskRows(tasks: SystemViewTaskRuntime[]): SystemViewTaskRow[] {
   const totalRun = tasks.reduce((sum, task) => {
     const run = Number.isFinite(task.runUs) ? Math.max(task.runUs, 0) : 0
@@ -113,7 +121,7 @@ export function computeContextRows(tasks: SystemViewTaskRuntime[]): SystemViewCo
   return tasks
     .map(task => ({
       id: task.id,
-      name: task.name,
+      name: normalizeSystemViewName(task.name),
       color: task.color,
       type: 'Task',
       priority: task.prio,
@@ -135,8 +143,9 @@ export function buildSystemViewEventRows(
   return events.map((event, offset) => {
     const kind = String(event.kind || 'event')
     const taskId = typeof event.task_id === 'number' ? hexId(event.task_id) : ''
-    const isrName = event.isr_name || (event.isr_id !== undefined ? `ISR #${event.isr_id}` : '')
-    const taskName = event.task_name || taskId
+    const isrName = normalizeSystemViewName(event.isr_name)
+      || (event.isr_id !== undefined ? `ISR #${event.isr_id}` : '')
+    const taskName = normalizeSystemViewName(event.task_name) || taskId
     const context = taskName || isrName || (kind === 'idle' ? 'Idle' : '')
 
     return {
