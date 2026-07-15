@@ -931,7 +931,7 @@ git commit -m "test: qualify RC packaged stream performance"
 
 ## Task 11: Build, Install, Exercise, and Uninstall the RC
 
-- [ ] **Step 1: Build from a clean release state**
+- [x] **Step 1: Build from a clean release state**
 
 Remove only verified workspace build directories, then run:
 
@@ -944,7 +944,7 @@ Require main EXE, sidecar, MSI, and NSIS setup EXE. Verify the temporary
 `externalBin` patch restored `tauri.conf.json` exactly and `git status` has no
 unintended build-config change.
 
-- [ ] **Step 2: Verify bundle contents and signatures**
+- [x] **Step 2: Verify bundle contents and signatures**
 
 ```powershell
 Get-FileHash gui/src-tauri/target/release/bundle/msi/* -Algorithm SHA256
@@ -956,31 +956,39 @@ Get-AuthenticodeSignature gui/src-tauri/target/release/bundle/nsis/*
 Unsigned status is recorded as a release limitation; it is not mislabeled as a
 signed build.
 
-- [ ] **Step 3: Install the NSIS EXE and prove Python independence**
+- [x] **Step 3: Install the NSIS EXE and prove Python independence**
 
 Install into the normal per-user/application location. Launch with a restricted
 PATH that omits system Python and verify `/api/health` reaches 200. Confirm the
 running child executable is the packaged `mklink-sidecar.exe`, not `python.exe`.
 
-- [ ] **Step 4: Exercise installed navigation and representative HIL**
+- [x] **Step 4: Exercise installed navigation and representative HIL**
 
 Through CDP, visit Config, Online Flash, Dashboard, RTT View, VOFA+, RTOS Trace,
 and SuperWatch. Run one online-flash verify and a short representative RTT
 stream. Record zero console errors and clean resource release.
 
-- [ ] **Step 5: Close and uninstall**
+Executed boundary: the installed representative RTT run completed before the
+final geometry-only rebuild (20.592 seconds, 25.86 kitems/s, strict frame
+parity, zero measured loss, and clean release). The final-hash installers were
+rerun for restricted-PATH health, clean navigation, and uninstall, but the
+whole-chip performance fixture was not reflashed over the restored
+bootloader-plus-App layout. The existing 600-second packaged RTT gate remains
+the release performance evidence.
+
+- [x] **Step 5: Close and uninstall**
 
 Close the window, require sidecar exit and port release, run the registered
 uninstaller, and verify installed application files are removed while user Pack
 cache and project files remain.
 
-- [ ] **Step 6: Repeat installer smoke with MSI**
+- [x] **Step 6: Repeat installer smoke with MSI**
 
 Install MSI silently with `msiexec /i ... /qn /norestart`, launch and health
 check, then uninstall with `msiexec /x ... /qn /norestart`. Record exit codes
 and cleanup.
 
-- [ ] **Step 7: Update report and commit**
+- [x] **Step 7: Update report and commit**
 
 ```powershell
 git add -- docs/verification/full-skill-release-v0.1.0-rc.1.md docs/verification/artifacts/rc1-installer.json

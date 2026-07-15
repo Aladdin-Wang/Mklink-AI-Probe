@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T21:27:08+08:00`
+- 更新时间：`2026-07-16T00:54:22+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`0f0a847`
-- 远端 HEAD：`0f0a847; Task 10 packaged-stream checkpoint pushed`
-- 工作树：Task 10 delivered; generated build caches remain untracked and Task 11 installer qualification is next
-- 当前任务：Task 11 clean bundle and Windows installer lifecycle qualification
+- HEAD：`1a8a874`
+- 远端 HEAD：`1a8a874; online-flash geometry and RTT layout fix pushed`
+- 工作树：Task 11 delivered; generated build caches remain untracked and Task 12 release asset preparation is next
+- 当前任务：Task 12 prepare release assets and complete final reviews
 - 状态：`in_progress`
 
 ## 里程碑
@@ -25,6 +25,7 @@
 - **High-throughput Task 8 RTT and SuperWatch binary migration** — `complete`。RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks.
 - **High-throughput Task 9 performance and HIL qualification** — `complete`。All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed.
 - **Release qualification Task 10 packaged stream gates** — `complete`。Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release.
+- **Release qualification Task 11 Windows installer lifecycle** — `complete`。Online-flash inspection returns FLM-derived sectors, supports variable-sector boundaries, defaults ordinary programming to covered-sector erase, blocks program/erase without reliable geometry, and retains explicit confirmed chip erase. Empty RTT text logs no longer occupy the page; the numeric curve Canvas remains. Final unsigned NSIS/MSI bundles are Python-independent; the NSIS fingerprint run additionally proves Pack/user caches are preserved.
 
 ## 验证证据
 
@@ -42,7 +43,9 @@
 - **Task 9 real Edge frontend HIL**：SystemView, VOFA, RTT, and SuperWatch loaded hashed Workers and binary WebSockets; visible and resumed rendering stayed <=30 FPS; pause kept backend and Worker collection advancing with zero Canvas frames and zero measured frontend/sequence/backend loss. Peak Edge process-tree working sets were 798273536, 736600064, 709496832, and 733954048 bytes respectively. Hidden state was not established on Edge 130 and is not claimed as HIL PASS.
 - **Task 10 packaged stream HIL**：Four 600-second packaged measurements pass with exact WebSocket/Worker parity, real canvas strokes, <=30.5 FPS, pause/resume evidence, zero measurement loss, and validated fixtures. Four regenerated cleanup artifacts independently prove target reflash, actual Flash readback, reset, zero controls, Tauri exit, and API/CDP port release.
 - **SystemView Context corruption**：Root causes fixed at protocol, RAM fallback, backend lifecycle, and GUI display boundaries. Focused Python 50 and GUI 8 tests pass. Fresh packaged HIL ran 20.657 seconds with 414568 events, zero parser drops, one valid protocol task name, zero invalid names, and complete cleanup.
-- **Current full automated baseline**：Python 611 passed in 26.41s; GUI 18 files / 238 tests passed in 18.14s; Node release harness 49 passed; Vite transformed 140 modules; Rust 3 passed and cargo check completed.
+- **Current full automated baseline**：Python 614 passed in 24.81s; GUI 18 files / 241 tests passed in 16.65s; focused online-flash/RTT GUI 54 passed; Node online-flash harness 6 passed; Vite transformed 140 modules; prior Rust 3 passed and cargo check completed.
+- **Task 11 online-flash safety and installer lifecycle**：Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release the API port; the NSIS run additionally released CDP and preserved both Pack/user cache fingerprints.
+- **RTT View empty layout**：The large black area was the empty virtual text log joined visually to the 160 px numeric Canvas. The text log now remains mounted but hidden until text arrives, so first-batch reception is preserved; installed DOM measured zero empty-log width/height and full GUI tests pass.
 
 ## 架构决策
 
@@ -52,6 +55,8 @@
 - High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.
 - Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.
 - Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.
+- Ordinary online-flash erase or program requires reliable FLM sector geometry and submits only image-covered sectors; whole-chip erase remains a separate explicit confirmation.
+- RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.
 - Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.
 
 ## 真机环境
@@ -65,8 +70,8 @@
 
 ## 下一动作
 
-1. Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.
-2. Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.
+1. Execute Task 12 local release asset preparation and verify release-manifest and SHA256SUMS against the final MSI/NSIS hashes.
+2. Complete final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.
 3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
@@ -76,6 +81,8 @@
 - Real hidden-tab HIL remains not established: Edge 130 rejected the visibility override and a background tab did not set document.hidden=true; deterministic hidden scheduling tests pass.
 - GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.
 - Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.
+- The Windows RC executables and installers are unsigned and may show an unknown-publisher warning.
+- Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
 
 ## 延续协议

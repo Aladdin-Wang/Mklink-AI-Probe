@@ -25,6 +25,7 @@ hardware, installer, or publication command completes.
 | Python regression after physical-HIL fixes | Automated regression | `python -m pytest -q` | Discovery, project-init, and DWARF fixes preserve the full suite | 593 passed | 24.90 s | PASS | Corrective commit `5d41382` | No hardware opened by tests |
 | SystemView protocol regressions | Automated regression | Focused parser/backend and GUI task-name tests | SEGGER `TASK_INFO`/`STACK_INFO` layouts decode exactly and false-alignment names are rejected | 50 Python tests and 8 GUI tests passed; task-name gate rejects control, replacement, surrogate, format, empty, overlong, and non-string values | <3 s aggregate | PASS | Raw-packet, RAM-object, backend lifecycle, and display fallback regressions | No hardware opened by tests |
 | Final firmware readback and reset regression | Automated regression | Focused `Device.flash`, `Device.reset`, and cleanup tests | `verify=true` reads back HEX/BIN regions before a real MCU reset and cleanup requires `targetVerified` | 6 Python tests plus 3 Node cleanup tests passed; covers multi-segment HEX, BIN, 1024-byte chunk tail, mismatch, skip-readback, and `cmd.reset_chip()` | <1 s aggregate | PASS | Unit tests and four regenerated physical cleanup artifacts | No hardware opened by unit tests |
+| Task 11 final regression | Automated regression | `python -m pytest -q`, `npm test`, focused online-flash/RTT tests, and `npm run build` | Geometry, bootloader protection, RTT layout, and all prior behavior pass | Python 614 passed; GUI 18 files / 241 tests passed; focused Python 42 and GUI 54 passed; 140 modules transformed | 24.81 s Python; 16.65 s GUI | PASS | Terminal summaries and independent review APPROVED | No hardware opened by automated tests |
 
 ## Core MKLink
 
@@ -61,6 +62,8 @@ hardware, installer, or publication command completes.
 | Probe busy and handoff | Packaged physical HIL | Scenario `probe-busy` | VOFA ownership yields `PROBE_BUSY`; retry succeeds after release | First job failed with `PROBE_BUSY`; handoff job completed program/verify/reset | Included above | PASS | [probe-busy artifact](artifacts/rc1-online-flash-probe-busy.json) | VOFA stopped; owner released |
 | Final boot restore | Packaged physical HIL | Scenario `restore` | Restore HEX, verify matching hash, and reset | Program and verify succeeded; restored SHA-256 matched expected SHA-256 | Included above | PASS | [restore artifact](artifacts/rc1-online-flash-restore.json) | Target restored; no owner or active job |
 | Desktop lifecycle cleanup | Packaged runtime | Close main window and poll process/listening-port state | Tauri and sidecar exit; ports 8765 and 9223 release | All processes exited and both listening ports released | 11.3 s | PASS | Lifecycle command summary | No remaining MKLink sidecar process |
+| Bootloader-preserving App program | Packaged physical HIL | Inspect App HEX, use returned FLM sectors, program and verify only covered sectors | App programming never falls back to chip erase and both bootloader and App remain valid | 56 covered 2 KiB sectors selected by default; program/verify passed; independent bootloader and App readback passed; an App variable continued changing after reset | Not separately timed | PASS | Focused API/GUI regressions and sanitized local HIL summary | Bootloader and App retained; no active job or owner |
+| FLM sector geometry and viewport | Packaged runtime | Inspect built-in and cached-Pack targets; open Online Flash at 1200 x 800 | Built-in and Pack FLM geometry is reliable; HEX preview scrolls internally | Built-in and cached-Pack geometry resolved; variable sector boundary regression passes; document height remained 800 while HEX preview scrolled internally | <5 s | PASS | Python geometry tests and CDP DOM metrics | No target write during layout check |
 
 ## Packaged Stream Performance
 
@@ -93,6 +96,18 @@ requires an RT-Thread Thread object before accepting an inline RAM name, avoids
 disruptive RAM resolution once protocol names exist, and rejects invalid names
 again at the GUI boundary with a hexadecimal task-id fallback.
 
+## Windows Installer Lifecycle
+
+| Feature / scenario | Layer | Command | Expected | Actual | Duration | Status | Artifact / diagnostic | Cleanup / restoration |
+|---|---|---|---|---|---:|---|---|---|
+| Final release bundle | Packaged build | Tauri builder `--bundle` from source commit `1a8a874` | EXE, sidecar, MSI, and NSIS are produced and source config is restored | 140 modules; 62.1 MiB MSI and 60.9 MiB NSIS; `tauri.conf.json` unchanged | 106.5 s | PASS | [installer artifact](artifacts/rc1-installer.json) | Build outputs remain untracked |
+| Signature disclosure | Release integrity | SHA-256 and Authenticode checks on final bundles | Hashes recorded; unsigned build is not mislabeled | MSI and NSIS hashes recorded; both are `NotSigned` | 1.2 s | PASS | [installer artifact](artifacts/rc1-installer.json) | Not applicable |
+| NSIS restricted-PATH runtime | Installed runtime | Silent install, launch without Python on PATH, poll health and inspect process tree | Packaged sidecar serves API without `python.exe` | Health `ok`; Python not discoverable; zero Python descendants; packaged sidecar present | 14.2 s startup | PASS | [installer artifact](artifacts/rc1-installer.json) | Application later closed and uninstalled |
+| Installed navigation and RTT layout | Installed runtime | CDP navigation through Config, Online Flash, Dashboard, VOFA+, RTOS Trace, SuperWatch, and RTT View | Routes load at fixed height with no clean-run console errors; empty RTT text log does not occupy the page | Routes loaded; document height 800; clean reload had zero console errors; empty log hidden while numeric Canvas behavior is retained | <10 s | PASS | [installer artifact](artifacts/rc1-installer.json) and 10 focused RTT tests | RTT performance remains backed by the existing 600-second packaged gate; target was not reflashed |
+| Installed representative RTT | Installed physical HIL | Short RTT stream on the installed build before the final geometry-only rebuild | Real binary stream, frame parity, Canvas curve, pause/resume, zero loss, and cleanup | 20.592 s at 25.86 kitems/s; 2,108 WebSocket/Worker frames matched; 3.79 FPS; all measured drops zero | 20.592 s | PASS | [installer artifact](artifacts/rc1-installer.json) | Backend stopped, resources released, and target later restored to bootloader-plus-App layout |
+| NSIS uninstall and cache retention | Installer lifecycle | Close, silent uninstall, compare cache fingerprints | Processes and ports exit; install files removed; Pack/user caches unchanged | Exit 0; 8765 and 9223 released; install directory removed; both cache fingerprints identical | 7.0 s | PASS | [installer artifact](artifacts/rc1-installer.json) | User cache preserved |
+| MSI lifecycle | Installer lifecycle | Silent install, restricted-PATH health check, silent uninstall | MSI installs and removes cleanly without Python | Install 0; health `ok`; zero Python descendants; packaged sidecar present; uninstall 0; install directory and API port removed | 14.1 s | PASS | [installer artifact](artifacts/rc1-installer.json) | No installed process remains; CDP was not enabled and cache fingerprints were not separately compared in the MSI run |
+
 ## Security And Artifact Scans
 
 | Feature / scenario | Layer | Command | Expected | Actual | Duration | Status | Artifact / diagnostic | Cleanup / restoration |
@@ -102,6 +117,9 @@ again at the GUI boundary with a hexadecimal task-id fallback.
 | Sanitized docs and harness scan | Automated regression | Git grep for full probe IDs, COM ports, and local user paths in `docs` and `_maintainer` | No unmasked hardware or username data | No matches | <1 s | PASS | Git grep exit 1 means no match | Not applicable |
 
 ## Known Limitations
+
+- The RC executable and both Windows installers are `NotSigned`. Windows may
+  show an unknown-publisher warning until a code-signing certificate is added.
 
 - `npm audit` reports 2 high-severity vulnerabilities and 0 critical
   vulnerabilities in the current locked development dependency graph. No

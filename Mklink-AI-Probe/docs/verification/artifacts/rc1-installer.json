@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "gate": "rc1_windows_installer_lifecycle",
+  "result": "pass",
+  "sourceCommit": "1a8a874",
+  "build": {
+    "frontendModules": 140,
+    "elapsedSeconds": 106.5,
+    "sourceVersion": "0.1.0-rc.1",
+    "tauriConfigRestored": true,
+    "artifacts": [
+      {
+        "kind": "msi",
+        "bytes": 65138688,
+        "sha256": "c36b973b1b7b9c9fac38e772de14cf9fcd809bb2d5cfcfb9b150d8be10599bd5",
+        "signature": "NotSigned"
+      },
+      {
+        "kind": "nsis",
+        "bytes": 63864016,
+        "sha256": "678f902ea07a3afb055e88fe941e6dd5f35fd9107b106b9a5b29f81accd4edcf",
+        "signature": "NotSigned"
+      }
+    ]
+  },
+  "navigation": {
+    "config": true,
+    "onlineFlash": true,
+    "dashboard": true,
+    "vofa": true,
+    "systemView": true,
+    "superWatch": true,
+    "documentHeight": 800,
+    "consoleErrorsOnCleanReload": 0
+  },
+  "rttLayout": {
+    "emptyTextLogHidden": true,
+    "hiddenLogStillMounted": true,
+    "numericCanvasRetained": true,
+    "focusedTestsPassed": 10,
+    "performanceEvidence": "rc1-packaged-rtt.json"
+  },
+  "representativeRtt": {
+    "buildStage": "installed build before the final geometry-only rebuild",
+    "elapsedSeconds": 20.592,
+    "itemRatePerSecond": 25860,
+    "webSocketFrames": 2108,
+    "workerFrames": 2108,
+    "renderFps": 3.79,
+    "canvasDrawn": true,
+    "pauseResumePassed": true,
+    "allMeasuredDropsZero": true,
+    "cleanupPassed": true
+  },
+  "nsis": {
+    "installExitCode": 0,
+    "restrictedPathPythonDiscoverable": false,
+    "pythonDescendants": 0,
+    "packagedSidecar": true,
+    "healthStatus": "ok",
+    "uninstallExitCode": 0,
+    "installDirectoryRemoved": true,
+    "apiPortReleased": true,
+    "cdpPortReleased": true,
+    "localPackCachePreserved": true,
+    "userCachePreserved": true
+  },
+  "msi": {
+    "installExitCode": 0,
+    "restrictedPathPythonDiscoverable": false,
+    "pythonDescendants": 0,
+    "packagedSidecar": true,
+    "uninstallExitCode": 0,
+    "healthStatus": "ok",
+    "installDirectoryRemoved": true,
+    "apiPortReleased": true,
+    "cdpPortUsed": false,
+    "cacheFingerprintCompared": false
+  },
+  "limitations": [
+    "The release candidate is unsigned.",
+    "The final installer smoke did not reflash the separate whole-chip performance fixture because the target currently uses a bootloader-preserving application layout."
+  ]
+}
