@@ -7,8 +7,8 @@
 - 更新时间：`2026-07-16T03:12:38+08:00`
 - 分支：`feature/online-flash-streaming`
 - HEAD：`v0.1.0-rc.1 -> 1c7c5aa; the final documentation commit contains this memory`
-- 远端 HEAD：`release tag and branch publication checkpoints pushed; final documentation push is the remaining action in this commit`
-- 工作树：generated repository-local artifacts removed; external release bundle retained; final handoff commit pending
+- 远端 HEAD：`release tag, publication checkpoint, and final handoff are pushed; final documentation is tracked at branch head`
+- 工作树：clean; generated repository-local artifacts removed; external release bundle retained; handoff complete
 - 当前任务：v0.1.0-rc.1 published and independently verified; collect external tester feedback
 - 状态：`complete`
 
