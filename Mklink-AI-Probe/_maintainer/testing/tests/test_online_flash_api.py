@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
+from mklink.cmsis_dap.images import SectorCoverage, SectorRecord
 from mklink.cmsis_dap.models import (
     ImageInspection,
     JobEvent,
@@ -25,6 +26,7 @@ from mklink.cmsis_dap.jobs import OnlineFlashJobManager
 from mklink.remote.online_flash_api import (
     OnlineFlashServices,
     _blocking,
+    _pack_memory_regions,
     create_online_flash_router,
     default_target_memory_provider,
 )
@@ -115,6 +117,11 @@ class Inspector:
             raise KeyError(image_id)
         return self.inspection
 
+    def covered_sectors(self, image_id, regions):
+        assert image_id == "image-1"
+        assert tuple(regions)[0].sector_size == 0x100
+        return SectorCoverage((SectorRecord(0x1000, 0x100),), True)
+
     def preview(self, image_id, address, length):
         if image_id != "image-1":
             raise KeyError(image_id)
@@ -176,7 +183,7 @@ def services(tmp_path):
             type("Probe", (), {"unique_id": "mk", "product_name": "MKLink DAP"})(),
             type("Probe", (), {"unique_id": "other", "product_name": "CMSIS-DAP"})(),
         ],
-        target_memory_provider=lambda part: [MemoryRegion("flash", 0x1000, 0x1000, True)],
+        target_memory_provider=lambda part: [MemoryRegion("flash", 0x1000, 0x1000, True, True, 0x100)],
         paths=PackPaths(tmp_path),
         pack_index_updater=lambda on_event: ({"status": "updated"}),
         heartbeat_interval=0.01,
@@ -411,6 +418,8 @@ def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, serv
     )
     body = inspected.json()
     assert body["image_id"] == "image-1"
+    assert body["sector_operations_available"] is True
+    assert body["sectors"] == [{"address": 0x1000, "size": 0x100}]
     assert "file_path" not in body
     assert not services.image_inspector.seen_path.exists()
 
@@ -695,6 +704,59 @@ def test_cached_pack_memory_provider_uses_exact_flash_algorithm(tmp_path):
 
     assert regions == [
         MemoryRegion("flash-0", 0x08000000, 0x40000, True, True, 0x800)
+    ]
+
+
+def test_builtin_registry_name_resolves_sector_geometry():
+    regions = default_target_memory_provider("STM32F103RC")
+
+    assert any(
+        region.start == 0x08000000 and region.sector_size == 0x800
+        for region in regions
+    )
+
+
+def test_installed_pack_memory_map_uses_pyocd_flm_geometry(tmp_path, monkeypatch):
+    pack_path = tmp_path / "Vendor.Device.pack"
+    pack_path.write_bytes(b"pack")
+
+    class FlashRegion:
+        name = "flash"
+        start = 0x08000000
+        length = 0x40000
+        is_flash = True
+        is_writable = True
+        sector_size = 0
+        blocksize = 0
+
+        class flm:
+            @staticmethod
+            def iter_sector_size_ranges():
+                first = type("Range", (), {
+                    "start": 0x08000000,
+                    "end": 0x0800FFFF,
+                })()
+                second = type("Range", (), {
+                    "start": 0x08010000,
+                    "end": 0x0803FFFF,
+                })()
+                yield first, 0x800
+                yield second, 0x1000
+
+    class Device:
+        part_number = "DEVICE"
+        memory_map = [FlashRegion()]
+
+    class Pack:
+        devices = [Device()]
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.cmsis_pack.CmsisPack", lambda _path: Pack()
+    )
+
+    assert _pack_memory_regions("device", pack_path) == [
+        MemoryRegion("flash", 0x08000000, 0x10000, True, True, 0x800),
+        MemoryRegion("flash-1", 0x08010000, 0x30000, True, True, 0x1000),
     ]
 
 

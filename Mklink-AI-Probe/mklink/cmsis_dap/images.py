@@ -153,7 +153,7 @@ class ImageInspector:
 
             regions = tuple(memory_regions)
             for segment in segments:
-                if self._containing_region(segment, regions) is None:
+                if not self._segment_is_covered(segment, regions):
                     raise FlashError(
                         FlashErrorCode.IMAGE_OUT_OF_RANGE,
                         "firmware segment is outside writable flash memory",
@@ -283,10 +283,7 @@ class ImageInspector:
             )
         )
         if any(
-            not any(
-                region.start <= segment.start and segment.end <= region.end
-                for region in relevant_regions
-            )
+            not self._segment_is_covered(segment, relevant_regions)
             for segment in segments
         ):
             return SectorCoverage((), False)
@@ -742,13 +739,19 @@ class ImageInspector:
         )
 
     @classmethod
-    def _containing_region(
+    def _segment_is_covered(
         cls, segment: ImageSegment, memory_regions: Iterable[MemoryRegion]
-    ) -> Optional[MemoryRegion]:
+    ) -> bool:
+        cursor = segment.start
         for region in cls._eligible_regions(memory_regions):
-            if region.start <= segment.start and segment.end <= region.end:
-                return region
-        return None
+            if region.end <= cursor:
+                continue
+            if region.start > cursor:
+                return False
+            cursor = max(cursor, region.end)
+            if cursor >= segment.end:
+                return True
+        return False
 
     def _record(self, image_id: str) -> _InspectedRecord:
         with self._lock:

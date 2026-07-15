@@ -40,6 +40,7 @@ const packError = ref('')
 const firmware = ref<File | null>(null)
 const baseAddress = ref('0x80000000')
 const inspection = ref<ImageInspection | null>(null)
+const selectedSectorAddresses = ref<number[]>([])
 const inspectBusy = ref(false)
 const inspectError = ref('')
 const rows = ref<FormattedHexRow[]>([])
@@ -75,6 +76,13 @@ const parsedBase = computed(() => {
 const baseError = computed(() => isBin.value && parsedBase.value === null ? 'BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）' : '')
 const active = computed(() => !!jobId.value && !!jobState.value && !TERMINAL.has(jobState.value))
 const stopping = computed(() => jobState.value === 'stopping')
+const geometryReliable = computed(() => (
+  inspection.value?.sector_operations_available === true
+  && inspection.value.sectors.length > 0
+))
+const requiresSectorGeometry = computed(() => (
+  actions.value.includes('erase') || actions.value.includes('program')
+))
 function canonicalActions(values: readonly JobAction[]): JobAction[] {
   const selected = new Set(values)
   selected.add('connect'); selected.add('disconnect')
@@ -90,7 +98,7 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
     && values.some(action => FLASH_ACTIONS.has(action))
 }
 function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value))
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!requiresSectorGeometry.value || geometryReliable.value))
 const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !active.value && !creatingJob.value)
 
 function message(error: unknown): string {
@@ -217,7 +225,7 @@ function resetInspection(): void {
   inspectionController?.abort()
   inspectionController = null
   inspectBusy.value = false
-  inspection.value = null; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
+  inspection.value = null; selectedSectorAddresses.value = []; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
 }
 function setFirmware(file: File | null): void { firmware.value = file; resetInspection() }
 function setBase(value: string): void { if (value !== baseAddress.value) { baseAddress.value = value; resetInspection() } }
@@ -236,6 +244,9 @@ async function inspectImage(): Promise<void> {
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error('服务端返回的镜像地址范围无效')
     inspection.value = result
+    selectedSectorAddresses.value = result.sector_operations_available
+      ? result.sectors.map(sector => sector.address)
+      : []
     preview.setSource({ imageId: result.image_id, start: result.start, size: result.end - result.start })
     await loadVisible(0, 360)
   } catch (error) {
@@ -287,13 +298,19 @@ function receiveEvent(event: JobStreamEvent): void {
   if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null }
 }
 
-async function startJob(customActions = actions.value, sectorAddresses: number[] = []): Promise<void> {
+async function startJob(customActions = actions.value, sectorAddresses?: number[]): Promise<void> {
   const orderedActions = canonicalActions(customActions)
   if (creatingJob.value || active.value || !probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
+  const resolvedSectors = sectorAddresses ?? (
+    orderedActions.includes('erase') && inspection.value?.sector_operations_available
+      ? inspection.value.sectors.map(sector => sector.address)
+      : []
+  )
+  if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value) return
   creatingJob.value = true
   try {
     logs.value = []; lastSequence.value = 0; stageProgress.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: sectorAddresses })
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: resolvedSectors })
     if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(`[JOB] 已创建 ${result.job_id}`); subscribe(0)
@@ -315,8 +332,14 @@ async function stopJob(): Promise<void> {
     appendLog(`[ERROR] 停止请求失败：${message(error)}`)
   }
 }
-function chipErase(): void { if (confirm('全片擦除将永久删除芯片中的全部闪存内容，确定继续？')) void startJob(['connect', 'erase', 'disconnect']) }
-function selectedErase(): void { if (confirm('确定擦除所选扇区？')) void startJob(['connect', 'erase', 'disconnect'], []) }
+function chipErase(): void { if (confirm('全片擦除将永久删除芯片中的全部闪存内容，确定继续？')) void startJob(['connect', 'erase', 'disconnect'], []) }
+function selectedErase(): void { if (selectedSectorAddresses.value.length && confirm('确定擦除所选扇区？')) void startJob(['connect', 'erase', 'disconnect'], selectedSectorAddresses.value) }
+function rangeErase(): void { if (inspection.value?.sectors.length && confirm('确定擦除镜像覆盖范围？')) void startJob(['connect', 'erase', 'disconnect'], inspection.value.sectors.map(sector => sector.address)) }
+function toggleSector(address: number): void {
+  selectedSectorAddresses.value = selectedSectorAddresses.value.includes(address)
+    ? selectedSectorAddresses.value.filter(value => value !== address)
+    : [...selectedSectorAddresses.value, address].sort((left, right) => left - right)
+}
 
 onMounted(() => { void Promise.all([refreshProbes(), refreshPackStatus(), searchTargets(desiredPart.value)]) })
 onBeforeUnmount(() => {
@@ -341,11 +364,11 @@ onBeforeUnmount(() => {
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @inspect="inspectImage" @scroll="loadVisible" />
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :geometry-reliable="false" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
   </div>
 </template>
 
 <style scoped>
-.online-flash-grid{--of-bg:#11151a;--of-surface:#1d2229;--of-input:#252b33;--of-border:#343c46;--of-text:#e6e9ed;--of-muted:#929ba7;--of-accent:#58a6d6;--of-danger:#f07178;--of-danger-bg:#3b2428;--of-ok:#65c18c;--of-ok-bg:#20372d;--of-warn:#d8ad62;--of-mono:var(--mono,ui-monospace,Consolas,monospace);min-height:660px;display:grid;grid-template-columns:minmax(230px,.85fr) minmax(520px,1.9fr) minmax(240px,.9fr);grid-template-rows:minmax(490px,1fr) 185px;gap:10px;padding:10px;border-radius:var(--radius,7px);background:var(--of-bg);color:var(--of-text);text-align:left;font-size:12px}.workspace-zone{min-width:0;overflow:hidden;border:1px solid var(--of-border);border-radius:7px;background:var(--of-surface)}.settings-zone{overflow:auto}.firmware-zone{display:flex;flex-direction:column}.firmware-zone :deep(.hex-scroll){flex:1}.logs-zone{grid-column:1/-1;font-family:var(--of-mono)}@media(max-width:1050px){.online-flash-grid{grid-template-columns:minmax(220px,.8fr) minmax(500px,1.6fr)}.flash-map-zone{grid-column:1/-1}.logs-zone{grid-column:1/-1}}@media(max-width:760px){.online-flash-grid{grid-template-columns:1fr;grid-template-rows:none}.flash-map-zone,.logs-zone{grid-column:auto}.firmware-zone{min-height:560px}}
+.online-flash-grid{--of-bg:#11151a;--of-surface:#1d2229;--of-input:#252b33;--of-border:#343c46;--of-text:#e6e9ed;--of-muted:#929ba7;--of-accent:#58a6d6;--of-danger:#f07178;--of-danger-bg:#3b2428;--of-ok:#65c18c;--of-ok-bg:#20372d;--of-warn:#d8ad62;--of-mono:var(--mono,ui-monospace,Consolas,monospace);box-sizing:border-box;height:calc(100dvh - 92px);min-height:0;display:grid;grid-template-columns:minmax(230px,.85fr) minmax(520px,1.9fr) minmax(240px,.9fr);grid-template-rows:minmax(0,1fr) minmax(130px,185px);gap:10px;padding:10px;border-radius:var(--radius,7px);background:var(--of-bg);color:var(--of-text);text-align:left;font-size:12px}.workspace-zone{min-width:0;min-height:0;overflow:hidden;border:1px solid var(--of-border);border-radius:7px;background:var(--of-surface)}.settings-zone,.flash-map-zone{overflow:auto}.firmware-zone{min-height:0;display:flex;flex-direction:column}.firmware-zone :deep(.hex-scroll){min-height:0;flex:1}.logs-zone{grid-column:1/-1;font-family:var(--of-mono)}@media(max-width:1050px){.online-flash-grid{height:auto;min-height:660px;grid-template-columns:minmax(220px,.8fr) minmax(500px,1.6fr);grid-template-rows:auto}.flash-map-zone{grid-column:1/-1}.logs-zone{grid-column:1/-1}}@media(max-width:760px){.online-flash-grid{grid-template-columns:1fr;grid-template-rows:none}.flash-map-zone,.logs-zone{grid-column:auto}.firmware-zone{min-height:560px}}
 </style>

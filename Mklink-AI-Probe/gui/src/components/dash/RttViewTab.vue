@@ -16,7 +16,9 @@
         <button class="btn-clear" @click="clearLogs">清除</button>
       </div>
       <canvas v-show="numericChannelCount > 0" ref="chart" class="rtt-numeric-chart" />
-      <VirtualLogPanel ref="logPanel" class="rtt-view-log" />
+      <VirtualLogPanel
+        ref="logPanel" class="rtt-view-log" :class="{ 'is-empty': !hasTextLogs }"
+      />
     </template>
   </div>
 </template>
@@ -38,6 +40,7 @@ const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const chart = ref<HTMLCanvasElement | null>(null)
 const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
+const hasTextLogs = ref(false)
 const renderPaused = ref(false)
 const toolbarState = computed(() => (
   dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
@@ -56,6 +59,7 @@ const scheduler = new RenderScheduler(() => {
 
 watch(() => binary.rttLines.value, batch => {
   if (!batch || renderPaused.value) return
+  if (batch.lines.length) hasTextLogs.value = true
   logPanel.value?.append(batch.lines.map(line => ({
     time: line.timestampNs, level: line.level, text: line.text,
   } satisfies VirtualLogInput)))
@@ -147,7 +151,10 @@ async function onStop(): Promise<void> {
   await dash.stop()
 }
 
-function clearLogs(): void { logPanel.value?.clear() }
+function clearLogs(): void {
+  logPanel.value?.clear()
+  hasTextLogs.value = false
+}
 
 onMounted(() => {
   scheduler.start()
@@ -170,4 +177,5 @@ onUnmounted(() => {
 .btn-clear { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 2px 8px; }
 .rtt-numeric-chart { width: 100%; height: 160px; flex: 0 0 160px; border: 1px solid var(--border); border-radius: var(--radius); background: #10151d; }
 .rtt-view-log { flex: 1 1 auto; min-height: 160px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.rtt-view-log.is-empty { display: none; }
 </style>

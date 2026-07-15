@@ -541,7 +541,15 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 regions,
                 base_address=parsed_base,
             )
-            return _json_primitive(inspection, hide_paths=True)
+            coverage = await _blocking(
+                services.image_inspector.covered_sectors,
+                inspection.image_id,
+                regions,
+            )
+            payload = _json_primitive(inspection, hide_paths=True)
+            payload["sector_operations_available"] = coverage.sector_operations_available
+            payload["sectors"] = _json_primitive(coverage.sectors)
+            return payload
         finally:
             await run_in_threadpool(_unlink, temporary)
             await file.close()
@@ -656,8 +664,11 @@ def default_target_memory_provider(
         entries = TARGET.items() if hasattr(TARGET, "items") else ((name, TARGET[name]) for name in TARGET.get_all_target_names())
         matches = []
         for name, target_type in entries:
-            candidate = str(getattr(target_type, "PART_NUMBER", None) or name)
-            if candidate.casefold() == needle:
+            candidates = {
+                str(name).casefold(),
+                str(getattr(target_type, "PART_NUMBER", "")).casefold(),
+            }
+            if needle in candidates:
                 matches.append(target_type)
         if len(matches) == 1:
             memory_map = getattr(matches[0], "MEMORY_MAP", None)
@@ -668,6 +679,20 @@ def default_target_memory_provider(
         pass
 
     if paths is not None:
+        try:
+            from mklink.cmsis_dap.pack_catalog import PackCatalog
+
+            installed = [
+                record
+                for record in PackCatalog(paths).search(part_number, installed=True)
+                if record.part_number.casefold() == needle and record.pack_path
+            ]
+            if len(installed) == 1:
+                regions = _pack_memory_regions(part_number, Path(installed[0].pack_path))
+                if regions:
+                    return regions
+        except (ImportError, OSError, TypeError, ValueError):
+            pass
         regions = _cached_index_regions(part_number, Path(getattr(paths, "index_file")))
         if regions:
             return regions
@@ -680,13 +705,49 @@ def _memory_map_regions(memory_map: object) -> List[MemoryRegion]:
     result = []
     for region in memory_map:
         is_flash = bool(getattr(region, "is_flash", False))
-        writable = bool(getattr(region, "is_writable", True))
         start = getattr(region, "start", None)
         length = getattr(region, "length", None)
-        if is_flash and writable and isinstance(start, int) and isinstance(length, int) and length > 0:
-            blocksize = getattr(region, "blocksize", None)
-            result.append(MemoryRegion(str(getattr(region, "name", "flash")), start, length, True, True, blocksize))
+        if is_flash and isinstance(start, int) and isinstance(length, int) and length > 0:
+            sector_size = getattr(region, "sector_size", None)
+            if not isinstance(sector_size, int) or isinstance(sector_size, bool) or sector_size <= 0:
+                sector_size = getattr(region, "blocksize", None)
+            if not isinstance(sector_size, int) or isinstance(sector_size, bool) or sector_size <= 0:
+                flm = getattr(region, "flm", None)
+                ranges = getattr(flm, "iter_sector_size_ranges", None)
+                if callable(ranges):
+                    flm_regions = []
+                    for index, (sector_range, range_sector_size) in enumerate(ranges()):
+                        range_start = max(start, int(sector_range.start))
+                        range_end = min(start + length, int(sector_range.end) + 1)
+                        if range_start < range_end and isinstance(range_sector_size, int) and range_sector_size > 0:
+                            name = str(getattr(region, "name", "flash"))
+                            flm_regions.append(MemoryRegion(
+                                name if index == 0 else "{}-{}".format(name, index),
+                                range_start,
+                                range_end - range_start,
+                                True,
+                                True,
+                                range_sector_size,
+                            ))
+                    if flm_regions:
+                        result.extend(flm_regions)
+                        continue
+            result.append(MemoryRegion(str(getattr(region, "name", "flash")), start, length, True, True, sector_size))
     return result
+
+
+def _pack_memory_regions(part_number: str, pack_path: Path) -> List[MemoryRegion]:
+    """Load a Pack target memory map; pyOCD derives sector geometry from its FLM."""
+    from pyocd.target.pack.cmsis_pack import CmsisPack
+
+    pack = CmsisPack(str(pack_path))
+    matches = [
+        device for device in pack.devices
+        if str(device.part_number).casefold() == part_number.casefold()
+    ]
+    if len(matches) != 1:
+        return []
+    return _memory_map_regions(matches[0].memory_map)
 
 
 def _cached_index_regions(part_number: str, index_file: Path) -> List[MemoryRegion]:

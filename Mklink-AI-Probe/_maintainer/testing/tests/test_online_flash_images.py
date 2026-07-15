@@ -350,7 +350,7 @@ def test_segment_must_fit_one_positive_writable_flash_region(
     )
 
 
-def test_segment_cannot_cross_adjacent_region_boundary(tmp_path: Path):
+def test_segment_can_cross_adjacent_writable_flash_regions(tmp_path: Path):
     firmware = tmp_path / "firmware.bin"
     firmware.write_bytes(bytes(range(32)))
     regions = (
@@ -358,12 +358,12 @@ def test_segment_cannot_cross_adjacent_region_boundary(tmp_path: Path):
         flash_region(start=FLASH_START + 16, length=16, name="B"),
     )
 
-    assert_flash_error(
-        FlashErrorCode.IMAGE_OUT_OF_RANGE,
-        lambda: ImageInspector().inspect(
-            firmware, regions, base_address=FLASH_START
-        ),
+    inspection = ImageInspector().inspect(
+        firmware, regions, base_address=FLASH_START
     )
+
+    assert inspection.start == FLASH_START
+    assert inspection.end == FLASH_START + 32
 
 
 def test_overlapping_regions_are_checked_deterministically(tmp_path: Path):
@@ -709,6 +709,34 @@ def test_covered_sectors_are_unique_aligned_and_clipped(tmp_path: Path):
     assert coverage.sectors == (
         SectorRecord(FLASH_START, 8),
         SectorRecord(FLASH_START + 16, 4),
+    )
+
+
+def test_contiguous_image_can_cross_adjacent_variable_sector_regions(
+    tmp_path: Path,
+):
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(bytes(range(20)))
+    regions = (
+        flash_region(length=8, sector_size=4, name="small-sectors"),
+        flash_region(
+            start=FLASH_START + 8,
+            length=16,
+            sector_size=8,
+            name="large-sectors",
+        ),
+    )
+    inspector = ImageInspector()
+
+    inspection = inspector.inspect(firmware, regions, base_address=FLASH_START)
+    coverage = inspector.covered_sectors(inspection.image_id, regions)
+
+    assert coverage.sector_operations_available is True
+    assert coverage.sectors == (
+        SectorRecord(FLASH_START, 4),
+        SectorRecord(FLASH_START + 4, 4),
+        SectorRecord(FLASH_START + 8, 8),
+        SectorRecord(FLASH_START + 16, 8),
     )
 
 

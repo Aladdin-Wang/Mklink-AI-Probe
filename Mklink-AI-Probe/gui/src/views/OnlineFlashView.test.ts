@@ -9,6 +9,8 @@ import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
 import actionBarSource from '../components/online-flash/FlashActionBar.vue?raw'
 import logPanelSource from '../components/online-flash/FlashLogPanel.vue?raw'
+import firmwareWorkspaceSource from '../components/online-flash/FirmwareWorkspace.vue?raw'
+import onlineFlashViewSource from './OnlineFlashView.vue?raw'
 
 async function onlineFlashView() {
   const path = './OnlineFlashView.vue'
@@ -434,6 +436,8 @@ function viewFetch(targets = [installedTarget]) {
       image_id: 'image-1', file_name: 'firmware.bin', format: 'bin', size: 32,
       sha256: 'abc123', start: 0x80000000, end: 0x80000020,
       segments: [{ start: 0x80000000, end: 0x80000020 }], base_address: 0x80000000,
+      sector_operations_available: true,
+      sectors: [{ address: 0x80000000, size: 0x1000 }],
     })
     if (url.includes('/preview?')) return json({
       address: 0x80000000, length: 32, data_base64: btoa('\x41'.repeat(32)), present: Array(32).fill(true),
@@ -771,6 +775,35 @@ describe('online flash task workspace behavior', () => {
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
 
     expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual(['connect', 'erase', 'program', 'verify', 'reset', 'disconnect'])
+    expect(JSON.parse(String(call?.[1]?.body)).sector_addresses).toEqual([0x80000000])
+    wrapper.unmount()
+  })
+
+  it('blocks erase-based programming when the FLM sector table is unavailable', async () => {
+    const fallback = viewFetch()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/images/inspect')) {
+        return new Response(JSON.stringify({
+          image_id: 'image-1', file_name: 'firmware.bin', format: 'bin', size: 32,
+          sha256: 'abc123', start: 0x80000000, end: 0x80000020,
+          segments: [{ start: 0x80000000, end: 0x80000020 }], base_address: 0x80000000,
+          sector_operations_available: false, sectors: [],
+        }), { status: 200 })
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('32 bytes'))
+
+    expect(wrapper.text()).toContain('扇区几何信息不可验证')
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    await wrapper.findAll('.action-choices label')[1].get('input').setValue(false)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -945,6 +978,12 @@ describe('online flash task workspace behavior', () => {
 })
 
 describe('online flash component quality', () => {
+  it('bounds the desktop workspace to the viewport and scrolls HEX rows internally', () => {
+    expect(onlineFlashViewSource).toMatch(/height:calc\(100dvh/)
+    expect(onlineFlashViewSource).toMatch(/min-height:0/)
+    expect(firmwareWorkspaceSource).toMatch(/\.hex-scroll\{min-height:0;height:auto;flex:1/)
+  })
+
   function mockLogGeometry(viewport: ReturnType<typeof mount>['element'], values: { top: number; height: number; total: number }) {
     Object.defineProperty(viewport, 'scrollTop', {
       configurable: true,

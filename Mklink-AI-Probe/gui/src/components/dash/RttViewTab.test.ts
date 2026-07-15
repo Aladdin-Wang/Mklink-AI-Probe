@@ -74,6 +74,24 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('keeps the text log hidden until RTT text arrives', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+
+    expect(wrapper.get('.rtt-view-log').classes()).toContain('is-empty')
+
+    mocks.binary.rttLines.value = {
+      type: 'rtt-lines', sequence: 1n,
+      lines: [{ timestampNs: 1n, level: 'raw', text: 'first-line' }],
+    }
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await nextTick()
+
+    expect(wrapper.get('.rtt-view-log').classes()).not.toContain('is-empty')
+    wrapper.unmount()
+  })
+
   it('starts and stops the binary lifecycle with dashboard controls', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('.btn-primary').trigger('click')

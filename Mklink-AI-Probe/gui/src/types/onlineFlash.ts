@@ -38,6 +38,8 @@ export interface ImageInspection {
   end: number
   segments: ImageSegment[]
   base_address: number | null
+  sector_operations_available: boolean
+  sectors: SectorRecord[]
 }
 
 export interface PreviewPage {
