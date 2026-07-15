@@ -6,9 +6,9 @@
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "f602857",
-    "remote_head": "c3a8b1e; Task 10 packaged-stream checkpoint is not yet pushed",
-    "working_tree": "Task 10 implementation and evidence complete; final specification/quality reviews, commit, and push remain"
+    "head": "0f0a847",
+    "remote_head": "0f0a847; Task 10 packaged-stream checkpoint pushed",
+    "working_tree": "Task 10 delivered; generated build caches remain untracked and Task 11 installer qualification is next"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -18,8 +18,8 @@
   "current_session": {
     "status": "in_progress",
     "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
-    "current_task": "Task 10 approved; explicit commit and push in progress",
-    "latest_commit": "f602857 test: qualify packaged online flash",
+    "current_task": "Task 11 clean bundle and Windows installer lifecycle qualification",
+    "latest_commit": "0f0a847 test: qualify RC packaged stream performance",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -28,7 +28,7 @@
     "task_8_implementation": "complete; final spec and quality reviews APPROVED",
     "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
     "task_10_implementation": "complete and independently approved; all four ten-minute measurements and regenerated targetVerified/targetReset cleanup artifacts pass; SystemView Context corruption, Flash readback, and real MCU reset evidence gaps are fixed",
-    "release_qualification": "Tasks 1-10 implemented. Task 10 final specification and quality re-reviews are APPROVED; commit and push are in progress. Installer lifecycle Tasks 11-13 remain.",
+    "release_qualification": "Tasks 1-10 implemented, independently approved, committed, and pushed through 0f0a847. Installer lifecycle Tasks 11-13 remain.",
     "pause_requested": "Resumed by user; the prior pause checkpoint is closed.",
     "stop_rule": "Continue autonomously through planning, testing, packaging, review, commit, push, tag, and GitHub prerelease. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
   },
@@ -114,7 +114,8 @@
     },
     {
       "name": "Release qualification Task 10 packaged stream gates",
-      "status": "complete_approved_pending_commit",
+      "status": "complete",
+      "commit": "0f0a847",
       "tests": "Python 611 passed in 26.41s; GUI 238 passed in 18.14s; Node release harness 49 passed; Vite 140 modules; Rust 3 passed and cargo check passed",
       "evidence": "docs/verification/full-skill-release-v0.1.0-rc.1.md and docs/verification/artifacts/rc1-packaged-*.json",
       "review": "final specification and quality re-reviews APPROVED; no Critical, Important, or Minor findings",
@@ -210,7 +211,6 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Commit and push the explicit Task 10 file set, then update durable memory with the delivery commit.",
     "Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.",
     "Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-15T21:04:26+08:00`
+- 更新时间：`2026-07-15T21:27:08+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`f602857`
-- 远端 HEAD：`c3a8b1e; Task 10 packaged-stream checkpoint is not yet pushed`
-- 工作树：Task 10 implementation and evidence complete; final specification/quality reviews, commit, and push remain
-- 当前任务：Task 10 final specification and quality re-reviews, then explicit commit and push
+- HEAD：`0f0a847`
+- 远端 HEAD：`0f0a847; Task 10 packaged-stream checkpoint pushed`
+- 工作树：Task 10 delivered; generated build caches remain untracked and Task 11 installer qualification is next
+- 当前任务：Task 11 clean bundle and Windows installer lifecycle qualification
 - 状态：`in_progress`
 
 ## 里程碑
@@ -24,7 +24,7 @@
 - **High-throughput Task 7 VOFA binary migration** — `complete`。Validated aligned source reads, atomic sample-major batches, Worker min/max envelopes, O(1) extrema and O(log N) interactions, bounded DOM work, live telemetry, pause-safe rates, and SuperWatch legacy isolation.
 - **High-throughput Task 8 RTT and SuperWatch binary migration** — `complete`。RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks.
 - **High-throughput Task 9 performance and HIL qualification** — `complete`。All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed.
-- **Release qualification Task 10 packaged stream gates** — `complete_pending_review_commit`。Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release.
+- **Release qualification Task 10 packaged stream gates** — `complete`。Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release.
 
 ## 验证证据
 
@@ -65,10 +65,9 @@
 
 ## 下一动作
 
-1. Request final specification and quality re-reviews; only after both APPROVED, commit and push the explicit Task 10 file set.
-2. Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.
-3. Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.
-4. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
+1. Execute Task 11 clean bundle, MSI/NSIS install, restricted-PATH Python independence, installed navigation/online-flash/RTT checks, and uninstall lifecycle.
+2. Continue through release asset preparation, final review, commit/push, tag, GitHub prerelease publication, and downloaded-asset hash verification.
+3. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 
