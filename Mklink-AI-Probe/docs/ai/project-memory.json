@@ -1,25 +1,27 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T03:12:38+08:00",
+  "updated_at": "2026-07-16T17:02:41+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "v0.1.0-rc.1 -> 1c7c5aa; the final documentation commit contains this memory",
-    "remote_head": "release tag, publication checkpoint, and final handoff are pushed; final documentation is tracked at branch head",
-    "working_tree": "clean; generated repository-local artifacts removed; external release bundle retained; handoff complete"
+    "head": "5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5 implements the offline configurator; the final documentation commit contains this memory",
+    "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
+    "working_tree": "clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
-    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；原烧录页命名为脱机烧录，新建在线烧录页；支持 BIN 与 HEX；CMSIS-Pack 索引完整、DFP 按需下载到用户缓存。",
+    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；支持 BIN 与 HEX；CMSIS-Pack 索引完整、DFP 按需下载到用户缓存。",
+    "offline_flash": "脱机烧录是与在线烧录并列的顶级页面；支持有序多固件、多 FLM、BIN 基地址、HEX 文件内地址、自动次数、IDCODE 超时、SWD 速率、脚本预览和 MKLink U 盘部署。",
     "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以经过验证的稳定负载采集，目标尽量达到或超过 10 kSamples/s；仅 RTT 建立了实测过载边界；可见曲线统一限制为 30 FPS。"
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "docs/superpowers/plans/2026-07-15-full-skill-release-qualification.md",
-    "current_task": "v0.1.0-rc.1 published and independently verified; collect external tester feedback",
-    "latest_commit": "1c7c5aa release: qualify v0.1.0-rc.1 (release tag target)",
+    "active_plan": "none; the user-directed offline download configurator is complete",
+    "current_task": "Offline download configurator implemented and V4.3.4 HIL-validated; collect tester feedback and qualify V2/V3 hardware when available",
+    "latest_commit": "5f5cae2 feat: add configurable offline download workflow",
+    "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, automated regression, and V4.3.4 dual-HEX HIL all pass",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -150,6 +152,15 @@
       "assets": "23 uploaded and downloaded: 21 manifest payloads plus release-manifest.json and SHA256SUMS.txt",
       "verification": "prerelease=true, draft=false; remote sizes and all downloaded SHA-256 values match local metadata",
       "notes": "MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f."
+    },
+    {
+      "name": "Offline download configurator",
+      "status": "complete",
+      "commit": "5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5",
+      "tests": "Python 632 passed in 37.23s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite 144 modules; Rust 6 passed and cargo check completed",
+      "evidence": "V4.3.4 detected through cmd.get_version(); offline_download.py deployed with two ordered HEX files; load.offline() completed both downloads; independent contiguous Flash readback matched 19,296 bootloader bytes and 113,728 application bytes",
+      "review": "full automated regression, diff validation, privacy scan, and real hardware closed loop completed",
+      "notes": "V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated."
     }
   ],
   "verification": [
@@ -160,7 +171,7 @@
     {
       "area": "Online flash HIL",
       "result": "MKLink filter, Pack index, on-demand GD32 DFP, restart cache, STM32F103RC HEX/BIN program+verify, expected VERIFY_FAIL, cooperative stop, VOFA PROBE_BUSY handoff, target boot firmware restored",
-      "probe": "MicroKeenV4/***1A91"
+      "probe": "MKLink V4; identifier omitted"
     },
     {
       "area": "Tauri",
@@ -212,7 +223,7 @@
     },
     {
       "area": "Current full automated baseline",
-      "result": "Python 618 passed in 24.91s; Node release harness 51 passed; GUI 18 files / 241 tests passed in 16.66s; Vite transformed 140 modules; Rust 5 passed and cargo check completed."
+      "result": "Python 632 passed in 37.23s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed."
     },
     {
       "area": "Task 11 online-flash safety and installer lifecycle",
@@ -229,6 +240,10 @@
     {
       "area": "Task 13 remote publication",
       "result": "GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6."
+    },
+    {
+      "area": "Offline download V4 HIL",
+      "result": "cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase."
     }
   ],
   "decisions": [
@@ -239,14 +254,17 @@
     "Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.",
     "Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.",
     "Ordinary online-flash program is enforced at both GUI and API boundaries: the inspected image is target-bound, reliable FLM coverage is recomputed, and erase sectors must exactly equal image-covered sectors; whole-chip erase remains a separate explicit confirmation.",
+    "Offline probe model selection is derived from cmd.get_version(). V2/V3 deploy python/offline_download.py; V4 may deploy a safe custom .py name selected on the probe screen.",
+    "Offline scripts preserve firmware order, use embedded HEX addresses, require BIN base addresses, and never generate a whole-chip erase operation.",
+    "The GUI trigger is disabled until the current configuration is deployed; V4 custom scripts require explicit confirmation that the same script is selected on the probe screen.",
     "RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
   "hardware": {
-    "probe": "MicroKeenV4/***1A91 connected",
-    "online_flash_project": "E:/PHDZ/PROJECT/liu/STM32F103_test/STM32F103_BOOT/MDK-ARM",
-    "stream_hil_project": "E:/PHDZ/PROJECT/liu/STM32F103_test/STM32F103RC/project.uvprojx",
-    "keil_root": "D:/Users/<redacted>/AppData/Local/Keil_v5",
+    "probe": "MKLink V4 connected; identifier intentionally omitted",
+    "online_flash_project": "STM32F103 bootloader fixture; local path intentionally omitted",
+    "stream_hil_project": "STM32F103 application fixture; local path intentionally omitted",
+    "keil_root": "local Keil installation; path intentionally omitted",
     "stream_target": "STM32F103RC",
     "permission": "User permits adding test firmware code, compiling with Keil, flashing, and testing VOFA/SystemView/variable reads."
   },
@@ -259,10 +277,13 @@
     "The Windows RC executables and installers are unsigned and may show an unknown-publisher warning.",
     "The first final-package restricted-environment teardown omitted SystemDrive in the test harness, so Windows created a literal test-cache directory after product processes and ports exited; the cache was removed and the corrected NSIS lifecycle rerun passed completely.",
     "Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.",
+    "V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.",
+    "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 246 Vitest tests and the production build, but no new Windows screenshot evidence is claimed.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Collect tester feedback from the v0.1.0-rc.1 GitHub prerelease and reproduce defects against the published hashes.",
+    "Collect tester feedback for the offline configurator and the v0.1.0-rc.1 GitHub prerelease.",
+    "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
   ],
