@@ -553,11 +553,22 @@ function apiErrorMessage(payload, status) {
   return 'Request failed' + (status ? ' (' + status + ')' : '');
 }
 
+var controlErrorUntil = 0;
+
 function showControlError(message) {
   var connStatus = document.getElementById('conn-status');
   if (!connStatus) return;
+  controlErrorUntil = Date.now() + 5000;
   connStatus.textContent = message || t('error');
   connStatus.className = 'badge badge-err';
+}
+
+function superwatchErrorMessage(message, name) {
+  var text = String(message || '');
+  if (/Cannot resolve/i.test(text) && /outside SRAM|not found/i.test(text)) {
+    return '无法监视“' + String(name || '') + '”：符号不存在或地址不在 SRAM 范围内。';
+  }
+  return '添加变量失败：' + (text || '未知错误');
 }
 
 function syncDashboardStatus(d) {
@@ -603,18 +614,24 @@ function updateCollectionUI(state) {
   badge.className = 'status-' + state;
 
   if (state === 'running') {
-    connStatus.textContent = t('live');
-    connStatus.className = 'badge badge-ok';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('live');
+      connStatus.className = 'badge badge-ok';
+    }
     paused = false;
   } else if (state === 'paused') {
     renderGeneration++;
     updatePending = false;
-    connStatus.textContent = t('paused');
-    connStatus.className = 'badge badge-warn';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('paused');
+      connStatus.className = 'badge badge-warn';
+    }
     paused = true;
   } else {
-    connStatus.textContent = t('stopped');
-    connStatus.className = 'badge badge-warn';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('stopped');
+      connStatus.className = 'badge badge-warn';
+    }
   }
 }
 
@@ -672,15 +689,21 @@ document.getElementById('btn-pause').addEventListener('click', function() {
   updateCollectionUI(renderPaused ? 'paused' : 'running');
 });
 document.getElementById('btn-stop').addEventListener('click', function() {
-  if (!confirm('Stop data collection? This will end the session.')) return;
   fetch(API_CTRL + 'stop', {method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok) throw new Error(apiErrorMessage(d, r.status));
+        return d;
+      });
+    })
     .then(function(d){
       renderPaused = false;
       updateCollectionUI('stopped');
       notifyVofaStreamState('stopped');
     })
-    .catch(function(){});
+    .catch(function(err){
+      showControlError(err && err.message ? err.message : t('error'));
+    });
 });
 document.getElementById('btn-apply-buffer').addEventListener('click', function() {
   var val = parseInt(document.getElementById('buffer-input').value, 10);
@@ -3392,12 +3415,14 @@ function superwatchAddName(name) {
         applyChannelMetadata(meta, false);
         updateUI();
       } else if (d.item && d.item.error) {
-        alert(d.item.error);
+        showControlError(superwatchErrorMessage(d.item.error, name));
       } else if (d.error) {
-        alert(d.error);
+        showControlError(superwatchErrorMessage(d.error, name));
       }
     })
-    .catch(function(){});
+    .catch(function(err){
+      showControlError(superwatchErrorMessage(err && err.message, name));
+    });
 }
 
 function superwatchSearch(query) {

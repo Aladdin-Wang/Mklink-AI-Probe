@@ -168,7 +168,8 @@ window.__rttTestProbe = {
   currentInterval: function() { return currentInterval; },
   RingBuffer: RingBuffer,
   hover: hoverProbe,
-  channelYState: function() { return channelYState; }
+  channelYState: function() { return channelYState; },
+  addSuperwatchName: superwatchAddName
 };`
   new Function(instrumented).call(window)
   return {
@@ -679,6 +680,12 @@ describe('VOFA viewer hot path source guard', () => {
     expect(pauseHandler).not.toContain("fetch(")
   })
 
+  it('stops collection directly and surfaces stop failures inline', () => {
+    const stopHandler = viewerSource.match(/document\.getElementById\('btn-stop'\)\.addEventListener[\s\S]*?\n}\);/)?.[0] ?? ''
+    expect(stopHandler).not.toContain('confirm(')
+    expect(stopHandler).toContain('showControlError')
+  })
+
   it('clears a stale render pause before starting a new acquisition', () => {
     const startHandler = source.match(/document\.getElementById\('btn-start'\)\.addEventListener[\s\S]*?\n}\);/)?.[0] ?? ''
     expect(startHandler).toContain('renderPaused = false;')
@@ -702,6 +709,39 @@ describe('VOFA viewer hot path source guard', () => {
 
       expect(runtime.probe.collectionState()).toMatchObject({ state: 'paused', paused: true, renderPaused: true })
     } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('shows an invalid SuperWatch symbol error inline without a blocking alert', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const alertSpy = vi.fn()
+    vi.stubGlobal('alert', alertSpy)
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        item: {
+          error: "Cannot resolve 'temp1': skipped (address outside SRAM or not found)",
+        },
+      }),
+    } as Response)
+    try {
+      runtime.probe.addSuperwatchName('temp1')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+
+      expect(document.getElementById('conn-status')?.textContent)
+        .toBe('无法监视“temp1”：符号不存在或地址不在 SRAM 范围内。')
+      expect(alertSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
       runtime.cleanup()
     }
   })

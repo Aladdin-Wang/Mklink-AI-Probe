@@ -11,10 +11,32 @@ import type {
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const BASE = `${API_BASE}/api/offline-download`
 
+function resourceOwnerLabel(owner: unknown): string {
+  if (typeof owner !== 'string') return '其他功能'
+  const name = owner.split(':').at(-1)?.toLowerCase()
+  if (name === 'superwatch') return 'SuperWatch'
+  if (name === 'rtt') return 'RTT View'
+  if (name === 'systemview') return 'RTOS Trace'
+  if (name === 'vofa') return 'VOFA+'
+  return owner
+}
+
+function detailMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object') {
+    const value = detail as Record<string, unknown>
+    if (value.code === 'PROBE_BUSY') {
+      return `探针正被 ${resourceOwnerLabel(value.conflict_owner ?? value.owner)} 占用，请先停止该功能后重试。`
+    }
+    if (typeof value.message === 'string') return value.message
+    try { return JSON.stringify(value) } catch { return fallback }
+  }
+  return fallback
+}
+
 async function responseError(response: Response): Promise<Error> {
   const payload = await response.json().catch(() => null)
-  const detail = payload?.detail
-  return new Error(typeof detail === 'string' ? detail : response.statusText)
+  return new Error(detailMessage(payload?.detail, response.statusText || `HTTP ${response.status}`))
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
