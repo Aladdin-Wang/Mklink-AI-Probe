@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T17:50:05+08:00",
+  "updated_at": "2026-07-16T21:28:01+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "814a0d8 fixes installed-runtime bridge reuse for offline operations; the final documentation commit contains this memory",
+    "head": "3afc051 fixes RTT dashboard startup and runtime failure propagation; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed"
   },
@@ -19,8 +19,9 @@
   "current_session": {
     "status": "complete",
     "active_plan": "none; the user-directed offline download configurator is complete",
-    "current_task": "Offline download configurator implemented and V4.3.4 HIL-validated; collect tester feedback and qualify V2/V3 hardware when available",
-    "latest_commit": "814a0d8 fix: reuse connected bridge for offline operations",
+    "current_task": "RTT dashboard failure handling fixed and installed-runtime HIL-validated; collect tester feedback and retain physical disconnect tests as not established",
+    "latest_commit": "3afc051 fix: surface RTT stream failures",
+    "rtt_dashboard_implementation": "complete; failed REST starts no longer open the binary WebSocket, runtime device ERROR stops the RTT worker and is exposed through status/UI, normal no-data Canvas behavior is unchanged, and the rebuilt installed application passed raw plus four-channel waveform WebSocket HIL with zero dropped batches",
     "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
@@ -162,6 +163,15 @@
       "evidence": "V4.3.4 detected through cmd.get_version(); offline_download.py deployed with two ordered HEX files; load.offline() completed both downloads; independent contiguous Flash readback matched 19,296 bootloader bytes and 113,728 application bytes",
       "review": "full automated regression, diff validation, privacy scan, and real hardware closed loop completed",
       "notes": "V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice."
+    },
+    {
+      "name": "RTT dashboard runtime-state repair",
+      "status": "complete",
+      "commit": "3afc051b46a2ae727f700500e00d7663b79fe8e6",
+      "tests": "Python 635 passed in 27.33s; Node release harness 51 passed; GUI 19 files / 248 tests passed in 19.43s; Vite 144 modules; Rust 6 passed; focused RTT/resource Python 72 passed",
+      "evidence": "Rebuilt installed NSIS restored the project and connected with AXF symbols. HIL received 10 ordered binary data frames alternating RTT raw and four-channel waveform payloads; 2,151 raw lines were all parsed, 15 batches were produced and delivered, and zero batches were dropped. Stop returned the device to READY and reset cleared the RAM-only fixture arm.",
+      "review": "focused RED/GREEN regression, full automated regression, production build, bundle install, sanitized HIL, diff validation, and generated-artifact cleanup completed",
+      "notes": "RTT start now returns a success boolean to the component, so a failed control-plane start cannot create an orphan binary WebSocket. The manager detects Device ERROR, stops, releases its API lease through the failure callback, exposes status.error, and the RTT toolbar stops the binary client and displays the runtime error. The numeric Canvas remains hidden until numeric RTT data arrives. Unsigned rebuilt NSIS SHA-256 EA1B68DCA35424D468738AE4710BC0C72F994CB59A97C7F979C597BA5AB21F9B; MSI SHA-256 80852E257D7901BF52624F34BFD245C90B9984195C45A9EF3853148F79DDC2F4."
     }
   ],
   "verification": [
@@ -245,6 +255,10 @@
     {
       "area": "Offline download V4 HIL",
       "result": "cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration."
+    },
+    {
+      "area": "RTT dashboard failure and installed HIL",
+      "result": "Python 635, Node 51, GUI 248, and Rust 6 tests passed; Vite production build transformed 144 modules. The rebuilt installed application restored the project, loaded AXF symbols, delivered ordered RTT raw plus four-channel waveform frames with zero backend drops, and stopped cleanly back to READY. Runtime Device ERROR is now terminal and visible instead of remaining falsely running."
     }
   ],
   "decisions": [
@@ -259,6 +273,7 @@
     "Offline scripts preserve firmware order, use embedded HEX addresses, require BIN base addresses, and never generate a whole-chip erase operation.",
     "The GUI trigger is disabled until the current configuration is deployed; V4 custom scripts require explicit confirmation that the same script is selected on the probe screen.",
     "RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.",
+    "RTT binary transport starts only after a successful control-plane start. A runtime Device ERROR is terminal, releases the dashboard lease, is exposed as status.error, and stops the frontend binary client.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
   "hardware": {
@@ -279,11 +294,11 @@
     "The first final-package restricted-environment teardown omitted SystemDrive in the test harness, so Windows created a literal test-cache directory after product processes and ports exited; the cache was removed and the corrected NSIS lifecycle rerun passed completely.",
     "Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.",
     "V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.",
-    "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 246 Vitest tests and the production build, but no new Windows screenshot evidence is claimed.",
+    "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 248 Vitest tests, the production build, direct installed FastAPI/WebSocket HIL, and no new Windows screenshot evidence is claimed.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Collect tester feedback for the offline configurator and the v0.1.0-rc.1 GitHub prerelease.",
+    "Collect tester feedback for the RTT dashboard repair, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
