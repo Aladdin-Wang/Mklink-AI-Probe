@@ -4,9 +4,9 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-16T17:02:41+08:00`
+- 更新时间：`2026-07-16T17:50:05+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5 implements the offline configurator; the final documentation commit contains this memory`
+- HEAD：`814a0d8 fixes installed-runtime bridge reuse for offline operations; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
 - 工作树：clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed
 - 当前任务：Offline download configurator implemented and V4.3.4 HIL-validated; collect tester feedback and qualify V2/V3 hardware when available
@@ -28,7 +28,7 @@
 - **Release qualification Task 11 Windows installer lifecycle** — `complete`。The API binds inspected images to the selected target and recomputes reliable FLM coverage before program, requiring exact covered sectors. Windows Job creation/assignment failure cannot retain an untracked sidecar child. Final NSIS installed-GUI App HEX verify and expected VERIFY_FAIL at 0x08000000 pass without writing the target. Final unsigned MSI SHA-256 is 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS is 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f.
 - **Release qualification Task 12 assets and final reviews** — `complete`。Release metadata contains no local source paths. SHA256SUMS is sorted by asset name using casefold order. Task 13 must regenerate manifest.source_commit after the final release commit and upload every manifest-listed payload plus manifest/checksums.
 - **Release qualification Task 13 GitHub publication** — `complete`。MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f.
-- **Offline download configurator** — `complete`。V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated.
+- **Offline download configurator** — `complete`。V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice.
 
 ## 验证证据
 
@@ -46,12 +46,12 @@
 - **Task 9 real Edge frontend HIL**：SystemView, VOFA, RTT, and SuperWatch loaded hashed Workers and binary WebSockets; visible and resumed rendering stayed <=30 FPS; pause kept backend and Worker collection advancing with zero Canvas frames and zero measured frontend/sequence/backend loss. Peak Edge process-tree working sets were 798273536, 736600064, 709496832, and 733954048 bytes respectively. Hidden state was not established on Edge 130 and is not claimed as HIL PASS.
 - **Task 10 packaged stream HIL**：Four 600-second packaged measurements pass with exact WebSocket/Worker parity, real canvas strokes, <=30.5 FPS, pause/resume evidence, zero measurement loss, and validated fixtures. Four regenerated cleanup artifacts independently prove target reflash, actual Flash readback, reset, zero controls, Tauri exit, and API/CDP port release.
 - **SystemView Context corruption**：Root causes fixed at protocol, RAM fallback, backend lifecycle, and GUI display boundaries. Focused Python 50 and GUI 8 tests pass. Fresh packaged HIL ran 20.657 seconds with 414568 events, zero parser drops, one valid protocol task name, zero invalid names, and complete cleanup.
-- **Current full automated baseline**：Python 632 passed in 37.23s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed.
+- **Current full automated baseline**：Python 634 passed in 37.69s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed.
 - **Task 11 online-flash safety and installer lifecycle**：Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final 56f1df6 NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release ports. Final installed NSIS App HEX verify succeeded read-only; expected VERIFY_FAIL reported first mismatch 0x08000000. NSIS uninstall preserved both Pack/user cache fingerprints.
 - **RTT View empty layout**：The large black area was the empty virtual text log joined visually to the 160 px numeric Canvas. The text log now remains mounted but hidden until text arrives, so first-batch reception is preserved; installed DOM measured zero empty-log width/height and full GUI tests pass.
 - **Task 12 release assets**：21 payload assets and 18 sanitized rc1 JSON files were copied to the external release directory. All sizes and SHA-256 values match the manifest; checksum lines are sorted by asset name. The complete Pack-index, uncached GigaDevice DFP 2.2.1 install, restart reuse, and final installed-runtime cache reuse are mapped into the report and rc1-pack-catalog-cache.json.
 - **Task 13 remote publication**：GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6.
-- **Offline download V4 HIL**：cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase.
+- **Offline download V4 HIL**：cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration.
 
 ## 架构决策
 

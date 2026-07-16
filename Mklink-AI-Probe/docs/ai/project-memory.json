@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T17:02:41+08:00",
+  "updated_at": "2026-07-16T17:50:05+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5 implements the offline configurator; the final documentation commit contains this memory",
+    "head": "814a0d8 fixes installed-runtime bridge reuse for offline operations; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed"
   },
@@ -20,8 +20,8 @@
     "status": "complete",
     "active_plan": "none; the user-directed offline download configurator is complete",
     "current_task": "Offline download configurator implemented and V4.3.4 HIL-validated; collect tester feedback and qualify V2/V3 hardware when available",
-    "latest_commit": "5f5cae2 feat: add configurable offline download workflow",
-    "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, automated regression, and V4.3.4 dual-HEX HIL all pass",
+    "latest_commit": "814a0d8 fix: reuse connected bridge for offline operations",
+    "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
     "task_5_implementation": "complete; final spec and quality reviews APPROVED",
@@ -157,10 +157,11 @@
       "name": "Offline download configurator",
       "status": "complete",
       "commit": "5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5",
-      "tests": "Python 632 passed in 37.23s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite 144 modules; Rust 6 passed and cargo check completed",
+      "corrective_commit": "814a0d8",
+      "tests": "Python 634 passed in 37.69s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite 144 modules; Rust 6 passed and cargo check completed",
       "evidence": "V4.3.4 detected through cmd.get_version(); offline_download.py deployed with two ordered HEX files; load.offline() completed both downloads; independent contiguous Flash readback matched 19,296 bootloader bytes and 113,728 application bytes",
       "review": "full automated regression, diff validation, privacy scan, and real hardware closed loop completed",
-      "notes": "V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated."
+      "notes": "V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice."
     }
   ],
   "verification": [
@@ -223,7 +224,7 @@
     },
     {
       "area": "Current full automated baseline",
-      "result": "Python 632 passed in 37.23s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed."
+      "result": "Python 634 passed in 37.69s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed."
     },
     {
       "area": "Task 11 online-flash safety and installer lifecycle",
@@ -243,7 +244,7 @@
     },
     {
       "area": "Offline download V4 HIL",
-      "result": "cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase."
+      "result": "cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration."
     }
   ],
   "decisions": [
