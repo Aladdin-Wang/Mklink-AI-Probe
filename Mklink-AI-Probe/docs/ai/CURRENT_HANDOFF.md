@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-16T23:21:13+08:00`
+- 更新时间：`2026-07-17T00:40:35+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`292a036 smooths RTT delivery, named-channel rendering, and mid-line stream attachment; the final documentation commit contains this memory`
+- HEAD：`c4812c8 improves dashboard stop behavior, SuperWatch error feedback, and offline resource-conflict recovery; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
-- 工作树：clean after the final documentation commit; generated repository-local artifacts removed and external test firmware/installers remain untracked
-- 当前任务：RTT named-channel demonstration and smooth refresh are implemented, installed, and HIL-validated; collect tester feedback and retain physical disconnect tests as not established
+- 工作树：clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed
+- 当前任务：Ordinary-user desktop testing found and fixed blocking SuperWatch stop/error handling and opaque offline resource conflicts; collect follow-up feedback and reproduce the remaining first-load offline target-search transient
 - 状态：`complete`
 
 ## 里程碑
@@ -31,6 +31,7 @@
 - **Offline download configurator** — `complete`。V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice.
 - **RTT dashboard runtime-state repair** — `complete`。RTT start now returns a success boolean to the component, so a failed control-plane start cannot create an orphan binary WebSocket. The manager detects Device ERROR, stops, releases its API lease through the failure callback, exposes status.error, and the RTT toolbar stops the binary client and displays the runtime error. The numeric Canvas remains hidden until numeric RTT data arrives. The Worker includes bufferStartMs/bufferEndMs in numeric batches and RTT View requests envelopes over that finite range, preventing all samples from collapsing into one pixel and one invisible point per constant channel. Unsigned rebuilt NSIS SHA-256 F7C84453687ABCEF669CAA36EAEC75CA5A42ED12124119FCAF9433312D9C709E; MSI SHA-256 134B3B426A3F6FFA19440FD755BF196A3664F9AA18BC40083E11C78301307676.
 - **RTT named waveform and smooth refresh** — `complete`。RTT delivery uses 50 Hz read windows and flushes incomplete numeric batches each cycle. The bridge polling quantum is 10 ms. The virtual log flush interval is 33 ms. Two consecutive matching numeric layouts are required before channel lock, preventing a mid-line first chunk such as peed=90 from replacing speed. Unsigned rebuilt NSIS SHA-256 E6D8B4A695FDEE8C56F331D6055A6E0B6D43C2B8605216934EE848EEE34E30EA; MSI SHA-256 CA0234FABED078F7242CE1AE3F0D060C76A38D416B4F51F949813E2FD013A5E9.
+- **Installed GUI ordinary-user experience recovery** — `complete`。The original SuperWatch stop confirmation caused Computer Use click timeout and retained the bridge lease. Offline detect then received a structured PROBE_BUSY response, but the frontend discarded the object and showed only Conflict. Both ends of that user-visible chain are fixed.
 
 ## 验证证据
 
@@ -56,6 +57,7 @@
 - **Offline download V4 HIL**：cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration.
 - **RTT dashboard failure and installed HIL**：Python 635, Node 51, GUI 249, and Rust 6 tests passed; Vite production build transformed 144 modules. The rebuilt installed application restored the project and loaded AXF symbols. Real Edge HIL confirmed ordered RTT raw plus four-channel waveform delivery, 37 Canvas clears and 148 strokes in the visible interval, zero measured loss, pause/resume rendering behavior, clean stop, zero clients, released resources, and target dearm. Runtime Device ERROR is terminal and visible instead of remaining falsely running.
 - **RTT named waveform and smooth refresh HIL**：Python 636, GUI 249, and Rust 6 tests passed; Vite transformed 144 modules; Keil App build had 0 errors and 0 warnings. The App-only HEX began at 0x08005000, passed readback verification, and preserved the Bootloader without whole-chip erase. Installed HIL recognized speed,temp during mid-line attachment, delivered over 1,000 parsed points/s with zero drops, rendered changing curves at 23.8 FPS, refreshed the virtual log at roughly 25 ms intervals, paused with zero draws, resumed normally, and stopped cleanly.
+- **Installed GUI ordinary-user experience**：Computer Use verified real connection/disconnection, RTT named data and curves, pause/resume/stop, RTOS Trace collection and stop, memory read, symbol search, SuperWatch symbol selection, error recovery, and navigation. Edge/Playwright continued after the Windows capture channel failed. GUI 252 tests and Vite 144 modules passed. The rebuilt NSIS installed with exit 0 and the installed application passed the corrected invalid-symbol, direct-stop, resource-release, and offline V4.3.4 detection flows.
 
 ## 架构决策
 
@@ -87,10 +89,11 @@
 
 ## 下一动作
 
-1. Collect tester feedback for the RTT named temp/speed curves, smooth refresh, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
-2. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
-3. For the next release, add code signing before promoting beyond prerelease.
-4. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
+1. Reproduce and fix the first-load Offline Flash target-search transient that can display 'online flash operation failed' before a manual retry succeeds.
+2. Collect tester feedback for the RTT named temp/speed curves, smooth refresh, corrected SuperWatch stop/error recovery, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
+3. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
+4. For the next release, add code signing before promoting beyond prerelease.
+5. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 
@@ -104,6 +107,12 @@
 - Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.
 - V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.
 - Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 249 Vitest tests, the production build, direct installed FastAPI/WebSocket HIL, and a real Edge Worker/Canvas stroke gate. No new Windows screenshot evidence is claimed.
+- Computer Use was available for most of the ordinary-user session, then its window capture channel twice timed out with FrameArrived errors. It recovered after the rebuilt installer was installed and completed the final installed-app retest. Screenshots remain local test evidence only and were deleted before commit.
+- Online Flash did not expose an exact MKLink CMSIS-DAP probe during this ordinary-user pass, so no program/erase action was attempted and current online-flash HIL remains based on the prior qualified evidence.
+- Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.
+- The first installed Offline Flash page load once showed the English transient error 'online flash operation failed'; pressing Search Target immediately succeeded. Reproduction and startup-order root cause remain open.
+- The current external tauri-gui-builder script does not translate the 0.1.0-rc.1 prerelease version for MSI, so a combined MSI/NSIS build failed at MSI validation. The self-contained EXE built successfully and a direct NSIS-only Tauri build succeeded and was installed. The published v0.1.0-rc.1 tag and release were not modified.
+- Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
 
 ## 延续协议
