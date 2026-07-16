@@ -283,6 +283,41 @@ def test_rtt_manager_stop_closes_the_device_stream_session():
     assert device.stop_calls == 1
 
 
+def test_rtt_manager_stops_and_reports_device_error_state():
+    from mklink._types import DeviceState
+
+    read_started = threading.Event()
+
+    class Device:
+        def __init__(self):
+            self.state = DeviceState.READY
+
+        def rtt_start(self, *_args, **_kwargs):
+            pass
+
+        def rtt_read(self, **_kwargs):
+            self.state = DeviceState.ERROR
+            read_started.set()
+            return b""
+
+        def rtt_stop(self):
+            pass
+
+    manager = RttStreamManager()
+    manager.start(Device())
+    try:
+        assert read_started.wait(timeout=1.0)
+        deadline = time.monotonic() + 1.0
+        while manager.running and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        status = manager.get_status()
+        assert status["running"] is False
+        assert "ERROR" in status["error"]
+    finally:
+        manager.stop()
+
+
 def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
     async def scenario():
         hub = StreamHub(max_batches_per_client=8)

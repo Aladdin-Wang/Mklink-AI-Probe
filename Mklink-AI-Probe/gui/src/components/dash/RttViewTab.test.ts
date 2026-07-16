@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref, shallowRef } from 'vue'
 import { nextTick } from 'vue'
@@ -62,7 +62,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.error = ref(null)
     mocks.useBinaryStream.mockReturnValue(mocks.binary)
     mocks.checkConflict.mockResolvedValue([])
-    mocks.dash.start.mockResolvedValue(undefined)
+    mocks.dash.start.mockResolvedValue(true)
     mocks.dash.stop.mockResolvedValue(undefined)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ running: false }) }))
   })
@@ -102,6 +102,39 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not start the binary transport when the dashboard start fails', async () => {
+    mocks.dash.start.mockResolvedValue(false)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+
+    await wrapper.get('.btn-primary').trigger('click')
+    await Promise.resolve()
+
+    expect(mocks.binary.reset).toHaveBeenCalled()
+    expect(mocks.binary.start).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('stops the binary transport and surfaces a backend runtime error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        running: false,
+        error: 'RTT device entered ERROR state',
+        numeric_channels: [],
+      }),
+    }))
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+
+    await flushPromises()
+    await nextTick()
+
+    expect(mocks.binary.stop).toHaveBeenCalled()
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+    expect(toolbar.props('state')).toBe('error')
+    expect(toolbar.props('error')).toBe('RTT device entered ERROR state')
     wrapper.unmount()
   })
 

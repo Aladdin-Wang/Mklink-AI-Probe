@@ -23,7 +23,7 @@ export function useDashboard(type: string) {
   const state = ref<StreamState>('idle')
   const error = ref<string | null>(null)
 
-  async function start(params?: Record<string, unknown>) {
+  async function start(params?: Record<string, unknown>): Promise<boolean> {
     error.value = null
     try {
       const body = params || {}
@@ -32,9 +32,11 @@ export function useDashboard(type: string) {
         body: JSON.stringify(body),
       })
       state.value = 'running'
+      return true
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : String(e)
       state.value = 'error'
+      return false
     }
   }
 

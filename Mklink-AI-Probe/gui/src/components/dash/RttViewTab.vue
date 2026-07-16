@@ -4,7 +4,7 @@
     <template v-else>
       <div class="rtt-view-toolbar">
         <ControlToolbar
-          :state="toolbarState" :error="dash.error.value"
+          :state="toolbarState" :error="runtimeError || dash.error.value"
           :device-connected="deviceConnected"
           @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
         />
@@ -42,8 +42,10 @@ const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
 const hasTextLogs = ref(false)
 const renderPaused = ref(false)
+const runtimeError = ref<string | null>(null)
 const toolbarState = computed(() => (
-  dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+  runtimeError.value ? 'error' :
+    dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
 ))
 let requestId = 0
 let statusTimer: ReturnType<typeof setTimeout> | null = null
@@ -117,6 +119,10 @@ async function pollStatus(): Promise<void> {
     if (response.ok) {
       const status = await response.json()
       numericChannelCount.value = Array.isArray(status.numeric_channels) ? status.numeric_channels.length : 0
+      if (typeof status.error === 'string' && status.error) {
+        runtimeError.value = status.error
+        binary.stop()
+      }
     }
   } catch { /* low-rate status retries below */ }
   if (!disposed) statusTimer = setTimeout(pollStatus, 1_000)
@@ -127,10 +133,11 @@ async function onStart(): Promise<void> {
   if (conflicts.length && !confirm(`启动 RTT 将停止 ${conflicts.join('、')}，确认？`)) return
   clearLogs()
   renderPaused.value = false
+  runtimeError.value = null
   scheduler.start()
   binary.reset()
-  await dash.start()
-  if (!disposed) binary.start()
+  const started = await dash.start()
+  if (started && !disposed) binary.start()
 }
 
 function onPauseRender(): void {
@@ -147,6 +154,7 @@ function onResumeRender(): void {
 
 async function onStop(): Promise<void> {
   renderPaused.value = false
+  runtimeError.value = null
   binary.stop()
   await dash.stop()
 }

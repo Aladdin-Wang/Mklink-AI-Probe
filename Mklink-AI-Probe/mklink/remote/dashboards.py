@@ -63,6 +63,14 @@ def _positive_int(value: Any) -> int:
     return parsed if parsed > 0 else 0
 
 
+def _device_in_error_state(device) -> bool:
+    state = getattr(device, "state", None)
+    return (
+        str(getattr(state, "name", "")).upper() == "ERROR"
+        or str(getattr(state, "value", "")).lower() == "error"
+    )
+
+
 # ---------------------------------------------------------------------------
 # SSE helpers
 # ---------------------------------------------------------------------------
@@ -213,6 +221,7 @@ class RttStreamManager:
         self._parser_auto_detect_attempts = 0
         self._interval = 0.0
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
+        self._error: str | None = None
         self._start_failure_callback = None
         self._stream_hub = stream_hub
         self._raw_batch_lines = max(1, int(raw_batch_lines))
@@ -322,6 +331,7 @@ class RttStreamManager:
         self._running = True
         self._history.clear()
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
+        self._error = None
         self._line_assembler.reset()
         self._pending_raw.clear()
         self._pending_numeric.clear()
@@ -337,6 +347,7 @@ class RttStreamManager:
         def _poll():
             initialized = False
             start_failure = None
+            terminal_failure = None
             try:
                 device.rtt_start(addr, channel=channel, mode=mode,
                                  search_size=search_size)
@@ -351,9 +362,18 @@ class RttStreamManager:
 
                     try:
                         text = device.rtt_read(duration=0.5)
-                    except Exception:
+                    except Exception as exc:
+                        if _device_in_error_state(device):
+                            terminal_failure = exc
+                            break
                         time.sleep(0.1)
                         continue
+
+                    if _device_in_error_state(device):
+                        terminal_failure = RuntimeError(
+                            "RTT device entered ERROR state"
+                        )
+                        break
 
                     if text is None or text == b"" or text == "":
                         continue
@@ -367,6 +387,8 @@ class RttStreamManager:
                 self._bridge.put({"event": "error", "message": str(e)})
                 if not initialized:
                     start_failure = e
+                else:
+                    terminal_failure = e
             finally:
                 try:
                     device.rtt_stop()
@@ -381,9 +403,12 @@ class RttStreamManager:
                         finally:
                             self._bridge.stop()
                 finally:
-                    if start_failure is not None and failure_callback is not None:
+                    failure = start_failure or terminal_failure
+                    if failure is not None:
+                        self._error = str(failure)
+                    if failure is not None and failure_callback is not None:
                         try:
-                            failure_callback(start_failure)
+                            failure_callback(failure)
                         except Exception:
                             pass
 
@@ -418,6 +443,7 @@ class RttStreamManager:
             "paused": self.paused,
             "clients": self._bridge.client_count,
             "stats": self._stats,
+            "error": self._error,
             "history_size": len(self._history),
             "numeric_channels": list(self._numeric_channels),
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
