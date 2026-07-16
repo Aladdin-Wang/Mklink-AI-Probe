@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-16T22:15:32+08:00`
+- 更新时间：`2026-07-16T23:21:13+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`e26d11e fixes RTT waveform rendering to use the actual Worker buffer time range; the final documentation commit contains this memory`
+- HEAD：`292a036 smooths RTT delivery, named-channel rendering, and mid-line stream attachment; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
-- 工作树：clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed
-- 当前任务：RTT dashboard failure handling and waveform rendering fixed and HIL-validated; collect tester feedback and retain physical disconnect tests as not established
+- 工作树：clean after the final documentation commit; generated repository-local artifacts removed and external test firmware/installers remain untracked
+- 当前任务：RTT named-channel demonstration and smooth refresh are implemented, installed, and HIL-validated; collect tester feedback and retain physical disconnect tests as not established
 - 状态：`complete`
 
 ## 里程碑
@@ -30,6 +30,7 @@
 - **Release qualification Task 13 GitHub publication** — `complete`。MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f.
 - **Offline download configurator** — `complete`。V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice.
 - **RTT dashboard runtime-state repair** — `complete`。RTT start now returns a success boolean to the component, so a failed control-plane start cannot create an orphan binary WebSocket. The manager detects Device ERROR, stops, releases its API lease through the failure callback, exposes status.error, and the RTT toolbar stops the binary client and displays the runtime error. The numeric Canvas remains hidden until numeric RTT data arrives. The Worker includes bufferStartMs/bufferEndMs in numeric batches and RTT View requests envelopes over that finite range, preventing all samples from collapsing into one pixel and one invisible point per constant channel. Unsigned rebuilt NSIS SHA-256 F7C84453687ABCEF669CAA36EAEC75CA5A42ED12124119FCAF9433312D9C709E; MSI SHA-256 134B3B426A3F6FFA19440FD755BF196A3664F9AA18BC40083E11C78301307676.
+- **RTT named waveform and smooth refresh** — `complete`。RTT delivery uses 50 Hz read windows and flushes incomplete numeric batches each cycle. The bridge polling quantum is 10 ms. The virtual log flush interval is 33 ms. Two consecutive matching numeric layouts are required before channel lock, preventing a mid-line first chunk such as peed=90 from replacing speed. Unsigned rebuilt NSIS SHA-256 E6D8B4A695FDEE8C56F331D6055A6E0B6D43C2B8605216934EE848EEE34E30EA; MSI SHA-256 CA0234FABED078F7242CE1AE3F0D060C76A38D416B4F51F949813E2FD013A5E9.
 
 ## 验证证据
 
@@ -54,6 +55,7 @@
 - **Task 13 remote publication**：GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6.
 - **Offline download V4 HIL**：cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration.
 - **RTT dashboard failure and installed HIL**：Python 635, Node 51, GUI 249, and Rust 6 tests passed; Vite production build transformed 144 modules. The rebuilt installed application restored the project and loaded AXF symbols. Real Edge HIL confirmed ordered RTT raw plus four-channel waveform delivery, 37 Canvas clears and 148 strokes in the visible interval, zero measured loss, pause/resume rendering behavior, clean stop, zero clients, released resources, and target dearm. Runtime Device ERROR is terminal and visible instead of remaining falsely running.
+- **RTT named waveform and smooth refresh HIL**：Python 636, GUI 249, and Rust 6 tests passed; Vite transformed 144 modules; Keil App build had 0 errors and 0 warnings. The App-only HEX began at 0x08005000, passed readback verification, and preserved the Bootloader without whole-chip erase. Installed HIL recognized speed,temp during mid-line attachment, delivered over 1,000 parsed points/s with zero drops, rendered changing curves at 23.8 FPS, refreshed the virtual log at roughly 25 ms intervals, paused with zero draws, resumed normally, and stopped cleanly.
 
 ## 架构决策
 
@@ -70,6 +72,8 @@
 - RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.
 - RTT binary transport starts only after a successful control-plane start. A runtime Device ERROR is terminal, releases the dashboard lease, is exposed as status.error, and stops the frontend binary client.
 - RTT waveform envelopes use the Worker's finite buffered timestamp range. Requesting 0..Number.MAX_SAFE_INTEGER is forbidden because it collapses real-time samples into one pixel and makes constant channels invisible.
+- RTT dashboard delivery uses 50 Hz read windows, flushes partial raw and numeric batches each cycle, and keeps Canvas rendering capped by the shared 30 FPS scheduler.
+- RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.
 - Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.
 
 ## 真机环境
@@ -83,7 +87,7 @@
 
 ## 下一动作
 
-1. Collect tester feedback for the RTT dashboard repair, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
+1. Collect tester feedback for the RTT named temp/speed curves, smooth refresh, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
 2. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
 3. For the next release, add code signing before promoting beyond prerelease.
 4. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.

@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-16T22:15:32+08:00",
+  "updated_at": "2026-07-16T23:21:13+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "e26d11e fixes RTT waveform rendering to use the actual Worker buffer time range; the final documentation commit contains this memory",
+    "head": "292a036 smooths RTT delivery, named-channel rendering, and mid-line stream attachment; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
-    "working_tree": "clean after the final documentation commit; generated repository-local artifacts and temporary HIL readback data removed"
+    "working_tree": "clean after the final documentation commit; generated repository-local artifacts removed and external test firmware/installers remain untracked"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
@@ -19,9 +19,9 @@
   "current_session": {
     "status": "complete",
     "active_plan": "none; the user-directed offline download configurator is complete",
-    "current_task": "RTT dashboard failure handling and waveform rendering fixed and HIL-validated; collect tester feedback and retain physical disconnect tests as not established",
-    "latest_commit": "e26d11e fix: use RTT buffer range for waveform rendering",
-    "rtt_dashboard_implementation": "complete; failed REST starts no longer open the binary WebSocket, runtime device ERROR stops the RTT worker and is exposed through status/UI, normal no-data Canvas behavior is unchanged, and waveform envelopes now use the Worker's actual buffered timestamp range instead of 0..Number.MAX_SAFE_INTEGER. Real Edge HIL confirmed Canvas clear and stroke activity with zero transport/backend loss.",
+    "current_task": "RTT named-channel demonstration and smooth refresh are implemented, installed, and HIL-validated; collect tester feedback and retain physical disconnect tests as not established",
+    "latest_commit": "292a036 fix: smooth RTT dashboard streaming",
+    "rtt_dashboard_implementation": "complete; RTT reads now deliver at 50 Hz with a 10 ms bridge polling quantum, partial numeric batches flush every read cycle, and the virtual log coalesces near 30 FPS instead of 10 FPS. Numeric channel layouts require two consecutive matching rows so attaching mid-line cannot lock a truncated name. The demonstration firmware emits changing temp/speed values. Real Edge HIL confirmed named curves, 23.8 Canvas FPS, about 25 ms log update intervals, pause/resume behavior, and zero transport/backend loss.",
     "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
     "task_3_implementation": "complete; final spec and quality reviews APPROVED",
     "task_4_implementation": "complete; final spec and quality reviews APPROVED",
@@ -173,6 +173,15 @@
       "evidence": "Rebuilt installed NSIS restored the project and connected with AXF symbols. Initial HIL received ordered RTT raw and four-channel waveform payloads with zero drops. After the rendering correction, real Edge visible-window HIL processed 93 data frames and 20,093 items in 10 seconds with 37 Canvas clears and 148 strokes, zero frontend sequence errors, zero transport/backend drops, pause with zero draws, resume with 20 clears and 80 strokes, complete resource cleanup, and RAM fixture dearm.",
       "review": "focused RED/GREEN regression, full automated regression, production build, bundle install, sanitized HIL, diff validation, and generated-artifact cleanup completed",
       "notes": "RTT start now returns a success boolean to the component, so a failed control-plane start cannot create an orphan binary WebSocket. The manager detects Device ERROR, stops, releases its API lease through the failure callback, exposes status.error, and the RTT toolbar stops the binary client and displays the runtime error. The numeric Canvas remains hidden until numeric RTT data arrives. The Worker includes bufferStartMs/bufferEndMs in numeric batches and RTT View requests envelopes over that finite range, preventing all samples from collapsing into one pixel and one invisible point per constant channel. Unsigned rebuilt NSIS SHA-256 F7C84453687ABCEF669CAA36EAEC75CA5A42ED12124119FCAF9433312D9C709E; MSI SHA-256 134B3B426A3F6FFA19440FD755BF196A3664F9AA18BC40083E11C78301307676."
+    },
+    {
+      "name": "RTT named waveform and smooth refresh",
+      "status": "complete",
+      "commit": "292a036",
+      "tests": "Python 636 passed in 27.32s; GUI 19 files / 249 tests passed in 16.97s; Vite 144 modules; Rust 6 passed; focused RTT Python 25 and GUI 13 passed; Keil App build 0 errors and 0 warnings",
+      "evidence": "Bootloader-preserving App HEX covered 0x08005000 through 0x08020C97 and passed Flash readback verification without whole-chip erase. Installed-runtime HIL recognized speed,temp after attaching to an already-running stream, delivered more than 3,000 parsed points in three seconds with zero drops, and rendered two changing named curves. A five-second Edge gate measured 119 Canvas clears, 238 strokes, 23.8 FPS, about 25 ms log update intervals, zero draws while paused, 29 draws in 1.2 seconds after resume, and clean stop.",
+      "review": "root-cause analysis, focused and full regression, production build, NSIS/MSI bundle, installed sidecar smoke, real Edge Worker/Canvas gate, diff validation, privacy-safe memory update, and generated-artifact cleanup completed",
+      "notes": "RTT delivery uses 50 Hz read windows and flushes incomplete numeric batches each cycle. The bridge polling quantum is 10 ms. The virtual log flush interval is 33 ms. Two consecutive matching numeric layouts are required before channel lock, preventing a mid-line first chunk such as peed=90 from replacing speed. Unsigned rebuilt NSIS SHA-256 E6D8B4A695FDEE8C56F331D6055A6E0B6D43C2B8605216934EE848EEE34E30EA; MSI SHA-256 CA0234FABED078F7242CE1AE3F0D060C76A38D416B4F51F949813E2FD013A5E9."
     }
   ],
   "verification": [
@@ -260,6 +269,10 @@
     {
       "area": "RTT dashboard failure and installed HIL",
       "result": "Python 635, Node 51, GUI 249, and Rust 6 tests passed; Vite production build transformed 144 modules. The rebuilt installed application restored the project and loaded AXF symbols. Real Edge HIL confirmed ordered RTT raw plus four-channel waveform delivery, 37 Canvas clears and 148 strokes in the visible interval, zero measured loss, pause/resume rendering behavior, clean stop, zero clients, released resources, and target dearm. Runtime Device ERROR is terminal and visible instead of remaining falsely running."
+    },
+    {
+      "area": "RTT named waveform and smooth refresh HIL",
+      "result": "Python 636, GUI 249, and Rust 6 tests passed; Vite transformed 144 modules; Keil App build had 0 errors and 0 warnings. The App-only HEX began at 0x08005000, passed readback verification, and preserved the Bootloader without whole-chip erase. Installed HIL recognized speed,temp during mid-line attachment, delivered over 1,000 parsed points/s with zero drops, rendered changing curves at 23.8 FPS, refreshed the virtual log at roughly 25 ms intervals, paused with zero draws, resumed normally, and stopped cleanly."
     }
   ],
   "decisions": [
@@ -276,6 +289,8 @@
     "RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.",
     "RTT binary transport starts only after a successful control-plane start. A runtime Device ERROR is terminal, releases the dashboard lease, is exposed as status.error, and stops the frontend binary client.",
     "RTT waveform envelopes use the Worker's finite buffered timestamp range. Requesting 0..Number.MAX_SAFE_INTEGER is forbidden because it collapses real-time samples into one pixel and makes constant channels invisible.",
+    "RTT dashboard delivery uses 50 Hz read windows, flushes partial raw and numeric batches each cycle, and keeps Canvas rendering capped by the shared 30 FPS scheduler.",
+    "RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
   "hardware": {
@@ -300,7 +315,7 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Collect tester feedback for the RTT dashboard repair, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
+    "Collect tester feedback for the RTT named temp/speed curves, smooth refresh, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
