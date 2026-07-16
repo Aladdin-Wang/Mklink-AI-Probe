@@ -506,6 +506,7 @@ def create_app(
         offline_download_api.create_offline_download_router(
             online_flash,
             _state["resource_manager"],
+            lambda: _state.get("device"),
         )
     )
 

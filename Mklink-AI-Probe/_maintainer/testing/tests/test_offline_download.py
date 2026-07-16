@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from mklink.firmware_check import Version, read_device_version
+from mklink.firmware_check import Version, read_bridge_version, read_device_version
 from mklink.offline_download import (
     OfflineDownloadError,
     deploy_offline_bundle,
@@ -222,6 +222,15 @@ def test_read_device_version_imports_the_serial_bridge(monkeypatch):
     ]
 
 
+def test_read_bridge_version_reuses_an_existing_connection():
+    class Bridge:
+        def send_command(self, command, timeout):
+            assert (command, timeout) == ("cmd.get_version()", 5.0)
+            return "V4.3.4"
+
+    assert read_bridge_version(Bridge()) == Version(4, 3, 4)
+
+
 def test_read_device_version_rejects_failed_serial_connection(monkeypatch):
     calls = []
 
@@ -308,6 +317,47 @@ def test_trigger_api_preserves_a_conflicting_resource_lease(monkeypatch):
     assert lease is not None
     assert lease.owner == "user:dashboard:rtt"
     assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+
+
+def test_offline_api_reuses_the_connected_device_bridge():
+    calls = []
+
+    class Bridge:
+        def send_command(self, command, timeout, echo=False):
+            calls.append((command, timeout, echo))
+            if command == "cmd.get_version()":
+                return "V4.3.4"
+            return "offline download finished"
+
+    class Device:
+        connected = True
+        port = "TEST_CDC"
+        _bridge = Bridge()
+
+        def close(self):
+            pass
+
+    app = create_app(auth_token=None, project_root=".")
+    app.state.mklink_state["device"] = Device()
+
+    with TestClient(app) as client:
+        detected = client.post("/api/offline-download/detect-model", json={})
+        preview = client.post(
+            "/api/offline-download/preview",
+            json={**_config(), "model": "auto"},
+        )
+        triggered = client.post("/api/offline-download/trigger", json={})
+
+    assert detected.json() == {"model": "V4", "version": "V4.3.4"}
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["model"] == "V4"
+    assert triggered.status_code == 200, triggered.text
+    assert triggered.json()["status"] == "completed"
+    assert calls == [
+        ("cmd.get_version()", 5.0, False),
+        ("cmd.get_version()", 5.0, False),
+        ("load.offline()", 600, True),
+    ]
 
 
 def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):

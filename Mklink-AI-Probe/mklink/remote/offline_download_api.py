@@ -30,16 +30,20 @@ _MAX_TOTAL_UPLOAD_SIZE = 512 * 1024 * 1024
 _TOKEN_SAFE = re.compile(r"^[A-Za-z0-9._:-]+$")
 
 
-def detect_probe_model(port: Optional[str] = None) -> dict:
+def detect_probe_model(port: Optional[str] = None, bridge: Optional[object] = None) -> dict:
     from mklink.discovery import find_mklink_cdc_port
-    from mklink.firmware_check import read_device_version
+    from mklink.firmware_check import read_bridge_version, read_device_version
 
     last_error: Optional[BaseException] = None
     for attempt in range(2):
-        resolved_port = port or find_mklink_cdc_port()
-        if resolved_port:
+        resolved_port = port or (None if bridge is not None else find_mklink_cdc_port())
+        if bridge is not None or resolved_port:
             try:
-                version = read_device_version(resolved_port)
+                version = (
+                    read_bridge_version(bridge)
+                    if bridge is not None
+                    else read_device_version(resolved_port)
+                )
             except (ConnectionError, TimeoutError, OSError) as error:
                 last_error = error
             else:
@@ -232,12 +236,6 @@ def _copy_upload(upload: UploadFile, destination: Path, total: list[int]) -> Pat
     return destination
 
 
-def _resolved_model(payload: Mapping[str, object], port: Optional[str]) -> Optional[str]:
-    if str(payload.get("model") or "auto").upper() != "AUTO":
-        return None
-    return detect_probe_model(port)["model"]
-
-
 def _redact_trigger_output(response: str) -> list[str]:
     result = []
     for raw in response.splitlines()[-100:]:
@@ -250,8 +248,37 @@ def _redact_trigger_output(response: str) -> list[str]:
 def create_offline_download_router(
     online_services: object,
     resource_manager: object,
+    device_provider: Optional[object] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/offline-download", tags=["offline-download"])
+
+    def _connected_bridge(port: Optional[str]) -> Optional[object]:
+        device = device_provider() if callable(device_provider) else None
+        if device is None or not bool(getattr(device, "connected", False)):
+            return None
+        device_port = getattr(device, "port", None)
+        if port and device_port and str(port) != str(device_port):
+            return None
+        return getattr(device, "_bridge", None)
+
+    async def _detect(port: Optional[str]) -> dict:
+        from mklink.remote.resource_manager import ResourceGroup
+
+        owner = f"user:offline-download:detect:{uuid.uuid4().hex}"
+        try:
+            resource_manager.acquire(ResourceGroup.MKLINK_BRIDGE, owner, preempt=False)
+            return await asyncio.to_thread(
+                detect_probe_model,
+                port,
+                _connected_bridge(port),
+            )
+        finally:
+            resource_manager.release(owner)
+
+    async def _resolved_model(payload: Mapping[str, object]) -> Optional[str]:
+        if str(payload.get("model") or "auto").upper() != "AUTO":
+            return None
+        return (await _detect(payload.get("port")))["model"]
 
     @router.get("/status")
     async def status() -> object:
@@ -269,7 +296,7 @@ def create_offline_download_router(
     @router.post("/detect-model")
     async def detect_model(port: Optional[str] = Body(default=None, embed=True)) -> object:
         try:
-            return await asyncio.to_thread(detect_probe_model, port)
+            return await _detect(port)
         except OfflineDownloadError as error:
             raise HTTPException(status_code=400, detail=str(error))
 
@@ -292,9 +319,7 @@ def create_offline_download_router(
     @router.post("/preview")
     async def preview(payload: dict = Body(...)) -> object:
         try:
-            model = await asyncio.to_thread(
-                _resolved_model, payload, payload.get("port")
-            )
+            model = await _resolved_model(payload)
             config = parse_offline_config(payload, resolved_model=model)
             return {
                 "model": config.model,
@@ -316,9 +341,7 @@ def create_offline_download_router(
             payload = json.loads(config_json)
             if not isinstance(payload, Mapping):
                 raise OfflineDownloadError("offline config must be an object")
-            model = await asyncio.to_thread(
-                _resolved_model, payload, payload.get("port")
-            )
+            model = await _resolved_model(payload)
             config = parse_offline_config(payload, resolved_model=model)
             disk = await asyncio.to_thread(find_microkeen_disk)
             if not disk:
@@ -377,8 +400,11 @@ def create_offline_download_router(
         from mklink.discovery import find_mklink_cdc_port
         from mklink.remote.resource_manager import ResourceGroup
 
-        resolved_port = port or await asyncio.to_thread(find_mklink_cdc_port)
-        if not resolved_port:
+        active_bridge = _connected_bridge(port)
+        resolved_port = port or (
+            None if active_bridge is not None else await asyncio.to_thread(find_mklink_cdc_port)
+        )
+        if active_bridge is None and not resolved_port:
             raise HTTPException(status_code=400, detail="MKLink CDC port was not found")
         owner = f"user:offline-download:trigger:{uuid.uuid4().hex}"
         try:
@@ -389,6 +415,10 @@ def create_offline_download_router(
             )
 
             def _run() -> str:
+                if active_bridge is not None:
+                    return active_bridge.send_command(
+                        "load.offline()", timeout=600, echo=True
+                    )
                 bridge = MKLinkSerialBridge(resolved_port)
                 try:
                     if not bridge.connect():
