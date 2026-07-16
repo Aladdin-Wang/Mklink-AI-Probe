@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   },
   checkConflict: vi.fn(),
   scheduler: {
+    render: null as null | (() => void),
     start: vi.fn(), stop: vi.fn(), invalidate: vi.fn(),
     recordCollection: vi.fn(), dispose: vi.fn(),
   },
@@ -39,6 +40,7 @@ vi.mock('../../composables/useResourceStatus', () => ({
 }))
 vi.mock('../../lib/stream/renderScheduler', () => ({
   RenderScheduler: class {
+    constructor(render: () => void) { mocks.scheduler.render = render }
     start = mocks.scheduler.start
     stop = mocks.scheduler.stop
     invalidate = mocks.scheduler.invalidate
@@ -62,6 +64,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.error = ref(null)
     mocks.useBinaryStream.mockReturnValue(mocks.binary)
     mocks.checkConflict.mockResolvedValue([])
+    mocks.scheduler.render = null
     mocks.dash.start.mockResolvedValue(true)
     mocks.dash.stop.mockResolvedValue(undefined)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ running: false }) }))
@@ -102,6 +105,23 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('requests the numeric envelope over the actual Worker buffer time range', async () => {
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    mocks.binary.telemetry.value = { bufferedSamples: 256 }
+    mocks.binary.waveformBatch.value = {
+      type: 'waveform-batch', sequence: 1n, timestampNs: 2_000_000_000n,
+      itemCount: 256, channelCount: 4, layout: 'sample-major-float32',
+      values: new ArrayBuffer(0), times: new ArrayBuffer(0),
+      bufferStartMs: 1_500, bufferEndMs: 2_000,
+    }
+    await nextTick()
+
+    mocks.scheduler.render?.()
+
+    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledWith(1, 1_500, 2_000, 640)
     wrapper.unmount()
   })
 

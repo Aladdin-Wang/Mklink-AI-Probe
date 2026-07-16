@@ -53,6 +53,8 @@ export type WorkerOutput =
       itemCount: number
       channelCount: number
       layout: 'sample-major-float32'
+      bufferStartMs: number | null
+      bufferEndMs: number | null
       values: ArrayBuffer
       times: ArrayBuffer
     }
@@ -383,6 +385,8 @@ export class StreamDecoder {
       type: 'waveform-batch', sequence: decoded.sequence,
       timestampNs: decoded.timestampNs, itemCount: decoded.itemCount,
       channelCount: ring.channelCount, layout: 'sample-major-float32',
+      bufferStartMs: ring.length ? ring.timeAt(0) : null,
+      bufferEndMs: ring.length ? ring.timeAt(ring.length - 1) : null,
       values: decoded.payload, times: timing.times.buffer as ArrayBuffer,
     }
     this.post(output, [output.values, output.times])
@@ -456,6 +460,8 @@ export class StreamDecoder {
       itemCount: decoded.itemCount,
       channelCount,
       layout: 'sample-major-float32',
+      bufferStartMs: nextRing.length ? nextRing.timeAt(0) : null,
+      bufferEndMs: nextRing.length ? nextRing.timeAt(nextRing.length - 1) : null,
       values: decoded.payload,
       times: timing.times.buffer as ArrayBuffer,
     }

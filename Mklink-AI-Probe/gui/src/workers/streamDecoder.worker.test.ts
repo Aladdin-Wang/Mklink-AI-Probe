@@ -811,6 +811,10 @@ describe('StreamDecoder worker controller', () => {
       connectionGeneration: 1,
       frameTicket: 1,
     })
+    const batch = messages.find(message => message.type === 'waveform-batch')
+    expect(batch).toMatchObject({
+      type: 'waveform-batch', bufferStartMs: 4.999998, bufferEndMs: 5,
+    })
     decoder.handle({ type: 'visible-range', requestId: 7, start: 0, end: 5, pixelWidth: 320 })
 
     const envelope = messages.at(-1)

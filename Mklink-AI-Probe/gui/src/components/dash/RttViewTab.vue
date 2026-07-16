@@ -56,7 +56,11 @@ const scheduler = new RenderScheduler(() => {
   if (!canvas || numericChannelCount.value <= 0) return
   const telemetry = binary.telemetry.value
   if (!telemetry?.bufferedSamples) return
-  binary.requestVisibleRange(++requestId, 0, Number.MAX_SAFE_INTEGER, Math.max(1, canvas.clientWidth || 640))
+  const batch = binary.waveformBatch.value
+  const start = batch?.bufferStartMs
+  const end = batch?.bufferEndMs
+  if (start == null || end == null || !Number.isFinite(start) || !Number.isFinite(end)) return
+  binary.requestVisibleRange(++requestId, start, end, Math.max(1, canvas.clientWidth || 640))
 })
 
 watch(() => binary.rttLines.value, batch => {
