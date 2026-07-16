@@ -126,10 +126,14 @@ function persist(): void {
 }
 watch([frequency, connectMode, resetMode, desiredPart], persist)
 
-async function refreshProbes(): Promise<void> {
+async function refreshProbes(retryWhenEmpty = false): Promise<void> {
   probeBusy.value = true; probeError.value = ''
   try {
     probes.value = await api.listProbes()
+    if (retryWhenEmpty && probes.value.length === 0) {
+      await new Promise(resolve => setTimeout(resolve, 700))
+      probes.value = await api.listProbes()
+    }
     if (!probes.value.some(item => item.unique_id === probeId.value)) probeId.value = probes.value[0]?.unique_id ?? ''
   } catch (error) { probeError.value = message(error) } finally { probeBusy.value = false }
 }
@@ -341,7 +345,7 @@ function toggleSector(address: number): void {
     : [...selectedSectorAddresses.value, address].sort((left, right) => left - right)
 }
 
-onMounted(() => { void Promise.all([refreshProbes(), refreshPackStatus(), searchTargets(desiredPart.value)]) })
+onMounted(() => { void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(desiredPart.value)]) })
 onBeforeUnmount(() => {
   disposed = true
   inspectionController?.abort()

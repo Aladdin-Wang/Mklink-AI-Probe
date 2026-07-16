@@ -175,9 +175,15 @@ def read_device_version(port: str, *, timeout: float = DEFAULT_VERSION_TIMEOUT) 
     Raises (TimeoutError, ConnectionError, etc.) on serial errors — caller
     decides how to recover.
     """
+    from mklink.bridge import MKLinkSerialBridge
+
     bridge = MKLinkSerialBridge(port)
-    bridge.connect()
-    resp = bridge.send_command("cmd.get_version()", timeout=timeout)
+    try:
+        if not bridge.connect():
+            raise ConnectionError("Unable to connect to MKLink CDC port")
+        resp = bridge.send_command("cmd.get_version()", timeout=timeout)
+    finally:
+        bridge.close()
     # Reuse the existing CLI parser (single source of truth for the format)
     from mklink.cli import _parse_version_response
     current_str, _ = _parse_version_response(resp)

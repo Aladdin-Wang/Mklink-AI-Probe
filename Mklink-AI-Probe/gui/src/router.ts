@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('./views/DashboardView.vue'),
     },
     {
+      path: '/offline-flash',
+      name: 'offline-flash',
+      component: () => import('./views/OfflineFlashView.vue'),
+    },
+    {
       path: '/online-flash',
       name: 'online-flash',
       component: () => import('./views/OnlineFlashView.vue'),

@@ -23,7 +23,6 @@
       </div>
       <div class="tabs-bar">
         <button :class="['tab-btn', { active: tab === 'rtt' }]" @click="tab = 'rtt'">RTT View</button>
-        <button :class="['tab-btn', { active: tab === 'flash' }]" @click="tab = 'flash'">脱机烧录</button>
         <button :class="['tab-btn', { active: tab === 'debug' }]" @click="tab = 'debug'">调试控制</button>
         <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
         <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">符号表</button>
@@ -36,31 +35,6 @@
       </div>
 
       <RttViewTab v-show="tab === 'rtt'" :device-connected="deviceStatus.connected" />
-
-      <!-- 脱机烧录 -->
-      <div v-if="tab === 'flash'">
-        <div v-if="!deviceStatus.connected" class="alert alert-warn">请先连接设备。</div>
-        <template v-else>
-          <div class="form-row">
-            <span class="form-label">固件文件</span>
-            <input class="form-input" v-model="flashReq.firmware" placeholder=".hex 或 .bin 文件路径" />
-          </div>
-          <div class="form-row">
-            <span class="form-label">脱机烧录后校验</span>
-            <label style="font-size:13px"><input type="checkbox" v-model="flashReq.verify" /> 启用</label>
-          </div>
-          <div class="form-row">
-            <span class="form-label">脱机烧录后复位</span>
-            <label style="font-size:13px"><input type="checkbox" v-model="flashReq.reset_after" /> 启用</label>
-          </div>
-          <div class="form-row">
-            <span class="form-label"></span>
-            <button class="btn btn-primary" @click="doFlash" :disabled="flashing">
-              {{ flashing ? '脱机烧录中...' : '脱机烧录固件' }}
-            </button>
-          </div>
-        </template>
-      </div>
 
       <!-- 调试控制 -->
       <div v-if="tab === 'debug'">
@@ -88,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useToast } from '../composables/useToast'
@@ -107,7 +81,6 @@ const route = useRoute()
 const router = useRouter()
 const {
   deviceStatus,
-  flashDevice,
   resetDevice,
   eraseDevice,
   haltDevice,
@@ -118,8 +91,6 @@ const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
-const flashing = ref(false)
-const flashReq = reactive({ firmware: '', verify: true, reset_after: true })
 
 const bridgeOwner = computed(() => getBridgeOwner())
 const bridgeOwnerLabel = computed(() => {
@@ -142,12 +113,6 @@ function goConnect() {
   router.push({ name: 'config' })
 }
 
-async function doFlash() {
-  flashing.value = true
-  try { const r = await flashDevice(flashReq); toast.success('脱机烧录完成: ' + JSON.stringify(r)) }
-  catch (e: any) { toast.error('脱机烧录失败: ' + e.message) }
-  finally { flashing.value = false }
-}
 async function doReset() {
   if (!confirm('确定要复位 CPU？')) return
   try { await resetDevice(); toast.success('已复位') } catch (e: any) { toast.error(e.message) }

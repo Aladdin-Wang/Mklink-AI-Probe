@@ -105,7 +105,7 @@ in [the high-throughput qualification report](docs/verification/high-throughput-
 ### 在线烧录与脱机烧录
 
 - **在线烧录**：打开 GUI 的 `/online-flash` 页，由主机通过 pyOCD/CMSIS-DAP 实时控制 **MKLink** 探针；支持目标搜索、CMSIS-Pack 按需下载、HEX/BIN 预览、擦除、编程、校验和复位。在线探针列表只接受 MKLink CMSIS-DAP，不会把其他厂商的 CMSIS-DAP 当作可选设备。
-- **脱机烧录**：使用已连接 MKLink 的仪表盘“脱机烧录”页签或现有 `python -m mklink flash` 流程，使用项目中已配置的 MCU/FLM 和固件路径。它不使用在线烧录页的 Pack 目录和任务流。
+- **脱机烧录**：打开与“在线烧录”并列的 `/offline-flash` 页，配置有序的多个 HEX/BIN 固件、BIN 基地址、多个 FLM 及其 Flash/RAM 基地址、固件与算法绑定、自动烧录次数、IDCODE 超时和 SWD 速率。FLM 可来自本地文件、项目/Keil 配置或已安装的 CMSIS-Pack，配置可预览并直接部署到 MKLink U 盘。型号通过 `cmd.get_version()` 识别；V2/V3 固定生成 `python/offline_download.py`，V4 支持安全的自定义 `.py` 文件名并由下载器屏幕选择。
 
 在线烧录首次使用某个 MCU 时，先更新 Pack 索引，搜索并下载对应 DFP。Pack 只在需要时下载，安装后缓存在当前用户的 `%LOCALAPPDATA%\MKLink\pyocd` 下（可用 `MKLINK_PYOCD_HOME` 改变根目录）；离线时可继续使用已缓存的索引和 Pack。在 GUI 中可取消当前 Pack 操作或删除未被任务使用的指定版本；不要把 `.pack` 文件放入 Git 或发布资源。索引更新和 Pack 下载使用启动 `mklink serve`/GUI 进程时的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；本地缓存命中不需要网络。
 

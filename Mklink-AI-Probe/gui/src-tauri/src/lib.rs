@@ -71,6 +71,10 @@ fn resolve_sidecar_launch() -> Result<SidecarLaunch, String> {
     choose_sidecar_launch(find_bundled_sidecar(), find_python())
 }
 
+fn default_project_root() -> String {
+    ".".into()
+}
+
 #[cfg(target_os = "windows")]
 fn which_exists(name: &str) -> bool {
     use std::os::windows::process::CommandExt;
@@ -425,9 +429,7 @@ pub fn run() {
         .manage(Sidecar {
             child: Mutex::new(None),
             port: 8765,
-            project_root: std::env::current_dir()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| ".".into()),
+            project_root: default_project_root(),
             #[cfg(target_os = "windows")]
             job: Mutex::new(None),
         })
@@ -516,6 +518,11 @@ mod tests {
         assert!(choose_sidecar_launch(None, None)
             .unwrap_err()
             .contains("No bundled sidecar or Python runtime"));
+    }
+
+    #[test]
+    fn installed_runtime_lets_backend_restore_the_last_project() {
+        assert_eq!(default_project_root(), ".");
     }
 
     #[test]

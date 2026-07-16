@@ -501,6 +501,13 @@ def create_app(
     )
     app.state.online_flash = online_flash
     app.include_router(online_flash_api.create_online_flash_router(online_flash))
+    from mklink.remote import offline_download_api
+    app.include_router(
+        offline_download_api.create_offline_download_router(
+            online_flash,
+            _state["resource_manager"],
+        )
+    )
 
     async def shutdown_online_flash() -> None:
         await run_in_threadpool(

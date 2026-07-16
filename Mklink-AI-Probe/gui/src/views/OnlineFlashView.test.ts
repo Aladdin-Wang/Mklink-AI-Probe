@@ -1,4 +1,4 @@
-import { mount, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import App from '../App.vue'
@@ -109,7 +109,7 @@ describe('online flash navigation and workspace', () => {
     expect(route?.path).toBe('/online-flash')
   })
 
-  it('shows 在线烧录 after 仪表盘 in the top navigation and navigates to it', async () => {
+  it('shows 脱机烧录 beside 在线烧录 in the top navigation and navigates to it', async () => {
     await router.push('/config')
     await router.isReady()
     const wrapper = mount(App, {
@@ -120,14 +120,14 @@ describe('online flash navigation and workspace', () => {
     })
 
     const labels = wrapper.findAll('.nav-tab').map(tab => tab.text())
-    expect(labels).toEqual(['配置', '仪表盘', '在线烧录'])
+    expect(labels).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录'])
 
     await wrapper.findAll('.nav-tab')[2].trigger('click')
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('online-flash'))
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('offline-flash'))
     wrapper.unmount()
   })
 
-  it('renames the legacy dashboard tab to exactly 脱机烧录', async () => {
+  it('removes the legacy dashboard 脱机烧录 tab', async () => {
     await router.push('/dashboard')
     const wrapper = shallowMount(DashboardView, {
       global: {
@@ -147,8 +147,7 @@ describe('online flash navigation and workspace', () => {
     })
     try {
       const labels = wrapper.findAll('.tab-btn').map(tab => tab.text())
-      expect(labels).toContain('脱机烧录')
-      expect(labels).not.toContain('烧录')
+      expect(labels).not.toContain('脱机烧录')
     } finally {
       wrapper.unmount()
     }
@@ -498,6 +497,32 @@ describe('online flash task workspace behavior', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('retries initial probe discovery once when the first result is empty', async () => {
+    vi.useFakeTimers()
+    const fallback = viewFetch()
+    let probeCalls = 0
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/probes')) {
+        probeCalls += 1
+        return Promise.resolve(new Response(JSON.stringify(probeCalls === 1 ? [] : [probeFixture]), { status: 200 }))
+      }
+      return fallback(input, options)
+    }))
+
+    const wrapper = mount(await onlineFlashView())
+    await flushPromises()
+    expect(probeCalls).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(699)
+    expect(probeCalls).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+
+    expect(probeCalls).toBe(2)
+    expect(wrapper.get('[data-testid="probe-select"]').element).toHaveProperty('value', probeFixture.unique_id)
+    wrapper.unmount()
   })
 
   it('rejects an invalid BIN base and keeps start disabled until server inspection succeeds', async () => {
