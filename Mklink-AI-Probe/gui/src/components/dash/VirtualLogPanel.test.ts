@@ -56,14 +56,14 @@ describe('VirtualLogPanel', () => {
     wrapper.unmount()
   })
 
-  it('coalesces appends to at most 10Hz and cancels pending work on unmount', async () => {
+  it('coalesces appends to about 30Hz and cancels pending work on unmount', async () => {
     vi.useFakeTimers()
     const wrapper = mount(VirtualLogPanel)
     for (let index = 0; index < 20; index++) {
       ;(wrapper.vm as any).append([{ time: index, level: 'raw', text: String(index) }])
     }
     expect((wrapper.vm as any).retainedCount).toBe(0)
-    vi.advanceTimersByTime(99)
+    vi.advanceTimersByTime(32)
     expect((wrapper.vm as any).retainedCount).toBe(0)
     vi.advanceTimersByTime(1)
     await nextTick()

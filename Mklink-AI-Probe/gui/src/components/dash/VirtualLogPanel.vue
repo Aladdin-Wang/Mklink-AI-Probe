@@ -32,7 +32,7 @@ interface VirtualLogEntry extends VirtualLogInput { readonly number: number }
 
 const MAX_LINES = 5000
 const FOLLOW_THRESHOLD = 24
-const FLUSH_INTERVAL_MS = 100
+const FLUSH_INTERVAL_MS = 33
 const rowHeight = 22
 const overscan = 6
 const viewport = ref<HTMLElement | null>(null)

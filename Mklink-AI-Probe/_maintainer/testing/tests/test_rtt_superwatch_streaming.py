@@ -237,6 +237,26 @@ def test_rtt_marker_lines_do_not_reset_stable_csv_waveform_layout():
     assert manager.get_status()["numeric_channels"] == ["v0", "v1", "v2", "v3"]
 
 
+def test_rtt_ignores_a_partial_initial_channel_name_before_locking_layout():
+    hub = _RecordingHub()
+    manager = RttStreamManager(stream_hub=hub)
+
+    manager.feed_rtt_bytes(
+        b"peed=90\ntemp=25,speed=100\ntemp=26,speed=101\n"
+    )
+    manager.flush_pending()
+
+    waveform = [
+        batch for batch in hub.snapshot()
+        if batch.stream_type is StreamType.WAVEFORM
+    ]
+    assert manager.get_status()["numeric_channels"] == ["speed", "temp"]
+    assert len(waveform) == 1
+    assert decode_waveform_samples(waveform[0].payload, 2, 2) == (
+        (100.0, 25.0), (101.0, 26.0),
+    )
+
+
 def test_rtt_default_marker_mix_stays_near_100fps_and_keeps_30hz_waveform():
     hub = _RecordingHub()
     manager = RttStreamManager(stream_hub=hub)

@@ -51,6 +51,7 @@ def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dic
     }
 
 logger = logging.getLogger(__name__)
+_RTT_DELIVERY_INTERVAL = 1.0 / 50.0
 
 
 def _positive_int(value: Any) -> int:
@@ -230,6 +231,8 @@ class RttStreamManager:
         self._pending_raw: list[RttLine] = []
         self._pending_numeric: list[tuple[float, ...]] = []
         self._numeric_channels: tuple[str, ...] = ()
+        self._numeric_candidate_channels: tuple[str, ...] = ()
+        self._numeric_candidate_rows: list[tuple[float, ...]] = []
 
     @property
     def running(self) -> bool:
@@ -276,11 +279,22 @@ class RttStreamManager:
                 channels = tuple(sorted(key for key in parsed if not key.startswith("_")))
                 if channels and all(math.isfinite(float(parsed[key])) for key in channels):
                     if not self._numeric_channels:
+                        row = tuple(float(parsed[key]) for key in channels)
+                        # Stream attachment can begin in the middle of a line.
+                        if self._numeric_candidate_channels != channels:
+                            self._numeric_candidate_channels = channels
+                            self._numeric_candidate_rows = [row]
+                            continue
+                        self._numeric_candidate_rows.append(row)
                         self._numeric_channels = channels
-                    if self._numeric_channels == channels:
+                        self._pending_numeric.extend(self._numeric_candidate_rows)
+                        self._numeric_candidate_channels = ()
+                        self._numeric_candidate_rows = []
+                    elif self._numeric_channels == channels:
                         self._pending_numeric.append(
                             tuple(float(parsed[key]) for key in channels)
                         )
+                    if self._numeric_channels == channels:
                         if len(self._pending_numeric) >= self._waveform_batch_samples:
                             self._flush_raw_batch()
                             self._flush_numeric_batch()
@@ -336,6 +350,8 @@ class RttStreamManager:
         self._pending_raw.clear()
         self._pending_numeric.clear()
         self._numeric_channels = ()
+        self._numeric_candidate_channels = ()
+        self._numeric_candidate_rows = []
 
         # Auto-detect parser strategy from initial RTT output
         from mklink.rtt_viewer import RttLineParser
@@ -361,7 +377,7 @@ class RttStreamManager:
                         continue
 
                     try:
-                        text = device.rtt_read(duration=0.5)
+                        text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
                     except Exception as exc:
                         if _device_in_error_state(device):
                             terminal_failure = exc
@@ -380,7 +396,7 @@ class RttStreamManager:
 
                     chunk = text if isinstance(text, bytes) else str(text).encode("utf-8")
                     self.feed_rtt_bytes(chunk)
-                    self._flush_raw_batch()
+                    self.flush_pending()
 
             except Exception as e:
                 logger.error("RTT stream error: %s", e)

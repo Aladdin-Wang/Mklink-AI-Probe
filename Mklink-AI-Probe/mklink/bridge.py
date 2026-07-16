@@ -32,6 +32,7 @@ _STREAM_STOP_COMMANDS = [
     b'vofa.send(0x20000000, "uint8_t", 0)\n',
     b"cmd.dump_memory(0x20000054, 4, 0)\n",
 ]
+_STREAM_READ_POLL_INTERVAL = 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +363,9 @@ class MKLinkSerialBridge:
                 self._response_buffer.clear()
             if chunk:
                 collected.append(chunk)
-            time.sleep(0.05)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(_STREAM_READ_POLL_INTERVAL, remaining))
 
         return "".join(collected)
 
