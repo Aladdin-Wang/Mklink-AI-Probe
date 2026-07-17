@@ -212,6 +212,7 @@ window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
 // State
 // ============================================================
 var FIELDS = {};
+var hiddenChannelNames = {};
 var FIELD_ORDER = [];
 var fieldOrderDirty = true;
 function markFieldOrderDirty() { fieldOrderDirty = true; }
@@ -1733,6 +1734,8 @@ function setChannelVisible(name, visible) {
   var meta = FIELDS[name];
   if (!meta) return;
   meta.visible = !!visible;
+  if (meta.visible) delete hiddenChannelNames[name];
+  else hiddenChannelNames[name] = true;
   var chip = document.querySelector('#var-selector .chip[data-name="' + cssEscape(name) + '"]');
   if (chip) chip.classList.toggle('active', meta.visible);
   updateWatchTable();
@@ -2194,6 +2197,20 @@ function processPoint(point) {
   }
 }
 
+function setHiddenChannels(names) {
+  hiddenChannelNames = {};
+  if (Array.isArray(names)) {
+    for (var i = 0; i < names.length; i++) hiddenChannelNames[String(names[i])] = true;
+  }
+  for (var name in FIELDS) {
+    if (!FIELDS.hasOwnProperty(name)) continue;
+    FIELDS[name].visible = !hiddenChannelNames[name];
+  }
+  updateWatchTable();
+  drawChart();
+  drawMinimap();
+}
+
 // Binary waveform bridge: Worker messages arrive as one transferable,
 // sample-major Float32 batch. Collection updates typed rings immediately;
 // WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
@@ -2285,6 +2302,7 @@ function configureBinaryChannels(channels) {
   binaryEnvelope = null;
   binaryLastUiPaint = -Infinity;
   applyChannelMetadata(metadata, false);
+  setHiddenChannels(Object.keys(hiddenChannelNames));
   updateTriggerSourceOptions();
 }
 
@@ -2450,6 +2468,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.resetBinaryStream = resetBinaryStream;
   binaryViewer.updateBinaryHealth = updateBinaryHealth;
   binaryViewer.updateAcquisitionStatus = syncDashboardStatus;
+  binaryViewer.setHiddenChannels = setHiddenChannels;
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
   binaryViewer.dispose = disposeViewer;

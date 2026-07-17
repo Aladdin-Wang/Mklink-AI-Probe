@@ -34,6 +34,9 @@ const viewerSource = fs.readFileSync(
 const componentSource = fs.readFileSync(
   path.resolve(process.cwd(), 'src/components/dash/WaveformViewer.vue'), 'utf8',
 )
+const viewerCss = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/assets/rtt_viewer.css'), 'utf8',
+)
 
 function waveformFrame(
   sequence: bigint, itemCount: number, timestampNs: bigint, payload: Float32Array,
@@ -639,6 +642,80 @@ describe('VOFA viewer hot path source guard', () => {
     expect(componentSource).not.toContain('superwatch-add-btn')
     expect(source).not.toContain('sw-search-dropdown')
     expect(source).not.toContain("API_SYMBOLS + 'search'")
+  })
+
+  it('suppresses the redundant Watch panel only in the desktop SuperWatch workspace', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      expect(runtime.wrapper.get('.waveform-viewer').classes()).toContain('superwatch-desktop')
+      expect(document.getElementById('watch-panel')).not.toBeNull()
+      expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #watch-panel')
+      expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #watch-resizer')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('hides selected curves without stopping their binary samples', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      runtime.viewer.setHiddenChannels(['B'])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 10, 2, 20, 3, 30).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+
+      expect(runtime.probe.fields().A.visible).toBe(true)
+      expect(runtime.probe.fields().B.visible).toBe(false)
+      expect(runtime.probe.fields().B.ringBuf.count).toBe(3)
+
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      expect(runtime.probe.fields().B.visible).toBe(false)
+      runtime.viewer.setHiddenChannels([])
+      expect(runtime.probe.fields().B.visible).toBe(true)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('forwards Vue hidden-channel prop replacements to the canvas runtime', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      await runtime.wrapper.setProps({ hiddenChannels: new Set(['B']) })
+      await nextTick()
+
+      expect(runtime.probe.fields().A.visible).toBe(true)
+      expect(runtime.probe.fields().B.visible).toBe(false)
+    } finally {
+      runtime.cleanup()
+    }
   })
 
   it('zooms, pans, and resets the X axis through its hit region', async () => {

@@ -1,5 +1,9 @@
 <template>
-  <div ref="container" class="waveform-viewer"></div>
+  <div
+    ref="container"
+    class="waveform-viewer"
+    :class="{ 'superwatch-desktop': props.mode === 'SuperWatch' }"
+  ></div>
 </template>
 
 <script setup lang="ts">
@@ -16,6 +20,7 @@ const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
   deviceConnected: boolean
+  hiddenChannels?: ReadonlySet<string>
 }>()
 
 const emit = defineEmits<{
@@ -62,7 +67,14 @@ function applyVofaChannels(channels: readonly Record<string, unknown>[]): void {
   visibleRequestId++
   pendingBatch = null
   if (props.mode === 'VOFA') binary.configure(Math.max(1, channels.length))
-  ;(window as any).__waveformViewers?.[props.mode]?.configureBinaryChannels?.(vofaChannels)
+  const viewer = (window as any).__waveformViewers?.[props.mode]
+  viewer?.configureBinaryChannels?.(vofaChannels)
+  applyHiddenChannels()
+}
+
+function applyHiddenChannels(): void {
+  const names = [...(props.hiddenChannels ?? [])].sort()
+  ;(window as any).__waveformViewers?.[props.mode]?.setHiddenChannels?.(names)
 }
 
 function onVofaChannels(event: Event): void {
@@ -210,6 +222,8 @@ watch(() => props.deviceConnected, (val) => {
   const viewers = (window as any).__waveformViewers
   if (viewers?.[props.mode]?.setDeviceConnected) viewers[props.mode].setDeviceConnected(val)
 })
+
+watch(() => props.hiddenChannels, applyHiddenChannels)
 
 onUnmounted(() => {
   disposed = true
@@ -468,6 +482,7 @@ function loadViewerScript(el: HTMLDivElement) {
     }
     if (viewers?.[props.mode]) {
       viewers[props.mode].configureBinaryChannels?.(vofaChannels)
+      applyHiddenChannels()
       if (latestVofaStatus) viewers[props.mode].updateAcquisitionStatus?.(latestVofaStatus)
       if (pendingBatch) {
         viewers[props.mode].acceptBinaryBatch?.(pendingBatch, vofaChannels)
