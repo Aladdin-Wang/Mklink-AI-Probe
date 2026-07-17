@@ -12,6 +12,7 @@ from mklink.dwarf_parser import (
     DwarfStruct,
     DwarfVariable,
 )
+from mklink.device import Device
 from mklink.symbol_catalog import (
     SymbolCatalog,
     SymbolValueError,
@@ -172,3 +173,30 @@ def test_rebind_paths_reports_preserved_updated_and_removed(tmp_path):
     assert summary.preserved == ("controller.target",)
     assert summary.updated == ("gain",)
     assert summary.removed == ("mode",)
+
+
+def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
+    first_axf = tmp_path / "first.axf"
+    second_axf = tmp_path / "second.axf"
+    first_axf.write_bytes(b"first")
+    second_axf.write_bytes(b"second")
+    loads = iter([_dwarf_fixture(), RuntimeError("bad DWARF")])
+
+    def load_dwarf(_path, *, use_cache=False):
+        result = next(loads)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr("mklink.dwarf_parser.load_dwarf_info", load_dwarf)
+    device = Device(axf=str(first_axf))
+
+    first = device.reparse_axf_atomically()
+    old_catalog = device.symbol_catalog
+    failed = device.parse_axf(str(second_axf))
+
+    assert first.generation == 1
+    assert failed["loaded"] is False
+    assert "bad DWARF" in failed["error"]
+    assert device.symbol_catalog is old_catalog
+    assert device.axf_status["axf_path"] == str(first_axf)

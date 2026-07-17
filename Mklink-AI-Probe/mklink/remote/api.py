@@ -1922,6 +1922,53 @@ def create_app(
     # Symbols / DWARF API
     # ===================================================================
 
+    def _require_symbol_catalog():
+        device = _state.get("device")
+        if not device:
+            raise HTTPException(status_code=400, detail="No device instance")
+        catalog = getattr(device, "symbol_catalog", None)
+        if catalog is None:
+            raise HTTPException(status_code=400, detail="No DWARF info loaded (need AXF/ELF)")
+        return catalog
+
+    @app.get("/api/symbols/status")
+    async def symbols_status():
+        catalog = _require_symbol_catalog()
+        return {
+            "loaded": True,
+            "generation": catalog.generation,
+            "parsed_at": catalog.parsed_at,
+            "fingerprint": catalog.fingerprint.to_dict(),
+            "stale": catalog.is_stale(),
+            "total": len(catalog.items),
+        }
+
+    @app.get("/api/symbols/catalog")
+    async def symbols_catalog(
+        q: str = "",
+        writable: bool = False,
+        offset: int = 0,
+        limit: int = 200,
+    ):
+        catalog = _require_symbol_catalog()
+        return catalog.to_page(
+            query=q,
+            writable=writable,
+            offset=offset,
+            limit=limit,
+        )
+
+    @app.post("/api/symbols/reparse")
+    async def symbols_reparse():
+        device = _state.get("device")
+        if not device or not device.connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, device.parse_axf)
+        if result.get("error"):
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+
     @app.get("/api/symbols/search")
     async def symbols_search(q: str = ""):
         device = _state.get("device")

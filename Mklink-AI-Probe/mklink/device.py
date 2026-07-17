@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import struct
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,6 +197,8 @@ class Device:
         self._systemview_session = None
         self._systemview_parser = None
         self._dwarf_info = None
+        self._symbol_catalog = None
+        self._symbol_lock = threading.RLock()
         self._axf_error = None  # reason DWARF load was skipped (e.g. readelf missing)
         self._connected = False
 
@@ -297,32 +300,59 @@ class Device:
     # DWARF / symbol loading
     # ------------------------------------------------------------------
     def _load_dwarf_info(self) -> None:
-        from mklink.dwarf_parser import load_dwarf_info
         if self._axf and Path(self._axf).exists():
             try:
-                self._dwarf_info = load_dwarf_info(self._axf)
-                self._axf_error = None
+                self.reparse_axf_atomically()
             except Exception as e:
                 # readelf missing / unreadable ELF / DWARF parse error: never
                 # let this crash connect() — the bridge is already up. Record
                 # the reason so axf_status / the MCP layer can surface it and
                 # guide the user (e.g. install the GNU Arm toolchain).
-                self._dwarf_info = None
                 self._axf_error = str(e)
+
+    @property
+    def symbol_catalog(self):
+        with self._symbol_lock:
+            return self._symbol_catalog
+
+    def reparse_axf_atomically(self, axf_path: str | None = None):
+        from mklink.dwarf_parser import load_dwarf_info
+        from mklink.symbol_catalog import AxfFingerprint, SymbolCatalog
+
+        candidate = str(axf_path or self._axf or "")
+        if not candidate:
+            raise DeviceError("No AXF path set")
+        if not Path(candidate).exists():
+            raise DeviceError(f"AXF not found: {candidate}")
+
+        fingerprint = AxfFingerprint.from_path(candidate)
+        info = load_dwarf_info(candidate)
+        with self._symbol_lock:
+            generation = (self._symbol_catalog.generation if self._symbol_catalog else 0) + 1
+        catalog = SymbolCatalog.from_dwarf(
+            info,
+            axf_path=candidate,
+            generation=generation,
+            ram_ranges=((_SRAM_START, _SRAM_END),),
+        )
+        if catalog.fingerprint != fingerprint:
+            raise DeviceError("AXF changed while symbols were being parsed")
+
+        with self._symbol_lock:
+            self._axf = candidate
+            self._dwarf_info = info
+            self._symbol_catalog = catalog
+            self._axf_error = None
+        return catalog
 
     def parse_axf(self, axf_path: str | None = None) -> dict:
         """手动触发 AXF 解析。返回解析结果摘要。"""
-        if axf_path:
-            self._axf = axf_path
-        if not self._axf:
-            return {"loaded": False, "error": "No AXF path set"}
-        if not Path(self._axf).exists():
-            return {"loaded": False, "error": f"AXF not found: {self._axf}"}
         try:
-            self._load_dwarf_info()
+            self.reparse_axf_atomically(axf_path)
             return self.axf_status
         except Exception as e:
-            return {"loaded": False, "error": str(e)}
+            self._axf_error = str(e)
+            return {"loaded": False, "error": str(e), "active": self.axf_status}
 
     @property
     def axf_status(self) -> dict:
@@ -338,7 +368,8 @@ class Device:
                 out["error"] = f"AXF file not found: {self._axf}"
             return out
         info = self._dwarf_info
-        return {
+        catalog = self.symbol_catalog
+        out = {
             "loaded": True,
             "axf_path": self._axf,
             "variable_count": len(info.variables),
@@ -346,6 +377,16 @@ class Device:
             "enum_count": len(info.enums),
             "readelf_available": tc["readelf_available"],
         }
+        if catalog is not None:
+            out.update({
+                "catalog_generation": catalog.generation,
+                "catalog_count": len(catalog.items),
+                "catalog_stale": catalog.is_stale(),
+                "parsed_at": catalog.parsed_at,
+            })
+        if self._axf_error:
+            out["last_error"] = self._axf_error
+        return out
 
     # ------------------------------------------------------------------
     # Flash
