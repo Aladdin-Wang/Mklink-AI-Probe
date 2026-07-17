@@ -6,20 +6,21 @@ import SymbolVariablePanel from './SymbolVariablePanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
 
 describe('SuperWatchTab', () => {
-  it('uses a two-column workspace and passes waveform values to the variable directory', async () => {
+  it('shares waveform values and channel visibility between both workspace panes', async () => {
     const wrapper = mount(SuperWatchTab, {
       props: { deviceConnected: true },
       global: {
         stubs: {
           SymbolVariablePanel: {
             name: 'SymbolVariablePanel',
-            props: ['deviceConnected', 'latestValues'],
+            emits: ['visibility-change', 'selection-removed'],
+            props: ['deviceConnected', 'latestValues', 'hiddenChannels'],
             template: '<aside class="variable-panel-stub" />',
           },
           WaveformViewer: {
             name: 'WaveformViewer',
             emits: ['latest-values'],
-            props: ['mode', 'deviceConnected'],
+            props: ['mode', 'deviceConnected', 'hiddenChannels'],
             template: '<main class="waveform-stub" />',
           },
         },
@@ -31,5 +32,15 @@ describe('SuperWatchTab', () => {
     await nextTick()
 
     expect(wrapper.findComponent(SymbolVariablePanel).props('latestValues')).toEqual({ gain: 1.25 })
+
+    wrapper.findComponent(SymbolVariablePanel).vm.$emit('visibility-change', 'gain', false)
+    await nextTick()
+    expect(wrapper.findComponent(SymbolVariablePanel).props('hiddenChannels')).toEqual(new Set(['gain']))
+    expect(wrapper.findComponent(WaveformViewer).props('hiddenChannels')).toEqual(new Set(['gain']))
+
+    wrapper.findComponent(SymbolVariablePanel).vm.$emit('selection-removed', 'gain')
+    await nextTick()
+    expect(wrapper.findComponent(SymbolVariablePanel).props('hiddenChannels')).toEqual(new Set())
+    expect(wrapper.findComponent(WaveformViewer).props('hiddenChannels')).toEqual(new Set())
   })
 })

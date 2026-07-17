@@ -3,12 +3,16 @@
     <SymbolVariablePanel
       :device-connected="deviceConnected"
       :latest-values="latestValues"
+      :hidden-channels="hiddenChannels"
+      @visibility-change="setChannelVisibility"
+      @selection-removed="clearChannelVisibility"
     />
     <div class="workspace-resizer" title="调整变量目录宽度" @mousedown="startResize"></div>
     <div class="waveform-pane">
       <WaveformViewer
         mode="SuperWatch"
         :device-connected="deviceConnected"
+        :hidden-channels="hiddenChannels"
         @latest-values="latestValues = $event"
       />
     </div>
@@ -24,8 +28,23 @@ defineProps<{ deviceConnected: boolean }>()
 
 const panelWidth = ref(340)
 const latestValues = shallowRef<Record<string, number | boolean>>({})
+const hiddenChannels = shallowRef(new Set<string>())
 let resizeStartX = 0
 let resizeStartWidth = 0
+
+function setChannelVisibility(path: string, visible: boolean): void {
+  const next = new Set(hiddenChannels.value)
+  if (visible) next.delete(path)
+  else next.add(path)
+  hiddenChannels.value = next
+}
+
+function clearChannelVisibility(path: string): void {
+  if (!hiddenChannels.value.has(path)) return
+  const next = new Set(hiddenChannels.value)
+  next.delete(path)
+  hiddenChannels.value = next
+}
 
 function startResize(event: MouseEvent): void {
   resizeStartX = event.clientX

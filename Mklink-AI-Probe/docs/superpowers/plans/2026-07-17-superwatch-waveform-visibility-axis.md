@@ -44,7 +44,7 @@ Expected: FAIL because the visibility props, events, and eye buttons do not exis
 
 - [ ] **Step 3: Add the icon dependency and implement parent-owned state**
 
-Install `lucide-vue-next`, then add this state flow to `SuperWatchTab.vue`:
+Install `@lucide/vue`, then add this state flow to `SuperWatchTab.vue`:
 
 ```ts
 const hiddenChannels = shallowRef(new Set<string>())

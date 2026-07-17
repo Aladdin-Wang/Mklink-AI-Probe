@@ -47,6 +47,22 @@
               :disabled="selectionBusy.has(symbol.path)"
               @change="toggleSelection(symbol.path, $event)"
             />
+            <span class="visibility-slot">
+              <button
+                v-if="selected.has(symbol.path)"
+                class="visibility-button"
+                type="button"
+                :class="{ hidden: hiddenChannels?.has(symbol.path) }"
+                :data-testid="`visibility-${symbol.path}`"
+                :aria-label="hiddenChannels?.has(symbol.path) ? `显示 ${symbol.path} 波形` : `隐藏 ${symbol.path} 波形`"
+                :aria-pressed="!hiddenChannels?.has(symbol.path)"
+                :title="hiddenChannels?.has(symbol.path) ? '显示波形' : '隐藏波形'"
+                @click.stop="toggleVisibility(symbol.path)"
+              >
+                <EyeOff v-if="hiddenChannels?.has(symbol.path)" :size="15" aria-hidden="true" />
+                <Eye v-else :size="15" aria-hidden="true" />
+              </button>
+            </span>
             <button class="variable-name" type="button" @click="beginEdit(symbol)">
               {{ symbol.path }}
             </button>
@@ -118,6 +134,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { Eye, EyeOff } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
 import type { SymbolDescriptor } from '../../types/mklink'
@@ -127,6 +144,12 @@ const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const props = defineProps<{
   deviceConnected: boolean
   latestValues: Record<string, number | boolean>
+  hiddenChannels?: ReadonlySet<string>
+}>()
+
+const emit = defineEmits<{
+  'visibility-change': [path: string, visible: boolean]
+  'selection-removed': [path: string]
 }>()
 
 const catalog = useSymbolCatalog()
@@ -198,12 +221,17 @@ async function toggleSelection(path: string, event: Event): Promise<void> {
       body: JSON.stringify({ name: path }),
     })
     selected.value = withSet(selected.value, path, checked)
+    if (!checked) emit('selection-removed', path)
   } catch (cause) {
     ;(event.target as HTMLInputElement).checked = !checked
     toast.error(cause instanceof Error ? cause.message : String(cause))
   } finally {
     selectionBusy.value = withSet(selectionBusy.value, path, false)
   }
+}
+
+function toggleVisibility(path: string): void {
+  emit('visibility-change', path, props.hiddenChannels?.has(path) ?? false)
 }
 
 function beginEdit(symbol: SymbolDescriptor): void {
@@ -251,7 +279,10 @@ async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
     const next = new Set(selected.value)
-    summary.removed.forEach(path => next.delete(path))
+    summary.removed.forEach(path => {
+      next.delete(path)
+      emit('selection-removed', path)
+    })
     selected.value = next
     toast.success(
       `符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`,
@@ -292,15 +323,20 @@ watch(() => props.deviceConnected, connected => {
 .variable-group h3 { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
 .variable-row { border-bottom: 1px solid var(--border); }
 .variable-row.selected { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.variable-main { display: grid; grid-template-columns: 18px minmax(100px, 1fr) 64px 66px 42px; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; }
+.variable-main { display: grid; grid-template-columns: 18px 24px minmax(100px, 1fr) 64px 66px 42px; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; }
+.visibility-slot { display: grid; place-items: center; width: 24px; height: 24px; }
+.visibility-button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.visibility-button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.visibility-button.hidden { color: var(--muted); }
+.visibility-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .variable-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; font: 12px Consolas, monospace; }
 .variable-type, .variable-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 11px Consolas, monospace; }
 .variable-value { color: var(--info); text-align: right; }
 .edit-button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; }
 .edit-button:disabled { color: var(--muted); cursor: default; }
-.write-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 0 8px 8px 31px; }
+.write-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 0 8px 8px 60px; }
 .write-editor input, .write-editor select { min-width: 0; height: 28px; }
 .write-editor .btn { min-height: 28px; padding: 3px 8px; }
-.write-success { padding: 0 8px 7px 31px; color: var(--success); font-size: 11px; }
+.write-success { padding: 0 8px 7px 60px; color: var(--success); font-size: 11px; }
 .empty-state { padding: 24px 12px; color: var(--muted); text-align: center; font-size: 12px; }
 </style>

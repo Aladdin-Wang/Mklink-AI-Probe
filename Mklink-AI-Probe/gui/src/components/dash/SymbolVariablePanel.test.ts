@@ -80,7 +80,9 @@ describe('SymbolVariablePanel', () => {
       .mockResolvedValueOnce(okJson({ item: { name: 'controller.target' } }))
       .mockResolvedValueOnce(okJson({ item: { name: 'gain', removed: true } }))
     vi.stubGlobal('fetch', fetchMock)
-    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: {}, hiddenChannels: new Set<string>() },
+    })
     await flushPromises()
 
     await wrapper.get('[data-testid="toggle-controller.target"]').setValue(true)
@@ -94,6 +96,39 @@ describe('SymbolVariablePanel', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/dash/superwatch/remove', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ name: 'gain' }),
     }))
+    expect(wrapper.emitted('selection-removed')).toEqual([['gain']])
+  })
+
+  it('shows an eye only for selected variables and toggles rendering without changing acquisition', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({ items: [{ name: 'gain' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: {}, hiddenChannels: new Set<string>() },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="visibility-controller.target"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="visibility-gain"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('[data-testid="visibility-gain"]').trigger('click')
+
+    expect(wrapper.emitted('visibility-change')).toEqual([['gain', false]])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the hidden state without removing the selected variable', async () => {
+    const wrapper = mount(SymbolVariablePanel, {
+      props: {
+        deviceConnected: true,
+        latestValues: { gain: 1.25 },
+        hiddenChannels: new Set(['gain']),
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="toggle-gain"]').attributes('checked')).toBeDefined()
+    expect(wrapper.get('[data-testid="visibility-gain"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-testid="latest-gain"]').text()).toContain('1.25')
   })
 
   it('writes a float from the variable row and shows the verified value', async () => {
