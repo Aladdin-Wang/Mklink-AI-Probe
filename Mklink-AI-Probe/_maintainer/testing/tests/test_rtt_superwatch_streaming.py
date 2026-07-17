@@ -4,6 +4,7 @@ import struct
 import threading
 import time
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -794,6 +795,47 @@ def test_superwatch_write_failure_restores_paused_state(tmp_path, monkeypatch):
         "pause",
     ]
     assert manager.get_status()["state"] == "paused"
+
+
+def test_superwatch_prepare_rebinds_existing_runtime_to_reconnected_device(
+    tmp_path, monkeypatch
+):
+    manager = SuperWatchStreamManager()
+    manager._runtime = _MutableWatchRuntime()
+    old_root = tmp_path / "old"
+    new_root = tmp_path / "new"
+    old_root.mkdir()
+    new_root.mkdir()
+    old_device, old_operations = _symbol_write_device(old_root)
+    new_device, new_operations = _symbol_write_device(new_root)
+    manager._device = old_device
+
+    manager.prepare(new_device)
+    monkeypatch.setattr(
+        manager,
+        "_readback_once",
+        lambda address, size: new_operations.append(("readback", address, size))
+        or struct.pack("<f", 1.5),
+        raising=False,
+    )
+
+    result = manager.write_symbol("gain", generation=1, value=1.5)
+
+    assert old_operations == []
+    assert new_operations == [
+        ("write", 0x20000020, struct.pack("<f", 1.5)),
+        ("readback", 0x20000020, 4),
+    ]
+    assert result["verified"] is True
+
+
+def test_superwatch_readback_uses_command_mode_after_dump_stream_stops():
+    manager = SuperWatchStreamManager()
+    device = SimpleNamespace(read_memory=Mock(return_value=b"\x00"))
+    manager._device = device
+
+    assert manager._readback_once(0x20000020, 1) == b"\x00"
+    device.read_memory.assert_called_once_with(0x20000020, 1)
 
 
 def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path, monkeypatch):

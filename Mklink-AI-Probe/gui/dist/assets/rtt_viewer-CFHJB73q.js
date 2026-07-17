@@ -199,7 +199,6 @@ var API_BASE = CONFIG.apiBase || '';
 var API_STREAM = API_BASE + '/api/dash/' + _dashType + '/stream';
 var API_CTRL = API_BASE + '/api/dash/' + _dashType + '/';
 var API_SW = API_BASE + '/api/dash/superwatch/';
-var API_SYMBOLS = API_BASE + '/api/symbols/';
 var viewerAbortController = new AbortController();
 
 function addViewerGlobalListener(target, type, listener) {
@@ -360,6 +359,8 @@ var canvas = document.getElementById('chart');
 var ctx = canvas.getContext('2d');
 var tooltip = document.getElementById('tooltip');
 var wrap = document.getElementById('chart-wrap');
+var xAxisHit = document.getElementById('x-axis-hit');
+var yAxisHit = document.getElementById('y-axis-hit');
 
 function resize() {
   var r = wrap.getBoundingClientRect();
@@ -488,14 +489,6 @@ if (!IS_VOFA_MODE && !IS_SUPERWATCH_MODE) {
   var ig = document.getElementById('interval-group');
   if (ig) ig.style.display = 'none';
 }
-if (IS_SUPERWATCH_MODE) {
-  var swp = document.getElementById('superwatch-panel');
-  if (swp) {
-    swp.classList.add('visible');
-    swp.setAttribute('aria-hidden', 'false');
-  }
-}
-
 function updateSampleRateBadge(interval, rate, allowIntervalEstimate) {
   if (Number.isFinite(Number(interval)) && Number(interval) > 0) {
     estimatedInterval = Number(interval);
@@ -553,11 +546,22 @@ function apiErrorMessage(payload, status) {
   return 'Request failed' + (status ? ' (' + status + ')' : '');
 }
 
+var controlErrorUntil = 0;
+
 function showControlError(message) {
   var connStatus = document.getElementById('conn-status');
   if (!connStatus) return;
+  controlErrorUntil = Date.now() + 5000;
   connStatus.textContent = message || t('error');
   connStatus.className = 'badge badge-err';
+}
+
+function superwatchErrorMessage(message, name) {
+  var text = String(message || '');
+  if (/Cannot resolve/i.test(text) && /outside SRAM|not found/i.test(text)) {
+    return '无法监视“' + String(name || '') + '”：符号不存在或地址不在 SRAM 范围内。';
+  }
+  return '添加变量失败：' + (text || '未知错误');
 }
 
 function syncDashboardStatus(d) {
@@ -603,18 +607,24 @@ function updateCollectionUI(state) {
   badge.className = 'status-' + state;
 
   if (state === 'running') {
-    connStatus.textContent = t('live');
-    connStatus.className = 'badge badge-ok';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('live');
+      connStatus.className = 'badge badge-ok';
+    }
     paused = false;
   } else if (state === 'paused') {
     renderGeneration++;
     updatePending = false;
-    connStatus.textContent = t('paused');
-    connStatus.className = 'badge badge-warn';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('paused');
+      connStatus.className = 'badge badge-warn';
+    }
     paused = true;
   } else {
-    connStatus.textContent = t('stopped');
-    connStatus.className = 'badge badge-warn';
+    if (Date.now() >= controlErrorUntil) {
+      connStatus.textContent = t('stopped');
+      connStatus.className = 'badge badge-warn';
+    }
   }
 }
 
@@ -672,15 +682,21 @@ document.getElementById('btn-pause').addEventListener('click', function() {
   updateCollectionUI(renderPaused ? 'paused' : 'running');
 });
 document.getElementById('btn-stop').addEventListener('click', function() {
-  if (!confirm('Stop data collection? This will end the session.')) return;
   fetch(API_CTRL + 'stop', {method:'POST'})
-    .then(function(r){return r.json()})
+    .then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok) throw new Error(apiErrorMessage(d, r.status));
+        return d;
+      });
+    })
     .then(function(d){
       renderPaused = false;
       updateCollectionUI('stopped');
       notifyVofaStreamState('stopped');
     })
-    .catch(function(){});
+    .catch(function(err){
+      showControlError(err && err.message ? err.message : t('error'));
+    });
 });
 document.getElementById('btn-apply-buffer').addEventListener('click', function() {
   var val = parseInt(document.getElementById('buffer-input').value, 10);
@@ -2511,6 +2527,115 @@ function resetChannelY(name) {
   channelYState[name] = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
 }
 
+function clampAxisOffset(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function zoomTimelineAt(clientX, deltaY) {
+  var full = getFullTimeRange();
+  var fullRange = full.tMax - full.tMin;
+  if (!(fullRange > 0)) return;
+  var current = getVisibleTimeRange();
+  var rect = canvas.getBoundingClientRect();
+  var pointerX = Number.isFinite(clientX) ? clientX : rect.left + rect.width / 2;
+  var ratio = Math.max(0, Math.min(1, (pointerX - rect.left) / Math.max(1, rect.width)));
+  var anchor = current.tMin + ratio * (current.tMax - current.tMin);
+  var factor = deltaY > 0 ? 0.8 : 1.25;
+  var nextZoom = Math.max(1, Math.min(100, timelineView.zoom * factor));
+  timelineView.zoom = nextZoom;
+  if (nextZoom === 1) {
+    timelineView.offset = 0;
+  } else {
+    var nextRange = fullRange / nextZoom;
+    var available = fullRange - nextRange;
+    timelineView.offset = clampAxisOffset((anchor - ratio * nextRange - full.tMin) / available);
+  }
+  drawChart();
+  drawMinimap();
+}
+
+function zoomVisibleY(deltaY) {
+  var factor = deltaY > 0 ? 0.8 : 1.25;
+  for (var name in FIELDS) {
+    if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
+    var state = ensureChannelYState(name);
+    state.autoRange = false;
+    state.manualMin = null;
+    state.manualMax = null;
+    state.zoom = Math.max(0.1, Math.min(100, state.zoom * factor));
+  }
+  drawChart();
+}
+
+function resetVisibleY() {
+  globalYView = { zoom: 1, offset: 0 };
+  for (var name in channelYState) resetChannelY(name);
+  drawChart();
+}
+
+var axisDrag = null;
+
+if (xAxisHit && yAxisHit) {
+  xAxisHit.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    zoomTimelineAt(e.clientX, e.deltaY);
+  }, { passive: false, signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    zoomVisibleY(e.deltaY);
+  }, { passive: false, signal: viewerAbortController.signal });
+
+  xAxisHit.addEventListener('mousedown', function(e) {
+    if (e.button !== 0 || timelineView.zoom <= 1) return;
+    axisDrag = { mode: 'x', startX: e.clientX, startOffset: timelineView.offset };
+    e.preventDefault();
+  }, { signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    var offsets = {};
+    var ranges = {};
+    for (var name in FIELDS) {
+      if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
+      var state = ensureChannelYState(name);
+      var range = getChannelYRange(name);
+      state.autoRange = false;
+      state.manualMin = null;
+      state.manualMax = null;
+      offsets[name] = state.offset;
+      ranges[name] = range ? range.yMax - range.yMin : 1;
+    }
+    axisDrag = { mode: 'y', startY: e.clientY, offsets: offsets, ranges: ranges };
+    e.preventDefault();
+  }, { signal: viewerAbortController.signal });
+
+  addViewerGlobalListener(window, 'mousemove', function(e) {
+    if (!axisDrag) return;
+    var rect = canvas.getBoundingClientRect();
+    if (axisDrag.mode === 'x') {
+      var dx = (e.clientX - axisDrag.startX) / Math.max(1, rect.width);
+      timelineView.offset = clampAxisOffset(axisDrag.startOffset - dx);
+      drawChart();
+      drawMinimap();
+    } else {
+      var dy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
+      for (var name in axisDrag.offsets) {
+        ensureChannelYState(name).offset = axisDrag.offsets[name] + dy * axisDrag.ranges[name];
+      }
+      drawChart();
+    }
+  });
+  addViewerGlobalListener(window, 'mouseup', function() { axisDrag = null; });
+
+  xAxisHit.addEventListener('dblclick', function() {
+    timelineView.zoom = 1;
+    timelineView.offset = 0;
+    drawChart();
+    drawMinimap();
+  }, { signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('dblclick', resetVisibleY, { signal: viewerAbortController.signal });
+}
+
 function formatTimeAxisValue(seconds) {
   if (timeUnit === 'us') return Math.round(seconds * 1000000) + 'us';
   if (timeUnit === 's') return seconds.toFixed(3) + 's';
@@ -3392,52 +3517,14 @@ function superwatchAddName(name) {
         applyChannelMetadata(meta, false);
         updateUI();
       } else if (d.item && d.item.error) {
-        alert(d.item.error);
+        showControlError(superwatchErrorMessage(d.item.error, name));
       } else if (d.error) {
-        alert(d.error);
+        showControlError(superwatchErrorMessage(d.error, name));
       }
     })
-    .catch(function(){});
-}
-
-function superwatchSearch(query) {
-  var dropdown = document.getElementById('sw-search-dropdown');
-  if (!dropdown) return;
-  if (!query || query.length < 1) {
-    dropdown.innerHTML = '';
-    dropdown.classList.remove('visible');
-    return;
-  }
-  fetch(API_SYMBOLS + 'search?q=' + encodeURIComponent(query))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      var results = d.results || [];
-      if (results.length === 0) {
-        dropdown.innerHTML = '<li style="color:var(--dim);cursor:default">No matches</li>';
-        dropdown.classList.add('visible');
-        return;
-      }
-      var html = '';
-      for (var i = 0; i < results.length; i++) {
-        html += '<li data-name="' + escapeHtml(results[i].name) + '">' +
-          escapeHtml(results[i].name) +
-          '<span class="sw-type">' + escapeHtml(results[i].type || results[i].kind || '') + '</span>' +
-          '</li>';
-      }
-      dropdown.innerHTML = html;
-      dropdown.classList.add('visible');
-    })
-    .catch(function(){});
-}
-
-function superwatchInspectSelected() {
-  var names = sortedFieldNames();
-  var name = selectedChannel || (names.length ? names[0] : '');
-  if (!name) return;
-  fetch(API_SW + 'inspect?name=' + encodeURIComponent(name))
-    .then(function(r){ return r.json(); })
-    .then(function(d){ showInspectorTree(d.tree); })
-    .catch(function(){});
+    .catch(function(err){
+      showControlError(superwatchErrorMessage(err && err.message, name));
+    });
 }
 
 function downloadJSON(filename, data) {
@@ -3480,69 +3567,6 @@ addViewerGlobalListener(document, 'click', function(e) {
   menu.classList.remove('visible');
   menu.setAttribute('aria-hidden', 'true');
 });
-
-if (IS_SUPERWATCH_MODE) {
-  var swSearchInput = document.getElementById('superwatch-search-input');
-  var swDropdown = document.getElementById('sw-search-dropdown');
-  var swTimeUnit = document.getElementById('time-unit-select');
-  // Add button: add whatever is typed in the search input
-  document.getElementById('superwatch-add-btn').addEventListener('click', function() {
-    superwatchAddName(swSearchInput.value);
-  });
-  // Dropdown: click item fills input (don't auto-add)
-  swDropdown.addEventListener('click', function(e) {
-    var li = e.target.closest('li');
-    if (li && li.dataset.name) {
-      swSearchInput.value = li.dataset.name;
-      swDropdown.classList.remove('visible');
-      swActiveIdx = -1;
-    }
-  });
-  // Search input: filter + keyboard navigation
-  var swActiveIdx = -1;
-  swSearchInput.addEventListener('input', function() {
-    swActiveIdx = -1;
-    superwatchSearch(swSearchInput.value);
-  });
-  swSearchInput.addEventListener('keydown', function(e) {
-    var items = swDropdown.querySelectorAll('li[data-name]');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      swActiveIdx = Math.min(swActiveIdx + 1, items.length - 1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      swActiveIdx = Math.max(swActiveIdx - 1, 0);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (swActiveIdx >= 0 && items[swActiveIdx]) {
-        // Fill input with selected item, close dropdown
-        swSearchInput.value = items[swActiveIdx].dataset.name;
-        swDropdown.classList.remove('visible');
-        swActiveIdx = -1;
-      } else if (swSearchInput.value.trim()) {
-        // No dropdown selection: add whatever is typed
-        superwatchAddName(swSearchInput.value);
-      }
-      return;
-    } else if (e.key === 'Escape') {
-      swDropdown.classList.remove('visible');
-      swActiveIdx = -1;
-      return;
-    } else { return; }
-    // Highlight active item
-    for (var i = 0; i < items.length; i++) items[i].classList.toggle('active', i === swActiveIdx);
-  });
-  // Close dropdown on outside click
-  addViewerGlobalListener(document, 'click', function(e) {
-    if (!e.target.closest('#sw-search-wrap')) swDropdown.classList.remove('visible');
-  });
-  swTimeUnit.addEventListener('change', function() {
-    timeUnit = swTimeUnit.value;
-    drawChart();
-    drawMinimap();
-  });
-  document.getElementById('superwatch-inspect-btn').addEventListener('click', superwatchInspectSelected);
-}
 
 function getSelectedThresholdChannel() {
   var sel = document.getElementById('threshold-channel');

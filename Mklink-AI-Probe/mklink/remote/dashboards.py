@@ -1193,9 +1193,10 @@ class SuperWatchStreamManager:
     def prepare(self, device) -> None:
         """Build runtime from DWARF info so search/add work before collection starts."""
         with self._read_lock:
-            if self._runtime is not None:
-                return
             self._device = device
+            if self._runtime is not None:
+                self._runtime.port = getattr(device, "_port", None)
+                return
             dwarf_info = getattr(device, "_dwarf_info", None)
             svd_registers = {}
             try:
@@ -1385,13 +1386,8 @@ class SuperWatchStreamManager:
     def _readback_once(self, address: int, size: int) -> bytes:
         if self._device is None:
             raise RuntimeError("SuperWatch device is unavailable")
-        bridge = getattr(self._device, "_bridge", None)
-        if bridge is not None and all(
-            callable(getattr(bridge, name, None))
-            for name in ("_enter_stream", "_write_raw", "drain_stream_bytes", "_exit_stream")
-        ):
-            from mklink.dump_memory import read_dump_memory_once
-            return read_dump_memory_once(bridge, address, size)
+        # The continuous dump stream is already stopped. Re-entering dump mode
+        # for a one-shot read can leave firmware unable to restart streaming.
         return self._device.read_memory(address, size)
 
     def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
