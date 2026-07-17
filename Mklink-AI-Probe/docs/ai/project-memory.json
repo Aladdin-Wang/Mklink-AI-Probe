@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-17T12:16:00+08:00",
+  "updated_at": "2026-07-17T22:05:39+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "cbe0d99 adds installed-runtime MicroKeen discovery and automatic HEX/BIN inspection; the final documentation commit contains this memory",
+    "head": "617ad90 restores SuperWatch typed writes after device reconnect and resumes continuous dump acquisition; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
@@ -18,10 +18,11 @@
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; installed online-flash MicroKeen discovery and firmware auto-inspection recovery are complete",
-    "current_task": "Installed online flash now auto-discovers MicroKeen CMSIS-DAP probes and automatically inspects HEX or explicit-base BIN files; collect follow-up feedback and reproduce the remaining first-load offline target-search transient",
-    "latest_commit": "cbe0d99 fix: auto-discover MicroKeen probes for online flash",
+    "active_plan": "none; SuperWatch symbol workspace, reconnect-safe typed writes, installed online-flash HIL, packaging, and final regression are complete",
+    "current_task": "SuperWatch typed writes now survive disconnect/reconnect, verify through command-mode readback, and automatically restore continuous dump acquisition; collect follow-up feedback and reproduce the remaining first-load offline target-search transient",
+    "latest_commit": "617ad90 fix: restore SuperWatch writes after reconnect",
     "online_flash_discovery_implementation": "complete; the packaged sidecar includes pyOCD and cmsis_pack_manager runtime data, the API maps enumeration failures to an actionable privacy-safe error, and page-entry discovery retries both empty results and transient cold-start failures before selecting the first matching MicroKeen probe. Selecting HEX starts inspection automatically. Selecting BIN requires an explicit valid base address and then starts inspection automatically. The manual inspect button was removed.",
+    "superwatch_symbol_workspace_implementation": "complete; AXF symbols load immediately into a shared runtime-safe catalog, SuperWatch offers searchable selection and typed inline writes, reparse preserves selected names, and the waveform supports independent X/Y wheel zoom, drag pan, and double-click reset. Typed writes stop continuous dump acquisition, use flush_memory, verify with command-mode readback, and restore the prior running or paused state. Reconnecting now rebinds the existing runtime to the current Device instead of retaining a closed Device object.",
     "desktop_usability_implementation": "complete; Computer Use exercised connection, RTT, RTOS Trace, memory, symbols, SuperWatch, navigation, pause/resume/stop, and resource recovery before its capture channel failed. Real Edge/Playwright continued visual testing. SuperWatch stop no longer opens an English blocking confirmation, stop HTTP failures are visible, invalid symbols use a persistent Chinese inline error instead of alert(), and offline structured PROBE_BUSY details identify the owning dashboard and recovery action. A rebuilt unsigned NSIS installer was installed and the installed application passed the affected flows with Computer Use.",
     "rtt_dashboard_implementation": "complete; RTT reads now deliver at 50 Hz with a 10 ms bridge polling quantum, partial numeric batches flush every read cycle, and the virtual log coalesces near 30 FPS instead of 10 FPS. Numeric channel layouts require two consecutive matching rows so attaching mid-line cannot lock a truncated name. The demonstration firmware emits changing temp/speed values. Real Edge HIL confirmed named curves, 23.8 Canvas FPS, about 25 ms log update intervals, pause/resume behavior, and zero transport/backend loss.",
     "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
@@ -202,6 +203,15 @@
       "evidence": "Computer Use cold-started the rebuilt unsigned NSIS installation, entered Online Flash from another page, and observed MicroKeenV4 CMSIS-DAP automatically discovered and selected without pressing Refresh. A minimal App-address HEX was automatically inspected. A BIN remained blocked until an explicit App base address was entered, then automatically inspected. No erase, program, or whole-chip operation was started.",
       "review": "root-cause tracing, RED/GREEN transient-enumeration coverage, full regression, production and NSIS-only build, silent overwrite install, installed Computer Use retest, privacy cleanup, and diff validation completed",
       "notes": "All CMSIS-DAP descriptions containing MicroKeen remain allowed, covering V2, V3, V4, and future MicroKeen variants while unique_id distinguishes devices. The original installed sidecar omitted pyOCD parser data and cmsis_pack_manager native runtime files. After packaging those dependencies, page-entry discovery still stopped on the first cold-start 500 because only empty arrays were retried; discovery now retries bounded transient errors as well."
+    },
+    {
+      "name": "SuperWatch symbol workspace and reconnect-safe typed writes",
+      "status": "complete",
+      "commit": "617ad90",
+      "tests": "Python 659 passed; GUI 24 files / 273 tests passed; Rust 6 passed; focused SuperWatch transaction regression 4 passed; Vite production build and MSI/NSIS bundles completed",
+      "evidence": "Computer Use verified the installed application after an explicit disconnect/reconnect cycle. The stable init_ok variable displayed 'verified: 0' after the typed write, no Failed to fetch error appeared, continuous dump acquisition resumed immediately, and backend read cycles increased by 21 in two seconds with zero read errors. Pause, resume, stop, buffer reset, symbol reparse preservation, X/Y zoom, and drag pan also passed. Online Flash automatically discovered the MicroKeen probe, automatically inspected the App HEX, programmed only the embedded App range, and completed connect, erase, program, verify, reset, and disconnect without whole-chip erase. The matching BIN required an explicit App base and then inspected automatically.",
+      "review": "ordinary-user Computer Use exploration, root-cause tracing, focused RED/GREEN tests, two rebuilt installer overwrite cycles, real target retest, full automated regression, privacy scan, generated-artifact cleanup, and diff validation completed",
+      "notes": "The first failure had two layers. SuperWatchRuntime survived reconnect but prepare() returned before rebinding the current Device, so writes used a closed Device while polling used the new Device. After rebinding, one-shot dump_memory readback could leave firmware unable to restart continuous dump; command-mode read_memory verification avoids that stream transition and restores acquisition reliably."
     }
   ],
   "verification": [
@@ -300,7 +310,11 @@
     },
     {
       "area": "Installed online-flash MicroKeen discovery",
-      "result": "The rebuilt NSIS installed with exit 0. Computer Use verified automatic MicroKeenV4 CMSIS-DAP discovery/selection, no manual firmware-inspection button, automatic HEX inspection, explicit BIN base validation, and automatic BIN inspection after entering an App address. GUI 255, focused Python 96, and Rust 6 tests passed. No Flash write or erase was performed."
+      "result": "The rebuilt NSIS installed with exit 0. Computer Use verified automatic MicroKeenV4 CMSIS-DAP discovery/selection, no manual firmware-inspection button, automatic HEX inspection, explicit BIN base validation, and automatic BIN inspection after entering an App address. A later App-only HEX program used the embedded range beginning at 0x08005000 and completed connect, covered-sector erase, program, verify, reset, and disconnect without whole-chip erase or Bootloader coverage."
+    },
+    {
+      "area": "SuperWatch reconnect and typed-write installed HIL",
+      "result": "Python 659, GUI 273, and Rust 6 tests passed. Two full MSI/NSIS bundles built and the NSIS installer overwrote the installed application with exit 0. Computer Use verified disconnect/reconnect, stable uint8 typed write with verified readback, immediate continuous dump recovery, 21 additional read cycles in two seconds, zero read errors, pause/resume, clean stop, and buffer reset to zero."
     }
   ],
   "decisions": [
@@ -319,6 +333,8 @@
     "RTT waveform envelopes use the Worker's finite buffered timestamp range. Requesting 0..Number.MAX_SAFE_INTEGER is forbidden because it collapses real-time samples into one pixel and makes constant channels invisible.",
     "RTT dashboard delivery uses 50 Hz read windows, flushes partial raw and numeric batches each cycle, and keeps Canvas rendering capped by the shared 30 FPS scheduler.",
     "RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.",
+    "SuperWatch typed writes serialize against acquisition: stop continuous dump, write through flush_memory, verify with command-mode read_memory, then restore the prior running or paused state.",
+    "SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
   "hardware": {
@@ -341,16 +357,15 @@
     "V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.",
     "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 249 Vitest tests, the production build, direct installed FastAPI/WebSocket HIL, and a real Edge Worker/Canvas stroke gate. No new Windows screenshot evidence is claimed.",
     "Computer Use was available for most of the ordinary-user session, then its window capture channel twice timed out with FrameArrived errors. It recovered after the rebuilt installer was installed and completed the final installed-app retest. Screenshots remain local test evidence only and were deleted before commit.",
-    "Installed Online Flash discovery was newly qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass. Firmware inspection was exercised without starting program or erase.",
+    "Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.",
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "The first installed Offline Flash page load once showed the English transient error 'online flash operation failed'; pressing Search Target immediately succeeded. Reproduction and startup-order root cause remain open.",
-    "The current external tauri-gui-builder script does not translate the 0.1.0-rc.1 prerelease version for MSI, so a combined MSI/NSIS build failed at MSI validation. The self-contained EXE built successfully and a direct NSIS-only Tauri build succeeded and was installed. The published v0.1.0-rc.1 tag and release were not modified.",
     "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
     "Reproduce and fix the first-load Offline Flash target-search transient that can display 'online flash operation failed' before a manual retry succeeds.",
-    "Collect tester feedback for the RTT named temp/speed curves, smooth refresh, corrected SuperWatch stop/error recovery, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
+    "Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace and typed writes, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
