@@ -1,137 +1,88 @@
 ---
 name: tauri-gui-builder
-description: |
-  Mklink AI Probe Tauri v2 桌面 GUI 构建工具。编译 Rust + Vue 3 前端为原生 Windows exe。
-  触发：编译 GUI、build tauri、构建桌面应用、打包 exe、tauri build、
-  mklink-ai-probe.exe、MSI、NSIS、sidecar 打包。
+description: Build and qualify the Mklink AI Probe Tauri v2 Windows desktop app, bundled Python sidecar, MSI, and NSIS installers.
 ---
 
-# Mklink AI Probe Tauri GUI Builder
+# Mklink AI Probe Tauri Builder
 
-## 架构
+Use this skill for desktop GUI compilation, installer generation, bundled-sidecar checks, overwrite installation, and release-candidate packaging.
 
+## Source Of Truth
+
+- Read `AGENTS.md` and `docs/ai/CURRENT_HANDOFF.md` before building.
+- Use the repository script at `skills/tauri-gui-builder/scripts/build.py`.
+- Do not use completed files under `docs/superpowers/` as active instructions.
+- The packaged application must work without Python, Node, Rust, Keil, or a source checkout on the target computer.
+
+## Architecture
+
+```text
+Tauri/Rust executable
+  -> Vue 3 production assets
+  -> bundled mklink-sidecar.exe
+  -> FastAPI on 127.0.0.1:8765
+  -> MKLink CMSIS-DAP hardware
 ```
-mklink-ai-probe/gui/
-├── src/                    # Vue 3 + TypeScript 前端
-├── src-tauri/
-│   ├── src/lib.rs          # Rust 入口（sidecar 进程管理）
-│   ├── src/main.rs         # Windows main（release 隐藏控制台）
-│   ├── Cargo.toml          # Rust 依赖：tauri v2 + tauri-plugin-shell
-│   ├── tauri.conf.json     # Tauri 窗口/打包配置
-│   └── capabilities/       # Tauri v2 权限
-└── package.json            # Node 依赖：@tauri-apps/cli + @tauri-apps/api
-```
 
-运行时：Tauri 窗口 → Vue 3 SPA → Python FastAPI (8765) → MKLink 硬件
+Development builds may fall back to a Python backend. Release installers must contain `mklink-sidecar.exe`, and the Rust launcher must prefer that bundled sidecar.
 
-## 前置条件
+## Commands
 
-执行构建前，先运行检查：
+Run from the project root:
 
 ```powershell
-python scripts/build.py --check
+python skills/tauri-gui-builder/scripts/build.py --check
+python skills/tauri-gui-builder/scripts/build.py
+python skills/tauri-gui-builder/scripts/build.py --bundle
+python skills/tauri-gui-builder/scripts/build.py --clean
 ```
 
-自动检测：Rust stable、Node.js、npm 依赖、Python mklink[gui]。缺失项会给出安装命令。
+Outputs:
 
-### Rust 工具链
+- executable: `gui/src-tauri/target/release/mklink-ai-probe.exe`
+- MSI: `gui/src-tauri/target/release/bundle/msi/`
+- NSIS: `gui/src-tauri/target/release/bundle/nsis/`
 
-```powershell
-# 检查
-rustc --version
+`--bundle` must force a fresh PyInstaller sidecar and collect:
 
-# 安装（如缺失）
-$installer = "$env:TEMP\rustup-init.exe"
-Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile $installer
-& $installer -y --default-toolchain stable --default-host x86_64-pc-windows-msvc
-$env:Path += ";$env:USERPROFILE\.cargo\bin"
-```
+- `mklink` package data;
+- pyOCD plugins and package metadata;
+- `cmsis_pack_manager` native/runtime data;
+- HID runtime support.
 
-### Node.js
+## Release Candidates
 
-```powershell
-node --version  # 需要 v18+
-# 如缺失：winget install OpenJS.NodeJS.LTS
-```
+Copy candidate installers to the main repository `release` directory. Include the source commit in every filename and generate a SHA-256 list. Keep installers, sidecars, checksums, logs, and extracted MSI contents out of Git.
 
-### Python GUI 依赖
+Provide two variants when preparing a broad Windows release:
 
-```powershell
-pip install -e ".[gui]"  # fastapi, uvicorn, websockets
-```
+- standard: smaller installer; Tauri downloads WebView2 only when the target lacks it;
+- offline: set `bundle.windows.webviewInstallMode.type` to `offlineInstaller` in a temporary Tauri config so WebView2 is embedded.
 
-## 构建
+The offline NSIS package is the preferred clean-machine qualification artifact.
 
-### 仅编译 exe（开发测试用）
+## Required Verification
 
-```powershell
-python scripts/build.py
-```
+1. Build exits successfully and produces both MSI and NSIS.
+2. MSI administrative extraction contains `mklink-ai-probe.exe` and `mklink-sidecar.exe`.
+3. Install NSIS with a PATH containing only Windows system directories.
+4. Start the installed app and verify `GET /api/health` returns `status=ok`.
+5. Verify `GET /api/online-flash/probes` runs without exposing complete probe identifiers in evidence.
+6. Verify the process tree contains no `python.exe` or `pythonw.exe`.
+7. Close normally and verify Mklink processes and port `8765` are released.
+8. Recompute every published SHA-256 value.
 
-产物：`gui/src-tauri/target/release/mklink-ai-probe.exe`（~10 MB）
+Do not use the removed `/api/dashboard/status` endpoint. Use the current `/api/dash/<name>/status` routes when a dashboard-specific check is needed.
 
-exe 启动时自动检测 PATH 上的 `python`，执行 `python -m mklink serve --port 8765` 作为后端。
+## Cleanup
 
-### 完整打包（含 sidecar，生成安装包）
+After copying external release artifacts, restore tracked `gui/dist` files and remove only generated paths from the current build:
 
-```powershell
-python scripts/build.py --bundle
-```
+- `build/`
+- `dist/`
+- `gui/src-tauri/binaries/`
+- `gui/src-tauri/target/`
+- `mklink-sidecar.spec`
+- generated `__pycache__/` directories
 
-额外步骤：
-1. PyInstaller 打包 Python 后端为 `mklink-sidecar.exe`
-2. 放入 `gui/src-tauri/binaries/mklink-sidecar-x86_64-pc-windows-msvc.exe`
-3. `tauri.conf.json` 临时添加 `externalBin`
-4. 生成 MSI + NSIS 安装包
-
-产物位于 `gui/src-tauri/target/release/bundle/`。
-
-### 开发模式（热重载）
-
-```powershell
-cd gui
-npx tauri dev
-```
-
-自动启动 Vite dev server (5173) + Rust 编译。需另开终端运行 `python -m mklink serve`。
-
-### 清理
-
-```powershell
-python scripts/build.py --clean
-```
-
-## 关键文件修改指引
-
-| 改什么 | 改哪里 |
-|--------|--------|
-| 前端页面 | `gui/src/views/*.vue`、`gui/src/composables/*.ts` |
-| 窗口大小/标题 | `gui/src-tauri/tauri.conf.json` → `app.windows` |
-| Sidecar 启动逻辑 | `gui/src-tauri/src/lib.rs` → `start_sidecar()` |
-| Tauri 权限 | `gui/src-tauri/capabilities/default.json` |
-| Dashboard 端口映射 | `mklink/remote/api.py` → `DASHBOARD_PORTS` |
-| Rust 依赖 | `gui/src-tauri/Cargo.toml` |
-
-## 常见问题
-
-**`cargo metadata` failed**：Rust 未安装或不在 PATH。运行 `rustup` 安装后重启终端。
-
-**`resource path doesn't exist`**：`tauri.conf.json` 中 `externalBin` 引用了不存在的 sidecar。开发构建用 `--no-bundle` 或移除 `externalBin`。
-
-**PyInstaller 打包后 sidecar 缺少模板文件**：确保 `--collect-all mklink` 参数存在，这会收集 HTML 模板和 JSON profile。
-
-**首次编译慢（3-5 分钟）**：正常现象，Rust 需要编译 200+ crates。后续增量编译只需 30-40 秒。
-
-## 验证
-
-```powershell
-# 启动 exe
-./gui/src-tauri/target/release/mklink-ai-probe.exe
-
-# 另一终端检查 API
-curl http://127.0.0.1:8765/api/health
-# 期望：{"status":"ok"}
-
-curl http://127.0.0.1:8765/api/dashboard/status
-# 期望：包含 rtt, serial, modbus, superwatch 四个 Dashboard
-```
+The final worktree must be clean. Windows installers are currently unsigned, so qualification reports must retain the unknown-publisher limitation.

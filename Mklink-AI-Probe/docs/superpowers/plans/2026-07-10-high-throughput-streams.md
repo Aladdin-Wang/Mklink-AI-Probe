@@ -1,6 +1,6 @@
 # MKLink High-Throughput Streams Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical completed plan.** Do not execute its task checklist or skill instructions. Use `docs/ai/CURRENT_HANDOFF.md` for current work.
 
 **Goal:** Preserve a qualified stable MKLink acquisition rate, target at least 10 kSamples/s when the probe permits it, retain an overload boundary when one is actually measured, and cap visible rendering at 30 FPS for SystemView, VOFA, RTT, and SuperWatch.
 
