@@ -430,8 +430,7 @@ function sseOnMessage(e) {
       return;
     }
     if (data._event === 'interval_change') {
-      currentInterval = data.interval;
-      document.getElementById('interval-input').value = data.interval;
+      syncIntervalFromServer(data.interval);
       return;
     }
     if (data._event === 'channel_metadata') {
@@ -479,11 +478,27 @@ var IS_SUPERWATCH_MODE = CONFIG.mode === 'SuperWatch';
 var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;
 var collectionState = 'stopped';
 var currentInterval = IS_SUPERWATCH_MODE ? 0.001 : 0;
+var intervalInput = document.getElementById('interval-input');
+var intervalDirty = false;
+var intervalUpdatePending = false;
 var estimatedInterval = 0;
 var estimatedRate = 0;
 var timeUnit = 'ms';
 // Initialize UI to stopped state
 updateCollectionUI('stopped');
+
+function syncIntervalFromServer(value) {
+  var normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0 || normalized > 60) return;
+  currentInterval = normalized;
+  if (!intervalDirty && !intervalUpdatePending) {
+    intervalInput.value = String(normalized);
+  }
+}
+
+intervalInput.addEventListener('input', function() {
+  intervalDirty = true;
+});
 
 // Hide interval controls in RTT mode (data rate is firmware-controlled)
 if (!IS_VOFA_MODE && !IS_SUPERWATCH_MODE) {
@@ -583,8 +598,7 @@ function syncDashboardStatus(d) {
   else updateSampleRateBadge(d.estimated_interval, d.estimated_rate, true);
   if (d.channel_metadata !== undefined) applyChannelMetadata(d.channel_metadata);
   if (d.interval !== undefined && d.interval > 0) {
-    currentInterval = d.interval;
-    document.getElementById('interval-input').value = d.interval;
+    syncIntervalFromServer(d.interval);
   }
 }
 
@@ -708,11 +722,13 @@ document.getElementById('btn-apply-buffer').addEventListener('click', function()
   setBufferCapacity(val);
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
-  var val = parseFloat(document.getElementById('interval-input').value);
+  var val = parseFloat(intervalInput.value);
   if (isNaN(val) || val < 0 || val > 60) {
     alert('Interval must be between 0 and 60 seconds');
     return;
   }
+  intervalDirty = false;
+  intervalUpdatePending = true;
   fetch(API_CTRL + 'interval', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -729,10 +745,13 @@ document.getElementById('btn-apply-interval').addEventListener('click', function
       });
     })
     .then(function(normalized){
-      currentInterval = normalized;
-      document.getElementById('interval-input').value = String(normalized);
+      intervalUpdatePending = false;
+      syncIntervalFromServer(normalized);
     })
     .catch(function(err){
+      intervalUpdatePending = false;
+      intervalDirty = false;
+      intervalInput.value = String(currentInterval);
       showControlError(err && err.message ? err.message : t('error'));
     });
 });

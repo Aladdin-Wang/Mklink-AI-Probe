@@ -405,7 +405,12 @@ describe('WaveformViewer VOFA binary transport', () => {
         json: async () => ({ interval: 0.002 }),
       })
       vi.stubGlobal('fetch', fetchMock)
+      input.focus()
       input.value = '0.002'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.blur()
+      runtime.probe.syncStatus({ state: 'running', interval: 0.001, items: [] })
+      expect(input.value).toBe('0.002')
       document.getElementById('btn-apply-interval')?.click()
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
 
