@@ -169,6 +169,61 @@ export interface SymbolTypeInfo {
   members?: unknown[]
 }
 
+export type SymbolScalarKind = 'signed' | 'unsigned' | 'float' | 'bool' | 'enum'
+
+export interface SymbolDescriptor {
+  path: string
+  address: number
+  type_name: string
+  scalar_kind: SymbolScalarKind
+  size: number
+  writable: boolean
+  enum_values: Record<string, number>
+  parent_path: string | null
+}
+
+export interface AxfFingerprint {
+  size: number
+  mtime_ns: number
+}
+
+export interface SymbolCatalogPage {
+  generation: number
+  parsed_at: number
+  fingerprint: AxfFingerprint
+  stale: boolean
+  total: number
+  items: SymbolDescriptor[]
+}
+
+export interface SymbolCatalogStatus {
+  loaded: boolean
+  generation: number
+  parsed_at: number
+  fingerprint: AxfFingerprint
+  stale: boolean
+  total: number
+}
+
+export interface SymbolRebindSummary {
+  preserved: string[]
+  updated: string[]
+  removed: string[]
+}
+
+export interface SuperWatchWriteResult {
+  path: string
+  generation: number
+  value: number | boolean
+  verified: boolean
+}
+
+export interface SuperWatchTransactionDetail {
+  code: 'superwatch_transaction_failed'
+  phase: 'stop' | 'write' | 'readback' | 'reparse' | 'rebind' | 'restore'
+  message: string
+}
+
 // Memory read result
 export interface MemoryReadResult {
   address: string
