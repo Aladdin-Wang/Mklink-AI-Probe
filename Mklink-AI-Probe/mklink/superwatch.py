@@ -178,7 +178,7 @@ def poll_blocks(
     *,
     port: str | None = None,
     duration: float = 0.0,
-    period: float = 0.1,
+    period: float = 0.001,
     read_func=read_memory,
     clock=time.time,
     sleep_func=time.sleep,
@@ -599,7 +599,7 @@ class SuperWatchRuntime:
 def run_superwatch_visualizer(
     *,
     items: list[WatchItem],
-    period: float = 0.1,
+    period: float = 0.001,
     port: str | None = None,
     host: str = "127.0.0.1",
     port_http: int = 0,

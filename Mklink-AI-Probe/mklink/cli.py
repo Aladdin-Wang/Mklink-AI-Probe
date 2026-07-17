@@ -4004,7 +4004,8 @@ def main():
     superwatch_parser.add_argument("--port", help="COM port")
     superwatch_parser.add_argument("--source", help="ELF/AXF path for DWARF variable resolution")
     superwatch_parser.add_argument("--svd", help="CMSIS-SVD path; auto-detected from Keil Pack when omitted")
-    superwatch_parser.add_argument("--period", type=float, default=0.1, help="sampling period in seconds")
+    superwatch_parser.add_argument("--period", type=float, default=0.001,
+        help="sampling period in seconds (default: 0.001)")
     superwatch_parser.add_argument("--visualize", action="store_true", help="start Web visualizer")
     superwatch_parser.add_argument("--host", default="127.0.0.1", help="HTTP bind host")
     superwatch_parser.add_argument("--port-http", type=int, default=0, help="HTTP port, 0=random")

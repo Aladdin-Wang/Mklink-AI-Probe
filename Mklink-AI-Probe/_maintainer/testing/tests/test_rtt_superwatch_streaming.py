@@ -27,6 +27,16 @@ def _drain(loop, turns=4):
         loop.run_until_complete(asyncio.sleep(0))
 
 
+def test_superwatch_dashboard_template_defaults_interval_to_1ms():
+    from mklink.rtt_viewer import _build_dashboard_html
+
+    superwatch_html = _build_dashboard_html(mode="SuperWatch")
+    vofa_html = _build_dashboard_html(mode="VOFA")
+
+    assert 'id="interval-input" value="0.001"' in superwatch_html
+    assert 'id="interval-input" value="0"' in vofa_html
+
+
 def _watch_item(name, address):
     return SimpleNamespace(
         name=name, type_name="float", size=4, address=address,
@@ -665,15 +675,16 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
 
     hub = StreamHub(max_batches_per_client=4)
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
+    assert manager.get_status()["interval"] == 0.001
     manager._runtime = runtime
     bridge = Bridge()
     manager.start(SimpleNamespace(_bridge=bridge))
     deadline = time.perf_counter() + 1.0
     while manager.get_status()["read_cycles"] < 1 and time.perf_counter() < deadline:
         time.sleep(0.001)
-    manager.set_interval(0.001)
+    manager.set_interval(0.002)
     restart_deadline = time.perf_counter() + 1.0
-    expected_restart = b"cmd.dump_memory(0x20000000, 4, 0.001)\n"
+    expected_restart = b"cmd.dump_memory(0x20000000, 4, 0.002)\n"
     while expected_restart not in bridge.writes and time.perf_counter() < restart_deadline:
         time.sleep(0.001)
     manager.stop()
@@ -684,7 +695,7 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
     assert status["stream_integrity"]["parser_dropped_bytes"] == 4
     assert status["stream_integrity"]["parser_crc_errors"] == 0
     assert hub.stats().produced_items == 1
-    assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.1)\n"
+    assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.001)\n"
     assert expected_restart in bridge.writes
     assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
 

@@ -389,6 +389,41 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('defaults SuperWatch to 1 ms and applies a new interval while running', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const input = document.getElementById('interval-input') as HTMLInputElement
+      expect(input.value).toBe('0.001')
+      expect(runtime.probe.currentInterval()).toBe(0.001)
+
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+      runtime.probe.syncStatus({ state: 'running', interval: 0.001, items: [] })
+      expect(runtime.probe.collectionState().state).toBe('running')
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ interval: 0.002 }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      input.value = '0.002'
+      document.getElementById('btn-apply-interval')?.click()
+      for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/dash/superwatch/interval',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ interval: 0.002 }),
+        }),
+      )
+      expect(runtime.probe.currentInterval()).toBe(0.002)
+      expect(input.value).toBe('0.002')
+      expect(runtime.probe.collectionState().state).toBe('running')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('uses the normalized server interval when zero requests fastest acquisition', async () => {
     const runtime = await loadRttViewerRuntime()
     try {

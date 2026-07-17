@@ -1124,7 +1124,7 @@ class SuperWatchStreamManager:
         self._running = False
         self._collecting = threading.Event()
         self._stop_event = threading.Event()
-        self._interval = 0.1  # 100ms default
+        self._interval = 0.001  # 1ms default
         self._device = None
         self._runtime = None
         # One re-entrant lock owns runtime layout snapshots, pending sample

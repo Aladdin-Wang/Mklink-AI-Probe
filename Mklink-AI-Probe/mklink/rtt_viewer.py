@@ -675,6 +675,7 @@ _MARKER_MAX_PTS = "__MAX_POINTS__"
 _MARKER_TITLE = "__TITLE__"
 _MARKER_MODE = "__MODE__"
 _MARKER_LANG = "__LANG__"
+_MARKER_INTERVAL = "__INTERVAL__"
 
 
 def _load_lang_preference() -> str:
@@ -728,6 +729,7 @@ def _build_dashboard_html(max_points: int = 500, title: str = "MKLink RTT View",
     html = html.replace(_MARKER_TITLE, title)
     html = html.replace(_MARKER_MODE, mode)
     html = html.replace(_MARKER_LANG, _load_lang_preference())
+    html = html.replace(_MARKER_INTERVAL, "0.001" if mode == "SuperWatch" else "0")
     return html
 
 

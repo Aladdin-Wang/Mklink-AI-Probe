@@ -244,6 +244,7 @@ onUnmounted(() => {
 
 function buildTemplate(mode: string): string {
   const maxPoints = 10000
+  const intervalValue = mode === 'SuperWatch' ? '0.001' : '0'
   return `
 <header>
   <h1>MKLink ${mode}</h1>
@@ -280,7 +281,7 @@ function buildTemplate(mode: string): string {
   <div class="ctrl-sep"></div>
   <div id="interval-group">
     <label data-i18n="interval">Interval</label>
-    <input type="number" id="interval-input" value="0" step="0.001" min="0" max="60">
+    <input type="number" id="interval-input" value="${intervalValue}" step="0.001" min="0" max="60">
     <span class="interval-unit">s</span>
     <button id="btn-apply-interval" class="ctrl-btn" data-i18n="apply">Apply</button>
   </div>

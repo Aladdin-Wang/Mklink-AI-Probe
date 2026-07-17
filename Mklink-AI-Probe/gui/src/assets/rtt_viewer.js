@@ -474,13 +474,13 @@ if (es) {
 // ============================================================
 // Collection control (Start/Pause/Stop + Interval)
 // ============================================================
-var collectionState = 'stopped';
-var currentInterval = 0;
-var estimatedInterval = 0;
-var estimatedRate = 0;
 var IS_VOFA_MODE = CONFIG.mode === 'VOFA';
 var IS_SUPERWATCH_MODE = CONFIG.mode === 'SuperWatch';
 var IS_BINARY_WAVEFORM_MODE = IS_VOFA_MODE || IS_SUPERWATCH_MODE;
+var collectionState = 'stopped';
+var currentInterval = IS_SUPERWATCH_MODE ? 0.001 : 0;
+var estimatedInterval = 0;
+var estimatedRate = 0;
 var timeUnit = 'ms';
 // Initialize UI to stopped state
 updateCollectionUI('stopped');
