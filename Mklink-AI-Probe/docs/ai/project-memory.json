@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-17T00:40:35+08:00",
+  "updated_at": "2026-07-17T12:16:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "c4812c8 improves dashboard stop behavior, SuperWatch error feedback, and offline resource-conflict recovery; the final documentation commit contains this memory",
+    "head": "cbe0d99 adds installed-runtime MicroKeen discovery and automatic HEX/BIN inspection; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
@@ -18,9 +18,10 @@
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; installed-GUI ordinary-user experience testing and the selected recovery fixes are complete",
-    "current_task": "Ordinary-user desktop testing found and fixed blocking SuperWatch stop/error handling and opaque offline resource conflicts; collect follow-up feedback and reproduce the remaining first-load offline target-search transient",
-    "latest_commit": "c4812c8 fix: improve dashboard resource recovery",
+    "active_plan": "none; installed online-flash MicroKeen discovery and firmware auto-inspection recovery are complete",
+    "current_task": "Installed online flash now auto-discovers MicroKeen CMSIS-DAP probes and automatically inspects HEX or explicit-base BIN files; collect follow-up feedback and reproduce the remaining first-load offline target-search transient",
+    "latest_commit": "cbe0d99 fix: auto-discover MicroKeen probes for online flash",
+    "online_flash_discovery_implementation": "complete; the packaged sidecar includes pyOCD and cmsis_pack_manager runtime data, the API maps enumeration failures to an actionable privacy-safe error, and page-entry discovery retries both empty results and transient cold-start failures before selecting the first matching MicroKeen probe. Selecting HEX starts inspection automatically. Selecting BIN requires an explicit valid base address and then starts inspection automatically. The manual inspect button was removed.",
     "desktop_usability_implementation": "complete; Computer Use exercised connection, RTT, RTOS Trace, memory, symbols, SuperWatch, navigation, pause/resume/stop, and resource recovery before its capture channel failed. Real Edge/Playwright continued visual testing. SuperWatch stop no longer opens an English blocking confirmation, stop HTTP failures are visible, invalid symbols use a persistent Chinese inline error instead of alert(), and offline structured PROBE_BUSY details identify the owning dashboard and recovery action. A rebuilt unsigned NSIS installer was installed and the installed application passed the affected flows with Computer Use.",
     "rtt_dashboard_implementation": "complete; RTT reads now deliver at 50 Hz with a 10 ms bridge polling quantum, partial numeric batches flush every read cycle, and the virtual log coalesces near 30 FPS instead of 10 FPS. Numeric channel layouts require two consecutive matching rows so attaching mid-line cannot lock a truncated name. The demonstration firmware emits changing temp/speed values. Real Edge HIL confirmed named curves, 23.8 Canvas FPS, about 25 ms log update intervals, pause/resume behavior, and zero transport/backend loss.",
     "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
@@ -192,6 +193,15 @@
       "evidence": "Computer Use completed real installed-app connection, RTT, RTOS Trace, memory, symbol, and SuperWatch interactions. Edge/Playwright reproduced the resource-conflict chain and verified the fixes. A fresh unsigned NSIS bundle installed with exit 0; the installed application restored the project, connected to the real target, displayed the invalid-symbol error inline without a dialog, stopped SuperWatch directly, released the bridge, and detected V4.3.4 on the offline page.",
       "review": "root-cause tracing, focused RED/GREEN tests, full GUI regression, production build, NSIS build/install, installed Computer Use retest, privacy cleanup, and diff validation completed",
       "notes": "The original SuperWatch stop confirmation caused Computer Use click timeout and retained the bridge lease. Offline detect then received a structured PROBE_BUSY response, but the frontend discarded the object and showed only Conflict. Both ends of that user-visible chain are fixed."
+    },
+    {
+      "name": "Installed online-flash MicroKeen discovery and firmware auto-inspection",
+      "status": "complete",
+      "commit": "cbe0d99",
+      "tests": "GUI 20 files / 255 tests passed; online-flash GUI 48 passed; online-flash Python 96 passed; Rust 6 passed; Vite transformed 144 modules",
+      "evidence": "Computer Use cold-started the rebuilt unsigned NSIS installation, entered Online Flash from another page, and observed MicroKeenV4 CMSIS-DAP automatically discovered and selected without pressing Refresh. A minimal App-address HEX was automatically inspected. A BIN remained blocked until an explicit App base address was entered, then automatically inspected. No erase, program, or whole-chip operation was started.",
+      "review": "root-cause tracing, RED/GREEN transient-enumeration coverage, full regression, production and NSIS-only build, silent overwrite install, installed Computer Use retest, privacy cleanup, and diff validation completed",
+      "notes": "All CMSIS-DAP descriptions containing MicroKeen remain allowed, covering V2, V3, V4, and future MicroKeen variants while unique_id distinguishes devices. The original installed sidecar omitted pyOCD parser data and cmsis_pack_manager native runtime files. After packaging those dependencies, page-entry discovery still stopped on the first cold-start 500 because only empty arrays were retried; discovery now retries bounded transient errors as well."
     }
   ],
   "verification": [
@@ -287,6 +297,10 @@
     {
       "area": "Installed GUI ordinary-user experience",
       "result": "Computer Use verified real connection/disconnection, RTT named data and curves, pause/resume/stop, RTOS Trace collection and stop, memory read, symbol search, SuperWatch symbol selection, error recovery, and navigation. Edge/Playwright continued after the Windows capture channel failed. GUI 252 tests and Vite 144 modules passed. The rebuilt NSIS installed with exit 0 and the installed application passed the corrected invalid-symbol, direct-stop, resource-release, and offline V4.3.4 detection flows."
+    },
+    {
+      "area": "Installed online-flash MicroKeen discovery",
+      "result": "The rebuilt NSIS installed with exit 0. Computer Use verified automatic MicroKeenV4 CMSIS-DAP discovery/selection, no manual firmware-inspection button, automatic HEX inspection, explicit BIN base validation, and automatic BIN inspection after entering an App address. GUI 255, focused Python 96, and Rust 6 tests passed. No Flash write or erase was performed."
     }
   ],
   "decisions": [
@@ -327,7 +341,7 @@
     "V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.",
     "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 249 Vitest tests, the production build, direct installed FastAPI/WebSocket HIL, and a real Edge Worker/Canvas stroke gate. No new Windows screenshot evidence is claimed.",
     "Computer Use was available for most of the ordinary-user session, then its window capture channel twice timed out with FrameArrived errors. It recovered after the rebuilt installer was installed and completed the final installed-app retest. Screenshots remain local test evidence only and were deleted before commit.",
-    "Online Flash did not expose an exact MKLink CMSIS-DAP probe during this ordinary-user pass, so no program/erase action was attempted and current online-flash HIL remains based on the prior qualified evidence.",
+    "Installed Online Flash discovery was newly qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass. Firmware inspection was exercised without starting program or erase.",
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "The first installed Offline Flash page load once showed the English transient error 'online flash operation failed'; pressing Search Target immediately succeeded. Reproduction and startup-order root cause remain open.",
     "The current external tauri-gui-builder script does not translate the 0.1.0-rc.1 prerelease version for MSI, so a combined MSI/NSIS build failed at MSI validation. The self-contained EXE built successfully and a direct NSIS-only Tauri build succeeded and was installed. The published v0.1.0-rc.1 tag and release were not modified.",
