@@ -268,22 +268,24 @@
       <div class="card">
         <div class="card-title">设备状态</div>
         <table class="desc-table">
-          <tr>
-            <th>连接状态</th>
-            <td><span :class="['badge', deviceStatus.connected ? 'badge-ok' : 'badge-err']">{{ deviceStatus.connected ? '已连接' : '未连接' }}</span></td>
-            <th>运行状态</th>
-            <td>{{ deviceStatus.state }}</td>
-          </tr>
-          <tr>
-            <th>MCU</th>
-            <td>{{ deviceStatus.mcu || '—' }}</td>
-            <th>IDCODE</th>
-            <td>{{ deviceStatus.idcode || '—' }}</td>
-          </tr>
-          <tr>
-            <th>串口</th>
-            <td colspan="3">{{ deviceStatus.port || '—' }}</td>
-          </tr>
+          <tbody>
+            <tr>
+              <th>连接状态</th>
+              <td><span :class="['badge', deviceStatus.connected ? 'badge-ok' : 'badge-err']">{{ deviceStatus.connected ? '已连接' : '未连接' }}</span></td>
+              <th>运行状态</th>
+              <td>{{ deviceStatus.state }}</td>
+            </tr>
+            <tr>
+              <th>MCU</th>
+              <td>{{ deviceStatus.mcu || '—' }}</td>
+              <th>IDCODE</th>
+              <td>{{ deviceStatus.idcode || '—' }}</td>
+            </tr>
+            <tr>
+              <th>串口</th>
+              <td colspan="3">{{ deviceStatus.port || '—' }}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
     </template>
