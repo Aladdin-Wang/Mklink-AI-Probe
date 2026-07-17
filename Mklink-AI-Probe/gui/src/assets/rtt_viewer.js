@@ -2542,6 +2542,28 @@ function getChannelYRange(name) {
   };
 }
 
+function getSharedYRange() {
+  var yMin = Infinity;
+  var yMax = -Infinity;
+  for (var name in FIELDS) {
+    var field = FIELDS[name];
+    if (!field.visible || !field.ringBuf || field.ringBuf.count < 2) continue;
+    if (Number.isFinite(field.ringBuf._min)) yMin = Math.min(yMin, field.ringBuf._min);
+    if (Number.isFinite(field.ringBuf._max)) yMax = Math.max(yMax, field.ringBuf._max);
+  }
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) return null;
+  var pad = (yMax - yMin) * 0.1 || 1;
+  yMin -= pad;
+  yMax += pad;
+  var range = yMax - yMin;
+  var center = (yMin + yMax) / 2 + globalYView.offset;
+  var visibleRange = range / globalYView.zoom;
+  return {
+    yMin: center - visibleRange / 2,
+    yMax: center + visibleRange / 2
+  };
+}
+
 function resetChannelY(name) {
   channelYState[name] = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
 }
@@ -2576,6 +2598,11 @@ function zoomTimelineAt(clientX, deltaY) {
 
 function zoomVisibleY(deltaY) {
   var factor = deltaY > 0 ? 0.8 : 1.25;
+  if (IS_SUPERWATCH_MODE) {
+    globalYView.zoom = Math.max(0.1, Math.min(100, globalYView.zoom * factor));
+    drawChart();
+    return;
+  }
   for (var name in FIELDS) {
     if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
     var state = ensureChannelYState(name);
@@ -2612,6 +2639,18 @@ if (xAxisHit && yAxisHit) {
   }, { signal: viewerAbortController.signal });
   yAxisHit.addEventListener('mousedown', function(e) {
     if (e.button !== 0) return;
+    if (IS_SUPERWATCH_MODE) {
+      var sharedRange = getSharedYRange();
+      if (!sharedRange) return;
+      axisDrag = {
+        mode: 'y-shared',
+        startY: e.clientY,
+        startOffset: globalYView.offset,
+        range: sharedRange.yMax - sharedRange.yMin
+      };
+      e.preventDefault();
+      return;
+    }
     var offsets = {};
     var ranges = {};
     for (var name in FIELDS) {
@@ -2636,6 +2675,10 @@ if (xAxisHit && yAxisHit) {
       timelineView.offset = clampAxisOffset(axisDrag.startOffset - dx);
       drawChart();
       drawMinimap();
+    } else if (axisDrag.mode === 'y-shared') {
+      var sharedDy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
+      globalYView.offset = axisDrag.startOffset + sharedDy * axisDrag.range;
+      drawChart();
     } else {
       var dy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
       for (var name in axisDrag.offsets) {
@@ -2661,6 +2704,22 @@ function formatTimeAxisValue(seconds) {
   return (seconds * 1000).toFixed(1) + 'ms';
 }
 
+function formatYAxisValue(value, span) {
+  var absValue = Math.abs(value);
+  var absSpan = Math.abs(span);
+  if (
+    absValue >= 1000000 || (absValue > 0 && absValue < 0.0001) ||
+    absSpan >= 10000000 || (absSpan > 0 && absSpan < 0.001)
+  ) {
+    return value.toExponential(2);
+  }
+  var step = absSpan / 5;
+  var decimals = step >= 100 ? 0 : (step >= 10 ? 1 : (step >= 1 ? 2 : (step >= 0.1 ? 3 : 4)));
+  var text = value.toFixed(decimals);
+  if (decimals > 0) text = text.replace(/\.?0+$/, '');
+  return text === '-0' ? '0' : text;
+}
+
 // ============================================================
 // Canvas chart drawing (enhanced with per-channel Y, timeline, cursors)
 // ============================================================
@@ -2676,27 +2735,33 @@ function drawChart() {
   var tr = getVisibleTimeRange();
   var tMin = tr.tMin, tMax = tr.tMax;
 
-  // Global Y range (for shared Y mode when no per-channel zoom active)
+  // Global Y range (shared in SuperWatch, legacy per-channel in VOFA)
   var yMin = Infinity, yMax = -Infinity;
   var hasData = false;
-  for (var k in FIELDS) {
-    if (!FIELDS[k].visible) continue;
-    var pts = FIELDS[k].ringBuf;
-    if (pts.count < 2) continue;
+  if (IS_SUPERWATCH_MODE) {
+    var sharedYRange = getSharedYRange();
+    if (!sharedYRange) return;
     hasData = true;
-    if (Number.isFinite(pts._min)) yMin = Math.min(yMin, pts._min);
-    if (Number.isFinite(pts._max)) yMax = Math.max(yMax, pts._max);
-  }
-  if (!hasData) return;
-  var pad = (yMax - yMin) * 0.1 || 1;
-  yMin -= pad; yMax += pad;
-
-  // Apply global Y-axis zoom (oscilloscope style: all channels + grid zoom together)
-  if (globalYView.zoom !== 1) {
-    var yCenter = (yMin + yMax) / 2 + globalYView.offset;
-    var yRange = (yMax - yMin) / globalYView.zoom;
-    yMin = yCenter - yRange / 2;
-    yMax = yCenter + yRange / 2;
+    yMin = sharedYRange.yMin;
+    yMax = sharedYRange.yMax;
+  } else {
+    for (var k in FIELDS) {
+      if (!FIELDS[k].visible) continue;
+      var pts = FIELDS[k].ringBuf;
+      if (pts.count < 2) continue;
+      hasData = true;
+      if (Number.isFinite(pts._min)) yMin = Math.min(yMin, pts._min);
+      if (Number.isFinite(pts._max)) yMax = Math.max(yMax, pts._max);
+    }
+    if (!hasData) return;
+    var pad = (yMax - yMin) * 0.1 || 1;
+    yMin -= pad; yMax += pad;
+    if (globalYView.zoom !== 1) {
+      var yCenter = (yMin + yMax) / 2 + globalYView.offset;
+      var yRange = (yMax - yMin) / globalYView.zoom;
+      yMin = yCenter - yRange / 2;
+      yMax = yCenter + yRange / 2;
+    }
   }
 
   // Count visible channels
@@ -2708,7 +2773,7 @@ function drawChart() {
     }
     return FIELDS[k].ringBuf.count >= 2;
   });
-  var mr = 16, mt = 8, mb = 32, ml = 16;
+  var mr = 16, mt = 8, mb = 32, ml = IS_SUPERWATCH_MODE ? 64 : 16;
   var pw = W - ml - mr;
   var ph = H - mt - mb;
   if (pw <= 0 || ph <= 0) return;
@@ -2719,7 +2784,7 @@ function drawChart() {
   // Per-channel Y: each channel normalized to its own min/max by default
   // (avoids small signals being crushed when channels have very different ranges)
   function tyForChannel(v, name) {
-    if (!name) return tyGlobal(v);
+    if (IS_SUPERWATCH_MODE || !name) return tyGlobal(v);
     var yr = getChannelYRange(name);
     if (!yr) return tyGlobal(v);
     return mt + ph - (v - yr.yMin) / (yr.yMax - yr.yMin || 1) * ph;
@@ -2733,6 +2798,13 @@ function drawChart() {
     ctx.beginPath();
     ctx.moveTo(ml, yp); ctx.lineTo(ml + pw, yp);
     ctx.stroke();
+    if (IS_SUPERWATCH_MODE) {
+      var yTick = yMax - (yMax - yMin) * i / 5;
+      ctx.fillStyle = TEXT_DIM;
+      ctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--font-mono');
+      ctx.textAlign = 'right';
+      ctx.fillText(formatYAxisValue(yTick, yMax - yMin), ml - 8, yp + 4);
+    }
   }
   // Time grid
   for (var i = 0; i <= 5; i++) {
@@ -2800,7 +2872,7 @@ function drawChart() {
 
   // Per-channel Y labels at right edge of chart, staggered to avoid overlap
   // Max labels pinned at top, Min labels pinned at bottom, each 14px apart
-  for (var ni = 0; ni < visChNames.length; ni++) {
+  for (var ni = 0; !IS_SUPERWATCH_MODE && ni < visChNames.length; ni++) {
     var chName = visChNames[ni];
     var chMeta = FIELDS[chName];
     var chRange = getChannelYRange(chName);
@@ -3004,6 +3076,11 @@ function drawChart() {
       return;
     }
 
+    if (IS_SUPERWATCH_MODE) {
+      zoomVisibleY(e.deltaY);
+      return;
+    }
+
     if (e.ctrlKey) {
       // Ctrl+wheel: per-channel Y-axis zoom
       var hoverT = tMin + (mx - ml) / pw * (tMax - tMin);
@@ -3052,6 +3129,11 @@ function drawChart() {
     var mx = e.clientX - rect.left;
     var my = e.clientY - rect.top;
     if (mx < ml || mx > ml + pw || my < mt || my > mt + ph) return;
+
+    if (IS_SUPERWATCH_MODE) {
+      resetVisibleY();
+      return;
+    }
 
     if (e.ctrlKey) {
       // Ctrl+double-click: reset everything

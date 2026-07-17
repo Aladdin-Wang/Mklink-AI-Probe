@@ -210,6 +210,9 @@ header h1 {
   border-right: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
 }
+.waveform-viewer.superwatch-desktop .axis-hit-y {
+  width: 64px;
+}
 
 #watch-table-wrap {
   overflow: auto;
