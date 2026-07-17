@@ -362,6 +362,45 @@ def build_dump_mem_command(
     return f"cmd.dump_memory({', '.join(parts)})"
 
 
+def read_dump_memory_once(
+    bridge,
+    address: int,
+    size: int,
+    *,
+    timeout: float = 2.0,
+    poll_interval: float = 0.0005,
+) -> bytes:
+    """Read one complete dump-memory sample and explicitly leave stream mode."""
+    if size <= 0:
+        raise ValueError("dump-memory size must be greater than zero")
+    from mklink._types import DeviceState
+
+    parser = DumpMemoryParser(region_sizes=[size])
+    command = build_dump_mem_command([(address, size)], 0)
+    deadline = time.monotonic() + max(0.001, float(timeout))
+    bridge._enter_stream(DeviceState.DUMP_STREAM)
+    try:
+        bridge._write_raw((command + "\n").encode("utf-8"))
+        while time.monotonic() < deadline:
+            raw = bridge.drain_stream_bytes(max_bytes=1024 * 1024)
+            for frame in parser.feed(raw) if raw else ():
+                for region_index, payload in frame.get("regions", ()):
+                    if region_index == 0 and len(payload) >= size:
+                        return payload[:size]
+            if poll_interval:
+                time.sleep(poll_interval)
+        raise TimeoutError("timed out waiting for one dump-memory sample")
+    finally:
+        try:
+            bridge._write_raw(b"RTTView.stop()\n")
+            try:
+                bridge.drain_stream_bytes()
+            except Exception:
+                pass
+        finally:
+            bridge._exit_stream()
+
+
 class DumpMemoryStreamSession:
     """Own one MKLink ``cmd.dump_memory`` binary-stream lifecycle.
 

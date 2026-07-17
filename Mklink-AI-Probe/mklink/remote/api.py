@@ -1416,6 +1416,29 @@ def create_app(
 
         return await run_in_threadpool(prepare_and_remove)
 
+    @app.post("/api/dash/superwatch/write")
+    async def superwatch_write(
+        path: str = Body(...),
+        generation: int = Body(...),
+        value: object = Body(...),
+    ):
+        if not _state["device"] or not _state["device"].connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        from mklink.remote.dashboards import SuperWatchTransactionError
+
+        manager = get_managers()["superwatch"]
+        if manager._device is None:
+            manager.prepare(_state["device"])
+        try:
+            return await run_in_threadpool(
+                manager.write_symbol,
+                path,
+                generation=generation,
+                value=value,
+            )
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
+
     @app.get("/api/dash/superwatch/items")
     async def superwatch_items():
         managers = get_managers()
@@ -1963,8 +1986,16 @@ def create_app(
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, device.parse_axf)
+        from mklink.remote.dashboards import SuperWatchTransactionError
+
+        manager = get_managers()["superwatch"]
+        try:
+            if manager._runtime is not None:
+                result = await run_in_threadpool(manager.reparse_symbols)
+            else:
+                result = await run_in_threadpool(device.parse_axf)
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
         if result.get("error"):
             raise HTTPException(status_code=422, detail=result["error"])
         return result

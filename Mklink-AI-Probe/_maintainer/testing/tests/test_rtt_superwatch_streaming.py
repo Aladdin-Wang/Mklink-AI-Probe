@@ -686,3 +686,181 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
     assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.1)\n"
     assert expected_restart in bridge.writes
     assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
+
+
+def _symbol_write_device(tmp_path, *, write_error=None):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        variables={
+            "gain": DwarfVariable("gain", 10, 1, 0x20000020, 4, "float"),
+        },
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    operations = []
+
+    def write_memory(address, data):
+        operations.append(("write", address, data))
+        if write_error:
+            raise write_error
+
+    device = SimpleNamespace(
+        symbol_catalog=catalog,
+        write_memory=write_memory,
+    )
+    return device, operations
+
+
+def test_superwatch_write_stops_dump_writes_reads_back_and_restores_running(tmp_path, monkeypatch):
+    manager = SuperWatchStreamManager()
+    manager._runtime = _MutableWatchRuntime()
+    device, operations = _symbol_write_device(tmp_path)
+    manager._device = device
+    manager._running = True
+    manager._stop_event.clear()
+    manager._collecting.set()
+
+    def stop():
+        operations.append("stop")
+        manager._running = False
+        manager._collecting.clear()
+
+    def start(_device):
+        operations.append("start")
+        manager._running = True
+        manager._collecting.set()
+
+    monkeypatch.setattr(manager, "stop", stop)
+    monkeypatch.setattr(manager, "start", start)
+    monkeypatch.setattr(
+        manager,
+        "_readback_once",
+        lambda address, size: operations.append(("readback", address, size)) or struct.pack("<f", 1.5),
+        raising=False,
+    )
+
+    result = manager.write_symbol("gain", generation=1, value=1.5)
+
+    assert operations == [
+        "stop",
+        ("write", 0x20000020, struct.pack("<f", 1.5)),
+        ("readback", 0x20000020, 4),
+        "start",
+    ]
+    assert result["verified"] is True
+    assert result["value"] == pytest.approx(1.5)
+    assert manager.get_status()["state"] == "running"
+
+
+def test_superwatch_write_failure_restores_paused_state(tmp_path, monkeypatch):
+    manager = SuperWatchStreamManager()
+    manager._runtime = _MutableWatchRuntime()
+    device, operations = _symbol_write_device(tmp_path, write_error=RuntimeError("flush failed"))
+    manager._device = device
+    manager._running = True
+    manager._stop_event.clear()
+    manager._collecting.clear()
+
+    def stop():
+        operations.append("stop")
+        manager._running = False
+
+    def start(_device):
+        operations.append("start")
+        manager._running = True
+        manager._collecting.set()
+
+    def pause():
+        operations.append("pause")
+        manager._collecting.clear()
+
+    monkeypatch.setattr(manager, "stop", stop)
+    monkeypatch.setattr(manager, "start", start)
+    monkeypatch.setattr(manager, "pause", pause)
+
+    with pytest.raises(RuntimeError, match="flush failed"):
+        manager.write_symbol("gain", generation=1, value=2.0)
+
+    assert operations == [
+        "stop",
+        ("write", 0x20000020, struct.pack("<f", 2.0)),
+        "start",
+        "pause",
+    ]
+    assert manager.get_status()["state"] == "paused"
+
+
+def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path, monkeypatch):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.superwatch import SuperWatchRuntime, WatchItem
+    from mklink.symbol_catalog import SymbolCatalog
+
+    first_axf = tmp_path / "first.axf"
+    second_axf = tmp_path / "second.axf"
+    first_axf.write_bytes(b"first")
+    second_axf.write_bytes(b"second")
+    old_info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        variables={"gain": DwarfVariable("gain", 10, 1, 0x20000020, 4, "float")},
+    )
+    new_info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        variables={"gain": DwarfVariable("gain", 10, 1, 0x20000040, 4, "float")},
+    )
+    old_catalog = SymbolCatalog.from_dwarf(
+        old_info, axf_path=str(first_axf), generation=1, ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    new_catalog = SymbolCatalog.from_dwarf(
+        new_info, axf_path=str(second_axf), generation=2, ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    operations = []
+    device = SimpleNamespace(
+        symbol_catalog=old_catalog,
+        _dwarf_info=old_info,
+        _project_root=".",
+        _port=None,
+    )
+
+    def reparse_axf_atomically():
+        operations.append("reparse")
+        device.symbol_catalog = new_catalog
+        device._dwarf_info = new_info
+        return new_catalog
+
+    device.reparse_axf_atomically = reparse_axf_atomically
+    manager = SuperWatchStreamManager()
+    manager._device = device
+    manager._runtime = SuperWatchRuntime(
+        items=[WatchItem("gain", 0x20000020, "float", 4)],
+        dwarf_info=old_info,
+    )
+    manager._running = True
+    manager._stop_event.clear()
+    manager._collecting.set()
+
+    def stop():
+        operations.append("stop")
+        manager._running = False
+        manager._collecting.clear()
+
+    def start(_device):
+        operations.append("start")
+        manager._running = True
+        manager._collecting.set()
+
+    monkeypatch.setattr(manager, "stop", stop)
+    monkeypatch.setattr(manager, "start", start)
+
+    result = manager.reparse_symbols()
+
+    assert operations == ["stop", "reparse", "start"]
+    assert result == {"preserved": [], "updated": ["gain"], "removed": []}
+    assert manager._runtime.items[0].name == "gain"
+    assert manager._runtime.items[0].address == 0x20000040
+    assert manager.get_status()["state"] == "running"

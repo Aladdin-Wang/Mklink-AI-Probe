@@ -1093,6 +1093,24 @@ class SystemViewStreamManager:
 # SuperWatch SSE Generator
 # ---------------------------------------------------------------------------
 
+class SuperWatchTransactionError(RuntimeError):
+    """Identifies the failed phase of a serialized SuperWatch operation."""
+
+    code = "superwatch_transaction_failed"
+
+    def __init__(self, phase: str, cause: Exception):
+        self.phase = phase
+        self.cause = cause
+        super().__init__(str(cause))
+
+    def to_detail(self) -> dict:
+        return {
+            "code": self.code,
+            "phase": self.phase,
+            "message": str(self.cause),
+        }
+
+
 class SuperWatchStreamManager:
     """Manages SuperWatch variable polling with SSE output.
 
@@ -1112,6 +1130,7 @@ class SuperWatchStreamManager:
         # One re-entrant lock owns runtime layout snapshots, pending sample
         # rows, and metadata transitions. Hardware reads happen outside it.
         self._read_lock = threading.RLock()
+        self._operation_lock = threading.RLock()
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
@@ -1362,6 +1381,140 @@ class SuperWatchStreamManager:
         if self._thread is thread:
             self._thread = None
         return True
+
+    def _readback_once(self, address: int, size: int) -> bytes:
+        if self._device is None:
+            raise RuntimeError("SuperWatch device is unavailable")
+        bridge = getattr(self._device, "_bridge", None)
+        if bridge is not None and all(
+            callable(getattr(bridge, name, None))
+            for name in ("_enter_stream", "_write_raw", "drain_stream_bytes", "_exit_stream")
+        ):
+            from mklink.dump_memory import read_dump_memory_once
+            return read_dump_memory_once(bridge, address, size)
+        return self._device.read_memory(address, size)
+
+    def write_symbol(self, path: str, *, generation: int, value: object) -> dict:
+        from mklink.symbol_catalog import decode_descriptor, encode_descriptor
+
+        with self._operation_lock:
+            device = self._device
+            if device is None:
+                raise RuntimeError("SuperWatch device is unavailable")
+            catalog = getattr(device, "symbol_catalog", None)
+            if catalog is None:
+                raise RuntimeError("No AXF symbol catalog is loaded")
+            descriptor = catalog.require(path, generation)
+            if not descriptor.writable:
+                raise RuntimeError(f"Symbol is read-only: {path}")
+            payload = encode_descriptor(descriptor, value)
+            was_running = self.running
+            was_collecting = self._collecting.is_set()
+
+            try:
+                if was_running:
+                    try:
+                        self.stop()
+                    except Exception as exc:
+                        raise SuperWatchTransactionError("stop", exc) from exc
+                try:
+                    device.write_memory(descriptor.address, payload)
+                except Exception as exc:
+                    raise SuperWatchTransactionError("write", exc) from exc
+                try:
+                    actual_raw = self._readback_once(descriptor.address, descriptor.size)
+                    if actual_raw[: descriptor.size] != payload:
+                        raise RuntimeError(f"SuperWatch readback mismatch for {path}")
+                    actual = decode_descriptor(descriptor, actual_raw)
+                except Exception as exc:
+                    raise SuperWatchTransactionError("readback", exc) from exc
+                return {
+                    "path": path,
+                    "generation": catalog.generation,
+                    "value": actual,
+                    "verified": True,
+                }
+            finally:
+                if was_running:
+                    try:
+                        self.start(device)
+                        if not was_collecting:
+                            self.pause()
+                    except Exception as exc:
+                        raise SuperWatchTransactionError("restore", exc) from exc
+
+    def reparse_symbols(self) -> dict:
+        from mklink.superwatch import SuperWatchRuntime
+        from mklink.symbol_catalog import RebindSummary, rebind_paths
+
+        with self._operation_lock:
+            device = self._device
+            if device is None:
+                raise RuntimeError("SuperWatch device is unavailable")
+            old_catalog = getattr(device, "symbol_catalog", None)
+            if old_catalog is None:
+                raise RuntimeError("No AXF symbol catalog is loaded")
+            old_runtime = self._runtime
+            symbol_paths = tuple(
+                item.name
+                for item in getattr(old_runtime, "items", ())
+                if getattr(item, "source", "ram") == "ram"
+            )
+            register_items = [
+                item
+                for item in getattr(old_runtime, "items", ())
+                if getattr(item, "source", "ram") != "ram"
+            ]
+            was_running = self.running
+            was_collecting = self._collecting.is_set()
+
+            try:
+                if was_running:
+                    try:
+                        self.stop()
+                    except Exception as exc:
+                        raise SuperWatchTransactionError("stop", exc) from exc
+                try:
+                    new_catalog = device.reparse_axf_atomically()
+                except Exception as exc:
+                    raise SuperWatchTransactionError("reparse", exc) from exc
+                try:
+                    summary = rebind_paths(old_catalog, new_catalog, symbol_paths)
+                    new_runtime = SuperWatchRuntime(
+                        items=register_items,
+                        dwarf_info=getattr(device, "_dwarf_info", None),
+                        svd_registers=getattr(old_runtime, "svd_registers", {}),
+                        port=getattr(device, "_port", None),
+                        read_lock=self._read_lock,
+                    )
+                    rebound_removed = list(summary.removed)
+                    for path in (*summary.preserved, *summary.updated):
+                        result = new_runtime.add(path)
+                        if result.get("error"):
+                            rebound_removed.append(path)
+                    if rebound_removed != list(summary.removed):
+                        rebound_set = set(rebound_removed)
+                        summary = RebindSummary(
+                            tuple(path for path in summary.preserved if path not in rebound_set),
+                            tuple(path for path in summary.updated if path not in rebound_set),
+                            tuple(rebound_removed),
+                        )
+                except Exception as exc:
+                    raise SuperWatchTransactionError("rebind", exc) from exc
+                with self._read_lock:
+                    self._runtime = new_runtime
+                    self._origin_us = None
+                    self._flush_binary_batch_locked()
+                    self._rebuild_metadata_cache_locked(publish=True)
+                return summary.to_dict()
+            finally:
+                if was_running:
+                    try:
+                        self.start(device)
+                        if not was_collecting:
+                            self.pause()
+                    except Exception as exc:
+                        raise SuperWatchTransactionError("restore", exc) from exc
 
     def add_watch(self, name: str) -> dict:
         with self._read_lock:

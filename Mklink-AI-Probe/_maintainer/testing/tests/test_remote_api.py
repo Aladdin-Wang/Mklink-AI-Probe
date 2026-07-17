@@ -148,3 +148,74 @@ def test_symbol_status_marks_changed_axf_stale(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["stale"] is True
+
+
+def test_superwatch_typed_write_route_passes_path_generation_and_value(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    app = create_app(auth_token=None, project_root=".")
+    result = {"path": "gain", "generation": 1, "value": 1.5, "verified": True}
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager, "write_symbol", return_value=result
+    ) as write_symbol, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/dash/superwatch/write",
+            json={"path": "gain", "generation": 1, "value": 1.5},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == result
+    write_symbol.assert_called_once_with("gain", generation=1, value=1.5)
+
+
+def test_superwatch_typed_write_reports_transaction_phase(tmp_path):
+    from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager,
+        "write_symbol",
+        side_effect=SuperWatchTransactionError("write", RuntimeError("flush failed")),
+    ), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/dash/superwatch/write",
+            json={"path": "gain", "generation": 1, "value": 2.0},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "superwatch_transaction_failed",
+        "phase": "write",
+        "message": "flush failed",
+    }
+
+
+def test_symbol_reparse_uses_superwatch_transaction_when_prepared(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    manager._runtime = SimpleNamespace(items=[])
+    app = create_app(auth_token=None, project_root=".")
+    summary = {"preserved": ["gain"], "updated": [], "removed": []}
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager, "reparse_symbols", return_value=summary
+    ) as reparse, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post("/api/symbols/reparse")
+
+    assert response.status_code == 200
+    assert response.json() == summary
+    reparse.assert_called_once_with()
