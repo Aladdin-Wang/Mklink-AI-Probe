@@ -213,6 +213,21 @@ def test_probe_target_and_pack_status_routes_use_injected_services(app, services
     assert status.json()["index_available"] is True
 
 
+def test_probe_enumeration_failure_is_actionable_and_does_not_expose_raw_details(app, services):
+    services.probe_provider = lambda: (_ for _ in ()).throw(
+        RuntimeError(r"backend failed at C:\private\probe")
+    )
+
+    response = request(app, "GET", "/api/online-flash/probes")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == {
+        "code": "CONNECT_FAIL",
+        "title": "连接失败",
+        "message": "CMSIS-DAP 枚举失败，请检查 MicroKeen 设备的 WinUSB 驱动后重试",
+    }
+
+
 def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, services):
     installed = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "HPM5300"})
     assert installed.json()["events"][0]["progress"] == 0.5

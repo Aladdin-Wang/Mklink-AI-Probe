@@ -11,6 +11,9 @@ import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnline
 import type { ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
+const PROBE_DISCOVERY_ATTEMPTS = 6
+const PROBE_DISCOVERY_DELAY_MS = 500
+const AUTO_INSPECT_DELAY_MS = 150
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
 const CANONICAL_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
@@ -38,7 +41,7 @@ const packCancelPending = ref(false)
 const packProgress = ref(0)
 const packError = ref('')
 const firmware = ref<File | null>(null)
-const baseAddress = ref('0x80000000')
+const baseAddress = ref('')
 const inspection = ref<ImageInspection | null>(null)
 const selectedSectorAddresses = ref<number[]>([])
 const inspectBusy = ref(false)
@@ -62,6 +65,7 @@ let viewportGeneration = 0
 let targetSearchGeneration = 0
 let targetSearchController: AbortController | null = null
 let packOperationToken = 0
+let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let storageWarningReported = false
 
@@ -129,10 +133,15 @@ watch([frequency, connectMode, resetMode, desiredPart], persist)
 async function refreshProbes(retryWhenEmpty = false): Promise<void> {
   probeBusy.value = true; probeError.value = ''
   try {
-    probes.value = await api.listProbes()
-    if (retryWhenEmpty && probes.value.length === 0) {
-      await new Promise(resolve => setTimeout(resolve, 700))
-      probes.value = await api.listProbes()
+    const attempts = retryWhenEmpty ? PROBE_DISCOVERY_ATTEMPTS : 1
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        probes.value = await api.listProbes()
+        if (probes.value.length > 0 || attempt === attempts - 1) break
+      } catch (error) {
+        if (attempt === attempts - 1) throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, PROBE_DISCOVERY_DELAY_MS))
     }
     if (!probes.value.some(item => item.unique_id === probeId.value)) probeId.value = probes.value[0]?.unique_id ?? ''
   } catch (error) { probeError.value = message(error) } finally { probeBusy.value = false }
@@ -233,6 +242,18 @@ function resetInspection(): void {
 }
 function setFirmware(file: File | null): void { firmware.value = file; resetInspection() }
 function setBase(value: string): void { if (value !== baseAddress.value) { baseAddress.value = value; resetInspection() } }
+
+function scheduleAutoInspection(): void {
+  if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
+  autoInspectTimer = null
+  if (!firmware.value || !selectedTarget.value?.installed || baseError.value) return
+  autoInspectTimer = setTimeout(() => {
+    autoInspectTimer = null
+    void inspectImage()
+  }, AUTO_INSPECT_DELAY_MS)
+}
+
+watch([firmware, () => selectedTarget.value?.part_number, baseAddress], scheduleAutoInspection)
 
 async function inspectImage(): Promise<void> {
   if (!firmware.value || !selectedTarget.value?.installed || baseError.value) {
@@ -348,6 +369,7 @@ function toggleSector(address: number): void {
 onMounted(() => { void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(desiredPart.value)]) })
 onBeforeUnmount(() => {
   disposed = true
+  if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
   inspectionController?.abort()
   inspectionGeneration += 1
   viewportGeneration += 1
@@ -365,7 +387,7 @@ onBeforeUnmount(() => {
       <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
-      <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @inspect="inspectImage" @scroll="loadVisible" />
+      <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @scroll="loadVisible" />
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
     <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>

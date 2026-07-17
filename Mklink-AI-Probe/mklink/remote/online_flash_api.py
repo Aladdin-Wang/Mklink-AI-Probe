@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -45,6 +46,7 @@ _POSIX_FILE_PATH = re.compile(
     r"(?:[^/" + _PATH_TOKEN_END + r"]+/)*"
     r"[^/" + _PATH_TOKEN_END + r"]+\.[A-Za-z0-9]{1,16}"
 )
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -419,6 +421,17 @@ def _selected_probe(provider: Callable[[], Sequence[object]], probe_id: str) -> 
     raise FlashError(FlashErrorCode.MKLINK_DAP_NOT_FOUND, "MKLink DAP probe was not found")
 
 
+def _enumerate_probes(provider: Callable[[], Sequence[object]]) -> list[object]:
+    try:
+        return filter_mklink_probes(provider())
+    except Exception as error:
+        _LOG.exception("CMSIS-DAP probe enumeration failed")
+        raise FlashError(
+            FlashErrorCode.CONNECT_FAIL,
+            "CMSIS-DAP 枚举失败，请检查 MicroKeen 设备的 WinUSB 驱动后重试",
+        ) from error
+
+
 def _active_snapshot(job_manager: object) -> Optional[object]:
     snapshots = job_manager.list()
     for snapshot in reversed(snapshots):
@@ -436,11 +449,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
 
     @router.get("/probes")
     async def probes() -> object:
-        raw = await _blocking(services.probe_provider)
-        try:
-            return _json_primitive(filter_mklink_probes(raw))
-        except Exception as error:
-            _raise_http(error)
+        return _json_primitive(await _blocking(_enumerate_probes, services.probe_provider))
 
     @router.get("/targets")
     async def targets(

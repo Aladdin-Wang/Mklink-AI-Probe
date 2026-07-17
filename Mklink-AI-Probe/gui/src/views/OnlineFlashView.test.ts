@@ -472,7 +472,6 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
   await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
   await chooseFirmware(wrapper)
   await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-  await wrapper.get('[data-testid="inspect-image"]').trigger('click')
   await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
   await wrapper.get('[data-testid="start-job"]').trigger('click')
   await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
@@ -499,14 +498,14 @@ describe('online flash task workspace behavior', () => {
     vi.restoreAllMocks()
   })
 
-  it('retries initial probe discovery once when the first result is empty', async () => {
+  it('keeps retrying probe discovery on page entry until MKLink appears', async () => {
     vi.useFakeTimers()
     const fallback = viewFetch()
     let probeCalls = 0
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
       if (String(input).endsWith('/probes')) {
         probeCalls += 1
-        return Promise.resolve(new Response(JSON.stringify(probeCalls === 1 ? [] : [probeFixture]), { status: 200 }))
+        return Promise.resolve(new Response(JSON.stringify(probeCalls < 4 ? [] : [probeFixture]), { status: 200 }))
       }
       return fallback(input, options)
     }))
@@ -515,13 +514,80 @@ describe('online flash task workspace behavior', () => {
     await flushPromises()
     expect(probeCalls).toBe(1)
 
-    await vi.advanceTimersByTimeAsync(699)
+    await vi.advanceTimersByTimeAsync(499)
     expect(probeCalls).toBe(1)
     await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
-
     expect(probeCalls).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(probeCalls).toBe(4)
     expect(wrapper.get('[data-testid="probe-select"]').element).toHaveProperty('value', probeFixture.unique_id)
+    wrapper.unmount()
+  })
+
+  it('retries transient probe enumeration errors during backend cold start', async () => {
+    vi.useFakeTimers()
+    const fallback = viewFetch()
+    let probeCalls = 0
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/probes')) {
+        probeCalls += 1
+        if (probeCalls < 3) {
+          return Promise.resolve(new Response(JSON.stringify({ detail: 'backend warming up' }), { status: 500 }))
+        }
+        return Promise.resolve(new Response(JSON.stringify([probeFixture]), { status: 200 }))
+      }
+      return fallback(input, options)
+    }))
+
+    const wrapper = mount(await onlineFlashView())
+    await flushPromises()
+    expect(probeCalls).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(probeCalls).toBe(3)
+    expect(wrapper.get('[data-testid="probe-select"]').element).toHaveProperty('value', probeFixture.unique_id)
+    expect(wrapper.text()).not.toContain('backend warming up')
+    wrapper.unmount()
+  })
+
+  it('automatically inspects a selected BIN or HEX file without an inspect button', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+
+    await chooseFirmware(wrapper, 'firmware.hex')
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
+    expect(wrapper.find('[data-testid="inspect-image"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('已自动检查')
+    wrapper.unmount()
+  })
+
+  it('waits for an explicit BIN base and inspects automatically after it is entered', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+
+    await chooseFirmware(wrapper, 'firmware.bin')
+    await new Promise(resolve => setTimeout(resolve, 250))
+
+    expect(wrapper.get('[data-testid="base-error"]').text()).toContain('BIN 基地址')
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(false)
+
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
+    expect(wrapper.text()).toContain('已自动检查')
     wrapper.unmount()
   })
 
@@ -536,7 +602,6 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
 
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     wrapper.unmount()
   })
@@ -558,7 +623,6 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
     await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
 
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80001000')
@@ -589,7 +653,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
 
     wrapper.unmount()
@@ -699,7 +763,6 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
@@ -761,7 +824,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.text()).toContain('AAAAAAAA'))
     const scroller = wrapper.get('.hex-scroll')
     Object.defineProperty(scroller.element, 'clientHeight', { configurable: true, value: 200 })
@@ -786,7 +849,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     const choices = wrapper.findAll('.action-choices label')
     expect(choices[0].get('input').attributes('disabled')).toBeDefined()
@@ -822,7 +885,6 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('32 bytes'))
 
     expect(wrapper.text()).toContain('扇区几何信息不可验证')
@@ -886,7 +948,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     const start = wrapper.get('[data-testid="start-job"]')
     await start.trigger('click'); await start.trigger('click')
@@ -950,7 +1012,6 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
-    await wrapper.get('[data-testid="inspect-image"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
