@@ -169,6 +169,7 @@ window.__rttTestProbe = {
   RingBuffer: RingBuffer,
   hover: hoverProbe,
   channelYState: function() { return channelYState; },
+  timeline: function() { return timelineView; },
   addSuperwatchName: superwatchAddName
 };`
   new Function(instrumented).call(window)
@@ -638,6 +639,72 @@ describe('VOFA viewer hot path source guard', () => {
     expect(componentSource).not.toContain('superwatch-add-btn')
     expect(source).not.toContain('sw-search-dropdown')
     expect(source).not.toContain("API_SYMBOLS + 'search'")
+  })
+
+  it('zooms, pans, and resets the X axis through its hit region', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })
+      const axis = document.getElementById('x-axis-hit')!
+
+      axis.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: 400, bubbles: true }))
+      expect(runtime.probe.timeline().zoom).toBeGreaterThan(1)
+      axis.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 500, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: 300, bubbles: true }))
+      expect(runtime.probe.timeline().offset).toBeGreaterThan(0)
+
+      axis.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(runtime.probe.timeline()).toMatchObject({ zoom: 1, offset: 0 })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('zooms, pans, and resets visible Y axes through their hit region', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })
+      const axis = document.getElementById('y-axis-hit')!
+
+      axis.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientY: 160, bubbles: true }))
+      expect(runtime.probe.channelYState().A.zoom).toBeGreaterThan(1)
+      axis.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientY: 120, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mousemove', { clientY: 180, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mouseup', { clientY: 180, bubbles: true }))
+      expect(runtime.probe.channelYState().A.offset).not.toBe(0)
+
+      axis.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(runtime.probe.channelYState().A).toMatchObject({ zoom: 1, offset: 0, autoRange: true })
+    } finally {
+      runtime.cleanup()
+    }
   })
 
   it('disposes global viewer observers and listeners when the Vue view unmounts', () => {

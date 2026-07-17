@@ -359,6 +359,8 @@ var canvas = document.getElementById('chart');
 var ctx = canvas.getContext('2d');
 var tooltip = document.getElementById('tooltip');
 var wrap = document.getElementById('chart-wrap');
+var xAxisHit = document.getElementById('x-axis-hit');
+var yAxisHit = document.getElementById('y-axis-hit');
 
 function resize() {
   var r = wrap.getBoundingClientRect();
@@ -2523,6 +2525,115 @@ function getChannelYRange(name) {
 
 function resetChannelY(name) {
   channelYState[name] = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
+}
+
+function clampAxisOffset(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function zoomTimelineAt(clientX, deltaY) {
+  var full = getFullTimeRange();
+  var fullRange = full.tMax - full.tMin;
+  if (!(fullRange > 0)) return;
+  var current = getVisibleTimeRange();
+  var rect = canvas.getBoundingClientRect();
+  var pointerX = Number.isFinite(clientX) ? clientX : rect.left + rect.width / 2;
+  var ratio = Math.max(0, Math.min(1, (pointerX - rect.left) / Math.max(1, rect.width)));
+  var anchor = current.tMin + ratio * (current.tMax - current.tMin);
+  var factor = deltaY > 0 ? 0.8 : 1.25;
+  var nextZoom = Math.max(1, Math.min(100, timelineView.zoom * factor));
+  timelineView.zoom = nextZoom;
+  if (nextZoom === 1) {
+    timelineView.offset = 0;
+  } else {
+    var nextRange = fullRange / nextZoom;
+    var available = fullRange - nextRange;
+    timelineView.offset = clampAxisOffset((anchor - ratio * nextRange - full.tMin) / available);
+  }
+  drawChart();
+  drawMinimap();
+}
+
+function zoomVisibleY(deltaY) {
+  var factor = deltaY > 0 ? 0.8 : 1.25;
+  for (var name in FIELDS) {
+    if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
+    var state = ensureChannelYState(name);
+    state.autoRange = false;
+    state.manualMin = null;
+    state.manualMax = null;
+    state.zoom = Math.max(0.1, Math.min(100, state.zoom * factor));
+  }
+  drawChart();
+}
+
+function resetVisibleY() {
+  globalYView = { zoom: 1, offset: 0 };
+  for (var name in channelYState) resetChannelY(name);
+  drawChart();
+}
+
+var axisDrag = null;
+
+if (xAxisHit && yAxisHit) {
+  xAxisHit.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    zoomTimelineAt(e.clientX, e.deltaY);
+  }, { passive: false, signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    zoomVisibleY(e.deltaY);
+  }, { passive: false, signal: viewerAbortController.signal });
+
+  xAxisHit.addEventListener('mousedown', function(e) {
+    if (e.button !== 0 || timelineView.zoom <= 1) return;
+    axisDrag = { mode: 'x', startX: e.clientX, startOffset: timelineView.offset };
+    e.preventDefault();
+  }, { signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    var offsets = {};
+    var ranges = {};
+    for (var name in FIELDS) {
+      if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
+      var state = ensureChannelYState(name);
+      var range = getChannelYRange(name);
+      state.autoRange = false;
+      state.manualMin = null;
+      state.manualMax = null;
+      offsets[name] = state.offset;
+      ranges[name] = range ? range.yMax - range.yMin : 1;
+    }
+    axisDrag = { mode: 'y', startY: e.clientY, offsets: offsets, ranges: ranges };
+    e.preventDefault();
+  }, { signal: viewerAbortController.signal });
+
+  addViewerGlobalListener(window, 'mousemove', function(e) {
+    if (!axisDrag) return;
+    var rect = canvas.getBoundingClientRect();
+    if (axisDrag.mode === 'x') {
+      var dx = (e.clientX - axisDrag.startX) / Math.max(1, rect.width);
+      timelineView.offset = clampAxisOffset(axisDrag.startOffset - dx);
+      drawChart();
+      drawMinimap();
+    } else {
+      var dy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
+      for (var name in axisDrag.offsets) {
+        ensureChannelYState(name).offset = axisDrag.offsets[name] + dy * axisDrag.ranges[name];
+      }
+      drawChart();
+    }
+  });
+  addViewerGlobalListener(window, 'mouseup', function() { axisDrag = null; });
+
+  xAxisHit.addEventListener('dblclick', function() {
+    timelineView.zoom = 1;
+    timelineView.offset = 0;
+    drawChart();
+    drawMinimap();
+  }, { signal: viewerAbortController.signal });
+  yAxisHit.addEventListener('dblclick', resetVisibleY, { signal: viewerAbortController.signal });
 }
 
 function formatTimeAxisValue(seconds) {

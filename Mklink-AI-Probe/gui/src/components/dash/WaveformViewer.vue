@@ -309,6 +309,8 @@ function buildTemplate(mode: string): string {
     <div id="enum-tooltip"></div>
     <div id="chart-wrap">
       <canvas id="chart"></canvas>
+      <div id="y-axis-hit" class="axis-hit-region axis-hit-y" title="纵轴缩放与平移"></div>
+      <div id="x-axis-hit" class="axis-hit-region axis-hit-x" title="横轴缩放与平移"></div>
       <div id="tooltip"></div>
       <div id="cursor-a" class="cursor-line" style="display:none;"></div>
       <div id="cursor-b" class="cursor-line" style="display:none;"></div>
