@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-17T22:05:39+08:00`
+- 更新时间：`2026-07-18T00:41:20+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`617ad90 restores SuperWatch typed writes after device reconnect and resumes continuous dump acquisition; the final documentation commit contains this memory`
+- HEAD：`8ef5b9c adds the shared numeric SuperWatch Y axis after variable-directory visibility controls and waveform workspace expansion; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
 - 工作树：clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed
-- 当前任务：SuperWatch typed writes now survive disconnect/reconnect, verify through command-mode readback, and automatically restore continuous dump acquisition; collect follow-up feedback and reproduce the remaining first-load offline target-search transient
+- 当前任务：SuperWatch now uses the variable directory for acquisition and curve visibility, gives the waveform the full right workspace, and exposes numeric shared-axis navigation; collect follow-up feedback and reproduce the remaining first-load offline target-search transient
 - 状态：`complete`
 
 ## 里程碑
@@ -34,6 +34,7 @@
 - **Installed GUI ordinary-user experience recovery** — `complete`。The original SuperWatch stop confirmation caused Computer Use click timeout and retained the bridge lease. Offline detect then received a structured PROBE_BUSY response, but the frontend discarded the object and showed only Conflict. Both ends of that user-visible chain are fixed.
 - **Installed online-flash MicroKeen discovery and firmware auto-inspection** — `complete`。All CMSIS-DAP descriptions containing MicroKeen remain allowed, covering V2, V3, V4, and future MicroKeen variants while unique_id distinguishes devices. The original installed sidecar omitted pyOCD parser data and cmsis_pack_manager native runtime files. After packaging those dependencies, page-entry discovery still stopped on the first cold-start 500 because only empty arrays were retried; discovery now retries bounded transient errors as well.
 - **SuperWatch symbol workspace and reconnect-safe typed writes** — `complete`。The first failure had two layers. SuperWatchRuntime survived reconnect but prepare() returned before rebinding the current Device, so writes used a closed Device while polling used the new Device. After rebinding, one-shot dump_memory readback could leave firmware unable to restart continuous dump; command-mode read_memory verification avoids that stream transition and restores acquisition reliably.
+- **SuperWatch waveform visibility and shared-axis workspace** — `complete`。The first full GUI run shared the host with Python and Rust and exceeded the synthetic VOFA peak-heap threshold by about 15 MiB while all functional assertions passed. The complete WaveformViewer file and the full GUI suite both passed when rerun without competing toolchains, identifying parallel host memory pressure rather than a stable product regression.
 
 ## 验证证据
 
@@ -62,6 +63,7 @@
 - **Installed GUI ordinary-user experience**：Computer Use verified real connection/disconnection, RTT named data and curves, pause/resume/stop, RTOS Trace collection and stop, memory read, symbol search, SuperWatch symbol selection, error recovery, and navigation. Edge/Playwright continued after the Windows capture channel failed. GUI 252 tests and Vite 144 modules passed. The rebuilt NSIS installed with exit 0 and the installed application passed the corrected invalid-symbol, direct-stop, resource-release, and offline V4.3.4 detection flows.
 - **Installed online-flash MicroKeen discovery**：The rebuilt NSIS installed with exit 0. Computer Use verified automatic MicroKeenV4 CMSIS-DAP discovery/selection, no manual firmware-inspection button, automatic HEX inspection, explicit BIN base validation, and automatic BIN inspection after entering an App address. A later App-only HEX program used the embedded range beginning at 0x08005000 and completed connect, covered-sector erase, program, verify, reset, and disconnect without whole-chip erase or Bootloader coverage.
 - **SuperWatch reconnect and typed-write installed HIL**：Python 659, GUI 273, and Rust 6 tests passed. Two full MSI/NSIS bundles built and the NSIS installer overwrote the installed application with exit 0. Computer Use verified disconnect/reconnect, stable uint8 typed write with verified readback, immediate continuous dump recovery, 21 additional read cycles in two seconds, zero read errors, pause/resume, clean stop, and buffer reset to zero.
+- **SuperWatch waveform visibility and shared-axis installed HIL**：Python 659, GUI 279, focused SuperWatch 55, isolated WaveformViewer 48, and Rust 6 tests passed; cargo check and the Vite production build also passed. Computer Use verified the expanded waveform workspace, independent eye visibility with continued acquisition, shared numeric Y ticks, Y zoom/pan/reset, pause with continued buffering, resume catch-up, stop with backend buffer reset, normal application exit, and sidecar/port release.
 
 ## 架构决策
 
@@ -82,6 +84,7 @@
 - RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.
 - SuperWatch typed writes serialize against acquisition: stop continuous dump, write through flush_memory, verify with command-mode read_memory, then restore the prior running or paused state.
 - SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.
+- SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform uses the full right workspace and a shared numeric Y axis with wheel zoom, drag pan, and double-click reset.
 - Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.
 
 ## 真机环境
@@ -96,7 +99,7 @@
 ## 下一动作
 
 1. Reproduce and fix the first-load Offline Flash target-search transient that can display 'online flash operation failed' before a manual retry succeeds.
-2. Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace and typed writes, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
+2. Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
 3. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
 4. For the next release, add code signing before promoting beyond prerelease.
 5. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
