@@ -163,6 +163,30 @@ describe('DashboardView layout classes', () => {
     expect(wrapper.find('.superwatch-route-probe').exists()).toBe(true)
   })
 
+  it('removes the VOFA+ desktop entry and degrades legacy links to RTT View', () => {
+    routerMock.query = { tab: 'vofa' }
+
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: { template: '<div class="rtt-route-probe" />', props: ['deviceConnected'] },
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).not.toContain('VOFA+')
+    expect(wrapper.find('.rtt-route-probe').exists()).toBe(true)
+    const rttButton = wrapper.findAll('button').find(button => button.text() === 'RTT View')
+    expect(rttButton?.classes()).toContain('active')
+  })
+
   it('reconnects SystemView control and binary streams when opening a running trace', () => {
     const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
 

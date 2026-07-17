@@ -99,7 +99,7 @@ export interface JsonRpcResponse {
   id: number | string | null
 }
 
-export type DashboardType = 'rtt' | 'serial' | 'modbus' | 'superwatch' | 'vofa' | 'systemview'
+export type DashboardType = 'rtt' | 'serial' | 'modbus' | 'superwatch' | 'systemview'
 
 // SystemView（RTOS 跟踪）解码事件——由后端 SystemViewParser 产出
 export interface SystemViewEvent {

@@ -3,7 +3,7 @@
     <div
       class="card"
       :class="{
-        'card-full': tab === 'rtt' || tab === 'superwatch' || tab === 'vofa',
+        'card-full': tab === 'rtt' || tab === 'superwatch',
         'card-rtt': tab === 'rtt',
         'card-systemview': tab === 'systemview',
       }"
@@ -30,7 +30,6 @@
         <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
         <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">串口监控</button>
         <button :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
-        <button :class="['tab-btn', { active: tab === 'vofa' }]" @click="tab = 'vofa'">VOFA+</button>
         <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>
       </div>
 
@@ -55,7 +54,6 @@
       <SuperWatchTab v-if="tab === 'superwatch'" :device-connected="deviceStatus.connected" />
       <SerialMonitorTab v-show="tab === 'serial'" :device-connected="deviceStatus.connected" />
       <ModbusTab v-show="tab === 'modbus'" :device-connected="deviceStatus.connected" />
-      <VofaTab v-if="tab === 'vofa'" :device-connected="deviceStatus.connected" />
       <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
     </div>
   </div>
@@ -74,7 +72,6 @@ import MemoryTab from '../components/dash/MemoryTab.vue'
 import SuperWatchTab from '../components/dash/SuperWatchTab.vue'
 import SerialMonitorTab from '../components/dash/SerialMonitorTab.vue'
 import ModbusTab from '../components/dash/ModbusTab.vue'
-import VofaTab from '../components/dash/VofaTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
 
 const route = useRoute()
@@ -88,7 +85,7 @@ const {
 } = useMklinkApi()
 const toast = useToast()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
-const dashboardTabs = new Set(['rtt', 'superwatch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
+const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
 

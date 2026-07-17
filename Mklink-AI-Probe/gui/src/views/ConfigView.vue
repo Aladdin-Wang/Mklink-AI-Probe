@@ -122,7 +122,7 @@
             </div>
             <div v-else class="axf-summary">
               <span class="badge badge-warn">未加载</span>
-              <span class="axf-hint">VOFA/SuperWatch/符号表功能需要 AXF 解析</span>
+              <span class="axf-hint">SuperWatch/符号表功能需要 AXF 解析</span>
             </div>
             <div class="form-row" style="margin-top:8px">
               <span class="form-label">AXF 路径</span>
