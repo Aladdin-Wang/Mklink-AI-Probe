@@ -255,6 +255,36 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(mocks.binary.stop).toHaveBeenCalledOnce()
   })
 
+  it('emits only the latest complete SuperWatch sample for the variable directory', async () => {
+    const wrapper = mount(WaveformViewer, {
+      props: { mode: 'SuperWatch', deviceConnected: true },
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    if (!mocks.binary.superwatchMetadata || !mocks.binary.waveformBatch) {
+      throw new Error('missing SuperWatch refs')
+    }
+    mocks.binary.superwatchMetadata.value = {
+      type: 'superwatch-metadata',
+      version: 1,
+      channels: [{ name: 'gain' }, { name: 'controller.target' }],
+    }
+    await nextTick()
+    mocks.binary.waveformBatch.value = {
+      type: 'waveform-batch', sequence: 1n, timestampNs: 1_000_000n,
+      itemCount: 2, channelCount: 2, layout: 'sample-major-float32',
+      values: Float32Array.of(1, 10, 1.25, 20).buffer,
+      times: Float64Array.of(0, 1).buffer,
+    }
+    await nextTick()
+
+    expect(wrapper.emitted('latest-values')?.at(-1)).toEqual([{
+      gain: 1.25,
+      'controller.target': 20,
+    }])
+    wrapper.unmount()
+  })
+
   it('resets SuperWatch Worker and viewer state at collection boundaries', async () => {
     const resetBinaryStream = vi.fn()
     ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
@@ -601,7 +631,13 @@ describe('VOFA viewer hot path source guard', () => {
     expect(source).toContain("var API_BASE = CONFIG.apiBase || '';")
     expect(source).toContain("var API_CTRL = API_BASE + '/api/dash/'")
     expect(source).toContain("var API_SW = API_BASE + '/api/dash/superwatch/';")
-    expect(source).toContain("var API_SYMBOLS = API_BASE + '/api/symbols/';")
+  })
+
+  it('keeps SuperWatch symbol selection outside the waveform workspace', () => {
+    expect(componentSource).not.toContain('superwatch-search-input')
+    expect(componentSource).not.toContain('superwatch-add-btn')
+    expect(source).not.toContain('sw-search-dropdown')
+    expect(source).not.toContain("API_SYMBOLS + 'search'")
   })
 
   it('disposes global viewer observers and listeners when the Vue view unmounts', () => {

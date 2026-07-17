@@ -199,7 +199,6 @@ var API_BASE = CONFIG.apiBase || '';
 var API_STREAM = API_BASE + '/api/dash/' + _dashType + '/stream';
 var API_CTRL = API_BASE + '/api/dash/' + _dashType + '/';
 var API_SW = API_BASE + '/api/dash/superwatch/';
-var API_SYMBOLS = API_BASE + '/api/symbols/';
 var viewerAbortController = new AbortController();
 
 function addViewerGlobalListener(target, type, listener) {
@@ -488,14 +487,6 @@ if (!IS_VOFA_MODE && !IS_SUPERWATCH_MODE) {
   var ig = document.getElementById('interval-group');
   if (ig) ig.style.display = 'none';
 }
-if (IS_SUPERWATCH_MODE) {
-  var swp = document.getElementById('superwatch-panel');
-  if (swp) {
-    swp.classList.add('visible');
-    swp.setAttribute('aria-hidden', 'false');
-  }
-}
-
 function updateSampleRateBadge(interval, rate, allowIntervalEstimate) {
   if (Number.isFinite(Number(interval)) && Number(interval) > 0) {
     estimatedInterval = Number(interval);
@@ -3425,46 +3416,6 @@ function superwatchAddName(name) {
     });
 }
 
-function superwatchSearch(query) {
-  var dropdown = document.getElementById('sw-search-dropdown');
-  if (!dropdown) return;
-  if (!query || query.length < 1) {
-    dropdown.innerHTML = '';
-    dropdown.classList.remove('visible');
-    return;
-  }
-  fetch(API_SYMBOLS + 'search?q=' + encodeURIComponent(query))
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      var results = d.results || [];
-      if (results.length === 0) {
-        dropdown.innerHTML = '<li style="color:var(--dim);cursor:default">No matches</li>';
-        dropdown.classList.add('visible');
-        return;
-      }
-      var html = '';
-      for (var i = 0; i < results.length; i++) {
-        html += '<li data-name="' + escapeHtml(results[i].name) + '">' +
-          escapeHtml(results[i].name) +
-          '<span class="sw-type">' + escapeHtml(results[i].type || results[i].kind || '') + '</span>' +
-          '</li>';
-      }
-      dropdown.innerHTML = html;
-      dropdown.classList.add('visible');
-    })
-    .catch(function(){});
-}
-
-function superwatchInspectSelected() {
-  var names = sortedFieldNames();
-  var name = selectedChannel || (names.length ? names[0] : '');
-  if (!name) return;
-  fetch(API_SW + 'inspect?name=' + encodeURIComponent(name))
-    .then(function(r){ return r.json(); })
-    .then(function(d){ showInspectorTree(d.tree); })
-    .catch(function(){});
-}
-
 function downloadJSON(filename, data) {
   var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
   var url = URL.createObjectURL(blob);
@@ -3505,69 +3456,6 @@ addViewerGlobalListener(document, 'click', function(e) {
   menu.classList.remove('visible');
   menu.setAttribute('aria-hidden', 'true');
 });
-
-if (IS_SUPERWATCH_MODE) {
-  var swSearchInput = document.getElementById('superwatch-search-input');
-  var swDropdown = document.getElementById('sw-search-dropdown');
-  var swTimeUnit = document.getElementById('time-unit-select');
-  // Add button: add whatever is typed in the search input
-  document.getElementById('superwatch-add-btn').addEventListener('click', function() {
-    superwatchAddName(swSearchInput.value);
-  });
-  // Dropdown: click item fills input (don't auto-add)
-  swDropdown.addEventListener('click', function(e) {
-    var li = e.target.closest('li');
-    if (li && li.dataset.name) {
-      swSearchInput.value = li.dataset.name;
-      swDropdown.classList.remove('visible');
-      swActiveIdx = -1;
-    }
-  });
-  // Search input: filter + keyboard navigation
-  var swActiveIdx = -1;
-  swSearchInput.addEventListener('input', function() {
-    swActiveIdx = -1;
-    superwatchSearch(swSearchInput.value);
-  });
-  swSearchInput.addEventListener('keydown', function(e) {
-    var items = swDropdown.querySelectorAll('li[data-name]');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      swActiveIdx = Math.min(swActiveIdx + 1, items.length - 1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      swActiveIdx = Math.max(swActiveIdx - 1, 0);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (swActiveIdx >= 0 && items[swActiveIdx]) {
-        // Fill input with selected item, close dropdown
-        swSearchInput.value = items[swActiveIdx].dataset.name;
-        swDropdown.classList.remove('visible');
-        swActiveIdx = -1;
-      } else if (swSearchInput.value.trim()) {
-        // No dropdown selection: add whatever is typed
-        superwatchAddName(swSearchInput.value);
-      }
-      return;
-    } else if (e.key === 'Escape') {
-      swDropdown.classList.remove('visible');
-      swActiveIdx = -1;
-      return;
-    } else { return; }
-    // Highlight active item
-    for (var i = 0; i < items.length; i++) items[i].classList.toggle('active', i === swActiveIdx);
-  });
-  // Close dropdown on outside click
-  addViewerGlobalListener(document, 'click', function(e) {
-    if (!e.target.closest('#sw-search-wrap')) swDropdown.classList.remove('visible');
-  });
-  swTimeUnit.addEventListener('change', function() {
-    timeUnit = swTimeUnit.value;
-    drawChart();
-    drawMinimap();
-  });
-  document.getElementById('superwatch-inspect-btn').addEventListener('click', superwatchInspectSelected);
-}
 
 function getSelectedThresholdChannel() {
   var sel = document.getElementById('threshold-channel');

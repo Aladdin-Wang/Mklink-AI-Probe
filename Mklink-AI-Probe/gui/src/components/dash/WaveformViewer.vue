@@ -18,6 +18,10 @@ const props = defineProps<{
   deviceConnected: boolean
 }>()
 
+const emit = defineEmits<{
+  'latest-values': [values: Record<string, number>]
+}>()
+
 const container = ref<HTMLDivElement>()
 const binary = useBinaryStream(
   props.mode === 'VOFA' ? 'vofa' : 'superwatch',
@@ -126,6 +130,23 @@ function onVofaStreamState(event: Event): void {
 watch(() => binary.waveformBatch.value, batch => {
   if (!batch) return
   pendingBatch = batch
+  if (
+    props.mode === 'SuperWatch'
+    && batch.itemCount > 0
+    && batch.channelCount === vofaChannels.length
+  ) {
+    const values = new Float32Array(batch.values)
+    const offset = (batch.itemCount - 1) * batch.channelCount
+    if (values.length >= offset + batch.channelCount) {
+      const latest: Record<string, number> = {}
+      for (let channel = 0; channel < batch.channelCount; channel += 1) {
+        const name = String(vofaChannels[channel]?.name ?? '')
+        const value = values[offset + channel]
+        if (name && Number.isFinite(value)) latest[name] = value
+      }
+      emit('latest-values', latest)
+    }
+  }
   const viewer = (window as any).__waveformViewers?.[props.mode]
   if (viewer?.acceptBinaryBatch) {
     viewer.acceptBinaryBatch(batch, vofaChannels)
@@ -282,21 +303,6 @@ function buildTemplate(mode: string): string {
 </div>
 
 <div id="var-selector"></div>
-
-<div id="superwatch-panel" aria-hidden="true">
-  <div id="sw-search-wrap" style="position:relative">
-    <input id="superwatch-search-input" data-i18n-placeholder="sw_search_placeholder" placeholder="搜索或输入变量名...">
-    <ul id="sw-search-dropdown"></ul>
-  </div>
-  <button id="superwatch-add-btn" class="panel-btn" data-i18n="add">添加</button>
-  <label data-i18n="time">时间</label>
-  <select id="time-unit-select">
-    <option value="us">us</option>
-    <option value="ms" selected>ms</option>
-    <option value="s">s</option>
-  </select>
-  <button id="superwatch-inspect-btn" class="panel-btn" data-i18n="inspect">检查</button>
-</div>
 
 <main id="debug-main">
   <section id="chart-watch-wrap">

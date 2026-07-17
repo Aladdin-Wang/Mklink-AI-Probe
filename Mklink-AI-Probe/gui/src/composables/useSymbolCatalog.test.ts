@@ -122,4 +122,24 @@ describe('useSymbolCatalog', () => {
     expect(symbols.generation.value).toBe(1)
     expect(symbols.items.value).toHaveLength(2)
   })
+
+  it('writes a typed value with the selected catalog generation', async () => {
+    const result = { path: 'gain', generation: 1, value: 1.3, verified: true }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse(result))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    await symbols.ensureLoaded()
+    await expect(symbols.writeSymbol('gain', 1.3)).resolves.toEqual(result)
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/dash/superwatch/write',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ path: 'gain', generation: 1, value: 1.3 }),
+      }),
+    )
+  })
 })

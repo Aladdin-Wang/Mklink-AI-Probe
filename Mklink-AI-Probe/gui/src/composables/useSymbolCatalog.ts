@@ -5,6 +5,7 @@ import type {
   SymbolCatalogStatus,
   SymbolDescriptor,
   SymbolRebindSummary,
+  SuperWatchWriteResult,
 } from '../types/mklink'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
@@ -130,6 +131,15 @@ async function reparse(): Promise<SymbolRebindSummary> {
   }
 }
 
+async function writeSymbol(path: string, value: unknown): Promise<SuperWatchWriteResult> {
+  if (stale.value) throw new Error('AXF 已变化，请重新解析符号后再写入')
+  if (generation.value <= 0) throw new Error('符号表尚未加载')
+  return request<SuperWatchWriteResult>('/api/dash/superwatch/write', {
+    method: 'POST',
+    body: JSON.stringify({ path, generation: generation.value, value }),
+  })
+}
+
 export function useSymbolCatalog() {
   return {
     items: readonly(items),
@@ -144,5 +154,6 @@ export function useSymbolCatalog() {
     ensureLoaded,
     refreshStatus,
     reparse,
+    writeSymbol,
   }
 }
