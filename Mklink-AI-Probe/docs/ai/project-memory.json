@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-18T00:41:20+08:00",
+  "updated_at": "2026-07-18T07:04:25+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "8ef5b9c adds the shared numeric SuperWatch Y axis after variable-directory visibility controls and waveform workspace expansion; the final documentation commit contains this memory",
+    "head": "04c1ca7 is the source commit used for the latest standalone standard and offline Windows installer bundles; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
@@ -18,9 +18,10 @@
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; SuperWatch waveform visibility, expanded workspace, shared numeric Y axis, installed HIL, and final regression are complete",
-    "current_task": "SuperWatch now uses the variable directory for acquisition and curve visibility, gives the waveform the full right workspace, and exposes numeric shared-axis navigation; collect follow-up feedback and reproduce the remaining first-load offline target-search transient",
-    "latest_commit": "8ef5b9c feat: add shared SuperWatch Y axis",
+    "active_plan": "none; the latest SuperWatch changes are bundled into standard and offline standalone Windows installers and copied to the external release directory",
+    "current_task": "The 04c1ca7 Windows release candidates are available as standard and WebView2-offline MSI/NSIS installers with checksums; validate on a second clean Windows machine, collect tester feedback, and reproduce the remaining first-load offline target-search transient",
+    "latest_commit": "04c1ca7 docs: update SuperWatch waveform HIL handoff",
+    "latest_installer_bundle": "complete; source commit 04c1ca7 produced standard MSI/NSIS packages and WebView2-offline MSI/NSIS packages. All four files and one SHA-256 checksum list are stored in the external main-repository release directory, which is excluded from Git. The installed application uses its bundled PyInstaller sidecar and does not require Python, Node, Rust, Keil, or the source checkout on the target computer.",
     "online_flash_discovery_implementation": "complete; the packaged sidecar includes pyOCD and cmsis_pack_manager runtime data, the API maps enumeration failures to an actionable privacy-safe error, and page-entry discovery retries both empty results and transient cold-start failures before selecting the first matching MicroKeen probe. Selecting HEX starts inspection automatically. Selecting BIN requires an explicit valid base address and then starts inspection automatically. The manual inspect button was removed.",
     "superwatch_symbol_workspace_implementation": "complete; AXF symbols load immediately into a shared runtime-safe catalog, SuperWatch offers searchable selection and typed inline writes, and reparse preserves selected names. The redundant right Watch panel is removed, so the waveform fills the right workspace. Variable checkboxes control acquisition while adjacent eye controls independently hide or restore curves without stopping sampling or current-value updates. The waveform has a shared numeric Y axis with wheel zoom, drag pan, and double-click reset, plus the existing independent X-axis navigation. Typed writes stop continuous dump acquisition, use flush_memory, verify with command-mode readback, and restore the prior running or paused state. Reconnecting rebinds the existing runtime to the current Device instead of retaining a closed Device object.",
     "desktop_usability_implementation": "complete; Computer Use exercised connection, RTT, RTOS Trace, memory, symbols, SuperWatch, navigation, pause/resume/stop, and resource recovery before its capture channel failed. Real Edge/Playwright continued visual testing. SuperWatch stop no longer opens an English blocking confirmation, stop HTTP failures are visible, invalid symbols use a persistent Chinese inline error instead of alert(), and offline structured PROBE_BUSY details identify the owning dashboard and recovery action. A rebuilt unsigned NSIS installer was installed and the installed application passed the affected flows with Computer Use.",
@@ -221,6 +222,15 @@
       "evidence": "Computer Use verified the installed application with two changing float variables. The redundant right Watch table was absent and the waveform filled the right workspace. Hiding one selected variable through its eye control removed only that curve while its displayed value continued changing; restoring the eye brought the curve back. Six shared Y-axis tick values were visible. Y wheel zoom changed the range, drag shifted its center, and double-click restored the default range. Pause froze the visible point count while the transport buffer continued growing, resume advanced the curve to the current buffer, stop cleared the backend buffer to zero, Alt+F4 closed the application, and the sidecar, port, and development server resources were released.",
       "review": "design refinement, implementation plan, focused component regression, full Python/GUI/Rust regression, production build, installed Computer Use HIL, privacy-safe memory update, diff validation, and generated-artifact cleanup completed",
       "notes": "The first full GUI run shared the host with Python and Rust and exceeded the synthetic VOFA peak-heap threshold by about 15 MiB while all functional assertions passed. The complete WaveformViewer file and the full GUI suite both passed when rerun without competing toolchains, identifying parallel host memory pressure rather than a stable product regression."
+    },
+    {
+      "name": "Standalone Windows installer candidates for 04c1ca7",
+      "status": "complete",
+      "source_commit": "04c1ca7",
+      "tests": "Tauri built standard and WebView2-offline MSI/NSIS bundles; standard NSIS and offline NSIS silent overwrite installs exited 0; restricted-PATH API health and MicroKeen discovery passed with zero Python processes; MSI administrative extraction contained the main executable and 62,076,496-byte sidecar; normal shutdown released all Mklink processes and port 8765",
+      "evidence": "The standard installers are approximately 61-62 MiB and use Tauri's WebView2 download bootstrapper only when the target lacks WebView2. The offline installers are approximately 257-258 MiB and embed the Microsoft WebView2 offline runtime. Both installed runs started the bundled PyInstaller sidecar from the application directory while PATH contained only Windows system directories. The health API returned ok, one MicroKeen CMSIS-DAP was enumerated, no python.exe or pythonw.exe process existed, and shutdown released the sidecar and listener.",
+      "review": "forced sidecar rebuild with mklink, pyOCD metadata/plugins, cmsis_pack_manager and HID collection; standard and offline Tauri bundles; restricted-environment install/runtime checks; MSI content extraction; SHA-256 generation; external release-directory publication; generated-artifact cleanup",
+      "notes": "The packages are intentionally not committed. The release directory is excluded by the main repository's local Git exclude. All current installers remain unsigned and may show an unknown-publisher warning."
     }
   ],
   "verification": [
@@ -328,6 +338,10 @@
     {
       "area": "SuperWatch waveform visibility and shared-axis installed HIL",
       "result": "Python 659, GUI 279, focused SuperWatch 55, isolated WaveformViewer 48, and Rust 6 tests passed; cargo check and the Vite production build also passed. Computer Use verified the expanded waveform workspace, independent eye visibility with continued acquisition, shared numeric Y ticks, Y zoom/pan/reset, pause with continued buffering, resume catch-up, stop with backend buffer reset, normal application exit, and sidecar/port release."
+    },
+    {
+      "area": "04c1ca7 standalone Windows installer qualification",
+      "result": "Standard and WebView2-offline MSI/NSIS bundles were generated. Both NSIS variants installed silently with exit 0. Under a PATH containing only Windows system directories, the installed application returned API health ok, enumerated the MicroKeen CMSIS-DAP, used only mklink-ai-probe.exe plus the bundled mklink-sidecar.exe process pair, spawned no Python process, and released all processes and port 8765 on normal close. MSI administrative extraction contained both installed executables. SHA-256 checksums were generated for all four external release files."
     }
   ],
   "decisions": [
@@ -349,6 +363,7 @@
     "SuperWatch typed writes serialize against acquisition: stop continuous dump, write through flush_memory, verify with command-mode read_memory, then restore the prior running or paused state.",
     "SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.",
     "SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform uses the full right workspace and a shared numeric Y axis with wheel zoom, drag pan, and double-click reset.",
+    "Every future Windows candidate bundle is copied to the main repository's external release directory with the source commit in each filename and a SHA-256 checksum list. Standard installers remain smaller and can download WebView2 when absent; offline installers embed WebView2 for clean or offline target computers. Installers and checksums are never committed.",
     "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
   ],
   "hardware": {
@@ -375,9 +390,11 @@
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "The first installed Offline Flash page load once showed the English transient error 'online flash operation failed'; pressing Search Target immediately succeeded. Reproduction and startup-order root cause remain open.",
     "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
+    "The 04c1ca7 installers were qualified on the build machine with a restricted PATH and embedded offline WebView2, but have not yet been exercised on a second physical clean Windows computer or clean virtual machine.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
+    "Install the 04c1ca7 offline NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, Keil, or prior WebView2 assumption, then repeat health, probe discovery, normal shutdown, uninstall, and reinstall checks.",
     "Reproduce and fix the first-load Offline Flash target-search transient that can display 'online flash operation failed' before a manual retry succeeds.",
     "Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
