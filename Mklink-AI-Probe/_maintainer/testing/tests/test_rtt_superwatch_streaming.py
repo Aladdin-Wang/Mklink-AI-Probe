@@ -349,6 +349,92 @@ def test_rtt_manager_stops_and_reports_device_error_state():
         manager.stop()
 
 
+def test_rtt_manager_write_preserves_bytes_and_exposes_down_buffers():
+    read_started = threading.Event()
+
+    class Device:
+        def __init__(self):
+            self.writes = []
+
+        def rtt_start(self, *_args, **_kwargs):
+            return {
+                "control_block_addr": "0x20001A40",
+                "down_buffers": [
+                    {"channel": 0, "size": 32, "active": True, "name": "Terminal"},
+                ],
+            }
+
+        def rtt_read(self, **_kwargs):
+            read_started.set()
+            time.sleep(0.002)
+            return b""
+
+        def rtt_write(self, data):
+            self.writes.append(data)
+            return True
+
+        def rtt_stop(self):
+            pass
+
+    device = Device()
+    manager = RttStreamManager()
+    with pytest.raises(RuntimeError, match="not running"):
+        manager.write(b"before start")
+
+    manager.start(device, addr="0x20001A40", mode=1, search_size=0)
+    assert read_started.wait(timeout=1.0)
+
+    payload = b"\x00\xff\r\n"
+    assert manager.write(payload) == len(payload)
+    assert device.writes == [payload]
+    assert manager.get_status()["down_buffers"] == [
+        {"channel": 0, "size": 32, "active": True, "name": "Terminal"},
+    ]
+
+    manager.stop()
+
+    assert manager.get_status()["down_buffers"] == []
+    with pytest.raises(RuntimeError, match="not running"):
+        manager.write(b"after stop")
+
+
+def test_rtt_manager_write_rejects_missing_down_buffer_and_failed_start():
+    read_started = threading.Event()
+
+    class NoDownBufferDevice:
+        def rtt_start(self, *_args, **_kwargs):
+            return {
+                "down_buffers": [
+                    {"channel": 0, "size": 0, "active": False},
+                ],
+            }
+
+        def rtt_read(self, **_kwargs):
+            read_started.set()
+            time.sleep(0.002)
+            return b""
+
+        def rtt_stop(self):
+            pass
+
+    manager = RttStreamManager()
+    manager.start(NoDownBufferDevice())
+    assert read_started.wait(timeout=1.0)
+    with pytest.raises(RuntimeError, match="DownBuffer is unavailable"):
+        manager.write(b"blocked")
+    manager.stop()
+
+    failed = RttStreamManager()
+    failed_device = Mock()
+    failed_device.rtt_start.side_effect = RuntimeError("init failed")
+    failed.start(failed_device)
+    failed._thread.join(timeout=1.0)
+
+    assert failed.get_status()["down_buffers"] == []
+    with pytest.raises(RuntimeError, match="not running"):
+        failed.write(b"stale")
+
+
 def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
     async def scenario():
         hub = StreamHub(max_batches_per_client=8)

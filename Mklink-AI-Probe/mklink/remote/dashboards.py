@@ -233,6 +233,10 @@ class RttStreamManager:
         self._numeric_channels: tuple[str, ...] = ()
         self._numeric_candidate_channels: tuple[str, ...] = ()
         self._numeric_candidate_rows: list[tuple[float, ...]] = []
+        self._device = None
+        self._start_info: dict = {}
+        self._active_generation = None
+        self._write_lock = threading.RLock()
 
     @property
     def running(self) -> bool:
@@ -251,6 +255,14 @@ class RttStreamManager:
     def detach_stream_hub(self, stream_hub) -> None:
         if self._stream_hub is stream_hub:
             self._stream_hub = None
+
+    def _clear_active_session(self, generation=None) -> None:
+        with self._write_lock:
+            if generation is not None and self._active_generation is not generation:
+                return
+            self._device = None
+            self._start_info = {}
+            self._active_generation = None
 
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
         for raw_line in self._line_assembler.feed(chunk, final=final):
@@ -337,6 +349,7 @@ class RttStreamManager:
                 return
             raise RuntimeError("RTT worker thread is still active")
 
+        self._clear_active_session()
         stop_event = threading.Event()
         generation = object()
         self._stop_event = stop_event
@@ -365,9 +378,20 @@ class RttStreamManager:
             start_failure = None
             terminal_failure = None
             try:
-                device.rtt_start(addr, channel=channel, mode=mode,
-                                 search_size=search_size)
+                start_info = device.rtt_start(
+                    addr, channel=channel, mode=mode, search_size=search_size,
+                )
                 initialized = True
+                with self._write_lock:
+                    if (
+                        getattr(self, "_generation", None) is generation
+                        and not stop_event.is_set()
+                    ):
+                        self._device = device
+                        self._start_info = (
+                            dict(start_info) if isinstance(start_info, dict) else {}
+                        )
+                        self._active_generation = generation
                 start_time = time.time()
                 while not stop_event.is_set():
                     if time.time() - start_time > duration:
@@ -406,10 +430,15 @@ class RttStreamManager:
                 else:
                     terminal_failure = e
             finally:
-                try:
-                    device.rtt_stop()
-                except Exception as e:
-                    logger.warning("RTT device stop failed: %s", e)
+                with self._write_lock:
+                    try:
+                        device.rtt_stop()
+                    except Exception as e:
+                        logger.warning("RTT device stop failed: %s", e)
+                    if self._active_generation is generation:
+                        self._device = None
+                        self._start_info = {}
+                        self._active_generation = None
                 self.flush_pending(final=True)
                 try:
                     if getattr(self, "_generation", None) is generation:
@@ -434,6 +463,7 @@ class RttStreamManager:
     def stop(self, timeout: float = 5.0) -> bool:
         thread = self._thread
         self._stop_event.set()
+        self._clear_active_session(getattr(self, "_generation", None))
         if thread:
             thread.join(timeout=timeout)
             if thread.is_alive():
@@ -453,7 +483,31 @@ class RttStreamManager:
     def get_history(self) -> list[dict]:
         return list(self._history)
 
+    def write(self, data: bytes) -> int:
+        with self._write_lock:
+            if (
+                not self.running
+                or self._device is None
+                or self._active_generation is not getattr(self, "_generation", None)
+            ):
+                raise RuntimeError("RTT is not running")
+            down_buffers = self._start_info.get("down_buffers", [])
+            if not any(
+                isinstance(item, dict) and item.get("active")
+                for item in down_buffers
+            ):
+                raise RuntimeError("RTT DownBuffer is unavailable")
+            if not self._device.rtt_write(data):
+                raise RuntimeError("RTT write failed")
+            return len(data)
+
     def get_status(self) -> dict:
+        with self._write_lock:
+            down_buffers = [
+                dict(item)
+                for item in self._start_info.get("down_buffers", [])
+                if isinstance(item, dict)
+            ]
         return {
             "running": self.running,
             "paused": self.paused,
@@ -462,6 +516,7 @@ class RttStreamManager:
             "error": self._error,
             "history_size": len(self._history),
             "numeric_channels": list(self._numeric_channels),
+            "down_buffers": down_buffers,
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 

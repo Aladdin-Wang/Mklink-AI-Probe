@@ -80,6 +80,75 @@ def test_port_discovery_failure_returns_500_and_server_remains_healthy():
     assert health.json()["status"] == "ok"
 
 
+def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_path):
+    source = tmp_path / "firmware.axf"
+    result = SimpleNamespace(
+        addr="0x20001A40",
+        source="binary:firmware.axf",
+        details=["resolved _SEGGER_RTT"],
+        warnings=["symbol tool fallback used"],
+    )
+    with patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch(
+        "mklink.project_config.load_keil_project",
+        side_effect=AssertionError("explicit source must bypass project discovery"),
+    ), patch("mklink.project_config.save_rtt_config") as save_rtt_config:
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rtt-find", json={"source_path": str(source)},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "found": True,
+        "addr": "0x20001A40",
+        "source": "binary:firmware.axf",
+        "source_path": str(source),
+        "details": ["resolved _SEGGER_RTT"],
+        "warnings": ["symbol tool fallback used"],
+    }
+    diagnose.assert_called_once_with(str(source))
+    save_rtt_config.assert_not_called()
+
+
+def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp_path):
+    map_path = tmp_path / "firmware.map"
+    result = SimpleNamespace(
+        addr="0x20001A40",
+        source="map:firmware.map",
+        details=["resolved _SEGGER_RTT"],
+        warnings=[],
+    )
+    with patch(
+        "mklink.project_config.load_keil_project",
+        return_value={"map_path": str(map_path)},
+    ), patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch(
+        "mklink.project_config.load_rtt_config", return_value={"mode": 0},
+    ), patch("mklink.project_config.save_rtt_config") as save_rtt_config:
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post("/api/rtt-find", json={})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "found": True,
+        "addr": "0x20001A40",
+        "source": "map:firmware.map",
+        "source_path": str(map_path),
+        "details": ["resolved _SEGGER_RTT"],
+        "warnings": [],
+        "map_path": str(map_path),
+    }
+    diagnose.assert_called_once_with(str(map_path))
+    save_rtt_config.assert_called_once_with(
+        str(tmp_path), {"mode": 0, "rtt_addr": "0x20001A40"},
+    )
+
+
 def _connected_symbol_device(tmp_path):
     axf = tmp_path / "app.axf"
     axf.write_bytes(b"axf")

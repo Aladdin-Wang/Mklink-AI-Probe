@@ -218,6 +218,62 @@ def test_dashboard_start_holds_both_target_resources_and_stop_releases(
     assert state["resource_manager"].get_status() == {}
 
 
+def test_rtt_write_endpoint_preserves_exact_binary_payload():
+    rtt = SimpleNamespace(running=True, write=MagicMock(return_value=4))
+    managers = {
+        name: rtt if name == "rtt" else SimpleNamespace(running=False)
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, _state = _dashboard_client(managers)
+
+    response = client.post(
+        "/api/dash/rtt/write", json={"data_hex": "00ff0d0a"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"sent_bytes": 4}
+    rtt.write.assert_called_once_with(b"\x00\xff\r\n")
+
+
+@pytest.mark.parametrize(
+    "data_hex",
+    ["", "0", "zz", "00 ff", "00" * 65537],
+    ids=["empty", "odd", "non-hex", "whitespace", "oversized"],
+)
+def test_rtt_write_endpoint_rejects_invalid_payloads(data_hex):
+    rtt = SimpleNamespace(running=True, write=MagicMock())
+    managers = {
+        name: rtt if name == "rtt" else SimpleNamespace(running=False)
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, _state = _dashboard_client(managers)
+
+    response = client.post("/api/dash/rtt/write", json={"data_hex": data_hex})
+
+    assert response.status_code == 422
+    rtt.write.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "message", ["RTT is not running", "RTT DownBuffer is unavailable"],
+)
+def test_rtt_write_endpoint_reports_unavailable_session_as_conflict(message):
+    rtt = SimpleNamespace(
+        running=False,
+        write=MagicMock(side_effect=RuntimeError(message)),
+    )
+    managers = {
+        name: rtt if name == "rtt" else SimpleNamespace(running=False)
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, _state = _dashboard_client(managers)
+
+    response = client.post("/api/dash/rtt/write", json={"data_hex": "01"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == message
+
+
 def test_dashboard_user_conflict_returns_structured_409():
     from mklink.remote.resource_manager import ResourceGroup
 

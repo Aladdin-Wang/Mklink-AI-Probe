@@ -710,15 +710,30 @@ def create_app(
         return rtt_config
 
     @app.post("/api/rtt-find")
-    async def rtt_find():
+    async def rtt_find(
+        source_path: str | None = Body(default=None, embed=True),
+    ):
         """Auto-detect RTT control block address from MAP/ELF file.
 
         Scans the project for MAP files and resolves _SEGGER_RTT address.
         If found, updates rtt_config automatically.
         """
         from mklink.project_config import (
-            ensure_rtt_config_updated, load_rtt_config, load_keil_project,
+            load_rtt_config, load_keil_project,
         )
+        from mklink.rtt_addr import diagnose_rtt_addr
+
+        if source_path:
+            result = diagnose_rtt_addr(source_path)
+            return {
+                "found": bool(result.addr),
+                "addr": result.addr,
+                "source": result.source,
+                "source_path": source_path,
+                "details": result.details,
+                "warnings": result.warnings,
+            }
+
         project_root = _state["project_root"]
         project_info = load_keil_project(project_root) or {}
         map_path = project_info.get("map_path")
@@ -731,7 +746,6 @@ def create_app(
                 map_path = str(candidates[0])
 
         if map_path:
-            from mklink.rtt_addr import diagnose_rtt_addr
             result = diagnose_rtt_addr(map_path)
             if result.addr:
                 # Update rtt_config with found address
@@ -742,15 +756,28 @@ def create_app(
                     "found": True,
                     "addr": result.addr,
                     "source": result.source,
+                    "source_path": map_path,
+                    "details": result.details,
+                    "warnings": result.warnings,
                     "map_path": map_path,
                 }
             return {
                 "found": False,
                 "addr": None,
+                "source": result.source,
+                "source_path": map_path,
                 "details": result.details,
+                "warnings": result.warnings,
                 "map_path": map_path,
             }
-        return {"found": False, "addr": None, "details": ["未找到 MAP 文件"]}
+        return {
+            "found": False,
+            "addr": None,
+            "source": "",
+            "source_path": None,
+            "details": ["未找到 MAP 文件"],
+            "warnings": [],
+        }
 
     @app.post("/api/project-init")
     async def project_init():
@@ -1219,6 +1246,32 @@ def create_app(
         managers = get_managers()
         stop_dashboard_manager(_state, "rtt", managers["rtt"])
         return {"status": "stopped"}
+
+    @app.post("/api/dash/rtt/write")
+    async def rtt_write(
+        data_hex: str = Body(..., embed=True),
+    ):
+        if len(data_hex) > 65536 * 2:
+            raise HTTPException(
+                status_code=422,
+                detail="data_hex payload must contain 1..65536 bytes",
+            )
+        if (
+            not data_hex
+            or len(data_hex) % 2
+            or any(char not in "0123456789abcdefABCDEF" for char in data_hex)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="data_hex must be even hexadecimal",
+            )
+        data = bytes.fromhex(data_hex)
+        managers = get_managers()
+        try:
+            sent_bytes = managers["rtt"].write(data)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"sent_bytes": sent_bytes}
 
     @app.post("/api/dash/rtt/pause")
     async def rtt_pause():
