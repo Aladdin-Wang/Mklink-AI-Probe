@@ -10,6 +10,7 @@ from typing import Callable, Dict, Optional, Set, Tuple, Union
 
 
 BytesLike = Union[bytes, bytearray, memoryview]
+SubscribeCallback = Callable[[Callable[..., int]], None]
 
 
 @dataclass(frozen=True, eq=False)
@@ -35,6 +36,28 @@ class StreamBatch:
         if isinstance(other, (bytes, bytearray, memoryview)):
             return self.payload == bytes(other)
         return NotImplemented
+
+
+class _SubscriberQueue(asyncio.Queue):
+    def __init__(self, maxsize: int):
+        super().__init__(maxsize=maxsize)
+        self._protected_initial = None
+
+    def protect_initial(self, batch: StreamBatch) -> None:
+        self._protected_initial = batch
+
+    def preserves_oldest(self) -> bool:
+        return (
+            self._protected_initial is not None
+            and bool(self._queue)
+            and self._queue[0] is self._protected_initial
+        )
+
+    def get_nowait(self):
+        item = super().get_nowait()
+        if item is self._protected_initial:
+            self._protected_initial = None
+        return item
 
 
 @dataclass(frozen=True)
@@ -81,10 +104,10 @@ class StreamHub:
         self._dropped_items = 0
         self._dropped_bytes = 0
         self._queue_high_water_mark = 0
-        self._subscribe_callback: Optional[Callable[[], None]] = None
+        self._subscribe_callback: Optional[SubscribeCallback] = None
 
     def set_subscribe_callback(
-        self, callback: Optional[Callable[[], None]],
+        self, callback: Optional[SubscribeCallback],
     ) -> None:
         if callback is not None and not callable(callback):
             raise TypeError("subscribe callback must be callable")
@@ -94,19 +117,48 @@ class StreamHub:
 
     def subscribe(self) -> asyncio.Queue:
         loop = self._running_loop()
-        queue: asyncio.Queue = asyncio.Queue(
+        queue: _SubscriberQueue = _SubscriberQueue(
             maxsize=self._max_batches_per_client
         )
-        with self._publish_lock:
-            with self._lock:
-                self._bind_or_require_owner_loop(loop)
-                self._subscribers.add(queue)
-                callback = self._subscribe_callback
-        if callback is not None:
+        with self._lock:
+            callback = self._subscribe_callback
+        activated = False
+
+        def enqueue_initial(
+            batch: BytesLike, item_count: int, flags: int = 0,
+            stream_type=None,
+        ) -> int:
+            nonlocal activated
+            with self._publish_lock:
+                with self._lock:
+                    if activated:
+                        raise RuntimeError("subscriber is already active")
+                    activated = True
+                    self._bind_or_require_owner_loop(loop)
+                    self._subscribers.add(queue)
+                published = self._prepare_batch(
+                    batch, item_count, flags, stream_type,
+                )
+                queue.protect_initial(published)
+                self._schedule_delivery(published)
+            return published.sequence
+
+        if callback is None:
+            with self._publish_lock:
+                with self._lock:
+                    activated = True
+                    self._bind_or_require_owner_loop(loop)
+                    self._subscribers.add(queue)
+        else:
             try:
-                callback()
+                callback(enqueue_initial)
+                if not activated:
+                    raise RuntimeError(
+                        "subscribe callback did not activate the subscriber"
+                    )
             except Exception:
-                self.unsubscribe(queue)
+                if activated:
+                    self.unsubscribe(queue)
                 raise
         return queue
 
@@ -242,17 +294,24 @@ class StreamHub:
                 if queue not in active_subscribers:
                     continue
                 dropped = None
+                enqueue_batch = True
                 if queue.full():
-                    dropped = queue.get_nowait()
-                    queue.task_done()
-                queue.put_nowait(batch)
+                    if queue.preserves_oldest():
+                        dropped = batch
+                        enqueue_batch = False
+                    else:
+                        dropped = queue.get_nowait()
+                        queue.task_done()
+                if enqueue_batch:
+                    queue.put_nowait(batch)
                 with self._lock:
-                    self._delivered_batches += 1
-                    self._delivered_items += batch.item_count
-                    self._delivered_bytes += len(batch)
-                    self._queue_high_water_mark = max(
-                        self._queue_high_water_mark, queue.qsize()
-                    )
+                    if enqueue_batch:
+                        self._delivered_batches += 1
+                        self._delivered_items += batch.item_count
+                        self._delivered_bytes += len(batch)
+                        self._queue_high_water_mark = max(
+                            self._queue_high_water_mark, queue.qsize()
+                        )
                     if dropped is not None:
                         self._dropped_batches += 1
                         self._dropped_items += dropped.item_count

@@ -81,13 +81,22 @@ function streamDelta(after, before) {
     dataFrames: Number(after.gate.dataFrames || 0) - Number(before.gate.dataFrames || 0),
     dataItems: Number(after.gate.dataItems || 0) - Number(before.gate.dataItems || 0),
     dataBytes: Number(after.gate.dataBytes || 0) - Number(before.gate.dataBytes || 0),
-    workerAcceptedFrames: Number(after.gate.lastTelemetry?.acceptedFrames || 0)
-      - Number(before.gate.lastTelemetry?.acceptedFrames || 0),
+    workerAcceptedFrames: Number(after.gate.targetWorkerAcceptedTotal || 0)
+      - Number(before.gate.targetWorkerAcceptedTotal || 0),
     backendProducedItems: Number(after.status?.stream?.produced_items || 0)
       - Number(before.status?.stream?.produced_items || 0),
     canvasFrames: Number(after.gate.canvasClearCalls || 0) - Number(before.gate.canvasClearCalls || 0),
     canvasStrokes: Number(after.gate.canvasStrokeCalls || 0) - Number(before.gate.canvasStrokeCalls || 0),
   }
+}
+
+function accumulateWorkerAcceptedFrames(total, previous, current) {
+  const acceptedTotal = Math.max(0, Number(total) || 0)
+  const previousCount = Math.max(0, Number(previous) || 0)
+  const currentCount = Math.max(0, Number(current) || 0)
+  return acceptedTotal + (currentCount >= previousCount
+    ? currentCount - previousCount
+    : currentCount)
 }
 
 async function apiJson(baseUrl, path, options = {}) {
@@ -343,7 +352,10 @@ async function cleanupPackagedGate(baseUrl, page, streamRoot, profile, targetDea
   let targetDearmed = false
   try {
     await applyMemoryWrites(baseUrl, targetDearmWrites)
-    targetDearmed = await verifyMemoryWrites(baseUrl, targetDearmWrites)
+    targetDearmed = await verifyTargetArmWrites(
+      targetDearmWrites,
+      () => verifyMemoryWrites(baseUrl, targetDearmWrites),
+    )
   } catch { /* reported by targetDearmed=false */ }
   try { await leaveDashboard(page, streamRoot) } catch { /* active client check reports failure */ }
 
@@ -479,6 +491,8 @@ function evaluatePackagedGate(metrics) {
     processTreePeakWorkingSetRecorded: Number(metrics.processTreePeakWorkingSetBytes || 0) > 0,
     fixtureValidated: metrics.fixture?.validated === true,
     noFrontendSequenceErrors: Number(metrics.sequenceErrors || 0) === 0,
+    workerDrained: metrics.workerDrainCompleted === true,
+    noTargetWorkerErrors: Number(metrics.targetWorkerErrors || 0) === 0,
     noFrontendTransportDrops: Number(telemetry.transportDroppedBatches || 0) === 0,
     noFrontendBackendDrops: Number(telemetry.backendDroppedBatches || 0) === 0
       && Number(telemetry.backendDroppedItems || 0) === 0
@@ -532,24 +546,64 @@ async function main() {
   if (!page) throw new Error('no Tauri WebView page exposed by CDP')
   page.setDefaultTimeout(30_000)
   acceptPageDialogs(page)
-  await page.addInitScript(canvasSelector => {
+  await page.addInitScript(({ canvasSelector, websocketPath }) => {
     const gate = window.__mklinkPackagedGate = {
       workerUrls: [], websocketUrls: [], wireFrames: 0, dataFrames: 0, dataItems: 0, dataBytes: 0,
       lastDataSequence: null, sequenceErrors: 0, workerMessages: 0, lastTelemetry: null,
+      workerCount: 0, targetWorkerId: null, targetWorkerAcceptedTotal: 0,
+      targetWorkerLastAcceptedFrames: 0, targetWorkerErrors: 0, targetWorkerErrorCodes: {},
+      targetWorkerErrorMessages: {}, targetWorkerErrorFrameHeaders: {}, targetFrameHeaders: {},
       canvasClearCalls: 0, canvasStrokeCalls: 0,
     }
     const safeCopy = value => Object.fromEntries(Object.entries(value || {}).map(([key, item]) => [
       key, typeof item === 'bigint' ? item.toString() : item,
     ]))
+    const frameKey = (generation, ticket) => `${Number(generation)}:${Number(ticket)}`
+    const targetFrames = new WeakSet()
     const NativeWorker = window.Worker
     window.Worker = class PackagedGateWorker extends NativeWorker {
       constructor(url, options) {
         super(url, options)
+        const workerId = ++gate.workerCount
         gate.workerUrls.push(String(url))
         this.addEventListener('message', event => {
           gate.workerMessages += 1
-          if (event.data?.type === 'telemetry') gate.lastTelemetry = safeCopy(event.data)
+          if (workerId !== gate.targetWorkerId) return
+          if (event.data?.type === 'telemetry') {
+            const currentAcceptedFrames = Math.max(0, Number(event.data.acceptedFrames || 0))
+            gate.targetWorkerAcceptedTotal += currentAcceptedFrames >= gate.targetWorkerLastAcceptedFrames
+              ? currentAcceptedFrames - gate.targetWorkerLastAcceptedFrames
+              : currentAcceptedFrames
+            gate.targetWorkerLastAcceptedFrames = currentAcceptedFrames
+            gate.lastTelemetry = safeCopy(event.data)
+            delete gate.targetFrameHeaders[
+              frameKey(event.data.acceptedConnectionGeneration, event.data.acceptedFrameTicket)
+            ]
+          } else if (event.data?.type === 'error') {
+            gate.targetWorkerErrors += 1
+            const code = String(event.data.code || 'unknown')
+            gate.targetWorkerErrorCodes[code] = Number(gate.targetWorkerErrorCodes[code] || 0) + 1
+            const message = String(event.data.message || 'unknown')
+            gate.targetWorkerErrorMessages[message] = Number(gate.targetWorkerErrorMessages[message] || 0) + 1
+            const key = frameKey(event.data.connectionGeneration, event.data.frameTicket)
+            const header = gate.targetFrameHeaders[key] || 'unknown'
+            gate.targetWorkerErrorFrameHeaders[header]
+              = Number(gate.targetWorkerErrorFrameHeaders[header] || 0) + 1
+            delete gate.targetFrameHeaders[key]
+          }
         })
+      }
+      postMessage(message, transfer) {
+        if (message?.type === 'frame' && targetFrames.has(message.buffer)) {
+          gate.targetWorkerId = workerId
+          if (message.buffer.byteLength >= 36) {
+            const view = new DataView(message.buffer)
+            gate.targetFrameHeaders[
+              frameKey(message.connectionGeneration, message.frameTicket)
+            ] = `${view.getUint8(5)}:${view.getUint16(6, true)}:${view.getUint32(28, true)}:${message.buffer.byteLength - 36}`
+          }
+        }
+        return super.postMessage(message, transfer)
       }
     }
     const NativeWebSocket = window.WebSocket
@@ -557,13 +611,18 @@ async function main() {
       constructor(url, protocols) {
         super(url, protocols)
         gate.websocketUrls.push(String(url))
+        const targetSocket = String(url).includes(websocketPath)
         this.addEventListener('message', event => {
-          if (!(event.data instanceof ArrayBuffer) || event.data.byteLength < 36) return
+          if (!targetSocket) return
+          if (!(event.data instanceof ArrayBuffer)) return
+          targetFrames.add(event.data)
+          if (event.data.byteLength < 36) return
           const bytes = new Uint8Array(event.data)
           if (bytes[0] !== 0x4d || bytes[1] !== 0x4b || bytes[2] !== 0x53 || bytes[3] !== 0x54) return
           const view = new DataView(event.data)
           gate.wireFrames += 1
-          if (view.getUint8(5) === 255) return
+          const streamType = view.getUint8(5)
+          if (streamType === 255) return
           const sequence = view.getBigUint64(12, true)
           if (gate.lastDataSequence !== null && sequence !== BigInt(gate.lastDataSequence) + 1n) gate.sequenceErrors += 1
           gate.dataFrames += 1
@@ -583,7 +642,7 @@ async function main() {
       if (this.canvas?.matches?.(canvasSelector)) gate.canvasStrokeCalls += 1
       return stroke.apply(this, args)
     }
-  }, profile.canvas)
+  }, { canvasSelector: profile.canvas, websocketPath: `/ws/streams/${streamName}` })
 
   const consoleErrors = []
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()) })
@@ -640,11 +699,28 @@ async function main() {
     const resumeStart = await streamSnapshot(page, baseUrl, profile)
     await page.waitForTimeout(resumeDurationMs)
     const resumeEnd = await streamSnapshot(page, baseUrl, profile)
+    await apiJson(baseUrl, `/api/dash/${profile.apiName}/stop`, { method: 'POST' })
+    let workerDrainCompleted = true
+    try {
+      await page.waitForFunction(startGeneration => {
+        const gate = window.__mklinkPackagedGate
+        const telemetry = gate?.lastTelemetry
+        return telemetry?.lastSequence != null
+          && gate.lastDataSequence != null
+          && Number(telemetry.acceptedConnectionGeneration) === startGeneration
+          && String(telemetry.lastSequence) === String(gate.lastDataSequence)
+          && Number(gate.targetWorkerAcceptedTotal || 0) === Number(gate.wireFrames || 0)
+          && Number(gate.targetWorkerErrors || 0) === 0
+      }, Number(startSnapshot.gate.lastTelemetry?.acceptedConnectionGeneration), { timeout: 10_000 })
+    } catch {
+      workerDrainCompleted = false
+    }
+    const transportEnd = await streamSnapshot(page, baseUrl, profile)
     const endedAt = Date.now()
     const startGate = startSnapshot.gate
     const startStatus = startSnapshot.status
-    const endGate = resumeEnd.gate
-    const endStatus = resumeEnd.status
+    const endGate = transportEnd.gate
+    const endStatus = transportEnd.status
     const startParserDrops = parserDropCounters(startStatus)
     const endParserDrops = parserDropCounters(endStatus)
     return {
@@ -654,12 +730,17 @@ async function main() {
       workerAssetUrls: endGate.workerUrls,
       websocketUrls: endGate.websocketUrls,
       dataFrames: endGate.dataFrames - startGate.dataFrames,
-      wireFrames: endGate.wireFrames - startGate.wireFrames,
+      wireFrames: Number(endGate.wireFrames || 0),
       dataItems: endGate.dataItems - startGate.dataItems,
       dataBytes: endGate.dataBytes - startGate.dataBytes,
       lastDataSequence: endGate.lastDataSequence,
       sequenceErrors: endGate.sequenceErrors,
-      workerAcceptedFrames: Number(endGate.lastTelemetry?.acceptedFrames || 0) - Number(startGate.lastTelemetry?.acceptedFrames || 0),
+      workerDrainCompleted,
+      workerAcceptedFrames: Number(endGate.targetWorkerAcceptedTotal || 0),
+      targetWorkerErrors: Number(endGate.targetWorkerErrors || 0),
+      targetWorkerErrorCodes: endGate.targetWorkerErrorCodes || {},
+      targetWorkerErrorMessages: endGate.targetWorkerErrorMessages || {},
+      targetWorkerErrorFrameHeaders: endGate.targetWorkerErrorFrameHeaders || {},
       workerBufferedSamples: Number(endGate.lastTelemetry?.bufferedSamples || 0),
       workerLastSequence: endGate.lastTelemetry?.lastSequence || null,
       workerTelemetry: endGate.lastTelemetry || {},
@@ -733,6 +814,10 @@ async function main() {
         dataFrames: measured.dataFrames, dataItems: measured.dataItems, dataBytes: measured.dataBytes,
         lastDataSequence: measured.lastDataSequence, frontendSequenceErrors: measured.sequenceErrors,
         workerAcceptedFrames: measured.workerAcceptedFrames,
+        targetWorkerErrors: measured.targetWorkerErrors,
+        targetWorkerErrorCodes: measured.targetWorkerErrorCodes,
+        targetWorkerErrorMessages: measured.targetWorkerErrorMessages,
+        targetWorkerErrorFrameHeaders: measured.targetWorkerErrorFrameHeaders,
         workerBufferedSamples: measured.workerBufferedSamples, workerLastSequence: measured.workerLastSequence,
         frontendTransportDroppedBatches: Number(measured.workerTelemetry.transportDroppedBatches || 0),
         frontendBackendDroppedBatches: Number(measured.workerTelemetry.backendDroppedBatches || 0),
@@ -811,4 +896,5 @@ module.exports = {
   waitForStreamUiReady,
   waitForStreamStartControl,
   verifyTargetArmWrites,
+  accumulateWorkerAcceptedFrames,
 }

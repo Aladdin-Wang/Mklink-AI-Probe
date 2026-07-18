@@ -342,6 +342,83 @@ def test_publish_without_subscribers_still_counts_production():
     assert stats.active_clients == 0
 
 
+def test_subscriber_replay_precedes_live_data_without_lock_inversion():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+        metadata_lock = threading.Lock()
+        producer_has_metadata_lock = threading.Event()
+        replay_started = threading.Event()
+
+        def replay_metadata(enqueue_initial):
+            replay_started.set()
+            with metadata_lock:
+                enqueue_initial(b"metadata", item_count=0, flags=1)
+
+        def publish_while_metadata_locked():
+            with metadata_lock:
+                producer_has_metadata_lock.set()
+                assert replay_started.wait(timeout=0.5)
+                hub.publish(b"before-subscribe", item_count=1, flags=2)
+
+        hub.set_subscribe_callback(replay_metadata)
+        producer = threading.Thread(target=publish_while_metadata_locked)
+        producer.start()
+        assert producer_has_metadata_lock.wait(timeout=0.5)
+        client = hub.subscribe()
+        producer.join(timeout=0.5)
+        assert not producer.is_alive()
+        hub.publish(b"after-subscribe", item_count=1, flags=2)
+        await asyncio.sleep(0)
+
+        first = await asyncio.wait_for(client.get(), timeout=0.1)
+        second = await asyncio.wait_for(client.get(), timeout=0.1)
+        assert (first.flags, second.flags) == (1, 2)
+        hub.unsubscribe(client)
+
+    asyncio.run(scenario())
+
+
+def test_subscriber_replay_survives_initial_queue_overflow():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=2)
+
+        def replay_metadata(enqueue_initial):
+            enqueue_initial(b"metadata", item_count=0, flags=1)
+
+        hub.set_subscribe_callback(replay_metadata)
+        client = hub.subscribe()
+        hub.publish(b"first-live", item_count=1, flags=2)
+        hub.publish(b"second-live", item_count=1, flags=2)
+        await asyncio.sleep(0)
+
+        first = await asyncio.wait_for(client.get(), timeout=0.1)
+        second = await asyncio.wait_for(client.get(), timeout=0.1)
+        assert first.payload == b"metadata"
+        assert second.payload == b"first-live"
+        client.task_done()
+        client.task_done()
+        await asyncio.wait_for(client.join(), timeout=0.1)
+
+        hub.publish(b"third-live", item_count=1, flags=2)
+        hub.publish(b"fourth-live", item_count=1, flags=2)
+        hub.publish(b"fifth-live", item_count=1, flags=2)
+        await asyncio.sleep(0)
+        fourth = await asyncio.wait_for(client.get(), timeout=0.1)
+        fifth = await asyncio.wait_for(client.get(), timeout=0.1)
+        assert fourth.payload == b"fourth-live"
+        assert fifth.payload == b"fifth-live"
+        client.task_done()
+        client.task_done()
+        await asyncio.wait_for(client.join(), timeout=0.1)
+
+        stats = hub.stats()
+        assert stats.dropped_batches == 2
+        assert stats.dropped_items == 2
+        hub.unsubscribe(client)
+
+    asyncio.run(scenario())
+
+
 def test_owner_loop_is_released_after_last_subscriber_unsubscribes():
     hub = StreamHub(max_batches_per_client=1)
 

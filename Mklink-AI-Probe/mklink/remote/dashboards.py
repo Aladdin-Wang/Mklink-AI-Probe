@@ -1278,19 +1278,17 @@ class SuperWatchStreamManager:
             stream_hub.set_subscribe_callback(None)
             self._stream_hub = None
 
-    def _publish_subscriber_metadata(self) -> None:
+    def _publish_subscriber_metadata(self, enqueue_initial) -> None:
         # Called synchronously by StreamHub.subscribe(), potentially from the
-        # asyncio event-loop thread.  It must never acquire the layout/read lock.
+        # asyncio event-loop thread. It must never acquire the layout/read lock.
         with self._metadata_publish_lock:
             payload, _snapshot_json, _version = self._metadata_cache
-            stream_hub = self._stream_hub
-            if stream_hub is not None:
-                stream_hub.publish(
-                    payload,
-                    item_count=0,
-                    flags=SUPERWATCH_METADATA_JSON,
-                    stream_type=StreamType.SUPERWATCH,
-                )
+            enqueue_initial(
+                payload,
+                item_count=0,
+                flags=SUPERWATCH_METADATA_JSON,
+                stream_type=StreamType.SUPERWATCH,
+            )
 
     @property
     def running(self) -> bool:

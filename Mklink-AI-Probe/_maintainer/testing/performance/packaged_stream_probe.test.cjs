@@ -24,6 +24,7 @@ const {
   waitForStreamUiReady,
   waitForStreamStartControl,
   verifyTargetArmWrites,
+  accumulateWorkerAcceptedFrames,
 } = require('./packaged_stream_probe.cjs')
 
 test('parser drop counters support nested SuperWatch stream integrity', () => {
@@ -42,6 +43,22 @@ test('parser drop counters support nested SuperWatch stream integrity', () => {
   }), { bytes: 5, packets: 2 })
 })
 
+test('worker accepted-frame accumulation survives decoder telemetry resets', () => {
+  assert.equal(accumulateWorkerAcceptedFrames(0, 0, 10), 10)
+  assert.equal(accumulateWorkerAcceptedFrames(10, 10, 12), 12)
+  assert.equal(accumulateWorkerAcceptedFrames(12, 12, 1), 13)
+})
+
+test('packaged gate rejects target Worker decode errors', () => {
+  const metrics = cleanMetrics()
+  metrics.targetWorkerErrors = 1
+
+  const evaluation = evaluatePackagedGate(metrics)
+
+  assert.equal(evaluation.checks.noTargetWorkerErrors, false)
+  assert.equal(evaluation.pass, false)
+})
+
 function cleanMetrics() {
   return {
     streamName: 'rtt',
@@ -53,7 +70,9 @@ function cleanMetrics() {
     wireFrames: 10,
     dataItems: 100,
     lastDataSequence: '42',
+    workerDrainCompleted: true,
     workerAcceptedFrames: 10,
+    targetWorkerErrors: 0,
     workerBufferedSamples: 100,
     workerLastSequence: '42',
     canvasFrames: 30,
@@ -158,6 +177,20 @@ test('the executable path leaves stdout flushing to process exitCode', () => {
   const source = fs.readFileSync(path.resolve(__dirname, 'packaged_stream_probe.cjs'), 'utf8')
   assert.equal(source.includes('process.exit('), false)
   assert.equal(source.includes('process.exitCode ='), true)
+})
+
+test('target Worker follows transferred target WebSocket frames instead of mount order', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, 'packaged_stream_probe.cjs'), 'utf8')
+  assert.equal(source.includes('gate.targetWorkerId = gate.workerCount'), false)
+  assert.equal(source.includes('targetFrames.add(event.data)'), true)
+  assert.equal(source.includes('targetFrames.has(message.buffer)'), true)
+})
+
+test('target frame diagnostics key headers by connection generation and ticket', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, 'packaged_stream_probe.cjs'), 'utf8')
+  assert.equal(source.includes('gate.targetFrameHeaders[gate.wireFrames]'), false)
+  assert.equal(source.includes('frameKey(message.connectionGeneration, message.frameTicket)'), true)
+  assert.equal(source.includes('frameKey(event.data.connectionGeneration, event.data.frameTicket)'), true)
 })
 
 test('runWithCleanup executes cleanup after a measurement failure', async () => {
