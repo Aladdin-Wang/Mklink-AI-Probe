@@ -8,7 +8,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from mklink.remote.dashboards import RttStreamManager, SuperWatchStreamManager
+from mklink.remote.dashboards import (
+    RttStreamManager,
+    SuperWatchStreamManager,
+    normalize_superwatch_interval,
+)
 from mklink.dump_memory import MAGIC
 from mklink.remote.stream_hub import StreamHub
 from mklink.remote.stream_protocol import (
@@ -35,6 +39,24 @@ def test_superwatch_dashboard_template_defaults_interval_to_1ms():
 
     assert 'id="interval-input" value="0.001"' in superwatch_html
     assert 'id="interval-input" value="0"' in vofa_html
+
+
+@pytest.mark.parametrize("interval", [0.00001, 0.001, 60.0])
+def test_superwatch_interval_accepts_supported_range(interval):
+    assert normalize_superwatch_interval(interval) == pytest.approx(interval)
+
+
+@pytest.mark.parametrize(
+    "interval", [float("nan"), float("inf"), -float("inf"), 0, 0.000009, 60.000001],
+)
+def test_superwatch_interval_rejects_values_outside_10us_to_60s(interval):
+    manager = SuperWatchStreamManager()
+    before = manager.get_status()["interval"]
+
+    with pytest.raises(ValueError, match="SuperWatch interval"):
+        manager.set_interval(interval)
+
+    assert manager.get_status()["interval"] == before
 
 
 def _watch_item(name, address):
@@ -730,7 +752,7 @@ def test_superwatch_concurrent_poll_add_remove_pressure_keeps_batches_aligned(mo
         return SimpleNamespace(origin_us=sampled, points=[point])
 
     monkeypatch.setattr("mklink.superwatch.sample_blocks", sample_blocks)
-    manager.set_interval(0.0)
+    manager.set_interval(0.00001)
     manager.start(SimpleNamespace(_bridge=object()))
     try:
         for _ in range(100):

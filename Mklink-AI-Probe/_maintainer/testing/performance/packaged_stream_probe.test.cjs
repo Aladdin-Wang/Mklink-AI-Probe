@@ -12,6 +12,7 @@ const {
   evaluatePackagedGate,
   leaveDashboard,
   memoryWriteBody,
+  parserDropCounters,
   runBrowserLifecycle,
   runWithCleanup,
   selectDashboardStreamTab,
@@ -24,6 +25,22 @@ const {
   waitForStreamStartControl,
   verifyTargetArmWrites,
 } = require('./packaged_stream_probe.cjs')
+
+test('parser drop counters support nested SuperWatch stream integrity', () => {
+  assert.deepEqual(parserDropCounters({
+    parser_dropped_bytes: 99,
+    parser_dropped_packets: 88,
+    stream_integrity: {
+      parser_dropped_bytes: 7,
+      parser_dropped_frames: 3,
+    },
+  }), { bytes: 7, packets: 3 })
+
+  assert.deepEqual(parserDropCounters({
+    parser_dropped_bytes: 5,
+    parser_dropped_packets: 2,
+  }), { bytes: 5, packets: 2 })
+})
 
 function cleanMetrics() {
   return {

@@ -171,15 +171,24 @@ async function waitForWarmStream(page) {
 }
 
 function lossCounterKey(status) {
+  const parserDrops = parserDropCounters(status)
   return JSON.stringify([
     Number(status?.stream?.dropped_batches || 0),
     Number(status?.stream?.dropped_items || 0),
     Number(status?.stream?.dropped_bytes || 0),
-    Number(status?.parser_dropped_bytes || 0),
-    Number(status?.parser_dropped_packets || 0),
+    parserDrops.bytes,
+    parserDrops.packets,
     Number(status?.target_dropped_packets_since_baseline || 0),
     Number(status?.target_overflow_events || 0),
   ])
+}
+
+function parserDropCounters(status) {
+  const source = status?.stream_integrity || status || {}
+  return {
+    bytes: Number(source.parser_dropped_bytes || 0),
+    packets: Number(source.parser_dropped_packets || source.parser_dropped_frames || 0),
+  }
 }
 
 async function waitForStableLossCounters(page, baseUrl, profile) {
@@ -636,6 +645,8 @@ async function main() {
     const startStatus = startSnapshot.status
     const endGate = resumeEnd.gate
     const endStatus = resumeEnd.status
+    const startParserDrops = parserDropCounters(startStatus)
+    const endParserDrops = parserDropCounters(endStatus)
     return {
       streamName,
       requiredDurationSeconds: durationMs / 1_000,
@@ -660,8 +671,8 @@ async function main() {
         bytes: Number(endStatus.stream?.dropped_bytes || 0) - Number(startStatus.stream?.dropped_bytes || 0),
       },
       parserDrops: {
-        bytes: Number(endStatus.parser_dropped_bytes || 0) - Number(startStatus.parser_dropped_bytes || 0),
-        packets: Number(endStatus.parser_dropped_packets || 0) - Number(startStatus.parser_dropped_packets || 0),
+        bytes: endParserDrops.bytes - startParserDrops.bytes,
+        packets: endParserDrops.packets - startParserDrops.packets,
       },
       targetDrops: {
         packets: Number(endStatus.target_dropped_packets_since_baseline || 0)
@@ -670,8 +681,8 @@ async function main() {
           - Number(startStatus.target_overflow_events || 0),
       },
       targetBaseline: {
-        parserDroppedBytes: Number(startStatus.parser_dropped_bytes || 0),
-        parserDroppedPackets: Number(startStatus.parser_dropped_packets || 0),
+        parserDroppedBytes: startParserDrops.bytes,
+        parserDroppedPackets: startParserDrops.packets,
         droppedPacketsSinceBaseline: Number(startStatus.target_dropped_packets_since_baseline || 0),
         overflowEvents: Number(startStatus.target_overflow_events || 0),
       },
@@ -786,6 +797,7 @@ module.exports = {
   evaluatePackagedGate,
   leaveDashboard,
   memoryWriteBody,
+  parserDropCounters,
   processTreeWorkingSet,
   runBrowserLifecycle,
   runWithCleanup,

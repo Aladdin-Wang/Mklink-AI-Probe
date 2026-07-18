@@ -1545,7 +1545,10 @@ def create_app(
     @app.post("/api/dash/superwatch/interval")
     async def superwatch_interval(interval: float = Body(..., embed=True)):
         managers = get_managers()
-        actual = managers["superwatch"].set_interval(interval)
+        try:
+            actual = managers["superwatch"].set_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"interval": actual}
 
     @app.get("/api/dash/superwatch/status")

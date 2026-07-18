@@ -189,6 +189,7 @@ var COLORS = [
 ];
 var GRID_COLOR = '#e8e6dc';
 var TEXT_DIM = '#87867f';
+var MIN_POINTS = Number.isFinite(Number(CONFIG.minPoints)) ? Math.floor(Number(CONFIG.minPoints)) : 2;
 var MAX_POINTS = CONFIG.maxPoints;
 var MAX_CHANNELS = 64; // Support 50+ channels (Task 7I)
 var RING_BUFFER_CAPACITY = MAX_POINTS; // Ring buffer capacity matches max points
@@ -715,16 +716,17 @@ document.getElementById('btn-stop').addEventListener('click', function() {
 });
 document.getElementById('btn-apply-buffer').addEventListener('click', function() {
   var val = parseInt(document.getElementById('buffer-input').value, 10);
-  if (!Number.isFinite(val) || val < 2 || val > 200000) {
-    alert('Buffer must be between 2 and 200000 points');
+  if (!Number.isFinite(val) || val < MIN_POINTS || val > 200000) {
+    alert('Buffer must be between ' + MIN_POINTS + ' and 200000 points per channel');
     return;
   }
   setBufferCapacity(val);
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
   var val = parseFloat(intervalInput.value);
-  if (isNaN(val) || val < 0 || val > 60) {
-    alert('Interval must be between 0 and 60 seconds');
+  var minimumInterval = IS_SUPERWATCH_MODE ? 0.00001 : 0;
+  if (!Number.isFinite(val) || val < minimumInterval || val > 60) {
+    alert('Interval must be between ' + minimumInterval + ' and 60 seconds');
     return;
   }
   intervalDirty = false;
@@ -1824,7 +1826,7 @@ function findWatchRow(name) {
 function setBufferCapacity(newCapacity) {
   newCapacity = Math.floor(Number(newCapacity));
   if (!Number.isFinite(newCapacity)) return false;
-  newCapacity = Math.max(2, Math.min(200000, newCapacity));
+  newCapacity = Math.max(MIN_POINTS, Math.min(200000, newCapacity));
   RING_BUFFER_CAPACITY = newCapacity;
   MAX_POINTS = newCapacity;
   window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
@@ -2787,7 +2789,7 @@ function drawChart() {
   var visChNames = sortedFieldNames().filter(function(k) {
     if (!FIELDS[k].visible) return false;
     var envelopeIndex = binaryChannelIndex[k];
-    if (IS_VOFA_MODE && binaryEnvelope && envelopeIndex !== undefined) {
+    if (IS_BINARY_WAVEFORM_MODE && binaryEnvelope && envelopeIndex !== undefined) {
       return binaryEnvelope.offsets[envelopeIndex + 1] - binaryEnvelope.offsets[envelopeIndex] >= 2;
     }
     return FIELDS[k].ringBuf.count >= 2;
@@ -2865,7 +2867,7 @@ function drawChart() {
     var started = false;
     var ring = meta.ringBuf;
     var envelopeChannel = binaryChannelIndex[name];
-    if (IS_VOFA_MODE && binaryEnvelope && envelopeChannel !== undefined) {
+    if (IS_BINARY_WAVEFORM_MODE && binaryEnvelope && envelopeChannel !== undefined) {
       var envelopeStart = binaryEnvelope.offsets[envelopeChannel];
       var envelopeEnd = binaryEnvelope.offsets[envelopeChannel + 1];
       for (var envelopePoint = envelopeStart; envelopePoint < envelopeEnd; envelopePoint++) {
@@ -3471,7 +3473,7 @@ function drawMinimap() {
     var bufMax = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1;
     var yRange = bufMax - bufMin || 1;
     var minimapChannel = binaryChannelIndex[names[ni]];
-    if (IS_VOFA_MODE && binaryEnvelope && minimapChannel !== undefined) {
+    if (IS_BINARY_WAVEFORM_MODE && binaryEnvelope && minimapChannel !== undefined) {
       var minimapStart = binaryEnvelope.offsets[minimapChannel];
       var minimapEnd = binaryEnvelope.offsets[minimapChannel + 1];
       for (var minimapPoint = minimapStart; minimapPoint < minimapEnd; minimapPoint++) {

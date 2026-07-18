@@ -1179,6 +1179,26 @@ class SystemViewStreamManager:
 # SuperWatch SSE Generator
 # ---------------------------------------------------------------------------
 
+SUPERWATCH_MIN_INTERVAL = 0.00001
+
+
+def normalize_superwatch_interval(interval: float) -> float:
+    """Return a finite SuperWatch interval supported by the desktop UI."""
+    try:
+        value = float(interval)
+    except (TypeError, ValueError):
+        raise ValueError("SuperWatch interval must be a finite number") from None
+    if (
+        not math.isfinite(value)
+        or value < SUPERWATCH_MIN_INTERVAL
+        or value > 60.0
+    ):
+        raise ValueError(
+            "SuperWatch interval must be finite and in the range [0.00001, 60]"
+        )
+    return value
+
+
 class SuperWatchTransactionError(RuntimeError):
     """Identifies the failed phase of a serialized SuperWatch operation."""
 
@@ -1372,7 +1392,7 @@ class SuperWatchStreamManager:
                             for block in blocks
                         ]
                         session = DumpMemoryStreamSession(
-                            bridge, region_pairs, max(0.000001, self._interval),
+                            bridge, region_pairs, self._interval,
                         )
                         completed_integrity = dict(self._stream_integrity)
                         try:
@@ -1730,7 +1750,7 @@ class SuperWatchStreamManager:
         self._collecting.set()
 
     def set_interval(self, interval: float) -> float:
-        self._interval = max(0.0, min(60.0, interval))
+        self._interval = normalize_superwatch_interval(interval)
         self._dump_restart.set()
         return self._interval
 

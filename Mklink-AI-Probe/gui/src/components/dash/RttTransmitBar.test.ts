@@ -46,11 +46,13 @@ describe('RttTransmitBar', () => {
     await ending.setValue('\r\n')
     await wrapper.get('[data-testid="rtt-send"]').trigger('click')
     expect(send).toHaveBeenLastCalledWith(Uint8Array.of(0x70, 0x69, 0x6e, 0x67, 0x0d, 0x0a))
-    expect((wrapper.get('[data-testid="rtt-input"]').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('[data-testid="rtt-input"]').element as HTMLInputElement).value).toBe('ping')
 
     await wrapper.get('[data-testid="rtt-input"]').setValue('ok')
     await wrapper.get('[data-testid="rtt-input"]').trigger('keydown', { key: 'Enter' })
     expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenLastCalledWith(Uint8Array.of(0x6f, 0x6b, 0x0d, 0x0a))
+    expect((wrapper.get('[data-testid="rtt-input"]').element as HTMLInputElement).value).toBe('ok')
   })
 
   it('does not send while Enter is part of IME composition', async () => {
@@ -65,18 +67,24 @@ describe('RttTransmitBar', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('does not send an empty main payload even when a line ending is selected', async () => {
+  it('sends a selected line ending without a main payload and blocks a fully empty payload', async () => {
     const send = vi.fn().mockResolvedValue(undefined)
     const wrapper = mount(RttTransmitBar, {
       props: { enabled: true, settings: settings({ lineEnding: '\r\n' }), send },
     })
 
-    expect(wrapper.get('[data-testid="rtt-send"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="rtt-send"]').attributes('disabled')).toBeUndefined()
     await wrapper.get('[data-testid="rtt-input"]').trigger('keydown', { key: 'Enter' })
-    expect(send).not.toHaveBeenCalled()
+    expect(send).toHaveBeenLastCalledWith(Uint8Array.of(0x0d, 0x0a))
 
     await wrapper.get('[data-testid="rtt-format"]').trigger('click')
     await wrapper.get('[data-testid="rtt-input"]').setValue('   ')
+    expect(wrapper.get('[data-testid="rtt-send"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="rtt-send"]').trigger('click')
+    expect(send).toHaveBeenLastCalledWith(Uint8Array.of(0x0d, 0x0a))
+
+    await wrapper.get('[data-testid="rtt-clear"]').trigger('click')
+    await wrapper.get('[data-testid="rtt-ending"]').setValue('')
     expect(wrapper.get('[data-testid="rtt-send"]').attributes('disabled')).toBeDefined()
   })
 
@@ -149,6 +157,7 @@ describe('RttTransmitBar', () => {
     expect(changed.sendHistory[0]).toMatchObject({
       text: 'status?', mode: 'text', lineEnding: '',
     })
+    expect((wrapper.get('[data-testid="rtt-input"]').element as HTMLInputElement).value).toBe('status?')
 
     await wrapper.setProps({ settings: changed })
     await wrapper.get('[data-testid="rtt-format"]').trigger('click')

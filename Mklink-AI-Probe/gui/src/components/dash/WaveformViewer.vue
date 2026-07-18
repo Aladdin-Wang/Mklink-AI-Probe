@@ -243,8 +243,11 @@ onUnmounted(() => {
 })
 
 function buildTemplate(mode: string): string {
-  const maxPoints = 10000
+  const minPoints = mode === 'SuperWatch' ? 50000 : 2
+  const maxPoints = mode === 'SuperWatch' ? 50000 : 10000
   const intervalValue = mode === 'SuperWatch' ? '0.001' : '0'
+  const intervalMinimum = mode === 'SuperWatch' ? '0.00001' : '0'
+  const intervalStep = mode === 'SuperWatch' ? '0.00001' : '0.001'
   return `
 <header>
   <h1>MKLink ${mode}</h1>
@@ -275,13 +278,13 @@ function buildTemplate(mode: string): string {
   <span id="collection-status-badge" class="status-running" data-i18n="running">Running</span>
   <div class="ctrl-sep"></div>
   <label data-i18n="buffer">Buffer</label>
-  <input type="number" id="buffer-input" value="${maxPoints}" min="2" max="200000" step="10">
-  <span class="buffer-unit">pts</span>
+  <input type="number" id="buffer-input" value="${maxPoints}" min="${minPoints}" max="200000" step="10">
+  <span class="buffer-unit">pts/ch</span>
   <button id="btn-apply-buffer" class="ctrl-btn" data-i18n="apply">Apply</button>
   <div class="ctrl-sep"></div>
   <div id="interval-group">
     <label data-i18n="interval">Interval</label>
-    <input type="number" id="interval-input" value="${intervalValue}" step="0.001" min="0" max="60">
+    <input type="number" id="interval-input" value="${intervalValue}" step="${intervalStep}" min="${intervalMinimum}" max="60">
     <span class="interval-unit">s</span>
     <button id="btn-apply-interval" class="ctrl-btn" data-i18n="apply">Apply</button>
   </div>
@@ -442,11 +445,14 @@ function buildTemplate(mode: string): string {
 }
 
 function injectScripts(el: HTMLDivElement, mode: string) {
+  const minPoints = mode === 'SuperWatch' ? 50000 : 2
+  const maxPoints = mode === 'SuperWatch' ? 50000 : 10000
   // 1. Set CONFIG globally
   const configScript = document.createElement('script')
   configScript.textContent = `
     var CONFIG = {
-      maxPoints: 10000,
+      minPoints: ${minPoints},
+      maxPoints: ${maxPoints},
       title: "MKLink ${mode}",
       mode: "${mode}",
       lang: "zh",

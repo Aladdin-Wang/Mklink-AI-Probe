@@ -82,7 +82,11 @@ const hasMainPayload = computed(() => (
     ? input.value.length > 0
     : input.value.replace(/[\x09-\x0d\x20]/g, '').length > 0
 ))
-const canSend = computed(() => props.enabled && !sending.value && hasMainPayload.value)
+const canSend = computed(() => (
+  props.enabled
+  && !sending.value
+  && (hasMainPayload.value || lineEnding.value.length > 0)
+))
 
 watch(() => props.settings, settings => {
   mode.value = settings.transmitMode
@@ -163,7 +167,6 @@ async function submit(): Promise<void> {
   try {
     await props.send(payload)
     updateSettings({ sendHistory: historyAfterSuccess(submitted) })
-    if (input.value === submitted.text) input.value = ''
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught)
   } finally {

@@ -393,7 +393,13 @@ describe('WaveformViewer VOFA binary transport', () => {
     const runtime = await loadRttViewerRuntime('SuperWatch')
     try {
       const input = document.getElementById('interval-input') as HTMLInputElement
+      const bufferInput = document.getElementById('buffer-input') as HTMLInputElement
+      expect(bufferInput.value).toBe('50000')
+      expect(bufferInput.min).toBe('50000')
+      expect(bufferInput.max).toBe('200000')
       expect(input.value).toBe('0.001')
+      expect(input.min).toBe('0.00001')
+      expect(input.step).toBe('0.00001')
       expect(runtime.probe.currentInterval()).toBe(0.001)
 
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
@@ -402,15 +408,15 @@ describe('WaveformViewer VOFA binary transport', () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ interval: 0.002 }),
+        json: async () => ({ interval: 0.00001 }),
       })
       vi.stubGlobal('fetch', fetchMock)
       input.focus()
-      input.value = '0.002'
+      input.value = '0.00001'
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.blur()
       runtime.probe.syncStatus({ state: 'running', interval: 0.001, items: [] })
-      expect(input.value).toBe('0.002')
+      expect(input.value).toBe('0.00001')
       document.getElementById('btn-apply-interval')?.click()
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
 
@@ -418,11 +424,11 @@ describe('WaveformViewer VOFA binary transport', () => {
         '/api/dash/superwatch/interval',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ interval: 0.002 }),
+          body: JSON.stringify({ interval: 0.00001 }),
         }),
       )
-      expect(runtime.probe.currentInterval()).toBe(0.002)
-      expect(input.value).toBe('0.002')
+      expect(runtime.probe.currentInterval()).toBe(0.00001)
+      expect(input.value).toBe('0.00001')
       expect(runtime.probe.collectionState().state).toBe('running')
     } finally {
       runtime.cleanup()
@@ -1493,11 +1499,12 @@ describe('VOFA viewer typed-ring runtime', () => {
     }
   }, 90_000)
 
-  it('renders a 200k x 8 snapshot from a bounded envelope without scanning rings', async () => {
+  it.each(['VOFA', 'SuperWatch'] as const)(
+    'renders a 200k x 8 %s snapshot from a bounded envelope without scanning rings', async mode => {
     const sampleCount = 200_000
     const channelCount = 8
     const pixelWidth = 800
-    const runtime = await loadRttViewerRuntime('VOFA', sampleCount)
+    const runtime = await loadRttViewerRuntime(mode, sampleCount)
     try {
       const channels = Array.from({ length: channelCount }, (_, index) => ({ name: `C${index}` }))
       runtime.viewer.configureBinaryChannels(channels)
@@ -1549,7 +1556,8 @@ describe('VOFA viewer typed-ring runtime', () => {
     } finally {
       runtime.cleanup()
     }
-  })
+    },
+  )
 
   it('renders wrapped multi-channel cursor data without copying either ring', async () => {
     const runtime = await loadRttViewerRuntime()
