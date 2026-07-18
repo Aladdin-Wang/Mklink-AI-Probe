@@ -182,6 +182,9 @@ test('the executable path leaves stdout flushing to process exitCode', () => {
 test('target Worker follows transferred target WebSocket frames instead of mount order', () => {
   const source = fs.readFileSync(path.resolve(__dirname, 'packaged_stream_probe.cjs'), 'utf8')
   assert.equal(source.includes('gate.targetWorkerId = gate.workerCount'), false)
+  assert.doesNotMatch(source, /gate\.targetWorkerId = workerId(?:\s|$)/)
+  assert.equal(source.includes('workerIds.set(this, workerId)'), true)
+  assert.equal(source.includes('workerIds.get(this)'), true)
   assert.equal(source.includes('targetFrames.add(event.data)'), true)
   assert.equal(source.includes('targetFrames.has(message.buffer)'), true)
 })

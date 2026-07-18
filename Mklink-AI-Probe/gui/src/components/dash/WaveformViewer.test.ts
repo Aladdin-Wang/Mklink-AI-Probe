@@ -311,6 +311,27 @@ describe('WaveformViewer VOFA binary transport', () => {
     wrapper.unmount()
   })
 
+  it('reconnects SuperWatch after the running-boundary reset to replay metadata', async () => {
+    const wrapper = mount(WaveformViewer, {
+      props: { mode: 'SuperWatch', deviceConnected: true },
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    mocks.binary.start.mockClear()
+    mocks.binary.stop.mockClear()
+    mocks.binary.reset.mockClear()
+
+    window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'running' }))
+
+    expect(mocks.binary.stop).toHaveBeenCalledOnce()
+    expect(mocks.binary.reset).toHaveBeenCalledOnce()
+    expect(mocks.binary.start).toHaveBeenCalledOnce()
+    expect(mocks.binary.stop.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.binary.reset.mock.invocationCallOrder[0])
+    expect(mocks.binary.reset.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.binary.start.mock.invocationCallOrder[0])
+    wrapper.unmount()
+  })
+
   it.each(['VOFA', 'SuperWatch'] as const)(
     'dispatches real %s script start/stop boundaries and clears binary data',
     async mode => {

@@ -131,7 +131,9 @@ function startVofaStatusPolling(startTransport: boolean): void {
 function onVofaStreamState(event: Event): void {
   const state = (event as CustomEvent<unknown>).detail
   if (state === 'running') {
+    if (props.mode === 'SuperWatch') binary.stop()
     resetVofaSession()
+    if (props.mode === 'SuperWatch') binary.start()
     startVofaStatusPolling(false)
   } else if (state === 'stopped') {
     resetVofaSession()

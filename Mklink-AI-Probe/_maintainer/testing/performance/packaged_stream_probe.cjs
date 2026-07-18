@@ -560,11 +560,13 @@ async function main() {
     ]))
     const frameKey = (generation, ticket) => `${Number(generation)}:${Number(ticket)}`
     const targetFrames = new WeakSet()
+    const workerIds = new WeakMap()
     const NativeWorker = window.Worker
     window.Worker = class PackagedGateWorker extends NativeWorker {
       constructor(url, options) {
         super(url, options)
         const workerId = ++gate.workerCount
+        workerIds.set(this, workerId)
         gate.workerUrls.push(String(url))
         this.addEventListener('message', event => {
           gate.workerMessages += 1
@@ -595,7 +597,7 @@ async function main() {
       }
       postMessage(message, transfer) {
         if (message?.type === 'frame' && targetFrames.has(message.buffer)) {
-          gate.targetWorkerId = workerId
+          gate.targetWorkerId = workerIds.get(this)
           if (message.buffer.byteLength >= 36) {
             const view = new DataView(message.buffer)
             gate.targetFrameHeaders[
