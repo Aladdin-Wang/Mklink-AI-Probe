@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-18T09:14:36+08:00`
+- 更新时间：`2026-07-18T15:47:04+08:00`
 - 分支：`feature/online-flash-streaming`
 - HEAD：`2b5ddd7 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
 - 工作树：clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed
-- 当前任务：The 2b5ddd7 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine, collect tester feedback, and reproduce the remaining first-load offline target-search transient.
+- 当前任务：The 2b5ddd7 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.
 - 状态：`complete`
 
 ## 里程碑
@@ -37,6 +37,7 @@
 - **SuperWatch waveform visibility and shared-axis workspace** — `complete`。The first full GUI run shared the host with Python and Rust and exceeded the synthetic VOFA peak-heap threshold by about 15 MiB while all functional assertions passed. The complete WaveformViewer file and the full GUI suite both passed when rerun without competing toolchains, identifying parallel host memory pressure rather than a stable product regression.
 - **Standalone Windows installer candidates for 04c1ca7** — `complete`。The packages are intentionally not committed. The release directory is excluded by the main repository's local Git exclude. All current installers remain unsigned and may show an unknown-publisher warning.
 - **SuperWatch 1 ms default and live interval editing** — `complete`。The first implementation already supported dynamic cmd.dump_memory restart, but status polling rewrote the number input before the user could submit. A focus-only guard passed synthetic click tests but failed with real mouse timing because blur could run before click. The final dirty/pending model is independent of focus event ordering. Completed SuperWatch plans were removed and the active Tauri builder skill was rewritten and synchronized.
+- **Offline Flash first-load target-search retest** — `complete`。The original one-off online flash operation failed observation is closed by repeated installed-runtime retest. No screenshots, raw logs, probe identifiers, COM ports, or local hardware paths are retained.
 
 ## 验证证据
 
@@ -68,6 +69,7 @@
 - **SuperWatch waveform visibility and shared-axis installed HIL**：Python 659, GUI 279, focused SuperWatch 55, isolated WaveformViewer 48, and Rust 6 tests passed; cargo check and the Vite production build also passed. Computer Use verified the expanded waveform workspace, independent eye visibility with continued acquisition, shared numeric Y ticks, Y zoom/pan/reset, pause with continued buffering, resume catch-up, stop with backend buffer reset, normal application exit, and sidecar/port release.
 - **04c1ca7 standalone Windows installer qualification**：Standard and WebView2-offline MSI/NSIS bundles were generated. Both NSIS variants installed silently with exit 0. Under a PATH containing only Windows system directories, the installed application returned API health ok, enumerated the MicroKeen CMSIS-DAP, used only mklink-ai-probe.exe plus the bundled mklink-sidecar.exe process pair, spawned no Python process, and released all processes and port 8765 on normal close. MSI administrative extraction contained both installed executables. SHA-256 checksums were generated for all four external release files.
 - **SuperWatch 1 ms default and dynamic interval installed HIL**：Python 660 and GUI 280 passed; Vite transformed 1906 modules. The 2b5ddd7 standard NSIS installed with exit 0. Real Edge/Playwright verified 0.001 initial display, a 0.002 draft surviving live polling, backend and UI both applying 0.002 while running, read cycles increasing from 178 to 2343 during the checked window, points increasing from 0 to 2272, changing float values, pause with continued backend reads, resume, stopped state, zero read errors, zero remaining clients after browser close, and complete process/port cleanup.
+- **Offline Flash first-load target-search installed retest**：Three valid cold starts of the installed 2b5ddd7 standard NSIS application were exercised with real Microsoft Edge/Playwright, the bundled sidecar, and a physical V4.3.4 probe. Offline Flash showed one matching target without manual retry and no error alert in every round. The two instrumented rounds captured the initial target-search request returning HTTP 200, and probe-model detection completed successfully.
 
 ## 架构决策
 
@@ -104,11 +106,10 @@
 ## 下一动作
 
 1. Install the 2b5ddd7 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, probe discovery, SuperWatch 0.001 to 0.002 live adjustment, normal shutdown, uninstall, and reinstall checks.
-2. Reproduce and fix the first-load Offline Flash target-search transient that can display 'online flash operation failed' before a manual retry succeeds.
-3. Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
-4. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
-5. For the next release, add code signing before promoting beyond prerelease.
-6. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
+2. Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
+3. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
+4. For the next release, add code signing before promoting beyond prerelease.
+5. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
 
 ## 已知限制
 
@@ -126,7 +127,6 @@
 - After the explicit packaging pause, Computer Use could not reconnect because its native pipe was missing, and the Browser plugin reported no available browser instance. The final dynamic-interval pass therefore used real Microsoft Edge through local Playwright against the production frontend and installed bundled sidecar; the temporary screenshot was deleted and no screenshot evidence is committed.
 - Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.
 - Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.
-- The first installed Offline Flash page load once showed the English transient error 'online flash operation failed'; pressing Search Target immediately succeeded. Reproduction and startup-order root cause remain open.
 - Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.
 - The 2b5ddd7 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
