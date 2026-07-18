@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-18T22:37:03+08:00`
+- 更新时间：`2026-07-19T00:31:06+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`93d83e4 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory`
+- HEAD：`28421cb is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory`
 - 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
 - 工作树：clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed
-- 当前任务：The 93d83e4 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.
+- 当前任务：The 28421cb v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.
 - 状态：`complete`
 
 ## 里程碑
@@ -39,6 +39,7 @@
 - **SuperWatch 1 ms default and live interval editing** — `complete`。The first implementation already supported dynamic cmd.dump_memory restart, but status polling rewrote the number input before the user could submit. A focus-only guard passed synthetic click tests but failed with real mouse timing because blur could run before click. The final dirty/pending model is independent of focus event ordering. Completed SuperWatch plans were removed and the active Tauri builder skill was rewritten and synchronized.
 - **Offline Flash first-load target-search retest** — `complete`。The original one-off online flash operation failed observation is closed by repeated installed-runtime retest. No screenshots, raw logs, probe identifiers, COM ports, or local hardware paths are retained.
 - **Desktop configuration workspace and bidirectional RTT** — `complete`。The standard NSIS is unsigned. AXF/ELF address diagnosis still depends on external arm-none-eabi-readelf; the restricted installed-runtime test intentionally omitted it, so MAP diagnosis was used and passed. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
+- **Packaged RTT startup visibility and version identity** — `complete`。Only the standard unsigned NSIS was generated. The final installed pass verified transmit acceptance but did not establish a fresh byte-exact MCU echo because the parser coalesced the target's per-byte echo records; the previous 93d83e4 hardware qualification retains byte-exact payload coverage. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
 
 ## 验证证据
 
@@ -72,6 +73,7 @@
 - **SuperWatch 1 ms default and dynamic interval installed HIL**：Python 660 and GUI 280 passed; Vite transformed 1906 modules. The 2b5ddd7 standard NSIS installed with exit 0. Real Edge/Playwright verified 0.001 initial display, a 0.002 draft surviving live polling, backend and UI both applying 0.002 while running, read cycles increasing from 178 to 2343 during the checked window, points increasing from 0 to 2272, changing float values, pause with continued backend reads, resume, stopped state, zero read errors, zero remaining clients after browser close, and complete process/port cleanup.
 - **Offline Flash first-load target-search installed retest**：Three valid cold starts of the installed 2b5ddd7 standard NSIS application were exercised with real Microsoft Edge/Playwright, the bundled sidecar, and a physical V4.3.4 probe. Offline Flash showed one matching target without manual retry and no error alert in every round. The two instrumented rounds captured the initial target-search request returning HTTP 200, and probe-model detection completed successfully.
 - **Desktop configuration and bidirectional RTT installed HIL**：Python 686, GUI 324, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real Edge verified the latest production frontend at the default and minimum desktop window sizes. Physical V4.3.4 HIL verified address detection, exact-mode compatibility recovery, repeated start/stop, active channel-0 DownBuffer writes, UTF-8/Hex payloads, all configured line endings, and byte-exact MCU echo. The 93d83e4 standard NSIS was the only bundle generated, installed silently with exit 0, ran with the bundled sidecar and no Python process under restricted PATH, passed installed MAP/RTT hardware checks, and released all processes and port 8765 on normal close. SHA-256 is 8737b858613f54615366f004d4d15976024d48d078e54ca4f66885de96bfb51d.
+- **Packaged RTT startup and visible build identity installed HIL**：Python 691, GUI 329, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real installed Tauri WebView2/CDP returned application/json for the RTT status endpoint, displayed v0.1.0-rc.2 plus commit 28421cb, kept the empty log panel visible, showed startup progress, issued mode 0/search_size 1024 to the bundled API, exposed target-control-block DownBuffers with active channel 0, accepted transmit with HTTP 200, restored running/send state after navigation, and exited with zero Mklink processes and released API/CDP ports. Only the standard NSIS was generated. SHA-256 is 3447bf96b56f3ce2d576addd417a0e1e1b5c7b0744837d35a3e964c7ecc08252.
 
 ## 架构决策
 
@@ -85,7 +87,7 @@
 - Offline probe model selection is derived from cmd.get_version(). V2/V3 deploy python/offline_download.py; V4 may deploy a safe custom .py name selected on the probe screen.
 - Offline scripts preserve firmware order, use embedded HEX addresses, require BIN base addresses, and never generate a whole-chip erase operation.
 - The GUI trigger is disabled until the current configuration is deployed; V4 custom scripts require explicit confirmation that the same script is selected on the probe screen.
-- RTT View hides the empty text terminal but retains the numeric Canvas, which appears only when numeric channels are available.
+- RTT View always renders the text data panel, while the numeric Canvas appears only when numeric channels are available.
 - RTT binary transport starts only after a successful control-plane start. A runtime Device ERROR is terminal, releases the dashboard lease, is exposed as status.error, and stops the frontend binary client.
 - RTT waveform envelopes use the Worker's finite buffered timestamp range. Requesting 0..Number.MAX_SAFE_INTEGER is forbidden because it collapses real-time samples into one pixel and makes constant channels invisible.
 - RTT dashboard delivery uses 50 Hz read windows, flushes partial raw and numeric batches each cycle, and keeps Canvas rendering capped by the shared 30 FPS scheduler.
@@ -97,6 +99,7 @@
 - Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.
 - The desktop configuration surface is one workspace with Local Device, File Sources, Remote Connection, and Start Service sections. AXF/ELF/OUT is one symbol-source field; MAP is independent. Project initialization remains a backend/AI workflow and is not exposed as duplicate desktop project overview state.
 - RTT address search fills the editable address field but never starts acquisition automatically. RTT transmit is raw passthrough on the selected channel with Abc/Hex encoding, Enter or button send, bounded history, and explicit no/\r/\n/\r\n endings.
+- Packaged Tauri builds inject http://127.0.0.1:8765 as the local control-plane origin; development builds keep relative URLs and the Vite proxy. Standard release builds generate NSIS only unless MSI or WebView2-offline output is explicitly requested.
 
 ## 真机环境
 
@@ -109,7 +112,7 @@
 
 ## 下一动作
 
-1. Install the 93d83e4 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, probe discovery, the merged configuration workspace, MAP-based RTT detection, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, normal shutdown, uninstall, and reinstall checks.
+1. Install the 28421cb v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, visible build identity, probe discovery, the merged configuration workspace, MAP-based RTT detection, startup feedback, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, normal shutdown, uninstall, and reinstall checks.
 2. Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
 3. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
 4. For the next release, add code signing before promoting beyond prerelease.
@@ -132,7 +135,8 @@
 - Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.
 - Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.
 - Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.
-- The 93d83e4 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.
+- The 28421cb v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.
+- The final v0.1.0-rc.2 installed pass verified DownBuffer authority and transmit acceptance but did not establish a fresh byte-exact MCU echo because the target parser coalesced per-byte echo records; the earlier 93d83e4 hardware pass remains the byte-exact payload evidence.
 - AXF/ELF symbol and RTT address diagnosis requires external arm-none-eabi-readelf. The installed restricted-PATH qualification intentionally had no readelf, so AXF diagnosis was unavailable while independent MAP diagnosis and hardware RTT startup passed.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
 
