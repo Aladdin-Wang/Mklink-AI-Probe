@@ -229,7 +229,8 @@ function detachBinary(): void {
 
 async function refreshStatus(): Promise<Record<string, any> | null> {
   try {
-    const response = await fetch('/api/dash/rtt/status')
+    const apiBase = import.meta.env.VITE_MKLINK_API || ''
+    const response = await fetch(`${apiBase}/api/dash/rtt/status`)
     if (response.ok) {
       const status = await response.json()
       statusRunning.value = status.running === true

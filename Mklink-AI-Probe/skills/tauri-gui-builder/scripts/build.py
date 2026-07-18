@@ -39,13 +39,13 @@ def find_project_root():
 IS_WINDOWS = platform.system() == "Windows"
 
 
-def run(cmd, cwd=None, check=True):
+def run(cmd, cwd=None, check=True, env=None):
     """Run a command and stream output."""
     print(f"\n> {' '.join(cmd) if isinstance(cmd, list) else cmd}")
     use_shell = IS_WINDOWS and isinstance(cmd, list) and cmd[0] in ("npm", "npx", "cargo", "rustc")
     result = subprocess.run(
         cmd, cwd=cwd, check=False,
-        text=True, shell=use_shell,
+        text=True, shell=use_shell, env=env,
     )
     if check and result.returncode != 0:
         print(f"[FAIL] Command exited with code {result.returncode}")
@@ -197,7 +197,9 @@ def build_tauri(bundle=False):
     if not bundle:
         cmd.append("--no-bundle")
 
-    run(cmd, cwd=str(GUI_DIR))
+    env = os.environ.copy()
+    env["VITE_MKLINK_API"] = "http://127.0.0.1:8765"
+    run(cmd, cwd=str(GUI_DIR), env=env)
 
     exe = TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"
     if exe.exists():

@@ -63,6 +63,24 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     assert calls == [True]
 
 
+def test_tauri_build_injects_packaged_api_origin(builder, monkeypatch, tmp_path):
+    builder.GUI_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "src-tauri"
+    executable = builder.TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"exe")
+    calls = []
+    monkeypatch.setattr(
+        builder,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)) or 0,
+    )
+
+    builder.build_tauri(bundle=False)
+
+    assert calls[0][1]["env"]["VITE_MKLINK_API"] == "http://127.0.0.1:8765"
+
+
 def test_release_bundle_removes_stale_bundle_outputs(builder, monkeypatch, tmp_path):
     builder.TAURI_DIR = tmp_path
     (tmp_path / "tauri.conf.json").write_text(

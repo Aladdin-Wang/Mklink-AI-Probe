@@ -67,7 +67,10 @@ vi.mock('../../lib/stream/renderScheduler', () => ({
 }))
 
 describe('RttViewTab binary migration', () => {
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -113,6 +116,17 @@ describe('RttViewTab binary migration', () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt', expect.any(Object))
     expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('polls RTT status through the configured packaged API origin', async () => {
+    vi.stubEnv('VITE_MKLINK_API', 'http://127.0.0.1:8765')
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:8765/api/dash/rtt/status',
+    )
     wrapper.unmount()
   })
 
