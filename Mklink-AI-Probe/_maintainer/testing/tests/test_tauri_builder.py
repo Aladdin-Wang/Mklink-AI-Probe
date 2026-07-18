@@ -63,14 +63,63 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     assert calls == [True]
 
 
-def test_bundle_config_uses_numeric_installer_version_and_restores(builder, tmp_path):
+def test_release_bundle_removes_stale_bundle_outputs(builder, monkeypatch, tmp_path):
+    builder.TAURI_DIR = tmp_path
+    (tmp_path / "tauri.conf.json").write_text(
+        '{"version":"0.1.0-rc.2","bundle":{"active":true}}',
+        encoding="utf-8",
+    )
+    stale_bundle = tmp_path / "target" / "release" / "bundle"
+    stale_msi = stale_bundle / "msi" / "stale.msi"
+    stale_msi.parent.mkdir(parents=True)
+    stale_msi.write_bytes(b"stale")
+    observed = []
+    monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
+    monkeypatch.setattr(
+        builder,
+        "build_tauri",
+        lambda bundle=False: observed.append((bundle, stale_bundle.exists())),
+    )
+
+    builder.build_release_bundle()
+
+    assert observed == [(True, False)]
+
+
+def test_release_bundle_aborts_when_stale_outputs_cannot_be_removed(
+    builder, monkeypatch, tmp_path,
+):
+    builder.TAURI_DIR = tmp_path
+    (tmp_path / "tauri.conf.json").write_text(
+        '{"version":"0.1.0-rc.2","bundle":{"active":true}}',
+        encoding="utf-8",
+    )
+    stale_bundle = tmp_path / "target" / "release" / "bundle"
+    stale_bundle.mkdir(parents=True)
+    built = []
+    monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
+    monkeypatch.setattr(builder.shutil, "rmtree", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        builder, "build_tauri", lambda bundle=False: built.append(bundle),
+    )
+
+    with pytest.raises(RuntimeError, match="stale bundle"):
+        builder.build_release_bundle()
+
+    assert built == []
+
+
+def test_bundle_config_preserves_product_version_and_builds_only_nsis(builder, tmp_path):
     config = tmp_path / "tauri.conf.json"
     original = b'{"version":"0.1.0-rc.1","bundle":{"active":true}}\n'
     config.write_bytes(original)
 
     with builder.temporary_bundle_config(config):
         patched = config.read_text(encoding="utf-8")
-        assert '"version": "0.1.0"' in patched
+        assert '"version": "0.1.0-rc.1"' in patched
+        assert '"targets": [' in patched
+        assert '"nsis"' in patched
+        assert '"msi"' not in patched
         assert '"externalBin"' in patched
 
     assert config.read_bytes() == original

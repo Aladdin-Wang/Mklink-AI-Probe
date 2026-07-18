@@ -40,12 +40,15 @@ export function useDashboard(type: string) {
     }
   }
 
-  async function stop() {
+  async function stop(): Promise<boolean> {
     try {
       await api(`/api/dash/${type}/stop`, { method: 'POST' })
       state.value = 'idle'
+      error.value = null
+      return true
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : String(e)
+      return false
     }
   }
 

@@ -112,6 +112,37 @@ def test_device_exact_rtt_start_uses_control_block_down_buffer_fallback():
     assert bridge.state is DeviceState.RTT_STREAM
 
 
+class CorruptDescriptorBridge(StopSensitiveBridge):
+    def send_command(self, command, timeout=5.0):
+        self.commands.append(command)
+        return (
+            "Find SEGGER RTT addr 0x20000000\n"
+            "UpBuffer Channel 0 Size: 16384 Mode: 0\n"
+            "DownBuffer Channel 0 Size: 0 Mode: 536873680\n"
+            "DownBuffer Channel 2 Size: 640616 Mode: 536873680\n>>>"
+        )
+
+
+@pytest.mark.parametrize(("mode", "search_size"), [(0, 1024), (1, 0)])
+def test_device_rtt_start_prefers_target_down_buffers_over_corrupt_probe_output(
+    mode, search_size,
+):
+    header, down = _rtt_control_block_memory()
+    bridge = CorruptDescriptorBridge()
+    bridge.state = DeviceState.READY
+    device = Device()
+    device._connected = True
+    device._bridge = bridge
+    device.read_memory = lambda _address, size: header if size == 24 else down
+
+    result = device.rtt_start(
+        "0x20000000", mode=mode, search_size=search_size,
+    )
+
+    assert result["down_buffer_source"] == "target-control-block"
+    assert [item["size"] for item in result["down_buffers"]] == [16, 8, 0]
+
+
 class ExactModeUnsupportedBridge(StopSensitiveBridge):
     def __init__(self):
         super().__init__()

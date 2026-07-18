@@ -152,12 +152,13 @@ def temporary_external_bin(config_path):
 
 @contextmanager
 def temporary_bundle_config(config_path):
-    """Apply bundle-only sidecar and numeric installer version settings."""
+    """Apply the standard NSIS-only sidecar bundle settings."""
     config_path = Path(config_path)
     original = config_path.read_bytes()
     data = json.loads(original.decode("utf-8"))
-    data["version"] = str(data.get("version", "0.0.0")).split("-", 1)[0]
-    data.setdefault("bundle", {})["externalBin"] = [
+    bundle = data.setdefault("bundle", {})
+    bundle["targets"] = ["nsis"]
+    bundle["externalBin"] = [
         "binaries/mklink-sidecar"
     ]
     config_path.write_text(
@@ -174,6 +175,18 @@ def build_release_bundle():
     """Build a bundle from the current source with a temporary sidecar config."""
     if not build_sidecar(force=True):
         raise SystemExit(1)
+    bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
+    if bundle_dir.exists():
+        try:
+            shutil.rmtree(bundle_dir)
+        except OSError as exc:
+            raise RuntimeError(
+                f"failed to remove stale bundle outputs: {bundle_dir}"
+            ) from exc
+        if bundle_dir.exists():
+            raise RuntimeError(
+                f"stale bundle outputs still exist: {bundle_dir}"
+            )
     with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
         build_tauri(bundle=True)
 

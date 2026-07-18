@@ -83,7 +83,7 @@ describe('RttViewTab binary migration', () => {
     mocks.checkConflict.mockResolvedValue([])
     mocks.scheduler.render = null
     mocks.dash.start.mockResolvedValue(true)
-    mocks.dash.stop.mockResolvedValue(undefined)
+    mocks.dash.stop.mockResolvedValue(true)
     mocks.api.findRtt.mockResolvedValue({ found: true, addr: '0x20001A40' })
     mocks.api.writeRtt.mockResolvedValue({ sent_bytes: 1 })
     mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
@@ -116,11 +116,11 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('keeps the text log hidden until RTT text arrives', async () => {
+  it('keeps the text data panel visible before RTT text arrives and after clear', async () => {
     vi.useFakeTimers()
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
 
-    expect(wrapper.get('.rtt-view-log').classes()).toContain('is-empty')
+    expect(wrapper.get('.rtt-view-log').classes()).not.toContain('is-empty')
 
     mocks.binary.rttLines.value = {
       type: 'rtt-lines', sequence: 1n,
@@ -131,22 +131,81 @@ describe('RttViewTab binary migration', () => {
     await nextTick()
 
     expect(wrapper.get('.rtt-view-log').classes()).not.toContain('is-empty')
+    await wrapper.get('.btn-clear').trigger('click')
+    expect(wrapper.get('.rtt-view-log').classes()).not.toContain('is-empty')
     wrapper.unmount()
   })
 
   it('starts and stops the binary lifecycle with dashboard controls', async () => {
+    mocks.status = {
+      running: true,
+      control_block_addr: '0x20000000',
+      numeric_channels: [],
+      down_buffers: [{ channel: 0, active: true }],
+    }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('.btn-primary').trigger('click')
-    await Promise.resolve()
+    await flushPromises()
     expect(mocks.binary.reset).toHaveBeenCalled()
     expect(mocks.dash.start).toHaveBeenCalledWith({
-      addr: '0x20000000', mode: 1, search_size: 0,
+      addr: '0x20000000', mode: 0, search_size: 1024,
     })
     expect(mocks.binary.start).toHaveBeenCalled()
     mocks.dash.state.value = 'running'
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('shows startup feedback and deduplicates repeated RTT start clicks', async () => {
+    let resolveStart!: (value: boolean) => void
+    mocks.dash.start.mockReturnValueOnce(new Promise(resolve => { resolveStart = resolve }))
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+
+    toolbar.vm.$emit('start')
+    toolbar.vm.$emit('start')
+    await nextTick()
+
+    expect(mocks.dash.start).toHaveBeenCalledOnce()
+    expect(toolbar.text()).toContain('启动中')
+
+    resolveStart(false)
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('stops a timed-out RTT start and ignores a late running status', async () => {
+    vi.useFakeTimers()
+    mocks.dash.stop
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    mocks.dash.start.mockImplementationOnce(async () => {
+      mocks.status = {
+        running: true,
+        control_block_addr: null,
+        numeric_channels: [],
+        down_buffers: [],
+      }
+      return true
+    })
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+
+    toolbar.vm.$emit('start')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(12_000)
+    await flushPromises()
+
+    expect(mocks.dash.stop).toHaveBeenCalledTimes(2)
+    expect(mocks.binary.stop).toHaveBeenCalled()
+    const startCalls = mocks.binary.start.mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushPromises()
+    expect(mocks.binary.start).toHaveBeenCalledTimes(startCalls)
+    expect(toolbar.props('state')).toBe('error')
     wrapper.unmount()
   })
 
@@ -272,7 +331,7 @@ describe('RttViewTab binary migration', () => {
     mocks.status = {
       running: true,
       numeric_channels: [],
-      down_buffers: [{ index: 0, active: true }],
+      down_buffers: [{ channel: 0, active: true }],
     }
     mocks.dash.state.value = 'running'
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
@@ -293,6 +352,20 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('requires an active DownBuffer on the selected RTT channel', async () => {
+    mocks.status = {
+      running: true,
+      numeric_channels: [],
+      down_buffers: [{ channel: 1, active: true }],
+    }
+    mocks.dash.state.value = 'running'
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'RttTransmitBar' }).props('enabled')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('disables transmission immediately when stop begins', async () => {
     vi.useFakeTimers()
     let resolveStop!: () => void
@@ -300,7 +373,7 @@ describe('RttViewTab binary migration', () => {
     mocks.status = {
       running: true,
       numeric_channels: [],
-      down_buffers: [{ index: 0, active: true }],
+      down_buffers: [{ channel: 0, active: true }],
     }
     mocks.dash.state.value = 'running'
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })

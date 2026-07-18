@@ -16,6 +16,9 @@
     <div class="app-main">
       <router-view />
     </div>
+    <footer class="app-footer">
+      <span data-testid="app-version">v{{ appVersion }} · {{ buildCommit }}</span>
+    </footer>
     <ToastContainer />
   </div>
 </template>
@@ -32,6 +35,8 @@ const router = useRouter()
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
 const { startHealthPolling, stopHealthPolling } = useBackendHealth()
+const appVersion = __APP_VERSION__
+const buildCommit = __APP_BUILD_COMMIT__
 
 const currentTab = computed(() => route.name as string)
 
@@ -138,6 +143,19 @@ body {
   min-height: 0;
   overflow: auto;
   padding: 20px;
+}
+.app-footer {
+  flex: 0 0 22px;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 /* ---- shared components ---- */

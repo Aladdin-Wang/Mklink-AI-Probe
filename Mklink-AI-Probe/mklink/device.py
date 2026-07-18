@@ -727,7 +727,7 @@ class Device:
 
         fallback_down_buffers = []
         requested_addr = None
-        if mode == 1 and addr:
+        if addr:
             try:
                 requested_addr = int(addr, 0)
                 fallback_down_buffers = self._read_rtt_down_buffers(requested_addr)
@@ -765,10 +765,7 @@ class Device:
                 reported_matches = int(reported_addr, 0) == requested_addr
             except (TypeError, ValueError):
                 reported_matches = False
-            if reported_matches and (
-                not result.get("down_buffers")
-                or result.get("probe_compatibility_mode") == "bounded-scan"
-            ):
+            if reported_matches:
                 result["down_buffers"] = fallback_down_buffers
                 result["down_buffer_source"] = "target-control-block"
         return result

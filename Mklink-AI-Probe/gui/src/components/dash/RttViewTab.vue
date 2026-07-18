@@ -29,9 +29,7 @@
         <button class="btn-clear" @click="clearLogs">清除</button>
       </div>
       <canvas v-show="numericChannelCount > 0" ref="chart" class="rtt-numeric-chart" />
-      <VirtualLogPanel
-        ref="logPanel" class="rtt-view-log" :class="{ 'is-empty': !hasTextLogs }"
-      />
+      <VirtualLogPanel ref="logPanel" class="rtt-view-log" />
       <RttTransmitBar
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
@@ -68,32 +66,41 @@ const rttAddress = ref(settings.value.rttAddress)
 const addressError = ref('')
 const addressSource = ref('')
 const searching = ref(false)
+const starting = ref(false)
 const stopping = ref(false)
 const statusRunning = ref(false)
-const downBuffers = ref<Array<{ active?: boolean }>>([])
+const downBuffers = ref<Array<{ channel?: number, active?: boolean }>>([])
 const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const chart = ref<HTMLCanvasElement | null>(null)
 const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
-const hasTextLogs = ref(false)
 const renderPaused = ref(false)
 const runtimeError = ref<string | null>(null)
+const RTT_CHANNEL = 0
+const RTT_SEARCH_SIZE = 1024
+const effectiveRunning = computed(() => (
+  statusRunning.value || dash.state.value === 'running'
+))
 const transmitEnabled = computed(() => (
-  dash.state.value === 'running'
-  && statusRunning.value
+  statusRunning.value
   && !stopping.value
   && !runtimeError.value
   && props.deviceConnected
-  && downBuffers.value.some(buffer => buffer.active === true)
+  && downBuffers.value.some(buffer => (
+    buffer.channel === RTT_CHANNEL && buffer.active === true
+  ))
 ))
 const toolbarState = computed(() => (
   runtimeError.value ? 'error' :
-    dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+    starting.value ? 'starting' :
+      effectiveRunning.value && renderPaused.value ? 'paused' :
+        effectiveRunning.value ? 'running' : dash.state.value
 ))
 let requestId = 0
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let searchGeneration = 0
+let binaryAttached = false
 
 function persistSettings(next: DesktopSettings): void {
   settings.value = saveDesktopSettings(desktopStorage, next)
@@ -157,7 +164,6 @@ const scheduler = new RenderScheduler(() => {
 
 watch(() => binary.rttLines.value, batch => {
   if (!batch || renderPaused.value) return
-  if (batch.lines.length) hasTextLogs.value = true
   logPanel.value?.append(batch.lines.map(line => ({
     time: line.timestampNs, level: line.level, text: line.text,
   } satisfies VirtualLogInput)))
@@ -209,7 +215,19 @@ function drawEnvelope(envelope: NonNullable<typeof binary.envelope.value>): void
   }
 }
 
-async function pollStatus(): Promise<void> {
+function attachBinary(): void {
+  if (binaryAttached) return
+  binaryAttached = true
+  binary.start()
+}
+
+function detachBinary(): void {
+  if (!binaryAttached) return
+  binaryAttached = false
+  binary.stop()
+}
+
+async function refreshStatus(): Promise<Record<string, any> | null> {
   try {
     const response = await fetch('/api/dash/rtt/status')
     if (response.ok) {
@@ -219,31 +237,84 @@ async function pollStatus(): Promise<void> {
       numericChannelCount.value = Array.isArray(status.numeric_channels) ? status.numeric_channels.length : 0
       if (typeof status.error === 'string' && status.error) {
         runtimeError.value = status.error
+        binaryAttached = false
         binary.stop()
+      } else if (statusRunning.value && !runtimeError.value) {
+        attachBinary()
       }
+      return status
     }
   } catch { /* low-rate status retries below */ }
+  return null
+}
+
+async function pollStatus(): Promise<void> {
+  await refreshStatus()
   if (!disposed) statusTimer = setTimeout(pollStatus, 1_000)
 }
 
+async function waitForRttReady(timeoutMs = 11_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (!disposed && Date.now() < deadline) {
+    const status = await refreshStatus()
+    if (runtimeError.value) return false
+    if (status?.running === true && typeof status.control_block_addr === 'string') {
+      return true
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  if (!disposed) {
+    runtimeError.value = 'RTT 启动超时，请检查地址后重试'
+    detachBinary()
+    const stopped = await stopTimedOutRtt()
+    statusRunning.value = false
+    downBuffers.value = []
+    if (!stopped) {
+      runtimeError.value = 'RTT 启动超时，后台仍在停止，请点击停止重试'
+    }
+  }
+  return false
+}
+
+async function stopTimedOutRtt(maxAttempts = 3): Promise<boolean> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (await dash.stop()) return true
+    if (attempt + 1 < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  return false
+}
+
 async function onStart(): Promise<void> {
-  if (searching.value) return
+  if (searching.value || starting.value) return
   const address = rttAddress.value.trim()
   if (!isRttAddress(address)) {
     addressError.value = '请输入有效的 RTT 地址，例如 0x20001A40'
     return
   }
   persistSettings({ ...settings.value, rttAddress: address })
-  stopping.value = false
-  const conflicts = await checkConflict('rtt')
-  if (conflicts.length && !confirm(`启动 RTT 将停止 ${conflicts.join('、')}，确认？`)) return
-  clearLogs()
-  renderPaused.value = false
-  runtimeError.value = null
-  scheduler.start()
-  binary.reset()
-  const started = await dash.start({ addr: address, mode: 1, search_size: 0 })
-  if (started && !disposed) binary.start()
+  starting.value = true
+  try {
+    stopping.value = false
+    const conflicts = await checkConflict('rtt')
+    if (conflicts.length && !confirm(`启动 RTT 将停止 ${conflicts.join('、')}，确认？`)) return
+    clearLogs()
+    renderPaused.value = false
+    runtimeError.value = null
+    scheduler.start()
+    binary.reset()
+    const started = await dash.start({
+      addr: address,
+      mode: 0,
+      search_size: RTT_SEARCH_SIZE,
+    })
+    if (!started || disposed) return
+    attachBinary()
+    await waitForRttReady()
+  } finally {
+    starting.value = false
+  }
 }
 
 function onPauseRender(): void {
@@ -261,12 +332,12 @@ function onResumeRender(): void {
 async function onStop(): Promise<void> {
   stopping.value = true
   renderPaused.value = false
-  runtimeError.value = null
   statusRunning.value = false
   downBuffers.value = []
-  binary.stop()
+  detachBinary()
   try {
-    await dash.stop()
+    const stopped = await dash.stop()
+    runtimeError.value = stopped ? null : (dash.error.value || 'RTT 停止未完成，请再次停止')
   } finally {
     stopping.value = false
   }
@@ -274,7 +345,6 @@ async function onStop(): Promise<void> {
 
 function clearLogs(): void {
   logPanel.value?.clear()
-  hasTextLogs.value = false
 }
 
 onMounted(() => {
@@ -286,7 +356,7 @@ onUnmounted(() => {
   disposed = true
   searchGeneration++
   if (statusTimer !== null) clearTimeout(statusTimer)
-  binary.stop()
+  detachBinary()
   scheduler.dispose()
 })
 </script>
@@ -305,7 +375,6 @@ onUnmounted(() => {
 .btn-clear { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 2px 8px; }
 .rtt-numeric-chart { width: 100%; height: 160px; flex: 0 0 160px; border: 1px solid var(--border); border-radius: var(--radius); background: #10151d; }
 .rtt-view-log { flex: 1 1 auto; min-height: 160px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
-.rtt-view-log.is-empty { display: none; }
 @media (max-width: 720px) {
   .rtt-address-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .address-error, .address-source { grid-column: 1 / -1; }
