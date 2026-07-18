@@ -2,10 +2,23 @@
   <div class="rtt-view-tab">
     <div v-if="!deviceConnected" class="alert alert-warn">请先连接设备。</div>
     <template v-else>
+      <div class="rtt-address-row">
+        <label for="rtt-address">RTT 地址</label>
+        <input
+          id="rtt-address" v-model="rttAddress" data-testid="rtt-address"
+          type="text" spellcheck="false" placeholder="0x20000000" @input="onAddressInput"
+        >
+        <button data-testid="rtt-search" type="button" class="btn-search" @click="searchRttAddress">
+          <Search :size="15" />
+          <span>{{ searching ? '搜索中' : '自动搜索' }}</span>
+        </button>
+        <span v-if="addressError" class="address-error" role="alert">{{ addressError }}</span>
+        <span v-else-if="addressSource" class="address-source">来源: {{ addressSource }}</span>
+      </div>
       <div class="rtt-view-toolbar">
         <ControlToolbar
           :state="toolbarState" :error="runtimeError || dash.error.value"
-          :device-connected="deviceConnected"
+          :device-connected="deviceConnected && !searching"
           @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
         />
         <span class="line-count">{{ retainedCount }} 行</span>
@@ -19,23 +32,45 @@
       <VirtualLogPanel
         ref="logPanel" class="rtt-view-log" :class="{ 'is-empty': !hasTextLogs }"
       />
+      <RttTransmitBar
+        :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
+        @settings-change="persistSettings"
+      />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Search } from '@lucide/vue'
 import { useDashboard } from '../../composables/useDashboard'
 import { useBinaryStream } from '../../composables/useBinaryStream'
+import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useResourceStatus } from '../../composables/useResourceStatus'
+import {
+  loadDesktopSettings,
+  saveDesktopSettings,
+  type DesktopSettings,
+} from '../../lib/desktopSettings'
 import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import ControlToolbar from './ControlToolbar.vue'
+import RttTransmitBar from './RttTransmitBar.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
 const binary = useBinaryStream('rtt', { capacity: 200_000, channelCount: 1 })
+const { findRtt, writeRtt } = useMklinkApi()
 const { checkConflict } = useResourceStatus()
+const desktopStorage = localStorage
+const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
+const rttAddress = ref(settings.value.rttAddress)
+const addressError = ref('')
+const addressSource = ref('')
+const searching = ref(false)
+const stopping = ref(false)
+const statusRunning = ref(false)
+const downBuffers = ref<Array<{ active?: boolean }>>([])
 const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const chart = ref<HTMLCanvasElement | null>(null)
 const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
@@ -43,6 +78,14 @@ const numericChannelCount = ref(0)
 const hasTextLogs = ref(false)
 const renderPaused = ref(false)
 const runtimeError = ref<string | null>(null)
+const transmitEnabled = computed(() => (
+  dash.state.value === 'running'
+  && statusRunning.value
+  && !stopping.value
+  && !runtimeError.value
+  && props.deviceConnected
+  && downBuffers.value.some(buffer => buffer.active === true)
+))
 const toolbarState = computed(() => (
   runtimeError.value ? 'error' :
     dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
@@ -50,6 +93,55 @@ const toolbarState = computed(() => (
 let requestId = 0
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
+let searchGeneration = 0
+
+function persistSettings(next: DesktopSettings): void {
+  settings.value = saveDesktopSettings(desktopStorage, next)
+}
+
+function isRttAddress(value: string): boolean {
+  return /^0x[0-9a-f]{1,8}$/i.test(value)
+}
+
+function onAddressInput(): void {
+  searchGeneration++
+  searching.value = false
+  addressError.value = ''
+  addressSource.value = ''
+  const address = rttAddress.value.trim()
+  if (isRttAddress(address)) {
+    persistSettings({ ...settings.value, rttAddress: address })
+  }
+}
+
+async function searchRttAddress(): Promise<void> {
+  const generation = ++searchGeneration
+  searching.value = true
+  addressError.value = ''
+  const symbolPath = settings.value.symbolPath.trim()
+  const mapPath = settings.value.mapPath.trim()
+  const source = symbolPath || mapPath || undefined
+  try {
+    const result = await findRtt(source)
+    if (disposed || generation !== searchGeneration) return
+    if (!result.addr || !isRttAddress(result.addr)) {
+      throw new Error(result.details?.join('；') || result.warnings?.join('；') || '未找到 RTT 地址')
+    }
+    rttAddress.value = result.addr
+    addressSource.value = result.source || (source ? '所选文件' : '工程自动检测')
+    persistSettings({ ...settings.value, rttAddress: result.addr })
+  } catch (caught) {
+    if (!disposed && generation === searchGeneration) {
+      addressError.value = caught instanceof Error ? caught.message : String(caught)
+    }
+  } finally {
+    if (!disposed && generation === searchGeneration) searching.value = false
+  }
+}
+
+async function sendRtt(payload: Uint8Array): Promise<void> {
+  await writeRtt(payload)
+}
 
 const scheduler = new RenderScheduler(() => {
   const canvas = chart.value
@@ -122,6 +214,8 @@ async function pollStatus(): Promise<void> {
     const response = await fetch('/api/dash/rtt/status')
     if (response.ok) {
       const status = await response.json()
+      statusRunning.value = status.running === true
+      downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       numericChannelCount.value = Array.isArray(status.numeric_channels) ? status.numeric_channels.length : 0
       if (typeof status.error === 'string' && status.error) {
         runtimeError.value = status.error
@@ -133,6 +227,14 @@ async function pollStatus(): Promise<void> {
 }
 
 async function onStart(): Promise<void> {
+  if (searching.value) return
+  const address = rttAddress.value.trim()
+  if (!isRttAddress(address)) {
+    addressError.value = '请输入有效的 RTT 地址，例如 0x20001A40'
+    return
+  }
+  persistSettings({ ...settings.value, rttAddress: address })
+  stopping.value = false
   const conflicts = await checkConflict('rtt')
   if (conflicts.length && !confirm(`启动 RTT 将停止 ${conflicts.join('、')}，确认？`)) return
   clearLogs()
@@ -140,7 +242,7 @@ async function onStart(): Promise<void> {
   runtimeError.value = null
   scheduler.start()
   binary.reset()
-  const started = await dash.start()
+  const started = await dash.start({ addr: address, mode: 1, search_size: 0 })
   if (started && !disposed) binary.start()
 }
 
@@ -157,10 +259,17 @@ function onResumeRender(): void {
 }
 
 async function onStop(): Promise<void> {
+  stopping.value = true
   renderPaused.value = false
   runtimeError.value = null
+  statusRunning.value = false
+  downBuffers.value = []
   binary.stop()
-  await dash.stop()
+  try {
+    await dash.stop()
+  } finally {
+    stopping.value = false
+  }
 }
 
 function clearLogs(): void {
@@ -175,6 +284,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   disposed = true
+  searchGeneration++
   if (statusTimer !== null) clearTimeout(statusTimer)
   binary.stop()
   scheduler.dispose()
@@ -184,10 +294,20 @@ onUnmounted(() => {
 <style scoped>
 .rtt-view-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
+.rtt-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 4px 0; }
+.rtt-address-row label { font-size: 12px; color: var(--muted); }
+.rtt-address-row input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.btn-search { height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }
+.address-error { min-width: 0; color: var(--danger, #dc2626); font-size: 12px; overflow-wrap: anywhere; }
+.address-source { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .rtt-view-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
 .line-count, .stream-health { color: var(--muted); font-size: 12px; }
 .btn-clear { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 2px 8px; }
 .rtt-numeric-chart { width: 100%; height: 160px; flex: 0 0 160px; border: 1px solid var(--border); border-radius: var(--radius); background: #10151d; }
 .rtt-view-log { flex: 1 1 auto; min-height: 160px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
 .rtt-view-log.is-empty { display: none; }
+@media (max-width: 720px) {
+  .rtt-address-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .address-error, .address-source { grid-column: 1 / -1; }
+}
 </style>

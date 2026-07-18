@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from types import SimpleNamespace
@@ -12,6 +13,10 @@ from fastapi.testclient import TestClient
 from mklink.dwarf_parser import DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
 from mklink.remote.api import create_app
 from mklink.symbol_catalog import SymbolCatalog
+
+
+def _route_endpoint(app, path):
+    return next(route.endpoint for route in app.routes if route.path == path)
 
 
 def _request(client, path, responses, key):
@@ -113,6 +118,72 @@ def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_pat
     save_rtt_config.assert_not_called()
 
 
+def test_rtt_find_runs_symbol_diagnosis_outside_the_event_loop_thread(tmp_path):
+    result = SimpleNamespace(
+        addr="0x20001A40", source="binary:firmware.axf", details=[], warnings=[],
+    )
+    call_threads = []
+
+    def diagnose(_path):
+        call_threads.append(threading.get_ident())
+        return result
+
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    endpoint = _route_endpoint(app, "/api/rtt-find")
+    event_loop_thread = threading.get_ident()
+    with patch("mklink.rtt_addr.diagnose_rtt_addr", side_effect=diagnose):
+        response = asyncio.run(endpoint(source_path="firmware.axf"))
+
+    assert response["found"] is True
+    assert call_threads == [call_threads[0]]
+    assert call_threads[0] != event_loop_thread
+
+
+def test_rtt_find_explicit_map_returns_parser_details_without_persisting(tmp_path):
+    source = tmp_path / "firmware.map"
+    result = SimpleNamespace(
+        addr=None,
+        source="",
+        details=["未找到 _SEGGER_RTT 地址"],
+        warnings=["检查链接输出"],
+    )
+    with patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch("mklink.project_config.save_rtt_config") as save_rtt_config:
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/rtt-find", json={"source_path": str(source)},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "found": False,
+        "addr": None,
+        "source": "",
+        "source_path": str(source),
+        "details": ["未找到 _SEGGER_RTT 地址"],
+        "warnings": ["检查链接输出"],
+    }
+    diagnose.assert_called_once_with(str(source))
+    save_rtt_config.assert_not_called()
+
+
+def test_rtt_find_explicit_missing_file_returns_actionable_details(tmp_path):
+    source = tmp_path / "missing.map"
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/rtt-find", json={"source_path": str(source)},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["found"] is False
+    assert body["source_path"] == str(source)
+    assert any("文件不存在" in detail for detail in body["details"])
+
+
 def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp_path):
     map_path = tmp_path / "firmware.map"
     result = SimpleNamespace(
@@ -131,7 +202,7 @@ def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp
     ), patch("mklink.project_config.save_rtt_config") as save_rtt_config:
         app = create_app(auth_token=None, project_root=str(tmp_path))
         with TestClient(app) as client:
-            response = client.post("/api/rtt-find", json={})
+            response = client.post("/api/rtt-find")
 
     assert response.status_code == 200
     assert response.json() == {

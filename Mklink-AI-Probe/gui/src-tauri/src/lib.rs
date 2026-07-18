@@ -425,6 +425,7 @@ pub fn run() {
     let shutdown = std::sync::Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar {
             child: Mutex::new(None),

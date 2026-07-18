@@ -435,6 +435,101 @@ def test_rtt_manager_write_rejects_missing_down_buffer_and_failed_start():
         failed.write(b"stale")
 
 
+def test_rtt_manager_serializes_concurrent_start_calls(monkeypatch):
+    caller_gate = threading.Event()
+    first_worker_start = threading.Event()
+    release_first_worker = threading.Event()
+    start_calls = 0
+    start_calls_lock = threading.Lock()
+
+    class Device:
+        def rtt_start(self, *_args, **_kwargs):
+            nonlocal start_calls
+            with start_calls_lock:
+                start_calls += 1
+            return {"down_buffers": [{"active": True}]}
+
+        def rtt_read(self, **_kwargs):
+            time.sleep(0.002)
+            return b""
+
+        def rtt_stop(self):
+            pass
+
+    manager = RttStreamManager()
+    errors = []
+
+    def invoke_start():
+        caller_gate.wait()
+        try:
+            manager.start(Device(), duration=0.1)
+        except Exception as exc:
+            errors.append(exc)
+
+    callers = [threading.Thread(target=invoke_start) for _ in range(2)]
+    for caller in callers:
+        caller.start()
+
+    original_thread_start = threading.Thread.start
+    intercepted = 0
+    intercepted_lock = threading.Lock()
+
+    def controlled_thread_start(thread):
+        nonlocal intercepted
+        with intercepted_lock:
+            intercepted += 1
+            current = intercepted
+        if current == 1:
+            first_worker_start.set()
+            assert release_first_worker.wait(timeout=1.0)
+        original_thread_start(thread)
+
+    monkeypatch.setattr(threading.Thread, "start", controlled_thread_start)
+    caller_gate.set()
+    assert first_worker_start.wait(timeout=1.0)
+    time.sleep(0.05)
+    release_first_worker.set()
+    for caller in callers:
+        caller.join(timeout=1.0)
+        assert not caller.is_alive()
+
+    deadline = time.monotonic() + 1.0
+    while start_calls == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+    assert errors == []
+    assert start_calls == 1
+    manager.stop()
+
+
+def test_rtt_manager_converts_device_write_exceptions_to_runtime_error():
+    read_started = threading.Event()
+
+    class Device:
+        def rtt_start(self, *_args, **_kwargs):
+            return {"down_buffers": [{"channel": 0, "active": True}]}
+
+        def rtt_read(self, **_kwargs):
+            read_started.set()
+            time.sleep(0.002)
+            return b""
+
+        def rtt_write(self, _data):
+            raise OSError("transport disconnected")
+
+        def rtt_stop(self):
+            pass
+
+    manager = RttStreamManager()
+    manager.start(Device())
+    assert read_started.wait(timeout=1.0)
+    try:
+        with pytest.raises(RuntimeError, match="RTT write failed"):
+            manager.write(b"data")
+    finally:
+        manager.stop()
+
+
 def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
     async def scenario():
         hub = StreamHub(max_batches_per_client=8)

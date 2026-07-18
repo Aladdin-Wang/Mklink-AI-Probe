@@ -140,6 +140,10 @@ class RTTSession:
         self._bridge._write_raw(data)
         return True
 
+    def reset_failed_start(self) -> str:
+        """Synchronize the probe after a start command returned no RTT address."""
+        return self._bridge.send_command("RTTView.stop()", timeout=5.0)
+
     def stop(self) -> str:
         """停止 RTT 会话。"""
         # 先恢复 READY 状态以便 send_command 工作

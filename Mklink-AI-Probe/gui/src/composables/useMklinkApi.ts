@@ -12,7 +12,10 @@ import type {
   FlashRequest,
   ProjectHistory,
   ProbeFirmwareCheck,
+  RttFindResponse,
+  RttWriteResponse,
 } from '../types/mklink'
+import { toHexPayload } from '../lib/rttTransmit'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -201,13 +204,18 @@ export function useMklinkApi() {
     return api(`/api/project-root/browse?path=${encodeURIComponent(path)}`)
   }
 
-  async function findRtt(): Promise<{
-    found: boolean
-    addr?: string
-    source?: string
-    details?: string[]
-  }> {
-    return api('/api/rtt-find', { method: 'POST' })
+  async function findRtt(sourcePath?: string): Promise<RttFindResponse> {
+    return api('/api/rtt-find', {
+      method: 'POST',
+      body: JSON.stringify(sourcePath ? { source_path: sourcePath } : {}),
+    })
+  }
+
+  async function writeRtt(data: Uint8Array): Promise<RttWriteResponse> {
+    return api('/api/dash/rtt/write', {
+      method: 'POST',
+      body: JSON.stringify({ data_hex: toHexPayload(data) }),
+    })
   }
 
   async function getProjectHistory(): Promise<ProjectHistory> {
@@ -256,6 +264,7 @@ export function useMklinkApi() {
     getProjectRoot,
     browseProjectRoot,
     findRtt,
+    writeRtt,
     getProjectHistory,
     addProjectHistory,
     removeProjectHistory,

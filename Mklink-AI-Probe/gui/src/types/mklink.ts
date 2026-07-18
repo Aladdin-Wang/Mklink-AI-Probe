@@ -169,6 +169,19 @@ export interface SymbolTypeInfo {
   members?: unknown[]
 }
 
+export interface RttFindResponse {
+  found: boolean
+  addr?: string
+  source?: string
+  source_path?: string
+  details?: string[]
+  warnings?: string[]
+}
+
+export interface RttWriteResponse {
+  sent_bytes: number
+}
+
 export type SymbolScalarKind = 'signed' | 'unsigned' | 'float' | 'bool' | 'enum'
 
 export interface SymbolDescriptor {

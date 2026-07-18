@@ -264,7 +264,25 @@ def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[s
     )
 
 
+def _dashboard_start_lock(state: dict[str, Any], dashboard: str) -> asyncio.Lock:
+    locks = state.setdefault("_dashboard_start_locks", {})
+    lock = locks.get(dashboard)
+    if lock is None:
+        lock = asyncio.Lock()
+        locks[dashboard] = lock
+    return lock
+
+
 async def start_dashboard_manager(
+    state: dict[str, Any], dashboard: str, manager, start_call
+) -> tuple[str, list[str]]:
+    async with _dashboard_start_lock(state, dashboard):
+        return await _start_dashboard_manager_transaction(
+            state, dashboard, manager, start_call,
+        )
+
+
+async def _start_dashboard_manager_transaction(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
     """Start a dashboard as a cancellation-safe acquire/start transaction.
@@ -724,7 +742,7 @@ def create_app(
         from mklink.rtt_addr import diagnose_rtt_addr
 
         if source_path:
-            result = diagnose_rtt_addr(source_path)
+            result = await asyncio.to_thread(diagnose_rtt_addr, source_path)
             return {
                 "found": bool(result.addr),
                 "addr": result.addr,
@@ -746,7 +764,7 @@ def create_app(
                 map_path = str(candidates[0])
 
         if map_path:
-            result = diagnose_rtt_addr(map_path)
+            result = await asyncio.to_thread(diagnose_rtt_addr, map_path)
             if result.addr:
                 # Update rtt_config with found address
                 cfg = load_rtt_config(project_root) or {}
@@ -1268,7 +1286,7 @@ def create_app(
         data = bytes.fromhex(data_hex)
         managers = get_managers()
         try:
-            sent_bytes = managers["rtt"].write(data)
+            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"sent_bytes": sent_bytes}

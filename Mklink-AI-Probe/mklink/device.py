@@ -664,6 +664,37 @@ class Device:
     # ------------------------------------------------------------------
     # RTT
     # ------------------------------------------------------------------
+    def _read_rtt_down_buffers(self, control_block_addr: int) -> list[dict]:
+        descriptor_size = 24
+        header = self.read_memory(control_block_addr, 24)
+        if len(header) < 24 or header[:10] != b"SEGGER RTT":
+            return []
+
+        max_up = int.from_bytes(header[16:20], "little")
+        max_down = int.from_bytes(header[20:24], "little")
+        if not 1 <= max_up <= 16 or not 1 <= max_down <= 16:
+            return []
+
+        down_address = control_block_addr + 24 + max_up * descriptor_size
+        raw = self.read_memory(down_address, max_down * descriptor_size)
+        if len(raw) != max_down * descriptor_size:
+            return []
+
+        buffers = []
+        for channel in range(max_down):
+            offset = channel * descriptor_size
+            buffer_address = int.from_bytes(raw[offset + 4:offset + 8], "little")
+            size = int.from_bytes(raw[offset + 8:offset + 12], "little")
+            flags = int.from_bytes(raw[offset + 20:offset + 24], "little")
+            buffers.append({
+                "channel": channel,
+                "size": size,
+                "mode": flags,
+                "active": buffer_address != 0 and 0 < size <= 1024 * 1024,
+                "name": "",
+            })
+        return buffers
+
     def rtt_start(
         self,
         addr: str | None = None,
@@ -685,19 +716,62 @@ class Device:
             self._rtt_session.stop()
 
         # 未显式传入时，从 rtt_config.json 解析
-        if mode is None:
+        rtt_cfg = None
+        if mode is None or not addr:
             from mklink.project_config import load_rtt_config, resolve_rtt_storage_mode
             rtt_cfg = load_rtt_config(self._project_root)
+        if mode is None:
             mode = resolve_rtt_storage_mode(rtt_cfg)
+        if mode == 1 and not addr and rtt_cfg:
+            addr = rtt_cfg.get("rtt_addr")
+
+        fallback_down_buffers = []
+        requested_addr = None
+        if mode == 1 and addr:
+            try:
+                requested_addr = int(addr, 0)
+                fallback_down_buffers = self._read_rtt_down_buffers(requested_addr)
+            except (TypeError, ValueError, OSError, DeviceError):
+                fallback_down_buffers = []
 
         from mklink.rtt import RTTSession
         self._rtt_session = RTTSession(self._bridge, channel=channel)
-        return self._rtt_session.start(
+        result = self._rtt_session.start(
             addr or "",
             search_size=search_size,
             project_root=self._project_root,
             mode=mode,
         )
+        if mode == 1 and not result.get("control_block_addr") and fallback_down_buffers:
+            self._rtt_session.reset_failed_start()
+            result = self._rtt_session.start(
+                addr or "",
+                search_size=4,
+                project_root=self._project_root,
+                mode=0,
+            )
+            result["storage_mode"] = 1
+            result["probe_compatibility_mode"] = "bounded-scan"
+        result["down_buffer_probe_count"] = len(fallback_down_buffers)
+        if not result.get("control_block_addr"):
+            raise DeviceError("RTT control block was not found")
+        reported_addr = result.get("control_block_addr")
+        if (
+            fallback_down_buffers
+            and requested_addr is not None
+            and reported_addr
+        ):
+            try:
+                reported_matches = int(reported_addr, 0) == requested_addr
+            except (TypeError, ValueError):
+                reported_matches = False
+            if reported_matches and (
+                not result.get("down_buffers")
+                or result.get("probe_compatibility_mode") == "bounded-scan"
+            ):
+                result["down_buffers"] = fallback_down_buffers
+                result["down_buffer_source"] = "target-control-block"
+        return result
 
     def rtt_read(self, duration: float = 10.0) -> str:
         self._require_connected()

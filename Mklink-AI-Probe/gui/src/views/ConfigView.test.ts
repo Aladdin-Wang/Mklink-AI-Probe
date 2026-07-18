@@ -51,7 +51,8 @@ vi.mock('../composables/useToast', () => ({
   useToast: () => ({ error: mocks.toastError, success: mocks.toastSuccess }),
 }))
 
-vi.mock('../lib/desktopSettings', () => ({
+vi.mock('../lib/desktopSettings', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/desktopSettings')>(),
   loadDesktopSettings: mocks.loadDesktopSettings,
   saveDesktopSettings: mocks.saveDesktopSettings,
 }))
@@ -86,10 +87,10 @@ describe('ConfigView', () => {
       axf: { loaded: false },
     })
     mocks.api.listPorts.mockResolvedValue([
-      { device: 'COM8', description: 'MKLink', manufacturer: 'MicroLink', vid: 1, pid: 2 },
+      { device: 'TEST_PORT_B', description: 'MKLink', manufacturer: 'MicroLink', vid: 1, pid: 2 },
     ])
-    mocks.api.discoverPort.mockResolvedValue({ port: 'COM8' })
-    mocks.api.getConfig.mockResolvedValue({ com_port: 'COM7', swd_clock: '2000000' })
+    mocks.api.discoverPort.mockResolvedValue({ port: 'TEST_PORT_B' })
+    mocks.api.getConfig.mockResolvedValue({ com_port: 'TEST_PORT_A', swd_clock: '2000000' })
     mocks.api.updateConfig.mockResolvedValue({})
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
@@ -122,6 +123,7 @@ describe('ConfigView', () => {
     expect(text).not.toContain('MCU 类型')
     expect(text).not.toContain('MCU 提示')
     expect(text).not.toContain('高级配置 (RTT)')
+    expect(wrapper.find('[data-testid="device-status"]').exists()).toBe(false)
   })
 
   it('connects locally with the configured port and saved AXF path without an MCU hint', async () => {
@@ -131,13 +133,13 @@ describe('ConfigView', () => {
     await flushPromises()
 
     expect(mocks.api.connectDevice).toHaveBeenCalledWith({
-      port: 'COM7',
+      port: 'TEST_PORT_A',
       axf: 'C:\\saved\\app.axf',
     })
     expect(mocks.api.connectDevice.mock.calls[0][0]).not.toHaveProperty('mcu')
   })
 
-  it('keeps serial discovery, refresh, SWD saving, disconnect, and device status in Local Device', async () => {
+  it('keeps serial discovery, refresh, SWD saving, and disconnect in Local Device', async () => {
     const wrapper = await mountView()
 
     await wrapper.get('[data-testid="auto-port"]').trigger('click')
@@ -147,10 +149,9 @@ describe('ConfigView', () => {
 
     expect(mocks.api.discoverPort).toHaveBeenCalledOnce()
     expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
-      com_port: 'COM8',
+      com_port: 'TEST_PORT_B',
       swd_clock: '4000000',
     }))
-    expect(wrapper.get('[data-testid="device-status"]').text()).toContain('未连接')
     expect(wrapper.get('[data-testid="disconnect-local"]').attributes('disabled')).toBeDefined()
   })
 
@@ -193,6 +194,31 @@ describe('ConfigView', () => {
 
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
     expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('3'))
+  })
+
+  it('shows inline path validation and does not let an invalid symbol path block connection', async () => {
+    mocks.loadDesktopSettings.mockReturnValueOnce({
+      version: 1,
+      symbolPath: 'C:\\saved\\app.txt',
+      mapPath: 'C:\\saved\\app.axf',
+      rttAddress: '',
+      transmitMode: 'text',
+      lineEnding: '',
+      sendHistory: [],
+    })
+    Object.assign(mocks.deviceStatus, { connected: false, state: 'disconnected' })
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    expect(mocks.api.connectDevice).toHaveBeenCalledWith({
+      port: 'TEST_PORT_A',
+      axf: undefined,
+    })
+
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+    expect(wrapper.get('[data-testid="symbol-path-validation"]').text()).toContain('.axf')
+    expect(wrapper.get('[data-testid="map-path-validation"]').text()).toContain('.map')
+    expect(wrapper.get('[data-testid="parse-symbols"]').attributes('disabled')).toBeDefined()
   })
 
   it('keeps remote connection and service launch controls reachable', async () => {

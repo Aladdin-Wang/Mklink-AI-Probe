@@ -29,6 +29,14 @@ export interface DesktopSettingsStorage {
 
 export type SuccessfulSend = Omit<RttSendHistoryEntry, 'timestamp'>
 
+export function isSymbolFilePath(path: string): boolean {
+  return /\.(axf|elf|out)$/i.test(path.trim())
+}
+
+export function isMapFilePath(path: string): boolean {
+  return /\.map$/i.test(path.trim())
+}
+
 function defaults(): DesktopSettings {
   return {
     version: DESKTOP_SETTINGS_VERSION,

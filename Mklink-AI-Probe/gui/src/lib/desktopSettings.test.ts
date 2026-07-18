@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   DESKTOP_SETTINGS_STORAGE_KEY,
   loadDesktopSettings,
+  isMapFilePath,
+  isSymbolFilePath,
   recordSuccessfulSend,
   saveDesktopSettings,
   type DesktopSettings,
@@ -33,6 +35,16 @@ function settings(overrides: Partial<DesktopSettings> = {}): DesktopSettings {
 }
 
 describe('desktop settings', () => {
+  it('validates supported symbol and MAP path extensions after trimming', () => {
+    expect(isSymbolFilePath(' C:\\firmware\\app.axf ')).toBe(true)
+    expect(isSymbolFilePath('app.ELF')).toBe(true)
+    expect(isSymbolFilePath('app.out')).toBe(true)
+    expect(isSymbolFilePath('app.map')).toBe(false)
+    expect(isSymbolFilePath('')).toBe(false)
+    expect(isMapFilePath(' C:\\firmware\\app.map ')).toBe(true)
+    expect(isMapFilePath('app.axf')).toBe(false)
+  })
+
   it('returns fresh defaults when no saved settings exist', () => {
     const storage = new MemoryStorage()
 

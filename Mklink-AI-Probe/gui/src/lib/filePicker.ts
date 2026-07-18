@@ -1,4 +1,4 @@
-const SYMBOL_FILTER = { name: 'AXF / ELF', extensions: ['axf', 'elf'] }
+const SYMBOL_FILTER = { name: 'AXF / ELF', extensions: ['axf', 'elf', 'out'] }
 const MAP_FILTER = { name: 'MAP', extensions: ['map'] }
 
 async function pickFile(filter: { name: string, extensions: string[] }): Promise<string | null> {

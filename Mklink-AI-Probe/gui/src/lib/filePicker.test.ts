@@ -18,7 +18,7 @@ describe('file picker', () => {
     await expect(picker.pickSymbolFile()).resolves.toBe('C:\\firmware\\app.axf')
     expect(open).toHaveBeenCalledWith({
       multiple: false,
-      filters: [{ name: 'AXF / ELF', extensions: ['axf', 'elf'] }],
+      filters: [{ name: 'AXF / ELF', extensions: ['axf', 'elf', 'out'] }],
     })
   })
 

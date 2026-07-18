@@ -237,6 +237,7 @@ class RttStreamManager:
         self._start_info: dict = {}
         self._active_generation = None
         self._write_lock = threading.RLock()
+        self._lifecycle_lock = threading.RLock()
 
     @property
     def running(self) -> bool:
@@ -343,6 +344,19 @@ class RttStreamManager:
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 1024,
               duration: float = 86400) -> None:
+        with self._lifecycle_lock:
+            self._start_locked(
+                device,
+                addr=addr,
+                channel=channel,
+                mode=mode,
+                search_size=search_size,
+                duration=duration,
+            )
+
+    def _start_locked(self, device, *, addr: str | None = None, channel: int = 0,
+                      mode: int = 0, search_size: int = 1024,
+                      duration: float = 86400) -> None:
         """Start RTT polling in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             if self.running:
@@ -391,6 +405,7 @@ class RttStreamManager:
                         self._start_info = (
                             dict(start_info) if isinstance(start_info, dict) else {}
                         )
+                        self._start_info["channel"] = channel
                         self._active_generation = generation
                 start_time = time.time()
                 while not stop_event.is_set():
@@ -461,18 +476,19 @@ class RttStreamManager:
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> bool:
-        thread = self._thread
-        self._stop_event.set()
-        self._clear_active_session(getattr(self, "_generation", None))
-        if thread:
-            thread.join(timeout=timeout)
-            if thread.is_alive():
-                raise TimeoutError("RTT worker thread is still active")
-        self._running = False
-        self.flush_pending(final=True)
-        if self._thread is thread:
-            self._thread = None
-        return True
+        with self._lifecycle_lock:
+            thread = self._thread
+            self._stop_event.set()
+            self._clear_active_session(getattr(self, "_generation", None))
+            if thread:
+                thread.join(timeout=timeout)
+                if thread.is_alive():
+                    raise TimeoutError("RTT worker thread is still active")
+            self._running = False
+            self.flush_pending(final=True)
+            if self._thread is thread:
+                self._thread = None
+            return True
 
     def pause(self) -> None:
         self._paused.clear()
@@ -492,12 +508,19 @@ class RttStreamManager:
             ):
                 raise RuntimeError("RTT is not running")
             down_buffers = self._start_info.get("down_buffers", [])
+            channel = int(self._start_info.get("channel", 0))
             if not any(
-                isinstance(item, dict) and item.get("active")
+                isinstance(item, dict)
+                and item.get("channel") == channel
+                and item.get("active")
                 for item in down_buffers
             ):
                 raise RuntimeError("RTT DownBuffer is unavailable")
-            if not self._device.rtt_write(data):
+            try:
+                written = self._device.rtt_write(data)
+            except Exception as exc:
+                raise RuntimeError(f"RTT write failed: {exc}") from exc
+            if not written:
                 raise RuntimeError("RTT write failed")
             return len(data)
 
@@ -508,6 +531,11 @@ class RttStreamManager:
                 for item in self._start_info.get("down_buffers", [])
                 if isinstance(item, dict)
             ]
+            control_block_addr = self._start_info.get("control_block_addr")
+            down_buffer_source = self._start_info.get("down_buffer_source")
+            down_buffer_probe_count = self._start_info.get(
+                "down_buffer_probe_count", 0
+            )
         return {
             "running": self.running,
             "paused": self.paused,
@@ -517,6 +545,9 @@ class RttStreamManager:
             "history_size": len(self._history),
             "numeric_channels": list(self._numeric_channels),
             "down_buffers": down_buffers,
+            "control_block_addr": control_block_addr,
+            "down_buffer_source": down_buffer_source,
+            "down_buffer_probe_count": down_buffer_probe_count,
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 

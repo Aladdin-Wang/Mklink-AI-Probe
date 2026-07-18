@@ -4,7 +4,12 @@ import { RefreshCw, Search, Save, TriangleAlert, Unplug, Usb } from '@lucide/vue
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
-import { loadDesktopSettings, saveDesktopSettings, type DesktopSettings } from '../lib/desktopSettings'
+import {
+  isSymbolFilePath,
+  loadDesktopSettings,
+  saveDesktopSettings,
+  type DesktopSettings,
+} from '../lib/desktopSettings'
 import { pickMapFile, pickSymbolFile } from '../lib/filePicker'
 import type { PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
@@ -105,7 +110,9 @@ async function connectLocal() {
   try {
     await connectDevice({
       port: localPort.value || config.value.com_port || undefined,
-      axf: settings.value.symbolPath || undefined,
+      axf: isSymbolFilePath(settings.value.symbolPath)
+        ? settings.value.symbolPath.trim()
+        : undefined,
     })
   } catch (error: any) {
     toast.error('连接失败: ' + error.message)
@@ -158,10 +165,10 @@ function saveFilePaths() {
 }
 
 async function parseSymbols() {
-  if (!deviceStatus.value.connected || !settings.value.symbolPath.trim()) return
+  if (!deviceStatus.value.connected || !isSymbolFilePath(settings.value.symbolPath)) return
   parsingSymbols.value = true
   try {
-    const result = await parseAxf(settings.value.symbolPath) as {
+    const result = await parseAxf(settings.value.symbolPath.trim()) as {
       loaded?: boolean
       variable_count?: number
     }
@@ -300,20 +307,6 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div class="device-status" data-testid="device-status">
-          <div>
-            <span>连接状态</span>
-            <strong>{{ deviceStatus.connected ? '已连接' : '未连接' }}</strong>
-          </div>
-          <div>
-            <span>运行状态</span>
-            <strong>{{ deviceStatus.state }}</strong>
-          </div>
-          <div>
-            <span>符号状态</span>
-            <strong>{{ deviceStatus.axf?.loaded ? '已加载' : '未加载' }}</strong>
-          </div>
-        </div>
       </section>
 
       <FileSourcesPanel
@@ -448,34 +441,6 @@ onMounted(async () => {
   margin: 18px 0 20px 110px;
 }
 
-.device-status {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 16px;
-}
-
-.device-status > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.device-status span {
-  color: var(--dim);
-  font-size: 11px;
-}
-
-.device-status strong {
-  color: var(--fg);
-  font-size: 13px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .firmware-banner {
   grid-column: 2;
   display: flex;
@@ -502,10 +467,6 @@ onMounted(async () => {
   .panel-actions {
     margin-left: 0;
     flex-wrap: wrap;
-  }
-
-  .device-status {
-    gap: 12px;
   }
 
   .firmware-banner {

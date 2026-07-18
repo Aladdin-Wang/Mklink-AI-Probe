@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FolderOpen, Save, ScanSearch } from '@lucide/vue'
+import { isMapFilePath, isSymbolFilePath } from '../../lib/desktopSettings'
 import type { AxlStatus } from '../../types/mklink'
 
 const props = defineProps<{
@@ -64,6 +65,12 @@ function inputValue(event: Event): string {
         </button>
       </div>
     </div>
+    <div
+      data-testid="symbol-path-validation"
+      :class="['path-validation', { invalid: symbolPath.trim() && !isSymbolFilePath(symbolPath) }]"
+    >
+      {{ !symbolPath.trim() ? '未配置 AXF / ELF 文件' : isSymbolFilePath(symbolPath) ? '路径格式有效' : '仅支持 .axf、.elf 或 .out 文件' }}
+    </div>
 
     <div class="source-row">
       <label for="map-path">MAP</label>
@@ -89,6 +96,12 @@ function inputValue(event: Event): string {
         </button>
       </div>
     </div>
+    <div
+      data-testid="map-path-validation"
+      :class="['path-validation', { invalid: mapPath.trim() && !isMapFilePath(mapPath) }]"
+    >
+      {{ !mapPath.trim() ? '未配置 MAP 文件' : isMapFilePath(mapPath) ? '路径格式有效' : '仅支持 .map 文件' }}
+    </div>
 
     <div v-if="symbolStatus.error" class="alert alert-error">{{ symbolStatus.error }}</div>
 
@@ -107,7 +120,7 @@ function inputValue(event: Event): string {
         class="btn btn-primary"
         type="button"
         data-testid="parse-symbols"
-        :disabled="parsing || !connected || !symbolPath.trim()"
+        :disabled="parsing || !connected || !isSymbolFilePath(symbolPath)"
         @click="emit('parse')"
       >
         <ScanSearch :size="15" aria-hidden="true" />
@@ -154,6 +167,16 @@ function inputValue(event: Event): string {
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.path-validation {
+  margin: -8px 0 12px 104px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.path-validation.invalid {
+  color: var(--danger, #dc2626);
 }
 
 .source-row label {
@@ -208,6 +231,10 @@ function inputValue(event: Event): string {
   .panel-actions {
     padding-left: 0;
     flex-wrap: wrap;
+  }
+
+  .path-validation {
+    margin-left: 0;
   }
 }
 </style>

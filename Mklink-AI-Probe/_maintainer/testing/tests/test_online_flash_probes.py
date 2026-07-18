@@ -235,6 +235,71 @@ def test_rtt_write_endpoint_preserves_exact_binary_payload():
     rtt.write.assert_called_once_with(b"\x00\xff\r\n")
 
 
+def test_rtt_write_endpoint_runs_device_write_outside_event_loop_thread():
+    call_threads = []
+
+    def write(data):
+        call_threads.append(threading.get_ident())
+        return len(data)
+
+    rtt = SimpleNamespace(running=True, write=write)
+    managers = {
+        name: rtt if name == "rtt" else SimpleNamespace(running=False)
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, _state = _dashboard_client(managers)
+    endpoint = next(
+        route.endpoint for route in client.app.routes
+        if route.path == "/api/dash/rtt/write"
+    )
+    event_loop_thread = threading.get_ident()
+
+    response = asyncio.run(endpoint(data_hex="00ff"))
+
+    assert response == {"sent_bytes": 2}
+    assert call_threads[0] != event_loop_thread
+
+
+def test_rtt_write_requires_active_down_buffer_for_current_channel():
+    from mklink.remote.dashboards import RttStreamManager
+
+    manager = RttStreamManager()
+    generation = object()
+    device = SimpleNamespace(rtt_write=MagicMock(return_value=True))
+    manager._running = True
+    manager._stop_event.clear()
+    manager._generation = generation
+    manager._active_generation = generation
+    manager._device = device
+    manager._start_info = {
+        "channel": 0,
+        "down_buffers": [{"channel": 1, "active": True}],
+    }
+
+    with pytest.raises(RuntimeError, match="DownBuffer"):
+        manager.write(b"x")
+
+    device.rtt_write.assert_not_called()
+
+
+def test_rtt_write_endpoint_accepts_exactly_64_kib():
+    rtt = SimpleNamespace(running=True, write=MagicMock(return_value=65536))
+    managers = {
+        name: rtt if name == "rtt" else SimpleNamespace(running=False)
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, _state = _dashboard_client(managers)
+
+    response = client.post(
+        "/api/dash/rtt/write", json={"data_hex": "00" * 65536},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"sent_bytes": 65536}
+    rtt.write.assert_called_once()
+    assert len(rtt.write.call_args.args[0]) == 65536
+
+
 @pytest.mark.parametrize(
     "data_hex",
     ["", "0", "zz", "00 ff", "00" * 65537],
@@ -307,6 +372,88 @@ def test_dashboard_start_failure_releases_only_its_new_leases():
 
     assert response.status_code == 500
     assert state["resource_manager"].get_status() == {}
+
+
+def test_concurrent_dashboard_starts_do_not_replace_failure_callback(monkeypatch):
+    from mklink.remote import api as remote_api
+
+    class ResourceManager:
+        def __init__(self):
+            self.release_calls = []
+
+        def release(self, owner):
+            self.release_calls.append(owner)
+            return []
+
+    class Manager:
+        def __init__(self):
+            self._thread = None
+            self._running = False
+            self._start_failure_callback = None
+            self._start_count = 0
+            self._start_lock = threading.Lock()
+            self._second_callback = threading.Event()
+            self._allow_failure = threading.Event()
+
+        @property
+        def running(self):
+            return self._running
+
+        def set_start_failure_callback(self, callback):
+            self._start_failure_callback = callback
+            if getattr(self, "_callback_count", 0):
+                self._second_callback.set()
+            self._callback_count = getattr(self, "_callback_count", 0) + 1
+
+        def start(self):
+            with self._start_lock:
+                self._start_count += 1
+                start_index = self._start_count
+            if start_index != 1:
+                return
+            failure_callback = self._start_failure_callback
+            self._second_callback.wait(timeout=0.4)
+            self._running = True
+
+            def fail():
+                self._allow_failure.wait(timeout=2)
+                self._running = False
+                failure_callback(RuntimeError("init failed"))
+
+            self._thread = threading.Thread(target=fail)
+            self._thread.start()
+
+    acquire_barrier = threading.Barrier(2)
+
+    def acquire(_state, _dashboard):
+        try:
+            acquire_barrier.wait(timeout=0.2)
+        except threading.BrokenBarrierError:
+            pass
+        return []
+
+    manager = Manager()
+    resource_manager = ResourceManager()
+    state = {"resource_manager": resource_manager}
+    monkeypatch.setattr(remote_api, "acquire_dashboard_resources", acquire)
+
+    async def exercise():
+        first = asyncio.create_task(remote_api.start_dashboard_manager(
+            state, "rtt", manager, manager.start,
+        ))
+        second = asyncio.create_task(remote_api.start_dashboard_manager(
+            state, "rtt", manager, manager.start,
+        ))
+        results = await asyncio.gather(first, second)
+        manager._allow_failure.set()
+        await asyncio.to_thread(manager._thread.join, 1)
+        return results
+
+    results = asyncio.run(exercise())
+
+    assert results == [("started", []), ("already_running", [])]
+    assert manager._start_count == 1
+    assert resource_manager.release_calls == ["user:dashboard:rtt"]
 
 
 def test_native_api_target_operation_releases_lease_on_success_and_failure():
