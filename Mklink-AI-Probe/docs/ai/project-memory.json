@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-18T15:47:04+08:00",
+  "updated_at": "2026-07-18T22:37:03+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "2b5ddd7 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
+    "head": "93d83e4 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
     "remote_head": "the implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
@@ -18,10 +18,12 @@
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; the SuperWatch 1 ms default, live interval editing repair, completed-document cleanup, and current build-skill cleanup are complete",
-    "current_task": "The 2b5ddd7 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.",
-    "latest_commit": "2b5ddd7 fix: preserve SuperWatch interval edits",
-    "latest_installer_bundle": "complete; source commit 2b5ddd7 produced one standard NSIS candidate and one SHA-256 checksum file in the external release directory. MSI and WebView2-offline packages were removed and must not be generated unless the user explicitly requests them. The installer contains the bundled PyInstaller sidecar and does not require Python, Node, Rust, Keil, or the source checkout on the target computer.",
+    "active_plan": "none; the merged desktop configuration workspace, RTT address workflow, bidirectional RTT transmit path, V4.3.4 compatibility repair, standard NSIS qualification, and review fixes are complete",
+    "current_task": "The 93d83e4 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.",
+    "latest_commit": "93d83e4 feat: add reliable desktop RTT workflow",
+    "latest_installer_bundle": "complete; source commit 93d83e4 produced only the standard NSIS candidate release/20260718-222826/Mklink-AI-Probe_0.1.0_x64-standard_93d83e4-setup.exe plus SHA256SUMS.txt. SHA-256 is 8737b858613f54615366f004d4d15976024d48d078e54ca4f66885de96bfb51d. No MSI or WebView2-offline package was generated. Silent overwrite install, restricted-PATH health, bundled-sidecar process isolation, installed hardware RTT, normal shutdown, and port cleanup passed.",
+    "desktop_configuration_implementation": "complete; the separate configuration and connection tabs are replaced by one configuration workspace with Local Device, File Sources, Remote Connection, and Start Service sections. Project overview, project directory/status, recent projects, MCU guidance, RTT advanced settings, and duplicated status blocks are removed. Users provide one AXF/ELF/OUT symbol path and an independent MAP path; invalid symbol paths do not block device connection. Tauri native file dialogs are registered and permissioned.",
+    "rtt_bidirectional_implementation": "complete; RTT View owns the editable address, auto-search fills it from AXF/ELF first, MAP second, and legacy project discovery last, and the user explicitly clicks Start. The transmit bar supports Abc/Hex toggle, Enter and button send, bounded history, clear, and no/\\r/\\n/\\r\\n endings. Backend writes are manager-owned, serialized outside the event loop, channel-aware, and protected by dashboard start transaction locking. V4.3.4 exact-mode startup is synchronized and retried with a four-byte bounded scan while target control-block DownBuffer descriptors remain authoritative.",
     "offline_first_load_retest": "complete; three valid installed-application cold starts opened Offline Flash through real Microsoft Edge/Playwright against the bundled sidecar and physical V4.3.4 probe. The initial target request returned HTTP 200 in the captured rounds, one matching target appeared without manual retry, model detection completed, and no online flash operation failed message appeared.",
     "superwatch_interval_implementation": "complete; SuperWatch defaults to 0.001 seconds across desktop, CLI, Python, manager, and legacy viewers. The backend dynamically stops and reissues cmd.dump_memory when the interval changes. The desktop input now preserves a user draft across status polling and mouse-focus transitions by tracking dirty and pending states, then displays the normalized server value after the request completes.",
     "online_flash_discovery_implementation": "complete; the packaged sidecar includes pyOCD and cmsis_pack_manager runtime data, the API maps enumeration failures to an actionable privacy-safe error, and page-entry discovery retries both empty results and transient cold-start failures before selecting the first matching MicroKeen probe. Selecting HEX starts inspection automatically. Selecting BIN requires an explicit valid base address and then starts inspection automatically. The manual inspect button was removed.",
@@ -250,6 +252,15 @@
       "evidence": "Each valid round entered Offline Flash immediately after port 8765 became available. Target search produced one matching result without manual retry and no alert. The two instrumented rounds captured the first /api/online-flash/targets request returning HTTP 200; probe model detection completed as V4.3.4.",
       "review": "No product-code change was required; the previously observed transient could not be reproduced after the existing cold-start and packaged-runtime repairs.",
       "notes": "The original one-off online flash operation failed observation is closed by repeated installed-runtime retest. No screenshots, raw logs, probe identifiers, COM ports, or local hardware paths are retained."
+    },
+    {
+      "name": "Desktop configuration workspace and bidirectional RTT",
+      "status": "complete",
+      "commits": ["2a35a3a", "d6c8aee", "d1931c9", "93d83e4"],
+      "tests": "Python 686 passed; GUI 30 files / 324 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed; focused backend review regressions 113 passed",
+      "evidence": "Real Microsoft Edge/Playwright at 1200x800 and 800x600 verified the four-section configuration workspace, removed duplicate project/MCU/status content, AXF/ELF and MAP validation, retained remote/server controls, RTT automatic address fill, explicit Start, Enter send, button send, history, mode toggle, and non-overlapping layout. Physical V4.3.4 HIL verified exact-mode recovery to a four-byte bounded scan, three target DownBuffer descriptors with active channel 0, repeated start/stop, UTF-8, 00ff, no ending, carriage return, line feed, and combined carriage-return/line-feed byte-for-byte echo. The installed standard NSIS ran under a PATH containing only Windows system directories, used mklink-ai-probe.exe plus bundled mklink-sidecar.exe with zero Python processes, passed MAP address detection and RTT write on hardware, then exited normally and released port 8765.",
+      "review": "Independent frontend and backend reviews completed. Search/start and pending-send UI races, dashboard start callback generation replacement, event-loop blocking, current-channel validation, and configured-address compatibility were fixed with RED/GREEN tests. Final backend re-review approved with no Critical or Important findings.",
+      "notes": "The standard NSIS is unsigned. AXF/ELF address diagnosis still depends on external arm-none-eabi-readelf; the restricted installed-runtime test intentionally omitted it, so MAP diagnosis was used and passed. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed."
     }
   ],
   "verification": [
@@ -369,6 +380,10 @@
     {
       "area": "Offline Flash first-load target-search installed retest",
       "result": "Three valid cold starts of the installed 2b5ddd7 standard NSIS application were exercised with real Microsoft Edge/Playwright, the bundled sidecar, and a physical V4.3.4 probe. Offline Flash showed one matching target without manual retry and no error alert in every round. The two instrumented rounds captured the initial target-search request returning HTTP 200, and probe-model detection completed successfully."
+    },
+    {
+      "area": "Desktop configuration and bidirectional RTT installed HIL",
+      "result": "Python 686, GUI 324, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real Edge verified the latest production frontend at the default and minimum desktop window sizes. Physical V4.3.4 HIL verified address detection, exact-mode compatibility recovery, repeated start/stop, active channel-0 DownBuffer writes, UTF-8/Hex payloads, all configured line endings, and byte-exact MCU echo. The 93d83e4 standard NSIS was the only bundle generated, installed silently with exit 0, ran with the bundled sidecar and no Python process under restricted PATH, passed installed MAP/RTT hardware checks, and released all processes and port 8765 on normal close. SHA-256 is 8737b858613f54615366f004d4d15976024d48d078e54ca4f66885de96bfb51d."
     }
   ],
   "decisions": [
@@ -391,7 +406,9 @@
     "SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.",
     "SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform uses the full right workspace and a shared numeric Y axis with wheel zoom, drag pan, and double-click reset.",
     "Every future Windows candidate is copied to the main repository's external release directory with the source commit in the filename and a SHA-256 checksum list. Generate the standard NSIS installer by default. Do not generate MSI or WebView2-offline installers unless the user explicitly requests them. Installers and checksums are never committed.",
-    "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed."
+    "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.",
+    "The desktop configuration surface is one workspace with Local Device, File Sources, Remote Connection, and Start Service sections. AXF/ELF/OUT is one symbol-source field; MAP is independent. Project initialization remains a backend/AI workflow and is not exposed as duplicate desktop project overview state.",
+    "RTT address search fills the editable address field but never starts acquisition automatically. RTT transmit is raw passthrough on the selected channel with Abc/Hex encoding, Enter or button send, bounded history, and explicit no/\\r/\\n/\\r\\n endings."
   ],
   "hardware": {
     "probe": "MKLink V4 connected; identifier intentionally omitted",
@@ -417,12 +434,13 @@
     "Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.",
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
-    "The 2b5ddd7 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
+    "The 93d83e4 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
+    "AXF/ELF symbol and RTT address diagnosis requires external arm-none-eabi-readelf. The installed restricted-PATH qualification intentionally had no readelf, so AXF diagnosis was unavailable while independent MAP diagnosis and hardware RTT startup passed.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Install the 2b5ddd7 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, probe discovery, SuperWatch 0.001 to 0.002 live adjustment, normal shutdown, uninstall, and reinstall checks.",
-    "Collect tester feedback for the RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
+    "Install the 93d83e4 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, probe discovery, the merged configuration workspace, MAP-based RTT detection, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, normal shutdown, uninstall, and reinstall checks.",
+    "Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
     "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
