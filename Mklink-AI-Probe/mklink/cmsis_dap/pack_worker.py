@@ -682,38 +682,13 @@ def _validate_pack_archive_identity(
     staged_pack: Path,
     expected: Tuple[str, str, str],
 ) -> None:
+    pdsc_data = _read_pack_descriptor(staged_pack, "downloaded pack")
     try:
-        with ZipFile(str(staged_pack)) as archive:
-            descriptors = [
-                info
-                for info in archive.infolist()
-                if not info.is_dir() and info.filename.casefold().endswith(".pdsc")
-            ]
-            if len(descriptors) != 1:
-                raise WorkerFailure(
-                    FlashErrorCode.PACK_INTEGRITY_ERROR,
-                    "downloaded pack must contain one descriptor",
-                )
-            descriptor = descriptors[0]
-            if descriptor.file_size > _MAX_PACK_PDSC_BYTES:
-                raise WorkerFailure(
-                    FlashErrorCode.PACK_INTEGRITY_ERROR,
-                    "downloaded pack descriptor exceeds the size limit",
-                )
-            with archive.open(descriptor) as stream:
-                pdsc_data = stream.read(_MAX_PACK_PDSC_BYTES + 1)
-            if len(pdsc_data) > _MAX_PACK_PDSC_BYTES:
-                raise WorkerFailure(
-                    FlashErrorCode.PACK_INTEGRITY_ERROR,
-                    "downloaded pack descriptor exceeds the size limit",
-                )
         root = ElementTree.fromstring(pdsc_data)
-    except WorkerFailure:
-        raise
-    except (BadZipFile, OSError, RuntimeError, ElementTree.ParseError):
+    except ElementTree.ParseError:
         raise WorkerFailure(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
-            "downloaded pack archive is invalid",
+            "downloaded pack descriptor is invalid",
         )
 
     direct_values = {}
@@ -745,6 +720,42 @@ def _validate_pack_archive_identity(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
             "downloaded pack current version does not match the selected device",
         )
+
+
+def _read_pack_descriptor(pack_path: Path, subject: str) -> bytes:
+    try:
+        with ZipFile(str(pack_path)) as archive:
+            descriptors = [
+                info
+                for info in archive.infolist()
+                if not info.is_dir() and info.filename.casefold().endswith(".pdsc")
+            ]
+            if len(descriptors) != 1:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "{} must contain one descriptor".format(subject),
+                )
+            descriptor = descriptors[0]
+            if descriptor.file_size > _MAX_PACK_PDSC_BYTES:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "{} descriptor exceeds the size limit".format(subject),
+                )
+            with archive.open(descriptor) as stream:
+                pdsc_data = stream.read(_MAX_PACK_PDSC_BYTES + 1)
+    except WorkerFailure:
+        raise
+    except (BadZipFile, OSError, RuntimeError):
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "{} archive is invalid".format(subject),
+        )
+    if len(pdsc_data) > _MAX_PACK_PDSC_BYTES:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "{} descriptor exceeds the size limit".format(subject),
+        )
+    return pdsc_data
 
 
 def _install(
@@ -907,7 +918,9 @@ def _import_pack(
         data_path=str(stage_data),
         emitter=emit,
     )
-    cache.add_pack_from_path(str(staged_pack))
+    staged_descriptor = stage_index / "import.pdsc"
+    staged_descriptor.write_bytes(_read_pack_descriptor(staged_pack, "imported pack"))
+    cache.add_pack_from_path(str(staged_descriptor))
     metadata = {_pack_metadata(device) for device in cache.index.values()}
     if len(metadata) != 1:
         raise WorkerFailure(

@@ -1779,7 +1779,11 @@ def test_parent_accepts_update_index_result_shape(tmp_path):
 
 def test_worker_import_promotes_exact_artifact_and_metadata(tmp_path):
     source = tmp_path / "incoming.pack"
-    source.write_bytes(b"imported")
+    with ZipFile(source, "w") as archive:
+        archive.writestr(
+            "Vendor.Device_DFP.pdsc",
+            "<package><vendor>Vendor</vendor><name>Device_DFP</name></package>",
+        )
 
     class FakeImportCache:
         instances = []
@@ -1795,7 +1799,8 @@ def test_worker_import_promotes_exact_artifact_and_metadata(tmp_path):
 
         def add_pack_from_path(self, path):
             self.added_path = Path(path)
-            assert self.added_path.read_bytes() == b"imported"
+            assert self.added_path.suffix == ".pdsc"
+            assert b"Device_DFP" in self.added_path.read_bytes()
             details = {
                 "from_pack": {
                     "vendor": "Vendor",
@@ -1832,11 +1837,53 @@ def test_worker_import_promotes_exact_artifact_and_metadata(tmp_path):
             _pack_path(PackPaths(tmp_path), "Vendor", "Device_DFP", "1.2.3")
         ),
     }
-    assert Path(result["pack_path"]).read_bytes() == b"imported"
+    assert Path(result["pack_path"]).read_bytes() == source.read_bytes()
     parent = SubprocessPackWorker(PackPaths(tmp_path))
     parent._active_staging_dir = PackPaths(tmp_path).staging_dir / "import-job"
     parent.acknowledge_commit(result)
     assert not PackPaths(tmp_path).staging_dir.exists()
+
+
+def test_worker_import_indexes_the_descriptor_inside_a_real_pack_archive(tmp_path):
+    source = tmp_path / "Vendor.Device_DFP.1.2.3.pack"
+    descriptor = """<?xml version="1.0" encoding="UTF-8"?>
+<package schemaVersion="1.7.0">
+  <vendor>Vendor</vendor>
+  <name>Device_DFP</name>
+  <description>Test device family</description>
+  <url>https://example.com/pack/</url>
+  <releases><release version="1.2.3" date="2026-01-01">Test</release></releases>
+  <devices>
+    <family Dfamily="Test" Dvendor="Vendor:1">
+      <processor Dcore="Cortex-M3" Dfpu="NO_FPU" Dmpu="NO_MPU" Dendian="Little-endian" Dclock="1000000"/>
+      <device Dname="DEVICE_A">
+        <memory name="IROM1" start="0x08000000" size="0x1000" access="rx" default="1" startup="1"/>
+        <memory name="IRAM1" start="0x20000000" size="0x1000" access="rwx" default="1"/>
+        <algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000" default="1"/>
+      </device>
+    </family>
+  </devices>
+</package>
+"""
+    with ZipFile(source, "w") as archive:
+        archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
+        archive.writestr("Flash/Test.FLM", b"algorithm")
+
+    result = handle_request(
+        {
+            "command": "import",
+            "payload": {"path": str(source)},
+            "root": str(tmp_path / "cache"),
+            "staging_dir": str(
+                (PackPaths(tmp_path / "cache").staging_dir / "real-import").resolve()
+            ),
+        },
+        lambda event: None,
+    )
+
+    assert result["pack_id"] == "Vendor.Device_DFP"
+    assert result["version"] == "1.2.3"
+    assert Path(result["pack_path"]).read_bytes() == source.read_bytes()
 
 
 def test_worker_protocol_stdout_contains_json_lines_only():
