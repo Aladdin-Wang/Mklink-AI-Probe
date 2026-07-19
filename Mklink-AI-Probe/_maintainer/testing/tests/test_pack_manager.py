@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from zipfile import ZipFile
 
 import pytest
 
@@ -1137,6 +1138,371 @@ def test_worker_install_downloads_only_pack_for_exact_selected_device(tmp_path):
     parent._active_staging_dir = Path(events[0]["path"])
     parent.acknowledge_commit(result)
     assert not PackPaths(tmp_path).staging_dir.exists()
+
+
+def test_worker_install_falls_back_to_https_when_cache_omits_pack(
+    tmp_path, monkeypatch
+):
+    class PackRef:
+        vendor = "Vendor"
+        pack = "Device_DFP"
+        version = "1.2.3"
+
+        def get_pack_name(self):
+            return str(Path(self.vendor) / self.pack / (self.version + ".pack"))
+
+        def get_pdsc_name(self):
+            return "Vendor.Device_DFP.1.2.3.pdsc"
+
+    class MissingArtifactCache:
+        instances = []
+
+        def __init__(self, silent, no_timeouts, json_path, data_path, emitter):
+            self.json_path = Path(json_path)
+            self.data_path = Path(data_path)
+            self._index = {
+                "DEVICE": {
+                    "from_pack": {
+                        "vendor": "Vendor",
+                        "pack": "Device_DFP",
+                        "version": "1.2.3",
+                    }
+                }
+            }
+            self.instances.append(self)
+
+        def cache_descriptors(self):
+            self.json_path.joinpath("index.json").write_text(
+                json.dumps(self._index), encoding="utf-8"
+            )
+            self.json_path.joinpath("aliases.json").write_text(
+                "{}", encoding="utf-8"
+            )
+            self.data_path.joinpath(
+                "Vendor.Device_DFP.1.2.3.pdsc"
+            ).write_text(
+                "<package><url>https://packs.example/vendor/</url></package>",
+                encoding="utf-8",
+            )
+
+        @property
+        def index(self):
+            return self._index
+
+        def packs_for_devices(self, devices):
+            return [PackRef()]
+
+        def download_pack_list(self, refs):
+            return None
+
+    fallback_calls = []
+    validated = []
+
+    def fake_https_fallback(pdsc_path, staged_pack, expected, emit):
+        fallback_calls.append((pdsc_path, staged_pack, expected))
+        staged_pack.parent.mkdir(parents=True, exist_ok=True)
+        staged_pack.write_bytes(b"fallback-pack")
+
+    monkeypatch.setattr(
+        pack_worker_module,
+        "_download_pack_over_https",
+        fake_https_fallback,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pack_worker_module,
+        "_validate_pack_archive_identity",
+        lambda path, expected: validated.append((path, expected)),
+        raising=False,
+    )
+
+    events = []
+    result = handle_request(
+        {
+            "command": "install",
+            "payload": {"part_number": "DEVICE"},
+            "root": str(tmp_path),
+            "staging_dir": str(
+                (PackPaths(tmp_path).staging_dir / "fallback-job").resolve()
+            ),
+        },
+        events.append,
+        cache_factory=MissingArtifactCache,
+    )
+
+    cache = MissingArtifactCache.instances[0]
+    assert len(fallback_calls) == 1
+    assert fallback_calls[0][0].name == "Vendor.Device_DFP.1.2.3.pdsc"
+    assert fallback_calls[0][2] == ("Vendor", "Device_DFP", "1.2.3")
+    assert validated == [
+        (fallback_calls[0][1], ("Vendor", "Device_DFP", "1.2.3"))
+    ]
+    assert result["pack_id"] == "Vendor.Device_DFP"
+    assert Path(result["pack_path"]).read_bytes() == b"fallback-pack"
+
+
+def test_worker_install_uses_last_known_device_when_refresh_omits_it(
+    tmp_path, monkeypatch
+):
+    paths = PackPaths(tmp_path)
+    paths.index_dir.mkdir(parents=True)
+    last_known = {
+        "from_pack": {
+            "vendor": "Vendor",
+            "pack": "Device_DFP",
+            "version": "1.2.3",
+            "url": "https://packs.example/vendor/",
+        }
+    }
+    paths.index_file.write_text(
+        json.dumps({"DEVICE": last_known}), encoding="utf-8"
+    )
+    paths.aliases_file.write_text("{}", encoding="utf-8")
+
+    class PackRef:
+        vendor = "Vendor"
+        pack = "Device_DFP"
+        version = "1.2.3"
+
+        def get_pack_name(self):
+            return str(Path(self.vendor) / self.pack / (self.version + ".pack"))
+
+    class IncompleteRefreshCache:
+        def __init__(self, silent, no_timeouts, json_path, data_path, emitter):
+            self.json_path = Path(json_path)
+            self.data_path = Path(data_path)
+            self._index = {}
+
+        def cache_descriptors(self):
+            self.json_path.joinpath("index.json").write_text("{}", encoding="utf-8")
+            self.json_path.joinpath("aliases.json").write_text("{}", encoding="utf-8")
+
+        @property
+        def index(self):
+            return self._index
+
+        def packs_for_devices(self, devices):
+            assert devices == [last_known]
+            return [PackRef()]
+
+        def download_pack_list(self, refs):
+            raise AssertionError("missing refreshed descriptor must not be parsed")
+
+    downloads = []
+    validations = []
+
+    def fake_base_download(base_url, staged_pack, expected, emit):
+        downloads.append((base_url, expected))
+        staged_pack.parent.mkdir(parents=True, exist_ok=True)
+        staged_pack.write_bytes(b"last-known-pack")
+
+    monkeypatch.setattr(
+        pack_worker_module,
+        "_download_pack_from_https_base",
+        fake_base_download,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pack_worker_module,
+        "_validate_pack_archive_identity",
+        lambda path, expected: validations.append((path, expected)),
+    )
+
+    result = handle_request(
+        {
+            "command": "install",
+            "payload": {"part_number": "DEVICE"},
+            "root": str(tmp_path),
+            "staging_dir": str((paths.staging_dir / "last-known-job").resolve()),
+        },
+        lambda event: None,
+        cache_factory=IncompleteRefreshCache,
+    )
+
+    assert downloads == [
+        (
+            "https://packs.example/vendor/",
+            ("Vendor", "Device_DFP", "1.2.3"),
+        )
+    ]
+    assert len(validations) == 1
+    assert Path(result["pack_path"]).read_bytes() == b"last-known-pack"
+    installed_index = json.loads(paths.index_file.read_text(encoding="utf-8"))
+    assert installed_index["DEVICE"] == last_known
+
+
+class _FakePackResponse:
+    def __init__(self, chunks, final_url, content_length):
+        self._chunks = list(chunks)
+        self._final_url = final_url
+        self.headers = {"Content-Length": str(content_length)}
+        self.status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def geturl(self):
+        return self._final_url
+
+    def read(self, size):
+        return self._chunks.pop(0) if self._chunks else b""
+
+
+def test_https_pack_fallback_streams_exact_identity_to_staging(
+    tmp_path, monkeypatch
+):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+    staged = tmp_path / "data" / "Vendor" / "Device_DFP" / "1.2.3.pack"
+    opened = []
+
+    def fake_urlopen(request, timeout):
+        opened.append((request.full_url, timeout))
+        return _FakePackResponse(
+            [b"pack", b"-bytes"], request.full_url, len(b"pack-bytes")
+        )
+
+    monkeypatch.setattr(
+        pack_worker_module, "urlopen", fake_urlopen, raising=False
+    )
+    events = []
+
+    pack_worker_module._download_pack_over_https(
+        pdsc,
+        staged,
+        ("Vendor", "Device_DFP", "1.2.3"),
+        events.append,
+    )
+
+    assert opened == [
+        (
+            "https://packs.example/vendor/Vendor.Device_DFP.1.2.3.pack",
+            30,
+        )
+    ]
+    assert staged.read_bytes() == b"pack-bytes"
+    assert not staged.with_name(staged.name + ".download").exists()
+    assert events[-1] == {"type": "progress", "current": 10, "total": 10}
+
+
+def test_https_pack_fallback_rejects_http_source(tmp_path, monkeypatch):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>http://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+
+    def unexpected_urlopen(request, timeout):
+        raise AssertionError("insecure source must not be opened")
+
+    monkeypatch.setattr(
+        pack_worker_module, "urlopen", unexpected_urlopen, raising=False
+    )
+
+    with pytest.raises(pack_worker_module.WorkerFailure, match="must use HTTPS"):
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            tmp_path / "1.2.3.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+
+def test_https_pack_fallback_rejects_redirect_downgrade(tmp_path, monkeypatch):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+    staged = tmp_path / "1.2.3.pack"
+
+    def fake_urlopen(request, timeout):
+        return _FakePackResponse(
+            [b"pack"], "http://cdn.example/pack.pack", len(b"pack")
+        )
+
+    monkeypatch.setattr(
+        pack_worker_module, "urlopen", fake_urlopen, raising=False
+    )
+
+    with pytest.raises(pack_worker_module.WorkerFailure, match="redirected outside HTTPS"):
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            staged,
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+    assert not staged.exists()
+
+
+def test_https_pack_fallback_rejects_oversized_response(tmp_path, monkeypatch):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pack_worker_module, "_MAX_PACK_DOWNLOAD_BYTES", 4, raising=False
+    )
+
+    def fake_urlopen(request, timeout):
+        return _FakePackResponse([b"large"], request.full_url, 5)
+
+    monkeypatch.setattr(
+        pack_worker_module, "urlopen", fake_urlopen, raising=False
+    )
+
+    with pytest.raises(pack_worker_module.WorkerFailure, match="size limit"):
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            tmp_path / "1.2.3.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+
+def test_pack_archive_identity_accepts_matching_unique_pdsc(tmp_path):
+    pack = tmp_path / "1.2.3.pack"
+    with ZipFile(pack, "w") as archive:
+        archive.writestr(
+            "Vendor.Device_DFP.pdsc",
+            """<package>
+                <vendor>Vendor:123</vendor>
+                <name>Device_DFP</name>
+                <releases><release version="1.2.3"/></releases>
+            </package>""",
+        )
+
+    pack_worker_module._validate_pack_archive_identity(
+        pack, ("Vendor", "Device_DFP", "1.2.3")
+    )
+
+
+def test_pack_archive_identity_rejects_mismatched_pdsc(tmp_path):
+    pack = tmp_path / "1.2.3.pack"
+    with ZipFile(pack, "w") as archive:
+        archive.writestr(
+            "Other.Device_DFP.pdsc",
+            """<package>
+                <vendor>Other</vendor>
+                <name>Device_DFP</name>
+                <releases><release version="1.2.3"/></releases>
+            </package>""",
+        )
+
+    with pytest.raises(
+        pack_worker_module.WorkerFailure, match="identity does not match"
+    ):
+        pack_worker_module._validate_pack_archive_identity(
+            pack, ("Vendor", "Device_DFP", "1.2.3")
+        )
 
 
 def test_worker_update_index_atomically_promotes_complete_metadata(tmp_path):

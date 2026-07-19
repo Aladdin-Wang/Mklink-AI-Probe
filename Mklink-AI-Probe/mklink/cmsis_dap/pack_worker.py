@@ -9,7 +9,11 @@ from pathlib import Path
 import shutil
 import sys
 from typing import Callable, Dict, IO, List, Mapping, Optional, Sequence, Tuple, Type
+from urllib.parse import quote, urljoin, urlparse
+from urllib.request import Request, urlopen
 import uuid
+import xml.etree.ElementTree as ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from cmsis_pack_manager import Cache
 
@@ -19,6 +23,9 @@ from .paths import PackPaths
 
 
 EventEmitter = Callable[[Dict[str, object]], None]
+_MAX_PACK_DOWNLOAD_BYTES = 1024 * 1024 * 1024
+_PACK_DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+_MAX_PACK_PDSC_BYTES = 16 * 1024 * 1024
 
 
 class WorkerFailure(Exception):
@@ -509,6 +516,203 @@ def _prepare_pack_transaction(
         raise
 
 
+def _download_pack_over_https(
+    pdsc_path: Path,
+    staged_pack: Path,
+    expected: Tuple[str, str, str],
+    emit: EventEmitter,
+) -> None:
+    try:
+        root = ElementTree.parse(str(pdsc_path)).getroot()
+    except (OSError, ElementTree.ParseError) as error:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "selected pack descriptor is invalid: {}".format(error),
+        )
+    urls = [
+        str(element.text).strip()
+        for element in root.iter()
+        if element.tag.rsplit("}", 1)[-1] == "url"
+        and element.text
+        and str(element.text).strip()
+    ]
+    if len(urls) != 1:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "selected pack descriptor must contain one download URL",
+        )
+    _download_pack_from_https_base(urls[0], staged_pack, expected, emit)
+
+
+def _download_pack_from_https_base(
+    download_base: str,
+    staged_pack: Path,
+    expected: Tuple[str, str, str],
+    emit: EventEmitter,
+) -> None:
+    _, _, normalized_version, pack_id = _normalize_pack_identity(*expected)
+    remote_name = "{}.{}.pack".format(pack_id, normalized_version)
+    download_url = urljoin(download_base.rstrip("/") + "/", quote(remote_name))
+    parsed_url = urlparse(download_url)
+    if (
+        parsed_url.scheme.casefold() != "https"
+        or not parsed_url.hostname
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+    ):
+        raise WorkerFailure(
+            FlashErrorCode.PACK_DOWNLOAD_FAIL,
+            "pack download fallback must use HTTPS",
+        )
+    if staged_pack.exists():
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "pack download destination already exists",
+        )
+
+    staged_pack.parent.mkdir(parents=True, exist_ok=True)
+    temporary = staged_pack.with_name(staged_pack.name + ".download")
+    request = Request(
+        download_url,
+        headers={"User-Agent": "Mklink-AI-Probe/0.1 PackWorker"},
+    )
+    emit({"type": "event", "event": "pack-download-fallback"})
+    try:
+        with urlopen(request, timeout=30) as response:
+            final_url = urlparse(str(response.geturl()))
+            if final_url.scheme.casefold() != "https" or not final_url.hostname:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "pack download redirected outside HTTPS",
+                )
+            if getattr(response, "status", 200) != 200:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "pack download returned an unexpected HTTP status",
+                )
+            length_value = response.headers.get("Content-Length")
+            try:
+                declared_length = (
+                    int(length_value) if length_value is not None else None
+                )
+            except (TypeError, ValueError):
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "pack download returned an invalid content length",
+                )
+            if declared_length is not None and (
+                declared_length < 0
+                or declared_length > _MAX_PACK_DOWNLOAD_BYTES
+            ):
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "pack download exceeds the size limit",
+                )
+
+            downloaded = 0
+            with temporary.open("xb") as stream:
+                while True:
+                    chunk = response.read(_PACK_DOWNLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > _MAX_PACK_DOWNLOAD_BYTES:
+                        raise WorkerFailure(
+                            FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                            "pack download exceeds the size limit",
+                        )
+                    stream.write(chunk)
+                    if declared_length is not None:
+                        emit(
+                            {
+                                "type": "progress",
+                                "current": downloaded,
+                                "total": declared_length,
+                            }
+                        )
+            if declared_length is not None and downloaded != declared_length:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "pack download length does not match the response",
+                )
+        os.replace(str(temporary), str(staged_pack))
+    except WorkerFailure:
+        raise
+    except Exception as error:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_DOWNLOAD_FAIL,
+            "HTTPS pack download failed: {}".format(error),
+        )
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _validate_pack_archive_identity(
+    staged_pack: Path,
+    expected: Tuple[str, str, str],
+) -> None:
+    try:
+        with ZipFile(str(staged_pack)) as archive:
+            descriptors = [
+                info
+                for info in archive.infolist()
+                if not info.is_dir() and info.filename.casefold().endswith(".pdsc")
+            ]
+            if len(descriptors) != 1:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "downloaded pack must contain one descriptor",
+                )
+            descriptor = descriptors[0]
+            if descriptor.file_size > _MAX_PACK_PDSC_BYTES:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "downloaded pack descriptor exceeds the size limit",
+                )
+            with archive.open(descriptor) as stream:
+                pdsc_data = stream.read(_MAX_PACK_PDSC_BYTES + 1)
+            if len(pdsc_data) > _MAX_PACK_PDSC_BYTES:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "downloaded pack descriptor exceeds the size limit",
+                )
+        root = ElementTree.fromstring(pdsc_data)
+    except WorkerFailure:
+        raise
+    except (BadZipFile, OSError, RuntimeError, ElementTree.ParseError) as error:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "downloaded pack archive is invalid: {}".format(error),
+        )
+
+    direct_values = {}
+    for child in root:
+        local_name = child.tag.rsplit("}", 1)[-1]
+        if local_name in ("vendor", "name") and child.text:
+            direct_values[local_name] = str(child.text).strip()
+    release_versions = {
+        str(element.attrib.get("version")).strip()
+        for element in root.iter()
+        if element.tag.rsplit("}", 1)[-1] == "release"
+        and element.attrib.get("version")
+    }
+    expected_vendor, expected_pack, expected_version, _ = (
+        _normalize_pack_identity(*expected)
+    )
+    actual_vendor = direct_values.get("vendor", "").split(":", 1)[0].strip()
+    actual_pack = direct_values.get("name", "")
+    if (
+        actual_vendor != expected_vendor
+        or actual_pack != expected_pack
+        or expected_version not in release_versions
+    ):
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "downloaded pack identity does not match the selected device",
+        )
+
+
 def _install(
     payload: Mapping[str, object],
     paths: PackPaths,
@@ -531,13 +735,22 @@ def _install(
         emitter=emit,
     )
     cache.cache_descriptors()
+    refreshed_device = True
     try:
         device = cache.index[part_number]
     except KeyError:
-        raise WorkerFailure(
-            FlashErrorCode.PACK_NOT_FOUND,
-            "no CMSIS-Pack provides {}".format(part_number),
+        refreshed_device = False
+        current_index = (
+            _read_json_object(paths.index_file)
+            if paths.index_file.is_file()
+            else {}
         )
+        device = current_index.get(part_number)
+        if not isinstance(device, Mapping):
+            raise WorkerFailure(
+                FlashErrorCode.PACK_NOT_FOUND,
+                "no CMSIS-Pack provides {}".format(part_number),
+            )
     expected = _pack_metadata(device)
     pack_refs = cache.packs_for_devices([device])
     if len(pack_refs) != 1 or _ref_metadata(pack_refs[0]) != expected:
@@ -545,10 +758,36 @@ def _install(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
             "selected device resolved to unexpected pack references",
         )
-    cache.download_pack_list(pack_refs)
+    if refreshed_device:
+        cache.download_pack_list(pack_refs)
     pack_ref = pack_refs[0]
     relative_name = Path(pack_ref.get_pack_name())
     staged_pack = stage_data / relative_name
+    if not staged_pack.is_file():
+        if refreshed_device:
+            pdsc_path = stage_data / Path(pack_ref.get_pdsc_name())
+            _download_pack_over_https(pdsc_path, staged_pack, expected, emit)
+        else:
+            from_pack = device.get("from_pack")
+            download_base = (
+                from_pack.get("url") if isinstance(from_pack, Mapping) else None
+            )
+            if not isinstance(download_base, str) or not download_base:
+                raise WorkerFailure(
+                    FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                    "last known pack metadata has no download URL",
+                )
+            _download_pack_from_https_base(
+                download_base, staged_pack, expected, emit
+            )
+        _validate_pack_archive_identity(staged_pack, expected)
+    if not refreshed_device:
+        staged_index_file = stage_index / "index.json"
+        staged_index_data = _read_json_object(staged_index_file)
+        staged_index_data[part_number] = dict(device)
+        staged_index_file.write_text(
+            json.dumps(staged_index_data, indent=2, sort_keys=True), encoding="utf-8"
+        )
     vendor, pack, version = expected
     destination = _canonical_pack_path(paths, vendor, pack, version)
     replacements = _prepare_pack_transaction(
