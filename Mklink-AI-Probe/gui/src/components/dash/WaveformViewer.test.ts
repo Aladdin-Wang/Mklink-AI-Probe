@@ -123,9 +123,17 @@ async function loadRttViewerRuntime(
   const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
     .mockReturnValue(canvasContext())
   const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockReturnValue({
-      x: 0, y: 0, width: 800, height: 400, top: 0, right: 800,
-      bottom: 400, left: 0, toJSON: () => ({}),
+    .mockImplementation(function(this: HTMLElement) {
+      if (this.id === 'y-axis-hit') {
+        return {
+          x: 0, y: 8, width: 64, height: 360, top: 8, right: 64,
+          bottom: 368, left: 0, toJSON: () => ({}),
+        }
+      }
+      return {
+        x: 0, y: 0, width: 800, height: 400, top: 0, right: 800,
+        bottom: 400, left: 0, toJSON: () => ({}),
+      }
     })
   const widthSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
     .mockReturnValue(800)
@@ -1009,6 +1017,38 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('resets a previous manual shared Y range when a legacy project omits global Y state', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+      document.getElementById('y-axis-hit')!.dispatchEvent(wheelEvent({
+        deltaY: -100, clientY: 160, bubbles: true,
+      }))
+      expect(runtime.probe.globalYView()).toMatchObject({ autoRange: false })
+
+      expect(runtime.probe.deserializeState({ channels: [{ name: 'A' }] })).toBe(true)
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('zooms, pans, and resets the X axis through its hit region', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
@@ -1062,7 +1102,7 @@ describe('VOFA viewer hot path source guard', () => {
       const axis = document.getElementById('y-axis-hit')!
 
       const beforeZoom = runtime.probe.sharedYRange()
-      const anchorRatio = 160 / 400
+      const anchorRatio = (160 - 8) / 360
       const anchorBefore = beforeZoom.yMax - anchorRatio * (beforeZoom.yMax - beforeZoom.yMin)
       axis.dispatchEvent(wheelEvent({ deltaY: -100, clientY: 160, bubbles: true }))
       const zoomedRange = runtime.probe.sharedYRange()

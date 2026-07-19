@@ -1960,6 +1960,7 @@ function deserializeState(json) {
   try {
     var state = (typeof json === 'string') ? JSON.parse(json) : json;
     if (!state || !state.channels) return false;
+    globalYView = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
     for (var i = 0; i < state.channels.length; i++) {
       var ch = state.channels[i];
       if (!ch.name) continue;
@@ -1990,9 +1991,6 @@ function deserializeState(json) {
     if (state.globalYView) {
       globalYView.zoom = state.globalYView.zoom || 1;
       globalYView.offset = state.globalYView.offset || 0;
-      globalYView.autoRange = true;
-      globalYView.manualMin = null;
-      globalYView.manualMax = null;
       if (state.globalYView.autoRange === false) {
         setManualSharedYRange(
           parseNullableNumber(state.globalYView.manualMin),
