@@ -15,6 +15,7 @@ BUILDER_PATH = (
     / "build.py"
 )
 BUILTIN_PACK_BUILDER_PATH = BUILDER_PATH.with_name("builtin_packs.py")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def source_tree_digest(source: Path, relative_names: list[str]) -> str:
@@ -166,6 +167,20 @@ def test_bundle_config_preserves_product_version_and_builds_only_nsis(builder, t
         assert '"externalBin"' in patched
 
     assert config.read_bytes() == original
+
+
+def test_tauri_bundle_includes_complete_third_party_license_texts():
+    tauri_dir = PROJECT_ROOT / "gui" / "src-tauri"
+    config = json.loads((tauri_dir / "tauri.conf.json").read_text(encoding="utf-8"))
+    notices_relative = "resources/THIRD-PARTY-NOTICES.txt"
+
+    assert notices_relative in config["bundle"]["resources"]
+    notices = (tauri_dir / notices_relative).read_text(encoding="utf-8")
+    assert "Apache License" in notices
+    assert "Version 2.0, January 2004" in notices
+    assert "END OF TERMS AND CONDITIONS" in notices
+    assert "BSD 3-Clause License" in notices
+    assert "Neither the name of Nordic Semiconductor ASA" in notices
 
 
 def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeypatch, tmp_path):
