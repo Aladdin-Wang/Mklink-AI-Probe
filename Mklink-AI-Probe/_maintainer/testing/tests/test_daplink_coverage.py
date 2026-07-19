@@ -147,6 +147,27 @@ def test_compare_coverage_rejects_same_model_from_another_manufacturer(coverage_
     assert report.counts == {"unresolved": 1}
 
 
+@pytest.mark.parametrize(
+    ("catalog_name", "source_name"),
+    [
+        ("STM32", "STMicroelectronics"),
+        ("NRF", "Nordic Semiconductor"),
+        ("NuMicro", "Nuvoton"),
+        ("HC32", "HDSC"),
+        ("Infineon", "Cypress"),
+        ("AIR32", "AirM2M"),
+        ("YTM32", "Yuntu Microelectronics"),
+        ("YTM32", "YTMicro"),
+    ],
+)
+def test_manufacturer_normalization_uses_verified_brand_aliases(
+    coverage_module, catalog_name, source_name,
+):
+    assert coverage_module.normalize_manufacturer(catalog_name) == (
+        coverage_module.normalize_manufacturer(source_name)
+    )
+
+
 def test_flm_hashes_are_identification_evidence_not_redistribution_permission(
     coverage_module,
 ):

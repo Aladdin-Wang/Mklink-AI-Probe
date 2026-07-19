@@ -109,6 +109,11 @@ _MANUFACTURER_ALIASES = {
     "numicro": "nuvoton",
     "nuvotontechnology": "nuvoton",
     "mircochip": "microchip",
+    "hc32": "hdsc",
+    "cypress": "infineon",
+    "air32": "airm2m",
+    "ytm32": "yuntumicroelectronics",
+    "ytmicro": "yuntumicroelectronics",
 }
 
 
