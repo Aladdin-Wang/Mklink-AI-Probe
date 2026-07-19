@@ -17,6 +17,81 @@ class _NullGuard:
 _GO_TOKEN = "MKLINK-PROCESS-GUARD-GO\n"
 _READY_TOKEN = "MKLINK-PROCESS-GUARD-READY\n"
 _REAL_POPEN = subprocess.Popen
+_PARENT_JOB_ENV = "MKLINK_PARENT_JOB_BREAKAWAY_OK"
+_KILL_ON_JOB_CLOSE = 0x00002000
+_BREAKAWAY_OK = 0x00000800
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _current_job_limit_flags() -> int:
+    if os.name != "nt":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [
+            ("ReadOperationCount", ctypes.c_uint64),
+            ("WriteOperationCount", ctypes.c_uint64),
+            ("OtherOperationCount", ctypes.c_uint64),
+            ("ReadTransferCount", ctypes.c_uint64),
+            ("WriteTransferCount", ctypes.c_uint64),
+            ("OtherTransferCount", ctypes.c_uint64),
+        ]
+
+    class ExtendedLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimitInformation),
+            ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.IsProcessInJob.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.BOOL),
+    ]
+    kernel32.QueryInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    process = kernel32.GetCurrentProcess()
+    in_job = wintypes.BOOL()
+    if not kernel32.IsProcessInJob(process, None, ctypes.byref(in_job)):
+        return 0
+    if not in_job.value:
+        return 0
+    limits = ExtendedLimitInformation()
+    if not kernel32.QueryInformationJobObject(
+        None,
+        9,
+        ctypes.byref(limits),
+        ctypes.sizeof(limits),
+        None,
+    ):
+        return 0
+    return int(limits.BasicLimitInformation.LimitFlags)
 
 
 def guarded_process_command(command: Sequence[str]) -> List[str]:
@@ -27,6 +102,15 @@ def guarded_process_command(command: Sequence[str]) -> List[str]:
         "mklink.cmsis_dap.process_guard_exec",
         str(os.getpid()),
     ] + values
+
+
+def guarded_process_creationflags() -> int:
+    if os.name != "nt" or os.environ.get(_PARENT_JOB_ENV) != "1":
+        return 0
+    required = _KILL_ON_JOB_CLOSE | _BREAKAWAY_OK
+    if _current_job_limit_flags() & required != required:
+        return 0
+    return _CREATE_BREAKAWAY_FROM_JOB
 
 
 def attach_parent_death_guard(process):

@@ -427,6 +427,36 @@ def test_guard_wrapper_executes_only_after_attach_and_go(tmp_path):
             guard.close()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="validates Windows parent Job reuse")
+def test_guard_creationflags_use_verified_parent_job_breakaway(
+    monkeypatch,
+):
+    import mklink.cmsis_dap.process_guard as process_guard
+
+    monkeypatch.setenv("MKLINK_PARENT_JOB_BREAKAWAY_OK", "1")
+    monkeypatch.setattr(
+        process_guard, "_current_job_limit_flags", lambda: 0x00002000 | 0x00000800
+    )
+    command = [sys.executable, "-c", "pass"]
+
+    assert process_guard.guarded_process_command(command) != command
+    assert process_guard.guarded_process_creationflags() == 0x01000000
+
+
+def test_guard_command_rejects_spoofed_parent_job_marker(monkeypatch):
+    import mklink.cmsis_dap.process_guard as process_guard
+
+    monkeypatch.setenv("MKLINK_PARENT_JOB_BREAKAWAY_OK", "1")
+    monkeypatch.setattr(
+        process_guard, "_current_job_limit_flags", lambda: 0,
+        raising=False,
+    )
+    command = [sys.executable, "-c", "pass"]
+
+    assert process_guard.guarded_process_command(command) != command
+    assert process_guard.guarded_process_creationflags() == 0
+
+
 def test_guard_attach_failure_is_fail_closed_and_leaves_no_worker(tmp_path):
     from mklink.cmsis_dap.process_guard import (
         attach_and_release_guarded_process,

@@ -16,6 +16,7 @@ from .pack_lock import PackRootLock
 from .process_guard import (
     attach_and_release_guarded_process,
     guarded_process_command,
+    guarded_process_creationflags,
 )
 from .paths import PackPaths
 
@@ -147,14 +148,13 @@ class SubprocessPackWorker:
             self._active_staging_dir = staging
             try:
                 process = subprocess.Popen(
-                    guarded_process_command(
-                        self._worker_command()
-                    ),
+                    guarded_process_command(self._worker_command()),
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
                     encoding="utf-8",
+                    creationflags=guarded_process_creationflags(),
                 )
                 process_guard = attach_and_release_guarded_process(process)
             except BaseException:
