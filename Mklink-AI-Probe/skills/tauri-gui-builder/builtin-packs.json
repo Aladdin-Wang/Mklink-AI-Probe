@@ -56,5 +56,20 @@
       "license_files": [{"path": "LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"}]
     }
   ],
-  "archives": []
+  "archives": [
+    {
+      "file": "NordicSemiconductor.nRF_DeviceFamilyPack.8.32.1.pack",
+      "sha256": "bf84ddd13a856706265b41de3b446bf51e791b25edc4fa0a0a107b323e5c8407",
+      "source_url": "https://files.nordicsemi.com/artifactory/nRF5-SDK/external/pieces/nRF_DeviceFamilyPack/NordicSemiconductor.nRF_DeviceFamilyPack.8.32.1.pack",
+      "redistribution_authorized": true,
+      "redistribution_basis": "BSD-3-Clause",
+      "license_files": [
+        {
+          "path": "License/license.txt",
+          "sha256": "4e20abb8d877137edb68d1233f8e5dacf859e7f2f3c47c333638665a913d7c35"
+        }
+      ],
+      "provenance": "official Nordic Semiconductor CMSIS-Pack"
+    }
+  ]
 }
