@@ -1335,7 +1335,11 @@ class _FakePackResponse:
     def __init__(self, chunks, final_url, content_length):
         self._chunks = list(chunks)
         self._final_url = final_url
-        self.headers = {"Content-Length": str(content_length)}
+        self.headers = (
+            {"Content-Length": str(content_length)}
+            if content_length is not None
+            else {}
+        )
         self.status = 200
 
     def __enter__(self):
@@ -1362,14 +1366,14 @@ def test_https_pack_fallback_streams_exact_identity_to_staging(
     staged = tmp_path / "data" / "Vendor" / "Device_DFP" / "1.2.3.pack"
     opened = []
 
-    def fake_urlopen(request, timeout):
+    def fake_open(request, timeout):
         opened.append((request.full_url, timeout))
         return _FakePackResponse(
             [b"pack", b"-bytes"], request.full_url, len(b"pack-bytes")
         )
 
     monkeypatch.setattr(
-        pack_worker_module, "urlopen", fake_urlopen, raising=False
+        pack_worker_module, "_open_https_request", fake_open
     )
     events = []
 
@@ -1398,11 +1402,11 @@ def test_https_pack_fallback_rejects_http_source(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    def unexpected_urlopen(request, timeout):
+    def unexpected_open(request, timeout):
         raise AssertionError("insecure source must not be opened")
 
     monkeypatch.setattr(
-        pack_worker_module, "urlopen", unexpected_urlopen, raising=False
+        pack_worker_module, "_open_https_request", unexpected_open
     )
 
     with pytest.raises(pack_worker_module.WorkerFailure, match="must use HTTPS"):
@@ -1422,13 +1426,13 @@ def test_https_pack_fallback_rejects_redirect_downgrade(tmp_path, monkeypatch):
     )
     staged = tmp_path / "1.2.3.pack"
 
-    def fake_urlopen(request, timeout):
+    def fake_open(request, timeout):
         return _FakePackResponse(
             [b"pack"], "http://cdn.example/pack.pack", len(b"pack")
         )
 
     monkeypatch.setattr(
-        pack_worker_module, "urlopen", fake_urlopen, raising=False
+        pack_worker_module, "_open_https_request", fake_open
     )
 
     with pytest.raises(pack_worker_module.WorkerFailure, match="redirected outside HTTPS"):
@@ -1442,6 +1446,32 @@ def test_https_pack_fallback_rejects_redirect_downgrade(tmp_path, monkeypatch):
     assert not staged.exists()
 
 
+@pytest.mark.parametrize(
+    "intermediate_url",
+    [
+        "http://mirror.example/intermediate.pack",
+        "https://user:secret@mirror.example/intermediate.pack",
+    ],
+)
+def test_https_redirect_handler_rejects_unsafe_intermediate_hop(
+    intermediate_url,
+):
+    handler = pack_worker_module._HTTPSOnlyRedirectHandler()
+    request = pack_worker_module.Request("https://packs.example/start.pack")
+
+    with pytest.raises(
+        pack_worker_module.WorkerFailure, match="redirected outside HTTPS"
+    ):
+        handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {},
+            intermediate_url,
+        )
+
+
 def test_https_pack_fallback_rejects_oversized_response(tmp_path, monkeypatch):
     pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
     pdsc.write_text(
@@ -1452,11 +1482,11 @@ def test_https_pack_fallback_rejects_oversized_response(tmp_path, monkeypatch):
         pack_worker_module, "_MAX_PACK_DOWNLOAD_BYTES", 4, raising=False
     )
 
-    def fake_urlopen(request, timeout):
+    def fake_open(request, timeout):
         return _FakePackResponse([b"large"], request.full_url, 5)
 
     monkeypatch.setattr(
-        pack_worker_module, "urlopen", fake_urlopen, raising=False
+        pack_worker_module, "_open_https_request", fake_open
     )
 
     with pytest.raises(pack_worker_module.WorkerFailure, match="size limit"):
@@ -1466,6 +1496,89 @@ def test_https_pack_fallback_rejects_oversized_response(tmp_path, monkeypatch):
             ("Vendor", "Device_DFP", "1.2.3"),
             lambda event: None,
         )
+
+
+def test_https_pack_fallback_limits_stream_without_content_length(
+    tmp_path, monkeypatch
+):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pack_worker_module, "_MAX_PACK_DOWNLOAD_BYTES", 4)
+
+    def fake_open(request, timeout):
+        return _FakePackResponse([b"123", b"45"], request.full_url, None)
+
+    monkeypatch.setattr(pack_worker_module, "_open_https_request", fake_open)
+
+    with pytest.raises(pack_worker_module.WorkerFailure, match="size limit"):
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            tmp_path / "1.2.3.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+
+def test_https_pack_fallback_redacts_paths_and_url_credentials(
+    tmp_path, monkeypatch
+):
+    missing = tmp_path / "SENTINEL-PDSC-PATH.pdsc"
+
+    with pytest.raises(pack_worker_module.WorkerFailure) as missing_error:
+        pack_worker_module._download_pack_over_https(
+            missing,
+            tmp_path / "1.2.3.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+    assert "SENTINEL-PDSC-PATH" not in missing_error.value.message
+    assert str(tmp_path) not in missing_error.value.message
+
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://packs.example/vendor/</url></package>",
+        encoding="utf-8",
+    )
+
+    def failing_open(request, timeout):
+        raise OSError("https://user:SECRET@packs.example/private")
+
+    monkeypatch.setattr(pack_worker_module, "_open_https_request", failing_open)
+
+    with pytest.raises(pack_worker_module.WorkerFailure) as network_error:
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            tmp_path / "network.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+    assert "SECRET" not in network_error.value.message
+    assert "user:" not in network_error.value.message
+
+
+def test_https_pack_fallback_redacts_malformed_url_credentials(tmp_path):
+    pdsc = tmp_path / "Vendor.Device_DFP.1.2.3.pdsc"
+    pdsc.write_text(
+        "<package><url>https://user:SECRET@[invalid/</url></package>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(pack_worker_module.WorkerFailure) as raised:
+        pack_worker_module._download_pack_over_https(
+            pdsc,
+            tmp_path / "1.2.3.pack",
+            ("Vendor", "Device_DFP", "1.2.3"),
+            lambda event: None,
+        )
+
+    assert raised.value.code is FlashErrorCode.PACK_DOWNLOAD_FAIL
+    assert raised.value.message == "pack download fallback must use HTTPS"
+    assert "SECRET" not in raised.value.message
 
 
 def test_pack_archive_identity_accepts_matching_unique_pdsc(tmp_path):
@@ -1499,6 +1612,29 @@ def test_pack_archive_identity_rejects_mismatched_pdsc(tmp_path):
 
     with pytest.raises(
         pack_worker_module.WorkerFailure, match="identity does not match"
+    ):
+        pack_worker_module._validate_pack_archive_identity(
+            pack, ("Vendor", "Device_DFP", "1.2.3")
+        )
+
+
+def test_pack_archive_identity_rejects_historical_expected_version(tmp_path):
+    pack = tmp_path / "1.2.3.pack"
+    with ZipFile(pack, "w") as archive:
+        archive.writestr(
+            "Vendor.Device_DFP.pdsc",
+            """<package>
+                <vendor>Vendor</vendor>
+                <name>Device_DFP</name>
+                <releases>
+                    <release version="2.0.0"/>
+                    <release version="1.2.3"/>
+                </releases>
+            </package>""",
+        )
+
+    with pytest.raises(
+        pack_worker_module.WorkerFailure, match="current version"
     ):
         pack_worker_module._validate_pack_archive_identity(
             pack, ("Vendor", "Device_DFP", "1.2.3")

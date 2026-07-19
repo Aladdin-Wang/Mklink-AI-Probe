@@ -10,7 +10,7 @@ import shutil
 import sys
 from typing import Callable, Dict, IO, List, Mapping, Optional, Sequence, Tuple, Type
 from urllib.parse import quote, urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 import uuid
 import xml.etree.ElementTree as ElementTree
 from zipfile import BadZipFile, ZipFile
@@ -33,6 +33,35 @@ class WorkerFailure(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def _is_secure_https_url(value: object) -> bool:
+    try:
+        parsed = urlparse(str(value))
+        return (
+            parsed.scheme.casefold() == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+        )
+    except (UnicodeError, ValueError):
+        return False
+
+
+class _HTTPSOnlyRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _is_secure_https_url(newurl):
+            raise WorkerFailure(
+                FlashErrorCode.PACK_DOWNLOAD_FAIL,
+                "pack download redirected outside HTTPS",
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_https_request(request: Request, timeout: int):
+    return build_opener(_HTTPSOnlyRedirectHandler()).open(
+        request, timeout=timeout
+    )
 
 
 class ReportingCache(Cache):
@@ -524,10 +553,10 @@ def _download_pack_over_https(
 ) -> None:
     try:
         root = ElementTree.parse(str(pdsc_path)).getroot()
-    except (OSError, ElementTree.ParseError) as error:
+    except (OSError, ElementTree.ParseError):
         raise WorkerFailure(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
-            "selected pack descriptor is invalid: {}".format(error),
+            "selected pack descriptor is invalid",
         )
     urls = [
         str(element.text).strip()
@@ -552,14 +581,16 @@ def _download_pack_from_https_base(
 ) -> None:
     _, _, normalized_version, pack_id = _normalize_pack_identity(*expected)
     remote_name = "{}.{}.pack".format(pack_id, normalized_version)
-    download_url = urljoin(download_base.rstrip("/") + "/", quote(remote_name))
-    parsed_url = urlparse(download_url)
-    if (
-        parsed_url.scheme.casefold() != "https"
-        or not parsed_url.hostname
-        or parsed_url.username is not None
-        or parsed_url.password is not None
-    ):
+    try:
+        download_url = urljoin(
+            download_base.rstrip("/") + "/", quote(remote_name)
+        )
+    except (UnicodeError, ValueError):
+        raise WorkerFailure(
+            FlashErrorCode.PACK_DOWNLOAD_FAIL,
+            "pack download fallback must use HTTPS",
+        )
+    if not _is_secure_https_url(download_url):
         raise WorkerFailure(
             FlashErrorCode.PACK_DOWNLOAD_FAIL,
             "pack download fallback must use HTTPS",
@@ -578,9 +609,8 @@ def _download_pack_from_https_base(
     )
     emit({"type": "event", "event": "pack-download-fallback"})
     try:
-        with urlopen(request, timeout=30) as response:
-            final_url = urlparse(str(response.geturl()))
-            if final_url.scheme.casefold() != "https" or not final_url.hostname:
+        with _open_https_request(request, timeout=30) as response:
+            if not _is_secure_https_url(response.geturl()):
                 raise WorkerFailure(
                     FlashErrorCode.PACK_DOWNLOAD_FAIL,
                     "pack download redirected outside HTTPS",
@@ -638,10 +668,10 @@ def _download_pack_from_https_base(
         os.replace(str(temporary), str(staged_pack))
     except WorkerFailure:
         raise
-    except Exception as error:
+    except Exception:
         raise WorkerFailure(
             FlashErrorCode.PACK_DOWNLOAD_FAIL,
-            "HTTPS pack download failed: {}".format(error),
+            "HTTPS pack download failed",
         )
     finally:
         if temporary.exists():
@@ -680,10 +710,10 @@ def _validate_pack_archive_identity(
         root = ElementTree.fromstring(pdsc_data)
     except WorkerFailure:
         raise
-    except (BadZipFile, OSError, RuntimeError, ElementTree.ParseError) as error:
+    except (BadZipFile, OSError, RuntimeError, ElementTree.ParseError):
         raise WorkerFailure(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
-            "downloaded pack archive is invalid: {}".format(error),
+            "downloaded pack archive is invalid",
         )
 
     direct_values = {}
@@ -691,12 +721,12 @@ def _validate_pack_archive_identity(
         local_name = child.tag.rsplit("}", 1)[-1]
         if local_name in ("vendor", "name") and child.text:
             direct_values[local_name] = str(child.text).strip()
-    release_versions = {
+    release_versions = [
         str(element.attrib.get("version")).strip()
         for element in root.iter()
         if element.tag.rsplit("}", 1)[-1] == "release"
         and element.attrib.get("version")
-    }
+    ]
     expected_vendor, expected_pack, expected_version, _ = (
         _normalize_pack_identity(*expected)
     )
@@ -705,11 +735,15 @@ def _validate_pack_archive_identity(
     if (
         actual_vendor != expected_vendor
         or actual_pack != expected_pack
-        or expected_version not in release_versions
     ):
         raise WorkerFailure(
             FlashErrorCode.PACK_INTEGRITY_ERROR,
             "downloaded pack identity does not match the selected device",
+        )
+    if not release_versions or release_versions[0] != expected_version:
+        raise WorkerFailure(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "downloaded pack current version does not match the selected device",
         )
 
 
