@@ -1230,6 +1230,102 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('keeps shared SuperWatch Y automatic during a horizontal plot pan', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, shiftKey: true, clientX: 500, clientY: 160,
+        bubbles: true, cancelable: true,
+      }))
+      const beforeOffset = runtime.probe.timeline().offset
+      const beforeY = runtime.probe.sharedYRange()
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
+      })
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 500, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 300, clientY: 160, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 300, clientY: 160, bubbles: true,
+      }))
+
+      expect(runtime.probe.timeline().offset).toBeGreaterThan(beforeOffset)
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
+      })
+      expect(runtime.probe.sharedYRange()).toEqual(beforeY)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('scales horizontal SuperWatch plot pan by the visible timeline span', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      const timeline = runtime.probe.timeline()
+      timeline.zoom = 100
+      timeline.offset = 0.5
+      runtime.viewer.renderBinaryFrame()
+      const beforeY = runtime.probe.sharedYRange()
+
+      const canvas = document.getElementById('chart')!
+      const plotWidth = 800 - 64 - 16
+      const dragPixels = plotWidth * 0.1
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 500, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 500 - dragPixels, clientY: 160, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 500 - dragPixels, clientY: 160, bubbles: true,
+      }))
+
+      expect(timeline.offset).toBeCloseTo(0.5 + 0.1 / (100 - 1), 12)
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
+      })
+      expect(runtime.probe.sharedYRange()).toEqual(beforeY)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('pans both axes on a diagonal plain-left SuperWatch plot drag when X is zoomed', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)

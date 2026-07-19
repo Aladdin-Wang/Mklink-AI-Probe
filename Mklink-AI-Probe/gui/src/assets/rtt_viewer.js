@@ -2770,16 +2770,22 @@ if (xAxisHit && yAxisHit) {
     if (axisDrag.mode === 'plot-shared') {
       var plotPixelDx = e.clientX - axisDrag.startX;
       var plotPixelDy = e.clientY - axisDrag.startY;
+      if (!axisDrag.panX && axisDrag.panTimeline && Math.abs(plotPixelDx) >= 5) axisDrag.panX = true;
+      if (!axisDrag.panY && Math.abs(plotPixelDy) >= 5) axisDrag.panY = true;
+      if (!axisDrag.panX && !axisDrag.panY) return;
       if (!axisDrag.moved) {
-        if (Math.sqrt(plotPixelDx * plotPixelDx + plotPixelDy * plotPixelDy) < 5) return;
         axisDrag.moved = true;
         probeDownPos = null;
       }
-      var plotShift = (e.clientY - axisDrag.startY) / axisDrag.plotHeight * axisDrag.range;
-      setManualSharedYRange(axisDrag.yMin + plotShift, axisDrag.yMax + plotShift);
-      if (axisDrag.panTimeline) {
-        var plotDx = (e.clientX - axisDrag.startX) / axisDrag.plotWidth;
-        timelineView.offset = clampAxisOffset(axisDrag.startTimelineOffset - plotDx);
+      if (axisDrag.panY) {
+        var plotShift = plotPixelDy / axisDrag.plotHeight * axisDrag.range;
+        setManualSharedYRange(axisDrag.yMin + plotShift, axisDrag.yMax + plotShift);
+      }
+      if (axisDrag.panX) {
+        var plotDx = plotPixelDx / axisDrag.plotWidth;
+        timelineView.offset = clampAxisOffset(
+          axisDrag.startTimelineOffset - plotDx * axisDrag.timelinePanScale
+        );
         drawMinimap();
       }
       drawChart();
@@ -3317,6 +3323,13 @@ function drawChart() {
         mx >= ml && mx <= ml + pw && my >= mt && my <= mt + ph) {
       var sharedRange = getSharedYRange();
       if (!sharedRange) return;
+      var fullTimeline = getFullTimeRange();
+      var fullTimelineSpan = fullTimeline.tMax - fullTimeline.tMin;
+      var visibleTimelineSpan = fullTimelineSpan / timelineView.zoom;
+      var availableTimelineSpan = fullTimelineSpan - visibleTimelineSpan;
+      var timelinePanScale = availableTimelineSpan > 0
+        ? visibleTimelineSpan / availableTimelineSpan
+        : 0;
       axisDrag = {
         mode: 'plot-shared',
         startX: e.clientX,
@@ -3327,7 +3340,10 @@ function drawChart() {
         plotWidth: Math.max(1, pw),
         plotHeight: Math.max(1, ph),
         startTimelineOffset: timelineView.offset,
-        panTimeline: timelineView.zoom > 1,
+        panTimeline: timelineView.zoom > 1 && timelinePanScale > 0,
+        timelinePanScale: timelinePanScale,
+        panX: false,
+        panY: false,
         moved: false
       };
       e.preventDefault();
