@@ -54,7 +54,21 @@ def _descriptor(source: Path) -> Path:
     return descriptors[0]
 
 
-def _pack_files(source: Path, descriptor: Path, license_files: object) -> List[PurePosixPath]:
+def _source_tree_sha256(source: Path, files: Iterable[PurePosixPath]) -> str:
+    digest = hashlib.sha256()
+    for relative in sorted(files, key=lambda value: value.as_posix().casefold()):
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(source.joinpath(*relative.parts).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _pack_files(
+    source: Path,
+    descriptor: Path,
+    metadata: Mapping[str, object],
+) -> tuple[List[PurePosixPath], Dict[str, object]]:
     try:
         root = ElementTree.parse(str(descriptor)).getroot()
     except (OSError, ElementTree.ParseError) as error:
@@ -66,16 +80,53 @@ def _pack_files(source: Path, descriptor: Path, license_files: object) -> List[P
         name = element.attrib.get("name")
         if name:
             files.add(_relative_path(name, "algorithm path"))
+    if metadata.get("redistribution_authorized") is not True:
+        raise ValueError("builtin Pack requires explicit redistribution_authorized=true")
+    source_url = _text(metadata.get("source_url"), "Pack source_url")
+    parsed_url = urlsplit(source_url)
+    if parsed_url.scheme.casefold() != "https" or not parsed_url.netloc:
+        raise ValueError("Pack source_url must use HTTPS")
+    redistribution_basis = _text(
+        metadata.get("redistribution_basis"), "Pack redistribution basis"
+    )
+    license_files = metadata.get("license_files")
     if not isinstance(license_files, list) or not license_files:
         raise ValueError("builtin Pack must declare license_files")
-    for value in license_files:
-        files.add(_relative_path(value, "license path"))
+    licenses = []
+    for raw_license in license_files:
+        if not isinstance(raw_license, Mapping):
+            raise ValueError("Pack license_files entries must be objects")
+        relative = _relative_path(raw_license.get("path"), "license path")
+        expected_digest = _text(
+            raw_license.get("sha256"), "Pack license SHA-256"
+        ).casefold()
+        if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
+            raise ValueError("Pack license SHA-256 must contain 64 hexadecimal characters")
+        candidate = source.joinpath(*relative.parts)
+        if not candidate.is_file():
+            raise FileNotFoundError("required builtin Pack file is missing: {}".format(relative))
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != expected_digest:
+            raise ValueError("Pack license SHA-256 does not match the allowlist")
+        files.add(relative)
+        licenses.append({"path": relative.as_posix(), "sha256": expected_digest})
     ordered = sorted(files, key=lambda value: value.as_posix().casefold())
     for relative in ordered:
         candidate = source.joinpath(*relative.parts)
         if not candidate.is_file():
             raise FileNotFoundError("required builtin Pack file is missing: {}".format(relative))
-    return ordered
+    expected_tree_digest = _text(
+        metadata.get("source_tree_sha256"), "Pack source tree SHA-256"
+    ).casefold()
+    if re.fullmatch(r"[0-9a-f]{64}", expected_tree_digest) is None:
+        raise ValueError("Pack source tree SHA-256 must contain 64 hexadecimal characters")
+    if _source_tree_sha256(source, ordered) != expected_tree_digest:
+        raise ValueError("Pack source tree SHA-256 does not match the allowlist")
+    return ordered, {
+        "source_url": source_url,
+        "source_tree_sha256": expected_tree_digest,
+        "redistribution_basis": redistribution_basis,
+        "licenses": sorted(licenses, key=lambda value: value["path"].casefold()),
+    }
 
 
 def _zip_entry(name: str, data: bytes) -> ZipInfo:
@@ -277,7 +328,7 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
         version = _text(raw_pack.get("version"), "version")
         source = _source_directory(pack_roots, pack_id, version)
         descriptor = _descriptor(source)
-        files = _pack_files(source, descriptor, raw_pack.get("license_files"))
+        files, public_metadata = _pack_files(source, descriptor, raw_pack)
         file_name = "{}.{}.pack".format(pack_id, version)
         relative_output = PurePosixPath("packs") / file_name
         slim_pack = output.joinpath(*relative_output.parts)
@@ -292,6 +343,7 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
             "file": relative_output.as_posix(),
             "sha256": _sha256(slim_pack),
             "targets": targets,
+            **public_metadata,
         })
     for raw_archive in archives:
         if not isinstance(raw_archive, Mapping):

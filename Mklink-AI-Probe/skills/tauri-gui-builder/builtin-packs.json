@@ -4,32 +4,56 @@
     {
       "pack_id": "Keil.STM32F2xx_DFP",
       "version": "2.11.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32F2xx_DFP.2.11.0.pack",
+      "source_tree_sha256": "34c1144175354d73630df64ba74a328d57072b813aeaacac8cd4d3eda05d1eb0",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0 AND BSD-3-Clause",
+      "license_files": [{"path": "LICENSE", "sha256": "ee3998f2a8c13d659bec490a7fa5006ebbc57341d6892420f8e6d77f2f27d564"}]
     },
     {
       "pack_id": "Keil.STM32F4xx_DFP",
       "version": "3.0.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32F4xx_DFP.3.0.0.pack",
+      "source_tree_sha256": "3859aa9f36e08ce94a10ccbfd95b08dff0c35bc93b599bfb627a9d7d6655e56a",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0",
+      "license_files": [{"path": "LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"}]
     },
     {
       "pack_id": "Keil.STM32F7xx_DFP",
       "version": "3.0.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32F7xx_DFP.3.0.0.pack",
+      "source_tree_sha256": "0e95f6089ff4c39e7d82603fb290ee2b29387d5af01afabbb1eb575a63d94ea7",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0",
+      "license_files": [{"path": "LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"}]
     },
     {
       "pack_id": "Keil.STM32G4xx_DFP",
       "version": "1.6.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32G4xx_DFP.1.6.0.pack",
+      "source_tree_sha256": "0dd0d214460036af839520705cf19f051e030232deb45a36625f9ab324603e7d",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0 AND BSD-3-Clause",
+      "license_files": [{"path": "LICENSE", "sha256": "a92910bbce04aae237d4b5fc5f961e246964b1e583aae8c6d33d755ca95e0c6d"}]
     },
     {
       "pack_id": "Keil.STM32H7xx_DFP",
       "version": "4.0.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32H7xx_DFP.4.0.0.pack",
+      "source_tree_sha256": "490ccdd56ba7bc54f39f7e9ad8756f0b69bb33eb054002287a25c689a5b47d00",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0",
+      "license_files": [{"path": "LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"}]
     },
     {
       "pack_id": "Keil.STM32L0xx_DFP",
       "version": "3.1.0",
-      "license_files": ["LICENSE"]
+      "source_url": "https://www.keil.com/pack/Keil.STM32L0xx_DFP.3.1.0.pack",
+      "source_tree_sha256": "5b7c8275a4e3a8f53aba2cbe0b086d2f336d147963e450bf89f4525dc6bec6bf",
+      "redistribution_authorized": true,
+      "redistribution_basis": "Apache-2.0",
+      "license_files": [{"path": "LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"}]
     }
   ],
   "archives": []

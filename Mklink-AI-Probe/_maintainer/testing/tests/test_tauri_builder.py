@@ -17,6 +17,16 @@ BUILDER_PATH = (
 BUILTIN_PACK_BUILDER_PATH = BUILDER_PATH.with_name("builtin_packs.py")
 
 
+def source_tree_digest(source: Path, relative_names: list[str]) -> str:
+    digest = hashlib.sha256()
+    for name in sorted(relative_names, key=str.casefold):
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((source / name).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 @pytest.fixture
 def builder():
     spec = importlib.util.spec_from_file_location("mklink_tauri_builder", BUILDER_PATH)
@@ -198,13 +208,20 @@ def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(
     (source / "Flash" / "Test.FLM").write_bytes(b"algorithm")
     (source / "LICENSE").write_text("Apache-2.0", encoding="utf-8")
     (source / "example.bin").write_bytes(b"do-not-bundle")
+    selected_names = ["Flash/Test.FLM", "Keil.Test_DFP.pdsc", "LICENSE"]
+    tree_digest = source_tree_digest(source, selected_names)
+    license_digest = hashlib.sha256(b"Apache-2.0").hexdigest()
     config = tmp_path / "builtin-packs.json"
     config.write_text(json.dumps({
         "schema": 1,
         "packs": [{
             "pack_id": "Keil.Test_DFP",
             "version": "1.0.0",
-            "license_files": ["LICENSE"],
+            "source_url": "https://vendor.example/Keil.Test_DFP.1.0.0.pack",
+            "source_tree_sha256": tree_digest,
+            "redistribution_authorized": True,
+            "redistribution_basis": "Apache-2.0",
+            "license_files": [{"path": "LICENSE", "sha256": license_digest}],
         }],
     }), encoding="utf-8")
     monkeypatch.setattr(
@@ -218,13 +235,56 @@ def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(
 
     slim_pack = output / manifest["packs"][0]["file"]
     with ZipFile(slim_pack) as archive:
-        assert sorted(archive.namelist()) == [
-            "Flash/Test.FLM",
-            "Keil.Test_DFP.pdsc",
-            "LICENSE",
-        ]
+        assert sorted(archive.namelist()) == selected_names
     assert manifest["target_count"] == 1
+    record = manifest["packs"][0]
+    assert record["source_url"] == "https://vendor.example/Keil.Test_DFP.1.0.0.pack"
+    assert record["source_tree_sha256"] == tree_digest
+    assert record["redistribution_basis"] == "Apache-2.0"
+    assert record["licenses"] == [{"path": "LICENSE", "sha256": license_digest}]
     assert json.loads((output / "manifest.json").read_text(encoding="utf-8")) == manifest
+
+
+def test_builtin_pack_directory_rejects_changed_source_tree(
+    builtin_pack_builder, monkeypatch, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    source = pack_root / "Keil" / "Test_DFP" / "1.0.0"
+    (source / "Flash").mkdir(parents=True)
+    (source / "Keil.Test_DFP.pdsc").write_text(
+        '<package><vendor>Keil</vendor><name>Test_DFP</name>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="TEST123">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>',
+        encoding="utf-8",
+    )
+    (source / "Flash" / "Test.FLM").write_bytes(b"algorithm")
+    (source / "LICENSE").write_bytes(b"Apache-2.0")
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [{
+            "pack_id": "Keil.Test_DFP",
+            "version": "1.0.0",
+            "source_url": "https://vendor.example/Keil.Test_DFP.1.0.0.pack",
+            "source_tree_sha256": "0" * 64,
+            "redistribution_authorized": True,
+            "redistribution_basis": "Apache-2.0",
+            "license_files": [{
+                "path": "LICENSE",
+                "sha256": hashlib.sha256(b"Apache-2.0").hexdigest(),
+            }],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "TEST123", "vendor": "Keil"}],
+    )
+
+    with pytest.raises(ValueError, match="source tree SHA-256"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
 
 
 def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
