@@ -16,6 +16,15 @@ class PackCatalogStatus:
     target_count: int
 
 
+def _hpm_rom_records() -> List[TargetRecord]:
+    from mklink.hpm_config import HPM_ROM_TARGETS
+
+    return [
+        TargetRecord(part_number, "HPMicro", installed=True, source="hpm-rom-api")
+        for part_number in HPM_ROM_TARGETS
+    ]
+
+
 def _production_builtin_provider() -> Iterable[TargetRecord]:
     """Load pyOCD's builtin target registry only when builtin targets are needed."""
 
@@ -28,7 +37,8 @@ def _production_builtin_provider() -> Iterable[TargetRecord]:
         names = TARGET.get_all_target_names()
         entries = ((name, TARGET[name]) for name in names)
 
-    records = load_builtin_pack_records()
+    records = _hpm_rom_records()
+    records.extend(load_builtin_pack_records())
     for name, target_type in entries:
         part_number = getattr(target_type, "PART_NUMBER", None) or name
         vendor = getattr(target_type, "VENDOR", "") or ""
@@ -197,17 +207,20 @@ class PackCatalog:
             return None
         return stat.st_mtime_ns, stat.st_size
 
-    @staticmethod
     def _apply_installed_path(
+        self,
         record: TargetRecord,
         installed_paths: Mapping[Tuple[str, str], str],
     ) -> TargetRecord:
+        from .pack_manager import resolve_managed_pack_path
+
         if record.pack_id is None or record.pack_version is None:
             return record
         pack_path = installed_paths.get((record.pack_id, record.pack_version))
-        if pack_path is None or not Path(pack_path).is_file():
+        resolved = resolve_managed_pack_path(self._paths, pack_path)
+        if resolved is None:
             return record
-        return replace(record, installed=True, pack_path=pack_path)
+        return replace(record, installed=True, pack_path=str(resolved))
 
     @classmethod
     def _parse_index(cls, payload: object) -> List[TargetRecord]:
@@ -280,6 +293,8 @@ class PackCatalog:
     @staticmethod
     def _priority(record: TargetRecord) -> Tuple[bool, int, bool]:
         if record.source == "index" and record.installed and record.pack_path is not None:
+            source_priority = 4
+        elif record.source == "hpm-rom-api":
             source_priority = 4
         elif record.source == "bundle":
             source_priority = 3

@@ -175,7 +175,30 @@ def _pack_candidates(paths: object, part_number: str) -> list[dict]:
 
 
 def discover_algorithms(paths: object, part_number: str, disk_root: Optional[Path]) -> list[dict]:
-    return _profile_candidates(part_number, disk_root) + _pack_candidates(paths, part_number)
+    from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
+
+    catalog = discover_flash_algorithms(part_number, paths=paths)
+    candidates = [{
+        "id": "catalog-" + algorithm.algorithm_id[:12],
+        "file_name": algorithm.file_name,
+        "flash_base": _hex(algorithm.flash_start),
+        "ram_base": _hex(algorithm.ram_start),
+        "source_kind": "pack",
+        "source_token": algorithm.source_token,
+        "origin": algorithm.source_name,
+        "available": True,
+        "on_probe": False,
+    } for algorithm in catalog]
+    combined = candidates + _profile_candidates(part_number, disk_root)
+    unique = {}
+    for candidate in combined:
+        key = (
+            candidate["file_name"].casefold(),
+            candidate["flash_base"],
+            candidate["ram_base"],
+        )
+        unique.setdefault(key, candidate)
+    return list(unique.values())
 
 
 def _profile_source(token: str, disk_root: Path) -> Path:
@@ -199,8 +222,31 @@ def _profile_source(token: str, disk_root: Path) -> Path:
 
 
 def _pack_source(paths: object, token: str, destination: Path) -> Path:
-    if not _TOKEN_SAFE.fullmatch(token) or not token.startswith("pack:"):
+    if not _TOKEN_SAFE.fullmatch(token) or not token.startswith(("pack:", "catalog:", "custom:")):
         raise OfflineDownloadError("invalid Pack FLM token")
+    if token.startswith(("catalog:", "custom:")):
+        from mklink.cmsis_dap.algorithm_catalog import (
+            discover_flash_algorithms,
+            extract_algorithm,
+            target_from_source_token,
+        )
+
+        try:
+            part_number = target_from_source_token(token)
+        except ValueError:
+            raise OfflineDownloadError("invalid catalog FLM token")
+        matches = [
+            algorithm
+            for algorithm in discover_flash_algorithms(part_number, paths=paths)
+            if algorithm.source_token == token
+        ]
+        if len(matches) != 1:
+            raise OfflineDownloadError("catalog FLM token is unavailable")
+        payload = extract_algorithm(matches[0])
+        if not isinstance(payload, bytes):
+            raise OfflineDownloadError("catalog FLM extraction failed")
+        destination.write_bytes(payload)
+        return destination
     try:
         _prefix, pack_id, version, part_number, raw_index = token.rsplit(":", 4)
         index = int(raw_index)

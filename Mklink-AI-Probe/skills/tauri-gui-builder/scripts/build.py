@@ -3,7 +3,7 @@
 
 Usage:
     python build.py              # Build exe only (no bundle)
-    python build.py --bundle     # Full bundle with sidecar (MSI/NSIS)
+    python build.py --bundle     # Standard NSIS bundle with sidecar
     python build.py --check      # Check prerequisites only
     python build.py --clean      # Clean build artifacts
 
@@ -281,7 +281,7 @@ def main():
     global SKILL_DIR, GUI_DIR, TAURI_DIR
 
     parser = argparse.ArgumentParser(description="Build Mklink AI Probe Tauri GUI")
-    parser.add_argument("--bundle", action="store_true", help="Full bundle (MSI/NSIS) with sidecar")
+    parser.add_argument("--bundle", action="store_true", help="Standard NSIS bundle with sidecar")
     parser.add_argument("--check", action="store_true", help="Check prerequisites only")
     parser.add_argument("--clean", action="store_true", help="Remove build artifacts")
     parser.add_argument("--project-dir", type=str, default=None, help="mklink-ai-probe project root directory")

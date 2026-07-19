@@ -1,6 +1,6 @@
 ---
 name: tauri-gui-builder
-description: Build and qualify the Mklink AI Probe Tauri v2 Windows desktop app, bundled Python sidecar, MSI, and NSIS installers.
+description: Build and qualify the Mklink AI Probe Tauri v2 Windows desktop app, bundled Python sidecar, and standard NSIS installer.
 ---
 
 # Mklink AI Probe Tauri Builder
@@ -40,7 +40,6 @@ python skills/tauri-gui-builder/scripts/build.py --clean
 Outputs:
 
 - executable: `gui/src-tauri/target/release/mklink-ai-probe.exe`
-- MSI: `gui/src-tauri/target/release/bundle/msi/`
 - NSIS: `gui/src-tauri/target/release/bundle/nsis/`
 
 `--bundle` must force a fresh PyInstaller sidecar and collect:
@@ -54,23 +53,17 @@ Outputs:
 
 Copy candidate installers to the main repository `release` directory. Include the source commit in every filename and generate a SHA-256 list. Keep installers, sidecars, checksums, logs, and extracted MSI contents out of Git.
 
-Provide two variants when preparing a broad Windows release:
-
-- standard: smaller installer; Tauri downloads WebView2 only when the target lacks it;
-- offline: set `bundle.windows.webviewInstallMode.type` to `offlineInstaller` in a temporary Tauri config so WebView2 is embedded.
-
-The offline NSIS package is the preferred clean-machine qualification artifact.
+Generate only the standard NSIS by default. MSI and WebView2-offline variants require explicit user authorization.
 
 ## Required Verification
 
-1. Build exits successfully and produces both MSI and NSIS.
-2. MSI administrative extraction contains `mklink-ai-probe.exe` and `mklink-sidecar.exe`.
-3. Install NSIS with a PATH containing only Windows system directories.
-4. Start the installed app and verify `GET /api/health` returns `status=ok`.
-5. Verify `GET /api/online-flash/probes` runs without exposing complete probe identifiers in evidence.
-6. Verify the process tree contains no `python.exe` or `pythonw.exe`.
-7. Close normally and verify Mklink processes and port `8765` are released.
-8. Recompute every published SHA-256 value.
+1. Build exits successfully and produces the standard NSIS.
+2. Install NSIS with a PATH containing only Windows system directories.
+3. Start the installed app and verify `GET /api/health` returns `status=ok`.
+4. Verify `GET /api/online-flash/probes` runs without exposing complete probe identifiers in evidence.
+5. Verify the process tree contains no `python.exe` or `pythonw.exe`.
+6. Close normally and verify Mklink processes and port `8765` are released.
+7. Recompute every published SHA-256 value.
 
 Do not use the removed `/api/dashboard/status` endpoint. Use the current `/api/dash/<name>/status` routes when a dashboard-specific check is needed.
 

@@ -90,12 +90,20 @@ async function loadConfig() {
 }
 
 async function saveLocalConfig() {
+  const rawClock = String(config.value.swd_clock ?? '').trim()
+  if (rawClock) {
+    const clock = Number(rawClock)
+    if (!Number.isInteger(clock) || clock < 1 || clock > 10_000_000) {
+      toast.error('SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数')
+      return
+    }
+  }
   savingLocal.value = true
   try {
     config.value = await updateConfig({
       ...config.value,
       com_port: localPort.value || undefined,
-      swd_clock: config.value.swd_clock || undefined,
+      swd_clock: rawClock || undefined,
     })
     toast.success('设备配置已保存')
   } catch (error: any) {
@@ -268,6 +276,10 @@ onMounted(async () => {
           <input
             id="swd-clock"
             v-model="config.swd_clock"
+            type="number"
+            min="1"
+            max="10000000"
+            step="1"
             class="form-input"
             data-testid="swd-clock"
             placeholder="如 1000000"

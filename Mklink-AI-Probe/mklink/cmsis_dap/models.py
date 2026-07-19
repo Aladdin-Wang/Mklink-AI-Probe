@@ -166,6 +166,8 @@ class JobRequest:
     reset_mode: str = "default"
     base_address: Optional[int] = None
     sector_addresses: Tuple[int, ...] = ()
+    board: Optional[str] = None
+    hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
 
     @classmethod
     def full_sequence(

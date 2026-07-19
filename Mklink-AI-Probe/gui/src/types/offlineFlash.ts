@@ -50,6 +50,9 @@ export interface OfflineConfigPayload {
   auto_download_count: number
   wait_idcode_timeout_ms: number
   swd_clock_hz: number
+  target_part?: string | null
+  board?: string | null
+  hpm_flash_cfg?: [string, string, string, string] | null
   algorithms: OfflineAlgorithmConfig[]
   firmwares: OfflineFirmwareConfig[]
 }

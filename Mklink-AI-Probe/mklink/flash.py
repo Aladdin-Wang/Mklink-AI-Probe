@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -21,7 +22,7 @@ if sys.platform == "win32":
 
 from mklink.bridge import MKLinkSerialBridge
 from mklink.discovery import find_microkeen_disk
-from mklink.hpm_config import HPM_BOARD_FLASH_CFG
+from mklink.hpm_config import HPM_BOARD_FLASH_CFG, default_hpm_board, is_hpm_target
 from mklink.profiles import load_mcu_profiles
 from mklink.utils import parse_download_progress, parse_load_result
 from mklink._types import FLM_LOAD_TIMEOUT
@@ -172,7 +173,13 @@ class MKLinkFlash:
         Args:
             clock_hz: 时钟频率（Hz），如 10000000 表示 10MHz
         """
-        self._bridge.send_command(f"cmd.set_swd_clock({clock_hz})", echo=True)
+        try:
+            parsed_clock = int(clock_hz, 0) if isinstance(clock_hz, str) else int(clock_hz)
+        except (TypeError, ValueError):
+            raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
+        if parsed_clock < 1 or parsed_clock > 10_000_000:
+            raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
+        self._bridge.send_command(f"cmd.set_swd_clock({parsed_clock})", echo=True)
 
     def load_flm(self, flm_path: str, flash_base: str, ram_base: str) -> bool:
         """加载 Flash 算法文件。
@@ -353,21 +360,26 @@ class MKLinkFlash:
         progress_callback=None,
     ) -> dict:
         """Program an HPMicro BIN image with the HPM device-side API."""
+        from mklink.hpm_config import (
+            normalize_hpm_address,
+            normalize_hpm_configuration,
+        )
+
+        normalized_board, normalized_cfg = normalize_hpm_configuration(
+            None, board=board, flash_cfg=flash_cfg
+        )
+        _address, normalized_address = normalize_hpm_address(addr)
         filename = self._copy_to_microkeen(bin_path, microkeen_filename)
         if not filename:
             raise FlashError("无法将文件拷贝到 MICROKEEN 磁盘")
 
-        board_key = board.lower() if board else ""
         commands: list[str] = []
-        if board_key:
-            commands.append(f'hpm.board("{board_key}")')
-        elif flash_cfg:
-            cfg = [str(v) for v in flash_cfg]
-            if len(cfg) != 4:
-                raise FlashError("HPM flash_cfg 需要 4 个参数: header,opt0,opt1,xpi_base_addr")
-            commands.append(f"hpm.flash_cfg({cfg[0]},{cfg[1]},{cfg[2]},{cfg[3]})")
+        if normalized_board:
+            commands.append(f'hpm.board("{normalized_board}")')
+        elif normalized_cfg:
+            commands.append(f"hpm.flash_cfg({','.join(normalized_cfg)})")
 
-        commands.append(f'hpm.program("{filename}",{addr})')
+        commands.append(f'hpm.program("{filename}",{normalized_address})')
 
         responses: list[str] = []
         start = time.time()
@@ -393,8 +405,8 @@ class MKLinkFlash:
         return {
             "success": result.get("success", False),
             "filename": filename,
-            "addr": addr,
-            "board": board_key or None,
+            "addr": normalized_address,
+            "board": normalized_board,
             "progress": progress_list,
             "loaded_successfully": result.get("loaded_successfully", False),
             "download_100_percent": result.get("download_100_percent", False),
@@ -524,19 +536,29 @@ def burn_hex_file(
         or flash_base
     )
     board = project_info.get("board", "")
-    is_hpm_project = (
-        str(project_info.get("vendor", "")).lower() == "hpmicro"
-        or str(board).lower().startswith("hpm")
+    target_part_from_project = str(
+        project_info.get("device") or project_info.get("target_part") or ""
+    ).strip()
+    is_hpm_project = is_hpm_target(
+        target_part_from_project,
+        vendor=project_info.get("vendor"),
+        board=board,
     )
+    if is_hpm_project and not board:
+        board = default_hpm_board(target_part_from_project) or ""
     hpm_flash_cfg = project_info.get("hpm_flash_cfg")
     if not hpm_flash_cfg and board:
         hpm_flash_cfg = HPM_BOARD_FLASH_CFG.get(str(board).lower())
 
+    catalog_required = False
     if mcu_key is None:
         mcu_key = config.get("mcu_key")
     if not mcu_key:
         if is_hpm_project:
             mcu_key = "custom"
+        elif target_part_from_project:
+            mcu_key = "custom"
+            catalog_required = True
         else:
             raise FlashError("mcu_key 未配置，请先运行 `python -m mklink project-init`")
 
@@ -555,14 +577,58 @@ def burn_hex_file(
         idcode = flash.get_idcode()
         print(f"[OK] IDCODE: 0x{idcode:08X}")
 
-        # 3. 加载 FLM。若 profile 没有配置 flm_path，则跳过下载算法，
-        # 直接依赖设备端通用烧录接口。
+        # 3. 优先从统一目录解析用户 Pack / 内置精简 Pack / 自定义 FLM。
+        # 找不到精确器件记录时才回退旧 profile 路径。
         profiles = load_mcu_profiles()
         mcu = profiles.get(mcu_key, {})
         if not mcu:
             raise FlashError(f"未知 MCU 配置: {mcu_key}，请检查 .mklink/config.json")
+        catalog_algorithm = None
+        catalog_selections = ()
+        catalog_image = None
+        target_part = target_part_from_project
+        if target_part:
+            from mklink.cmsis_dap.algorithm_catalog import (
+                discover_flash_algorithms,
+                deploy_algorithm_to_probe,
+                resolve_firmware_algorithms,
+            )
+
+            catalog = discover_flash_algorithms(target_part)
+            if catalog:
+                if is_bin_file:
+                    start = int(str(bin_base), 0)
+                    firmware_ranges = ((start, start + Path(hex_path).stat().st_size),)
+                else:
+                    from intelhex import IntelHex
+
+                    catalog_image = IntelHex(str(hex_path))
+                    firmware_ranges = tuple(catalog_image.segments())
+                catalog_selections = tuple(
+                    resolve_firmware_algorithms(catalog, firmware_ranges)
+                )
+                catalog_algorithm = catalog_selections[0].algorithm
+                if len(catalog_selections) == 1:
+                    catalog_path = deploy_algorithm_to_probe(catalog_algorithm)
+                    flash_base = f"0x{catalog_algorithm.flash_start:08X}"
+                    selected_ram = catalog_algorithm.ram_start or int(
+                        str(mcu.get("ram_base") or "0x20000000"), 0
+                    )
+                    ram_base = f"0x{selected_ram:08X}"
+                    print(
+                        f"[*] 使用 {catalog_algorithm.source_name} 的 FLM: "
+                        f"{catalog_algorithm.file_name} (RAM={ram_base})"
+                    )
+                    if not flash.load_flm(catalog_path, flash_base, ram_base):
+                        raise FLMLoadError(f"FLM 加载失败: {catalog_algorithm.file_name}")
+                    print("[OK] 内置/Pack FLM 加载成功")
+        if catalog_required and catalog_algorithm is None:
+            raise FlashError(
+                f"内置或用户 Pack 中没有 {target_part} 的可用下载算法"
+            )
+
         flm_path_from_profile = mcu.get("flm_path", "")
-        if flm_path_from_profile:
+        if flm_path_from_profile and catalog_algorithm is None:
             # flm_path 来自 profile，格式如 "FLM/N32G43x.FLM"，设备端需要 "/FLM/..." 格式
             if not flm_path_from_profile.startswith("/"):
                 flm_path = "/" + flm_path_from_profile
@@ -576,11 +642,44 @@ def burn_hex_file(
                 raise FLMLoadError(f"FLM 加载失败: {flm_path}")
 
             print(f"[OK] FLM 加载成功")
-        else:
+        elif catalog_algorithm is None:
             print("[AUTO] MCU profile 未配置 flm_path，跳过 FLM 加载")
 
         # 4. 烧录（load.hex 内部自动按扇区擦写，无需单独擦除）
-        if is_bin_file:
+        if len(catalog_selections) > 1:
+            if is_bin_file or catalog_image is None:
+                raise FLMLoadError("多个 Flash 下载算法只支持 Intel HEX 镜像")
+            region_results = []
+            with tempfile.TemporaryDirectory(prefix="mklink-flash-regions-") as raw_temp:
+                for index, selection in enumerate(catalog_selections):
+                    algorithm = selection.algorithm
+                    path = deploy_algorithm_to_probe(algorithm)
+                    selected_ram = algorithm.ram_start or int(
+                        str(mcu.get("ram_base") or "0x20000000"), 0
+                    )
+                    if not flash.load_flm(
+                        path,
+                        f"0x{algorithm.flash_start:08X}",
+                        f"0x{selected_ram:08X}",
+                    ):
+                        raise FLMLoadError(f"FLM 加载失败: {algorithm.file_name}")
+                    image = IntelHex()
+                    for start, end in selection.ranges:
+                        image.puts(
+                            start,
+                            bytes(catalog_image.tobinarray(start=start, end=end - 1)),
+                        )
+                    region_path = Path(raw_temp) / f"region-{index}.hex"
+                    image.write_hex_file(str(region_path))
+                    region_result = flash.burn_hex(
+                        str(region_path),
+                        progress_callback=progress_callback,
+                    )
+                    if not region_result.get("success"):
+                        raise FlashError(f"区域烧录失败: {algorithm.file_name}")
+                    region_results.append(dict(region_result))
+            result = {"success": True, "regions": region_results}
+        elif is_bin_file:
             print(f"开始烧录 {Path(hex_path).name} (BIN 模式, 地址: {bin_base}) ...")
             if is_hpm_project:
                 print(f"[AUTO] HPM 工程使用 hpm.program 下载，板卡: {board or '未指定'}")
@@ -598,6 +697,20 @@ def burn_hex_file(
             result = flash.burn_hex(hex_path, progress_callback=progress_callback)
 
         # 5. 提示音
+        if catalog_algorithm is not None:
+            result = dict(result)
+            result["algorithm_source"] = catalog_algorithm.source_kind
+            result["algorithm_name"] = catalog_algorithm.file_name
+            if len(catalog_selections) > 1:
+                result["algorithm_sources"] = [
+                    selection.algorithm.source_kind for selection in catalog_selections
+                ]
+                result["algorithm_names"] = [
+                    selection.algorithm.file_name for selection in catalog_selections
+                ]
+        elif is_hpm_project:
+            result = dict(result)
+            result["algorithm_source"] = "hpm-rom-api"
         if result["success"]:
             flash.beep()
 

@@ -26,6 +26,26 @@ interface FirmwareRow {
   algorithm_id: string
 }
 
+const hpmBoards = [
+  'hpm5300evk', 'hpm5301evklite', 'hpm5e00evk', 'hpm6e00evk',
+  'hpm6p00evk', 'hpm6200evk', 'hpm6300evk', 'hpm6750evk2',
+  'hpm6750evkmini', 'hpm6800evk',
+]
+function isHpmPart(partNumber: string): boolean {
+  return partNumber.trim().toLowerCase().startsWith('hpm')
+}
+function defaultHpmBoard(partNumber: string): string {
+  const part = partNumber.trim().toLowerCase()
+  const match = [
+    ['hpm5301', 'hpm5301evklite'], ['hpm5300', 'hpm5300evk'],
+    ['hpm5e', 'hpm5e00evk'], ['hpm6e', 'hpm6e00evk'],
+    ['hpm6p', 'hpm6p00evk'], ['hpm6200', 'hpm6200evk'],
+    ['hpm6300', 'hpm6300evk'], ['hpm6750', 'hpm6750evk2'],
+    ['hpm6800', 'hpm6800evk'],
+  ].find(([prefix]) => part.startsWith(prefix))
+  return match?.[1] || ''
+}
+
 const offline = useOfflineFlashApi()
 const online = useOnlineFlashApi()
 
@@ -41,6 +61,8 @@ const swdClock = ref(10000000)
 const algorithms = ref<AlgorithmRow[]>([])
 const firmwares = ref<FirmwareRow[]>([])
 const targetQuery = ref('STM32F103RC')
+const targetPart = ref('')
+const hpmBoard = ref('')
 const targets = ref<TargetRecord[]>([])
 const targetBusy = ref(false)
 const operationBusy = ref(false)
@@ -59,13 +81,16 @@ const effectiveScriptName = computed(() => (
     ? 'offline_download.py'
     : scriptName.value
 ))
+const hpmMode = computed(() => isHpmPart(targetPart.value))
 const canBuild = computed(() => (
   !!effectiveModel.value
   && !!disk.value?.available
-  && algorithms.value.length > 0
   && firmwares.value.length > 0
-  && algorithms.value.every(item => item.source_kind !== 'upload' || item.file)
-  && firmwares.value.every(item => item.file && item.algorithm_id)
+  && (hpmMode.value
+    ? !!hpmBoard.value && firmwares.value.every(item => item.file && item.format === 'bin' && !!item.base_address)
+    : algorithms.value.length > 0
+      && algorithms.value.every(item => item.source_kind !== 'upload' || item.file)
+      && firmwares.value.every(item => item.file && item.algorithm_id))
 ))
 const canTrigger = computed(() => (
   !!disk.value?.available
@@ -74,7 +99,7 @@ const canTrigger = computed(() => (
 ))
 
 watch(
-  [model, scriptName, automaticCount, idcodeTimeout, swdClock, algorithms, firmwares],
+  [model, scriptName, automaticCount, idcodeTimeout, swdClock, targetPart, hpmBoard, algorithms, firmwares],
   () => {
     deployedScriptName.value = ''
     triggerLines.value = []
@@ -84,6 +109,11 @@ watch(
 
 function message(value: unknown): string {
   return value instanceof Error ? value.message : String(value)
+}
+
+function targetAction(target: TargetRecord): string {
+  if (isHpmPart(target.part_number)) return '使用 ROM API'
+  return target.installed ? '加入算法' : '下载 Pack'
 }
 
 async function refreshDisk(): Promise<void> {
@@ -135,6 +165,15 @@ async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
+    targetPart.value = target.part_number
+    if (isHpmPart(target.part_number)) {
+      algorithms.value = []
+      hpmBoard.value = defaultHpmBoard(target.part_number)
+      firmwares.value.forEach(item => { item.algorithm_id = '' })
+      notice.value = `${target.part_number} 使用 HPM ROM API，无需 Pack 或 FLM`
+      return
+    }
+    hpmBoard.value = ''
     if (!target.installed) await online.installPack(target.part_number)
     const items = await offline.listAlgorithms(target.part_number)
     if (!items.length) throw new Error(`未找到 ${target.part_number} 的 FLM 算法`)
@@ -190,13 +229,17 @@ function addFirmware(event: Event): void {
       error.value = '固件只支持 BIN 或 HEX'
       continue
     }
+    if (hpmMode.value && suffix !== 'bin') {
+      error.value = 'HPM ROM API 只支持 BIN 固件'
+      continue
+    }
     firmwares.value.push({
       id: nextId('firmware'),
       file,
       file_name: file.name,
       format: suffix,
-      base_address: suffix === 'bin' ? '0x08000000' : '',
-      algorithm_id: algorithms.value[0]?.id || '',
+      base_address: suffix === 'bin' ? (hpmMode.value ? '0x80000400' : '0x08000000') : '',
+      algorithm_id: hpmMode.value ? '' : algorithms.value[0]?.id || '',
     })
   }
   preview.value = null
@@ -249,6 +292,8 @@ function buildRequest(): {
       auto_download_count: Number(automaticCount.value),
       wait_idcode_timeout_ms: Number(idcodeTimeout.value),
       swd_clock_hz: Number(swdClock.value),
+      target_part: targetPart.value || null,
+      board: hpmMode.value ? hpmBoard.value || null : null,
       algorithms: algorithmPayload,
       firmwares: firmwarePayload,
     },
@@ -323,7 +368,7 @@ onMounted(async () => {
 
     <div class="offline-workspace">
       <section class="work-panel target-panel">
-        <div class="panel-heading"><h2>下载算法</h2><label class="btn btn-sm file-button">添加 FLM<input type="file" accept=".flm" @change="addManualFlm"></label></div>
+        <div class="panel-heading"><h2>器件与下载算法</h2><label v-if="!hpmMode" class="btn btn-sm file-button">添加 FLM<input type="file" accept=".flm" @change="addManualFlm"></label></div>
         <div class="target-search">
           <input v-model="targetQuery" class="form-input" data-testid="offline-target-search" @keydown.enter="searchTargets">
           <button class="btn" :disabled="targetBusy" @click="searchTargets">搜索器件</button>
@@ -331,10 +376,11 @@ onMounted(async () => {
         <div class="target-results">
           <button v-for="target in targets" :key="target.part_number" class="target-result" :disabled="targetBusy" @click="addTargetAlgorithms(target)">
             <span><b>{{ target.part_number }}</b><small>{{ target.vendor }}</small></span>
-            <em>{{ target.installed ? '加入算法' : '下载 Pack' }}</em>
+            <em>{{ targetAction(target) }}</em>
           </button>
         </div>
-        <div class="algorithm-list">
+        <p v-if="hpmMode" class="hpm-mode">HPM ROM API · 无需 Pack 或 FLM</p>
+        <div v-else class="algorithm-list">
           <div v-for="(item, index) in algorithms" :key="item.id" class="algorithm-row" data-testid="offline-algorithm-row">
             <div class="row-title"><input v-model="item.file_name" class="compact-input mono"><span>{{ item.origin }}</span><button class="icon-command" title="移除算法" @click="removeAlgorithm(index)">×</button></div>
             <label>Flash<input v-model="item.flash_base" class="compact-input mono"></label>
@@ -351,10 +397,11 @@ onMounted(async () => {
             <div class="sequence-number">{{ index + 1 }}</div>
             <div class="firmware-fields">
               <input v-model="item.file_name" class="compact-input mono file-name">
-              <select v-model="item.algorithm_id" class="compact-input">
+              <select v-if="!hpmMode" v-model="item.algorithm_id" class="compact-input">
                 <option value="" disabled>选择 FLM</option>
                 <option v-for="algorithm in algorithms" :key="algorithm.id" :value="algorithm.id">{{ algorithm.file_name }}</option>
               </select>
+              <span v-else class="embedded-address">HPM ROM API</span>
               <input v-if="item.format === 'bin'" v-model="item.base_address" class="compact-input mono" placeholder="BIN 基地址">
               <span v-else class="embedded-address">HEX 文件内地址</span>
             </div>
@@ -371,10 +418,11 @@ onMounted(async () => {
       <section class="work-panel settings-panel">
         <div class="panel-heading"><h2>量产配置</h2></div>
         <label class="setting-row"><span>下载器型号</span><select v-model="model" class="form-select" @change="modelChanged"><option value="auto">自动识别</option><option value="V2">V2</option><option value="V3">V3</option><option value="V4">V4</option></select></label>
+        <label v-if="hpmMode" class="setting-row"><span>HPM 板卡</span><select v-model="hpmBoard" class="form-select"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
         <label class="setting-row"><span>脚本文件名</span><input v-model="scriptName" class="form-input mono" :disabled="effectiveModel === 'V2' || effectiveModel === 'V3'"></label>
         <label class="setting-row"><span>自动烧录次数</span><input v-model.number="automaticCount" type="number" min="1" max="9999" class="form-input" :disabled="effectiveModel === 'V2'"></label>
         <label class="setting-row"><span>IDCODE 超时</span><input v-model.number="idcodeTimeout" type="number" min="500" max="600000" step="500" class="form-input"><em>ms</em></label>
-        <label class="setting-row"><span>SWD 速率</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option><option :value="20000000">20 MHz</option></select></label>
+        <label class="setting-row"><span>SWD 速率</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option></select></label>
         <div class="deploy-actions">
           <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">生成预览</button>
           <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild" @click="deploy">部署到 U 盘</button>
@@ -391,5 +439,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:#fff}.algorithm-row{padding:8px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
+.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.hpm-mode{padding:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--success);font-size:12px}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:#fff}.algorithm-row{padding:8px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
 </style>

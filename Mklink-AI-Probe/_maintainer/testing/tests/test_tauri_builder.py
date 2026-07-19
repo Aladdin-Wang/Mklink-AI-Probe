@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 from zipfile import ZipFile
@@ -224,6 +225,86 @@ def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(
         ]
     assert manifest["target_count"] == 1
     assert json.loads((output / "manifest.json").read_text(encoding="utf-8")) == manifest
+
+
+def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
+    builtin_pack_builder, monkeypatch, tmp_path,
+):
+    pack_root = tmp_path / "pyocd-packs"
+    pack_root.mkdir()
+    archive_path = pack_root / "Vendor.Device_DFP.1.0.0-small.pack"
+    descriptor = (
+        '<package><vendor>Vendor</vendor><name>Device_DFP</name>'
+        '<license>LICENSE.txt</license>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="DEVICE_A">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>'
+    )
+    with ZipFile(archive_path, "w") as archive:
+        archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
+        archive.writestr("Flash/Test.FLM", b"algorithm")
+        archive.writestr("LICENSE.txt", "Redistribution terms")
+        archive.writestr("Examples/large.bin", b"do-not-bundle")
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [],
+        "archives": [{
+            "file": archive_path.name,
+            "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            "redistribution_authorized": True,
+            "provenance": "local pyOCD resource bundle",
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "DEVICE_A", "vendor": "Vendor"}],
+    )
+
+    manifest = builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
+
+    record = manifest["packs"][0]
+    assert record["pack_id"] == "Vendor.Device_DFP"
+    assert record["version"] == "1.0.0"
+    assert record["provenance"] == "local pyOCD resource bundle"
+    with ZipFile(tmp_path / "out" / record["file"]) as archive:
+        assert sorted(archive.namelist()) == ["Flash/Test.FLM", "LICENSE.txt", "Vendor.Device_DFP.pdsc"]
+
+
+def test_builtin_archive_requires_allowlisted_digest_and_descriptor_license(
+    builtin_pack_builder, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    pack_root.mkdir()
+    archive_path = pack_root / "Vendor.Unlicensed.1.0.0.pack"
+    with ZipFile(archive_path, "w") as archive:
+        archive.writestr(
+            "Vendor.Unlicensed.pdsc",
+            '<package><vendor>Vendor</vendor><name>Unlicensed</name>'
+            '<releases><release version="1.0.0"/></releases></package>',
+        )
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [],
+        "archives": [{
+            "file": archive_path.name,
+            "sha256": "0" * 64,
+            "redistribution_authorized": True,
+            "provenance": "fixture",
+        }],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "bad-hash")
+
+    payload = json.loads(config.read_text(encoding="utf-8"))
+    payload["archives"][0]["sha256"] = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="license"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "no-license")
 
 
 def test_sidecar_collects_generated_builtin_pack_bundle(builder, monkeypatch, tmp_path):

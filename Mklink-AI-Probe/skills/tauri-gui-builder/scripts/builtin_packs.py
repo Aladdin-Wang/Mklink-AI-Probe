@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import re
 from typing import Dict, Iterable, List, Mapping, Sequence
 from xml.etree import ElementTree
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
@@ -34,6 +35,15 @@ def _source_directory(pack_roots: Sequence[Path], pack_id: str, version: str) ->
         if candidate.is_dir():
             return candidate.resolve()
     raise FileNotFoundError("required builtin Pack {}@{} is not installed".format(pack_id, version))
+
+
+def _source_archive(pack_roots: Sequence[Path], value: object) -> Path:
+    relative = _relative_path(value, "archive file")
+    for root in pack_roots:
+        candidate = Path(root).joinpath(*relative.parts)
+        if candidate.is_file() and candidate.suffix.casefold() == ".pack":
+            return candidate.resolve()
+    raise FileNotFoundError("required builtin Pack archive {} is unavailable".format(relative))
 
 
 def _descriptor(source: Path) -> Path:
@@ -83,6 +93,89 @@ def _write_slim_pack(source: Path, files: Iterable[PurePosixPath], output: Path)
             archive.writestr(_zip_entry(relative.as_posix(), data), data)
 
 
+def _archive_descriptor(archive: ZipFile) -> PurePosixPath:
+    descriptors = [
+        PurePosixPath(name.replace("\\", "/"))
+        for name in archive.namelist()
+        if name.casefold().endswith(".pdsc")
+    ]
+    if len(descriptors) != 1:
+        raise ValueError("builtin Pack archive must contain exactly one PDSC")
+    return descriptors[0]
+
+
+def _archive_metadata(
+    source: Path,
+    license_files: object,
+    redistribution_authorized: object,
+) -> tuple[str, str, List[PurePosixPath]]:
+    if redistribution_authorized is not True:
+        raise ValueError("builtin Pack archive requires explicit redistribution_authorized=true")
+    with ZipFile(source) as archive:
+        descriptor = _archive_descriptor(archive)
+        try:
+            root = ElementTree.fromstring(archive.read(descriptor.as_posix()))
+        except (KeyError, ElementTree.ParseError) as error:
+            raise ValueError("builtin Pack archive descriptor is invalid: {}".format(error))
+        vendor = _text(root.findtext("vendor"), "archive vendor")
+        name = _text(root.findtext("name"), "archive name")
+        release = root.find("./releases/release")
+        version = _text(
+            release.attrib.get("version") if release is not None else None,
+            "archive version",
+        )
+        files = {descriptor}
+        archive_names = {name.replace("\\", "/") for name in archive.namelist()}
+        descriptor_licenses = []
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] == "license" and element.text:
+                descriptor_licenses.append(
+                    descriptor.parent / _relative_path(
+                        element.text, "archive descriptor license path"
+                    )
+                )
+        if not descriptor_licenses:
+            raise ValueError("builtin Pack archive descriptor must declare a license file")
+        files.update(descriptor_licenses)
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "algorithm":
+                continue
+            algorithm = element.attrib.get("name")
+            if algorithm:
+                relative = descriptor.parent / _relative_path(
+                    algorithm,
+                    "archive algorithm path",
+                )
+                if relative.as_posix() in archive_names:
+                    files.add(relative)
+        if license_files is not None:
+            if not isinstance(license_files, list):
+                raise ValueError("archive license_files must be a list")
+            for value in license_files:
+                files.add(descriptor.parent / _relative_path(value, "archive license path"))
+        for relative in files:
+            if relative.as_posix() not in archive_names:
+                raise FileNotFoundError(
+                    "required builtin Pack archive file is missing: {}".format(relative)
+                )
+    return "{}.{}".format(vendor, name), version, sorted(
+        files,
+        key=lambda value: value.as_posix().casefold(),
+    )
+
+
+def _write_slim_archive(
+    source: Path,
+    files: Iterable[PurePosixPath],
+    output: Path,
+) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(source) as input_archive, ZipFile(output, "w") as output_archive:
+        for relative in files:
+            data = input_archive.read(relative.as_posix())
+            output_archive.writestr(_zip_entry(relative.as_posix(), data), data)
+
+
 def _read_targets(pack_path: Path) -> List[Dict[str, str]]:
     from pyocd.target.pack.cmsis_pack import CmsisPack
 
@@ -118,14 +211,30 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
     packs = config.get("packs")
     if not isinstance(packs, list):
         raise ValueError("builtin Pack configuration must contain a packs list")
+    archives = config.get("archives", [])
+    if not isinstance(archives, list):
+        raise ValueError("builtin Pack configuration archives must be a list")
+    archive_sets = config.get("archive_sets", [])
+    if archive_sets not in (None, []):
+        raise ValueError("builtin Pack archive_sets are unsupported; use explicit digest-pinned archives")
+    archives = list(archives)
+    archives.sort(
+        key=lambda value: str(value.get("file", "")).casefold()
+        if isinstance(value, Mapping) else "",
+        reverse=True,
+    )
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     manifest_packs = []  # type: List[Dict[str, object]]
     target_count = 0
+    seen_pack_ids = set()
     for raw_pack in packs:
         if not isinstance(raw_pack, Mapping):
             raise ValueError("builtin Pack configuration entry must be an object")
         pack_id = _text(raw_pack.get("pack_id"), "pack_id")
+        if pack_id.casefold() in seen_pack_ids:
+            raise ValueError("builtin Pack ids must be unique")
+        seen_pack_ids.add(pack_id.casefold())
         version = _text(raw_pack.get("version"), "version")
         source = _source_directory(pack_roots, pack_id, version)
         descriptor = _descriptor(source)
@@ -144,6 +253,42 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
             "file": relative_output.as_posix(),
             "sha256": _sha256(slim_pack),
             "targets": targets,
+        })
+    for raw_archive in archives:
+        if not isinstance(raw_archive, Mapping):
+            raise ValueError("builtin Pack archive entry must be an object")
+        provenance = _text(raw_archive.get("provenance"), "archive provenance")
+        source = _source_archive(pack_roots, raw_archive.get("file"))
+        expected_digest = _text(raw_archive.get("sha256"), "archive SHA-256").casefold()
+        if re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
+            raise ValueError("archive SHA-256 must contain 64 hexadecimal characters")
+        if _sha256(source) != expected_digest:
+            raise ValueError("archive SHA-256 does not match the allowlist")
+        pack_id, version, files = _archive_metadata(
+            source,
+            raw_archive.get("license_files"),
+            raw_archive.get("redistribution_authorized"),
+        )
+        if not any(path.suffix.casefold() == ".flm" for path in files):
+            continue
+        if pack_id.casefold() in seen_pack_ids:
+            continue
+        seen_pack_ids.add(pack_id.casefold())
+        file_name = "{}.{}.pack".format(pack_id, version)
+        relative_output = PurePosixPath("packs") / file_name
+        slim_pack = output.joinpath(*relative_output.parts)
+        _write_slim_archive(source, files, slim_pack)
+        targets = _read_targets(slim_pack)
+        if not targets:
+            raise ValueError("builtin Pack {} has no devices".format(pack_id))
+        target_count += len(targets)
+        manifest_packs.append({
+            "pack_id": pack_id,
+            "version": version,
+            "file": relative_output.as_posix(),
+            "sha256": _sha256(slim_pack),
+            "targets": targets,
+            "provenance": provenance,
         })
     manifest = {
         "schema": 1,

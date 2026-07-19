@@ -84,6 +84,13 @@ def test_v2_rejects_automatic_multi_round_downloads():
         parse_offline_config(payload)
 
 
+def test_offline_swd_clock_is_limited_to_10_mhz():
+    payload = _config()
+    payload["swd_clock_hz"] = 10_000_001
+    with pytest.raises(OfflineDownloadError, match="SWD clock.*10000000"):
+        parse_offline_config(payload)
+
+
 def test_bin_requires_an_address_and_hex_uses_embedded_addresses():
     payload = _config()
     payload["firmwares"][0]["base_address"] = None
@@ -110,6 +117,45 @@ def test_v4_script_supports_multiple_files_addresses_algorithms_and_rounds():
     assert 'load.bin("assets.bin", 0x90000000)' in script
     assert script.index('load.bin("boot.bin"') < script.index('load.hex("rt-thread.hex"')
     assert script.index('load.hex("rt-thread.hex"') < script.index('load.flm("FLM/External.FLM"')
+
+
+def test_hpm_offline_script_uses_rom_api_without_flm():
+    payload = {
+        "model": "V4",
+        "script_name": "hpm-offline.py",
+        "auto_download_count": 2,
+        "wait_idcode_timeout_ms": 10000,
+        "swd_clock_hz": 10000000,
+        "target_part": "HPM5301xEGx",
+        "board": "hpm5301evklite",
+        "algorithms": [],
+        "firmwares": [{
+            "id": "app",
+            "file_name": "app.bin",
+            "format": "bin",
+            "base_address": "0x80000400",
+            "algorithm_id": "",
+            "upload_index": 0,
+        }],
+    }
+
+    config = parse_offline_config(payload)
+    script = generate_offline_script(config)
+
+    assert config.algorithms == ()
+    assert "import hpm" in script
+    assert 'hpm.board("hpm5301evklite")' in script
+    assert 'hpm.program("app.bin", 0x80000400)' in script
+    assert "load.flm" not in script
+
+
+def test_non_hpm_offline_config_rejects_hpm_board_settings():
+    payload = _config()
+    payload["target_part"] = "STM32F103RC"
+    payload["board"] = "hpm5301evklite"
+
+    with pytest.raises(OfflineDownloadError, match="only valid for HPM"):
+        parse_offline_config(payload)
 
 
 def test_deploy_copies_script_firmwares_and_flms_to_expected_usb_directories(tmp_path):

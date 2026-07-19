@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import struct
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -395,6 +396,11 @@ class Device:
         self,
         firmware: str,
         *,
+        target_part: str | None = None,
+        base_address: int | str | None = None,
+        board: str | None = None,
+        hpm_flash_cfg: list[str] | tuple[str, str, str, str] | None = None,
+        swd_clock: int | None = None,
         verify: bool = True,
         reset_after: bool = True,
         progress_callback=None,
@@ -411,6 +417,7 @@ class Device:
         mcu_profile = None
         resolved_key = None
         cfg = {}
+        project_info = {}
         if self._mcu_hint and self._mcu_hint in profiles:
             mcu_profile = profiles[self._mcu_hint]
             resolved_key = self._mcu_hint
@@ -424,10 +431,35 @@ class Device:
         elif self._project_root:
             from mklink.project_config import load_config
             cfg = load_config(self._project_root) or {}
+        if self._project_root:
+            try:
+                from mklink.project_config import load_project_info
+
+                project_info = load_project_info(self._project_root) or {}
+            except Exception:
+                project_info = {}
+        requested_target = str(
+            target_part
+            or project_info.get("device")
+            or project_info.get("target_part")
+            or ""
+        ).strip()
+        if not mcu_profile and requested_target:
+            target_profile_key = match_mcu_by_device(requested_target, profiles)
+            if target_profile_key:
+                mcu_profile = profiles[target_profile_key]
+                resolved_key = target_profile_key
         if not mcu_profile:
             mcu_profile = self._get_mcu_profile()
         explicit_custom = self._mcu_hint == "custom" or cfg.get("mcu_key") == "custom"
-        if not mcu_profile and not explicit_custom:
+        from mklink.hpm_config import is_hpm_target
+
+        project_hpm = is_hpm_target(
+            requested_target,
+            vendor=project_info.get("vendor"),
+            board=board or project_info.get("board"),
+        )
+        if not mcu_profile and not explicit_custom and not requested_target and not project_hpm:
             raise DeviceError(
                 "Unknown MCU profile; run `python -m mklink mcu-detect` "
                 "or `python -m mklink project-init` before flashing"
@@ -447,27 +479,143 @@ class Device:
                 or "hpmicro" in profile_name
                 or profile_prefix.startswith("hpm")
             )
+        if base_address is not None:
+            try:
+                parsed_base_address = (
+                    int(base_address, 0) if isinstance(base_address, str) else int(base_address)
+                )
+            except (TypeError, ValueError):
+                raise DeviceError("Flash base address must be an integer")
+            if parsed_base_address < 0:
+                raise DeviceError("Flash base address must be nonnegative")
+            flash_base = _fmt_hex(parsed_base_address)
 
         # Setup SWD clock (prefer config, fallback to profile default)
-        swd_clock = 1000000
-        if cfg:
+        resolved_swd_clock = 1000000
+        if swd_clock is not None:
+            resolved_swd_clock = swd_clock
+        elif cfg:
             cfg_clock = cfg.get("swd_clock")
             if cfg_clock:
-                swd_clock = int(cfg_clock)
+                resolved_swd_clock = int(cfg_clock)
         elif mcu_profile:
-            swd_clock = mcu_profile.get("swd_clock_default", swd_clock)
-        self._flash.set_swd_clock(swd_clock)
+            resolved_swd_clock = mcu_profile.get("swd_clock_default", resolved_swd_clock)
+        self._flash.set_swd_clock(resolved_swd_clock)
 
-        # Load FLM
+        # Prefer the unified user/builtin Pack catalog when an exact target is
+        # available. Legacy profile FLM paths remain a compatibility fallback.
+        catalog_algorithm = None
+        catalog_selections = ()
+        catalog_image = None
+        resolved_target = requested_target
+        if not resolved_target and self._mcu_hint and self._mcu_hint not in profiles:
+            resolved_target = self._mcu_hint
+
+        from mklink.hpm_config import (
+            default_hpm_board,
+        )
+
+        resolved_board = str(board or project_info.get("board") or "").strip()
+        hpm_target = is_hpm_target(
+            resolved_target,
+            vendor=project_info.get("vendor"),
+            board=resolved_board,
+        ) or is_hpm_profile
+        if hpm_target:
+            if ext != ".bin":
+                raise DeviceError("HPM ROM API only supports BIN firmware")
+            raw_address = base_address
+            if raw_address is None:
+                raw_address = (
+                    project_info.get("bin_base")
+                    or project_info.get("download_base")
+                    or project_info.get("flash_base")
+                )
+            if raw_address is None:
+                raise DeviceError("HPM BIN firmware requires an explicit base address")
+            try:
+                address = int(raw_address, 0) if isinstance(raw_address, str) else int(raw_address)
+            except (TypeError, ValueError):
+                raise DeviceError("HPM BIN base address must be an integer")
+            if address < 0:
+                raise DeviceError("HPM BIN base address must be nonnegative")
+            if not resolved_board:
+                resolved_board = default_hpm_board(resolved_target) or ""
+            resolved_flash_cfg = hpm_flash_cfg or project_info.get("hpm_flash_cfg")
+            if not resolved_board and not resolved_flash_cfg:
+                raise DeviceError("HPM target requires a board or flash configuration")
+            result = self._flash.burn_hpm_bin(
+                firmware,
+                addr=_fmt_hex(address),
+                board=resolved_board or None,
+                flash_cfg=resolved_flash_cfg,
+                progress_callback=progress_callback,
+            )
+            if not result.get("success"):
+                raise DeviceError(f"Flash failed: {result}")
+            result = dict(result)
+            result["algorithm_source"] = "hpm-rom-api"
+            result["verified"] = False
+            if verify:
+                self._verify_firmware_readback(firmware, _fmt_hex(address))
+                result["verified"] = True
+            if reset_after:
+                self.reset()
+            return result
+
+        if resolved_target:
+            from mklink.cmsis_dap.algorithm_catalog import (
+                discover_flash_algorithms,
+                deploy_algorithm_to_probe,
+                resolve_firmware_algorithms,
+            )
+
+            if ext == ".hex":
+                from intelhex import IntelHex
+
+                image = IntelHex(str(firmware))
+                catalog_image = image
+                firmware_ranges = tuple((start, end) for start, end in image.segments())
+            else:
+                firmware_ranges = ((int(flash_base, 0), int(flash_base, 0) + Path(firmware).stat().st_size),)
+            catalog = discover_flash_algorithms(resolved_target)
+            if catalog:
+                catalog_selections = tuple(
+                    resolve_firmware_algorithms(catalog, firmware_ranges)
+                )
+                catalog_algorithm = catalog_selections[0].algorithm
+                if len(catalog_selections) == 1:
+                    flm_path = deploy_algorithm_to_probe(catalog_algorithm)
+                    algorithm_flash_base = _fmt_hex(catalog_algorithm.flash_start)
+                    if ext == ".hex":
+                        flash_base = algorithm_flash_base
+                    selected_ram = catalog_algorithm.ram_start or int(ram_base, 0)
+                    if not self._flash.load_flm(
+                        flm_path,
+                        algorithm_flash_base,
+                        _fmt_hex(selected_ram),
+                    ):
+                        raise DeviceError(f"FLM load failed: {flm_path}")
+            elif not (
+                mcu_profile
+                and resolved_key not in (None, "custom")
+                and mcu_profile.get("flm_path")
+            ):
+                raise DeviceError(
+                    f"Target {resolved_target!r} has no usable Flash algorithm"
+                )
+
+        # Load the legacy profile FLM only when the unified catalog did not
+        # resolve the exact target and firmware address range.
         flm_path = None
-        if mcu_profile:
+        if mcu_profile and catalog_algorithm is None:
             flm_path = mcu_profile.get("flm_path", "")
             if flm_path and not flm_path.startswith("/"):
                 flm_path = "/" + flm_path
-        if flm_path:
+        if flm_path and catalog_algorithm is None:
             if not self._flash.load_flm(flm_path, flash_base, ram_base):
                 raise DeviceError(f"FLM load failed: {flm_path}")
-        elif (
+        elif catalog_algorithm is None and (
             mcu_profile
             and resolved_key != "custom"
             and not explicit_custom
@@ -477,7 +625,45 @@ class Device:
                 f"MCU profile {resolved_key or mcu_profile.get('name', '')!r} has no FLM path"
             )
 
-        if ext == ".hex":
+        if len(catalog_selections) > 1:
+            if ext != ".hex" or catalog_image is None:
+                raise DeviceError("Multiple Flash algorithms require an Intel HEX image")
+            region_results = []
+            with tempfile.TemporaryDirectory(prefix="mklink-flash-regions-") as temporary:
+                for index, selection in enumerate(catalog_selections):
+                    algorithm = selection.algorithm
+                    flm_path = deploy_algorithm_to_probe(algorithm)
+                    selected_ram = algorithm.ram_start or int(ram_base, 0)
+                    if not self._flash.load_flm(
+                        flm_path,
+                        _fmt_hex(algorithm.flash_start),
+                        _fmt_hex(selected_ram),
+                    ):
+                        raise DeviceError(f"FLM load failed: {flm_path}")
+                    region_image = IntelHex()
+                    for start, end in selection.ranges:
+                        region_image.puts(
+                            start,
+                            bytes(catalog_image.tobinarray(start=start, end=end - 1)),
+                        )
+                    region_path = Path(temporary) / "region-{}.hex".format(index)
+                    region_image.write_hex_file(str(region_path))
+
+                    def region_progress(percent: int, region_index: int = index) -> None:
+                        if progress_callback is not None:
+                            progress_callback(
+                                int((region_index * 100 + percent) / len(catalog_selections))
+                            )
+
+                    region_result = self._flash.burn_hex(
+                        str(region_path),
+                        progress_callback=region_progress,
+                    )
+                    if not region_result.get("success"):
+                        raise DeviceError(f"Flash failed: {region_result}")
+                    region_results.append(dict(region_result))
+            result = {"success": True, "regions": region_results}
+        elif ext == ".hex":
             result = self._flash.burn_hex(
                 firmware, progress_callback=progress_callback
             )
@@ -492,6 +678,16 @@ class Device:
             raise DeviceError(f"Flash failed: {result}")
 
         result = dict(result)
+        if catalog_algorithm is not None:
+            result["algorithm_source"] = catalog_algorithm.source_kind
+            result["algorithm_name"] = catalog_algorithm.file_name
+            if len(catalog_selections) > 1:
+                result["algorithm_sources"] = [
+                    selection.algorithm.source_kind for selection in catalog_selections
+                ]
+                result["algorithm_names"] = [
+                    selection.algorithm.file_name for selection in catalog_selections
+                ]
         result["verified"] = False
         if verify:
             self._verify_firmware_readback(firmware, flash_base)

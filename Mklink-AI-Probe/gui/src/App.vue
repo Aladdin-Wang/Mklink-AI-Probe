@@ -14,7 +14,14 @@
       </div>
     </header>
     <div class="app-main">
-      <router-view />
+      <router-view v-if="initialBackendReady" />
+      <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
+        正在启动本地服务…
+      </div>
+      <div v-else class="backend-recovery" role="alert">
+        <strong>本地服务未启动</strong>
+        <button data-testid="backend-restart" @click="restart">重启服务</button>
+      </div>
     </div>
     <footer class="app-footer">
       <span data-testid="app-version">v{{ appVersion }} · {{ buildCommit }}</span>
@@ -24,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
@@ -34,7 +41,9 @@ import { useBackendHealth } from './composables/useBackendHealth'
 const router = useRouter()
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { startHealthPolling, stopHealthPolling } = useBackendHealth()
+const { backendState, startHealthPolling, stopHealthPolling, restart } = useBackendHealth()
+const initialBackendReady = ref(false)
+let statusPollingStarted = false
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
 
@@ -51,12 +60,18 @@ function navigate(key: string) {
   router.push({ name: key })
 }
 
-onMounted(() => {
-  startStatusPolling(3000)
-  startHealthPolling(5000)
-})
+watch(backendState, state => {
+  if (state !== 'alive' || initialBackendReady.value) return
+  initialBackendReady.value = true
+  if (!statusPollingStarted) {
+    statusPollingStarted = true
+    startStatusPolling(3000)
+  }
+}, { immediate: true })
+
+onMounted(() => startHealthPolling(5000))
 onUnmounted(() => {
-  stopStatusPolling()
+  if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()
 })
 </script>
@@ -143,6 +158,29 @@ body {
   min-height: 0;
   overflow: auto;
   padding: 20px;
+}
+.backend-starting {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.backend-recovery {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--danger);
+}
+.backend-recovery button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 6px 12px;
+  cursor: pointer;
 }
 .app-footer {
   flex: 0 0 22px;

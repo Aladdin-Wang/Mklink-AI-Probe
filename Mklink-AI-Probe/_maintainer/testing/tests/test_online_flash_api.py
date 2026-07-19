@@ -1,5 +1,6 @@
 import asyncio
 import json
+import asyncio
 import threading
 import time
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from mklink.remote.online_flash_api import (
     OnlineFlashServices,
     _blocking,
     _pack_memory_regions,
+    _put_latest_pack_event,
+    _target_flash_configuration,
     create_online_flash_router,
     default_target_memory_provider,
 )
@@ -42,7 +45,7 @@ class Catalog:
     def search(self, query, vendor=None, installed=None, limit=100):
         self.calls.append((query, vendor, installed, limit))
         records = [
-            TargetRecord("HPM5300", "HPMicro", "HPM.Pack", "1.0", "safe.pack", True),
+            TargetRecord("DEVICE_A", "Vendor", "Vendor.Pack", "1.0", "safe.pack", True),
             TargetRecord("Other", "Vendor", installed=False),
         ]
         return [record for record in records if query.casefold() in record.part_number.casefold()][:limit]
@@ -250,12 +253,98 @@ def request(app, method, path, **kwargs):
 def test_probe_target_and_pack_status_routes_use_injected_services(app, services):
     probes = request(app, "GET", "/api/online-flash/probes")
     assert [item["unique_id"] for item in probes.json()] == ["mk"]
-    targets = request(app, "GET", "/api/online-flash/targets?q=hpm&vendor=HPMicro&installed=true&limit=7")
-    assert targets.json()[0]["part_number"] == "HPM5300"
+    targets = request(app, "GET", "/api/online-flash/targets?q=device&vendor=Vendor&installed=true&limit=7")
+    assert targets.json()[0]["part_number"] == "DEVICE_A"
     assert "pack_path" not in targets.json()[0]
-    assert services.catalog.calls[-1] == ("hpm", "HPMicro", True, 7)
+    assert services.catalog.calls[-1] == ("device", "Vendor", True, 7)
     status = request(app, "GET", "/api/online-flash/packs/status")
     assert status.json()["index_available"] is True
+
+
+def test_hpm_image_and_job_use_rom_api_without_pack_or_sector_geometry(app, services):
+    services.catalog.search = lambda *args, **kwargs: []
+    services.target_memory_provider = lambda _part: pytest.fail("HPM must not load Pack memory")
+    hpm_inspection = ImageInspection(
+        "hpm-image", "firmware.bin", "snapshot.bin", "bin", 8, "abc",
+        0x80000400, 0x80000408, base_address=0x80000400,
+    )
+
+    def inspect_hpm(path, regions, base_address=None):
+        assert Path(path).is_file()
+        assert tuple(regions) == (
+            MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),
+        )
+        assert base_address == 0x80000400
+        return hpm_inspection
+
+    services.image_inspector.inspect = inspect_hpm
+    services.image_inspector.validate_unchanged = lambda image_id: (
+        hpm_inspection if image_id == hpm_inspection.image_id else pytest.fail("wrong image")
+    )
+
+    inspected = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "0x80000400"},
+        files={"file": ("firmware.bin", b"firmware")},
+    )
+
+    assert inspected.status_code == 200
+    assert inspected.json()["sector_operations_available"] is False
+    assert inspected.json()["sectors"] == []
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "program", "verify", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspected.json()["image_id"],
+            "base_address": 0x80000400,
+            "board": "hpm5300evk",
+        },
+    )
+
+    assert started.status_code == 200
+    request_record = services.job_manager.started[-1]
+    assert request_record.pack_path is None
+    assert request_record.custom_flm_paths == ()
+    assert request_record.sector_addresses == ()
+    assert request_record.board == "hpm5300evk"
+
+
+def test_hpm_image_rejects_hex_without_pack_lookup(app, services):
+    services.catalog.search = lambda *args, **kwargs: pytest.fail("HPM must not look up Packs")
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={"part_number": "HPM5300", "base_address": "0x80000400"},
+        files={"file": ("firmware.hex", b":00000001FF\n")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "FILE_FORMAT_ERROR"
+
+
+def test_hpm_algorithm_api_never_accepts_flm(app, services):
+    listed = request(app, "GET", "/api/online-flash/algorithms?part_number=HPM5300")
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("not-used.flm", b"algorithm")},
+    )
+
+    assert listed.json() == []
+    assert added.status_code == 422
+    assert added.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+    assert services.custom_flms.records == []
 
 
 def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, services):
@@ -263,14 +352,14 @@ def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, ser
         app,
         "POST",
         "/api/online-flash/algorithms",
-        data={"part_number": "HPM5300"},
+        data={"part_number": "DEVICE_A"},
         files={"file": ("external.flm", b"algorithm")},
     )
 
     assert added.status_code == 200
     assert added.json() == {
         "algorithm_id": "algo-1",
-        "target_part": "HPM5300",
+        "target_part": "DEVICE_A",
         "file_name": "external.flm",
         "flash_start": 0x90000000,
         "flash_size": 0x800000,
@@ -278,15 +367,48 @@ def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, ser
         "sector_sizes": [[0, 0x1000]],
     }
     assert "file_path" not in added.text
-    listed = request(app, "GET", "/api/online-flash/algorithms?part_number=HPM5300")
+    listed = request(app, "GET", "/api/online-flash/algorithms?part_number=DEVICE_A")
     assert listed.json() == [added.json()]
     removed = request(
         app,
         "DELETE",
-        "/api/online-flash/algorithms/algo-1?part_number=HPM5300",
+        "/api/online-flash/algorithms/algo-1?part_number=DEVICE_A",
     )
     assert removed.json() == {"status": "removed"}
     assert services.custom_flms.records == []
+
+
+def test_custom_flm_overrides_only_builtin_bundle_regions(tmp_path):
+    base = MemoryRegion("bundle-external", 0x90000000, 0x800000, True, True, 0x1000)
+    custom = MemoryRegion("custom-external", 0x90000000, 0x800000, True, True, 0x1000)
+
+    class ExactCatalog:
+        def search(self, query, installed=None, limit=100, **_kwargs):
+            return [TargetRecord(
+                part_number=query,
+                vendor="Vendor",
+                pack_id="Vendor.Bundle",
+                pack_version="1",
+                pack_path="bundle.pack",
+                installed=True,
+                source="bundle",
+            )]
+
+    class Algorithms:
+        def regions(self, _part_number): return (custom,)
+        def fingerprint(self, _part_number): return ("digest",)
+        def paths(self, _part_number): return (str(tmp_path / "custom.flm"),)
+
+    services = type("Services", (), {
+        "catalog": ExactCatalog(),
+        "target_memory_provider": staticmethod(lambda _part_number: (base,)),
+        "custom_flms": Algorithms(),
+    })()
+
+    regions, fingerprint, _paths = _target_flash_configuration(services, "DEVICE_A")
+
+    assert regions == (custom,)
+    assert fingerprint == ("digest",)
 
 
 def test_inspection_binds_custom_flms_and_job_receives_stored_paths(app, services):
@@ -294,11 +416,11 @@ def test_inspection_binds_custom_flms_and_job_receives_stored_paths(app, service
         app,
         "POST",
         "/api/online-flash/algorithms",
-        data={"part_number": "HPM5300"},
+        data={"part_number": "DEVICE_A"},
         files={"file": ("external.flm", b"algorithm")},
     )
     assert added.status_code == 200
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
     assert [region.start for region in services.image_inspector.seen_regions] == [
         0x1000,
         0x90000000,
@@ -311,7 +433,7 @@ def test_inspection_binds_custom_flms_and_job_receives_stored_paths(app, service
         json={
             "actions": ["connect", "verify", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "image_id": inspection["image_id"],
             "frequency": 10_000_000,
         },
@@ -331,14 +453,14 @@ def test_algorithm_change_invalidates_an_existing_image_inspection(app, services
         app,
         "POST",
         "/api/online-flash/algorithms",
-        data={"part_number": "HPM5300"},
+        data={"part_number": "DEVICE_A"},
         files={"file": ("external.flm", b"algorithm")},
     ).json()
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
     request(
         app,
         "DELETE",
-        "/api/online-flash/algorithms/{}?part_number=HPM5300".format(
+        "/api/online-flash/algorithms/{}?part_number=DEVICE_A".format(
             added["algorithm_id"]
         ),
     )
@@ -350,7 +472,7 @@ def test_algorithm_change_invalidates_an_existing_image_inspection(app, services
         json={
             "actions": ["connect", "verify", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "image_id": inspection["image_id"],
         },
     )
@@ -366,7 +488,7 @@ def test_custom_flm_mutation_is_blocked_while_an_online_job_is_active(app, servi
         app,
         "POST",
         "/api/online-flash/algorithms",
-        data={"part_number": "HPM5300"},
+        data={"part_number": "DEVICE_A"},
         files={"file": ("external.flm", b"algorithm")},
     )
 
@@ -413,14 +535,14 @@ def test_job_start_and_custom_flm_mutation_share_configuration_lock(app, service
         app,
         "POST",
         "/api/online-flash/algorithms",
-        data={"part_number": "HPM5300"},
+        data={"part_number": "DEVICE_A"},
         files={"file": ("external.flm", b"algorithm")},
     )
     assert added.status_code == 200
     removed = request(
         app,
         "DELETE",
-        "/api/online-flash/algorithms/algo-1?part_number=HPM5300",
+        "/api/online-flash/algorithms/algo-1?part_number=DEVICE_A",
     )
     assert removed.status_code == 200
     started = request(
@@ -430,7 +552,7 @@ def test_job_start_and_custom_flm_mutation_share_configuration_lock(app, service
         json={
             "actions": ["connect", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
         },
     )
     assert started.status_code == 200
@@ -444,7 +566,7 @@ def test_job_frequency_is_limited_to_ten_megahertz(app):
         json={
             "actions": ["connect", "erase", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "frequency": 10_000_001,
         },
     )
@@ -468,7 +590,7 @@ def test_probe_enumeration_failure_is_actionable_and_does_not_expose_raw_details
 
 
 def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, services):
-    installed = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "HPM5300"})
+    installed = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "Other"})
     assert installed.json()["events"][0]["progress"] == 0.5
     missing = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "missing"})
     assert missing.status_code == 404
@@ -479,6 +601,93 @@ def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, servic
     removed = request(app, "DELETE", "/api/online-flash/packs/V.P/1")
     assert removed.status_code == 200
     assert services.pack_manager.removed == ("V", "P", "1")
+
+
+def test_hpm_pack_install_is_satisfied_without_network_download(app, services):
+    services.pack_manager.install = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("HPM must not download a Pack")
+    )
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/packs/install",
+        json={"part_number": "HPM5301xEGx"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == {
+        "status": "installed",
+        "part_number": "HPM5301xEGx",
+    }
+
+
+def test_pack_install_can_stream_progress_and_terminal_result(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/packs/install",
+        json={"part_number": "Other"},
+        headers={"Accept": "application/x-ndjson"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    messages = [json.loads(line) for line in response.text.splitlines() if line]
+    assert messages[0] == {
+        "type": "event",
+        "event": {"type": "progress", "phase": "preparing", "progress": 0.01},
+    }
+    assert any(
+        message.get("type") == "event"
+        and message.get("event", {}).get("phase") == "downloading"
+        and message["event"]["progress"] > 0.01
+        for message in messages
+    )
+    assert messages[-1] == {
+        "type": "result",
+        "result": {"status": "installed", "part_number": "Other"},
+    }
+
+
+def test_pack_stream_bounds_bursty_progress_without_losing_result(app, services):
+    def noisy_install(part_number, on_event):
+        for index in range(1000):
+            on_event({"type": "progress", "current": index + 1, "total": 1000})
+        return {"status": "installed", "part_number": part_number}
+
+    services.pack_manager.install = noisy_install
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/packs/install",
+        json={"part_number": "Other"},
+        headers={"Accept": "application/x-ndjson"},
+    )
+    messages = [json.loads(line) for line in response.text.splitlines() if line]
+
+    assert response.status_code == 200
+    assert messages[-1] == {
+        "type": "result",
+        "result": {"status": "installed", "part_number": "Other"},
+    }
+
+
+def test_pack_progress_queue_replaces_old_events_at_capacity():
+    queue = asyncio.Queue(maxsize=2)
+    _put_latest_pack_event(queue, {"sequence": 1})
+    _put_latest_pack_event(queue, {"sequence": 2})
+    _put_latest_pack_event(queue, {"sequence": 3})
+
+    assert queue.qsize() == 2
+    assert queue.get_nowait() == {"sequence": 2}
+    assert queue.get_nowait() == {"sequence": 3}
+
+    queue.put_nowait({"type": "event", "sequence": 4})
+    queue.put_nowait({"type": "result"})
+    _put_latest_pack_event(queue, {"type": "event", "sequence": 5})
+    assert queue.get_nowait() == {"type": "event", "sequence": 4}
+    assert queue.get_nowait() == {"type": "result"}
 
 
 def test_flash_error_redacts_windows_posix_and_nested_path_values(app):
@@ -667,7 +876,7 @@ def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, serv
         app,
         "POST",
         "/api/online-flash/images/inspect",
-        data={"part_number": "HPM5300", "base_address": "0x1000"},
+        data={"part_number": "DEVICE_A", "base_address": "0x1000"},
         files={"file": ("fw.bin", b"abcd")},
     )
     body = inspected.json()
@@ -692,7 +901,7 @@ def test_inspect_requires_exact_installed_target_and_enforces_upload_limit(app, 
         app,
         "POST",
         "/api/online-flash/images/inspect",
-        data={"part_number": "HPM5300", "base_address": "4096"},
+        data={"part_number": "DEVICE_A", "base_address": "4096"},
         files={"file": ("fw.bin", b"abcd")},
     )
     assert too_large.status_code == 422
@@ -704,7 +913,7 @@ def test_inspect_rejects_invalid_base_address_with_422(app):
         app,
         "POST",
         "/api/online-flash/images/inspect",
-        data={"part_number": "HPM5300", "base_address": "not-an-address"},
+        data={"part_number": "DEVICE_A", "base_address": "not-an-address"},
         files={"file": ("fw.bin", b"abcd")},
     )
 
@@ -731,12 +940,12 @@ def test_preview_defaults_to_4096_bytes(app, services):
     assert services.image_inspector.preview_length == 4096
 
 
-def inspect_hpm_image(app):
+def inspect_device_image(app):
     response = request(
         app,
         "POST",
         "/api/online-flash/images/inspect",
-        data={"part_number": "HPM5300", "base_address": "4096"},
+        data={"part_number": "DEVICE_A", "base_address": "4096"},
         files={"file": ("fw.bin", b"abcd")},
     )
     assert response.status_code == 200
@@ -744,11 +953,11 @@ def inspect_hpm_image(app):
 
 
 def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
     payload = {
         "actions": ["connect", "erase", "program", "disconnect"],
         "probe_id": "mk",
-        "target_part": "HPM5300",
+        "target_part": "DEVICE_A",
         "image_id": inspection["image_id"],
         "sector_addresses": [0x1000],
     }
@@ -764,7 +973,7 @@ def test_jobs_validate_dependencies_and_second_active_job_is_conflict(app):
 
 
 def test_program_job_requires_covered_sector_erase(app):
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
 
     response = request(
         app,
@@ -773,7 +982,7 @@ def test_program_job_requires_covered_sector_erase(app):
         json={
             "actions": ["connect", "program", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "image_id": inspection["image_id"],
         },
     )
@@ -783,7 +992,7 @@ def test_program_job_requires_covered_sector_erase(app):
 
 
 def test_program_job_recomputes_and_requires_exact_covered_sectors(app):
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
 
     response = request(
         app,
@@ -792,7 +1001,7 @@ def test_program_job_recomputes_and_requires_exact_covered_sectors(app):
         json={
             "actions": ["connect", "erase", "program", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "image_id": inspection["image_id"],
             "sector_addresses": [0x1100],
         },
@@ -803,7 +1012,7 @@ def test_program_job_recomputes_and_requires_exact_covered_sectors(app):
 
 
 def test_program_job_rejects_geometry_that_is_no_longer_reliable(app, services):
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
     services.image_inspector.covered_sectors = lambda image_id, regions: SectorCoverage((), False)
 
     response = request(
@@ -813,7 +1022,7 @@ def test_program_job_rejects_geometry_that_is_no_longer_reliable(app, services):
         json={
             "actions": ["connect", "erase", "program", "disconnect"],
             "probe_id": "mk",
-            "target_part": "HPM5300",
+            "target_part": "DEVICE_A",
             "image_id": inspection["image_id"],
             "sector_addresses": [0x1000],
         },
@@ -824,7 +1033,7 @@ def test_program_job_rejects_geometry_that_is_no_longer_reliable(app, services):
 
 
 def test_job_rejects_image_inspected_for_a_different_target(app, services):
-    inspection = inspect_hpm_image(app)
+    inspection = inspect_device_image(app)
     services.catalog.search = lambda *args, **kwargs: [
         TargetRecord("Other", "Vendor", installed=True)
     ]

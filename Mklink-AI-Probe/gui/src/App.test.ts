@@ -1,7 +1,11 @@
 import { shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import App from './App.vue'
+
+const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
+const startStatusPolling = vi.fn()
+const restart = vi.fn()
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -9,31 +13,66 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('./composables/useMklinkApi', () => ({
-  useMklinkApi: () => ({ startStatusPolling: vi.fn(), stopStatusPolling: vi.fn() }),
+  useMklinkApi: () => ({ startStatusPolling, stopStatusPolling: vi.fn() }),
 }))
 
 vi.mock('./composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
-    backendAlive: ref(true),
+    backendState,
     startHealthPolling: vi.fn(),
     stopHealthPolling: vi.fn(),
+    restart,
   }),
 }))
 
+function mountApp() {
+  return shallowMount(App, {
+    global: {
+      stubs: {
+        StatusBar: true,
+        ToastContainer: true,
+        RouterView: { template: '<div data-testid="route-view" />' },
+      },
+    },
+  })
+}
+
 describe('App version footer', () => {
   it('shows the release candidate and source build in the lower right', () => {
-    const wrapper = shallowMount(App, {
-      global: {
-        stubs: {
-          StatusBar: true,
-          ToastContainer: true,
-          RouterView: true,
-        },
-      },
-    })
+    const wrapper = mountApp()
 
     expect(wrapper.get('[data-testid="app-version"]').text())
       .toMatch(/^v0\.1\.0-rc\.2 · [0-9a-f]{7,}$/)
+    wrapper.unmount()
+  })
+
+  it('does not mount route views or poll device state before the backend API is ready', async () => {
+    backendState.value = 'starting'
+    startStatusPolling.mockClear()
+    const wrapper = mountApp()
+
+    expect(wrapper.find('[data-testid="route-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="backend-starting"]').exists()).toBe(true)
+    expect(startStatusPolling).not.toHaveBeenCalled()
+
+    backendState.value = 'alive'
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="route-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="backend-starting"]').exists()).toBe(false)
+    expect(startStatusPolling).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('offers sidecar recovery when the first startup attempt fails', async () => {
+    backendState.value = 'dead'
+    restart.mockClear()
+    const wrapper = mountApp()
+
+    expect(wrapper.find('[data-testid="route-view"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="backend-starting"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="backend-restart"]').trigger('click')
+    expect(restart).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
 })

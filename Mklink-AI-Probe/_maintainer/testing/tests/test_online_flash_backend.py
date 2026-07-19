@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from mklink.cmsis_dap.backend import PyOcdBackend
+from mklink.cmsis_dap.backend import HpmRomBackend, PyOcdBackend, RoutingFlashBackend
 from mklink.cmsis_dap.backend import _install_custom_flm_regions
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import ImageInspection, ImageSegment, MemoryRegion
@@ -95,6 +95,130 @@ def assert_error(code: FlashErrorCode, call) -> FlashError:
         call()
     assert raised.value.code is code
     return raised.value
+
+
+def test_hpm_rom_backend_programs_without_flm_and_verifies_by_readback(
+    tmp_path: Path,
+) -> None:
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"abcdefgh")
+    calls = []
+
+    class Device:
+        def flash(self, path, **kwargs):
+            calls.append(("flash", Path(path), kwargs))
+            return {"success": True, "algorithm_source": "hpm-rom-api"}
+
+        def read_memory(self, address, size):
+            calls.append(("read", address, size))
+            return firmware.read_bytes()[address - 0x80000400 : address - 0x80000400 + size]
+
+        def reset(self):
+            calls.append(("reset",))
+
+        def close(self):
+            calls.append(("close",))
+
+    device = Device()
+    backend = HpmRomBackend(
+        device_factory=lambda **kwargs: calls.append(("connect", kwargs)) or device,
+        port_resolver=lambda probe: calls.append(("resolve", probe)) or "probe-port",
+        verify_chunk_size=4,
+    )
+    backend.connect(
+        probe="probe-id",
+        target="HPM5300",
+        frequency=10_000_000,
+        board="hpm5300evk",
+    )
+    image = ImageInspection(
+        "image", file_path=str(firmware), format="bin", base_address=0x80000400
+    )
+
+    backend.erase_chip()
+    backend.erase_sectors([0x80000000])
+    backend.program(image)
+    backend.verify(image)
+    backend.reset_run()
+    backend.disconnect()
+
+    assert calls[0:2] == [("resolve", "probe-id"), ("connect", {"port": "probe-port"})]
+    assert calls[2] == (
+        "flash",
+        firmware,
+        {
+            "target_part": "HPM5300",
+            "base_address": 0x80000400,
+            "board": "hpm5300evk",
+            "hpm_flash_cfg": None,
+            "swd_clock": 10_000_000,
+            "verify": False,
+            "reset_after": False,
+        },
+    )
+    assert calls[3:] == [
+        ("read", 0x80000400, 4),
+        ("read", 0x80000404, 4),
+        ("reset",),
+        ("close",),
+    ]
+
+
+def test_hpm_rom_backend_rejects_hex_and_reports_verify_mismatch(tmp_path: Path) -> None:
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"expected")
+
+    class Device:
+        def read_memory(self, address, size):
+            return b"x" * size
+
+        def close(self):
+            pass
+
+    backend = HpmRomBackend(
+        device_factory=lambda **_kwargs: Device(),
+        port_resolver=lambda _probe: "probe-port",
+    )
+    backend.connect("probe", "HPM5300", 1_000_000, board="hpm5300evk")
+
+    mismatch = assert_error(
+        FlashErrorCode.VERIFY_FAIL,
+        lambda: backend.verify(ImageInspection(
+            "bin", file_path=str(firmware), format="bin", base_address=0x80000000
+        )),
+    )
+    assert mismatch.details["address"] == 0x80000000
+    assert_error(
+        FlashErrorCode.FILE_FORMAT_ERROR,
+        lambda: backend.program(ImageInspection("hex", file_path=str(firmware), format="hex")),
+    )
+
+
+def test_routing_backend_selects_hpm_rom_only_for_hpm_targets() -> None:
+    calls = []
+
+    class Backend:
+        def __init__(self, name):
+            self.name = name
+
+        def connect(self, **kwargs):
+            calls.append((self.name, kwargs))
+
+        def disconnect(self):
+            calls.append((self.name, "disconnect"))
+
+    router = RoutingFlashBackend(
+        pyocd_factory=lambda: Backend("pyocd"),
+        hpm_factory=lambda: Backend("hpm"),
+    )
+    router.connect("probe", "HPM5300", 1_000_000, board="hpm5300evk")
+    router.disconnect()
+    router.connect("probe", "STM32F103RC", 1_000_000, board="ignored")
+
+    assert calls[0][0] == "hpm"
+    assert calls[0][1]["board"] == "hpm5300evk"
+    assert calls[2][0] == "pyocd"
+    assert "board" not in calls[2][1]
 
 
 def test_connect_halts_target_and_disconnect_closes_session() -> None:
@@ -390,6 +514,34 @@ def test_custom_flm_regions_do_not_mutate_a_shared_pack_memory_map(
     assert len(shared.regions) == 2
     assert len(targets[0].memory_map.regions) == 3
     assert len(targets[1].memory_map.regions) == 3
+
+
+def test_custom_flm_replaces_overlapping_builtin_region_on_cloned_map(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap, RamRegion
+
+    shared = MemoryMap(
+        FlashRegion(start=0x90000000, length=0x800000, sector_size=0x1000),
+        RamRegion(start=0x20000000, length=0x20000),
+    )
+    target = type("Target", (), {"memory_map": shared})()
+
+    class Algorithm:
+        flash_start = 0x90000000
+        flash_size = 0x800000
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.flash_algo.PackFlashAlgo",
+        lambda _payload: Algorithm(),
+    )
+
+    _install_custom_flm_regions(target, (b"custom",))
+
+    assert len(shared.regions) == 2
+    replacement = target.memory_map.get_region_for_address(0x90000000)
+    assert replacement.name == "mklink_custom_flm_0"
+    assert len(target.memory_map.regions) == 2
 
 
 def test_custom_flm_flash_calls_optional_verify_entry(tmp_path: Path, monkeypatch) -> None:

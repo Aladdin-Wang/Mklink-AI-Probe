@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from mklink.cmsis_dap.models import TargetRecord
-from mklink.cmsis_dap.pack_catalog import PackCatalog
+from mklink.cmsis_dap.pack_catalog import PackCatalog, _hpm_rom_records
 from mklink.cmsis_dap.builtin_pack_bundle import load_builtin_pack_records
 from mklink.cmsis_dap.paths import PackPaths
 
@@ -37,6 +37,14 @@ def _write_state(paths, installed):
         json.dumps({"installed": installed}),
         encoding="utf-8",
     )
+
+
+def test_hpm_rom_targets_are_builtin_without_pack_paths():
+    records = _hpm_rom_records()
+
+    assert any(record.part_number == "HPM5301xEGx" for record in records)
+    assert all(record.installed and record.source == "hpm-rom-api" for record in records)
+    assert all(record.pack_path is None for record in records)
 
 
 def test_searches_cached_index_case_insensitively(tmp_path):
@@ -104,8 +112,8 @@ def test_installed_registry_marks_exact_pack_version_and_path(tmp_path):
             )
         },
     )
-    pack_path = tmp_path / "cache" / "GigaDevice.GD32F30x_DFP.3.0.2.pack"
-    pack_path.parent.mkdir()
+    pack_path = paths.data_dir / "GigaDevice.GD32F30x_DFP.3.0.2.pack"
+    pack_path.parent.mkdir(parents=True)
     pack_path.write_bytes(b"pack")
     _write_state(
         paths,
@@ -128,7 +136,8 @@ def test_installed_pack_path_wins_over_runtime_pack_target_registration(tmp_path
         paths,
         {"STM32H7B0VBTx": _index_target("Keil", "STM32H7xx_DFP", "4.1.3")},
     )
-    pack_path = tmp_path / "Keil.STM32H7xx_DFP.4.1.3.pack"
+    pack_path = paths.data_dir / "Keil.STM32H7xx_DFP.4.1.3.pack"
+    pack_path.parent.mkdir(parents=True)
     pack_path.write_bytes(b"pack")
     _write_state(
         paths,
@@ -425,7 +434,8 @@ def test_user_installed_pack_overrides_duplicate_builtin_bundle(tmp_path):
         paths,
         {"STM32H7B0VBTx": _index_target("Keil", "STM32H7xx_DFP", "4.1.0")},
     )
-    imported = tmp_path / "imported.pack"
+    imported = paths.data_dir / "imported.pack"
+    imported.parent.mkdir(parents=True)
     imported.write_bytes(b"pack")
     _write_state(
         paths,
@@ -551,7 +561,8 @@ def test_catalog_caches_state_until_state_signature_changes(monkeypatch, tmp_pat
         paths,
         {"GD32F303RC": _index_target("GigaDevice", "GD32F30x_DFP", "3.0.2")},
     )
-    pack_path = tmp_path / "installed.pack"
+    pack_path = paths.data_dir / "installed.pack"
+    pack_path.parent.mkdir(parents=True)
     pack_path.write_bytes(b"pack")
     _write_state(
         paths,
@@ -617,7 +628,8 @@ def test_catalog_retries_state_after_transient_read_failure(monkeypatch, tmp_pat
         paths,
         {"GD32F303RC": _index_target("GigaDevice", "GD32F30x_DFP", "3.0.2")},
     )
-    pack_path = tmp_path / "installed.pack"
+    pack_path = paths.data_dir / "installed.pack"
+    pack_path.parent.mkdir(parents=True)
     pack_path.write_bytes(b"pack")
     _write_state(
         paths,

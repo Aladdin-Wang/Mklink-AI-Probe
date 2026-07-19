@@ -209,13 +209,26 @@ python -m mklink rtt --visualize --port-http 8888 --no-browser
 
 ### HPMicro BIN 下载
 
-HPM SDK 工程会走设备端 `hpm.program()` 下载路径。`project-init` 识别到 HPM board 后，会把 `hpm_flash_cfg` 写入 `project_info.json`；手动配置时必须使用 4 个参数：
+HPM SDK 工程会走设备端 `hpm.program()` 下载路径。HPM 型号不使用 FLM，也不需要 Pack；算法发现必须直接返回空。`project-init` 识别到 HPM board 后，会把 `hpm_flash_cfg` 写入 `project_info.json`；手动配置时必须使用 4 个参数：
 
 ```json
 "hpm_flash_cfg": ["0xfcf90002U", "0x00000005U", "0x00001000U", "0xf3000000U"]
 ```
 
 这 4 个参数依次对应 `hpm.flash_cfg(header,opt0,opt1,xpi_base_addr)`。不要再使用旧的 3 参数写法，因为下载算法里的 XPI 基址不应固定。
+
+MCP/AI 调用示例：
+
+```text
+flash(
+  firmware="build/demo.bin",
+  target_part="HPM5301xEGx",
+  base_address=0x80000400,
+  board="hpm5301evklite"
+)
+```
+
+只支持 BIN；未提供工程配置时必须显式传 `base_address`。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得先调用 `detect_mcu_profile`、安装 Pack 或加载 FLM。
 
 XPI 基址按芯片族选择：
 - `0xf3000000U`: HPM5300/HPM5301/HPM5E/HPM6E/HPM6P/HPM6800

@@ -48,12 +48,21 @@ class OfflineDownloadConfig:
     auto_download_count: int
     wait_idcode_timeout_ms: int
     swd_clock_hz: int
+    target_part: Optional[str]
+    board: Optional[str]
+    hpm_flash_cfg: Optional[tuple[str, str, str, str]]
     algorithms: tuple[OfflineAlgorithm, ...]
     firmwares: tuple[OfflineFirmware, ...]
 
     @property
     def script_name(self) -> str:
         return script_filename(self.model, self.requested_script_name)
+
+    @property
+    def is_hpm(self) -> bool:
+        from mklink.hpm_config import is_hpm_target
+
+        return is_hpm_target(self.target_part)
 
 
 def _parse_int(value: object, label: str) -> int:
@@ -131,8 +140,29 @@ def parse_offline_config(
         payload.get("swd_clock_hz", 10000000),
         "SWD clock",
         100000,
-        50000000,
+        10000000,
     )
+    target_part = str(payload.get("target_part") or "").strip() or None
+    from mklink.hpm_config import is_hpm_target, normalize_hpm_configuration
+
+    hpm_target = is_hpm_target(target_part)
+    raw_board = str(payload.get("board") or "").strip()
+    raw_hpm_flash_cfg = payload.get("hpm_flash_cfg")
+    if not hpm_target and (raw_board or raw_hpm_flash_cfg not in (None, "")):
+        raise OfflineDownloadError("HPM board and flash config are only valid for HPM targets")
+    board = None
+    hpm_flash_cfg = None
+    if hpm_target:
+        try:
+            board, hpm_flash_cfg = normalize_hpm_configuration(
+                target_part,
+                board=raw_board or None,
+                flash_cfg=(
+                    None if raw_hpm_flash_cfg in (None, "") else raw_hpm_flash_cfg
+                ),
+            )
+        except (TypeError, ValueError) as error:
+            raise OfflineDownloadError(str(error)) from error
 
     raw_algorithms = payload.get("algorithms")
     if not isinstance(raw_algorithms, Sequence) or isinstance(raw_algorithms, (str, bytes)):
@@ -176,7 +206,9 @@ def parse_offline_config(
                 upload_index=parsed_upload_index,
             )
         )
-    if not algorithms:
+    if hpm_target and algorithms:
+        raise OfflineDownloadError("HPM targets do not use FLM algorithms")
+    if not hpm_target and not algorithms:
         raise OfflineDownloadError("at least one FLM algorithm is required")
 
     raw_firmwares = payload.get("firmwares")
@@ -200,13 +232,15 @@ def parse_offline_config(
         if image_format not in ("bin", "hex") or Path(file_name).suffix.casefold() != f".{image_format}":
             raise OfflineDownloadError("firmware format does not match its file name")
         algorithm_id = str(raw.get("algorithm_id") or "").strip()
-        if algorithm_id.casefold() not in seen_algorithm_ids:
+        if not hpm_target and algorithm_id.casefold() not in seen_algorithm_ids:
             raise OfflineDownloadError("firmware references an unknown FLM algorithm")
         base_address = None
         if image_format == "bin":
             if raw.get("base_address") in (None, ""):
                 raise OfflineDownloadError("BIN firmware requires a base address")
             base_address = _parse_int(raw.get("base_address"), "BIN base address")
+        elif hpm_target:
+            raise OfflineDownloadError("HPM ROM API only supports BIN firmware")
         firmwares.append(
             OfflineFirmware(
                 id=firmware_id,
@@ -226,12 +260,38 @@ def parse_offline_config(
         auto_download_count=count,
         wait_idcode_timeout_ms=timeout,
         swd_clock_hz=swd_clock,
+        target_part=target_part,
+        board=board,
+        hpm_flash_cfg=hpm_flash_cfg,
         algorithms=tuple(algorithms),
         firmwares=tuple(firmwares),
     )
 
 
 def _program_lines(config: OfflineDownloadConfig, indent: str) -> list[str]:
+    if config.is_hpm:
+        lines = []
+        if config.board:
+            setup_call = f'hpm.board("{config.board}")'
+        else:
+            cfg = config.hpm_flash_cfg or ()
+            setup_call = "hpm.flash_cfg({})".format(",".join(cfg))
+        lines.extend((
+            f"{indent}if {setup_call} != 0:",
+            f'{indent}    print("HPM flash configuration failed")',
+            f"{indent}    abort = True",
+            f"{indent}    break",
+        ))
+        for firmware in config.firmwares:
+            call = f'hpm.program("{firmware.file_name}", 0x{firmware.base_address:08X})'
+            lines.extend((
+                f"{indent}if {call} != 0:",
+                f'{indent}    print("HPM program failed: {firmware.file_name}")',
+                f"{indent}    abort = True",
+                f"{indent}    break",
+            ))
+        return lines
+
     algorithms = {algorithm.id: algorithm for algorithm in config.algorithms}
     lines = []
     active_algorithm = None
@@ -268,7 +328,7 @@ def _generate_v2_script(config: OfflineDownloadConfig) -> str:
         "import PikaStdLib",
         "import time",
         "import cmd",
-        "import load",
+        "import hpm" if config.is_hpm else "import load",
         "",
         f"cmd.set_swd_clock({config.swd_clock_hz})",
         "abort = False",
@@ -294,7 +354,7 @@ def generate_offline_script(config: OfflineDownloadConfig) -> str:
         "import PikaStdLib",
         "import time",
         "import cmd",
-        "import load",
+        "import hpm" if config.is_hpm else "import load",
         "",
         f"AUTO_DOWNLOAD_COUNT = {config.auto_download_count}",
         f"WAIT_IDCODE_TIMEOUT = {config.wait_idcode_timeout_ms}",

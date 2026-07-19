@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -76,7 +77,7 @@ def _production_probe_provider() -> Sequence[object]:
 
 def create_default_online_flash_services(resource_manager: object) -> OnlineFlashServices:
     """Build lazy production services without enumerating USB or accessing the network."""
-    from mklink.cmsis_dap.backend import PyOcdBackend
+    from mklink.cmsis_dap.backend import RoutingFlashBackend
     from mklink.cmsis_dap.custom_flm import CustomFlmCatalog
     from mklink.cmsis_dap.images import ImageInspector
     from mklink.cmsis_dap.jobs import OnlineFlashJobManager
@@ -91,7 +92,7 @@ def create_default_online_flash_services(resource_manager: object) -> OnlineFlas
         pack_manager=PackManager(paths.root),
         image_inspector=inspector,
         job_manager=OnlineFlashJobManager(
-            PyOcdBackend,
+            RoutingFlashBackend,
             resource_manager,
             inspector.validate_unchanged,
         ),
@@ -143,6 +144,8 @@ class JobBody(BaseModel):
     reset_mode: str = "default"
     base_address: Optional[int] = None
     sector_addresses: List[int] = Field(default_factory=list)
+    board: Optional[str] = None
+    hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
 
 
 def _redact_paths(value: str) -> str:
@@ -282,6 +285,148 @@ async def _blocking(function: Callable[..., Any], *args: object, **kwargs: objec
         _raise_http(error)
 
 
+def _pack_stream_requested(request: Request) -> bool:
+    return "application/x-ndjson" in request.headers.get("accept", "").casefold()
+
+
+def _pack_stream_error(error: BaseException) -> Dict[str, object]:
+    if isinstance(error, HTTPException):
+        return {
+            "type": "error",
+            "status": error.status_code,
+            "detail": _json_primitive(error.detail, hide_paths=True),
+        }
+    if isinstance(error, FlashError):
+        return {
+            "type": "error",
+            "status": _flash_status(error.code),
+            "detail": _json_primitive(error.to_dict(), hide_paths=True),
+        }
+    if isinstance(error, (ValueError, TypeError)):
+        return {
+            "type": "error",
+            "status": 422,
+            "detail": {
+                "code": "VALIDATION_ERROR",
+                "message": _redact_paths(str(error)),
+            },
+        }
+    return {
+        "type": "error",
+        "status": 500,
+        "detail": {
+            "code": FlashErrorCode.UNKNOWN_ERROR.value,
+            "message": "online flash operation failed",
+        },
+    }
+
+
+def _put_latest_pack_event(queue: asyncio.Queue, message: Dict[str, object]) -> None:
+    if queue.full():
+        if any(
+            isinstance(item, Mapping) and item.get("type") in ("result", "error")
+            for item in queue._queue
+        ):
+            return
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    queue.put_nowait(message)
+
+
+def _pack_stream_response(
+    services: OnlineFlashServices,
+    operation: Callable[[Callable[[Dict[str, object]], None]], object],
+    *,
+    refresh_catalog: bool = False,
+    cleanup: Optional[Callable[[], None]] = None,
+) -> StreamingResponse:
+    async def stream():
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue(maxsize=32)  # type: asyncio.Queue
+        progress_high_water = 0.01
+
+        def emit(raw_event: Dict[str, object]) -> None:
+            nonlocal progress_high_water
+            event = dict(raw_event)
+            if event.get("type") == "progress":
+                raw_progress = event.get("progress")
+                if isinstance(raw_progress, (int, float)) and not isinstance(raw_progress, bool):
+                    fraction = float(raw_progress)
+                else:
+                    current = event.get("current")
+                    total = event.get("total")
+                    fraction = (
+                        float(current) / float(total)
+                        if isinstance(current, (int, float))
+                        and not isinstance(current, bool)
+                        and isinstance(total, (int, float))
+                        and not isinstance(total, bool)
+                        and float(total) > 0
+                        else 0.0
+                    )
+                progress_high_water = max(
+                    progress_high_water,
+                    min(0.90, 0.05 + max(0.0, min(1.0, fraction)) * 0.85),
+                )
+                event["phase"] = "downloading"
+                event["progress"] = progress_high_water
+            message = {"type": "event", "event": _json_primitive(event, hide_paths=True)}
+
+            loop.call_soon_threadsafe(_put_latest_pack_event, queue, message)
+
+        async def run_operation() -> None:
+            try:
+                result = await run_in_threadpool(operation, emit)
+                if refresh_catalog:
+                    await queue.put({
+                        "type": "event",
+                        "event": {
+                            "type": "progress",
+                            "phase": "refreshing",
+                            "progress": 0.95,
+                        },
+                    })
+                    refresh = getattr(services.catalog, "refresh", None)
+                    if callable(refresh):
+                        await run_in_threadpool(refresh)
+                await queue.put({
+                    "type": "result",
+                    "result": _json_primitive(result, hide_paths=True),
+                })
+            except BaseException as error:
+                await queue.put(_pack_stream_error(error))
+
+        task = asyncio.create_task(run_operation())
+        try:
+            initial = {
+                "type": "event",
+                "event": {"type": "progress", "phase": "preparing", "progress": 0.01},
+            }
+            yield json.dumps(initial, separators=(",", ":")) + "\n"
+            while True:
+                message = await queue.get()
+                yield json.dumps(message, separators=(",", ":")) + "\n"
+                if message.get("type") in ("result", "error"):
+                    break
+            await task
+        finally:
+            if not task.done():
+                try:
+                    await run_in_threadpool(services.pack_manager.cancel)
+                except Exception:
+                    pass
+                task.cancel()
+            if cleanup is not None:
+                try:
+                    await run_in_threadpool(cleanup)
+                except Exception:
+                    pass
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
 def update_pack_index(
     manager: object,
     on_event: Callable[[Dict[str, object]], None],
@@ -418,6 +563,19 @@ def _exact_installed_target(catalog: object, part_number: str) -> TargetRecord:
     return exact[0]
 
 
+def _resolved_target(catalog: object, part_number: str) -> TargetRecord:
+    from mklink.hpm_config import is_hpm_target
+
+    if is_hpm_target(part_number):
+        return TargetRecord(
+            part_number=part_number.strip(),
+            vendor="HPMicro",
+            installed=True,
+            source="hpm-rom-api",
+        )
+    return _exact_installed_target(catalog, part_number)
+
+
 def _custom_flm_payload(record: object) -> Dict[str, object]:
     return {
         "algorithm_id": str(getattr(record, "algorithm_id")),
@@ -434,19 +592,33 @@ def _target_flash_configuration(
     services: OnlineFlashServices,
     part_number: str,
 ) -> tuple[tuple[MemoryRegion, ...], tuple[str, ...], tuple[str, ...]]:
+    from mklink.hpm_config import is_hpm_target
+
+    if is_hpm_target(part_number):
+        return (
+            (MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),),
+            (),
+            (),
+        )
+    target = _exact_installed_target(services.catalog, part_number)
+    allow_builtin_override = target.source in ("bundle", "builtin")
     base_regions = tuple(services.target_memory_provider(part_number))
     if services.custom_flms is None:
         return base_regions, (), ()
     custom_regions = tuple(services.custom_flms.regions(part_number))
+    retained_base = list(base_regions)
     for index, region in enumerate(custom_regions):
-        for other in base_regions + custom_regions[:index]:
+        for other in tuple(retained_base) + custom_regions[:index]:
             if region.start < other.end and other.start < region.end:
+                if allow_builtin_override and other in retained_base:
+                    retained_base.remove(other)
+                    continue
                 raise FlashError(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "custom FLM range overlaps an existing flash algorithm",
                 )
     return (
-        base_regions + custom_regions,
+        tuple(retained_base) + custom_regions,
         tuple(services.custom_flms.fingerprint(part_number)),
         tuple(services.custom_flms.paths(part_number)),
     )
@@ -496,7 +668,11 @@ def _add_custom_flm_configuration(
                 "custom FLM configuration is in use by an online flash job",
             )
         target = _exact_installed_target(services.catalog, part_number)
-        existing = services.target_memory_provider(target.part_number)
+        existing = (
+            ()
+            if target.source in ("bundle", "builtin")
+            else services.target_memory_provider(target.part_number)
+        )
         return services.custom_flms.add(
             temporary,
             file_name,
@@ -525,6 +701,15 @@ def _start_job_with_configuration(
     target: TargetRecord,
 ) -> tuple[str, object]:
     with services.configuration_lock:
+        from mklink.hpm_config import is_hpm_target, normalize_hpm_configuration
+
+        hpm_target = is_hpm_target(target.part_number)
+        board = body.board
+        hpm_flash_cfg = body.hpm_flash_cfg
+        if hpm_target:
+            board, hpm_flash_cfg = normalize_hpm_configuration(
+                target.part_number, board=board, flash_cfg=hpm_flash_cfg
+            )
         regions, fingerprint, custom_flm_paths = _target_flash_configuration(
             services, target.part_number
         )
@@ -543,7 +728,7 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "image inspection does not match the selected target",
                 )
-        if "program" in body.actions:
+        if "program" in body.actions and not hpm_target:
             if "erase" not in body.actions:
                 raise FlashError(
                     FlashErrorCode.IMAGE_OUT_OF_RANGE,
@@ -578,6 +763,8 @@ def _start_job_with_configuration(
             reset_mode=body.reset_mode,
             base_address=body.base_address,
             sector_addresses=tuple(body.sector_addresses),
+            board=board,
+            hpm_flash_cfg=hpm_flash_cfg,
         )
         job_id = services.job_manager.start(job_request)
         return job_id, services.job_manager.get(job_id)
@@ -607,7 +794,12 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return _json_primitive(status)
 
     @router.post("/packs/index/update")
-    async def pack_index_update() -> object:
+    async def pack_index_update(request: Request) -> object:
+        if _pack_stream_requested(request):
+            return _pack_stream_response(
+                services,
+                lambda on_event: _refresh_pack_index(services, on_event),
+            )
         events: List[Dict[str, object]] = []
         result = await _blocking(
             _refresh_pack_index,
@@ -620,7 +812,23 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         }
 
     @router.post("/packs/install")
-    async def pack_install(body: PackInstallBody) -> object:
+    async def pack_install(request: Request, body: PackInstallBody) -> object:
+        from mklink.hpm_config import is_hpm_target
+
+        if is_hpm_target(body.part_number):
+            return {
+                "result": {"status": "installed", "part_number": body.part_number},
+                "events": [{"type": "log", "message": "HPM 使用内置 ROM API，无需 Pack"}],
+            }
+        if _pack_stream_requested(request):
+            return _pack_stream_response(
+                services,
+                lambda on_event: services.pack_manager.install(
+                    body.part_number,
+                    on_event,
+                ),
+                refresh_catalog=True,
+            )
         events: List[Dict[str, object]] = []
         result = await _blocking(
             services.pack_manager.install,
@@ -633,12 +841,26 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         }
 
     @router.post("/packs/import")
-    async def pack_import(file: UploadFile = File(...)) -> object:
+    async def pack_import(request: Request, file: UploadFile = File(...)) -> object:
         temporary = None  # type: Optional[Path]
+        stream_handoff = False
         try:
             temporary, _digest, _size = await _blocking(
                 _stream_upload, file, services.paths, (".pack",), services.upload_limit
             )
+            if _pack_stream_requested(request):
+                await file.close()
+                stream_handoff = True
+                source = temporary
+                return _pack_stream_response(
+                    services,
+                    lambda on_event: services.pack_manager.import_pack(
+                        source,
+                        on_event,
+                    ),
+                    refresh_catalog=True,
+                    cleanup=lambda: _unlink(source),
+                )
             events: List[Dict[str, object]] = []
             result = await _blocking(
                 services.pack_manager.import_pack,
@@ -650,8 +872,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 "events": _json_primitive(events, hide_paths=True),
             }
         finally:
-            await run_in_threadpool(_unlink, temporary)
-            await file.close()
+            if not stream_handoff:
+                await run_in_threadpool(_unlink, temporary)
+                await file.close()
 
     @router.post("/packs/cancel")
     async def pack_cancel() -> object:
@@ -674,6 +897,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
 
     @router.get("/algorithms")
     async def custom_flm_list(part_number: str) -> object:
+        from mklink.hpm_config import is_hpm_target
+
+        if is_hpm_target(part_number):
+            return []
         if services.custom_flms is None:
             return []
         records = await _blocking(services.custom_flms.list, part_number)
@@ -684,6 +911,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         file: UploadFile = File(...),
         part_number: str = Form(...),
     ) -> object:
+        from mklink.hpm_config import is_hpm_target
+
+        if is_hpm_target(part_number):
+            _raise_http(FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "HPM targets use the ROM API and cannot load FLM algorithms",
+            ))
         if services.custom_flms is None:
             raise HTTPException(status_code=503, detail="custom FLM storage is unavailable")
         if await _blocking(_pack_in_use, services.job_manager):
@@ -714,6 +948,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
 
     @router.delete("/algorithms/{algorithm_id}")
     async def custom_flm_remove(algorithm_id: str, part_number: str) -> object:
+        from mklink.hpm_config import is_hpm_target
+
+        if is_hpm_target(part_number):
+            _raise_http(FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "HPM targets use the ROM API and cannot load FLM algorithms",
+            ))
         if services.custom_flms is None:
             raise HTTPException(status_code=503, detail="custom FLM storage is unavailable")
         if await _blocking(_pack_in_use, services.job_manager):
@@ -737,7 +978,14 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     ) -> object:
         temporary = None  # type: Optional[Path]
         try:
-            target = await _blocking(_exact_installed_target, services.catalog, part_number)
+            from mklink.hpm_config import is_hpm_target
+
+            target = await _blocking(_resolved_target, services.catalog, part_number)
+            if is_hpm_target(target.part_number) and not str(file.filename or "").casefold().endswith(".bin"):
+                _raise_http(FlashError(
+                    FlashErrorCode.FILE_FORMAT_ERROR,
+                    "HPM ROM API only supports BIN firmware",
+                ))
             regions, fingerprint, _paths = await _blocking(
                 _target_flash_configuration, services, target.part_number
             )
@@ -751,11 +999,16 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 regions,
                 base_address=parsed_base,
             )
-            coverage = await _blocking(
-                services.image_inspector.covered_sectors,
-                inspection.image_id,
-                regions,
-            )
+            if is_hpm_target(target.part_number):
+                from mklink.cmsis_dap.images import SectorCoverage
+
+                coverage = SectorCoverage((), False)
+            else:
+                coverage = await _blocking(
+                    services.image_inspector.covered_sectors,
+                    inspection.image_id,
+                    regions,
+                )
             services.image_targets[inspection.image_id] = (
                 target.part_number.casefold(), fingerprint
             )
@@ -788,7 +1041,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         if not body.probe_id or not body.target_part:
             raise HTTPException(status_code=422, detail="probe_id and target_part are required")
         await _blocking(_selected_probe, services.probe_provider, body.probe_id)
-        target = await _blocking(_exact_installed_target, services.catalog, body.target_part)
+        target = await _blocking(_resolved_target, services.catalog, body.target_part)
         job_id, snapshot = await _blocking(
             _start_job_with_configuration,
             services,

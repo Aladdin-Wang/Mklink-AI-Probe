@@ -232,11 +232,20 @@ class OnlineFlashJobManager:
                     raise primary_error
 
                 acquire_attempted = True
-                self._resource_manager.acquire(
-                    ResourceGroup.TARGET_DEBUG,
-                    owner,
-                    preempt=job.request.preempt_ai,
-                )
+                from mklink.hpm_config import is_hpm_target
+
+                resources = [ResourceGroup.TARGET_DEBUG]
+                if is_hpm_target(job.request.target_part):
+                    resources.append(ResourceGroup.MKLINK_BRIDGE)
+                    self._resource_manager.acquire_many(
+                        resources, owner, preempt=job.request.preempt_ai
+                    )
+                else:
+                    self._resource_manager.acquire(
+                        ResourceGroup.TARGET_DEBUG,
+                        owner,
+                        preempt=job.request.preempt_ai,
+                    )
                 with self._condition:
                     cancelled_after_acquire = job.cancel_requested
 
@@ -253,7 +262,7 @@ class OnlineFlashJobManager:
                         try:
                             if action == "connect":
                                 connection_may_be_open = True
-                                backend.connect(
+                                connect_options = dict(
                                     probe=job.request.probe_id,
                                     target=job.request.target_part,
                                     frequency=job.request.frequency,
@@ -263,6 +272,12 @@ class OnlineFlashJobManager:
                                     connect_mode=job.request.connect_mode,
                                     reset_mode=job.request.reset_mode,
                                 )
+                                if is_hpm_target(job.request.target_part):
+                                    connect_options.update(
+                                        board=job.request.board,
+                                        hpm_flash_cfg=job.request.hpm_flash_cfg,
+                                    )
+                                backend.connect(**connect_options)
                             elif action == "erase":
                                 if job.request.sector_addresses:
                                     backend.erase_sectors(job.request.sector_addresses)

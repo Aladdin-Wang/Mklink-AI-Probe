@@ -685,6 +685,18 @@ def create_app(
         if mcu_key is not None:
             config["mcu_key"] = mcu_key
         if swd_clock is not None:
+            try:
+                parsed_swd_clock = int(swd_clock, 0)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
+                )
+            if parsed_swd_clock < 1 or parsed_swd_clock > 10_000_000:
+                raise HTTPException(
+                    status_code=422,
+                    detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
+                )
             config["swd_clock"] = swd_clock
         save_config(_state["project_root"], config)
         return config

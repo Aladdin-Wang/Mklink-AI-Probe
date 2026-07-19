@@ -9,6 +9,7 @@ import type {
   JobStreamEvent,
   JobSubscription,
   PackCancelResult,
+  PackEvent,
   PackOperationResponse,
   PackRemoveResult,
   PackStatus,
@@ -111,6 +112,76 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function packOperationRequest(
+  path: string,
+  options: RequestInit,
+  onEvent?: (event: PackEvent) => void,
+): Promise<PackOperationResponse> {
+  const isMultipart = options.body instanceof FormData
+  const headers = new Headers(options.headers)
+  headers.set('Accept', 'application/x-ndjson')
+  if (!isMultipart && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${API_BASE}${ONLINE_FLASH_BASE}${path}`, { ...options, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new OnlineFlashApiError(response.status, response.statusText, payload)
+  }
+
+  if (!response.headers.get('Content-Type')?.toLowerCase().includes('application/x-ndjson')) {
+    const legacy = await response.json() as PackOperationResponse
+    for (const event of legacy.events || []) onEvent?.(event)
+    return legacy
+  }
+  if (!response.body) throw new Error('Pack 操作未返回进度数据流')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const events: PackEvent[] = []
+  let result: PackOperationResponse['result'] | null = null
+  let buffer = ''
+
+  const consume = (line: string) => {
+    if (!line.trim()) return
+    const message = JSON.parse(line) as Record<string, unknown>
+    if (message.type === 'event' && isRecord(message.event)) {
+      const event = message.event as unknown as PackEvent
+      if (events.length >= 128) events.shift()
+      events.push(event)
+      onEvent?.(event)
+      return
+    }
+    if (message.type === 'result' && isRecord(message.result)) {
+      result = message.result as unknown as PackOperationResponse['result']
+      return
+    }
+    if (message.type === 'error') {
+      const status = typeof message.status === 'number' ? message.status : 500
+      throw new OnlineFlashApiError(status, `HTTP ${status}`, { detail: message.detail })
+    }
+    throw new Error('Pack 操作返回了无效的进度消息')
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      let newline = buffer.indexOf('\n')
+      while (newline >= 0) {
+        consume(buffer.slice(0, newline))
+        buffer = buffer.slice(newline + 1)
+        newline = buffer.indexOf('\n')
+      }
+      if (done) break
+    }
+    consume(buffer)
+  } catch (error) {
+    await reader.cancel().catch(() => undefined)
+    throw error
+  }
+  if (result === null) throw new Error('Pack 操作在返回结果前中断')
+  return { result, events }
+}
+
 function encoded(value: string): string {
   return encodeURIComponent(value)
 }
@@ -132,21 +203,21 @@ export function useOnlineFlashApi() {
     return request('/packs/status')
   }
 
-  function updatePackIndex(): Promise<PackOperationResponse> {
-    return request('/packs/index/update', { method: 'POST' })
+  function updatePackIndex(onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
+    return packOperationRequest('/packs/index/update', { method: 'POST' }, onEvent)
   }
 
-  function installPack(partNumber: string): Promise<PackOperationResponse> {
-    return request('/packs/install', {
+  function installPack(partNumber: string, onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
+    return packOperationRequest('/packs/install', {
       method: 'POST',
       body: JSON.stringify({ part_number: partNumber }),
-    })
+    }, onEvent)
   }
 
-  function importPack(file: File): Promise<PackOperationResponse> {
+  function importPack(file: File, onEvent?: (event: PackEvent) => void): Promise<PackOperationResponse> {
     const body = new FormData()
     body.append('file', file)
-    return request('/packs/import', { method: 'POST', body })
+    return packOperationRequest('/packs/import', { method: 'POST', body }, onEvent)
   }
 
   function cancelPackOperation(): Promise<PackCancelResult> {

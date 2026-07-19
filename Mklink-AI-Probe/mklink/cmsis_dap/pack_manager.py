@@ -86,6 +86,21 @@ def _canonical_pack_path(
     return _resolved_child(candidate, resolved_data, "canonical pack path")
 
 
+def resolve_managed_pack_path(paths: PackPaths, value: object) -> Optional[Path]:
+    """Resolve a state-file Pack path only when it stays under managed data."""
+    if not isinstance(value, str):
+        return None
+    try:
+        candidate = _resolved_child(
+            Path(value), paths.data_dir, "installed pack path"
+        )
+    except (FlashError, OSError, RuntimeError, ValueError):
+        return None
+    if candidate.suffix.casefold() != ".pack" or not candidate.is_file():
+        return None
+    return candidate
+
+
 class SubprocessPackWorker:
     """Run the network-facing pack operations behind a JSON-lines boundary."""
 

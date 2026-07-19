@@ -155,6 +155,19 @@ describe('ConfigView', () => {
     expect(wrapper.get('[data-testid="disconnect-local"]').attributes('disabled')).toBeDefined()
   })
 
+  it('rejects local SWD clock settings above 10 MHz', async () => {
+    const wrapper = await mountView()
+    const input = wrapper.get('[data-testid="swd-clock"]')
+    expect(input.attributes('max')).toBe('10000000')
+
+    await input.setValue('10000001')
+    await wrapper.get('[data-testid="save-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.updateConfig).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('10 MHz'))
+  })
+
   it('restores, browses, and saves independently editable AXF/ELF and MAP paths', async () => {
     const wrapper = await mountView()
     await wrapper.get('[data-testid="config-section-files"]').trigger('click')

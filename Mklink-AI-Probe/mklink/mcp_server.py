@@ -271,6 +271,10 @@ def _register_flash_tools(mcp: Any) -> None:
     @mcp.tool()
     def flash(
         firmware: str,
+        target_part: str | None = None,
+        base_address: int | None = None,
+        board: str | None = None,
+        hpm_flash_cfg: list[str] | None = None,
         verify: bool = True,
         reset_after: bool = True,
     ) -> dict:
@@ -282,12 +286,29 @@ def _register_flash_tools(mcp: Any) -> None:
 
         Args:
             firmware: Path to .hex or .bin file.
+            target_part: Exact MCU part number. When supplied, the shared
+                user-Pack/builtin-Pack/custom-FLM catalog is used without
+                requiring Keil on the host. HPMicro targets instead use the
+                device-side HPM ROM API and never load an FLM.
+            base_address: Required BIN load address when unavailable from
+                project configuration. HPM SDK images commonly use 0x80000400.
+            board: Optional HPM board name such as hpm5301evklite.
+            hpm_flash_cfg: Optional four-word HPM flash configuration used
+                when no board name is supplied.
             verify: Read back and compare after programming (default True).
             reset_after: Reset the target to entry point after flash (default
                 True). Set False to keep the CPU halted for inspection.
         """
         dev = _connected_device()
-        return dev.flash(firmware, verify=verify, reset_after=reset_after)
+        return dev.flash(
+            firmware,
+            target_part=target_part,
+            base_address=base_address,
+            board=board,
+            hpm_flash_cfg=hpm_flash_cfg,
+            verify=verify,
+            reset_after=reset_after,
+        )
 
     @mcp.tool()
     def erase_chip() -> dict:

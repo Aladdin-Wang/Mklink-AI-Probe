@@ -8,7 +8,7 @@ import re
 import threading
 from pathlib import Path
 from types import MethodType
-from typing import Any, Callable, Iterator, Optional, Tuple
+from typing import Any, Callable, Iterator, Mapping, Optional, Tuple
 
 from .errors import FlashError, FlashErrorCode
 from .models import ImageInspection, MemoryRegion
@@ -63,14 +63,17 @@ def _install_custom_flm_regions(target: Any, payloads: Tuple[bytes, ...]) -> Non
         _enable_custom_flm_verify(algorithm)
         start = int(algorithm.flash_start)
         end = start + int(algorithm.flash_size)
-        for region in existing:
+        for region in list(existing):
             region_start = int(region.start)
             region_end = region_start + int(region.length)
             if start < region_end and region_start < end:
-                raise FlashError(
-                    FlashErrorCode.TARGET_NOT_SUPPORTED,
-                    "custom FLM range overlaps an existing flash algorithm",
-                )
+                if str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
+                    raise FlashError(
+                        FlashErrorCode.TARGET_NOT_SUPPORTED,
+                        "custom FLM range overlaps another custom algorithm",
+                    )
+                target.memory_map.remove_region(region)
+                existing.remove(region)
         region = FlashRegion(
             name="mklink_custom_flm_{}".format(index),
             start=start,
@@ -105,6 +108,217 @@ def _enable_custom_flm_verify(algorithm: Any) -> None:
         return flash_algo
 
     algorithm.get_pyocd_flash_algo = MethodType(build_with_verify, algorithm)
+
+
+class HpmRomBackend:
+    """Program HPMicro XPI Flash through the MKLink device-side ROM API."""
+
+    def __init__(
+        self,
+        device_factory: Optional[Callable[..., Any]] = None,
+        port_resolver: Optional[Callable[[Any], Optional[str]]] = None,
+        *,
+        verify_chunk_size: int = 4096,
+    ) -> None:
+        if not isinstance(verify_chunk_size, int) or verify_chunk_size <= 0:
+            raise ValueError("verify_chunk_size must be a positive integer")
+        self._device_factory = device_factory
+        self._port_resolver = port_resolver
+        self._verify_chunk_size = verify_chunk_size
+        self._device: Any = None
+        self._target = ""
+        self._frequency = 1_000_000
+        self._board: Optional[str] = None
+        self._flash_cfg: Optional[Tuple[str, str, str, str]] = None
+        self._lock = threading.RLock()
+
+    def connect(
+        self,
+        probe: Any,
+        target: str,
+        frequency: int,
+        pack: Optional[str] = None,
+        custom_flm_paths: Tuple[str, ...] = (),
+        custom_flm_digests: Tuple[str, ...] = (),
+        connect_mode: str = "halt",
+        reset_mode: str = "default",
+        board: Optional[str] = None,
+        hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None,
+    ) -> None:
+        del pack, custom_flm_paths, custom_flm_digests, connect_mode, reset_mode
+        from mklink.hpm_config import (
+            is_hpm_target,
+            normalize_hpm_configuration,
+        )
+
+        if not is_hpm_target(target):
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "target is not an HPM device")
+        if not isinstance(frequency, int) or isinstance(frequency, bool) or not 1 <= frequency <= 10_000_000:
+            raise ValueError("frequency must be between 1 and 10000000 Hz")
+        resolved_board, resolved_cfg = normalize_hpm_configuration(
+            target, board=board, flash_cfg=hpm_flash_cfg
+        )
+        with self._lock:
+            self.disconnect()
+            resolver = self._port_resolver
+            if resolver is None:
+                from mklink.discovery import find_mklink_cdc_port
+
+                resolver = lambda identifier: find_mklink_cdc_port(serial_number=identifier)
+            port = resolver(probe)
+            if not port:
+                raise FlashError(
+                    FlashErrorCode.MKLINK_DAP_NOT_FOUND,
+                    "MKLink CDC bridge was not found for the selected probe",
+                )
+            factory = self._device_factory
+            if factory is None:
+                from mklink.device import connect
+
+                factory = connect
+            try:
+                self._device = factory(port=port)
+                self._target = str(target)
+                self._frequency = frequency
+                self._board = resolved_board
+                self._flash_cfg = resolved_cfg
+            except FlashError:
+                raise
+            except Exception as error:
+                raise FlashError(FlashErrorCode.CONNECT_FAIL, str(error)) from error
+
+    def disconnect(self) -> None:
+        with self._lock:
+            device, self._device = self._device, None
+            if device is not None:
+                try:
+                    device.close()
+                except Exception as error:
+                    raise FlashError(FlashErrorCode.CONNECT_FAIL, str(error)) from error
+
+    def erase_chip(self) -> None:
+        self._require_device()
+
+    def erase_sectors(self, addresses: Any) -> None:
+        del addresses
+        self._require_device()
+
+    def program(self, image: ImageInspection) -> None:
+        with self._lock:
+            device = self._require_device()
+            path, base = self._validated_bin(image)
+            try:
+                result = device.flash(
+                    str(path),
+                    target_part=self._target,
+                    base_address=base,
+                    board=self._board,
+                    hpm_flash_cfg=self._flash_cfg,
+                    swd_clock=self._frequency,
+                    verify=False,
+                    reset_after=False,
+                )
+                if not isinstance(result, Mapping) or result.get("success") is not True:
+                    raise FlashError(FlashErrorCode.PROGRAM_FAIL, "HPM ROM programming failed")
+            except FlashError:
+                raise
+            except Exception as error:
+                raise FlashError(FlashErrorCode.PROGRAM_FAIL, str(error)) from error
+
+    def verify(self, image: ImageInspection) -> None:
+        with self._lock:
+            device = self._require_device()
+            path, base = self._validated_bin(image)
+            try:
+                with path.open("rb") as stream:
+                    offset = 0
+                    while True:
+                        expected = stream.read(self._verify_chunk_size)
+                        if not expected:
+                            break
+                        actual = bytes(device.read_memory(base + offset, len(expected)))
+                        if actual != expected:
+                            mismatch = next(
+                                (index for index, pair in enumerate(zip(expected, actual)) if pair[0] != pair[1]),
+                                min(len(expected), len(actual)),
+                            )
+                            raise FlashError(
+                                FlashErrorCode.VERIFY_FAIL,
+                                "HPM Flash verification failed",
+                                {"address": base + offset + mismatch},
+                            )
+                        offset += len(expected)
+            except FlashError:
+                raise
+            except FileNotFoundError:
+                raise FlashError(FlashErrorCode.FILE_NOT_FOUND, "firmware snapshot file was not found") from None
+            except Exception as error:
+                raise FlashError(FlashErrorCode.VERIFY_FAIL, str(error)) from error
+
+    def reset_run(self, reset_mode: Optional[str] = None) -> None:
+        del reset_mode
+        try:
+            self._require_device().reset()
+        except FlashError:
+            raise
+        except Exception as error:
+            raise FlashError(FlashErrorCode.RESET_FAIL, str(error)) from error
+
+    def _require_device(self) -> Any:
+        if self._device is None:
+            raise FlashError(FlashErrorCode.CONNECT_FAIL, "HPM backend is not connected")
+        return self._device
+
+    @staticmethod
+    def _validated_bin(image: ImageInspection) -> Tuple[Path, int]:
+        if image.format.casefold() != "bin":
+            raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "HPM ROM API only supports BIN firmware")
+        path = Path(image.file_path)
+        if not path.is_file():
+            raise FlashError(FlashErrorCode.FILE_NOT_FOUND, "firmware snapshot file was not found")
+        if image.base_address is None:
+            raise FlashError(FlashErrorCode.BIN_ADDRESS_MISSING, "HPM BIN firmware requires a base address")
+        from mklink.hpm_config import normalize_hpm_address
+
+        base, _formatted = normalize_hpm_address(image.base_address)
+        return path, base
+
+
+class RoutingFlashBackend:
+    """Select the HPM ROM backend or pyOCD once per connection."""
+
+    def __init__(
+        self,
+        pyocd_factory: Optional[Callable[[], Any]] = None,
+        hpm_factory: Optional[Callable[[], Any]] = None,
+    ) -> None:
+        self._pyocd_factory = pyocd_factory or PyOcdBackend
+        self._hpm_factory = hpm_factory or HpmRomBackend
+        self._backend: Any = None
+
+    def connect(self, probe: Any, target: str, frequency: int, **kwargs: Any) -> None:
+        from mklink.hpm_config import is_hpm_target
+
+        self.disconnect()
+        if is_hpm_target(target):
+            backend = self._hpm_factory()
+        else:
+            backend = self._pyocd_factory()
+            kwargs.pop("board", None)
+            kwargs.pop("hpm_flash_cfg", None)
+        backend.connect(probe=probe, target=target, frequency=frequency, **kwargs)
+        self._backend = backend
+
+    def disconnect(self) -> None:
+        backend, self._backend = self._backend, None
+        if backend is not None:
+            backend.disconnect()
+
+    def __getattr__(self, name: str) -> Any:
+        backend = self._backend
+        if backend is None:
+            raise AttributeError(name)
+        return getattr(backend, name)
 
 
 class PyOcdBackend:

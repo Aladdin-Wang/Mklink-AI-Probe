@@ -85,6 +85,15 @@ def test_port_discovery_failure_returns_500_and_server_remains_healthy():
     assert health.json()["status"] == "ok"
 
 
+def test_config_api_rejects_swd_clock_above_10_mhz(tmp_path):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.put("/api/config", json={"swd_clock": "10000001"})
+
+    assert response.status_code == 422
+    assert "10 MHz" in response.json()["detail"]
+
+
 def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_path):
     source = tmp_path / "firmware.axf"
     result = SimpleNamespace(

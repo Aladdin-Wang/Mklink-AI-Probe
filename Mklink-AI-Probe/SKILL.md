@@ -36,7 +36,8 @@ description: |
 - Modbus 点表：先 `detect` 汇报并确认，再 `generate`
 - 执行具体操作前：**先 Read 下方路由表对应的 reference**，理解边界（如 flush-memory 分块、RTT 静态模式选型）
 - **符号/AXF 功能依赖 `arm-none-eabi-readelf`**（GNU Arm 工具链，**不内置**）：`load_symbols`/`read_variable`/`write_variable`/`memory_map`/`decode_hardfault` 源码行需它。**首调 `ping` 看 `readelf_available`**；缺失时 `connect(axf=)` 仍成功但返回 `axf_loaded:false` + `axf_error`（提示安装），引导用户 `winget install Arm.GnuArmEmbeddedToolchain` 或设 `MKLINK_READELF`/`.mklink/toolchain.json`。flash/RTT/内存/寄存器/断点/Modbus/串口**不**需要它。
-- **未知 MCU 禁止直接改 `custom` 兜底**：烧录前若项目 MCU 不在 `mcu_profiles.json`，先调用 MCP `detect_mcu_profile` 或 CLI `python -m mklink mcu-detect`。多内部 FLM 候选时把候选报给用户选择，再用 `flm`/`--flm` 固化；找不到本地 FLM/Pack 时停止并提示安装或解包 Keil/Arm Pack。
+- **未知 MCU 禁止直接改 `custom` 兜底**：烧录前若项目 MCU 不在 `mcu_profiles.json`，先调用 MCP `detect_mcu_profile` 或 CLI `python -m mklink mcu-detect`。多内部 FLM 候选时把候选报给用户选择，再用 `flm`/`--flm` 固化；找不到本地 FLM/Pack 时停止并提示安装或解包 Keil/Arm Pack。HPMicro 是明确例外，见下一条。
+- **HPMicro 禁止寻找或加载 FLM**：`HPM*` 型号使用探针设备端 HPM ROM API。MCP `flash` 传 `.bin`、精确 `target_part`、`base_address`，并传 `board`（推荐）或四字 `hpm_flash_cfg`；返回 `algorithm_source: "hpm-rom-api"`。在线、脱机和 CLI 都不得为 HPM 下载 Pack 或调用 `load.flm`。
 
 ## MCP tool 速查（52 tools，按能力域）
 

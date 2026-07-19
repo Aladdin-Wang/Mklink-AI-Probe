@@ -39,6 +39,34 @@ class FakeBackend:
         self.calls.append(("disconnect", None))
 
 
+def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
+    backend = BlockingBackend()
+    resources = ResourceManager()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        resources,
+        image_provider=lambda _image_id: inspected,
+    )
+    request = JobRequest(
+        actions=("connect", "program", "disconnect"),
+        image_id=inspected.image_id,
+        probe_id="probe",
+        target_part="HPM5300",
+        board="hpm5300evk",
+    )
+
+    job_id = manager.start(request)
+    assert backend.program_started.wait(2)
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is not None
+    assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None
+    backend.allow_program.set()
+    assert manager.wait(job_id, timeout=2).state is JobState.SUCCEEDED
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+    assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is None
+    manager.shutdown()
+
+
 class BlockingBackend(FakeBackend):
     def __init__(self):
         super().__init__()
@@ -206,8 +234,8 @@ def test_full_job_releases_resource_and_records_snapshot():
         actions=("connect", "erase", "program", "verify", "reset", "disconnect"),
         image_id=inspected.image_id,
         probe_id="probe-1",
-        target_part="HPM5301",
-        pack_path="/packs/HPM5301.pack",
+        target_part="STM32F103RC",
+        pack_path="/packs/STM32F103RC.pack",
         frequency=2_000_000,
         connect_mode="under-reset",
         reset_mode="hw",
@@ -228,9 +256,9 @@ def test_full_job_releases_resource_and_records_snapshot():
     ]
     assert backend.calls[0][1] == {
         "probe": "probe-1",
-        "target": "HPM5301",
+        "target": "STM32F103RC",
         "frequency": 2_000_000,
-        "pack": "/packs/HPM5301.pack",
+        "pack": "/packs/STM32F103RC.pack",
         "custom_flm_paths": (),
         "custom_flm_digests": (),
         "connect_mode": "under-reset",

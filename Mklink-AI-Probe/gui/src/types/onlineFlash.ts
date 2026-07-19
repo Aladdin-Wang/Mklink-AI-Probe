@@ -77,6 +77,8 @@ export interface JobRequest {
   reset_mode?: string
   base_address?: number | null
   sector_addresses?: number[]
+  board?: string | null
+  hpm_flash_cfg?: [string, string, string, string] | null
 }
 
 export type JobState =
@@ -139,12 +141,15 @@ export type JobStreamEvent = JobEvent | JobStreamError
 export interface PackFractionProgressEvent {
   type: 'progress'
   progress: number
+  phase?: 'preparing' | 'downloading' | 'refreshing'
 }
 
 export interface PackCountProgressEvent {
   type: 'progress'
   current: number
   total: number
+  progress?: number
+  phase?: 'preparing' | 'downloading' | 'refreshing'
 }
 
 export type PackProgressEvent = PackFractionProgressEvent | PackCountProgressEvent

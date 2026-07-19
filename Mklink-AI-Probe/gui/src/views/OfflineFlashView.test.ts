@@ -108,4 +108,35 @@ describe('OfflineFlashView', () => {
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('factory-download.py'))
     expect(offlineMocks.trigger).toHaveBeenCalledOnce()
   })
+
+  it('configures HPM BIN download without Pack or FLM algorithms', async () => {
+    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'HPM5301xEGx', vendor: 'HPMicro', pack_id: null,
+      pack_version: null, installed: true, source: 'builtin',
+    }])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[type="file"][multiple]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['bin'], 'app.bin')],
+    })
+    await input.trigger('change')
+    await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+    await flushPromises()
+
+    expect(onlineMocks.installPack).not.toHaveBeenCalled()
+    expect(offlineMocks.listAlgorithms).not.toHaveBeenCalled()
+    expect(offlineMocks.deploy).toHaveBeenCalledOnce()
+    const payload = offlineMocks.deploy.mock.calls[0][0]
+    expect(payload.target_part).toBe('HPM5301xEGx')
+    expect(payload.board).toBe('hpm5301evklite')
+    expect(payload.algorithms).toEqual([])
+    expect(payload.firmwares[0].algorithm_id).toBe('')
+    expect(payload.firmwares[0].base_address).toBe('0x80000400')
+  })
 })

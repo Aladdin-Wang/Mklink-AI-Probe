@@ -57,6 +57,10 @@ function startHealthPolling(intervalMs = 5000) {
   pollTimer = setInterval(async () => {
     fastPolls++
     await refreshHealth()
+    if (fastPolls >= maxFastPolls && backendState.value === 'starting') {
+      backendState.value = 'dead'
+      firstCheckDone = true
+    }
     // Switch to slower interval after first success or after max fast polls
     if ((backendState.value === 'alive' || fastPolls >= maxFastPolls) && pollTimer) {
       clearInterval(pollTimer)
@@ -73,13 +77,14 @@ function stopHealthPolling() {
 }
 
 async function restart(): Promise<void> {
-  if (!isTauri) return
   backendState.value = 'starting'
   firstCheckDone = false
-  try {
-    await (window as any).__TAURI__.invoke('restart_sidecar')
-  } catch (e) {
-    console.error('[useBackendHealth] restart failed:', e)
+  if (isTauri) {
+    try {
+      await (window as any).__TAURI__.invoke('restart_sidecar')
+    } catch (e) {
+      console.error('[useBackendHealth] restart failed:', e)
+    }
   }
   // Wait for backend to come back up (up to 15s)
   for (let i = 0; i < 30; i++) {

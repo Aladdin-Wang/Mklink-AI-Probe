@@ -1,8 +1,11 @@
 from pathlib import Path
 
-from mklink.flash import MKLinkFlash, burn_hex_file, parse_hpm_program_result
+import pytest
+
+from mklink.flash import FlashError, MKLinkFlash, burn_hex_file, parse_hpm_program_result
 from mklink.hpm_config import HPM_BOARD_FLASH_CFG
 from mklink.project_config import save_config, save_project_info
+from intelhex import IntelHex
 
 
 def test_hpm_program_requires_loaded_successfully_or_100_percent():
@@ -12,7 +15,6 @@ def test_hpm_program_requires_loaded_successfully_or_100_percent():
         " demo.bin loaded successfully.\n"
         "0\n"
     )["success"]
-
     assert parse_hpm_program_result(
         'hpm.program("demo.bin",0x80000400)\n'
         "Download:  96% ,used 2127 ms\n"
@@ -33,6 +35,13 @@ def test_hpm_program_requires_loaded_successfully_or_100_percent():
         "Download:  96% ,used 2127 ms\n"
         "0\n"
     )["success"]
+
+
+def test_mklink_flash_rejects_swd_clock_above_10_mhz():
+    flash = MKLinkFlash(type("Bridge", (), {"send_command": lambda *_args, **_kwargs: "0"})())
+
+    with pytest.raises(FlashError, match="10MHz"):
+        flash.set_swd_clock(10_000_001)
 
 
 class _FakeBridge:
@@ -90,6 +99,33 @@ def test_hpm_burn_bin_does_not_treat_plain_zero_as_success(tmp_path: Path):
     assert result["download_100_percent"] is False
 
 
+@pytest.mark.parametrize(
+    ("board", "flash_cfg", "addr"),
+    [
+        ('hpm5300evk\");hpm.program("evil.bin",0)', None, "0x80000400"),
+        ("hpm5300evk", ("0xfcf90002U", "0x5U", "0x1000U", "0xf3000000U);evil()"), "0x80000400"),
+        ("hpm5300evk", None, "0x80000400);evil()"),
+    ],
+)
+def test_hpm_burn_bin_rejects_script_injection(
+    tmp_path: Path, board, flash_cfg, addr
+):
+    firmware = tmp_path / "demo.bin"
+    firmware.write_bytes(b"demo")
+    commands = []
+    flash = MKLinkFlash(type("Bridge", (), {
+        "send_command": lambda _self, command, **_kwargs: commands.append(command) or "0"
+    })())
+    flash._copy_to_microkeen = lambda *_args, **_kwargs: "demo.bin"
+
+    with pytest.raises((FlashError, ValueError)):
+        flash.burn_hpm_bin(
+            str(firmware), addr=addr, board=board, flash_cfg=flash_cfg
+        )
+
+    assert commands == []
+
+
 def test_hpm_flash_does_not_require_mcu_profile(tmp_path: Path, monkeypatch):
     bin_file = tmp_path / "demo.bin"
     bin_file.write_bytes(b"demo")
@@ -130,6 +166,7 @@ def test_hpm_flash_does_not_require_mcu_profile(tmp_path: Path, monkeypatch):
     result = burn_hex_file(project_root=str(tmp_path))
 
     assert result["success"] is True
+    assert result["algorithm_source"] == "hpm-rom-api"
     assert ("hpm", "demo.bin", "0x80000400", "hpm6e00evk") in calls
 
 
@@ -183,5 +220,62 @@ def test_hpm_custom_mcu_burn_hex_file_routes_to_hpm_program(tmp_path: Path, monk
     result = burn_hex_file(project_root=str(tmp_path))
 
     assert result["success"] is True
+    assert result["algorithm_source"] == "hpm-rom-api"
     assert ("hpm", "demo.bin", "0x80000400", "hpm5301evklite", HPM_BOARD_FLASH_CFG["hpm5301evklite"]) in calls
     assert calls[-1] == ("close",)
+
+
+def test_cli_flash_uses_builtin_catalog_algorithm_without_keil(tmp_path: Path, monkeypatch):
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+
+    firmware = tmp_path / "external.hex"
+    image = IntelHex()
+    image.puts(0x90000000, b"external")
+    image.write_hex_file(str(firmware))
+    save_config(str(tmp_path), {"mcu_key": "custom", "swd_clock": 10_000_000})
+    save_project_info(str(tmp_path), {
+        "device": "DEVICE_A",
+        "hex_path": str(firmware),
+        "flash_base": "0x90000000",
+    })
+    algorithm = FlashAlgorithm(
+        algorithm_id="a" * 64,
+        target_part="DEVICE_A",
+        file_name="External.FLM",
+        flash_start=0x90000000,
+        flash_size=0x800000,
+        ram_start=0x20001000,
+        ram_size=0x10000,
+        default=False,
+        source_kind="builtin-pack",
+        source_name="Vendor.Pack@1",
+        source_token="catalog:bundle:Vendor.Pack:1:DEVICE_A:0",
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda part_number: [algorithm] if part_number == "DEVICE_A" else [],
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.deploy_algorithm_to_probe",
+        lambda selected: "/FLM/External_hash.flm",
+    )
+    calls = []
+
+    class FakeFlash:
+        def set_swd_clock(self, value): calls.append(("clock", value))
+        def get_idcode(self): return 1
+        def load_flm(self, path, flash_base, ram_base):
+            calls.append(("flm", path, flash_base, ram_base))
+            return True
+        def burn_hex(self, path, progress_callback=None):
+            calls.append(("hex", Path(path).name))
+            return {"success": True}
+        def beep(self): pass
+        def close(self): pass
+
+    monkeypatch.setattr(MKLinkFlash, "connect", staticmethod(lambda port=None: FakeFlash()))
+
+    result = burn_hex_file(project_root=str(tmp_path))
+
+    assert result["algorithm_source"] == "builtin-pack"
+    assert ("flm", "/FLM/External_hash.flm", "0x90000000", "0x20001000") in calls

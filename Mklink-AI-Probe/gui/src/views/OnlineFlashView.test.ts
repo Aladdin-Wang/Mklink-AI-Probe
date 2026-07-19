@@ -1,12 +1,13 @@
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import App from '../App.vue'
 import router from '../router'
 import type { JobAction, JobRequest, PackOperationResponse } from '../types/onlineFlash'
 import DashboardView from './DashboardView.vue'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
+import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
 import actionBarSource from '../components/online-flash/FlashActionBar.vue?raw'
 import logPanelSource from '../components/online-flash/FlashLogPanel.vue?raw'
 import firmwareWorkspaceSource from '../components/online-flash/FirmwareWorkspace.vue?raw'
@@ -42,7 +43,11 @@ vi.mock('../composables/useMklinkApi', () => ({
 }))
 
 vi.mock('../composables/useBackendHealth', () => ({
-  useBackendHealth: () => ({ startHealthPolling: vi.fn(), stopHealthPolling: vi.fn() }),
+  useBackendHealth: () => ({
+    backendState: ref('alive'),
+    startHealthPolling: vi.fn(),
+    stopHealthPolling: vi.fn(),
+  }),
 }))
 
 vi.mock('../composables/useToast', () => ({
@@ -243,6 +248,19 @@ describe('useOnlineFlashApi', () => {
     expect(source.default).toContain(':disabled="busy || algorithmBusy"')
   })
 
+  it('marks HPM targets as ROM API devices without custom FLM controls', async () => {
+    const wrapper = mount(TargetPackPanel, { props: {
+      targets: [], selectedPart: 'HPM5300', status: null, busy: false,
+      cancelPending: false, progress: 0, phase: 'preparing', error: '',
+      algorithms: [], algorithmBusy: false, algorithmError: '',
+      canManageAlgorithms: false, algorithmNotRequired: true,
+    } })
+
+    expect(wrapper.text()).toContain('HPM ROM API')
+    expect(wrapper.find('[data-testid="custom-flm-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('forwards preview abort signals to fetch', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('{}', { status: 200 }))
     const controller = new AbortController()
@@ -351,6 +369,73 @@ describe('useOnlineFlashApi', () => {
     ])
   })
 
+  it('delivers streamed Pack progress before the operation result settles', async () => {
+    const encoder = new TextEncoder()
+    let finish!: () => void
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${JSON.stringify({
+          type: 'event',
+          event: { type: 'progress', progress: 0.25, phase: 'downloading' },
+        })}\n`))
+        finish = () => {
+          controller.enqueue(encoder.encode(`${JSON.stringify({
+            type: 'result',
+            result: { status: 'installed', pack_id: 'Keil.STM32F1xx_DFP', version: '2.4.1' },
+          })}\n`))
+          controller.close()
+        }
+      },
+    })
+    vi.mocked(fetch).mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    }))
+    const { useOnlineFlashApi } = await onlineFlashApiModule()
+    const events: unknown[] = []
+    let settled = false
+
+    const pending = useOnlineFlashApi().installPack('STM32F103RC', event => {
+      events.push(event)
+    }).finally(() => { settled = true })
+
+    await vi.waitFor(() => expect(events).toEqual([
+      { type: 'progress', progress: 0.25, phase: 'downloading' },
+    ]))
+    expect(settled).toBe(false)
+
+    finish()
+    await expect(pending).resolves.toMatchObject({
+      result: { status: 'installed', pack_id: 'Keil.STM32F1xx_DFP' },
+    })
+  })
+
+  it('bounds retained Pack event history while delivering every live callback', async () => {
+    const encoder = new TextEncoder()
+    const lines = Array.from({ length: 200 }, (_, index) => JSON.stringify({
+      type: 'event', event: { type: 'progress', progress: index / 199 },
+    }))
+    lines.push(JSON.stringify({
+      type: 'result', result: { status: 'updated', target_count: 1 },
+    }))
+    vi.mocked(fetch).mockResolvedValue(new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`${lines.join('\n')}\n`))
+          controller.close()
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } },
+    ))
+    const delivered: unknown[] = []
+
+    const response = await (await onlineFlashApi()).updatePackIndex(event => delivered.push(event))
+
+    expect(delivered).toHaveLength(200)
+    expect(response.events).toHaveLength(128)
+    expect(response.events[0]).toMatchObject({ progress: 72 / 199 })
+  })
+
   it('filters replayed sequences and closes synchronously after a terminal event', async () => {
     const onEvent = vi.fn()
     const subscription = (await onlineFlashApi()).subscribeJob('job/1', 12, onEvent)
@@ -431,8 +516,13 @@ const probeFixture = {
 }
 
 const installedTarget = {
-  part_number: 'HPM5300', vendor: 'HPMicro', pack_id: 'HPMicro.HPM_SDK',
+  part_number: 'DEVICE_A', vendor: 'Vendor', pack_id: 'Vendor.Device_DFP',
   pack_version: '1.0.0', installed: true, source: 'installed',
+}
+const regularTarget = installedTarget
+const hpmTarget = {
+  part_number: 'HPM5300', vendor: 'HPMicro', pack_id: null,
+  pack_version: null, installed: true, source: 'hpm-rom-api',
 }
 
 function viewFetch(targets = [installedTarget]) {
@@ -446,7 +536,7 @@ function viewFetch(targets = [installedTarget]) {
     if (url.includes('/algorithms?')) return json(algorithms)
     if (url.endsWith('/algorithms') && options?.method === 'POST') {
       const record = {
-        algorithm_id: 'external-1', target_part: 'HPM5300', file_name: 'external.flm',
+        algorithm_id: 'external-1', target_part: 'DEVICE_A', file_name: 'external.flm',
         flash_start: 0x90000000, flash_size: 0x800000, page_size: 0x1000,
         sector_sizes: [[0, 0x1000]],
       }
@@ -458,7 +548,7 @@ function viewFetch(targets = [installedTarget]) {
       events: [{ type: 'progress', progress: 1 }],
     })
     if (url.endsWith('/packs/import')) return json({
-      result: { status: 'installed', pack_id: 'HPMicro.HPM_SDK', version: '1.0.0' },
+      result: { status: 'installed', pack_id: 'Vendor.Device_DFP', version: '1.0.0' },
       events: [{ type: 'progress', progress: 1 }],
     })
     if (url.endsWith('/images/inspect')) return json({
@@ -475,7 +565,7 @@ function viewFetch(targets = [installedTarget]) {
       job_id: 'job-1',
       job: {
         job_id: 'job-1', state: 'queued', actions: ['program'], image_id: 'image-1',
-        created_at: 1, updated_at: 1, probe_id: 'mklink-1', target_part: 'HPM5300',
+        created_at: 1, updated_at: 1, probe_id: 'mklink-1', target_part: 'DEVICE_A',
         frequency: 1000000, connect_mode: 'halt', reset_mode: 'default', file_path: null,
         image_format: 'bin', image_start: 0x80000000, image_end: 0x80000020,
         image_size: 32, image_sha256: 'abc123', current_action: null, stage_progress: 0,
@@ -517,8 +607,8 @@ async function choosePack(wrapper: ReturnType<typeof mount>) {
 }
 
 async function readyAndStart(wrapper: ReturnType<typeof mount>) {
-  await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-  await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+  await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+  await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
   await chooseFirmware(wrapper)
   await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
   await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
@@ -555,7 +645,7 @@ describe('online flash task workspace behavior', () => {
     ).toBe(true))
 
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/targets?')).length).toBeGreaterThan(1)
-    expect(wrapper.text()).toContain('已导入 HPMicro.HPM_SDK@1.0.0')
+    expect(wrapper.text()).toContain('已导入 Vendor.Device_DFP@1.0.0')
     wrapper.unmount()
   })
 
@@ -580,9 +670,10 @@ describe('online flash task workspace behavior', () => {
   })
 
   it('adds and displays a target-scoped custom FLM', async () => {
+    vi.stubGlobal('fetch', viewFetch([regularTarget]))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
 
     await chooseCustomFlm(wrapper)
 
@@ -593,6 +684,37 @@ describe('online flash task workspace behavior', () => {
       String(url).endsWith('/algorithms') && options?.method === 'POST'
     ))
     expect(upload?.[1]?.body).toBeInstanceOf(FormData)
+    wrapper.unmount()
+  })
+
+  it('uses an HPM board and starts ROM programming without sector geometry', async () => {
+    const fallback = viewFetch([hpmTarget])
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/images/inspect')) {
+        return new Response(JSON.stringify({
+          image_id: 'hpm-image', file_name: 'firmware.bin', format: 'bin', size: 32,
+          sha256: 'abc123', start: 0x80000400, end: 0x80000420,
+          segments: [{ start: 0x80000400, end: 0x80000420 }], base_address: 0x80000400,
+          sector_operations_available: false, sectors: [],
+        }), { status: 200 })
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="hpm-board"]').element).toHaveProperty('value', 'hpm5300evk')
+    expect(wrapper.text()).toContain('内置 ROM API')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000400')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
+    const body = JSON.parse(String(call?.[1]?.body))
+    expect(body.board).toBe('hpm5300evk')
+    expect(body.sector_addresses).toEqual([])
     wrapper.unmount()
   })
 
@@ -658,8 +780,8 @@ describe('online flash task workspace behavior', () => {
     const fetchMock = viewFetch()
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
 
     await chooseFirmware(wrapper, 'firmware.hex')
 
@@ -673,8 +795,8 @@ describe('online flash task workspace behavior', () => {
     const fetchMock = viewFetch()
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
 
     await chooseFirmware(wrapper, 'firmware.bin')
     await new Promise(resolve => setTimeout(resolve, 250))
@@ -691,8 +813,8 @@ describe('online flash task workspace behavior', () => {
 
   it('rejects an invalid BIN base and keeps start disabled until server inspection succeeds', async () => {
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('80000000')
 
@@ -717,8 +839,8 @@ describe('online flash task workspace behavior', () => {
       return fallback(input, options)
     }))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
@@ -748,8 +870,8 @@ describe('online flash task workspace behavior', () => {
       return fallback(input, options)
     }))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(inspectionSignal).not.toBeNull())
@@ -765,12 +887,12 @@ describe('online flash task workspace behavior', () => {
   })
 
   it('does not trust an install response when refreshed exact target remains uninstalled', async () => {
-    const missing = { ...installedTarget, installed: false, source: 'index' }
+    const missing = { ...regularTarget, installed: false, source: 'index' }
     vi.stubGlobal('fetch', viewFetch([missing]))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
 
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('安装后索引仍未确认'))
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('下载'))
@@ -825,7 +947,7 @@ describe('online flash task workspace behavior', () => {
   })
 
   it('locks Pack install and cancel operations against duplicate clicks', async () => {
-    const missing = { ...installedTarget, installed: false, source: 'index' }
+    const missing = { ...regularTarget, installed: false, source: 'index' }
     const fallback = viewFetch([missing])
     let resolveInstall!: (response: Response) => void
     let resolveCancel!: (response: Response) => void
@@ -838,8 +960,8 @@ describe('online flash task workspace behavior', () => {
       return fallback(input, options)
     }))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    const target = wrapper.get('[data-testid="target-HPM5300"]')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    const target = wrapper.get('[data-testid="target-DEVICE_A"]')
     await target.trigger('click'); await target.trigger('click')
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/packs/install'))).toHaveLength(1)
     expect(target.attributes('disabled')).toBeDefined()
@@ -851,14 +973,14 @@ describe('online flash task workspace behavior', () => {
     for (let index = 0; index < 5; index += 1) await Promise.resolve()
     expect(target.attributes('disabled')).toBeDefined()
     expect(cancelButton.attributes('disabled')).toBeDefined()
-    resolveInstall(new Response(JSON.stringify({ result: { status: 'installed', part_number: 'HPM5300' }, events: [] }), { status: 200 }))
+    resolveInstall(new Response(JSON.stringify({ result: { status: 'installed', part_number: 'DEVICE_A' }, events: [] }), { status: 200 }))
     wrapper.unmount()
   })
 
   it('replays from sequence zero, deduplicates logs, and explicitly reconnects after a stream error', async () => {
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
@@ -919,8 +1041,8 @@ describe('online flash task workspace behavior', () => {
       return fallback(input, options)
     }))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.text()).toContain('AAAAAAAA'))
@@ -944,8 +1066,8 @@ describe('online flash task workspace behavior', () => {
 
   it('submits canonical actions and keeps connect/disconnect mandatory', async () => {
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
@@ -979,8 +1101,8 @@ describe('online flash task workspace behavior', () => {
       return fallback(input, options)
     }))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.text()).toContain('32 bytes'))
@@ -1043,8 +1165,8 @@ describe('online flash task workspace behavior', () => {
       String(input).endsWith('/jobs') && options?.method === 'POST' ? pendingJob : fallback(input, options)
     )))
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
@@ -1062,8 +1184,8 @@ describe('online flash task workspace behavior', () => {
     )))
     FakeEventSource.instances = []
     const eraseWrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(eraseWrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await eraseWrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(eraseWrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await eraseWrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     const chipErase = eraseWrapper.get('[data-testid="chip-erase"]')
     await chipErase.trigger('click'); await chipErase.trigger('click')
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/jobs'))).toHaveLength(1)
@@ -1106,8 +1228,8 @@ describe('online flash task workspace behavior', () => {
 
   it('shows STOPPING and waits for a terminal event after stop', async () => {
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await chooseFirmware(wrapper)
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
@@ -1141,8 +1263,8 @@ describe('online flash task workspace behavior', () => {
 
   it('requires explicit confirmation for chip erase and keeps sectors disabled without reliable geometry', async () => {
     const wrapper = mount(await onlineFlashView())
-    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
-    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
     await wrapper.get('[data-testid="chip-erase"]').trigger('click')
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('全片擦除'))
