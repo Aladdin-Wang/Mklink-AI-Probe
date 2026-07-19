@@ -2768,6 +2768,13 @@ if (xAxisHit && yAxisHit) {
     if (!axisDrag) return;
     var rect = canvas.getBoundingClientRect();
     if (axisDrag.mode === 'plot-shared') {
+      var plotPixelDx = e.clientX - axisDrag.startX;
+      var plotPixelDy = e.clientY - axisDrag.startY;
+      if (!axisDrag.moved) {
+        if (Math.sqrt(plotPixelDx * plotPixelDx + plotPixelDy * plotPixelDy) < 5) return;
+        axisDrag.moved = true;
+        probeDownPos = null;
+      }
       var plotShift = (e.clientY - axisDrag.startY) / axisDrag.plotHeight * axisDrag.range;
       setManualSharedYRange(axisDrag.yMin + plotShift, axisDrag.yMax + plotShift);
       if (axisDrag.panTimeline) {
@@ -3320,9 +3327,9 @@ function drawChart() {
         plotWidth: Math.max(1, pw),
         plotHeight: Math.max(1, ph),
         startTimelineOffset: timelineView.offset,
-        panTimeline: timelineView.zoom > 1
+        panTimeline: timelineView.zoom > 1,
+        moved: false
       };
-      probeDownPos = null;
       e.preventDefault();
       return;
     }

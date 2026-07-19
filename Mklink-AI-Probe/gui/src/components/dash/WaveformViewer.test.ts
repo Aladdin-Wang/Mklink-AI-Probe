@@ -1191,6 +1191,45 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('toggles the SuperWatch hover probe with a plain-left plot click', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      const clickPlot = () => {
+        canvas.dispatchEvent(new MouseEvent('mousedown', {
+          button: 0, clientX: 400, clientY: 160, bubbles: true, cancelable: true,
+        }))
+        window.dispatchEvent(new MouseEvent('mouseup', {
+          button: 0, clientX: 400, clientY: 160, bubbles: true,
+        }))
+      }
+
+      expect(runtime.probe.hover.active).toBe(false)
+      clickPlot()
+      expect(runtime.probe.hover.active).toBe(true)
+      clickPlot()
+      expect(runtime.probe.hover.active).toBe(false)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('pans both axes on a diagonal plain-left SuperWatch plot drag when X is zoomed', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
