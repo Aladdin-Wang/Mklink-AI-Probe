@@ -277,5 +277,5 @@ class PackCatalog:
         return list(selected.values())
 
     @staticmethod
-    def _priority(record: TargetRecord) -> Tuple[bool, bool]:
-        return record.installed, record.source == "builtin"
+    def _priority(record: TargetRecord) -> Tuple[bool, bool, bool]:
+        return record.installed, record.pack_path is not None, record.source == "builtin"

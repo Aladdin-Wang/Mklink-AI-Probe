@@ -50,6 +50,48 @@ class Catalog:
     def status(self):
         return {"index_available": True, "target_count": 2, "last_error": None}
 
+    def refresh(self):
+        return self.status()
+
+
+class CustomFlms:
+    def __init__(self, root):
+        self.root = Path(root)
+        self.records = []
+
+    def list(self, part_number):
+        return tuple(record for record in self.records if record.target_part.casefold() == part_number.casefold())
+
+    def add(self, path, file_name, part_number, existing_regions):
+        assert Path(path).is_file()
+        assert tuple(existing_regions)[0].start == 0x1000
+        stored = self.root / "custom.flm"
+        stored.write_bytes(Path(path).read_bytes())
+        record = type("Custom", (), {
+            "algorithm_id": "algo-1", "target_part": part_number,
+            "file_name": file_name, "file_path": str(stored),
+            "flash_start": 0x90000000, "flash_size": 0x800000,
+            "page_size": 0x1000, "sector_sizes": ((0, 0x1000),),
+        })()
+        self.records.append(record)
+        return record
+
+    def remove(self, part_number, algorithm_id):
+        self.records = [r for r in self.records if not (
+            r.target_part.casefold() == part_number.casefold() and r.algorithm_id == algorithm_id
+        )]
+
+    def regions(self, part_number):
+        if not self.list(part_number):
+            return ()
+        return (MemoryRegion("external", 0x90000000, 0x800000, True, True, 0x1000),)
+
+    def paths(self, part_number):
+        return tuple(record.file_path for record in self.list(part_number))
+
+    def fingerprint(self, part_number):
+        return tuple(record.algorithm_id for record in self.list(part_number))
+
 
 class PackManager:
     def __init__(self):
@@ -104,11 +146,13 @@ class Inspector:
         )
         self.seen_path = None
         self.preview_length = None
+        self.seen_regions = ()
 
     def inspect(self, path, regions, base_address=None):
         self.seen_path = Path(path)
         assert self.seen_path.exists()
-        assert tuple(regions)[0].start == 0x1000
+        self.seen_regions = tuple(regions)
+        assert self.seen_regions[0].start == 0x1000
         assert base_address == 0x1000
         return self.inspection
 
@@ -185,6 +229,7 @@ def services(tmp_path):
         ],
         target_memory_provider=lambda part: [MemoryRegion("flash", 0x1000, 0x1000, True, True, 0x100)],
         paths=PackPaths(tmp_path),
+        custom_flms=CustomFlms(tmp_path),
         pack_index_updater=lambda on_event: ({"status": "updated"}),
         heartbeat_interval=0.01,
     )
@@ -211,6 +256,200 @@ def test_probe_target_and_pack_status_routes_use_injected_services(app, services
     assert services.catalog.calls[-1] == ("hpm", "HPMicro", True, 7)
     status = request(app, "GET", "/api/online-flash/packs/status")
     assert status.json()["index_available"] is True
+
+
+def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, services):
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("external.flm", b"algorithm")},
+    )
+
+    assert added.status_code == 200
+    assert added.json() == {
+        "algorithm_id": "algo-1",
+        "target_part": "HPM5300",
+        "file_name": "external.flm",
+        "flash_start": 0x90000000,
+        "flash_size": 0x800000,
+        "page_size": 0x1000,
+        "sector_sizes": [[0, 0x1000]],
+    }
+    assert "file_path" not in added.text
+    listed = request(app, "GET", "/api/online-flash/algorithms?part_number=HPM5300")
+    assert listed.json() == [added.json()]
+    removed = request(
+        app,
+        "DELETE",
+        "/api/online-flash/algorithms/algo-1?part_number=HPM5300",
+    )
+    assert removed.json() == {"status": "removed"}
+    assert services.custom_flms.records == []
+
+
+def test_inspection_binds_custom_flms_and_job_receives_stored_paths(app, services):
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("external.flm", b"algorithm")},
+    )
+    assert added.status_code == 200
+    inspection = inspect_hpm_image(app)
+    assert [region.start for region in services.image_inspector.seen_regions] == [
+        0x1000,
+        0x90000000,
+    ]
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "verify", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspection["image_id"],
+            "frequency": 10_000_000,
+        },
+    )
+
+    assert started.status_code == 200
+    request_record = services.job_manager.started[-1]
+    assert request_record.frequency == 10_000_000
+    assert request_record.custom_flm_paths == (
+        services.custom_flms.records[0].file_path,
+    )
+    assert request_record.custom_flm_digests == ("algo-1",)
+
+
+def test_algorithm_change_invalidates_an_existing_image_inspection(app, services):
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("external.flm", b"algorithm")},
+    ).json()
+    inspection = inspect_hpm_image(app)
+    request(
+        app,
+        "DELETE",
+        "/api/online-flash/algorithms/{}?part_number=HPM5300".format(
+            added["algorithm_id"]
+        ),
+    )
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "verify", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "image_id": inspection["image_id"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+
+
+def test_custom_flm_mutation_is_blocked_while_an_online_job_is_active(app, services):
+    services.job_manager.busy = True
+
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("external.flm", b"algorithm")},
+    )
+
+    assert added.status_code == 409
+    assert added.json()["detail"]["code"] == "PROBE_BUSY"
+
+
+def test_job_start_and_custom_flm_mutation_share_configuration_lock(app, services):
+    class TrackingLock:
+        def __init__(self):
+            self._lock = threading.RLock()
+            self.depth = 0
+
+        def __enter__(self):
+            self._lock.acquire()
+            self.depth += 1
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            self.depth -= 1
+            self._lock.release()
+
+    lock = TrackingLock()
+
+    class LockedCustomFlms(CustomFlms):
+        def add(self, *args, **kwargs):
+            assert lock.depth > 0
+            return super().add(*args, **kwargs)
+
+        def remove(self, *args, **kwargs):
+            assert lock.depth > 0
+            return super().remove(*args, **kwargs)
+
+    class LockedJobs(Jobs):
+        def start(self, request):
+            assert lock.depth > 0
+            return super().start(request)
+
+    services.configuration_lock = lock
+    services.custom_flms = LockedCustomFlms(services.paths.root)
+    services.job_manager = LockedJobs()
+
+    added = request(
+        app,
+        "POST",
+        "/api/online-flash/algorithms",
+        data={"part_number": "HPM5300"},
+        files={"file": ("external.flm", b"algorithm")},
+    )
+    assert added.status_code == 200
+    removed = request(
+        app,
+        "DELETE",
+        "/api/online-flash/algorithms/algo-1?part_number=HPM5300",
+    )
+    assert removed.status_code == 200
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+        },
+    )
+    assert started.status_code == 200
+
+
+def test_job_frequency_is_limited_to_ten_megahertz(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+            "frequency": 10_000_001,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_probe_enumeration_failure_is_actionable_and_does_not_expose_raw_details(app, services):
@@ -869,6 +1108,50 @@ def test_installed_pack_memory_map_uses_pyocd_flm_geometry(tmp_path, monkeypatch
         MemoryRegion("flash", 0x08000000, 0x10000, True, True, 0x800),
         MemoryRegion("flash-1", 0x08010000, 0x30000, True, True, 0x1000),
     ]
+
+
+def test_memory_provider_prefers_exact_installed_pack_over_dynamic_registry(
+    tmp_path, monkeypatch,
+):
+    import mklink.remote.online_flash_api as module
+    import pyocd.target
+
+    pack_path = tmp_path / "exact.pack"
+    pack_path.write_bytes(b"pack")
+    exact = [MemoryRegion("exact", 0x08000000, 0x20000, True, True, 0x2000)]
+    polluted = MemoryRegion("family-external", 0x90000000, 0x8000000, True, True, 0x1000)
+
+    class CatalogWithInstalledPack:
+        def __init__(self, paths):
+            pass
+
+        def search(self, part_number, installed=None):
+            return [
+                TargetRecord(
+                    part_number,
+                    "Vendor",
+                    pack_path=str(pack_path),
+                    installed=True,
+                )
+            ]
+
+    class DynamicPackTarget:
+        PART_NUMBER = "STM32H7B0VBTx"
+        MEMORY_MAP = (polluted,)
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.pack_catalog.PackCatalog",
+        CatalogWithInstalledPack,
+    )
+    monkeypatch.setattr(
+        module,
+        "_pack_memory_regions",
+        lambda part_number, path: exact,
+    )
+    monkeypatch.setattr(pyocd.target, "TARGET", {"stm32h7b0vbtx": DynamicPackTarget})
+    paths = type("Paths", (), {"index_file": tmp_path / "index.json"})()
+
+    assert default_target_memory_provider("STM32H7B0VBTx", paths) == exact
 
 
 def test_cached_pack_memory_provider_rejects_missing_memory_map(tmp_path):

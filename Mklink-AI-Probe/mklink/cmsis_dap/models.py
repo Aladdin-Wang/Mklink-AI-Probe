@@ -159,6 +159,8 @@ class JobRequest:
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
     pack_path: Optional[str] = None
+    custom_flm_paths: Tuple[str, ...] = ()
+    custom_flm_digests: Tuple[str, ...] = ()
     frequency: int = 1_000_000
     connect_mode: str = "halt"
     reset_mode: str = "default"

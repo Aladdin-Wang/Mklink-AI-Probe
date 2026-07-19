@@ -1,4 +1,5 @@
 import type {
+  CustomFlmRecord,
   ImageInspection,
   JobEvent,
   JobCreateResult,
@@ -156,6 +157,23 @@ export function useOnlineFlashApi() {
     return request(`/packs/${encoded(packId)}/${encoded(version)}`, { method: 'DELETE' })
   }
 
+  function listCustomFlms(partNumber: string): Promise<CustomFlmRecord[]> {
+    return request(`/algorithms?part_number=${encoded(partNumber)}`)
+  }
+
+  function addCustomFlm(file: File, partNumber: string): Promise<CustomFlmRecord> {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('part_number', partNumber)
+    return request('/algorithms', { method: 'POST', body })
+  }
+
+  function removeCustomFlm(algorithmId: string, partNumber: string): Promise<{ status: 'removed' }> {
+    return request(`/algorithms/${encoded(algorithmId)}?part_number=${encoded(partNumber)}`, {
+      method: 'DELETE',
+    })
+  }
+
   function inspectImage(
     file: File,
     partNumber: string,
@@ -277,6 +295,9 @@ export function useOnlineFlashApi() {
     importPack,
     cancelPackOperation,
     removePack,
+    listCustomFlms,
+    addCustomFlm,
+    removeCustomFlm,
     inspectImage,
     previewImage,
     createJob,

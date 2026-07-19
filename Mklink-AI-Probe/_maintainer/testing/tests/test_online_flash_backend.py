@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 import threading
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from mklink.cmsis_dap.backend import PyOcdBackend
+from mklink.cmsis_dap.backend import _install_custom_flm_regions
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import ImageInspection, ImageSegment, MemoryRegion
 
@@ -29,6 +31,7 @@ class FakeTarget:
 class FakeSession:
     def __init__(self, target: FakeTarget | None = None) -> None:
         self.target = target or FakeTarget()
+        self.delegate = None
         self.open_calls = 0
         self.close_calls = 0
 
@@ -250,6 +253,216 @@ def test_connect_rejects_missing_or_non_pack_path(tmp_path: Path) -> None:
         FlashErrorCode.TARGET_NOT_SUPPORTED,
         lambda: backend.connect(object(), "HPM5300", 1, pack=str(wrong)),
     )
+
+
+def test_connect_installs_custom_flm_delegate_before_session_open(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    flm = tmp_path / "external.flm"
+    flm.write_bytes(b"flm")
+    session = FakeSession()
+    installed = []
+
+    class Sequence:
+        def insert_before(self, task, item):
+            assert task == "create_flash"
+            name, callback = item
+            assert name == "mklink_custom_flm"
+            installed.append(callback)
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend._install_custom_flm_regions",
+        lambda target, paths: installed.append((target, paths)),
+    )
+    original_open = session.open
+
+    def open_session():
+        session.delegate.will_init_target(session.target, Sequence())
+        installed[0]()
+        original_open()
+
+    session.open = open_session
+    backend = PyOcdBackend(session_factory=lambda probe, options: session)
+
+    backend.connect(
+        object(),
+        "HPM5300",
+        10_000_000,
+        custom_flm_paths=(str(flm),),
+        custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
+    )
+
+    assert installed[1] == (session.target, (b"flm",))
+    backend.disconnect()
+
+
+def test_connect_rejects_custom_flm_changed_after_catalog_snapshot(
+    tmp_path: Path,
+) -> None:
+    flm = tmp_path / "external.flm"
+    original = b"original-flm"
+    flm.write_bytes(original)
+    digest = hashlib.sha256(original).hexdigest()
+    flm.write_bytes(b"replaced-flm")
+    backend = PyOcdBackend(
+        session_factory=lambda probe, options: pytest.fail(
+            "integrity must be checked before creating a session"
+        )
+    )
+
+    error = assert_error(
+        FlashErrorCode.PACK_INTEGRITY_ERROR,
+        lambda: backend.connect(
+            object(),
+            "HPM5300",
+            1_000_000,
+            custom_flm_paths=(str(flm),),
+            custom_flm_digests=(digest,),
+        ),
+    )
+
+    assert error.message == "custom FLM integrity check failed"
+
+
+def test_custom_flm_delegate_preserves_an_existing_session_delegate(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    flm = tmp_path / "external.flm"
+    flm.write_bytes(b"flm")
+    calls = []
+
+    class ExistingDelegate:
+        def will_init_target(self, target, init_sequence):
+            calls.append((target, init_sequence))
+
+        def did_reset(self):
+            return "existing"
+
+    session = FakeSession()
+    existing = ExistingDelegate()
+    session.delegate = existing
+    backend = PyOcdBackend(session_factory=lambda probe, options: session)
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend._install_custom_flm_regions",
+        lambda target, paths: None,
+    )
+
+    backend.connect(
+        object(),
+        "HPM5300",
+        1,
+        custom_flm_paths=(str(flm),),
+        custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
+    )
+    sequence = type("Sequence", (), {"insert_before": lambda *args: None})()
+    session.delegate.will_init_target(session.target, sequence)
+
+    assert calls == [(session.target, sequence)]
+    assert session.delegate.did_reset() == "existing"
+    backend.disconnect()
+
+
+def test_custom_flm_regions_do_not_mutate_a_shared_pack_memory_map(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap, RamRegion
+
+    shared = MemoryMap(
+        FlashRegion(start=0x08000000, length=0x20000, sector_size=0x2000),
+        RamRegion(start=0x20000000, length=0x20000),
+    )
+    targets = [type("Target", (), {"memory_map": shared})() for _ in range(2)]
+    flm = tmp_path / "external.flm"
+    flm.write_bytes(b"flm")
+
+    class Algorithm:
+        flash_start = 0x90000000
+        flash_size = 0x800000
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.flash_algo.PackFlashAlgo",
+        lambda _path: Algorithm(),
+    )
+
+    _install_custom_flm_regions(targets[0], (flm.read_bytes(),))
+    _install_custom_flm_regions(targets[1], (flm.read_bytes(),))
+
+    assert len(shared.regions) == 2
+    assert len(targets[0].memory_map.regions) == 3
+    assert len(targets[1].memory_map.regions) == 3
+
+
+def test_custom_flm_flash_calls_optional_verify_entry(tmp_path: Path, monkeypatch) -> None:
+    from pyocd.core.memory_map import MemoryMap, RamRegion
+    from pyocd.flash.flash import Flash
+
+    flm = tmp_path / "external.flm"
+    flm.write_bytes(b"flm")
+
+    class Algorithm:
+        flash_start = 0x90000000
+        flash_size = 0x800000
+        symbols = {"Verify": 0x5D}
+
+        def get_pyocd_flash_algo(self, blocksize, ram_region):
+            return {
+                "load_address": 0x20001000,
+                "instructions": [0] * 64,
+                "pc_erase_sector": 0x20001001,
+                "pc_program_page": 0x20001003,
+                "page_buffers": [0x20000000],
+                "begin_stack": 0x20002000,
+                "static_base": 0x20001100,
+                "analyzer_supported": False,
+            }
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.flash_algo.PackFlashAlgo",
+        lambda _path: Algorithm(),
+    )
+    target = FakeTarget(MemoryMap(RamRegion(start=0x20000000, length=0x20000)))
+
+    _install_custom_flm_regions(target, (flm.read_bytes(),))
+
+    region = target.memory_map.get_region_for_address(0x90000000)
+    algo = region.flm.get_pyocd_flash_algo(0x1000, None)
+    flash_target = type(
+        "FlashTarget",
+        (),
+        {
+            "session": type(
+                "Session",
+                (),
+                {"options": {"flash.timeout.program": 7.0}},
+            )(),
+            "write_memory_block8": lambda self, address, data: writes.append(
+                (address, bytes(data))
+            ),
+        },
+    )()
+    flash = Flash(flash_target, algo)
+    flash.region = region
+    lifecycle = []
+    writes = []
+    flash.init = lambda operation: lifecycle.append(("init", operation.name))
+    flash.uninit = lambda: lifecycle.append(("uninit",))
+    flash._call_function_and_wait = lambda pc, r0, r1, r2, timeout: (
+        lifecycle.append(("call", pc, r0, r1, r2, timeout)) or r0 + r1
+    )
+
+    result = PyOcdBackend._verify_with_flash_algorithm(
+        flash, 0x90000020, b"abcd"
+    )
+
+    assert flash.flash_algo["pc_verify"] == 0x20001061
+    assert flash.flash_algo["mklink_custom_verify"] is True
+    assert writes == [(0x20000000, b"abcd")]
+    assert lifecycle == [
+        ("init", "VERIFY"),
+        ("call", 0x20001061, 0x90000020, 4, 0x20000000, 7.0),
+        ("uninit",),
+    ]
+    assert result == 0x90000024
 
 
 def connected_backend(*, target=None, programmer_factory=None, eraser_factory=None):
@@ -649,6 +862,71 @@ def test_verify_sparse_hex_reads_only_inspected_segments(tmp_path: Path) -> None
     backend.verify(image)
 
     assert target.read_calls == [(first, 2), (second, 2)]
+    backend.disconnect()
+
+
+def test_verify_uses_custom_flm_for_non_memory_mapped_flash(tmp_path: Path) -> None:
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"abcdef")
+    calls = []
+
+    class FlmVerifier:
+        def verify_data(self, address, data):
+            calls.append((address, bytes(data)))
+            return address + len(data)
+
+    class ExternalTarget(FakeTarget):
+        def read_memory_block8(self, address, size):
+            pytest.fail("external flash must be verified by its FLM")
+
+    region = FakeRegion(0x90000000, 0x1000, blocksize=0x100)
+    region.page_size = 4
+    region.flash = FlmVerifier()
+    backend, _ = connected_backend(target=ExternalTarget((region,)))
+
+    backend.verify(
+        ImageInspection(
+            "bin",
+            file_path=str(firmware),
+            format="bin",
+            size=6,
+            start=0x90000000,
+            end=0x90000006,
+            segments=(ImageSegment(0x90000000, 0x90000006),),
+            base_address=0x90000000,
+        )
+    )
+
+    assert calls == [(0x90000000, b"abcd"), (0x90000004, b"ef")]
+    backend.disconnect()
+
+
+def test_verify_reports_custom_flm_failure_address(tmp_path: Path) -> None:
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"abcd")
+
+    class FlmVerifier:
+        def verify_data(self, address, data):
+            return address + 2
+
+    region = FakeRegion(0x90000000, 0x1000, blocksize=0x100)
+    region.page_size = 4
+    region.flash = FlmVerifier()
+    backend, _ = connected_backend(target=FakeTarget((region,)))
+    image = ImageInspection(
+        "bin",
+        file_path=str(firmware),
+        format="bin",
+        size=4,
+        start=0x90000000,
+        end=0x90000004,
+        segments=(ImageSegment(0x90000000, 0x90000004),),
+        base_address=0x90000000,
+    )
+
+    error = assert_error(FlashErrorCode.VERIFY_FAIL, lambda: backend.verify(image))
+
+    assert "0x90000002" in error.message
     backend.disconnect()
 
 

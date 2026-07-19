@@ -23,6 +23,16 @@ export interface PackStatus {
   target_count: number
 }
 
+export interface CustomFlmRecord {
+  algorithm_id: string
+  target_part: string
+  file_name: string
+  flash_start: number
+  flash_size: number
+  page_size: number
+  sector_sizes: Array<[number, number]>
+}
+
 export interface ImageSegment {
   start: number
   end: number

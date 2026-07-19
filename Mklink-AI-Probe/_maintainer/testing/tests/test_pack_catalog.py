@@ -120,6 +120,34 @@ def test_installed_registry_marks_exact_pack_version_and_path(tmp_path):
     assert result.pack_path == str(pack_path)
 
 
+def test_installed_pack_path_wins_over_runtime_pack_target_registration(tmp_path):
+    paths = PackPaths(root=tmp_path)
+    _write_index(
+        paths,
+        {"STM32H7B0VBTx": _index_target("Keil", "STM32H7xx_DFP", "4.1.3")},
+    )
+    pack_path = tmp_path / "Keil.STM32H7xx_DFP.4.1.3.pack"
+    pack_path.write_bytes(b"pack")
+    _write_state(
+        paths,
+        {"Keil.STM32H7xx_DFP": {"4.1.3": str(pack_path)}},
+    )
+    runtime_record = TargetRecord(
+        "STM32H7B0VBTx",
+        "STMicroelectronics",
+        installed=True,
+        source="builtin",
+    )
+
+    result = PackCatalog(
+        paths,
+        builtin_provider=lambda: [runtime_record],
+    ).search("STM32H7B0VBTx")[0]
+
+    assert result.pack_path == str(pack_path)
+    assert result.pack_id == "Keil.STM32H7xx_DFP"
+
+
 @pytest.mark.parametrize(
     "installed",
     [

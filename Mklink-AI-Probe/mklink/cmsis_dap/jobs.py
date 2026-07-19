@@ -258,6 +258,8 @@ class OnlineFlashJobManager:
                                     target=job.request.target_part,
                                     frequency=job.request.frequency,
                                     pack=job.request.pack_path,
+                                    custom_flm_paths=job.request.custom_flm_paths,
+                                    custom_flm_digests=job.request.custom_flm_digests,
                                     connect_mode=job.request.connect_mode,
                                     reset_mode=job.request.reset_mode,
                                 )

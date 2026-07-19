@@ -11,6 +11,7 @@ import actionBarSource from '../components/online-flash/FlashActionBar.vue?raw'
 import logPanelSource from '../components/online-flash/FlashLogPanel.vue?raw'
 import firmwareWorkspaceSource from '../components/online-flash/FirmwareWorkspace.vue?raw'
 import onlineFlashViewSource from './OnlineFlashView.vue?raw'
+import probeSettingsSource from '../components/online-flash/ProbeSettingsPanel.vue?raw'
 
 async function onlineFlashView() {
   const path = './OnlineFlashView.vue'
@@ -217,15 +218,29 @@ describe('useOnlineFlashApi', () => {
 
     await api.importPack(pack)
     await api.inspectImage(image, 'HPM5300', 0x1000)
+    await api.addCustomFlm(new File(['flm'], 'external.flm'), 'HPM5300')
 
     const [importUrl, importOptions] = vi.mocked(fetch).mock.calls[0]
     const [inspectUrl, inspectOptions] = vi.mocked(fetch).mock.calls[1]
+    const [flmUrl, flmOptions] = vi.mocked(fetch).mock.calls[2]
     expect(importUrl).toBe('/api/online-flash/packs/import')
     expect(inspectUrl).toBe('/api/online-flash/images/inspect')
+    expect(flmUrl).toBe('/api/online-flash/algorithms')
     expect(importOptions?.body).toBeInstanceOf(FormData)
     expect(inspectOptions?.body).toBeInstanceOf(FormData)
+    expect(flmOptions?.body).toBeInstanceOf(FormData)
     expect(new Headers(importOptions?.headers).has('Content-Type')).toBe(false)
     expect(new Headers(inspectOptions?.headers).has('Content-Type')).toBe(false)
+    expect(new Headers(flmOptions?.headers).has('Content-Type')).toBe(false)
+  })
+
+  it('offers the supported 10 MHz online SWD frequency', () => {
+    expect(probeSettingsSource).toContain('<option :value="10000000">10 MHz</option>')
+  })
+
+  it('locks target selection while a custom algorithm mutation is active', async () => {
+    const source = await import('../components/online-flash/TargetPackPanel.vue?raw')
+    expect(source.default).toContain(':disabled="busy || algorithmBusy"')
   })
 
   it('forwards preview abort signals to fetch', async () => {
@@ -421,12 +436,23 @@ const installedTarget = {
 }
 
 function viewFetch(targets = [installedTarget]) {
+  const algorithms: Array<Record<string, unknown>> = []
   return vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = String(input)
     const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
     if (url.endsWith('/probes')) return json([probeFixture])
     if (url.includes('/targets?')) return json(targets)
     if (url.endsWith('/packs/status')) return json({ last_error: null, index_available: true, target_count: targets.length })
+    if (url.includes('/algorithms?')) return json(algorithms)
+    if (url.endsWith('/algorithms') && options?.method === 'POST') {
+      const record = {
+        algorithm_id: 'external-1', target_part: 'HPM5300', file_name: 'external.flm',
+        flash_start: 0x90000000, flash_size: 0x800000, page_size: 0x1000,
+        sector_sizes: [[0, 0x1000]],
+      }
+      algorithms.push(record)
+      return json(record)
+    }
     if (url.endsWith('/packs/install')) return json({
       result: { status: 'installed', part_number: JSON.parse(String(options?.body)).part_number },
       events: [{ type: 'progress', progress: 1 }],
@@ -467,6 +493,16 @@ async function chooseFirmware(wrapper: ReturnType<typeof mount>, name = 'firmwar
   await input.trigger('change')
 }
 
+async function chooseCustomFlm(wrapper: ReturnType<typeof mount>) {
+  const input = wrapper.get('[data-testid="custom-flm-input"]')
+  await vi.waitFor(() => expect(input.attributes('disabled')).toBeUndefined())
+  Object.defineProperty(input.element, 'files', {
+    configurable: true,
+    value: [new File(['algorithm'], 'external.flm')],
+  })
+  await input.trigger('change')
+}
+
 async function readyAndStart(wrapper: ReturnType<typeof mount>) {
   await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
   await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
@@ -496,6 +532,23 @@ describe('online flash task workspace behavior', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('adds and displays a target-scoped custom FLM', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+
+    await chooseCustomFlm(wrapper)
+
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="custom-flm-external-1"]').exists()).toBe(true))
+    expect(wrapper.text()).toContain('external.flm')
+    expect(wrapper.text()).toContain('0x90000000')
+    const upload = vi.mocked(fetch).mock.calls.find(([url, options]) => (
+      String(url).endsWith('/algorithms') && options?.method === 'POST'
+    ))
+    expect(upload?.[1]?.body).toBeInstanceOf(FormData)
+    wrapper.unmount()
   })
 
   it('keeps retrying probe discovery on page entry until MKLink appears', async () => {

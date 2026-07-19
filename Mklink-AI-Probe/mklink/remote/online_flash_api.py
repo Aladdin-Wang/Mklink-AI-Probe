@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -58,7 +59,9 @@ class OnlineFlashServices:
     probe_provider: Callable[[], Sequence[object]]
     target_memory_provider: Callable[[str], Sequence[MemoryRegion]]
     paths: object
-    image_targets: Dict[str, str] = field(default_factory=dict)
+    custom_flms: object = None
+    configuration_lock: object = field(default_factory=threading.RLock)
+    image_targets: Dict[str, object] = field(default_factory=dict)
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
@@ -74,6 +77,7 @@ def _production_probe_provider() -> Sequence[object]:
 def create_default_online_flash_services(resource_manager: object) -> OnlineFlashServices:
     """Build lazy production services without enumerating USB or accessing the network."""
     from mklink.cmsis_dap.backend import PyOcdBackend
+    from mklink.cmsis_dap.custom_flm import CustomFlmCatalog
     from mklink.cmsis_dap.images import ImageInspector
     from mklink.cmsis_dap.jobs import OnlineFlashJobManager
     from mklink.cmsis_dap.pack_catalog import PackCatalog
@@ -96,6 +100,7 @@ def create_default_online_flash_services(resource_manager: object) -> OnlineFlas
             part_number, paths
         ),
         paths=paths,
+        custom_flms=CustomFlmCatalog(paths.root),
     )
 
 
@@ -133,7 +138,7 @@ class JobBody(BaseModel):
     preempt_ai: bool = True
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
-    frequency: int = 1_000_000
+    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
     base_address: Optional[int] = None
@@ -158,7 +163,7 @@ def _json_mapping(value: Mapping, *, hide_paths: bool) -> Dict[str, object]:
             safe_key = "[redacted-key-{}]".format(redacted_index)
         else:
             safe_key = raw_key
-        if hide_paths and raw_key in ("file_path", "pack_path"):
+        if hide_paths and raw_key in ("file_path", "pack_path", "custom_flm_paths", "flm_path"):
             continue
         base_key = safe_key
         collision_index = 2
@@ -181,7 +186,7 @@ def _json_primitive(value: object, *, hide_paths: bool = False) -> object:
     if is_dataclass(value) and not isinstance(value, type):
         result = {}
         for field in fields(value):
-            if hide_paths and field.name in ("file_path", "pack_path"):
+            if hide_paths and field.name in ("file_path", "pack_path", "custom_flm_paths", "flm_path"):
                 continue
             result[field.name] = _json_primitive(getattr(value, field.name), hide_paths=hide_paths)
         return result
@@ -413,6 +418,40 @@ def _exact_installed_target(catalog: object, part_number: str) -> TargetRecord:
     return exact[0]
 
 
+def _custom_flm_payload(record: object) -> Dict[str, object]:
+    return {
+        "algorithm_id": str(getattr(record, "algorithm_id")),
+        "target_part": str(getattr(record, "target_part")),
+        "file_name": str(getattr(record, "file_name")),
+        "flash_start": int(getattr(record, "flash_start")),
+        "flash_size": int(getattr(record, "flash_size")),
+        "page_size": int(getattr(record, "page_size")),
+        "sector_sizes": [list(pair) for pair in getattr(record, "sector_sizes")],
+    }
+
+
+def _target_flash_configuration(
+    services: OnlineFlashServices,
+    part_number: str,
+) -> tuple[tuple[MemoryRegion, ...], tuple[str, ...], tuple[str, ...]]:
+    base_regions = tuple(services.target_memory_provider(part_number))
+    if services.custom_flms is None:
+        return base_regions, (), ()
+    custom_regions = tuple(services.custom_flms.regions(part_number))
+    for index, region in enumerate(custom_regions):
+        for other in base_regions + custom_regions[:index]:
+            if region.start < other.end and other.start < region.end:
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "custom FLM range overlaps an existing flash algorithm",
+                )
+    return (
+        base_regions + custom_regions,
+        tuple(services.custom_flms.fingerprint(part_number)),
+        tuple(services.custom_flms.paths(part_number)),
+    )
+
+
 def _selected_probe(provider: Callable[[], Sequence[object]], probe_id: str) -> object:
     records = filter_mklink_probes(provider())
     for record in records:
@@ -444,6 +483,106 @@ def _pack_in_use(job_manager: object) -> bool:
     return _active_snapshot(job_manager) is not None
 
 
+def _add_custom_flm_configuration(
+    services: OnlineFlashServices,
+    temporary: Path,
+    file_name: str,
+    part_number: str,
+) -> object:
+    with services.configuration_lock:
+        if _pack_in_use(services.job_manager):
+            raise FlashError(
+                FlashErrorCode.PROBE_BUSY,
+                "custom FLM configuration is in use by an online flash job",
+            )
+        target = _exact_installed_target(services.catalog, part_number)
+        existing = services.target_memory_provider(target.part_number)
+        return services.custom_flms.add(
+            temporary,
+            file_name,
+            target.part_number,
+            tuple(existing),
+        )
+
+
+def _remove_custom_flm_configuration(
+    services: OnlineFlashServices,
+    part_number: str,
+    algorithm_id: str,
+) -> None:
+    with services.configuration_lock:
+        if _pack_in_use(services.job_manager):
+            raise FlashError(
+                FlashErrorCode.PROBE_BUSY,
+                "custom FLM configuration is in use by an online flash job",
+            )
+        services.custom_flms.remove(part_number, algorithm_id)
+
+
+def _start_job_with_configuration(
+    services: OnlineFlashServices,
+    body: JobBody,
+    target: TargetRecord,
+) -> tuple[str, object]:
+    with services.configuration_lock:
+        regions, fingerprint, custom_flm_paths = _target_flash_configuration(
+            services, target.part_number
+        )
+        if any(action in body.actions for action in ("program", "verify")):
+            if not body.image_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="program and verify require image_id",
+                )
+            services.image_inspector.validate_unchanged(body.image_id)
+            if services.image_targets.get(body.image_id) != (
+                target.part_number.casefold(),
+                fingerprint,
+            ):
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "image inspection does not match the selected target",
+                )
+        if "program" in body.actions:
+            if "erase" not in body.actions:
+                raise FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "program requires image-covered sector erase",
+                )
+            coverage = services.image_inspector.covered_sectors(
+                body.image_id,
+                regions,
+            )
+            expected_sectors = tuple(sector.address for sector in coverage.sectors)
+            if not coverage.sector_operations_available or not expected_sectors:
+                raise FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "reliable sector geometry is required for programming",
+                )
+            if tuple(body.sector_addresses) != expected_sectors:
+                raise FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "erase sectors must exactly match the image-covered sectors",
+                )
+        job_request = JobRequest(
+            actions=tuple(body.actions),
+            image_id=body.image_id,
+            preempt_ai=body.preempt_ai,
+            probe_id=body.probe_id,
+            target_part=target.part_number,
+            pack_path=target.pack_path,
+            custom_flm_paths=custom_flm_paths,
+            custom_flm_digests=fingerprint,
+            frequency=body.frequency,
+            connect_mode=body.connect_mode,
+            reset_mode=body.reset_mode,
+            base_address=body.base_address,
+            sector_addresses=tuple(body.sector_addresses),
+        )
+        job_id = services.job_manager.start(job_request)
+        return job_id, services.job_manager.get(job_id)
+
+
 def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     router = APIRouter(prefix="/api/online-flash", tags=["online-flash"])
 
@@ -463,7 +602,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
 
     @router.get("/packs/status")
     async def pack_status() -> object:
-        return _json_primitive(await _blocking(services.catalog.status))
+        refresh = getattr(services.catalog, "refresh", None)
+        status = await _blocking(refresh if callable(refresh) else services.catalog.status)
+        return _json_primitive(status)
 
     @router.post("/packs/index/update")
     async def pack_index_update() -> object:
@@ -531,6 +672,63 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         )
         return {"status": "removed", "pack_id": pack_id, "version": version}
 
+    @router.get("/algorithms")
+    async def custom_flm_list(part_number: str) -> object:
+        if services.custom_flms is None:
+            return []
+        records = await _blocking(services.custom_flms.list, part_number)
+        return [_custom_flm_payload(record) for record in records]
+
+    @router.post("/algorithms")
+    async def custom_flm_add(
+        file: UploadFile = File(...),
+        part_number: str = Form(...),
+    ) -> object:
+        if services.custom_flms is None:
+            raise HTTPException(status_code=503, detail="custom FLM storage is unavailable")
+        if await _blocking(_pack_in_use, services.job_manager):
+            _raise_http(FlashError(
+                FlashErrorCode.PROBE_BUSY,
+                "custom FLM configuration is in use by an online flash job",
+            ))
+        temporary = None  # type: Optional[Path]
+        try:
+            temporary, _digest, _size = await _blocking(
+                _stream_upload,
+                file,
+                services.paths,
+                (".flm",),
+                min(services.upload_limit, 8 * 1024 * 1024),
+            )
+            record = await _blocking(
+                _add_custom_flm_configuration,
+                services,
+                temporary,
+                Path(file.filename or "algorithm.flm").name,
+                part_number,
+            )
+            return _custom_flm_payload(record)
+        finally:
+            await run_in_threadpool(_unlink, temporary)
+            await file.close()
+
+    @router.delete("/algorithms/{algorithm_id}")
+    async def custom_flm_remove(algorithm_id: str, part_number: str) -> object:
+        if services.custom_flms is None:
+            raise HTTPException(status_code=503, detail="custom FLM storage is unavailable")
+        if await _blocking(_pack_in_use, services.job_manager):
+            _raise_http(FlashError(
+                FlashErrorCode.PROBE_BUSY,
+                "custom FLM configuration is in use by an online flash job",
+            ))
+        await _blocking(
+            _remove_custom_flm_configuration,
+            services,
+            part_number,
+            algorithm_id,
+        )
+        return {"status": "removed"}
+
     @router.post("/images/inspect")
     async def image_inspect(
         file: UploadFile = File(...),
@@ -540,7 +738,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         temporary = None  # type: Optional[Path]
         try:
             target = await _blocking(_exact_installed_target, services.catalog, part_number)
-            regions = await _blocking(services.target_memory_provider, target.part_number)
+            regions, fingerprint, _paths = await _blocking(
+                _target_flash_configuration, services, target.part_number
+            )
             parsed_base = await _blocking(_parse_base_address, base_address)
             temporary, _digest, _size = await _blocking(
                 _stream_upload, file, services.paths, (".hex", ".bin"), services.upload_limit
@@ -556,7 +756,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 inspection.image_id,
                 regions,
             )
-            services.image_targets[inspection.image_id] = target.part_number.casefold()
+            services.image_targets[inspection.image_id] = (
+                target.part_number.casefold(), fingerprint
+            )
             payload = _json_primitive(inspection, hide_paths=True)
             payload["sector_operations_available"] = coverage.sector_operations_available
             payload["sectors"] = _json_primitive(coverage.sectors)
@@ -587,53 +789,12 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             raise HTTPException(status_code=422, detail="probe_id and target_part are required")
         await _blocking(_selected_probe, services.probe_provider, body.probe_id)
         target = await _blocking(_exact_installed_target, services.catalog, body.target_part)
-        if any(action in body.actions for action in ("program", "verify")):
-            if not body.image_id:
-                raise HTTPException(status_code=422, detail="program and verify require image_id")
-            await _blocking(services.image_inspector.validate_unchanged, body.image_id)
-            if services.image_targets.get(body.image_id) != target.part_number.casefold():
-                _raise_http(FlashError(
-                    FlashErrorCode.TARGET_NOT_SUPPORTED,
-                    "image inspection does not match the selected target",
-                ))
-        if "program" in body.actions:
-            if "erase" not in body.actions:
-                _raise_http(FlashError(
-                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
-                    "program requires image-covered sector erase",
-                ))
-            regions = await _blocking(services.target_memory_provider, target.part_number)
-            coverage = await _blocking(
-                services.image_inspector.covered_sectors,
-                body.image_id,
-                regions,
-            )
-            expected_sectors = tuple(sector.address for sector in coverage.sectors)
-            if not coverage.sector_operations_available or not expected_sectors:
-                _raise_http(FlashError(
-                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
-                    "reliable sector geometry is required for programming",
-                ))
-            if tuple(body.sector_addresses) != expected_sectors:
-                _raise_http(FlashError(
-                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
-                    "erase sectors must exactly match the image-covered sectors",
-                ))
-        job_request = JobRequest(
-            actions=tuple(body.actions),
-            image_id=body.image_id,
-            preempt_ai=body.preempt_ai,
-            probe_id=body.probe_id,
-            target_part=target.part_number,
-            pack_path=target.pack_path,
-            frequency=body.frequency,
-            connect_mode=body.connect_mode,
-            reset_mode=body.reset_mode,
-            base_address=body.base_address,
-            sector_addresses=tuple(body.sector_addresses),
+        job_id, snapshot = await _blocking(
+            _start_job_with_configuration,
+            services,
+            body,
+            target,
         )
-        job_id = await _blocking(services.job_manager.start, job_request)
-        snapshot = await _blocking(services.job_manager.get, job_id)
         return {"job_id": job_id, "job": _safe_job_snapshot(snapshot)}
 
     @router.get("/jobs/active")
@@ -697,6 +858,21 @@ def default_target_memory_provider(
 ) -> Sequence[MemoryRegion]:
     """Resolve exact builtin or cached-pack flash regions without opening USB."""
     needle = part_number.casefold()
+    if paths is not None:
+        try:
+            from mklink.cmsis_dap.pack_catalog import PackCatalog
+
+            installed = [
+                record
+                for record in PackCatalog(paths).search(part_number, installed=True)
+                if record.part_number.casefold() == needle and record.pack_path
+            ]
+            if len(installed) == 1:
+                regions = _pack_memory_regions(part_number, Path(installed[0].pack_path))
+                if regions:
+                    return regions
+        except (ImportError, OSError, TypeError, ValueError):
+            pass
     try:
         from pyocd.target import TARGET
 
@@ -718,20 +894,6 @@ def default_target_memory_provider(
         pass
 
     if paths is not None:
-        try:
-            from mklink.cmsis_dap.pack_catalog import PackCatalog
-
-            installed = [
-                record
-                for record in PackCatalog(paths).search(part_number, installed=True)
-                if record.part_number.casefold() == needle and record.pack_path
-            ]
-            if len(installed) == 1:
-                regions = _pack_memory_regions(part_number, Path(installed[0].pack_path))
-                if regions:
-                    return regions
-        except (ImportError, OSError, TypeError, ValueError):
-            pass
         regions = _cached_index_regions(part_number, Path(getattr(paths, "index_file")))
         if regions:
             return regions

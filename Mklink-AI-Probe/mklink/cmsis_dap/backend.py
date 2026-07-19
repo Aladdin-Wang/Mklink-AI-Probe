@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import re
 import threading
 from pathlib import Path
+from types import MethodType
 from typing import Any, Callable, Iterator, Optional, Tuple
 
 from .errors import FlashError, FlashErrorCode
@@ -18,6 +21,90 @@ _LOCKED_ERROR_PATTERN = re.compile(
     r"|\bmass\s+erase\s+disabled\s+due\s+protection\b",
     re.IGNORECASE,
 )
+
+
+class _CustomFlmDelegate:
+    def __init__(self, payloads: Tuple[bytes, ...], next_delegate: Any = None) -> None:
+        self._payloads = payloads
+        self._next_delegate = next_delegate
+
+    def will_init_target(self, target: Any, init_sequence: Any) -> None:
+        callback = getattr(self._next_delegate, "will_init_target", None)
+        if callable(callback):
+            callback(target, init_sequence)
+        init_sequence.insert_before(
+            "create_flash",
+            (
+                "mklink_custom_flm",
+                lambda: _install_custom_flm_regions(target, self._payloads),
+            ),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        if self._next_delegate is None:
+            raise AttributeError(name)
+        return getattr(self._next_delegate, name)
+
+
+def _install_custom_flm_regions(target: Any, payloads: Tuple[bytes, ...]) -> None:
+    from pyocd.core.memory_map import FlashRegion
+    from pyocd.target.pack.flash_algo import PackFlashAlgo
+
+    target.memory_map = target.memory_map.clone()
+    existing = [region for region in target.memory_map if bool(getattr(region, "is_flash", False))]
+    for index, payload in enumerate(payloads):
+        try:
+            algorithm = PackFlashAlgo(io.BytesIO(payload))
+        except Exception:
+            raise FlashError(
+                FlashErrorCode.FILE_FORMAT_ERROR,
+                "custom FLM could not be loaded",
+            ) from None
+        _enable_custom_flm_verify(algorithm)
+        start = int(algorithm.flash_start)
+        end = start + int(algorithm.flash_size)
+        for region in existing:
+            region_start = int(region.start)
+            region_end = region_start + int(region.length)
+            if start < region_end and region_start < end:
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "custom FLM range overlaps an existing flash algorithm",
+                )
+        region = FlashRegion(
+            name="mklink_custom_flm_{}".format(index),
+            start=start,
+            length=int(algorithm.flash_size),
+            flm=algorithm,
+        )
+        target.memory_map.add_region(region)
+        existing.append(region)
+
+
+def _enable_custom_flm_verify(algorithm: Any) -> None:
+    symbols = getattr(algorithm, "symbols", None)
+    verify_offset = symbols.get("Verify") if isinstance(symbols, dict) else None
+    build_algo = getattr(algorithm, "get_pyocd_flash_algo", None)
+    if (
+        not isinstance(verify_offset, int)
+        or isinstance(verify_offset, bool)
+        or verify_offset < 0
+        or not callable(build_algo)
+    ):
+        return
+
+    def build_with_verify(self: Any, blocksize: int, ram_region: Any) -> Any:
+        flash_algo = build_algo(blocksize, ram_region)
+        if flash_algo is None:
+            return None
+        flash_algo = dict(flash_algo)
+        flash_algo["pc_verify"] = (
+            int(flash_algo["load_address"]) + 4 + verify_offset
+        )
+        flash_algo["mklink_custom_verify"] = True
+        return flash_algo
+
+    algorithm.get_pyocd_flash_algo = MethodType(build_with_verify, algorithm)
 
 
 class PyOcdBackend:
@@ -44,6 +131,8 @@ class PyOcdBackend:
         target: str,
         frequency: int,
         pack: Optional[str] = None,
+        custom_flm_paths: Tuple[str, ...] = (),
+        custom_flm_digests: Tuple[str, ...] = (),
         connect_mode: str = "halt",
         reset_mode: str = "default",
     ) -> None:
@@ -64,6 +153,42 @@ class PyOcdBackend:
                         "CMSIS-Pack path must name a .pack file",
                     )
                 resolved_pack = str(pack_path.resolve())
+            if len(custom_flm_paths) != len(custom_flm_digests):
+                raise FlashError(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "custom FLM integrity metadata is invalid",
+                )
+            resolved_flms = []
+            for value, expected_digest in zip(custom_flm_paths, custom_flm_digests):
+                flm_path = Path(value).expanduser()
+                if not flm_path.is_file():
+                    raise FlashError(FlashErrorCode.FILE_NOT_FOUND, "custom FLM file was not found")
+                if flm_path.suffix.casefold() != ".flm":
+                    raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "custom algorithm must be an .flm file")
+                digest = str(expected_digest).casefold()
+                if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM integrity metadata is invalid",
+                    )
+                try:
+                    payload = flm_path.read_bytes()
+                except FileNotFoundError:
+                    raise FlashError(
+                        FlashErrorCode.FILE_NOT_FOUND,
+                        "custom FLM file was not found",
+                    ) from None
+                except OSError:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM integrity check failed",
+                    ) from None
+                if hashlib.sha256(payload).hexdigest() != digest:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM integrity check failed",
+                    )
+                resolved_flms.append(payload)
             session = None
             try:
                 resolved_probe = self._resolve_probe(probe)
@@ -83,6 +208,10 @@ class PyOcdBackend:
                 if resolved_pack is not None:
                     options["pack"] = resolved_pack
                 session = factory(resolved_probe, options)
+                if resolved_flms:
+                    session.delegate = _CustomFlmDelegate(
+                        tuple(resolved_flms), getattr(session, "delegate", None)
+                    )
                 session.open()
                 session.target.reset_and_halt()
                 self._session = session
@@ -172,23 +301,7 @@ class PyOcdBackend:
             session = self._require_session()
             try:
                 for address, expected in self._iter_image_chunks(image):
-                    actual = self._read_target_bytes(session.target, address, len(expected))
-                    common = min(len(actual), len(expected))
-                    mismatch = next(
-                        (
-                            offset
-                            for offset in range(common)
-                            if actual[offset] != expected[offset]
-                        ),
-                        None,
-                    )
-                    if mismatch is None and len(actual) != len(expected):
-                        mismatch = common
-                    if mismatch is not None:
-                        raise FlashError(
-                            FlashErrorCode.VERIFY_FAIL,
-                            f"verification mismatch at 0x{address + mismatch:X}",
-                        )
+                    self._verify_expected_bytes(session.target, address, expected)
             except FlashError:
                 raise
             except FileNotFoundError:
@@ -198,6 +311,123 @@ class PyOcdBackend:
                 ) from None
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.VERIFY_FAIL) from None
+
+    @classmethod
+    def _verify_expected_bytes(
+        cls, target: Any, address: int, expected: bytes
+    ) -> None:
+        offset = 0
+        while offset < len(expected):
+            current = address + offset
+            region = cls._flash_region_for_address(target, current)
+            size = len(expected) - offset
+            if region is not None:
+                size = min(size, int(region.start) + int(region.length) - current)
+            flash = getattr(region, "flash", None) if region is not None else None
+            custom_verify = callable(getattr(flash, "verify_data", None))
+            flash_algo = getattr(flash, "flash_algo", None)
+            custom_verify = custom_verify or (
+                isinstance(flash_algo, dict)
+                and flash_algo.get("mklink_custom_verify") is True
+            )
+            if custom_verify:
+                page_size = getattr(region, "page_size", None)
+                if (
+                    not isinstance(page_size, int)
+                    or isinstance(page_size, bool)
+                    or page_size <= 0
+                ):
+                    raise RuntimeError("custom FLM has no valid verification buffer size")
+                size = min(size, page_size)
+                result = cls._verify_with_flash_algorithm(
+                    flash, current, expected[offset : offset + size]
+                )
+                success = current + size
+                if result != success:
+                    mismatch = (
+                        result
+                        if isinstance(result, int)
+                        and not isinstance(result, bool)
+                        and current <= result < success
+                        else current
+                    )
+                    raise FlashError(
+                        FlashErrorCode.VERIFY_FAIL,
+                        f"verification mismatch at 0x{mismatch:X}",
+                    )
+            else:
+                actual = cls._read_target_bytes(target, current, size)
+                common = min(len(actual), size)
+                mismatch = next(
+                    (
+                        index
+                        for index in range(common)
+                        if actual[index] != expected[offset + index]
+                    ),
+                    None,
+                )
+                if mismatch is None and len(actual) != size:
+                    mismatch = common
+                if mismatch is not None:
+                    raise FlashError(
+                        FlashErrorCode.VERIFY_FAIL,
+                        f"verification mismatch at 0x{current + mismatch:X}",
+                    )
+            offset += size
+
+    @staticmethod
+    def _flash_region_for_address(target: Any, address: int) -> Any:
+        memory_map = getattr(target, "memory_map", ())
+        getter = getattr(memory_map, "get_region_for_address", None)
+        if callable(getter):
+            region = getter(address)
+            if region is not None and bool(getattr(region, "is_flash", False)):
+                return region
+        for region in memory_map:
+            if (
+                bool(getattr(region, "is_flash", False))
+                and int(region.start) <= address < int(region.start) + int(region.length)
+            ):
+                return region
+        return None
+
+    @staticmethod
+    def _verify_with_flash_algorithm(flash: Any, address: int, data: bytes) -> Any:
+        verifier = getattr(flash, "verify_data", None)
+        if callable(verifier):
+            return verifier(address, data)
+
+        flash_algo = getattr(flash, "flash_algo", None)
+        if (
+            not isinstance(flash_algo, dict)
+            or flash_algo.get("mklink_custom_verify") is not True
+        ):
+            raise RuntimeError("custom FLM verification is unavailable")
+        pc_verify = flash_algo.get("pc_verify")
+        page_buffers = getattr(flash, "page_buffers", ())
+        if (
+            not isinstance(pc_verify, int)
+            or isinstance(pc_verify, bool)
+            or not page_buffers
+        ):
+            raise RuntimeError("custom FLM verification entry is invalid")
+
+        flash.init(flash.Operation.VERIFY)
+        try:
+            flash.target.write_memory_block8(page_buffers[0], data)
+            timeout = flash.target.session.options.get("flash.timeout.program")
+            result = flash._call_function_and_wait(
+                pc_verify,
+                address,
+                len(data),
+                page_buffers[0],
+                timeout=timeout,
+            )
+            if result == flash.TIMEOUT_ERROR:
+                raise RuntimeError("custom FLM verification timed out")
+            return result
+        finally:
+            flash.uninit()
 
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
         with self._lock:

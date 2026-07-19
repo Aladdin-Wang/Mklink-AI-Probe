@@ -8,12 +8,13 @@ import ProbeSettingsPanel from '../components/online-flash/ProbeSettingsPanel.vu
 import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
 import { HexPreviewModel, type FormattedHexRow } from '../lib/hexPreview'
 import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnlineFlashApi'
-import type { ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
+import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const PROBE_DISCOVERY_ATTEMPTS = 6
 const PROBE_DISCOVERY_DELAY_MS = 500
 const AUTO_INSPECT_DELAY_MS = 150
+const ONLINE_FREQUENCIES = new Set([1_000_000, 2_000_000, 4_000_000, 8_000_000, 10_000_000])
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
 const CANONICAL_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
@@ -24,12 +25,15 @@ function savedSettings(): SavedSettings {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as SavedSettings } catch { return {} }
 }
 const saved = savedSettings()
+function savedFrequency(value: number | undefined): number {
+  return value !== undefined && ONLINE_FREQUENCIES.has(value) ? value : 1_000_000
+}
 
 const probes = ref<ProbeRecord[]>([])
 const probeId = ref('')
 const probeBusy = ref(false)
 const probeError = ref('')
-const frequency = ref(saved.frequency ?? 1_000_000)
+const frequency = ref(savedFrequency(saved.frequency))
 const connectMode = ref(saved.connectMode ?? 'halt')
 const resetMode = ref(saved.resetMode ?? 'default')
 const targets = ref<TargetRecord[]>([])
@@ -40,6 +44,9 @@ const packBusy = ref(false)
 const packCancelPending = ref(false)
 const packProgress = ref(0)
 const packError = ref('')
+const customFlms = ref<CustomFlmRecord[]>([])
+const customFlmBusy = ref(false)
+const customFlmError = ref('')
 const firmware = ref<File | null>(null)
 const baseAddress = ref('')
 const inspection = ref<ImageInspection | null>(null)
@@ -65,6 +72,7 @@ let viewportGeneration = 0
 let targetSearchGeneration = 0
 let targetSearchController: AbortController | null = null
 let packOperationToken = 0
+let customFlmToken = 0
 let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let storageWarningReported = false
@@ -211,6 +219,67 @@ async function selectTarget(target: TargetRecord): Promise<void> {
     }
   } else selectedTarget.value = target
   persist()
+}
+
+async function loadCustomFlms(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
+  const token = ++customFlmToken
+  customFlmError.value = ''
+  if (!partNumber) {
+    customFlms.value = []
+    customFlmBusy.value = false
+    return
+  }
+  customFlmBusy.value = true
+  try {
+    const records = await api.listCustomFlms(partNumber)
+    if (token === customFlmToken && !disposed) customFlms.value = records
+  } catch (error) {
+    if (token === customFlmToken) {
+      customFlms.value = []
+      customFlmError.value = message(error)
+    }
+  } finally {
+    if (token === customFlmToken) customFlmBusy.value = false
+  }
+}
+
+watch(() => selectedTarget.value?.part_number || '', partNumber => {
+  void loadCustomFlms(partNumber)
+})
+
+async function addCustomFlm(file: File): Promise<void> {
+  const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
+  if (!partNumber || customFlmBusy.value || active.value) return
+  customFlmBusy.value = true
+  customFlmError.value = ''
+  try {
+    await api.addCustomFlm(file, partNumber)
+    await loadCustomFlms(partNumber)
+    resetInspection()
+    scheduleAutoInspection()
+  } catch (error) {
+    customFlmError.value = message(error)
+  } finally {
+    customFlmBusy.value = false
+  }
+}
+
+async function removeCustomFlm(algorithmId: string): Promise<void> {
+  const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
+  if (!partNumber || customFlmBusy.value || active.value) return
+  if (!confirm('移除此自定义 FLM？已有固件检查结果将失效。')) return
+  customFlmBusy.value = true
+  customFlmError.value = ''
+  try {
+    await api.removeCustomFlm(algorithmId, partNumber)
+    await loadCustomFlms(partNumber)
+    resetInspection()
+    scheduleAutoInspection()
+  } catch (error) {
+    customFlmError.value = message(error)
+  } finally {
+    customFlmBusy.value = false
+  }
 }
 
 async function refreshPackStatus(): Promise<void> {
@@ -384,7 +453,7 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
-      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" />
+      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @scroll="loadVisible" />

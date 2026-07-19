@@ -1371,6 +1371,18 @@ def test_subprocess_worker_forwards_progress_before_process_wait(monkeypatch, tm
     assert request["payload"] == {"part_number": "DEVICE"}
 
 
+def test_pack_worker_uses_internal_entrypoint_when_frozen(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", r"C:\Program Files\MKLink\mklink-sidecar.exe")
+
+    command = SubprocessPackWorker(PackPaths(tmp_path))._worker_command()
+
+    assert command == [
+        r"C:\Program Files\MKLink\mklink-sidecar.exe",
+        "--internal-pack-worker",
+    ]
+
+
 def test_subprocess_worker_stops_process_on_invalid_json(monkeypatch, tmp_path):
     class Input:
         def write(self, value):

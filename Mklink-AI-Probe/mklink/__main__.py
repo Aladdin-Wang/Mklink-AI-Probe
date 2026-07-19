@@ -4,6 +4,11 @@ import sys
 import site
 import subprocess
 
+if sys.argv[1:] == ["--internal-pack-worker"]:
+    from mklink.cmsis_dap.pack_worker import main as _pack_worker_main
+
+    raise SystemExit(_pack_worker_main())
+
 _skill_dir = os.path.dirname(os.path.abspath(__file__))
 _base_dir = os.path.dirname(_skill_dir)  # mklink-ai-probe/
 

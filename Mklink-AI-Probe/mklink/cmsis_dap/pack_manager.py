@@ -112,6 +112,12 @@ class SubprocessPackWorker:
                 else None
             )
 
+    @staticmethod
+    def _worker_command() -> list[str]:
+        if getattr(sys, "frozen", False):
+            return [sys.executable, "--internal-pack-worker"]
+        return [sys.executable, "-m", "mklink.cmsis_dap.pack_worker"]
+
     def run(
         self,
         command: str,
@@ -142,7 +148,7 @@ class SubprocessPackWorker:
             try:
                 process = subprocess.Popen(
                     guarded_process_command(
-                        [sys.executable, "-m", "mklink.cmsis_dap.pack_worker"]
+                        self._worker_command()
                     ),
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,

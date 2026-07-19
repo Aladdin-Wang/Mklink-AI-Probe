@@ -231,6 +231,8 @@ def test_full_job_releases_resource_and_records_snapshot():
         "target": "HPM5301",
         "frequency": 2_000_000,
         "pack": "/packs/HPM5301.pack",
+        "custom_flm_paths": (),
+        "custom_flm_digests": (),
         "connect_mode": "under-reset",
         "reset_mode": "hw",
     }

@@ -40,6 +40,7 @@ defineEmits<{
       <select data-testid="frequency" :value="frequency" @change="$emit('update:frequency', Number(($event.target as HTMLSelectElement).value))">
         <option :value="1000000">1 MHz</option><option :value="2000000">2 MHz</option>
         <option :value="4000000">4 MHz</option><option :value="8000000">8 MHz</option>
+        <option :value="10000000">10 MHz</option>
       </select>
     </label>
     <label>连接方式
