@@ -736,6 +736,12 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('removes the dynamic statistics footer from the waveform layout', () => {
+    expect(componentSource).not.toContain('id="stats-footer"')
+    expect(viewerSource).not.toContain("document.getElementById('stats-footer')")
+    expect(viewerCss).not.toMatch(/\nfooter\s*\{/)
+  })
+
   it('hides selected curves without stopping their binary samples', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)

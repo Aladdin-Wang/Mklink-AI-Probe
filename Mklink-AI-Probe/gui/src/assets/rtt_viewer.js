@@ -3578,20 +3578,6 @@ function updateUI() {
     }
     chip.classList.toggle('active', meta.visible);
   }
-
-  var footer = document.getElementById('stats-footer');
-  var html = '';
-  for (var i = 0; i < names.length; i++) {
-    var name = names[i];
-    var meta = FIELDS[name];
-    var latest = meta.ringBuf.latest();
-    var cur = latest ? formatTypedValue(latest.y, meta) : '-';
-    var avg = meta.ringBuf._count > 0 ? (meta.ringBuf._sum / meta.ringBuf._count).toFixed(meta.precision || 2) : '-';
-    var minV = Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min.toFixed(meta.precision || 2) : '-';
-    var maxV = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max.toFixed(meta.precision || 2) : '-';
-    html += '<div class="stat"><span class="label">' + name + ':</span><span class="value" style="color:' + meta.color + '">cur=' + cur + ' min=' + minV + ' max=' + maxV + ' avg=' + avg + '</span></div>';
-  }
-  footer.innerHTML = html;
 }
 
 function toggleField(name, chipEl) {

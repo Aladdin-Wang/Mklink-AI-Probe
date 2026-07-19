@@ -385,7 +385,6 @@ function buildTemplate(mode: string): string {
   <section id="inspector-panel" aria-hidden="true"></section>
 </main>
 
-<footer id="stats-footer"></footer>
 <div id="threshold-overlay" class="config-overlay" aria-hidden="true">
   <div class="config-dialog" role="dialog" aria-modal="true" aria-labelledby="threshold-title">
     <h2 id="threshold-title" data-i18n="thresholds">阈值</h2>

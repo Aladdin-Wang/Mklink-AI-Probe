@@ -916,22 +916,6 @@ tr.watch-child-row td[data-col="value"] {
 }
 #raw-log-panel[data-open="false"] #raw-log { display: none; }
 
-footer {
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 6px 20px;
-  font-size: 11px;
-  color: var(--dim);
-  display: flex;
-  gap: 20px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  min-height: 28px;
-}
-.stat { display: flex; gap: 4px; }
-.stat .label { opacity: .7; }
-.stat .value { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-
 #shutdown-overlay {
   display: none;
   position: fixed;
