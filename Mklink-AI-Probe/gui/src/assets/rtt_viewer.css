@@ -1097,10 +1097,6 @@ tr.watch-child-row td[data-col="value"] {
     right: 8px;
     text-align: right;
   }
-  footer {
-    padding: 6px 10px;
-    gap: 10px;
-  }
 }
 
 /* measurement cursors */
