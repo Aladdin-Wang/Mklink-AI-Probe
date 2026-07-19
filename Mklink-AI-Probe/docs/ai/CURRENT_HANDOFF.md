@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-19T03:03:43+08:00`
+- 更新时间：`2026-07-19T11:28:06+08:00`
 - 分支：`feature/online-flash-streaming`
-- HEAD：`a9f1b6b is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory`
-- 远端 HEAD：`the implementation and final handoff commits are pushed together on feature/online-flash-streaming`
+- HEAD：`41007b3 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory`
+- 远端 HEAD：`the stable viewport implementation and final handoff commits are pushed together on feature/online-flash-streaming`
 - 工作树：clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed
-- 当前任务：The a9f1b6b v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.
+- 当前任务：The 41007b3 v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.
 - 状态：`complete`
 
 ## 里程碑
@@ -41,6 +41,7 @@
 - **Desktop configuration workspace and bidirectional RTT** — `complete`。The standard NSIS is unsigned. AXF/ELF address diagnosis still depends on external arm-none-eabi-readelf; the restricted installed-runtime test intentionally omitted it, so MAP diagnosis was used and passed. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
 - **Packaged RTT startup visibility and version identity** — `complete`。Only the standard unsigned NSIS was generated. The final installed pass verified transmit acceptance but did not establish a fresh byte-exact MCU echo because the parser coalesced the target's per-byte echo records; the previous 93d83e4 hardware qualification retains byte-exact payload coverage. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
 - **RTT transmit retention and SuperWatch 10 us throughput** — `complete`。The 10 us setting is the fastest supported request and the qualified two-channel stable rate, not a proven absolute hardware maximum. Only the standard unsigned NSIS was generated. No MSI, WebView2-offline bundle, raw log, screenshot, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
+- **SuperWatch stable chart and absolute Y viewport** — `complete`。Only the standard unsigned NSIS was generated. The installed restricted-PATH process tree contained Tauri, the bundled sidecar, and WebView2 with zero Python processes; normal close released application processes and ports 8765 and 9223. No MSI, WebView2-offline bundle, raw log, screenshot, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed.
 
 ## 验证证据
 
@@ -76,6 +77,7 @@
 - **Desktop configuration and bidirectional RTT installed HIL**：Python 686, GUI 324, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real Edge verified the latest production frontend at the default and minimum desktop window sizes. Physical V4.3.4 HIL verified address detection, exact-mode compatibility recovery, repeated start/stop, active channel-0 DownBuffer writes, UTF-8/Hex payloads, all configured line endings, and byte-exact MCU echo. The 93d83e4 standard NSIS was the only bundle generated, installed silently with exit 0, ran with the bundled sidecar and no Python process under restricted PATH, passed installed MAP/RTT hardware checks, and released all processes and port 8765 on normal close. SHA-256 is 8737b858613f54615366f004d4d15976024d48d078e54ca4f66885de96bfb51d.
 - **Packaged RTT startup and visible build identity installed HIL**：Python 691, GUI 329, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real installed Tauri WebView2/CDP returned application/json for the RTT status endpoint, displayed v0.1.0-rc.2 plus commit 28421cb, kept the empty log panel visible, showed startup progress, issued mode 0/search_size 1024 to the bundled API, exposed target-control-block DownBuffers with active channel 0, accepted transmit with HTTP 200, restored running/send state after navigation, and exited with zero Mklink processes and released API/CDP ports. Only the standard NSIS was generated. SHA-256 is 3447bf96b56f3ce2d576addd417a0e1e1b5c7b0744837d35a3e964c7ecc08252.
 - **RTT transmit and SuperWatch high-throughput installed HIL**：Python 702, GUI 331, packaged harness 40, focused StreamHub/RTT/SuperWatch 75, and WaveformViewer 51 tests passed; Vite transformed 1908 modules. The installed a9f1b6b standard NSIS ran through the bundled sidecar under restricted PATH with no Python process. A 600.737-second visible WebView2 SuperWatch gate at a 10 us request delivered 14628202 two-channel sample rows at 24350.43 samples/s/channel, rendered at 23.04 FPS, matched 457776 WebSocket and Worker frames exactly, reported zero Worker errors and zero loss in every measured domain, passed pause/resume and drain, then stopped and released all processes and ports. SHA-256 is 00dd2f4472e538438b4be3185ebce2da783cfdaae8c31328efb68906a121b0e1.
+- **SuperWatch stable viewport installed HIL**：Python 702, GUI 343, WaveformViewer 63, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The installed 41007b3 standard NSIS displayed the matching build identity and ran a real four-channel SuperWatch stream through the bundled sidecar. Chart geometry remained identical across eleven samples, absolute manual Y zoom/pan stayed fixed as uwTick grew, X/Y diagonal drag and Auto reset passed, small-signal zoom kept all selected channels acquiring while uwTick was outside the viewport, Canvas refreshed at 22.36 FPS with zero measured backend drops, pause/resume behaved correctly, and dashboard/application cleanup released clients, resources, processes, and API/CDP ports. SHA-256 is f7fb285e4558435beb52e3e6a007608b27de1f114f52844cc3b05545a5f6fb45.
 
 ## 架构决策
 
@@ -96,7 +98,7 @@
 - RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.
 - SuperWatch typed writes serialize against acquisition: stop continuous dump, write through flush_memory, verify with command-mode read_memory, then restore the prior running or paused state.
 - SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.
-- SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform uses the full right workspace and a shared numeric Y axis with wheel zoom, drag pan, and double-click reset.
+- SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform has no dynamic statistics footer. Its shared Y axis starts in Auto, uses an absolute manual range after Y interaction, anchors wheel zoom to the pointer, supports plot Y/XY panning with independent activation thresholds, and returns to Auto on double-click.
 - Every future Windows candidate is copied to the main repository's external release directory with the source commit in the filename and a SHA-256 checksum list. Generate the standard NSIS installer by default. Do not generate MSI or WebView2-offline installers unless the user explicitly requests them. Installers and checksums are never committed.
 - Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.
 - The desktop configuration surface is one workspace with Local Device, File Sources, Remote Connection, and Start Service sections. AXF/ELF/OUT is one symbol-source field; MAP is independent. Project initialization remains a backend/AI workflow and is not exposed as duplicate desktop project overview state.
@@ -114,8 +116,8 @@
 
 ## 下一动作
 
-1. Install the a9f1b6b v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, visible build identity, probe discovery, the merged configuration workspace, MAP-based RTT detection, startup feedback, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, 10 us acquisition, normal shutdown, uninstall, and reinstall checks.
-2. Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch 50000-point minimum buffer and 10 us workflow, symbol workspace, typed writes, eye visibility, shared-axis navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
+1. Install the 41007b3 v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, visible build identity, probe discovery, the merged configuration workspace, MAP-based RTT detection, startup feedback, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, 10 us acquisition, stable chart geometry, pointer-anchored Y zoom, Y/XY drag, Auto reset, normal shutdown, uninstall, and reinstall checks.
+2. Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch 50000-point minimum buffer and 10 us workflow, symbol workspace, typed writes, eye visibility, stable chart geometry, small-signal Y navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.
 3. Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.
 4. For the next release, add code signing before promoting beyond prerelease.
 5. Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present.
@@ -137,7 +139,7 @@
 - Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.
 - Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.
 - Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.
-- The a9f1b6b v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.
+- The 41007b3 v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.
 - The final v0.1.0-rc.2 installed pass verified DownBuffer authority and transmit acceptance but did not establish a fresh byte-exact MCU echo because the target parser coalesced per-byte echo records; the earlier 93d83e4 hardware pass remains the byte-exact payload evidence.
 - AXF/ELF symbol and RTT address diagnosis requires external arm-none-eabi-readelf. The installed restricted-PATH qualification intentionally had no readelf, so AXF diagnosis was unavailable while independent MAP diagnosis and hardware RTT startup passed.
 - Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git.
