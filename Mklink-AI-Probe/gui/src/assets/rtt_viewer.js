@@ -301,7 +301,13 @@ function classifyWatchValue(meta, value) {
 }
 
 // Global Y-axis zoom (all channels together, like oscilloscope)
-var globalYView = { zoom: 1, offset: 0 };
+var globalYView = {
+  zoom: 1,
+  offset: 0,
+  autoRange: true,
+  manualMin: null,
+  manualMax: null
+};
 
 // Per-channel Y-axis state (Ctrl+wheel for individual channel zoom)
 var channelYState = {};  // { name: { zoom: 1, offset: 0, autoRange: true } }
@@ -1924,7 +1930,13 @@ function serializeState() {
     channels.push(ch);
   }
   var state = { channels: channels };
-  state.globalYView = { zoom: globalYView.zoom, offset: globalYView.offset };
+  state.globalYView = {
+    zoom: globalYView.zoom,
+    offset: globalYView.offset,
+    autoRange: globalYView.autoRange !== false,
+    manualMin: globalYView.manualMin,
+    manualMax: globalYView.manualMax
+  };
   state.bufferPoints = RING_BUFFER_CAPACITY;
   state.watchColumns = JSON.parse(JSON.stringify(watchColumnState));
   state.triggerSettings = {
@@ -1978,6 +1990,15 @@ function deserializeState(json) {
     if (state.globalYView) {
       globalYView.zoom = state.globalYView.zoom || 1;
       globalYView.offset = state.globalYView.offset || 0;
+      globalYView.autoRange = true;
+      globalYView.manualMin = null;
+      globalYView.manualMax = null;
+      if (state.globalYView.autoRange === false) {
+        setManualSharedYRange(
+          parseNullableNumber(state.globalYView.manualMin),
+          parseNullableNumber(state.globalYView.manualMax)
+        );
+      }
     }
     if (state.bufferPoints !== undefined) {
       setBufferCapacity(state.bufferPoints);
@@ -2563,7 +2584,7 @@ function getChannelYRange(name) {
   };
 }
 
-function getSharedYRange() {
+function getAutoSharedYRange() {
   var yMin = Infinity;
   var yMax = -Infinity;
   for (var name in FIELDS) {
@@ -2576,6 +2597,29 @@ function getSharedYRange() {
   var pad = (yMax - yMin) * 0.1 || 1;
   yMin -= pad;
   yMax += pad;
+  return { yMin: yMin, yMax: yMax };
+}
+
+function hasManualSharedYRange() {
+  return globalYView.autoRange === false &&
+    globalYView.manualMin !== null && globalYView.manualMin !== undefined && globalYView.manualMin !== '' &&
+    globalYView.manualMax !== null && globalYView.manualMax !== undefined && globalYView.manualMax !== '' &&
+    Number.isFinite(Number(globalYView.manualMin)) &&
+    Number.isFinite(Number(globalYView.manualMax)) &&
+    Number(globalYView.manualMax) > Number(globalYView.manualMin);
+}
+
+function getSharedYRange() {
+  if (hasManualSharedYRange()) {
+    return {
+      yMin: Number(globalYView.manualMin),
+      yMax: Number(globalYView.manualMax)
+    };
+  }
+  var autoRange = getAutoSharedYRange();
+  if (!autoRange) return null;
+  var yMin = autoRange.yMin;
+  var yMax = autoRange.yMax;
   var range = yMax - yMin;
   var center = (yMin + yMax) / 2 + globalYView.offset;
   var visibleRange = range / globalYView.zoom;
@@ -2583,6 +2627,36 @@ function getSharedYRange() {
     yMin: center - visibleRange / 2,
     yMax: center + visibleRange / 2
   };
+}
+
+function setManualSharedYRange(yMin, yMax) {
+  if (yMin === null || yMin === undefined || yMin === '' ||
+      yMax === null || yMax === undefined || yMax === '') return false;
+  yMin = Number(yMin);
+  yMax = Number(yMax);
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || !(yMax > yMin)) return false;
+  globalYView.autoRange = false;
+  globalYView.manualMin = yMin;
+  globalYView.manualMax = yMax;
+  globalYView.zoom = 1;
+  globalYView.offset = 0;
+  return true;
+}
+
+function zoomSharedYAt(anchorRatio, deltaY) {
+  var current = getSharedYRange();
+  if (!current) return false;
+  var ratio = Number(anchorRatio);
+  if (!Number.isFinite(ratio)) ratio = 0.5;
+  ratio = Math.max(0, Math.min(1, ratio));
+  var span = current.yMax - current.yMin;
+  if (!(span > 0)) return false;
+  var anchor = current.yMax - ratio * span;
+  var nextSpan = span * (deltaY > 0 ? 1.25 : 0.8);
+  return setManualSharedYRange(
+    anchor - (1 - ratio) * nextSpan,
+    anchor + ratio * nextSpan
+  );
 }
 
 function resetChannelY(name) {
@@ -2617,10 +2691,10 @@ function zoomTimelineAt(clientX, deltaY) {
   drawMinimap();
 }
 
-function zoomVisibleY(deltaY) {
+function zoomVisibleY(deltaY, anchorRatio) {
   var factor = deltaY > 0 ? 0.8 : 1.25;
   if (IS_SUPERWATCH_MODE) {
-    globalYView.zoom = Math.max(0.1, Math.min(100, globalYView.zoom * factor));
+    zoomSharedYAt(anchorRatio, deltaY);
     drawChart();
     return;
   }
@@ -2636,7 +2710,7 @@ function zoomVisibleY(deltaY) {
 }
 
 function resetVisibleY() {
-  globalYView = { zoom: 1, offset: 0 };
+  globalYView = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
   for (var name in channelYState) resetChannelY(name);
   drawChart();
 }
@@ -2650,7 +2724,9 @@ if (xAxisHit && yAxisHit) {
   }, { passive: false, signal: viewerAbortController.signal });
   yAxisHit.addEventListener('wheel', function(e) {
     e.preventDefault();
-    zoomVisibleY(e.deltaY);
+    var rect = yAxisHit.getBoundingClientRect();
+    var ratio = (e.clientY - rect.top) / Math.max(1, rect.height);
+    zoomVisibleY(e.deltaY, ratio);
   }, { passive: false, signal: viewerAbortController.signal });
 
   xAxisHit.addEventListener('mousedown', function(e) {
@@ -2666,8 +2742,10 @@ if (xAxisHit && yAxisHit) {
       axisDrag = {
         mode: 'y-shared',
         startY: e.clientY,
-        startOffset: globalYView.offset,
-        range: sharedRange.yMax - sharedRange.yMin
+        yMin: sharedRange.yMin,
+        yMax: sharedRange.yMax,
+        range: sharedRange.yMax - sharedRange.yMin,
+        height: Math.max(1, yAxisHit.getBoundingClientRect().height)
       };
       e.preventDefault();
       return;
@@ -2697,8 +2775,9 @@ if (xAxisHit && yAxisHit) {
       drawChart();
       drawMinimap();
     } else if (axisDrag.mode === 'y-shared') {
-      var sharedDy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
-      globalYView.offset = axisDrag.startOffset + sharedDy * axisDrag.range;
+      var sharedDy = (e.clientY - axisDrag.startY) / axisDrag.height;
+      var sharedShift = sharedDy * axisDrag.range;
+      setManualSharedYRange(axisDrag.yMin + sharedShift, axisDrag.yMax + sharedShift);
       drawChart();
     } else {
       var dy = (e.clientY - axisDrag.startY) / Math.max(1, rect.height);
@@ -3098,7 +3177,7 @@ function drawChart() {
     }
 
     if (IS_SUPERWATCH_MODE) {
-      zoomVisibleY(e.deltaY);
+      zoomVisibleY(e.deltaY, (my - mt) / Math.max(1, ph));
       return;
     }
 

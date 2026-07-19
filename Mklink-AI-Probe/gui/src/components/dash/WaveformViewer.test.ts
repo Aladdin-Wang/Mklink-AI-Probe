@@ -103,6 +103,17 @@ function canvasContext(): CanvasRenderingContext2D {
   })
 }
 
+function wheelEvent(init: WheelEventInit) {
+  const event = new WheelEvent('wheel', init)
+  if (init.clientX !== undefined) {
+    Object.defineProperty(event, 'clientX', { value: init.clientX })
+  }
+  if (init.clientY !== undefined) {
+    Object.defineProperty(event, 'clientY', { value: init.clientY })
+  }
+  return event
+}
+
 async function loadRttViewerRuntime(
   mode: 'VOFA' | 'SuperWatch' = 'VOFA', capacity = 4,
 ) {
@@ -177,6 +188,9 @@ window.__rttTestProbe = {
   hover: hoverProbe,
   channelYState: function() { return channelYState; },
   globalYView: function() { return globalYView; },
+  sharedYRange: function() { return getSharedYRange(); },
+  serializeState: serializeState,
+  deserializeState: deserializeState,
   timeline: function() { return timelineView; },
   addSuperwatchName: superwatchAddName
 };`
@@ -835,6 +849,166 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('anchors shared SuperWatch canvas wheel zoom to the pointer Y value', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'small' }, { name: 'uwTick' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 2,
+        layout: 'sample-major-float32',
+        values: Float32Array.of(1, 100000, 2, 200000, 3, 300000).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      const before = runtime.probe.sharedYRange()
+      const plotTop = 8
+      const plotHeight = 400 - plotTop - 32
+      const anchorRatio = 0.25
+      const pointerY = plotTop + plotHeight * anchorRatio
+      const anchorBefore = before.yMax - anchorRatio * (before.yMax - before.yMin)
+
+      const zoomEvent = wheelEvent({
+        deltaY: -100, clientX: 400, clientY: pointerY, bubbles: true, cancelable: true,
+      })
+      expect(zoomEvent.clientY).toBe(pointerY)
+      canvas.dispatchEvent(zoomEvent)
+
+      const after = runtime.probe.sharedYRange()
+      const expectedSpan = (before.yMax - before.yMin) * 0.8
+      expect(after).toEqual({
+        yMin: anchorBefore - (1 - anchorRatio) * expectedSpan,
+        yMax: anchorBefore + anchorRatio * expectedSpan,
+      })
+      const anchorAfter = after.yMax - anchorRatio * (after.yMax - after.yMin)
+      expect(after.yMax - after.yMin).toBeLessThan(before.yMax - before.yMin)
+      expect(anchorAfter).toBeCloseTo(anchorBefore, 8)
+      expect(runtime.probe.globalYView()).toMatchObject({ autoRange: false })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps a manual shared SuperWatch Y range fixed as later values grow', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'small' }, { name: 'uwTick' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 2,
+        layout: 'sample-major-float32',
+        values: Float32Array.of(1, 100000, 2, 200000, 3, 300000).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      document.getElementById('chart')!.dispatchEvent(wheelEvent({
+        deltaY: -100, clientX: 400, clientY: 98, bubbles: true, cancelable: true,
+      }))
+      const lockedRange = runtime.probe.sharedYRange()
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 5_000_000n, itemCount: 2, channelCount: 2,
+        layout: 'sample-major-float32',
+        values: Float32Array.of(4, 900000, 5, 1000000).buffer,
+        times: Float64Array.of(3, 4).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      expect(runtime.probe.sharedYRange()).toEqual(lockedRange)
+      expect(runtime.probe.fields().uwTick.ringBuf._max).toBe(1000000)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('persists an absolute manual shared SuperWatch Y range', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+      document.getElementById('y-axis-hit')!.dispatchEvent(wheelEvent({
+        deltaY: -100, clientY: 160, bubbles: true,
+      }))
+      const manualRange = runtime.probe.sharedYRange()
+      const saved = runtime.probe.serializeState()
+      expect(saved.globalYView).toEqual({
+        zoom: 1, offset: 0, autoRange: false,
+        manualMin: manualRange.yMin, manualMax: manualRange.yMax,
+      })
+
+      document.getElementById('y-axis-hit')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      expect(runtime.probe.deserializeState(saved)).toBe(true)
+      expect(runtime.probe.sharedYRange()).toEqual(manualRange)
+      expect(runtime.probe.globalYView()).toEqual(saved.globalYView)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('loads legacy shared Y zoom and rejects invalid manual bounds', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.probe.deserializeState({
+        channels: [{ name: 'A' }],
+        globalYView: { zoom: 2, offset: 0.25 },
+      })).toBe(true)
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 2, offset: 0.25, autoRange: true, manualMin: null, manualMax: null,
+      })
+
+      expect(runtime.probe.deserializeState({
+        channels: [{ name: 'A' }],
+        globalYView: {
+          zoom: 3, offset: 0.5, autoRange: false, manualMin: null, manualMax: 10,
+        },
+      })).toBe(true)
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 3, offset: 0.5, autoRange: true, manualMin: null, manualMax: null,
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('zooms, pans, and resets the X axis through its hit region', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
@@ -854,7 +1028,7 @@ describe('VOFA viewer hot path source guard', () => {
       })
       const axis = document.getElementById('x-axis-hit')!
 
-      axis.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: 400, bubbles: true }))
+      axis.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
       expect(runtime.probe.timeline().zoom).toBeGreaterThan(1)
       axis.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 500, bubbles: true }))
       window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }))
@@ -868,7 +1042,7 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
-  it('zooms, pans, and resets the shared SuperWatch Y axis through its hit region', async () => {
+  it('zooms, pans, and resets an absolute shared SuperWatch Y range through its hit region', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
     mocks.binary.telemetry = shallowRef(null)
@@ -887,15 +1061,41 @@ describe('VOFA viewer hot path source guard', () => {
       })
       const axis = document.getElementById('y-axis-hit')!
 
-      axis.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientY: 160, bubbles: true }))
-      expect(runtime.probe.globalYView().zoom).toBeGreaterThan(1)
+      const beforeZoom = runtime.probe.sharedYRange()
+      const anchorRatio = 160 / 400
+      const anchorBefore = beforeZoom.yMax - anchorRatio * (beforeZoom.yMax - beforeZoom.yMin)
+      axis.dispatchEvent(wheelEvent({ deltaY: -100, clientY: 160, bubbles: true }))
+      const zoomedRange = runtime.probe.sharedYRange()
+      const anchorAfter = zoomedRange.yMax - anchorRatio * (zoomedRange.yMax - zoomedRange.yMin)
+      expect(anchorAfter).toBeCloseTo(anchorBefore, 12)
+      expect(runtime.probe.globalYView()).toMatchObject({
+        zoom: 1, offset: 0, autoRange: false,
+        manualMin: zoomedRange.yMin, manualMax: zoomedRange.yMax,
+      })
       axis.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientY: 120, bubbles: true }))
       window.dispatchEvent(new MouseEvent('mousemove', { clientY: 180, bubbles: true }))
       window.dispatchEvent(new MouseEvent('mouseup', { clientY: 180, bubbles: true }))
-      expect(runtime.probe.globalYView().offset).not.toBe(0)
+      const pannedRange = runtime.probe.sharedYRange()
+      expect(pannedRange.yMax - pannedRange.yMin)
+        .toBeCloseTo(zoomedRange.yMax - zoomedRange.yMin, 12)
+      expect(pannedRange.yMin).toBeGreaterThan(zoomedRange.yMin)
+      expect(runtime.probe.globalYView()).toMatchObject({
+        zoom: 1, offset: 0, autoRange: false,
+        manualMin: pannedRange.yMin, manualMax: pannedRange.yMax,
+      })
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 5_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(900000, 1000000).buffer,
+        times: Float64Array.of(3, 4).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+      expect(runtime.probe.sharedYRange()).toEqual(pannedRange)
 
       axis.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-      expect(runtime.probe.globalYView()).toEqual({ zoom: 1, offset: 0 })
+      expect(runtime.probe.globalYView()).toEqual({
+        zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
+      })
     } finally {
       runtime.cleanup()
     }
