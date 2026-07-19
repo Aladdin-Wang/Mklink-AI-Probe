@@ -246,14 +246,19 @@ def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
         archive.writestr("Flash/Test.FLM", b"algorithm")
         archive.writestr("LICENSE.txt", "Redistribution terms")
         archive.writestr("Examples/large.bin", b"do-not-bundle")
+    source_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    license_digest = hashlib.sha256(b"Redistribution terms").hexdigest()
     config = tmp_path / "builtin-packs.json"
     config.write_text(json.dumps({
         "schema": 1,
         "packs": [],
         "archives": [{
             "file": archive_path.name,
-            "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            "sha256": source_digest,
+            "source_url": "https://vendor.example/packs/Vendor.Device_DFP.1.0.0.pack",
             "redistribution_authorized": True,
+            "redistribution_basis": "Vendor terms permit redistribution",
+            "license_files": [{"path": "LICENSE.txt", "sha256": license_digest}],
             "provenance": "local pyOCD resource bundle",
         }],
     }), encoding="utf-8")
@@ -269,6 +274,10 @@ def test_builtin_pack_builder_accepts_explicit_authorized_slim_archives(
     assert record["pack_id"] == "Vendor.Device_DFP"
     assert record["version"] == "1.0.0"
     assert record["provenance"] == "local pyOCD resource bundle"
+    assert record["source_sha256"] == source_digest
+    assert record["source_url"] == "https://vendor.example/packs/Vendor.Device_DFP.1.0.0.pack"
+    assert record["redistribution_basis"] == "Vendor terms permit redistribution"
+    assert record["licenses"] == [{"path": "LICENSE.txt", "sha256": license_digest}]
     with ZipFile(tmp_path / "out" / record["file"]) as archive:
         assert sorted(archive.namelist()) == ["Flash/Test.FLM", "LICENSE.txt", "Vendor.Device_DFP.pdsc"]
 
@@ -292,7 +301,13 @@ def test_builtin_archive_requires_allowlisted_digest_and_descriptor_license(
         "archives": [{
             "file": archive_path.name,
             "sha256": "0" * 64,
+            "source_url": "https://vendor.example/Unlicensed.pack",
             "redistribution_authorized": True,
+            "redistribution_basis": "fixture terms permit redistribution",
+            "license_files": [{
+                "path": "LICENSE.txt",
+                "sha256": hashlib.sha256(b"missing").hexdigest(),
+            }],
             "provenance": "fixture",
         }],
     }), encoding="utf-8")
@@ -305,6 +320,110 @@ def test_builtin_archive_requires_allowlisted_digest_and_descriptor_license(
     config.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="license"):
         builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "no-license")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("source_url", None, "source_url"),
+        ("source_url", "http://vendor.example/Device.pack", "HTTPS"),
+        ("redistribution_basis", None, "redistribution basis"),
+        ("redistribution_authorized", False, "redistribution_authorized"),
+        ("license_files", None, "license_files"),
+    ],
+)
+def test_builtin_archive_requires_public_redistribution_metadata(
+    builtin_pack_builder, monkeypatch, tmp_path, field, value, message,
+):
+    pack_root = tmp_path / "packs"
+    pack_root.mkdir()
+    archive_path = pack_root / "Vendor.Device_DFP.1.0.0.pack"
+    descriptor = (
+        '<package><vendor>Vendor</vendor><name>Device_DFP</name>'
+        '<license>LICENSE.txt</license>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="DEVICE_A">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>'
+    )
+    with ZipFile(archive_path, "w") as archive:
+        archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
+        archive.writestr("Flash/Test.FLM", b"algorithm")
+        archive.writestr("LICENSE.txt", b"Redistribution terms")
+    record = {
+        "file": archive_path.name,
+        "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+        "source_url": "https://vendor.example/Device.pack",
+        "redistribution_authorized": True,
+        "redistribution_basis": "Vendor terms permit redistribution",
+        "license_files": [{
+            "path": "LICENSE.txt",
+            "sha256": hashlib.sha256(b"Redistribution terms").hexdigest(),
+        }],
+        "provenance": "official vendor Pack",
+    }
+    if value is None:
+        record.pop(field)
+    else:
+        record[field] = value
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(
+        json.dumps({"schema": 1, "packs": [], "archives": [record]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "DEVICE_A", "vendor": "Vendor"}],
+    )
+
+    with pytest.raises(ValueError, match=message):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
+
+
+def test_builtin_archive_rejects_changed_license_bytes(
+    builtin_pack_builder, monkeypatch, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    pack_root.mkdir()
+    archive_path = pack_root / "Vendor.Device_DFP.1.0.0.pack"
+    descriptor = (
+        '<package><vendor>Vendor</vendor><name>Device_DFP</name>'
+        '<license>LICENSE.txt</license>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="DEVICE_A">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>'
+    )
+    with ZipFile(archive_path, "w") as archive:
+        archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
+        archive.writestr("Flash/Test.FLM", b"algorithm")
+        archive.writestr("LICENSE.txt", b"changed terms")
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [],
+        "archives": [{
+            "file": archive_path.name,
+            "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            "source_url": "https://vendor.example/Device.pack",
+            "redistribution_authorized": True,
+            "redistribution_basis": "Vendor terms permit redistribution",
+            "license_files": [{
+                "path": "LICENSE.txt",
+                "sha256": hashlib.sha256(b"original terms").hexdigest(),
+            }],
+            "provenance": "official vendor Pack",
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "DEVICE_A", "vendor": "Vendor"}],
+    )
+
+    with pytest.raises(ValueError, match="license SHA-256"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
 
 
 def test_sidecar_collects_generated_builtin_pack_bundle(builder, monkeypatch, tmp_path):

@@ -8,6 +8,7 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 from typing import Dict, Iterable, List, Mapping, Sequence
+from urllib.parse import urlsplit
 from xml.etree import ElementTree
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
@@ -106,11 +107,31 @@ def _archive_descriptor(archive: ZipFile) -> PurePosixPath:
 
 def _archive_metadata(
     source: Path,
-    license_files: object,
-    redistribution_authorized: object,
-) -> tuple[str, str, List[PurePosixPath]]:
-    if redistribution_authorized is not True:
+    metadata: Mapping[str, object],
+) -> tuple[str, str, List[PurePosixPath], Dict[str, object]]:
+    if metadata.get("redistribution_authorized") is not True:
         raise ValueError("builtin Pack archive requires explicit redistribution_authorized=true")
+    source_url = _text(metadata.get("source_url"), "archive source_url")
+    parsed_url = urlsplit(source_url)
+    if parsed_url.scheme.casefold() != "https" or not parsed_url.netloc:
+        raise ValueError("archive source_url must use HTTPS")
+    redistribution_basis = _text(
+        metadata.get("redistribution_basis"), "archive redistribution basis"
+    )
+    raw_license_files = metadata.get("license_files")
+    if not isinstance(raw_license_files, list) or not raw_license_files:
+        raise ValueError("archive license_files must be a non-empty list")
+    configured_licenses = {}
+    for raw_license in raw_license_files:
+        if not isinstance(raw_license, Mapping):
+            raise ValueError("archive license_files entries must be objects")
+        relative = _relative_path(raw_license.get("path"), "archive license path")
+        digest = _text(raw_license.get("sha256"), "archive license SHA-256").casefold()
+        if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise ValueError("archive license SHA-256 must contain 64 hexadecimal characters")
+        if relative.as_posix() in configured_licenses:
+            raise ValueError("archive license paths must be unique")
+        configured_licenses[relative.as_posix()] = digest
     with ZipFile(source) as archive:
         descriptor = _archive_descriptor(archive)
         try:
@@ -148,19 +169,37 @@ def _archive_metadata(
                 )
                 if relative.as_posix() in archive_names:
                     files.add(relative)
-        if license_files is not None:
-            if not isinstance(license_files, list):
-                raise ValueError("archive license_files must be a list")
-            for value in license_files:
-                files.add(descriptor.parent / _relative_path(value, "archive license path"))
+        declared_names = {relative.as_posix() for relative in descriptor_licenses}
+        if not declared_names.issubset(configured_licenses):
+            raise ValueError("every descriptor license must be pinned in archive license_files")
+        for relative_name, expected_digest in configured_licenses.items():
+            relative = descriptor.parent / PurePosixPath(relative_name)
+            files.add(relative)
+            if relative.as_posix() not in archive_names:
+                raise FileNotFoundError(
+                    "required builtin Pack archive file is missing: {}".format(relative)
+                )
+            actual_digest = hashlib.sha256(archive.read(relative.as_posix())).hexdigest()
+            if actual_digest != expected_digest:
+                raise ValueError("archive license SHA-256 does not match the allowlist")
         for relative in files:
             if relative.as_posix() not in archive_names:
                 raise FileNotFoundError(
                     "required builtin Pack archive file is missing: {}".format(relative)
                 )
-    return "{}.{}".format(vendor, name), version, sorted(
-        files,
-        key=lambda value: value.as_posix().casefold(),
+    license_records = [
+        {"path": path, "sha256": digest}
+        for path, digest in sorted(configured_licenses.items(), key=lambda item: item[0].casefold())
+    ]
+    return (
+        "{}.{}".format(vendor, name),
+        version,
+        sorted(files, key=lambda value: value.as_posix().casefold()),
+        {
+            "source_url": source_url,
+            "redistribution_basis": redistribution_basis,
+            "licenses": license_records,
+        },
     )
 
 
@@ -264,11 +303,7 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
             raise ValueError("archive SHA-256 must contain 64 hexadecimal characters")
         if _sha256(source) != expected_digest:
             raise ValueError("archive SHA-256 does not match the allowlist")
-        pack_id, version, files = _archive_metadata(
-            source,
-            raw_archive.get("license_files"),
-            raw_archive.get("redistribution_authorized"),
-        )
+        pack_id, version, files, public_metadata = _archive_metadata(source, raw_archive)
         if not any(path.suffix.casefold() == ".flm" for path in files):
             continue
         if pack_id.casefold() in seen_pack_ids:
@@ -287,8 +322,10 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
             "version": version,
             "file": relative_output.as_posix(),
             "sha256": _sha256(slim_pack),
+            "source_sha256": expected_digest,
             "targets": targets,
             "provenance": provenance,
+            **public_metadata,
         })
     manifest = {
         "schema": 1,

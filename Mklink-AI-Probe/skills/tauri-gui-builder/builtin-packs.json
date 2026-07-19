@@ -32,12 +32,5 @@
       "license_files": ["LICENSE"]
     }
   ],
-  "archives": [
-    {
-      "file": "NXP.MCXN947_DFP.25.03.00.pack",
-      "sha256": "34084cd50ea216dd799a41f08de934ac679731c271ba76ab9724963d279bb71b",
-      "redistribution_authorized": true,
-      "provenance": "RT-Thread Studio PyOCD 0.2.9 resource bundle"
-    }
-  ]
+  "archives": []
 }
