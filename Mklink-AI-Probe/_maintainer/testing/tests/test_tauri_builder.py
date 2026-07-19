@@ -199,6 +199,7 @@ def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(
     (source / "Flash").mkdir(parents=True)
     (source / "Keil.Test_DFP.pdsc").write_text(
         '<package><vendor>Keil</vendor><name>Test_DFP</name>'
+        '<license>LICENSE</license>'
         '<releases><release version="1.0.0"/></releases>'
         '<devices><family Dfamily="Test"><device Dname="TEST123">'
         '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
@@ -253,6 +254,7 @@ def test_builtin_pack_directory_rejects_changed_source_tree(
     (source / "Flash").mkdir(parents=True)
     (source / "Keil.Test_DFP.pdsc").write_text(
         '<package><vendor>Keil</vendor><name>Test_DFP</name>'
+        '<license>LICENSE</license>'
         '<releases><release version="1.0.0"/></releases>'
         '<devices><family Dfamily="Test"><device Dname="TEST123">'
         '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
@@ -284,6 +286,80 @@ def test_builtin_pack_directory_rejects_changed_source_tree(
     )
 
     with pytest.raises(ValueError, match="source tree SHA-256"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    ("pack_id", "version"),
+    [
+        ("Vendor.Bad/Name", "1.0.0"),
+        ("Vendor.Device_DFP", "../1.0.0"),
+    ],
+)
+def test_builtin_pack_directory_rejects_unsafe_identity_segments(
+    builtin_pack_builder, tmp_path, pack_id, version,
+):
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [{"pack_id": pack_id, "version": version}],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="safe path segment"):
+        builtin_pack_builder.build_bundle(config, [tmp_path], tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    ("vendor", "name", "release", "license_xml", "message"),
+    [
+        ("Other", "Test_DFP", "1.0.0", "<license>LICENSE</license>", "identity"),
+        ("Keil", "Other_DFP", "1.0.0", "<license>LICENSE</license>", "identity"),
+        ("Keil", "Test_DFP", "2.0.0", "<license>LICENSE</license>", "version"),
+        ("Keil", "Test_DFP", "1.0.0", "", "declare a license"),
+        ("Keil", "Test_DFP", "1.0.0", "<license>OTHER.txt</license>", "pinned"),
+    ],
+)
+def test_builtin_pack_directory_validates_descriptor_identity_and_licenses(
+    builtin_pack_builder, monkeypatch, tmp_path,
+    vendor, name, release, license_xml, message,
+):
+    pack_root = tmp_path / "packs"
+    source = pack_root / "Keil" / "Test_DFP" / "1.0.0"
+    (source / "Flash").mkdir(parents=True)
+    descriptor = (
+        f"<package><vendor>{vendor}</vendor><name>{name}</name>{license_xml}"
+        f'<releases><release version="{release}"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="TEST123">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>'
+    )
+    (source / "Keil.Test_DFP.pdsc").write_text(descriptor, encoding="utf-8")
+    (source / "Flash" / "Test.FLM").write_bytes(b"algorithm")
+    (source / "LICENSE").write_bytes(b"Apache-2.0")
+    names = ["Flash/Test.FLM", "Keil.Test_DFP.pdsc", "LICENSE"]
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [{
+            "pack_id": "Keil.Test_DFP",
+            "version": "1.0.0",
+            "source_url": "https://vendor.example/Keil.Test_DFP.1.0.0.pack",
+            "source_tree_sha256": source_tree_digest(source, names),
+            "redistribution_authorized": True,
+            "redistribution_basis": "Apache-2.0",
+            "license_files": [{
+                "path": "LICENSE",
+                "sha256": hashlib.sha256(b"Apache-2.0").hexdigest(),
+            }],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "TEST123", "vendor": "Keil"}],
+    )
+
+    with pytest.raises(ValueError, match=message):
         builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
 
 
@@ -380,6 +456,90 @@ def test_builtin_archive_requires_allowlisted_digest_and_descriptor_license(
     config.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="license"):
         builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "no-license")
+
+
+def test_builtin_archive_rejects_unsafe_descriptor_path(
+    builtin_pack_builder, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    pack_root.mkdir()
+    archive_path = pack_root / "Vendor.Device_DFP.1.0.0.pack"
+    descriptor = (
+        '<package><vendor>Vendor</vendor><name>Device_DFP</name>'
+        '<license>LICENSE.txt</license>'
+        '<releases><release version="1.0.0"/></releases></package>'
+    )
+    with ZipFile(archive_path, "w") as archive:
+        archive.writestr("../Vendor.Device_DFP.pdsc", descriptor)
+        archive.writestr("LICENSE.txt", b"Redistribution terms")
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [],
+        "archives": [{
+            "file": archive_path.name,
+            "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            "source_url": "https://vendor.example/Device.pack",
+            "redistribution_authorized": True,
+            "redistribution_basis": "Redistribution terms",
+            "license_files": [{
+                "path": "LICENSE.txt",
+                "sha256": hashlib.sha256(b"Redistribution terms").hexdigest(),
+            }],
+            "provenance": "fixture",
+        }],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="safe relative path"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
+
+
+def test_builtin_archive_rejects_duplicate_pack_identity(
+    builtin_pack_builder, monkeypatch, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    pack_root.mkdir()
+    descriptor = (
+        '<package><vendor>Vendor</vendor><name>Device_DFP</name>'
+        '<license>LICENSE.txt</license>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="DEVICE_A">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>'
+    )
+    records = []
+    for index in (1, 2):
+        archive_path = pack_root / f"copy-{index}.pack"
+        with ZipFile(archive_path, "w") as archive:
+            archive.writestr("Vendor.Device_DFP.pdsc", descriptor)
+            archive.writestr("Flash/Test.FLM", b"algorithm")
+            archive.writestr("LICENSE.txt", b"Redistribution terms")
+        records.append({
+            "file": archive_path.name,
+            "sha256": hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+            "source_url": f"https://vendor.example/copy-{index}.pack",
+            "redistribution_authorized": True,
+            "redistribution_basis": "Redistribution terms",
+            "license_files": [{
+                "path": "LICENSE.txt",
+                "sha256": hashlib.sha256(b"Redistribution terms").hexdigest(),
+            }],
+            "provenance": "fixture",
+        })
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [],
+        "archives": records,
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "DEVICE_A", "vendor": "Vendor"}],
+    )
+
+    with pytest.raises(ValueError, match="unique"):
+        builtin_pack_builder.build_bundle(config, [pack_root], tmp_path / "out")
 
 
 @pytest.mark.parametrize(

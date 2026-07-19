@@ -7,7 +7,7 @@ import argparse
 from collections import Counter
 from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from typing import Dict, Iterable, Mapping, Sequence, Tuple
 
@@ -35,9 +35,15 @@ class DapTarget:
 
 
 @dataclass(frozen=True)
+class CoverageModel:
+    model: str
+    manufacturer: str
+
+
+@dataclass(frozen=True)
 class CoverageSource:
     name: str
-    models: Tuple[str, ...]
+    models: Tuple[CoverageModel, ...]
 
 
 @dataclass(frozen=True)
@@ -94,6 +100,35 @@ def normalize_model(value: str) -> str:
     return _SEPARATORS.sub("", str(value).strip().casefold())
 
 
+_MANUFACTURER_ALIASES = {
+    "stm32": "stmicroelectronics",
+    "st": "stmicroelectronics",
+    "nrf": "nordicsemiconductor",
+    "nordic": "nordicsemiconductor",
+    "nordicsemiconductorasa": "nordicsemiconductor",
+    "numicro": "nuvoton",
+    "nuvotontechnology": "nuvoton",
+    "mircochip": "microchip",
+}
+
+
+def normalize_manufacturer(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "", str(value).strip().casefold())
+    return _MANUFACTURER_ALIASES.get(normalized, normalized)
+
+
+def _algorithm_name(value: object) -> str:
+    text = _text(value, "algorithm").replace("\\", "/")
+    path = PurePosixPath(text)
+    if path.is_absolute() or len(path.parts) != 1 or ":" in text or text in (".", ".."):
+        raise ValueError("algorithm must be a safe resource name")
+    return text
+
+
+def _region_value(region: Mapping[str, object], current: str, legacy: str) -> object:
+    return region[current] if current in region else region.get(legacy)
+
+
 def parse_catalog(payload: object) -> Tuple[DapTarget, ...]:
     if not isinstance(payload, Mapping):
         raise ValueError("DAPLinkUtility catalog must be an object")
@@ -118,17 +153,24 @@ def parse_catalog(payload: object) -> Tuple[DapTarget, ...]:
                     if not isinstance(raw_region, Mapping):
                         raise ValueError("algoprog entries must be objects")
                     regions.append(DapRegion(
-                        flash_start=_address(raw_region.get("flashbase"), "flashbase"),
-                        flash_size=_address(raw_region.get("flashsize"), "flashsize"),
-                        algorithm=_text(raw_region.get("algorithm"), "algorithm"),
+                        flash_start=_address(
+                            _region_value(raw_region, "flashbase", "addr"), "flashbase"
+                        ),
+                        flash_size=_address(
+                            _region_value(raw_region, "flashsize", "size"), "flashsize"
+                        ),
+                        algorithm=_algorithm_name(
+                            _region_value(raw_region, "algorithm", "algo")
+                        ),
                     ))
+                raw_option = str(raw_target.get("algooptb") or "").strip()
                 targets.append(DapTarget(
                     manufacturer=manufacturer,
                     series=series,
                     model=model,
                     ram_base=_address(raw_target.get("rambase"), "rambase"),
                     ram_size=_address(raw_target.get("ramsize"), "ramsize"),
-                    option_algorithm=str(raw_target.get("algooptb") or "").strip(),
+                    option_algorithm=_algorithm_name(raw_option) if raw_option else "",
                     regions=tuple(regions),
                 ))
     return tuple(sorted(
@@ -167,18 +209,26 @@ def compare_coverage(
     algorithm_hashes: Mapping[str, str] | None = None,
 ) -> CoverageReport:
     prepared = []
-    aliases: Dict[str, list[tuple[int, str, str]]] = {}
+    aliases: Dict[tuple[str, str], list[tuple[int, str, str]]] = {}
     for source_index, source in enumerate(sources):
         name = _text(source.name, "coverage source name")
-        models = tuple(sorted(
-            {_text(model, "coverage model") for model in source.models},
-            key=str.casefold,
-        ))
-        exact = {model.casefold(): model for model in models}
+        models = tuple(sorted({
+            CoverageModel(
+                _text(model.model, "coverage model"),
+                _text(model.manufacturer, "coverage manufacturer"),
+            )
+            for model in source.models
+        }, key=lambda model: (model.manufacturer.casefold(), model.model.casefold())))
+        exact = {
+            (normalize_manufacturer(model.manufacturer), model.model.casefold()): model.model
+            for model in models
+        }
         prepared.append((name, exact))
         for model in models:
-            aliases.setdefault(normalize_model(model), []).append(
-                (source_index, name, model)
+            aliases.setdefault((
+                normalize_manufacturer(model.manufacturer), normalize_model(model.model)
+            ), []).append(
+                (source_index, name, model.model)
             )
 
     hashes = {
@@ -188,18 +238,19 @@ def compare_coverage(
     }
     matches = []
     for target in targets:
+        manufacturer = normalize_manufacturer(target.manufacturer)
         matched_status = "unresolved"
         matched_source = None
         matched_model = None
         for source_name, exact in prepared:
-            candidate = exact.get(target.model.casefold())
+            candidate = exact.get((manufacturer, target.model.casefold()))
             if candidate is not None:
                 matched_status = "exact"
                 matched_source = source_name
                 matched_model = candidate
                 break
         if matched_model is None:
-            candidates = aliases.get(normalize_model(target.model), [])
+            candidates = aliases.get((manufacturer, normalize_model(target.model)), [])
             distinct_models = {candidate[2].casefold() for candidate in candidates}
             if len(distinct_models) == 1 and candidates:
                 _index, matched_source, matched_model = min(
@@ -216,7 +267,7 @@ def compare_coverage(
     return CoverageReport(tuple(matches))
 
 
-def load_manifest_models(path: Path) -> Tuple[str, ...]:
+def load_manifest_models(path: Path) -> Tuple[CoverageModel, ...]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     packs = payload.get("packs") if isinstance(payload, Mapping) else None
     if not isinstance(packs, list):
@@ -229,14 +280,19 @@ def load_manifest_models(path: Path) -> Tuple[str, ...]:
         for target in targets:
             if not isinstance(target, Mapping):
                 raise ValueError("builtin manifest target must be an object")
-            models.add(_text(target.get("part_number"), "builtin part number"))
-    return tuple(sorted(models, key=str.casefold))
+            models.add(CoverageModel(
+                _text(target.get("part_number"), "builtin part number"),
+                _text(target.get("vendor"), "builtin vendor"),
+            ))
+    return tuple(sorted(
+        models, key=lambda model: (model.manufacturer.casefold(), model.model.casefold())
+    ))
 
 
 def load_algorithm_hashes(path: Path) -> Dict[str, str]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if isinstance(payload, Mapping):
-        records = payload.get("records", payload)
+        records = payload.get("records", payload.get("algorithms", payload))
     else:
         records = payload
     if isinstance(records, Mapping):
@@ -256,24 +312,32 @@ def load_algorithm_hashes(path: Path) -> Dict[str, str]:
         digest = _text(raw_digest, "FLM SHA-256").casefold()
         if _SHA256.fullmatch(digest) is None:
             raise ValueError("FLM SHA-256 must contain 64 hexadecimal characters")
+        previous = hashes.get(name)
+        if previous is not None and previous != digest:
+            raise ValueError("conflicting FLM SHA-256 values for the same basename")
         hashes[name] = digest
     return hashes
 
 
-def pyocd_builtin_models() -> Tuple[str, ...]:
+def pyocd_builtin_models() -> Tuple[CoverageModel, ...]:
     from pyocd.target import TARGET
 
     models = {
-        str(getattr(target_type, "PART_NUMBER", None) or name)
+        CoverageModel(
+            str(getattr(target_type, "PART_NUMBER", None) or name),
+            str(getattr(target_type, "VENDOR", None) or "pyOCD"),
+        )
         for name, target_type in TARGET.items()
     }
-    return tuple(sorted(models, key=str.casefold))
+    return tuple(sorted(
+        models, key=lambda model: (model.manufacturer.casefold(), model.model.casefold())
+    ))
 
 
-def hpm_rom_models() -> Tuple[str, ...]:
+def hpm_rom_models() -> Tuple[CoverageModel, ...]:
     from mklink.hpm_config import HPM_ROM_TARGETS
 
-    return tuple(HPM_ROM_TARGETS)
+    return tuple(CoverageModel(model, "HPMicro") for model in HPM_ROM_TARGETS)
 
 
 def _match_dict(match: CoverageMatch) -> Dict[str, object]:

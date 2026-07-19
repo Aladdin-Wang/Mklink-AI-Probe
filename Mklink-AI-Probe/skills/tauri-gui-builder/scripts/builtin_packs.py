@@ -27,10 +27,38 @@ def _relative_path(value: object, description: str) -> PurePosixPath:
     return path
 
 
+def _path_segment(value: object, description: str) -> str:
+    text = _text(value, description)
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", text) is None:
+        raise ValueError("{} must be a safe path segment".format(description))
+    return text
+
+
+def _local_name(element: ElementTree.Element) -> str:
+    return element.tag.rsplit("}", 1)[-1]
+
+
+def _element_text(root: ElementTree.Element, name: str, description: str) -> str:
+    for element in root.iter():
+        if _local_name(element) == name and element.text and element.text.strip():
+            return _text(element.text, description)
+    raise ValueError("{} must be a non-empty string".format(description))
+
+
+def _release_version(root: ElementTree.Element, description: str) -> str:
+    for element in root.iter():
+        if _local_name(element) == "release" and element.attrib.get("version"):
+            return _text(element.attrib["version"], description)
+    raise ValueError("{} must be a non-empty string".format(description))
+
+
 def _source_directory(pack_roots: Sequence[Path], pack_id: str, version: str) -> Path:
     if pack_id.count(".") != 1:
         raise ValueError("pack_id must contain vendor and pack name")
-    vendor, pack_name = pack_id.split(".", 1)
+    raw_vendor, raw_pack_name = pack_id.split(".", 1)
+    vendor = _path_segment(raw_vendor, "Pack vendor")
+    pack_name = _path_segment(raw_pack_name, "Pack name")
+    version = _path_segment(version, "Pack version")
     for root in pack_roots:
         candidate = Path(root) / vendor / pack_name / version
         if candidate.is_dir():
@@ -73,9 +101,19 @@ def _pack_files(
         root = ElementTree.parse(str(descriptor)).getroot()
     except (OSError, ElementTree.ParseError) as error:
         raise ValueError("builtin Pack descriptor is invalid: {}".format(error))
+    expected_pack_id = _text(metadata.get("pack_id"), "pack_id")
+    expected_version = _text(metadata.get("version"), "version")
+    descriptor_pack_id = "{}.{}".format(
+        _element_text(root, "vendor", "Pack vendor"),
+        _element_text(root, "name", "Pack name"),
+    )
+    if descriptor_pack_id != expected_pack_id:
+        raise ValueError("builtin Pack descriptor identity does not match the allowlist")
+    if _release_version(root, "Pack version") != expected_version:
+        raise ValueError("builtin Pack descriptor version does not match the allowlist")
     files = {PurePosixPath(descriptor.name)}
     for element in root.iter():
-        if element.tag.rsplit("}", 1)[-1] != "algorithm":
+        if _local_name(element) != "algorithm":
             continue
         name = element.attrib.get("name")
         if name:
@@ -93,6 +131,7 @@ def _pack_files(
     if not isinstance(license_files, list) or not license_files:
         raise ValueError("builtin Pack must declare license_files")
     licenses = []
+    configured_license_names = set()
     for raw_license in license_files:
         if not isinstance(raw_license, Mapping):
             raise ValueError("Pack license_files entries must be objects")
@@ -108,7 +147,17 @@ def _pack_files(
         if hashlib.sha256(candidate.read_bytes()).hexdigest() != expected_digest:
             raise ValueError("Pack license SHA-256 does not match the allowlist")
         files.add(relative)
+        configured_license_names.add(relative.as_posix())
         licenses.append({"path": relative.as_posix(), "sha256": expected_digest})
+    descriptor_licenses = {
+        _relative_path(element.text, "descriptor license path").as_posix()
+        for element in root.iter()
+        if _local_name(element) == "license" and element.text and element.text.strip()
+    }
+    if not descriptor_licenses:
+        raise ValueError("builtin Pack descriptor must declare a license file")
+    if not descriptor_licenses.issubset(configured_license_names):
+        raise ValueError("every descriptor license must be pinned in Pack license_files")
     ordered = sorted(files, key=lambda value: value.as_posix().casefold())
     for relative in ordered:
         candidate = source.joinpath(*relative.parts)
@@ -147,7 +196,7 @@ def _write_slim_pack(source: Path, files: Iterable[PurePosixPath], output: Path)
 
 def _archive_descriptor(archive: ZipFile) -> PurePosixPath:
     descriptors = [
-        PurePosixPath(name.replace("\\", "/"))
+        _relative_path(name, "archive descriptor path")
         for name in archive.namelist()
         if name.casefold().endswith(".pdsc")
     ]
@@ -184,23 +233,21 @@ def _archive_metadata(
             raise ValueError("archive license paths must be unique")
         configured_licenses[relative.as_posix()] = digest
     with ZipFile(source) as archive:
+        for archive_name in archive.namelist():
+            _relative_path(archive_name, "archive entry path")
         descriptor = _archive_descriptor(archive)
         try:
             root = ElementTree.fromstring(archive.read(descriptor.as_posix()))
         except (KeyError, ElementTree.ParseError) as error:
             raise ValueError("builtin Pack archive descriptor is invalid: {}".format(error))
-        vendor = _text(root.findtext("vendor"), "archive vendor")
-        name = _text(root.findtext("name"), "archive name")
-        release = root.find("./releases/release")
-        version = _text(
-            release.attrib.get("version") if release is not None else None,
-            "archive version",
-        )
+        vendor = _element_text(root, "vendor", "archive vendor")
+        name = _element_text(root, "name", "archive name")
+        version = _release_version(root, "archive version")
         files = {descriptor}
         archive_names = {name.replace("\\", "/") for name in archive.namelist()}
         descriptor_licenses = []
         for element in root.iter():
-            if element.tag.rsplit("}", 1)[-1] == "license" and element.text:
+            if _local_name(element) == "license" and element.text:
                 descriptor_licenses.append(
                     descriptor.parent / _relative_path(
                         element.text, "archive descriptor license path"
@@ -210,7 +257,7 @@ def _archive_metadata(
             raise ValueError("builtin Pack archive descriptor must declare a license file")
         files.update(descriptor_licenses)
         for element in root.iter():
-            if element.tag.rsplit("}", 1)[-1] != "algorithm":
+            if _local_name(element) != "algorithm":
                 continue
             algorithm = element.attrib.get("name")
             if algorithm:
@@ -359,7 +406,7 @@ def build_bundle(config_path: Path, pack_roots: Sequence[Path], output: Path) ->
         if not any(path.suffix.casefold() == ".flm" for path in files):
             continue
         if pack_id.casefold() in seen_pack_ids:
-            continue
+            raise ValueError("builtin Pack ids must be unique")
         seen_pack_ids.add(pack_id.casefold())
         file_name = "{}.{}.pack".format(pack_id, version)
         relative_output = PurePosixPath("packs") / file_name
