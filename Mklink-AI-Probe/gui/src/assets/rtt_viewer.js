@@ -2767,7 +2767,16 @@ if (xAxisHit && yAxisHit) {
   addViewerGlobalListener(window, 'mousemove', function(e) {
     if (!axisDrag) return;
     var rect = canvas.getBoundingClientRect();
-    if (axisDrag.mode === 'x') {
+    if (axisDrag.mode === 'plot-shared') {
+      var plotShift = (e.clientY - axisDrag.startY) / axisDrag.plotHeight * axisDrag.range;
+      setManualSharedYRange(axisDrag.yMin + plotShift, axisDrag.yMax + plotShift);
+      if (axisDrag.panTimeline) {
+        var plotDx = (e.clientX - axisDrag.startX) / axisDrag.plotWidth;
+        timelineView.offset = clampAxisOffset(axisDrag.startTimelineOffset - plotDx);
+        drawMinimap();
+      }
+      drawChart();
+    } else if (axisDrag.mode === 'x') {
       var dx = (e.clientX - axisDrag.startX) / Math.max(1, rect.width);
       timelineView.offset = clampAxisOffset(axisDrag.startOffset - dx);
       drawChart();
@@ -3279,8 +3288,8 @@ function drawChart() {
       }
     }
 
-    // Timeline pan (middle button, alt+left, or plain left when zoomed in)
-    if (e.button === 1 || (e.button === 0 && e.altKey) || (e.button === 0 && !e.ctrlKey && !e.shiftKey && !spaceHeld && timelineView.zoom > 1 && mx >= ml && mx <= ml + pw && my >= mt && my <= mt + ph)) {
+    // Timeline hand tools remain horizontal-only.
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
       timelineView.dragging = true;
       timelineView.dragStartX = mx;
       timelineView.dragStartOffset = timelineView.offset;
@@ -3296,10 +3305,42 @@ function drawChart() {
       e.preventDefault();
       return;
     }
+
+    if (IS_SUPERWATCH_MODE && e.button === 0 && !e.ctrlKey && !e.shiftKey && !e.altKey && !spaceHeld &&
+        mx >= ml && mx <= ml + pw && my >= mt && my <= mt + ph) {
+      var sharedRange = getSharedYRange();
+      if (!sharedRange) return;
+      axisDrag = {
+        mode: 'plot-shared',
+        startX: e.clientX,
+        startY: e.clientY,
+        yMin: sharedRange.yMin,
+        yMax: sharedRange.yMax,
+        range: sharedRange.yMax - sharedRange.yMin,
+        plotWidth: Math.max(1, pw),
+        plotHeight: Math.max(1, ph),
+        startTimelineOffset: timelineView.offset,
+        panTimeline: timelineView.zoom > 1
+      };
+      probeDownPos = null;
+      e.preventDefault();
+      return;
+    }
+
+    // Preserve VOFA's plain-left timeline pan when zoomed in.
+    if (e.button === 0 && !e.ctrlKey && !e.shiftKey && !spaceHeld && timelineView.zoom > 1 &&
+        mx >= ml && mx <= ml + pw && my >= mt && my <= mt + ph) {
+      timelineView.dragging = true;
+      timelineView.dragStartX = mx;
+      timelineView.dragStartOffset = timelineView.offset;
+      e.preventDefault();
+      return;
+    }
   };
 
   canvas.onmousemove = (function(origFn) {
     return function(e) {
+      if (axisDrag && axisDrag.mode === 'plot-shared') return;
       if (cursorState.dragging) {
         var rect = canvas.getBoundingClientRect();
         var mx = e.clientX - rect.left;

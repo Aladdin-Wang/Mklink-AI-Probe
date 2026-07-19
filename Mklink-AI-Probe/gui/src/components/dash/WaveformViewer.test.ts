@@ -111,6 +111,9 @@ function wheelEvent(init: WheelEventInit) {
   if (init.clientY !== undefined) {
     Object.defineProperty(event, 'clientY', { value: init.clientY })
   }
+  if (init.shiftKey !== undefined) {
+    Object.defineProperty(event, 'shiftKey', { value: init.shiftKey })
+  }
   return event
 }
 
@@ -1136,6 +1139,183 @@ describe('VOFA viewer hot path source guard', () => {
       expect(runtime.probe.globalYView()).toEqual({
         zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
       })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('pans the manual shared SuperWatch Y range by plain-left dragging the plot', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, clientX: 400, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      const before = runtime.probe.sharedYRange()
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 400, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 400, clientY: 220, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 400, clientY: 220, bubbles: true,
+      }))
+
+      const after = runtime.probe.sharedYRange()
+      expect(after.yMax - after.yMin).toBeCloseTo(before.yMax - before.yMin, 12)
+      expect(after.yMin).toBeGreaterThan(before.yMin)
+      expect(after.yMax).toBeGreaterThan(before.yMax)
+      expect(runtime.probe.globalYView()).toMatchObject({
+        autoRange: false, manualMin: after.yMin, manualMax: after.yMax,
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('pans both axes on a diagonal plain-left SuperWatch plot drag when X is zoomed', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, shiftKey: true, clientX: 500, clientY: 160,
+        bubbles: true, cancelable: true,
+      }))
+      const beforeTimelineOffset = runtime.probe.timeline().offset
+      const beforeY = runtime.probe.sharedYRange()
+      expect(runtime.probe.timeline().zoom).toBeGreaterThan(1)
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 500, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 300, clientY: 220, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 300, clientY: 220, bubbles: true,
+      }))
+
+      const afterY = runtime.probe.sharedYRange()
+      expect(runtime.probe.timeline().offset).toBeGreaterThan(beforeTimelineOffset)
+      expect(afterY.yMax - afterY.yMin).toBeCloseTo(beforeY.yMax - beforeY.yMin, 12)
+      expect(afterY.yMin).toBeGreaterThan(beforeY.yMin)
+      expect(afterY.yMax).toBeGreaterThan(beforeY.yMax)
+      expect(runtime.probe.globalYView()).toMatchObject({
+        autoRange: false, manualMin: afterY.yMin, manualMax: afterY.yMax,
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps cursor and trigger drags ahead of SuperWatch plot viewport panning', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      const canvas = document.getElementById('chart')!
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, clientX: 400, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, shiftKey: true, clientX: 500, clientY: 160,
+        bubbles: true, cancelable: true,
+      }))
+
+      const timeline = runtime.probe.timeline()
+      const ring = runtime.probe.fields().A.ringBuf
+      const fullMin = ring.oldest().t
+      const fullMax = ring.latest().t
+      const fullSpan = fullMax - fullMin
+      const visibleSpan = fullSpan / timeline.zoom
+      const visibleMin = fullMin + timeline.offset * (fullSpan - visibleSpan)
+      runtime.probe.cursor.enabled = true
+      runtime.probe.cursor.a = { t: visibleMin + visibleSpan / 2 }
+      runtime.probe.cursor.b = { t: visibleMin + visibleSpan * 0.75 }
+      runtime.viewer.renderBinaryFrame()
+      const cursorX = Number.parseFloat(document.getElementById('cursor-a')!.style.left)
+      const beforeCursorY = runtime.probe.sharedYRange()
+      const beforeCursorOffset = timeline.offset
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: cursorX, clientY: 160, bubbles: true, cancelable: true,
+      }))
+      canvas.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 500, clientY: 220, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 500, clientY: 220, bubbles: true,
+      }))
+      expect(runtime.probe.sharedYRange()).toEqual(beforeCursorY)
+      expect(timeline.offset).toBe(beforeCursorOffset)
+
+      const triggerRange = runtime.probe.sharedYRange()
+      runtime.probe.trigger.enabled = true
+      runtime.probe.trigger.source = 'A'
+      runtime.probe.trigger.level = (triggerRange.yMin + triggerRange.yMax) / 2
+      runtime.viewer.renderBinaryFrame()
+      const beforeTriggerY = runtime.probe.sharedYRange()
+      const beforeTriggerOffset = timeline.offset
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 400, clientY: 192, bubbles: true, cancelable: true,
+      }))
+      canvas.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 300, clientY: 240, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 300, clientY: 240, bubbles: true,
+      }))
+      expect(runtime.probe.sharedYRange()).toEqual(beforeTriggerY)
+      expect(timeline.offset).toBe(beforeTriggerOffset)
     } finally {
       runtime.cleanup()
     }
