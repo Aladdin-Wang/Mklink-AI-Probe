@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-19T21:22:31+08:00",
+  "updated_at": "2026-07-20T01:30:44+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "2fb5a8a is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
-    "remote_head": "the online flash algorithm-source implementation and final handoff commits are pushed together on feature/online-flash-streaming",
+    "head": "51b6192 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
+    "remote_head": "the offline-first algorithm and HPM ROM implementation plus final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
   "mission": {
@@ -18,11 +18,12 @@
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; online flash 10 MHz, bundled algorithms, local Pack import, custom FLM, frozen Pack worker hardening, standard NSIS packaging, and physical BOOT/RGB_LCD qualification are complete",
-    "current_task": "The 2fb5a8a v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Expand the curated builtin algorithm set only after redistribution-license review, then validate the candidate on a second clean Windows machine.",
-    "latest_commit": "2fb5a8a fix: import CMSIS Pack descriptors from archives",
-    "latest_installer_bundle": "complete; source commit 2fb5a8a produced only the standard NSIS candidate release/20260719-211720/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_2fb5a8a-setup.exe plus SHA256SUMS.txt. SHA-256 is def00101776f9a0fe35f420e5d14ed6e14e04f8c4a520b9afc0e9c2470fcec62. No MSI or WebView2-offline package was generated. Silent overwrite install, restricted-PATH bundled-sidecar launch, visible build identity, builtin target discovery, frozen online Pack install, local Pack import, BOOT internal Flash HIL, RGB_LCD external QSPI FLM HIL, normal shutdown, zero Python processes, and API/CDP port cleanup passed.",
-    "online_flash_algorithm_sources_implementation": "complete; online SWD offers and enforces a 10 MHz maximum. The sidecar bundles six license-reviewed slim STM32 DFPs containing only PDSC, referenced FLM, and license files: 1142 exact targets in 4.56 MiB. User-installed or downloaded Packs override duplicate builtin records, the GUI exposes local .pack import, and target-scoped custom FLM records persist for additional external Flash regions. Frozen Pack operations use internal worker and process-guard entrypoints with parent-death Jobs, HTTPS provenance validation, atomic commit, and privacy-safe API responses. Real installed WebView2 HIL programmed and verified both internal Flash and external QSPI Flash.",
+    "active_plan": "none; online flash 10 MHz, seven curated bundled Packs, local Pack import, custom FLM, streamed online Pack progress, HPM ROM special handling, standard NSIS packaging, and physical BOOT/RGB_LCD qualification are complete",
+    "current_task": "The 51b6192 v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified on the build machine. Validate it on a second clean Windows machine, and expand the curated builtin algorithm set only after redistribution-license review.",
+    "latest_commit": "51b6192 feat: support offline-first algorithms and HPM ROM flash",
+    "latest_installer_bundle": "complete; source commit 51b6192 produced only the standard NSIS candidate release/20260720-012219/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_51b6192-setup.exe plus SHA256SUMS.txt and two builtin-target CSV inventories. SHA-256 is 3167936a9afc9be3aab417dddb7c4e5c00ec0eccd2414a2355a7aa19c5071398. No MSI or WebView2-offline package was generated. Silent overwrite install, bundled-sidecar health, visible build identity, 10 MHz BOOT internal Flash HIL, RGB_LCD external QSPI custom-FLM HIL, streamed HTTPS Pack installation, automatic catalog refresh, normal shutdown, zero Python processes, and port cleanup passed.",
+    "online_flash_algorithm_sources_implementation": "complete; online SWD offers and enforces a 10 MHz maximum. The sidecar bundles seven license-reviewed slim Packs containing only PDSC, referenced FLM, and required license material: six STM32 DFPs plus NXP.MCXN947_DFP, covering 1146 exact Pack targets. The complete built-in catalog exported from the candidate has 1361 unique models across 20 manufacturers: 1146 slim-Pack targets, 205 pyOCD builtin targets, and 10 HPM ROM targets. User-installed or downloaded Packs override duplicate builtin records, the GUI exposes local .pack import, target-scoped custom FLM records persist for additional external Flash regions, and NDJSON Pack operations report preparing, byte download, refreshing, and terminal phases before the catalog refreshes automatically. Frozen Pack workers retain HTTPS provenance validation, atomic commit, bounded progress queues, and privacy-safe API responses. Real installed HIL programmed and verified both internal Flash and external QSPI Flash.",
+    "hpm_rom_special_handling": "complete by automated and installed-API verification; HPM targets are built-in ROM-API records and never require, discover, install, or load Pack/FLM algorithms. Online, offline, Device, CLI, and MCP routes accept BIN with an explicit base address, validate board/flash_cfg/address values, use hpm.board/hpm.flash_cfg/hpm.program, reserve both target-debug and MKLink-bridge resources, and support chunked readback verification online. HPM erase is a no-op and independent erase controls are disabled. Physical HPM programming was intentionally not performed in this session at the user's direction.",
     "superwatch_stable_viewport_implementation": "complete; the dynamic cur/min/max/avg footer and all responsive footer CSS are removed, so changing digit widths cannot resize the chart. The shared Y axis starts in Auto, captures absolute manualMin/manualMax on Y interaction, anchors wheel zoom to the pointer value, keeps later outliers from moving a manual viewport, and restores Auto on double-click. Plain plot left-drag uses independent 5 px X/Y activation, pans Y by absolute range, pans X only when zoomed using visibleRange divided by availableRange, preserves cursor/trigger/Alt/middle/Space/VOFA/probe-click priority, and persists manual state without leaking it across project loads.",
     "superwatch_throughput_implementation": "complete; RTT transmit retains the input after successful sends and permits an empty body when an explicit line ending is selected. SuperWatch desktop buffers are at least 50000 points per channel, the supported interval range is 10 us to 60 s, and Canvas renders Worker-generated pixel envelopes instead of scanning the full ring. StreamHub late subscription atomically replays and protects SuperWatch metadata without lock inversion or producer blocking. The SuperWatch running boundary reconnects the binary stream after reset so the new Worker session receives metadata before samples. The strict packaged gate tracks the actual target Worker by transferred ArrayBuffer identity, counts accepted frames across resets, rejects every Worker error, and keys diagnostics by connection generation plus frame ticket.",
     "rtt_packaged_repair": "complete; the installed Tauri frontend now receives an explicit http://127.0.0.1:8765 control-plane origin instead of resolving /api to tauri.localhost index.html. RTT View always renders the text data panel, uses the user-proven dynamic 1024-byte scan, shows a deduplicated startup state, waits for a real control block, retries stop-pending cleanup, restores an already-running session on re-entry, and enables transmit only for active channel 0. Device.rtt_start treats matching target RAM DownBuffer descriptors as authoritative over corrupt nonempty probe output in both dynamic and exact modes. The lower-right footer shows v0.1.0-rc.2 plus the source commit.",
@@ -61,10 +62,10 @@
     {
       "name": "Online flash algorithm sources, 10 MHz, and frozen Pack workers",
       "status": "complete",
-      "commits": ["0e2bcd5", "348ed62", "5215419", "8d301c2", "01c4510", "dd807a9", "2fb5a8a"],
-      "tests": "Python 746 passed; GUI 348 passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
-      "review": "installed standard NSIS and physical WebView2 HIL complete",
-      "notes": "10 MHz online SWD; 1142 exact builtin targets from six slim licensed DFPs; local Pack import; target-scoped custom FLM for external Flash; secure frozen Pack install/import workers; BOOT internal Flash and RGB_LCD external QSPI program plus verify passed."
+      "commits": ["0e2bcd5", "348ed62", "5215419", "8d301c2", "01c4510", "dd807a9", "2fb5a8a", "51b6192"],
+      "tests": "Python 783 passed; GUI 357 passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
+      "review": "installed standard NSIS, physical STM32H7B0 HIL, and real streamed HTTPS Pack installation complete",
+      "notes": "10 MHz online SWD; 1146 exact targets from seven slim licensed Packs; 1361 unique builtin models including pyOCD and HPM ROM records; local Pack import; target-scoped custom FLM for external Flash; secure frozen Pack workers; visible byte progress and automatic catalog refresh; BOOT internal Flash and RGB_LCD external QSPI program plus verify passed. HPM is a ROM-API special case and physical HPM flashing was intentionally skipped."
     },
     {
       "name": "High-throughput Task 1 binary protocol",
@@ -439,12 +440,17 @@
     {
       "area": "Online flash algorithm sources and installed hardware qualification",
       "result": "Python 746, GUI 348, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The 2fb5a8a installed standard NSIS exposed the matching build identity, a visible 10 MHz SWD option, local Pack import, target-scoped custom FLM, and 1142 exact builtin targets from a 4.56 MiB slim bundle. A previously uninstalled DFP completed the frozen HTTPS Pack install path and a real local Pack archive imported successfully; both privacy-safe responses omitted local paths. Real Tauri WebView2/Playwright HIL programmed, readback-verified, reset, and disconnected a BOOT internal-Flash HEX and an RGB_LCD external-QSPI HEX using the persisted custom FLM, with complete ordered job states, zero console errors, no active job or resource owner, normal application close, zero Python processes, and released API/CDP ports. Only standard NSIS was generated; SHA-256 is def00101776f9a0fe35f420e5d14ed6e14e04f8c4a520b9afc0e9c2470fcec62."
+    },
+    {
+      "area": "Offline-first algorithms, HPM ROM routing, and final installed qualification",
+      "result": "Python 783, GUI 357, and Rust 6 tests passed; Vite transformed 1908 modules, cargo check completed, and the repository builder prerequisite check passed. The installed 51b6192 sidecar remained healthy without Python, exposed the matching build identity and 10 MHz option, and returned 12704 indexed models. Real STM32H7B0 HIL programmed and readback-verified the BOOT internal-Flash HEX and RGB_LCD external-QSPI HEX at 10 MHz; RGB_LCD used one persisted custom FLM, and both jobs released their active state. A real optional HTTPS Pack install emitted preparing 1%, monotonic byte progress through 90%, refreshing 95%, and a terminal installed result; the catalog immediately exposed the target and algorithm without restart, and the test Pack was removed afterward. HPM records expose hpm-rom-api with zero algorithms and reject FLM; physical HPM programming was intentionally skipped by user direction. The standard-only NSIS is release/20260720-012219/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_51b6192-setup.exe, 68731291 bytes, SHA-256 3167936a9afc9be3aab417dddb7c4e5c00ec0eccd2414a2355a7aa19c5071398. The release directory also contains privacy-checked UTF-8 CSV inventories for 1361 unique builtin models across 20 manufacturers. Normal close left zero product/Python processes and no listener on port 8765."
     }
   ],
   "decisions": [
     "Only MKLink-exposed CMSIS-DAP is supported by the online flash UI.",
     "BIN requires an explicit base address; HEX uses embedded mappings.",
     "Online flash algorithm acquisition is offline-first: license-reviewed slim builtin DFPs are preferred, users can import local .pack archives, users can attach target-scoped custom FLM for additional Flash regions, and HTTPS Pack download remains optional.",
+    "HPMicro targets are an explicit ROM-API special case across online, offline, Device, CLI, MCP, and AI workflows: they use BIN plus base address and board/flash_cfg, never discover or load FLM, expose no erase sectors, and do not offer independent erase.",
     "User-installed or downloaded Pack records override duplicate builtin bundle records. Custom FLM may add non-overlapping external Flash regions but cannot silently replace an existing Pack algorithm for the same address range.",
     "Builtin algorithm bundles are generated deterministically from an explicit allowlist and contain only PDSC, referenced FLM, and required license files. Pack or FLM binaries remain outside Git.",
     "High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.",
@@ -471,6 +477,7 @@
   "hardware": {
     "probe": "MKLink V4 connected; identifier intentionally omitted",
     "online_flash_project": "STM32F103 bootloader fixture; local path intentionally omitted",
+    "latest_online_flash_target": "STM32H7B0VBTx LCD board; BOOT internal Flash and RGB_LCD external QSPI fixtures; local paths intentionally omitted",
     "stream_hil_project": "STM32F103 application fixture; local path intentionally omitted",
     "keil_root": "local Keil installation; path intentionally omitted",
     "stream_target": "STM32F103RC",
@@ -492,8 +499,9 @@
     "Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.",
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
-    "The 2fb5a8a v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
-    "The builtin algorithm bundle currently covers 1142 exact targets from six license-reviewed STM32 DFPs plus pyOCD builtin targets. DAPLinkUtility resources and third-party Pack algorithms with unclear redistribution terms were studied but not copied; broader vendor coverage requires explicit license review or authorization.",
+    "The 51b6192 v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
+    "The slim builtin Pack bundle currently covers 1146 exact targets from six license-reviewed STM32 DFPs plus NXP.MCXN947_DFP. Together with 205 pyOCD builtin targets and 10 HPM ROM targets, the candidate exports 1361 unique builtin models across 20 manufacturers. DAPLinkUtility resources and third-party Pack algorithms with unclear redistribution terms were studied but not copied; broader vendor coverage requires explicit license review or authorization.",
+    "Physical HPM ROM programming was not executed in this session by explicit user direction. Automated coverage verifies online, offline, Device, CLI, MCP, and AI routing without FLM, while installed API checks verify HPM target discovery and zero algorithms.",
     "Optional online Pack installation still requires outbound HTTPS access and may require a user-configured proxy in restricted networks. Offline builtin, local Pack import, and custom FLM paths do not depend on catalog downloads after their files are present.",
     "One installed HIL cold start returned a transient CMSIS-DAP enumeration failure while the USB device remained present and no resource owner existed; a normal application restart restored discovery and both subsequent hardware jobs passed.",
     "The final v0.1.0-rc.2 installed pass verified DownBuffer authority and transmit acceptance but did not establish a fresh byte-exact MCU echo because the target parser coalesced per-byte echo records; the earlier 93d83e4 hardware pass remains the byte-exact payload evidence.",
@@ -501,8 +509,8 @@
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Install the 2fb5a8a v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, Keil, or pre-existing Pack cache. Verify builtin target search without network, local Pack import, target-scoped custom FLM persistence, optional online Pack behavior, 10 MHz selection, health, visible build identity, normal shutdown, uninstall, and reinstall.",
-    "Audit redistribution terms and choose the next curated builtin DFP set before adding GD32, HPM, NXP, Nordic, Renesas, Infineon, Silicon Labs, or TI algorithms. Do not copy DAPLinkUtility resources without explicit authorization.",
+    "Install the 51b6192 v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, Keil, or pre-existing Pack cache. Verify all three offline-first algorithm sources, optional online Pack progress, 10 MHz selection, health, visible build identity, normal shutdown, uninstall, and reinstall.",
+    "Audit redistribution terms and choose the next curated builtin DFP set before adding GD32, Nordic, Renesas, Infineon, Silicon Labs, TI, or additional NXP algorithms. Do not copy DAPLinkUtility resources without explicit authorization.",
     "Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch 50000-point minimum buffer and 10 us workflow, symbol workspace, typed writes, eye visibility, stable chart geometry, small-signal Y navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
