@@ -196,7 +196,7 @@ async function selectTarget(target: TargetRecord): Promise<void> {
   resetInspection()
   selectedTarget.value = null
   if (!target.installed) {
-    if (!confirm(`器件 ${target.part_number} 尚未安装。是否联网下载对应 Pack？`)) return
+    if (!confirm(`器件 ${target.part_number} 本机尚无下载算法。可先导入本地 Pack；是否现在联网下载对应 Pack？`)) return
     const operation = ++packOperationToken
     packBusy.value = true; packProgress.value = 0; packError.value = ''
     try {
@@ -291,6 +291,22 @@ async function updatePackIndex(): Promise<void> {
   packBusy.value = true; packProgress.value = 0; packError.value = ''
   try { const response = await api.updatePackIndex(); applyPackProgress(response.events); await Promise.all([refreshPackStatus(), searchTargets('')]) }
   catch (error) { packError.value = message(error) } finally {
+    if (operation === packOperationToken) { packBusy.value = false; packCancelPending.value = false }
+  }
+}
+async function importPack(file: File): Promise<void> {
+  if (packBusy.value || active.value) return
+  const operation = ++packOperationToken
+  packBusy.value = true; packProgress.value = 0; packError.value = ''
+  try {
+    const response = await api.importPack(file)
+    applyPackProgress(response.events)
+    const importedPack = 'pack_id' in response.result
+      ? `${response.result.pack_id}@${response.result.version}`
+      : 'part_number' in response.result ? response.result.part_number : 'Pack'
+    appendLog(`[PACK] 已导入 ${importedPack}`)
+    await Promise.all([refreshPackStatus(), searchTargets(desiredPart.value)])
+  } catch (error) { packError.value = message(error) } finally {
     if (operation === packOperationToken) { packBusy.value = false; packCancelPending.value = false }
   }
 }
@@ -453,7 +469,7 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
-      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
+      <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @scroll="loadVisible" />

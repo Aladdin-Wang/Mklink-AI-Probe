@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -11,11 +13,23 @@ BUILDER_PATH = (
     / "scripts"
     / "build.py"
 )
+BUILTIN_PACK_BUILDER_PATH = BUILDER_PATH.with_name("builtin_packs.py")
 
 
 @pytest.fixture
 def builder():
     spec = importlib.util.spec_from_file_location("mklink_tauri_builder", BUILDER_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def builtin_pack_builder():
+    spec = importlib.util.spec_from_file_location(
+        "mklink_builtin_pack_builder", BUILTIN_PACK_BUILDER_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -164,3 +178,85 @@ def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeyp
     assert ["--copy-metadata", "pyocd"] in pairs
     assert ["--collect-all", "cmsis_pack_manager"] in pairs
     assert ["--collect-all", "hid"] in pairs
+
+
+def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(
+    builtin_pack_builder, monkeypatch, tmp_path,
+):
+    pack_root = tmp_path / "packs"
+    source = pack_root / "Keil" / "Test_DFP" / "1.0.0"
+    (source / "Flash").mkdir(parents=True)
+    (source / "Keil.Test_DFP.pdsc").write_text(
+        '<package><vendor>Keil</vendor><name>Test_DFP</name>'
+        '<releases><release version="1.0.0"/></releases>'
+        '<devices><family Dfamily="Test"><device Dname="TEST123">'
+        '<algorithm name="Flash/Test.FLM" start="0x08000000" size="0x1000"/>'
+        '</device></family></devices></package>',
+        encoding="utf-8",
+    )
+    (source / "Flash" / "Test.FLM").write_bytes(b"algorithm")
+    (source / "LICENSE").write_text("Apache-2.0", encoding="utf-8")
+    (source / "example.bin").write_bytes(b"do-not-bundle")
+    config = tmp_path / "builtin-packs.json"
+    config.write_text(json.dumps({
+        "schema": 1,
+        "packs": [{
+            "pack_id": "Keil.Test_DFP",
+            "version": "1.0.0",
+            "license_files": ["LICENSE"],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        builtin_pack_builder,
+        "_read_targets",
+        lambda _path: [{"part_number": "TEST123", "vendor": "Keil"}],
+    )
+    output = tmp_path / "bundle"
+
+    manifest = builtin_pack_builder.build_bundle(config, [pack_root], output)
+
+    slim_pack = output / manifest["packs"][0]["file"]
+    with ZipFile(slim_pack) as archive:
+        assert sorted(archive.namelist()) == [
+            "Flash/Test.FLM",
+            "Keil.Test_DFP.pdsc",
+            "LICENSE",
+        ]
+    assert manifest["target_count"] == 1
+    assert json.loads((output / "manifest.json").read_text(encoding="utf-8")) == manifest
+
+
+def test_sidecar_collects_generated_builtin_pack_bundle(builder, monkeypatch, tmp_path):
+    builder.SKILL_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "gui" / "src-tauri"
+    config = tmp_path / "skills" / "tauri-gui-builder" / "builtin-packs.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"schema":1,"packs":[]}', encoding="utf-8")
+    pack_root = tmp_path / "pack-root"
+    pack_root.mkdir()
+    monkeypatch.setenv("MKLINK_BUILTIN_PACK_ROOTS", str(pack_root))
+    generated = []
+    commands = []
+
+    def fake_bundle(_config, roots, output):
+        generated.append((list(roots), output))
+        output.mkdir(parents=True)
+        (output / "manifest.json").write_text('{"schema":1,"packs":[]}', encoding="utf-8")
+        return {"target_count": 0, "packs": []}
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output = tmp_path / "dist" / "mklink-sidecar.exe"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"sidecar")
+        return 0
+
+    monkeypatch.setattr(builder, "build_builtin_pack_bundle", fake_bundle)
+    monkeypatch.setattr(builder, "run", fake_run)
+
+    assert builder.build_sidecar(force=True) is True
+
+    command = commands[0]
+    add_data_index = command.index("--add-data")
+    assert command[add_data_index + 1].endswith(";mklink/builtin_packs")
+    assert generated[0][0] == [pack_root]

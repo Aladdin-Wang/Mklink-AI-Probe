@@ -1,4 +1,5 @@
 import builtins
+import hashlib
 import json
 import os
 from dataclasses import FrozenInstanceError, is_dataclass
@@ -8,6 +9,7 @@ import pytest
 
 from mklink.cmsis_dap.models import TargetRecord
 from mklink.cmsis_dap.pack_catalog import PackCatalog
+from mklink.cmsis_dap.builtin_pack_bundle import load_builtin_pack_records
 from mklink.cmsis_dap.paths import PackPaths
 
 
@@ -380,6 +382,69 @@ def test_duplicate_uninstalled_part_number_prefers_builtin_record(tmp_path):
     results = PackCatalog(paths, builtin_provider=lambda: [builtin]).search("STM32")
 
     assert results == [builtin]
+
+
+def test_builtin_pack_bundle_loads_verified_target_records(tmp_path):
+    pack_dir = tmp_path / "packs"
+    pack_dir.mkdir()
+    pack = pack_dir / "Keil.STM32H7xx_DFP.4.0.0.pack"
+    pack.write_bytes(b"slim-pack")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({
+            "schema": 1,
+            "packs": [{
+                "pack_id": "Keil.STM32H7xx_DFP",
+                "version": "4.0.0",
+                "file": "packs/Keil.STM32H7xx_DFP.4.0.0.pack",
+                "sha256": hashlib.sha256(b"slim-pack").hexdigest(),
+                "targets": [{
+                    "part_number": "STM32H7B0VBTx",
+                    "vendor": "STMicroelectronics",
+                }],
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    records = load_builtin_pack_records(tmp_path)
+
+    assert records == [TargetRecord(
+        part_number="STM32H7B0VBTx",
+        vendor="STMicroelectronics",
+        pack_id="Keil.STM32H7xx_DFP",
+        pack_version="4.0.0",
+        pack_path=str(pack.resolve()),
+        installed=True,
+        source="bundle",
+    )]
+
+
+def test_user_installed_pack_overrides_duplicate_builtin_bundle(tmp_path):
+    paths = PackPaths(root=tmp_path)
+    _write_index(
+        paths,
+        {"STM32H7B0VBTx": _index_target("Keil", "STM32H7xx_DFP", "4.1.0")},
+    )
+    imported = tmp_path / "imported.pack"
+    imported.write_bytes(b"pack")
+    _write_state(
+        paths,
+        {"Keil.STM32H7xx_DFP": {"4.1.0": str(imported)}},
+    )
+    bundled = TargetRecord(
+        part_number="STM32H7B0VBTx",
+        vendor="STMicroelectronics",
+        pack_id="Keil.STM32H7xx_DFP",
+        pack_version="4.0.0",
+        pack_path=str(tmp_path / "builtin.pack"),
+        installed=True,
+        source="bundle",
+    )
+
+    result = PackCatalog(paths, builtin_provider=lambda: [bundled]).search("STM32H7B0")
+
+    assert result[0].pack_version == "4.1.0"
+    assert result[0].source == "index"
 
 
 @pytest.mark.parametrize("index_contents", [None, "{not-json"])

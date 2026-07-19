@@ -19,6 +19,7 @@ class PackCatalogStatus:
 def _production_builtin_provider() -> Iterable[TargetRecord]:
     """Load pyOCD's builtin target registry only when builtin targets are needed."""
 
+    from .builtin_pack_bundle import load_builtin_pack_records
     from pyocd.target import TARGET
 
     if hasattr(TARGET, "items"):
@@ -27,7 +28,7 @@ def _production_builtin_provider() -> Iterable[TargetRecord]:
         names = TARGET.get_all_target_names()
         entries = ((name, TARGET[name]) for name in names)
 
-    records = []
+    records = load_builtin_pack_records()
     for name, target_type in entries:
         part_number = getattr(target_type, "PART_NUMBER", None) or name
         vendor = getattr(target_type, "VENDOR", "") or ""
@@ -277,5 +278,13 @@ class PackCatalog:
         return list(selected.values())
 
     @staticmethod
-    def _priority(record: TargetRecord) -> Tuple[bool, bool, bool]:
-        return record.installed, record.pack_path is not None, record.source == "builtin"
+    def _priority(record: TargetRecord) -> Tuple[bool, int, bool]:
+        if record.source == "index" and record.installed and record.pack_path is not None:
+            source_priority = 4
+        elif record.source == "bundle":
+            source_priority = 3
+        elif record.source == "builtin":
+            source_priority = 2
+        else:
+            source_priority = 1
+        return record.installed, source_priority, record.pack_path is not None

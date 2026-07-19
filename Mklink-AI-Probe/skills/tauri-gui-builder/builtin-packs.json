@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "packs": [
+    {
+      "pack_id": "Keil.STM32F2xx_DFP",
+      "version": "2.11.0",
+      "license_files": ["LICENSE"]
+    },
+    {
+      "pack_id": "Keil.STM32F4xx_DFP",
+      "version": "3.0.0",
+      "license_files": ["LICENSE"]
+    },
+    {
+      "pack_id": "Keil.STM32F7xx_DFP",
+      "version": "3.0.0",
+      "license_files": ["LICENSE"]
+    },
+    {
+      "pack_id": "Keil.STM32G4xx_DFP",
+      "version": "1.6.0",
+      "license_files": ["LICENSE"]
+    },
+    {
+      "pack_id": "Keil.STM32H7xx_DFP",
+      "version": "4.0.0",
+      "license_files": ["LICENSE"]
+    },
+    {
+      "pack_id": "Keil.STM32L0xx_DFP",
+      "version": "3.1.0",
+      "license_files": ["LICENSE"]
+    }
+  ]
+}

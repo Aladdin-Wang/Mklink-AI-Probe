@@ -457,6 +457,10 @@ function viewFetch(targets = [installedTarget]) {
       result: { status: 'installed', part_number: JSON.parse(String(options?.body)).part_number },
       events: [{ type: 'progress', progress: 1 }],
     })
+    if (url.endsWith('/packs/import')) return json({
+      result: { status: 'installed', pack_id: 'HPMicro.HPM_SDK', version: '1.0.0' },
+      events: [{ type: 'progress', progress: 1 }],
+    })
     if (url.endsWith('/images/inspect')) return json({
       image_id: 'image-1', file_name: 'firmware.bin', format: 'bin', size: 32,
       sha256: 'abc123', start: 0x80000000, end: 0x80000020,
@@ -503,6 +507,15 @@ async function chooseCustomFlm(wrapper: ReturnType<typeof mount>) {
   await input.trigger('change')
 }
 
+async function choosePack(wrapper: ReturnType<typeof mount>) {
+  const input = wrapper.get('[data-testid="pack-import-input"]')
+  Object.defineProperty(input.element, 'files', {
+    configurable: true,
+    value: [new File(['pack'], 'device.pack')],
+  })
+  await input.trigger('change')
+}
+
 async function readyAndStart(wrapper: ReturnType<typeof mount>) {
   await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
   await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
@@ -514,6 +527,38 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('online flash task workspace behavior', () => {
+  it('distinguishes builtin, local Pack, and optional online target sources', async () => {
+    vi.stubGlobal('fetch', viewFetch([
+      { ...installedTarget, part_number: 'BUILTIN', source: 'bundle' },
+      { ...installedTarget, part_number: 'LOCAL', source: 'index' },
+      { ...installedTarget, part_number: 'ONLINE', installed: false, source: 'index' },
+    ]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-BUILTIN"]').exists()).toBe(true))
+
+    expect(wrapper.get('[data-testid="target-BUILTIN"]').text()).toContain('内置可用')
+    expect(wrapper.get('[data-testid="target-LOCAL"]').text()).toContain('本地 Pack')
+    expect(wrapper.get('[data-testid="target-ONLINE"]').text()).toContain('可导入或联网下载')
+    expect(wrapper.text()).toContain('联网更新')
+    wrapper.unmount()
+  })
+
+  it('imports a local Pack from the target panel and refreshes the catalog', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="pack-import-input"]').exists()).toBe(true))
+
+    await choosePack(wrapper)
+    await vi.waitFor(() => expect(
+      fetchMock.mock.calls.some(([url]) => String(url).endsWith('/packs/import')),
+    ).toBe(true))
+
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/targets?')).length).toBeGreaterThan(1)
+    expect(wrapper.text()).toContain('已导入 HPMicro.HPM_SDK@1.0.0')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     FakeEventSource.instances = []
     const storage = new Map<string, string>()

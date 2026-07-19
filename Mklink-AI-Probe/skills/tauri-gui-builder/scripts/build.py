@@ -19,6 +19,7 @@ import platform
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -89,6 +90,28 @@ def check_python_deps():
     return True
 
 
+def build_builtin_pack_bundle(config_path, roots, output):
+    """Load the colocated bundle builder without making scripts a package."""
+    import importlib.util
+
+    builder_path = Path(__file__).resolve().with_name("builtin_packs.py")
+    spec = importlib.util.spec_from_file_location("mklink_builtin_pack_builder", builder_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load builtin Pack builder")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_bundle(Path(config_path), [Path(root) for root in roots], Path(output))
+
+
+def builtin_pack_roots():
+    value = os.environ.get("MKLINK_BUILTIN_PACK_ROOTS", "")
+    roots = [Path(item).resolve() for item in value.split(os.pathsep) if item.strip()]
+    missing = [root for root in roots if not root.is_dir()]
+    if missing:
+        raise RuntimeError("builtin Pack root does not exist: {}".format(missing[0]))
+    return roots
+
+
 def build_sidecar(force=False):
     """Build Python sidecar exe with PyInstaller."""
     sidecar_dir = TAURI_DIR / "binaries"
@@ -110,17 +133,35 @@ def build_sidecar(force=False):
     except ImportError:
         run([sys.executable, "-m", "pip", "install", "pyinstaller"])
 
-    run([
-        sys.executable, "-m", "PyInstaller",
-        "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
-        "--collect-all", "mklink",
-        "--collect-all", "pyocd",
-        "--copy-metadata", "pyocd",
-        "--collect-all", "cmsis_pack_manager",
-        "--collect-all", "hid",
-        "-p", str(SKILL_DIR),
-        str(SKILL_DIR / "mklink" / "__main__.py"),
-    ], cwd=str(SKILL_DIR))
+    with TemporaryDirectory(prefix="mklink-builtin-packs-") as temporary:
+        roots = builtin_pack_roots()
+        builtin_args = []
+        if roots:
+            bundle_dir = Path(temporary) / "builtin_packs"
+            manifest = build_builtin_pack_bundle(
+                SKILL_DIR / "skills" / "tauri-gui-builder" / "builtin-packs.json",
+                roots,
+                bundle_dir,
+            )
+            print("[OK] Built builtin Pack bundle: {} targets".format(manifest["target_count"]))
+            builtin_args = [
+                "--add-data",
+                "{}{}mklink/builtin_packs".format(bundle_dir, os.pathsep),
+            ]
+        else:
+            print("[WARN] MKLINK_BUILTIN_PACK_ROOTS is not set; builtin Pack bundle omitted")
+        run([
+            sys.executable, "-m", "PyInstaller",
+            "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
+            "--collect-all", "mklink",
+            "--collect-all", "pyocd",
+            "--copy-metadata", "pyocd",
+            "--collect-all", "cmsis_pack_manager",
+            "--collect-all", "hid",
+        ] + builtin_args + [
+            "-p", str(SKILL_DIR),
+            str(SKILL_DIR / "mklink" / "__main__.py"),
+        ], cwd=str(SKILL_DIR))
 
     sidecar_dir.mkdir(parents=True, exist_ok=True)
     if built.exists():
