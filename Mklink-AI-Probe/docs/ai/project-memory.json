@@ -1,27 +1,28 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-19T11:28:06+08:00",
+  "updated_at": "2026-07-19T21:22:31+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "41007b3 is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
-    "remote_head": "the stable viewport implementation and final handoff commits are pushed together on feature/online-flash-streaming",
+    "head": "2fb5a8a is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
+    "remote_head": "the online flash algorithm-source implementation and final handoff commits are pushed together on feature/online-flash-streaming",
     "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
   },
   "mission": {
     "product": "MKLink 专用嵌入式上位机",
-    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；支持 BIN 与 HEX；CMSIS-Pack 索引完整、DFP 按需下载到用户缓存。",
+    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；支持 BIN 与 HEX；优先使用许可明确的精简内置算法，也支持用户导入 Pack、按器件添加自制 FLM，以及可选联网下载 Pack。",
     "offline_flash": "脱机烧录是与在线烧录并列的顶级页面；支持有序多固件、多 FLM、BIN 基地址、HEX 文件内地址、自动次数、IDCODE 超时、SWD 速率、脚本预览和 MKLink U 盘部署。",
     "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以经过验证的稳定负载采集，目标尽量达到或超过 10 kSamples/s；仅 RTT 建立了实测过载边界；可见曲线统一限制为 30 FPS。"
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; the SuperWatch stable chart layout, absolute manual Y viewport, pointer-anchored zoom, plot Y/XY panning, standard NSIS qualification, and all review fixes are complete",
-    "current_task": "The 41007b3 v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Validate it on a second clean Windows machine and collect tester feedback.",
-    "latest_commit": "41007b3 fix: separate SuperWatch plot pan axes",
-    "latest_installer_bundle": "complete; source commit 41007b3 produced only the standard NSIS candidate release/20260719-111218/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_41007b3-setup.exe plus SHA256SUMS.txt. SHA-256 is f7fb285e4558435beb52e3e6a007608b27de1f114f52844cc3b05545a5f6fb45. No MSI or WebView2-offline package was generated. Silent overwrite install, restricted-PATH bundled-sidecar launch, visible build identity, physical four-channel SuperWatch viewport qualification, normal shutdown, zero Python processes, and API/CDP port cleanup passed.",
+    "active_plan": "none; online flash 10 MHz, bundled algorithms, local Pack import, custom FLM, frozen Pack worker hardening, standard NSIS packaging, and physical BOOT/RGB_LCD qualification are complete",
+    "current_task": "The 2fb5a8a v0.1.0-rc.2 standard NSIS candidate is installed and hardware-qualified. Expand the curated builtin algorithm set only after redistribution-license review, then validate the candidate on a second clean Windows machine.",
+    "latest_commit": "2fb5a8a fix: import CMSIS Pack descriptors from archives",
+    "latest_installer_bundle": "complete; source commit 2fb5a8a produced only the standard NSIS candidate release/20260719-211720/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_2fb5a8a-setup.exe plus SHA256SUMS.txt. SHA-256 is def00101776f9a0fe35f420e5d14ed6e14e04f8c4a520b9afc0e9c2470fcec62. No MSI or WebView2-offline package was generated. Silent overwrite install, restricted-PATH bundled-sidecar launch, visible build identity, builtin target discovery, frozen online Pack install, local Pack import, BOOT internal Flash HIL, RGB_LCD external QSPI FLM HIL, normal shutdown, zero Python processes, and API/CDP port cleanup passed.",
+    "online_flash_algorithm_sources_implementation": "complete; online SWD offers and enforces a 10 MHz maximum. The sidecar bundles six license-reviewed slim STM32 DFPs containing only PDSC, referenced FLM, and license files: 1142 exact targets in 4.56 MiB. User-installed or downloaded Packs override duplicate builtin records, the GUI exposes local .pack import, and target-scoped custom FLM records persist for additional external Flash regions. Frozen Pack operations use internal worker and process-guard entrypoints with parent-death Jobs, HTTPS provenance validation, atomic commit, and privacy-safe API responses. Real installed WebView2 HIL programmed and verified both internal Flash and external QSPI Flash.",
     "superwatch_stable_viewport_implementation": "complete; the dynamic cur/min/max/avg footer and all responsive footer CSS are removed, so changing digit widths cannot resize the chart. The shared Y axis starts in Auto, captures absolute manualMin/manualMax on Y interaction, anchors wheel zoom to the pointer value, keeps later outliers from moving a manual viewport, and restores Auto on double-click. Plain plot left-drag uses independent 5 px X/Y activation, pans Y by absolute range, pans X only when zoomed using visibleRange divided by availableRange, preserves cursor/trigger/Alt/middle/Space/VOFA/probe-click priority, and persists manual state without leaking it across project loads.",
     "superwatch_throughput_implementation": "complete; RTT transmit retains the input after successful sends and permits an empty body when an explicit line ending is selected. SuperWatch desktop buffers are at least 50000 points per channel, the supported interval range is 10 us to 60 s, and Canvas renders Worker-generated pixel envelopes instead of scanning the full ring. StreamHub late subscription atomically replays and protects SuperWatch metadata without lock inversion or producer blocking. The SuperWatch running boundary reconnects the binary stream after reset so the new Worker session receives metadata before samples. The strict packaged gate tracks the actual target Worker by transferred ArrayBuffer identity, counts accepted frames across resets, rejects every Worker error, and keys diagnostics by connection generation plus frame ticket.",
     "rtt_packaged_repair": "complete; the installed Tauri frontend now receives an explicit http://127.0.0.1:8765 control-plane origin instead of resolving /api to tauri.localhost index.html. RTT View always renders the text data panel, uses the user-proven dynamic 1024-byte scan, shows a deduplicated startup state, waits for a real control block, retries stop-pending cleanup, restores an already-running session on re-entry, and enables transmit only for active channel 0. Device.rtt_start treats matching target RAM DownBuffer descriptors as authoritative over corrupt nonempty probe output in both dynamic and exact modes. The lower-right footer shows v0.1.0-rc.2 plus the source commit.",
@@ -56,6 +57,14 @@
       "range_end": "037514b",
       "evidence": "docs/verification/online-flash-hil.md",
       "review": "final spec and quality APPROVED"
+    },
+    {
+      "name": "Online flash algorithm sources, 10 MHz, and frozen Pack workers",
+      "status": "complete",
+      "commits": ["0e2bcd5", "348ed62", "5215419", "8d301c2", "01c4510", "dd807a9", "2fb5a8a"],
+      "tests": "Python 746 passed; GUI 348 passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
+      "review": "installed standard NSIS and physical WebView2 HIL complete",
+      "notes": "10 MHz online SWD; 1142 exact builtin targets from six slim licensed DFPs; local Pack import; target-scoped custom FLM for external Flash; secure frozen Pack install/import workers; BOOT internal Flash and RGB_LCD external QSPI program plus verify passed."
     },
     {
       "name": "High-throughput Task 1 binary protocol",
@@ -426,12 +435,18 @@
     {
       "area": "SuperWatch stable viewport installed HIL",
       "result": "Python 702, GUI 343, WaveformViewer 63, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The installed 41007b3 standard NSIS displayed the matching build identity and ran a real four-channel SuperWatch stream through the bundled sidecar. Chart geometry remained identical across eleven samples, absolute manual Y zoom/pan stayed fixed as uwTick grew, X/Y diagonal drag and Auto reset passed, small-signal zoom kept all selected channels acquiring while uwTick was outside the viewport, Canvas refreshed at 22.36 FPS with zero measured backend drops, pause/resume behaved correctly, and dashboard/application cleanup released clients, resources, processes, and API/CDP ports. SHA-256 is f7fb285e4558435beb52e3e6a007608b27de1f114f52844cc3b05545a5f6fb45."
+    },
+    {
+      "area": "Online flash algorithm sources and installed hardware qualification",
+      "result": "Python 746, GUI 348, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The 2fb5a8a installed standard NSIS exposed the matching build identity, a visible 10 MHz SWD option, local Pack import, target-scoped custom FLM, and 1142 exact builtin targets from a 4.56 MiB slim bundle. A previously uninstalled DFP completed the frozen HTTPS Pack install path and a real local Pack archive imported successfully; both privacy-safe responses omitted local paths. Real Tauri WebView2/Playwright HIL programmed, readback-verified, reset, and disconnected a BOOT internal-Flash HEX and an RGB_LCD external-QSPI HEX using the persisted custom FLM, with complete ordered job states, zero console errors, no active job or resource owner, normal application close, zero Python processes, and released API/CDP ports. Only standard NSIS was generated; SHA-256 is def00101776f9a0fe35f420e5d14ed6e14e04f8c4a520b9afc0e9c2470fcec62."
     }
   ],
   "decisions": [
     "Only MKLink-exposed CMSIS-DAP is supported by the online flash UI.",
     "BIN requires an explicit base address; HEX uses embedded mappings.",
-    "CMSIS-Pack catalog is complete but DFP files are downloaded on demand and never committed or bundled.",
+    "Online flash algorithm acquisition is offline-first: license-reviewed slim builtin DFPs are preferred, users can import local .pack archives, users can attach target-scoped custom FLM for additional Flash regions, and HTTPS Pack download remains optional.",
+    "User-installed or downloaded Pack records override duplicate builtin bundle records. Custom FLM may add non-overlapping external Flash regions but cannot silently replace an existing Pack algorithm for the same address range.",
+    "Builtin algorithm bundles are generated deterministically from an explicit allowlist and contain only PDSC, referenced FLM, and required license files. Pack or FLM binaries remain outside Git.",
     "High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.",
     "Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.",
     "Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.",
@@ -477,13 +492,17 @@
     "Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.",
     "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
     "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
-    "The 41007b3 v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
+    "The 2fb5a8a v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
+    "The builtin algorithm bundle currently covers 1142 exact targets from six license-reviewed STM32 DFPs plus pyOCD builtin targets. DAPLinkUtility resources and third-party Pack algorithms with unclear redistribution terms were studied but not copied; broader vendor coverage requires explicit license review or authorization.",
+    "Optional online Pack installation still requires outbound HTTPS access and may require a user-configured proxy in restricted networks. Offline builtin, local Pack import, and custom FLM paths do not depend on catalog downloads after their files are present.",
+    "One installed HIL cold start returned a transient CMSIS-DAP enumeration failure while the USB device remained present and no resource owner existed; a normal application restart restored discovery and both subsequent hardware jobs passed.",
     "The final v0.1.0-rc.2 installed pass verified DownBuffer authority and transmit acceptance but did not establish a fresh byte-exact MCU echo because the target parser coalesced per-byte echo records; the earlier 93d83e4 hardware pass remains the byte-exact payload evidence.",
     "AXF/ELF symbol and RTT address diagnosis requires external arm-none-eabi-readelf. The installed restricted-PATH qualification intentionally had no readelf, so AXF diagnosis was unavailable while independent MAP diagnosis and hardware RTT startup passed.",
     "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
   ],
   "next_actions": [
-    "Install the 41007b3 v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, or Keil, allow the standard WebView2 bootstrapper network access if WebView2 is absent, then repeat health, visible build identity, probe discovery, the merged configuration workspace, MAP-based RTT detection, startup feedback, Abc/Hex bidirectional send, SuperWatch 0.001 to 0.002 live adjustment, 10 us acquisition, stable chart geometry, pointer-anchored Y zoom, Y/XY drag, Auto reset, normal shutdown, uninstall, and reinstall checks.",
+    "Install the 2fb5a8a v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, Keil, or pre-existing Pack cache. Verify builtin target search without network, local Pack import, target-scoped custom FLM persistence, optional online Pack behavior, 10 MHz selection, health, visible build identity, normal shutdown, uninstall, and reinstall.",
+    "Audit redistribution terms and choose the next curated builtin DFP set before adding GD32, HPM, NXP, Nordic, Renesas, Infineon, Silicon Labs, or TI algorithms. Do not copy DAPLinkUtility resources without explicit authorization.",
     "Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch 50000-point minimum buffer and 10 us workflow, symbol workspace, typed writes, eye visibility, stable chart geometry, small-signal Y navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
     "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
     "For the next release, add code signing before promoting beyond prerelease.",
