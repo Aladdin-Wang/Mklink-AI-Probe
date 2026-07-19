@@ -457,6 +457,52 @@ def test_guard_command_rejects_spoofed_parent_job_marker(monkeypatch):
     assert process_guard.guarded_process_creationflags() == 0
 
 
+def test_guard_command_uses_internal_entrypoint_when_frozen(monkeypatch):
+    import mklink.cmsis_dap.process_guard as process_guard
+
+    monkeypatch.setattr(process_guard.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        process_guard.sys,
+        "executable",
+        r"C:\Program Files\MKLink\mklink-sidecar.exe",
+    )
+    monkeypatch.setattr(process_guard.os, "getpid", lambda: 1234)
+
+    command = process_guard.guarded_process_command(["worker.exe", "--run"])
+
+    assert command == [
+        r"C:\Program Files\MKLink\mklink-sidecar.exe",
+        "--internal-process-guard",
+        "1234",
+        "worker.exe",
+        "--run",
+    ]
+
+
+def test_main_routes_internal_process_guard_entrypoint(monkeypatch):
+    import runpy
+    import mklink.cmsis_dap.process_guard_exec as guard_exec
+
+    observed = []
+
+    def fake_main():
+        observed.append(list(sys.argv))
+        return 17
+
+    monkeypatch.setattr(guard_exec, "main", fake_main)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mklink-sidecar.exe", "--internal-process-guard", "1234", "worker.exe"],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_module("mklink.__main__", run_name="__main__")
+
+    assert raised.value.code == 17
+    assert observed == [["mklink-sidecar.exe", "1234", "worker.exe"]]
+
+
 def test_guard_attach_failure_is_fail_closed_and_leaves_no_worker(tmp_path):
     from mklink.cmsis_dap.process_guard import (
         attach_and_release_guarded_process,

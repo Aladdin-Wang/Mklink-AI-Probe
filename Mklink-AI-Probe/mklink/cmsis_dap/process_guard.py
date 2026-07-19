@@ -96,6 +96,12 @@ def _current_job_limit_flags() -> int:
 
 def guarded_process_command(command: Sequence[str]) -> List[str]:
     values = [str(value) for value in command]
+    if getattr(sys, "frozen", False):
+        return [
+            sys.executable,
+            "--internal-process-guard",
+            str(os.getpid()),
+        ] + values
     return [
         sys.executable,
         "-m",
