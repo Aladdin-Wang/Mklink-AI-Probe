@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ntpath
+import posixpath
 from contextlib import contextmanager
 from importlib.metadata import version
 from typing import Callable, Iterable, Iterator
@@ -146,6 +148,70 @@ def _is_global_scope(parent_tags: tuple[str, ...]) -> bool:
         "DW_TAG_inlined_subroutine",
     }
     return not any(tag in local_tags for tag in parent_tags)
+
+
+def _entry_value(entry, key: str, default=None):
+    if hasattr(entry, key):
+        return getattr(entry, key)
+    try:
+        return entry[key]
+    except (KeyError, TypeError):
+        return default
+
+
+def _line_file_path(cu, line_program, state) -> str | None:
+    file_index = int(state.file or 0) - 1
+    files = line_program.header.file_entry
+    if file_index < 0 or file_index >= len(files):
+        return None
+    file_entry = files[file_index]
+    filename = _decode_value(_entry_value(file_entry, "name", ""))
+    if not filename:
+        return None
+
+    top = cu.get_top_DIE()
+    comp_dir = _attribute_name(top.attributes, "DW_AT_comp_dir")
+    directory = ""
+    dir_index = int(_entry_value(file_entry, "dir_index", 0) or 0)
+    directories = line_program.header.include_directory
+    if 0 < dir_index <= len(directories):
+        directory = _decode_value(directories[dir_index - 1])
+
+    parts = [comp_dir, directory, filename]
+    windows_style = any("\\" in part or ntpath.splitdrive(part)[0] for part in parts)
+    path_module = ntpath if windows_style else posixpath
+    if path_module.isabs(filename):
+        return path_module.normpath(filename)
+    base = directory
+    if base and not path_module.isabs(base):
+        base = path_module.join(comp_dir, base) if comp_dir else base
+    elif not base:
+        base = comp_dir
+    return path_module.normpath(path_module.join(base, filename)) if base else filename
+
+
+def _line_ranges_from_program(cu, line_program) -> list[tuple[int, int, str]]:
+    ranges = []
+    previous = None
+    for entry in line_program.get_entries():
+        state = entry.state
+        if state is None:
+            continue
+        if previous is not None:
+            start = int(previous.address)
+            end = int(state.address)
+            location_path = _line_file_path(cu, line_program, previous)
+            if (
+                end > start
+                and location_path
+                and previous.line is not None
+                and int(previous.line) > 0
+            ):
+                ranges.append(
+                    (start, end, f"{location_path}:{int(previous.line)}")
+                )
+        previous = None if state.end_sequence else state
+    return ranges
 
 
 class BuiltinElfBackend:
@@ -371,4 +437,26 @@ class BuiltinElfBackend:
     def source_locations(
         self, source: str, addresses: Iterable[int]
     ) -> dict[int, str]:
-        raise ElfParseError("Built-in source-line parsing is not available yet")
+        requested = [int(address) for address in addresses]
+        if not requested:
+            return {}
+        with self._open_elf(source) as elf:
+            if not elf.has_dwarf_info():
+                return {}
+            dwarf = elf.get_dwarf_info()
+            ranges = []
+            for cu in dwarf.iter_CUs():
+                line_program = dwarf.line_program_for_CU(cu)
+                if line_program is not None:
+                    ranges.extend(_line_ranges_from_program(cu, line_program))
+
+        locations = {}
+        for original in requested:
+            address = original & ~1
+            best = None
+            for start, end, location in ranges:
+                if start <= address < end and (best is None or start >= best[0]):
+                    best = (start, location)
+            if best is not None:
+                locations[original] = best[1]
+        return locations
