@@ -38,11 +38,11 @@ function mountApp() {
 }
 
 describe('App version footer', () => {
-  it('shows the release candidate and source build in the lower right', () => {
+  it('shows the stable release and source build in the lower right', () => {
     const wrapper = mountApp()
 
     expect(wrapper.get('[data-testid="app-version"]').text())
-      .toMatch(/^v0\.1\.0-rc\.2 · [0-9a-f]{7,}$/)
+      .toMatch(/^v0\.1\.0 · [0-9a-f]{7,}$/)
     wrapper.unmount()
   })
 

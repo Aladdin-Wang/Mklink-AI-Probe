@@ -16,6 +16,9 @@ BUILDER_PATH = (
 )
 BUILTIN_PACK_BUILDER_PATH = BUILDER_PATH.with_name("builtin_packs.py")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+GITEE_UPDATER_ENDPOINT = (
+    "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"
+)
 
 
 def source_tree_digest(source: Path, relative_names: list[str]) -> str:
@@ -184,6 +187,49 @@ def test_tauri_bundle_includes_complete_third_party_license_texts():
     assert "pyelftools 0.32" in notices
     assert "free and unencumbered software released into the public domain" in notices
     assert "http://unlicense.org/" in notices
+
+
+def test_stable_product_version_and_signed_updater_are_configured():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    cargo = (PROJECT_ROOT / "gui" / "src-tauri" / "Cargo.toml").read_text(
+        encoding="utf-8"
+    )
+    config = json.loads(
+        (PROJECT_ROOT / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    package = json.loads(
+        (PROJECT_ROOT / "gui" / "package.json").read_text(encoding="utf-8")
+    )
+    lib_rs = (PROJECT_ROOT / "gui" / "src-tauri" / "src" / "lib.rs").read_text(
+        encoding="utf-8"
+    )
+    capability = json.loads(
+        (
+            PROJECT_ROOT
+            / "gui"
+            / "src-tauri"
+            / "capabilities"
+            / "default.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert 'version = "0.1.0"' in pyproject
+    assert 'version = "0.1.0"' in cargo
+    assert config["version"] == "0.1.0"
+    assert config["bundle"]["createUpdaterArtifacts"] is True
+    assert config["plugins"]["updater"]["endpoints"] == [GITEE_UPDATER_ENDPOINT]
+    assert config["plugins"]["updater"]["pubkey"].strip()
+
+    assert 'tauri-plugin-updater = "2"' in cargo
+    assert 'tauri-plugin-process = "2"' in cargo
+    assert ".plugin(tauri_plugin_updater::Builder::new().build())" in lib_rs
+    assert ".plugin(tauri_plugin_process::init())" in lib_rs
+    assert "@tauri-apps/plugin-updater" in package["dependencies"]
+    assert "@tauri-apps/plugin-process" in package["dependencies"]
+    assert "updater:default" in capability["permissions"]
+    assert "process:allow-restart" in capability["permissions"]
 
 
 def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeypatch, tmp_path):

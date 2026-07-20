@@ -1,6 +1,6 @@
 {
   "productName": "Mklink AI Probe",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0",
   "identifier": "com.microkeen.mklink-ai-probe",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -30,7 +30,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "resources": [
       "resources/THIRD-PARTY-NOTICES.txt"
     ],
@@ -43,7 +44,10 @@
   },
   "plugins": {
     "updater": {
-      "active": false
+      "endpoints": [
+        "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxOEE2QkM3REYyQjA3OTkKUldTWkJ5dmZ4MnVLVWRVKzV0WmRLQWg3VDc2Ky9td2tZZWJheW1lTzNzNEErbmQ3T2JteE1jUTMK"
     }
   }
 }
