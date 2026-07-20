@@ -135,10 +135,13 @@ export function useMklinkApi() {
     }
   }
 
-  async function parseAxf(axf?: string) {
+  async function parseAxf(axf?: string, elfBackend?: 'builtin' | 'external') {
     const result = await api('/api/device/parse-axf', {
       method: 'POST',
-      body: JSON.stringify(axf ? { axf } : {}),
+      body: JSON.stringify({
+        ...(axf ? { axf } : {}),
+        ...(elfBackend ? { elf_backend: elfBackend } : {}),
+      }),
     })
     await refreshStatus()
     return result

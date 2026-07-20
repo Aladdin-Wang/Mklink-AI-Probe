@@ -946,12 +946,14 @@ def create_app(
         port: str | None = None
         axf: str | None = None
         mcu: str | None = None
+        elf_backend: str | None = None
 
     @app.post("/api/device/connect")
     async def connect_device(
         port: str | None = Body(default=None),
         axf: str | None = Body(default=None),
         mcu: str | None = Body(default=None),
+        elf_backend: str | None = Body(default=None),
     ):
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
@@ -961,6 +963,7 @@ def create_app(
                 "idcode": hex(dev.idcode) if dev.idcode else "0x0",
                 "port": dev.port,
                 "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
+                "elf_backend": dev.axf_status.get("elf_backend"),
             }
 
         import mklink
@@ -978,6 +981,7 @@ def create_app(
                 axf=axf,
                 mcu=mcu,
                 project_root=_state["project_root"],
+                elf_backend=elf_backend,
             )
 
         async with async_target_debug_lease(_state, "connect"):
@@ -994,6 +998,7 @@ def create_app(
             "idcode": hex(device.idcode) if device.idcode else "0x0",
             "port": device.port,
             "axf_loaded": bool(getattr(device, "_dwarf_info", None)),
+            "elf_backend": device.axf_status.get("elf_backend"),
         }
 
     @app.post("/api/device/disconnect")
@@ -1056,6 +1061,7 @@ def create_app(
     @app.post("/api/device/parse-axf")
     async def parse_axf(
         axf: str | None = Body(default=None, embed=True),
+        elf_backend: str | None = Body(default=None, embed=True),
     ):
         """手动触发 AXF/ELF 符号表解析。"""
         if not _state["device"] or not _state["device"].connected:
@@ -1066,13 +1072,18 @@ def create_app(
         manager = get_managers()["superwatch"]
         try:
             if manager._runtime is not None and getattr(device, "symbol_catalog", None) is not None:
-                summary = await run_in_threadpool(manager.reparse_symbols, axf)
+                if elf_backend is None:
+                    summary = await run_in_threadpool(manager.reparse_symbols, axf)
+                else:
+                    summary = await run_in_threadpool(
+                        manager.reparse_symbols, axf, elf_backend
+                    )
                 result = dict(device.axf_status)
                 result["rebind"] = summary
             else:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
-                    None, lambda: device.parse_axf(axf)
+                    None, lambda: device.parse_axf(axf, elf_backend=elf_backend)
                 )
                 if manager._runtime is not None and not result.get("error"):
                     manager.prepare(device)
@@ -2145,9 +2156,12 @@ def create_app(
     @app.get("/api/health")
     async def health():
         dev = _state["device"]
+        from mklink.elf_backend import elf_status
+
         return {
             "status": "ok",
             "device_connected": dev.connected if dev else False,
+            **elf_status(project_root=_state["project_root"]),
         }
 
     # ===================================================================

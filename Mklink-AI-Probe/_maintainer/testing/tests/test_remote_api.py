@@ -438,3 +438,55 @@ def test_device_parse_axf_rebinds_prepared_superwatch_runtime(tmp_path):
     assert response.json()["variable_count"] == 8
     assert response.json()["rebind"] == summary
     reparse.assert_called_once_with(str(next_axf))
+
+
+def test_device_connect_forwards_explicit_elf_backend(tmp_path):
+    device, _axf = _connected_symbol_device(tmp_path)
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device) as connect, TestClient(app) as client:
+        response = client.post(
+            "/api/device/connect", json={"elf_backend": "external"}
+        )
+
+    assert response.status_code == 200
+    connect.assert_called_once()
+    assert connect.call_args.kwargs["elf_backend"] == "external"
+
+
+def test_device_parse_axf_forwards_explicit_elf_backend(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    next_axf = tmp_path / "next.axf"
+    next_axf.write_bytes(b"next")
+    device.axf_status = {"loaded": True, "axf_path": str(next_axf)}
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    manager._runtime = SimpleNamespace(items=[])
+    app = create_app(auth_token=None, project_root=".")
+    summary = {"preserved": [], "updated": [], "removed": []}
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager, "reparse_symbols", return_value=summary
+    ) as reparse, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/parse-axf",
+            json={"axf": str(next_axf), "elf_backend": "external"},
+        )
+
+    assert response.status_code == 200
+    reparse.assert_called_once_with(str(next_axf), "external")
+
+
+def test_health_reports_builtin_elf_capability():
+    app = create_app(auth_token=None, project_root=".")
+
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["elf_backend"] == "builtin"
+    assert body["builtin_elf_available"] is True

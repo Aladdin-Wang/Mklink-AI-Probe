@@ -51,6 +51,14 @@ export interface ConfigStatus {
 export interface AxlStatus {
   loaded: boolean
   axf_path?: string | null
+  elf_backend?: 'builtin' | 'external'
+  elf_available?: boolean
+  builtin_elf_available?: boolean
+  builtin_elf_version?: string | null
+  external_elf_available?: boolean
+  external_source_lookup_available?: boolean
+  readelf_available?: boolean
+  addr2line_available?: boolean
   variable_count?: number
   struct_count?: number
   enum_count?: number
@@ -76,6 +84,7 @@ export interface ConnectRequest {
   port?: string
   axf?: string
   mcu?: string
+  elf_backend?: 'builtin' | 'external'
 }
 
 export interface FlashRequest {

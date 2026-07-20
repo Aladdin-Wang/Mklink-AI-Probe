@@ -1576,7 +1576,11 @@ class SuperWatchStreamManager:
                     except Exception as exc:
                         raise SuperWatchTransactionError("restore", exc) from exc
 
-    def reparse_symbols(self, axf_path: str | None = None) -> dict:
+    def reparse_symbols(
+        self,
+        axf_path: str | None = None,
+        elf_backend: str | None = None,
+    ) -> dict:
         from mklink.superwatch import SuperWatchRuntime
         from mklink.symbol_catalog import RebindSummary, rebind_paths
 
@@ -1608,7 +1612,12 @@ class SuperWatchStreamManager:
                     except Exception as exc:
                         raise SuperWatchTransactionError("stop", exc) from exc
                 try:
-                    new_catalog = device.reparse_axf_atomically(axf_path)
+                    if elf_backend is None:
+                        new_catalog = device.reparse_axf_atomically(axf_path)
+                    else:
+                        new_catalog = device.reparse_axf_atomically(
+                            axf_path, elf_backend=elf_backend
+                        )
                 except Exception as exc:
                     raise SuperWatchTransactionError("reparse", exc) from exc
                 try:

@@ -348,7 +348,7 @@ def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
     second_axf.write_bytes(b"second")
     loads = iter([_dwarf_fixture(), RuntimeError("bad DWARF")])
 
-    def load_dwarf(_path, *, use_cache=False):
+    def load_dwarf(_path, **_kwargs):
         result = next(loads)
         if isinstance(result, Exception):
             raise result
@@ -367,4 +367,6 @@ def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
     assert device.symbol_catalog is old_catalog
     assert device.axf_status["axf_path"] == str(first_axf)
     assert device.axf_status["variable_count"] == len(first.items)
+    assert device.axf_status["elf_backend"] == "builtin"
+    assert device.axf_status["builtin_elf_available"] is True
     assert len(first.items) > 4

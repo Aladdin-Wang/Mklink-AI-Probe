@@ -187,11 +187,14 @@ class Device:
         axf: str | None = None,
         mcu: str | None = None,
         project_root: str = ".",
+        elf_backend: str | None = None,
     ):
         self._port = port
         self._axf = axf
         self._mcu_hint = mcu
         self._project_root = project_root
+        self._elf_backend_requested = elf_backend
+        self._elf_backend = None
         self._bridge = None
         self._flash = None
         self._rtt_session = None
@@ -200,7 +203,7 @@ class Device:
         self._dwarf_info = None
         self._symbol_catalog = None
         self._symbol_lock = threading.RLock()
-        self._axf_error = None  # reason DWARF load was skipped (e.g. readelf missing)
+        self._axf_error = None  # reason ELF/DWARF loading was skipped
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -305,10 +308,10 @@ class Device:
             try:
                 self.reparse_axf_atomically()
             except Exception as e:
-                # readelf missing / unreadable ELF / DWARF parse error: never
+                # Unreadable ELF / missing DWARF / parser error: never
                 # let this crash connect() — the bridge is already up. Record
                 # the reason so axf_status / the MCP layer can surface it and
-                # guide the user (e.g. install the GNU Arm toolchain).
+                # guide the user without losing the connected debug session.
                 self._axf_error = str(e)
 
     @property
@@ -316,8 +319,13 @@ class Device:
         with self._symbol_lock:
             return self._symbol_catalog
 
-    def reparse_axf_atomically(self, axf_path: str | None = None):
+    def reparse_axf_atomically(
+        self,
+        axf_path: str | None = None,
+        elf_backend: str | None = None,
+    ):
         from mklink.dwarf_parser import load_dwarf_info
+        from mklink.elf_backend import resolve_elf_backend
         from mklink.symbol_catalog import AxfFingerprint, SymbolCatalog
 
         candidate = str(axf_path or self._axf or "")
@@ -326,8 +334,20 @@ class Device:
         if not Path(candidate).exists():
             raise DeviceError(f"AXF not found: {candidate}")
 
+        requested_backend = (
+            elf_backend
+            if elf_backend is not None
+            else self._elf_backend_requested
+        )
+        effective_backend = resolve_elf_backend(
+            requested_backend, project_root=self._project_root
+        )
         fingerprint = AxfFingerprint.from_path(candidate)
-        info = load_dwarf_info(candidate)
+        info = load_dwarf_info(
+            candidate,
+            backend=effective_backend,
+            project_root=self._project_root,
+        )
         with self._symbol_lock:
             generation = (self._symbol_catalog.generation if self._symbol_catalog else 0) + 1
         catalog = SymbolCatalog.from_dwarf(
@@ -343,13 +363,19 @@ class Device:
             self._axf = candidate
             self._dwarf_info = info
             self._symbol_catalog = catalog
+            self._elf_backend_requested = requested_backend
+            self._elf_backend = effective_backend
             self._axf_error = None
         return catalog
 
-    def parse_axf(self, axf_path: str | None = None) -> dict:
+    def parse_axf(
+        self,
+        axf_path: str | None = None,
+        elf_backend: str | None = None,
+    ) -> dict:
         """手动触发 AXF 解析。返回解析结果摘要。"""
         try:
-            self.reparse_axf_atomically(axf_path)
+            self.reparse_axf_atomically(axf_path, elf_backend=elf_backend)
             return self.axf_status
         except Exception as e:
             self._axf_error = str(e)
@@ -357,12 +383,27 @@ class Device:
 
     @property
     def axf_status(self) -> dict:
-        """返回 AXF 解析状态摘要（含工具链可用性与失败原因）。"""
-        from mklink.toolchain import status as toolchain_status
-        tc = toolchain_status()
+        """返回 AXF 解析状态摘要（含解析后端能力与失败原因）。"""
+        from mklink.elf_backend import elf_status
+
+        try:
+            tc = elf_status(
+                self._elf_backend or self._elf_backend_requested,
+                project_root=self._project_root,
+            )
+        except Exception as exc:
+            tc = {
+                "elf_backend": self._elf_backend_requested or "invalid",
+                "elf_available": False,
+                "builtin_elf_available": True,
+                "external_elf_available": False,
+                "readelf_available": False,
+                "addr2line_available": False,
+            }
+            if not self._axf_error:
+                self._axf_error = str(exc)
         if not self._dwarf_info:
-            out: dict = {"loaded": False, "axf_path": self._axf,
-                         "readelf_available": tc["readelf_available"]}
+            out: dict = {"loaded": False, "axf_path": self._axf, **tc}
             if self._axf_error:
                 out["error"] = self._axf_error
             elif self._axf and not Path(self._axf).exists():
@@ -376,7 +417,7 @@ class Device:
             "variable_count": len(catalog.items) if catalog is not None else 0,
             "struct_count": len(info.structs),
             "enum_count": len(info.enums),
-            "readelf_available": tc["readelf_available"],
+            **tc,
         }
         if catalog is not None:
             out.update({
@@ -1367,7 +1408,12 @@ class Device:
                 stack_frame = parse_exception_stack_frame(frame_raw)
                 if stack_frame:
                     addrs = [stack_frame.get("pc", 0), stack_frame.get("lr", 0)]
-                    source_locations = addr2line(self._axf, *addrs)
+                    source_locations = addr2line(
+                        self._axf,
+                        *addrs,
+                        backend=self._elf_backend,
+                        project_root=self._project_root,
+                    )
             except Exception:
                 pass
 
@@ -1392,7 +1438,11 @@ class Device:
         if not self._axf:
             raise DeviceError("No AXF/ELF loaded for memory map analysis.")
         from mklink.memmap import analyze_memmap
-        return analyze_memmap(self._axf)
+        return analyze_memmap(
+            self._axf,
+            backend=self._elf_backend,
+            project_root=self._project_root,
+        )
 
 
 # ======================================================================
@@ -1405,6 +1455,7 @@ def connect(
     axf: str | None = None,
     mcu: str | None = None,
     project_root: str = ".",
+    elf_backend: str | None = None,
 ) -> Device:
     """Create and connect a Device.
 
@@ -1418,8 +1469,15 @@ def connect(
         axf: Path to AXF/ELF file for symbol resolution.
         mcu: MCU profile hint (e.g. "stm32f4").
         project_root: Project root for .mklink/ config lookup.
+        elf_backend: Explicit ELF parser backend (builtin or external).
     """
-    dev = Device(port=port, axf=axf, mcu=mcu, project_root=project_root)
+    dev = Device(
+        port=port,
+        axf=axf,
+        mcu=mcu,
+        project_root=project_root,
+        elf_backend=elf_backend,
+    )
     dev._connect()
     return dev
 

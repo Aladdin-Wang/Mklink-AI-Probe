@@ -37,4 +37,19 @@ describe('RTT API contracts', () => {
       body: JSON.stringify({ data_hex: '000aff' }),
     }))
   })
+
+  it('keeps AXF parsing built-in by default and forwards explicit external mode', async () => {
+    const api = useMklinkApi()
+    await api.parseAxf('C:\\firmware\\app.axf')
+    await api.parseAxf('C:\\firmware\\app.axf', 'external')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/device/parse-axf', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ axf: 'C:\\firmware\\app.axf' }),
+    }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/device/parse-axf', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ axf: 'C:\\firmware\\app.axf', elf_backend: 'external' }),
+    }))
+  })
 })
