@@ -261,6 +261,22 @@ describe('useOnlineFlashApi', () => {
     wrapper.unmount()
   })
 
+  it('fills the target search field as soon as target selection begins', async () => {
+    const target = { ...installedTarget, part_number: 'STM32H7B0VBT6' }
+    const wrapper = mount(TargetPackPanel, { props: {
+      targets: [target], selectedPart: target.part_number, status: null, busy: false,
+      cancelPending: false, progress: 0, phase: 'preparing', error: '',
+      algorithms: [], algorithmBusy: false, algorithmError: '',
+      canManageAlgorithms: true, algorithmNotRequired: false,
+    } })
+
+    await wrapper.get(`[data-testid="target-${target.part_number}"]`).trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="target-search"]').element.value)
+      .toBe(target.part_number)
+    wrapper.unmount()
+  })
+
   it('forwards preview abort signals to fetch', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('{}', { status: 200 }))
     const controller = new AbortController()
@@ -617,6 +633,14 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('online flash task workspace behavior', () => {
+  it('defaults the connection mode to keeping the target running', async () => {
+    const wrapper = mount(await onlineFlashView())
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value)
+      .toBe('attach')
+    wrapper.unmount()
+  })
+
   it('distinguishes builtin, local Pack, and optional online target sources', async () => {
     vi.stubGlobal('fetch', viewFetch([
       { ...installedTarget, part_number: 'BUILTIN', source: 'bundle' },
@@ -1208,7 +1232,7 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
-  it('does not mirror total job progress into stage progress', async () => {
+  it('shows one total job progress indicator', async () => {
     const wrapper = mount(await onlineFlashView())
     await readyAndStart(wrapper)
     FakeEventSource.instances[0].emit('progress', {
@@ -1217,12 +1241,9 @@ describe('online flash task workspace behavior', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.get('[data-testid="total-progress"]').attributes('value')).toBe('0.4')
-    expect(wrapper.get('[data-testid="stage-progress"]').attributes('value')).toBe('1')
-    FakeEventSource.instances[0].emit('state', {
-      job_id: 'job-1', sequence: 4, timestamp: 3, event: 'state', message: '', state: 'verifying', progress: null,
-    })
-    await wrapper.vm.$nextTick()
-    expect(wrapper.get('[data-testid="stage-progress"]').attributes('value')).toBe('0')
+    expect(wrapper.get('[data-testid="total-progress-label"]').text()).toBe('40%')
+    expect(wrapper.find('[data-testid="stage-progress"]').exists()).toBe(false)
+    expect(wrapper.findAll('progress')).toHaveLength(1)
     wrapper.unmount()
   })
 

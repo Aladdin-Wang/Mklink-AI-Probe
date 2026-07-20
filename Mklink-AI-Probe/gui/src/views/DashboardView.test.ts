@@ -46,6 +46,27 @@ describe('DashboardView layout classes', () => {
     routerMock.query = {}
   })
 
+  it('places SuperWatch immediately after RTT View', () => {
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.findAll('.tab-btn').map(button => button.text()).slice(0, 2))
+      .toEqual(['RTT View', 'SuperWatch'])
+    wrapper.unmount()
+  })
+
   it('does not use the full-screen clipped card layout for RTOS Trace', async () => {
     const wrapper = shallowMount(DashboardView, {
       global: {

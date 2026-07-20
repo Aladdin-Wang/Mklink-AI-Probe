@@ -44,7 +44,7 @@ defineEmits<{
       </select>
     </label>
     <label>连接方式
-      <select :value="connectMode" @change="$emit('update:connectMode', ($event.target as HTMLSelectElement).value)">
+      <select data-testid="connect-mode" :value="connectMode" @change="$emit('update:connectMode', ($event.target as HTMLSelectElement).value)">
         <option value="halt">连接后暂停</option><option value="attach">保持运行</option>
         <option value="under-reset">复位下连接</option>
       </select>

@@ -22,6 +22,7 @@ const reparsing = ref(false)
 const error = ref<string | null>(null)
 
 let loadingPromise: Promise<void> | null = null
+let forcedRefreshPromise: Promise<void> | null = null
 
 function errorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback
@@ -89,13 +90,26 @@ async function loadCatalog(): Promise<void> {
   }
 }
 
-async function ensureLoaded(force = false): Promise<void> {
-  if (!force && generation.value > 0) return
+function startLoad(): Promise<void> {
   if (loadingPromise) return loadingPromise
   loadingPromise = loadCatalog().finally(() => {
     loadingPromise = null
   })
   return loadingPromise
+}
+
+async function ensureLoaded(force = false): Promise<void> {
+  if (!force && generation.value > 0) return
+  if (!force) return startLoad()
+  if (forcedRefreshPromise) return forcedRefreshPromise
+  forcedRefreshPromise = (async () => {
+    const existingLoad = loadingPromise
+    if (existingLoad) await existingLoad.catch(() => undefined)
+    await startLoad()
+  })().finally(() => {
+    forcedRefreshPromise = null
+  })
+  return forcedRefreshPromise
 }
 
 async function refreshStatus(): Promise<SymbolCatalogStatus> {

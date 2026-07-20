@@ -64,6 +64,56 @@ describe('useSymbolCatalog', () => {
     expect(second.generation.value).toBe(1)
   })
 
+  it('queues a forced refresh behind an in-flight catalog load', async () => {
+    let resolveInitial!: (response: Response) => void
+    const initial = new Promise<Response>(resolve => { resolveInitial = resolve })
+    const nextPage = {
+      ...firstPage,
+      generation: 2,
+      total: 1,
+      items: [{ ...firstPage.items[1], path: 'rgb_framebuffer' }],
+    }
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(initial)
+      .mockResolvedValueOnce(jsonResponse(nextPage))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    const firstLoad = symbols.ensureLoaded()
+    const forcedRefresh = symbols.ensureLoaded(true)
+    resolveInitial(jsonResponse(firstPage))
+    await Promise.all([firstLoad, forcedRefresh])
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(symbols.generation.value).toBe(2)
+    expect(symbols.items.value.map(item => item.path)).toEqual(['rgb_framebuffer'])
+  })
+
+  it('retries a forced refresh after an older in-flight load fails', async () => {
+    let resolveInitial!: (response: Response) => void
+    const initial = new Promise<Response>(resolve => { resolveInitial = resolve })
+    const nextPage = {
+      ...firstPage,
+      generation: 2,
+      total: 1,
+      items: [{ ...firstPage.items[1], path: 'rgb_framebuffer' }],
+    }
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(initial)
+      .mockResolvedValueOnce(jsonResponse(nextPage))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    const firstLoad = symbols.ensureLoaded()
+    const forcedRefresh = symbols.ensureLoaded(true)
+    resolveInitial(jsonResponse({ detail: 'old device disconnected' }, 409))
+
+    await expect(firstLoad).rejects.toThrow('old device disconnected')
+    await expect(forcedRefresh).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(symbols.generation.value).toBe(2)
+  })
+
   it('refreshes stale status without replacing the loaded catalog', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(firstPage))

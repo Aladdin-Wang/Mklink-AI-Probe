@@ -23,6 +23,10 @@ function importPack(event: Event): void {
   input.value = ''
   if (file) emit('importPack', file)
 }
+function selectTarget(target: TargetRecord): void {
+  query.value = target.part_number
+  emit('select', target)
+}
 function targetAvailability(target: TargetRecord): string {
   if (target.part_number.toLowerCase().startsWith('hpm')) return '内置 ROM API'
   if (target.source === 'bundle' || target.source === 'builtin') return '内置可用'
@@ -42,7 +46,7 @@ const phaseLabel = computed(() => ({
     <div class="title-row"><h3>器件选择</h3><span data-testid="pack-status" class="badge" :class="selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? 'ok' : ''">{{ selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? '已安装' : '未就绪' }}</span></div>
     <input v-model="query" data-testid="target-search" type="search" placeholder="搜索型号 / 厂商 / 系列" aria-label="搜索器件">
     <div class="target-list">
-      <button v-for="target in targets" :key="target.part_number" :data-testid="`target-${target.part_number}`" :disabled="busy || algorithmBusy" :class="{ active: selectedPart === target.part_number }" @click="emit('select', target)">
+      <button v-for="target in targets" :key="target.part_number" :data-testid="`target-${target.part_number}`" :disabled="busy || algorithmBusy" :class="{ active: selectedPart === target.part_number }" @click="selectTarget(target)">
         <strong>{{ target.part_number }}</strong><small>{{ target.vendor }} · {{ target.pack_id || '内置' }}</small><span>{{ targetAvailability(target) }}</span>
       </button>
     </div>

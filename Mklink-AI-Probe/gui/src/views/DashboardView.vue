@@ -23,11 +23,11 @@
       </div>
       <div class="tabs-bar">
         <button :class="['tab-btn', { active: tab === 'rtt' }]" @click="tab = 'rtt'">RTT View</button>
+        <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
         <button :class="['tab-btn', { active: tab === 'debug' }]" @click="tab = 'debug'">调试控制</button>
         <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
         <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">符号表</button>
         <button :class="['tab-btn', { active: tab === 'memory' }]" @click="tab = 'memory'">内存</button>
-        <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
         <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">串口监控</button>
         <button :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
         <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>

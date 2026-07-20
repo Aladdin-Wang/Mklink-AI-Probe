@@ -4,6 +4,7 @@ import { RefreshCw, Search, Save, TriangleAlert, Unplug, Usb } from '@lucide/vue
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
+import { useSymbolCatalog } from '../composables/useSymbolCatalog'
 import {
   isSymbolFilePath,
   loadDesktopSettings,
@@ -29,6 +30,7 @@ const {
 } = useMklinkApi()
 const { wsConnected, connect: wsConnect, disconnect: wsDisconnect } = useMklinkWs()
 const toast = useToast()
+const symbolCatalog = useSymbolCatalog()
 
 const activeSection = ref<ConfigSection>('local')
 const config = ref<ProjectConfig>({})
@@ -181,6 +183,12 @@ async function parseSymbols() {
       variable_count?: number
     }
     if (result.loaded) {
+      try {
+        await symbolCatalog.ensureLoaded(true)
+      } catch (error: any) {
+        toast.error('符号目录刷新失败: ' + error.message)
+        return
+      }
       toast.success(`AXF 解析成功: ${result.variable_count || 0} 变量`)
     } else {
       toast.error('AXF 解析失败')

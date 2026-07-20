@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
     saveDesktopSettings: vi.fn(),
     pickSymbolFile: vi.fn(),
     pickMapFile: vi.fn(),
+    refreshSymbolCatalog: vi.fn(),
   }
 })
 
@@ -60,6 +61,10 @@ vi.mock('../lib/desktopSettings', async importOriginal => ({
 vi.mock('../lib/filePicker', () => ({
   pickSymbolFile: mocks.pickSymbolFile,
   pickMapFile: mocks.pickMapFile,
+}))
+
+vi.mock('../composables/useSymbolCatalog', () => ({
+  useSymbolCatalog: () => ({ ensureLoaded: mocks.refreshSymbolCatalog }),
 }))
 
 async function mountView() {
@@ -95,6 +100,7 @@ describe('ConfigView', () => {
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
     mocks.api.parseAxf.mockResolvedValue({ loaded: true, variable_count: 3 })
+    mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
     mocks.loadDesktopSettings.mockReturnValue({
       version: 1,
@@ -206,7 +212,22 @@ describe('ConfigView', () => {
     await flushPromises()
 
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
+    expect(mocks.refreshSymbolCatalog).toHaveBeenCalledWith(true)
     expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('3'))
+  })
+
+  it('reports a catalog refresh failure separately from successful AXF parsing', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
+    mocks.refreshSymbolCatalog.mockRejectedValueOnce(new Error('catalog unavailable'))
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
+    expect(mocks.toastError).toHaveBeenCalledWith('符号目录刷新失败: catalog unavailable')
+    expect(mocks.toastError).not.toHaveBeenCalledWith(expect.stringContaining('AXF 解析失败'))
   })
 
   it('shows inline path validation and does not let an invalid symbol path block connection', async () => {

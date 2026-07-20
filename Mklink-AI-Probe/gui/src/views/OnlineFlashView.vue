@@ -34,7 +34,7 @@ const probeId = ref('')
 const probeBusy = ref(false)
 const probeError = ref('')
 const frequency = ref(savedFrequency(saved.frequency))
-const connectMode = ref(saved.connectMode ?? 'halt')
+const connectMode = ref(saved.connectMode ?? 'attach')
 const resetMode = ref(saved.resetMode ?? 'default')
 const hpmBoards = [
   'hpm5300evk', 'hpm5301evklite', 'hpm5e00evk', 'hpm6e00evk',
@@ -66,7 +66,6 @@ const paddingBottom = ref(0)
 const actions = ref<JobAction[]>([...CANONICAL_ACTIONS])
 const jobId = ref('')
 const jobState = ref<JobState | null>(null)
-const stageProgress = ref(0)
 const totalProgress = ref(0)
 const logs = ref<string[]>([])
 const lastSequence = ref(0)
@@ -438,10 +437,8 @@ function receiveEvent(event: JobStreamEvent): void {
   const jobEvent = event as JobEvent
   if (jobEvent.state) {
     jobState.value = jobEvent.state
-    if (jobEvent.event === 'state') stageProgress.value = TERMINAL.has(jobEvent.state) ? 1 : 0
   }
   if (jobEvent.event === 'progress' && jobEvent.progress !== null) {
-    stageProgress.value = 1
     totalProgress.value = Math.max(totalProgress.value, jobEvent.progress)
   }
   if (jobEvent.message) appendLog(`[${jobEvent.sequence}] ${jobEvent.message}`)
@@ -459,7 +456,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
   creatingJob.value = true
   try {
-    logs.value = []; lastSequence.value = 0; stageProgress.value = 0; totalProgress.value = 0
+    logs.value = []; lastSequence.value = 0; totalProgress.value = 0
     const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
     if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
@@ -514,7 +511,7 @@ onBeforeUnmount(() => {
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @scroll="loadVisible" />
-      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :stage-progress="stageProgress" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
     <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
