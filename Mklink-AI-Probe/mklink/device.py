@@ -373,7 +373,7 @@ class Device:
         out = {
             "loaded": True,
             "axf_path": self._axf,
-            "variable_count": len(info.variables),
+            "variable_count": len(catalog.items) if catalog is not None else 0,
             "struct_count": len(info.structs),
             "enum_count": len(info.enums),
             "readelf_available": tc["readelf_available"],

@@ -200,3 +200,4 @@ def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
     assert "bad DWARF" in failed["error"]
     assert device.symbol_catalog is old_catalog
     assert device.axf_status["axf_path"] == str(first_axf)
+    assert device.axf_status["variable_count"] == len(first.items) == 4
