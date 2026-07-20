@@ -74,8 +74,9 @@ def prepare_release(
     version: str,
     source_commit: str,
     output_dir: Path | str,
-    msi: Path | str,
     nsis: Path | str,
+    updater_archive: Path | str,
+    updater_signature: Path | str,
     report: Path | str,
     evidence: Sequence[Path | str],
 ) -> dict[str, object]:
@@ -87,8 +88,17 @@ def prepare_release(
         raise ValueError("source commit must be a 40-character hexadecimal SHA")
 
     sources = [
-        (_require_file(msi), f"Mklink-AI-Probe-{version}-x64.msi", False),
         (_require_file(nsis), f"Mklink-AI-Probe-{version}-x64-Setup.exe", False),
+        (
+            _require_file(updater_archive),
+            f"Mklink-AI-Probe-{version}-x64.nsis.zip",
+            False,
+        ),
+        (
+            _require_file(updater_signature),
+            f"Mklink-AI-Probe-{version}-x64.nsis.zip.sig",
+            False,
+        ),
         (_require_file(report), "TEST-REPORT.md", False),
     ]
     sources.extend((path, path.name, True) for path in _validate_evidence(evidence))
@@ -146,8 +156,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--msi", required=True, type=Path)
     parser.add_argument("--nsis", required=True, type=Path)
+    parser.add_argument("--updater-archive", required=True, type=Path)
+    parser.add_argument("--updater-signature", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--evidence", action="append", default=[], type=Path)
     return parser
@@ -159,8 +170,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         version=args.version,
         source_commit=args.source_commit,
         output_dir=args.output,
-        msi=args.msi,
         nsis=args.nsis,
+        updater_archive=args.updater_archive,
+        updater_signature=args.updater_signature,
         report=args.report,
         evidence=args.evidence,
     )
