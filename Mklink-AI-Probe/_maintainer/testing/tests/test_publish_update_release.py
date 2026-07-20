@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import urllib.error
 import urllib.parse
 from pathlib import Path
@@ -121,6 +122,133 @@ def test_gitee_release_creation_is_idempotent(publisher, monkeypatch):
     ]
 
 
+def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
+    repository = tmp_path / "repo"
+    release_dir = tmp_path / "release"
+    (repository / "gui" / "src-tauri").mkdir(parents=True)
+    release_dir.mkdir()
+    (repository / "pyproject.toml").write_text(
+        f'[project]\nversion = "{version}"\n', encoding="utf-8"
+    )
+    (repository / "gui" / "src-tauri" / "Cargo.toml").write_text(
+        f'[package]\nversion = "{version}"\n', encoding="utf-8"
+    )
+    (repository / "gui" / "src-tauri" / "tauri.conf.json").write_text(
+        json.dumps({"version": version}), encoding="utf-8"
+    )
+    names = [
+        f"Mklink-AI-Probe-v{version}-x64-Setup.exe",
+        f"Mklink-AI-Probe-v{version}-x64.nsis.zip",
+        f"Mklink-AI-Probe-v{version}-x64.nsis.zip.sig",
+    ]
+    assets = []
+    for name in names:
+        path = release_dir / name
+        path.write_bytes(name.encode())
+        assets.append({
+            "name": name,
+            "size": path.stat().st_size,
+            "sha256": publisher.sha256(path),
+        })
+    manifest = {
+        "release_version": version,
+        "source_commit": head,
+        "assets": assets,
+    }
+    (release_dir / "release-manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    (release_dir / "SHA256SUMS.txt").write_text(
+        "".join(f'{asset["sha256"]}  {asset["name"]}\n' for asset in assets),
+        encoding="ascii",
+    )
+    return repository, release_dir, release_dir / names[1], release_dir / names[2]
+
+
+def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
+    publisher, monkeypatch, tmp_path,
+):
+    repository, release_dir, archive, signature = release_fixture(publisher, tmp_path)
+    responses = {
+        ("branch", "--show-current"): "feature/test",
+        ("rev-parse", "HEAD"): "a" * 40,
+        ("status", "--porcelain"): "",
+    }
+    monkeypatch.setattr(
+        publisher,
+        "git_output",
+        lambda repository, *args: responses[args],
+    )
+
+    with pytest.raises(RuntimeError, match="master"):
+        publisher.validate_release_preflight(
+            repository=repository,
+            release_dir=release_dir,
+            version="0.1.0",
+            updater_archive=archive,
+            updater_signature=signature,
+        )
+
+    responses[("branch", "--show-current")] = "master"
+    responses[("status", "--porcelain")] = " M tracked-file"
+    with pytest.raises(RuntimeError, match="clean"):
+        publisher.validate_release_preflight(
+            repository=repository,
+            release_dir=release_dir,
+            version="0.1.0",
+            updater_archive=archive,
+            updater_signature=signature,
+        )
+
+    responses[("status", "--porcelain")] = ""
+    archive.write_bytes(b"tampered")
+    with pytest.raises(RuntimeError, match="hash"):
+        publisher.validate_release_preflight(
+            repository=repository,
+            release_dir=release_dir,
+            version="0.1.0",
+            updater_archive=archive,
+            updater_signature=signature,
+        )
+
+
+def test_github_existing_assets_must_match_digest(publisher, tmp_path):
+    asset = tmp_path / "setup.exe"
+    asset.write_bytes(b"setup")
+    digest = f"sha256:{publisher.sha256(asset)}"
+
+    assert publisher.select_github_uploads(
+        [asset], [{"name": asset.name, "size": asset.stat().st_size, "digest": digest}]
+    ) == []
+    with pytest.raises(RuntimeError, match="conflicting GitHub release asset"):
+        publisher.select_github_uploads(
+            [asset], [{"name": asset.name, "size": asset.stat().st_size, "digest": "sha256:deadbeef"}]
+        )
+
+
+def test_gitee_git_push_uses_token_only_in_askpass_environment(
+    publisher, monkeypatch, tmp_path,
+):
+    calls = []
+    monkeypatch.setattr(
+        publisher,
+        "_run",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    publisher._gitee_push(
+        repository=tmp_path,
+        repo="owner/repo",
+        refspec="master:master",
+        token="secret-token",
+    )
+
+    command, kwargs = calls[0]
+    assert "secret-token" not in " ".join(command)
+    assert kwargs["env"]["MKLINK_GIT_PASSWORD"] == "secret-token"
+    assert command[-1] == "master:master"
+
+
 def test_updates_branch_is_published_only_after_both_releases_and_verification(
     publisher, monkeypatch, tmp_path,
 ):
@@ -130,6 +258,11 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
     archive.write_bytes(b"archive")
     signature.write_text("signature", encoding="ascii")
 
+    monkeypatch.setattr(
+        publisher,
+        "validate_release_preflight",
+        lambda **_kwargs: events.append("preflight") or [archive, signature],
+    )
     monkeypatch.setattr(publisher, "push_version_tag", lambda **_kwargs: events.append("tag"))
     monkeypatch.setattr(publisher, "publish_github_release", lambda **_kwargs: events.append("github"))
     monkeypatch.setattr(
@@ -163,4 +296,4 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         repository=tmp_path,
     )
 
-    assert events == ["tag", "github", "gitee", "verify", "updates"]
+    assert events == ["preflight", "tag", "github", "gitee", "verify", "updates"]

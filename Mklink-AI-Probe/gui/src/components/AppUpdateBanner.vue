@@ -12,6 +12,7 @@ defineProps<{
 defineEmits<{
   install: []
   retry: []
+  dismiss: []
 }>()
 </script>
 
@@ -39,16 +40,23 @@ defineEmits<{
       max="1"
       aria-label="软件更新下载进度"
     />
-    <button
-      v-if="state === 'ready'"
-      class="btn btn-sm btn-primary"
-      data-testid="install-update"
-      type="button"
-      @click="$emit('install')"
-    >
-      <CircleArrowUp :size="13" aria-hidden="true" />
-      立即安装
-    </button>
+    <div v-if="state === 'ready'" class="update-actions">
+      <button
+        class="btn btn-sm btn-primary"
+        data-testid="install-update"
+        type="button"
+        @click="$emit('install')"
+      >
+        <CircleArrowUp :size="13" aria-hidden="true" />
+        立即安装
+      </button>
+      <button
+        class="btn btn-sm"
+        data-testid="later-update"
+        type="button"
+        @click="$emit('dismiss')"
+      >稍后</button>
+    </div>
     <button
       v-else-if="state === 'error'"
       class="btn btn-sm"
@@ -92,12 +100,15 @@ defineEmits<{
   margin-left: auto;
   accent-color: var(--info);
 }
-.update-banner button {
+.update-actions,
+.update-banner > button {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
+.update-actions { gap: 6px; }
+.update-actions button { display: inline-flex; align-items: center; gap: 5px; }
 .spin { animation: update-spin 1s linear infinite; }
 @keyframes update-spin { to { transform: rotate(360deg); } }
 @media (max-width: 640px) {

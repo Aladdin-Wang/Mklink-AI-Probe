@@ -20,6 +20,8 @@ describe('AppUpdateBanner', () => {
 
     await wrapper.get('[data-testid="install-update"]').trigger('click')
     expect(wrapper.emitted('install')).toHaveLength(1)
+    await wrapper.get('[data-testid="later-update"]').trigger('click')
+    expect(wrapper.emitted('dismiss')).toHaveLength(1)
   })
 
   it('offers retry after an update error', async () => {

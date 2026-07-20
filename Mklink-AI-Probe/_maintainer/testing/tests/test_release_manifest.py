@@ -25,34 +25,29 @@ def release_inputs(tmp_path):
     nsis = tmp_path / "input.exe"
     updater = tmp_path / "input.nsis.zip"
     signature = tmp_path / "input.nsis.zip.sig"
-    report = tmp_path / "full-report.md"
     nsis.write_bytes(b"exe")
     updater.write_bytes(b"updater")
     signature.write_text("signature", encoding="ascii")
-    report.write_text("report", encoding="utf-8")
-    return nsis, updater, signature, report
+    return nsis, updater, signature
 
 
 def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp_path):
-    nsis, updater, signature, report = release_inputs(tmp_path)
+    nsis, updater, signature = release_inputs(tmp_path)
     output = tmp_path / "release"
 
     result = release_module.prepare_release(
-        version="v0.1.0",
+        version="0.1.0",
         source_commit="a" * 40,
         output_dir=output,
         nsis=nsis,
         updater_archive=updater,
         updater_signature=signature,
-        report=report,
-        evidence=[],
     )
 
     assert {asset["name"] for asset in result["assets"]} == {
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
         "Mklink-AI-Probe-v0.1.0-x64.nsis.zip",
         "Mklink-AI-Probe-v0.1.0-x64.nsis.zip.sig",
-        "TEST-REPORT.md",
     }
     assert all(len(asset["sha256"]) == 64 for asset in result["assets"])
     assert all(set(asset) == {"name", "size", "sha256"} for asset in result["assets"])
@@ -66,56 +61,14 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
     assert json.loads(manifest_text) == result
 
 
-def test_prepare_release_rejects_duplicate_output_names(release_module, monkeypatch, tmp_path):
-    nsis, updater, signature, report = release_inputs(tmp_path)
-    artifact_root = tmp_path / "docs" / "verification" / "artifacts"
-    artifact_root.mkdir(parents=True)
-    duplicate = artifact_root / "TEST-REPORT.md"
-    duplicate.write_text("duplicate", encoding="utf-8")
-    monkeypatch.setattr(release_module, "REPO_ROOT", tmp_path)
-
-    with pytest.raises(ValueError, match="duplicate release asset name"):
-        release_module.prepare_release(
-            version="v0.1.0",
-            source_commit="a" * 40,
-            output_dir=tmp_path / "release",
-            nsis=nsis,
-            updater_archive=updater,
-            updater_signature=signature,
-            report=report,
-            evidence=[duplicate],
-        )
-
-
 def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
-    _nsis, updater, signature, report = release_inputs(tmp_path)
+    _nsis, updater, signature = release_inputs(tmp_path)
     with pytest.raises(FileNotFoundError, match="release input does not exist"):
         release_module.prepare_release(
-            version="v0.1.0",
+            version="0.1.0",
             source_commit="a" * 40,
             output_dir=tmp_path / "release",
             nsis=tmp_path / "missing.exe",
             updater_archive=updater,
             updater_signature=signature,
-            report=report,
-            evidence=[],
-        )
-
-
-def test_prepare_release_rejects_evidence_outside_artifact_root(release_module, monkeypatch, tmp_path):
-    nsis, updater, signature, report = release_inputs(tmp_path)
-    outside = tmp_path / "private-hardware-log.json"
-    outside.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(release_module, "REPO_ROOT", tmp_path)
-
-    with pytest.raises(ValueError, match="docs/verification/artifacts"):
-        release_module.prepare_release(
-            version="v0.1.0",
-            source_commit="a" * 40,
-            output_dir=tmp_path / "release",
-            nsis=nsis,
-            updater_archive=updater,
-            updater_signature=signature,
-            report=report,
-            evidence=[outside],
         )

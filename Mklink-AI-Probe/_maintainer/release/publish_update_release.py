@@ -18,6 +18,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
+try:
+    import tomllib
+except ImportError:  # pragma: no cover
+    import tomli as tomllib
+
 
 GITEE_API = "https://gitee.com/api/v5"
 
@@ -34,6 +39,82 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def git_output(repository: Path, *args: str) -> str:
+    return _run(["git", *args], cwd=repository).stdout.strip()
+
+
+def _release_names(version: str) -> dict[str, str]:
+    prefix = f"Mklink-AI-Probe-v{version}-x64"
+    return {
+        "setup": f"{prefix}-Setup.exe",
+        "updater_archive": f"{prefix}.nsis.zip",
+        "updater_signature": f"{prefix}.nsis.zip.sig",
+        "checksums": "SHA256SUMS.txt",
+        "manifest": "release-manifest.json",
+    }
+
+
+def validate_release_preflight(
+    *, repository: Path, release_dir: Path, version: str,
+    updater_archive: Path, updater_signature: Path,
+) -> list[Path]:
+    if git_output(repository, "branch", "--show-current") != "master":
+        raise RuntimeError("release publication must run from the master branch")
+    if git_output(repository, "status", "--porcelain"):
+        raise RuntimeError("release publication requires a clean working tree")
+    head = git_output(repository, "rev-parse", "HEAD")
+
+    with (repository / "pyproject.toml").open("rb") as stream:
+        python_version = str(tomllib.load(stream)["project"]["version"])
+    with (repository / "gui" / "src-tauri" / "Cargo.toml").open("rb") as stream:
+        cargo_version = str(tomllib.load(stream)["package"]["version"])
+    tauri_version = str(json.loads(
+        (repository / "gui" / "src-tauri" / "tauri.conf.json").read_text(
+            encoding="utf-8"
+        )
+    )["version"])
+    if {python_version, cargo_version, tauri_version} != {version}:
+        raise RuntimeError("release version does not match project metadata")
+
+    names = _release_names(version)
+    expected_files = {release_dir / name for name in names.values()}
+    actual_files = {path for path in release_dir.iterdir() if path.is_file()}
+    if actual_files != expected_files:
+        raise RuntimeError("release directory must contain exactly the five public assets")
+    if updater_archive.resolve() != (release_dir / names["updater_archive"]).resolve():
+        raise RuntimeError("updater archive filename does not match the release version")
+    if updater_signature.resolve() != (release_dir / names["updater_signature"]).resolve():
+        raise RuntimeError("updater signature filename does not match the release version")
+
+    manifest = json.loads((release_dir / names["manifest"]).read_text(encoding="utf-8"))
+    if manifest.get("release_version") != version or manifest.get("source_commit") != head:
+        raise RuntimeError("release manifest version or source commit does not match HEAD")
+    expected_payload_names = {
+        names["setup"], names["updater_archive"], names["updater_signature"]
+    }
+    assets = manifest.get("assets")
+    if not isinstance(assets, list) or len(assets) != 3 or not all(
+        isinstance(value, dict) for value in assets
+    ) or {
+        value.get("name") for value in assets if isinstance(value, dict)
+    } != expected_payload_names:
+        raise RuntimeError("release manifest has an unexpected asset set")
+    checksum_lines = []
+    for asset in sorted(assets, key=lambda value: str(value["name"]).casefold()):
+        path = release_dir / str(asset["name"])
+        if path.stat().st_size != asset.get("size") or sha256(path) != asset.get("sha256"):
+            raise RuntimeError(f"release asset hash or size mismatch: {path.name}")
+        checksum_lines.append(f'{asset["sha256"]}  {asset["name"]}')
+    actual_checksums = (release_dir / names["checksums"]).read_text(
+        encoding="ascii"
+    ).splitlines()
+    if actual_checksums != checksum_lines:
+        raise RuntimeError("SHA256SUMS.txt does not match the release manifest")
+    return [release_dir / names[key] for key in (
+        "setup", "updater_archive", "updater_signature", "checksums", "manifest"
+    )]
 
 
 def build_latest_document(
@@ -135,6 +216,8 @@ def ensure_gitee_release(
     else:
         if release.get("tag_name") != tag:
             raise RuntimeError("Gitee returned a conflicting release tag")
+        if release.get("name") not in (None, title) or release.get("body") not in (None, notes):
+            raise RuntimeError("Gitee release metadata conflicts with the requested release")
         return release
 
     return request_json(
@@ -223,9 +306,12 @@ def upload_gitee_asset(
     )
 
 
-def _run(command: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: Sequence[str], *, cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        list(command), cwd=cwd, text=True, capture_output=True, check=False
+        list(command), cwd=cwd, env=env, text=True, capture_output=True, check=False
     )
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "command failed"
@@ -233,8 +319,33 @@ def _run(command: Sequence[str], *, cwd: Path | None = None) -> subprocess.Compl
     return result
 
 
+def _gitee_push(
+    *, repository: Path, repo: str, refspec: str, token: str, force: bool = False
+) -> None:
+    owner = repo.split("/", 1)[0]
+    with tempfile.TemporaryDirectory(prefix="mklink-askpass-") as directory:
+        askpass = Path(directory) / ("askpass.cmd" if os.name == "nt" else "askpass.sh")
+        if os.name == "nt":
+            askpass.write_text("@echo off\necho %MKLINK_GIT_PASSWORD%\n", encoding="ascii")
+        else:  # pragma: no cover
+            askpass.write_text("#!/bin/sh\nprintf '%s\\n' \"$MKLINK_GIT_PASSWORD\"\n", encoding="ascii")
+            askpass.chmod(0o700)
+        env = os.environ.copy()
+        env.update({
+            "GIT_ASKPASS": str(askpass),
+            "GIT_TERMINAL_PROMPT": "0",
+            "MKLINK_GIT_PASSWORD": token,
+        })
+        command = ["git", "-c", "credential.helper=", "push"]
+        if force:
+            command.append("--force")
+        command.extend([f"https://{owner}@gitee.com/{repo}.git", refspec])
+        _run(command, cwd=repository, env=env)
+
+
 def push_version_tag(
-    *, repository: Path, tag: str, github_repo: str, gitee_repo: str
+    *, repository: Path, tag: str, github_repo: str, gitee_repo: str,
+    gitee_token: str,
 ) -> None:
     current = _run(["git", "rev-parse", "HEAD"], cwd=repository).stdout.strip()
     existing = subprocess.run(
@@ -248,24 +359,55 @@ def push_version_tag(
         raise RuntimeError(f"tag {tag} points to a different commit")
     if existing.returncode != 0:
         _run(["git", "tag", "-a", tag, "-m", f"Mklink AI Probe {tag}"], cwd=repository)
-    _run(["git", "push", f"https://github.com/{github_repo}.git", tag], cwd=repository)
-    _run(["git", "push", f"https://gitee.com/{gitee_repo}.git", tag], cwd=repository)
+    _run(["git", "push", "origin", "master"], cwd=repository)
+    _gitee_push(
+        repository=repository, repo=gitee_repo, refspec="master:master",
+        token=gitee_token,
+    )
+    _run(["git", "push", "origin", tag], cwd=repository)
+    _gitee_push(
+        repository=repository, repo=gitee_repo, refspec=tag, token=gitee_token
+    )
+
+
+def select_github_uploads(
+    assets: Sequence[Path], existing_assets: Sequence[Mapping[str, object]]
+) -> list[Path]:
+    existing = {str(asset.get("name")): asset for asset in existing_assets}
+    uploads = []
+    for path in assets:
+        remote = existing.get(path.name)
+        if remote is None:
+            uploads.append(path)
+            continue
+        expected_digest = f"sha256:{sha256(path)}"
+        if remote.get("size") != path.stat().st_size or remote.get("digest") != expected_digest:
+            raise RuntimeError(f"conflicting GitHub release asset: {path.name}")
+    extra = set(existing) - {path.name for path in assets}
+    if extra:
+        raise RuntimeError("GitHub release contains unexpected assets")
+    return uploads
 
 
 def publish_github_release(
     *, repo: str, tag: str, title: str, notes: str, assets: Sequence[Path]
 ) -> None:
     view = subprocess.run(
-        ["gh", "release", "view", tag, "--repo", repo],
+        ["gh", "release", "view", tag, "--repo", repo, "--json", "tagName,name,body,assets"],
         text=True,
         capture_output=True,
         check=False,
     )
     if view.returncode == 0:
-        _run(["gh", "release", "edit", tag, "--repo", repo, "--title", title, "--notes", notes])
+        existing = json.loads(view.stdout)
+        if existing.get("tagName") != tag or existing.get("name") != title or existing.get("body") != notes:
+            raise RuntimeError("GitHub release metadata conflicts with the requested release")
+        uploads = select_github_uploads(assets, existing.get("assets", []))
     else:
         _run(["gh", "release", "create", tag, "--repo", repo, "--title", title, "--notes", notes, "--verify-tag"])
-    _run(["gh", "release", "upload", tag, "--repo", repo, "--clobber", *map(str, assets)])
+        uploads = list(assets)
+    if uploads:
+        _run(["gh", "release", "upload", tag, "--repo", repo, *map(str, uploads)])
 
 
 def publish_gitee_release(
@@ -289,7 +431,8 @@ def publish_gitee_release(
 
 
 def publish_updates_branch(
-    *, document: Mapping[str, object], github_repo: str, gitee_repo: str
+    *, document: Mapping[str, object], github_repo: str, gitee_repo: str,
+    gitee_token: str,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="mklink-updates-") as directory:
         checkout = Path(directory)
@@ -303,7 +446,10 @@ def publish_updates_branch(
         _run(["git", "add", "latest.json"], cwd=checkout)
         _run(["git", "commit", "-m", f"release: publish v{document['version']} update"], cwd=checkout)
         _run(["git", "push", "--force", f"https://github.com/{github_repo}.git", "updates:updates"], cwd=checkout)
-        _run(["git", "push", "--force", f"https://gitee.com/{gitee_repo}.git", "updates:updates"], cwd=checkout)
+        _gitee_push(
+            repository=checkout, repo=gitee_repo, refspec="updates:updates",
+            token=gitee_token, force=True,
+        )
 
 
 def publish_update_release(
@@ -313,15 +459,20 @@ def publish_update_release(
 ) -> dict[str, object]:
     tag = f"v{version}"
     title = f"Mklink AI Probe {tag}"
-    required = [path for path in sorted(release_dir.iterdir()) if path.is_file()]
-    if updater_archive not in required or updater_signature not in required:
-        raise ValueError("updater archive and signature must be inside the release directory")
+    required = validate_release_preflight(
+        repository=repository,
+        release_dir=release_dir,
+        version=version,
+        updater_archive=updater_archive,
+        updater_signature=updater_signature,
+    )
     signature = updater_signature.read_text(encoding="ascii").strip()
     if not signature:
         raise ValueError("updater signature is empty")
 
     push_version_tag(
-        repository=repository, tag=tag, github_repo=github_repo, gitee_repo=gitee_repo
+        repository=repository, tag=tag, github_repo=github_repo,
+        gitee_repo=gitee_repo, gitee_token=gitee_token,
     )
     publish_github_release(
         repo=github_repo, tag=tag, title=title, notes=notes, assets=required
@@ -344,7 +495,8 @@ def publish_update_release(
         url=updater_url,
     )
     publish_updates_branch(
-        document=document, github_repo=github_repo, gitee_repo=gitee_repo
+        document=document, github_repo=github_repo, gitee_repo=gitee_repo,
+        gitee_token=gitee_token,
     )
     return document
 

@@ -14,12 +14,14 @@
       </div>
     </header>
     <AppUpdateBanner
+      v-if="!updateDismissed"
       :state="updateState"
       :version="updateVersion"
       :progress="updateProgress"
       :error="updateError"
       @install="installAndRelaunch"
       @retry="retryUpdate"
+      @dismiss="updateDismissed = true"
     />
     <div class="app-main">
       <router-view v-if="initialBackendReady" />
@@ -62,6 +64,7 @@ const {
   retry: retryUpdate,
 } = useAppUpdater()
 const initialBackendReady = ref(false)
+const updateDismissed = ref(false)
 let statusPollingStarted = false
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__

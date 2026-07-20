@@ -10,7 +10,7 @@ import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,19 +56,6 @@ def _require_file(value: Path | str) -> Path:
     return path
 
 
-def _validate_evidence(paths: Iterable[Path | str]) -> list[Path]:
-    artifact_root = (REPO_ROOT / "docs" / "verification" / "artifacts").resolve()
-    result = []
-    for value in paths:
-        path = _require_file(value)
-        if not path.is_relative_to(artifact_root):
-            raise ValueError(
-                "release evidence must be inside docs/verification/artifacts"
-            )
-        result.append(path)
-    return result
-
-
 def prepare_release(
     *,
     version: str,
@@ -77,8 +64,6 @@ def prepare_release(
     nsis: Path | str,
     updater_archive: Path | str,
     updater_signature: Path | str,
-    report: Path | str,
-    evidence: Sequence[Path | str],
 ) -> dict[str, object]:
     if not version or any(separator in version for separator in ("/", "\\")):
         raise ValueError("release version must be a path-safe value")
@@ -88,23 +73,19 @@ def prepare_release(
         raise ValueError("source commit must be a 40-character hexadecimal SHA")
 
     sources = [
-        (_require_file(nsis), f"Mklink-AI-Probe-{version}-x64-Setup.exe", False),
+        (_require_file(nsis), f"Mklink-AI-Probe-v{version}-x64-Setup.exe"),
         (
             _require_file(updater_archive),
-            f"Mklink-AI-Probe-{version}-x64.nsis.zip",
-            False,
+            f"Mklink-AI-Probe-v{version}-x64.nsis.zip",
         ),
         (
             _require_file(updater_signature),
-            f"Mklink-AI-Probe-{version}-x64.nsis.zip.sig",
-            False,
+            f"Mklink-AI-Probe-v{version}-x64.nsis.zip.sig",
         ),
-        (_require_file(report), "TEST-REPORT.md", False),
     ]
-    sources.extend((path, path.name, True) for path in _validate_evidence(evidence))
 
     names: set[str] = set()
-    for _source, name, _is_evidence in sources:
+    for _source, name in sources:
         folded = name.casefold()
         if folded in names:
             raise ValueError(f"duplicate release asset name: {name}")
@@ -113,8 +94,7 @@ def prepare_release(
     output = Path(output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     assets = []
-    evidence_names = []
-    for source, name, is_evidence in sorted(sources, key=lambda item: item[1].casefold()):
+    for source, name in sorted(sources, key=lambda item: item[1].casefold()):
         destination = output / name
         shutil.copy2(source, destination)
         assets.append(
@@ -124,8 +104,6 @@ def prepare_release(
                 "sha256": _sha256(destination),
             }
         )
-        if is_evidence:
-            evidence_names.append(name)
 
     manifest: dict[str, object] = {
         "schema_version": 1,
@@ -135,7 +113,6 @@ def prepare_release(
         "platform": platform.platform(),
         "versions": _source_versions(),
         "assets": assets,
-        "evidence": sorted(evidence_names, key=str.casefold),
     }
     (output / "release-manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
@@ -159,8 +136,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--nsis", required=True, type=Path)
     parser.add_argument("--updater-archive", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
-    parser.add_argument("--report", required=True, type=Path)
-    parser.add_argument("--evidence", action="append", default=[], type=Path)
     return parser
 
 
@@ -173,8 +148,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         nsis=args.nsis,
         updater_archive=args.updater_archive,
         updater_signature=args.updater_signature,
-        report=args.report,
-        evidence=args.evidence,
     )
     print(json.dumps({
         "release_version": manifest["release_version"],
