@@ -767,6 +767,16 @@ describe('VOFA viewer hot path source guard', () => {
     expect(viewerCss).not.toMatch(/(^|\n)\s*footer\s*\{/)
   })
 
+  it('keeps desktop SuperWatch live status and controls in stable rows', () => {
+    expect(componentSource).toContain('<div class="header-status">')
+    expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop header')
+    expect(viewerCss).toContain('grid-template-columns: minmax(0, 1fr) auto')
+    expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #control-toolbar')
+    expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #trigger-toolbar')
+    expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #transport-health-badge')
+    expect(viewerCss).toContain('flex-wrap: nowrap')
+  })
+
   it('hides selected curves without stopping their binary samples', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)

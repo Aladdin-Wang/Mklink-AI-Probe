@@ -21,7 +21,7 @@
 
     <div class="panel-filters">
       <label>
-        <input v-model="selectedOnly" type="checkbox" />
+        <input v-model="selectedOnly" type="checkbox" data-testid="selected-only" />
         仅已选
       </label>
       <span>{{ selected.size }} / {{ catalog.items.value.length }}</span>
@@ -34,112 +34,132 @@
     <div v-if="!deviceConnected" class="empty-state">请先连接设备</div>
     <div v-else-if="catalog.loading.value" class="empty-state">正在加载符号...</div>
     <div v-else class="variable-groups">
-      <section v-for="group in groups" :key="group.name" class="variable-group">
-        <h3>{{ group.name }}</h3>
-        <div
-          v-for="symbol in group.items"
-          :key="symbol.path"
-          class="variable-row"
-          :class="{ selected: selected.has(symbol.path) }"
+      <h3 class="variable-root-heading">全局变量</h3>
+      <template v-for="row in rows" :key="row.node.key">
+        <button
+          v-if="row.node.kind === 'branch'"
+          class="branch-row"
+          type="button"
+          :data-testid="`branch-${row.node.key}`"
+          :title="row.node.key"
+          :style="{ paddingLeft: rowIndent(row.depth) }"
+          @click="toggleBranch(row.node.key)"
         >
-          <div class="variable-main">
+          <ChevronDown v-if="row.expanded" :size="15" aria-hidden="true" />
+          <ChevronRight v-else :size="15" aria-hidden="true" />
+          <span class="branch-name">{{ row.node.label }}</span>
+          <span class="branch-count">{{ row.selectedLeafCount }} / {{ row.node.leafCount }}</span>
+        </button>
+        <div
+          v-else-if="row.node.descriptor"
+          class="variable-row"
+          :class="{ selected: selected.has(row.node.descriptor.path) }"
+          :data-testid="`leaf-${row.node.descriptor.path}`"
+        >
+          <div class="variable-main" :style="{ paddingLeft: rowIndent(row.depth) }">
             <input
               type="checkbox"
-              :checked="selected.has(symbol.path)"
-              :data-testid="`toggle-${symbol.path}`"
-              :disabled="selectionBusy.has(symbol.path)"
-              @change="toggleSelection(symbol.path, $event)"
+              :checked="selected.has(row.node.descriptor.path)"
+              :data-testid="`toggle-${row.node.descriptor.path}`"
+              :disabled="selectionBusy.has(row.node.descriptor.path)"
+              @change="toggleSelection(row.node.descriptor.path, $event)"
             />
             <span class="visibility-slot">
               <button
-                v-if="selected.has(symbol.path)"
+                v-if="selected.has(row.node.descriptor.path)"
                 class="visibility-button"
                 type="button"
-                :class="{ hidden: hiddenChannels?.has(symbol.path) }"
-                :data-testid="`visibility-${symbol.path}`"
-                :aria-label="hiddenChannels?.has(symbol.path) ? `显示 ${symbol.path} 波形` : `隐藏 ${symbol.path} 波形`"
-                :aria-pressed="!hiddenChannels?.has(symbol.path)"
-                :title="hiddenChannels?.has(symbol.path) ? '显示波形' : '隐藏波形'"
-                @click.stop="toggleVisibility(symbol.path)"
+                :class="{ hidden: hiddenChannels?.has(row.node.descriptor.path) }"
+                :data-testid="`visibility-${row.node.descriptor.path}`"
+                :aria-label="hiddenChannels?.has(row.node.descriptor.path) ? `显示 ${row.node.descriptor.path} 波形` : `隐藏 ${row.node.descriptor.path} 波形`"
+                :aria-pressed="!hiddenChannels?.has(row.node.descriptor.path)"
+                :title="hiddenChannels?.has(row.node.descriptor.path) ? '显示波形' : '隐藏波形'"
+                @click.stop="toggleVisibility(row.node.descriptor.path)"
               >
-                <EyeOff v-if="hiddenChannels?.has(symbol.path)" :size="15" aria-hidden="true" />
+                <EyeOff v-if="hiddenChannels?.has(row.node.descriptor.path)" :size="15" aria-hidden="true" />
                 <Eye v-else :size="15" aria-hidden="true" />
               </button>
             </span>
-            <button class="variable-name" type="button" @click="beginEdit(symbol)">
-              {{ symbol.path }}
+            <button
+              class="variable-name"
+              type="button"
+              :title="row.node.descriptor.path"
+              @click="beginEdit(row.node.descriptor)"
+            >
+              {{ row.node.label }}
             </button>
-            <span class="variable-type">{{ symbol.type_name }}</span>
-            <span :data-testid="`latest-${symbol.path}`" class="variable-value">
-              {{ formatValue(latestValues[symbol.path]) }}
+            <span class="variable-type">{{ row.node.descriptor.type_name }}</span>
+            <span :data-testid="`latest-${row.node.descriptor.path}`" class="variable-value">
+              {{ formatValue(latestValues[row.node.descriptor.path]) }}
             </span>
             <button
               class="edit-button"
               type="button"
-              :data-testid="`edit-${symbol.path}`"
-              :disabled="catalog.stale.value || !symbol.writable"
+              :data-testid="`edit-${row.node.descriptor.path}`"
+              :disabled="catalog.stale.value || !row.node.descriptor.writable"
               title="设置变量"
-              @click="beginEdit(symbol)"
+              @click="beginEdit(row.node.descriptor)"
             >
               编辑
             </button>
           </div>
 
-          <div v-if="editing === symbol.path" class="write-editor">
+          <div v-if="editing === row.node.descriptor.path" class="write-editor">
             <select
-              v-if="symbol.scalar_kind === 'bool'"
-              v-model="editValues[symbol.path]"
-              :data-testid="`write-input-${symbol.path}`"
+              v-if="row.node.descriptor.scalar_kind === 'bool'"
+              v-model="editValues[row.node.descriptor.path]"
+              :data-testid="`write-input-${row.node.descriptor.path}`"
             >
               <option value="true">true</option>
               <option value="false">false</option>
             </select>
             <select
-              v-else-if="symbol.scalar_kind === 'enum'"
-              v-model="editValues[symbol.path]"
-              :data-testid="`write-input-${symbol.path}`"
+              v-else-if="row.node.descriptor.scalar_kind === 'enum'"
+              v-model="editValues[row.node.descriptor.path]"
+              :data-testid="`write-input-${row.node.descriptor.path}`"
             >
-              <option v-for="(_value, label) in symbol.enum_values" :key="label" :value="label">
+              <option v-for="(_value, label) in row.node.descriptor.enum_values" :key="label" :value="label">
                 {{ label }}
               </option>
             </select>
             <input
               v-else
-              v-model="editValues[symbol.path]"
+              v-model="editValues[row.node.descriptor.path]"
               class="form-input"
-              :data-testid="`write-input-${symbol.path}`"
+              :data-testid="`write-input-${row.node.descriptor.path}`"
               inputmode="decimal"
             />
             <button
               type="button"
               class="btn btn-primary"
-              :data-testid="`write-${symbol.path}`"
-              :disabled="writing.has(symbol.path)"
-              @click="writeValue(symbol)"
+              :data-testid="`write-${row.node.descriptor.path}`"
+              :disabled="writing.has(row.node.descriptor.path)"
+              @click="writeValue(row.node.descriptor)"
             >
-              {{ writing.has(symbol.path) ? '写入中' : '写入' }}
+              {{ writing.has(row.node.descriptor.path) ? '写入中' : '写入' }}
             </button>
             <button type="button" class="btn btn-secondary" @click="editing = null">取消</button>
           </div>
           <div
-            v-if="writeSuccess[symbol.path] !== undefined"
+            v-if="writeSuccess[row.node.descriptor.path] !== undefined"
             class="write-success"
-            :data-testid="`write-ok-${symbol.path}`"
+            :data-testid="`write-ok-${row.node.descriptor.path}`"
           >
-            已验证: {{ formatValue(writeSuccess[symbol.path]) }}
+            已验证: {{ formatValue(writeSuccess[row.node.descriptor.path]) }}
           </div>
         </div>
-      </section>
-      <div v-if="groups.length === 0" class="empty-state">无匹配变量</div>
+      </template>
+      <div v-if="rows.length === 0" class="empty-state">无匹配变量</div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { Eye, EyeOff } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Eye, EyeOff } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
+import { buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
 import type { SymbolDescriptor } from '../../types/mklink'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
@@ -165,21 +185,16 @@ const writing = shallowRef(new Set<string>())
 const editing = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const writeSuccess = reactive<Record<string, number | boolean | undefined>>({})
+const expanded = shallowRef(new Set<string>())
+let searchExpansionSnapshot: Set<string> | null = null
 
-const groups = computed(() => {
-  const key = query.value.trim().toLocaleLowerCase()
-  const grouped = new Map<string, SymbolDescriptor[]>()
-  for (const symbol of catalog.items.value) {
-    if (selectedOnly.value && !selected.value.has(symbol.path)) continue
-    if (key && !symbol.path.toLocaleLowerCase().includes(key)
-      && !symbol.type_name.toLocaleLowerCase().includes(key)) continue
-    const groupName = symbol.parent_path?.split('.')[0] || '全局变量'
-    const values = grouped.get(groupName) ?? []
-    values.push(symbol)
-    grouped.set(groupName, values)
-  }
-  return [...grouped.entries()].map(([name, items]) => ({ name, items }))
-})
+const tree = computed(() => buildSymbolTree(catalog.items.value))
+const rows = computed(() => visibleSymbolRows(tree.value, {
+  expanded: expanded.value,
+  selected: selected.value,
+  query: query.value,
+  selectedOnly: selectedOnly.value,
+}))
 
 async function request(path: string, options?: RequestInit): Promise<any> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -212,6 +227,15 @@ function withSet(source: Set<string>, path: string, enabled: boolean): Set<strin
   if (enabled) next.add(path)
   else next.delete(path)
   return next
+}
+
+function toggleBranch(path: string): void {
+  if (query.value.trim() || selectedOnly.value) return
+  expanded.value = withSet(expanded.value, path, !expanded.value.has(path))
+}
+
+function rowIndent(depth: number): string {
+  return `${8 + depth * 16}px`
 }
 
 async function toggleSelection(path: string, event: Event): Promise<void> {
@@ -305,6 +329,20 @@ onMounted(loadWorkspace)
 watch(() => props.deviceConnected, connected => {
   if (connected) void loadWorkspace()
 })
+watch(query, (next, previous) => {
+  if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
+  if (!next.trim() && previous.trim() && searchExpansionSnapshot) {
+    expanded.value = searchExpansionSnapshot
+    searchExpansionSnapshot = null
+  }
+})
+watch(tree, roots => {
+  const valid = collectBranchKeys(roots)
+  expanded.value = new Set([...expanded.value].filter(path => valid.has(path)))
+  if (searchExpansionSnapshot) {
+    searchExpansionSnapshot = new Set([...searchExpansionSnapshot].filter(path => valid.has(path)))
+  }
+})
 </script>
 
 <style scoped>
@@ -331,7 +369,27 @@ watch(() => props.deviceConnected, connected => {
   overflow-wrap: anywhere;
 }
 .variable-groups { min-height: 0; overflow: auto; }
-.variable-group h3 { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
+.variable-root-heading { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
+.branch-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 32px;
+  padding-top: 4px;
+  padding-right: 10px;
+  padding-bottom: 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.branch-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px Consolas, monospace; }
+.branch-count { color: var(--muted); font: 11px Consolas, monospace; }
 .variable-row { border-bottom: 1px solid var(--border); }
 .variable-row.selected { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .variable-main { display: grid; grid-template-columns: 18px 24px minmax(100px, 1fr) 64px 66px 42px; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; }

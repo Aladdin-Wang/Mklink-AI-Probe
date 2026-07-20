@@ -252,13 +252,15 @@ function buildTemplate(mode: string): string {
   const intervalStep = mode === 'SuperWatch' ? '0.00001' : '0.001'
   return `
 <header>
-  <h1>MKLink ${mode}</h1>
-  <span id="mode-badge" class="badge badge-mode">${mode}</span>
-  <span id="conn-status" class="badge badge-ok" data-i18n="live">live</span>
-  <span id="pts-count" class="badge badge-info">0 pts</span>
-  <span id="sample-rate-badge" class="badge badge-info">rate -- Hz</span>
-  <span id="transport-state-badge" class="badge badge-info">transport stopped</span>
-  <span id="transport-health-badge" class="badge badge-info">transport 0 / backend 0/0 / buffer 0</span>
+  <div class="header-status">
+    <h1>MKLink ${mode}</h1>
+    <span id="mode-badge" class="badge badge-mode">${mode}</span>
+    <span id="conn-status" class="badge badge-ok" data-i18n="live">live</span>
+    <span id="pts-count" class="badge badge-info">0 pts</span>
+    <span id="sample-rate-badge" class="badge badge-info">rate -- Hz</span>
+    <span id="transport-state-badge" class="badge badge-info">transport stopped</span>
+    <span id="transport-health-badge" class="badge badge-info">transport 0 / backend 0/0 / buffer 0</span>
+  </div>
   <div class="header-actions">
     <button id="btn-lang-toggle" class="panel-btn" title="中文/English">中/En</button>
     <button id="btn-cursor-toggle" class="panel-btn" data-i18n-title="cursors_tip" data-i18n="cursors">Cursors</button>

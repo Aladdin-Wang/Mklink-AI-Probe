@@ -56,6 +56,7 @@ header h1 {
   flex: 0 1 auto;
   min-width: 0;
 }
+.header-status { display: contents; }
 .header-actions {
   margin-left: auto;
   display: flex;
@@ -212,6 +213,55 @@ header h1 {
 }
 .waveform-viewer.superwatch-desktop .axis-hit-y {
   width: 64px;
+}
+
+@media (min-width: 641px) {
+  .waveform-viewer.superwatch-desktop header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 49px;
+    max-height: 49px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .waveform-viewer.superwatch-desktop .header-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    overflow: hidden;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .waveform-viewer.superwatch-desktop .header-status > * { flex-shrink: 0; }
+  .waveform-viewer.superwatch-desktop .header-actions {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+  .waveform-viewer.superwatch-desktop #pts-count { width: 86px; }
+  .waveform-viewer.superwatch-desktop #sample-rate-badge { width: 92px; }
+  .waveform-viewer.superwatch-desktop #transport-state-badge { width: 132px; }
+  .waveform-viewer.superwatch-desktop #transport-health-badge {
+    width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .waveform-viewer.superwatch-desktop #control-toolbar,
+  .waveform-viewer.superwatch-desktop #trigger-toolbar {
+    min-height: 39px;
+    max-height: 39px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .waveform-viewer.superwatch-desktop #control-toolbar::-webkit-scrollbar,
+  .waveform-viewer.superwatch-desktop #trigger-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .waveform-viewer.superwatch-desktop #collection-status-badge { min-width: 64px; text-align: center; }
+  .waveform-viewer.superwatch-desktop #trigger-state-badge { min-width: 48px; text-align: center; }
 }
 
 #watch-table-wrap {
