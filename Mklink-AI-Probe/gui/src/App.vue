@@ -13,6 +13,14 @@
         <StatusBar />
       </div>
     </header>
+    <AppUpdateBanner
+      :state="updateState"
+      :version="updateVersion"
+      :progress="updateProgress"
+      :error="updateError"
+      @install="installAndRelaunch"
+      @retry="retryUpdate"
+    />
     <div class="app-main">
       <router-view v-if="initialBackendReady" />
       <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
@@ -35,13 +43,24 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import AppUpdateBanner from './components/AppUpdateBanner.vue'
 import { useMklinkApi } from './composables/useMklinkApi'
 import { useBackendHealth } from './composables/useBackendHealth'
+import { useAppUpdater } from './composables/useAppUpdater'
 
 const router = useRouter()
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
 const { backendState, startHealthPolling, stopHealthPolling, restart } = useBackendHealth()
+const {
+  state: updateState,
+  version: updateVersion,
+  progress: updateProgress,
+  error: updateError,
+  checkForUpdates,
+  installAndRelaunch,
+  retry: retryUpdate,
+} = useAppUpdater()
 const initialBackendReady = ref(false)
 let statusPollingStarted = false
 const appVersion = __APP_VERSION__
@@ -69,7 +88,10 @@ watch(backendState, state => {
   }
 }, { immediate: true })
 
-onMounted(() => startHealthPolling(5000))
+onMounted(() => {
+  startHealthPolling(5000)
+  void checkForUpdates()
+})
 onUnmounted(() => {
   if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()

@@ -6,6 +6,10 @@ import App from './App.vue'
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 const startStatusPolling = vi.fn()
 const restart = vi.fn()
+const checkForUpdates = vi.fn()
+const installAndRelaunch = vi.fn()
+const retryUpdate = vi.fn()
+const updateState = ref<'idle' | 'checking' | 'downloading' | 'ready' | 'installing' | 'error'>('idle')
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -25,12 +29,25 @@ vi.mock('./composables/useBackendHealth', () => ({
   }),
 }))
 
+vi.mock('./composables/useAppUpdater', () => ({
+  useAppUpdater: () => ({
+    state: updateState,
+    version: ref('0.2.0'),
+    progress: ref(1),
+    error: ref(''),
+    checkForUpdates,
+    installAndRelaunch,
+    retry: retryUpdate,
+  }),
+}))
+
 function mountApp() {
   return shallowMount(App, {
     global: {
       stubs: {
         StatusBar: true,
         ToastContainer: true,
+        AppUpdateBanner: true,
         RouterView: { template: '<div data-testid="route-view" />' },
       },
     },
@@ -38,6 +55,14 @@ function mountApp() {
 }
 
 describe('App version footer', () => {
+  it('checks for desktop updates when the application starts', () => {
+    checkForUpdates.mockClear()
+    const wrapper = mountApp()
+
+    expect(checkForUpdates).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('shows the stable release and source build in the lower right', () => {
     const wrapper = mountApp()
 
