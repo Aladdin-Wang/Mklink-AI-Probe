@@ -255,8 +255,62 @@ def temporary_bundle_config(config_path):
         config_path.write_bytes(original)
 
 
+def load_updater_private_key(env=None, home=None):
+    """Load the updater key without adding it to the process environment."""
+    values = os.environ if env is None else env
+    configured = values.get("MKLINK_TAURI_UPDATER_KEY", "").strip()
+    if configured:
+        configured_path = Path(configured).expanduser()
+        try:
+            is_file = configured_path.is_file()
+        except OSError:
+            is_file = False
+        if is_file:
+            configured = configured_path.read_text(encoding="utf-8").strip()
+        if configured:
+            return configured
+
+    key_path = (
+        (Path.home() if home is None else Path(home))
+        / ".config"
+        / "mklink-ai-probe"
+        / "updater.key"
+    )
+    if not key_path.is_file():
+        raise RuntimeError(
+            "updater private key is required; set MKLINK_TAURI_UPDATER_KEY "
+            "or create ~/.config/mklink-ai-probe/updater.key"
+        )
+    key = key_path.read_text(encoding="utf-8").strip()
+    if not key:
+        raise RuntimeError("updater private key is empty")
+    return key
+
+
+def collect_signed_bundle_outputs(bundle_dir):
+    """Return the three required standard NSIS updater outputs."""
+    nsis_dir = Path(bundle_dir) / "nsis"
+    setups = sorted(nsis_dir.glob("*.exe"))
+    archives = sorted(nsis_dir.glob("*.nsis.zip"))
+    if not setups:
+        raise RuntimeError("standard NSIS setup executable was not produced")
+    if not archives:
+        raise RuntimeError("Tauri NSIS updater archive was not produced")
+    if len(setups) != 1 or len(archives) != 1:
+        raise RuntimeError("expected exactly one standard NSIS setup and updater archive")
+    signature = Path(f"{archives[0]}.sig")
+    if not signature.is_file():
+        raise RuntimeError("Tauri updater signature was not produced")
+    return {
+        "setup": setups[0],
+        "updater_archive": archives[0],
+        "updater_signature": signature,
+    }
+
+
 def build_release_bundle():
     """Build a bundle from the current source with a temporary sidecar config."""
+    signing_key = load_updater_private_key()
     if not build_sidecar(force=True):
         raise SystemExit(1)
     bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
@@ -272,10 +326,10 @@ def build_release_bundle():
                 f"stale bundle outputs still exist: {bundle_dir}"
             )
     with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
-        build_tauri(bundle=True)
+        return build_tauri(bundle=True, signing_key=signing_key)
 
 
-def build_tauri(bundle=False):
+def build_tauri(bundle=False, signing_key=None):
     """Build Tauri application."""
     cmd = ["npx", "tauri", "build"]
     if not bundle:
@@ -283,6 +337,10 @@ def build_tauri(bundle=False):
 
     env = os.environ.copy()
     env["VITE_MKLINK_API"] = "http://127.0.0.1:8765"
+    if bundle:
+        if not signing_key:
+            raise RuntimeError("updater private key is required for a release bundle")
+        env["TAURI_SIGNING_PRIVATE_KEY"] = signing_key
     run(cmd, cwd=str(GUI_DIR), env=env)
 
     exe = TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"
@@ -294,15 +352,14 @@ def build_tauri(bundle=False):
         sys.exit(1)
 
     if bundle:
-        bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
-        if bundle_dir.exists():
-            for fmt in ["msi", "nsis"]:
-                d = bundle_dir / fmt
-                if d.exists():
-                    files = list(d.glob("*"))
-                    for f in files:
-                        size_mb = f.stat().st_size / (1024 * 1024)
-                        print(f"[OK] Bundle: {f} ({size_mb:.1f} MB)")
+        outputs = collect_signed_bundle_outputs(
+            TAURI_DIR / "target" / "release" / "bundle"
+        )
+        for label, path in outputs.items():
+            size_mb = path.stat().st_size / (1024 * 1024)
+            print(f"[OK] {label}: {path} ({size_mb:.1f} MB)")
+        return outputs
+    return {}
 
 
 def clean():

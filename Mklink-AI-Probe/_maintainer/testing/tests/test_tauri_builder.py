@@ -85,7 +85,10 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
         "build_sidecar",
         lambda force=False: calls.append(force) or True,
     )
-    monkeypatch.setattr(builder, "build_tauri", lambda bundle=False: None)
+    monkeypatch.setattr(builder, "load_updater_private_key", lambda: "private-key")
+    monkeypatch.setattr(
+        builder, "build_tauri", lambda bundle=False, signing_key=None: None
+    )
 
     builder.build_release_bundle()
 
@@ -122,15 +125,18 @@ def test_release_bundle_removes_stale_bundle_outputs(builder, monkeypatch, tmp_p
     stale_msi.write_bytes(b"stale")
     observed = []
     monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
+    monkeypatch.setattr(builder, "load_updater_private_key", lambda: "private-key")
     monkeypatch.setattr(
         builder,
         "build_tauri",
-        lambda bundle=False: observed.append((bundle, stale_bundle.exists())),
+        lambda bundle=False, signing_key=None: observed.append(
+            (bundle, stale_bundle.exists(), signing_key)
+        ),
     )
 
     builder.build_release_bundle()
 
-    assert observed == [(True, False)]
+    assert observed == [(True, False, "private-key")]
 
 
 def test_release_bundle_aborts_when_stale_outputs_cannot_be_removed(
@@ -145,9 +151,12 @@ def test_release_bundle_aborts_when_stale_outputs_cannot_be_removed(
     stale_bundle.mkdir(parents=True)
     built = []
     monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
+    monkeypatch.setattr(builder, "load_updater_private_key", lambda: "private-key")
     monkeypatch.setattr(builder.shutil, "rmtree", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
-        builder, "build_tauri", lambda bundle=False: built.append(bundle),
+        builder,
+        "build_tauri",
+        lambda bundle=False, signing_key=None: built.append((bundle, signing_key)),
     )
 
     with pytest.raises(RuntimeError, match="stale bundle"):
@@ -170,6 +179,72 @@ def test_bundle_config_preserves_product_version_and_builds_only_nsis(builder, t
         assert '"externalBin"' in patched
 
     assert config.read_bytes() == original
+
+
+def test_updater_private_key_is_required_outside_the_repository(
+    builder, monkeypatch, tmp_path,
+):
+    monkeypatch.delenv("MKLINK_TAURI_UPDATER_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="updater private key"):
+        builder.load_updater_private_key(env={}, home=tmp_path)
+
+
+def test_signed_tauri_bundle_passes_private_key_only_to_child_environment(
+    builder, monkeypatch, tmp_path,
+):
+    builder.GUI_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "src-tauri"
+    executable = builder.TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"
+    nsis = builder.TAURI_DIR / "target" / "release" / "bundle" / "nsis"
+    executable.parent.mkdir(parents=True)
+    nsis.mkdir(parents=True)
+    executable.write_bytes(b"exe")
+    (nsis / "Mklink AI Probe_0.1.0_x64-setup.exe").write_bytes(b"setup")
+    (nsis / "Mklink AI Probe_0.1.0_x64-setup.nsis.zip").write_bytes(b"archive")
+    (nsis / "Mklink AI Probe_0.1.0_x64-setup.nsis.zip.sig").write_text(
+        "signature", encoding="ascii"
+    )
+    calls = []
+    monkeypatch.delenv("TAURI_SIGNING_PRIVATE_KEY", raising=False)
+    monkeypatch.setattr(
+        builder,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)) or 0,
+    )
+
+    outputs = builder.build_tauri(bundle=True, signing_key="private-key-value")
+
+    assert calls[0][1]["env"]["TAURI_SIGNING_PRIVATE_KEY"] == "private-key-value"
+    assert "TAURI_SIGNING_PRIVATE_KEY" not in builder.os.environ
+    assert set(outputs) == {"setup", "updater_archive", "updater_signature"}
+
+
+def test_signed_bundle_outputs_reject_missing_signature_and_ignore_msi(
+    builder, tmp_path,
+):
+    bundle = tmp_path / "bundle"
+    nsis = bundle / "nsis"
+    msi = bundle / "msi"
+    nsis.mkdir(parents=True)
+    msi.mkdir()
+    (nsis / "app-setup.exe").write_bytes(b"setup")
+    archive = nsis / "app-setup.nsis.zip"
+    archive.write_bytes(b"archive")
+    (msi / "app.msi").write_bytes(b"msi")
+
+    with pytest.raises(RuntimeError, match="signature"):
+        builder.collect_signed_bundle_outputs(bundle)
+
+    signature = nsis / "app-setup.nsis.zip.sig"
+    signature.write_text("signature", encoding="ascii")
+    outputs = builder.collect_signed_bundle_outputs(bundle)
+
+    assert outputs == {
+        "setup": nsis / "app-setup.exe",
+        "updater_archive": archive,
+        "updater_signature": signature,
+    }
 
 
 def test_tauri_bundle_includes_complete_third_party_license_texts():
