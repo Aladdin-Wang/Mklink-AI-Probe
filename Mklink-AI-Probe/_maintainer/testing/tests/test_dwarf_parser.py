@@ -1,4 +1,10 @@
-from mklink.dwarf_parser import _info_from_json, _info_to_json, parse_dwarf_info_output
+from mklink.dwarf_parser import (
+    DwarfCache,
+    DwarfInfo,
+    _info_from_json,
+    _info_to_json,
+    parse_dwarf_info_output,
+)
 
 
 def test_variable_type_resolves_through_volatile_and_typedefs():
@@ -128,3 +134,29 @@ def test_parser_preserves_duplicate_named_enums_by_type_offset():
     restored = _info_from_json(_info_to_json(info))
     assert restored.enums_by_offset[0x10].values == {0: "OLD"}
     assert restored.enums_by_offset[0x20].values == {1: "NEW"}
+
+
+def test_dwarf_cache_is_backend_parser_and_source_aware(tmp_path):
+    source = tmp_path / "firmware.axf"
+    source.write_bytes(b"first")
+    cache = DwarfCache(str(tmp_path / "cache"))
+    info = DwarfInfo()
+
+    cache.save(
+        str(source), info, backend="builtin", parser_version="pyelftools-test"
+    )
+
+    assert cache.load(
+        str(source), backend="builtin", parser_version="pyelftools-test"
+    ) is not None
+    assert cache.load(
+        str(source), backend="external", parser_version="pyelftools-test"
+    ) is None
+    assert cache.load(
+        str(source), backend="builtin", parser_version="pyelftools-other"
+    ) is None
+
+    source.write_bytes(b"changed")
+    assert cache.load(
+        str(source), backend="builtin", parser_version="pyelftools-test"
+    ) is None

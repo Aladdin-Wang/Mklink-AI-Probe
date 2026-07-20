@@ -9,9 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
-import os
 import re
-import subprocess
 from pathlib import Path
 
 
@@ -348,47 +346,96 @@ def _finalize_array_size(
 
 
 class DwarfCache:
+    CACHE_SCHEMA_VERSION = 4
+
     def __init__(self, cache_dir: str | None = None):
         self.cache_dir = Path(cache_dir or (Path.home() / ".mklink" / "dwarf_cache"))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def _key(self, source: str) -> Path:
+    def _source_metadata(self, source: str) -> dict:
         p = Path(source)
-        mtime = os.path.getmtime(source) if p.exists() else 0
-        h = hashlib.md5(f"{p.resolve() if p.exists() else source}:{mtime}".encode("utf-8")).hexdigest()
+        stat = p.stat()
+        return {
+            "source": str(p.resolve()),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+        }
+
+    def _key(self, source: str, backend: str, parser_version: str) -> Path:
+        p = Path(source)
+        resolved = str(p.resolve()) if p.exists() else source
+        h = hashlib.md5(
+            f"{resolved}:{backend}:{parser_version}".encode("utf-8")
+        ).hexdigest()
         return self.cache_dir / f"dwarf_{h}.json"
 
-    def load(self, source: str) -> DwarfInfo | None:
-        path = self._key(source)
+    def load(
+        self, source: str, *, backend: str, parser_version: str
+    ) -> DwarfInfo | None:
+        path = self._key(source, backend, parser_version)
         if not path.exists():
             return None
         try:
-            return _info_from_json(json.loads(path.read_text(encoding="utf-8")))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("cache_schema_version") != self.CACHE_SCHEMA_VERSION:
+                return None
+            if data.get("backend") != backend:
+                return None
+            if data.get("parser_version") != parser_version:
+                return None
+            if data.get("source_metadata") != self._source_metadata(source):
+                return None
+            return _info_from_json(data["info"])
         except Exception:
             return None
 
-    def save(self, source: str, info: DwarfInfo) -> None:
-        self._key(source).write_text(json.dumps(_info_to_json(info), ensure_ascii=False), encoding="utf-8")
+    def save(
+        self,
+        source: str,
+        info: DwarfInfo,
+        *,
+        backend: str,
+        parser_version: str,
+    ) -> None:
+        data = {
+            "cache_schema_version": self.CACHE_SCHEMA_VERSION,
+            "backend": backend,
+            "parser_version": parser_version,
+            "source_metadata": self._source_metadata(source),
+            "info": _info_to_json(info),
+        }
+        self._key(source, backend, parser_version).write_text(
+            json.dumps(data, ensure_ascii=False), encoding="utf-8"
+        )
 
 
-def load_dwarf_info(source: str, *, use_cache: bool = True) -> DwarfInfo:
+def load_dwarf_info(
+    source: str,
+    *,
+    use_cache: bool = True,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> DwarfInfo:
+    from mklink.elf_backend import get_elf_backend
+
+    selected = get_elf_backend(backend, project_root=project_root)
     cache = DwarfCache()
     if use_cache:
-        cached = cache.load(source)
+        cached = cache.load(
+            source,
+            backend=selected.name,
+            parser_version=selected.parser_version,
+        )
         if cached:
             return cached
-    from mklink.toolchain import require_readelf
-    result = subprocess.run(
-        [require_readelf(), "--debug-dump=info", source],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "readelf --debug-dump=info failed")
-    info = parse_dwarf_info_output(result.stdout)
+    info = selected.dwarf_info(source)
     if use_cache:
-        cache.save(source, info)
+        cache.save(
+            source,
+            info,
+            backend=selected.name,
+            parser_version=selected.parser_version,
+        )
     return info
 
 

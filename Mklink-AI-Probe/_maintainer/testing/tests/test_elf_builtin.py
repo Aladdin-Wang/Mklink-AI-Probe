@@ -1,7 +1,8 @@
 import pytest
+from elftools.dwarf.structs import DWARFStructs
 
 from mklink.elf_backend import ElfParseError, ElfSection
-from mklink.elf_builtin import BuiltinElfBackend
+from mklink.elf_builtin import BuiltinElfBackend, _fixed_address, _member_offset
 
 
 class FakeSymbol:
@@ -52,15 +53,65 @@ class FakeSection:
 
 
 class FakeElf:
-    def __init__(self, symbols=(), sections=()):
+    def __init__(self, symbols=(), sections=(), dwarf=None):
         self._symtab = FakeSymbolTable(symbols)
         self._sections = list(sections)
+        self._dwarf = dwarf
 
     def get_section_by_name(self, name):
         return self._symtab if name == ".symtab" else None
 
     def iter_sections(self):
         return iter(self._sections)
+
+    def has_dwarf_info(self):
+        return self._dwarf is not None
+
+    def get_dwarf_info(self):
+        return self._dwarf
+
+
+class FakeAttribute:
+    def __init__(self, form, value):
+        self.form = form
+        self.value = value
+
+
+class FakeDie:
+    def __init__(self, tag, offset, *, attributes=None, children=(), refs=None):
+        self.tag = tag
+        self.offset = offset
+        self.attributes = attributes or {}
+        self._children = list(children)
+        self._refs = refs or {}
+
+    def iter_children(self):
+        return iter(self._children)
+
+    def get_DIE_from_attribute(self, key):
+        return self._refs[key]
+
+
+class FakeCu:
+    def __init__(self, top):
+        self._top = top
+
+    def get_top_DIE(self):
+        return self._top
+
+
+class FakeDwarf:
+    def __init__(self, top):
+        self._cus = [FakeCu(top)]
+        self.structs = DWARFStructs(
+            little_endian=True,
+            dwarf_format=32,
+            address_size=4,
+            dwarf_version=4,
+        )
+
+    def iter_CUs(self):
+        return iter(self._cus)
 
 
 def make_backend(tmp_path, elf):
@@ -163,3 +214,117 @@ def test_builtin_invalid_input_has_clear_error(tmp_path):
 
     with pytest.raises(ElfParseError, match="Invalid ELF/AXF"):
         BuiltinElfBackend().symbols(str(source))
+
+
+def test_fixed_address_and_member_offset_accept_only_constant_expressions():
+    structs = DWARFStructs(
+        little_endian=True, dwarf_format=32, address_size=4, dwarf_version=4
+    )
+    address = FakeAttribute(
+        "DW_FORM_exprloc", bytes([0x03, 0x20, 0x00, 0x00, 0x20])
+    )
+    dynamic = FakeAttribute("DW_FORM_exprloc", bytes([0x91, 0x00]))
+    member = FakeAttribute("DW_FORM_exprloc", bytes([0x23, 0x04]))
+
+    assert _fixed_address(address, structs) == 0x20000020
+    assert _fixed_address(dynamic, structs) is None
+    assert _member_offset(member, structs) == 4
+
+
+def test_builtin_dwarf_normalizes_records_arrays_and_global_addresses(tmp_path):
+    int16 = FakeDie(
+        "DW_TAG_base_type",
+        0x10,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"int16_t"),
+            "DW_AT_byte_size": FakeAttribute("DW_FORM_data1", 2),
+            "DW_AT_encoding": FakeAttribute("DW_FORM_data1", 5),
+        },
+    )
+    member = FakeDie(
+        "DW_TAG_member",
+        0x21,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"value"),
+            "DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x10),
+            "DW_AT_data_member_location": FakeAttribute("DW_FORM_data1", 0),
+        },
+        refs={"DW_AT_type": int16},
+    )
+    record = FakeDie(
+        "DW_TAG_structure_type",
+        0x20,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"Point"),
+            "DW_AT_byte_size": FakeAttribute("DW_FORM_data1", 2),
+        },
+        children=[member],
+    )
+    subrange = FakeDie(
+        "DW_TAG_subrange_type",
+        0x31,
+        attributes={"DW_AT_count": FakeAttribute("DW_FORM_data1", 2)},
+    )
+    array = FakeDie(
+        "DW_TAG_array_type",
+        0x30,
+        attributes={"DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x20)},
+        children=[subrange],
+        refs={"DW_AT_type": record},
+    )
+    fixed = FakeDie(
+        "DW_TAG_variable",
+        0x40,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"points"),
+            "DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x30),
+            "DW_AT_location": FakeAttribute(
+                "DW_FORM_exprloc", bytes([0x03, 0x00, 0x00, 0x00, 0x20])
+            ),
+        },
+        refs={"DW_AT_type": array},
+    )
+    linked = FakeDie(
+        "DW_TAG_variable",
+        0x50,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"linked_only"),
+            "DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x10),
+        },
+        refs={"DW_AT_type": int16},
+    )
+    local_duplicate = FakeDie(
+        "DW_TAG_variable",
+        0x61,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"linked_only"),
+            "DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x10),
+        },
+        refs={"DW_AT_type": int16},
+    )
+    subprogram = FakeDie(
+        "DW_TAG_subprogram", 0x60, children=[local_duplicate]
+    )
+    top = FakeDie(
+        "DW_TAG_compile_unit",
+        0,
+        children=[int16, record, array, fixed, linked, subprogram],
+    )
+    elf = FakeElf(
+        symbols=[
+            FakeSymbol(
+                "linked_only", kind="STT_OBJECT", address=0x20000010, size=2
+            )
+        ],
+        dwarf=FakeDwarf(top),
+    )
+    backend, source = make_backend(tmp_path, elf)
+
+    info = backend.dwarf_info(source)
+
+    assert info.records_by_offset[0x20].members[0].type_name == "int16_t"
+    assert info.arrays[0x30].dimensions == (2,)
+    assert info.arrays[0x30].size == 4
+    assert info.variables["points"].address == 0x20000000
+    assert info.variables["points"].type_name == "Point[]"
+    assert info.variables["linked_only"].address == 0x20000010
