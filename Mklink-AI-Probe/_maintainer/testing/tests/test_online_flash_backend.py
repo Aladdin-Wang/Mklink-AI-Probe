@@ -396,7 +396,9 @@ def test_connect_installs_custom_flm_delegate_before_session_open(
 
     monkeypatch.setattr(
         "mklink.cmsis_dap.backend._install_custom_flm_regions",
-        lambda target, paths: installed.append((target, paths)),
+        lambda target, paths, ram, regions: installed.append(
+            (target, paths, ram, regions)
+        ),
     )
     original_open = session.open
 
@@ -416,7 +418,94 @@ def test_connect_installs_custom_flm_delegate_before_session_open(
         custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
     )
 
-    assert installed[1] == (session.target, (b"flm",))
+    assert installed[1] == (session.target, (b"flm",), None, ())
+    backend.disconnect()
+
+
+def test_unknown_target_with_builtin_flm_uses_generic_target_and_catalog_ram(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    flm = tmp_path / "builtin.flm"
+    flm.write_bytes(b"flm")
+    session = FakeSession()
+    observed = {}
+
+    class Sequence:
+        def insert_before(self, _task, item):
+            _name, callback = item
+            callback()
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend._install_custom_flm_regions",
+        lambda target, payloads, ram, regions: observed.update(
+            target=target, payloads=payloads, ram=ram, regions=regions
+        ),
+    )
+
+    def factory(_probe, options):
+        observed["options"] = options
+        original_open = session.open
+
+        def open_session():
+            session.delegate.will_init_target(session.target, Sequence())
+            original_open()
+
+        session.open = open_session
+        return session
+
+    backend = PyOcdBackend(session_factory=factory)
+    backend.connect(
+        object(),
+        "VENDOR_UNKNOWN_PART",
+        10_000_000,
+        custom_flm_paths=(str(flm),),
+        custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
+        custom_flm_ram_start=0x20000000,
+        custom_flm_ram_size=0x10000,
+    )
+
+    assert observed["options"]["target_override"] == "cortex_m"
+    assert observed["payloads"] == (b"flm",)
+    assert observed["ram"] == (0x20000000, 0x10000)
+    assert observed["regions"] == ()
+    backend.disconnect()
+
+
+def test_connect_passes_exact_catalog_flash_region_to_delegate(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    flm = tmp_path / "builtin.flm"
+    flm.write_bytes(b"flm")
+    session = FakeSession()
+    observed = {}
+
+    class Sequence:
+        def insert_before(self, _task, item):
+            _name, callback = item
+            callback()
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend._install_custom_flm_regions",
+        lambda _target, _payloads, _ram, regions: observed.update(regions=regions),
+    )
+    original_open = session.open
+
+    def open_session():
+        session.delegate.will_init_target(session.target, Sequence())
+        original_open()
+
+    session.open = open_session
+    backend = PyOcdBackend(session_factory=lambda _probe, _options: session)
+    backend.connect(
+        object(),
+        "VENDOR_UNKNOWN_PART",
+        1_000_000,
+        custom_flm_paths=(str(flm),),
+        custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
+        custom_flm_regions=((0x60000000, 0x1000000),),
+    )
+
+    assert observed["regions"] == ((0x60000000, 0x1000000),)
     backend.disconnect()
 
 
@@ -468,7 +557,7 @@ def test_custom_flm_delegate_preserves_an_existing_session_delegate(
     backend = PyOcdBackend(session_factory=lambda probe, options: session)
     monkeypatch.setattr(
         "mklink.cmsis_dap.backend._install_custom_flm_regions",
-        lambda target, paths: None,
+        lambda target, paths, ram, regions: None,
     )
 
     backend.connect(
@@ -514,6 +603,76 @@ def test_custom_flm_regions_do_not_mutate_a_shared_pack_memory_map(
     assert len(shared.regions) == 2
     assert len(targets[0].memory_map.regions) == 3
     assert len(targets[1].memory_map.regions) == 3
+
+
+def test_custom_flm_replaces_overlapping_generic_placeholder_region(
+    monkeypatch,
+) -> None:
+    from pyocd.core.memory_map import MemoryMap, RamRegion
+
+    target = type("Target", (), {"memory_map": MemoryMap(
+        RamRegion(name="Code", start=0x00000000, length=0x20000000),
+        RamRegion(name="SRAM", start=0x20000000, length=0x20000000),
+        RamRegion(name="RAM2", start=0x80000000, length=0x20000000),
+    )})()
+
+    class Algorithm:
+        flash_start = 0x90000000
+        flash_size = 0x800000
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.flash_algo.PackFlashAlgo",
+        lambda _payload: Algorithm(),
+    )
+
+    _install_custom_flm_regions(
+        target,
+        (b"flm",),
+        (0x20000000, 0x10000),
+    )
+
+    region = target.memory_map.get_region_for_address(0x90000400)
+    assert region is not None
+    assert region.is_flash
+    assert region.name == "mklink_custom_flm_0"
+    ram = target.memory_map.get_region_for_address(0x20000000)
+    assert ram is not None
+    assert ram.is_ram
+    assert ram.start == 0x20000000
+    assert ram.length == 0x10000
+    assert target.memory_map.get_region_for_address(0x1000) is None
+
+
+def test_custom_flm_region_uses_catalog_range_instead_of_embedded_range(
+    monkeypatch,
+) -> None:
+    from pyocd.core.memory_map import MemoryMap, RamRegion
+
+    target = type("Target", (), {"memory_map": MemoryMap(
+        RamRegion(start=0x20000000, length=0x10000),
+    )})()
+
+    class Algorithm:
+        flash_start = 0x90000000
+        flash_size = 0x800000
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.flash_algo.PackFlashAlgo",
+        lambda _payload: Algorithm(),
+    )
+
+    _install_custom_flm_regions(
+        target,
+        (b"flm",),
+        None,
+        ((0x60000000, 0x1000000),),
+    )
+
+    region = target.memory_map.get_region_for_address(0x60001000)
+    assert region is not None
+    assert region.is_flash
+    assert region.start == 0x60000000
+    assert region.length == 0x1000000
 
 
 def test_custom_flm_replaces_overlapping_builtin_region_on_cloned_map(
@@ -732,6 +891,40 @@ def test_program_bin_passes_base_and_hex_does_not(tmp_path: Path) -> None:
         ("program", str(binary), {"base_address": 0x80000000}),
         ("create", session),
         ("program", str(ihex), {}),
+    ]
+    backend.disconnect()
+
+
+def test_program_disables_memory_scans_for_custom_flm_regions(tmp_path: Path) -> None:
+    calls = []
+
+    class Programmer:
+        def __init__(self, session, **kwargs):
+            calls.append(("create", session, kwargs))
+
+        def program(self, path, **kwargs):
+            calls.append(("program", path, kwargs))
+
+    firmware = tmp_path / "external.hex"
+    firmware.write_text(":00000001FF\n", encoding="ascii")
+    target = FakeTarget((FakeRegion(
+        0x90000000,
+        0x800000,
+        name="mklink_custom_flm_0",
+    ),))
+    backend, session = connected_backend(target=target, programmer_factory=Programmer)
+
+    backend.program(ImageInspection(
+        "external",
+        file_path=str(firmware),
+        format="hex",
+        start=0x90000000,
+        end=0x90001000,
+    ))
+
+    assert calls == [
+        ("create", session, {"smart_flash": False, "keep_unwritten": False}),
+        ("program", str(firmware), {}),
     ]
     backend.disconnect()
 

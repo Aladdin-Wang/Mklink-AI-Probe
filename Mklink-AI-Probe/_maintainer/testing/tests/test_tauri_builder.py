@@ -695,3 +695,51 @@ def test_sidecar_collects_generated_builtin_pack_bundle(builder, monkeypatch, tm
     add_data_index = command.index("--add-data")
     assert command[add_data_index + 1].endswith(";mklink/builtin_packs")
     assert generated[0][0] == [pack_root]
+
+
+def test_sidecar_collects_generated_daplinkutility_flm_bundle(
+    builder, monkeypatch, tmp_path
+):
+    builder.SKILL_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "gui" / "src-tauri"
+    executable = tmp_path / "DAPLinkUtility.exe"
+    executable.write_bytes(b"pinned-source")
+    monkeypatch.setenv("MKLINK_DAPLINKUTILITY_EXE", str(executable))
+    generated = []
+    commands = []
+
+    def fake_bundle(source, output):
+        generated.append((source, output))
+        output.mkdir(parents=True)
+        (output / "manifest.json").write_text(
+            '{"schema":1,"targets":[]}', encoding="utf-8"
+        )
+        return {"target_count": 8137, "blob_count": 1428}
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        output = tmp_path / "dist" / "mklink-sidecar.exe"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"sidecar")
+        return 0
+
+    monkeypatch.setattr(builder, "build_daplinkutility_flm_bundle", fake_bundle)
+    monkeypatch.setattr(builder, "run", fake_run)
+
+    assert builder.build_sidecar(force=True) is True
+
+    command = commands[0]
+    add_data = [
+        command[index + 1]
+        for index, value in enumerate(command[:-1])
+        if value == "--add-data"
+    ]
+    assert any(value.endswith(";mklink/builtin_flm") for value in add_data)
+    assert generated[0][0] == executable
+
+
+def test_daplinkutility_executable_rejects_missing_source(builder, monkeypatch, tmp_path):
+    monkeypatch.setenv("MKLINK_DAPLINKUTILITY_EXE", str(tmp_path / "missing.exe"))
+
+    with pytest.raises(RuntimeError, match="does not exist"):
+        builder.daplinkutility_executable()

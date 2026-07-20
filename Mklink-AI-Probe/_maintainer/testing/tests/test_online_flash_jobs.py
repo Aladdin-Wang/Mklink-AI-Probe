@@ -261,6 +261,9 @@ def test_full_job_releases_resource_and_records_snapshot():
         "pack": "/packs/STM32F103RC.pack",
         "custom_flm_paths": (),
         "custom_flm_digests": (),
+        "custom_flm_regions": (),
+        "custom_flm_ram_start": None,
+        "custom_flm_ram_size": None,
         "connect_mode": "under-reset",
         "reset_mode": "hw",
     }

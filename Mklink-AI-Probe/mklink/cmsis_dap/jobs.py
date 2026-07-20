@@ -269,6 +269,9 @@ class OnlineFlashJobManager:
                                     pack=job.request.pack_path,
                                     custom_flm_paths=job.request.custom_flm_paths,
                                     custom_flm_digests=job.request.custom_flm_digests,
+                                    custom_flm_regions=job.request.custom_flm_regions,
+                                    custom_flm_ram_start=job.request.custom_flm_ram_start,
+                                    custom_flm_ram_size=job.request.custom_flm_ram_size,
                                     connect_mode=job.request.connect_mode,
                                     reset_mode=job.request.reset_mode,
                                 )

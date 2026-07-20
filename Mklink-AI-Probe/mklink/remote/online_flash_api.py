@@ -601,7 +601,6 @@ def _target_flash_configuration(
             (),
         )
     target = _exact_installed_target(services.catalog, part_number)
-    allow_builtin_override = target.source in ("bundle", "builtin")
     base_regions = tuple(services.target_memory_provider(part_number))
     if services.custom_flms is None:
         return base_regions, (), ()
@@ -610,17 +609,40 @@ def _target_flash_configuration(
     for index, region in enumerate(custom_regions):
         for other in tuple(retained_base) + custom_regions[:index]:
             if region.start < other.end and other.start < region.end:
-                if allow_builtin_override and other in retained_base:
+                if other in retained_base:
                     retained_base.remove(other)
                     continue
                 raise FlashError(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "custom FLM range overlaps an existing flash algorithm",
                 )
+    builtin_algorithms = []
+    if target.source == "daplink-builtin":
+        from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
+
+        builtin_algorithms = discover_builtin_flm_algorithms(part_number)
+    retained_algorithms = []
+    for algorithm in builtin_algorithms:
+        algorithm_end = algorithm.flash_start + algorithm.flash_size
+        if any(
+            algorithm.flash_start < region.end and region.start < algorithm_end
+            for region in custom_regions
+        ):
+            continue
+        retained_algorithms.append(algorithm)
+    builtin_sources = {}
+    for algorithm in retained_algorithms:
+        if algorithm.builtin_blob_path and algorithm.builtin_blob_sha256:
+            builtin_sources.setdefault(
+                algorithm.builtin_blob_sha256,
+                algorithm.builtin_blob_path,
+            )
+    user_digests = tuple(services.custom_flms.fingerprint(part_number))
+    user_paths = tuple(services.custom_flms.paths(part_number))
     return (
         tuple(retained_base) + custom_regions,
-        tuple(services.custom_flms.fingerprint(part_number)),
-        tuple(services.custom_flms.paths(part_number)),
+        tuple(builtin_sources) + user_digests,
+        tuple(builtin_sources.values()) + user_paths,
     )
 
 
@@ -668,16 +690,11 @@ def _add_custom_flm_configuration(
                 "custom FLM configuration is in use by an online flash job",
             )
         target = _exact_installed_target(services.catalog, part_number)
-        existing = (
-            ()
-            if target.source in ("bundle", "builtin")
-            else services.target_memory_provider(target.part_number)
-        )
         return services.custom_flms.add(
             temporary,
             file_name,
             target.part_number,
-            tuple(existing),
+            (),
         )
 
 
@@ -695,6 +712,94 @@ def _remove_custom_flm_configuration(
         services.custom_flms.remove(part_number, algorithm_id)
 
 
+def _job_flash_algorithms(
+    target: TargetRecord,
+    body: JobBody,
+    inspection: object,
+    algorithms: Sequence[object],
+) -> list[object]:
+    from mklink.cmsis_dap.algorithm_catalog import resolve_firmware_algorithms
+
+    if not algorithms:
+        if target.source == "daplink-builtin":
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "DAPLink builtin target has no usable Flash algorithm",
+            )
+        return []
+
+    if inspection is not None:
+        ranges = tuple(
+            (int(segment.start), int(segment.end))
+            for segment in inspection.segments
+        ) or ((int(inspection.start), int(inspection.end)),)
+        return [
+            selection.algorithm
+            for selection in resolve_firmware_algorithms(
+                algorithms,
+                ranges,
+                allow_uncovered=target.source == "builtin",
+            )
+        ]
+
+    if "erase" in body.actions and body.sector_addresses:
+        return [
+            selection.algorithm
+            for selection in resolve_firmware_algorithms(
+                algorithms,
+                tuple((int(address), int(address) + 1) for address in body.sector_addresses),
+                allow_uncovered=target.source == "builtin",
+            )
+        ]
+
+    if "erase" in body.actions:
+        has_custom = any(
+            getattr(algorithm, "source_kind", "") == "custom-flm"
+            for algorithm in algorithms
+        )
+        if target.source == "builtin" and has_custom:
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "chip erase is ambiguous when a pyOCD target has custom Flash algorithms",
+            )
+        if target.source == "daplink-builtin" or has_custom:
+            ranges = tuple(
+                (
+                    int(algorithm.flash_start),
+                    int(algorithm.flash_start) + int(algorithm.flash_size),
+                )
+                for algorithm in algorithms
+                if int(getattr(algorithm, "flash_size", 0)) > 0
+            )
+            selections = resolve_firmware_algorithms(algorithms, ranges) if ranges else []
+            if len(selections) != 1:
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "chip erase requires exactly one unambiguous Flash algorithm",
+                )
+            return [selections[0].algorithm]
+        return []
+
+    if target.source == "daplink-builtin":
+        candidates = [
+            algorithm for algorithm in algorithms
+            if int(getattr(algorithm, "flash_size", 0)) > 0
+        ]
+        if not candidates:
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "DAPLink builtin target has no usable Flash algorithm",
+            )
+        return [min(candidates, key=lambda algorithm: (
+            0 if bool(getattr(algorithm, "default", False)) else 1,
+            0 if getattr(algorithm, "source_kind", "") == "daplink-builtin" else 1,
+            int(algorithm.flash_start),
+            int(algorithm.flash_size),
+            str(algorithm.algorithm_id),
+        ))]
+    return []
+
+
 def _start_job_with_configuration(
     services: OnlineFlashServices,
     body: JobBody,
@@ -710,16 +815,22 @@ def _start_job_with_configuration(
             board, hpm_flash_cfg = normalize_hpm_configuration(
                 target.part_number, board=board, flash_cfg=hpm_flash_cfg
             )
-        regions, fingerprint, custom_flm_paths = _target_flash_configuration(
+        regions, fingerprint, configured_flm_paths = _target_flash_configuration(
             services, target.part_number
         )
+        custom_flm_paths = ()
+        custom_flm_digests = ()
+        custom_flm_regions = ()
+        custom_flm_ram_start = None
+        custom_flm_ram_size = None
+        inspection = None
         if any(action in body.actions for action in ("program", "verify")):
             if not body.image_id:
                 raise HTTPException(
                     status_code=422,
                     detail="program and verify require image_id",
                 )
-            services.image_inspector.validate_unchanged(body.image_id)
+            inspection = services.image_inspector.validate_unchanged(body.image_id)
             if services.image_targets.get(body.image_id) != (
                 target.part_number.casefold(),
                 fingerprint,
@@ -728,6 +839,60 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "image inspection does not match the selected target",
                 )
+        if not hpm_target:
+            from mklink.cmsis_dap.algorithm_catalog import (
+                FlashAlgorithmError,
+                discover_flash_algorithms,
+            )
+
+            try:
+                needs_catalog = (
+                    inspection is not None
+                    or bool(body.sector_addresses)
+                    or target.source == "daplink-builtin"
+                    or ("erase" in body.actions and bool(configured_flm_paths))
+                )
+                catalog = (
+                    discover_flash_algorithms(target.part_number, paths=services.paths)
+                    if needs_catalog else []
+                )
+                selected = _job_flash_algorithms(target, body, inspection, catalog)
+            except FlashAlgorithmError as error:
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    str(error),
+                ) from error
+            source_records = []
+            for algorithm in selected:
+                path = algorithm.custom_path or algorithm.builtin_blob_path
+                digest = algorithm.custom_sha256 or algorithm.builtin_blob_sha256
+                if path and digest:
+                    source_records.append((
+                        str(path),
+                        str(digest),
+                        (int(algorithm.flash_start), int(algorithm.flash_size)),
+                    ))
+                if (
+                    target.source == "daplink-builtin"
+                    and custom_flm_ram_start is None
+                    and algorithm.ram_size > 0
+                ):
+                    custom_flm_ram_start = int(algorithm.ram_start)
+                    custom_flm_ram_size = int(algorithm.ram_size)
+            if source_records:
+                custom_flm_paths = tuple(record[0] for record in source_records)
+                custom_flm_digests = tuple(record[1] for record in source_records)
+                custom_flm_regions = tuple(record[2] for record in source_records)
+            elif inspection is not None and not catalog and configured_flm_paths:
+                custom_flm_paths = tuple(configured_flm_paths)
+                custom_flm_digests = tuple(fingerprint)
+            if custom_flm_ram_start is None and target.source == "daplink-builtin":
+                from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
+
+                builtin_algorithms = discover_builtin_flm_algorithms(target.part_number)
+                if builtin_algorithms:
+                    custom_flm_ram_start = builtin_algorithms[0].ram_start
+                    custom_flm_ram_size = builtin_algorithms[0].ram_size
         if "program" in body.actions and not hpm_target:
             if "erase" not in body.actions:
                 raise FlashError(
@@ -757,7 +922,10 @@ def _start_job_with_configuration(
             target_part=target.part_number,
             pack_path=target.pack_path,
             custom_flm_paths=custom_flm_paths,
-            custom_flm_digests=fingerprint,
+            custom_flm_digests=custom_flm_digests,
+            custom_flm_regions=custom_flm_regions,
+            custom_flm_ram_start=custom_flm_ram_start,
+            custom_flm_ram_size=custom_flm_ram_size,
             frequency=body.frequency,
             connect_mode=body.connect_mode,
             reset_mode=body.reset_mode,
@@ -1126,6 +1294,42 @@ def default_target_memory_provider(
                     return regions
         except (ImportError, OSError, TypeError, ValueError):
             pass
+    try:
+        from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
+
+        algorithms = discover_builtin_flm_algorithms(part_number)
+        regions = []
+        for algorithm_index, algorithm in enumerate(algorithms):
+            sector_sizes = algorithm.sector_sizes
+            if not sector_sizes:
+                regions.append(MemoryRegion(
+                    "daplink-flm-{}".format(algorithm_index),
+                    algorithm.flash_start,
+                    algorithm.flash_size,
+                    True,
+                    True,
+                    None,
+                ))
+                continue
+            for sector_index, (offset, sector_size) in enumerate(sector_sizes):
+                next_offset = (
+                    sector_sizes[sector_index + 1][0]
+                    if sector_index + 1 < len(sector_sizes)
+                    else algorithm.flash_size
+                )
+                if 0 <= offset < next_offset <= algorithm.flash_size and sector_size > 0:
+                    regions.append(MemoryRegion(
+                        "daplink-flm-{}-{}".format(algorithm_index, sector_index),
+                        algorithm.flash_start + offset,
+                        next_offset - offset,
+                        True,
+                        True,
+                        sector_size,
+                    ))
+        if regions:
+            return regions
+    except (ImportError, OSError, TypeError, ValueError):
+        pass
     try:
         from pyocd.target import TARGET
 

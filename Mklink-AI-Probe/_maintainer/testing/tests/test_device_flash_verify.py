@@ -109,9 +109,11 @@ def test_device_flash_can_skip_readback_when_verify_is_false(tmp_path: Path):
     assert result["verified"] is False
 
 
+@pytest.mark.parametrize("source_kind", ["builtin-pack", "daplink-builtin"])
 def test_device_flash_uses_catalog_algorithm_for_external_flash(
     tmp_path: Path,
     monkeypatch,
+    source_kind: str,
 ):
     from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
 
@@ -126,7 +128,7 @@ def test_device_flash_uses_catalog_algorithm_for_external_flash(
         ram_start=0x20001000,
         ram_size=0x10000,
         default=False,
-        source_kind="builtin-pack",
+        source_kind=source_kind,
         source_name="Vendor.Pack@1",
         source_token="catalog:bundle:Vendor.Pack:1:DEVICE_A:0",
     )
@@ -148,7 +150,7 @@ def test_device_flash_uses_catalog_algorithm_for_external_flash(
         reset_after=False,
     )
 
-    assert result["algorithm_source"] == "builtin-pack"
+    assert result["algorithm_source"] == source_kind
     assert device._flash.loaded == [
         ("/FLM/External_hash.flm", "0x90000000", "0x20001000"),
     ]

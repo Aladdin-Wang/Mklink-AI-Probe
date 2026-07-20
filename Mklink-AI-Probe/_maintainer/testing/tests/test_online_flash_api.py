@@ -11,9 +11,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
+from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
 from mklink.cmsis_dap.images import SectorCoverage, SectorRecord
 from mklink.cmsis_dap.models import (
     ImageInspection,
+    ImageSegment,
     JobEvent,
     JobRequest,
     JobSnapshot,
@@ -67,7 +69,7 @@ class CustomFlms:
 
     def add(self, path, file_name, part_number, existing_regions):
         assert Path(path).is_file()
-        assert tuple(existing_regions)[0].start == 0x1000
+        assert tuple(existing_regions) == ()
         stored = self.root / "custom.flm"
         stored.write_bytes(Path(path).read_bytes())
         record = type("Custom", (), {
@@ -378,7 +380,7 @@ def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, ser
     assert services.custom_flms.records == []
 
 
-def test_custom_flm_overrides_only_builtin_bundle_regions(tmp_path):
+def test_custom_flm_overrides_installed_pack_regions(tmp_path):
     base = MemoryRegion("bundle-external", 0x90000000, 0x800000, True, True, 0x1000)
     custom = MemoryRegion("custom-external", 0x90000000, 0x800000, True, True, 0x1000)
 
@@ -391,7 +393,7 @@ def test_custom_flm_overrides_only_builtin_bundle_regions(tmp_path):
                 pack_version="1",
                 pack_path="bundle.pack",
                 installed=True,
-                source="bundle",
+                source="index",
             )]
 
     class Algorithms:
@@ -446,6 +448,223 @@ def test_inspection_binds_custom_flms_and_job_receives_stored_paths(app, service
         services.custom_flms.records[0].file_path,
     )
     assert request_record.custom_flm_digests == ("algo-1",)
+
+
+def test_pyocd_builtin_keeps_internal_algorithm_and_injects_external_custom_flm(
+    app, services, tmp_path, monkeypatch,
+):
+    services.catalog.search = lambda query, **_kwargs: [TargetRecord(
+        query,
+        "Vendor",
+        installed=True,
+        source="builtin",
+    )]
+    custom_path = tmp_path / "external.flm"
+    custom_path.write_bytes(b"external")
+    services.custom_flms.records.append(type("Custom", (), {
+        "algorithm_id": "a0f72b7c2eea0f85a43874d5dba038ee9f81ff7d8e6727765b1491af0f41dc67",
+        "target_part": "DEVICE_A",
+        "file_name": "external.flm",
+        "file_path": str(custom_path),
+        "flash_start": 0x90000000,
+        "flash_size": 0x800000,
+        "ram_start": 0x20001000,
+        "ram_size": 0x10000,
+        "page_size": 0x1000,
+        "sector_sizes": ((0, 0x1000),),
+    })())
+    services.image_inspector.inspection = ImageInspection(
+        "image-1",
+        "fw.hex",
+        "snapshot.hex",
+        "hex",
+        8,
+        "abc",
+        0x08000000,
+        0x90000004,
+        segments=(
+            ImageSegment(0x08000000, 0x08000004),
+            ImageSegment(0x90000000, 0x90000004),
+        ),
+    )
+    services.image_targets["image-1"] = (
+        "device_a",
+        services.custom_flms.fingerprint("DEVICE_A"),
+    )
+    external = FlashAlgorithm(
+        algorithm_id=services.custom_flms.records[0].algorithm_id,
+        target_part="DEVICE_A",
+        file_name="external.flm",
+        flash_start=0x90000000,
+        flash_size=0x800000,
+        ram_start=0x20001000,
+        ram_size=0x10000,
+        default=False,
+        source_kind="custom-flm",
+        source_name="user",
+        source_token="external",
+        custom_path=str(custom_path),
+        custom_sha256=services.custom_flms.records[0].algorithm_id,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [external],
+    )
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "verify", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "image_id": "image-1",
+        },
+    )
+
+    assert started.status_code == 200
+    request_record = services.job_manager.started[-1]
+    assert request_record.custom_flm_paths == (str(custom_path),)
+    assert request_record.custom_flm_regions == ((0x90000000, 0x800000),)
+    assert request_record.custom_flm_ram_start is None
+    assert request_record.custom_flm_ram_size is None
+
+
+def _algorithm(tmp_path, name, start, size, *, default=False):
+    path = tmp_path / name
+    path.write_bytes(name.encode("ascii"))
+    digest = "{:064x}".format(start)
+    return FlashAlgorithm(
+        algorithm_id=name,
+        target_part="DEVICE_A",
+        file_name=name,
+        flash_start=start,
+        flash_size=size,
+        ram_start=0x20000000,
+        ram_size=0x20000,
+        default=default,
+        source_kind="daplink-builtin",
+        source_name="DAPLinkUtility",
+        source_token=name,
+        builtin_blob_path=str(path),
+        builtin_blob_sha256=digest,
+    )
+
+
+def _use_daplink_target(services, algorithms, monkeypatch):
+    services.catalog.search = lambda query, **_kwargs: [TargetRecord(
+        query,
+        "Vendor",
+        installed=True,
+        source="daplink-builtin",
+    )]
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: list(algorithms),
+    )
+
+
+def test_daplink_connect_only_loads_one_deterministic_default_algorithm(
+    app, services, tmp_path, monkeypatch,
+):
+    internal = _algorithm(tmp_path, "internal.flm", 0x08000000, 0x200000, default=True)
+    external = _algorithm(tmp_path, "external.flm", 0x90000000, 0x800000)
+    _use_daplink_target(services, (external, internal), monkeypatch)
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert started.status_code == 200
+    request_record = services.job_manager.started[-1]
+    assert request_record.custom_flm_paths == (internal.builtin_blob_path,)
+    assert request_record.custom_flm_regions == ((0x08000000, 0x200000),)
+
+
+def test_daplink_sector_erase_loads_only_covering_algorithm(
+    app, services, tmp_path, monkeypatch,
+):
+    internal = _algorithm(tmp_path, "internal.flm", 0x08000000, 0x200000, default=True)
+    external = _algorithm(tmp_path, "external.flm", 0x90000000, 0x800000)
+    _use_daplink_target(services, (internal, external), monkeypatch)
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "sector_addresses": [0x90001000],
+        },
+    )
+
+    assert started.status_code == 200
+    request_record = services.job_manager.started[-1]
+    assert request_record.custom_flm_paths == (external.builtin_blob_path,)
+    assert request_record.custom_flm_regions == ((0x90000000, 0x800000),)
+
+
+def test_daplink_chip_erase_rejects_multiple_algorithms(
+    app, services, tmp_path, monkeypatch,
+):
+    algorithms = (
+        _algorithm(tmp_path, "internal.flm", 0x08000000, 0x200000, default=True),
+        _algorithm(tmp_path, "external.flm", 0x90000000, 0x800000),
+    )
+    _use_daplink_target(services, algorithms, monkeypatch)
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+
+
+def test_daplink_chip_erase_loads_its_only_algorithm(
+    app, services, tmp_path, monkeypatch,
+):
+    algorithm = _algorithm(
+        tmp_path,
+        "internal.flm",
+        0x08000000,
+        0x200000,
+        default=True,
+    )
+    _use_daplink_target(services, (algorithm,), monkeypatch)
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert started.status_code == 200
+    assert services.job_manager.started[-1].custom_flm_paths == (
+        algorithm.builtin_blob_path,
+    )
 
 
 def test_algorithm_change_invalidates_an_existing_image_inspection(app, services):

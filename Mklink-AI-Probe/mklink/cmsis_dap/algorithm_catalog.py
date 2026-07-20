@@ -39,6 +39,10 @@ class FlashAlgorithm:
     algorithm_path: Optional[str] = None
     custom_path: Optional[str] = None
     custom_sha256: Optional[str] = None
+    builtin_blob_path: Optional[str] = None
+    builtin_blob_sha256: Optional[str] = None
+    page_size: int = 0
+    sector_sizes: Tuple[Tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,7 @@ def discover_flash_algorithms(
     *,
     paths: Optional[PackPaths] = None,
     builtin_provider: Optional[Callable[[], Iterable[TargetRecord]]] = None,
+    daplink_provider: Optional[Callable[[str], Iterable[FlashAlgorithm]]] = None,
 ) -> list[FlashAlgorithm]:
     target = str(part_number or "").strip()
     if not target:
@@ -259,6 +264,13 @@ def discover_flash_algorithms(
         algorithms = _pack_algorithms(record, target)
         if algorithms:
             return custom + algorithms
+    if daplink_provider is None:
+        from .builtin_flm_bundle import discover_builtin_flm_algorithms
+
+        daplink_provider = discover_builtin_flm_algorithms
+    daplink_algorithms = list(daplink_provider(target))
+    if daplink_algorithms:
+        return custom + daplink_algorithms
     return custom
 
 
@@ -272,6 +284,13 @@ def _extract_bytes(algorithm: FlashAlgorithm) -> bytes:
         if algorithm.custom_sha256 and digest != algorithm.custom_sha256.casefold():
             raise FlashAlgorithmError("custom FLM payload integrity check failed")
         return data
+    if algorithm.builtin_blob_path:
+        from .builtin_flm_bundle import BuiltinFlmBundleError, extract_builtin_flm
+
+        try:
+            return extract_builtin_flm(algorithm)
+        except BuiltinFlmBundleError as error:
+            raise FlashAlgorithmError(str(error)) from error
     if not algorithm.pack_path or algorithm.pack_algorithm_index is None:
         raise FlashAlgorithmError("Pack algorithm source is incomplete")
     pack_path = Path(algorithm.pack_path).resolve()
@@ -364,6 +383,8 @@ def deploy_algorithm_to_probe(
 def resolve_firmware_algorithms(
     algorithms: Sequence[FlashAlgorithm],
     ranges: Sequence[Tuple[int, int]],
+    *,
+    allow_uncovered: bool = False,
 ) -> list[FirmwareAlgorithmSelection]:
     selected = {}  # type: dict[str, tuple[FlashAlgorithm, list[Tuple[int, int]]]]
     for start, end in ranges:
@@ -376,6 +397,8 @@ def resolve_firmware_algorithms(
             and end <= algorithm.flash_start + algorithm.flash_size
         ]
         if not candidates:
+            if allow_uncovered:
+                continue
             raise FlashAlgorithmError(
                 "no Flash algorithm covers 0x{:08X}-0x{:08X}".format(start, end)
             )

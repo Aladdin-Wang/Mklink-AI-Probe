@@ -29,6 +29,7 @@ def _production_builtin_provider() -> Iterable[TargetRecord]:
     """Load pyOCD's builtin target registry only when builtin targets are needed."""
 
     from .builtin_pack_bundle import load_builtin_pack_records
+    from .builtin_flm_bundle import load_builtin_flm_targets
     from pyocd.target import TARGET
 
     if hasattr(TARGET, "items"):
@@ -39,6 +40,7 @@ def _production_builtin_provider() -> Iterable[TargetRecord]:
 
     records = _hpm_rom_records()
     records.extend(load_builtin_pack_records())
+    records.extend(load_builtin_flm_targets())
     for name, target_type in entries:
         part_number = getattr(target_type, "PART_NUMBER", None) or name
         vendor = getattr(target_type, "VENDOR", "") or ""
@@ -298,6 +300,8 @@ class PackCatalog:
             source_priority = 4
         elif record.source == "bundle":
             source_priority = 3
+        elif record.source == "daplink-builtin":
+            source_priority = 2
         elif record.source == "builtin":
             source_priority = 2
         else:

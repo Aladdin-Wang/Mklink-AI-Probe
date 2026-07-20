@@ -137,3 +137,74 @@ def test_hpm_targets_never_resolve_flm_algorithms(tmp_path: Path):
         paths=PackPaths(tmp_path / "cache"),
         builtin_provider=unexpected_builtin_provider,
     ) == []
+
+
+def test_daplink_bundle_follows_pack_and_precedes_empty_result(tmp_path: Path):
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+
+    builtin = FlashAlgorithm(
+        algorithm_id="d" * 64,
+        target_part="DEVICE_A",
+        file_name="DAP.FLM",
+        flash_start=0x08000000,
+        flash_size=0x20000,
+        ram_start=0x20000000,
+        ram_size=0x1000,
+        default=True,
+        source_kind="daplink-builtin",
+        source_name="DAPLinkUtility",
+        source_token="daplink:test",
+        builtin_blob_path=str(tmp_path / "blob.flm"),
+        builtin_blob_sha256="d" * 64,
+    )
+
+    algorithms = discover_flash_algorithms(
+        "DEVICE_A",
+        paths=PackPaths(tmp_path / "cache"),
+        builtin_provider=lambda: [],
+        daplink_provider=lambda target: [builtin] if target == "DEVICE_A" else [],
+    )
+
+    assert algorithms == [builtin]
+
+
+def test_daplink_bundle_token_extracts_for_offline_deployment(
+    tmp_path: Path, monkeypatch,
+):
+    from mklink.remote.offline_download_api import _pack_source, discover_algorithms
+
+    payload = b"offline-daplink-flm"
+    digest = hashlib.sha256(payload).hexdigest()
+    bundle = tmp_path / "builtin-flm"
+    blob = bundle / "blobs" / digest[:2] / (digest + ".flm")
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(payload)
+    (bundle / "manifest.json").write_text(json.dumps({
+        "schema": 1,
+        "targets": [{
+            "manufacturer": "Vendor",
+            "series": "Series",
+            "part_number": "DEVICE_A",
+            "ram_start": 0x20000000,
+            "ram_size": 0x10000,
+            "algorithms": [{
+                "file_name": "Device.FLM",
+                "sha256": digest,
+                "blob": "blobs/{}/{}.flm".format(digest[:2], digest),
+                "flash_start": 0x08000000,
+                "flash_size": 0x20000,
+                "automatic": True,
+                "page_size": 0x100,
+                "sector_sizes": [[0, 0x1000]],
+            }],
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setenv("MKLINK_BUILTIN_FLM_ROOT", str(bundle))
+    paths = PackPaths(tmp_path / "cache")
+
+    candidates = discover_algorithms(paths, "DEVICE_A", None)
+    candidate = next(item for item in candidates if item["origin"] == "DAPLinkUtility 内置算法")
+    destination = tmp_path / "offline.flm"
+
+    assert _pack_source(paths, candidate["source_token"], destination) == destination
+    assert destination.read_bytes() == payload

@@ -103,6 +103,19 @@ def build_builtin_pack_bundle(config_path, roots, output):
     return module.build_bundle(Path(config_path), [Path(root) for root in roots], Path(output))
 
 
+def build_daplinkutility_flm_bundle(executable, output):
+    """Load the pinned Qt resource extractor without making scripts a package."""
+    import importlib.util
+
+    builder_path = Path(__file__).resolve().with_name("daplinkutility_resources.py")
+    spec = importlib.util.spec_from_file_location("mklink_daplinkutility_resources", builder_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load DAPLinkUtility FLM builder")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_bundle(Path(executable), Path(output))
+
+
 def builtin_pack_roots():
     value = os.environ.get("MKLINK_BUILTIN_PACK_ROOTS", "")
     roots = [Path(item).resolve() for item in value.split(os.pathsep) if item.strip()]
@@ -110,6 +123,16 @@ def builtin_pack_roots():
     if missing:
         raise RuntimeError("builtin Pack root does not exist: {}".format(missing[0]))
     return roots
+
+
+def daplinkutility_executable():
+    value = os.environ.get("MKLINK_DAPLINKUTILITY_EXE", "").strip()
+    if not value:
+        return None
+    executable = Path(value).resolve()
+    if not executable.is_file():
+        raise RuntimeError("DAPLinkUtility executable does not exist: {}".format(executable))
+    return executable
 
 
 def build_sidecar(force=False):
@@ -150,6 +173,25 @@ def build_sidecar(force=False):
             ]
         else:
             print("[WARN] MKLINK_BUILTIN_PACK_ROOTS is not set; builtin Pack bundle omitted")
+        daplink_exe = daplinkutility_executable()
+        if daplink_exe is not None:
+            try:
+                import pefile  # noqa: F401
+            except ImportError:
+                run([sys.executable, "-m", "pip", "install", "pefile"])
+            flm_dir = Path(temporary) / "builtin_flm"
+            flm_manifest = build_daplinkutility_flm_bundle(daplink_exe, flm_dir)
+            print(
+                "[OK] Built DAPLinkUtility FLM bundle: {} targets, {} blobs".format(
+                    flm_manifest["target_count"], flm_manifest["blob_count"]
+                )
+            )
+            builtin_args.extend([
+                "--add-data",
+                "{}{}mklink/builtin_flm".format(flm_dir, os.pathsep),
+            ])
+        else:
+            print("[WARN] MKLINK_DAPLINKUTILITY_EXE is not set; builtin FLM bundle omitted")
         run([
             sys.executable, "-m", "PyInstaller",
             "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",

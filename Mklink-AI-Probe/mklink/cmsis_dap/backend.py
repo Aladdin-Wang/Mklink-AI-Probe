@@ -24,9 +24,17 @@ _LOCKED_ERROR_PATTERN = re.compile(
 
 
 class _CustomFlmDelegate:
-    def __init__(self, payloads: Tuple[bytes, ...], next_delegate: Any = None) -> None:
+    def __init__(
+        self,
+        payloads: Tuple[bytes, ...],
+        next_delegate: Any = None,
+        ram_region: Optional[Tuple[int, int]] = None,
+        flash_regions: Tuple[Tuple[int, int], ...] = (),
+    ) -> None:
         self._payloads = payloads
         self._next_delegate = next_delegate
+        self._ram_region = ram_region
+        self._flash_regions = flash_regions
 
     def will_init_target(self, target: Any, init_sequence: Any) -> None:
         callback = getattr(self._next_delegate, "will_init_target", None)
@@ -36,7 +44,12 @@ class _CustomFlmDelegate:
             "create_flash",
             (
                 "mklink_custom_flm",
-                lambda: _install_custom_flm_regions(target, self._payloads),
+                lambda: _install_custom_flm_regions(
+                    target,
+                    self._payloads,
+                    self._ram_region,
+                    self._flash_regions,
+                ),
             ),
         )
 
@@ -46,12 +59,32 @@ class _CustomFlmDelegate:
         return getattr(self._next_delegate, name)
 
 
-def _install_custom_flm_regions(target: Any, payloads: Tuple[bytes, ...]) -> None:
-    from pyocd.core.memory_map import FlashRegion
+def _install_custom_flm_regions(
+    target: Any,
+    payloads: Tuple[bytes, ...],
+    ram_region: Optional[Tuple[int, int]] = None,
+    flash_regions: Tuple[Tuple[int, int], ...] = (),
+) -> None:
+    from pyocd.core.memory_map import FlashRegion, RamRegion
     from pyocd.target.pack.flash_algo import PackFlashAlgo
 
     target.memory_map = target.memory_map.clone()
+    if ram_region is not None:
+        ram_start, ram_size = ram_region
+        for region in list(target.memory_map):
+            if bool(getattr(region, "is_ram", False)):
+                target.memory_map.remove_region(region)
+        target.memory_map.add_region(RamRegion(
+            name="mklink_algorithm_ram",
+            start=ram_start,
+            length=ram_size,
+        ))
     existing = [region for region in target.memory_map if bool(getattr(region, "is_flash", False))]
+    if flash_regions and len(flash_regions) != len(payloads):
+        raise FlashError(
+            FlashErrorCode.PACK_INTEGRITY_ERROR,
+            "custom FLM region metadata is invalid",
+        )
     for index, payload in enumerate(payloads):
         try:
             algorithm = PackFlashAlgo(io.BytesIO(payload))
@@ -61,9 +94,15 @@ def _install_custom_flm_regions(target: Any, payloads: Tuple[bytes, ...]) -> Non
                 "custom FLM could not be loaded",
             ) from None
         _enable_custom_flm_verify(algorithm)
-        start = int(algorithm.flash_start)
-        end = start + int(algorithm.flash_size)
-        for region in list(existing):
+        if flash_regions:
+            start, size = flash_regions[index]
+            algorithm.flash_start = start
+            algorithm.flash_size = size
+        else:
+            start = int(algorithm.flash_start)
+            size = int(algorithm.flash_size)
+        end = start + size
+        for region in list(target.memory_map):
             region_start = int(region.start)
             region_end = region_start + int(region.length)
             if start < region_end and region_start < end:
@@ -73,11 +112,12 @@ def _install_custom_flm_regions(target: Any, payloads: Tuple[bytes, ...]) -> Non
                         "custom FLM range overlaps another custom algorithm",
                     )
                 target.memory_map.remove_region(region)
-                existing.remove(region)
+                if region in existing:
+                    existing.remove(region)
         region = FlashRegion(
             name="mklink_custom_flm_{}".format(index),
             start=start,
-            length=int(algorithm.flash_size),
+            length=size,
             flm=algorithm,
         )
         target.memory_map.add_region(region)
@@ -140,12 +180,24 @@ class HpmRomBackend:
         pack: Optional[str] = None,
         custom_flm_paths: Tuple[str, ...] = (),
         custom_flm_digests: Tuple[str, ...] = (),
+        custom_flm_regions: Tuple[Tuple[int, int], ...] = (),
+        custom_flm_ram_start: Optional[int] = None,
+        custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
         reset_mode: str = "default",
         board: Optional[str] = None,
         hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None,
     ) -> None:
-        del pack, custom_flm_paths, custom_flm_digests, connect_mode, reset_mode
+        del (
+            pack,
+            custom_flm_paths,
+            custom_flm_digests,
+            custom_flm_regions,
+            custom_flm_ram_start,
+            custom_flm_ram_size,
+            connect_mode,
+            reset_mode,
+        )
         from mklink.hpm_config import (
             is_hpm_target,
             normalize_hpm_configuration,
@@ -347,6 +399,9 @@ class PyOcdBackend:
         pack: Optional[str] = None,
         custom_flm_paths: Tuple[str, ...] = (),
         custom_flm_digests: Tuple[str, ...] = (),
+        custom_flm_regions: Tuple[Tuple[int, int], ...] = (),
+        custom_flm_ram_start: Optional[int] = None,
+        custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
         reset_mode: str = "default",
     ) -> None:
@@ -372,6 +427,33 @@ class PyOcdBackend:
                     FlashErrorCode.PACK_INTEGRITY_ERROR,
                     "custom FLM integrity metadata is invalid",
                 )
+            if custom_flm_regions and len(custom_flm_regions) != len(custom_flm_paths):
+                raise FlashError(
+                    FlashErrorCode.PACK_INTEGRITY_ERROR,
+                    "custom FLM region metadata is invalid",
+                )
+            resolved_regions = []
+            for raw_region in custom_flm_regions:
+                if not isinstance(raw_region, tuple) or len(raw_region) != 2:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM region metadata is invalid",
+                    )
+                start, size = raw_region
+                if (
+                    not isinstance(start, int)
+                    or isinstance(start, bool)
+                    or start < 0
+                    or not isinstance(size, int)
+                    or isinstance(size, bool)
+                    or size <= 0
+                    or start + size > 0x1_0000_0000
+                ):
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM region metadata is invalid",
+                    )
+                resolved_regions.append((start, size))
             resolved_flms = []
             for value, expected_digest in zip(custom_flm_paths, custom_flm_digests):
                 flm_path = Path(value).expanduser()
@@ -403,6 +485,22 @@ class PyOcdBackend:
                         "custom FLM integrity check failed",
                     )
                 resolved_flms.append(payload)
+            ram_region = None
+            if custom_flm_ram_start is not None or custom_flm_ram_size is not None:
+                if (
+                    not isinstance(custom_flm_ram_start, int)
+                    or isinstance(custom_flm_ram_start, bool)
+                    or custom_flm_ram_start < 0
+                    or not isinstance(custom_flm_ram_size, int)
+                    or isinstance(custom_flm_ram_size, bool)
+                    or custom_flm_ram_size <= 0
+                    or custom_flm_ram_start + custom_flm_ram_size > 0x1_0000_0000
+                ):
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "custom FLM RAM metadata is invalid",
+                    )
+                ram_region = (custom_flm_ram_start, custom_flm_ram_size)
             session = None
             try:
                 resolved_probe = self._resolve_probe(probe)
@@ -413,8 +511,19 @@ class PyOcdBackend:
                     factory = lambda selected_probe, selected_options: Session(
                         selected_probe, options=selected_options
                     )
+                session_target = target
+                if resolved_pack is None and resolved_flms:
+                    from pyocd.target import TARGET
+
+                    known = {str(name).casefold() for name in TARGET}
+                    known.update(
+                        str(getattr(target_type, "PART_NUMBER", "")).casefold()
+                        for target_type in TARGET.values()
+                    )
+                    if str(target).casefold() not in known:
+                        session_target = "cortex_m"
                 options = {
-                    "target_override": target,
+                    "target_override": session_target,
                     "frequency": frequency,
                     "connect_mode": connect_mode,
                     "auto_unlock": False,
@@ -424,7 +533,10 @@ class PyOcdBackend:
                 session = factory(resolved_probe, options)
                 if resolved_flms:
                     session.delegate = _CustomFlmDelegate(
-                        tuple(resolved_flms), getattr(session, "delegate", None)
+                        tuple(resolved_flms),
+                        getattr(session, "delegate", None),
+                        ram_region,
+                        tuple(resolved_regions),
                     )
                 session.open()
                 session.target.reset_and_halt()
@@ -492,7 +604,20 @@ class PyOcdBackend:
                     from pyocd.flash.file_programmer import FileProgrammer
 
                     factory = FileProgrammer
-                programmer = factory(session)
+                image_start = (
+                    image.base_address
+                    if image.format.lower() == "bin" and image.base_address is not None
+                    else image.start
+                )
+                region = self._flash_region_for_address(session.target, image_start)
+                if str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
+                    programmer = factory(
+                        session,
+                        smart_flash=False,
+                        keep_unwritten=False,
+                    )
+                else:
+                    programmer = factory(session)
                 kwargs = {}
                 if image.format.lower() == "bin":
                     kwargs["base_address"] = image.base_address
