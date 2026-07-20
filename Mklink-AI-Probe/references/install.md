@@ -50,97 +50,59 @@ pip install -e ".[mcp]"
 ```
 
 > 仅使用 CLI、不用 MCP 的用户：跳过 `.[mcp]`，`pip install -e .` 即可。
-> 符号解析 / AXF 调试另需下文的 `arm-none-eabi-readelf`。
+> `pyelftools` 已作为正式依赖安装；标准桌面安装包也会把它打入 sidecar。
 
 
-## GNU Arm readelf（符号解析与 AXF 调试）
+## ELF/AXF 解析后端
 
-当用户要执行以下功能时，必须提供 `arm-none-eabi-readelf`：
+MKLink 默认使用内置 `pyelftools`，以下功能不需要用户安装 Keil、GNU Arm 或系统 binutils：
 
-- `python -m mklink symbols --source <firmware.axf>`
-- `python -m mklink vofa <符号名>,... --visualize --source <firmware.axf>`
-- `python -m mklink typeinfo --source <firmware.axf> --var <name>`
-- `python -m mklink watch` / `superwatch`（使用 `--source <firmware.axf>` 时）
-- `python -m mklink hardfault --source <firmware.axf> --sp <stack_pointer>`
+- `symbols`、`typeinfo`、`watch`、`superwatch` 和 VOFA 变量名解析
+- `memmap`、函数名断点和符号目录
+- HardFault PC/LR 源码行定位
+- CLI、MCP、REST API 和桌面上位机的 AXF 重解析
 
-先检查依赖是否已经可用：
+后端选择优先级：命令/API 显式参数、`MKLINK_ELF_BACKEND`、项目
+`.mklink/toolchain.json` 的 `elf_backend`，最后默认 `builtin`。
 
 ```powershell
-arm-none-eabi-readelf --version
+python -m mklink symbols --source path/to/firmware.axf
+python -m mklink hardfault --source path/to/firmware.axf --sp 0x20001FF0
 ```
 
-若命令不存在，优先使用 winget 安装官方 GNU Arm Embedded Toolchain：
+### 可选 GNU 兼容后端
+
+只有用户明确指定 `external` 时，MKLink 才会调用本机 `readelf` / `addr2line`。
+仅设置 `MKLINK_READELF`、`MKLINK_ADDR2LINE` 或工具路径不会自动启用 external，
+内置解析失败时也不会静默回退。
+
+```powershell
+$env:MKLINK_ELF_BACKEND = "external"
+$env:MKLINK_READELF = "C:\tools\arm-gnu\bin\arm-none-eabi-readelf.exe"
+$env:MKLINK_ADDR2LINE = "C:\tools\arm-gnu\bin\arm-none-eabi-addr2line.exe"
+
+python -m mklink symbols --source path/to/firmware.axf --elf-backend external
+```
+
+项目级配置：
+
+```json
+{
+  "elf_backend": "external",
+  "readelf": "C:/tools/arm-gnu/bin/arm-none-eabi-readelf.exe",
+  "addr2line": "C:/tools/arm-gnu/bin/arm-none-eabi-addr2line.exe"
+}
+```
+
+需要安装 GNU Arm 工具链时可执行：
 
 ```powershell
 winget install --id Arm.GnuArmEmbeddedToolchain -e --accept-package-agreements --accept-source-agreements
 ```
 
-如果 winget 安装器被 UAC、GUI 或权限问题中断，使用无管理员权限的便携安装方式：
-
-```powershell
-$toolsDir = Join-Path $env:USERPROFILE ".local\tools"
-$zipPath = Join-Path $toolsDir "arm-gnu-toolchain-14.2.rel1-mingw-w64-i686-arm-none-eabi.zip"
-New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-
-curl.exe -L "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-mingw-w64-i686-arm-none-eabi.zip" -o $zipPath
-tar -xf $zipPath -C $toolsDir
-
-# 该 zip 解压后 bin 目录通常位于 $toolsDir\bin
-$bin = Join-Path $toolsDir "bin"
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($userPath -split ";") -notcontains $bin) {
-  [Environment]::SetEnvironmentVariable("Path", "$userPath;$bin", "User")
-}
-
-# 让当前 PowerShell 立即可用
-if (($env:Path -split ";") -notcontains $bin) {
-  $env:Path = "$env:Path;$bin"
-}
-```
-
-如果当前会话或 Python `subprocess.run(["arm-none-eabi-readelf", ...])` 仍找不到命令，可把真实 exe 复制到已在 PATH 中的用户 bin 目录：
-
-```powershell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin" | Out-Null
-Copy-Item "$env:USERPROFILE\.local\tools\bin\arm-none-eabi-readelf.exe" "$env:USERPROFILE\.local\bin\arm-none-eabi-readelf.exe" -Force
-```
-
-安装后必须验证：
-
-```powershell
-arm-none-eabi-readelf --version
-python -c "import shutil, subprocess; print(shutil.which('arm-none-eabi-readelf')); subprocess.run(['arm-none-eabi-readelf','--version'], check=True)"
-python -m mklink symbols --source path/to/firmware.axf --filter "counter|sensor"
-```
-
-
-### 不想把工具链加进 PATH？用环境变量或配置文件指定
-
-mklink 按以下顺序解析 `readelf` / `addr2line`（命中即用，首次解析后缓存）：
-
-1. 环境变量 `MKLINK_READELF` / `MKLINK_ADDR2LINE`（指向可执行文件全路径）
-2. 项目配置 `.mklink/toolchain.json`：`{"readelf": "...", "addr2line": "..."}`
-3. 常见安装位置（winget `Program Files`、WinGet 包缓存、`~/.local/tools`）
-4. PATH 上的 `arm-none-eabi-readelf` / `arm-none-eabi-addr2line`
-5. 系统 binutils 的 `readelf` / `addr2line`（GNU 版可读任意 ELF，够用）
-
-适合用便携版、或不想污染全局 PATH 的用户：
-
-```powershell
-# 方式 A：环境变量（当前会话；持久化用 setx 或系统设置）
-$env:MKLINK_READELF    = "$env:USERPROFILE\.local\tools\bin\arm-none-eabi-readelf.exe"
-$env:MKLINK_ADDR2LINE  = "$env:USERPROFILE\.local\tools\bin\arm-none-eabi-addr2line.exe"
-
-# 方式 B：项目级配置（可提交到仓库，团队共用）
-New-Item -ItemType Directory -Force -Path .mklink | Out-Null
-@{ readelf    = "C:/tools/arm-gnu/bin/arm-none-eabi-readelf.exe"
-   addr2line  = "C:/tools/arm-gnu/bin/arm-none-eabi-addr2line.exe" } |
-  ConvertTo-Json | Out-File -Encoding utf8 .mklink/toolchain.json
-```
-
-> MCP 用户：调用 `ping` 即可看到 `readelf_available` / `readelf_path`。工具缺失时
-> `connect(axf=...)` 仍会成功（探针已连上），但返回 `axf_loaded:false` 并附 `axf_error`
-> 安装提示——不会像以前那样整次连接崩溃。
+MCP `ping` 和 REST `/api/health` 会同时报告 `elf_backend`、
+`builtin_elf_available`、`external_elf_available`、`readelf_available` 和
+`addr2line_available`。后两个字段只描述可选 GNU 后端，不再决定 AXF 功能是否可用。
 
 
 ## GUI 依赖（Web GUI 与 Tauri 桌面应用）

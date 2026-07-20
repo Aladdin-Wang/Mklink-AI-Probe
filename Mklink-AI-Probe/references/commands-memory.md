@@ -360,7 +360,7 @@ python -m mklink vofa g_config.setpoint float --source path/to/firmware.axf --vi
 ### AXF/DWARF 调试增强
 
 #### `python -m mklink typeinfo --source <firmware.axf> [--var 名称 | --struct 名称 | --enum 名称 | --list-structs | --list-enums]`
-使用 `arm-none-eabi-readelf --debug-dump=info` 解析 DWARF 类型信息，不引入额外 Python 依赖。
+默认使用随 MKLink 内置的 `pyelftools` 解析 DWARF 类型信息，不依赖用户工具链。
 
 ```
 python -m mklink typeinfo --source path/to/firmware.axf --var g_appState
@@ -369,7 +369,7 @@ python -m mklink typeinfo --source path/to/firmware.axf --enum AppMode
 ```
 
 #### `python -m mklink symbols --source <firmware.axf> [--filter <正则>]`
-从 ELF/AXF 列出 RAM 全局变量（需 `arm-none-eabi-readelf`）。`--filter` 为正则，用于缩小符号列表。
+从 ELF/AXF 列出 RAM 全局变量。`--filter` 为正则，用于缩小符号列表。只有用户明确传 `--elf-backend external` 时才调用本机 `readelf`。
 
 ```
 python -m mklink symbols --source path/to/firmware.axf
@@ -416,7 +416,7 @@ python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --d
 - 若 flags=`0x0004`，含义是 `Region error`，优先排查目标供电、Vref、SWD、NRST、MCU 运行/低功耗/复位状态；这不是 host parser CRC 失败。
 
 #### `python -m mklink hardfault [--source <firmware.axf>] [--sp <异常栈帧地址>]`
-读取 SCB Fault 寄存器并解码 CFSR/HFSR。提供 `--sp` 时再读取 32 字节异常栈帧，并用 `arm-none-eabi-addr2line` 映射 PC/LR。
+读取 SCB Fault 寄存器并解码 CFSR/HFSR。提供 `--sp` 时再读取 32 字节异常栈帧，并默认通过内置 DWARF line program 映射 PC/LR；显式 external 模式才调用本机 `addr2line`。
 
 ```
 python -m mklink hardfault --source path/to/firmware.axf --sp 0x20001FF0

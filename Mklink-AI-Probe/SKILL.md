@@ -35,7 +35,7 @@ description: |
 - Modbus/串口 **同一 COM 口禁止并行访问**（须串行；MCP 层已用跨进程锁 `modbus_locks`/`serial_locks` 保证，探针用 `SerialLock`）
 - Modbus 点表：先 `detect` 汇报并确认，再 `generate`
 - 执行具体操作前：**先 Read 下方路由表对应的 reference**，理解边界（如 flush-memory 分块、RTT 静态模式选型）
-- **符号/AXF 功能依赖 `arm-none-eabi-readelf`**（GNU Arm 工具链，**不内置**）：`load_symbols`/`read_variable`/`write_variable`/`memory_map`/`decode_hardfault` 源码行需它。**首调 `ping` 看 `readelf_available`**；缺失时 `connect(axf=)` 仍成功但返回 `axf_loaded:false` + `axf_error`（提示安装），引导用户 `winget install Arm.GnuArmEmbeddedToolchain` 或设 `MKLINK_READELF`/`.mklink/toolchain.json`。flash/RTT/内存/寄存器/断点/Modbus/串口**不**需要它。
+- **符号/AXF 默认使用内置 pyelftools**：`load_symbols`/`read_variable`/`write_variable`/`memory_map`/函数断点/`decode_hardfault` 源码行不依赖用户电脑的编译工具链。AI **默认使用内置 pyelftools**，不得因 `readelf_available:false` 阻止 AXF 操作。**仅在用户明确指定** `elf_backend=external` 时，才调用本机 `readelf`/`addr2line`；仅设置工具路径不会自动启用 external。内置解析遇到不支持的文件时先报告原因，取得用户同意后才能切换外部兼容后端。
 - **未知 MCU 禁止直接改 `custom` 兜底**：烧录前若项目 MCU 不在 `mcu_profiles.json`，先调用 MCP `detect_mcu_profile` 或 CLI `python -m mklink mcu-detect`。多内部 FLM 候选时把候选报给用户选择，再用 `flm`/`--flm` 固化；找不到本地 FLM/Pack 时停止并提示安装或解包 Keil/Arm Pack。HPMicro 是明确例外，见下一条。
 - **HPMicro 禁止寻找或加载 FLM**：`HPM*` 型号使用探针设备端 HPM ROM API。MCP `flash` 传 `.bin`、精确 `target_part`、`base_address`，并传 `board`（推荐）或四字 `hpm_flash_cfg`；返回 `algorithm_source: "hpm-rom-api"`。在线、脱机和 CLI 都不得为 HPM 下载 Pack 或调用 `load.flm`。
 
@@ -53,7 +53,7 @@ description: |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
 | RTT | `rtt_start`(mode=auto/dynamic/static) · `rtt_read` · `rtt_write` · `rtt_stop` · `capture_rtt` | mode 决策见 [rtt-static-mode.md](references/rtt-static-mode.md) |
 | **SystemView** | `systemview_integrate` · `systemview_start` · `systemview_read` · `systemview_stop` · `capture_systemview` · `systemview_decode` · `systemview_analyze` · `systemview_analyze_events` · `systemview_report` | RTOS 跟踪（任务切换/ISR/CPU%）；集成见 [systemview-rtthread.md](references/systemview-rtthread.md)；先 rtt-integrate |
-| HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + addr2line 回溯 |
+| HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + 内置 DWARF 源码回溯 |
 | Modbus | `modbus_open` · `modbus_close` · `modbus_read` · `modbus_write` · `modbus_scan` | 独立串口（非探针） |
 | 串口 | `serial_list` · `serial_open` · `serial_close` · `serial_send` · `serial_read` | 独立串口（非探针） |
 
@@ -79,7 +79,7 @@ description: |
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
 | `vofa` | VOFA+ 实时变量观测（支持 `--visualize`） |
-| `symbols` | 从 ELF/AXF 列出 RAM 变量（需 readelf） |
+| `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
 | `watch` | 按变量名读取快照（支持 `struct.field`） |
 | `superwatch` | 时间戳连续采样（支持 `--visualize`、`--dump-mem`） |

@@ -196,6 +196,7 @@ def build_sidecar(force=False):
             sys.executable, "-m", "PyInstaller",
             "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
             "--collect-all", "mklink",
+            "--collect-all", "elftools",
             "--collect-all", "pyocd",
             "--copy-metadata", "pyocd",
             "--collect-all", "cmsis_pack_manager",

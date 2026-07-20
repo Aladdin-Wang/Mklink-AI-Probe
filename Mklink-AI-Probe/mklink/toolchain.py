@@ -1,11 +1,9 @@
-"""Resolution + availability for the GNU Arm host tools (readelf, addr2line).
+"""Resolution for the explicitly selected GNU ELF compatibility backend.
 
-mklink shells out to ``arm-none-eabi-readelf`` (symbol table + DWARF parsing)
-and ``arm-none-eabi-addr2line`` (HardFault source-line lookup). These are NOT
-bundled with mklink — they come from the GNU Arm Embedded Toolchain or from
-system binutils. This module centralizes *how* those binaries are located so
-that every call site behaves identically and a missing tool surfaces as one
-clear, actionable error instead of an opaque ``[WinError 2]``.
+MKLink uses bundled pyelftools by default. Only ``elf_backend=external`` shells
+out to ``arm-none-eabi-readelf`` and ``arm-none-eabi-addr2line``. These optional
+binaries are not bundled; this module centralizes how the external adapter
+locates them and reports actionable errors.
 
 Resolution order (first existing hit wins, per tool):
   1. Environment override — ``$MKLINK_READELF`` / ``$MKLINK_ADDR2LINE``.
@@ -17,12 +15,8 @@ Resolution order (first existing hit wins, per tool):
   5. System binutils fallback — plain ``readelf`` / ``addr2line`` (reads any
      ELF; works for ``-s`` / ``--debug-dump`` / ``-e ... -f``).
 
-Call sites should use :func:`require_readelf` / :func:`require_addr2line`
-(raise :class:`ToolchainMissingError` with an install hint when absent) or
-:func:`resolve_readelf` / :func:`resolve_addr2line` (return ``None``) — never
-hardcode the binary name. :func:`status` reports availability for the MCP
-``ping``/``connect`` layer so an agent can guide the user to install the
-toolchain before any AXF feature is touched.
+Only ``mklink.elf_external`` should require these binaries. Status callers may
+use the non-raising resolvers for optional external-backend diagnostics.
 """
 from __future__ import annotations
 

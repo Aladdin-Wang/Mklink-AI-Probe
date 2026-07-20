@@ -181,6 +181,9 @@ def test_tauri_bundle_includes_complete_third_party_license_texts():
     assert "END OF TERMS AND CONDITIONS" in notices
     assert "BSD 3-Clause License" in notices
     assert "Neither the name of Nordic Semiconductor ASA" in notices
+    assert "pyelftools 0.32" in notices
+    assert "free and unencumbered software released into the public domain" in notices
+    assert "http://unlicense.org/" in notices
 
 
 def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeypatch, tmp_path):
@@ -200,10 +203,18 @@ def test_sidecar_collects_pyocd_plugins_metadata_and_hid_binary(builder, monkeyp
     assert builder.build_sidecar(force=True) is True
 
     pairs = [commands[0][index:index + 2] for index in range(len(commands[0]) - 1)]
+    assert ["--collect-all", "elftools"] in pairs
     assert ["--collect-all", "pyocd"] in pairs
     assert ["--copy-metadata", "pyocd"] in pairs
     assert ["--collect-all", "cmsis_pack_manager"] in pairs
     assert ["--collect-all", "hid"] in pairs
+
+
+def test_skill_defaults_axf_to_builtin_parser():
+    text = (PROJECT_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "默认使用内置 pyelftools" in text
+    assert "仅在用户明确指定" in text
 
 
 def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(

@@ -450,14 +450,13 @@ def _cli_project_init(project_root: str):
     print(f"  MCU:      {mcu_key or 'custom'} ({mcu_name})")
     print(f"  RTT:      将在首次使用时检测")
 
-    # readelf / AXF 工具链可用性（符号/变量/HardFault 源码行依赖它，flash/RTT/内存等不需要）
-    from mklink._deps import check_readelf_available
-    readelf_ok, readelf_info = check_readelf_available()
-    if readelf_ok:
-        print(f"  readelf:  {readelf_info} (符号/变量/HardFault 源码行可用)")
+    # AXF/ELF 解析默认使用随包内置的 pyelftools。
+    from mklink._deps import check_elf_available
+    elf_ok, elf_info = check_elf_available(project_root=project_root)
+    if elf_ok:
+        print(f"  ELF:      {elf_info} (符号/变量/HardFault 源码行可用)")
     else:
-        print(f"  readelf:  未找到 — 符号/变量/HardFault 源码行不可用（flash/RTT/内存/Modbus 不受影响）")
-        print(f"            安装：winget install Arm.GnuArmEmbeddedToolchain，或编辑 .mklink/toolchain.json 指向工具路径")
+        print(f"  ELF:      不可用 — {elf_info}")
 
     print("=" * 50)
 
@@ -487,12 +486,13 @@ def _cli_project_init(project_root: str):
         "autostart": False,
         "rtt_storage_mode": 0,
     })
-    # 保存 toolchain.json 模板（可选：覆盖 GNU Arm 工具链路径；留空则按 PATH/常见位置自动解析）
+    # 保存 toolchain.json 模板。GNU 工具只在 elf_backend=external 时使用。
     save_toolchain_config(project_root, {
+        "elf_backend": "builtin",
         "readelf": "",
         "addr2line": "",
-        "_doc": "可选：覆盖 GNU Arm 工具链路径。留空 = 按 PATH/常见安装位置自动解析。"
-                "示例：C:/tools/arm-gnu/bin/arm-none-eabi-readelf.exe",
+        "_doc": "默认 builtin 使用内置 pyelftools。仅显式改为 external 时解析 GNU 工具路径；"
+                "路径本身不会启用 external。",
     })
 
     # 探针固件版本检查（不阻塞 init）
@@ -511,14 +511,13 @@ def _cli_project_init(project_root: str):
 
     print("[OK] 项目配置已保存到 .mklink/")
 
-    # 检查可选依赖
-    from mklink._deps import check_readelf_available
-    readelf_ok, readelf_info = check_readelf_available()
-    if readelf_ok:
-        print(f"  readelf:  {readelf_info} (符号解析可用)")
+    # 检查内置 ELF 能力
+    from mklink._deps import check_elf_available
+    elf_ok, elf_info = check_elf_available(project_root=project_root)
+    if elf_ok:
+        print(f"  ELF:      {elf_info} (符号解析可用)")
     else:
-        print(f"  readelf:  未安装（符号解析/VOFA变量名/HardFault分析不可用）")
-        print(f"            安装: winget install --id Arm.GnuArmEmbeddedToolchain")
+        print(f"  ELF:      不可用（{elf_info}）")
 
 
 def _cli_flash(project_root: str, port: str | None, hex_path: str | None):
