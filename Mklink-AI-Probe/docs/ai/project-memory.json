@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T18:16:15+08:00",
+  "updated_at": "2026-07-21T00:01:10+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "a8f82c2 is the latest product source commit; d005864 refreshes tracked frontend assets; the final handoff commit contains this memory",
+    "head": "063068d is the latest product source commit; 9890008 refreshes tracked frontend assets; the final handoff commit contains this memory",
     "remote_head": "feature/online-flash-streaming is pushed through the final handoff commit",
     "working_tree": "clean after the final handoff commit; release files remain outside Git"
   },
@@ -17,17 +17,17 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "在可用的 Edge/Playwright/WebView2 或 computer-use 会话中，用 STM32F103 真机确认 a8f82c2 SuperWatch 曲线几何稳定、完整目录流畅度和结构体/数组折叠交互。",
+    "current_task": "内置 pyelftools ELF/DWARF 后端已完成并通过真实 STM32F103 AXF/ELF、完整自动化测试和标准 NSIS 安装态验证；等待后续任务。",
     "latest_source_commits": [
-      "d005864 build: refresh SuperWatch frontend assets",
-      "a8f82c2 fix: stabilize SuperWatch symbol browsing",
-      "b599f5c feat: expand runtime-readable structured symbols"
+      "9890008 build: refresh hardened ELF frontend assets",
+      "063068d fix: harden ELF backend address handling",
+      "0ebe87e fix: preserve complete ELF symbol catalogs"
     ],
-    "latest_installer": "release/20260720-180708/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_a8f82c2-setup.exe; 64149887 bytes; SHA-256 366d86572a8e33f69afc1fd6bcc76e1ca82e97f8f47bc2c3c903b67a6566697b",
+    "latest_installer": "release/20260720-235616/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_063068d-build-9890008-setup.exe; 64391108 bytes; SHA-256 1ea30da4668eafc6b411a2c1777244db0316d7213d047ea6002d6f8b09588cd0",
     "model_inventory": "release/20260720-152538/builtin-models.csv contains 10747 effective models across 65 manufacturer labels; BUILTIN-MODELS-SUMMARY.md is the compact summary.",
     "flash_state": "Online SWD supports up to 10 MHz. The GUI defaults to keep-running connection, uses one total progress bar, refreshes after Pack installation, fills the target search after selection, and supports builtin algorithms, local Pack import, custom FLM, and optional online Pack installation.",
     "hpm_state": "HPM targets use the dedicated ROM API path, require no FLM, expose no independent erase, and were not physically programmed in this session.",
-    "symbol_state": "Only fixed-address runtime-readable scalar leaves are published. SuperWatch derives a structure/array tree from those paths, collapses branches by default, auto-expands matching search/selected-only paths, restores pre-search expansion state, and mounts only visible leaves. Each root remains capped at 256 leaves.",
+    "symbol_state": "pyelftools 0.32 is bundled and is the default backend for symbols, sections, DWARF types, readable structured leaves, memory maps, breakpoint function lookup, and HardFault PC/LR source lines. Only direct DW_OP_addr plus optional constant DW_OP_plus_uconst offsets are published; value expressions, unresolved member offsets, and arrays with any dynamic dimension are excluded. External readelf/addr2line run only when elf_backend=external is explicitly selected, use the selected project_root for tool configuration, and never receive automatic fallback traffic.",
     "stop_rule": "Continue autonomously through implementation, proportional verification, standard NSIS packaging when needed, AI memory, commit, and push. Do not build MSI or WebView2-offline packages unless explicitly requested."
   },
   "milestones": [
@@ -47,6 +47,11 @@
       "notes": "Configuration, Symbols, search/typeinfo, and SuperWatch share one generation- and fingerprint-aware catalog. Reparse and reconnect rebind valid selected channels and remove invalid ones."
     },
     {
+      "name": "Built-in ELF and DWARF backend",
+      "status": "complete",
+      "notes": "pyelftools 0.32 is the default across SDK, CLI, MCP, REST, desktop, SuperWatch, VOFA, breakpoints, memory maps, and HardFault source lookup. GNU readelf/addr2line are isolated behind explicit elf_backend=external selection with no automatic fallback."
+    },
+    {
       "name": "Windows standard NSIS candidate",
       "status": "complete",
       "notes": "The installed a8f82c2 candidate runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close."
@@ -60,19 +65,19 @@
   "verification": [
     {
       "area": "Latest automated baseline",
-      "result": "Python 860 passed and 1 skipped; GUI 33 files / 375 tests passed; Vite production build transformed 1909 modules and embedded a8f82c2d9cc2; Rust 6 passed; cargo check completed."
+      "result": "Python 899 passed and 1 skipped after review fixes; GUI 33 files / 376 tests passed; Vite production build transformed 1909 modules; Rust release packaging completed with 6 prior tests passing and cargo check completed."
     },
     {
       "area": "Installed WebView2 checks",
-      "result": "The standard a8f82c2 NSIS installed silently to an isolated location and launched under restricted PATH. Health was ok, one probe was discoverable, no Python process was present, and normal window close left zero product processes and released port 8765."
+      "result": "The standard 063068d/9890008 NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, no Python/GNU child, and normal close left zero product processes and released port 8765."
     },
     {
       "area": "SuperWatch tree and layout qualification",
       "result": "Pure and component tests cover nested structures/arrays, default collapse, search expansion restoration, selected-only pruning, reparse cleanup, and a 4660-leaf catalog mounting zero leaf rows while collapsed. Source-level guards cover stable desktop header/toolbars. Interactive live geometry sampling was unavailable because browser and computer-use control surfaces were not available."
     },
     {
-      "area": "Flash and package qualification",
-      "result": "STM32H7B0 internal and external Flash program/verify/reset paths passed in earlier qualification. The final symbol pass performed no erase or program. Normal close left zero product/Python processes and released ports 8765 and 9223."
+      "area": "Built-in ELF real-file qualification",
+      "result": "On the supplied STM32F103 fixtures, builtin/external symbol sets matched exactly: Keil AXF 1626 and GCC ELF 1418. Safe builtin readable catalogs contain Keil 4851 and GCC 4385 leaves. GCC remains a strict superset of external results; the 17 Keil external-only leaves were confirmed to come from dereference/stack-value or piece expressions that external text parsing misclassifies as direct writable addresses. Builtin line lookup resolved 50/50 sampled Keil addresses and 48/50 GCC addresses. Installed sidecar symbols, typeinfo, and memmap all passed under restricted PATH."
     }
   ],
   "decisions": [
@@ -86,6 +91,7 @@
     "SuperWatch merges nearby addresses through build_read_blocks(max_gap=256) and preserves selected symbol names across valid reparse/reconnect transitions.",
     "High-rate acquisition never waits for the browser; queues are bounded and report drops explicitly.",
     "SuperWatch structure and array branches are collapsed by default; search and selected-only filters expose only matching leaves and ancestors without changing acquisition selection.",
+    "ELF/AXF parsing defaults to bundled pyelftools. External readelf/addr2line are used only for explicit elf_backend=external requests; path configuration does not activate them, and builtin failures do not auto-fallback.",
     "Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths."
   ],
   "hardware": {
@@ -98,6 +104,7 @@
     "The a8f82c2 standard NSIS has not yet been tested on a second clean Windows machine or VM.",
     "The new SuperWatch layout has automated geometry guards but no fresh interactive Edge/WebView2 rectangle sampling because browser and computer-use control surfaces were unavailable.",
     "The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.",
+    "Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.",
     "The installer is unsigned and may show an unknown-publisher warning.",
     "Optional online Pack installation requires outbound HTTPS and may require a configured proxy.",
     "Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.",
@@ -106,7 +113,7 @@
   ],
   "next_actions": [
     "Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.",
-    "Install and qualify the a8f82c2 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, or pre-existing Pack cache.",
+    "Install and qualify the 063068d/9890008 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.",
     "Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.",
     "Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.",
     "Add Windows code signing before promotion beyond prerelease."
