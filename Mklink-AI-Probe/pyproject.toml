@@ -7,7 +7,7 @@ name = "mklink"
 version = "0.1.0rc2"
 description = "Mklink AI Probe - Embedded Debug Toolkit"
 requires-python = ">=3.9"
-dependencies = ["pyserial", "pymodbus>=3.0"]
+dependencies = ["pyserial", "pymodbus>=3.0", "pyelftools==0.32"]
 
 [project.optional-dependencies]
 gui = [

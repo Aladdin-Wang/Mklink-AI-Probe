@@ -60,10 +60,14 @@ class ToolchainMissingError(RuntimeError):
 # --------------------------------------------------------------------------
 # Config (.mklink/toolchain.json) — cwd-upward search, git-style.
 # --------------------------------------------------------------------------
-def _find_config() -> dict[str, str]:
+def load_toolchain_overrides(
+    start: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
     """Return overrides from the nearest ``.mklink/toolchain.json``."""
-    start = Path.cwd()
-    for here in [start, *start.parents]:
+    start_path = Path(start).resolve() if start is not None else Path.cwd()
+    if start_path.is_file():
+        start_path = start_path.parent
+    for here in [start_path, *start_path.parents]:
         f = here / ".mklink" / CONFIG_NAME
         if f.is_file():
             try:
@@ -74,6 +78,11 @@ def _find_config() -> dict[str, str]:
                 return {k: str(v) for k, v in data.items() if isinstance(v, str)}
             return {}
     return {}
+
+
+def _find_config() -> dict[str, str]:
+    """Backward-compatible private alias for nearest toolchain overrides."""
+    return load_toolchain_overrides()
 
 
 # --------------------------------------------------------------------------
@@ -189,20 +198,10 @@ def require_addr2line() -> str:
 
 
 def status() -> dict[str, object]:
-    """Snapshot of host-tool availability — for MCP ``ping`` / ``connect``.
+    """Snapshot of built-in ELF and optional GNU host-tool capabilities."""
+    from mklink.elf_backend import elf_status
 
-    Cheap to call: the per-tool resolution is cached. Returns booleans plus
-    the resolved paths so an agent can both gate behavior and tell the user
-    exactly which binary (if any) was found.
-    """
-    r = resolve_readelf()
-    a = resolve_addr2line()
-    return {
-        "readelf_available": bool(r),
-        "readelf_path": r,
-        "addr2line_available": bool(a),
-        "addr2line_path": a,
-    }
+    return elf_status()
 
 
 def clear_cache() -> None:
