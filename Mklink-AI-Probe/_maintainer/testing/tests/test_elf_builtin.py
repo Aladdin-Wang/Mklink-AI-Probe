@@ -223,17 +223,92 @@ def test_fixed_address_and_member_offset_accept_only_constant_expressions():
     address = FakeAttribute(
         "DW_FORM_exprloc", bytes([0x03, 0x20, 0x00, 0x00, 0x20])
     )
+    address_with_offset = FakeAttribute(
+        "DW_FORM_exprloc", bytes([0x03, 0x20, 0x00, 0x00, 0x20, 0x23, 0x04])
+    )
     dynamic = FakeAttribute("DW_FORM_exprloc", bytes([0x91, 0x00]))
     member = FakeAttribute("DW_FORM_exprloc", bytes([0x23, 0x04]))
+    dynamic_member = FakeAttribute("DW_FORM_exprloc", bytes([0x91, 0x00]))
     composite = FakeAttribute(
         "DW_FORM_exprloc",
         bytes([0x03, 0x20, 0x00, 0x00, 0x20, 0x94, 0x01, 0x9F]),
     )
 
     assert _fixed_address(address, structs) == 0x20000020
-    assert _fixed_address(composite, structs) == 0x20000020
+    assert _fixed_address(address_with_offset, structs) == 0x20000024
+    assert _fixed_address(composite, structs) is None
     assert _fixed_address(dynamic, structs) is None
     assert _member_offset(member, structs) == 4
+    assert _member_offset(dynamic_member, structs) is None
+
+
+def test_builtin_dwarf_skips_members_with_nonconstant_offsets(tmp_path):
+    int16 = FakeDie(
+        "DW_TAG_base_type",
+        0x10,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"int16_t"),
+            "DW_AT_byte_size": FakeAttribute("DW_FORM_data1", 2),
+        },
+    )
+    dynamic_member = FakeDie(
+        "DW_TAG_member",
+        0x21,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"dynamic"),
+            "DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x10),
+            "DW_AT_data_member_location": FakeAttribute(
+                "DW_FORM_exprloc", bytes([0x91, 0x00])
+            ),
+        },
+        refs={"DW_AT_type": int16},
+    )
+    record = FakeDie(
+        "DW_TAG_structure_type",
+        0x20,
+        attributes={"DW_AT_name": FakeAttribute("DW_FORM_string", b"Record")},
+        children=[dynamic_member],
+    )
+    top = FakeDie("DW_TAG_compile_unit", 0, children=[int16, record])
+    backend, source = make_backend(tmp_path, FakeElf(dwarf=FakeDwarf(top)))
+
+    info = backend.dwarf_info(source)
+
+    assert info.records_by_offset[0x20].members == []
+
+
+def test_builtin_dwarf_excludes_arrays_with_dynamic_dimensions(tmp_path):
+    int16 = FakeDie(
+        "DW_TAG_base_type",
+        0x10,
+        attributes={
+            "DW_AT_name": FakeAttribute("DW_FORM_string", b"int16_t"),
+            "DW_AT_byte_size": FakeAttribute("DW_FORM_data1", 2),
+        },
+    )
+    dynamic = FakeDie(
+        "DW_TAG_subrange_type",
+        0x31,
+        attributes={"DW_AT_count": FakeAttribute("DW_FORM_ref4", 0x99)},
+    )
+    fixed = FakeDie(
+        "DW_TAG_subrange_type",
+        0x32,
+        attributes={"DW_AT_count": FakeAttribute("DW_FORM_data1", 4)},
+    )
+    array = FakeDie(
+        "DW_TAG_array_type",
+        0x30,
+        attributes={"DW_AT_type": FakeAttribute("DW_FORM_ref4", 0x10)},
+        children=[dynamic, fixed],
+        refs={"DW_AT_type": int16},
+    )
+    top = FakeDie("DW_TAG_compile_unit", 0, children=[int16, array])
+    backend, source = make_backend(tmp_path, FakeElf(dwarf=FakeDwarf(top)))
+
+    info = backend.dwarf_info(source)
+
+    assert 0x30 not in info.arrays
 
 
 def test_builtin_dwarf_normalizes_records_arrays_and_global_addresses(tmp_path):

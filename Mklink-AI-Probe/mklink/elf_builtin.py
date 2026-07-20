@@ -103,33 +103,48 @@ def _fixed_address(attribute, structs) -> int | None:
     operations = _expression_operations(attribute, structs)
     if not operations or operations[0].op_name != "DW_OP_addr":
         return None
-    dynamic_ops = {
-        "DW_OP_call_frame_cfa",
-        "DW_OP_fbreg",
-    }
-    if any(
-        operation.op_name in dynamic_ops
-        or operation.op_name.startswith("DW_OP_breg")
-        or operation.op_name.startswith("DW_OP_reg")
-        for operation in operations
-    ):
+    address = int(operations[0].args[0])
+    for operation in operations[1:]:
+        if operation.op_name != "DW_OP_plus_uconst":
+            return None
+        address += int(operation.args[0])
+    return address
+
+
+_CONSTANT_INTEGER_FORMS = {
+    "DW_FORM_data1",
+    "DW_FORM_data2",
+    "DW_FORM_data4",
+    "DW_FORM_data8",
+    "DW_FORM_implicit_const",
+    "DW_FORM_sdata",
+    "DW_FORM_udata",
+}
+
+
+def _constant_attribute_int(attribute) -> int | None:
+    if attribute is None or attribute.form not in _CONSTANT_INTEGER_FORMS:
         return None
-    return int(operations[0].args[0])
+    if not isinstance(attribute.value, int):
+        return None
+    return int(attribute.value)
 
 
-def _member_offset(attribute, structs) -> int:
+def _member_offset(attribute, structs) -> int | None:
     if attribute is None:
         return 0
-    if isinstance(attribute.value, int):
-        return int(attribute.value)
+    constant = _constant_attribute_int(attribute)
+    if constant is not None:
+        return constant if constant >= 0 else None
     operations = _expression_operations(attribute, structs)
     if len(operations) == 1 and operations[0].op_name in {
         "DW_OP_plus_uconst",
         "DW_OP_constu",
         "DW_OP_consts",
     }:
-        return int(operations[0].args[0])
-    return 0
+        value = int(operations[0].args[0])
+        return value if value >= 0 else None
+    return None
 
 
 def _walk_dies(die, parent_tags: tuple[str, ...] = ()):
@@ -320,27 +335,41 @@ class BuiltinElfBackend:
                     info.pointers[offset] = (type_offset, size or 4)
                 elif tag == "DW_TAG_array_type":
                     dimensions = []
+                    complete = True
                     for child in die.iter_children():
                         if child.tag != "DW_TAG_subrange_type":
                             continue
                         child_attrs = child.attributes
                         count_attr = child_attrs.get("DW_AT_count")
                         upper_attr = child_attrs.get("DW_AT_upper_bound")
-                        if count_attr is not None and isinstance(count_attr.value, int):
-                            count = int(count_attr.value)
-                        elif upper_attr is not None and isinstance(upper_attr.value, int):
-                            lower = _attribute_int(child_attrs, "DW_AT_lower_bound")
-                            count = int(upper_attr.value) - lower + 1
+                        if count_attr is not None:
+                            count = _constant_attribute_int(count_attr)
+                        elif upper_attr is not None:
+                            upper = _constant_attribute_int(upper_attr)
+                            lower_attr = child_attrs.get("DW_AT_lower_bound")
+                            lower = (
+                                0
+                                if lower_attr is None
+                                else _constant_attribute_int(lower_attr)
+                            )
+                            count = (
+                                upper - lower + 1
+                                if upper is not None and lower is not None
+                                else None
+                            )
                         else:
-                            count = 0
-                        if count > 0:
-                            dimensions.append(count)
-                    info.arrays[offset] = DwarfArray(
-                        offset=offset,
-                        element_type_offset=type_offset,
-                        dimensions=tuple(dimensions),
-                        size=size,
-                    )
+                            count = None
+                        if count is None or count <= 0:
+                            complete = False
+                            break
+                        dimensions.append(count)
+                    if complete:
+                        info.arrays[offset] = DwarfArray(
+                            offset=offset,
+                            element_type_offset=type_offset,
+                            dimensions=tuple(dimensions),
+                            size=size,
+                        )
                 elif tag in {
                     "DW_TAG_atomic_type",
                     "DW_TAG_const_type",
@@ -362,12 +391,15 @@ class BuiltinElfBackend:
                         if child.tag != "DW_TAG_member":
                             continue
                         child_attrs = child.attributes
+                        member_offset = _member_offset(
+                            child_attrs.get("DW_AT_data_member_location"),
+                            dwarf.structs,
+                        )
+                        if member_offset is None:
+                            continue
                         member = DwarfMember(
                             name=_attribute_name(child_attrs, "DW_AT_name"),
-                            offset=_member_offset(
-                                child_attrs.get("DW_AT_data_member_location"),
-                                dwarf.structs,
-                            ),
+                            offset=member_offset,
                             type_offset=_type_offset(child),
                             bit_offset=(
                                 _attribute_int(child_attrs, "DW_AT_bit_offset")

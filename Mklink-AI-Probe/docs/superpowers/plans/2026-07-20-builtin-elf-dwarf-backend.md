@@ -606,4 +606,3 @@ git rev-list --left-right --count HEAD...@{upstream}
 ```
 
 Expected: push succeeds, worktree is clean, and ahead/behind is `0 0`.
-

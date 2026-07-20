@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from os import PathLike
 from typing import Iterable
 
 from mklink.elf_backend import ElfSection, ElfSymbol
@@ -34,23 +35,25 @@ class ExternalElfBackend:
         *,
         readelf: str | None = None,
         addr2line: str | None = None,
+        project_root: str | PathLike[str] | None = None,
     ) -> None:
         self._readelf = readelf
         self._addr2line = addr2line
+        self._project_root = project_root
 
     def _readelf_path(self) -> str:
         if self._readelf:
             return self._readelf
         from mklink.toolchain import require_readelf
 
-        return require_readelf()
+        return require_readelf(self._project_root)
 
     def _addr2line_path(self) -> str:
         if self._addr2line:
             return self._addr2line
         from mklink.toolchain import require_addr2line
 
-        return require_addr2line()
+        return require_addr2line(self._project_root)
 
     def _run_readelf(self, *arguments: str, timeout: float = 60) -> str:
         try:

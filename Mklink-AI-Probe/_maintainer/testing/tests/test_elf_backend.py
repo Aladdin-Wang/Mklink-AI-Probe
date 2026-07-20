@@ -6,6 +6,7 @@ from mklink.elf_backend import (
     ElfSymbol,
     ElfBackendConfigError,
     elf_status,
+    get_elf_backend,
     resolve_elf_backend,
 )
 from mklink.elf_external import ExternalElfBackend
@@ -38,6 +39,35 @@ def test_project_config_can_explicitly_select_external(monkeypatch, tmp_path):
     assert resolve_elf_backend(project_root=tmp_path) == "external"
 
 
+def test_external_backend_uses_tools_from_selected_project(monkeypatch, tmp_path):
+    from mklink.toolchain import clear_cache
+
+    monkeypatch.delenv("MKLINK_READELF", raising=False)
+    monkeypatch.delenv("MKLINK_ADDR2LINE", raising=False)
+    readelf = tmp_path / "readelf.exe"
+    addr2line = tmp_path / "addr2line.exe"
+    readelf.write_bytes(b"")
+    addr2line.write_bytes(b"")
+    save_toolchain_config(
+        tmp_path,
+        {
+            "elf_backend": "external",
+            "readelf": str(readelf),
+            "addr2line": str(addr2line),
+        },
+    )
+    clear_cache()
+
+    backend = get_elf_backend(project_root=tmp_path)
+    status = elf_status(project_root=tmp_path)
+
+    assert backend._readelf_path() == str(readelf)
+    assert backend._addr2line_path() == str(addr2line)
+    assert status["readelf_path"] == str(readelf)
+    assert status["addr2line_path"] == str(addr2line)
+    clear_cache()
+
+
 def test_explicit_selection_precedes_environment_and_project(monkeypatch, tmp_path):
     save_toolchain_config(tmp_path, {"elf_backend": "external"})
     monkeypatch.setenv("MKLINK_ELF_BACKEND", "external")
@@ -62,8 +92,8 @@ def test_invalid_backend_is_rejected(monkeypatch, tmp_path, value):
 
 def test_status_separates_builtin_and_external_availability(monkeypatch, tmp_path):
     monkeypatch.delenv("MKLINK_ELF_BACKEND", raising=False)
-    monkeypatch.setattr("mklink.toolchain.resolve_readelf", lambda: None)
-    monkeypatch.setattr("mklink.toolchain.resolve_addr2line", lambda: None)
+    monkeypatch.setattr("mklink.toolchain.resolve_readelf", lambda *_args: None)
+    monkeypatch.setattr("mklink.toolchain.resolve_addr2line", lambda *_args: None)
 
     status = elf_status(project_root=tmp_path)
 

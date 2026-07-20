@@ -74,9 +74,11 @@ def load_toolchain_overrides(
     return {}
 
 
-def _find_config() -> dict[str, str]:
+def _find_config(
+    start: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
     """Backward-compatible private alias for nearest toolchain overrides."""
-    return load_toolchain_overrides()
+    return load_toolchain_overrides(start)
 
 
 # --------------------------------------------------------------------------
@@ -151,41 +153,49 @@ def _expand_first(patterns: list[str]) -> str | None:
 # --------------------------------------------------------------------------
 # Public resolution API. Cached per-process; clear_cache() for tests.
 # --------------------------------------------------------------------------
-@lru_cache(maxsize=1)
-def resolve_readelf() -> str | None:
+@lru_cache(maxsize=None)
+def resolve_readelf(
+    start: str | os.PathLike[str] | None = None,
+) -> str | None:
     """Resolve the readelf binary path, or ``None`` if unavailable."""
     env_path = os.environ.get(ENV_READELF)
     if env_path and Path(env_path).is_file():
         return env_path
-    cfg = _find_config().get("readelf")
+    cfg = _find_config(start).get("readelf")
     if cfg and Path(cfg).is_file():
         return cfg
     return _expand_first(_wellknown_candidates("readelf"))
 
 
-@lru_cache(maxsize=1)
-def resolve_addr2line() -> str | None:
+@lru_cache(maxsize=None)
+def resolve_addr2line(
+    start: str | os.PathLike[str] | None = None,
+) -> str | None:
     """Resolve the addr2line binary path, or ``None`` if unavailable."""
     env_path = os.environ.get(ENV_ADDR2LINE)
     if env_path and Path(env_path).is_file():
         return env_path
-    cfg = _find_config().get("addr2line")
+    cfg = _find_config(start).get("addr2line")
     if cfg and Path(cfg).is_file():
         return cfg
     return _expand_first(_wellknown_candidates("addr2line"))
 
 
-def require_readelf() -> str:
+def require_readelf(
+    start: str | os.PathLike[str] | None = None,
+) -> str:
     """Return the readelf path, raising :class:`ToolchainMissingError` if absent."""
-    p = resolve_readelf()
+    p = resolve_readelf(start)
     if not p:
         raise ToolchainMissingError("readelf")
     return p
 
 
-def require_addr2line() -> str:
+def require_addr2line(
+    start: str | os.PathLike[str] | None = None,
+) -> str:
     """Return the addr2line path, raising :class:`ToolchainMissingError` if absent."""
-    p = resolve_addr2line()
+    p = resolve_addr2line(start)
     if not p:
         raise ToolchainMissingError("addr2line")
     return p

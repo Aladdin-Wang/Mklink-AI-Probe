@@ -110,7 +110,7 @@ def get_elf_backend(
         return BuiltinElfBackend()
     from mklink.elf_external import ExternalElfBackend
 
-    return ExternalElfBackend()
+    return ExternalElfBackend(project_root=project_root)
 
 
 def _builtin_version() -> str | None:
@@ -130,8 +130,8 @@ def elf_status(
 
     effective = resolve_elf_backend(backend, project_root=project_root)
     builtin_version = _builtin_version()
-    readelf = resolve_readelf()
-    addr2line = resolve_addr2line()
+    readelf = resolve_readelf(project_root)
+    addr2line = resolve_addr2line(project_root)
     builtin_available = builtin_version is not None
     external_available = readelf is not None
     return {
