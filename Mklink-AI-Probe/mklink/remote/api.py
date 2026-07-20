@@ -1060,10 +1060,24 @@ def create_app(
         """手动触发 AXF/ELF 符号表解析。"""
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, lambda: _state["device"].parse_axf(axf)
-        )
+        from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
+
+        device = _state["device"]
+        manager = get_managers()["superwatch"]
+        try:
+            if manager._runtime is not None and getattr(device, "symbol_catalog", None) is not None:
+                summary = await run_in_threadpool(manager.reparse_symbols, axf)
+                result = dict(device.axf_status)
+                result["rebind"] = summary
+            else:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, lambda: device.parse_axf(axf)
+                )
+                if manager._runtime is not None and not result.get("error"):
+                    manager.prepare(device)
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
         if result.get("error"):
             raise HTTPException(status_code=500, detail=result["error"])
         return result
@@ -2046,10 +2060,12 @@ def create_app(
         return {
             "loaded": True,
             "generation": catalog.generation,
+            "axf_path": catalog.axf_path,
             "parsed_at": catalog.parsed_at,
             "fingerprint": catalog.fingerprint.to_dict(),
             "stale": catalog.is_stale(),
             "total": len(catalog.items),
+            "truncated_roots": list(catalog.truncated_roots),
         }
 
     @app.get("/api/symbols/catalog")
@@ -2088,25 +2104,17 @@ def create_app(
 
     @app.get("/api/symbols/search")
     async def symbols_search(q: str = ""):
-        device = _state.get("device")
-        if not device:
-            raise HTTPException(status_code=400, detail="No device instance")
-        dwarf = getattr(device, "_dwarf_info", None)
-        if not dwarf:
-            raise HTTPException(status_code=400, detail="No DWARF info loaded (need AXF/ELF)")
         try:
-            results = []
-            q_lower = q.lower()
-            for name, var in dwarf.variables.items():
-                if q_lower in name.lower():
-                    results.append({
-                        "name": name,
-                        "address": var.address,
-                        "type": var.type_name,
-                        "size": var.size,
-                    })
-                    if len(results) >= 50:
-                        break
+            page = _require_symbol_catalog().to_page(query=q, limit=50)
+            results = [
+                {
+                    "name": item["path"],
+                    "address": item["address"],
+                    "type": item["type_name"],
+                    "size": item["size"],
+                }
+                for item in page["items"]
+            ]
             return {"results": results}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -2115,28 +2123,17 @@ def create_app(
     async def symbols_typeinfo(name: str = ""):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        dwarf = _state["device"]._dwarf_info
-        if not dwarf:
-            raise HTTPException(status_code=400, detail="No DWARF info loaded (need AXF/ELF)")
         try:
-            var = dwarf.variables.get(name)
-            if not var:
+            descriptor = _require_symbol_catalog().by_path(name)
+            if descriptor is None:
                 return {"name": name, "found": False}
-            # 查找 struct 成员信息
-            members = []
-            struct_def = dwarf.structs.get(var.type_name)
-            if struct_def:
-                members = [
-                    {"name": m.name, "offset": m.offset, "type": m.type_name, "size": m.size}
-                    for m in struct_def.members
-                ]
             return {
                 "name": name,
                 "found": True,
-                "type": var.type_name,
-                "size": var.size,
-                "address": var.address,
-                "members": members,
+                "type": descriptor.type_name,
+                "size": descriptor.size,
+                "address": descriptor.address,
+                "members": [],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

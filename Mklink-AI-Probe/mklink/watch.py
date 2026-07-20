@@ -20,6 +20,9 @@ TYPE_FORMATS = {
     "uint32_t": ("<I", 4), "uint32": ("<I", 4), "uint": ("<I", 4),
     "int32_t": ("<i", 4), "int32": ("<i", 4), "int": ("<i", 4),
     "float": ("<f", 4), "fp32": ("<f", 4),
+    "uint64_t": ("<Q", 8), "uint64": ("<Q", 8),
+    "int64_t": ("<q", 8), "int64": ("<q", 8),
+    "double": ("<d", 8), "fp64": ("<d", 8),
 }
 
 _C_TYPE_ALIASES = {
@@ -41,13 +44,37 @@ _C_TYPE_ALIASES = {
 }
 
 
-def decode_value(data: bytes, type_name: str, enum_values: dict[int, str] | None = None, *, known_size: int = 0):
+def decode_value(
+    data: bytes,
+    type_name: str,
+    enum_values: dict[int, str] | None = None,
+    *,
+    known_size: int = 0,
+    scalar_kind: str | None = None,
+):
     """Decode raw bytes into a value based on type name.
 
     Args:
         known_size: When set (> 0), overrides the format-derived size for
             types not in TYPE_FORMATS (e.g. typedefs / enums).
     """
+    if scalar_kind:
+        size = int(known_size or len(data))
+        if len(data) < size:
+            raise ValueError(f"not enough bytes for {type_name}: need {size}, got {len(data)}")
+        payload = data[:size]
+        if scalar_kind == "float":
+            if size not in (4, 8):
+                raise ValueError(f"unsupported floating-point size: {size}")
+            return struct.unpack("<f" if size == 4 else "<d", payload)[0]
+        if scalar_kind == "bool":
+            return bool(int.from_bytes(payload, "little", signed=False))
+        if scalar_kind in {"signed", "unsigned", "enum"}:
+            value = int.from_bytes(payload, "little", signed=scalar_kind == "signed")
+            if enum_values and value in enum_values:
+                return f"{value} ({enum_values[value]})"
+            return value
+
     key = type_name.strip().lower()
     fmt_size = TYPE_FORMATS.get(key)
     if fmt_size:

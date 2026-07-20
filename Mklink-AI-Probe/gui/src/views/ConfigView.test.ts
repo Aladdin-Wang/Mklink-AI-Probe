@@ -132,6 +132,22 @@ describe('ConfigView', () => {
     expect(wrapper.find('[data-testid="device-status"]').exists()).toBe(false)
   })
 
+  it('distinguishes readable variables from DWARF type definitions', async () => {
+    mocks.deviceStatus.axf = {
+      loaded: true,
+      variable_count: 801,
+      struct_count: 150,
+      enum_count: 12,
+    }
+
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    expect(wrapper.text()).toContain('801 个固定可读变量')
+    expect(wrapper.text()).toContain('150 种结构体类型')
+    expect(wrapper.text()).toContain('12 种枚举类型')
+  })
+
   it('connects locally with the configured port and saved AXF path without an MCU hint', async () => {
     const wrapper = await mountView()
 

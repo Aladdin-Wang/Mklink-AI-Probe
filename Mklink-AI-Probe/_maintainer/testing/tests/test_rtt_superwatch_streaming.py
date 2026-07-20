@@ -1043,6 +1043,60 @@ def test_superwatch_prepare_rebinds_existing_runtime_to_reconnected_device(
     assert result["verified"] is True
 
 
+def test_superwatch_prepare_rebinds_selected_items_to_new_device_catalog(tmp_path):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.superwatch import SuperWatchRuntime, WatchItem
+    from mklink.symbol_catalog import SymbolCatalog
+
+    old_axf = tmp_path / "old.axf"
+    new_axf = tmp_path / "new.axf"
+    old_axf.write_bytes(b"old")
+    new_axf.write_bytes(b"new")
+    old_info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        variables={
+            "gain": DwarfVariable("gain", 10, 1, 0x20000020, 4, "float"),
+            "removed": DwarfVariable("removed", 11, 1, 0x20000024, 4, "float"),
+        },
+    )
+    new_info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        variables={
+            "gain": DwarfVariable("gain", 10, 1, 0x20000040, 4, "float"),
+        },
+    )
+    old_catalog = SymbolCatalog.from_dwarf(
+        old_info, axf_path=str(old_axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    new_catalog = SymbolCatalog.from_dwarf(
+        new_info, axf_path=str(new_axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    manager = SuperWatchStreamManager()
+    manager._runtime = SuperWatchRuntime(
+        items=[
+            WatchItem("gain", 0x20000020, "float", 4),
+            WatchItem("removed", 0x20000024, "float", 4),
+        ],
+        dwarf_info=old_info,
+        symbol_catalog=old_catalog,
+    )
+    device = SimpleNamespace(
+        _dwarf_info=new_info,
+        symbol_catalog=new_catalog,
+        _project_root=str(tmp_path),
+        _port=None,
+    )
+
+    manager.prepare(device)
+
+    assert [(item.name, item.address) for item in manager._runtime.items] == [
+        ("gain", 0x20000040),
+    ]
+    assert [(block.address, block.size) for block in manager._runtime.blocks] == [
+        (0x20000040, 4),
+    ]
+
+
 def test_superwatch_readback_uses_command_mode_after_dump_stream_stops():
     manager = SuperWatchStreamManager()
     device = SimpleNamespace(read_memory=Mock(return_value=b"\x00"))
@@ -1050,6 +1104,85 @@ def test_superwatch_readback_uses_command_mode_after_dump_stream_stops():
 
     assert manager._readback_once(0x20000020, 1) == b"\x00"
     device.read_memory.assert_called_once_with(0x20000020, 1)
+
+
+def test_superwatch_adds_catalog_array_leaves_and_merges_contiguous_reads(tmp_path):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("int16_t", 2)},
+        arrays={2: (1, 8)},
+        variables={
+            "samples": DwarfVariable(
+                "samples", 10, 2, 0x20000020, 8, "int16_t[]",
+            ),
+        },
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    device = SimpleNamespace(
+        _dwarf_info=info,
+        symbol_catalog=catalog,
+        _project_root=str(tmp_path),
+        _port=None,
+    )
+    manager = SuperWatchStreamManager()
+
+    manager.prepare(device)
+    first = manager.add_watch("samples[0]")
+    second = manager.add_watch("samples[1]")
+
+    assert first["item"]["address"] == "0x20000020"
+    assert second["item"]["address"] == "0x20000022"
+    assert manager._runtime.items[0].scalar_kind == "signed"
+    assert [(block.address, block.size) for block in manager._runtime.blocks] == [
+        (0x20000020, 4),
+    ]
+
+
+def test_dump_stream_decodes_catalog_typedef_with_scalar_kind_and_size():
+    from mklink.dump_memory import decode_frame_to_points
+
+    frame = {
+        "timestamp_us": 10,
+        "regions": [(0, struct.pack("<q", -2))],
+    }
+    blocks = [
+        (0x20000020, 8, [("clock", "clock_t", 0, 8, "signed", None)]),
+    ]
+
+    points, origin = decode_frame_to_points(frame, blocks, None)
+
+    assert origin == 10
+    assert points == [{"_t": 0.0, "timestamp_us": 10, "clock": -2}]
+
+
+def test_read_memory_fallback_keeps_enum_samples_numeric():
+    from mklink.superwatch import ReadBlock, WatchItem, sample_blocks
+
+    item = WatchItem(
+        "mode",
+        0x20000020,
+        "Mode",
+        4,
+        enum_values={1: "RUN"},
+        scalar_kind="enum",
+    )
+    block = ReadBlock(0x20000020, 4, [item])
+
+    result = sample_blocks(
+        [block],
+        read_func=lambda _port, _address, _size: (
+            b"\x01\x00\x00\x00",
+            "timestamp_us=10\n20000020  01 00 00 00",
+        ),
+    )
+
+    assert result.points[0]["mode"] == 1
 
 
 def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path, monkeypatch):
@@ -1083,8 +1216,8 @@ def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path
         _port=None,
     )
 
-    def reparse_axf_atomically():
-        operations.append("reparse")
+    def reparse_axf_atomically(axf_path=None):
+        operations.append(("reparse", axf_path))
         device.symbol_catalog = new_catalog
         device._dwarf_info = new_info
         return new_catalog
@@ -1113,9 +1246,9 @@ def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path
     monkeypatch.setattr(manager, "stop", stop)
     monkeypatch.setattr(manager, "start", start)
 
-    result = manager.reparse_symbols()
+    result = manager.reparse_symbols(str(second_axf))
 
-    assert operations == ["stop", "reparse", "start"]
+    assert operations == ["stop", ("reparse", str(second_axf)), "start"]
     assert result == {"preserved": [], "updated": ["gain"], "removed": []}
     assert manager._runtime.items[0].name == "gain"
     assert manager._runtime.items[0].address == 0x20000040

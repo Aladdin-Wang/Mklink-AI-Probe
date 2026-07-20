@@ -189,7 +189,7 @@ async function parseSymbols() {
         toast.error('符号目录刷新失败: ' + error.message)
         return
       }
-      toast.success(`AXF 解析成功: ${result.variable_count || 0} 变量`)
+      toast.success(`AXF 解析成功: ${result.variable_count || 0} 个固定可读变量`)
     } else {
       toast.error('AXF 解析失败')
     }

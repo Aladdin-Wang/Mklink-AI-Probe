@@ -6,11 +6,18 @@ from dataclasses import dataclass, field
 from functools import cached_property
 import math
 from pathlib import Path
+import re
 import struct
 import time
 from typing import Iterable, Sequence
 
-from mklink.dwarf_parser import DwarfInfo
+from mklink.dwarf_parser import (
+    DwarfInfo,
+    get_array_type,
+    get_enum_type,
+    get_record_type,
+    resolve_type_name,
+)
 
 
 class SymbolCatalogError(ValueError):
@@ -44,6 +51,7 @@ class SymbolDescriptor:
     size: int
     writable: bool = True
     enum_values: dict[str, int] = field(default_factory=dict)
+    enum_signed: bool = False
     parent_path: str | None = None
 
     def to_dict(self) -> dict:
@@ -55,6 +63,7 @@ class SymbolDescriptor:
             "size": self.size,
             "writable": self.writable,
             "enum_values": dict(self.enum_values),
+            "enum_signed": self.enum_signed,
             "parent_path": self.parent_path,
         }
 
@@ -78,6 +87,7 @@ class _ScalarSpec:
     kind: str
     size: int
     enum_values: dict[str, int] = field(default_factory=dict)
+    enum_signed: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,7 @@ class SymbolCatalog:
     fingerprint: AxfFingerprint
     parsed_at: float
     items: tuple[SymbolDescriptor, ...]
+    truncated_roots: tuple[str, ...] = ()
 
     @cached_property
     def index(self) -> dict[str, SymbolDescriptor]:
@@ -130,11 +141,13 @@ class SymbolCatalog:
         count = max(1, min(int(limit), 500))
         return {
             "generation": self.generation,
+            "axf_path": self.axf_path,
             "parsed_at": self.parsed_at,
             "fingerprint": self.fingerprint.to_dict(),
             "stale": self.is_stale(),
             "total": len(filtered),
             "items": [item.to_dict() for item in filtered[start : start + count]],
+            "truncated_roots": list(self.truncated_roots),
         }
 
     @classmethod
@@ -145,25 +158,33 @@ class SymbolCatalog:
         axf_path: str,
         generation: int = 1,
         ram_ranges: Iterable[tuple[int, int]] = ((0x20000000, 0x40000000),),
+        max_leaves_per_root: int = 256,
     ) -> "SymbolCatalog":
         ranges = tuple((int(start), int(end)) for start, end in ram_ranges)
         descriptors: list[SymbolDescriptor] = []
+        truncated_roots: set[str] = set()
+        leaf_limit = max(1, int(max_leaves_per_root))
 
         def in_ram(address: int, size: int) -> bool:
             return any(start <= address and address + max(1, size) <= end for start, end in ranges)
 
         def append_scalar(
             *,
+            root_path: str,
             path: str,
             address: int,
             type_name: str,
             type_offset: int | None,
             size: int,
             parent_path: str | None,
+            leaf_count: list[int],
         ) -> bool:
             spec = _resolve_scalar_spec(info, type_offset, type_name=type_name, size=size)
             if spec is None or not in_ram(address, spec.size):
                 return False
+            if leaf_count[0] >= leaf_limit:
+                truncated_roots.add(root_path)
+                return True
             descriptors.append(
                 SymbolDescriptor(
                     path=path,
@@ -172,82 +193,132 @@ class SymbolCatalog:
                     scalar_kind=spec.kind,
                     size=spec.size,
                     enum_values=spec.enum_values,
+                    enum_signed=spec.enum_signed,
                     parent_path=parent_path,
                 )
             )
+            leaf_count[0] += 1
             return True
 
-        def expand_struct(
+        def expand_type(
             *,
             root_path: str,
+            path: str,
             address: int,
-            struct_name: str,
-            parent_path: str | None,
+            type_name: str,
+            type_offset: int | None,
+            size: int,
             depth: int,
-            visited: frozenset[str],
+            visited: frozenset[int],
+            leaf_count: list[int],
         ) -> None:
-            if depth > 8 or struct_name in visited:
+            if root_path in truncated_roots:
                 return
-            struct_def = info.structs.get(struct_name)
-            if struct_def is None:
+            if depth > 16:
                 return
-            next_visited = visited | {struct_name}
-            for member in struct_def.members:
+            if append_scalar(
+                root_path=root_path,
+                path=path,
+                address=address,
+                type_name=type_name,
+                type_offset=type_offset,
+                size=size,
+                parent_path=None if path == root_path else root_path,
+                leaf_count=leaf_count,
+            ):
+                return
+
+            resolved = _follow_type(info, type_offset)
+            array = get_array_type(info, resolved)
+            if array is not None:
+                element_name, element_size = resolve_type_name(
+                    info, array.element_type_offset,
+                )
+                if element_size <= 0 or not array.dimensions:
+                    return
+                if array.size > 0 and not in_ram(address, array.size):
+                    return
+                element_count = math.prod(array.dimensions)
+                for linear_index in range(element_count):
+                    if root_path in truncated_roots:
+                        return
+                    remainder = linear_index
+                    indexes: list[int] = []
+                    for dimension in reversed(array.dimensions):
+                        indexes.append(remainder % dimension)
+                        remainder //= dimension
+                    indexes.reverse()
+                    element_path = path + "".join(f"[{index}]" for index in indexes)
+                    expand_type(
+                        root_path=root_path,
+                        path=element_path,
+                        address=address + linear_index * element_size,
+                        type_name=element_name,
+                        type_offset=array.element_type_offset,
+                        size=element_size,
+                        depth=depth + 1,
+                        visited=visited,
+                        leaf_count=leaf_count,
+                    )
+                return
+
+            record = get_record_type(info, resolved)
+            if record is None and type_name in info.structs:
+                record = info.structs[type_name]
+            if record is None or record.kind == "union" or record.offset in visited:
+                return
+            if record.size > 0 and not in_ram(address, record.size):
+                return
+            next_visited = visited | {record.offset}
+            for member in record.members:
                 if not member.name or member.bit_size is not None:
                     continue
-                member_path = f"{root_path}.{member.name}"
-                member_address = address + member.offset
-                if append_scalar(
-                    path=member_path,
-                    address=member_address,
+                expand_type(
+                    root_path=root_path,
+                    path=f"{path}.{member.name}",
+                    address=address + member.offset,
                     type_name=member.type_name,
                     type_offset=member.type_offset,
                     size=member.size,
-                    parent_path=root_path,
-                ):
-                    continue
-                nested_name = _resolve_struct_name(info, member.type_offset, member.type_name)
-                if nested_name:
-                    expand_struct(
-                        root_path=member_path,
-                        address=member_address,
-                        struct_name=nested_name,
-                        parent_path=parent_path or root_path,
-                        depth=depth + 1,
-                        visited=next_visited,
-                    )
+                    depth=depth + 1,
+                    visited=next_visited,
+                    leaf_count=leaf_count,
+                )
 
         for name, variable in info.variables.items():
             if variable.address is None:
                 continue
             address = int(variable.address)
-            if append_scalar(
+            expand_type(
+                root_path=name,
                 path=name,
                 address=address,
                 type_name=variable.type_name,
                 type_offset=variable.type_offset,
                 size=variable.size,
-                parent_path=None,
-            ):
-                continue
-            struct_name = _resolve_struct_name(info, variable.type_offset, variable.type_name)
-            if struct_name and in_ram(address, max(1, variable.size)):
-                expand_struct(
-                    root_path=name,
-                    address=address,
-                    struct_name=struct_name,
-                    parent_path=None,
-                    depth=0,
-                    visited=frozenset(),
-                )
+                depth=0,
+                visited=frozenset(),
+                leaf_count=[0],
+            )
 
         return cls(
             generation=max(1, int(generation)),
             axf_path=str(axf_path),
             fingerprint=AxfFingerprint.from_path(axf_path),
             parsed_at=time.time(),
-            items=tuple(sorted(descriptors, key=lambda item: item.path.casefold())),
+            items=tuple(sorted(descriptors, key=lambda item: _natural_path_key(item.path))),
+            truncated_roots=tuple(sorted(truncated_roots, key=str.casefold)),
         )
+
+
+_PATH_NUMBER_RE = re.compile(r"(\d+)")
+
+
+def _natural_path_key(path: str) -> tuple[str | int, ...]:
+    return tuple(
+        int(part) if part.isdigit() else part.casefold()
+        for part in _PATH_NUMBER_RE.split(path)
+    )
 
 
 def _follow_type(info: DwarfInfo, type_offset: int | None) -> int | None:
@@ -265,14 +336,6 @@ def _follow_type(info: DwarfInfo, type_offset: int | None) -> int | None:
     return current
 
 
-def _resolve_struct_name(info: DwarfInfo, type_offset: int | None, type_name: str) -> str | None:
-    resolved = _follow_type(info, type_offset)
-    for name, struct_def in info.structs.items():
-        if struct_def.offset == resolved:
-            return name
-    return type_name if type_name in info.structs else None
-
-
 def _resolve_scalar_spec(
     info: DwarfInfo,
     type_offset: int | None,
@@ -283,23 +346,44 @@ def _resolve_scalar_spec(
     resolved = _follow_type(info, type_offset)
     if resolved in info.pointers or resolved in info.arrays:
         return None
-    for enum_def in info.enums.values():
-        if enum_def.offset == resolved:
-            return _ScalarSpec(
-                "enum",
-                enum_def.size or size or 4,
-                {label: value for value, label in enum_def.values.items()},
-            )
+    enum_def = get_enum_type(info, resolved)
+    if enum_def is not None:
+        return _ScalarSpec(
+            "enum",
+            enum_def.size or size or 4,
+            {label: value for value, label in enum_def.values.items()},
+            any(value < 0 for value in enum_def.values),
+        )
     if resolved in info.base_types:
         base_name, base_size = info.base_types[resolved]
-        return _classify_scalar(base_name, base_size or size)
+        return _classify_scalar(
+            base_name,
+            base_size or size,
+            encoding=info.base_type_encodings.get(resolved),
+        )
     if resolved is not None:
         return None
     return _classify_scalar(type_name, size)
 
 
-def _classify_scalar(type_name: str, size: int) -> _ScalarSpec | None:
+def _classify_scalar(
+    type_name: str,
+    size: int,
+    *,
+    encoding: int | None = None,
+) -> _ScalarSpec | None:
+    if encoding == 0x02:
+        return _ScalarSpec("bool", size or 1)
+    if encoding == 0x04:
+        return _ScalarSpec("float", size) if size in (4, 8) else None
+    if encoding in {0x05, 0x06}:
+        return _ScalarSpec("signed", size or 4)
+    if encoding in {0x07, 0x08}:
+        return _ScalarSpec("unsigned", size or 4)
+    if encoding is not None:
+        return None
     key = " ".join(type_name.strip().lower().replace("__", "").split())
+    tokens = key.split()
     if not key or key == "unknown" or key.endswith("*") or key.endswith("[]"):
         return None
     if key in {"bool", "boolean", "_bool"}:
@@ -310,10 +394,9 @@ def _classify_scalar(type_name: str, size: int) -> _ScalarSpec | None:
         return _ScalarSpec("float", 8)
     if "unsigned" in key or key.startswith("uint") or key in {"uchar", "ushort", "ulong"}:
         return _ScalarSpec("unsigned", size or _integer_size_from_name(key))
-    if (
-        key.startswith("int")
-        or key in {"char", "signed char", "short", "long", "long long", "signed int"}
-    ):
+    if key.startswith("int") or "int" in tokens or key.startswith("signed") or key in {
+        "char", "short", "long", "long long",
+    }:
         return _ScalarSpec("signed", size or _integer_size_from_name(key))
     return None
 
@@ -351,7 +434,10 @@ def encode_descriptor(descriptor: SymbolDescriptor, value: object) -> bytes:
             number = _coerce_integer(value)
             if number not in descriptor.enum_values.values():
                 raise SymbolValueError(f"unknown enum value: {number}")
-        return int(number).to_bytes(size, "little", signed=False)
+        try:
+            return int(number).to_bytes(size, "little", signed=descriptor.enum_signed)
+        except OverflowError as exc:
+            raise SymbolValueError("enum value does not fit the selected type") from exc
     if kind in {"signed", "unsigned"}:
         number = _coerce_integer(value)
         minimum = -(1 << (size * 8 - 1)) if kind == "signed" else 0
@@ -374,7 +460,9 @@ def decode_descriptor(descriptor: SymbolDescriptor, data: bytes):
         return bool(int.from_bytes(payload, "little", signed=False))
     if descriptor.scalar_kind == "signed":
         return int.from_bytes(payload, "little", signed=True)
-    if descriptor.scalar_kind in {"unsigned", "enum"}:
+    if descriptor.scalar_kind == "enum":
+        return int.from_bytes(payload, "little", signed=descriptor.enum_signed)
+    if descriptor.scalar_kind == "unsigned":
         return int.from_bytes(payload, "little", signed=False)
     raise SymbolValueError(f"unsupported scalar kind: {descriptor.scalar_kind}")
 
@@ -411,12 +499,14 @@ def rebind_paths(
             before.scalar_kind,
             before.size,
             before.enum_values,
+            before.enum_signed,
         ) != (
             after.address,
             after.type_name,
             after.scalar_kind,
             after.size,
             after.enum_values,
+            after.enum_signed,
         ):
             updated.append(path)
         else:

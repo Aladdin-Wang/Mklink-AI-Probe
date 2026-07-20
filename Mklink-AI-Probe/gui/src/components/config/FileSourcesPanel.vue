@@ -37,7 +37,7 @@ function inputValue(event: Event): string {
         </span>
       </div>
       <span v-if="symbolStatus.loaded" class="symbol-counts">
-        {{ symbolStatus.variable_count || 0 }} 变量 · {{ symbolStatus.struct_count || 0 }} 结构体 · {{ symbolStatus.enum_count || 0 }} 枚举
+        {{ symbolStatus.variable_count || 0 }} 个固定可读变量 · {{ symbolStatus.struct_count || 0 }} 种结构体类型 · {{ symbolStatus.enum_count || 0 }} 种枚举类型
       </span>
     </header>
 

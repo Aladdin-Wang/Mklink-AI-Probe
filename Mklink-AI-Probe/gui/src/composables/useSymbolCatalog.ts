@@ -13,10 +13,12 @@ const PAGE_SIZE = 500
 
 const items = shallowRef<SymbolDescriptor[]>([])
 const generation = ref(0)
+const axfPath = ref('')
 const parsedAt = ref(0)
 const fingerprint = shallowRef<AxfFingerprint | null>(null)
 const stale = ref(false)
 const total = ref(0)
+const truncatedRoots = shallowRef<string[]>([])
 const loading = ref(false)
 const reparsing = ref(false)
 const error = ref<string | null>(null)
@@ -59,7 +61,12 @@ async function fetchCatalog(): Promise<SymbolCatalogPage> {
     const page = await request<SymbolCatalogPage>(
       `/api/symbols/catalog?offset=${merged.length}&limit=${PAGE_SIZE}`,
     )
-    if (page.generation !== first.generation) {
+    if (
+      page.generation !== first.generation
+      || page.axf_path !== first.axf_path
+      || page.fingerprint.size !== first.fingerprint.size
+      || page.fingerprint.mtime_ns !== first.fingerprint.mtime_ns
+    ) {
       throw new Error('Symbol catalog changed while loading; retry')
     }
     if (page.items.length === 0) break
@@ -71,10 +78,12 @@ async function fetchCatalog(): Promise<SymbolCatalogPage> {
 function publishCatalog(catalog: SymbolCatalogPage): void {
   items.value = catalog.items
   generation.value = catalog.generation
+  axfPath.value = catalog.axf_path
   parsedAt.value = catalog.parsed_at
   fingerprint.value = catalog.fingerprint
   stale.value = catalog.stale
   total.value = catalog.total
+  truncatedRoots.value = catalog.truncated_roots ?? []
 }
 
 async function loadCatalog(): Promise<void> {
@@ -99,7 +108,10 @@ function startLoad(): Promise<void> {
 }
 
 async function ensureLoaded(force = false): Promise<void> {
-  if (!force && generation.value > 0) return
+  if (!force && generation.value > 0) {
+    await refreshStatus()
+    return
+  }
   if (!force) return startLoad()
   if (forcedRefreshPromise) return forcedRefreshPromise
   forcedRefreshPromise = (async () => {
@@ -114,11 +126,24 @@ async function ensureLoaded(force = false): Promise<void> {
 
 async function refreshStatus(): Promise<SymbolCatalogStatus> {
   const status = await request<SymbolCatalogStatus>('/api/symbols/status')
+  const currentFingerprint = fingerprint.value
+  const identityChanged = generation.value > 0 && (
+    status.generation !== generation.value
+    || status.axf_path !== axfPath.value
+    || currentFingerprint === null
+    || status.fingerprint.size !== currentFingerprint.size
+    || status.fingerprint.mtime_ns !== currentFingerprint.mtime_ns
+  )
+  if (identityChanged) {
+    await startLoad()
+    return status
+  }
   stale.value = status.stale
   if (status.generation === generation.value) {
     parsedAt.value = status.parsed_at
     fingerprint.value = status.fingerprint
     total.value = status.total
+    truncatedRoots.value = status.truncated_roots ?? []
   }
   return status
 }
@@ -158,10 +183,12 @@ export function useSymbolCatalog() {
   return {
     items: readonly(items),
     generation: readonly(generation),
+    axfPath: readonly(axfPath),
     parsedAt: readonly(parsedAt),
     fingerprint: readonly(fingerprint),
     stale: readonly(stale),
     total: readonly(total),
+    truncatedRoots: readonly(truncatedRoots),
     loading: readonly(loading),
     reparsing: readonly(reparsing),
     error: readonly(error),

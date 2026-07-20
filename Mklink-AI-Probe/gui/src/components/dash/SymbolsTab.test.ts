@@ -24,6 +24,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
     ]),
     generation: ref(1),
     stale: ref(false),
+    truncatedRoots: shallowRef(['controller']),
     loading: ref(false),
     reparsing: ref(false),
     error: ref(null),
@@ -59,6 +60,8 @@ describe('SymbolsTab', () => {
     expect(mocks.ensureLoaded).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('controller.target')
     expect(wrapper.text()).toContain('gain')
+    expect(wrapper.text()).toContain('controller')
+    expect(wrapper.text()).toContain('前 256 个')
   })
 
   it('filters the loaded catalog locally', async () => {

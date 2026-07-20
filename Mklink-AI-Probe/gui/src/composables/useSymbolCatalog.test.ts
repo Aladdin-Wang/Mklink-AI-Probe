@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const firstPage = {
+  axf_path: 'C:\\first\\app.axf',
   generation: 1,
   parsed_at: 10,
   fingerprint: { size: 100, mtime_ns: 200 },
   stale: false,
+  truncated_roots: ['controller'],
   total: 2,
   items: [
     {
@@ -62,6 +64,7 @@ describe('useSymbolCatalog', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(second.items.value.map(item => item.path)).toEqual(['controller.target', 'gain'])
     expect(second.generation.value).toBe(1)
+    expect(second.truncatedRoots.value).toEqual(['controller'])
   })
 
   it('queues a forced refresh behind an in-flight catalog load', async () => {
@@ -114,12 +117,45 @@ describe('useSymbolCatalog', () => {
     expect(symbols.generation.value).toBe(2)
   })
 
+  it('reloads when a reconnected device reuses the same generation', async () => {
+    const nextPage = {
+      ...firstPage,
+      axf_path: 'C:\\second\\app.axf',
+      total: 1,
+      items: [{ ...firstPage.items[1], path: 'second_device_value' }],
+      truncated_roots: [],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse({
+        loaded: true,
+        generation: 1,
+        axf_path: nextPage.axf_path,
+        parsed_at: 20,
+        fingerprint: firstPage.fingerprint,
+        stale: false,
+        total: 1,
+        truncated_roots: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse(nextPage))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    await symbols.ensureLoaded()
+    await symbols.ensureLoaded()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(symbols.items.value.map(item => item.path)).toEqual(['second_device_value'])
+    expect(symbols.axfPath.value).toBe(nextPage.axf_path)
+  })
+
   it('refreshes stale status without replacing the loaded catalog', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(firstPage))
       .mockResolvedValueOnce(jsonResponse({
         loaded: true,
         generation: 1,
+        axf_path: firstPage.axf_path,
         parsed_at: 10,
         fingerprint: firstPage.fingerprint,
         stale: true,

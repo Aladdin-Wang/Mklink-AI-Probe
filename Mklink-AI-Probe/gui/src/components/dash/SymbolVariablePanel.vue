@@ -28,6 +28,9 @@
     </div>
 
     <div v-if="catalog.stale.value" class="stale-banner">AXF 已变化，请重新解析</div>
+    <div v-if="catalog.truncatedRoots.value.length" class="truncated-banner">
+      以下大型变量仅展开前 256 个可读叶子：{{ catalog.truncatedRoots.value.join('、') }}
+    </div>
     <div v-if="!deviceConnected" class="empty-state">请先连接设备</div>
     <div v-else-if="catalog.loading.value" class="empty-state">正在加载符号...</div>
     <div v-else class="variable-groups">
@@ -319,6 +322,14 @@ watch(() => props.deviceConnected, connected => {
 .panel-filters { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
+.truncated-banner {
+  padding: 7px 10px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .variable-groups { min-height: 0; overflow: auto; }
 .variable-group h3 { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
 .variable-row { border-bottom: 1px solid var(--border); }

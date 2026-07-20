@@ -1299,7 +1299,37 @@ class SuperWatchStreamManager:
         with self._read_lock:
             self._device = device
             if self._runtime is not None:
-                self._runtime.port = getattr(device, "_port", None)
+                runtime = self._runtime
+                new_catalog = getattr(device, "symbol_catalog", None)
+                if getattr(runtime, "symbol_catalog", None) is not new_catalog:
+                    from mklink.superwatch import SuperWatchRuntime
+
+                    register_items = [
+                        item for item in runtime.items
+                        if getattr(item, "source", "ram") != "ram"
+                    ]
+                    selected_paths = [
+                        item.name for item in runtime.items
+                        if getattr(item, "source", "ram") == "ram"
+                    ]
+                    rebound = SuperWatchRuntime(
+                        items=register_items,
+                        dwarf_info=getattr(device, "_dwarf_info", None),
+                        symbol_catalog=new_catalog,
+                        svd_registers=getattr(runtime, "svd_registers", {}),
+                        port=getattr(device, "_port", None),
+                        read_lock=self._read_lock,
+                    )
+                    if new_catalog is not None:
+                        for path in selected_paths:
+                            rebound.add(path)
+                    self._runtime = rebound
+                    self._origin_us = None
+                    self._flush_binary_batch_locked()
+                    self._rebuild_metadata_cache_locked(publish=True)
+                else:
+                    runtime.port = getattr(device, "_port", None)
+                    runtime.dwarf_info = getattr(device, "_dwarf_info", None)
                 return
             dwarf_info = getattr(device, "_dwarf_info", None)
             svd_registers = {}
@@ -1315,6 +1345,7 @@ class SuperWatchStreamManager:
             self._runtime = SuperWatchRuntime(
                 items=[],
                 dwarf_info=dwarf_info,
+                symbol_catalog=getattr(device, "symbol_catalog", None),
                 svd_registers=svd_registers,
                 port=getattr(device, "_port", None),
                 read_lock=self._read_lock,
@@ -1382,6 +1413,8 @@ class SuperWatchStreamManager:
                                         item.name,
                                         item.type_name,
                                         item.address - block.address,
+                                        item.size,
+                                        getattr(item, "scalar_kind", None),
                                         item.enum_values,
                                     )
                                     for item in block.items
@@ -1543,7 +1576,7 @@ class SuperWatchStreamManager:
                     except Exception as exc:
                         raise SuperWatchTransactionError("restore", exc) from exc
 
-    def reparse_symbols(self) -> dict:
+    def reparse_symbols(self, axf_path: str | None = None) -> dict:
         from mklink.superwatch import SuperWatchRuntime
         from mklink.symbol_catalog import RebindSummary, rebind_paths
 
@@ -1575,7 +1608,7 @@ class SuperWatchStreamManager:
                     except Exception as exc:
                         raise SuperWatchTransactionError("stop", exc) from exc
                 try:
-                    new_catalog = device.reparse_axf_atomically()
+                    new_catalog = device.reparse_axf_atomically(axf_path)
                 except Exception as exc:
                     raise SuperWatchTransactionError("reparse", exc) from exc
                 try:
@@ -1583,6 +1616,7 @@ class SuperWatchStreamManager:
                     new_runtime = SuperWatchRuntime(
                         items=register_items,
                         dwarf_info=getattr(device, "_dwarf_info", None),
+                        symbol_catalog=new_catalog,
                         svd_registers=getattr(old_runtime, "svd_registers", {}),
                         port=getattr(device, "_port", None),
                         read_lock=self._read_lock,

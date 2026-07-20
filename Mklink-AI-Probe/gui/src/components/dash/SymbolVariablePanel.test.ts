@@ -31,6 +31,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
     items: shallowRef(catalogItems),
     generation: ref(1),
     stale: mocks.stale,
+    truncatedRoots: shallowRef(['controller']),
     loading: ref(false),
     reparsing: ref(false),
     ensureLoaded: mocks.ensureLoaded,
@@ -72,6 +73,7 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.text()).toContain('controller')
     expect(wrapper.text()).toContain('controller.target')
     expect(wrapper.get('[data-testid="latest-gain"]').text()).toContain('1.25')
+    expect(wrapper.text()).toContain('前 256 个')
   })
 
   it('adds and removes a selected variable through the SuperWatch API', async () => {

@@ -48,6 +48,7 @@ class WatchItem:
     size: int
     source: str = "ram"
     enum_values: dict[int, str] | None = None
+    scalar_kind: str | None = None
     metadata: dict = field(default_factory=dict)
 
 
@@ -168,7 +169,13 @@ def sample_blocks(
         for item in block.items:
             offset = item.address - block.address
             data = parsed.data[offset:offset + item.size]
-            point[item.name] = decode_value(data, item.type_name, item.enum_values, known_size=item.size)
+            point[item.name] = decode_value(
+                data,
+                item.type_name,
+                None,
+                known_size=item.size,
+                scalar_kind=getattr(item, "scalar_kind", None),
+            )
         points.append(point)
     return SampleResult(points=points, origin_us=current_origin or 0)
 
@@ -460,12 +467,14 @@ class SuperWatchRuntime:
         *,
         items: list[WatchItem],
         dwarf_info=None,
+        symbol_catalog=None,
         svd_registers: dict[str, SvdRegister] | None = None,
         port: str | None = None,
         read_lock=None,
     ):
         self.items = list(items)
         self.dwarf_info = dwarf_info
+        self.symbol_catalog = symbol_catalog
         self.svd_registers = svd_registers or {}
         self.port = port
         self.read_lock = read_lock or threading.Lock()
@@ -475,7 +484,19 @@ class SuperWatchRuntime:
     def search(self, query: str) -> list[dict]:
         q = query.strip().lower()
         results: list[dict] = []
-        if self.dwarf_info is not None:
+        if self.symbol_catalog is not None:
+            for descriptor in self.symbol_catalog.items:
+                if q and q not in descriptor.path.lower():
+                    continue
+                results.append({
+                    "name": descriptor.path,
+                    "kind": "variable",
+                    "type": descriptor.type_name,
+                    "size": descriptor.size,
+                })
+                if len(results) >= 50:
+                    break
+        elif self.dwarf_info is not None:
             for name, var in sorted(getattr(self.dwarf_info, "variables", {}).items()):
                 if q and q not in name.lower():
                     continue
@@ -508,17 +529,33 @@ class SuperWatchRuntime:
         existing = next((item for item in self.items if item.name == name), None)
         if existing is not None:
             return {"name": existing.name, **make_channel_metadata([existing])[existing.name]}
-        try:
-            resolved = resolve_watch_items(
-                [name],
-                dwarf_info=self.dwarf_info,
-                svd_registers=self.svd_registers,
+        descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+        if descriptor is not None:
+            item = WatchItem(
+                name=descriptor.path,
+                address=descriptor.address,
+                type_name=descriptor.type_name,
+                size=descriptor.size,
+                source="ram",
+                enum_values={value: label for label, value in descriptor.enum_values.items()},
+                scalar_kind=(
+                    "signed"
+                    if descriptor.scalar_kind == "enum" and descriptor.enum_signed
+                    else descriptor.scalar_kind
+                ),
             )
-        except (KeyError, ValueError) as exc:
-            return {"error": f"Cannot resolve '{name}': {exc}"}
-        if not resolved:
-            return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
-        item = resolved[0]
+        else:
+            try:
+                resolved = resolve_watch_items(
+                    [name],
+                    dwarf_info=self.dwarf_info,
+                    svd_registers=self.svd_registers,
+                )
+            except (KeyError, ValueError) as exc:
+                return {"error": f"Cannot resolve '{name}': {exc}"}
+            if not resolved:
+                return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
+            item = resolved[0]
         self.items.append(item)
         self.blocks = build_read_blocks(self.items, max_gap=256)
         self.blocks_version += 1

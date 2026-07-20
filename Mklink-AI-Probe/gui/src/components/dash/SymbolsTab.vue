@@ -25,6 +25,9 @@
         <span>{{ filtered.length }} 个变量</span>
         <span v-if="catalog.stale.value" class="stale-label">AXF 已变化</span>
       </div>
+      <div v-if="catalog.truncatedRoots.value.length" class="truncated-banner">
+        以下大型变量仅展开前 256 个可读叶子：{{ catalog.truncatedRoots.value.join('、') }}
+      </div>
 
       <div v-if="catalog.loading.value" class="sym-empty">正在加载符号表...</div>
       <div v-else-if="visibleItems.length" class="sym-results">
@@ -145,6 +148,12 @@ watch(() => props.deviceConnected, connected => {
 .sym-controls .form-input { flex: 1; min-width: 0; }
 .sym-summary { display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
 .stale-label { color: var(--warn); }
+.truncated-banner {
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .sym-results { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); }
 .sym-item {
   display: grid;

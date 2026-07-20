@@ -192,6 +192,7 @@ export interface SymbolDescriptor {
   size: number
   writable: boolean
   enum_values: Record<string, number>
+  enum_signed?: boolean
   parent_path: string | null
 }
 
@@ -202,20 +203,24 @@ export interface AxfFingerprint {
 
 export interface SymbolCatalogPage {
   generation: number
+  axf_path: string
   parsed_at: number
   fingerprint: AxfFingerprint
   stale: boolean
   total: number
   items: SymbolDescriptor[]
+  truncated_roots: string[]
 }
 
 export interface SymbolCatalogStatus {
   loaded: boolean
   generation: number
+  axf_path: string
   parsed_at: number
   fingerprint: AxfFingerprint
   stale: boolean
   total: number
+  truncated_roots: string[]
 }
 
 export interface SymbolRebindSummary {

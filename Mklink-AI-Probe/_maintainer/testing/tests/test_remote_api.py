@@ -263,6 +263,7 @@ def _connected_symbol_device(tmp_path):
         port="redacted",
         axf_status={"loaded": True},
         symbol_catalog=catalog,
+        _dwarf_info=dwarf,
         close=lambda: None,
     )
     device.parse_axf = lambda _path=None: {"loaded": True, "catalog_generation": catalog.generation}
@@ -283,6 +284,43 @@ def test_symbol_catalog_api_lists_valid_variables_immediately(tmp_path):
     assert [item["path"] for item in body["items"]] == [
         "controller.enabled", "controller.target", "gain",
     ]
+
+
+def test_symbol_typeinfo_accepts_flattened_catalog_path(tmp_path):
+    device, _axf = _connected_symbol_device(tmp_path)
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.get("/api/symbols/typeinfo?name=controller.target")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "controller.target",
+        "found": True,
+        "type": "float",
+        "size": 4,
+        "address": 0x20000020,
+        "members": [],
+    }
+
+
+def test_symbol_search_and_typeinfo_expose_only_runtime_catalog_leaves(tmp_path):
+    device, _axf = _connected_symbol_device(tmp_path)
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        search = client.get("/api/symbols/search?q=controller")
+        root_type = client.get("/api/symbols/typeinfo?name=controller")
+
+    assert search.status_code == 200
+    assert [item["name"] for item in search.json()["results"]] == [
+        "controller.enabled",
+        "controller.target",
+    ]
+    assert root_type.status_code == 200
+    assert root_type.json() == {"name": "controller", "found": False}
 
 
 def test_symbol_status_marks_changed_axf_stale(tmp_path):
@@ -368,3 +406,35 @@ def test_symbol_reparse_uses_superwatch_transaction_when_prepared(tmp_path):
     assert response.status_code == 200
     assert response.json() == summary
     reparse.assert_called_once_with()
+
+
+def test_device_parse_axf_rebinds_prepared_superwatch_runtime(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    next_axf = tmp_path / "next.axf"
+    next_axf.write_bytes(b"next")
+    device.axf_status = {
+        "loaded": True,
+        "axf_path": str(next_axf),
+        "variable_count": 8,
+    }
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    manager._runtime = SimpleNamespace(items=[])
+    app = create_app(auth_token=None, project_root=".")
+    summary = {"preserved": ["gain"], "updated": [], "removed": []}
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager, "reparse_symbols", return_value=summary
+    ) as reparse, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/parse-axf",
+            json={"axf": str(next_axf)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["variable_count"] == 8
+    assert response.json()["rebind"] == summary
+    reparse.assert_called_once_with(str(next_axf))

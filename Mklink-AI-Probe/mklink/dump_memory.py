@@ -497,7 +497,7 @@ class DumpMemoryStreamSession:
 
 def decode_frame_to_points(
     frame: dict,
-    block_addresses: list[tuple[int, int, list[tuple[str, str, int, dict | None]]]],
+    block_addresses: list[tuple[int, int, list[tuple]]],
     origin_us: int | None,
 ) -> tuple[list[dict], int | None]:
     """Decode a parsed frame's region data into per-variable point dicts.
@@ -507,7 +507,8 @@ def decode_frame_to_points(
 
     Args:
         frame: Parsed frame from DumpMemoryParser.feed().
-        block_addresses: Per-region info list: [(block_addr, block_size, [(name, type_name, item_offset, enum_values), ...])]
+        block_addresses: Per-region info list with item name, type, offset,
+            byte size, scalar kind, and enum values.
         origin_us: Baseline timestamp in microseconds (from first sample).
 
     Returns:
@@ -529,11 +530,22 @@ def decode_frame_to_points(
             continue
         block_addr, _block_size, items = block_addresses[region_index]
         point: dict = {"_t": relative_t, "timestamp_us": ts}
-        for name, type_name, item_offset, enum_values in items:
-            data = region_data[item_offset:item_offset + _item_size(type_name)]
+        for item in items:
+            if len(item) == 4:
+                name, type_name, item_offset, enum_values = item
+                item_size = _item_size(type_name)
+                scalar_kind = None
+            else:
+                name, type_name, item_offset, item_size, scalar_kind, enum_values = item
+            data = region_data[item_offset:item_offset + item_size]
             if data:
                 # Store raw numeric value for charting; enum display is handled by frontend
-                point[name] = decode_value(data, type_name)
+                point[name] = decode_value(
+                    data,
+                    type_name,
+                    known_size=item_size,
+                    scalar_kind=scalar_kind,
+                )
         points.append(point)
 
     return points, current_origin
