@@ -1,570 +1,111 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T15:51:56+08:00",
+  "updated_at": "2026-07-20T16:08:12+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
     "branch": "feature/online-flash-streaming",
-    "head": "b599f5c is the source commit used for the latest standard NSIS candidate; the final documentation commit contains this memory",
-    "remote_head": "the runtime-readable structured-symbol implementation plus final handoff commit are pushed together on feature/online-flash-streaming",
-    "working_tree": "clean after the final documentation commit; generated installers, screenshots, logs, caches, dependencies, and build outputs removed"
+    "head": "b599f5c is the latest product source commit; the final handoff commit contains this memory",
+    "remote_head": "feature/online-flash-streaming is pushed through the final handoff commit",
+    "working_tree": "clean after the final handoff commit; release files remain outside Git"
   },
   "mission": {
-    "product": "MKLink 专用嵌入式上位机",
-    "online_flash": "仅支持 MKLink 暴露的 CMSIS-DAP；支持 BIN 与 HEX；标准安装包内置许可明确的精简 Pack 和从固定 DAPLinkUtility 资源提取的精简 FLM bundle，也支持用户导入 Pack、按器件添加自制 FLM，以及可选联网下载 Pack。",
-    "offline_flash": "脱机烧录是与在线烧录并列的顶级页面；支持有序多固件、多 FLM、BIN 基地址、HEX 文件内地址、自动次数、IDCODE 超时、SWD 速率、脚本预览和 MKLink U 盘部署。",
-    "streaming": "SystemView、VOFA、RTT 和 SuperWatch 以经过验证的稳定负载采集，目标尽量达到或超过 10 kSamples/s；仅 RTT 建立了实测过载边界；可见曲线统一限制为 30 FPS。"
+    "product": "MKLink/MicroLink 专用嵌入式上位机，覆盖在线/脱机烧录、RTT、SystemView、VOFA、SuperWatch、内存、符号、串口、Modbus、CLI、MCP 和 AI skill。",
+    "flash": "离线优先：标准安装包内置精简算法目录；用户可导入本地 Pack 或添加目标专用 FLM；联网安装 Pack 是可选补充。",
+    "streaming": "高频数据使用二进制 WebSocket、Worker 固定容量缓冲和像素包络，前端绘制限制在 30 FPS。"
   },
   "current_session": {
     "status": "complete",
-    "active_plan": "none; runtime-readable scalar, structure, and array symbol expansion; cross-page symbol refresh; continuous SuperWatch block merging; installed WebView2 qualification; and standard NSIS packaging are complete",
-    "current_task": "The b599f5c v0.1.0-rc.2 standard NSIS candidate is installed and qualified on the build machine. Validate it on a second clean Windows machine, then collect external-user feedback for the 10747-model flash catalog and 801-leaf RGB_LCD symbol catalog.",
-    "latest_commit": "b599f5c feat: expand runtime-readable structured symbols",
-    "latest_installer_bundle": "complete; source commit b599f5c produced only the standard NSIS candidate release/20260720-152538/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_b599f5c-setup.exe. The installer is 86305720 bytes with SHA-256 2502f29f8b0da08c4ca08d725344ee56a69119375ed9a839d2a7f95345573482, and the installed sidecar SHA-256 is c2ca65c6eb71ec84dac9e9413daaa95fc508fc06dfed42b423dd2cce10797ace. No MSI or WebView2-offline package was generated. The release directory also contains the unchanged 10747-model effective CSV, 8137-record raw DAP CSV, summaries, and SHA256SUMS.txt.",
-    "structured_symbol_implementation": "complete; only fixed-address runtime-readable scalar leaves are published. Fixed structures and arrays recursively expand to member and index paths, including arrays of structures; pointers, bit-fields, variable-length arrays, overlapping union aliases, incomplete layouts, and non-RAM addresses are excluded. Plain char encoding, signed and unsigned integers, float, bool, enums including negative values, duplicate type names, anonymous structures, and multidimensional arrays are decoded consistently. Each root is capped at 256 leaves, with truncated roots reported. Configuration parse, Symbols, symbol search/typeinfo, and SuperWatch share the same generation- and fingerprint-aware catalog. Existing SuperWatch selections are transactionally rebound after reparse or reconnect, and adjacent addresses continue to merge through build_read_blocks(max_gap=256).",
-    "online_flash_algorithm_sources_implementation": "complete; online SWD offers and enforces a 10 MHz maximum. The sidecar bundles 73 slim Packs with 5065 exact target records plus a compact DAPLinkUtility 0.0.6 resource bundle with 8137 target records, 12161 Flash regions, 1468 referenced FLM names, and 1428 SHA-256-deduplicated FLM blobs totaling 30742148 bytes before installer compression. Deterministic precedence yields 10747 unique searchable models across 65 manufacturer labels: 4843 licensed-Pack, 5703 DAPLinkUtility, 191 pyOCD builtin, and 10 HPM ROM records. User-installed or downloaded Packs override duplicate bundled records; target-scoped custom FLM overrides overlapping Flash regions and adds external Flash; optional HTTPS Pack installation remains available with visible byte progress and automatic refresh. Image jobs inject only algorithms selected by firmware ranges, sector erase selects by address, DAP connect-only loads one deterministic algorithm, and ambiguous multi-algorithm chip erase is rejected. pyOCD builtin internal Flash can remain on its native algorithm while a custom external FLM is injected. The same unified catalog feeds online, offline, Device, CLI, MCP, and AI flash paths.",
-    "daplink_builtin_flm_implementation": "complete; the build accepts only a pinned DAPLinkUtility 0.0.6 executable with SHA-256 419e1a830fb66ccb5db5c748e6085dd1778e2289c0b211ea92a84ec214656c33, locates its Qt v3 resource registration arrays, validates the 22-byte tree/name/data structure, decompresses zlib resources, parses chips.json, recovers sentinel Flash geometry from FLM metadata, filters automatic:false entries, and emits only referenced content-addressed FLM blobs plus a compact manifest. Runtime validates manifest schema, blob paths, SHA-256, ranges, and HPM short-circuits before bundle access. No source executable, Pack, standalone FLM, firmware, raw log, screenshot, probe identifier, COM port, user name, credential, or local hardware path is committed.",
-    "hpm_rom_special_handling": "complete by automated and installed-API verification; HPM targets are built-in ROM-API records and never require, discover, install, or load Pack/FLM algorithms. Online, offline, Device, CLI, and MCP routes accept BIN with an explicit base address, validate board/flash_cfg/address values, use hpm.board/hpm.flash_cfg/hpm.program, reserve both target-debug and MKLink-bridge resources, and support chunked readback verification online. HPM erase is a no-op and independent erase controls are disabled. Physical HPM programming was intentionally not performed in this session at the user's direction.",
-    "superwatch_stable_viewport_implementation": "complete; the dynamic cur/min/max/avg footer and all responsive footer CSS are removed, so changing digit widths cannot resize the chart. The shared Y axis starts in Auto, captures absolute manualMin/manualMax on Y interaction, anchors wheel zoom to the pointer value, keeps later outliers from moving a manual viewport, and restores Auto on double-click. Plain plot left-drag uses independent 5 px X/Y activation, pans Y by absolute range, pans X only when zoomed using visibleRange divided by availableRange, preserves cursor/trigger/Alt/middle/Space/VOFA/probe-click priority, and persists manual state without leaking it across project loads.",
-    "superwatch_throughput_implementation": "complete; RTT transmit retains the input after successful sends and permits an empty body when an explicit line ending is selected. SuperWatch desktop buffers are at least 50000 points per channel, the supported interval range is 10 us to 60 s, and Canvas renders Worker-generated pixel envelopes instead of scanning the full ring. StreamHub late subscription atomically replays and protects SuperWatch metadata without lock inversion or producer blocking. The SuperWatch running boundary reconnects the binary stream after reset so the new Worker session receives metadata before samples. The strict packaged gate tracks the actual target Worker by transferred ArrayBuffer identity, counts accepted frames across resets, rejects every Worker error, and keys diagnostics by connection generation plus frame ticket.",
-    "rtt_packaged_repair": "complete; the installed Tauri frontend now receives an explicit http://127.0.0.1:8765 control-plane origin instead of resolving /api to tauri.localhost index.html. RTT View always renders the text data panel, uses the user-proven dynamic 1024-byte scan, shows a deduplicated startup state, waits for a real control block, retries stop-pending cleanup, restores an already-running session on re-entry, and enables transmit only for active channel 0. Device.rtt_start treats matching target RAM DownBuffer descriptors as authoritative over corrupt nonempty probe output in both dynamic and exact modes. The lower-right footer shows v0.1.0-rc.2 plus the source commit.",
-    "desktop_configuration_implementation": "complete; the separate configuration and connection tabs are replaced by one configuration workspace with Local Device, File Sources, Remote Connection, and Start Service sections. Project overview, project directory/status, recent projects, MCU guidance, RTT advanced settings, and duplicated status blocks are removed. Users provide one AXF/ELF/OUT symbol path and an independent MAP path; invalid symbol paths do not block device connection. Tauri native file dialogs are registered and permissioned.",
-    "rtt_bidirectional_implementation": "complete; RTT View owns the editable address, auto-search fills it from AXF/ELF first, MAP second, and legacy project discovery last, and the user explicitly clicks Start. The transmit bar supports Abc/Hex toggle, Enter and button send, bounded history, clear, and no/\\r/\\n/\\r\\n endings. Backend writes are manager-owned, serialized outside the event loop, channel-aware, and protected by dashboard start transaction locking. V4.3.4 exact-mode startup is synchronized and retried with a four-byte bounded scan while target control-block DownBuffer descriptors remain authoritative.",
-    "offline_first_load_retest": "complete; three valid installed-application cold starts opened Offline Flash through real Microsoft Edge/Playwright against the bundled sidecar and physical V4.3.4 probe. The initial target request returned HTTP 200 in the captured rounds, one matching target appeared without manual retry, model detection completed, and no online flash operation failed message appeared.",
-    "superwatch_interval_implementation": "complete; SuperWatch defaults to 0.001 seconds across desktop, CLI, Python, manager, and legacy viewers. The backend dynamically stops and reissues cmd.dump_memory when the interval changes. The desktop input now preserves a user draft across status polling and mouse-focus transitions by tracking dirty and pending states, then displays the normalized server value after the request completes.",
-    "online_flash_discovery_implementation": "complete; the packaged sidecar includes pyOCD and cmsis_pack_manager runtime data, the API maps enumeration failures to an actionable privacy-safe error, and page-entry discovery retries both empty results and transient cold-start failures before selecting the first matching MicroKeen probe. Selecting HEX starts inspection automatically. Selecting BIN requires an explicit valid base address and then starts inspection automatically. The manual inspect button was removed.",
-    "superwatch_symbol_workspace_implementation": "complete; AXF symbols load immediately into a shared runtime-safe catalog, SuperWatch offers searchable selection and typed inline writes, and reparse preserves selected names. The redundant right Watch panel is removed, so the waveform fills the right workspace. Variable checkboxes control acquisition while adjacent eye controls independently hide or restore curves without stopping sampling or current-value updates. The waveform has a shared numeric Y axis with wheel zoom, drag pan, and double-click reset, plus the existing independent X-axis navigation. Typed writes stop continuous dump acquisition, use flush_memory, verify with command-mode readback, and restore the prior running or paused state. Reconnecting rebinds the existing runtime to the current Device instead of retaining a closed Device object.",
-    "desktop_usability_implementation": "complete; Computer Use exercised connection, RTT, RTOS Trace, memory, symbols, SuperWatch, navigation, pause/resume/stop, and resource recovery before its capture channel failed. Real Edge/Playwright continued visual testing. SuperWatch stop no longer opens an English blocking confirmation, stop HTTP failures are visible, invalid symbols use a persistent Chinese inline error instead of alert(), and offline structured PROBE_BUSY details identify the owning dashboard and recovery action. A rebuilt unsigned NSIS installer was installed and the installed application passed the affected flows with Computer Use.",
-    "rtt_dashboard_implementation": "complete; RTT reads now deliver at 50 Hz with a 10 ms bridge polling quantum, partial numeric batches flush every read cycle, and the virtual log coalesces near 30 FPS instead of 10 FPS. Numeric channel layouts require two consecutive matching rows so attaching mid-line cannot lock a truncated name. The demonstration firmware emits changing temp/speed values. Real Edge HIL confirmed named curves, 23.8 Canvas FPS, about 25 ms log update intervals, pause/resume behavior, and zero transport/backend loss.",
-    "offline_download_implementation": "complete; top-level GUI, structured API/core, transactional U-disk deployment, model-specific filenames, trigger resource coordination, transient version retry, reuse of an already connected Device bridge in installed runtime, automated regression, and V4.3.4 dual-HEX HIL all pass",
-    "task_3_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_4_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_5_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_6_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_7_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_8_implementation": "complete; final spec and quality reviews APPROVED",
-    "task_9_implementation": "complete; final spec and quality re-reviews APPROVED; strict Tauri evidence, final dist, verification docs, and AI memory committed and pushed",
-    "task_10_implementation": "complete and independently approved; all four ten-minute measurements and regenerated targetVerified/targetReset cleanup artifacts pass; SystemView Context corruption, Flash readback, and real MCU reset evidence gaps are fixed",
-    "task_11_implementation": "complete; final MSI/NSIS bundles rebuilt from 56f1df6, final NSIS installed-GUI verify and VERIFY_FAIL mismatch-address HIL pass, both restricted-PATH installer lifecycles pass, and Pack/user caches are preserved",
-    "task_12_implementation": "complete; 21 local release payloads and 18 sanitized JSON artifacts validate, SHA256SUMS is name-sorted, and final specification and quality reviews are APPROVED with no remaining findings",
-    "task_13_implementation": "complete; 1c7c5aa tagged as v0.1.0-rc.1, GitHub prerelease published with 23 assets, every asset downloaded and SHA-256 verified, and local branch/tag/release state checked",
-    "release_qualification": "Complete. The reviewed release commit is 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6, the annotated tag and manifest identify that commit, and the GitHub prerelease is public and verified.",
-    "pause_requested": "Resumed by user; the packaging pause checkpoint is closed.",
-    "stop_rule": "Continue autonomously through implementation, verification, standard NSIS packaging when needed, memory, commit, and push. Do not build MSI or WebView2-offline packages unless the user explicitly requests them. Stop only for irreplaceable credentials, required manual hardware action, or an unauthorized irreversible external operation."
+    "current_task": "在第二台无开发环境和预置 Pack 缓存的 Windows 10/11 机器验证 b599f5c 标准 NSIS，并收集外部用户对器件目录与结构化符号的反馈。",
+    "latest_source_commits": [
+      "e269e11 fix: refresh symbols and refine online flash controls",
+      "c9f4480 fix: report only runtime-readable symbols",
+      "b599f5c feat: expand runtime-readable structured symbols"
+    ],
+    "latest_installer": "release/20260720-152538/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_b599f5c-setup.exe; 86305720 bytes; SHA-256 2502f29f8b0da08c4ca08d725344ee56a69119375ed9a839d2a7f95345573482",
+    "model_inventory": "release/20260720-152538/builtin-models.csv contains 10747 effective models across 65 manufacturer labels; BUILTIN-MODELS-SUMMARY.md is the compact summary.",
+    "flash_state": "Online SWD supports up to 10 MHz. The GUI defaults to keep-running connection, uses one total progress bar, refreshes after Pack installation, fills the target search after selection, and supports builtin algorithms, local Pack import, custom FLM, and optional online Pack installation.",
+    "hpm_state": "HPM targets use the dedicated ROM API path, require no FLM, expose no independent erase, and were not physically programmed in this session.",
+    "symbol_state": "Only fixed-address runtime-readable scalar leaves are published. Fixed structures, arrays, and arrays of structures expand into member/index paths. Adjacent leaves remain eligible for merged reads. Each root is capped at 256 leaves with an explicit truncation notice.",
+    "stop_rule": "Continue autonomously through implementation, proportional verification, standard NSIS packaging when needed, AI memory, commit, and push. Do not build MSI or WebView2-offline packages unless explicitly requested."
   },
   "milestones": [
     {
-      "name": "Online flash Tasks 1-12",
+      "name": "Online and offline flash workflows",
       "status": "complete",
-      "range_end": "037514b",
-      "evidence": "docs/verification/online-flash-hil.md",
-      "review": "final spec and quality APPROVED"
+      "notes": "Online and offline paths share the unified target/algorithm catalog, preserve ordered firmware ranges, avoid implicit whole-chip erase, support 10 MHz, and cover builtin, local Pack, custom FLM, and optional online Pack sources."
     },
     {
-      "name": "Online flash algorithm sources, 10 MHz, and frozen Pack workers",
+      "name": "Desktop dashboards and high-rate streaming",
       "status": "complete",
-      "commits": ["0e2bcd5", "348ed62", "5215419", "8d301c2", "01c4510", "dd807a9", "2fb5a8a", "51b6192"],
-      "tests": "Python 783 passed; GUI 357 passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
-      "review": "installed standard NSIS, physical STM32H7B0 HIL, and real streamed HTTPS Pack installation complete",
-      "notes": "10 MHz online SWD; 1146 exact targets from seven slim licensed Packs; 1361 unique builtin models including pyOCD and HPM ROM records; local Pack import; target-scoped custom FLM for external Flash; secure frozen Pack workers; visible byte progress and automatic catalog refresh; BOOT internal Flash and RGB_LCD external QSPI program plus verify passed. HPM is a ROM-API special case and physical HPM flashing was intentionally skipped."
+      "notes": "RTT View, SystemView, VOFA, and SuperWatch use bounded binary streaming, Worker-owned buffers, explicit loss telemetry, pause/resume, and cleanup-safe resource ownership."
     },
     {
-      "name": "High-throughput Task 1 binary protocol",
+      "name": "Runtime-readable structured symbols",
       "status": "complete",
-      "commits": ["00be35f"],
-      "tests": "Python 10 passed; TypeScript 8 passed",
-      "review": "spec and quality APPROVED"
+      "notes": "Configuration, Symbols, search/typeinfo, and SuperWatch share one generation- and fingerprint-aware catalog. Reparse and reconnect rebind valid selected channels and remove invalid ones."
     },
     {
-      "name": "High-throughput Task 2 bounded StreamHub",
+      "name": "Windows standard NSIS candidate",
       "status": "complete",
-      "commits": ["082472b", "b8e8bb0", "05eda14"],
-      "tests": "focused 39 passed; full Python 427 passed",
-      "review": "spec and quality APPROVED",
-      "notes": "Unique owner loop, immutable batch, generation/pending callback lifecycle, stale callback isolation."
-    },
-    {
-      "name": "High-throughput Task 3 authenticated binary WebSocket",
-      "status": "complete",
-      "commits": ["c1346f3", "d8029d8", "398ed7b"],
-      "tests": "Task 1-3 focused 64 passed; stream API 24 passed x5; full Python 452 passed",
-      "review": "final spec and quality APPROVED",
-      "notes": "Invalid JSON shapes and binary authentication frames close 1008 without leaks; sequence, item_count, and timestamp_ns are shared per fan-out batch."
-    },
-    {
-      "name": "High-throughput Task 4 Worker-owned stream buffers",
-      "status": "complete",
-      "commits": ["6e0db44", "beb50df", "ad8d787"],
-      "tests": "Task 4 focused 21 passed; GUI full 98 passed; Vite build 134 modules",
-      "review": "final spec and quality APPROVED",
-      "notes": "Fixed-capacity typed ring, transferable Worker frames, bounded reconnect lifecycle, and generation/ticket readiness acknowledgements isolate stale sockets."
-    },
-    {
-      "name": "High-throughput Task 5 envelope, scheduler, and benchmark",
-      "status": "complete",
-      "commits": ["cd9370b", "9d23045", "85bc178"],
-      "tests": "Benchmark 14 passed; envelope/scheduler 11 passed; GUI full 109 passed; Python stream 78 passed",
-      "review": "final spec and quality APPROVED",
-      "notes": "Typed min/max envelope, one 30 FPS scheduler, strict sequence/drop accounting, responsive cancellation, and deterministic sample-rate benchmark."
-    },
-    {
-      "name": "High-throughput Task 6 SystemView binary migration",
-      "status": "complete",
-      "commits": ["71e877f", "5fda737", "83ee6e8", "2b304b8"],
-      "tests": "Python full 507 passed; GUI full 153 passed; Vite build 137 modules; final focused frontend 52 and backend 41 passed",
-      "review": "final spec and quality APPROVED",
-      "notes": "Recording-first fixed 48-byte events, bounded O(1) Worker rings, nested ISR contexts, exact BigInt ticks, pixel-bounded interval envelopes, binary UI at 30 FPS and event table at 5 Hz."
-    },
-    {
-      "name": "High-throughput Task 7 VOFA binary migration",
-      "status": "complete",
-      "commits": ["6e73135", "7f2cea5", "4b87409", "d1f8a32", "513038d", "ecaa614"],
-      "tests": "Python full 544 passed; GUI full 192 passed; Vite build 137 modules; final focused Python 37 and GUI 88 passed",
-      "review": "final spec and quality APPROVED",
-      "notes": "Validated aligned source reads, atomic sample-major batches, Worker min/max envelopes, O(1) extrema and O(log N) interactions, bounded DOM work, live telemetry, pause-safe rates, and SuperWatch legacy isolation."
-    },
-    {
-      "name": "High-throughput Task 8 RTT and SuperWatch binary migration",
-      "status": "complete",
-      "commits": ["2b4c060", "70dbe6c", "5d02f90", "2344a77", "11325f1", "426d6a7"],
-      "tests": "Python full 570 passed; GUI full 217 passed; Vite build 140 modules; final focused backend 93 passed",
-      "review": "final spec and quality APPROVED",
-      "evidence": "docs/verification/task8-rtt-superwatch-synthetic.md",
-      "notes": "RTT raw and numeric binary records, bounded virtual log, SuperWatch versioned metadata and sample generations, nonblocking hardware reads, late-subscriber metadata replay, and transactional dashboard cancellation/rollback without probe lease leaks."
-    },
-    {
-      "name": "High-throughput Task 9 performance and HIL qualification",
-      "status": "complete",
-      "tests": "Python full 583 passed in 26.36s; GUI full 231 passed; Vite build 140 modules; browser/package harness 13 passed",
-      "evidence": "docs/verification/high-throughput-streams.md",
-      "review": "final spec and quality re-reviews APPROVED",
-      "notes": "All four 30-minute backend HIL gates passed at qualified stable rates. Only RTT retained a measured overload boundary; VOFA/SuperWatch used the fastest supported request and SystemView used pairs=2/tick. Real Edge visible/pause/resume gates passed with <=30 FPS and zero measured loss; hidden state was not established. Strict packaged Tauri RTT ran 300.027 seconds with exact WebSocket/Worker frame and sequence parity, zero loss, complete cleanup, and CDP browser release. Deliverable commit cc8282f is pushed."
-    },
-    {
-      "name": "Release qualification Task 10 packaged stream gates",
-      "status": "complete",
-      "commit": "0f0a847",
-      "tests": "Python 611 passed in 26.41s; GUI 238 passed in 18.14s; Node release harness 49 passed; Vite 140 modules; Rust 3 passed and cargo check passed",
-      "evidence": "docs/verification/full-skill-release-v0.1.0-rc.1.md and docs/verification/artifacts/rc1-packaged-*.json",
-      "review": "final specification and quality re-reviews APPROVED; no Critical, Important, or Minor findings",
-      "notes": "Formal packaged measurements: RTT 26.090 kHz, SystemView 20.091 kEvents/s, VOFA 8.037 kHz, SuperWatch 7.887 kHz. SystemView Context parser, fixed-layout RT-Thread object validation, backend fallback behavior, GUI sanitization, and overlong-name gate are implemented. Device.flash reads multi-segment HEX/BIN regions back before reset, Device.reset sends cmd.reset_chip(), and all four regenerated cleanup artifacts contain targetVerified=true plus targetReset, zero controls, Tauri exit, and port release."
-    },
-    {
-      "name": "Release qualification Task 11 Windows installer lifecycle",
-      "status": "complete",
-      "code_commit": "56f1df6",
-      "tests": "Python 618 passed in 24.91s; Node 51 passed; GUI 18 files / 241 tests passed in 16.66s; Vite 140 modules; Rust 5 passed; NSIS and MSI install/health/uninstall passed",
-      "evidence": "docs/verification/full-skill-release-v0.1.0-rc.1.md and docs/verification/artifacts/rc1-installer.json",
-      "review": "final specification and quality re-reviews APPROVED; no Critical, Important, or Minor findings",
-      "notes": "The API binds inspected images to the selected target and recomputes reliable FLM coverage before program, requiring exact covered sectors. Windows Job creation/assignment failure cannot retain an untracked sidecar child. Final NSIS installed-GUI App HEX verify and expected VERIFY_FAIL at 0x08000000 pass without writing the target. Final unsigned MSI SHA-256 is 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS is 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f."
-    },
-    {
-      "name": "Release qualification Task 12 assets and final reviews",
-      "status": "complete",
-      "tests": "Python 618; Node 51; GUI 241; Vite 140 modules; Rust 5; cargo check; memory and diff validation",
-      "evidence": "21 external payloads, 18 rc1 JSON artifacts, TEST-REPORT.md, release-manifest.json, and SHA256SUMS.txt",
-      "review": "specification APPROVED and quality APPROVED; no remaining findings",
-      "notes": "Release metadata contains no local source paths. SHA256SUMS is sorted by asset name using casefold order. Task 13 must regenerate manifest.source_commit after the final release commit and upload every manifest-listed payload plus manifest/checksums."
-    },
-    {
-      "name": "Release qualification Task 13 GitHub publication",
-      "status": "complete",
-      "release_commit": "1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6",
-      "tag": "v0.1.0-rc.1",
-      "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.0-rc.1",
-      "assets": "23 uploaded and downloaded: 21 manifest payloads plus release-manifest.json and SHA256SUMS.txt",
-      "verification": "prerelease=true, draft=false; remote sizes and all downloaded SHA-256 values match local metadata",
-      "notes": "MSI SHA-256 6612ee8427c18246d25928d9b2ed8f745f440ec30f258215c880c1af5e2a975e; NSIS SHA-256 6caef8fe36b3a29846c0ceff75a519e4b6e81bc30e03e5c3bdb0dd507e97717f."
-    },
-    {
-      "name": "Offline download configurator",
-      "status": "complete",
-      "commit": "5f5cae2c03520d31b8f7f771dd9fe90d14c3f1d5",
-      "corrective_commit": "814a0d8",
-      "tests": "Python 634 passed in 37.69s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite 144 modules; Rust 6 passed and cargo check completed",
-      "evidence": "V4.3.4 detected through cmd.get_version(); offline_download.py deployed with two ordered HEX files; load.offline() completed both downloads; independent contiguous Flash readback matched 19,296 bootloader bytes and 113,728 application bytes",
-      "review": "full automated regression, diff validation, privacy scan, and real hardware closed loop completed",
-      "notes": "V2/V3 always generate python/offline_download.py. V4 accepts a safe custom .py filename, requires screen selection confirmation before GUI trigger, and uses offline_download.py for unattended HIL. No whole-chip erase command is generated. Installed runtime detection, automatic preview/deploy, and trigger reuse the connected Device bridge instead of opening the CDC port twice."
-    },
-    {
-      "name": "RTT dashboard runtime-state repair",
-      "status": "complete",
-      "commit": "3afc051b46a2ae727f700500e00d7663b79fe8e6",
-      "rendering_commit": "e26d11e1936b52a5ca324728f0e3220f0c60ca69",
-      "tests": "Python 635 passed in 27.33s; Node release harness 51 passed; GUI 19 files / 249 tests passed in 17.38s; Vite 144 modules; Rust 6 passed; focused RTT Worker/View 72 passed",
-      "evidence": "Rebuilt installed NSIS restored the project and connected with AXF symbols. Initial HIL received ordered RTT raw and four-channel waveform payloads with zero drops. After the rendering correction, real Edge visible-window HIL processed 93 data frames and 20,093 items in 10 seconds with 37 Canvas clears and 148 strokes, zero frontend sequence errors, zero transport/backend drops, pause with zero draws, resume with 20 clears and 80 strokes, complete resource cleanup, and RAM fixture dearm.",
-      "review": "focused RED/GREEN regression, full automated regression, production build, bundle install, sanitized HIL, diff validation, and generated-artifact cleanup completed",
-      "notes": "RTT start now returns a success boolean to the component, so a failed control-plane start cannot create an orphan binary WebSocket. The manager detects Device ERROR, stops, releases its API lease through the failure callback, exposes status.error, and the RTT toolbar stops the binary client and displays the runtime error. The numeric Canvas remains hidden until numeric RTT data arrives. The Worker includes bufferStartMs/bufferEndMs in numeric batches and RTT View requests envelopes over that finite range, preventing all samples from collapsing into one pixel and one invisible point per constant channel. Unsigned rebuilt NSIS SHA-256 F7C84453687ABCEF669CAA36EAEC75CA5A42ED12124119FCAF9433312D9C709E; MSI SHA-256 134B3B426A3F6FFA19440FD755BF196A3664F9AA18BC40083E11C78301307676."
-    },
-    {
-      "name": "RTT named waveform and smooth refresh",
-      "status": "complete",
-      "commit": "292a036",
-      "tests": "Python 636 passed in 27.32s; GUI 19 files / 249 tests passed in 16.97s; Vite 144 modules; Rust 6 passed; focused RTT Python 25 and GUI 13 passed; Keil App build 0 errors and 0 warnings",
-      "evidence": "Bootloader-preserving App HEX covered 0x08005000 through 0x08020C97 and passed Flash readback verification without whole-chip erase. Installed-runtime HIL recognized speed,temp after attaching to an already-running stream, delivered more than 3,000 parsed points in three seconds with zero drops, and rendered two changing named curves. A five-second Edge gate measured 119 Canvas clears, 238 strokes, 23.8 FPS, about 25 ms log update intervals, zero draws while paused, 29 draws in 1.2 seconds after resume, and clean stop.",
-      "review": "root-cause analysis, focused and full regression, production build, NSIS/MSI bundle, installed sidecar smoke, real Edge Worker/Canvas gate, diff validation, privacy-safe memory update, and generated-artifact cleanup completed",
-      "notes": "RTT delivery uses 50 Hz read windows and flushes incomplete numeric batches each cycle. The bridge polling quantum is 10 ms. The virtual log flush interval is 33 ms. Two consecutive matching numeric layouts are required before channel lock, preventing a mid-line first chunk such as peed=90 from replacing speed. Unsigned rebuilt NSIS SHA-256 E6D8B4A695FDEE8C56F331D6055A6E0B6D43C2B8605216934EE848EEE34E30EA; MSI SHA-256 CA0234FABED078F7242CE1AE3F0D060C76A38D416B4F51F949813E2FD013A5E9."
-    },
-    {
-      "name": "Installed GUI ordinary-user experience recovery",
-      "status": "complete",
-      "commit": "c4812c8",
-      "tests": "GUI 20 files / 252 tests passed; Vite transformed 144 modules; focused RED/GREEN tests cover structured offline conflicts, nonblocking invalid-symbol feedback, and direct stop behavior",
-      "evidence": "Computer Use completed real installed-app connection, RTT, RTOS Trace, memory, symbol, and SuperWatch interactions. Edge/Playwright reproduced the resource-conflict chain and verified the fixes. A fresh unsigned NSIS bundle installed with exit 0; the installed application restored the project, connected to the real target, displayed the invalid-symbol error inline without a dialog, stopped SuperWatch directly, released the bridge, and detected V4.3.4 on the offline page.",
-      "review": "root-cause tracing, focused RED/GREEN tests, full GUI regression, production build, NSIS build/install, installed Computer Use retest, privacy cleanup, and diff validation completed",
-      "notes": "The original SuperWatch stop confirmation caused Computer Use click timeout and retained the bridge lease. Offline detect then received a structured PROBE_BUSY response, but the frontend discarded the object and showed only Conflict. Both ends of that user-visible chain are fixed."
-    },
-    {
-      "name": "Installed online-flash MicroKeen discovery and firmware auto-inspection",
-      "status": "complete",
-      "commit": "cbe0d99",
-      "tests": "GUI 20 files / 255 tests passed; online-flash GUI 48 passed; online-flash Python 96 passed; Rust 6 passed; Vite transformed 144 modules",
-      "evidence": "Computer Use cold-started the rebuilt unsigned NSIS installation, entered Online Flash from another page, and observed MicroKeenV4 CMSIS-DAP automatically discovered and selected without pressing Refresh. A minimal App-address HEX was automatically inspected. A BIN remained blocked until an explicit App base address was entered, then automatically inspected. No erase, program, or whole-chip operation was started.",
-      "review": "root-cause tracing, RED/GREEN transient-enumeration coverage, full regression, production and NSIS-only build, silent overwrite install, installed Computer Use retest, privacy cleanup, and diff validation completed",
-      "notes": "All CMSIS-DAP descriptions containing MicroKeen remain allowed, covering V2, V3, V4, and future MicroKeen variants while unique_id distinguishes devices. The original installed sidecar omitted pyOCD parser data and cmsis_pack_manager native runtime files. After packaging those dependencies, page-entry discovery still stopped on the first cold-start 500 because only empty arrays were retried; discovery now retries bounded transient errors as well."
-    },
-    {
-      "name": "SuperWatch symbol workspace and reconnect-safe typed writes",
-      "status": "complete",
-      "commit": "617ad90",
-      "tests": "Python 659 passed; GUI 24 files / 273 tests passed; Rust 6 passed; focused SuperWatch transaction regression 4 passed; Vite production build and MSI/NSIS bundles completed",
-      "evidence": "Computer Use verified the installed application after an explicit disconnect/reconnect cycle. The stable init_ok variable displayed 'verified: 0' after the typed write, no Failed to fetch error appeared, continuous dump acquisition resumed immediately, and backend read cycles increased by 21 in two seconds with zero read errors. Pause, resume, stop, buffer reset, symbol reparse preservation, X/Y zoom, and drag pan also passed. Online Flash automatically discovered the MicroKeen probe, automatically inspected the App HEX, programmed only the embedded App range, and completed connect, erase, program, verify, reset, and disconnect without whole-chip erase. The matching BIN required an explicit App base and then inspected automatically.",
-      "review": "ordinary-user Computer Use exploration, root-cause tracing, focused RED/GREEN tests, two rebuilt installer overwrite cycles, real target retest, full automated regression, privacy scan, generated-artifact cleanup, and diff validation completed",
-      "notes": "The first failure had two layers. SuperWatchRuntime survived reconnect but prepare() returned before rebinding the current Device, so writes used a closed Device while polling used the new Device. After rebinding, one-shot dump_memory readback could leave firmware unable to restart continuous dump; command-mode read_memory verification avoids that stream transition and restores acquisition reliably."
-    },
-    {
-      "name": "SuperWatch waveform visibility and shared-axis workspace",
-      "status": "complete",
-      "commits": ["60307e4", "844f112", "8ef5b9c"],
-      "tests": "Python 659 passed in 37.95s; GUI 24 files / 279 tests passed; focused SuperWatch tests 55 passed; WaveformViewer 48 passed in isolation; Vite transformed 1906 modules; Rust 6 passed and cargo check completed",
-      "evidence": "Computer Use verified the installed application with two changing float variables. The redundant right Watch table was absent and the waveform filled the right workspace. Hiding one selected variable through its eye control removed only that curve while its displayed value continued changing; restoring the eye brought the curve back. Six shared Y-axis tick values were visible. Y wheel zoom changed the range, drag shifted its center, and double-click restored the default range. Pause froze the visible point count while the transport buffer continued growing, resume advanced the curve to the current buffer, stop cleared the backend buffer to zero, Alt+F4 closed the application, and the sidecar, port, and development server resources were released.",
-      "review": "design refinement, implementation plan, focused component regression, full Python/GUI/Rust regression, production build, installed Computer Use HIL, privacy-safe memory update, diff validation, and generated-artifact cleanup completed",
-      "notes": "The first full GUI run shared the host with Python and Rust and exceeded the synthetic VOFA peak-heap threshold by about 15 MiB while all functional assertions passed. The complete WaveformViewer file and the full GUI suite both passed when rerun without competing toolchains, identifying parallel host memory pressure rather than a stable product regression."
-    },
-    {
-      "name": "Standalone Windows installer candidates for 04c1ca7",
-      "status": "complete",
-      "source_commit": "04c1ca7",
-      "tests": "Tauri built standard and WebView2-offline MSI/NSIS bundles; standard NSIS and offline NSIS silent overwrite installs exited 0; restricted-PATH API health and MicroKeen discovery passed with zero Python processes; MSI administrative extraction contained the main executable and 62,076,496-byte sidecar; normal shutdown released all Mklink processes and port 8765",
-      "evidence": "The standard installers are approximately 61-62 MiB and use Tauri's WebView2 download bootstrapper only when the target lacks WebView2. The offline installers are approximately 257-258 MiB and embed the Microsoft WebView2 offline runtime. Both installed runs started the bundled PyInstaller sidecar from the application directory while PATH contained only Windows system directories. The health API returned ok, one MicroKeen CMSIS-DAP was enumerated, no python.exe or pythonw.exe process existed, and shutdown released the sidecar and listener.",
-      "review": "forced sidecar rebuild with mklink, pyOCD metadata/plugins, cmsis_pack_manager and HID collection; standard and offline Tauri bundles; restricted-environment install/runtime checks; MSI content extraction; SHA-256 generation; external release-directory publication; generated-artifact cleanup",
-      "notes": "The packages are intentionally not committed. The release directory is excluded by the main repository's local Git exclude. All current installers remain unsigned and may show an unknown-publisher warning."
-    },
-    {
-      "name": "SuperWatch 1 ms default and live interval editing",
-      "status": "complete",
-      "commits": ["0aae0b9", "8ad1e83", "2b5ddd7"],
-      "tests": "Focused WaveformViewer 49 passed; focused SuperWatch/stream Python 64 passed; GUI 24 files / 280 tests passed twice; Python 660 passed; Vite transformed 1906 modules",
-      "evidence": "The standard NSIS overwrite install exited 0. Computer Use established the initial 0.001 second default and reproduced status polling overwriting an in-progress edit. After Computer Use became unavailable following a pause, real Microsoft Edge with Playwright used the production frontend and the installed bundled sidecar against the physical target. The 0.002 draft survived more than two seconds of polling, Apply changed both UI and backend to 0.002 while state remained running, read cycles and points continued advancing, pause kept backend acquisition active, resume restored rendering, stop reached stopped with zero read errors, the browser client count returned to zero, and all test processes and ports were released.",
-      "review": "ordinary-user reproduction, focused regression, two real-input timing iterations, full GUI/Python regression, production build, standard NSIS build/install, real Edge hardware retest, privacy cleanup, and generated-artifact cleanup completed",
-      "notes": "The first implementation already supported dynamic cmd.dump_memory restart, but status polling rewrote the number input before the user could submit. A focus-only guard passed synthetic click tests but failed with real mouse timing because blur could run before click. The final dirty/pending model is independent of focus event ordering. Completed SuperWatch plans were removed and the active Tauri builder skill was rewritten and synchronized."
-    },
-    {
-      "name": "Offline Flash first-load target-search retest",
-      "status": "complete",
-      "tests": "Three installed-application cold-start rounds with the standard 2b5ddd7 NSIS candidate, real Microsoft Edge/Playwright, bundled sidecar, and physical V4.3.4 probe",
-      "evidence": "Each valid round entered Offline Flash immediately after port 8765 became available. Target search produced one matching result without manual retry and no alert. The two instrumented rounds captured the first /api/online-flash/targets request returning HTTP 200; probe model detection completed as V4.3.4.",
-      "review": "No product-code change was required; the previously observed transient could not be reproduced after the existing cold-start and packaged-runtime repairs.",
-      "notes": "The original one-off online flash operation failed observation is closed by repeated installed-runtime retest. No screenshots, raw logs, probe identifiers, COM ports, or local hardware paths are retained."
-    },
-    {
-      "name": "Desktop configuration workspace and bidirectional RTT",
-      "status": "complete",
-      "commits": ["2a35a3a", "d6c8aee", "d1931c9", "93d83e4"],
-      "tests": "Python 686 passed; GUI 30 files / 324 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed; focused backend review regressions 113 passed",
-      "evidence": "Real Microsoft Edge/Playwright at 1200x800 and 800x600 verified the four-section configuration workspace, removed duplicate project/MCU/status content, AXF/ELF and MAP validation, retained remote/server controls, RTT automatic address fill, explicit Start, Enter send, button send, history, mode toggle, and non-overlapping layout. Physical V4.3.4 HIL verified exact-mode recovery to a four-byte bounded scan, three target DownBuffer descriptors with active channel 0, repeated start/stop, UTF-8, 00ff, no ending, carriage return, line feed, and combined carriage-return/line-feed byte-for-byte echo. The installed standard NSIS ran under a PATH containing only Windows system directories, used mklink-ai-probe.exe plus bundled mklink-sidecar.exe with zero Python processes, passed MAP address detection and RTT write on hardware, then exited normally and released port 8765.",
-      "review": "Independent frontend and backend reviews completed. Search/start and pending-send UI races, dashboard start callback generation replacement, event-loop blocking, current-channel validation, and configured-address compatibility were fixed with RED/GREEN tests. Final backend re-review approved with no Critical or Important findings.",
-      "notes": "The standard NSIS is unsigned. AXF/ELF address diagnosis still depends on external arm-none-eabi-readelf; the restricted installed-runtime test intentionally omitted it, so MAP diagnosis was used and passed. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed."
-    },
-    {
-      "name": "Packaged RTT startup visibility and version identity",
-      "status": "complete",
-      "commits": ["fb2862f", "28421cb"],
-      "tests": "Python 691 passed; GUI 31 files / 329 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed; focused RTT GUI 21 and builder 8 passed",
-      "evidence": "Real installed Tauri WebView2/CDP proved the packaged frontend receives application/json from the bundled API instead of tauri.localhost index.html. The footer displayed v0.1.0-rc.2 plus source commit 28421cb. Physical RTT HIL showed an always-visible empty log panel, immediate startup feedback, mode 0 with a 1024-byte scan, target-control-block DownBuffer authority with active channel 0, HTTP 200 transmit, and running/send restoration after leaving and returning to RTT View. Normal exit released the application, sidecar, API port, and CDP port.",
-      "review": "Two independent backend reviews found and closed stop-pending cleanup, stale bundle output, and packaged API-origin gaps. Final review approved with no Critical or Important findings.",
-      "notes": "Only the standard unsigned NSIS was generated. The final installed pass verified transmit acceptance but did not establish a fresh byte-exact MCU echo because the parser coalesced the target's per-byte echo records; the previous 93d83e4 hardware qualification retains byte-exact payload coverage. No installer, checksum, screenshot, raw log, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed."
-    },
-    {
-      "name": "RTT transmit retention and SuperWatch 10 us throughput",
-      "status": "complete",
-      "commits": ["f0a7a41", "c014d4d", "a9f1b6b"],
-      "tests": "Python 702 passed; GUI 31 files / 331 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed before the final frontend-only repair; packaged gate 40 passed; focused StreamHub/RTT/SuperWatch 75 passed; WaveformViewer 51 passed",
-      "evidence": "Installed Tauri WebView2/CDP at a 10 us request completed a strict 600.737-second physical SuperWatch gate. All 457776 WebSocket frames matched 457776 target Worker accepted frames, final sequence matched, Worker errors were zero, and frontend transport, frontend backend, backend queue, parser, target packet, and target overflow drops were all zero. Two float channels produced 14628202 sample rows at 24350.43 samples/s/channel. Canvas rendered 13843 frames and 193802 strokes at 23.04 FPS, paused with zero draws while acquisition continued, resumed drawing, drained fully, stopped, released the dashboard lease, and closed with zero Mklink processes, zero API/CDP listeners, and zero Python processes. The installed footer showed v0.1.0-rc.2 plus a9f1b6b.",
-      "review": "Independent backend and harness reviews found and closed frame-ticket high-water masking, wrong-Worker attribution, reconnect diagnostic-key leakage, a cross-thread lock inversion, initial metadata queue eviction, and the frontend running-boundary metadata reset. Final reviews reported no Critical or Important findings.",
-      "notes": "The 10 us setting is the fastest supported request and the qualified two-channel stable rate, not a proven absolute hardware maximum. Only the standard unsigned NSIS was generated. No MSI, WebView2-offline bundle, raw log, screenshot, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed."
-    },
-    {
-      "name": "SuperWatch stable chart and absolute Y viewport",
-      "status": "complete",
-      "commits": ["fabe63d", "fa179d1", "3a49b93", "9ca0eb1", "10a2f2f", "b035191", "41007b3"],
-      "tests": "Python 702 passed; GUI 31 files / 343 tests passed; WaveformViewer 63 passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
-      "evidence": "The installed 41007b3 Tauri WebView2/CDP ran four physical channels at a 0.001 s request and 50000 points/channel. Eleven chart-wrap rectangle samples over 5.5 seconds were identical while values changed. Pointer-anchored zoom reduced the rendered Y span to about 0.8 while keeping the anchor within rendered-label rounding, then held identical ticks for five seconds as uwTick increased. Vertical drag kept span and shifted Y; diagonal drag shifted X and Y; double-click restored Auto; bottom-anchored zoom excluded uwTick while all four channels continued updating. Canvas rendered at 22.36 FPS with real strokes, pause kept WebSocket acquisition advancing while continuous draws stopped, resume restored draws, measured backend drops were zero, and leaving the dashboard reduced clients to zero and released the resource owner.",
-      "review": "Per-task specification and quality reviews plus the final integrated review are APPROVED. Responsive footer leakage, project-load manual-state leakage, lost probe clicks, horizontal-drag Y locking, and high-zoom X sensitivity were found with RED tests and closed before final qualification.",
-      "notes": "Only the standard unsigned NSIS was generated. The installed restricted-PATH process tree contained Tauri, the bundled sidecar, and WebView2 with zero Python processes; normal close released application processes and ports 8765 and 9223. No MSI, WebView2-offline bundle, raw log, screenshot, firmware, Pack, probe identifier, COM port, user name, credential, or local hardware path is committed."
-    },
-    {
-      "name": "Licensed builtin Pack expansion and public-release license delivery",
-      "status": "complete",
-      "commits": ["7c95b96", "3adc8f3", "ce8625c", "1866dc0", "0466d24", "064bee8", "84877cb", "5bc46be"],
-      "tests": "Python 821 passed; GUI 32 files / 357 tests passed, including 63 WaveformViewer tests; Vite transformed 1908 modules; Rust 6 passed and cargo check completed. One parallel GUI run exceeded only the VOFA heap gate because Python and Rust were running concurrently; the complete GUI suite passed when rerun in isolation without product changes.",
-      "evidence": "The deterministic 14897697-byte slim bundle contains 73 Packs and 5065 exact target records. Public reports show 73/73 declared license files present and DAPLinkUtility coverage of 2432 exact plus 1061 aliases. The 5bc46be standard NSIS installed with exit 0, delivered a readable THIRD-PARTY-NOTICES.txt whose digest matched source, showed the matching build identity and 10 MHz option, initialized 13120 searchable index entries, returned representative STM32, Nordic, Infineon, and Microchip Pack algorithms, kept HPM5300 at zero algorithms, and parsed the supplied external-QSPI custom FLM. Normal close left no product/Python process and released port 8765.",
-      "review": "Final code review found no Critical or Important issue. The only Minor request, explicit bundle-level Apache license delivery, was implemented and covered by a regression test.",
-      "notes": "Only the standard unsigned NSIS was generated. At this checkpoint no DAPLinkUtility FLM was copied; that limitation is superseded by the following pinned-resource bundle milestone. No full source Pack, firmware, raw log, screenshot, probe identifier, COM port, user name, credential, or local hardware path was committed. Physical HPM programming and new target flashing were intentionally not performed in this pass."
-    },
-    {
-      "name": "DAPLinkUtility builtin FLM expansion and installed hardware qualification",
-      "status": "complete",
-      "commit": "405866d",
-      "tests": "Python 845 passed and 1 unrelated skip; fixed DAPLinkUtility EXE integration 5 passed; GUI 32 files / 357 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed; focused algorithm/API/backend/jobs regression 194 passed",
-      "evidence": "The pinned DAPLinkUtility resource extraction produced 8137 target records, 12161 Flash regions, 8122 unique model names, and 1428 deduplicated FLM blobs. Empty-Pack-cache source HIL passed DAP-only connect plus STM32H7B0 BOOT and RGB program/verify/reset at 10 MHz. The installed standard NSIS exposed visible 405866d identity in real Tauri WebView2, returned a DAP-only GD32 target and offline DAP algorithm from the embedded sidecar, kept HPM5300 at zero algorithms, spawned no Python descendants, and passed system-level normal close. The installed bundled sidecar then programmed and verified BOOT internal Flash and RGB external QSPI using the supplied custom FLM.",
-      "review": "Root-cause debugging, RED/GREEN coverage for pyOCD fallback and no-image jobs, full automated regression, fixed-source extraction gate, real hardware, installed WebView2, restricted-PATH process checks, checksum verification, privacy scan, and generated-output cleanup completed",
-      "notes": "Only the standard unsigned NSIS was generated. The external release directory contains the effective 10747-model table and raw 8137-record DAP table. No MSI, WebView2-offline package, source executable, standalone FLM, Pack, firmware, raw log, screenshot, probe identifier, COM port, user name, credential, or local hardware path is committed. Physical HPM programming was intentionally skipped by user direction."
-    },
-    {
-      "name": "Runtime-readable structured symbols and installed read-only qualification",
-      "status": "complete",
-      "commits": ["e269e11", "c9f4480", "b599f5c"],
-      "tests": "Python 860 passed with one skip; GUI 32 files / 365 tests passed; Vite transformed 1908 modules; Rust 6 passed and cargo check completed",
-      "evidence": "RGB_LCD contains 2381 raw DWARF variables, 18 fixed RAM roots, and 801 runtime-readable scalar leaves after recursive structure and array expansion. BOOT exposes 59 runtime-readable leaves. Real installed WebView2 displayed 801 in Configuration, Symbols, and SuperWatch. A physical read-only SuperWatch run selected adjacent s_tDotsLocation[0].iX/iY leaves, entered dump-memory mode, added 92 completed cycles with zero read drops, read errors, or binary batch drops, and passed pause/resume/stop. A direct four-byte read decoded valid int16 values, and production build_read_blocks merged both leaves into one four-byte block.",
-      "review": "Focused RED/GREEN tests, full Python/GUI/Rust regression, production and standard NSIS build, installed restricted-PATH WebView2/CDP qualification, BOOT/RGB_LCD read-only hardware validation, privacy cleanup, and final code review completed with no Critical or Important finding",
-      "notes": "Two large roots, DISP0_ADAPTER and s_tLCDTextControl, are intentionally truncated to 256 readable leaves each. No erase or programming operation was performed during this final qualification, and physical HPM programming remained intentionally out of scope."
+      "notes": "The installed b599f5c candidate runs with the bundled sidecar under restricted PATH, spawns no Python child, exposes the expected build identity, and releases processes and ports on normal close."
     }
   ],
   "verification": [
     {
-      "area": "Online flash automated",
-      "result": "Python 388 passed; GUI 69 passed; Vite 134 modules; no tracked or bundled .pack"
+      "area": "Latest automated baseline",
+      "result": "Python 860 passed and 1 skipped; GUI 32 files / 365 tests passed; Vite production build transformed 1908 modules; Rust 6 passed; cargo check completed."
     },
     {
-      "area": "Online flash HIL",
-      "result": "MKLink filter, Pack index, on-demand GD32 DFP, restart cache, STM32F103RC HEX/BIN program+verify, expected VERIFY_FAIL, cooperative stop, VOFA PROBE_BUSY handoff, target boot firmware restored",
-      "probe": "MKLink V4; identifier omitted"
+      "area": "Installed WebView2 checks",
+      "result": "Health ok; build identity b599f5c; no startup serial-read failure; 10 MHz visible; keep-running default; one total progress bar; target selection fills the search; SuperWatch follows RTT View; HPM5300 exposes zero algorithms."
     },
     {
-      "area": "Tauri",
-      "result": "release EXE, MSI, and NSIS bundles were generated during Task 9; the refreshed packaged WebView2 RTT gate ran 300.027 seconds with 31010 WebSocket frames exactly matching 31010 Worker frames and final sequence 34334, 7832827 items, 5.27 FPS, zero backend/frontend/sequence loss, backend stopped, zero clients, no RTT resource owner, and successful target-dearm readback"
+      "area": "Symbol and SuperWatch read-only HIL",
+      "result": "BOOT exposes 59 runtime-readable leaves. RGB_LCD exposes 801 leaves, shown consistently in Configuration, Symbols, and SuperWatch. Adjacent structure-array leaves merged into one four-byte block and sampled in dump-memory mode with zero read drops, read errors, or binary batch drops."
     },
     {
-      "area": "Current Python baseline",
-      "result": "583 passed in 26.36 seconds after Task 9 browser/render fixes and evidence updates"
-    },
-    {
-      "area": "Current GUI baseline",
-      "result": "18 files / 231 tests passed; Vite production build transformed 140 modules after SystemView pause lifecycle, offline import recovery, follow-FPS, SuperWatch pause, and deep-link fixes"
-    },
-    {
-      "area": "Task 9 release harness",
-      "result": "13/13 Node tests passed, including exact transport/cleanup predicates and CDP browser release after both successful and failed cleanup"
-    },
-    {
-      "area": "Task 5 local transport benchmark",
-      "result": "10 seconds at 10 kSamples/s and 8 channels produced/consumed 100000/100000 with zero drops and sequence errors; elapsed 10.001s; responsive 1800-second cancellation; real overflow accounting matched exactly"
-    },
-    {
-      "area": "Task 6 SystemView soak",
-      "result": "Hub/codec 600 seconds at 50 kEvents/s consumed 30000000/30000000 fixed 48-byte events with zero drops/errors, 2.4036 MB/s, queue high-water 1, RSS growth 430080 bytes; realistic Worker 60 seconds processed 3000000 events at 50002.8 events/s with fixed 100000 buffer, 30 FPS visible requests, output <=1600 for 800 pixels, zero errors"
-    },
-    {
-      "area": "Task 7 VOFA synthetic qualification",
-      "result": "Python synthetic transport 1800 seconds at 10 kSamples/s and 8 channels consumed 18000000/18000000 with zero drops/errors and working-set growth 40960 bytes. Accelerated jsdom same-thread harness processed 60 seconds of data (600000 samples), 1800 visible requests, output <=5120 for 320 pixels x 8 channels, zero ring full scans/drops/errors; this is not wall-clock browser, WebSocket, Web Worker, Python backend, or HIL evidence."
-    },
-    {
-      "area": "Task 8 RTT and SuperWatch synthetic qualification",
-      "result": "Python local StreamHub/codec soaks ran 600 seconds each at 10 k records/s: RTT consumed 6000000/6000000 with zero drops/sequence errors at 123599.7 B/s and queue high-water 1; SuperWatch 8-channel consumed 6000000/6000000 with zero drops/sequence errors at 403599.4 B/s and queue high-water 1. Accelerated jsdom same-thread gates processed RTT 6000 records with a 5000-line bound and DOM below 40 rows, and SuperWatch 600000 x 8 samples with a 200000-sample ring and envelope <=5120 values. These are not real wall-clock browser, WebSocket, Web Worker, packaged application, or MKLink HIL results."
-    },
-    {
-      "area": "Task 9 backend MKLink HIL",
-      "result": "Four authenticated binary WebSocket runs completed 1800 seconds each with zero measured sequence/backend loss: SystemView 20093.43 events/s, VOFA 8044.33 samples/s, RTT 12997.51 samples/s, SuperWatch 8023.71 samples/s. These are qualified stable rates; only RTT retained a measured overload boundary."
-    },
-    {
-      "area": "Task 9 real Edge frontend HIL",
-      "result": "SystemView, VOFA, RTT, and SuperWatch loaded hashed Workers and binary WebSockets; visible and resumed rendering stayed <=30 FPS; pause kept backend and Worker collection advancing with zero Canvas frames and zero measured frontend/sequence/backend loss. Peak Edge process-tree working sets were 798273536, 736600064, 709496832, and 733954048 bytes respectively. Hidden state was not established on Edge 130 and is not claimed as HIL PASS."
-    },
-    {
-      "area": "Task 10 packaged stream HIL",
-      "result": "Four 600-second packaged measurements pass with exact WebSocket/Worker parity, real canvas strokes, <=30.5 FPS, pause/resume evidence, zero measurement loss, and validated fixtures. Four regenerated cleanup artifacts independently prove target reflash, actual Flash readback, reset, zero controls, Tauri exit, and API/CDP port release."
-    },
-    {
-      "area": "SystemView Context corruption",
-      "result": "Root causes fixed at protocol, RAM fallback, backend lifecycle, and GUI display boundaries. Focused Python 50 and GUI 8 tests pass. Fresh packaged HIL ran 20.657 seconds with 414568 events, zero parser drops, one valid protocol task name, zero invalid names, and complete cleanup."
-    },
-    {
-      "area": "Current full automated baseline",
-      "result": "Python 634 passed in 37.69s; Node release harness 51 passed; GUI 19 files / 246 tests passed in 18.16s; Vite transformed 144 modules; Rust 6 passed and cargo check completed."
-    },
-    {
-      "area": "Task 11 online-flash safety and installer lifecycle",
-      "result": "Real App programming used 56 covered 2 KiB sectors and preserved independently verified bootloader and App regions. Final 56f1df6 NSIS/MSI bundles install and uninstall with exit 0, run without Python on PATH or Python descendants, and release ports. Final installed NSIS App HEX verify succeeded read-only; expected VERIFY_FAIL reported first mismatch 0x08000000. NSIS uninstall preserved both Pack/user cache fingerprints."
-    },
-    {
-      "area": "RTT View empty layout",
-      "result": "The large black area was the empty virtual text log joined visually to the 160 px numeric Canvas. The text log now remains mounted but hidden until text arrives, so first-batch reception is preserved; installed DOM measured zero empty-log width/height and full GUI tests pass."
-    },
-    {
-      "area": "Task 12 release assets",
-      "result": "21 payload assets and 18 sanitized rc1 JSON files were copied to the external release directory. All sizes and SHA-256 values match the manifest; checksum lines are sorted by asset name. The complete Pack-index, uncached GigaDevice DFP 2.2.1 install, restart reuse, and final installed-runtime cache reuse are mapped into the report and rc1-pack-catalog-cache.json."
-    },
-    {
-      "area": "Task 13 remote publication",
-      "result": "GitHub prerelease v0.1.0-rc.1 is non-draft and contains 23 assets. All assets were downloaded to an isolated temporary directory and matched local name, byte size, and SHA-256; the temporary verification copy was removed. Tag and manifest source both resolve to 1c7c5aac3f49f95d4195a0f07eed51bdaf6dcde6."
-    },
-    {
-      "area": "Offline download V4 HIL",
-      "result": "cmd.get_version() identified V4.3.4. The structured deploy API copied an ordered bootloader HEX and application HEX plus python/offline_download.py to the MKLink disk, then load.offline() reported both images loaded successfully and auto download finished. Independent readback matched both complete configured ranges byte for byte, preserving the bootloader and application together without whole-chip erase. A real API reproduction also connected Device first and then detected V4.3.4 through the same bridge, covering installed-runtime project restoration."
-    },
-    {
-      "area": "RTT dashboard failure and installed HIL",
-      "result": "Python 635, Node 51, GUI 249, and Rust 6 tests passed; Vite production build transformed 144 modules. The rebuilt installed application restored the project and loaded AXF symbols. Real Edge HIL confirmed ordered RTT raw plus four-channel waveform delivery, 37 Canvas clears and 148 strokes in the visible interval, zero measured loss, pause/resume rendering behavior, clean stop, zero clients, released resources, and target dearm. Runtime Device ERROR is terminal and visible instead of remaining falsely running."
-    },
-    {
-      "area": "RTT named waveform and smooth refresh HIL",
-      "result": "Python 636, GUI 249, and Rust 6 tests passed; Vite transformed 144 modules; Keil App build had 0 errors and 0 warnings. The App-only HEX began at 0x08005000, passed readback verification, and preserved the Bootloader without whole-chip erase. Installed HIL recognized speed,temp during mid-line attachment, delivered over 1,000 parsed points/s with zero drops, rendered changing curves at 23.8 FPS, refreshed the virtual log at roughly 25 ms intervals, paused with zero draws, resumed normally, and stopped cleanly."
-    },
-    {
-      "area": "Installed GUI ordinary-user experience",
-      "result": "Computer Use verified real connection/disconnection, RTT named data and curves, pause/resume/stop, RTOS Trace collection and stop, memory read, symbol search, SuperWatch symbol selection, error recovery, and navigation. Edge/Playwright continued after the Windows capture channel failed. GUI 252 tests and Vite 144 modules passed. The rebuilt NSIS installed with exit 0 and the installed application passed the corrected invalid-symbol, direct-stop, resource-release, and offline V4.3.4 detection flows."
-    },
-    {
-      "area": "Installed online-flash MicroKeen discovery",
-      "result": "The rebuilt NSIS installed with exit 0. Computer Use verified automatic MicroKeenV4 CMSIS-DAP discovery/selection, no manual firmware-inspection button, automatic HEX inspection, explicit BIN base validation, and automatic BIN inspection after entering an App address. A later App-only HEX program used the embedded range beginning at 0x08005000 and completed connect, covered-sector erase, program, verify, reset, and disconnect without whole-chip erase or Bootloader coverage."
-    },
-    {
-      "area": "SuperWatch reconnect and typed-write installed HIL",
-      "result": "Python 659, GUI 273, and Rust 6 tests passed. Two full MSI/NSIS bundles built and the NSIS installer overwrote the installed application with exit 0. Computer Use verified disconnect/reconnect, stable uint8 typed write with verified readback, immediate continuous dump recovery, 21 additional read cycles in two seconds, zero read errors, pause/resume, clean stop, and buffer reset to zero."
-    },
-    {
-      "area": "SuperWatch waveform visibility and shared-axis installed HIL",
-      "result": "Python 659, GUI 279, focused SuperWatch 55, isolated WaveformViewer 48, and Rust 6 tests passed; cargo check and the Vite production build also passed. Computer Use verified the expanded waveform workspace, independent eye visibility with continued acquisition, shared numeric Y ticks, Y zoom/pan/reset, pause with continued buffering, resume catch-up, stop with backend buffer reset, normal application exit, and sidecar/port release."
-    },
-    {
-      "area": "04c1ca7 standalone Windows installer qualification",
-      "result": "Standard and WebView2-offline MSI/NSIS bundles were generated. Both NSIS variants installed silently with exit 0. Under a PATH containing only Windows system directories, the installed application returned API health ok, enumerated the MicroKeen CMSIS-DAP, used only mklink-ai-probe.exe plus the bundled mklink-sidecar.exe process pair, spawned no Python process, and released all processes and port 8765 on normal close. MSI administrative extraction contained both installed executables. SHA-256 checksums were generated for all four external release files."
-    },
-    {
-      "area": "SuperWatch 1 ms default and dynamic interval installed HIL",
-      "result": "Python 660 and GUI 280 passed; Vite transformed 1906 modules. The 2b5ddd7 standard NSIS installed with exit 0. Real Edge/Playwright verified 0.001 initial display, a 0.002 draft surviving live polling, backend and UI both applying 0.002 while running, read cycles increasing from 178 to 2343 during the checked window, points increasing from 0 to 2272, changing float values, pause with continued backend reads, resume, stopped state, zero read errors, zero remaining clients after browser close, and complete process/port cleanup."
-    },
-    {
-      "area": "Offline Flash first-load target-search installed retest",
-      "result": "Three valid cold starts of the installed 2b5ddd7 standard NSIS application were exercised with real Microsoft Edge/Playwright, the bundled sidecar, and a physical V4.3.4 probe. Offline Flash showed one matching target without manual retry and no error alert in every round. The two instrumented rounds captured the initial target-search request returning HTTP 200, and probe-model detection completed successfully."
-    },
-    {
-      "area": "Desktop configuration and bidirectional RTT installed HIL",
-      "result": "Python 686, GUI 324, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real Edge verified the latest production frontend at the default and minimum desktop window sizes. Physical V4.3.4 HIL verified address detection, exact-mode compatibility recovery, repeated start/stop, active channel-0 DownBuffer writes, UTF-8/Hex payloads, all configured line endings, and byte-exact MCU echo. The 93d83e4 standard NSIS was the only bundle generated, installed silently with exit 0, ran with the bundled sidecar and no Python process under restricted PATH, passed installed MAP/RTT hardware checks, and released all processes and port 8765 on normal close. SHA-256 is 8737b858613f54615366f004d4d15976024d48d078e54ca4f66885de96bfb51d."
-    },
-    {
-      "area": "Packaged RTT startup and visible build identity installed HIL",
-      "result": "Python 691, GUI 329, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. Real installed Tauri WebView2/CDP returned application/json for the RTT status endpoint, displayed v0.1.0-rc.2 plus commit 28421cb, kept the empty log panel visible, showed startup progress, issued mode 0/search_size 1024 to the bundled API, exposed target-control-block DownBuffers with active channel 0, accepted transmit with HTTP 200, restored running/send state after navigation, and exited with zero Mklink processes and released API/CDP ports. Only the standard NSIS was generated. SHA-256 is 3447bf96b56f3ce2d576addd417a0e1e1b5c7b0744837d35a3e964c7ecc08252."
-    },
-    {
-      "area": "RTT transmit and SuperWatch high-throughput installed HIL",
-      "result": "Python 702, GUI 331, packaged harness 40, focused StreamHub/RTT/SuperWatch 75, and WaveformViewer 51 tests passed; Vite transformed 1908 modules. The installed a9f1b6b standard NSIS ran through the bundled sidecar under restricted PATH with no Python process. A 600.737-second visible WebView2 SuperWatch gate at a 10 us request delivered 14628202 two-channel sample rows at 24350.43 samples/s/channel, rendered at 23.04 FPS, matched 457776 WebSocket and Worker frames exactly, reported zero Worker errors and zero loss in every measured domain, passed pause/resume and drain, then stopped and released all processes and ports. SHA-256 is 00dd2f4472e538438b4be3185ebce2da783cfdaae8c31328efb68906a121b0e1."
-    },
-    {
-      "area": "SuperWatch stable viewport installed HIL",
-      "result": "Python 702, GUI 343, WaveformViewer 63, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The installed 41007b3 standard NSIS displayed the matching build identity and ran a real four-channel SuperWatch stream through the bundled sidecar. Chart geometry remained identical across eleven samples, absolute manual Y zoom/pan stayed fixed as uwTick grew, X/Y diagonal drag and Auto reset passed, small-signal zoom kept all selected channels acquiring while uwTick was outside the viewport, Canvas refreshed at 22.36 FPS with zero measured backend drops, pause/resume behaved correctly, and dashboard/application cleanup released clients, resources, processes, and API/CDP ports. SHA-256 is f7fb285e4558435beb52e3e6a007608b27de1f114f52844cc3b05545a5f6fb45."
-    },
-    {
-      "area": "Online flash algorithm sources and installed hardware qualification",
-      "result": "Python 746, GUI 348, and Rust 6 tests passed; Vite transformed 1908 modules and cargo check completed. The 2fb5a8a installed standard NSIS exposed the matching build identity, a visible 10 MHz SWD option, local Pack import, target-scoped custom FLM, and 1142 exact builtin targets from a 4.56 MiB slim bundle. A previously uninstalled DFP completed the frozen HTTPS Pack install path and a real local Pack archive imported successfully; both privacy-safe responses omitted local paths. Real Tauri WebView2/Playwright HIL programmed, readback-verified, reset, and disconnected a BOOT internal-Flash HEX and an RGB_LCD external-QSPI HEX using the persisted custom FLM, with complete ordered job states, zero console errors, no active job or resource owner, normal application close, zero Python processes, and released API/CDP ports. Only standard NSIS was generated; SHA-256 is def00101776f9a0fe35f420e5d14ed6e14e04f8c4a520b9afc0e9c2470fcec62."
-    },
-    {
-      "area": "Offline-first algorithms, HPM ROM routing, and final installed qualification",
-      "result": "Python 783, GUI 357, and Rust 6 tests passed; Vite transformed 1908 modules, cargo check completed, and the repository builder prerequisite check passed. The installed 51b6192 sidecar remained healthy without Python, exposed the matching build identity and 10 MHz option, and returned 12704 indexed models. Real STM32H7B0 HIL programmed and readback-verified the BOOT internal-Flash HEX and RGB_LCD external-QSPI HEX at 10 MHz; RGB_LCD used one persisted custom FLM, and both jobs released their active state. A real optional HTTPS Pack install emitted preparing 1%, monotonic byte progress through 90%, refreshing 95%, and a terminal installed result; the catalog immediately exposed the target and algorithm without restart, and the test Pack was removed afterward. HPM records expose hpm-rom-api with zero algorithms and reject FLM; physical HPM programming was intentionally skipped by user direction. The standard-only NSIS is release/20260720-012219/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_51b6192-setup.exe, 68731291 bytes, SHA-256 3167936a9afc9be3aab417dddb7c4e5c00ec0eccd2414a2355a7aa19c5071398. The release directory also contains privacy-checked UTF-8 CSV inventories for 1361 unique builtin models across 20 manufacturers. Normal close left zero product/Python processes and no listener on port 8765."
-    },
-    {
-      "area": "Licensed builtin Pack expansion and installed public-release candidate",
-      "result": "The 73-Pack source set was reconstructed only from pinned official HTTPS URLs and verified source SHA-256 values, then deterministically reduced to 14897697 bytes and 5065 exact records. License audit reports 73/73 declared-present; complete Apache-2.0 and Nordic BSD-3-Clause texts are installed as a readable resource. The DAPLinkUtility comparison covers 3493 of 8137 models without copying its FLM resources. The 5bc46be standard-only NSIS installed with exit 0, its sidecar digest matched the build output, health returned ok, build identity and 10 MHz were visible in real Tauri WebView2, the local index became ready with 13120 entries, representative licensed vendors returned local algorithms, HPM5300 returned raw [], and the supplied QSPI FLM imported, parsed, and was removed. Normal close left zero Mklink/Python processes and no port 8765 listener."
-    },
-    {
-      "area": "DAPLinkUtility builtin FLM and final installed hardware qualification",
-      "result": "Python 845 passed with one unrelated skip, the fixed-source DAP extraction suite passed 5/5, GUI 357 passed, Vite transformed 1908 modules, Rust 6 passed, and cargo check completed. The compact DAP bundle contains 8137 target records, 12161 Flash regions, 1468 referenced FLM names, 1428 deduplicated blobs, and 30742148 payload bytes. Source HIL with an empty Pack cache passed DAP-only connect and STM32H7B0 BOOT/RGB program+verify+reset at 10 MHz. The installed 405866d standard NSIS exposed the matching identity in real Tauri WebView2, a DAP-only GD32 online target and offline algorithm, HPM zero algorithms, zero Python descendants, normal system-level close, and released ports. Installed-sidecar BOOT internal Flash and RGB external QSPI program+verify+reset also passed. The release directory contains 10747 effective unique models, 8137 raw DAP records, and ten independently revalidated SHA-256 payload lines. Installer SHA-256 is c77f6de1c31e00d6c8ff75518e5b2bb8234f1c4a5e93cf0a1c5dcec900f78a7d."
-    },
-    {
-      "area": "Runtime-readable structures, arrays, and final installed read-only HIL",
-      "result": "Python 860 passed with one skip, GUI 365 passed, Vite transformed 1908 modules, Rust 6 passed, and cargo check completed. The installed b599f5c standard NSIS returned health ok under restricted PATH with no Python process, displayed the matching build identity, offered 10 MHz, defaulted connection mode to keep-running, showed one total flash progress bar, filled the target search after double-click, and placed SuperWatch immediately after RTT View. HPM5300 returned zero algorithms. BOOT parsed 59 runtime-readable leaves; RGB_LCD parsed 801 leaves and showed the same 801 count in Configuration, Symbols, and SuperWatch. Adjacent structure-array leaves merged into one four-byte block and completed physical dump-memory sampling with zero read drops, read errors, or binary batch drops. Pause, resume, stop, target resume, disconnect, normal application close, zero product/Python processes, and release of ports 8765 and 9223 all passed. Installer SHA-256 is 2502f29f8b0da08c4ca08d725344ee56a69119375ed9a839d2a7f95345573482."
+      "area": "Flash and package qualification",
+      "result": "STM32H7B0 internal and external Flash program/verify/reset paths passed in earlier qualification. The final symbol pass performed no erase or program. Normal close left zero product/Python processes and released ports 8765 and 9223."
     }
   ],
   "decisions": [
-    "Only MKLink-exposed CMSIS-DAP is supported by the online flash UI.",
-    "BIN requires an explicit base address; HEX uses embedded mappings.",
-    "Online flash algorithm acquisition is offline-first: the standard sidecar bundles 73 slim DFPs and a pinned compact DAPLinkUtility FLM catalog, users can import local .pack archives, users can attach target-scoped custom FLM for additional or replacement Flash regions, and HTTPS Pack download remains optional.",
-    "HPMicro targets are an explicit ROM-API special case across online, offline, Device, CLI, MCP, and AI workflows: they use BIN plus base address and board/flash_cfg, never discover or load FLM, expose no erase sectors, and do not offer independent erase.",
-    "User-installed or downloaded Pack records override duplicate builtin records. A target-scoped custom FLM is an explicit user override for overlapping Flash regions and may add external Flash; firmware and sector jobs inject only the algorithms selected for the requested addresses.",
-    "Builtin Pack bundles are generated deterministically from an explicit allowlist and contain only PDSC, referenced FLM, and required license files. The DAPLinkUtility bundle is generated only from a pinned executable digest and contains only referenced content-addressed FLM blobs plus a compact manifest. Source executables, source Packs, standalone FLM binaries, and generated bundles remain outside Git.",
-    "High-rate data uses a versioned binary WebSocket data plane; REST/SSE remains for control and legacy low-rate paths.",
-    "Acquisition must never wait for a browser; each client has a bounded queue that drops the oldest batch with explicit telemetry.",
-    "Rendering is decoupled from acquisition and capped at 30 FPS with min/max pixel-envelope decimation.",
-    "Ordinary online-flash program is enforced at both GUI and API boundaries: the inspected image is target-bound, reliable FLM coverage is recomputed, and erase sectors must exactly equal image-covered sectors; whole-chip erase remains a separate explicit confirmation.",
-    "Offline probe model selection is derived from cmd.get_version(). V2/V3 deploy python/offline_download.py; V4 may deploy a safe custom .py name selected on the probe screen.",
-    "Offline scripts preserve firmware order, use embedded HEX addresses, require BIN base addresses, and never generate a whole-chip erase operation.",
-    "The GUI trigger is disabled until the current configuration is deployed; V4 custom scripts require explicit confirmation that the same script is selected on the probe screen.",
-    "RTT View always renders the text data panel, while the numeric Canvas appears only when numeric channels are available.",
-    "RTT binary transport starts only after a successful control-plane start. A runtime Device ERROR is terminal, releases the dashboard lease, is exposed as status.error, and stops the frontend binary client.",
-    "RTT waveform envelopes use the Worker's finite buffered timestamp range. Requesting 0..Number.MAX_SAFE_INTEGER is forbidden because it collapses real-time samples into one pixel and makes constant channels invisible.",
-    "RTT dashboard delivery uses 50 Hz read windows, flushes partial raw and numeric batches each cycle, and keeps Canvas rendering capped by the shared 30 FPS scheduler.",
-    "RTT numeric channel names are locked only after two consecutive rows expose the same layout; the first stream chunk may begin in the middle of a line.",
-    "SuperWatch typed writes serialize against acquisition: stop continuous dump, write through flush_memory, verify with command-mode read_memory, then restore the prior running or paused state.",
-    "SuperWatch prepare always rebinds the current Device on reconnect even when the symbol runtime and selected watch list are preserved.",
-    "The public symbol catalog contains only fixed-address runtime-readable scalar leaves. Fixed structures and arrays are recursively flattened into member/index paths, adjacent leaves remain eligible for merged reads, and each root is capped at 256 leaves with an explicit truncation notice.",
-    "SuperWatch variable checkboxes control acquisition while adjacent eye controls affect rendering only; hidden curves keep sampling and updating their current values. The desktop waveform has no dynamic statistics footer. Its shared Y axis starts in Auto, uses an absolute manual range after Y interaction, anchors wheel zoom to the pointer, supports plot Y/XY panning with independent activation thresholds, and returns to Auto on double-click.",
-    "Every future Windows candidate is copied to the main repository's external release directory with the source commit in the filename and a SHA-256 checksum list. Generate the standard NSIS installer by default. Do not generate MSI or WebView2-offline installers unless the user explicitly requests them. Installers and checksums are never committed.",
-    "Subagent workflow is implementer, spec review, then quality review; review fixes receive new commits and are re-reviewed.",
-    "The desktop configuration surface is one workspace with Local Device, File Sources, Remote Connection, and Start Service sections. AXF/ELF/OUT is one symbol-source field; MAP is independent. Project initialization remains a backend/AI workflow and is not exposed as duplicate desktop project overview state.",
-    "RTT address search fills the editable address field but never starts acquisition automatically. RTT transmit is raw passthrough on the selected channel with Abc/Hex encoding, Enter or button send, bounded history, and explicit no/\\r/\\n/\\r\\n endings.",
-    "Packaged Tauri builds inject http://127.0.0.1:8765 as the local control-plane origin; development builds keep relative URLs and the Vite proxy. Standard release builds generate NSIS only unless MSI or WebView2-offline output is explicitly requested."
+    "Generate only the standard NSIS installer by default. MSI and WebView2-offline packages require explicit user request.",
+    "Only MKLink-exposed CMSIS-DAP probes are supported by the online flash UI.",
+    "BIN requires an explicit base address; HEX uses embedded addresses.",
+    "Ordinary programming erases only image-covered sectors and verifies readback before reset. Whole-chip erase remains a separate confirmed operation.",
+    "Algorithm selection is offline-first: builtin catalog, then user Pack, then target-scoped custom FLM; optional online Pack installation remains available.",
+    "HPM targets always use the HPM ROM API path and never discover or load FLM.",
+    "The public symbol catalog contains only fixed readable scalar leaves. Pointers, bit-fields, variable-length arrays, overlapping union aliases, incomplete layouts, and non-RAM addresses are excluded.",
+    "SuperWatch merges nearby addresses through build_read_blocks(max_gap=256) and preserves selected symbol names across valid reparse/reconnect transitions.",
+    "High-rate acquisition never waits for the browser; queues are bounded and report drops explicitly.",
+    "Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths."
   ],
   "hardware": {
-    "probe": "MKLink V4 connected; identifier intentionally omitted",
-    "online_flash_project": "STM32F103 bootloader fixture; local path intentionally omitted",
-    "latest_online_flash_target": "STM32H7B0VBTx LCD board; BOOT internal Flash and RGB_LCD external QSPI fixtures; local paths intentionally omitted",
-    "stream_hil_project": "STM32F103 application fixture; local path intentionally omitted",
-    "keil_root": "local Keil installation; path intentionally omitted",
-    "stream_target": "STM32F103RC",
-    "permission": "User permits adding test firmware code, compiling with Keil, flashing, and testing VOFA/SystemView/variable reads."
+    "probe": "MKLink V4 available; identifier intentionally omitted",
+    "latest_target": "STM32H7B0 LCD board fixture with internal and external Flash; local paths intentionally omitted",
+    "stream_target": "STM32F103RC fixture; local path intentionally omitted",
+    "permission": "User permits firmware build/flash and read-only target validation when the requested task requires it."
   },
   "known_limits": [
-    "Physical target power loss, probe unplug, SWD wire disconnect, second non-MKLink probe comparison, and physical network disconnect were not executed.",
-    "Only RTT retained a measured overload boundary. SystemView pairs=2/tick and VOFA/SuperWatch at the fastest supported 10 us request are qualified stable zero-drop rates, not claimed drop-bounded maxima. The latest installed two-channel SuperWatch gate sustained 24350.43 samples/s/channel for 600.737 seconds at the 10 us request.",
-    "Real hidden-tab HIL remains not established: Edge 130 rejected the visibility override and a background tab did not set document.hidden=true; deterministic hidden scheduling tests pass.",
-    "GUI npm audit reports two pre-existing high vulnerabilities; dependencies were not changed during protocol work.",
-    "Task 3 uses the first CONTROL heartbeat as a subscription-ready barrier in tests because batches published before subscribe are intentionally not cached.",
-    "The Windows RC executables and installers are unsigned and may show an unknown-publisher warning.",
-    "The first final-package restricted-environment teardown omitted SystemDrive in the test harness, so Windows created a literal test-cache directory after product processes and ports exited; the cache was removed and the corrected NSIS lifecycle rerun passed completely.",
-    "Task 11 did not reflash the whole-chip stream fixture because the target currently uses a bootloader-preserving App layout; RTT performance remains supported by the existing 600-second packaged HIL artifact.",
-    "V2/V3 offline deployment is covered by automated tests but was not physically executed in this session; V4.3.4 is the only newly qualified offline hardware model.",
-    "Windows computer-use visual automation was unavailable because its native communication pipe was missing; GUI behavior was verified by 249 Vitest tests, the production build, direct installed FastAPI/WebSocket HIL, and a real Edge Worker/Canvas stroke gate. No new Windows screenshot evidence is claimed.",
-    "Computer Use was available for most of the ordinary-user session, then its window capture channel twice timed out with FrameArrived errors. It recovered after the rebuilt installer was installed and completed the final installed-app retest. Screenshots remain local test evidence only and were deleted before commit.",
-    "After the explicit packaging pause, Computer Use could not reconnect because its native pipe was missing, and the Browser plugin reported no available browser instance. The final dynamic-interval pass therefore used real Microsoft Edge through local Playwright against the production frontend and installed bundled sidecar; the temporary screenshot was deleted and no screenshot evidence is committed.",
-    "Installed Online Flash discovery and App-only programming were physically qualified with MicroKeenV4 only. V2 and V3 share the MicroKeen CMSIS-DAP description policy but were not physically available for this pass.",
-    "Serial and Modbus physical fixtures were not established in this ordinary-user pass and remain NOT ESTABLISHED.",
-    "Immediately after the large PyInstaller/Rust build, Windows displayed one crashrpt.exe 0xc000012d dialog over the installed app. Dismissing it allowed normal operation; it was not attributed to Mklink without further reproduction.",
-    "The b599f5c v0.1.0-rc.2 standard NSIS was qualified on the build machine and uses the bundled sidecar, but has not yet been exercised on a second physical clean Windows computer or clean virtual machine. If WebView2 is absent, the standard bootstrapper may require network access.",
-    "The effective catalog exposes 10747 unique model names. The DAPLinkUtility source has 8137 target records but 8122 unique model names because 15 names occur in more than one source series. One HK32 Flash region lacks reliable sector geometry, so ordinary image programming correctly refuses covered-sector operations for that region until geometry is supplied.",
-    "Physical HPM ROM programming was not executed in this session by explicit user direction. Automated coverage verifies online, offline, Device, CLI, MCP, and AI routing without FLM, while installed API checks verify HPM target discovery and zero algorithms.",
-    "Optional online Pack installation still requires outbound HTTPS access and may require a user-configured proxy in restricted networks. Offline builtin, local Pack import, and custom FLM paths do not depend on catalog downloads after their files are present.",
-    "One installed HIL cold start returned a transient CMSIS-DAP enumeration failure while the USB device remained present and no resource owner existed; a normal application restart restored discovery and both subsequent hardware jobs passed.",
-    "The final v0.1.0-rc.2 installed pass verified DownBuffer authority and transmit acceptance but did not establish a fresh byte-exact MCU echo because the target parser coalesced per-byte echo records; the earlier 93d83e4 hardware pass remains the byte-exact payload evidence.",
-    "Runtime-readable expansion intentionally excludes pointers, bit-fields, variable-length arrays, overlapping union aliases, incomplete layouts, and addresses outside readable RAM. DISP0_ADAPTER and s_tLCDTextControl are truncated to their first 256 readable leaves.",
-    "AXF/ELF symbol and RTT address diagnosis requires external arm-none-eabi-readelf. The installed restricted-PATH qualification intentionally had no readelf, so AXF diagnosis was unavailable while independent MAP diagnosis and hardware RTT startup passed.",
-    "Do not expose full probe IDs, COM ports, credentials, user names, raw logs, screenshots, Pack files, or build artifacts in Git."
+    "The b599f5c standard NSIS has not yet been tested on a second clean Windows machine or VM.",
+    "The installer is unsigned and may show an unknown-publisher warning.",
+    "Optional online Pack installation requires outbound HTTPS and may require a configured proxy.",
+    "Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.",
+    "DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.",
+    "One HK32 catalog region lacks reliable sector geometry and is correctly rejected for ordinary covered-sector programming."
   ],
   "next_actions": [
-    "Install the b599f5c v0.1.0-rc.2 standard NSIS candidate on a second clean Windows 10/11 computer or virtual machine with no Python, Node, Rust, Keil, or pre-existing Pack cache. Verify representative DAP-only models, installed Pack models, local Pack import, custom FLM, optional online Pack progress, 10 MHz selection, health, visible build identity, normal shutdown, uninstall, and reinstall.",
-    "Collect external-user feedback for the 10747-model effective catalog and use exact model plus address-range reports to correct any vendor naming, duplicate-series, RAM, or sector-geometry mismatch.",
-    "Collect user feedback for fixed structures and arrays with large, nested, anonymous, or vendor-specific DWARF layouts; compare the Configuration, Symbols, and SuperWatch counts and report exact variable paths when a readable leaf is missing.",
-    "Collect tester feedback for the merged configuration workspace, RTT address workflow and bidirectional transmit bar, RTT named temp/speed curves, SuperWatch 50000-point minimum buffer and 10 us workflow, symbol workspace, typed writes, eye visibility, stable chart geometry, small-signal Y navigation, offline configurator, and the v0.1.0-rc.1 GitHub prerelease.",
-    "Qualify V2 and V3 physical offline deployment when those probe models are available; automated script-generation coverage already passes.",
-    "For the next release, add code signing before promoting beyond prerelease.",
-    "Keep hidden-document, Serial, Modbus, and physical fault-injection results NOT ESTABLISHED unless their required runtime or fixture is actually present."
+    "Install and qualify the b599f5c standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, or pre-existing Pack cache.",
+    "Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.",
+    "Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.",
+    "Add Windows code signing before promotion beyond prerelease."
   ],
   "continuation_protocol": [
-    "Run: python scripts/ai_memory.py validate",
-    "Read: docs/ai/CURRENT_HANDOFF.md and the active plan",
-    "Run: git status --short and git log -12 --oneline; reconcile with repository.head",
-    "Resume current_task before starting later tasks",
-    "Before ending: update project-memory.json, run render, validate, tests proportional to changes, git diff --check, commit, and push"
+    "Run python scripts/ai_memory.py validate.",
+    "Read docs/ai/CURRENT_HANDOFF.md and reconcile it with git status --short --branch and git log -12 --oneline.",
+    "Resume current_session.current_task before starting later work.",
+    "Before ending, update project-memory.json, render and validate the handoff, run proportional tests and git diff --check, then commit and push."
   ]
 }
