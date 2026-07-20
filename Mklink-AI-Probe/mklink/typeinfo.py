@@ -36,7 +36,11 @@ def format_enum(info: DwarfInfo, name: str) -> str:
 
 
 def run_typeinfo(args) -> str:
-    info = load_dwarf_info(args.source)
+    info = load_dwarf_info(
+        args.source,
+        backend=getattr(args, "elf_backend", None),
+        project_root=getattr(args, "project_root", None),
+    )
     if getattr(args, "json", False):
         if args.list_structs:
             return json.dumps(sorted(info.structs), ensure_ascii=False)

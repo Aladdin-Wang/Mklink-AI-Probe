@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 import json
 import os
 import re
-import subprocess
 import struct
 import threading
 import time
@@ -209,13 +208,22 @@ def resolve_watch_items(
     source: str | None = None,
     dwarf_info=None,
     svd_registers: dict[str, SvdRegister] | None = None,
+    backend: str | None = None,
+    project_root: str | None = None,
 ) -> list[WatchItem]:
     if dwarf_info is None and source:
         from mklink.dwarf_parser import load_dwarf_info
 
-        dwarf_info = load_dwarf_info(source)
+        dwarf_info = load_dwarf_info(
+            source, backend=backend, project_root=project_root
+        )
     svd_registers = svd_registers or {}
-    symbol_sizes = _symbol_size_lookup(source) if source else {}
+    symbol_sizes = (
+        _symbol_size_lookup(
+            source, backend=backend, project_root=project_root
+        )
+        if source else {}
+    )
     items: list[WatchItem] = []
     for raw_name in _normalize_names(names):
         reg_key = raw_name.upper().replace("->", ".")
@@ -269,35 +277,25 @@ def resolve_watch_items(
     return items
 
 
-def _symbol_size_lookup(source: str) -> dict[str, int]:
-    from mklink.toolchain import resolve_readelf
-    tool = resolve_readelf()
-    if not tool:
-        return {}
+def _symbol_size_lookup(
+    source: str,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> dict[str, int]:
+    from mklink.elf_backend import list_elf_symbols
+
     try:
-        result = subprocess.run(
-            [tool, "-s", source],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        symbols = list_elf_symbols(
+            source, backend=backend, project_root=project_root
         )
-    except subprocess.TimeoutExpired:
+    except Exception:
         return {}
-    if result.returncode != 0:
-        return {}
-    sizes: dict[str, int] = {}
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 8:
-            continue
-        try:
-            size = int(parts[2], 0)
-        except ValueError:
-            continue
-        name = parts[-1]
-        if size > 0:
-            sizes[name] = size
-    return sizes
+    return {
+        symbol.name: symbol.size
+        for symbol in symbols
+        if symbol.kind == "object" and symbol.size > 0
+    }
 
 
 def _normalize_names(names: list[str]) -> list[str]:

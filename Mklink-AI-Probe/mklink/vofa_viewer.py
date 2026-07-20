@@ -421,7 +421,13 @@ def infer_channel_metadata_from_dwarf(
     return metadata
 
 
-def resolve_variable_names(variables: list[str], elf_path: str | None = None) -> list[str]:
+def resolve_variable_names(
+    variables: list[str],
+    elf_path: str | None = None,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> list[str]:
     """Resolve symbolic variable names to addresses using symbol_parser.
 
     If a variable token is not a hex address (doesn't start with '0x'), attempt
@@ -438,8 +444,7 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
     if not elf_path:
         return variables
 
-    import subprocess
-    from mklink.symbol_parser import parse_readelf_output, resolve_symbol_names, suggest_similar_symbols
+    from mklink.symbol_parser import resolve_symbol_names, suggest_similar_symbols
 
     # Check if any address-position token looks like a name. In precise mode
     # the odd tokens are type names, so do not try to resolve them.
@@ -465,7 +470,9 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
         try:
             from mklink.dwarf_parser import load_dwarf_info
             from mklink.watch import resolve_variable_path
-            dwarf_info = load_dwarf_info(elf_path)
+            dwarf_info = load_dwarf_info(
+                elf_path, backend=backend, project_root=project_root
+            )
             for dotted in dotted_names:
                 try:
                     addr, type_name, _size, _enum_values = resolve_variable_path(dwarf_info, dotted)
@@ -490,20 +497,24 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
     if not name_like:
         return variables
 
-    # Run readelf to get symbols
-    from mklink.toolchain import resolve_readelf
-    tool = resolve_readelf()
-    if not tool:
-        return variables
-    cmd = [tool, "-s", elf_path]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            return variables
-    except subprocess.TimeoutExpired:
-        return variables
+        from mklink.elf_backend import list_elf_symbols
 
-    symbols = parse_readelf_output(result.stdout)
+        normalized = list_elf_symbols(
+            elf_path, backend=backend, project_root=project_root
+        )
+    except Exception:
+        return variables
+    symbols = [
+        {
+            "name": symbol.name,
+            "address": f"0x{symbol.address:08x}",
+            "type": "OBJECT",
+            "size": symbol.size,
+        }
+        for symbol in normalized
+        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
+    ]
     if not symbols:
         return variables
 
@@ -540,6 +551,8 @@ def run_vofa_visualizer(
     max_points: int = 500,
     source: str | None = None,
     original_variables: list[str] | None = None,
+    backend: str | None = None,
+    project_root: str | None = None,
 ) -> None:
     """Run the full VOFA+ visualization pipeline."""
     from mklink.rtt_viewer import VisualizationServer
@@ -565,7 +578,9 @@ def run_vofa_visualizer(
     if source:
         try:
             from mklink.dwarf_parser import load_dwarf_info
-            dwarf_info = load_dwarf_info(source)
+            dwarf_info = load_dwarf_info(
+                source, backend=backend, project_root=project_root
+            )
             dwarf_metadata = infer_channel_metadata_from_dwarf(
                 dwarf_info,
                 variables,

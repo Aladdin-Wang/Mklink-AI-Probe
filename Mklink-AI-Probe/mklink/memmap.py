@@ -1,11 +1,10 @@
-"""ELF/AXF memory map analysis using readelf text output."""
+"""ELF/AXF memory map analysis over normalized section records."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
 import re
-import subprocess
 
 
 @dataclass
@@ -47,12 +46,31 @@ def summarize_sections(sections: list[Section], *, flash_size: int = 0, ram_size
     }
 
 
-def analyze_memmap(source: str, *, flash_size: int = 0, ram_size: int = 0) -> dict:
-    from mklink.toolchain import require_readelf
-    result = subprocess.run([require_readelf(), "-S", source], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "readelf -S failed")
-    return summarize_sections(parse_section_headers(result.stdout), flash_size=flash_size, ram_size=ram_size)
+def _flags_text(flags: int) -> str:
+    return "".join(
+        letter for bit, letter in ((0x1, "W"), (0x2, "A"), (0x4, "X"))
+        if flags & bit
+    )
+
+
+def analyze_memmap(
+    source: str,
+    *,
+    flash_size: int = 0,
+    ram_size: int = 0,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> dict:
+    from mklink.elf_backend import list_elf_sections
+
+    normalized = list_elf_sections(
+        source, backend=backend, project_root=project_root
+    )
+    sections = [
+        Section(item.name, item.address, item.size, _flags_text(item.flags))
+        for item in normalized
+    ]
+    return summarize_sections(sections, flash_size=flash_size, ram_size=ram_size)
 
 
 def format_memmap(summary: dict) -> str:

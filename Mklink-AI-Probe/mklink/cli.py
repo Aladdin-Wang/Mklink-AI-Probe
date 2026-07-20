@@ -2222,49 +2222,39 @@ def _cli_read_flash(port: str | None, addr: str, size: int, save: str | None, pr
         bridge.close()
 
 
-def _cli_symbols(source: str, filter_pattern: str | None):
-    """Browse symbols from ELF/AXF file using arm-none-eabi-readelf.
+def _cli_symbols(
+    source: str,
+    filter_pattern: str | None,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+):
+    """Browse RAM object symbols from an ELF/AXF file.
 
     Usage:
         python -m mklink symbols --source <axf>
         python -m mklink symbols --source <axf> --filter <regex>
     """
-    import subprocess
-
-    from mklink.symbol_parser import parse_readelf_output, filter_symbols
-    from mklink.toolchain import resolve_readelf
-
-    # Run readelf to get symbol table
-    tool = resolve_readelf()
-    if not tool:
-        print("[FAIL] arm-none-eabi-readelf 未找到（PATH / MKLINK_READELF / .mklink/toolchain.json）")
-        print("       安装 GNU Arm 工具链，例如：winget install Arm.GnuArmEmbeddedToolchain")
-        return
-    cmd = [tool, "-s", source]
-
+    from mklink.elf_backend import list_elf_symbols
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        normalized = list_elf_symbols(
+            source, backend=backend, project_root=project_root
         )
-    except subprocess.TimeoutExpired:
-        print("[FAIL] readelf command timed out")
+    except Exception as e:
+        print(f"[FAIL] {e}")
         return
-
-    if result.returncode != 0:
-        print(f"[FAIL] readelf failed: {result.stderr.strip()}")
-        return
-
-    # Parse the readelf output
-    symbols = parse_readelf_output(result.stdout)
+    symbols = [
+        {
+            "name": symbol.name,
+            "address": f"0x{symbol.address:08x}",
+            "size": symbol.size,
+        }
+        for symbol in normalized
+        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
+    ]
 
     if not symbols:
-        if not result.stdout.strip():
-            print("No symbols found (empty readelf output)")
-        else:
-            print("No RAM OBJECT symbols found")
+        print("No RAM OBJECT symbols found")
         return
 
     # Apply filter if specified
@@ -2276,7 +2266,10 @@ def _cli_symbols(source: str, filter_pattern: str | None):
             print(f"[FAIL] Invalid regex pattern: {e}")
             return
 
-        symbols = filter_symbols(symbols, filter_pattern)
+        symbols = [
+            symbol for symbol in symbols
+            if re.search(filter_pattern, symbol["name"])
+        ]
 
         if not symbols:
             print("No matching symbols found")
@@ -2329,7 +2322,14 @@ def _profile_sizes(project_root: str) -> tuple[int, int]:
     return flash_size, ram_size
 
 
-def _cli_hardfault(port: str | None, source: str | None, sp: str | None):
+def _cli_hardfault(
+    port: str | None,
+    source: str | None,
+    sp: str | None,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+):
     from mklink.hardfault import FAULT_REGISTERS, addr2line, format_hardfault_report, parse_exception_stack_frame
     from mklink.memory_access import read_memory
     from mklink.registers import resolve_register
@@ -2352,7 +2352,13 @@ def _cli_hardfault(port: str | None, source: str | None, sp: str | None):
         if len(data) >= 32:
             frame = parse_exception_stack_frame(data)
             if source:
-                locations = addr2line(source, frame["pc"], frame["lr"])
+                locations = addr2line(
+                    source,
+                    frame["pc"],
+                    frame["lr"],
+                    backend=backend,
+                    project_root=project_root,
+                )
         else:
             print("[WARN] 无法解析异常栈帧:")
             print(raw.strip())
@@ -2365,8 +2371,9 @@ def _cli_hardfault(port: str | None, source: str | None, sp: str | None):
 def _cli_typeinfo(args):
     from mklink.typeinfo import run_typeinfo
 
+    args.project_root = _project_root_from_args(args)
     if not args.source:
-        args.source = _default_axf_from_project(_project_root_from_args(args))
+        args.source = _default_axf_from_project(args.project_root)
     if not args.source:
         print("[FAIL] 请指定 --source 或先运行 project-init")
         return
@@ -2386,7 +2393,13 @@ def _cli_memmap(args):
         return
     flash_size, ram_size = _profile_sizes(project_root)
     try:
-        summary = analyze_memmap(source, flash_size=flash_size, ram_size=ram_size)
+        summary = analyze_memmap(
+            source,
+            flash_size=flash_size,
+            ram_size=ram_size,
+            backend=getattr(args, "elf_backend", None),
+            project_root=project_root,
+        )
     except Exception as e:
         print(f"[FAIL] {e}")
         return
@@ -2416,10 +2429,22 @@ def _cli_watch(args):
     try:
         if args.period and args.period > 0:
             while True:
-                print(format_watch_rows(read_watch_values(names, source=source, port=args.port), as_json=args.json))
+                print(format_watch_rows(read_watch_values(
+                    names,
+                    source=source,
+                    port=args.port,
+                    backend=getattr(args, "elf_backend", None),
+                    project_root=args.project_root,
+                ), as_json=args.json))
                 time.sleep(args.period)
         else:
-            print(format_watch_rows(read_watch_values(names, source=source, port=args.port), as_json=args.json))
+            print(format_watch_rows(read_watch_values(
+                names,
+                source=source,
+                port=args.port,
+                backend=getattr(args, "elf_backend", None),
+                project_root=args.project_root,
+            ), as_json=args.json))
     except KeyboardInterrupt:
         pass
     except Exception as e:
@@ -2452,7 +2477,11 @@ def _cli_superwatch(args):
     if args.source:
         try:
             from mklink.dwarf_parser import load_dwarf_info
-            dwarf_info = load_dwarf_info(args.source)
+            dwarf_info = load_dwarf_info(
+                args.source,
+                backend=getattr(args, "elf_backend", None),
+                project_root=args.project_root,
+            )
         except Exception as e:
             print(f"[WARN] DWARF unavailable: {e}")
 
@@ -2462,6 +2491,8 @@ def _cli_superwatch(args):
             source=args.source,
             dwarf_info=dwarf_info,
             svd_registers=svd_registers,
+            backend=getattr(args, "elf_backend", None),
+            project_root=args.project_root,
         )
     except Exception as e:
         print(f"[FAIL] {e}")
@@ -2511,6 +2542,8 @@ def _cli_vofa(
     duration: float = 30.0,
     names: str | None = None,
     source: str | None = None,
+    elf_backend: str | None = None,
+    project_root: str | None = None,
 ):
     """启动或停止 VOFA+ 实时变量观测。"""
     from mklink.bridge import MKLinkSerialBridge
@@ -2545,7 +2578,12 @@ def _cli_vofa(
             original_variables = list(variables)
             if source:
                 from mklink.vofa_viewer import resolve_variable_names
-                variables = resolve_variable_names(variables, source)
+                variables = resolve_variable_names(
+                    variables,
+                    source,
+                    backend=elf_backend,
+                    project_root=project_root,
+                )
 
             var_args = ", ".join(f'"{v}"' if not v.startswith("0x") and not v.replace(".", "").isdigit() else v for v in variables)
             cmd = f'vofa.send({var_args}, {period})'
@@ -2572,6 +2610,8 @@ def _cli_vofa(
                     channel_names=channel_names,
                     source=source,
                     original_variables=original_variables,
+                    backend=elf_backend,
+                    project_root=project_root,
                 )
             else:
                 # --- 控制台模式 ---
@@ -3463,42 +3503,34 @@ def _cli_break(args):
                 print(f"[FAIL] 需要 --source 指定 AXF 文件来解析函数名 '{target}'")
                 return
 
-            import subprocess
-            import shutil
-            from mklink.symbol_parser import resolve_function_address
-            from mklink.toolchain import resolve_readelf
+            from mklink.debug_control import (
+                resolve_function_address,
+                search_functions,
+            )
 
-            tool = resolve_readelf()
-            if tool:
-                result = subprocess.run(
-                    [tool, "-s", source],
-                    capture_output=True, text=True, timeout=10
+            try:
+                address = resolve_function_address(
+                    source,
+                    target,
+                    backend=getattr(args, "elf_backend", None),
+                    project_root=_project_root_from_args(args),
                 )
-                if result.returncode != 0:
-                    print(f"[FAIL] readelf 失败: {result.stderr.strip()}")
-                    return
-                address = resolve_function_address(result.stdout, target)
-            else:
-                # 无 GNU readelf —— 回退到 Keil ARM Compiler 的 fromelf
-                result = None
-                address = None
-                if shutil.which("fromelf"):
-                    result = subprocess.run(
-                        ["fromelf", "--text", "-s", source],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    if result.returncode == 0:
-                        address = resolve_function_address(result.stdout, target)
-                if result is None:
-                    print("[FAIL] 未找到 arm-none-eabi-readelf 或 fromelf")
-                    print("       安装 GNU Arm 工具链: winget install Arm.GnuArmEmbeddedToolchain")
-                    return
+            except Exception as e:
+                print(f"[FAIL] {e}")
+                return
 
             if address is None:
-                # Try fuzzy match
-                from mklink.symbol_parser import parse_readelf_functions
-                funcs = parse_readelf_functions(result.stdout)
-                similar = [f["name"] for f in funcs if target.lower() in f["name"].lower()][:5]
+                import re
+
+                similar = [
+                    item["name"] for item in search_functions(
+                        source,
+                        re.escape(target),
+                        max_results=5,
+                        backend=getattr(args, "elf_backend", None),
+                        project_root=_project_root_from_args(args),
+                    )
+                ]
                 print(f"[FAIL] 未找到函数 '{target}'")
                 if similar:
                     print(f"  相似函数: {', '.join(similar)}")
@@ -3734,6 +3766,13 @@ def main():
         parser.add_argument("--project-root", default=".", help="项目根目录")
         parser.add_argument("project_root_positional", nargs="?", default=None, help="项目根目录（位置参数，等同于 --project-root）")
 
+    def _add_elf_backend_arg(parser):
+        parser.add_argument(
+            "--elf-backend",
+            choices=("builtin", "external"),
+            help="ELF/DWARF 解析后端（默认 builtin）",
+        )
+
     def _resolve_project_root(args):
         """从参数中解析 project_root，优先使用位置参数。"""
         return args.project_root if args.project_root != "." else args.project_root_positional or "."
@@ -3955,22 +3994,29 @@ def main():
     vofa_parser.add_argument("--duration", type=float, default=30.0, help="可视化运行时长（秒，默认 30）")
     vofa_parser.add_argument("--names", help="通道名称，逗号分隔（如 ntc_temp,comp_coeff）")
     vofa_parser.add_argument("--source", help="ELF/AXF 文件路径，用于变量名/struct.field 解析")
+    vofa_parser.add_argument("--project-root", default=".", help="项目根目录")
+    _add_elf_backend_arg(vofa_parser)
     vofa_parser.add_argument("variables", nargs="*", help="变量列表: 地址 类型 地址 类型 ...（如 0x20000030 uint8_t 0x2000154c float）")
 
     # symbols 子命令（符号浏览器）
     symbols_parser = subparsers.add_parser("symbols", help="Browse symbols from ELF/AXF file")
     symbols_parser.add_argument("--source", required=True, help="ELF/AXF file path")
     symbols_parser.add_argument("--filter", default=None, help="Regex pattern to filter symbol names")
+    symbols_parser.add_argument("--project-root", default=".", help="项目根目录")
+    _add_elf_backend_arg(symbols_parser)
 
     # hardfault 子命令
     hardfault_parser = subparsers.add_parser("hardfault", help="读取并解码 Cortex-M HardFault 寄存器/栈帧")
     hardfault_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     hardfault_parser.add_argument("--source", help="ELF/AXF 文件路径，用于 addr2line")
     hardfault_parser.add_argument("--sp", help="异常栈帧地址（MSP/PSP 值）；未指定时只读 Fault 寄存器")
+    hardfault_parser.add_argument("--project-root", default=".", help="项目根目录")
+    _add_elf_backend_arg(hardfault_parser)
 
     # typeinfo 子命令
     typeinfo_parser = subparsers.add_parser("typeinfo", help="查询 AXF DWARF 类型信息")
     _add_project_root_arg(typeinfo_parser)
+    _add_elf_backend_arg(typeinfo_parser)
     typeinfo_parser.add_argument("--source", help="ELF/AXF 文件路径")
     typeinfo_parser.add_argument("--var", help="变量名")
     typeinfo_parser.add_argument("--struct", help="结构体名")
@@ -3982,6 +4028,7 @@ def main():
     # memmap 子命令
     memmap_parser = subparsers.add_parser("memmap", help="分析 AXF 段表和 RAM/Flash 占用")
     _add_project_root_arg(memmap_parser)
+    _add_elf_backend_arg(memmap_parser)
     memmap_parser.add_argument("--source", help="ELF/AXF 文件路径")
     memmap_parser.add_argument("--top", type=int, default=0, help="预留：显示前 N 个大符号")
     memmap_parser.add_argument("--json", action="store_true", help="JSON 输出")
@@ -3996,6 +4043,7 @@ def main():
     watch_parser.add_argument("--profile", help="watch profile JSON，格式: {\"variables\": [...]}")
     watch_parser.add_argument("--struct", action="store_true", help="预留：展开结构体字段")
     watch_parser.add_argument("--json", action="store_true", help="JSON 输出")
+    _add_elf_backend_arg(watch_parser)
 
     # ---- Modbus RTU 子命令组 ----
     superwatch_parser = subparsers.add_parser("superwatch", help="SuperWatch read_ram timestamped viewer")
@@ -4014,6 +4062,7 @@ def main():
     superwatch_parser.add_argument("--duration", type=float, default=30.0, help="run duration seconds; 0=forever")
     superwatch_parser.add_argument("--dump-mem", action="store_true",
         help="use dump_mem binary streaming protocol for higher throughput")
+    _add_elf_backend_arg(superwatch_parser)
 
     modbus_parser = subparsers.add_parser(
         "modbus", help="Modbus RTU 调试（扫描、读写、轮询、监控）"
@@ -4248,6 +4297,8 @@ def main():
     break_parser.add_argument("target", nargs="?", help="函数名或 Flash 地址（如 main 或 0x08001234）")
     break_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     break_parser.add_argument("--source", help="ELF/AXF 文件路径（用于符号解析）")
+    break_parser.add_argument("--project-root", default=".", help="项目根目录")
+    _add_elf_backend_arg(break_parser)
     break_parser.add_argument("--slot", type=int, default=None, help="指定断点槽位 (0-5)")
     break_parser.add_argument("--list", action="store_true", help="列出当前已设置的断点")
     break_parser.add_argument("--clear", nargs="?", const="all", help="清除断点：指定槽位号或 all")
@@ -4429,11 +4480,24 @@ def main():
             duration=args.duration,
             names=args.names,
             source=args.source,
+            elf_backend=args.elf_backend,
+            project_root=args.project_root,
         )
     elif args.command == "symbols":
-        _cli_symbols(args.source, args.filter)
+        _cli_symbols(
+            args.source,
+            args.filter,
+            backend=args.elf_backend,
+            project_root=args.project_root,
+        )
     elif args.command == "hardfault":
-        _cli_hardfault(args.port, args.source, args.sp)
+        _cli_hardfault(
+            args.port,
+            args.source,
+            args.sp,
+            backend=args.elf_backend,
+            project_root=args.project_root,
+        )
     elif args.command == "typeinfo":
         _cli_typeinfo(args)
     elif args.command == "memmap":

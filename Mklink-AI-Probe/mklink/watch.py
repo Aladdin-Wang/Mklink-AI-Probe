@@ -240,8 +240,12 @@ def read_watch_values(
     *,
     source: str,
     port: str | None = None,
+    backend: str | None = None,
+    project_root: str | None = None,
 ) -> list[dict]:
-    info = load_dwarf_info(source)
+    info = load_dwarf_info(
+        source, backend=backend, project_root=project_root
+    )
     rows = []
     for name in names:
         try:
@@ -274,12 +278,41 @@ def format_watch_rows(rows: list[dict], *, as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
-def run_watch(names: list[str], *, source: str, port: str | None = None, period: float | None = None, as_json: bool = False) -> str:
+def run_watch(
+    names: list[str],
+    *,
+    source: str,
+    port: str | None = None,
+    period: float | None = None,
+    as_json: bool = False,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> str:
     if period is None or period <= 0:
-        return format_watch_rows(read_watch_values(names, source=source, port=port), as_json=as_json)
+        return format_watch_rows(
+            read_watch_values(
+                names,
+                source=source,
+                port=port,
+                backend=backend,
+                project_root=project_root,
+            ),
+            as_json=as_json,
+        )
     try:
         while True:
-            print(format_watch_rows(read_watch_values(names, source=source, port=port), as_json=as_json))
+            print(
+                format_watch_rows(
+                    read_watch_values(
+                        names,
+                        source=source,
+                        port=port,
+                        backend=backend,
+                        project_root=project_root,
+                    ),
+                    as_json=as_json,
+                )
+            )
             time.sleep(period)
     except KeyboardInterrupt:
         return ""
