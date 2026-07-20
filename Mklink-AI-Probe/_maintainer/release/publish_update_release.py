@@ -49,8 +49,7 @@ def _release_names(version: str) -> dict[str, str]:
     prefix = f"Mklink-AI-Probe-v{version}-x64"
     return {
         "setup": f"{prefix}-Setup.exe",
-        "updater_archive": f"{prefix}.nsis.zip",
-        "updater_signature": f"{prefix}.nsis.zip.sig",
+        "updater_signature": f"{prefix}-Setup.exe.sig",
         "checksums": "SHA256SUMS.txt",
         "manifest": "release-manifest.json",
     }
@@ -58,7 +57,7 @@ def _release_names(version: str) -> dict[str, str]:
 
 def validate_release_preflight(
     *, repository: Path, release_dir: Path, version: str,
-    updater_archive: Path, updater_signature: Path,
+    updater_installer: Path, updater_signature: Path,
 ) -> list[Path]:
     if git_output(repository, "branch", "--show-current") != "master":
         raise RuntimeError("release publication must run from the master branch")
@@ -82,9 +81,9 @@ def validate_release_preflight(
     expected_files = {release_dir / name for name in names.values()}
     actual_files = {path for path in release_dir.iterdir() if path.is_file()}
     if actual_files != expected_files:
-        raise RuntimeError("release directory must contain exactly the five public assets")
-    if updater_archive.resolve() != (release_dir / names["updater_archive"]).resolve():
-        raise RuntimeError("updater archive filename does not match the release version")
+        raise RuntimeError("release directory must contain exactly the four public assets")
+    if updater_installer.resolve() != (release_dir / names["setup"]).resolve():
+        raise RuntimeError("updater installer filename does not match the release version")
     if updater_signature.resolve() != (release_dir / names["updater_signature"]).resolve():
         raise RuntimeError("updater signature filename does not match the release version")
 
@@ -92,10 +91,10 @@ def validate_release_preflight(
     if manifest.get("release_version") != version or manifest.get("source_commit") != head:
         raise RuntimeError("release manifest version or source commit does not match HEAD")
     expected_payload_names = {
-        names["setup"], names["updater_archive"], names["updater_signature"]
+        names["setup"], names["updater_signature"]
     }
     assets = manifest.get("assets")
-    if not isinstance(assets, list) or len(assets) != 3 or not all(
+    if not isinstance(assets, list) or len(assets) != 2 or not all(
         isinstance(value, dict) for value in assets
     ) or {
         value.get("name") for value in assets if isinstance(value, dict)
@@ -113,7 +112,7 @@ def validate_release_preflight(
     if actual_checksums != checksum_lines:
         raise RuntimeError("SHA256SUMS.txt does not match the release manifest")
     return [release_dir / names[key] for key in (
-        "setup", "updater_archive", "updater_signature", "checksums", "manifest"
+        "setup", "updater_signature", "checksums", "manifest"
     )]
 
 
@@ -426,7 +425,7 @@ def publish_gitee_release(
         if path.name == updater_name:
             updater_url = _asset_url(asset)
     if not updater_url:
-        raise RuntimeError("Gitee updater archive URL was not returned")
+        raise RuntimeError("Gitee updater installer URL was not returned")
     return {"release": release, "updater_url": updater_url}
 
 
@@ -454,7 +453,7 @@ def publish_updates_branch(
 
 def publish_update_release(
     *, version: str, notes: str, published_at: str, release_dir: Path,
-    updater_archive: Path, updater_signature: Path, github_repo: str,
+    updater_installer: Path, updater_signature: Path, github_repo: str,
     gitee_repo: str, gitee_token: str, repository: Path,
 ) -> dict[str, object]:
     tag = f"v{version}"
@@ -463,7 +462,7 @@ def publish_update_release(
         repository=repository,
         release_dir=release_dir,
         version=version,
-        updater_archive=updater_archive,
+        updater_installer=updater_installer,
         updater_signature=updater_signature,
     )
     signature = updater_signature.read_text(encoding="ascii").strip()
@@ -479,13 +478,13 @@ def publish_update_release(
     )
     gitee = publish_gitee_release(
         repo=gitee_repo, tag=tag, title=title, notes=notes, token=gitee_token,
-        assets=required, updater_name=updater_archive.name,
+        assets=required, updater_name=updater_installer.name,
     )
     updater_url = str(gitee["updater_url"])
     verify_public_asset(
         url=updater_url,
-        expected_sha256=sha256(updater_archive),
-        expected_size=updater_archive.stat().st_size,
+        expected_sha256=sha256(updater_installer),
+        expected_size=updater_installer.stat().st_size,
     )
     document = build_latest_document(
         version=version,
@@ -506,7 +505,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", required=True)
     parser.add_argument("--notes", required=True)
     parser.add_argument("--release-dir", required=True, type=Path)
-    parser.add_argument("--updater-archive", required=True, type=Path)
+    parser.add_argument("--updater-installer", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
     parser.add_argument("--github-repo", default="Aladdin-Wang/Mklink-AI-Probe")
     parser.add_argument("--gitee-repo", default="Aladdin-Wang/Mklink-AI-Probe")
@@ -521,7 +520,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         notes=args.notes,
         published_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         release_dir=args.release_dir.resolve(),
-        updater_archive=args.updater_archive.resolve(),
+        updater_installer=args.updater_installer.resolve(),
         updater_signature=args.updater_signature.resolve(),
         github_repo=args.github_repo,
         gitee_repo=args.gitee_repo,

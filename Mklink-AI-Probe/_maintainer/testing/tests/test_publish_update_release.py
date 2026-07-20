@@ -29,7 +29,7 @@ def test_build_latest_document_matches_tauri_v2_schema(publisher):
         notes="Stable release",
         published_at="2026-07-21T01:02:03Z",
         signature="signed-value",
-        url="https://gitee.example/download.nsis.zip",
+        url="https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
     )
 
     assert document == {
@@ -39,7 +39,7 @@ def test_build_latest_document_matches_tauri_v2_schema(publisher):
         "platforms": {
             "windows-x86_64": {
                 "signature": "signed-value",
-                "url": "https://gitee.example/download.nsis.zip",
+                "url": "https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
             }
         },
     }
@@ -138,8 +138,7 @@ def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
     )
     names = [
         f"Mklink-AI-Probe-v{version}-x64-Setup.exe",
-        f"Mklink-AI-Probe-v{version}-x64.nsis.zip",
-        f"Mklink-AI-Probe-v{version}-x64.nsis.zip.sig",
+        f"Mklink-AI-Probe-v{version}-x64-Setup.exe.sig",
     ]
     assets = []
     for name in names:
@@ -162,13 +161,13 @@ def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
         "".join(f'{asset["sha256"]}  {asset["name"]}\n' for asset in assets),
         encoding="ascii",
     )
-    return repository, release_dir, release_dir / names[1], release_dir / names[2]
+    return repository, release_dir, release_dir / names[0], release_dir / names[1]
 
 
 def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
     publisher, monkeypatch, tmp_path,
 ):
-    repository, release_dir, archive, signature = release_fixture(publisher, tmp_path)
+    repository, release_dir, installer, signature = release_fixture(publisher, tmp_path)
     responses = {
         ("branch", "--show-current"): "feature/test",
         ("rev-parse", "HEAD"): "a" * 40,
@@ -185,7 +184,7 @@ def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
             repository=repository,
             release_dir=release_dir,
             version="0.1.0",
-            updater_archive=archive,
+            updater_installer=installer,
             updater_signature=signature,
         )
 
@@ -196,18 +195,18 @@ def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
             repository=repository,
             release_dir=release_dir,
             version="0.1.0",
-            updater_archive=archive,
+            updater_installer=installer,
             updater_signature=signature,
         )
 
     responses[("status", "--porcelain")] = ""
-    archive.write_bytes(b"tampered")
+    installer.write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="hash"):
         publisher.validate_release_preflight(
             repository=repository,
             release_dir=release_dir,
             version="0.1.0",
-            updater_archive=archive,
+            updater_installer=installer,
             updater_signature=signature,
         )
 
@@ -253,15 +252,15 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
     publisher, monkeypatch, tmp_path,
 ):
     events = []
-    archive = tmp_path / "Mklink-AI-Probe-v0.1.0-x64.nsis.zip"
-    signature = tmp_path / "Mklink-AI-Probe-v0.1.0-x64.nsis.zip.sig"
-    archive.write_bytes(b"archive")
+    installer = tmp_path / "Mklink-AI-Probe-v0.1.0-x64-Setup.exe"
+    signature = tmp_path / "Mklink-AI-Probe-v0.1.0-x64-Setup.exe.sig"
+    installer.write_bytes(b"installer")
     signature.write_text("signature", encoding="ascii")
 
     monkeypatch.setattr(
         publisher,
         "validate_release_preflight",
-        lambda **_kwargs: events.append("preflight") or [archive, signature],
+        lambda **_kwargs: events.append("preflight") or [installer, signature],
     )
     monkeypatch.setattr(publisher, "push_version_tag", lambda **_kwargs: events.append("tag"))
     monkeypatch.setattr(publisher, "publish_github_release", lambda **_kwargs: events.append("github"))
@@ -269,7 +268,7 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         publisher,
         "publish_gitee_release",
         lambda **_kwargs: events.append("gitee") or {
-            "updater_url": "https://gitee.example/archive.nsis.zip"
+            "updater_url": "https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe"
         },
     )
     monkeypatch.setattr(
@@ -288,7 +287,7 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         notes="Stable release",
         published_at="2026-07-21T01:02:03Z",
         release_dir=tmp_path,
-        updater_archive=archive,
+        updater_installer=installer,
         updater_signature=signature,
         github_repo="Aladdin-Wang/Mklink-AI-Probe",
         gitee_repo="Aladdin-Wang/Mklink-AI-Probe",

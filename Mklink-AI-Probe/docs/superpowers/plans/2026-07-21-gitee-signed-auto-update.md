@@ -83,7 +83,7 @@ def build_latest_document(
 - Modify: `_maintainer/testing/tests/test_tauri_builder.py`
 - Modify: `skills/tauri-gui-builder/SKILL.md`
 
-- [ ] Write failing tests that `--bundle` requires the external private key, still selects only NSIS, and reports the setup executable, updater archive, and signature.
+- [ ] Write failing tests that `--bundle` requires the external private key, still selects only NSIS, and reports the setup/updater executable and signature.
 - [ ] Load the key from `MKLINK_TAURI_UPDATER_KEY` or `%USERPROFILE%\.config\mklink-ai-probe\updater.key`; never print key contents.
 - [ ] Set `TAURI_SIGNING_PRIVATE_KEY` only in the child build environment and keep MSI/WebView2-offline disabled.
 - [ ] Verify all three updater outputs exist before reporting build success.
@@ -101,5 +101,5 @@ def build_latest_document(
 - [ ] Build only the signed standard NSIS and updater artifacts.
 - [ ] Install under restricted PATH; verify health, sidecar lifecycle, no Python/GNU child, and port cleanup.
 - [ ] Publish `v0.1.0` and all update assets to GitHub and Gitee, then publish `updates/latest.json`.
-- [ ] Fetch the Gitee manifest and updater archive anonymously; verify version, signature field, filename, size, and SHA-256.
+- [ ] Fetch the Gitee manifest and updater installer anonymously; verify version, signature field, filename, size, and SHA-256.
 - [ ] Update AI memory, render and validate handoff, run `git diff --check`, commit, push the feature branch, merge to `master`, and synchronize GitHub/Gitee.

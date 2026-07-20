@@ -200,13 +200,15 @@ def test_signed_tauri_bundle_passes_private_key_only_to_child_environment(
     executable.parent.mkdir(parents=True)
     nsis.mkdir(parents=True)
     executable.write_bytes(b"exe")
-    (nsis / "Mklink AI Probe_0.1.0_x64-setup.exe").write_bytes(b"setup")
-    (nsis / "Mklink AI Probe_0.1.0_x64-setup.nsis.zip").write_bytes(b"archive")
-    (nsis / "Mklink AI Probe_0.1.0_x64-setup.nsis.zip.sig").write_text(
+    setup = nsis / "Mklink AI Probe_0.1.0_x64-setup.exe"
+    setup.write_bytes(b"setup")
+    (nsis / "Mklink AI Probe_0.1.0_x64-setup.exe.sig").write_text(
         "signature", encoding="ascii"
     )
     calls = []
     monkeypatch.delenv("TAURI_SIGNING_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv("TAURI_SIGNING_PRIVATE_KEY_PASSWORD", raising=False)
+    monkeypatch.delenv("MKLINK_TAURI_UPDATER_KEY_PASSWORD", raising=False)
     monkeypatch.setattr(
         builder,
         "run",
@@ -216,8 +218,10 @@ def test_signed_tauri_bundle_passes_private_key_only_to_child_environment(
     outputs = builder.build_tauri(bundle=True, signing_key="private-key-value")
 
     assert calls[0][1]["env"]["TAURI_SIGNING_PRIVATE_KEY"] == "private-key-value"
+    assert calls[0][1]["env"]["TAURI_SIGNING_PRIVATE_KEY_PASSWORD"] == ""
     assert "TAURI_SIGNING_PRIVATE_KEY" not in builder.os.environ
-    assert set(outputs) == {"setup", "updater_archive", "updater_signature"}
+    assert "TAURI_SIGNING_PRIVATE_KEY_PASSWORD" not in builder.os.environ
+    assert set(outputs) == {"setup", "updater_signature"}
 
 
 def test_signed_bundle_outputs_reject_missing_signature_and_ignore_msi(
@@ -228,21 +232,19 @@ def test_signed_bundle_outputs_reject_missing_signature_and_ignore_msi(
     msi = bundle / "msi"
     nsis.mkdir(parents=True)
     msi.mkdir()
-    (nsis / "app-setup.exe").write_bytes(b"setup")
-    archive = nsis / "app-setup.nsis.zip"
-    archive.write_bytes(b"archive")
+    setup = nsis / "app-setup.exe"
+    setup.write_bytes(b"setup")
     (msi / "app.msi").write_bytes(b"msi")
 
     with pytest.raises(RuntimeError, match="signature"):
         builder.collect_signed_bundle_outputs(bundle)
 
-    signature = nsis / "app-setup.nsis.zip.sig"
+    signature = nsis / "app-setup.exe.sig"
     signature.write_text("signature", encoding="ascii")
     outputs = builder.collect_signed_bundle_outputs(bundle)
 
     assert outputs == {
-        "setup": nsis / "app-setup.exe",
-        "updater_archive": archive,
+        "setup": setup,
         "updater_signature": signature,
     }
 

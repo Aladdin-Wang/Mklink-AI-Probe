@@ -23,16 +23,14 @@ def release_module():
 
 def release_inputs(tmp_path):
     nsis = tmp_path / "input.exe"
-    updater = tmp_path / "input.nsis.zip"
-    signature = tmp_path / "input.nsis.zip.sig"
+    signature = tmp_path / "input.exe.sig"
     nsis.write_bytes(b"exe")
-    updater.write_bytes(b"updater")
     signature.write_text("signature", encoding="ascii")
-    return nsis, updater, signature
+    return nsis, signature
 
 
 def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp_path):
-    nsis, updater, signature = release_inputs(tmp_path)
+    nsis, signature = release_inputs(tmp_path)
     output = tmp_path / "release"
 
     result = release_module.prepare_release(
@@ -40,14 +38,12 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
         source_commit="a" * 40,
         output_dir=output,
         nsis=nsis,
-        updater_archive=updater,
         updater_signature=signature,
     )
 
     assert {asset["name"] for asset in result["assets"]} == {
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
-        "Mklink-AI-Probe-v0.1.0-x64.nsis.zip",
-        "Mklink-AI-Probe-v0.1.0-x64.nsis.zip.sig",
+        "Mklink-AI-Probe-v0.1.0-x64-Setup.exe.sig",
     }
     assert all(len(asset["sha256"]) == 64 for asset in result["assets"])
     assert all(set(asset) == {"name", "size", "sha256"} for asset in result["assets"])
@@ -62,13 +58,12 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
 
 
 def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
-    _nsis, updater, signature = release_inputs(tmp_path)
+    _nsis, signature = release_inputs(tmp_path)
     with pytest.raises(FileNotFoundError, match="release input does not exist"):
         release_module.prepare_release(
             version="0.1.0",
             source_commit="a" * 40,
             output_dir=tmp_path / "release",
             nsis=tmp_path / "missing.exe",
-            updater_archive=updater,
             updater_signature=signature,
         )

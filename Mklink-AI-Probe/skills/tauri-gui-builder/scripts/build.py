@@ -288,22 +288,18 @@ def load_updater_private_key(env=None, home=None):
 
 
 def collect_signed_bundle_outputs(bundle_dir):
-    """Return the three required standard NSIS updater outputs."""
+    """Return the standard NSIS installer and its Tauri updater signature."""
     nsis_dir = Path(bundle_dir) / "nsis"
     setups = sorted(nsis_dir.glob("*.exe"))
-    archives = sorted(nsis_dir.glob("*.nsis.zip"))
     if not setups:
         raise RuntimeError("standard NSIS setup executable was not produced")
-    if not archives:
-        raise RuntimeError("Tauri NSIS updater archive was not produced")
-    if len(setups) != 1 or len(archives) != 1:
-        raise RuntimeError("expected exactly one standard NSIS setup and updater archive")
-    signature = Path(f"{archives[0]}.sig")
+    if len(setups) != 1:
+        raise RuntimeError("expected exactly one standard NSIS setup executable")
+    signature = Path(f"{setups[0]}.sig")
     if not signature.is_file():
         raise RuntimeError("Tauri updater signature was not produced")
     return {
         "setup": setups[0],
-        "updater_archive": archives[0],
         "updater_signature": signature,
     }
 
@@ -341,6 +337,9 @@ def build_tauri(bundle=False, signing_key=None):
         if not signing_key:
             raise RuntimeError("updater private key is required for a release bundle")
         env["TAURI_SIGNING_PRIVATE_KEY"] = signing_key
+        env["TAURI_SIGNING_PRIVATE_KEY_PASSWORD"] = os.environ.get(
+            "MKLINK_TAURI_UPDATER_KEY_PASSWORD", ""
+        )
     run(cmd, cwd=str(GUI_DIR), env=env)
 
     exe = TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"

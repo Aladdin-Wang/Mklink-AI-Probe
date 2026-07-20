@@ -40,9 +40,8 @@ python skills/tauri-gui-builder/scripts/build.py --clean
 Outputs:
 
 - executable: `gui/src-tauri/target/release/mklink-ai-probe.exe`
-- setup executable: `gui/src-tauri/target/release/bundle/nsis/*.exe`
-- updater archive: `gui/src-tauri/target/release/bundle/nsis/*.nsis.zip`
-- updater signature: `gui/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig`
+- setup/updater executable: `gui/src-tauri/target/release/bundle/nsis/*.exe`
+- updater signature: `gui/src-tauri/target/release/bundle/nsis/*.exe.sig`
 
 `--bundle` must force a fresh PyInstaller sidecar and collect:
 
@@ -53,7 +52,9 @@ Outputs:
 
 Signed bundles require `MKLINK_TAURI_UPDATER_KEY` or the external key at
 `~/.config/mklink-ai-probe/updater.key`. The builder passes the key only to the
-Tauri child process and never prints it.
+Tauri child process and never prints it. Set `MKLINK_TAURI_UPDATER_KEY_PASSWORD`
+when the key uses a non-empty password; the generated local key uses an empty
+password by default.
 
 ## Release Candidates
 
@@ -63,7 +64,7 @@ Generate only the standard NSIS by default. MSI and WebView2-offline variants re
 
 ## Required Verification
 
-1. Build exits successfully and produces the standard NSIS setup, updater archive, and signature.
+1. Build exits successfully and produces the standard NSIS setup/updater executable and signature.
 2. Install NSIS with a PATH containing only Windows system directories.
 3. Start the installed app and verify `GET /api/health` returns `status=ok`.
 4. Verify `GET /api/online-flash/probes` runs without exposing complete probe identifiers in evidence.

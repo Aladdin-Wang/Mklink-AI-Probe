@@ -62,7 +62,6 @@ def prepare_release(
     source_commit: str,
     output_dir: Path | str,
     nsis: Path | str,
-    updater_archive: Path | str,
     updater_signature: Path | str,
 ) -> dict[str, object]:
     if not version or any(separator in version for separator in ("/", "\\")):
@@ -75,12 +74,8 @@ def prepare_release(
     sources = [
         (_require_file(nsis), f"Mklink-AI-Probe-v{version}-x64-Setup.exe"),
         (
-            _require_file(updater_archive),
-            f"Mklink-AI-Probe-v{version}-x64.nsis.zip",
-        ),
-        (
             _require_file(updater_signature),
-            f"Mklink-AI-Probe-v{version}-x64.nsis.zip.sig",
+            f"Mklink-AI-Probe-v{version}-x64-Setup.exe.sig",
         ),
     ]
 
@@ -134,7 +129,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--nsis", required=True, type=Path)
-    parser.add_argument("--updater-archive", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
     return parser
 
@@ -146,7 +140,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_commit=args.source_commit,
         output_dir=args.output,
         nsis=args.nsis,
-        updater_archive=args.updater_archive,
         updater_signature=args.updater_signature,
     )
     print(json.dumps({

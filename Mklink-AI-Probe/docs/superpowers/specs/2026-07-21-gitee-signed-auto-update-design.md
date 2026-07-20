@@ -19,13 +19,12 @@ The updater accepts only Tauri-signed artifacts. The public key is compiled into
 
 Each release publishes these assets to both GitHub Release and Gitee Release:
 
-- standard NSIS setup executable;
-- Tauri NSIS updater archive;
+- standard NSIS setup executable, also used as the Tauri v2 updater payload;
 - updater signature;
 - `SHA256SUMS.txt`;
 - release manifest.
 
-The dedicated `updates` branch contains only `latest.json`. Its platform entry points to the Gitee Release updater archive and carries the Tauri signature.
+The dedicated `updates` branch contains only `latest.json`. Its platform entry points to the Gitee Release NSIS setup executable and carries the Tauri signature.
 
 ## Publication Order
 
