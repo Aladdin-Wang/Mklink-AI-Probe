@@ -69,7 +69,7 @@ class ExternalElfBackend:
         return result.stdout
 
     def symbols(self, source: str) -> list[ElfSymbol]:
-        output = self._run_readelf("-s", source, timeout=30)
+        output = self._run_readelf("-sW", source, timeout=30)
         symbols = []
         for line in output.splitlines():
             match = _SYMBOL_RE.match(line)

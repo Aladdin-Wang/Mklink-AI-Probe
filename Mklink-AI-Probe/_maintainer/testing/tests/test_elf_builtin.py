@@ -225,8 +225,13 @@ def test_fixed_address_and_member_offset_accept_only_constant_expressions():
     )
     dynamic = FakeAttribute("DW_FORM_exprloc", bytes([0x91, 0x00]))
     member = FakeAttribute("DW_FORM_exprloc", bytes([0x23, 0x04]))
+    composite = FakeAttribute(
+        "DW_FORM_exprloc",
+        bytes([0x03, 0x20, 0x00, 0x00, 0x20, 0x94, 0x01, 0x9F]),
+    )
 
     assert _fixed_address(address, structs) == 0x20000020
+    assert _fixed_address(composite, structs) == 0x20000020
     assert _fixed_address(dynamic, structs) is None
     assert _member_offset(member, structs) == 4
 

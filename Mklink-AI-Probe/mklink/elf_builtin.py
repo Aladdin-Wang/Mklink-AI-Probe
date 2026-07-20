@@ -101,7 +101,18 @@ def _expression_operations(attribute, structs):
 
 def _fixed_address(attribute, structs) -> int | None:
     operations = _expression_operations(attribute, structs)
-    if len(operations) != 1 or operations[0].op_name != "DW_OP_addr":
+    if not operations or operations[0].op_name != "DW_OP_addr":
+        return None
+    dynamic_ops = {
+        "DW_OP_call_frame_cfa",
+        "DW_OP_fbreg",
+    }
+    if any(
+        operation.op_name in dynamic_ops
+        or operation.op_name.startswith("DW_OP_breg")
+        or operation.op_name.startswith("DW_OP_reg")
+        for operation in operations
+    ):
         return None
     return int(operations[0].args[0])
 
@@ -414,9 +425,15 @@ class BuiltinElfBackend:
                         address=address,
                     )
                     existing = info.variables.get(name)
-                    if existing is None or (
-                        existing.address is None and variable.address is not None
-                    ):
+                    existing_quality = (
+                        0 if existing is None or existing.address is None
+                        else 1 if existing.address == 0 else 2
+                    )
+                    variable_quality = (
+                        0 if variable.address is None
+                        else 1 if variable.address == 0 else 2
+                    )
+                    if existing is None or variable_quality > existing_quality:
                         info.variables[name] = variable
 
             for record in info.records_by_offset.values():

@@ -95,7 +95,7 @@ def test_external_backend_normalizes_readelf_symbols(monkeypatch):
         ("g_counter", "object"),
         ("HardFault_Handler", "function"),
     ]
-    assert calls[0][0] == ["readelf.exe", "-s", "firmware.axf"]
+    assert calls[0][0] == ["readelf.exe", "-sW", "firmware.axf"]
 
 
 def test_builtin_consumers_use_structured_service_without_subprocess(monkeypatch):
