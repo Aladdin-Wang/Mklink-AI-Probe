@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-21T09:31:53+08:00",
+  "updated_at": "2026-07-21T12:19:23+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/Mklink-AI-Probe",
     "branch": "master",
-    "head": "57de292 is the signed v0.1.0 product release source; master also contains the release handoff and authenticated Gitee-token checkpoint",
-    "remote_head": "GitHub and Gitee master are synchronized through this authenticated Gitee-token checkpoint; updates is synchronized at 53b0b3b",
-    "working_tree": "clean after the authenticated Gitee-token checkpoint; installers and release metadata remain under the ignored outer release directory"
+    "head": "b3c7925 is the signed v0.1.1 product release source; master also contains Gitee publisher hardening and the final handoff",
+    "remote_head": "GitHub and Gitee master are synchronized through the final v0.1.1 handoff; updates is synchronized at ea36381",
+    "working_tree": "clean after the final v0.1.1 handoff; installers and release metadata remain under the ignored outer release directory"
   },
   "mission": {
     "product": "MKLink/MicroLink 专用嵌入式上位机，覆盖在线/脱机烧录、RTT、SystemView、VOFA、SuperWatch、内存、符号、串口、Modbus、CLI、MCP 和 AI skill。",
@@ -17,13 +17,14 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "v0.1.0 稳定版已发布到 GitHub/Gitee，签名更新链路已验证，用户级 GITEE_TOKEN 现可支持经过认证的无人值守 Gitee Release 发布；等待后续任务。",
+    "current_task": "v0.1.1 已发布到 GitHub/Gitee，旧版客户端可从 Gitee updates 分支发现签名更新；等待用户侧自动更新确认和后续任务。",
     "latest_source_commits": [
+      "1ee0f57 fix: harden Gitee release publication",
+      "b3c7925 feat: stream named V4 offline downloads",
       "57de292 fix: align updater artifacts with Tauri v2",
-      "b4aae03 fix: harden signed update publication",
-      "dda005c build: produce signed NSIS updates"
+      "b4aae03 fix: harden signed update publication"
     ],
-    "latest_installer": "release/20260721-014803/Mklink-AI-Probe-v0.1.0-x64-Setup.exe; 65416990 bytes; SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6",
+    "latest_installer": "release/20260721-114541/Mklink-AI-Probe-v0.1.1-x64-Setup.exe; 65419031 bytes; SHA-256 26c4403928b6f33416af03dd5d603649174c550b55df713038b34a4ae7e6b732",
     "model_inventory": "release/20260720-152538/builtin-models.csv contains 10747 effective models across 65 manufacturer labels; BUILTIN-MODELS-SUMMARY.md is the compact summary.",
     "flash_state": "Online SWD supports up to 10 MHz. The GUI defaults to keep-running connection, uses one total progress bar, refreshes after Pack installation, fills the target search after selection, and supports builtin algorithms, local Pack import, custom FLM, and optional online Pack installation.",
     "hpm_state": "HPM targets use the dedicated ROM API path, require no FLM, expose no independent erase, and were not physically programmed in this session.",
@@ -34,7 +35,7 @@
     {
       "name": "Online and offline flash workflows",
       "status": "complete",
-      "notes": "Online and offline paths share the unified target/algorithm catalog, preserve ordered firmware ranges, avoid implicit whole-chip erase, support 10 MHz, and cover builtin, local Pack, custom FLM, and optional online Pack sources."
+      "notes": "Online and offline paths share the unified target/algorithm catalog, preserve ordered firmware ranges, avoid implicit whole-chip erase, support 10 MHz, and cover builtin, local Pack, custom FLM, and optional online Pack sources. Offline deployment auto-generates a missing preview, keeps staging and rollback files off the probe disk, selects named V4 scripts, and streams trigger output live."
     },
     {
       "name": "Desktop dashboards and high-rate streaming",
@@ -62,15 +63,15 @@
       "notes": "Structured symbols render as a default-collapsed tree with search-state restoration and selected-only pruning. Desktop live status and toolbars use stable single-row geometry, and a 4660-leaf component test proves collapsed catalogs do not mount leaf rows."
     },
     {
-      "name": "Signed desktop auto-update and v0.1.0 release",
+      "name": "Signed desktop auto-update and stable releases",
       "status": "complete",
-      "notes": "Tauri v2 updater/process plugins download the signed NSIS setup from Gitee in the background and install only after user confirmation. GitHub/Gitee v0.1.0 Releases carry the same setup, signature, checksums, and manifest; updates/latest.json was published last and is identical on both hosts."
+      "notes": "Tauri v2 updater/process plugins download the signed NSIS setup from Gitee in the background and install only after user confirmation. GitHub/Gitee v0.1.1 Releases carry the same setup, signature, checksums, and manifest; updates/latest.json was published last and is identical on both hosts."
     }
   ],
   "verification": [
     {
       "area": "Latest automated baseline",
-      "result": "Final v0.1.0 source 57de292 passed Python 909 and 1 skipped, GUI 35 files / 384 tests, Rust 6 tests, Vite production build with 1915 modules, cargo check, and npm production audit with zero vulnerabilities."
+      "result": "Final v0.1.1 source b3c7925 passed Python 915 and 1 skipped, GUI 35 files / 387 tests, Rust 6 tests, Vite production build with 1915 modules, cargo check, and npm production audit with zero vulnerabilities."
     },
     {
       "area": "Installed WebView2 checks",
@@ -91,6 +92,14 @@
     {
       "area": "Authenticated Gitee publication access",
       "result": "The user-level GITEE_TOKEN was read without echoing it. Authenticated Gitee API v5 calls successfully resolved the current account, repository, and v0.1.0 Release with six assets, and the release publisher resolve_gitee_token() path returned a non-empty token."
+    },
+    {
+      "area": "V4 offline deployment HIL",
+      "result": "Using the supplied STM32F103 fixture and a real V4 probe disk, deployment produced the same script as preview and left zero .mklink-offline-staging-* entries on the probe disk. The named V4 trigger completed successfully with 87 streamed line events; the first line arrived at 6.834 seconds and the terminal result at 17.741 seconds."
+    },
+    {
+      "area": "v0.1.1 installed and published release",
+      "result": "The standard NSIS installed silently to an isolated location and reported product version 0.1.1 with health=ok and elf_backend=builtin under a Windows-system-only PATH. It launched no Python child, used the bundled sidecar, and released port 8765 on normal close. GitHub and Gitee each expose the four product assets for v0.1.1, public latest.json reports 0.1.1 with a signed Gitee installer URL, and both updates branches point to ea36381."
     }
   ],
   "decisions": [
@@ -108,6 +117,8 @@
     "Desktop updates use the official Tauri v2 updater. For NSIS, the standard setup executable is also the updater payload and its adjacent .exe.sig is the updater signature.",
     "The application checks https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json, downloads automatically in the background, and installs only after explicit user confirmation.",
     "Release publication uploads the same four public assets to GitHub and Gitee, verifies the anonymous Gitee setup download, then pushes the single-file updates branch last.",
+    "Offline deployment generates a missing preview before copying, stores transactional staging and backups only in the host temporary directory, and never creates .mklink-offline-staging-* on the probe disk.",
+    "V4 offline tests call load.offline with the validated deployed Python script path and stream device output over NDJSON; V2/V3 retain load.offline() compatibility.",
     "Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths."
   ],
   "hardware": {
@@ -117,7 +128,7 @@
     "permission": "User permits firmware build/flash and read-only target validation when the requested task requires it."
   },
   "known_limits": [
-    "The v0.1.0 standard NSIS has not yet been tested on a second clean Windows machine or VM.",
+    "The v0.1.1 standard NSIS has not yet been tested on a second clean Windows machine or VM.",
     "The new SuperWatch layout has automated geometry guards but no fresh interactive Edge/WebView2 rectangle sampling because browser and computer-use control surfaces were unavailable.",
     "The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.",
     "Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.",
@@ -128,6 +139,7 @@
     "One HK32 catalog region lacks reliable sector geometry and is correctly rejected for ordinary covered-sector programming."
   ],
   "next_actions": [
+    "Confirm that an installed v0.1.0 client discovers, downloads, and installs the published v0.1.1 update in the user's normal desktop environment.",
     "Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.",
     "Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.",
     "Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.",
