@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-21T09:08:15+08:00",
+  "updated_at": "2026-07-21T09:31:53+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe",
     "project_root": "E:/software/HPM5300/Mklink-AI-Probe/Mklink-AI-Probe",
     "branch": "master",
-    "head": "57de292 is the signed v0.1.0 product release source; the final handoff commit contains this memory",
-    "remote_head": "GitHub and Gitee master are synchronized through the final handoff commit; updates is synchronized at 53b0b3b",
-    "working_tree": "clean after the final handoff commit; installers and release metadata remain under the ignored outer release directory"
+    "head": "57de292 is the signed v0.1.0 product release source; master also contains the release handoff and authenticated Gitee-token checkpoint",
+    "remote_head": "GitHub and Gitee master are synchronized through this authenticated Gitee-token checkpoint; updates is synchronized at 53b0b3b",
+    "working_tree": "clean after the authenticated Gitee-token checkpoint; installers and release metadata remain under the ignored outer release directory"
   },
   "mission": {
     "product": "MKLink/MicroLink 专用嵌入式上位机，覆盖在线/脱机烧录、RTT、SystemView、VOFA、SuperWatch、内存、符号、串口、Modbus、CLI、MCP 和 AI skill。",
@@ -17,7 +17,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "v0.1.0 稳定版已发布到 GitHub/Gitee，Tauri v2 签名更新清单已从 Gitee updates 分支公开并通过匿名下载与安装态验证；等待后续任务。",
+    "current_task": "v0.1.0 稳定版已发布到 GitHub/Gitee，签名更新链路已验证，用户级 GITEE_TOKEN 现可支持经过认证的无人值守 Gitee Release 发布；等待后续任务。",
     "latest_source_commits": [
       "57de292 fix: align updater artifacts with Tauri v2",
       "b4aae03 fix: harden signed update publication",
@@ -87,6 +87,10 @@
     {
       "area": "v0.1.0 signed update publication",
       "result": "GitHub and Gitee published the same setup, Tauri signature, SHA256SUMS.txt, and release-manifest.json for tag v0.1.0. The anonymous Gitee setup download matched 65416990 bytes and SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6. Public latest.json returned version 0.1.0 with the exact local signature and Gitee installer URL; GitHub and Gitee updates branches both point to 53b0b3b."
+    },
+    {
+      "area": "Authenticated Gitee publication access",
+      "result": "The user-level GITEE_TOKEN was read without echoing it. Authenticated Gitee API v5 calls successfully resolved the current account, repository, and v0.1.0 Release with six assets, and the release publisher resolve_gitee_token() path returned a non-empty token."
     }
   ],
   "decisions": [
@@ -118,14 +122,12 @@
     "The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.",
     "Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.",
     "The updater payload is signed for Tauri integrity, but the Windows installer has no Authenticode signature and may show an unknown-publisher warning.",
-    "A Gitee API token is not configured on this machine. The v0.1.0 Gitee Release was created through the signed-in web UI; fully unattended future Gitee Release publication requires GITEE_TOKEN with repository release permission.",
     "Optional online Pack installation requires outbound HTTPS and may require a configured proxy.",
     "Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.",
     "DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.",
     "One HK32 catalog region lacks reliable sector geometry and is correctly rejected for ordinary covered-sector programming."
   ],
   "next_actions": [
-    "Configure a Gitee API token with repository release permission so future dual-host releases can run fully unattended.",
     "Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.",
     "Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.",
     "Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.",

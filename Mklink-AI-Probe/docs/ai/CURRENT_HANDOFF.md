@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-21T09:08:15+08:00`
+- 更新时间：`2026-07-21T09:31:53+08:00`
 - 分支：`master`
-- HEAD：`57de292 is the signed v0.1.0 product release source; the final handoff commit contains this memory`
-- 远端 HEAD：`GitHub and Gitee master are synchronized through the final handoff commit; updates is synchronized at 53b0b3b`
-- 工作树：clean after the final handoff commit; installers and release metadata remain under the ignored outer release directory
-- 当前任务：v0.1.0 稳定版已发布到 GitHub/Gitee，Tauri v2 签名更新清单已从 Gitee updates 分支公开并通过匿名下载与安装态验证；等待后续任务。
+- HEAD：`57de292 is the signed v0.1.0 product release source; master also contains the release handoff and authenticated Gitee-token checkpoint`
+- 远端 HEAD：`GitHub and Gitee master are synchronized through this authenticated Gitee-token checkpoint; updates is synchronized at 53b0b3b`
+- 工作树：clean after the authenticated Gitee-token checkpoint; installers and release metadata remain under the ignored outer release directory
+- 当前任务：v0.1.0 稳定版已发布到 GitHub/Gitee，签名更新链路已验证，用户级 GITEE_TOKEN 现可支持经过认证的无人值守 Gitee Release 发布；等待后续任务。
 - 状态：`complete`
 
 ## 里程碑
@@ -29,6 +29,7 @@
 - **SuperWatch tree and layout qualification**：Pure and component tests cover nested structures/arrays, default collapse, search expansion restoration, selected-only pruning, reparse cleanup, and a 4660-leaf catalog mounting zero leaf rows while collapsed. Source-level guards cover stable desktop header/toolbars. Interactive live geometry sampling was unavailable because browser and computer-use control surfaces were not available.
 - **Built-in ELF real-file qualification**：On the supplied STM32F103 fixtures, builtin/external symbol sets matched exactly: Keil AXF 1626 and GCC ELF 1418. Safe builtin readable catalogs contain Keil 4851 and GCC 4385 leaves. GCC remains a strict superset of external results; the 17 Keil external-only leaves were confirmed to come from dereference/stack-value or piece expressions that external text parsing misclassifies as direct writable addresses. Builtin line lookup resolved 50/50 sampled Keil addresses and 48/50 GCC addresses. Installed sidecar symbols, typeinfo, and memmap all passed under restricted PATH.
 - **v0.1.0 signed update publication**：GitHub and Gitee published the same setup, Tauri signature, SHA256SUMS.txt, and release-manifest.json for tag v0.1.0. The anonymous Gitee setup download matched 65416990 bytes and SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6. Public latest.json returned version 0.1.0 with the exact local signature and Gitee installer URL; GitHub and Gitee updates branches both point to 53b0b3b.
+- **Authenticated Gitee publication access**：The user-level GITEE_TOKEN was read without echoing it. Authenticated Gitee API v5 calls successfully resolved the current account, repository, and v0.1.0 Release with six assets, and the release publisher resolve_gitee_token() path returned a non-empty token.
 
 ## 架构决策
 
@@ -57,12 +58,11 @@
 
 ## 下一动作
 
-1. Configure a Gitee API token with repository release permission so future dual-host releases can run fully unattended.
-2. Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.
-3. Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.
-4. Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.
-5. Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.
-6. Add Windows code signing before promotion beyond prerelease.
+1. Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.
+2. Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.
+3. Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.
+4. Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.
+5. Add Windows code signing before promotion beyond prerelease.
 
 ## 已知限制
 
@@ -71,7 +71,6 @@
 - The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.
 - Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.
 - The updater payload is signed for Tauri integrity, but the Windows installer has no Authenticode signature and may show an unknown-publisher warning.
-- A Gitee API token is not configured on this machine. The v0.1.0 Gitee Release was created through the signed-in web UI; fully unattended future Gitee Release publication requires GITEE_TOKEN with repository release permission.
 - Optional online Pack installation requires outbound HTTPS and may require a configured proxy.
 - Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.
 - DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.
