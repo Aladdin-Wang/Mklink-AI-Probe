@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-21T00:01:10+08:00",
+  "updated_at": "2026-07-21T09:08:15+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
-    "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming",
-    "project_root": "E:/software/HPM5300/Mklink-AI-Probe/.worktrees/online-flash-streaming/Mklink-AI-Probe",
-    "branch": "feature/online-flash-streaming",
-    "head": "063068d is the latest product source commit; 9890008 refreshes tracked frontend assets; the final handoff commit contains this memory",
-    "remote_head": "feature/online-flash-streaming is pushed through the final handoff commit",
-    "working_tree": "clean after the final handoff commit; release files remain outside Git"
+    "outer_worktree": "E:/software/HPM5300/Mklink-AI-Probe",
+    "project_root": "E:/software/HPM5300/Mklink-AI-Probe/Mklink-AI-Probe",
+    "branch": "master",
+    "head": "57de292 is the signed v0.1.0 product release source; the final handoff commit contains this memory",
+    "remote_head": "GitHub and Gitee master are synchronized through the final handoff commit; updates is synchronized at 53b0b3b",
+    "working_tree": "clean after the final handoff commit; installers and release metadata remain under the ignored outer release directory"
   },
   "mission": {
     "product": "MKLink/MicroLink 专用嵌入式上位机，覆盖在线/脱机烧录、RTT、SystemView、VOFA、SuperWatch、内存、符号、串口、Modbus、CLI、MCP 和 AI skill。",
@@ -17,18 +17,18 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "内置 pyelftools ELF/DWARF 后端已完成并通过真实 STM32F103 AXF/ELF、完整自动化测试和标准 NSIS 安装态验证；等待后续任务。",
+    "current_task": "v0.1.0 稳定版已发布到 GitHub/Gitee，Tauri v2 签名更新清单已从 Gitee updates 分支公开并通过匿名下载与安装态验证；等待后续任务。",
     "latest_source_commits": [
-      "9890008 build: refresh hardened ELF frontend assets",
-      "063068d fix: harden ELF backend address handling",
-      "0ebe87e fix: preserve complete ELF symbol catalogs"
+      "57de292 fix: align updater artifacts with Tauri v2",
+      "b4aae03 fix: harden signed update publication",
+      "dda005c build: produce signed NSIS updates"
     ],
-    "latest_installer": "release/20260720-235616/Mklink-AI-Probe_0.1.0-rc.2_x64-standard_063068d-build-9890008-setup.exe; 64391108 bytes; SHA-256 1ea30da4668eafc6b411a2c1777244db0316d7213d047ea6002d6f8b09588cd0",
+    "latest_installer": "release/20260721-014803/Mklink-AI-Probe-v0.1.0-x64-Setup.exe; 65416990 bytes; SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6",
     "model_inventory": "release/20260720-152538/builtin-models.csv contains 10747 effective models across 65 manufacturer labels; BUILTIN-MODELS-SUMMARY.md is the compact summary.",
     "flash_state": "Online SWD supports up to 10 MHz. The GUI defaults to keep-running connection, uses one total progress bar, refreshes after Pack installation, fills the target search after selection, and supports builtin algorithms, local Pack import, custom FLM, and optional online Pack installation.",
     "hpm_state": "HPM targets use the dedicated ROM API path, require no FLM, expose no independent erase, and were not physically programmed in this session.",
     "symbol_state": "pyelftools 0.32 is bundled and is the default backend for symbols, sections, DWARF types, readable structured leaves, memory maps, breakpoint function lookup, and HardFault PC/LR source lines. Only direct DW_OP_addr plus optional constant DW_OP_plus_uconst offsets are published; value expressions, unresolved member offsets, and arrays with any dynamic dimension are excluded. External readelf/addr2line run only when elf_backend=external is explicitly selected, use the selected project_root for tool configuration, and never receive automatic fallback traffic.",
-    "stop_rule": "Continue autonomously through implementation, proportional verification, standard NSIS packaging when needed, AI memory, commit, and push. Do not build MSI or WebView2-offline packages unless explicitly requested."
+    "stop_rule": "Continue autonomously through implementation, proportional verification, standard NSIS packaging when needed, AI memory, commit, and push. Do not build MSI or WebView2-offline packages unless explicitly requested. Publish latest.json only after GitHub/Gitee Release assets and the anonymous Gitee download are verified."
   },
   "milestones": [
     {
@@ -52,24 +52,29 @@
       "notes": "pyelftools 0.32 is the default across SDK, CLI, MCP, REST, desktop, SuperWatch, VOFA, breakpoints, memory maps, and HardFault source lookup. GNU readelf/addr2line are isolated behind explicit elf_backend=external selection with no automatic fallback."
     },
     {
-      "name": "Windows standard NSIS candidate",
+      "name": "Windows standard NSIS stable release",
       "status": "complete",
-      "notes": "The installed a8f82c2 candidate runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close."
+      "notes": "The installed v0.1.0 release from source 57de292 runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close."
     },
     {
       "name": "SuperWatch symbol tree and layout stability",
       "status": "complete",
       "notes": "Structured symbols render as a default-collapsed tree with search-state restoration and selected-only pruning. Desktop live status and toolbars use stable single-row geometry, and a 4660-leaf component test proves collapsed catalogs do not mount leaf rows."
+    },
+    {
+      "name": "Signed desktop auto-update and v0.1.0 release",
+      "status": "complete",
+      "notes": "Tauri v2 updater/process plugins download the signed NSIS setup from Gitee in the background and install only after user confirmation. GitHub/Gitee v0.1.0 Releases carry the same setup, signature, checksums, and manifest; updates/latest.json was published last and is identical on both hosts."
     }
   ],
   "verification": [
     {
       "area": "Latest automated baseline",
-      "result": "Python 899 passed and 1 skipped after review fixes; GUI 33 files / 376 tests passed; Vite production build transformed 1909 modules; Rust release packaging completed with 6 prior tests passing and cargo check completed."
+      "result": "Final v0.1.0 source 57de292 passed Python 909 and 1 skipped, GUI 35 files / 384 tests, Rust 6 tests, Vite production build with 1915 modules, cargo check, and npm production audit with zero vulnerabilities."
     },
     {
       "area": "Installed WebView2 checks",
-      "result": "The standard 063068d/9890008 NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, no Python/GNU child, and normal close left zero product processes and released port 8765."
+      "result": "The v0.1.0 standard NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, one probe was discovered without exposing its identifier, no Python/GNU child was spawned, and normal close left zero product processes and released port 8765."
     },
     {
       "area": "SuperWatch tree and layout qualification",
@@ -78,6 +83,10 @@
     {
       "area": "Built-in ELF real-file qualification",
       "result": "On the supplied STM32F103 fixtures, builtin/external symbol sets matched exactly: Keil AXF 1626 and GCC ELF 1418. Safe builtin readable catalogs contain Keil 4851 and GCC 4385 leaves. GCC remains a strict superset of external results; the 17 Keil external-only leaves were confirmed to come from dereference/stack-value or piece expressions that external text parsing misclassifies as direct writable addresses. Builtin line lookup resolved 50/50 sampled Keil addresses and 48/50 GCC addresses. Installed sidecar symbols, typeinfo, and memmap all passed under restricted PATH."
+    },
+    {
+      "area": "v0.1.0 signed update publication",
+      "result": "GitHub and Gitee published the same setup, Tauri signature, SHA256SUMS.txt, and release-manifest.json for tag v0.1.0. The anonymous Gitee setup download matched 65416990 bytes and SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6. Public latest.json returned version 0.1.0 with the exact local signature and Gitee installer URL; GitHub and Gitee updates branches both point to 53b0b3b."
     }
   ],
   "decisions": [
@@ -92,6 +101,9 @@
     "High-rate acquisition never waits for the browser; queues are bounded and report drops explicitly.",
     "SuperWatch structure and array branches are collapsed by default; search and selected-only filters expose only matching leaves and ancestors without changing acquisition selection.",
     "ELF/AXF parsing defaults to bundled pyelftools. External readelf/addr2line are used only for explicit elf_backend=external requests; path configuration does not activate them, and builtin failures do not auto-fallback.",
+    "Desktop updates use the official Tauri v2 updater. For NSIS, the standard setup executable is also the updater payload and its adjacent .exe.sig is the updater signature.",
+    "The application checks https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json, downloads automatically in the background, and installs only after explicit user confirmation.",
+    "Release publication uploads the same four public assets to GitHub and Gitee, verifies the anonymous Gitee setup download, then pushes the single-file updates branch last.",
     "Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths."
   ],
   "hardware": {
@@ -101,19 +113,21 @@
     "permission": "User permits firmware build/flash and read-only target validation when the requested task requires it."
   },
   "known_limits": [
-    "The a8f82c2 standard NSIS has not yet been tested on a second clean Windows machine or VM.",
+    "The v0.1.0 standard NSIS has not yet been tested on a second clean Windows machine or VM.",
     "The new SuperWatch layout has automated geometry guards but no fresh interactive Edge/WebView2 rectangle sampling because browser and computer-use control surfaces were unavailable.",
     "The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.",
     "Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.",
-    "The installer is unsigned and may show an unknown-publisher warning.",
+    "The updater payload is signed for Tauri integrity, but the Windows installer has no Authenticode signature and may show an unknown-publisher warning.",
+    "A Gitee API token is not configured on this machine. The v0.1.0 Gitee Release was created through the signed-in web UI; fully unattended future Gitee Release publication requires GITEE_TOKEN with repository release permission.",
     "Optional online Pack installation requires outbound HTTPS and may require a configured proxy.",
     "Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.",
     "DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.",
     "One HK32 catalog region lacks reliable sector geometry and is correctly rejected for ordinary covered-sector programming."
   ],
   "next_actions": [
+    "Configure a Gitee API token with repository release permission so future dual-host releases can run fully unattended.",
     "Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.",
-    "Install and qualify the 063068d/9890008 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.",
+    "Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.",
     "Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.",
     "Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.",
     "Add Windows code signing before promotion beyond prerelease."

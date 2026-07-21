@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-21T00:01:10+08:00`
-- 分支：`feature/online-flash-streaming`
-- HEAD：`063068d is the latest product source commit; 9890008 refreshes tracked frontend assets; the final handoff commit contains this memory`
-- 远端 HEAD：`feature/online-flash-streaming is pushed through the final handoff commit`
-- 工作树：clean after the final handoff commit; release files remain outside Git
-- 当前任务：内置 pyelftools ELF/DWARF 后端已完成并通过真实 STM32F103 AXF/ELF、完整自动化测试和标准 NSIS 安装态验证；等待后续任务。
+- 更新时间：`2026-07-21T09:08:15+08:00`
+- 分支：`master`
+- HEAD：`57de292 is the signed v0.1.0 product release source; the final handoff commit contains this memory`
+- 远端 HEAD：`GitHub and Gitee master are synchronized through the final handoff commit; updates is synchronized at 53b0b3b`
+- 工作树：clean after the final handoff commit; installers and release metadata remain under the ignored outer release directory
+- 当前任务：v0.1.0 稳定版已发布到 GitHub/Gitee，Tauri v2 签名更新清单已从 Gitee updates 分支公开并通过匿名下载与安装态验证；等待后续任务。
 - 状态：`complete`
 
 ## 里程碑
@@ -18,15 +18,17 @@
 - **Desktop dashboards and high-rate streaming** — `complete`。RTT View, SystemView, VOFA, and SuperWatch use bounded binary streaming, Worker-owned buffers, explicit loss telemetry, pause/resume, and cleanup-safe resource ownership.
 - **Runtime-readable structured symbols** — `complete`。Configuration, Symbols, search/typeinfo, and SuperWatch share one generation- and fingerprint-aware catalog. Reparse and reconnect rebind valid selected channels and remove invalid ones.
 - **Built-in ELF and DWARF backend** — `complete`。pyelftools 0.32 is the default across SDK, CLI, MCP, REST, desktop, SuperWatch, VOFA, breakpoints, memory maps, and HardFault source lookup. GNU readelf/addr2line are isolated behind explicit elf_backend=external selection with no automatic fallback.
-- **Windows standard NSIS candidate** — `complete`。The installed a8f82c2 candidate runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close.
+- **Windows standard NSIS stable release** — `complete`。The installed v0.1.0 release from source 57de292 runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close.
 - **SuperWatch symbol tree and layout stability** — `complete`。Structured symbols render as a default-collapsed tree with search-state restoration and selected-only pruning. Desktop live status and toolbars use stable single-row geometry, and a 4660-leaf component test proves collapsed catalogs do not mount leaf rows.
+- **Signed desktop auto-update and v0.1.0 release** — `complete`。Tauri v2 updater/process plugins download the signed NSIS setup from Gitee in the background and install only after user confirmation. GitHub/Gitee v0.1.0 Releases carry the same setup, signature, checksums, and manifest; updates/latest.json was published last and is identical on both hosts.
 
 ## 验证证据
 
-- **Latest automated baseline**：Python 899 passed and 1 skipped after review fixes; GUI 33 files / 376 tests passed; Vite production build transformed 1909 modules; Rust release packaging completed with 6 prior tests passing and cargo check completed.
-- **Installed WebView2 checks**：The standard 063068d/9890008 NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, no Python/GNU child, and normal close left zero product processes and released port 8765.
+- **Latest automated baseline**：Final v0.1.0 source 57de292 passed Python 909 and 1 skipped, GUI 35 files / 384 tests, Rust 6 tests, Vite production build with 1915 modules, cargo check, and npm production audit with zero vulnerabilities.
+- **Installed WebView2 checks**：The v0.1.0 standard NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, one probe was discovered without exposing its identifier, no Python/GNU child was spawned, and normal close left zero product processes and released port 8765.
 - **SuperWatch tree and layout qualification**：Pure and component tests cover nested structures/arrays, default collapse, search expansion restoration, selected-only pruning, reparse cleanup, and a 4660-leaf catalog mounting zero leaf rows while collapsed. Source-level guards cover stable desktop header/toolbars. Interactive live geometry sampling was unavailable because browser and computer-use control surfaces were not available.
 - **Built-in ELF real-file qualification**：On the supplied STM32F103 fixtures, builtin/external symbol sets matched exactly: Keil AXF 1626 and GCC ELF 1418. Safe builtin readable catalogs contain Keil 4851 and GCC 4385 leaves. GCC remains a strict superset of external results; the 17 Keil external-only leaves were confirmed to come from dereference/stack-value or piece expressions that external text parsing misclassifies as direct writable addresses. Builtin line lookup resolved 50/50 sampled Keil addresses and 48/50 GCC addresses. Installed sidecar symbols, typeinfo, and memmap all passed under restricted PATH.
+- **v0.1.0 signed update publication**：GitHub and Gitee published the same setup, Tauri signature, SHA256SUMS.txt, and release-manifest.json for tag v0.1.0. The anonymous Gitee setup download matched 65416990 bytes and SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6. Public latest.json returned version 0.1.0 with the exact local signature and Gitee installer URL; GitHub and Gitee updates branches both point to 53b0b3b.
 
 ## 架构决策
 
@@ -41,6 +43,9 @@
 - High-rate acquisition never waits for the browser; queues are bounded and report drops explicitly.
 - SuperWatch structure and array branches are collapsed by default; search and selected-only filters expose only matching leaves and ancestors without changing acquisition selection.
 - ELF/AXF parsing defaults to bundled pyelftools. External readelf/addr2line are used only for explicit elf_backend=external requests; path configuration does not activate them, and builtin failures do not auto-fallback.
+- Desktop updates use the official Tauri v2 updater. For NSIS, the standard setup executable is also the updater payload and its adjacent .exe.sig is the updater signature.
+- The application checks https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json, downloads automatically in the background, and installs only after explicit user confirmation.
+- Release publication uploads the same four public assets to GitHub and Gitee, verifies the anonymous Gitee setup download, then pushes the single-file updates branch last.
 - Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths.
 
 ## 真机环境
@@ -52,19 +57,21 @@
 
 ## 下一动作
 
-1. Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.
-2. Install and qualify the 063068d/9890008 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.
-3. Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.
-4. Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.
-5. Add Windows code signing before promotion beyond prerelease.
+1. Configure a Gitee API token with repository release permission so future dual-host releases can run fully unattended.
+2. Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.
+3. Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.
+4. Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.
+5. Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.
+6. Add Windows code signing before promotion beyond prerelease.
 
 ## 已知限制
 
-- The a8f82c2 standard NSIS has not yet been tested on a second clean Windows machine or VM.
+- The v0.1.0 standard NSIS has not yet been tested on a second clean Windows machine or VM.
 - The new SuperWatch layout has automated geometry guards but no fresh interactive Edge/WebView2 rectangle sampling because browser and computer-use control surfaces were unavailable.
 - The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.
 - Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.
-- The installer is unsigned and may show an unknown-publisher warning.
+- The updater payload is signed for Tauri integrity, but the Windows installer has no Authenticode signature and may show an unknown-publisher warning.
+- A Gitee API token is not configured on this machine. The v0.1.0 Gitee Release was created through the signed-in web UI; fully unattended future Gitee Release publication requires GITEE_TOKEN with repository release permission.
 - Optional online Pack installation requires outbound HTTPS and may require a configured proxy.
 - Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.
 - DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.
