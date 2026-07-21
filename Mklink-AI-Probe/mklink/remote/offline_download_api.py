@@ -9,10 +9,11 @@ from pathlib import Path
 import re
 import tempfile
 import time
-from typing import Dict, List, Mapping, Optional
+from typing import Callable, Dict, List, Mapping, Optional
 import uuid
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from mklink.offline_download import (
     OfflineAlgorithm,
@@ -20,6 +21,7 @@ from mklink.offline_download import (
     OfflineDownloadError,
     deploy_offline_bundle,
     generate_offline_script,
+    offline_trigger_command,
     parse_offline_config,
 )
 
@@ -282,13 +284,20 @@ def _copy_upload(upload: UploadFile, destination: Path, total: list[int]) -> Pat
     return destination
 
 
+def _redact_trigger_line(raw: str) -> str:
+    return re.sub(
+        r"(?i)(IDCODE\s*:\s*)0x[0-9a-f]+",
+        r"\1<masked>",
+        str(raw).strip(),
+    )[:500]
+
+
 def _redact_trigger_output(response: str) -> list[str]:
-    result = []
-    for raw in response.splitlines()[-100:]:
-        line = re.sub(r"(?i)(IDCODE\s*:\s*)0x[0-9a-f]+", r"\1<masked>", raw.strip())
-        if line:
-            result.append(line[:500])
-    return result
+    return [
+        line
+        for line in (_redact_trigger_line(raw) for raw in response.splitlines()[-100:])
+        if line
+    ]
 
 
 def create_offline_download_router(
@@ -297,6 +306,7 @@ def create_offline_download_router(
     device_provider: Optional[object] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/offline-download", tags=["offline-download"])
+    background_trigger_tasks: set[asyncio.Task] = set()
 
     def _connected_bridge(port: Optional[str]) -> Optional[object]:
         device = device_provider() if callable(device_provider) else None
@@ -325,6 +335,114 @@ def create_offline_download_router(
         if str(payload.get("model") or "auto").upper() != "AUTO":
             return None
         return (await _detect(payload.get("port")))["model"]
+
+    def _send_trigger(
+        command: str,
+        active_bridge: Optional[object],
+        resolved_port: Optional[str],
+        on_output: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        from mklink.bridge import MKLinkSerialBridge
+
+        if active_bridge is not None:
+            if on_output is None:
+                return active_bridge.send_command(command, timeout=600, echo=True)
+            return active_bridge.send_command(
+                command,
+                timeout=600,
+                echo=False,
+                on_output=on_output,
+            )
+        bridge = MKLinkSerialBridge(resolved_port)
+        try:
+            if not bridge.connect():
+                raise ConnectionError("Unable to connect to MKLink CDC port")
+            if on_output is None:
+                return bridge.send_command(command, timeout=600, echo=True)
+            return bridge.send_command(
+                command,
+                timeout=600,
+                echo=False,
+                on_output=on_output,
+            )
+        finally:
+            bridge.close()
+
+    def _trigger_stream(
+        command: str,
+        active_bridge: Optional[object],
+        resolved_port: Optional[str],
+    ) -> StreamingResponse:
+        from mklink.remote.resource_manager import ResourceGroup
+
+        async def stream():
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue = asyncio.Queue()
+            owner = f"user:offline-download:trigger:{uuid.uuid4().hex}"
+            accepting_output = True
+
+            def emit(raw: str) -> None:
+                if not accepting_output:
+                    return
+                line = _redact_trigger_line(raw)
+                if line:
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait,
+                        {"type": "line", "line": line},
+                    )
+
+            async def run() -> None:
+                try:
+                    resource_manager.acquire_many(
+                        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+                        owner,
+                        preempt=False,
+                    )
+                    response = await asyncio.to_thread(
+                        _send_trigger,
+                        command,
+                        active_bridge,
+                        resolved_port,
+                        emit,
+                    )
+                    lines = _redact_trigger_output(response)
+                    text = "\n".join(lines).casefold()
+                    await queue.put({
+                        "type": "result",
+                        "result": {
+                            "status": (
+                                "completed"
+                                if "finished" in text and "aborted" not in text
+                                else "failed"
+                            ),
+                            "lines": lines,
+                        },
+                    })
+                except Exception as error:
+                    await queue.put({
+                        "type": "error",
+                        "status": 409,
+                        "detail": str(error),
+                    })
+                finally:
+                    resource_manager.release(owner)
+
+            task = asyncio.create_task(run())
+            background_trigger_tasks.add(task)
+            task.add_done_callback(background_trigger_tasks.discard)
+            try:
+                while True:
+                    message = await queue.get()
+                    yield json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n"
+                    if message.get("type") in ("result", "error"):
+                        break
+                await task
+            finally:
+                accepting_output = False
+                if task.done():
+                    await task
+
+        return StreamingResponse(stream(), media_type="application/x-ndjson")
 
     @router.get("/status")
     async def status() -> object:
@@ -441,10 +559,29 @@ def create_offline_download_router(
                 await upload.close()
 
     @router.post("/trigger")
-    async def trigger(port: Optional[str] = Body(default=None, embed=True)) -> object:
-        from mklink.bridge import MKLinkSerialBridge
+    async def trigger(
+        request: Request,
+        payload: Optional[dict] = Body(default=None),
+    ) -> object:
         from mklink.discovery import find_mklink_cdc_port
         from mklink.remote.resource_manager import ResourceGroup
+
+        values = payload or {}
+        raw_port = values.get("port")
+        port = str(raw_port) if raw_port else None
+        try:
+            if values:
+                model = str(values.get("model") or "auto").upper()
+                if model == "AUTO":
+                    model = (await _detect(port))["model"]
+                command = offline_trigger_command(
+                    model,
+                    str(values.get("script_name") or "offline_download.py"),
+                )
+            else:
+                command = "load.offline()"
+        except OfflineDownloadError as error:
+            raise HTTPException(status_code=422, detail=str(error))
 
         active_bridge = _connected_bridge(port)
         resolved_port = port or (
@@ -452,6 +589,9 @@ def create_offline_download_router(
         )
         if active_bridge is None and not resolved_port:
             raise HTTPException(status_code=400, detail="MKLink CDC port was not found")
+        if "application/x-ndjson" in request.headers.get("accept", "").casefold():
+            return _trigger_stream(command, active_bridge, resolved_port)
+
         owner = f"user:offline-download:trigger:{uuid.uuid4().hex}"
         try:
             resource_manager.acquire_many(
@@ -460,20 +600,12 @@ def create_offline_download_router(
                 preempt=False,
             )
 
-            def _run() -> str:
-                if active_bridge is not None:
-                    return active_bridge.send_command(
-                        "load.offline()", timeout=600, echo=True
-                    )
-                bridge = MKLinkSerialBridge(resolved_port)
-                try:
-                    if not bridge.connect():
-                        raise ConnectionError("Unable to connect to MKLink CDC port")
-                    return bridge.send_command("load.offline()", timeout=600, echo=True)
-                finally:
-                    bridge.close()
-
-            response = await asyncio.to_thread(_run)
+            response = await asyncio.to_thread(
+                _send_trigger,
+                command,
+                active_bridge,
+                resolved_port,
+            )
         except Exception as error:
             raise HTTPException(status_code=409, detail=str(error))
         finally:

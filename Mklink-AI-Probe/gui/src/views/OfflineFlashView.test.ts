@@ -45,6 +45,11 @@ describe('OfflineFlashView', () => {
       script_name: 'factory-download.py',
       files: ['python/factory-download.py', 'firmware.hex'],
     })
+    offlineMocks.preview.mockResolvedValue({
+      model: 'V4',
+      script_name: 'factory-download.py',
+      script: '# generated preview',
+    })
     offlineMocks.trigger.mockResolvedValue({ status: 'completed', lines: ['offline download finished'] })
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
@@ -75,7 +80,7 @@ describe('OfflineFlashView', () => {
     expect(source).toContain('SWD 速率')
   })
 
-  it('only triggers a deployed V4 script after screen-selection confirmation', async () => {
+  it('triggers the deployed V4 script by its configured file name', async () => {
     offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     onlineMocks.searchTargets.mockResolvedValue([{
       part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
@@ -105,8 +110,97 @@ describe('OfflineFlashView', () => {
     await wrapper.get('[data-testid="offline-trigger"]').trigger('click')
     await flushPromises()
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('factory-download.py'))
-    expect(offlineMocks.trigger).toHaveBeenCalledOnce()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(offlineMocks.trigger).toHaveBeenCalledWith(
+      'V4',
+      'factory-download.py',
+      expect.any(Function),
+    )
+
+    offlineMocks.detectModel.mockResolvedValue({ model: 'V3', version: 'V3.3.1' })
+    const detectButton = wrapper.findAll('button').find(button => button.text() === '识别版本')
+    await detectButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="offline-trigger"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('offline_download.py')
+  })
+
+  it('generates the preview automatically before deploying', async () => {
+    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
+    offlineMocks.preview.mockResolvedValue({
+      model: 'V4',
+      script_name: 'factory-download.py',
+      script: '# generated preview',
+    })
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
+      pack_version: '2.4.1', installed: true, source: 'installed',
+    }])
+    offlineMocks.listAlgorithms.mockResolvedValue([{
+      id: 'profile-stm32f1', file_name: 'STM32F10x_1024.FLM',
+      flash_base: '0x08000000', ram_base: '0x20000000', source_kind: 'existing',
+      source_token: null, origin: 'MCU profile', available: true, on_probe: true,
+    }])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[type="file"][multiple]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['hex'], 'firmware.hex')],
+    })
+    await input.trigger('change')
+
+    await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+    await flushPromises()
+
+    expect(offlineMocks.preview).toHaveBeenCalledOnce()
+    expect(offlineMocks.preview.mock.invocationCallOrder[0]).toBeLessThan(
+      offlineMocks.deploy.mock.invocationCallOrder[0],
+    )
+    expect(wrapper.text()).toContain('# generated preview')
+  })
+
+  it('renders trigger output while the V4 command is still running', async () => {
+    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
+    offlineMocks.preview.mockResolvedValue({
+      model: 'V4', script_name: 'factory-download.py', script: '# preview',
+    })
+    offlineMocks.trigger.mockImplementation(async (_model, _script, onLine) => {
+      onLine('erase started')
+      await Promise.resolve()
+      onLine('program finished')
+      return { status: 'completed', lines: ['erase started', 'program finished'] }
+    })
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
+      pack_version: '2.4.1', installed: true, source: 'installed',
+    }])
+    offlineMocks.listAlgorithms.mockResolvedValue([{
+      id: 'profile-stm32f1', file_name: 'STM32F10x_1024.FLM',
+      flash_base: '0x08000000', ram_base: '0x20000000', source_kind: 'existing',
+      source_token: null, origin: 'MCU profile', available: true, on_probe: true,
+    }])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[type="file"][multiple]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['hex'], 'firmware.hex')],
+    })
+    await input.trigger('change')
+    await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="offline-trigger"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.trigger-log').text()).toContain('erase started')
+    expect(wrapper.get('.trigger-log').text()).toContain('program finished')
   })
 
   it('configures HPM BIN download without Pack or FLM algorithms', async () => {

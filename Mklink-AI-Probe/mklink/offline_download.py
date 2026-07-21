@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import re
 import shutil
+import tempfile
 from typing import Mapping, Optional, Sequence, Union
-import uuid
 
 
 _SAFE_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -108,6 +107,14 @@ def script_filename(model: str, requested_name: str) -> str:
     if normalized in ("V2", "V3"):
         return "offline_download.py"
     return _file_name(requested_name or "offline_download.py", "script name", (".py",))
+
+
+def offline_trigger_command(model: str, requested_name: str) -> str:
+    normalized = str(model).upper()
+    if normalized in ("V2", "V3"):
+        return "load.offline()"
+    name = script_filename(normalized, requested_name)
+    return f'load.offline("Python/{name}")'
 
 
 def parse_offline_config(
@@ -437,55 +444,66 @@ def _relative_destination(relative: Path) -> Path:
     return relative
 
 
+def _remove_probe_file(path: Path) -> None:
+    try:
+        path.unlink()
+    except PermissionError:
+        path.chmod(0o666)
+        path.unlink()
+
+
 def _transactional_copy(
     disk_root: Path,
     files: Sequence[tuple[Path, Optional[Path], Optional[bytes]]],
 ) -> list[str]:
-    stage = disk_root / f".mklink-offline-staging-{uuid.uuid4().hex}"
-    backup_root = stage / "backup"
-    staged_root = stage / "files"
-    installed = []
-    backups = []
-    try:
-        for relative, source, content in files:
-            relative = _relative_destination(relative)
-            staged = staged_root / relative
-            staged.parent.mkdir(parents=True, exist_ok=True)
-            if source is not None:
-                shutil.copy2(source, staged)
-            else:
-                staged.write_bytes(content or b"")
+    with tempfile.TemporaryDirectory(prefix="mklink-offline-staging-") as raw_stage:
+        stage = Path(raw_stage)
+        backup_root = stage / "backup"
+        staged_root = stage / "files"
+        installed = []
+        backups = []
+        try:
+            for relative, source, content in files:
+                relative = _relative_destination(relative)
+                staged = staged_root / relative
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                if source is not None:
+                    shutil.copy2(source, staged)
+                else:
+                    staged.write_bytes(content or b"")
 
-        for relative, _source, _content in files:
-            relative = _relative_destination(relative)
-            destination = disk_root / relative
-            staged = staged_root / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            if destination.exists():
-                backup = backup_root / relative
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(destination, backup)
-                backups.append((destination, backup))
-            os.replace(staged, destination)
-            installed.append(destination)
-        return [str(path.relative_to(disk_root)).replace("\\", "/") for path in installed]
-    except BaseException:
-        for destination in reversed(installed):
-            try:
+            for relative, _source, _content in files:
+                relative = _relative_destination(relative)
+                destination = disk_root / relative
+                staged = staged_root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
-                    destination.unlink()
-            except OSError:
-                pass
-        for destination, backup in reversed(backups):
-            try:
-                if backup.exists():
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(backup, destination)
-            except OSError:
-                pass
-        raise
-    finally:
-        shutil.rmtree(stage, ignore_errors=True)
+                    backup = backup_root / relative
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(destination, backup)
+                    backups.append((destination, backup))
+                    _remove_probe_file(destination)
+                installed.append(destination)
+                shutil.copy2(staged, destination)
+            return [
+                str(path.relative_to(disk_root)).replace("\\", "/")
+                for path in installed
+            ]
+        except BaseException:
+            for destination in reversed(installed):
+                try:
+                    if destination.exists():
+                        destination.unlink()
+                except OSError:
+                    pass
+            for destination, backup in reversed(backups):
+                try:
+                    if backup.exists():
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(backup, destination)
+                except OSError:
+                    pass
+            raise
 
 
 def deploy_offline_bundle(

@@ -1,18 +1,23 @@
+import asyncio
 from pathlib import Path
 import json
+import threading
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from mklink.firmware_check import Version, read_bridge_version, read_device_version
 from mklink.offline_download import (
     OfflineDownloadError,
     deploy_offline_bundle,
     generate_offline_script,
+    offline_trigger_command,
     parse_offline_config,
     script_filename,
 )
+from mklink.bridge import MKLinkSerialBridge
 from mklink.remote.api import create_app
 from mklink.remote.offline_download_api import detect_probe_model
 from mklink.remote.resource_manager import ResourceGroup
@@ -191,6 +196,99 @@ def test_deploy_copies_script_firmwares_and_flms_to_expected_usb_directories(tmp
     assert (disk / "keep.txt").read_text(encoding="ascii") == "keep"
 
 
+def test_deploy_never_creates_a_staging_directory_on_the_probe_disk(tmp_path, monkeypatch):
+    config = parse_offline_config(_config())
+    disk = tmp_path / "MICROKEEN"
+    disk.mkdir()
+    firmware_sources = []
+    for index, name in enumerate(("boot.bin", "rt-thread.hex", "assets.bin")):
+        path = tmp_path / f"firmware-{index}"
+        path.write_bytes(name.encode("ascii"))
+        firmware_sources.append(path)
+    algorithm_sources = []
+    for index in range(2):
+        path = tmp_path / f"algorithm-{index}"
+        path.write_bytes(bytes([index]))
+        algorithm_sources.append(path)
+
+    real_copy2 = __import__("shutil").copy2
+
+    def assert_clean_probe_disk(source, destination):
+        assert not any(
+            child.name.startswith(".mklink-offline-staging-")
+            for child in disk.iterdir()
+        )
+        return real_copy2(source, destination)
+
+    monkeypatch.setattr("mklink.offline_download.shutil.copy2", assert_clean_probe_disk)
+    deploy_offline_bundle(
+        config,
+        disk,
+        firmware_sources=firmware_sources,
+        algorithm_sources=algorithm_sources,
+    )
+
+
+def test_deploy_removes_existing_probe_files_before_copying_replacements(tmp_path, monkeypatch):
+    config = parse_offline_config(_config())
+    disk = tmp_path / "MICROKEEN"
+    (disk / "FLM").mkdir(parents=True)
+    (disk / "boot.bin").write_bytes(b"old")
+    (disk / "FLM" / "STM32F10x_1024.FLM").write_bytes(b"old")
+    firmware_sources = []
+    for index, name in enumerate(("boot.bin", "rt-thread.hex", "assets.bin")):
+        path = tmp_path / f"firmware-replacement-{index}"
+        path.write_bytes(name.encode("ascii"))
+        firmware_sources.append(path)
+    algorithm_sources = []
+    for index in range(2):
+        path = tmp_path / f"algorithm-replacement-{index}"
+        path.write_bytes(bytes([index]))
+        algorithm_sources.append(path)
+
+    real_copy2 = __import__("shutil").copy2
+
+    def reject_in_place_overwrite(source, destination):
+        destination = Path(destination)
+        if destination.exists() and disk in destination.parents:
+            raise PermissionError("probe file must be removed before replacement")
+        return real_copy2(source, destination)
+
+    monkeypatch.setattr("mklink.offline_download.shutil.copy2", reject_in_place_overwrite)
+    deploy_offline_bundle(
+        config,
+        disk,
+        firmware_sources=firmware_sources,
+        algorithm_sources=algorithm_sources,
+    )
+
+    assert (disk / "boot.bin").read_bytes() == b"boot.bin"
+    assert (disk / "FLM" / "STM32F10x_1024.FLM").read_bytes() == b"\x00"
+
+
+def test_v4_trigger_command_selects_the_configured_script():
+    assert offline_trigger_command("V4", "factory-line-a.py") == (
+        'load.offline("Python/factory-line-a.py")'
+    )
+    assert offline_trigger_command("V3", "ignored.py") == "load.offline()"
+
+
+def test_serial_bridge_echo_callback_receives_complete_lines():
+    bridge = object.__new__(MKLinkSerialBridge)
+    bridge._buffer_lock = threading.Lock()
+    bridge._response_buffer = ["first\r\nsecond\n"]
+    bridge._echo_offset = 0
+    bridge._echo_pending = ""
+    bridge._echo_prefix = "[SERIAL] "
+    bridge._echo_enabled = False
+    lines = []
+    bridge._echo_callback = lines.append
+
+    bridge._flush_echo_buffer(final=True)
+
+    assert lines == ["first", "second"]
+
+
 def test_v3_deploy_forces_offline_download_script_name(tmp_path):
     payload = _config("V3")
     payload["auto_download_count"] = 1
@@ -313,7 +411,7 @@ def test_preview_api_generates_the_resolved_script():
     assert 'load.hex("rt-thread.hex")' in payload["script"]
 
 
-def test_trigger_api_runs_load_offline_with_both_resources_leased(monkeypatch):
+def test_trigger_api_runs_the_configured_v4_script_with_both_resources_leased(monkeypatch):
     calls = []
 
     class Bridge:
@@ -336,14 +434,17 @@ def test_trigger_api_runs_load_offline_with_both_resources_leased(monkeypatch):
     app = create_app(auth_token=None, project_root=".")
 
     with TestClient(app) as client:
-        response = client.post("/api/offline-download/trigger", json={})
+        response = client.post(
+            "/api/offline-download/trigger",
+            json={"model": "V4", "script_name": "factory-line-a.py"},
+        )
 
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "completed"
     assert calls == [
         ("init", "TEST_CDC"),
         ("connect",),
-        ("send", "load.offline()", 600, True),
+        ("send", 'load.offline("Python/factory-line-a.py")', 600, True),
         ("close",),
     ]
     assert app.state.mklink_state["resource_manager"].get_status() == {}
@@ -392,7 +493,10 @@ def test_offline_api_reuses_the_connected_device_bridge():
             "/api/offline-download/preview",
             json={**_config(), "model": "auto"},
         )
-        triggered = client.post("/api/offline-download/trigger", json={})
+        triggered = client.post(
+            "/api/offline-download/trigger",
+            json={"model": "V4", "script_name": "factory-line-a.py"},
+        )
 
     assert detected.json() == {"model": "V4", "version": "V4.3.4"}
     assert preview.status_code == 200, preview.text
@@ -402,8 +506,110 @@ def test_offline_api_reuses_the_connected_device_bridge():
     assert calls == [
         ("cmd.get_version()", 5.0, False),
         ("cmd.get_version()", 5.0, False),
-        ("load.offline()", 600, True),
+        ('load.offline("Python/factory-line-a.py")', 600, True),
     ]
+
+
+def test_trigger_api_streams_device_output_before_the_terminal_result(monkeypatch):
+    class Bridge:
+        def __init__(self, _port):
+            pass
+
+        def connect(self):
+            return True
+
+        def send_command(self, command, timeout, echo=False, on_output=None):
+            assert command == 'load.offline("Python/factory-line-a.py")'
+            assert timeout == 600
+            assert echo is False
+            on_output("erase started")
+            on_output("program finished")
+            return "erase started\nprogram finished\noffline download finished"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mklink.bridge.MKLinkSerialBridge", Bridge)
+    monkeypatch.setattr("mklink.discovery.find_mklink_cdc_port", lambda: "TEST_CDC")
+    app = create_app(auth_token=None, project_root=".")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/offline-download/trigger",
+            json={"model": "V4", "script_name": "factory-line-a.py"},
+            headers={"Accept": "application/x-ndjson"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    messages = [json.loads(line) for line in response.text.splitlines() if line]
+    assert messages[:2] == [
+        {"type": "line", "line": "erase started"},
+        {"type": "line", "line": "program finished"},
+    ]
+    assert messages[-1]["type"] == "result"
+    assert messages[-1]["result"]["status"] == "completed"
+
+
+def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
+    allow_finish = threading.Event()
+
+    class Bridge:
+        def send_command(self, command, timeout, echo=False, on_output=None):
+            assert command == 'load.offline("Python/factory-line-a.py")'
+            assert timeout == 600
+            assert echo is False
+            on_output("program started")
+            assert allow_finish.wait(timeout=5.0)
+            return "program started\noffline download finished"
+
+    class Device:
+        connected = True
+        port = "TEST_CDC"
+        _bridge = Bridge()
+
+        def close(self):
+            pass
+
+    app = create_app(auth_token=None, project_root=".")
+    app.state.mklink_state["device"] = Device()
+    manager = app.state.mklink_state["resource_manager"]
+    route = next(
+        item
+        for item in app.routes
+        if getattr(item, "path", None) == "/api/offline-download/trigger"
+    )
+
+    async def exercise_disconnect():
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        request = Request({
+            "type": "http",
+            "method": "POST",
+            "path": "/api/offline-download/trigger",
+            "headers": [(b"accept", b"application/x-ndjson")],
+            "app": app,
+        }, receive)
+        response = await route.endpoint(
+            request=request,
+            payload={"model": "V4", "script_name": "factory-line-a.py"},
+        )
+        iterator = response.body_iterator
+        await anext(iterator)
+        await iterator.aclose()
+        await asyncio.sleep(0)
+        assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None
+        assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is not None
+
+        allow_finish.set()
+        for _ in range(100):
+            if manager.get_status() == {}:
+                break
+            await asyncio.sleep(0.01)
+        assert manager.get_status() == {}
+
+    asyncio.run(exercise_disconnect())
 
 
 def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):

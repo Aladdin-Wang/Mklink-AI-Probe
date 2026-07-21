@@ -50,6 +50,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json()
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function useOfflineFlashApi() {
   function getStatus(): Promise<OfflineDiskStatus> {
     return request('/status')
@@ -82,11 +86,71 @@ export function useOfflineFlashApi() {
     return request('/deploy', { method: 'POST', body })
   }
 
-  function trigger(port?: string): Promise<OfflineTriggerResult> {
-    return request('/trigger', {
-      method: 'POST',
-      body: JSON.stringify(port ? { port } : {}),
+  async function trigger(
+    model: 'V2' | 'V3' | 'V4',
+    scriptName: string,
+    onLine?: (line: string) => void,
+    port?: string,
+  ): Promise<OfflineTriggerResult> {
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
     })
+    const response = await fetch(`${BASE}/trigger`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        script_name: scriptName,
+        ...(port ? { port } : {}),
+      }),
+    })
+    if (!response.ok) throw await responseError(response)
+    if (!response.headers.get('Content-Type')?.toLowerCase().includes('application/x-ndjson')) {
+      return response.json()
+    }
+    if (!response.body) throw new Error('脱机下载未返回实时日志数据流')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result: OfflineTriggerResult | null = null
+    const consume = (line: string) => {
+      if (!line.trim()) return
+      const message = JSON.parse(line) as Record<string, unknown>
+      if (message.type === 'line' && typeof message.line === 'string') {
+        onLine?.(message.line)
+        return
+      }
+      if (message.type === 'result' && isRecord(message.result)) {
+        result = message.result as unknown as OfflineTriggerResult
+        return
+      }
+      if (message.type === 'error') {
+        throw new Error(detailMessage(message.detail, '脱机下载执行失败'))
+      }
+      throw new Error('脱机下载返回了无效的实时日志消息')
+    }
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value, { stream: !done })
+        let newline = buffer.indexOf('\n')
+        while (newline >= 0) {
+          consume(buffer.slice(0, newline))
+          buffer = buffer.slice(newline + 1)
+          newline = buffer.indexOf('\n')
+        }
+        if (done) break
+      }
+      consume(buffer)
+    } catch (value) {
+      await reader.cancel().catch(() => undefined)
+      throw value
+    }
+    if (result === null) throw new Error('脱机下载实时日志在返回结果前中断')
+    return result
   }
 
   return { getStatus, detectModel, listAlgorithms, preview, deploy, trigger }

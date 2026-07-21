@@ -2,6 +2,7 @@ import importlib.util
 import hashlib
 import json
 from pathlib import Path
+import tomllib
 from zipfile import ZipFile
 
 import pytest
@@ -292,9 +293,11 @@ def test_stable_product_version_and_signed_updater_are_configured():
         ).read_text(encoding="utf-8")
     )
 
-    assert 'version = "0.1.0"' in pyproject
-    assert 'version = "0.1.0"' in cargo
-    assert config["version"] == "0.1.0"
+    python_version = tomllib.loads(pyproject)["project"]["version"]
+    cargo_version = tomllib.loads(cargo)["package"]["version"]
+    assert python_version == cargo_version == config["version"]
+    assert len(config["version"].split(".")) == 3
+    assert all(part.isdigit() for part in config["version"].split("."))
     assert config["bundle"]["createUpdaterArtifacts"] is True
     assert config["plugins"]["updater"]["endpoints"] == [GITEE_UPDATER_ENDPOINT]
     assert config["plugins"]["updater"]["pubkey"].strip()

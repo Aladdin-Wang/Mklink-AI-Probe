@@ -71,6 +71,7 @@ const notice = ref('')
 const preview = ref<OfflinePreview | null>(null)
 const triggerLines = ref<string[]>([])
 const deployedScriptName = ref('')
+const deployedModel = ref<'V2' | 'V3' | 'V4' | ''>('')
 
 let sequence = 0
 const nextId = (prefix: string) => `${prefix}-${++sequence}`
@@ -95,13 +96,16 @@ const canBuild = computed(() => (
 const canTrigger = computed(() => (
   !!disk.value?.available
   && !!deployedScriptName.value
+  && !!deployedModel.value
   && !operationBusy.value
 ))
 
 watch(
   [model, scriptName, automaticCount, idcodeTimeout, swdClock, targetPart, hpmBoard, algorithms, firmwares],
   () => {
+    preview.value = null
     deployedScriptName.value = ''
+    deployedModel.value = ''
     triggerLines.value = []
   },
   { deep: true },
@@ -128,6 +132,10 @@ async function detectModel(): Promise<void> {
     const result = await offline.detectModel()
     detectedModel.value = result.model
     detectedVersion.value = result.version
+    preview.value = null
+    deployedScriptName.value = ''
+    deployedModel.value = ''
+    triggerLines.value = []
     if (result.model === 'V2') automaticCount.value = 1
   } catch (value) { error.value = message(value) }
   finally { operationBusy.value = false }
@@ -320,9 +328,14 @@ async function deploy(): Promise<void> {
   notice.value = ''
   try {
     const request = buildRequest()
+    if (!preview.value) {
+      preview.value = await offline.preview(request.payload)
+      detectedModel.value = preview.value.model
+    }
     const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles)
     detectedModel.value = result.model
     deployedScriptName.value = result.script_name
+    deployedModel.value = result.model
     notice.value = `已部署 ${result.files.length} 个文件，脚本 ${result.script_name}`
     await refreshDisk()
   } catch (value) { error.value = message(value) }
@@ -330,16 +343,18 @@ async function deploy(): Promise<void> {
 }
 
 async function triggerOffline(): Promise<void> {
-  if (
-    effectiveModel.value === 'V4'
-    && deployedScriptName.value !== 'offline_download.py'
-    && !window.confirm(`请先在 V4 下载器屏幕选择 ${deployedScriptName.value}，然后再触发测试。`)
-  ) return
   operationBusy.value = true
   error.value = ''
   triggerLines.value = []
   try {
-    const result = await offline.trigger()
+    const result = await offline.trigger(
+      deployedModel.value as 'V2' | 'V3' | 'V4',
+      deployedScriptName.value,
+      (line) => {
+        triggerLines.value.push(line)
+        if (triggerLines.value.length > 200) triggerLines.value.shift()
+      },
+    )
     triggerLines.value = result.lines
     notice.value = result.status === 'completed' ? '脱机下载执行完成' : '脱机下载执行失败'
   } catch (value) { error.value = message(value) }

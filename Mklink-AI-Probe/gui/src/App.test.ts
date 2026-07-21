@@ -67,7 +67,7 @@ describe('App version footer', () => {
     const wrapper = mountApp()
 
     expect(wrapper.get('[data-testid="app-version"]').text())
-      .toMatch(/^v0\.1\.0 · [0-9a-f]{7,}$/)
+      .toMatch(new RegExp(`^v${__APP_VERSION__.replaceAll('.', '\\.')} · [0-9a-f]{7,}$`))
     wrapper.unmount()
   })
 
