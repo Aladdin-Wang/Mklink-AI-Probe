@@ -161,9 +161,14 @@ def build_gitee_request(
     return request
 
 
-def request_json(request: urllib.request.Request) -> dict[str, object]:
+def request_json(
+    request: urllib.request.Request,
+    *,
+    allow_null: bool = False,
+    timeout: float = 60,
+) -> dict[str, object] | None:
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = response.read()
     except urllib.error.HTTPError as error:
         parsed = urllib.parse.urlsplit(request.full_url)
@@ -172,6 +177,8 @@ def request_json(request: urllib.request.Request) -> dict[str, object]:
         )
         raise GiteeApiError(error.code, redacted) from None
     result = json.loads(payload.decode("utf-8"))
+    if result is None and allow_null:
+        return None
     if not isinstance(result, dict):
         raise RuntimeError("Gitee API returned a non-object response")
     return result
@@ -207,31 +214,37 @@ def ensure_gitee_release(
     path = f"/repos/{owner}/{repo}/releases/tags/{tag}"
     try:
         release = request_json(
-            build_gitee_request(method="GET", path=path, token=token)
+            build_gitee_request(method="GET", path=path, token=token),
+            allow_null=True,
         )
     except GiteeApiError as error:
         if error.status != 404:
             raise
-    else:
+        release = None
+    if release is not None:
         if release.get("tag_name") != tag:
             raise RuntimeError("Gitee returned a conflicting release tag")
         if release.get("name") not in (None, title) or release.get("body") not in (None, notes):
             raise RuntimeError("Gitee release metadata conflicts with the requested release")
         return release
 
-    return request_json(
+    created = request_json(
         build_gitee_request(
             method="POST",
             path=f"/repos/{owner}/{repo}/releases",
             token=token,
             payload={
                 "tag_name": tag,
+                "target_commitish": "master",
                 "name": title,
                 "body": notes,
                 "prerelease": False,
             },
         )
     )
+    if created is None:
+        raise RuntimeError("Gitee release creation returned an empty response")
+    return created
 
 
 def _multipart_file(path: Path) -> tuple[bytes, str]:
@@ -301,7 +314,8 @@ def upload_gitee_asset(
             token=token,
             data=data,
             content_type=content_type,
-        )
+        ),
+        timeout=600,
     )
 
 

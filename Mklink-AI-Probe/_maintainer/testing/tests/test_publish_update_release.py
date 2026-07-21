@@ -96,7 +96,7 @@ def test_gitee_release_creation_is_idempotent(publisher, monkeypatch):
     calls = []
     existing = {"id": 42, "tag_name": "v0.1.0", "assets": []}
 
-    def request_json(request):
+    def request_json(request, **_kwargs):
         calls.append((request.method, request.full_url))
         if request.method == "GET":
             return existing
@@ -120,6 +120,58 @@ def test_gitee_release_creation_is_idempotent(publisher, monkeypatch):
             "https://gitee.com/api/v5/repos/owner/repo/releases/tags/v0.1.0?access_token=token",
         )
     ]
+
+
+def test_gitee_release_creation_treats_null_tag_lookup_as_missing(
+    publisher, monkeypatch,
+):
+    calls = []
+    created = {"id": 43, "tag_name": "v0.1.1", "assets": []}
+
+    def request_json(request, *, allow_null=False):
+        calls.append((request.method, allow_null))
+        if request.method == "GET":
+            assert allow_null is True
+            return None
+        assert urllib.parse.parse_qs(request.data.decode())["target_commitish"] == ["master"]
+        return created
+
+    monkeypatch.setattr(publisher, "request_json", request_json)
+
+    result = publisher.ensure_gitee_release(
+        owner="owner",
+        repo="repo",
+        token="token",
+        tag="v0.1.1",
+        title="Mklink AI Probe v0.1.1",
+        notes="Patch release",
+    )
+
+    assert result == created
+    assert calls == [("GET", True), ("POST", False)]
+
+
+def test_gitee_asset_upload_uses_a_large_file_timeout(publisher, monkeypatch, tmp_path):
+    asset = tmp_path / "setup.exe"
+    asset.write_bytes(b"installer")
+    calls = []
+
+    def request_json(request, **kwargs):
+        calls.append((request, kwargs))
+        return {"name": asset.name, "browser_download_url": "https://example.invalid/setup.exe"}
+
+    monkeypatch.setattr(publisher, "request_json", request_json)
+
+    result = publisher.upload_gitee_asset(
+        owner="owner",
+        repo="repo",
+        token="token",
+        release={"id": 7, "assets": []},
+        path=asset,
+    )
+
+    assert result["name"] == asset.name
+    assert calls[0][1]["timeout"] == 600
 
 
 def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
