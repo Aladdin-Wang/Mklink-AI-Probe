@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-22T16:37:37+08:00`
+- 更新时间：`2026-07-22T18:02:52+08:00`
 - 分支：`master`
-- HEAD：`v0.1.2 source/tag 9cd9177 plus this post-release handoff`
-- 远端 HEAD：`GitHub and Gitee v0.1.2 peel to 9cd9177; both updates branches are 926f046 and both master branches receive this final handoff`
-- 工作树：clean after the post-release handoff commit; generated build/cache output was removed, external release assets are retained outside Git, v0.1.2 remains installed locally, test services are stopped, and the target is reset and disconnected
-- 当前任务：v0.1.2 was built, installed over v0.1.1, qualified with the real STM32F103 target, and published to GitHub and Gitee with latest.json updated last.
+- HEAD：`local master includes the dedicated feature-branch workflow through this handoff; v0.1.2 remains tagged at 9cd9177`
+- 远端 HEAD：`GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177`
+- 工作树：clean after the verified branch-workflow policy is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is reset and disconnected
+- 当前任务：Repository policy now requires every runtime or user-facing feature and bug fix to be developed and fully qualified on a dedicated branch before merging into master.
 - 状态：`complete`
 
 ## 里程碑
@@ -18,12 +18,13 @@
 - **Streaming and SuperWatch** — `complete`。RTT, SystemView, VOFA, and SuperWatch use bounded streaming. RTT View now has optional labeled axes with wheel zoom, drag pan, retained pause/stop curves, and inline input-format guidance. SuperWatch retains paused/stopped curves, exports timestamped selected-variable raw data, and suppresses viewer shortcuts while users type in editable controls.
 - **Built-in ELF and DWARF** — `complete`。Bundled pyelftools is the default for symbols, types, memory maps, HardFault lines, and desktop features. External GNU tools run only when explicitly selected.
 - **Signed desktop updates** — `complete`。The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.2 assets and latest.json are published on GitHub and Gitee.
-- **Shared cross-model maintenance workflow** — `complete`。AGENTS.md and the repository skill define requirement discovery, diagnosis, proportional planning/testing, worktree reuse, verification, handoff, and maintainer-only releases without relying on globally installed skills.
+- **Shared cross-model maintenance workflow** — `complete`。AGENTS.md and the repository skill require dedicated feature/fix branches, branch-local automated and real-hardware qualification before merge, requirement discovery, diagnosis, proportional planning, handoff, and maintainer-only releases without relying on globally installed skills.
 - **Cross-platform USB Web entry** — `complete`。One offline HTML uses the strict mklink-ai-probe://web start/open/stop protocol. User-scoped Windows, macOS, and Linux handlers start the existing loopback GUI, reuse existing Web services without ownership, and stop only identity-verified processes started by the entry.
 - **Browser file-source loading** — `complete`。The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory.
 
 ## 验证证据
 
+- **Dedicated feature-branch workflow**：Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge.
 - **v0.1.2 final source gate and real hardware**：The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect.
 - **v0.1.2 installed candidate and publication**：The signed standard NSIS overwrote the local v0.1.1 installation under a Windows-system-only PATH. The installed v0.1.2 used one bundled sidecar and no Python child, exposed builtin ELF, discovered one probe without recording its identifier, uploaded the real AXF/MAP into an isolated runtime directory, connected the STM32F103 target, and sampled a selected RAM variable for 3,215 cycles with zero errors or drops. RTT-to-SuperWatch and SuperWatch-to-RTT switching each stopped the previous dashboard automatically. Normal window close removed all product processes and released port 8765. GitHub and Gitee expose the four release attachments, anonymous Gitee installer download passed size/SHA-256 verification, and both latest.json files point to the signed v0.1.2 Gitee payload.
 - **Cross-platform USB Web entry**：Focused Web-entry and CLI coverage passed 34/34, the full Python suite passed 945 with 1 skipped, the GUI suite passed 36 files/397 tests, and the production Vite build passed. On Windows, the real user-level protocol and physical MICROKEEN USB HTML reused an existing Web service without changing its PID or stopping it, then independently started one owned loopback GUI, reused the same PID on a second click, and stopped only that owned process. Uninstall removed the owned registry tree and reinstall restored it. macOS and Linux registration/quoting are covered by unit tests but were not run on those operating systems.
@@ -37,6 +38,7 @@
 
 ## 架构决策
 
+- Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.
 - Every runtime or user-facing feature and bug fix now requires the full Python and GUI suites plus a production build, followed by a real-hardware closed loop on the affected Web, Tauri, or device surface before release. Component or mocked tests alone are not release evidence.
 - Browser file pickers cannot expose an absolute local path. Web AXF/MAP selection therefore uploads the selected File to a suffix-checked, 256 MiB-limited, content-addressed runtime directory and uses the returned backend path; Tauri continues to use its native dialog without upload.
 - The v0.1.2 public release must not start until its signed NSIS has overwritten the local installation and the installed bundled-sidecar application has passed the real-hardware closed loop.
@@ -86,4 +88,5 @@
 
 - Follow AGENTS.md and skills/maintaining-mklink-ai-probe/SKILL.md.
 - Reconcile AI memory with live Git and runtime state before editing.
+- Create a dedicated feature or fix branch before runtime or user-facing implementation, complete the required automated and real-hardware gates there, and merge only after the branch passes.
 - Before ending, run proportional checks and git diff --check, update memory, render and validate the handoff, then commit and push when authorized.

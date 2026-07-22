@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T16:37:37+08:00",
+  "updated_at": "2026-07-22T18:02:52+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "v0.1.2 source/tag 9cd9177 plus this post-release handoff",
-    "remote_head": "GitHub and Gitee v0.1.2 peel to 9cd9177; both updates branches are 926f046 and both master branches receive this final handoff",
-    "working_tree": "clean after the post-release handoff commit; generated build/cache output was removed, external release assets are retained outside Git, v0.1.2 remains installed locally, test services are stopped, and the target is reset and disconnected"
+    "head": "local master includes the dedicated feature-branch workflow through this handoff; v0.1.2 remains tagged at 9cd9177",
+    "remote_head": "GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177",
+    "working_tree": "clean after the verified branch-workflow policy is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is reset and disconnected"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "v0.1.2 was built, installed over v0.1.1, qualified with the real STM32F103 target, and published to GitHub and Gitee with latest.json updated last.",
+    "current_task": "Repository policy now requires every runtime or user-facing feature and bug fix to be developed and fully qualified on a dedicated branch before merging into master.",
     "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
     "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
     "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
@@ -44,7 +44,7 @@
     {
       "name": "Shared cross-model maintenance workflow",
       "status": "complete",
-      "notes": "AGENTS.md and the repository skill define requirement discovery, diagnosis, proportional planning/testing, worktree reuse, verification, handoff, and maintainer-only releases without relying on globally installed skills."
+      "notes": "AGENTS.md and the repository skill require dedicated feature/fix branches, branch-local automated and real-hardware qualification before merge, requirement discovery, diagnosis, proportional planning, handoff, and maintainer-only releases without relying on globally installed skills."
     },
     {
       "name": "Cross-platform USB Web entry",
@@ -58,6 +58,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "Dedicated feature-branch workflow",
+      "result": "Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge."
+    },
     {
       "area": "v0.1.2 final source gate and real hardware",
       "result": "The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect."
@@ -100,6 +104,7 @@
     }
   ],
   "decisions": [
+    "Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.",
     "Every runtime or user-facing feature and bug fix now requires the full Python and GUI suites plus a production build, followed by a real-hardware closed loop on the affected Web, Tauri, or device surface before release. Component or mocked tests alone are not release evidence.",
     "Browser file pickers cannot expose an absolute local path. Web AXF/MAP selection therefore uploads the selected File to a suffix-checked, 256 MiB-limited, content-addressed runtime directory and uses the returned backend path; Tauri continues to use its native dialog without upload.",
     "The v0.1.2 public release must not start until its signed NSIS has overwritten the local installation and the installed bundled-sidecar application has passed the real-hardware closed loop.",
@@ -145,6 +150,7 @@
   "continuation_protocol": [
     "Follow AGENTS.md and skills/maintaining-mklink-ai-probe/SKILL.md.",
     "Reconcile AI memory with live Git and runtime state before editing.",
+    "Create a dedicated feature or fix branch before runtime or user-facing implementation, complete the required automated and real-hardware gates there, and merge only after the branch passes.",
     "Before ending, run proportional checks and git diff --check, update memory, render and validate the handoff, then commit and push when authorized."
   ]
 }

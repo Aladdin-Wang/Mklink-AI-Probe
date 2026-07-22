@@ -19,6 +19,25 @@ skills installed on one developer's computer.
 4. Check `git worktree list`. Reuse the current isolated worktree when one
    already exists; create another only when isolation is useful and authorized.
 
+## Develop On A Branch
+
+1. Before editing a runtime or user-facing feature or bug fix, start from a
+   clean, current `master` and create a dedicated `feature/<topic>` or
+   `fix/<topic>` branch. A separate worktree remains optional; the branch does
+   not.
+2. Never develop or commit feature and bug-fix work directly on `master`.
+   Documentation-only maintenance and release handoffs are exempt unless the
+   maintainer requests a branch.
+3. Keep the implementation, regression coverage, final verification, real-
+   hardware evidence, and project-memory update on the feature or fix branch.
+4. Before merging, incorporate the current `master` into the branch when it has
+   advanced, then rerun the full final gate. Treat any code change or conflict
+   resolution after verification as invalidating the earlier evidence.
+5. Merge into `master` only after the branch passes its required automated and
+   real-surface gates. After merging, verify that `master` contains the tested
+   branch tip, project memory validates, and the worktree is clean. Push only
+   when authorized.
+
 ## Turn Requests Into Results
 
 1. Identify the observed problem, the developer's intended outcome, affected
@@ -31,7 +50,8 @@ skills installed on one developer's computer.
 4. Find the root cause. Keep the change within the owning module and avoid
    speculative abstractions or unrelated cleanup.
 5. Use a short written plan for multi-step, risky, or cross-module work. Small
-   fixes can proceed directly. Update the plan when evidence changes it.
+   fixes can proceed without a long plan, but still require a fix branch. Update
+   the plan when evidence changes it.
 6. Add regression coverage when it is useful and economical. Do not require a
    separate RED commit, a test-first ceremony, or broad tests for a narrow edit.
 7. Prefer repository scripts and established APIs. Keep runtime dependencies
@@ -56,12 +76,13 @@ skills installed on one developer's computer.
 ## Verify And Hand Off
 
 1. For every runtime or user-facing feature and bug fix, run the full Python
-   and GUI suites plus the production build. Proportional focused tests remain
-   useful for iteration but do not replace this final gate.
+   and GUI suites plus the production build on its branch before merge.
+   Proportional focused tests remain useful for iteration but do not replace
+   this final gate.
 2. Complete a real-hardware closed loop on the affected Web, Tauri, or device
-   workflow before release. Mocked/component-only verification is insufficient;
-   if the required hardware surface is unavailable, obtain an explicit
-   maintainer waiver and record the exception.
+   workflow before merge and release. Mocked/component-only verification is
+   insufficient; if the required hardware surface is unavailable, obtain an
+   explicit maintainer waiver and record the exception.
 3. Run `git diff --check` and record what was validated on the real surface.
 4. Update `docs/ai/project-memory.json` with current facts, decisions, evidence,
    limits, and next actions. Run `python scripts/ai_memory.py render` and
