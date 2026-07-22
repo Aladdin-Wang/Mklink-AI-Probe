@@ -4,86 +4,64 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-21T12:19:23+08:00`
+- 更新时间：`2026-07-22T09:50:24+08:00`
 - 分支：`master`
-- HEAD：`b3c7925 is the signed v0.1.1 product release source; master also contains Gitee publisher hardening and the final handoff`
-- 远端 HEAD：`GitHub and Gitee master are synchronized through the final v0.1.1 handoff; updates is synchronized at ea36381`
-- 工作树：clean after the final v0.1.1 handoff; installers and release metadata remain under the ignored outer release directory
-- 当前任务：v0.1.1 已发布到 GitHub/Gitee，旧版客户端可从 Gitee updates 分支发现签名更新；等待用户侧自动更新确认和后续任务。
+- HEAD：`master contains the v0.1.1 release handoff and the repository-bundled maintenance workflow`
+- 远端 HEAD：`GitHub master contains this maintenance workflow; Gitee master remains maintainer-synchronized and was not changed by this task; both updates branches remain ea36381`
+- 工作树：clean after the maintenance workflow handoff; repository skill and release procedure are tracked
+- 当前任务：Repository-bundled cross-model maintenance workflow and maintainer-only automatic release procedure are complete; waiting for the next task.
 - 状态：`complete`
 
 ## 里程碑
 
-- **Online and offline flash workflows** — `complete`。Online and offline paths share the unified target/algorithm catalog, preserve ordered firmware ranges, avoid implicit whole-chip erase, support 10 MHz, and cover builtin, local Pack, custom FLM, and optional online Pack sources. Offline deployment auto-generates a missing preview, keeps staging and rollback files off the probe disk, selects named V4 scripts, and streams trigger output live.
-- **Desktop dashboards and high-rate streaming** — `complete`。RTT View, SystemView, VOFA, and SuperWatch use bounded binary streaming, Worker-owned buffers, explicit loss telemetry, pause/resume, and cleanup-safe resource ownership.
-- **Runtime-readable structured symbols** — `complete`。Configuration, Symbols, search/typeinfo, and SuperWatch share one generation- and fingerprint-aware catalog. Reparse and reconnect rebind valid selected channels and remove invalid ones.
-- **Built-in ELF and DWARF backend** — `complete`。pyelftools 0.32 is the default across SDK, CLI, MCP, REST, desktop, SuperWatch, VOFA, breakpoints, memory maps, and HardFault source lookup. GNU readelf/addr2line are isolated behind explicit elf_backend=external selection with no automatic fallback.
-- **Windows standard NSIS stable release** — `complete`。The installed v0.1.0 release from source 57de292 runs with the bundled sidecar under restricted PATH, spawns no Python child, embeds the expected build identity, discovers the available probe without exposing its identifier, and releases processes and port 8765 on normal close.
-- **SuperWatch symbol tree and layout stability** — `complete`。Structured symbols render as a default-collapsed tree with search-state restoration and selected-only pruning. Desktop live status and toolbars use stable single-row geometry, and a 4660-leaf component test proves collapsed catalogs do not mount leaf rows.
-- **Signed desktop auto-update and stable releases** — `complete`。Tauri v2 updater/process plugins download the signed NSIS setup from Gitee in the background and install only after user confirmation. GitHub/Gitee v0.1.1 Releases carry the same setup, signature, checksums, and manifest; updates/latest.json was published last and is identical on both hosts.
+- **Flash workflows** — `complete`。Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live.
+- **Streaming and SuperWatch** — `complete`。RTT, SystemView, VOFA, and SuperWatch use bounded streaming. SuperWatch keeps stable chart geometry and renders structures/arrays as default-collapsed symbol trees.
+- **Built-in ELF and DWARF** — `complete`。Bundled pyelftools is the default for symbols, types, memory maps, HardFault lines, and desktop features. External GNU tools run only when explicitly selected.
+- **Signed desktop updates** — `complete`。The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.1 assets are on GitHub and Gitee.
+- **Shared cross-model maintenance workflow** — `complete`。AGENTS.md and the repository skill define requirement discovery, diagnosis, proportional planning/testing, worktree reuse, verification, handoff, and maintainer-only releases without relying on globally installed skills.
 
 ## 验证证据
 
-- **Latest automated baseline**：Final v0.1.1 source b3c7925 passed Python 915 and 1 skipped, GUI 35 files / 387 tests, Rust 6 tests, Vite production build with 1915 modules, cargo check, and npm production audit with zero vulnerabilities.
-- **Installed WebView2 checks**：The v0.1.0 standard NSIS installed silently to an isolated location and launched under a Windows-system-only PATH. Health reported elf_backend=builtin, pyelftools 0.32 available, readelf/addr2line unavailable, one probe was discovered without exposing its identifier, no Python/GNU child was spawned, and normal close left zero product processes and released port 8765.
-- **SuperWatch tree and layout qualification**：Pure and component tests cover nested structures/arrays, default collapse, search expansion restoration, selected-only pruning, reparse cleanup, and a 4660-leaf catalog mounting zero leaf rows while collapsed. Source-level guards cover stable desktop header/toolbars. Interactive live geometry sampling was unavailable because browser and computer-use control surfaces were not available.
-- **Built-in ELF real-file qualification**：On the supplied STM32F103 fixtures, builtin/external symbol sets matched exactly: Keil AXF 1626 and GCC ELF 1418. Safe builtin readable catalogs contain Keil 4851 and GCC 4385 leaves. GCC remains a strict superset of external results; the 17 Keil external-only leaves were confirmed to come from dereference/stack-value or piece expressions that external text parsing misclassifies as direct writable addresses. Builtin line lookup resolved 50/50 sampled Keil addresses and 48/50 GCC addresses. Installed sidecar symbols, typeinfo, and memmap all passed under restricted PATH.
-- **v0.1.0 signed update publication**：GitHub and Gitee published the same setup, Tauri signature, SHA256SUMS.txt, and release-manifest.json for tag v0.1.0. The anonymous Gitee setup download matched 65416990 bytes and SHA-256 2473cee615caea69bdef634c4571402162fa21c26182366721005f49020351c6. Public latest.json returned version 0.1.0 with the exact local signature and Gitee installer URL; GitHub and Gitee updates branches both point to 53b0b3b.
-- **Authenticated Gitee publication access**：The user-level GITEE_TOKEN was read without echoing it. Authenticated Gitee API v5 calls successfully resolved the current account, repository, and v0.1.0 Release with six assets, and the release publisher resolve_gitee_token() path returned a non-empty token.
-- **V4 offline deployment HIL**：Using the supplied STM32F103 fixture and a real V4 probe disk, deployment produced the same script as preview and left zero .mklink-offline-staging-* entries on the probe disk. The named V4 trigger completed successfully with 87 streamed line events; the first line arrived at 6.834 seconds and the terminal result at 17.741 seconds.
-- **v0.1.1 installed and published release**：The standard NSIS installed silently to an isolated location and reported product version 0.1.1 with health=ok and elf_backend=builtin under a Windows-system-only PATH. It launched no Python child, used the bundled sidecar, and released port 8765 on normal close. GitHub and Gitee each expose the four product assets for v0.1.1, public latest.json reports 0.1.1 with a signed Gitee installer URL, and both updates branches point to ea36381.
+- **v0.1.1 automated baseline**：Release source b3c7925 passed Python 915 with 1 skipped, GUI 35 files/387 tests, Rust 6 tests, Vite production build, cargo check, and production npm audit with zero vulnerabilities.
+- **Installed application**：The standard NSIS ran with the bundled sidecar under a Windows-system-only PATH, exposed the builtin ELF backend, spawned no Python child, discovered a probe without recording its identifier, and released processes and port 8765 on close.
+- **Real V4 offline deployment**：Deployment auto-generated a missing preview, left no staging backup on the probe disk, selected the configured script name, and delivered device output as 87 live line events before successful completion.
+- **Published update**：GitHub and Gitee expose the same four v0.1.1 assets; anonymous Gitee download and SHA-256 passed, and public latest.json points to the signed Gitee NSIS payload.
+- **Repository maintenance workflow**：The repository skill passed skill-creator quick validation; release preparation/publication tests passed 12/12; AI memory validation and git diff checks passed.
 
 ## 架构决策
 
-- Generate only the standard NSIS installer by default. MSI and WebView2-offline packages require explicit user request.
-- Only MKLink-exposed CMSIS-DAP probes are supported by the online flash UI.
-- BIN requires an explicit base address; HEX uses embedded addresses.
-- Ordinary programming erases only image-covered sectors and verifies readback before reset. Whole-chip erase remains a separate confirmed operation.
-- Algorithm selection is offline-first: builtin catalog, then user Pack, then target-scoped custom FLM; optional online Pack installation remains available.
-- HPM targets always use the HPM ROM API path and never discover or load FLM.
-- The public symbol catalog contains only fixed readable scalar leaves. Pointers, bit-fields, variable-length arrays, overlapping union aliases, incomplete layouts, and non-RAM addresses are excluded.
-- SuperWatch merges nearby addresses through build_read_blocks(max_gap=256) and preserves selected symbol names across valid reparse/reconnect transitions.
-- High-rate acquisition never waits for the browser; queues are bounded and report drops explicitly.
-- SuperWatch structure and array branches are collapsed by default; search and selected-only filters expose only matching leaves and ancestors without changing acquisition selection.
-- ELF/AXF parsing defaults to bundled pyelftools. External readelf/addr2line are used only for explicit elf_backend=external requests; path configuration does not activate them, and builtin failures do not auto-fallback.
-- Desktop updates use the official Tauri v2 updater. For NSIS, the standard setup executable is also the updater payload and its adjacent .exe.sig is the updater signature.
-- The application checks https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json, downloads automatically in the background, and installs only after explicit user confirmation.
-- Release publication uploads the same four public assets to GitHub and Gitee, verifies the anonymous Gitee setup download, then pushes the single-file updates branch last.
-- Offline deployment generates a missing preview before copying, stores transactional staging and backups only in the host temporary directory, and never creates .mklink-offline-staging-* on the probe disk.
-- V4 offline tests call load.offline with the validated deployed Python script path and stream device output over NDJSON; V2/V3 retain load.offline() compatibility.
-- Do not commit installers, firmware, Pack files, standalone FLM, logs, screenshots, full probe IDs, COM ports, usernames, credentials, or local hardware paths.
+- Repository instructions and skills are the cross-model source of truth; local/global skills may help but must not be required.
+- Plans, tests, and worktrees scale with risk. Do not impose long plans, separate RED commits, or new worktrees on every task.
+- Diagnose before editing, prefer existing patterns, make the smallest complete change, and verify before claiming success.
+- Generate only standard NSIS by default. MSI and WebView2-offline packages require explicit authorization.
+- Official signing and publication run only on the maintainer's computer or controlled CI; signing keys remain local/CI only.
+- GitHub is the primary collaborative repository. Only the maintainer or controlled CI synchronizes official releases to Gitee.
+- Publish GitHub/Gitee assets and verify the anonymous Gitee installer before publishing updates/latest.json last.
+- HPM targets always use the dedicated ROM API and never discover or load FLM.
+- Bundled pyelftools is the default; readelf/addr2line require explicit external-backend selection and never receive automatic fallback traffic.
+- Do not commit installers, firmware, Packs, FLM files, logs, screenshots, full probe IDs, COM numbers, usernames, credentials, signing keys, or local hardware paths.
 
 ## 真机环境
 
-- **probe**：MKLink V4 available; identifier intentionally omitted
-- **latest_target**：STM32H7B0 LCD board fixture with internal and external Flash; local paths intentionally omitted
-- **stream_target**：STM32F103RC fixture; local path intentionally omitted
-- **permission**：User permits firmware build/flash and read-only target validation when the requested task requires it.
+- **probe**：MKLink V4 is available; identifier omitted
+- **stream_target**：STM32F103RC fixture is available; local path omitted
+- **permission**：Firmware build/flash and read-only target validation are permitted when required by the active task.
 
 ## 下一动作
 
-1. Confirm that an installed v0.1.0 client discovers, downloads, and installs the published v0.1.1 update in the user's normal desktop environment.
-2. Use real Edge/Playwright/WebView2 or computer use with the supplied STM32F103 project to record invariant SuperWatch chart geometry and confirm smooth full-catalog interaction.
-3. Install and qualify the v0.1.0 standard NSIS on a second clean Windows 10/11 machine without Python, Node, Rust, Keil, GNU Arm tools, or pre-existing Pack cache.
-4. Collect exact model and address-range reports from external users to correct any catalog naming or Flash geometry mismatch.
-5. Collect exact variable paths for any missing fixed structure/array leaves and compare the Configuration, Symbols, and SuperWatch counts.
-6. Add Windows code signing before promotion beyond prerelease.
+1. The maintainer may synchronize GitHub master to Gitee when desired; agents must not perform that synchronization without explicit authorization.
+2. Confirm an installed older client discovers, downloads, and installs v0.1.1 in the maintainer's normal desktop environment.
+3. Qualify the standard NSIS on a second clean Windows 10/11 system without Python, Node, Rust, Keil, GNU Arm tools, or a Pack cache.
 
 ## 已知限制
 
-- The v0.1.1 standard NSIS has not yet been tested on a second clean Windows machine or VM.
-- The new SuperWatch layout has automated geometry guards but no fresh interactive Edge/WebView2 rectangle sampling because browser and computer-use control surfaces were unavailable.
-- The supplied STM32F103 project could not complete a new source-backend connection while another process owned the probe resources; the installed candidate probe-discovery and lifecycle checks passed after cleanup.
-- Builtin source-line lookup resolved 48 of 50 sampled GCC addresses; unresolved locations remain unresolved instead of silently invoking addr2line.
-- The updater payload is signed for Tauri integrity, but the Windows installer has no Authenticode signature and may show an unknown-publisher warning.
-- Optional online Pack installation requires outbound HTTPS and may require a configured proxy.
-- Physical HPM programming, V2/V3 offline deployment, target power loss, probe unplug, SWD disconnect, Serial, Modbus, and hidden-tab HIL are not established in the latest pass.
-- DISP0_ADAPTER and s_tLCDTextControl are intentionally truncated to their first 256 readable leaves.
-- One HK32 catalog region lacks reliable sector geometry and is correctly rejected for ordinary covered-sector programming.
+- The v0.1.1 NSIS has not been qualified on a second clean Windows machine without development tools.
+- The updater payload has Tauri integrity signing but no Windows Authenticode signature, so Windows may show an unknown-publisher warning.
+- The latest SuperWatch tree/layout has automated coverage but no fresh interactive WebView2 geometry capture.
+- Some optional online Pack operations require outbound HTTPS, and unqualified hardware/power-loss scenarios remain device-specific.
 
 ## 延续协议
 
-- Run python scripts/ai_memory.py validate.
-- Read docs/ai/CURRENT_HANDOFF.md and reconcile it with git status --short --branch and git log -12 --oneline.
-- Resume current_session.current_task before starting later work.
-- Before ending, update project-memory.json, render and validate the handoff, run proportional tests and git diff --check, then commit and push.
+- Follow AGENTS.md and skills/maintaining-mklink-ai-probe/SKILL.md.
+- Reconcile AI memory with live Git and runtime state before editing.
+- Before ending, run proportional checks and git diff --check, update memory, render and validate the handoff, then commit and push when authorized.

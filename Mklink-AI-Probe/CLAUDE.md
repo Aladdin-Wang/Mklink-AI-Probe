@@ -1,3 +1,6 @@
-# Claude project entry
+# Claude Project Entry
 
-Follow [AGENTS.md](AGENTS.md). Start with `python scripts/ai_memory.py validate`, then read `docs/ai/CURRENT_HANDOFF.md` and the active plan. Update the JSON project memory and regenerate the handoff before ending the session.
+Follow `AGENTS.md` and the repository-bundled
+`skills/maintaining-mklink-ai-probe/SKILL.md`. Repository instructions and AI
+memory are the source of truth; do not depend on skills installed only on the
+current computer.
