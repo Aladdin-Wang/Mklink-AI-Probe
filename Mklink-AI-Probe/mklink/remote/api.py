@@ -24,15 +24,76 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager, contextmanager
 import contextvars
+import hashlib
 import json
 import logging
 import os
+from pathlib import Path
+import secrets
 import sys
 import threading
 from typing import Any
 import weakref
 
 logger = logging.getLogger(__name__)
+
+_FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
+_FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
+
+
+def _store_uploaded_file_source(
+    upload: Any,
+    project_root: Path | str,
+    allowed_suffixes: tuple[str, ...],
+) -> dict[str, object]:
+    original_name = str(upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    suffix = Path(original_name).suffix.casefold()
+    if suffix not in allowed_suffixes:
+        raise ValueError("file must use one of: {}".format(", ".join(allowed_suffixes)))
+
+    uploads = (
+        Path(project_root).resolve() / ".mklink" / "uploads" / "file-sources"
+    ).resolve()
+    uploads.mkdir(parents=True, exist_ok=True)
+    temporary = (uploads / (secrets.token_hex(24) + ".tmp")).resolve()
+    if temporary.parent != uploads:
+        raise ValueError("invalid upload path")
+
+    digest = hashlib.sha256()
+    total = 0
+    descriptor = os.open(str(temporary), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            while True:
+                chunk = upload.file.read(_FILE_SOURCE_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _FILE_SOURCE_UPLOAD_LIMIT:
+                    raise ValueError("file exceeds 256 MiB upload limit")
+                digest.update(chunk)
+                output.write(chunk)
+        if total == 0:
+            raise ValueError("file is empty")
+        checksum = digest.hexdigest()
+        destination = (uploads / (checksum + suffix)).resolve()
+        if destination.parent != uploads:
+            raise ValueError("invalid upload path")
+        if destination.exists():
+            temporary.unlink()
+        else:
+            os.replace(temporary, destination)
+        return {
+            "path": str(destination),
+            "name": original_name,
+            "size": total,
+            "sha256": checksum,
+        }
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 _NATIVE_TARGET_COORDINATOR = threading.RLock()
 _NATIVE_TARGET_CONTEXT = threading.local()
@@ -247,36 +308,36 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
 
 
 def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[str]:
-    """Atomically lease the bridge and target before starting a dashboard."""
+    """Stop bridge peers, then atomically lease resources for a dashboard."""
     from mklink.remote.dashboards import stop_bridge_dashboards
     from mklink.remote.resource_manager import ResourceGroup
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
+    stopped = stop_bridge_dashboards(
+        exclude=dashboard,
+        resource_manager=manager,
+    )
     manager.acquire_many(
         [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
         owner,
         preempt=True,
     )
-    return stop_bridge_dashboards(
-        exclude=dashboard,
-        resource_manager=manager,
-    )
+    return stopped
 
 
-def _dashboard_start_lock(state: dict[str, Any], dashboard: str) -> asyncio.Lock:
-    locks = state.setdefault("_dashboard_start_locks", {})
-    lock = locks.get(dashboard)
+def _dashboard_start_lock(state: dict[str, Any]) -> asyncio.Lock:
+    lock = state.get("_dashboard_start_lock")
     if lock is None:
         lock = asyncio.Lock()
-        locks[dashboard] = lock
+        state["_dashboard_start_lock"] = lock
     return lock
 
 
 async def start_dashboard_manager(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
-    async with _dashboard_start_lock(state, dashboard):
+    async with _dashboard_start_lock(state):
         return await _start_dashboard_manager_transaction(
             state, dashboard, manager, start_call,
         )
@@ -412,7 +473,7 @@ def stop_dashboard_manager(state: dict[str, Any], dashboard: str, manager) -> No
 try:
     from fastapi import (                      # noqa: F401
         FastAPI, WebSocket, WebSocketDisconnect,
-        HTTPException, Query, Body, Request,
+        HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
     from pydantic import BaseModel                    # noqa: F401
@@ -450,7 +511,10 @@ def create_app(
     # imports above are needed so that from __future__ import annotations
     # does not break closure type hints (especially the WebSocket parameter
     # in the /ws handler).
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body, Request
+    from fastapi import (
+        FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body,
+        Request, File, UploadFile,
+    )
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 
@@ -937,6 +1001,30 @@ def create_app(
             "flm_dir": flm_dir,
             "available": disk is not None,
         }
+
+    async def _upload_file_source(
+        file: UploadFile,
+        allowed_suffixes: tuple[str, ...],
+    ) -> dict[str, object]:
+        try:
+            return await run_in_threadpool(
+                _store_uploaded_file_source,
+                file,
+                _state["project_root"],
+                allowed_suffixes,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            await file.close()
+
+    @app.post("/api/files/symbol")
+    async def upload_symbol_file(file: UploadFile = File(...)):
+        return await _upload_file_source(file, (".axf", ".elf", ".out"))
+
+    @app.post("/api/files/map")
+    async def upload_map_file(file: UploadFile = File(...)):
+        return await _upload_file_source(file, (".map",))
 
     # ===================================================================
     # REST API — Device Lifecycle

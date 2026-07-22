@@ -3601,6 +3601,51 @@ def _cli_gui(args):
     )
 
 
+def _cli_web_entry(args):
+    """Install or operate the cross-platform HTML Web entry point."""
+    import json
+    from pathlib import Path
+    from mklink.web_entry import (
+        WebEntryError,
+        handle_protocol_uri,
+        install_protocol,
+        start_web_entry,
+        stop_web_entry,
+        uninstall_protocol,
+        web_entry_status,
+        write_launcher_html,
+    )
+
+    try:
+        if args.web_entry_command == "install":
+            result = install_protocol()
+            if args.html:
+                result["html"] = str(write_launcher_html(Path(args.html)).resolve())
+        elif args.web_entry_command == "uninstall":
+            result = uninstall_protocol()
+        elif args.web_entry_command == "html":
+            output = write_launcher_html(Path(args.output)).resolve()
+            result = {"status": "created", "html": str(output)}
+        elif args.web_entry_command == "start":
+            browser_open = (lambda _url: None) if args.no_browser else None
+            result = (
+                start_web_entry(browser_open=browser_open)
+                if browser_open is not None else start_web_entry()
+            )
+        elif args.web_entry_command == "stop":
+            result = stop_web_entry()
+        elif args.web_entry_command == "status":
+            result = web_entry_status()
+        elif args.web_entry_command == "handle":
+            result = handle_protocol_uri(args.uri)
+        else:
+            raise WebEntryError("Missing web-entry command")
+    except WebEntryError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False))
+        raise SystemExit(1) from exc
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def _cli_serve(args):
     """启动远程调试服务器。"""
     from mklink._deps import require_gui_dependencies
@@ -4323,6 +4368,29 @@ def main():
     gui_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
     gui_parser.add_argument("--project-root", default=".", help="项目根目录")
 
+    # web-entry 子命令（U 盘单 HTML 跨平台启动入口）
+    web_entry_parser = subparsers.add_parser(
+        "web-entry",
+        help="安装和管理跨平台 Mklink Web HTML 启动入口",
+    )
+    web_entry_sub = web_entry_parser.add_subparsers(dest="web_entry_command")
+    web_entry_install = web_entry_sub.add_parser(
+        "install", help="安装当前用户的自定义 URL 协议处理器",
+    )
+    web_entry_install.add_argument(
+        "--html", default=None,
+        help="同时生成通用 HTML 到指定路径（可直接指定 U 盘路径）",
+    )
+    web_entry_sub.add_parser("uninstall", help="卸载 URL 协议处理器")
+    web_entry_html = web_entry_sub.add_parser("html", help="生成单文件通用启动 HTML")
+    web_entry_html.add_argument("--output", required=True, help="HTML 输出路径")
+    web_entry_start = web_entry_sub.add_parser("start", help="启动或复用 Mklink Web 服务")
+    web_entry_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    web_entry_sub.add_parser("stop", help="停止由 Web 入口启动的服务")
+    web_entry_sub.add_parser("status", help="显示 Web 入口服务状态")
+    web_entry_handle = web_entry_sub.add_parser("handle", help=argparse.SUPPRESS)
+    web_entry_handle.add_argument("uri", help=argparse.SUPPRESS)
+
     # mcp 子命令（MCP server，stdio transport）
     mcp_parser = subparsers.add_parser(
         "mcp",
@@ -4521,6 +4589,8 @@ def main():
         _cli_serve(args)
     elif args.command == "gui":
         _cli_gui(args)
+    elif args.command == "web-entry":
+        _cli_web_entry(args)
     elif args.command == "mcp":
         _cli_mcp(args)
     else:

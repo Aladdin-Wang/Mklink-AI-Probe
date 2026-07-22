@@ -55,13 +55,18 @@ skills installed on one developer's computer.
 
 ## Verify And Hand Off
 
-1. Run checks proportional to the blast radius and `git diff --check`.
-2. For user-facing or hardware changes, record what was validated on the real
-   surface and what remains unverified.
-3. Update `docs/ai/project-memory.json` with current facts, decisions, evidence,
+1. For every runtime or user-facing feature and bug fix, run the full Python
+   and GUI suites plus the production build. Proportional focused tests remain
+   useful for iteration but do not replace this final gate.
+2. Complete a real-hardware closed loop on the affected Web, Tauri, or device
+   workflow before release. Mocked/component-only verification is insufficient;
+   if the required hardware surface is unavailable, obtain an explicit
+   maintainer waiver and record the exception.
+3. Run `git diff --check` and record what was validated on the real surface.
+4. Update `docs/ai/project-memory.json` with current facts, decisions, evidence,
    limits, and next actions. Run `python scripts/ai_memory.py render` and
    `python scripts/ai_memory.py validate`.
-4. Commit and push only when authorized. Finish with a clean worktree unless
+5. Commit and push only when authorized. Finish with a clean worktree unless
    the user explicitly leaves work in progress.
 
 ## Official Releases

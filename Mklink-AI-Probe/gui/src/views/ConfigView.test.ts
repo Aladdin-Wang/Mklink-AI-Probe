@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
       connectDevice: vi.fn(),
       disconnectDevice: vi.fn(),
       parseAxf: vi.fn(),
+      uploadFileSource: vi.fn(),
       probeFirmwareCheck: vi.fn(),
     },
     wsConnect: vi.fn(),
@@ -100,6 +101,7 @@ describe('ConfigView', () => {
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
     mocks.api.parseAxf.mockResolvedValue({ loaded: true, variable_count: 3 })
+    mocks.api.uploadFileSource.mockResolvedValue({ path: '' })
     mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
     mocks.loadDesktopSettings.mockReturnValue({
@@ -230,6 +232,23 @@ describe('ConfigView', () => {
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
     expect(mocks.refreshSymbolCatalog).toHaveBeenCalledWith(true)
     expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('3'))
+  })
+
+  it('uploads a browser-selected AXF and uses the backend path', async () => {
+    const selected = new File(['ELF'], 'browser.axf', { type: 'application/octet-stream' })
+    mocks.pickSymbolFile.mockResolvedValueOnce(selected)
+    mocks.api.uploadFileSource.mockResolvedValueOnce({
+      path: 'C:\\Users\\test\\.mklink\\uploads\\file-sources\\uploaded.axf',
+    })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="browse-symbol"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.uploadFileSource).toHaveBeenCalledWith('symbol', selected)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="symbol-path"]').element.value)
+      .toBe('C:\\Users\\test\\.mklink\\uploads\\file-sources\\uploaded.axf')
   })
 
   it('reports a catalog refresh failure separately from successful AXF parsing', async () => {

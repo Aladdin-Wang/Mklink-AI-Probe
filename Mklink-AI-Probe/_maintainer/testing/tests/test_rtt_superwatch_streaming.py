@@ -236,6 +236,28 @@ def test_rtt_auto_detects_csv_rows_before_publishing_waveform_batches():
     asyncio.run(scenario())
 
 
+def test_rtt_auto_detection_keeps_majority_kv_format_when_marker_is_in_probe_window():
+    hub = _RecordingHub()
+    manager = RttStreamManager(
+        stream_hub=hub, raw_batch_lines=32, waveform_batch_samples=32,
+    )
+
+    manager.feed_rtt_bytes(b"temp=20,speed=80\n" * 9)
+    manager.feed_rtt_bytes(b"M,9,9,0\n")
+    manager.feed_rtt_bytes(b"temp=21,speed=81\ntemp=22,speed=82\n")
+    manager.flush_pending()
+
+    waveform = [
+        batch for batch in hub.snapshot()
+        if batch.stream_type is StreamType.WAVEFORM
+    ]
+    assert manager.get_status()["numeric_channels"] == ["speed", "temp"]
+    assert sum(batch.item_count for batch in waveform) == 11
+    assert decode_waveform_samples(waveform[0].payload, 11, 2)[-2:] == (
+        (81.0, 21.0), (82.0, 22.0),
+    )
+
+
 def test_rtt_default_batches_keep_12khz_dual_stream_below_100_frames_per_second():
     hub = _RecordingHub()
     manager = RttStreamManager(stream_hub=hub)

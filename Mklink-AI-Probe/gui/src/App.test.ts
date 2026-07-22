@@ -2,6 +2,7 @@ import { shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import App from './App.vue'
+import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 const startStatusPolling = vi.fn()
@@ -66,8 +67,10 @@ describe('App version footer', () => {
   it('shows the stable release and source build in the lower right', () => {
     const wrapper = mountApp()
 
-    expect(wrapper.get('[data-testid="app-version"]').text())
-      .toMatch(new RegExp(`^v${__APP_VERSION__.replaceAll('.', '\\.')} · [0-9a-f]{7,}$`))
+    expect(wrapper.getComponent(VersionHistoryPopover).props()).toEqual({
+      version: __APP_VERSION__,
+      buildCommit: expect.stringMatching(/^[0-9a-f]{7,}$/),
+    })
     wrapper.unmount()
   })
 

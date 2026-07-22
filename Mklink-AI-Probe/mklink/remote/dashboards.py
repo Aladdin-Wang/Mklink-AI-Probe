@@ -220,6 +220,7 @@ class RttStreamManager:
         self._parser = RttLineParser("kv")
         self._parser_auto_detect_done = False
         self._parser_auto_detect_attempts = 0
+        self._parser_auto_detect_samples: list[str] = []
         self._interval = 0.0
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error: str | None = None
@@ -271,7 +272,10 @@ class RttStreamManager:
             timestamp_ns = time.time_ns()
             if line and not self._parser_auto_detect_done:
                 from mklink.rtt_viewer import RttLineParser
-                detected = RttLineParser.auto_detect([line])
+                self._parser_auto_detect_samples.append(line)
+                detected = RttLineParser.auto_detect(
+                    self._parser_auto_detect_samples
+                )
                 if detected.strategy != self._parser.strategy:
                     self._parser = detected
                 self._parser_auto_detect_attempts += 1
@@ -385,6 +389,7 @@ class RttStreamManager:
         self._parser = RttLineParser("kv")  # will auto-detect on first lines
         self._parser_auto_detect_done = False
         self._parser_auto_detect_attempts = 0
+        self._parser_auto_detect_samples.clear()
         failure_callback = self._start_failure_callback
 
         def _poll():

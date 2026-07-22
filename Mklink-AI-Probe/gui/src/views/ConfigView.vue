@@ -11,8 +11,8 @@ import {
   saveDesktopSettings,
   type DesktopSettings,
 } from '../lib/desktopSettings'
-import { pickMapFile, pickSymbolFile } from '../lib/filePicker'
-import type { PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
+import { pickMapFile, pickSymbolFile, type PickedFile } from '../lib/filePicker'
+import type { FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
 import FirmwareUpdateModal from '../components/config/FirmwareUpdateModal.vue'
@@ -23,6 +23,7 @@ const {
   discoverPort,
   getConfig,
   updateConfig,
+  uploadFileSource,
   connectDevice,
   disconnectDevice,
   parseAxf,
@@ -142,11 +143,20 @@ async function disconnectLocal() {
   }
 }
 
+async function selectedFilePath(kind: FileSourceKind, selected: PickedFile): Promise<string | null> {
+  if (!selected) return null
+  if (typeof selected === 'string') return selected
+  const uploaded = await uploadFileSource(kind, selected)
+  return uploaded.path
+}
+
 async function browseSymbolFile() {
   browsingFiles.value = true
   try {
-    const path = await pickSymbolFile()
+    const path = await selectedFilePath('symbol', await pickSymbolFile())
     if (path) settings.value.symbolPath = path
+  } catch (error: any) {
+    toast.error('加载 AXF / ELF 文件失败: ' + error.message)
   } finally {
     browsingFiles.value = false
   }
@@ -155,8 +165,10 @@ async function browseSymbolFile() {
 async function browseMapFile() {
   browsingFiles.value = true
   try {
-    const path = await pickMapFile()
+    const path = await selectedFilePath('map', await pickMapFile())
     if (path) settings.value.mapPath = path
+  } catch (error: any) {
+    toast.error('加载 MAP 文件失败: ' + error.message)
   } finally {
     browsingFiles.value = false
   }

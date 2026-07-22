@@ -52,4 +52,18 @@ describe('RTT API contracts', () => {
       body: JSON.stringify({ axf: 'C:\\firmware\\app.axf', elf_backend: 'external' }),
     }))
   })
+
+  it('uploads a browser-selected symbol file as multipart data', async () => {
+    const api = useMklinkApi()
+    const file = new File(['ELF'], 'firmware.axf', { type: 'application/octet-stream' })
+
+    await api.uploadFileSource('symbol', file)
+
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/files/symbol')
+    expect(options.method).toBe('POST')
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(new Headers(options.headers).has('Content-Type')).toBe(false)
+    expect((options.body as FormData).get('file')).toBe(file)
+  })
 })

@@ -136,7 +136,8 @@ function onVofaStreamState(event: Event): void {
     if (props.mode === 'SuperWatch') binary.start()
     startVofaStatusPolling(false)
   } else if (state === 'stopped') {
-    resetVofaSession()
+    pendingBatch = null
+    binary.stop()
     stopVofaStatusPolling()
   }
 }
@@ -378,6 +379,7 @@ function buildTemplate(mode: string): string {
       </div>
       <div class="panel-actions">
         <span id="raw-log-count" class="panel-count">0 lines</span>
+        <button id="raw-log-save" class="panel-btn" title="保存带时间戳的原始数据">保存</button>
         <button id="raw-log-clear" class="panel-btn" data-i18n-title="clear_log" data-i18n="clear">清除</button>
         <button id="raw-log-close" class="panel-btn panel-btn-close" data-i18n-title="close_panel" title="关闭面板">&#x2715;</button>
       </div>

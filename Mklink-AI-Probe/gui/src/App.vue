@@ -34,7 +34,7 @@
       </div>
     </div>
     <footer class="app-footer">
-      <span data-testid="app-version">v{{ appVersion }} · {{ buildCommit }}</span>
+      <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
     </footer>
     <ToastContainer />
   </div>
@@ -46,6 +46,7 @@ import { useRouter, useRoute } from 'vue-router'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
+import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 import { useMklinkApi } from './composables/useMklinkApi'
 import { useBackendHealth } from './composables/useBackendHealth'
 import { useAppUpdater } from './composables/useAppUpdater'

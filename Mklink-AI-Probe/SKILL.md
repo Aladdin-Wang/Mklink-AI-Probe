@@ -6,7 +6,7 @@ description: |
   能力以 MCP tool 暴露（vendor-neutral，Claude Code / Cursor / ChatGPT 等均可调用），
   亦提供 CLI（python -m mklink）与 FastAPI/GUI。
   触发：Keil/IAR 初始化/烧录、RTT/VOFA 观测、read_ram/watch/superwatch、
-  Modbus 扫描/读写/dashboard/点表生成、串口 open/send/dashboard、resources、symbols/typeinfo、dump-memory、flush-memory、version、serve/gui、
+  Modbus 扫描/读写/dashboard/点表生成、串口 open/send/dashboard、resources、symbols/typeinfo、dump-memory、flush-memory、version、serve/gui、web-entry、U盘HTML快速启动、
   **SystemView RTOS 跟踪**（systemview-integrate 集成/systemview 观测/systemview-analyze 分析/systemview-report 报告，任务切换/ISR/CPU 占用）、
   RTT 控制块静态编译（rtt_storage_mode=1）、散射文件中固定 RTT 地址、MKLINK_RTT_STATIC 宏、`.ARM.__at_0xADDR` 段名。
 ---
@@ -65,6 +65,7 @@ description: |
 |------|------|
 | `serve` | 远程调试服务器（REST API + WebSocket JSON-RPC） |
 | `gui` | 启动 GUI（FastAPI 后端 + Vue 前端） |
+| `web-entry` | 安装跨平台 URL Handler、生成单文件 U 盘 HTML、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
 | `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
@@ -112,6 +113,7 @@ description: |
 | Modbus、RS485、点表、dashboard | [references/commands-modbus.md](references/commands-modbus.md) |
 | 串口、UART、协议 profile | [references/commands-serial.md](references/commands-serial.md) |
 | serve、gui、Tauri、桌面应用、远程调试 | [references/commands-remote-gui.md](references/commands-remote-gui.md) |
+| U盘单HTML、Web快速启动、自定义URL协议、web-entry | [references/web-entry.md](references/web-entry.md) |
 | 「用户说 X 我该跑什么」 | [references/triggers.md](references/triggers.md) |
 | 新项目首次烧录、RTT 集成、故障排查 | [references/workflows.md](references/workflows.md) |
 

@@ -14,18 +14,21 @@ import type {
   ProbeFirmwareCheck,
   RttFindResponse,
   RttWriteResponse,
+  FileSourceKind,
+  UploadedFileSource,
 } from '../types/mklink'
 import { toHexPayload } from '../lib/rttTransmit'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers)
+  if (!(options?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => null)
@@ -74,6 +77,15 @@ export function useMklinkApi() {
       method: 'PUT',
       body: JSON.stringify(config),
     })
+  }
+
+  async function uploadFileSource(
+    kind: FileSourceKind,
+    file: File,
+  ): Promise<UploadedFileSource> {
+    const body = new FormData()
+    body.append('file', file)
+    return api(`/api/files/${kind}`, { method: 'POST', body })
   }
 
   async function getConfigStatus(): Promise<ConfigStatus> {
@@ -245,6 +257,7 @@ export function useMklinkApi() {
     getProfiles,
     getConfig,
     updateConfig,
+    uploadFileSource,
     getConfigStatus,
     getProjectInfo,
     getRttConfig,

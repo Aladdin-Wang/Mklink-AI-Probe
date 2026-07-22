@@ -28,6 +28,7 @@
 | **Modbus RTU** | 完整 Modbus 调试：扫描、读写、轮询、点表生成、Web Dashboard |
 | **串口调试** | 通用 UART 终端，支持自定义协议 Profile |
 | **远程 GUI** | FastAPI 后端 + Vue 3 SPA，浏览器即用 |
+| **U 盘 Web 入口** | 单个 HTML 通过用户级 URL 协议启动已安装的 Web runtime，Windows/macOS/Linux 通用 |
 | **Tauri 桌面** | Rust 桌面应用，Python sidecar，原生窗口体验 |
 | **AI Agent 集成** | Claude / OpenAI Agent 可通过 CLI 直接操控硬件 |
 
@@ -89,6 +90,25 @@ python -m mklink gui
 cd gui && npx tauri dev
 ```
 
+### 生成跨平台 U 盘 Web 入口
+
+电脑首次安装完整 Mklink skill/runtime 后注册一次用户级协议（只复制
+`SKILL.md` 不足以运行 Web 服务）：
+
+```bash
+python -m mklink web-entry install
+```
+
+生成一份可放入任意 U 盘、三个桌面系统通用的单文件 HTML：
+
+```bash
+python -m mklink web-entry html --output "/path/to/usb/启动 Mklink Web.html"
+```
+
+HTML 只调用 `mklink-ai-probe://web/start`，不会从 U 盘执行程序。入口复用现有
+Mklink Web 服务且不取得所有权；停止按钮只结束由入口自身启动的服务。详见
+[跨平台 U 盘 Web 启动入口](references/web-entry.md)。
+
 ### High-throughput GUI streams
 
 SystemView, VOFA, RTT, and SuperWatch use an authenticated, versioned binary
@@ -135,6 +155,7 @@ HEX 固件使用文件内的绝对地址；BIN 没有地址信息，必须明确
 | `serial` | 通用串口调试 |
 | `serve` | 远程调试 REST API 服务器 |
 | `gui` | 启动 Web GUI（FastAPI + Vue） |
+| `web-entry` | 安装跨平台 HTML 启动协议、生成 HTML、管理入口自有 Web 服务 |
 | `discover` | 发现 MKLink 探针端口 |
 
 完整命令文档见 [references/](references/) 目录。

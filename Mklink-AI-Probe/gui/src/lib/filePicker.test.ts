@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {
   vi.doUnmock('@tauri-apps/plugin-dialog')
+  vi.doUnmock('@tauri-apps/api/core')
   vi.resetModules()
 })
 
 async function loadPickerWithDialog(result: unknown) {
+  vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
   const open = vi.fn().mockResolvedValue(result)
   vi.doMock('@tauri-apps/plugin-dialog', () => ({ open }))
   return { open, picker: await import('./filePicker') }
@@ -39,11 +41,26 @@ describe('file picker', () => {
   })
 
   it('returns null when the Tauri dialog plugin is unavailable', async () => {
+    vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => true }))
     vi.doMock('@tauri-apps/plugin-dialog', () => {
       throw new Error('dialog plugin unavailable')
     })
     const picker = await import('./filePicker')
 
     await expect(picker.pickMapFile()).resolves.toBeNull()
+  })
+
+  it('opens a native browser file input when Tauri is unavailable', async () => {
+    vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => false }))
+    const selected = new File(['ELF'], 'firmware.axf', { type: 'application/octet-stream' })
+    const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function () {
+      expect(this.accept).toBe('.axf,.elf,.out')
+      Object.defineProperty(this, 'files', { configurable: true, value: [selected] })
+      this.dispatchEvent(new Event('change'))
+    })
+    const picker = await import('./filePicker')
+
+    await expect(picker.pickSymbolFile()).resolves.toBe(selected)
+    expect(click).toHaveBeenCalledOnce()
   })
 })

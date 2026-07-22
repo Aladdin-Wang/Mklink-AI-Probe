@@ -172,6 +172,26 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('switches from a conflicting SuperWatch session without confirmation', async () => {
+    mocks.checkConflict.mockResolvedValue(['superwatch'])
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
+    mocks.status = {
+      running: true,
+      control_block_addr: '0x20000000',
+      numeric_channels: [],
+      down_buffers: [],
+    }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mocks.dash.start).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('shows startup feedback and deduplicates repeated RTT start clicks', async () => {
     let resolveStart!: (value: boolean) => void
     mocks.dash.start.mockReturnValueOnce(new Promise(resolve => { resolveStart = resolve }))
@@ -415,7 +435,106 @@ describe('RttViewTab binary migration', () => {
 
     mocks.scheduler.render?.()
 
-    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledWith(1, 1_500, 2_000, 640)
+    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledWith(1, 1_500, 2_000, 564)
+    wrapper.unmount()
+  })
+
+  it('shows chart controls and keeps the last curve visible after pause and stop', async () => {
+    mocks.status = {
+      running: true,
+      numeric_channels: ['temp'],
+      down_buffers: [],
+    }
+    const clearRect = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      setTransform: vi.fn(), clearRect, beginPath: vi.fn(), moveTo: vi.fn(),
+      lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(), save: vi.fn(),
+      restore: vi.fn(), rect: vi.fn(), clip: vi.fn(), translate: vi.fn(),
+      rotate: vi.fn(), strokeStyle: '', fillStyle: '', font: '', textAlign: '',
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    mocks.binary.waveformBatch.value = {
+      type: 'waveform-batch', sequence: 1n, timestampNs: 2_000_000_000n,
+      itemCount: 2, channelCount: 1, layout: 'sample-major-float32',
+      values: Float32Array.of(1, 2).buffer,
+      times: Float64Array.of(1_000, 2_000).buffer,
+      bufferStartMs: 1_000, bufferEndMs: 2_000,
+    }
+    await nextTick()
+    mocks.binary.envelope.value = {
+      type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+      requestId: 0, pixelWidth: 640, channelCount: 1, pointCount: 2,
+      candidateSampleCount: 2, values: Float32Array.of(1, 2).buffer,
+      times: Float64Array.of(1_000, 2_000).buffer,
+      timeIndices: Uint32Array.of(0, 1).buffer,
+      channelOffsets: Uint32Array.of(0, 2).buffer,
+    }
+    await nextTick()
+
+    expect(wrapper.text()).toContain('数据格式')
+    expect(wrapper.get('[data-testid="rtt-chart-toggle"]').text()).toContain('关闭曲线')
+    expect(wrapper.get('.rtt-chart-shell').isVisible()).toBe(true)
+
+    mocks.dash.state.value = 'running'
+    await nextTick()
+    await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
+    await wrapper.get('.btn-danger').trigger('click')
+
+    expect(wrapper.get('.rtt-chart-shell').isVisible()).toBe(true)
+    await wrapper.get('[data-testid="rtt-chart-toggle"]').trigger('click')
+    expect(wrapper.find('.rtt-chart-shell').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="rtt-chart-toggle"]').text()).toContain('打开曲线')
+    wrapper.unmount()
+  })
+
+  it('zooms around the pointer and pans the retained RTT chart viewport', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      setTransform: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(),
+      lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(), save: vi.fn(),
+      restore: vi.fn(), rect: vi.fn(), clip: vi.fn(), translate: vi.fn(),
+      rotate: vi.fn(), strokeStyle: '', fillStyle: '', font: '', textAlign: '',
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    mocks.binary.telemetry.value = { bufferedSamples: 256 }
+    mocks.binary.waveformBatch.value = {
+      type: 'waveform-batch', sequence: 1n, timestampNs: 10_000_000_000n,
+      itemCount: 256, channelCount: 1, layout: 'sample-major-float32',
+      values: new ArrayBuffer(0), times: new ArrayBuffer(0),
+      bufferStartMs: 0, bufferEndMs: 10_000,
+    }
+    await nextTick()
+
+    const canvas = wrapper.get('canvas').element as HTMLCanvasElement
+    Object.defineProperty(canvas, 'clientWidth', { configurable: true, value: 640 })
+    Object.defineProperty(canvas, 'clientHeight', { configurable: true, value: 220 })
+    canvas.getBoundingClientRect = () => ({
+      x: 0, y: 0, width: 640, height: 220, top: 0, right: 640,
+      bottom: 220, left: 0, toJSON: () => ({}),
+    })
+    mocks.scheduler.render?.()
+    const initial = mocks.binary.requestVisibleRange.mock.calls.at(-1)
+
+    await wrapper.get('canvas').trigger('wheel', { deltaY: -1, clientX: 320, clientY: 110 })
+    mocks.scheduler.render?.()
+    const zoomed = mocks.binary.requestVisibleRange.mock.calls.at(-1)
+    expect(zoomed[2] - zoomed[1]).toBeLessThan(initial[2] - initial[1])
+
+    const down = new MouseEvent('mousedown')
+    Object.defineProperties(down, {
+      button: { value: 0 }, clientX: { value: 320 }, clientY: { value: 110 },
+    })
+    canvas.dispatchEvent(down)
+    const move = new MouseEvent('mousemove')
+    Object.defineProperties(move, {
+      clientX: { value: 220 }, clientY: { value: 130 },
+    })
+    window.dispatchEvent(move)
+    window.dispatchEvent(new MouseEvent('mouseup', { button: 0 }))
+    mocks.scheduler.render?.()
+    const panned = mocks.binary.requestVisibleRange.mock.calls.at(-1)
+    expect(panned[1]).not.toBe(zoomed[1])
     wrapper.unmount()
   })
 
@@ -453,11 +572,42 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('returns to idle when another dashboard stops RTT in the backend', async () => {
+    vi.useFakeTimers()
+    mocks.status = {
+      running: true,
+      numeric_channels: ['temp'],
+      down_buffers: [],
+    }
+    mocks.dash.state.value = 'running'
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'ControlToolbar' }).props('state')).toBe('running')
+    mocks.status = {
+      running: false,
+      numeric_channels: ['temp'],
+      down_buffers: [],
+    }
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'ControlToolbar' }).props('state')).toBe('idle')
+    expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('pauses only rendering while binary acquisition remains active', async () => {
     vi.useFakeTimers()
+    mocks.status = {
+      running: true,
+      numeric_channels: ['temp'],
+      down_buffers: [],
+    }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     mocks.dash.state.value = 'running'
-    await nextTick()
+    await flushPromises()
+    mocks.binary.start.mockClear()
 
     await wrapper.get('.control-toolbar .btn:not(.btn-danger)').trigger('click')
     expect(mocks.scheduler.stop).toHaveBeenCalled()

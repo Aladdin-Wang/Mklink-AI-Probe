@@ -190,6 +190,7 @@ window.__rttTestProbe = {
   rawLogState: function() { return {
     count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
   }; },
+  saveRawLog: saveRawLog,
   syncStatus: syncDashboardStatus,
   collectionState: function() { return {
     state: collectionState, paused: paused, renderPaused: renderPaused
@@ -203,6 +204,8 @@ window.__rttTestProbe = {
   serializeState: serializeState,
   deserializeState: deserializeState,
   timeline: function() { return timelineView; },
+  fullTimeRange: function() { return getFullTimeRange(); },
+  binaryEnvelope: function() { return binaryEnvelope; },
   addSuperwatchName: superwatchAddName
 };`
   new Function(instrumented).call(window)
@@ -319,7 +322,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     wrapper.unmount()
   })
 
-  it('resets SuperWatch Worker and viewer state at collection boundaries', async () => {
+  it('stops SuperWatch transport without clearing the retained viewer state', async () => {
     const resetBinaryStream = vi.fn()
     ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
     const wrapper = mount(WaveformViewer, {
@@ -331,8 +334,9 @@ describe('WaveformViewer VOFA binary transport', () => {
 
     window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
 
-    expect(mocks.binary.reset).toHaveBeenCalledOnce()
-    expect(resetBinaryStream).toHaveBeenCalledOnce()
+    expect(mocks.binary.stop).toHaveBeenCalledOnce()
+    expect(mocks.binary.reset).not.toHaveBeenCalled()
+    expect(resetBinaryStream).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -358,7 +362,7 @@ describe('WaveformViewer VOFA binary transport', () => {
   })
 
   it.each(['VOFA', 'SuperWatch'] as const)(
-    'dispatches real %s script start/stop boundaries and clears binary data',
+    'clears %s data on start but preserves the last curve on stop',
     async mode => {
       const runtime = await loadRttViewerRuntime(mode)
       const states: string[] = []
@@ -401,10 +405,8 @@ describe('WaveformViewer VOFA binary transport', () => {
         document.getElementById('btn-stop')?.click()
         for (let turn = 0; turn < 6; turn++) await Promise.resolve()
         expect(states).toEqual(['running', 'stopped'])
-        expect(mocks.binary.reset).toHaveBeenCalledTimes(2)
-        expect(Object.values(runtime.probe.fields()).every(
-          (field: any) => field.ringBuf.count === 0,
-        )).toBe(true)
+        expect(mocks.binary.reset).toHaveBeenCalledTimes(1)
+        expect(runtime.probe.fields().A.ringBuf.count).toBe(1)
       } finally {
         window.removeEventListener('mklink:vofa-stream-state', onState)
         runtime.cleanup()
@@ -605,7 +607,7 @@ describe('WaveformViewer VOFA binary transport', () => {
     wrapper.unmount()
   })
 
-  it('resets Worker and viewer state at reconnect and collection session boundaries', async () => {
+  it('resets Worker state on reconnect but preserves it when collection stops', async () => {
     const resetBinaryStream = vi.fn()
     const updateBinaryHealth = vi.fn()
     ;(window as any).__waveformViewers.VOFA = { resetBinaryStream, updateBinaryHealth }
@@ -622,8 +624,8 @@ describe('WaveformViewer VOFA binary transport', () => {
     expect(resetBinaryStream).toHaveBeenCalledOnce()
 
     window.dispatchEvent(new CustomEvent('mklink:vofa-stream-state', { detail: 'stopped' }))
-    expect(mocks.binary.reset).toHaveBeenCalledTimes(2)
-    expect(resetBinaryStream).toHaveBeenCalledTimes(2)
+    expect(mocks.binary.reset).toHaveBeenCalledOnce()
+    expect(resetBinaryStream).toHaveBeenCalledOnce()
 
     mocks.binary.state.value = { phase: 'connected' }
     await nextTick()
@@ -1571,6 +1573,111 @@ describe('VOFA viewer hot path source guard', () => {
 
       expect(runtime.probe.collectionState()).toMatchObject({ state: 'paused', paused: true, renderPaused: true })
     } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('freezes the SuperWatch viewport and envelope while render pause is active', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_000_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2).buffer,
+        times: Float64Array.of(1_000, 2_000).buffer,
+      })
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 100, channelCount: 1, pointCount: 2,
+        candidateSampleCount: 2, times: Float64Array.of(1_000, 2_000).buffer,
+        timeIndices: Uint32Array.of(0, 1).buffer, values: Float32Array.of(1, 2).buffer,
+        channelOffsets: Uint32Array.of(0, 2).buffer,
+      })
+      runtime.probe.syncStatus({ state: 'running', items: [{ name: 'A' }] })
+      document.getElementById('btn-pause')!.click()
+      const frozenTime = runtime.probe.fullTimeRange()
+      const frozenY = runtime.probe.sharedYRange()
+      const frozenEnvelope = Array.from(runtime.probe.binaryEnvelope().values)
+
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 4_000_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1_000, 2_000).buffer,
+        times: Float64Array.of(3_000, 4_000).buffer,
+      })
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 2, pixelWidth: 100, channelCount: 1, pointCount: 2,
+        candidateSampleCount: 2, times: Float64Array.of(3_000, 4_000).buffer,
+        timeIndices: Uint32Array.of(0, 1).buffer, values: Float32Array.of(1_000, 2_000).buffer,
+        channelOffsets: Uint32Array.of(0, 2).buffer,
+      })
+      const canvas = document.getElementById('chart') as HTMLCanvasElement
+      canvas.onmouseleave?.({} as MouseEvent)
+      canvas.onmousemove?.({ clientX: 400, clientY: 200 } as MouseEvent)
+
+      expect(runtime.probe.fullTimeRange()).toEqual(frozenTime)
+      expect(runtime.probe.sharedYRange()).toEqual(frozenY)
+      expect(Array.from(runtime.probe.binaryEnvelope().values)).toEqual(frozenEnvelope)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('does not trigger viewer shortcuts while typing in the variable search input', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const search = document.createElement('input')
+    search.dataset.testid = 'variable-search'
+    document.body.appendChild(search)
+    try {
+      runtime.probe.setRawLogOpen(false)
+      const event = new KeyboardEvent('keydown', {
+        key: 'L', bubbles: true, cancelable: true,
+      })
+
+      search.dispatchEvent(event)
+
+      expect(event.defaultPrevented).toBe(false)
+      expect(document.getElementById('raw-log-panel')?.dataset.open).toBe('false')
+    } finally {
+      search.remove()
+      runtime.cleanup()
+    }
+  })
+
+  it('records selected SuperWatch values with timestamps and saves the raw log', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const createObjectURL = vi.fn(() => 'blob:superwatch-log')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'gain' }, { name: 'target' }])
+      runtime.probe.setRawLogOpen(true)
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_700_000_000_100_000_000n,
+        itemCount: 2, channelCount: 2, layout: 'sample-major-float32',
+        values: Float32Array.of(1, 10, 1.25, 20).buffer,
+        times: Float64Array.of(1_700_000_000_000, 1_700_000_000_100).buffer,
+      })
+
+      const lines = runtime.probe.rawLogState().lines
+      expect(lines).toHaveLength(2)
+      expect(lines[0]).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] gain=1, target=10$/)
+      expect(lines[1]).toContain('gain=1.25, target=20')
+      runtime.probe.saveRawLog()
+      expect(createObjectURL).toHaveBeenCalledOnce()
+      expect(click).toHaveBeenCalledOnce()
+      expect(document.getElementById('raw-log-save')).not.toBeNull()
+    } finally {
+      click.mockRestore()
+      vi.unstubAllGlobals()
       runtime.cleanup()
     }
   })

@@ -61,6 +61,25 @@ GUI 启动后在浏览器中提供三个主页面：
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
 - **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
 
+浏览器版“配置 > 文件来源”可直接选择本机 AXF/ELF/OUT 和 MAP 文件。浏览器
+不会暴露本机绝对路径，因此前端使用 multipart 将文件上传到本机 Mklink 服务的
+受控 `.mklink/uploads/file-sources` 目录，再把服务端路径用于连接和符号解析。
+单文件上限为 256 MiB；Tauri 桌面版继续使用原生文件对话框，不经过上传。
+
+### web-entry — U 盘单 HTML 快速启动
+
+`web-entry` 为已经安装完整 Mklink skill/runtime 的电脑注册
+`mklink-ai-probe://` 用户级协议。U 盘只需保存一个跨 Windows、macOS、Linux
+通用的 HTML 文件：
+
+```bash
+python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
+```
+
+入口会复用现有 Web 服务；只停止自己启动的进程，不改变 `serve`、MCP 或 Tauri
+sidecar 的所有权。平台安装位置、权限和故障排查见
+[跨平台 U 盘 Web 启动入口](web-entry.md)。
+
 
 ## Tauri 桌面应用（原生窗口）
 

@@ -28,7 +28,14 @@ If repository memory is stale, verify reality and correct the memory.
 
 ## Finish
 
-Run proportional verification and `git diff --check`. Update
+For every runtime or user-facing feature and bug fix, run the full Python and
+GUI suites plus the production build. Complete a real-hardware closed loop on
+the affected Web, Tauri, or device workflow before release; mocked or component
+tests alone are not release evidence. If the required hardware surface is
+unavailable, stop and obtain an explicit maintainer waiver instead of silently
+reducing the gate.
+
+Run the required verification and `git diff --check`. Update
 `docs/ai/project-memory.json`, then run `python scripts/ai_memory.py render` and
 `python scripts/ai_memory.py validate`. Commit and push when authorized, and
 leave the worktree clean.

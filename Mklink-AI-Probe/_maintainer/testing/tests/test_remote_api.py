@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -92,6 +93,49 @@ def test_config_api_rejects_swd_clock_above_10_mhz(tmp_path):
 
     assert response.status_code == 422
     assert "10 MHz" in response.json()["detail"]
+
+
+def test_browser_symbol_upload_persists_in_a_controlled_project_directory(tmp_path):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/files/symbol",
+            files={"file": ("firmware.axf", b"\x7fELFtest", "application/octet-stream")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    stored = Path(payload["path"])
+    assert stored.parent == (tmp_path / ".mklink" / "uploads" / "file-sources").resolve()
+    assert stored.suffix == ".axf"
+    assert stored.read_bytes() == b"\x7fELFtest"
+    assert payload["name"] == "firmware.axf"
+
+
+def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/files/symbol",
+            files={"file": ("firmware.txt", b"not an elf", "text/plain")},
+        )
+
+    assert response.status_code == 400
+    assert not (tmp_path / ".mklink" / "uploads" / "file-sources").exists()
+
+
+def test_browser_map_upload_uses_the_map_only_endpoint(tmp_path):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/files/map",
+            files={"file": ("firmware.map", b"memory map", "text/plain")},
+        )
+
+    assert response.status_code == 200
+    stored = Path(response.json()["path"])
+    assert stored.suffix == ".map"
+    assert stored.read_bytes() == b"memory map"
 
 
 def test_rtt_find_uses_explicit_source_without_persisting_project_config(tmp_path):

@@ -319,3 +319,12 @@ export interface ProbeFirmwareCheck {
   firmware_dir: string | null
   instructions: string
 }
+
+export type FileSourceKind = 'symbol' | 'map'
+
+export interface UploadedFileSource {
+  path: string
+  name: string
+  size: number
+  sha256: string
+}

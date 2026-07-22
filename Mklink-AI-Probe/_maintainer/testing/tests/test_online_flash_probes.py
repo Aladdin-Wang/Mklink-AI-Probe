@@ -218,6 +218,88 @@ def test_dashboard_start_holds_both_target_resources_and_stop_releases(
     assert state["resource_manager"].get_status() == {}
 
 
+def test_dashboard_start_stops_running_peer_before_acquiring_resources():
+    class DashboardManager:
+        def __init__(self):
+            self.running = False
+            self.start = MagicMock(side_effect=self._start)
+            self.stop = MagicMock(side_effect=self._stop)
+
+        def _start(self, *_args, **_kwargs):
+            self.running = True
+
+        def _stop(self):
+            self.running = False
+
+    managers = {
+        name: DashboardManager()
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        rtt_started = client.post("/api/dash/rtt/start", json={})
+        superwatch_started = client.post("/api/dash/superwatch/start", json={})
+
+    assert rtt_started.status_code == 200
+    assert superwatch_started.status_code == 200
+    assert superwatch_started.json()["stopped"] == ["rtt"]
+    managers["rtt"].stop.assert_called_once_with()
+    assert managers["rtt"].running is False
+    assert managers["superwatch"].running is True
+    status = state["resource_manager"].get_status()
+    assert status["mklink_bridge"]["owner"] == "user:dashboard:superwatch"
+    assert status["target_debug"]["owner"] == "user:dashboard:superwatch"
+
+
+def test_different_dashboard_starts_share_one_transaction_lock(monkeypatch):
+    from mklink.remote import api as remote_api
+
+    active = 0
+    max_active = 0
+    first_entered = threading.Event()
+    allow_first = threading.Event()
+
+    def acquire(_state, dashboard):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        if dashboard == "rtt":
+            first_entered.set()
+            allow_first.wait(timeout=1)
+        active -= 1
+        return []
+
+    monkeypatch.setattr(remote_api, "acquire_dashboard_resources", acquire)
+    state = {
+        "resource_manager": SimpleNamespace(release=lambda _owner: None),
+    }
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock())
+        for name in ("rtt", "superwatch")
+    }
+
+    async def exercise():
+        first = asyncio.create_task(remote_api.start_dashboard_manager(
+            state, "rtt", managers["rtt"], managers["rtt"].start,
+        ))
+        await asyncio.to_thread(first_entered.wait, 1)
+        second = asyncio.create_task(remote_api.start_dashboard_manager(
+            state,
+            "superwatch",
+            managers["superwatch"],
+            managers["superwatch"].start,
+        ))
+        await asyncio.sleep(0.05)
+        allow_first.set()
+        return await asyncio.gather(first, second)
+
+    results = asyncio.run(exercise())
+
+    assert results == [("started", []), ("started", [])]
+    assert max_active == 1
+
+
 def test_rtt_write_endpoint_preserves_exact_binary_payload():
     rtt = SimpleNamespace(running=True, write=MagicMock(return_value=4))
     managers = {
