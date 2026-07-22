@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-22T09:50:24+08:00`
+- 更新时间：`2026-07-22T10:09:30+08:00`
 - 分支：`master`
-- HEAD：`master contains the v0.1.1 release handoff and the repository-bundled maintenance workflow`
-- 远端 HEAD：`GitHub master contains this maintenance workflow; Gitee master remains maintainer-synchronized and was not changed by this task; both updates branches remain ea36381`
-- 工作树：clean after the maintenance workflow handoff; repository skill and release procedure are tracked
-- 当前任务：Repository-bundled cross-model maintenance workflow and maintainer-only automatic release procedure are complete; waiting for the next task.
+- HEAD：`master contains the v0.1.1 release handoff, repository-bundled maintenance workflow, and this final session handoff`
+- 远端 HEAD：`GitHub and Gitee master contain this handoff; both updates branches remain ea36381`
+- 工作树：clean after the final handoff; only the master worktree remains
+- 当前任务：Current maintenance, branch cleanup, and GitHub/Gitee synchronization are complete; waiting for a new problem in the next conversation.
 - 状态：`complete`
 
 ## 里程碑
@@ -27,6 +27,7 @@
 - **Real V4 offline deployment**：Deployment auto-generated a missing preview, left no staging backup on the probe disk, selected the configured script name, and delivered device output as 87 live line events before successful completion.
 - **Published update**：GitHub and Gitee expose the same four v0.1.1 assets; anonymous Gitee download and SHA-256 passed, and public latest.json points to the signed Gitee NSIS payload.
 - **Repository maintenance workflow**：The repository skill passed skill-creator quick validation; release preparation/publication tests passed 12/12; AI memory validation and git diff checks passed.
+- **Repository synchronization**：Obsolete feature branches were removed locally and from GitHub/Gitee. Both hosts retain only master and updates, with matching branch heads and tags before this final handoff.
 
 ## 架构决策
 
@@ -49,7 +50,7 @@
 
 ## 下一动作
 
-1. The maintainer may synchronize GitHub master to Gitee when desired; agents must not perform that synchronization without explicit authorization.
+1. Start the next conversation from AGENTS.md and the repository-bundled maintenance skill, then inspect live state before changing code.
 2. Confirm an installed older client discovers, downloads, and installs v0.1.1 in the maintainer's normal desktop environment.
 3. Qualify the standard NSIS on a second clean Windows 10/11 system without Python, Node, Rust, Keil, GNU Arm tools, or a Pack cache.
 

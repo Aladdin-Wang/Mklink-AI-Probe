@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T09:50:24+08:00",
+  "updated_at": "2026-07-22T10:09:30+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "master contains the v0.1.1 release handoff and the repository-bundled maintenance workflow",
-    "remote_head": "GitHub master contains this maintenance workflow; Gitee master remains maintainer-synchronized and was not changed by this task; both updates branches remain ea36381",
-    "working_tree": "clean after the maintenance workflow handoff; repository skill and release procedure are tracked"
+    "head": "master contains the v0.1.1 release handoff, repository-bundled maintenance workflow, and this final session handoff",
+    "remote_head": "GitHub and Gitee master contain this handoff; both updates branches remain ea36381",
+    "working_tree": "clean after the final handoff; only the master worktree remains"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
@@ -15,9 +15,10 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "Repository-bundled cross-model maintenance workflow and maintainer-only automatic release procedure are complete; waiting for the next task.",
+    "current_task": "Current maintenance, branch cleanup, and GitHub/Gitee synchronization are complete; waiting for a new problem in the next conversation.",
     "release": "v0.1.1 source/tag b3c7925; standard NSIS SHA-256 26c4403928b6f33416af03dd5d603649174c550b55df713038b34a4ae7e6b732; public updates branch ea36381",
-    "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI."
+    "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
+    "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
   },
   "milestones": [
     {
@@ -66,6 +67,10 @@
     {
       "area": "Repository maintenance workflow",
       "result": "The repository skill passed skill-creator quick validation; release preparation/publication tests passed 12/12; AI memory validation and git diff checks passed."
+    },
+    {
+      "area": "Repository synchronization",
+      "result": "Obsolete feature branches were removed locally and from GitHub/Gitee. Both hosts retain only master and updates, with matching branch heads and tags before this final handoff."
     }
   ],
   "decisions": [
@@ -92,7 +97,7 @@
     "Some optional online Pack operations require outbound HTTPS, and unqualified hardware/power-loss scenarios remain device-specific."
   ],
   "next_actions": [
-    "The maintainer may synchronize GitHub master to Gitee when desired; agents must not perform that synchronization without explicit authorization.",
+    "Start the next conversation from AGENTS.md and the repository-bundled maintenance skill, then inspect live state before changing code.",
     "Confirm an installed older client discovers, downloads, and installs v0.1.1 in the maintainer's normal desktop environment.",
     "Qualify the standard NSIS on a second clean Windows 10/11 system without Python, Node, Rust, Keil, GNU Arm tools, or a Pack cache."
   ],
