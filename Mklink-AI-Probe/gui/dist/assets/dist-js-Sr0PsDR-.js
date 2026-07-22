@@ -1,1 +1,0 @@
-async function e(e,t={},n){return window.__TAURI_INTERNALS__.invoke(e,t,n)}async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};

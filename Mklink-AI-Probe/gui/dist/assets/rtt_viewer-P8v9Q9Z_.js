@@ -610,6 +610,7 @@ function syncDashboardStatus(d) {
 }
 
 function updateCollectionUI(state) {
+  var previousState = collectionState;
   collectionState = state;
   var btnStart = document.getElementById('btn-start');
   var btnPause = document.getElementById('btn-pause');
@@ -629,12 +630,14 @@ function updateCollectionUI(state) {
   badge.className = 'status-' + state;
 
   if (state === 'running') {
+    clearFrozenView();
     if (Date.now() >= controlErrorUntil) {
       connStatus.textContent = t('live');
       connStatus.className = 'badge badge-ok';
     }
     paused = false;
   } else if (state === 'paused') {
+    if (!paused) freezeRenderedView();
     renderGeneration++;
     updatePending = false;
     if (Date.now() >= controlErrorUntil) {
@@ -643,10 +646,13 @@ function updateCollectionUI(state) {
     }
     paused = true;
   } else {
+    var retainedView = IS_SUPERWATCH_MODE && previousState !== 'stopped' &&
+      (paused || freezeRenderedView());
     if (Date.now() >= controlErrorUntil) {
       connStatus.textContent = t('stopped');
       connStatus.className = 'badge badge-warn';
     }
+    if (retainedView) paused = true;
   }
 }
 
@@ -816,6 +822,63 @@ function appendRawLogLine(line) {
   paintRawLog(false);
 }
 
+function formatRawLogTimestamp(milliseconds) {
+  var date = new Date(milliseconds);
+  if (!Number.isFinite(date.getTime())) return '0000-00-00 00:00:00.000';
+  function pad(value, width) { return String(value).padStart(width, '0'); }
+  return pad(date.getFullYear(), 4) + '-' + pad(date.getMonth() + 1, 2) + '-' +
+    pad(date.getDate(), 2) + ' ' + pad(date.getHours(), 2) + ':' +
+    pad(date.getMinutes(), 2) + ':' + pad(date.getSeconds(), 2) + '.' +
+    pad(date.getMilliseconds(), 3);
+}
+
+function formatRawLogValue(value) {
+  if (!Number.isFinite(value)) return 'NaN';
+  return String(Number(value.toPrecision(9)));
+}
+
+function appendBinaryRawSamples(times, values, itemCount, channelCount) {
+  if (!IS_SUPERWATCH_MODE || !rawLogOpen) return;
+  for (var sample = 0; sample < itemCount; sample++) {
+    var fields = new Array(channelCount);
+    for (var channel = 0; channel < channelCount; channel++) {
+      fields[channel] = binaryChannelNames[channel] + '=' +
+        formatRawLogValue(values[sample * channelCount + channel]);
+    }
+    appendRawLogLine('[' + formatRawLogTimestamp(times[sample]) + '] ' + fields.join(', '));
+  }
+}
+
+function clearRawLog() {
+  rawLogEl.textContent = '';
+  rawLogLines = new Array(RAW_LOG_CAPACITY);
+  rawLogHead = 0;
+  rawLogStoredCount = 0;
+  rawLogLineCount = 0;
+  rawLogCountEl.textContent = '0 lines';
+}
+
+function saveRawLog() {
+  var snapshot = rawLogSnapshot();
+  if (!snapshot.length) return false;
+  var content = snapshot.join('\n') + '\n';
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var now = new Date();
+  function pad(value, width) { return String(value).padStart(width, '0'); }
+  var suffix = pad(now.getFullYear(), 4) + pad(now.getMonth() + 1, 2) +
+    pad(now.getDate(), 2) + '-' + pad(now.getHours(), 2) +
+    pad(now.getMinutes(), 2) + pad(now.getSeconds(), 2);
+  var link = document.createElement('a');
+  link.href = url;
+  link.download = 'superwatch-raw-' + suffix + '.txt';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 function setRawLogOpen(open) {
   rawLogOpen = open;
   rawLogPanel.dataset.open = open ? 'true' : 'false';
@@ -831,14 +894,8 @@ rawLogPanel.querySelector('.panel-header').addEventListener('click', function(e)
   toggleRawLog();
 });
 document.getElementById('raw-log-close').addEventListener('click', function() { setRawLogOpen(false); });
-document.getElementById('raw-log-clear').addEventListener('click', function() {
-  rawLogEl.textContent = '';
-  rawLogLines = new Array(RAW_LOG_CAPACITY);
-  rawLogHead = 0;
-  rawLogStoredCount = 0;
-  rawLogLineCount = 0;
-  rawLogCountEl.textContent = '0 lines';
-});
+document.getElementById('raw-log-save').addEventListener('click', saveRawLog);
+document.getElementById('raw-log-clear').addEventListener('click', clearRawLog);
 
 // -- drag resize for raw log --
 var panelResizer = document.querySelector('#raw-log-panel .panel-resizer');
@@ -2262,6 +2319,31 @@ var binaryLastSequence = null;
 var binaryEnvelope = null;
 var binaryChannelIndex = {};
 var binaryLastUiPaint = -Infinity;
+var frozenFullTimeRange = null;
+var frozenSharedYRange = null;
+
+function clearFrozenView() {
+  frozenFullTimeRange = null;
+  frozenSharedYRange = null;
+}
+
+function freezeRenderedView() {
+  if (!IS_SUPERWATCH_MODE) return false;
+  if (frozenFullTimeRange) return true;
+  var hasData = binaryEnvelope !== null;
+  if (!hasData) {
+    for (var name in FIELDS) {
+      if (FIELDS[name].ringBuf && FIELDS[name].ringBuf.count >= 2) {
+        hasData = true;
+        break;
+      }
+    }
+  }
+  if (!hasData) return false;
+  frozenFullTimeRange = computeFullTimeRange();
+  frozenSharedYRange = getSharedYRange();
+  return true;
+}
 
 function configureBinaryChannels(channels) {
   if (!IS_BINARY_WAVEFORM_MODE || !Array.isArray(channels)) return;
@@ -2383,7 +2465,8 @@ function acceptBinaryBatch(batch, channels) {
   }
   binaryLastSequence = batch.sequence;
   binaryLastTimestamp = times[times.length - 1] / 1000;
-  appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
+  if (IS_SUPERWATCH_MODE) appendBinaryRawSamples(times, values, batch.itemCount, batch.channelCount);
+  else appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
   return true;
 }
 
@@ -2424,6 +2507,7 @@ function parseBinaryEnvelope(envelope) {
 
 function renderBinaryEnvelope(envelope) {
   if (!IS_BINARY_WAVEFORM_MODE) return false;
+  if (IS_SUPERWATCH_MODE && paused) return true;
   var parsed = parseBinaryEnvelope(envelope);
   if (!parsed) return false;
   binaryEnvelope = parsed;
@@ -2446,6 +2530,7 @@ function resetBinaryStream() {
   binaryLastTimestamp = null;
   binaryLastSequence = null;
   binaryEnvelope = null;
+  clearFrozenView();
   for (var channel = 0; channel < binaryChannelNames.length; channel++) {
     var field = FIELDS[binaryChannelNames[channel]];
     if (field && field.ringBuf) field.ringBuf.clear();
@@ -2519,7 +2604,7 @@ if (typeof window !== 'undefined') {
 // ============================================================
 // Get visible time range (with timeline zoom/offset)
 // ============================================================
-function getFullTimeRange() {
+function computeFullTimeRange() {
   var tMax = 0, tMin = Infinity;
   for (var k in FIELDS) {
     var pts = FIELDS[k].ringBuf;
@@ -2532,6 +2617,13 @@ function getFullTimeRange() {
   if (!Number.isFinite(tMin)) tMin = 0;
   if (tMax - tMin < 1) tMin = tMax - 1;
   return { tMin: tMin, tMax: tMax };
+}
+
+function getFullTimeRange() {
+  if (IS_SUPERWATCH_MODE && paused && frozenFullTimeRange) {
+    return { tMin: frozenFullTimeRange.tMin, tMax: frozenFullTimeRange.tMax };
+  }
+  return computeFullTimeRange();
 }
 
 function getVisibleTimeRange() {
@@ -2613,6 +2705,9 @@ function getSharedYRange() {
       yMin: Number(globalYView.manualMin),
       yMax: Number(globalYView.manualMax)
     };
+  }
+  if (IS_SUPERWATCH_MODE && paused && frozenSharedYRange) {
+    return { yMin: frozenSharedYRange.yMin, yMax: frozenSharedYRange.yMax };
   }
   var autoRange = getAutoSharedYRange();
   if (!autoRange) return null;
@@ -3414,8 +3509,15 @@ function drawChart() {
 // ============================================================
 // Module-scope event listeners (extracted from drawChart to prevent leak)
 // ============================================================
+function isEditableKeyboardTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
+  );
+}
+
 addViewerGlobalListener(document, 'keydown', function(e) {
-  if (e.key === ' ' && !e.repeat && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+  if (e.key === ' ' && !e.repeat && !isEditableKeyboardTarget(e.target)) {
     spaceHeld = true;
     canvas.style.cursor = 'grab';
     e.preventDefault();
@@ -4134,7 +4236,7 @@ function appendTriggerPoint(point) {
 // ============================================================
 var helpOpen = false;
 addViewerGlobalListener(document, 'keydown', function(e) {
-  if (helpOpen) return;
+  if (helpOpen || isEditableKeyboardTarget(e.target)) return;
   if (e.key === 'p' || e.key === 'P') {
     if (collectionState === 'running') {
       renderPaused = true;
