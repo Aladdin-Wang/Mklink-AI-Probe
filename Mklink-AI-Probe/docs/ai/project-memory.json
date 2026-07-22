@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T22:25:10+08:00",
+  "updated_at": "2026-07-22T23:00:14+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "local master includes the AI-first README and Web GUI onboarding refresh after the documentation branch is fast-forwarded; v0.1.2 remains tagged at 9cd9177",
-    "remote_head": "GitHub and Gitee master remain at e911e62 while the local maintenance and README commits await explicit push authorization; updates remain 926f046 and v0.1.2 peels to 9cd9177",
-    "working_tree": "clean after the documentation-only README refresh is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released"
+    "head": "local master and the Aladdin-Wang GitHub fork include the AI-first README, firmware-download priority repair, and maintenance workflow updates; upstream PR su5176/Mklink-AI-Probe#3 is open; v0.1.2 remains tagged at 9cd9177",
+    "remote_head": "GitHub origin master is published with the current maintenance work and feeds upstream PR #3; Gitee master intentionally remains at e911e62, updates remains 926f046, and v0.1.2 peels to 9cd9177",
+    "working_tree": "clean after GitHub publication, upstream PR #3 creation, and handoff recording; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "The repository README now leads with AI-assisted Skill installation, explains Web GUI and cross-platform USB HTML setup in user-facing language, and removes obsolete probe-firmware release notes.",
+    "current_task": "The GitHub fork is current, upstream PR su5176/Mklink-AI-Probe#3 is open with a concise full-project summary, and repository memory is prepared for the next maintainer.",
     "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
     "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
     "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
@@ -60,9 +60,18 @@
       "name": "AI-first README and Web GUI onboarding",
       "status": "complete",
       "notes": "The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites."
+    },
+    {
+      "name": "Upstream PR and maintainer handoff",
+      "status": "complete",
+      "notes": "The Aladdin-Wang GitHub fork master is published and proposes the complete 237-commit delta to su5176/Mklink-AI-Probe master in PR #3. Gitee was not synchronized because this request authorized GitHub and the upstream PR only."
     }
   ],
   "verification": [
+    {
+      "area": "GitHub publication and upstream PR",
+      "result": "GitHub accepted the origin master push, the origin branch resolved to the published source tip, and su5176/Mklink-AI-Probe PR #3 was read back as OPEN from Aladdin-Wang:master to su5176:master with 331 changed files and no upstream-only commits or reported CI checks. Gitee master was read-only checked and intentionally left at e911e62."
+    },
     {
       "area": "README and Web GUI onboarding",
       "result": "The documentation-only change was checked against current CLI help, pyproject requirements, Web entry behavior, browser file-source limits, built-in ELF policy, and release constraints. Every local Markdown target exists, stale V3.3.3/V4.3.3 and MK-Firmware release-history references are absent from both READMEs, Gitee returned HTTP 200, the GitHub repository address matches the configured and queried origin, and git diff validation passed. Runtime code did not change, so automated product suites and real-hardware qualification were not required."
@@ -158,6 +167,7 @@
     "Some optional online Pack operations require outbound HTTPS, and unqualified hardware/power-loss scenarios remain device-specific."
   ],
   "next_actions": [
+    "Monitor su5176/Mklink-AI-Probe PR #3, answer review feedback on a dedicated feature or fix branch, and merge into Aladdin-Wang master only after the required automated and affected real-hardware gates pass.",
     "Qualify the same USB HTML and user-level protocol on one current macOS system and one mainstream Linux desktop, including browser confirmation and USB HID/serial permissions.",
     "Ensure the deployed skill/runtime package carries matching built gui/dist assets and runs web-entry install whenever its absolute installation path changes.",
     "Confirm an installed older client discovers, downloads, and installs v0.1.2 in the maintainer's normal desktop environment.",
