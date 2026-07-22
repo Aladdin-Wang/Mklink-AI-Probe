@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T15:56:25+08:00",
+  "updated_at": "2026-07-22T16:37:37+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "8a8a227 plus the uncommitted v0.1.2 RTT/SuperWatch/version-history, USB Web entry, and browser file-source upload release source",
-    "remote_head": "GitHub origin master remains 8a8a227 and updates remains ea36381; no Gitee remote is configured in this worktree, so Gitee was not rechecked in this session",
-    "working_tree": "dirty with intended v0.1.2 source, tests, version metadata, workflow documentation, and AI memory; final generated build/cache cleanup and release-source commit are pending, test services are stopped, and the target is reset and disconnected"
+    "head": "v0.1.2 source/tag 9cd9177 plus this post-release handoff",
+    "remote_head": "GitHub and Gitee v0.1.2 peel to 9cd9177; both updates branches are 926f046 and both master branches receive this final handoff",
+    "working_tree": "clean after the post-release handoff commit; generated build/cache output was removed, external release assets are retained outside Git, v0.1.2 remains installed locally, test services are stopped, and the target is reset and disconnected"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
     "maintenance": "Keep behavior consistent across developers and coding models through repository-owned instructions, proportional engineering rigor, real-surface verification, and concise durable project memory."
   },
   "current_session": {
-    "status": "in_progress",
-    "current_task": "Prepare and publish v0.1.2. Release publication is gated on generating the signed standard NSIS, overwriting the local installation, and completing a real-hardware closed loop in the installed Tauri/WebView2 application.",
-    "release": "v0.1.2 metadata and release history are aligned but no tag or public asset exists yet; v0.1.1 remains the published update until installed-candidate qualification passes",
+    "status": "complete",
+    "current_task": "v0.1.2 was built, installed over v0.1.1, qualified with the real STM32F103 target, and published to GitHub and Gitee with latest.json updated last.",
+    "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
     "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
     "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
   },
@@ -39,7 +39,7 @@
     {
       "name": "Signed desktop updates",
       "status": "complete",
-      "notes": "The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.1 assets are on GitHub and Gitee."
+      "notes": "The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.2 assets and latest.json are published on GitHub and Gitee."
     },
     {
       "name": "Shared cross-model maintenance workflow",
@@ -60,7 +60,11 @@
   "verification": [
     {
       "area": "v0.1.2 final source gate and real hardware",
-      "result": "The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect. The installed v0.1.2 NSIS candidate still requires the same hardware closed loop before publication."
+      "result": "The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect."
+    },
+    {
+      "area": "v0.1.2 installed candidate and publication",
+      "result": "The signed standard NSIS overwrote the local v0.1.1 installation under a Windows-system-only PATH. The installed v0.1.2 used one bundled sidecar and no Python child, exposed builtin ELF, discovered one probe without recording its identifier, uploaded the real AXF/MAP into an isolated runtime directory, connected the STM32F103 target, and sampled a selected RAM variable for 3,215 cycles with zero errors or drops. RTT-to-SuperWatch and SuperWatch-to-RTT switching each stopped the previous dashboard automatically. Normal window close removed all product processes and released port 8765. GitHub and Gitee expose the four release attachments, anonymous Gitee installer download passed size/SHA-256 verification, and both latest.json files point to the signed v0.1.2 Gitee payload."
     },
     {
       "area": "Cross-platform USB Web entry",
@@ -84,7 +88,7 @@
     },
     {
       "area": "Published update",
-      "result": "GitHub and Gitee expose the same four v0.1.1 assets; anonymous Gitee download and SHA-256 passed, and public latest.json points to the signed Gitee NSIS payload."
+      "result": "GitHub and Gitee expose the same four v0.1.2 release attachments; anonymous Gitee download and SHA-256 passed, and both public latest.json files point to the signed v0.1.2 Gitee NSIS payload."
     },
     {
       "area": "Repository maintenance workflow",
@@ -127,19 +131,15 @@
   "known_limits": [
     "The protocol handler was exercised on Windows only. macOS LaunchServices and Linux xdg-mime behavior still need real-system qualification even though their generated files and quoting have automated coverage.",
     "Every target computer needs a complete Mklink runtime with GUI dependencies and built gui/dist assets plus one-time web-entry registration; the USB HTML intentionally contains no executable runtime.",
-    "The v0.1.1 NSIS has not been qualified on a second clean Windows machine without development tools.",
+    "The v0.1.2 NSIS has not been qualified on a second clean Windows machine without development tools.",
     "The updater payload has Tauri integrity signing but no Windows Authenticode signature, so Windows may show an unknown-publisher warning.",
-    "The new RTT View and SuperWatch workflow passed real-hardware validation in the system Edge Web client, but has no fresh capture from the installed Tauri WebView2 shell.",
+    "The installed v0.1.2 Tauri application passed backend and hardware lifecycle qualification, but no automated screenshot capture was available from its WebView2 surface.",
     "Some optional online Pack operations require outbound HTTPS, and unqualified hardware/power-loss scenarios remain device-specific."
   ],
   "next_actions": [
-    "Clean generated verification output, commit and push the intended v0.1.2 source on master, then build the signed standard NSIS and four sanitized public assets.",
-    "Overwrite the local application with the v0.1.2 NSIS and qualify health, bundled sidecar, no Python child, Web file upload, symbol parsing, RTT/SuperWatch real-hardware behavior, normal shutdown, and port release.",
-    "Only after installed-candidate qualification passes, run the one-command publisher to push the v0.1.2 tag and four assets to GitHub/Gitee, verify anonymous Gitee download, and publish latest.json last.",
     "Qualify the same USB HTML and user-level protocol on one current macOS system and one mainstream Linux desktop, including browser confirmation and USB HID/serial permissions.",
     "Ensure the deployed skill/runtime package carries matching built gui/dist assets and runs web-entry install whenever its absolute installation path changes.",
-    "Optionally repeat the qualified real-hardware workflow in the installed Tauri WebView2 shell before the next desktop release.",
-    "Confirm an installed older client discovers, downloads, and installs v0.1.1 in the maintainer's normal desktop environment.",
+    "Confirm an installed older client discovers, downloads, and installs v0.1.2 in the maintainer's normal desktop environment.",
     "Qualify the standard NSIS on a second clean Windows 10/11 system without Python, Node, Rust, Keil, GNU Arm tools, or a Pack cache."
   ],
   "continuation_protocol": [
