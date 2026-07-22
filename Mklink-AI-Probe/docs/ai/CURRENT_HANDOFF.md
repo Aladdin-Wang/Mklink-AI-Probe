@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-22T18:02:52+08:00`
+- 更新时间：`2026-07-22T19:36:00+08:00`
 - 分支：`master`
-- HEAD：`local master includes the dedicated feature-branch workflow through this handoff; v0.1.2 remains tagged at 9cd9177`
+- HEAD：`local master includes the verified firmware-download-priority and debug-control repair after fast-forwarding fix/firmware-download-priority; v0.1.2 remains tagged at 9cd9177`
 - 远端 HEAD：`GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177`
-- 工作树：clean after the verified branch-workflow policy is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is reset and disconnected
-- 当前任务：Repository policy now requires every runtime or user-facing feature and bug fix to be developed and fully qualified on a dedicated branch before merging into master.
+- 工作树：clean after the verified firmware-download-priority branch is merged to local master and deployed to the Codex global Skill; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released
+- 当前任务：Firmware downloads now prefer an available project IDE, then pyOCD online flash, then the MKLink offline API; debug-control auto-port resolution and FLM source ordering are repaired and qualified.
 - 状态：`complete`
 
 ## 里程碑
 
-- **Flash workflows** — `complete`。Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live.
+- **Flash workflows** — `complete`。Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live. Agent-driven downloads prefer IDE-native build/download, then pyOCD, then offline deployment. Automatic FLM selection uses bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms while explicit user choices remain selectable and authoritative.
 - **Streaming and SuperWatch** — `complete`。RTT, SystemView, VOFA, and SuperWatch use bounded streaming. RTT View now has optional labeled axes with wheel zoom, drag pan, retained pause/stop curves, and inline input-format guidance. SuperWatch retains paused/stopped curves, exports timestamped selected-variable raw data, and suppresses viewer shortcuts while users type in editable controls.
 - **Built-in ELF and DWARF** — `complete`。Bundled pyelftools is the default for symbols, types, memory maps, HardFault lines, and desktop features. External GNU tools run only when explicitly selected.
 - **Signed desktop updates** — `complete`。The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.2 assets and latest.json are published on GitHub and Gitee.
@@ -24,6 +24,7 @@
 
 ## 验证证据
 
+- **Firmware download priority and debug-control repair**：RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. Ports 8765 and 5173 were closed afterward.
 - **Dedicated feature-branch workflow**：Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge.
 - **v0.1.2 final source gate and real hardware**：The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect.
 - **v0.1.2 installed candidate and publication**：The signed standard NSIS overwrote the local v0.1.1 installation under a Windows-system-only PATH. The installed v0.1.2 used one bundled sidecar and no Python child, exposed builtin ELF, discovered one probe without recording its identifier, uploaded the real AXF/MAP into an isolated runtime directory, connected the STM32F103 target, and sampled a selected RAM variable for 3,215 cycles with zero errors or drops. RTT-to-SuperWatch and SuperWatch-to-RTT switching each stopped the previous dashboard automatically. Normal window close removed all product processes and released port 8765. GitHub and Gitee expose the four release attachments, anonymous Gitee installer download passed size/SHA-256 verification, and both latest.json files point to the signed v0.1.2 Gitee payload.
@@ -38,6 +39,8 @@
 
 ## 架构决策
 
+- Agent-driven firmware download uses an available project IDE's verified native build/download commands first, pyOCD online flash when the IDE path is unavailable or not applicable, and the MKLink offline API last. A backend that has started and failed stops with evidence instead of silently falling through; python -m mklink flash is an explicit compatibility/diagnostic path.
+- Automatic FLM resolution ranks bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms, considers all tiers for address coverage, preserves Pack-version discovery order, and lets explicit user selections override the automatic order. HPM remains ROM API/BIN only.
 - Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.
 - Every runtime or user-facing feature and bug fix now requires the full Python and GUI suites plus a production build, followed by a real-hardware closed loop on the affected Web, Tauri, or device surface before release. Component or mocked tests alone are not release evidence.
 - Browser file pickers cannot expose an absolute local path. Web AXF/MAP selection therefore uploads the selected File to a suffix-checked, 256 MiB-limited, content-addressed runtime directory and uses the returned backend path; Tauri continues to use its native dialog without upload.
@@ -77,6 +80,7 @@
 
 ## 已知限制
 
+- The available STM32F103 fixture uses pyOCD's bundled builtin target algorithm. Bundled Pack/DAPLink versus installed/custom priority, address fallback, and explicit override behavior are covered by automated catalog/API/UI tests; this fixture did not provide a second physical target that requires a repository-bundled Pack or DAPLink FLM.
 - The protocol handler was exercised on Windows only. macOS LaunchServices and Linux xdg-mime behavior still need real-system qualification even though their generated files and quoting have automated coverage.
 - Every target computer needs a complete Mklink runtime with GUI dependencies and built gui/dist assets plus one-time web-entry registration; the USB HTML intentionally contains no executable runtime.
 - The v0.1.2 NSIS has not been qualified on a second clean Windows machine without development tools.

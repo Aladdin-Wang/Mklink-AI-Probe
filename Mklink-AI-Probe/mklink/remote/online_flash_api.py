@@ -717,6 +717,7 @@ def _job_flash_algorithms(
     body: JobBody,
     inspection: object,
     algorithms: Sequence[object],
+    preferred_algorithm_ids: Sequence[str] = (),
 ) -> list[object]:
     from mklink.cmsis_dap.algorithm_catalog import resolve_firmware_algorithms
 
@@ -739,6 +740,7 @@ def _job_flash_algorithms(
                 algorithms,
                 ranges,
                 allow_uncovered=target.source == "builtin",
+                preferred_algorithm_ids=preferred_algorithm_ids,
             )
         ]
 
@@ -749,6 +751,7 @@ def _job_flash_algorithms(
                 algorithms,
                 tuple((int(address), int(address) + 1) for address in body.sector_addresses),
                 allow_uncovered=target.source == "builtin",
+                preferred_algorithm_ids=preferred_algorithm_ids,
             )
         ]
 
@@ -771,7 +774,11 @@ def _job_flash_algorithms(
                 for algorithm in algorithms
                 if int(getattr(algorithm, "flash_size", 0)) > 0
             )
-            selections = resolve_firmware_algorithms(algorithms, ranges) if ranges else []
+            selections = resolve_firmware_algorithms(
+                algorithms,
+                ranges,
+                preferred_algorithm_ids=preferred_algorithm_ids,
+            ) if ranges else []
             if len(selections) != 1:
                 raise FlashError(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
@@ -856,7 +863,20 @@ def _start_job_with_configuration(
                     discover_flash_algorithms(target.part_number, paths=services.paths)
                     if needs_catalog else []
                 )
-                selected = _job_flash_algorithms(target, body, inspection, catalog)
+                configured_paths = {str(path) for path in configured_flm_paths}
+                preferred_algorithm_ids = tuple(
+                    algorithm.algorithm_id
+                    for algorithm in catalog
+                    if algorithm.source_kind == "custom-flm"
+                    and str(algorithm.custom_path) in configured_paths
+                )
+                selected = _job_flash_algorithms(
+                    target,
+                    body,
+                    inspection,
+                    catalog,
+                    preferred_algorithm_ids,
+                )
             except FlashAlgorithmError as error:
                 raise FlashError(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,

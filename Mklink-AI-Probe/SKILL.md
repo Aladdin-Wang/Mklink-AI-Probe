@@ -30,8 +30,11 @@ description: |
 
 ## Agent 核心约束
 
-- **MCP 优先**：Claude Code 环境下，烧录/内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；CLI 仅作兜底或 MCP 未覆盖时使用
+- **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用
 - **禁止**编写 Python 脚本替代 MCP tool 或 CLI
+- **固件下载必须按统一优先级路由**：普通 MCU 默认先使用已安装 IDE 的原生命令行完成编译和下载；IDE 不可用或项目只有预编译镜像时，使用 pyOCD 在线烧录；两者都不适用或用户明确要求脱机部署时，最后使用 MKLink 脱机下载 API。执行前必须读取 [firmware-download-priority.md](references/firmware-download-priority.md)。`python -m mklink flash` 是用户显式要求时使用的原生串口/FLM 路径，不再是自动下载首选。
+- **失败不得静默换后端**：只有当前方式不适用或能力不可用时才进入下一优先级；IDE 编译/下载、pyOCD 作业或脱机部署一旦开始后失败，先停止并报告根因，取得用户同意后才能换后端。
+- **FLM 自动选择内置优先**：自动发现按内置 Pack、内置 DAPLink FLM、已安装 Pack、用户自定义 FLM 排序。用户显式指定 `--flm`/算法时尊重用户选择；HPM 目标仍禁止 FLM。
 - Modbus/串口 **同一 COM 口禁止并行访问**（须串行；MCP 层已用跨进程锁 `modbus_locks`/`serial_locks` 保证，探针用 `SerialLock`）
 - Modbus 点表：先 `detect` 汇报并确认，再 `generate`
 - 执行具体操作前：**先 Read 下方路由表对应的 reference**，理解边界（如 flush-memory 分块、RTT 静态模式选型）
@@ -70,7 +73,7 @@ description: |
 | `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
 | `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
 | `project-info` | 显示项目配置状态 |
-| `flash` | 一站式烧录（连接 → IDCODE → FLM → 烧录） |
+| `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
 | `rtt` | 一站式 RTT 捕获（支持 `--visualize`） |
 | `read-ram` | 读取 RAM 数据（十六进制 dump） |
 | `read-reg` | 读取内存映射寄存器 |
@@ -105,6 +108,7 @@ description: |
 
 | 用户意图 / 关键词 | 读取文档 |
 |------------------|----------|
+| 下载固件、编译并烧录、Keil/IAR、pyOCD、在线/脱机回退、FLM 优先级 | [references/firmware-download-priority.md](references/firmware-download-priority.md) |
 | 安装、pip、readelf、Rust、Tauri | [references/install.md](references/install.md) |
 | 烧录、RTT、project-init、Keil/IAR | [references/commands-flash-rtt.md](references/commands-flash-rtt.md) |
 | RTT 静态编译、rtt_storage_mode、MKLINK_RTT_STATIC、.ARM.__at_0xADDR、CB 固定地址 | [references/rtt-static-mode.md](references/rtt-static-mode.md) |
@@ -119,14 +123,14 @@ description: |
 
 ## 快速开始
 
-**MCP 方式**（Claude Code，推荐）：直接调用 `mcp__mklink__*` tool，例如 `connect` → `flash` → `read_variable` → `rtt_start`。
+**MCP 方式**（Claude Code，推荐）：调试操作直接调用 `mcp__mklink__*` tool，例如 `connect` → `read_variable` → `rtt_start`。固件下载仍先执行 [firmware-download-priority.md](references/firmware-download-priority.md) 的 IDE → pyOCD → 脱机 API 路由。
 
 **CLI 方式**（兜底 / 跨 harness）：
 
 ```bash
 python -m pip install -e ".[gui]"   # 首次安装（GUI/MCP 依赖）
 python -m mklink project-init
-python -m mklink flash
+# 按 firmware-download-priority.md 选择 IDE、pyOCD 或脱机 API
 python -m mklink rtt --duration 10
 ```
 

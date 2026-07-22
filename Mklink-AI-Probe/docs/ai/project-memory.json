@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T18:02:52+08:00",
+  "updated_at": "2026-07-22T19:36:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "local master includes the dedicated feature-branch workflow through this handoff; v0.1.2 remains tagged at 9cd9177",
+    "head": "local master includes the verified firmware-download-priority and debug-control repair after fast-forwarding fix/firmware-download-priority; v0.1.2 remains tagged at 9cd9177",
     "remote_head": "GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177",
-    "working_tree": "clean after the verified branch-workflow policy is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is reset and disconnected"
+    "working_tree": "clean after the verified firmware-download-priority branch is merged to local master and deployed to the Codex global Skill; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "Repository policy now requires every runtime or user-facing feature and bug fix to be developed and fully qualified on a dedicated branch before merging into master.",
+    "current_task": "Firmware downloads now prefer an available project IDE, then pyOCD online flash, then the MKLink offline API; debug-control auto-port resolution and FLM source ordering are repaired and qualified.",
     "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
     "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
     "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
@@ -24,7 +24,7 @@
     {
       "name": "Flash workflows",
       "status": "complete",
-      "notes": "Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live."
+      "notes": "Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live. Agent-driven downloads prefer IDE-native build/download, then pyOCD, then offline deployment. Automatic FLM selection uses bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms while explicit user choices remain selectable and authoritative."
     },
     {
       "name": "Streaming and SuperWatch",
@@ -58,6 +58,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "Firmware download priority and debug-control repair",
+      "result": "RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. Ports 8765 and 5173 were closed afterward."
+    },
     {
       "area": "Dedicated feature-branch workflow",
       "result": "Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge."
@@ -104,6 +108,8 @@
     }
   ],
   "decisions": [
+    "Agent-driven firmware download uses an available project IDE's verified native build/download commands first, pyOCD online flash when the IDE path is unavailable or not applicable, and the MKLink offline API last. A backend that has started and failed stops with evidence instead of silently falling through; python -m mklink flash is an explicit compatibility/diagnostic path.",
+    "Automatic FLM resolution ranks bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms, considers all tiers for address coverage, preserves Pack-version discovery order, and lets explicit user selections override the automatic order. HPM remains ROM API/BIN only.",
     "Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.",
     "Every runtime or user-facing feature and bug fix now requires the full Python and GUI suites plus a production build, followed by a real-hardware closed loop on the affected Web, Tauri, or device surface before release. Component or mocked tests alone are not release evidence.",
     "Browser file pickers cannot expose an absolute local path. Web AXF/MAP selection therefore uploads the selected File to a suffix-checked, 256 MiB-limited, content-addressed runtime directory and uses the returned backend path; Tauri continues to use its native dialog without upload.",
@@ -134,6 +140,7 @@
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
+    "The available STM32F103 fixture uses pyOCD's bundled builtin target algorithm. Bundled Pack/DAPLink versus installed/custom priority, address fallback, and explicit override behavior are covered by automated catalog/API/UI tests; this fixture did not provide a second physical target that requires a repository-bundled Pack or DAPLink FLM.",
     "The protocol handler was exercised on Windows only. macOS LaunchServices and Linux xdg-mime behavior still need real-system qualification even though their generated files and quoting have automated coverage.",
     "Every target computer needs a complete Mklink runtime with GUI dependencies and built gui/dist assets plus one-time web-entry registration; the USB HTML intentionally contains no executable runtime.",
     "The v0.1.2 NSIS has not been qualified on a second clean Windows machine without development tools.",

@@ -3372,7 +3372,7 @@ def _cli_serial_dispatch(args):
 def _cli_halt(port: str | None):
     from mklink.bridge import MKLinkSerialBridge
     from mklink.debug_control import halt_cpu, read_debug_state
-    port = port or _auto_detect_port()
+    port = _resolve_port(port)
     if not port:
         return
     bridge = MKLinkSerialBridge(port)
@@ -3391,7 +3391,7 @@ def _cli_halt(port: str | None):
 def _cli_resume(port: str | None):
     from mklink.bridge import MKLinkSerialBridge
     from mklink.debug_control import resume_cpu
-    port = port or _auto_detect_port()
+    port = _resolve_port(port)
     if not port:
         return
     bridge = MKLinkSerialBridge(port)
@@ -3410,7 +3410,7 @@ def _cli_resume(port: str | None):
 def _cli_step(port: str | None):
     from mklink.bridge import MKLinkSerialBridge
     from mklink.debug_control import step_cpu
-    port = port or _auto_detect_port()
+    port = _resolve_port(port)
     if not port:
         return
     bridge = MKLinkSerialBridge(port)
@@ -3429,7 +3429,7 @@ def _cli_break(args):
         set_breakpoint, clear_breakpoint, clear_all_breakpoints,
         read_debug_state, get_num_breakpoints,
     )
-    port = args.port or _auto_detect_port()
+    port = _resolve_port(args.port)
     if not port:
         return
     bridge = MKLinkSerialBridge(port)

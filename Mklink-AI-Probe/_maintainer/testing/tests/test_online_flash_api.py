@@ -506,9 +506,26 @@ def test_pyocd_builtin_keeps_internal_algorithm_and_injects_external_custom_flm(
         custom_path=str(custom_path),
         custom_sha256=services.custom_flms.records[0].algorithm_id,
     )
+    bundled_path = tmp_path / "bundled-external.flm"
+    bundled_path.write_bytes(b"bundled-external")
+    bundled = FlashAlgorithm(
+        algorithm_id="bundled-external",
+        target_part="DEVICE_A",
+        file_name="bundled-external.flm",
+        flash_start=0x90000000,
+        flash_size=0x800000,
+        ram_start=0x20001000,
+        ram_size=0x10000,
+        default=True,
+        source_kind="builtin-pack",
+        source_name="Vendor.Bundle@1.0.0",
+        source_token="bundled-external",
+        builtin_blob_path=str(bundled_path),
+        builtin_blob_sha256="b" * 64,
+    )
     monkeypatch.setattr(
         "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
-        lambda *_args, **_kwargs: [external],
+        lambda *_args, **_kwargs: [bundled, external],
     )
 
     started = request(

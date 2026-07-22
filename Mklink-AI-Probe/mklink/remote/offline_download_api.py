@@ -198,6 +198,7 @@ def discover_algorithms(paths: object, part_number: str, disk_root: Optional[Pat
             candidate["file_name"].casefold(),
             candidate["flash_base"],
             candidate["ram_base"],
+            candidate["source_token"],
         )
         unique.setdefault(key, candidate)
     return list(unique.values())

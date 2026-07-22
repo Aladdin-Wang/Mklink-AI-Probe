@@ -80,6 +80,34 @@ describe('OfflineFlashView', () => {
     expect(source).toContain('SWD 速率')
   })
 
+  it('keeps same-range algorithms from different sources selectable', async () => {
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'DEVICE_A', vendor: 'Vendor', pack_id: 'Vendor.Device_DFP',
+      pack_version: '1.0.0', installed: true, source: 'bundle',
+    }])
+    offlineMocks.listAlgorithms.mockResolvedValue([
+      {
+        id: 'builtin', file_name: 'Device.FLM',
+        flash_base: '0x08000000', ram_base: '0x20000000', source_kind: 'pack',
+        source_token: 'catalog:bundle:one', origin: '内置 Pack', available: true, on_probe: false,
+      },
+      {
+        id: 'custom', file_name: 'Device.FLM',
+        flash_base: '0x08000000', ram_base: '0x20000000', source_kind: 'pack',
+        source_token: 'custom:one', origin: '用户 FLM', available: true, on_probe: false,
+      },
+    ])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="offline-algorithm-row"]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('内置 Pack')
+    expect(wrapper.text()).toContain('用户 FLM')
+  })
+
   it('triggers the deployed V4 script by its configured file name', async () => {
     offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     onlineMocks.searchTargets.mockResolvedValue([{

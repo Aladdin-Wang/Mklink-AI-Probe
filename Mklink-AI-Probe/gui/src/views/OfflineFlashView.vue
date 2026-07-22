@@ -160,6 +160,7 @@ function mergeAlgorithms(items: OfflineAlgorithmCandidate[]): void {
       existing.file_name.toLowerCase() === item.file_name.toLowerCase()
       && existing.flash_base === item.flash_base
       && existing.ram_base === item.ram_base
+      && (existing.source_token || existing.id) === (item.source_token || item.id)
     ))
     if (!duplicate) algorithms.value.push({ ...item, file: null })
   }

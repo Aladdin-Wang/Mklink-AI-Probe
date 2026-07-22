@@ -52,6 +52,12 @@ class FirmwareAlgorithmSelection:
 
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_AUTOMATIC_SOURCE_PRIORITY = {
+    "builtin-pack": 0,
+    "daplink-builtin": 1,
+    "installed-pack": 2,
+    "custom-flm": 3,
+}
 
 
 def _encode_target(value: str) -> str:
@@ -245,11 +251,7 @@ def discover_flash_algorithms(
         return []
     resolved_paths = paths or PackPaths()
     custom = _custom_algorithms(resolved_paths, target)
-
-    for record in _installed_pack_records(resolved_paths, target):
-        algorithms = _pack_algorithms(record, target)
-        if algorithms:
-            return custom + algorithms
+    discovered = []  # type: list[FlashAlgorithm]
 
     if builtin_provider is None:
         from .builtin_pack_bundle import load_builtin_pack_records
@@ -261,17 +263,16 @@ def discover_flash_algorithms(
         and record.source == "bundle"
     ]
     for record in matching:
-        algorithms = _pack_algorithms(record, target)
-        if algorithms:
-            return custom + algorithms
+        discovered.extend(_pack_algorithms(record, target))
     if daplink_provider is None:
         from .builtin_flm_bundle import discover_builtin_flm_algorithms
 
         daplink_provider = discover_builtin_flm_algorithms
-    daplink_algorithms = list(daplink_provider(target))
-    if daplink_algorithms:
-        return custom + daplink_algorithms
-    return custom
+    discovered.extend(daplink_provider(target))
+    for record in _installed_pack_records(resolved_paths, target):
+        discovered.extend(_pack_algorithms(record, target))
+    discovered.extend(custom)
+    return discovered
 
 
 def _extract_bytes(algorithm: FlashAlgorithm) -> bytes:
@@ -385,7 +386,13 @@ def resolve_firmware_algorithms(
     ranges: Sequence[Tuple[int, int]],
     *,
     allow_uncovered: bool = False,
+    preferred_algorithm_ids: Iterable[str] = (),
 ) -> list[FirmwareAlgorithmSelection]:
+    preferred = {str(algorithm_id) for algorithm_id in preferred_algorithm_ids}
+    source_order = {}  # type: dict[tuple[str, str], int]
+    for algorithm in algorithms:
+        source_key = (algorithm.source_kind, algorithm.source_name)
+        source_order.setdefault(source_key, len(source_order))
     selected = {}  # type: dict[str, tuple[FlashAlgorithm, list[Tuple[int, int]]]]
     for start, end in ranges:
         if start < 0 or end <= start:
@@ -403,7 +410,9 @@ def resolve_firmware_algorithms(
                 "no Flash algorithm covers 0x{:08X}-0x{:08X}".format(start, end)
             )
         candidates.sort(key=lambda algorithm: (
-            0 if algorithm.source_kind == "custom-flm" else 1,
+            0 if algorithm.algorithm_id in preferred else 1,
+            _AUTOMATIC_SOURCE_PRIORITY.get(algorithm.source_kind, 4),
+            source_order[(algorithm.source_kind, algorithm.source_name)],
             0 if algorithm.default else 1,
             algorithm.flash_size,
             algorithm.algorithm_id,

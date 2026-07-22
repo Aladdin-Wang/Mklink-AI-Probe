@@ -47,7 +47,7 @@ def _record(pack: Path, version: str, source: str) -> TargetRecord:
     )
 
 
-def test_user_pack_precedes_bundle_and_exposes_all_exact_device_regions(tmp_path: Path):
+def test_bundle_precedes_installed_pack_and_exposes_all_exact_device_regions(tmp_path: Path):
     paths = PackPaths(tmp_path / "cache")
     paths.data_dir.mkdir(parents=True)
     installed = _pack(paths.data_dir / "installed.pack", "2.0.0", b"new-internal", b"new-external")
@@ -63,10 +63,225 @@ def test_user_pack_precedes_bundle_and_exposes_all_exact_device_regions(tmp_path
         builtin_provider=lambda: [_record(bundled, "1.0.0", "bundle")],
     )
 
-    assert [algorithm.file_name for algorithm in algorithms] == ["Internal.FLM", "External.FLM"]
-    assert {algorithm.source_kind for algorithm in algorithms} == {"installed-pack"}
-    assert {algorithm.source_name for algorithm in algorithms} == {"Vendor.Device_DFP@2.0.0"}
-    assert extract_algorithm(algorithms[1]) == b"new-external"
+    assert [algorithm.source_kind for algorithm in algorithms] == [
+        "builtin-pack",
+        "builtin-pack",
+        "installed-pack",
+        "installed-pack",
+    ]
+    assert {algorithm.source_name for algorithm in algorithms[:2]} == {
+        "Vendor.Device_DFP@1.0.0"
+    }
+    assert extract_algorithm(algorithms[1]) == b"old-external"
+
+
+def test_daplink_bundle_precedes_installed_pack(tmp_path: Path):
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+
+    paths = PackPaths(tmp_path / "cache")
+    paths.data_dir.mkdir(parents=True)
+    installed = _pack(paths.data_dir / "installed.pack", "2.0.0", b"installed", b"external")
+    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.state_file.write_text(json.dumps({
+        "installed": {"Vendor.Device_DFP": {"2.0.0": str(installed)}},
+    }), encoding="utf-8")
+    bundled = FlashAlgorithm(
+        algorithm_id="d" * 64,
+        target_part="DEVICE_A",
+        file_name="DAP.FLM",
+        flash_start=0x08000000,
+        flash_size=0x20000,
+        ram_start=0x20000000,
+        ram_size=0x1000,
+        default=True,
+        source_kind="daplink-builtin",
+        source_name="DAPLinkUtility",
+        source_token="daplink:test",
+        builtin_blob_path=str(tmp_path / "blob.flm"),
+        builtin_blob_sha256="d" * 64,
+    )
+
+    algorithms = discover_flash_algorithms(
+        "DEVICE_A",
+        paths=paths,
+        builtin_provider=lambda: [],
+        daplink_provider=lambda target: [bundled] if target == "DEVICE_A" else [],
+    )
+
+    assert algorithms[0] == bundled
+    assert algorithms[0].source_kind == "daplink-builtin"
+
+
+def test_resolution_falls_through_sources_when_builtin_does_not_cover_range(tmp_path: Path):
+    paths = PackPaths(tmp_path / "cache")
+    paths.data_dir.mkdir(parents=True)
+    installed = _pack(
+        paths.data_dir / "installed.pack",
+        "2.0.0",
+        b"installed-internal",
+        b"installed-external",
+    )
+    bundled = _pack(
+        tmp_path / "bundled.pack",
+        "1.0.0",
+        b"bundled-internal",
+        b"bundled-external",
+    )
+    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.state_file.write_text(json.dumps({
+        "installed": {"Vendor.Device_DFP": {"2.0.0": str(installed)}},
+    }), encoding="utf-8")
+
+    algorithms = discover_flash_algorithms(
+        "DEVICE_A",
+        paths=paths,
+        builtin_provider=lambda: [_record(bundled, "1.0.0", "bundle")],
+    )
+    bundled_internal_only = [
+        algorithm for algorithm in algorithms
+        if algorithm.source_kind == "builtin-pack"
+        and algorithm.flash_start == 0x08000000
+    ]
+    installed_external = [
+        algorithm for algorithm in algorithms
+        if algorithm.source_kind == "installed-pack"
+        and algorithm.flash_start == 0x90000000
+    ]
+
+    selected = resolve_firmware_algorithms(
+        bundled_internal_only + installed_external,
+        ((0x90001000, 0x90002000),),
+    )
+
+    assert selected[0].algorithm.source_kind == "installed-pack"
+    assert extract_algorithm(selected[0].algorithm) == b"installed-external"
+
+
+def test_resolution_preserves_installed_pack_version_order(tmp_path: Path):
+    paths = PackPaths(tmp_path / "cache")
+    paths.data_dir.mkdir(parents=True)
+    older = _pack(
+        paths.data_dir / "older.pack",
+        "2.0.0",
+        b"older-internal",
+        b"older-external",
+    )
+    newer = _pack(
+        paths.data_dir / "newer.pack",
+        "3.0.0",
+        b"newer-internal",
+        b"newer-external",
+    )
+    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.state_file.write_text(json.dumps({
+        "installed": {
+            "Vendor.Device_DFP": {
+                "2.0.0": str(older),
+                "3.0.0": str(newer),
+            }
+        },
+    }), encoding="utf-8")
+
+    algorithms = discover_flash_algorithms(
+        "DEVICE_A",
+        paths=paths,
+        builtin_provider=lambda: [],
+        daplink_provider=lambda _target: [],
+    )
+    selected = resolve_firmware_algorithms(
+        algorithms,
+        ((0x08001000, 0x08002000),),
+    )
+
+    assert selected[0].algorithm.source_name == "Vendor.Device_DFP@3.0.0"
+    assert extract_algorithm(selected[0].algorithm) == b"newer-internal"
+
+
+def test_automatic_resolution_prefers_builtin_but_explicit_custom_is_honored():
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+
+    builtin = FlashAlgorithm(
+        algorithm_id="b" * 64,
+        target_part="DEVICE_A",
+        file_name="Builtin.FLM",
+        flash_start=0x08000000,
+        flash_size=0x20000,
+        ram_start=0x20000000,
+        ram_size=0x1000,
+        default=True,
+        source_kind="builtin-pack",
+        source_name="Builtin",
+        source_token="builtin:test",
+    )
+    custom = FlashAlgorithm(
+        algorithm_id="c" * 64,
+        target_part="DEVICE_A",
+        file_name="Custom.FLM",
+        flash_start=0x08000000,
+        flash_size=0x20000,
+        ram_start=0x20000000,
+        ram_size=0x1000,
+        default=False,
+        source_kind="custom-flm",
+        source_name="Custom",
+        source_token="custom:test",
+    )
+
+    automatic = resolve_firmware_algorithms(
+        [custom, builtin],
+        ((0x08001000, 0x08002000),),
+    )
+    explicit = resolve_firmware_algorithms(
+        [custom, builtin],
+        ((0x08001000, 0x08002000),),
+        preferred_algorithm_ids=(custom.algorithm_id,),
+    )
+
+    assert automatic[0].algorithm == builtin
+    assert explicit[0].algorithm == custom
+
+
+def test_offline_algorithm_list_keeps_lower_priority_explicit_choices(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+    from mklink.remote.offline_download_api import discover_algorithms
+
+    common = {
+        "target_part": "DEVICE_A",
+        "file_name": "Device.FLM",
+        "flash_start": 0x08000000,
+        "flash_size": 0x20000,
+        "ram_start": 0x20000000,
+        "ram_size": 0x1000,
+        "default": True,
+    }
+    builtin = FlashAlgorithm(
+        algorithm_id="b" * 64,
+        source_kind="builtin-pack",
+        source_name="Builtin",
+        source_token="catalog:bundle:Vendor.Pack:1:REVWSUNFX0E:0",
+        **common,
+    )
+    custom = FlashAlgorithm(
+        algorithm_id="c" * 64,
+        source_kind="custom-flm",
+        source_name="Custom",
+        source_token="custom:REVWSUNFX0E:" + "c" * 64,
+        **common,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [builtin, custom],
+    )
+
+    candidates = discover_algorithms(PackPaths(tmp_path / "cache"), "DEVICE_A", None)
+
+    assert [candidate["source_token"] for candidate in candidates] == [
+        builtin.source_token,
+        custom.source_token,
+    ]
 
 
 def test_state_pack_outside_managed_data_directory_is_ignored(tmp_path: Path):
