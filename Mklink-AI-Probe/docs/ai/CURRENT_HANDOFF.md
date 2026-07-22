@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-22T19:45:00+08:00`
+- 更新时间：`2026-07-22T22:25:10+08:00`
 - 分支：`master`
-- HEAD：`local master includes the verified firmware-download-priority and debug-control repair after fast-forwarding fix/firmware-download-priority; v0.1.2 remains tagged at 9cd9177`
-- 远端 HEAD：`GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177`
-- 工作树：clean after the verified firmware-download-priority branch is merged to local master and deployed to the Codex global Skill; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released
-- 当前任务：Firmware downloads now prefer an available project IDE, then pyOCD online flash, then the MKLink offline API; debug-control auto-port resolution and FLM source ordering are repaired and qualified.
+- HEAD：`local master includes the AI-first README and Web GUI onboarding refresh after the documentation branch is fast-forwarded; v0.1.2 remains tagged at 9cd9177`
+- 远端 HEAD：`GitHub and Gitee master remain at e911e62 while the local maintenance and README commits await explicit push authorization; updates remain 926f046 and v0.1.2 peels to 9cd9177`
+- 工作树：clean after the documentation-only README refresh is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released
+- 当前任务：The repository README now leads with AI-assisted Skill installation, explains Web GUI and cross-platform USB HTML setup in user-facing language, and removes obsolete probe-firmware release notes.
 - 状态：`complete`
 
 ## 里程碑
@@ -21,9 +21,11 @@
 - **Shared cross-model maintenance workflow** — `complete`。AGENTS.md and the repository skill require dedicated feature/fix branches, branch-local automated and real-hardware qualification before merge, requirement discovery, diagnosis, proportional planning, handoff, and maintainer-only releases without relying on globally installed skills.
 - **Cross-platform USB Web entry** — `complete`。One offline HTML uses the strict mklink-ai-probe://web start/open/stop protocol. User-scoped Windows, macOS, and Linux handlers start the existing loopback GUI, reuse existing Web services without ownership, and stop only identity-verified processes started by the entry.
 - **Browser file-source loading** — `complete`。The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory.
+- **AI-first README and Web GUI onboarding** — `complete`。The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites.
 
 ## 验证证据
 
+- **README and Web GUI onboarding**：The documentation-only change was checked against current CLI help, pyproject requirements, Web entry behavior, browser file-source limits, built-in ELF policy, and release constraints. Every local Markdown target exists, stale V3.3.3/V4.3.3 and MK-Firmware release-history references are absent from both READMEs, Gitee returned HTTP 200, the GitHub repository address matches the configured and queried origin, and git diff validation passed. Runtime code did not change, so automated product suites and real-hardware qualification were not required.
 - **Firmware download priority and debug-control repair**：RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. A clean archive of the tested commit replaced the Codex global Skill; the installed copy repeated Keil build/download with verify, served the bundled Web client, completed pyOCD online verify, and resumed the target. Old Skill backups were removed and ports 8765 and 5173 were closed afterward.
 - **Dedicated feature-branch workflow**：Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge.
 - **v0.1.2 final source gate and real hardware**：The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect.
@@ -54,7 +56,7 @@
 - After a successful RTT status poll, backend running state is authoritative over stale local toolbar state so peer-triggered stops return the hidden RTT view to idle without clearing retained data.
 - Waveform global shortcuts yield to input, textarea, select, contenteditable, and textbox-role targets so search and value editing receive literal keystrokes.
 - Version history is bundled as structured frontend data so the footer popover works offline; stable release entries must be updated as part of future version preparation.
-- Repository instructions and skills are the cross-model source of truth; local/global skills may help but must not be required.
+- Repository instructions and the bundled skills/maintaining-mklink-ai-probe/SKILL.md are the cross-model source of truth. Computer-global workflow skills must not override or add required process to this repository because their contents differ across developer machines.
 - Plans, tests, and worktrees scale with risk. Do not impose long plans, separate RED commits, or new worktrees on every task.
 - Diagnose before editing, prefer existing patterns, make the smallest complete change, and verify before claiming success.
 - Generate only standard NSIS by default. MSI and WebView2-offline packages require explicit authorization.

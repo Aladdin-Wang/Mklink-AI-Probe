@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T19:45:00+08:00",
+  "updated_at": "2026-07-22T22:25:10+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "local master includes the verified firmware-download-priority and debug-control repair after fast-forwarding fix/firmware-download-priority; v0.1.2 remains tagged at 9cd9177",
-    "remote_head": "GitHub and Gitee master remain at e911e62 until this maintenance-policy commit is explicitly authorized for push; updates remain 926f046 and v0.1.2 peels to 9cd9177",
-    "working_tree": "clean after the verified firmware-download-priority branch is merged to local master and deployed to the Codex global Skill; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released"
+    "head": "local master includes the AI-first README and Web GUI onboarding refresh after the documentation branch is fast-forwarded; v0.1.2 remains tagged at 9cd9177",
+    "remote_head": "GitHub and Gitee master remain at e911e62 while the local maintenance and README commits await explicit push authorization; updates remain 926f046 and v0.1.2 peels to 9cd9177",
+    "working_tree": "clean after the documentation-only README refresh is merged to local master; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released"
   },
   "mission": {
     "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "Firmware downloads now prefer an available project IDE, then pyOCD online flash, then the MKLink offline API; debug-control auto-port resolution and FLM source ordering are repaired and qualified.",
+    "current_task": "The repository README now leads with AI-assisted Skill installation, explains Web GUI and cross-platform USB HTML setup in user-facing language, and removes obsolete probe-firmware release notes.",
     "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
     "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
     "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
@@ -55,9 +55,18 @@
       "name": "Browser file-source loading",
       "status": "complete",
       "notes": "The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory."
+    },
+    {
+      "name": "AI-first README and Web GUI onboarding",
+      "status": "complete",
+      "notes": "The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites."
     }
   ],
   "verification": [
+    {
+      "area": "README and Web GUI onboarding",
+      "result": "The documentation-only change was checked against current CLI help, pyproject requirements, Web entry behavior, browser file-source limits, built-in ELF policy, and release constraints. Every local Markdown target exists, stale V3.3.3/V4.3.3 and MK-Firmware release-history references are absent from both READMEs, Gitee returned HTTP 200, the GitHub repository address matches the configured and queried origin, and git diff validation passed. Runtime code did not change, so automated product suites and real-hardware qualification were not required."
+    },
     {
       "area": "Firmware download priority and debug-control repair",
       "result": "RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. A clean archive of the tested commit replaced the Codex global Skill; the installed copy repeated Keil build/download with verify, served the bundled Web client, completed pyOCD online verify, and resumed the target. Old Skill backups were removed and ports 8765 and 5173 were closed afterward."
@@ -123,7 +132,7 @@
     "After a successful RTT status poll, backend running state is authoritative over stale local toolbar state so peer-triggered stops return the hidden RTT view to idle without clearing retained data.",
     "Waveform global shortcuts yield to input, textarea, select, contenteditable, and textbox-role targets so search and value editing receive literal keystrokes.",
     "Version history is bundled as structured frontend data so the footer popover works offline; stable release entries must be updated as part of future version preparation.",
-    "Repository instructions and skills are the cross-model source of truth; local/global skills may help but must not be required.",
+    "Repository instructions and the bundled skills/maintaining-mklink-ai-probe/SKILL.md are the cross-model source of truth. Computer-global workflow skills must not override or add required process to this repository because their contents differ across developer machines.",
     "Plans, tests, and worktrees scale with risk. Do not impose long plans, separate RED commits, or new worktrees on every task.",
     "Diagnose before editing, prefer existing patterns, make the smallest complete change, and verify before claiming success.",
     "Generate only standard NSIS by default. MSI and WebView2-offline packages require explicit authorization.",
