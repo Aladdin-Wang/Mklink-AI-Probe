@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T19:36:00+08:00",
+  "updated_at": "2026-07-22T19:45:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -60,7 +60,7 @@
   "verification": [
     {
       "area": "Firmware download priority and debug-control repair",
-      "result": "RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. Ports 8765 and 5173 were closed afterward."
+      "result": "RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. A clean archive of the tested commit replaced the Codex global Skill; the installed copy repeated Keil build/download with verify, served the bundled Web client, completed pyOCD online verify, and resumed the target. Old Skill backups were removed and ports 8765 and 5173 were closed afterward."
     },
     {
       "area": "Dedicated feature-branch workflow",

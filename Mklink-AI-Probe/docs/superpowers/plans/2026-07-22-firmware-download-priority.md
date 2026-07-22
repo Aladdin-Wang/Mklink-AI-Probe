@@ -57,5 +57,5 @@
 - [x] Run the complete Python suite, complete GUI suite, production GUI build, Rust tests, and `cargo check`.
 - [x] On the STM32F103 fixture, run Keil build then Keil download, verify Flash readback and a changing runtime counter, and verify `python -m mklink resume` succeeds.
 - [x] Run a pyOCD real-hardware download using the bundled algorithm and verify readback/runtime again.
-- [ ] Update and render project memory, run `git diff --check`, commit the branch, ensure `master` has not advanced, and fast-forward merge.
-- [ ] Rebuild the clean Codex global Skill from the tested commit, reinstall `mklink[gui,mcp]`, and rerun the download smoke checks from the global path.
+- [x] Update and render project memory, run `git diff --check`, commit the branch, ensure `master` has not advanced, and fast-forward merge.
+- [x] Rebuild the clean Codex global Skill from the tested commit, reinstall `mklink[gui,mcp]`, and rerun the download smoke checks from the global path.
