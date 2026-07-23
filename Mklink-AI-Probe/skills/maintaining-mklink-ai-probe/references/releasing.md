@@ -51,7 +51,7 @@ $NsisFiles = @(Get-ChildItem "gui\src-tauri\target\release\bundle\nsis\*.exe")
 if ($NsisFiles.Count -ne 1) { throw "Expected exactly one NSIS executable" }
 $Nsis = $NsisFiles[0]
 $SkillArchive = Join-Path $env:TEMP "Mklink-AI-Probe-v$Version-source-skill.zip"
-git archive --format=zip --prefix="Mklink-AI-Probe-v$Version/" `
+git -C .. archive --format=zip --prefix="Mklink-AI-Probe-v$Version/" `
   --output $SkillArchive HEAD:Mklink-AI-Probe
 
 python _maintainer/release/prepare_release.py `
