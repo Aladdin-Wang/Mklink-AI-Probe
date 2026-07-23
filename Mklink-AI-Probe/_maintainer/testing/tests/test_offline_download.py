@@ -451,20 +451,46 @@ def test_trigger_api_runs_the_configured_v4_script_with_both_resources_leased(mo
     assert app.state.mklink_state["resource_manager"].get_status() == {}
 
 
-def test_trigger_api_preserves_a_conflicting_resource_lease(monkeypatch):
+def test_trigger_api_preempts_and_stops_the_rtt_dashboard(monkeypatch):
+    stopped = []
+
+    class Bridge:
+        def __init__(self, _port):
+            pass
+
+        def connect(self):
+            return True
+
+        def send_command(self, _command, timeout, echo=False):
+            assert timeout == 600
+            assert echo is True
+            return "offline download finished"
+
+        def close(self):
+            pass
+
+    class RttManager:
+        running = True
+
+        def stop(self):
+            self.running = False
+            stopped.append("rtt")
+
+    monkeypatch.setattr("mklink.bridge.MKLinkSerialBridge", Bridge)
     monkeypatch.setattr("mklink.discovery.find_mklink_cdc_port", lambda: "TEST_CDC")
     app = create_app(auth_token=None, project_root=".")
     manager = app.state.mklink_state["resource_manager"]
     manager.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:rtt")
 
-    with TestClient(app) as client:
+    with patch(
+        "mklink.remote.dashboards.get_managers", return_value={"rtt": RttManager()},
+    ), TestClient(app) as client:
         response = client.post("/api/offline-download/trigger", json={})
 
-    assert response.status_code == 409
-    lease = manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE)
-    assert lease is not None
-    assert lease.owner == "user:dashboard:rtt"
-    assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert stopped == ["rtt"]
+    assert manager.get_status() == {}
 
 
 def test_offline_api_reuses_the_connected_device_bridge():

@@ -132,6 +132,10 @@ class RTTSession:
         """读取 UpBuffer 输出 (MCU -> PC)。"""
         return self._bridge.read_stream(duration=duration)
 
+    def read_output_bytes(self, duration: float = 10.0) -> bytes:
+        """读取 UpBuffer 原始字节，供可选文本编码的客户端解码。"""
+        return self._bridge.read_stream_bytes(duration=duration)
+
     def send_input(self, data: bytes) -> bool:
         """通过 DownBuffer 发送数据到 MCU (PC -> MCU)。
 

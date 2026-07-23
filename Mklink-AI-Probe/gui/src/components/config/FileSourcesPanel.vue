@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { FolderOpen, Save, ScanSearch } from '@lucide/vue'
-import { isMapFilePath, isSymbolFilePath } from '../../lib/desktopSettings'
+import { isMapFilePath, isSameFileSourcePath, isSymbolFilePath } from '../../lib/desktopSettings'
 import type { AxlStatus } from '../../types/mklink'
 
 const props = defineProps<{
@@ -25,6 +26,16 @@ const emit = defineEmits<{
 function inputValue(event: Event): string {
   return (event.target as HTMLInputElement).value
 }
+
+const sourceMatches = computed(() => isSameFileSourcePath(
+  props.symbolPath,
+  props.symbolStatus.axf_path,
+))
+const sourcePending = computed(() => (
+  props.symbolStatus.loaded
+  && Boolean(props.symbolPath.trim())
+  && !sourceMatches.value
+))
 </script>
 
 <template>
@@ -32,14 +43,26 @@ function inputValue(event: Event): string {
     <header class="panel-header">
       <div>
         <h2 id="file-sources-title">文件来源</h2>
-        <span :class="['badge', symbolStatus.loaded ? 'badge-ok' : 'badge-warn']">
-          {{ symbolStatus.loaded ? '符号已加载' : '符号未加载' }}
+        <span
+          data-testid="symbol-source-state"
+          :class="['badge', symbolStatus.loaded && !sourcePending ? 'badge-ok' : 'badge-warn']"
+        >
+          {{ sourcePending ? '待解析' : symbolStatus.loaded ? '符号已加载' : '符号未加载' }}
         </span>
       </div>
       <span v-if="symbolStatus.loaded" class="symbol-counts">
         {{ symbolStatus.variable_count || 0 }} 个固定可读变量 · {{ symbolStatus.struct_count || 0 }} 种结构体类型 · {{ symbolStatus.enum_count || 0 }} 种枚举类型
       </span>
     </header>
+
+    <div
+      v-if="symbolStatus.loaded && symbolStatus.axf_path"
+      class="active-symbol-path"
+      data-testid="active-symbol-path"
+    >
+      <span>当前加载</span>
+      <code>{{ symbolStatus.axf_path }}</code>
+    </div>
 
     <div class="source-row">
       <label for="symbol-path">AXF / ELF</label>
@@ -159,6 +182,26 @@ function inputValue(event: Event): string {
 .action-state {
   color: var(--dim);
   font-size: 12px;
+}
+
+.active-symbol-path {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  margin: -10px 0 18px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.active-symbol-path span {
+  text-align: right;
+}
+
+.active-symbol-path code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 .source-row {

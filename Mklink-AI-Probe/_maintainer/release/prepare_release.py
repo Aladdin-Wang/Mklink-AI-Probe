@@ -8,8 +8,9 @@ import json
 import platform
 import shutil
 import sys
+import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Sequence
 
 
@@ -56,6 +57,37 @@ def _require_file(value: Path | str) -> Path:
     return path
 
 
+def _validate_skill_archive(path: Path, version: str) -> None:
+    with zipfile.ZipFile(path) as archive:
+        files = {
+            PurePosixPath(info.filename)
+            for info in archive.infolist()
+            if not info.is_dir()
+        }
+        if not files or any(
+            member.is_absolute() or ".." in member.parts for member in files
+        ):
+            raise ValueError("Skill archive contains an unsafe or empty layout")
+        roots = {member.parts[0] for member in files if member.parts}
+        if len(roots) != 1:
+            raise ValueError("Skill archive must contain exactly one root directory")
+        root = next(iter(roots))
+        required = {
+            PurePosixPath(root, "pyproject.toml"),
+            PurePosixPath(root, "SKILL.md"),
+            PurePosixPath(root, ".claude-plugin", "plugin.json"),
+            PurePosixPath(root, "scripts", "skill_update.py"),
+        }
+        if not required <= files:
+            raise ValueError(
+                "Skill archive root must directly contain the installable project"
+            )
+        plugin_path = PurePosixPath(root, ".claude-plugin", "plugin.json")
+        plugin = json.loads(archive.read(str(plugin_path)))
+        if str(plugin.get("version")) != version:
+            raise ValueError("Skill archive plugin version does not match the release")
+
+
 def prepare_release(
     *,
     version: str,
@@ -63,6 +95,7 @@ def prepare_release(
     output_dir: Path | str,
     nsis: Path | str,
     updater_signature: Path | str,
+    skill_archive: Path | str,
 ) -> dict[str, object]:
     if not version or any(separator in version for separator in ("/", "\\")):
         raise ValueError("release version must be a path-safe value")
@@ -71,11 +104,17 @@ def prepare_release(
     ):
         raise ValueError("source commit must be a 40-character hexadecimal SHA")
 
+    skill_source = _require_file(skill_archive)
+    _validate_skill_archive(skill_source, version)
     sources = [
         (_require_file(nsis), f"Mklink-AI-Probe-v{version}-x64-Setup.exe"),
         (
             _require_file(updater_signature),
             f"Mklink-AI-Probe-v{version}-x64-Setup.exe.sig",
+        ),
+        (
+            skill_source,
+            f"Mklink-AI-Probe-v{version}-Skill.zip",
         ),
     ]
 
@@ -130,6 +169,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--nsis", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
+    parser.add_argument("--skill-archive", required=True, type=Path)
     return parser
 
 
@@ -141,6 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         nsis=args.nsis,
         updater_signature=args.updater_signature,
+        skill_archive=args.skill_archive,
     )
     print(json.dumps({
         "release_version": manifest["release_version"],

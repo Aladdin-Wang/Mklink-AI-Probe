@@ -41,6 +41,17 @@ _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
 
 
+def _same_file_source_path(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return False
+    try:
+        return Path(left).resolve() == Path(right).resolve()
+    except OSError:
+        return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+            os.path.abspath(right)
+        )
+
+
 def _store_uploaded_file_source(
     upload: Any,
     project_root: Path | str,
@@ -233,6 +244,7 @@ def target_debug_lease(state: dict[str, Any], operation: str):
                 ResourceGroup.TARGET_DEBUG,
                 owner,
                 preempt=True,
+                preempt_user_dashboard=True,
             )
         stack.append((manager, lease_owner, not nested))
         try:
@@ -289,6 +301,7 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
             ResourceGroup.TARGET_DEBUG,
             owner,
             preempt=True,
+            preempt_user_dashboard=True,
         )
     except Exception:
         _NATIVE_TARGET_COORDINATOR.release()
@@ -551,7 +564,7 @@ def create_app(
     app.state.mklink_state = _state
 
     from mklink.remote import stream_api
-    from mklink.remote.dashboards import get_managers
+    from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
 
     stream_registry = stream_api.create_stream_registry()
     stream_types = dict(stream_api.STREAM_TYPES)
@@ -577,6 +590,60 @@ def create_app(
 
     from starlette.concurrency import run_in_threadpool
     from mklink.remote import online_flash_api
+
+    async def _reparse_active_symbols(
+        axf: str | None = None,
+        elf_backend: str | None = None,
+        *,
+        error_status: int = 500,
+    ) -> dict:
+        device = _state.get("device")
+        if not device or not device.connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+
+        manager = get_managers()["superwatch"]
+        try:
+            if (
+                manager._runtime is not None
+                and getattr(device, "symbol_catalog", None) is not None
+            ):
+                if elf_backend is None:
+                    args = () if axf is None else (axf,)
+                    summary = await run_in_threadpool(
+                        manager.reparse_symbols, *args, device=device
+                    )
+                else:
+                    summary = await run_in_threadpool(
+                        manager.reparse_symbols,
+                        axf,
+                        elf_backend,
+                        device=device,
+                    )
+                result = dict(device.axf_status)
+                result["rebind"] = summary
+            else:
+                result = await run_in_threadpool(
+                    device.parse_axf, axf, elf_backend=elf_backend
+                )
+                if manager._runtime is not None and not result.get("error"):
+                    await run_in_threadpool(manager.prepare, device)
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
+
+        if result.get("error"):
+            raise HTTPException(status_code=error_status, detail=result["error"])
+        active_axf = result.get("axf_path")
+        if axf and not _same_file_source_path(axf, active_axf):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "symbol_source_mismatch",
+                    "message": "Symbol parsing completed without activating the requested AXF",
+                    "requested_axf": axf,
+                    "active_axf": active_axf,
+                },
+            )
+        return result
 
     online_flash = online_flash_api.create_default_online_flash_services(
         _state["resource_manager"]
@@ -1045,6 +1112,11 @@ def create_app(
     ):
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
+            manager = get_managers()["superwatch"]
+            if axf is not None or elf_backend is not None:
+                await _reparse_active_symbols(axf, elf_backend)
+            elif manager._device is not dev:
+                await run_in_threadpool(manager.prepare, dev)
             return {
                 "status": "already_connected",
                 "mcu": dev.mcu_name,
@@ -1052,6 +1124,7 @@ def create_app(
                 "port": dev.port,
                 "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
                 "elf_backend": dev.axf_status.get("elf_backend"),
+                "axf": dev.axf_status,
             }
 
         import mklink
@@ -1080,6 +1153,7 @@ def create_app(
 
         _state["device"] = device
         _state["dispatcher"] = DeviceDispatcher(device)
+        await run_in_threadpool(get_managers()["superwatch"].prepare, device)
         return {
             "status": "connected",
             "mcu": device.mcu_name,
@@ -1152,34 +1226,7 @@ def create_app(
         elf_backend: str | None = Body(default=None, embed=True),
     ):
         """手动触发 AXF/ELF 符号表解析。"""
-        if not _state["device"] or not _state["device"].connected:
-            raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
-
-        device = _state["device"]
-        manager = get_managers()["superwatch"]
-        try:
-            if manager._runtime is not None and getattr(device, "symbol_catalog", None) is not None:
-                if elf_backend is None:
-                    summary = await run_in_threadpool(manager.reparse_symbols, axf)
-                else:
-                    summary = await run_in_threadpool(
-                        manager.reparse_symbols, axf, elf_backend
-                    )
-                result = dict(device.axf_status)
-                result["rebind"] = summary
-            else:
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None, lambda: device.parse_axf(axf, elf_backend=elf_backend)
-                )
-                if manager._runtime is not None and not result.get("error"):
-                    manager.prepare(device)
-        except SuperWatchTransactionError as exc:
-            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
-        if result.get("error"):
-            raise HTTPException(status_code=500, detail=result["error"])
-        return result
+        return await _reparse_active_symbols(axf, elf_backend)
 
     class FlashRequest(BaseModel):
         firmware: str
@@ -1360,12 +1407,19 @@ def create_app(
         channel: int = Body(default=0),
         mode: int = Body(default=0),
         search_size: int = Body(default=1024),
+        encoding: str = Body(default="utf-8"),
     ):
+        from mklink.remote.dashboards import normalize_rtt_encoding
+
         if mode not in (0, 1):
             raise HTTPException(
                 status_code=400,
                 detail=f"mode 必须是 0 或 1，得到 {mode}",
             )
+        try:
+            encoding = normalize_rtt_encoding(encoding)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         managers = get_managers()
@@ -1380,9 +1434,19 @@ def create_app(
                 channel=channel,
                 mode=mode,
                 search_size=search_size,
+                encoding=encoding,
             ),
         )
         return {"status": status, "stopped": stopped}
+
+    @app.post("/api/dash/rtt/encoding")
+    async def rtt_encoding(encoding: str = Body(..., embed=True)):
+        managers = get_managers()
+        try:
+            selected = managers["rtt"].set_encoding(encoding)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"encoding": selected}
 
     @app.post("/api/dash/rtt/stop")
     async def rtt_stop():
@@ -2164,6 +2228,7 @@ def create_app(
             "fingerprint": catalog.fingerprint.to_dict(),
             "stale": catalog.is_stale(),
             "total": len(catalog.items),
+            "container_count": len(catalog.containers),
             "truncated_roots": list(catalog.truncated_roots),
         }
 
@@ -2184,22 +2249,38 @@ def create_app(
 
     @app.post("/api/symbols/reparse")
     async def symbols_reparse():
+        result = await _reparse_active_symbols(error_status=422)
+        return result.get("rebind", result)
+
+    @app.post("/api/symbols/c-layout")
+    async def symbols_apply_c_layout(
+        variable: str = Body(...),
+        definition: str = Body(...),
+        pack: int | None = Body(default=None),
+    ):
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import SuperWatchTransactionError
-
         manager = get_managers()["superwatch"]
         try:
-            if manager._runtime is not None:
-                result = await run_in_threadpool(manager.reparse_symbols)
-            else:
-                result = await run_in_threadpool(device.parse_axf)
+            result = await run_in_threadpool(
+                manager.apply_c_definition,
+                variable.strip(),
+                definition,
+                pack,
+                device=device,
+            )
         except SuperWatchTransactionError as exc:
-            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
-        if result.get("error"):
-            raise HTTPException(status_code=422, detail=result["error"])
-        return result
+            status_code = 422 if exc.phase == "c_layout" else 409
+            raise HTTPException(status_code=status_code, detail=exc.to_detail()) from exc
+        catalog = _require_symbol_catalog()
+        return {
+            **result,
+            "generation": catalog.generation,
+            "axf_path": catalog.axf_path,
+            "total": len(catalog.items),
+            "container_count": len(catalog.containers),
+        }
 
     @app.get("/api/symbols/search")
     async def symbols_search(q: str = ""):

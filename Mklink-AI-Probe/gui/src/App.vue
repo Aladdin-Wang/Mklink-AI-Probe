@@ -352,8 +352,11 @@ body {
   gap: 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .tab-btn {
+  flex: 0 0 auto;
   background: none;
   border: none;
   padding: 8px 18px;
@@ -363,6 +366,7 @@ body {
   border-bottom: 2px solid transparent;
   transition: all 0.15s;
   font-family: var(--font-body);
+  white-space: nowrap;
 }
 .tab-btn:hover { color: var(--fg); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }

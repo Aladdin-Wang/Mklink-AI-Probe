@@ -100,7 +100,11 @@ describe('ConfigView', () => {
     mocks.api.updateConfig.mockResolvedValue({})
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
-    mocks.api.parseAxf.mockResolvedValue({ loaded: true, variable_count: 3 })
+    mocks.api.parseAxf.mockResolvedValue({
+      loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
+      variable_count: 3,
+    })
     mocks.api.uploadFileSource.mockResolvedValue({ path: '' })
     mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
@@ -137,6 +141,7 @@ describe('ConfigView', () => {
   it('distinguishes readable variables from DWARF type definitions', async () => {
     mocks.deviceStatus.axf = {
       loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
       variable_count: 801,
       struct_count: 150,
       enum_count: 12,
@@ -148,6 +153,23 @@ describe('ConfigView', () => {
     expect(wrapper.text()).toContain('801 个固定可读变量')
     expect(wrapper.text()).toContain('150 种结构体类型')
     expect(wrapper.text()).toContain('12 种枚举类型')
+  })
+
+  it('shows the active symbol source when the edited path is not loaded', async () => {
+    mocks.deviceStatus.axf = {
+      loaded: true,
+      axf_path: 'C:\\old\\firmware.axf',
+      variable_count: 801,
+      struct_count: 150,
+      enum_count: 12,
+    }
+
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="symbol-source-state"]').text()).toContain('待解析')
+    expect(wrapper.get('[data-testid="active-symbol-path"]').text())
+      .toContain('C:\\old\\firmware.axf')
   })
 
   it('connects locally with the configured port and saved AXF path without an MCU hint', async () => {
@@ -263,6 +285,24 @@ describe('ConfigView', () => {
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
     expect(mocks.toastError).toHaveBeenCalledWith('符号目录刷新失败: catalog unavailable')
     expect(mocks.toastError).not.toHaveBeenCalledWith(expect.stringContaining('AXF 解析失败'))
+  })
+
+  it('rejects a parse response that still reports another active AXF', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
+    mocks.api.parseAxf.mockResolvedValueOnce({
+      loaded: true,
+      axf_path: 'C:\\old\\firmware.axf',
+      variable_count: 801,
+    })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.refreshSymbolCatalog).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('C:\\old\\firmware.axf'))
   })
 
   it('shows inline path validation and does not let an invalid symbol path block connection', async () => {

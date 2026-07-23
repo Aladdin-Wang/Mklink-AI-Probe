@@ -3,6 +3,8 @@ import type {
   AxfFingerprint,
   SymbolCatalogPage,
   SymbolCatalogStatus,
+  SymbolCLayoutResult,
+  SymbolContainerDescriptor,
   SymbolDescriptor,
   SymbolRebindSummary,
   SuperWatchWriteResult,
@@ -12,6 +14,7 @@ const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const PAGE_SIZE = 500
 
 const items = shallowRef<SymbolDescriptor[]>([])
+const containers = shallowRef<SymbolContainerDescriptor[]>([])
 const generation = ref(0)
 const axfPath = ref('')
 const parsedAt = ref(0)
@@ -21,6 +24,7 @@ const total = ref(0)
 const truncatedRoots = shallowRef<string[]>([])
 const loading = ref(false)
 const reparsing = ref(false)
+const applyingLayout = ref(false)
 const error = ref<string | null>(null)
 
 let loadingPromise: Promise<void> | null = null
@@ -77,6 +81,7 @@ async function fetchCatalog(): Promise<SymbolCatalogPage> {
 
 function publishCatalog(catalog: SymbolCatalogPage): void {
   items.value = catalog.items
+  containers.value = catalog.containers ?? []
   generation.value = catalog.generation
   axfPath.value = catalog.axf_path
   parsedAt.value = catalog.parsed_at
@@ -170,6 +175,28 @@ async function reparse(): Promise<SymbolRebindSummary> {
   }
 }
 
+async function applyCLayout(
+  variable: string,
+  definition: string,
+  pack: number | null,
+): Promise<SymbolCLayoutResult> {
+  applyingLayout.value = true
+  error.value = null
+  try {
+    const response = await request<SymbolCLayoutResult>('/api/symbols/c-layout', {
+      method: 'POST',
+      body: JSON.stringify({ variable, definition, pack }),
+    })
+    publishCatalog(await fetchCatalog())
+    return response
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+    throw cause
+  } finally {
+    applyingLayout.value = false
+  }
+}
+
 async function writeSymbol(path: string, value: unknown): Promise<SuperWatchWriteResult> {
   if (stale.value) throw new Error('AXF 已变化，请重新解析符号后再写入')
   if (generation.value <= 0) throw new Error('符号表尚未加载')
@@ -182,6 +209,7 @@ async function writeSymbol(path: string, value: unknown): Promise<SuperWatchWrit
 export function useSymbolCatalog() {
   return {
     items: readonly(items),
+    containers: readonly(containers),
     generation: readonly(generation),
     axfPath: readonly(axfPath),
     parsedAt: readonly(parsedAt),
@@ -191,10 +219,12 @@ export function useSymbolCatalog() {
     truncatedRoots: readonly(truncatedRoots),
     loading: readonly(loading),
     reparsing: readonly(reparsing),
+    applyingLayout: readonly(applyingLayout),
     error: readonly(error),
     ensureLoaded,
     refreshStatus,
     reparse,
+    applyCLayout,
     writeSymbol,
   }
 }

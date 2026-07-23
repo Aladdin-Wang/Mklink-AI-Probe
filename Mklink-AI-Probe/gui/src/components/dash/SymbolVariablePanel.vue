@@ -10,14 +10,55 @@
       <button
         class="icon-button"
         type="button"
+        title="手动添加变量"
+        aria-label="手动添加变量"
+        data-testid="show-manual-add"
+        @click="manualAddOpen = !manualAddOpen"
+      >
+        <Plus :size="16" aria-hidden="true" />
+      </button>
+      <button
+        class="icon-button"
+        type="button"
+        title="粘贴 C 结构定义"
+        aria-label="粘贴 C 结构定义"
+        data-testid="show-c-layout"
+        @click="openCLayout()"
+      >
+        <Code2 :size="16" aria-hidden="true" />
+      </button>
+      <button
+        class="icon-button"
+        type="button"
         title="重新解析符号"
+        aria-label="重新解析符号"
         :disabled="catalog.reparsing.value"
         data-testid="reparse-symbols"
         @click="reparseSymbols"
       >
-        ↻
+        <RefreshCw :size="16" aria-hidden="true" />
       </button>
     </div>
+
+    <form v-if="manualAddOpen" class="manual-add-row" @submit.prevent="addManualVariable">
+      <input
+        v-model="manualPath"
+        class="form-input"
+        data-testid="manual-variable-path"
+        placeholder="变量或成员路径"
+        autocomplete="off"
+      />
+      <button
+        class="icon-button"
+        type="submit"
+        title="添加到 SuperWatch"
+        aria-label="添加到 SuperWatch"
+        data-testid="add-manual-variable"
+        :disabled="manualAdding || !manualPath.trim()"
+      >
+        <Plus :size="16" aria-hidden="true" />
+      </button>
+    </form>
 
     <div class="panel-filters">
       <label>
@@ -49,6 +90,20 @@
           <ChevronRight v-else :size="15" aria-hidden="true" />
           <span class="branch-name">{{ row.node.label }}</span>
           <span class="branch-count">{{ row.selectedLeafCount }} / {{ row.node.leafCount }}</span>
+        </button>
+        <button
+          v-else-if="row.node.kind === 'container' && row.node.container"
+          class="container-row"
+          type="button"
+          :data-testid="`container-${row.node.container.path}`"
+          :title="row.node.container.path"
+          :style="{ paddingLeft: rowIndent(row.depth) }"
+          @click="openCLayout(row.node.container.path)"
+        >
+          <Code2 :size="15" aria-hidden="true" />
+          <span class="branch-name">{{ row.node.label }}</span>
+          <span class="container-type">{{ row.node.container.type_name }}</span>
+          <span class="container-state">待定义</span>
         </button>
         <div
           v-else-if="row.node.descriptor"
@@ -151,12 +206,65 @@
       </template>
       <div v-if="rows.length === 0" class="empty-state">无匹配变量</div>
     </div>
+
+    <div v-if="cLayoutOpen" class="modal-overlay" data-testid="c-layout-modal" @click.self="closeCLayout">
+      <section class="layout-modal" role="dialog" aria-modal="true" aria-labelledby="c-layout-title">
+        <header class="layout-modal-header">
+          <h3 id="c-layout-title"><Code2 :size="17" aria-hidden="true" />应用 C 结构定义</h3>
+          <button class="icon-button" type="button" title="关闭" aria-label="关闭" @click="closeCLayout">
+            <X :size="16" aria-hidden="true" />
+          </button>
+        </header>
+        <label class="layout-field">
+          <span>变量</span>
+          <input
+            v-model="cLayoutVariable"
+            class="form-input"
+            data-testid="c-layout-variable"
+            autocomplete="off"
+            placeholder="data_save"
+          />
+        </label>
+        <label class="layout-field">
+          <span>对齐</span>
+          <select v-model="cLayoutPack" class="form-input" data-testid="c-layout-pack">
+            <option value="">自动</option>
+            <option value="1">pack(1)</option>
+            <option value="2">pack(2)</option>
+            <option value="4">pack(4)</option>
+            <option value="8">pack(8)</option>
+          </select>
+        </label>
+        <label class="layout-field layout-definition">
+          <span>C 定义</span>
+          <textarea
+            v-model="cLayoutDefinition"
+            class="form-input"
+            data-testid="c-layout-definition"
+            spellcheck="false"
+            placeholder="typedef struct { ... } TypeName;"
+          />
+        </label>
+        <footer class="layout-modal-actions">
+          <button type="button" class="btn btn-secondary" @click="closeCLayout">取消</button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-testid="apply-c-layout"
+            :disabled="catalog.applyingLayout.value || !cLayoutVariable.trim() || !cLayoutDefinition.trim()"
+            @click="applyCLayout"
+          >
+            {{ catalog.applyingLayout.value ? '解析中' : '应用' }}
+          </button>
+        </footer>
+      </section>
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { ChevronDown, ChevronRight, Eye, EyeOff } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Code2, Eye, EyeOff, Plus, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
 import { buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
@@ -178,6 +286,13 @@ const emit = defineEmits<{
 const catalog = useSymbolCatalog()
 const toast = useToast()
 const query = ref('')
+const manualAddOpen = ref(false)
+const manualPath = ref('')
+const manualAdding = ref(false)
+const cLayoutOpen = ref(false)
+const cLayoutVariable = ref('')
+const cLayoutDefinition = ref('')
+const cLayoutPack = ref('')
 const selectedOnly = ref(false)
 const selected = shallowRef(new Set<string>())
 const selectionBusy = shallowRef(new Set<string>())
@@ -188,7 +303,7 @@ const writeSuccess = reactive<Record<string, number | boolean | undefined>>({})
 const expanded = shallowRef(new Set<string>())
 let searchExpansionSnapshot: Set<string> | null = null
 
-const tree = computed(() => buildSymbolTree(catalog.items.value))
+const tree = computed(() => buildSymbolTree(catalog.items.value, catalog.containers.value))
 const rows = computed(() => visibleSymbolRows(tree.value, {
   expanded: expanded.value,
   selected: selected.value,
@@ -257,6 +372,62 @@ async function toggleSelection(path: string, event: Event): Promise<void> {
   }
 }
 
+async function addManualVariable(): Promise<void> {
+  const path = manualPath.value.trim()
+  if (!path) return
+  manualAdding.value = true
+  try {
+    const response = await request('/api/dash/superwatch/add', {
+      method: 'POST',
+      body: JSON.stringify({ name: path }),
+    })
+    const item = response?.item
+    if (response?.error || item?.error) throw new Error(response?.error || item.error)
+    const addedPath = typeof item?.name === 'string' ? item.name : path
+    selected.value = withSet(selected.value, addedPath, true)
+    manualPath.value = ''
+    manualAddOpen.value = false
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  } finally {
+    manualAdding.value = false
+  }
+}
+
+function applyRebindSummary(summary: { removed: string[] }): void {
+  const next = new Set(selected.value)
+  summary.removed.forEach(path => {
+    next.delete(path)
+    emit('selection-removed', path)
+  })
+  selected.value = next
+}
+
+function openCLayout(variable = ''): void {
+  cLayoutVariable.value = variable
+  cLayoutOpen.value = true
+}
+
+function closeCLayout(): void {
+  if (catalog.applyingLayout.value) return
+  cLayoutOpen.value = false
+}
+
+async function applyCLayout(): Promise<void> {
+  try {
+    const result = await catalog.applyCLayout(
+      cLayoutVariable.value.trim(),
+      cLayoutDefinition.value,
+      cLayoutPack.value ? Number(cLayoutPack.value) : null,
+    )
+    applyRebindSummary(result.rebind)
+    cLayoutOpen.value = false
+    toast.success(`已解析 ${result.layout.leaf_count} 个成员`)
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  }
+}
+
 function toggleVisibility(path: string): void {
   emit('visibility-change', path, props.hiddenChannels?.has(path) ?? false)
 }
@@ -305,12 +476,7 @@ async function writeValue(symbol: SymbolDescriptor): Promise<void> {
 async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
-    const next = new Set(selected.value)
-    summary.removed.forEach(path => {
-      next.delete(path)
-      emit('selection-removed', path)
-    })
-    selected.value = next
+    applyRebindSummary(summary)
     toast.success(
       `符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`,
     )
@@ -356,7 +522,10 @@ watch(tree, roots => {
 }
 .panel-toolbar { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); }
 .panel-toolbar .form-input { min-width: 0; flex: 1; }
-.icon-button { width: 30px; height: 30px; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
+.icon-button { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; }
+.icon-button:disabled { color: var(--muted); cursor: default; }
+.manual-add-row { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.manual-add-row .form-input { min-width: 0; flex: 1; }
 .panel-filters { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
@@ -388,6 +557,26 @@ watch(tree, roots => {
   text-align: left;
 }
 .branch-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.container-row {
+  display: grid;
+  grid-template-columns: 18px minmax(70px, 1fr) minmax(64px, auto) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding-top: 4px;
+  padding-right: 10px;
+  padding-bottom: 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.container-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.container-type { overflow: hidden; color: var(--muted); font: 11px Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.container-state { color: var(--warn); font-size: 11px; white-space: nowrap; }
 .branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px Consolas, monospace; }
 .branch-count { color: var(--muted); font: 11px Consolas, monospace; }
 .variable-row { border-bottom: 1px solid var(--border); }
@@ -408,4 +597,20 @@ watch(tree, roots => {
 .write-editor .btn { min-height: 28px; padding: 3px 8px; }
 .write-success { padding: 0 8px 7px 60px; color: var(--success); font-size: 11px; }
 .empty-state { padding: 24px 12px; color: var(--muted); text-align: center; font-size: 12px; }
+.modal-overlay { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / 45%); }
+.layout-modal { display: grid; gap: 12px; width: min(620px, 100%); max-height: calc(100vh - 40px); padding: 16px; border: 1px solid var(--border); background: var(--surface); box-shadow: 0 16px 50px rgb(0 0 0 / 25%); }
+.layout-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.layout-modal-header h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 15px; }
+.layout-field { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.layout-definition { align-items: start; }
+.layout-definition span { padding-top: 7px; }
+.layout-definition textarea { min-height: 260px; resize: vertical; font: 12px/1.5 Consolas, monospace; white-space: pre; }
+.layout-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 560px) {
+  .modal-overlay { padding: 10px; }
+  .layout-modal { max-height: calc(100vh - 20px); padding: 12px; }
+  .layout-field { grid-template-columns: 1fr; gap: 5px; }
+  .layout-definition span { padding-top: 0; }
+  .layout-definition textarea { min-height: 220px; }
+}
 </style>

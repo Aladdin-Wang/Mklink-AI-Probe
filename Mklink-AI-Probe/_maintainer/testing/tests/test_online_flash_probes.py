@@ -563,7 +563,7 @@ def test_native_api_target_operation_releases_lease_on_success_and_failure():
     assert state["resource_manager"].get_status() == {}
 
 
-def test_native_api_conflict_with_dashboard_returns_409():
+def test_native_api_preempts_and_stops_dashboard_before_target_access():
     from mklink.remote.resource_manager import ResourceGroup
 
     managers = {
@@ -571,6 +571,7 @@ def test_native_api_conflict_with_dashboard_returns_409():
         for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
     }
     client, state = _dashboard_client(managers)
+    managers["rtt"].running = True
     device = MagicMock()
     device.connected = True
     state["device"] = device
@@ -578,15 +579,32 @@ def test_native_api_conflict_with_dashboard_returns_409():
         ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
     )
 
-    response = client.post("/api/device/halt")
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post("/api/device/halt")
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == {
-        "code": "PROBE_BUSY",
-        "resource": "target_debug",
-        "conflict_owner": "user:dashboard:rtt",
+    assert response.status_code == 200
+    managers["rtt"].stop.assert_called_once_with()
+    device.halt.assert_called_once_with()
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_rtt_encoding_routes_validate_and_update_the_shared_manager():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
     }
-    device.halt.assert_not_called()
+    managers["rtt"].set_encoding = MagicMock(return_value="gbk")
+    client, _state = _dashboard_client(managers)
+
+    invalid_start = client.post(
+        "/api/dash/rtt/start", json={"encoding": "shift-jis"},
+    )
+    changed = client.post("/api/dash/rtt/encoding", json={"encoding": "gbk"})
+
+    assert invalid_start.status_code == 422
+    assert changed.status_code == 200
+    assert changed.json() == {"encoding": "gbk"}
+    managers["rtt"].set_encoding.assert_called_once_with("gbk")
 
 
 def test_disconnect_cleanup_is_not_blocked_by_target_lease():
@@ -611,7 +629,7 @@ def test_disconnect_cleanup_is_not_blocked_by_target_lease():
     assert state["resource_manager"].get_status() == {}
 
 
-def test_mcu_detect_with_idcode_uses_target_lease_and_reports_conflict():
+def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
     from mklink.remote.resource_manager import ResourceGroup
 
     managers = {
@@ -637,14 +655,21 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_reports_conflict():
     state["resource_manager"].acquire(
         ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
     )
-    with patch("mklink.mcu_detect.detect_mcu_profile") as detect_mock:
-        conflict = client.post("/api/mcu-detect", json={"port": "COM5"})
+    managers["rtt"].running = True
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        with patch(
+            "mklink.mcu_detect.detect_mcu_profile",
+            return_value={"detected": True},
+        ) as detect_mock:
+            switched = client.post("/api/mcu-detect", json={"port": "COM5"})
 
-    assert conflict.status_code == 409
-    detect_mock.assert_not_called()
+    assert switched.status_code == 200
+    managers["rtt"].stop.assert_called_once_with()
+    detect_mock.assert_called_once()
+    assert state["resource_manager"].get_status() == {}
 
 
-def test_run_server_auto_connect_uses_target_lease_and_does_not_bypass_conflict():
+def test_run_server_auto_connect_uses_target_lease_and_preempts_dashboard():
     from mklink.remote.api import create_app, run_server
     from mklink.remote.resource_manager import ResourceGroup
 
@@ -675,9 +700,37 @@ def test_run_server_auto_connect_uses_target_lease_and_does_not_bypass_conflict(
     with patch("mklink.connect") as connect_mock, patch("uvicorn.run") as serve_mock:
         run_server(app, auto_connect=True)
 
-    connect_mock.assert_not_called()
+    connect_mock.assert_called_once()
     serve_mock.assert_called_once()
-    assert state["device"] is None
+    assert state["device"] is connect_mock.return_value
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_dashboard_preempt_stop_failure_restores_old_lease():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["rtt"].stop.side_effect = TimeoutError("still stopping")
+    client, state = _dashboard_client(managers)
+    managers["rtt"].running = True
+    device = MagicMock()
+    device.connected = True
+    state["device"] = device
+    state["resource_manager"].acquire(
+        ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
+    )
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post("/api/device/halt")
+
+    assert response.status_code == 500
+    device.halt.assert_not_called()
+    assert state["resource_manager"].get_active_lease(
+        ResourceGroup.TARGET_DEBUG
+    ).owner == "user:dashboard:rtt"
 
 
 def test_session_acquire_failure_preserves_same_ai_owner_existing_lease():

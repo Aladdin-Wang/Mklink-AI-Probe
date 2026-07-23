@@ -203,6 +203,16 @@ export interface SymbolDescriptor {
   enum_values: Record<string, number>
   enum_signed?: boolean
   parent_path: string | null
+  overlapping?: boolean
+  source?: 'dwarf' | 'c_override'
+}
+
+export interface SymbolContainerDescriptor {
+  path: string
+  address: number
+  type_name: string
+  size: number
+  reason: 'unsupported_layout'
 }
 
 export interface AxfFingerprint {
@@ -219,6 +229,7 @@ export interface SymbolCatalogPage {
   total: number
   items: SymbolDescriptor[]
   truncated_roots: string[]
+  containers: SymbolContainerDescriptor[]
 }
 
 export interface SymbolCatalogStatus {
@@ -229,6 +240,7 @@ export interface SymbolCatalogStatus {
   fingerprint: AxfFingerprint
   stale: boolean
   total: number
+  container_count: number
   truncated_roots: string[]
 }
 
@@ -236,6 +248,21 @@ export interface SymbolRebindSummary {
   preserved: string[]
   updated: string[]
   removed: string[]
+}
+
+export interface SymbolCLayoutResult {
+  layout: {
+    type_name: string
+    size: number
+    alignment: number
+    pack: number | null
+    leaf_count: number
+  }
+  rebind: SymbolRebindSummary
+  generation: number
+  axf_path: string
+  total: number
+  container_count: number
 }
 
 export interface SuperWatchWriteResult {

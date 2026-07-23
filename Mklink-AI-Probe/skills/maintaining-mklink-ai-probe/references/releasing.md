@@ -38,7 +38,7 @@ Build standard NSIS only unless the user explicitly requests MSI or a
 WebView2-offline package. A signed bundle must produce one NSIS `.exe` and its
 adjacent `.exe.sig`.
 
-## Prepare Four Public Assets
+## Prepare Five Public Assets
 
 Create an empty workspace-level `release/<YYYYMMDD-HHMMSS>/` directory outside
 the source repository. From the repository root:
@@ -50,21 +50,30 @@ $ReleaseDir = "..\release\<YYYYMMDD-HHMMSS>"
 $NsisFiles = @(Get-ChildItem "gui\src-tauri\target\release\bundle\nsis\*.exe")
 if ($NsisFiles.Count -ne 1) { throw "Expected exactly one NSIS executable" }
 $Nsis = $NsisFiles[0]
+$SkillArchive = Join-Path $env:TEMP "Mklink-AI-Probe-v$Version-source-skill.zip"
+git archive --format=zip --prefix="Mklink-AI-Probe-v$Version/" `
+  --output $SkillArchive HEAD:Mklink-AI-Probe
 
 python _maintainer/release/prepare_release.py `
   --version $Version `
   --source-commit $SourceCommit `
   --output $ReleaseDir `
   --nsis $Nsis.FullName `
-  --updater-signature "$($Nsis.FullName).sig"
+  --updater-signature "$($Nsis.FullName).sig" `
+  --skill-archive $SkillArchive
 ```
 
 The directory must contain exactly:
 
 - `Mklink-AI-Probe-vX.Y.Z-x64-Setup.exe`
 - `Mklink-AI-Probe-vX.Y.Z-x64-Setup.exe.sig`
+- `Mklink-AI-Probe-vX.Y.Z-Skill.zip`
 - `SHA256SUMS.txt`
 - `release-manifest.json`
+
+Remove the temporary source Skill archive after preparation. The published update
+document includes the installer and Skill package size, SHA-256, and source
+commit so AI clients can verify automatic updates before installation.
 
 Install and qualify the NSIS candidate under a restricted PATH. Confirm health,
 bundled-sidecar use, no Python child process, probe discovery without exposing
@@ -87,7 +96,7 @@ The publisher verifies clean `master`, version agreement, source commit, exact
 asset set, sizes, and hashes. It then:
 
 1. pushes `master` and the annotated version tag to GitHub and Gitee;
-2. creates or verifies both Releases and uploads the same four assets;
+2. creates or verifies both Releases and uploads the same five assets;
 3. anonymously downloads the Gitee installer and verifies size and SHA-256;
 4. publishes the single-file `updates/latest.json` branch to both hosts last.
 

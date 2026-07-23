@@ -28,6 +28,23 @@ description: |
 - MCP 未覆盖的：`project-init`、`dashboard`（Web 可视化）、`modbus pointmap detect/generate`、`vofa`/`superwatch` Web、`serve`/`gui` → 走 CLI
 - OpenAI/Codex 或无 MCP → 走 CLI（`python -m mklink`）
 
+## 版本检查与自动更新
+
+- 每个 AI 会话第一次实际使用 MKLink 能力时，在占用探针、串口或启动下载前，运行：
+  `python <skill-root>/scripts/skill_update.py check --json`。脚本默认缓存 24 小时，
+  网络不可用时不阻塞当前任务，也不要反复提示。
+- 当返回 `update_available: true` 时，主动告诉用户当前版本、最新版本和发布说明，
+  并询问是否现在更新。安全关键操作或已经开始的烧录/调试会话不得被更新检查打断。
+- 只有用户明确同意后才运行：
+  `python <skill-root>/scripts/skill_update.py install --yes --json`。该命令从公开
+  `updates/latest.json` 获取版本化桌面安装包和 Skill 包，逐项校验公开的大小与
+  SHA-256，关闭状态下覆盖安装桌面版，并更新本地 Skill。只更新 Skill 可加
+  `--skill-only`，只更新桌面版可加 `--app-only`。
+- Skill 更新完成后提醒用户重启当前 AI 客户端或开启新会话；当前会话已加载的
+  Skill 文本不会在运行中自动替换。由 Git 管理的开发工作区不会被自动覆盖。
+- 本机制从包含 `scripts/skill_update.py` 的版本开始生效；更旧的本地 Skill 需要
+  首次手动重装或由维护者协助升级一次。
+
 ## Agent 核心约束
 
 - **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用

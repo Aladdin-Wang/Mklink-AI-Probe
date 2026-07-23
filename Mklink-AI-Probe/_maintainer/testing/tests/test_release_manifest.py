@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -26,11 +27,21 @@ def release_inputs(tmp_path):
     signature = tmp_path / "input.exe.sig"
     nsis.write_bytes(b"exe")
     signature.write_text("signature", encoding="ascii")
-    return nsis, signature
+    skill = tmp_path / "skill.zip"
+    with zipfile.ZipFile(skill, "w") as archive:
+        root = "Mklink-AI-Probe-v0.1.0"
+        archive.writestr(f"{root}/pyproject.toml", '[project]\nversion = "0.1.0"\n')
+        archive.writestr(f"{root}/SKILL.md", "# Skill\n")
+        archive.writestr(
+            f"{root}/.claude-plugin/plugin.json",
+            json.dumps({"version": "0.1.0"}),
+        )
+        archive.writestr(f"{root}/scripts/skill_update.py", "# updater\n")
+    return nsis, signature, skill
 
 
 def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp_path):
-    nsis, signature = release_inputs(tmp_path)
+    nsis, signature, skill = release_inputs(tmp_path)
     output = tmp_path / "release"
 
     result = release_module.prepare_release(
@@ -39,11 +50,13 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
         output_dir=output,
         nsis=nsis,
         updater_signature=signature,
+        skill_archive=skill,
     )
 
     assert {asset["name"] for asset in result["assets"]} == {
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe.sig",
+        "Mklink-AI-Probe-v0.1.0-Skill.zip",
     }
     assert all(len(asset["sha256"]) == 64 for asset in result["assets"])
     assert all(set(asset) == {"name", "size", "sha256"} for asset in result["assets"])
@@ -58,7 +71,7 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
 
 
 def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
-    _nsis, signature = release_inputs(tmp_path)
+    _nsis, signature, skill = release_inputs(tmp_path)
     with pytest.raises(FileNotFoundError, match="release input does not exist"):
         release_module.prepare_release(
             version="0.1.0",
@@ -66,4 +79,31 @@ def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
             output_dir=tmp_path / "release",
             nsis=tmp_path / "missing.exe",
             updater_signature=signature,
+            skill_archive=skill,
+        )
+
+
+def test_prepare_release_rejects_nested_repository_skill_layout(
+    release_module, tmp_path,
+):
+    nsis, signature, _skill = release_inputs(tmp_path)
+    nested = tmp_path / "nested.zip"
+    with zipfile.ZipFile(nested, "w") as archive:
+        root = "Mklink-AI-Probe-v0.1.0/Mklink-AI-Probe"
+        archive.writestr(f"{root}/pyproject.toml", '[project]\nversion = "0.1.0"\n')
+        archive.writestr(f"{root}/SKILL.md", "# Skill\n")
+        archive.writestr(
+            f"{root}/.claude-plugin/plugin.json",
+            json.dumps({"version": "0.1.0"}),
+        )
+        archive.writestr(f"{root}/scripts/skill_update.py", "# updater\n")
+
+    with pytest.raises(ValueError, match="directly contain"):
+        release_module.prepare_release(
+            version="0.1.0",
+            source_commit="a" * 40,
+            output_dir=tmp_path / "release",
+            nsis=nsis,
+            updater_signature=signature,
+            skill_archive=nested,
         )

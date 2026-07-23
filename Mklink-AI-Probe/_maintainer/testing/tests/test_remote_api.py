@@ -382,6 +382,72 @@ def test_symbol_status_marks_changed_axf_stale(tmp_path):
     assert response.json()["stale"] is True
 
 
+def test_symbol_c_layout_uses_shared_superwatch_transaction(tmp_path):
+    from mklink.c_layout import parse_c_layout
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    app = create_app(auth_token=None, project_root=".")
+    definition = "typedef struct { float target; bool enabled; char pad[3]; } Controller;"
+    layout = parse_c_layout(definition, preferred_type="Controller")
+
+    def apply(variable, source, pack, *, device: object):
+        assert variable == "controller"
+        assert source == definition
+        assert pack == 4
+        device.symbol_catalog = device.symbol_catalog.with_c_layout(
+            "controller", 0x20000020, layout
+        )
+        return {
+            "layout": layout.to_dict(),
+            "rebind": {"preserved": [], "updated": [], "removed": []},
+        }
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager, "apply_c_definition", side_effect=apply
+    ) as apply_mock, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post("/api/symbols/c-layout", json={
+            "variable": " controller ",
+            "definition": definition,
+            "pack": 4,
+        })
+
+    assert response.status_code == 200
+    assert response.json()["layout"]["leaf_count"] == 5
+    assert response.json()["generation"] == 2
+    apply_mock.assert_called_once_with(
+        "controller", definition, 4, device=device
+    )
+
+
+def test_symbol_c_layout_reports_validation_failure_as_422(tmp_path):
+    from mklink.c_layout import CLayoutError
+    from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager,
+        "apply_c_definition",
+        side_effect=SuperWatchTransactionError(
+            "c_layout", CLayoutError("layout size mismatch")
+        ),
+    ), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post("/api/symbols/c-layout", json={
+            "variable": "controller",
+            "definition": "typedef struct { int bad; } Controller;",
+        })
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["phase"] == "c_layout"
+    assert response.json()["detail"]["message"] == "layout size mismatch"
+
+
 def test_superwatch_typed_write_route_passes_path_generation_and_value(tmp_path):
     from mklink.remote.dashboards import get_managers
 
@@ -450,7 +516,7 @@ def test_symbol_reparse_uses_superwatch_transaction_when_prepared(tmp_path):
 
     assert response.status_code == 200
     assert response.json() == summary
-    reparse.assert_called_once_with()
+    reparse.assert_called_once_with(device=device)
 
 
 def test_device_parse_axf_rebinds_prepared_superwatch_runtime(tmp_path):
@@ -482,7 +548,132 @@ def test_device_parse_axf_rebinds_prepared_superwatch_runtime(tmp_path):
     assert response.status_code == 200
     assert response.json()["variable_count"] == 8
     assert response.json()["rebind"] == summary
-    reparse.assert_called_once_with(str(next_axf))
+    reparse.assert_called_once_with(str(next_axf), device=device)
+
+
+def test_device_parse_axf_rebinds_stale_superwatch_device(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    current_device, _axf = _connected_symbol_device(tmp_path)
+    stale_root = tmp_path / "stale"
+    stale_root.mkdir()
+    stale_device, _stale_axf = _connected_symbol_device(stale_root)
+    next_axf = tmp_path / "next.axf"
+    next_axf.write_bytes(b"next")
+    manager = get_managers()["superwatch"]
+    manager._device = stale_device
+    manager._runtime = SimpleNamespace(
+        items=[],
+        symbol_catalog=stale_device.symbol_catalog,
+        svd_registers={},
+    )
+    app = create_app(auth_token=None, project_root=".")
+    summary = {"preserved": [], "updated": [], "removed": []}
+
+    def reparse(path, *, device):
+        assert device is current_device
+        manager._device = device
+        current_device.axf_status = {
+            "loaded": True,
+            "axf_path": str(next_axf),
+            "variable_count": 8,
+        }
+        return summary
+
+    with patch("mklink.connect", return_value=current_device), patch.object(
+        manager, "reparse_symbols", side_effect=reparse
+    ) as reparse_mock, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/parse-axf",
+            json={"axf": str(next_axf)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["axf_path"] == str(next_axf)
+    assert response.json()["variable_count"] == 8
+    assert manager._device is current_device
+    reparse_mock.assert_called_once_with(str(next_axf), device=current_device)
+
+
+def test_device_parse_axf_rejects_a_false_success_with_the_old_source(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, current_axf = _connected_symbol_device(tmp_path)
+    device.axf_status = {
+        "loaded": True,
+        "axf_path": str(current_axf),
+        "variable_count": 4,
+    }
+    next_axf = tmp_path / "next.axf"
+    next_axf.write_bytes(b"next")
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    manager._runtime = SimpleNamespace(
+        items=[],
+        symbol_catalog=device.symbol_catalog,
+        svd_registers={},
+    )
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), patch.object(
+        manager,
+        "reparse_symbols",
+        return_value={"preserved": [], "updated": [], "removed": []},
+    ), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/parse-axf",
+            json={"axf": str(next_axf)},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "symbol_source_mismatch",
+        "message": "Symbol parsing completed without activating the requested AXF",
+        "requested_axf": str(next_axf),
+        "active_axf": str(current_axf),
+    }
+
+
+def test_device_connect_refreshes_symbols_when_already_connected(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    next_axf = tmp_path / "next.axf"
+    next_axf.write_bytes(b"next")
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    manager._runtime = SimpleNamespace(
+        items=[],
+        symbol_catalog=device.symbol_catalog,
+        svd_registers={},
+    )
+    app = create_app(auth_token=None, project_root=".")
+
+    def reparse(path, *, device: object):
+        manager._device = device
+        device.axf_status = {
+            "loaded": True,
+            "axf_path": str(next_axf),
+            "variable_count": 8,
+        }
+        return {"preserved": [], "updated": [], "removed": []}
+
+    with patch("mklink.connect", return_value=device) as connect, patch.object(
+        manager, "reparse_symbols", side_effect=reparse
+    ) as reparse_mock, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/connect",
+            json={"axf": str(next_axf)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_connected"
+    assert response.json()["axf"]["axf_path"] == str(next_axf)
+    assert connect.call_count == 1
+    reparse_mock.assert_called_once_with(str(next_axf), device=device)
 
 
 def test_device_connect_forwards_explicit_elf_backend(tmp_path):
@@ -522,7 +713,7 @@ def test_device_parse_axf_forwards_explicit_elf_backend(tmp_path):
         )
 
     assert response.status_code == 200
-    reparse.assert_called_once_with(str(next_axf), "external")
+    reparse.assert_called_once_with(str(next_axf), "external", device=device)
 
 
 def test_health_reports_builtin_elf_capability():

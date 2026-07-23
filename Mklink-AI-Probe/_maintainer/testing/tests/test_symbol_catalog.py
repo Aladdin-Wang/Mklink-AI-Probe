@@ -13,6 +13,7 @@ from mklink.dwarf_parser import (
     DwarfVariable,
 )
 from mklink.device import Device
+from mklink.c_layout import CLayoutError
 from mklink.symbol_catalog import (
     SymbolCatalog,
     SymbolValueError,
@@ -170,7 +171,7 @@ def test_catalog_does_not_report_truncation_for_unsupported_tail_after_exact_lim
     assert catalog.truncated_roots == ()
 
 
-def test_catalog_skips_union_aliases_that_share_the_same_storage(tmp_path):
+def test_catalog_lists_union_aliases_and_marks_overlapping_storage(tmp_path):
     axf = tmp_path / "app.axf"
     axf.write_bytes(b"axf")
     info = DwarfInfo(base_types={1: ("uint32_t", 4)})
@@ -194,7 +195,91 @@ def test_catalog_skips_union_aliases_that_share_the_same_storage(tmp_path):
         info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
     )
 
+    assert [item.path for item in catalog.items] == ["alias.same_word", "alias.word"]
+    assert {item.address for item in catalog.items} == {0x20000020}
+    assert all(item.overlapping for item in catalog.items)
+
+
+def test_catalog_transparently_expands_anonymous_struct_and_union_members(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(base_types={1: ("uint32_t", 4), 2: ("float", 4)})
+    inner = DwarfStruct(
+        name="",
+        offset=51,
+        size=8,
+        members=[
+            DwarfMember("mileage", 0, 2, "float", 4),
+            DwarfMember("zero", 4, 1, "uint32_t", 4),
+        ],
+    )
+    union = DwarfStruct(
+        name="",
+        offset=52,
+        size=8,
+        members=[
+            DwarfMember("odo", 0, 1, "uint32_t", 4),
+            DwarfMember("", 0, 51, "anonymous struct", 8),
+        ],
+        kind="union",
+    )
+    outer = DwarfStruct(
+        name="DATASAVE_TYPEDEF",
+        offset=53,
+        size=8,
+        members=[DwarfMember("", 0, 52, "anonymous union", 8)],
+    )
+    info.records_by_offset = {51: inner, 52: union, 53: outer}
+    info.structs = {"DATASAVE_TYPEDEF": outer}
+    info.variables = {
+        "data_save": DwarfVariable(
+            "data_save", 100, 53, 0x20000648, 8, "DATASAVE_TYPEDEF",
+        ),
+    }
+
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+
+    assert [item.path for item in catalog.items] == [
+        "data_save.mileage", "data_save.odo", "data_save.zero",
+    ]
+    assert catalog.require("data_save.mileage", 1).address == 0x20000648
+    assert catalog.require("data_save.zero", 1).address == 0x2000064C
+    assert all(item.overlapping for item in catalog.items)
+
+
+def test_catalog_lists_unexpanded_aggregate_as_container(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    opaque = DwarfStruct(
+        name="Opaque",
+        offset=54,
+        size=4,
+        members=[DwarfMember("bits", 0, 1, "uint32_t", 4, bit_size=3)],
+    )
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)},
+        structs={"Opaque": opaque},
+        records_by_offset={54: opaque},
+        variables={
+            "opaque": DwarfVariable("opaque", 100, 54, 0x20000020, 4, "Opaque"),
+        },
+    )
+
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+
     assert catalog.items == ()
+    assert [item.to_dict() for item in catalog.containers] == [{
+        "path": "opaque",
+        "address": 0x20000020,
+        "type_name": "Opaque",
+        "size": 4,
+        "reason": "unsupported_layout",
+    }]
+    assert catalog.to_page(query="opaque")["containers"][0]["path"] == "opaque"
 
 
 def test_catalog_accepts_common_gcc_signed_integer_base_type_names(tmp_path):
@@ -370,3 +455,66 @@ def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
     assert device.axf_status["elf_backend"] == "builtin"
     assert device.axf_status["builtin_elf_available"] is True
     assert len(first.items) > 4
+
+
+def _opaque_layout_fixture() -> DwarfInfo:
+    opaque = DwarfStruct(
+        name="Opaque",
+        offset=60,
+        size=8,
+        members=[DwarfMember("bits", 0, 1, "uint32_t", 4, bit_size=3)],
+    )
+    return DwarfInfo(
+        base_types={1: ("uint32_t", 4)},
+        structs={"Opaque": opaque},
+        records_by_offset={60: opaque},
+        variables={
+            "opaque": DwarfVariable("opaque", 100, 60, 0x20000020, 8, "Opaque"),
+        },
+    )
+
+
+def test_device_applies_and_reuses_c_layout_for_the_same_axf(tmp_path, monkeypatch):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = _opaque_layout_fixture()
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    device = Device(axf=str(axf))
+    device._dwarf_info = info
+    device._symbol_catalog = catalog
+    definition = "typedef struct { uint32_t low; uint32_t high; } Opaque;"
+
+    applied, layout = device.apply_c_definition("opaque", definition)
+
+    assert layout.size == 8
+    assert [item.path for item in applied.items] == ["opaque.high", "opaque.low"]
+    assert all(item.source == "c_override" for item in applied.items)
+    monkeypatch.setattr("mklink.dwarf_parser.load_dwarf_info", lambda *_args, **_kwargs: info)
+    reparsed = device.reparse_axf_atomically()
+    assert [item.path for item in reparsed.items] == ["opaque.high", "opaque.low"]
+
+    axf.write_bytes(b"rebuilt-axf")
+    rebuilt = device.reparse_axf_atomically()
+    assert rebuilt.items == ()
+    assert [item.path for item in rebuilt.containers] == ["opaque"]
+
+
+def test_device_rejects_c_layout_whose_size_differs_from_axf(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = _opaque_layout_fixture()
+    device = Device(axf=str(axf))
+    device._dwarf_info = info
+    device._symbol_catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+
+    with pytest.raises(CLayoutError, match="does not match AXF variable size"):
+        device.apply_c_definition(
+            "opaque", "typedef struct { uint32_t only; } Opaque;"
+        )
+
+    assert device.symbol_catalog.items == ()
+    assert [item.path for item in device.symbol_catalog.containers] == ["opaque"]

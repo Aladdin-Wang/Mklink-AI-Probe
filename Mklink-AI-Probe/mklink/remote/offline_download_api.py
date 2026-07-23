@@ -323,7 +323,12 @@ def create_offline_download_router(
 
         owner = f"user:offline-download:detect:{uuid.uuid4().hex}"
         try:
-            resource_manager.acquire(ResourceGroup.MKLINK_BRIDGE, owner, preempt=False)
+            resource_manager.acquire(
+                ResourceGroup.MKLINK_BRIDGE,
+                owner,
+                preempt=False,
+                preempt_user_dashboard=True,
+            )
             return await asyncio.to_thread(
                 detect_probe_model,
                 port,
@@ -398,6 +403,7 @@ def create_offline_download_router(
                         [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
                         owner,
                         preempt=False,
+                        preempt_user_dashboard=True,
                     )
                     response = await asyncio.to_thread(
                         _send_trigger,
@@ -599,6 +605,7 @@ def create_offline_download_router(
                 [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
                 owner,
                 preempt=False,
+                preempt_user_dashboard=True,
             )
 
             response = await asyncio.to_thread(

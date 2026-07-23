@@ -52,6 +52,17 @@ def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dic
 
 logger = logging.getLogger(__name__)
 _RTT_DELIVERY_INTERVAL = 1.0 / 50.0
+SUPPORTED_RTT_ENCODINGS = ("utf-8", "gb2312", "gbk", "gb18030", "big5")
+
+
+def normalize_rtt_encoding(value: str) -> str:
+    encoding = str(value).strip().lower().replace("_", "-")
+    if encoding not in SUPPORTED_RTT_ENCODINGS:
+        raise ValueError(
+            f"Unsupported RTT encoding: {value}. "
+            f"Expected one of {', '.join(SUPPORTED_RTT_ENCODINGS)}"
+        )
+    return encoding
 
 
 def _positive_int(value: Any) -> int:
@@ -174,10 +185,10 @@ class AsyncBridge:
 
 
 class _RttLineAssembler:
-    """Incrementally decode UTF-8 and split LF/CRLF without losing tails."""
+    """Incrementally decode RTT text and split LF/CRLF without losing tails."""
 
-    def __init__(self):
-        self.reset()
+    def __init__(self, encoding: str = "utf-8"):
+        self.reset(encoding)
 
     def feed(self, chunk: bytes, *, final: bool = False) -> list[str]:
         if not isinstance(chunk, (bytes, bytearray, memoryview)):
@@ -197,8 +208,10 @@ class _RttLineAssembler:
             self.reset()
         return lines
 
-    def reset(self) -> None:
-        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    def reset(self, encoding: str | None = None) -> None:
+        if encoding is not None:
+            self.encoding = normalize_rtt_encoding(encoding)
+        self._decoder = codecs.getincrementaldecoder(self.encoding)(errors="replace")
         self._text = ""
 
 class RttStreamManager:
@@ -229,6 +242,7 @@ class RttStreamManager:
         self._raw_batch_lines = max(1, int(raw_batch_lines))
         self._waveform_batch_samples = max(1, int(waveform_batch_samples))
         self._line_assembler = _RttLineAssembler()
+        self._decode_lock = threading.RLock()
         self._pending_raw: list[RttLine] = []
         self._pending_numeric: list[tuple[float, ...]] = []
         self._numeric_channels: tuple[str, ...] = ()
@@ -267,7 +281,9 @@ class RttStreamManager:
             self._active_generation = None
 
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
-        for raw_line in self._line_assembler.feed(chunk, final=final):
+        with self._decode_lock:
+            lines = self._line_assembler.feed(chunk, final=final)
+        for raw_line in lines:
             line = raw_line.strip()
             timestamp_ns = time.time_ns()
             if line and not self._parser_auto_detect_done:
@@ -347,7 +363,7 @@ class RttStreamManager:
 
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 1024,
-              duration: float = 86400) -> None:
+              duration: float = 86400, encoding: str = "utf-8") -> None:
         with self._lifecycle_lock:
             self._start_locked(
                 device,
@@ -356,11 +372,12 @@ class RttStreamManager:
                 mode=mode,
                 search_size=search_size,
                 duration=duration,
+                encoding=encoding,
             )
 
     def _start_locked(self, device, *, addr: str | None = None, channel: int = 0,
                       mode: int = 0, search_size: int = 1024,
-                      duration: float = 86400) -> None:
+                      duration: float = 86400, encoding: str = "utf-8") -> None:
         """Start RTT polling in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             if self.running:
@@ -377,7 +394,8 @@ class RttStreamManager:
         self._history.clear()
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
         self._error = None
-        self._line_assembler.reset()
+        with self._decode_lock:
+            self._line_assembler.reset(encoding)
         self._pending_raw.clear()
         self._pending_numeric.clear()
         self._numeric_channels = ()
@@ -421,7 +439,11 @@ class RttStreamManager:
                         continue
 
                     try:
-                        text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
+                        read_bytes = getattr(device, "rtt_read_bytes", None)
+                        if callable(read_bytes):
+                            text = read_bytes(duration=_RTT_DELIVERY_INTERVAL)
+                        else:
+                            text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
                     except Exception as exc:
                         if _device_in_error_state(device):
                             terminal_failure = exc
@@ -501,6 +523,12 @@ class RttStreamManager:
     def resume(self) -> None:
         self._paused.set()
 
+    def set_encoding(self, encoding: str) -> str:
+        normalized = normalize_rtt_encoding(encoding)
+        with self._decode_lock:
+            self._line_assembler.reset(normalized)
+        return normalized
+
     def get_history(self) -> list[dict]:
         return list(self._history)
 
@@ -549,6 +577,7 @@ class RttStreamManager:
             "error": self._error,
             "history_size": len(self._history),
             "numeric_channels": list(self._numeric_channels),
+            "encoding": self._line_assembler.encoding,
             "down_buffers": down_buffers,
             "control_block_addr": control_block_addr,
             "down_buffer_source": down_buffer_source,
@@ -1585,15 +1614,67 @@ class SuperWatchStreamManager:
         self,
         axf_path: str | None = None,
         elf_backend: str | None = None,
+        *,
+        device=None,
+    ) -> dict:
+        target_device = device or self._device
+        if target_device is None:
+            raise RuntimeError("SuperWatch device is unavailable")
+
+        def load_catalog():
+            if elf_backend is None:
+                return target_device.reparse_axf_atomically(axf_path)
+            return target_device.reparse_axf_atomically(
+                axf_path, elf_backend=elf_backend
+            )
+
+        return self._replace_symbol_catalog(
+            target_device,
+            load_catalog,
+            failure_phase="reparse",
+        )
+
+    def apply_c_definition(
+        self,
+        variable_name: str,
+        definition: str,
+        pack: int | None = None,
+        *,
+        device=None,
+    ) -> dict:
+        target_device = device or self._device
+        if target_device is None:
+            raise RuntimeError("SuperWatch device is unavailable")
+        applied: dict = {}
+
+        def load_catalog():
+            new_catalog, layout = target_device.apply_c_definition(
+                variable_name,
+                definition,
+                pack,
+            )
+            applied["layout"] = layout.to_dict()
+            return new_catalog
+
+        rebind = self._replace_symbol_catalog(
+            target_device,
+            load_catalog,
+            failure_phase="c_layout",
+        )
+        return {"layout": applied["layout"], "rebind": rebind}
+
+    def _replace_symbol_catalog(
+        self,
+        target_device,
+        load_catalog,
+        *,
+        failure_phase: str,
     ) -> dict:
         from mklink.superwatch import SuperWatchRuntime
         from mklink.symbol_catalog import RebindSummary, rebind_paths
 
         with self._operation_lock:
-            device = self._device
-            if device is None:
-                raise RuntimeError("SuperWatch device is unavailable")
-            old_catalog = getattr(device, "symbol_catalog", None)
+            old_catalog = getattr(target_device, "symbol_catalog", None)
             if old_catalog is None:
                 raise RuntimeError("No AXF symbol catalog is loaded")
             old_runtime = self._runtime
@@ -1616,23 +1697,19 @@ class SuperWatchStreamManager:
                         self.stop()
                     except Exception as exc:
                         raise SuperWatchTransactionError("stop", exc) from exc
+                self.prepare(target_device)
                 try:
-                    if elf_backend is None:
-                        new_catalog = device.reparse_axf_atomically(axf_path)
-                    else:
-                        new_catalog = device.reparse_axf_atomically(
-                            axf_path, elf_backend=elf_backend
-                        )
+                    new_catalog = load_catalog()
                 except Exception as exc:
-                    raise SuperWatchTransactionError("reparse", exc) from exc
+                    raise SuperWatchTransactionError(failure_phase, exc) from exc
                 try:
                     summary = rebind_paths(old_catalog, new_catalog, symbol_paths)
                     new_runtime = SuperWatchRuntime(
                         items=register_items,
-                        dwarf_info=getattr(device, "_dwarf_info", None),
+                        dwarf_info=getattr(target_device, "_dwarf_info", None),
                         symbol_catalog=new_catalog,
                         svd_registers=getattr(old_runtime, "svd_registers", {}),
-                        port=getattr(device, "_port", None),
+                        port=getattr(target_device, "_port", None),
                         read_lock=self._read_lock,
                     )
                     rebound_removed = list(summary.removed)
@@ -1658,7 +1735,7 @@ class SuperWatchStreamManager:
             finally:
                 if was_running:
                     try:
-                        self.start(device)
+                        self.start(target_device)
                         if not was_collecting:
                             self.pause()
                     except Exception as exc:

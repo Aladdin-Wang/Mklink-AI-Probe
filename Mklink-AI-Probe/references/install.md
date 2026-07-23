@@ -52,6 +52,22 @@ pip install -e ".[mcp]"
 > 仅使用 CLI、不用 MCP 的用户：跳过 `.[mcp]`，`pip install -e .` 即可。
 > `pyelftools` 已作为正式依赖安装；标准桌面安装包也会把它打入 sidecar。
 
+## Skill 与桌面版自动更新
+
+从 v0.1.3 开始，AI 每个会话第一次使用 MKLink 能力时会执行一次带 24 小时
+缓存的版本检查。检查不会占用探针，离线失败不会阻塞调试。发现新版本后，AI
+会先说明版本和发布说明，只有得到用户明确同意才自动更新：
+
+```powershell
+python scripts/skill_update.py check --json
+python scripts/skill_update.py install --yes --json
+```
+
+更新器从公开 `updates/latest.json` 读取桌面安装包和 Skill ZIP，对下载结果校验
+大小与 SHA-256 后再安装。桌面程序和本地服务必须先关闭；Skill 更新后需要
+重启 AI 客户端或开启新会话。Git checkout 会被识别并拒绝覆盖，应继续通过 Git
+维护。早于 v0.1.3 的复制式 Skill 没有更新检查入口，需要先手动升级一次。
+
 
 ## ELF/AXF 解析后端
 

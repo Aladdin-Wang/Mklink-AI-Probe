@@ -7,6 +7,7 @@ const firstPage = {
   fingerprint: { size: 100, mtime_ns: 200 },
   stale: false,
   truncated_roots: ['controller'],
+  containers: [],
   total: 2,
   items: [
     {
@@ -193,6 +194,57 @@ describe('useSymbolCatalog', () => {
     expect(symbols.generation.value).toBe(2)
     expect(symbols.items.value).toHaveLength(1)
     expect(symbols.items.value[0].address).toBe(0x20000040)
+  })
+
+  it('applies a C layout and publishes the expanded catalog', async () => {
+    const unresolvedPage = {
+      ...firstPage,
+      total: 0,
+      items: [],
+      containers: [{
+        path: 'data_save', address: 0x20000648, type_name: 'DATASAVE_TYPEDEF',
+        size: 16, reason: 'unsupported_layout',
+      }],
+    }
+    const expandedPage = {
+      ...firstPage,
+      generation: 2,
+      total: 1,
+      items: [{ ...firstPage.items[1], path: 'data_save.odo', address: 0x20000648 }],
+      containers: [],
+    }
+    const result = {
+      layout: { type_name: 'DATASAVE_TYPEDEF', size: 16, alignment: 8, pack: null, leaf_count: 1 },
+      rebind: { preserved: [], updated: [], removed: [] },
+      generation: 2,
+      axf_path: firstPage.axf_path,
+      total: 1,
+      container_count: 0,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(unresolvedPage))
+      .mockResolvedValueOnce(jsonResponse(result))
+      .mockResolvedValueOnce(jsonResponse(expandedPage))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    await symbols.ensureLoaded()
+    await expect(symbols.applyCLayout(
+      'data_save',
+      'typedef struct { uint64_t odo; } DATASAVE_TYPEDEF;',
+      null,
+    )).resolves.toEqual(result)
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/symbols/c-layout', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        variable: 'data_save',
+        definition: 'typedef struct { uint64_t odo; } DATASAVE_TYPEDEF;',
+        pack: null,
+      }),
+    }))
+    expect(symbols.items.value[0].path).toBe('data_save.odo')
+    expect(symbols.containers.value).toEqual([])
   })
 
   it('keeps the previous catalog when reparse fails', async () => {

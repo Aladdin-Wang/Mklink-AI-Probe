@@ -4,6 +4,7 @@ export const MAX_SEND_HISTORY = 20
 
 export type RttTransmitMode = 'text' | 'hex'
 export type RttLineEnding = '' | '\r' | '\n' | '\r\n'
+export type RttEncoding = 'utf-8' | 'gb2312' | 'gbk' | 'gb18030' | 'big5'
 
 export interface RttSendHistoryEntry {
   text: string
@@ -17,6 +18,7 @@ export interface DesktopSettings {
   symbolPath: string
   mapPath: string
   rttAddress: string
+  rttEncoding: RttEncoding
   transmitMode: RttTransmitMode
   lineEnding: RttLineEnding
   sendHistory: RttSendHistoryEntry[]
@@ -37,12 +39,25 @@ export function isMapFilePath(path: string): boolean {
   return /\.map$/i.test(path.trim())
 }
 
+export function isSameFileSourcePath(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (!left?.trim() || !right?.trim()) return false
+  const normalize = (value: string) => {
+    const path = value.trim().replace(/\\/g, '/')
+    return /^[a-z]:\//i.test(path) ? path.toLowerCase() : path
+  }
+  return normalize(left) === normalize(right)
+}
+
 function defaults(): DesktopSettings {
   return {
     version: DESKTOP_SETTINGS_VERSION,
     symbolPath: '',
     mapPath: '',
     rttAddress: '',
+    rttEncoding: 'utf-8',
     transmitMode: 'text',
     lineEnding: '',
     sendHistory: [],
@@ -63,6 +78,11 @@ function isLineEnding(value: unknown): value is RttLineEnding {
 
 function isRttAddress(value: unknown): value is string {
   return value === '' || (typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value))
+}
+
+function isRttEncoding(value: unknown): value is RttEncoding {
+  return value === 'utf-8' || value === 'gb2312' || value === 'gbk'
+    || value === 'gb18030' || value === 'big5'
 }
 
 function parseHistoryEntry(value: unknown): RttSendHistoryEntry | null {
@@ -95,6 +115,7 @@ function normalize(value: unknown): DesktopSettings {
     symbolPath: typeof value.symbolPath === 'string' ? value.symbolPath : '',
     mapPath: typeof value.mapPath === 'string' ? value.mapPath : '',
     rttAddress: isRttAddress(value.rttAddress) ? value.rttAddress : '',
+    rttEncoding: isRttEncoding(value.rttEncoding) ? value.rttEncoding : 'utf-8',
     transmitMode: isTransmitMode(value.transmitMode) ? value.transmitMode : 'text',
     lineEnding: isLineEnding(value.lineEnding) ? value.lineEnding : '',
     sendHistory: history,

@@ -65,12 +65,22 @@ class ResourceManager:
         owner: str,
         ttl: float | None = None,
         preempt: bool = False,
+        preempt_user_dashboard: bool = False,
     ) -> ResourceLease:
-        """获取或刷新资源租约，必要时由用户抢占 AI。"""
+        """获取或刷新资源租约，按显式策略抢占 AI 或用户 Dashboard。"""
         with self._lock:
-            lease, preempted = self._acquire_locked(resource, owner, ttl, preempt)
+            lease, preempted = self._acquire_locked(
+                resource, owner, ttl, preempt, preempt_user_dashboard,
+            )
         if preempted is not None:
-            self._notify_preempt(preempted, owner)
+            try:
+                self._notify_preempt(preempted, owner)
+            except Exception:
+                with self._lock:
+                    current = self._leases.get(resource)
+                    if current is lease:
+                        self._leases[resource] = preempted
+                raise
         return lease
 
     def acquire_many(
@@ -79,6 +89,7 @@ class ResourceManager:
         owner: str,
         ttl: float | None = None,
         preempt: bool = False,
+        preempt_user_dashboard: bool = False,
     ) -> list[ResourceLease]:
         """Acquire all resources atomically and preserve prior owner leases."""
         unique_resources = list(dict.fromkeys(resources))
@@ -91,7 +102,7 @@ class ResourceManager:
                 leases = []
                 for resource in unique_resources:
                     lease, displaced = self._acquire_locked(
-                        resource, owner, ttl, preempt
+                        resource, owner, ttl, preempt, preempt_user_dashboard,
                     )
                     leases.append(lease)
                     if displaced is not None:
@@ -103,8 +114,23 @@ class ResourceManager:
                     else:
                         self._leases[resource] = old_lease
                 raise
-        for displaced in preempted:
-            self._notify_preempt(displaced, owner)
+        notified_owners: set[str] = set()
+        try:
+            for displaced in preempted:
+                if displaced.owner in notified_owners:
+                    continue
+                self._notify_preempt(displaced, owner)
+                notified_owners.add(displaced.owner)
+        except Exception:
+            with self._lock:
+                for resource, old_lease in previous.items():
+                    current = self._leases.get(resource)
+                    if current is None or current.owner == owner:
+                        if old_lease is None:
+                            self._leases.pop(resource, None)
+                        else:
+                            self._leases[resource] = old_lease
+            raise
         return leases
 
     def _acquire_locked(
@@ -113,6 +139,7 @@ class ResourceManager:
         owner: str,
         ttl: float | None,
         preempt: bool,
+        preempt_user_dashboard: bool,
     ) -> tuple[ResourceLease, ResourceLease | None]:
         existing = self._leases.get(resource)
         if existing and existing.is_expired:
@@ -125,6 +152,15 @@ class ResourceManager:
             return lease, None
 
         if preempt and owner.startswith("user:") and existing.is_ai:
+            lease = self._make_lease(resource, owner, ttl)
+            self._leases[resource] = lease
+            return lease, existing
+
+        if (
+            preempt_user_dashboard
+            and owner.startswith("user:")
+            and existing.owner.startswith("user:dashboard:")
+        ):
             lease = self._make_lease(resource, owner, ttl)
             self._leases[resource] = lease
             return lease, existing
@@ -188,7 +224,4 @@ class ResourceManager:
         with self._lock:
             callbacks = list(self._on_preempt)
         for callback in callbacks:
-            try:
-                callback(lease, new_owner)
-            except Exception:
-                pass
+            callback(lease, new_owner)

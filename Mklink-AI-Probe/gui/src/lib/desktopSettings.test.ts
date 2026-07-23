@@ -3,6 +3,7 @@ import {
   DESKTOP_SETTINGS_STORAGE_KEY,
   loadDesktopSettings,
   isMapFilePath,
+  isSameFileSourcePath,
   isSymbolFilePath,
   recordSuccessfulSend,
   saveDesktopSettings,
@@ -27,6 +28,7 @@ function settings(overrides: Partial<DesktopSettings> = {}): DesktopSettings {
     symbolPath: '',
     mapPath: '',
     rttAddress: '',
+    rttEncoding: 'utf-8',
     transmitMode: 'text',
     lineEnding: '',
     sendHistory: [],
@@ -43,6 +45,12 @@ describe('desktop settings', () => {
     expect(isSymbolFilePath('')).toBe(false)
     expect(isMapFilePath(' C:\\firmware\\app.map ')).toBe(true)
     expect(isMapFilePath('app.axf')).toBe(false)
+  })
+
+  it('compares Windows file sources case-insensitively without weakening POSIX paths', () => {
+    expect(isSameFileSourcePath('C:\\Build\\App.axf', 'c:/build/app.axf')).toBe(true)
+    expect(isSameFileSourcePath('/tmp/App.axf', '/tmp/app.axf')).toBe(false)
+    expect(isSameFileSourcePath('', 'C:\\build\\app.axf')).toBe(false)
   })
 
   it('returns fresh defaults when no saved settings exist', () => {
@@ -69,6 +77,7 @@ describe('desktop settings', () => {
       symbolPath: 'C:\\firmware\\app.axf',
       mapPath: 'C:\\firmware\\app.map',
       rttAddress: '0x20001A40',
+      rttEncoding: 'gb18030',
       transmitMode: 'hex',
       lineEnding: '\r\n',
       sendHistory: [{ text: 'AA 55', mode: 'hex', lineEnding: '', timestamp: 10 }],
@@ -84,6 +93,7 @@ describe('desktop settings', () => {
       symbolPath: 'C:\\firmware\\app.axf',
       mapPath: 'C:\\firmware\\app.map',
       rttAddress: '0x20001A40',
+      rttEncoding: 'gb18030',
       transmitMode: 'hex',
       lineEnding: '\r\n',
       sendHistory: [{ text: 'AA 55', mode: 'hex', lineEnding: '', timestamp: 10 }],
@@ -97,6 +107,7 @@ describe('desktop settings', () => {
       symbolPath: 42,
       mapPath: 'valid.map',
       rttAddress: '20001A40',
+      rttEncoding: 'shift-jis',
       transmitMode: 'binary',
       lineEnding: '\r\r',
       sendHistory: [

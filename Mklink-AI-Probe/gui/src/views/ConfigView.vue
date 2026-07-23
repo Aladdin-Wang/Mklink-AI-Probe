@@ -6,13 +6,14 @@ import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
 import { useSymbolCatalog } from '../composables/useSymbolCatalog'
 import {
+  isSameFileSourcePath,
   isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
 } from '../lib/desktopSettings'
 import { pickMapFile, pickSymbolFile, type PickedFile } from '../lib/filePicker'
-import type { FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
+import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
 import FirmwareUpdateModal from '../components/config/FirmwareUpdateModal.vue'
@@ -190,11 +191,13 @@ async function parseSymbols() {
   if (!deviceStatus.value.connected || !isSymbolFilePath(settings.value.symbolPath)) return
   parsingSymbols.value = true
   try {
-    const result = await parseAxf(settings.value.symbolPath.trim()) as {
-      loaded?: boolean
-      variable_count?: number
-    }
+    const requestedPath = settings.value.symbolPath.trim()
+    const result = await parseAxf(requestedPath) as AxlStatus
     if (result.loaded) {
+      if (!isSameFileSourcePath(requestedPath, result.axf_path)) {
+        toast.error(`AXF 解析失败: 后端仍在使用 ${result.axf_path || '未知文件'}`)
+        return
+      }
       try {
         await symbolCatalog.ensureLoaded(true)
       } catch (error: any) {

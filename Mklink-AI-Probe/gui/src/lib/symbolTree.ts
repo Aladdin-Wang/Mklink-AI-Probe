@@ -1,10 +1,11 @@
-import type { SymbolDescriptor } from '../types/mklink'
+import type { SymbolContainerDescriptor, SymbolDescriptor } from '../types/mklink'
 
 export interface SymbolTreeNode {
   key: string
   label: string
-  kind: 'branch' | 'leaf'
+  kind: 'branch' | 'leaf' | 'container'
   descriptor: SymbolDescriptor | null
+  container: SymbolContainerDescriptor | null
   children: SymbolTreeNode[]
   leafCount: number
 }
@@ -37,12 +38,18 @@ function appendPath(parent: string, token: string): string {
   return token.startsWith('[') ? `${parent}${token}` : `${parent}.${token}`
 }
 
-function createNode(key: string, label: string, descriptor: SymbolDescriptor | null): MutableSymbolTreeNode {
+function createNode(
+  key: string,
+  label: string,
+  descriptor: SymbolDescriptor | null,
+  container: SymbolContainerDescriptor | null = null,
+): MutableSymbolTreeNode {
   return {
     key,
     label,
-    kind: descriptor ? 'leaf' : 'branch',
+    kind: descriptor ? 'leaf' : container ? 'container' : 'branch',
     descriptor,
+    container,
     children: [],
     childIndex: new Map(),
     leafCount: descriptor ? 1 : 0,
@@ -56,6 +63,7 @@ function finalizeNode(node: MutableSymbolTreeNode): SymbolTreeNode {
     label: node.label,
     kind: node.kind,
     descriptor: node.descriptor,
+    container: node.container,
     children,
     leafCount: node.kind === 'leaf'
       ? 1
@@ -63,7 +71,10 @@ function finalizeNode(node: MutableSymbolTreeNode): SymbolTreeNode {
   }
 }
 
-export function buildSymbolTree(items: readonly SymbolDescriptor[]): SymbolTreeNode[] {
+export function buildSymbolTree(
+  items: readonly SymbolDescriptor[],
+  containers: readonly SymbolContainerDescriptor[] = [],
+): SymbolTreeNode[] {
   const roots: MutableSymbolTreeNode[] = []
   const rootIndex = new Map<string, MutableSymbolTreeNode>()
 
@@ -81,6 +92,29 @@ export function buildSymbolTree(items: readonly SymbolDescriptor[]): SymbolTreeN
         node = createNode(key, token, isLeaf ? descriptor : null)
         siblingIndex.set(key, node)
         siblings.push(node)
+      }
+      parentKey = key
+      siblings = node.children
+      siblingIndex = node.childIndex
+    })
+  }
+
+  for (const container of containers) {
+    const tokens = pathTokens(container.path)
+    let parentKey = ''
+    let siblings = roots
+    let siblingIndex = rootIndex
+    tokens.forEach((token, index) => {
+      const key = appendPath(parentKey, token)
+      const isContainer = index === tokens.length - 1
+      let node = siblingIndex.get(key)
+      if (!node) {
+        node = createNode(key, token, null, isContainer ? container : null)
+        siblingIndex.set(key, node)
+        siblings.push(node)
+      } else if (isContainer && node.kind === 'branch' && node.children.length === 0) {
+        node.kind = 'container'
+        node.container = container
       }
       parentKey = key
       siblings = node.children
@@ -113,6 +147,14 @@ export function visibleSymbolRows(
           || descriptor.type_name.toLocaleLowerCase().includes(query)),
       )
       result = selectedMatch && queryMatch
+    } else if (node.kind === 'container') {
+      const container = node.container
+      result = !options.selectedOnly && Boolean(
+        container
+        && (!query
+          || container.path.toLocaleLowerCase().includes(query)
+          || container.type_name.toLocaleLowerCase().includes(query)),
+      )
     } else {
       result = node.children.some(isVisible)
     }
@@ -125,7 +167,9 @@ export function visibleSymbolRows(
     if (cached !== undefined) return cached
     const count = node.kind === 'leaf'
       ? Number(options.selected.has(node.key))
-      : node.children.reduce((total, child) => total + selectedLeafCount(child), 0)
+      : node.kind === 'branch'
+        ? node.children.reduce((total, child) => total + selectedLeafCount(child), 0)
+        : 0
     selectedCounts.set(node.key, count)
     return count
   }

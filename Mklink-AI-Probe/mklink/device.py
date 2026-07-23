@@ -202,6 +202,7 @@ class Device:
         self._systemview_parser = None
         self._dwarf_info = None
         self._symbol_catalog = None
+        self._symbol_layout_overrides: dict[tuple[str, int, int], dict[str, tuple[str, int | None]]] = {}
         self._symbol_lock = threading.RLock()
         self._axf_error = None  # reason ELF/DWARF loading was skipped
         self._connected = False
@@ -356,6 +357,22 @@ class Device:
             generation=generation,
             ram_ranges=((_SRAM_START, _SRAM_END),),
         )
+        override_key = (
+            str(Path(candidate).resolve()),
+            fingerprint.size,
+            fingerprint.mtime_ns,
+        )
+        for variable_name, (definition, pack) in self._symbol_layout_overrides.get(
+            override_key, {}
+        ).items():
+            catalog, _layout = self._catalog_with_c_definition(
+                info,
+                catalog,
+                variable_name,
+                definition,
+                pack,
+                generation=generation,
+            )
         if catalog.fingerprint != fingerprint:
             raise DeviceError("AXF changed while symbols were being parsed")
 
@@ -367,6 +384,79 @@ class Device:
             self._elf_backend = effective_backend
             self._axf_error = None
         return catalog
+
+    @staticmethod
+    def _catalog_with_c_definition(
+        info,
+        catalog,
+        variable_name: str,
+        definition: str,
+        pack: int | None,
+        *,
+        generation: int | None = None,
+    ):
+        from mklink.c_layout import CLayoutError, parse_c_layout
+
+        variable = info.variables.get(variable_name)
+        if variable is None or variable.address is None:
+            raise CLayoutError(
+                f"variable '{variable_name}' was not found or has no fixed address"
+            )
+        if variable.size <= 0:
+            raise CLayoutError(f"variable '{variable_name}' has no known storage size")
+        layout = parse_c_layout(
+            definition,
+            preferred_type=(
+                variable.type_name
+                if re.fullmatch(r"[A-Za-z_]\w*", variable.type_name or "")
+                else None
+            ),
+            pack=pack,
+        )
+        if layout.size != variable.size:
+            raise CLayoutError(
+                f"C layout size {layout.size} does not match AXF variable size "
+                f"{variable.size} for '{variable_name}'"
+            )
+        return (
+            catalog.with_c_layout(
+                variable_name,
+                int(variable.address),
+                layout,
+                generation=generation,
+            ),
+            layout,
+        )
+
+    def apply_c_definition(
+        self,
+        variable_name: str,
+        definition: str,
+        pack: int | None = None,
+    ):
+        """Apply a bounded C aggregate layout to the active symbol catalog."""
+        with self._symbol_lock:
+            info = self._dwarf_info
+            catalog = self._symbol_catalog
+            if info is None or catalog is None:
+                raise DeviceError("No AXF symbol catalog is loaded")
+            new_catalog, layout = self._catalog_with_c_definition(
+                info,
+                catalog,
+                variable_name,
+                definition,
+                pack,
+            )
+            override_key = (
+                str(Path(catalog.axf_path).resolve()),
+                catalog.fingerprint.size,
+                catalog.fingerprint.mtime_ns,
+            )
+            overrides = dict(self._symbol_layout_overrides.get(override_key, {}))
+            overrides[variable_name] = (definition, pack)
+            self._symbol_layout_overrides[override_key] = overrides
+            self._symbol_catalog = new_catalog
+            return new_catalog, layout
 
     def parse_axf(
         self,
@@ -423,6 +513,7 @@ class Device:
             out.update({
                 "catalog_generation": catalog.generation,
                 "catalog_count": len(catalog.items),
+                "catalog_container_count": len(catalog.containers),
                 "catalog_stale": catalog.is_stale(),
                 "parsed_at": catalog.parsed_at,
             })
@@ -1012,6 +1103,12 @@ class Device:
         if not self._rtt_session or not self._rtt_session._running:
             raise DeviceError("RTT not started. Call rtt_start() first.")
         return self._rtt_session.read_output(duration=duration)
+
+    def rtt_read_bytes(self, duration: float = 10.0) -> bytes:
+        self._require_connected()
+        if not self._rtt_session or not self._rtt_session._running:
+            raise DeviceError("RTT not started. Call rtt_start() first.")
+        return self._rtt_session.read_output_bytes(duration=duration)
 
     def rtt_write(self, data: bytes | str) -> bool:
         self._require_connected()

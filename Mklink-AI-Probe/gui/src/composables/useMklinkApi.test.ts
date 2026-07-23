@@ -53,6 +53,32 @@ describe('RTT API contracts', () => {
     }))
   })
 
+  it('switches the shared RTT decoder encoding', async () => {
+    const api = useMklinkApi()
+    await api.setRttEncoding('gb18030')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/dash/rtt/encoding', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ encoding: 'gb18030' }),
+    }))
+  })
+
+  it('surfaces structured backend symbol-source errors', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      statusText: 'Conflict',
+      json: async () => ({
+        detail: {
+          code: 'symbol_source_mismatch',
+          message: 'requested AXF was not activated',
+        },
+      }),
+    })
+
+    await expect(useMklinkApi().parseAxf('C:\\firmware\\next.axf'))
+      .rejects.toThrow('requested AXF was not activated')
+  })
+
   it('uploads a browser-selected symbol file as multipart data', async () => {
     const api = useMklinkApi()
     const file = new File(['ELF'], 'firmware.axf', { type: 'application/octet-stream' })

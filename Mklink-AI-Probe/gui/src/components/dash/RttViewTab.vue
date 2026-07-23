@@ -21,6 +21,19 @@
           :device-connected="deviceConnected && !searching"
           @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
         />
+        <label class="encoding-control" for="rtt-encoding">
+          <span>编码</span>
+          <select
+            id="rtt-encoding" v-model="rttEncoding" data-testid="rtt-encoding"
+            :disabled="starting || stopping" @change="onEncodingChange"
+          >
+            <option value="utf-8">UTF-8</option>
+            <option value="gb2312">GB2312</option>
+            <option value="gbk">GBK</option>
+            <option value="gb18030">GB18030</option>
+            <option value="big5">Big5</option>
+          </select>
+        </label>
         <span class="line-count">{{ retainedCount }} 行</span>
         <span class="stream-health">
           buffer {{ binary.telemetry.value?.bufferedSamples ?? 0 }} ·
@@ -66,6 +79,7 @@ import {
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
+  type RttEncoding,
 } from '../../lib/desktopSettings'
 import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import ControlToolbar from './ControlToolbar.vue'
@@ -75,10 +89,11 @@ import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
 const binary = useBinaryStream('rtt', { capacity: 200_000, channelCount: 1 })
-const { findRtt, writeRtt } = useMklinkApi()
+const { findRtt, writeRtt, setRttEncoding } = useMklinkApi()
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
 const rttAddress = ref(settings.value.rttAddress)
+const rttEncoding = ref<RttEncoding>(settings.value.rttEncoding)
 const addressError = ref('')
 const addressSource = ref('')
 const searching = ref(false)
@@ -188,6 +203,18 @@ async function searchRttAddress(): Promise<void> {
 
 async function sendRtt(payload: Uint8Array): Promise<void> {
   await writeRtt(payload)
+}
+
+async function onEncodingChange(): Promise<void> {
+  persistSettings({ ...settings.value, rttEncoding: rttEncoding.value })
+  if (!effectiveRunning.value) return
+  try {
+    const result = await setRttEncoding(rttEncoding.value)
+    rttEncoding.value = result.encoding
+    runtimeError.value = null
+  } catch (caught) {
+    runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+  }
 }
 
 const scheduler = new RenderScheduler(() => {
@@ -514,6 +541,16 @@ async function refreshStatus(): Promise<Record<string, any> | null> {
       const status = await response.json()
       statusKnown.value = true
       statusRunning.value = status.running === true
+      if (statusRunning.value && typeof status.encoding === 'string') {
+        const encoding = status.encoding as RttEncoding
+        if (
+          ['utf-8', 'gb2312', 'gbk', 'gb18030', 'big5'].includes(encoding)
+          && rttEncoding.value !== encoding
+        ) {
+          rttEncoding.value = encoding
+          persistSettings({ ...settings.value, rttEncoding: encoding })
+        }
+      }
       downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       const channels = Array.isArray(status.numeric_channels)
         ? status.numeric_channels.map((name: unknown) => String(name))
@@ -596,6 +633,7 @@ async function onStart(): Promise<void> {
       addr: address,
       mode: 0,
       search_size: RTT_SEARCH_SIZE,
+      encoding: rttEncoding.value,
     })
     if (!started || disposed) return
     attachBinary()
@@ -665,6 +703,8 @@ onUnmounted(() => {
 .address-error { min-width: 0; color: var(--danger, #dc2626); font-size: 12px; overflow-wrap: anywhere; }
 .address-source { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .rtt-view-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.encoding-control { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.encoding-control select { height: 26px; padding: 0 24px 0 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
 .line-count, .stream-health { color: var(--muted); font-size: 12px; }
 .btn-clear { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 2px 8px; }
 .btn-chart-toggle { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }

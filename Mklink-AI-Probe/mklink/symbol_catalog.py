@@ -53,6 +53,8 @@ class SymbolDescriptor:
     enum_values: dict[str, int] = field(default_factory=dict)
     enum_signed: bool = False
     parent_path: str | None = None
+    overlapping: bool = False
+    source: str = "dwarf"
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +67,26 @@ class SymbolDescriptor:
             "enum_values": dict(self.enum_values),
             "enum_signed": self.enum_signed,
             "parent_path": self.parent_path,
+            "overlapping": self.overlapping,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True)
+class SymbolContainerDescriptor:
+    path: str
+    address: int
+    type_name: str
+    size: int
+    reason: str
+
+    def to_dict(self) -> dict:
+        return {
+            "path": self.path,
+            "address": self.address,
+            "type_name": self.type_name,
+            "size": self.size,
+            "reason": self.reason,
         }
 
 
@@ -98,6 +120,7 @@ class SymbolCatalog:
     parsed_at: float
     items: tuple[SymbolDescriptor, ...]
     truncated_roots: tuple[str, ...] = ()
+    containers: tuple[SymbolContainerDescriptor, ...] = ()
 
     @cached_property
     def index(self) -> dict[str, SymbolDescriptor]:
@@ -137,6 +160,13 @@ class SymbolCatalog:
             if (not query_key or query_key in item.path.casefold() or query_key in item.type_name.casefold())
             and (not writable or item.writable)
         ]
+        filtered_containers = [
+            item
+            for item in self.containers
+            if not query_key
+            or query_key in item.path.casefold()
+            or query_key in item.type_name.casefold()
+        ]
         start = max(0, int(offset))
         count = max(1, min(int(limit), 500))
         return {
@@ -148,6 +178,7 @@ class SymbolCatalog:
             "total": len(filtered),
             "items": [item.to_dict() for item in filtered[start : start + count]],
             "truncated_roots": list(self.truncated_roots),
+            "containers": [item.to_dict() for item in filtered_containers],
         }
 
     @classmethod
@@ -162,6 +193,7 @@ class SymbolCatalog:
     ) -> "SymbolCatalog":
         ranges = tuple((int(start), int(end)) for start, end in ram_ranges)
         descriptors: list[SymbolDescriptor] = []
+        containers: list[SymbolContainerDescriptor] = []
         truncated_roots: set[str] = set()
         leaf_limit = max(1, int(max_leaves_per_root))
 
@@ -178,6 +210,7 @@ class SymbolCatalog:
             size: int,
             parent_path: str | None,
             leaf_count: list[int],
+            overlapping: bool,
         ) -> bool:
             spec = _resolve_scalar_spec(info, type_offset, type_name=type_name, size=size)
             if spec is None or not in_ram(address, spec.size):
@@ -195,6 +228,7 @@ class SymbolCatalog:
                     enum_values=spec.enum_values,
                     enum_signed=spec.enum_signed,
                     parent_path=parent_path,
+                    overlapping=overlapping,
                 )
             )
             leaf_count[0] += 1
@@ -211,6 +245,7 @@ class SymbolCatalog:
             depth: int,
             visited: frozenset[int],
             leaf_count: list[int],
+            overlapping: bool = False,
         ) -> None:
             if root_path in truncated_roots:
                 return
@@ -225,6 +260,7 @@ class SymbolCatalog:
                 size=size,
                 parent_path=None if path == root_path else root_path,
                 leaf_count=leaf_count,
+                overlapping=overlapping,
             ):
                 return
 
@@ -259,23 +295,25 @@ class SymbolCatalog:
                         depth=depth + 1,
                         visited=visited,
                         leaf_count=leaf_count,
+                        overlapping=overlapping,
                     )
                 return
 
             record = get_record_type(info, resolved)
             if record is None and type_name in info.structs:
                 record = info.structs[type_name]
-            if record is None or record.kind == "union" or record.offset in visited:
+            if record is None or record.offset in visited:
                 return
             if record.size > 0 and not in_ram(address, record.size):
                 return
             next_visited = visited | {record.offset}
             for member in record.members:
-                if not member.name or member.bit_size is not None:
+                if member.bit_size is not None:
                     continue
+                member_path = f"{path}.{member.name}" if member.name else path
                 expand_type(
                     root_path=root_path,
-                    path=f"{path}.{member.name}",
+                    path=member_path,
                     address=address + member.offset,
                     type_name=member.type_name,
                     type_offset=member.type_offset,
@@ -283,12 +321,14 @@ class SymbolCatalog:
                     depth=depth + 1,
                     visited=next_visited,
                     leaf_count=leaf_count,
+                    overlapping=overlapping or record.kind == "union",
                 )
 
         for name, variable in info.variables.items():
             if variable.address is None:
                 continue
             address = int(variable.address)
+            leaf_count = [0]
             expand_type(
                 root_path=name,
                 path=name,
@@ -298,8 +338,20 @@ class SymbolCatalog:
                 size=variable.size,
                 depth=0,
                 visited=frozenset(),
-                leaf_count=[0],
+                leaf_count=leaf_count,
             )
+            if leaf_count[0] == 0 and in_ram(address, variable.size):
+                resolved = _follow_type(info, variable.type_offset)
+                record = get_record_type(info, resolved)
+                array = get_array_type(info, resolved)
+                if record is not None or array is not None:
+                    containers.append(SymbolContainerDescriptor(
+                        path=name,
+                        address=address,
+                        type_name=variable.type_name,
+                        size=variable.size,
+                        reason="unsupported_layout",
+                    ))
 
         return cls(
             generation=max(1, int(generation)),
@@ -308,6 +360,49 @@ class SymbolCatalog:
             parsed_at=time.time(),
             items=tuple(sorted(descriptors, key=lambda item: _natural_path_key(item.path))),
             truncated_roots=tuple(sorted(truncated_roots, key=str.casefold)),
+            containers=tuple(sorted(containers, key=lambda item: _natural_path_key(item.path))),
+        )
+
+    def with_c_layout(
+        self,
+        root_path: str,
+        base_address: int,
+        layout,
+        *,
+        generation: int | None = None,
+    ) -> "SymbolCatalog":
+        prefix_dot = root_path + "."
+        prefix_index = root_path + "["
+        retained = tuple(
+            item for item in self.items
+            if item.path != root_path
+            and not item.path.startswith(prefix_dot)
+            and not item.path.startswith(prefix_index)
+        )
+        replacements = tuple(
+            SymbolDescriptor(
+                path=root_path + leaf.suffix,
+                address=base_address + leaf.offset,
+                type_name=leaf.type_name,
+                scalar_kind=leaf.scalar_kind,
+                size=leaf.size,
+                writable=True,
+                enum_values=dict(leaf.enum_values or {}),
+                enum_signed=leaf.enum_signed,
+                parent_path=root_path,
+                overlapping=leaf.overlapping,
+                source="c_override",
+            )
+            for leaf in layout.leaves
+        )
+        return SymbolCatalog(
+            generation=self.generation + 1 if generation is None else int(generation),
+            axf_path=self.axf_path,
+            fingerprint=self.fingerprint,
+            parsed_at=time.time(),
+            items=tuple(sorted((*retained, *replacements), key=lambda item: _natural_path_key(item.path))),
+            truncated_roots=tuple(path for path in self.truncated_roots if path != root_path),
+            containers=tuple(item for item in self.containers if item.path != root_path),
         )
 
 
@@ -500,6 +595,8 @@ def rebind_paths(
             before.size,
             before.enum_values,
             before.enum_signed,
+            before.overlapping,
+            before.source,
         ) != (
             after.address,
             after.type_name,
@@ -507,6 +604,8 @@ def rebind_paths(
             after.size,
             after.enum_values,
             after.enum_signed,
+            after.overlapping,
+            after.source,
         ):
             updated.append(path)
         else:

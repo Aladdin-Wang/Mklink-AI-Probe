@@ -1,195 +1,147 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-23T14:36:15+08:00",
+  "updated_at": "2026-07-24T00:24:03+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "local master contains reviewer-blocker fix a1dcb8e followed by the final handoff, resolving all six issues reported against upstream PR su5176/Mklink-AI-Probe#3",
-    "remote_head": "GitHub origin master and upstream PR #3 contain qualified product fix a1dcb8e; Gitee master intentionally remains at e911e62, updates remains 926f046, and v0.1.2 peels to 9cd9177",
-    "working_tree": "clean apart from the three pre-existing untracked Python bytecode cache directories; v0.1.2 remains installed, test services are stopped, and no hardware state was changed"
+    "branch": "fix/symbol-source-state",
+    "head": "The qualified v0.1.3 release branch is based on upstream merge commit 6cff397 and includes shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.",
+    "remote_head": "su5176/Mklink-AI-Probe PR #3 merged on 2026-07-23. Gitee was not changed by the PR work.",
+    "working_tree": "The release implementation, regression tests, rebuilt gui/dist, v0.1.3 version bump, automatic Skill updater, release tooling, and this memory update are ready to commit on fix/symbol-source-state. The earlier local candidate predates the updater and must not be published; all owned processes are closed and port 8765 is free."
   },
   "mission": {
-    "product": "MKLink/MicroLink embedded desktop and CLI tooling for online/offline flash, RTT, SystemView, VOFA, SuperWatch, memory, symbols, HardFault, Serial, Modbus, MCP, and AI-assisted workflows.",
-    "maintenance": "Keep behavior consistent across developers and coding models through repository-owned instructions, proportional engineering rigor, real-surface verification, and concise durable project memory."
+    "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
+    "maintenance": "Keep only the current integration baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions here; use Git history and detailed verification documents for completed chronology."
   },
   "current_session": {
-    "status": "complete",
-    "current_task": "Upstream PR #3 now includes the qualified dependency, FastAPI 0.139.2, Windows venv process-guard, frontend security, path-redaction, and timing-test fixes at a1dcb8e.",
-    "release": "v0.1.2 source/tag 9cd9177; standard NSIS SHA-256 bdfa56513d4247b8cfa2281e9c4f8803863b355a447c98b89a9b27b779dc5d07; public updates branch 926f046",
-    "release_authority": "Official signing, version tags, Releases, latest.json, and Gitee synchronization may run only on the maintainer's computer or maintainer-controlled CI.",
-    "release_environment": "The updater private key exists at the standard local ~/.config/mklink-ai-probe/updater.key path and is not stored in Git. Verify key/token presence without printing values before publishing."
+    "status": "authorized_for_v0.1.3_release",
+    "current_task": "Publish the qualified v0.1.3 repairs and verified proactive Skill/desktop update mechanism from final master.",
+    "release": "The maintainer explicitly authorized official v0.1.3 publication to GitHub and Gitee. v0.1.2 remains public until the final master build, overwrite-install qualification, five-asset publication, and updates/latest.json verification complete."
   },
   "milestones": [
     {
-      "name": "Flash workflows",
+      "name": "Product baseline",
       "status": "complete",
-      "notes": "Online and offline flashing share the target/algorithm catalog, support builtin/local/custom algorithms, use image-covered erase and verification, and stream named V4 offline execution live. Agent-driven downloads prefer IDE-native build/download, then pyOCD, then offline deployment. Automatic FLM selection uses bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms while explicit user choices remain selectable and authoritative."
+      "notes": "Online/offline flash, debug control, symbols and types, bounded streaming, Serial, Modbus, MCP, and resource arbitration are implemented."
     },
     {
-      "name": "Streaming and SuperWatch",
+      "name": "Web and desktop distribution",
       "status": "complete",
-      "notes": "RTT, SystemView, VOFA, and SuperWatch use bounded streaming. RTT View now has optional labeled axes with wheel zoom, drag pan, retained pause/stop curves, and inline input-format guidance. SuperWatch retains paused/stopped curves, exports timestamped selected-variable raw data, and suppresses viewer shortcuts while users type in editable controls."
+      "notes": "The Vue Web client, Tauri v2 desktop app, bundled Python sidecar, strict USB Web entry protocol, browser file uploads, and signed updater flow are available."
     },
     {
-      "name": "Built-in ELF and DWARF",
+      "name": "Compatibility hardening",
       "status": "complete",
-      "notes": "Bundled pyelftools is the default for symbols, types, memory maps, HardFault lines, and desktop features. External GNU tools run only when explicitly selected."
+      "notes": "Builtin pyelftools is the default, FastAPI 0.139.2 is supported, Windows venv process guards are stable, test extras are complete, and the frontend audit is clean."
     },
     {
-      "name": "Signed desktop updates",
+      "name": "Upstream integration",
       "status": "complete",
-      "notes": "The Tauri v2 application discovers signed NSIS updates from Gitee, downloads in the background, and installs after user confirmation. v0.1.2 assets and latest.json are published on GitHub and Gitee."
+      "notes": "su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f into upstream master as 6cff397."
     },
     {
-      "name": "Shared cross-model maintenance workflow",
+      "name": "Shared symbol-source state",
       "status": "complete",
-      "notes": "AGENTS.md and the repository skill require dedicated feature/fix branches, branch-local automated and real-hardware qualification before merge, requirement discovery, diagnosis, proportional planning, handoff, and maintainer-only releases without relying on globally installed skills."
+      "notes": "Symbol reparsing now binds the current Device explicitly, serializes SuperWatch stop/rebind/restart, uses one transaction for parse and connected-reload endpoints, rejects requested/active path mismatches, and exposes active versus pending AXF state consistently in the frontend."
     },
     {
-      "name": "Cross-platform USB Web entry",
+      "name": "Aggregate symbol recovery",
       "status": "complete",
-      "notes": "One offline HTML uses the strict mklink-ai-probe://web start/open/stop protocol. User-scoped Windows, macOS, and Linux handlers start the existing loopback GUI, reuse existing Web services without ownership, and stop only identity-verified processes started by the entry."
+      "notes": "Anonymous struct and union layers expand transparently, overlapping union interpretations remain selectable, unsupported aggregates remain visible as containers, and a bounded pycparser-backed C layout override is shared by Web, Tauri, and AI-launched services."
     },
     {
-      "name": "Browser file-source loading",
+      "name": "RTT encoding and SWD arbitration",
       "status": "complete",
-      "notes": "The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory."
+      "notes": "RTT preserves device bytes until the Dashboard applies UTF-8, GB2312, GBK, GB18030, or Big5 decoding. One-shot SWD and download operations safely preempt Dashboard owners but never another user operation."
     },
     {
-      "name": "AI-first README and Web GUI onboarding",
+      "name": "Proactive verified updates",
       "status": "complete",
-      "notes": "The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites."
-    },
-    {
-      "name": "Upstream PR and maintainer handoff",
-      "status": "complete",
-      "notes": "The Aladdin-Wang GitHub fork master is published and proposes the complete 237-commit delta to su5176/Mklink-AI-Probe master in PR #3. Gitee was not synchronized because this request authorized GitHub and the upstream PR only."
-    },
-    {
-      "name": "Upstream PR reviewer blockers",
-      "status": "complete",
-      "notes": "All reported blockers were fixed and qualified on fix/upstream-review-blockers, fast-forwarded into master as a1dcb8e, pushed to GitHub, and read back as the OPEN upstream PR #3 head. Clean test extras include httpx and PyInstaller, FastAPI 0.139.2 route inspection is supported, Windows venv guards bypass launcher PID proxies, frontend high-risk advisories are removed, the local Keil path is redacted, and timing tests use event ordering instead of 50 ms thresholds."
+      "notes": "The installed Skill checks the public update manifest once per AI session with a 24-hour cache, reports newer releases without blocking hardware work, and updates the desktop app and copied Skill only after explicit approval with size and SHA-256 verification."
     }
   ],
   "verification": [
     {
-      "area": "Upstream PR reviewer blockers",
-      "result": "A new Windows venv installed only .[gui,test] and resolved FastAPI 0.139.2, httpx 0.28.1, and PyInstaller 6.21.0 before the full Python suite passed 958 with 1 skipped. The three previously failing latest-FastAPI route tests and three Windows venv process-guard failures were reproduced before the fixes; route coverage then passed 252/252 and guard coverage 10/10. Three event-order timing scenarios passed 30 repeated runs (150 parameterized cases). npm ci, all-dependency audit with zero vulnerabilities, GUI 36 files/401 tests, Vite 8.1.5 production build, Rust 6 tests, and cargo check passed. The actual Windows process lifecycle was exercised without hardware; no device workflow changed, so a hardware loop was not applicable."
+      "area": "Latest source gate",
+      "result": "Python passed 989 with 1 skipped; GUI passed 36 files/412 tests; Rust passed 6 tests; cargo check, Vite 8.1.5 production build, npm audit with zero vulnerabilities, and the Tauri builder prerequisite check passed."
     },
     {
-      "area": "GitHub publication and upstream PR",
-      "result": "GitHub accepted the origin master push, the origin branch resolved to the published source tip, and su5176/Mklink-AI-Probe PR #3 was read back as OPEN from Aladdin-Wang:master to su5176:master with 331 changed files and no upstream-only commits or reported CI checks. Gitee master was read-only checked and intentionally left at e911e62."
+      "area": "Update and release automation",
+      "result": "Focused updater and publisher coverage passed 20 tests. Real public-manifest checking saw public v0.1.2 from the v0.1.3 source without a false update. Release preparation now requires a verified flat installable Skill archive, and publication preserves Tauri compatibility while adding installer and Skill URL, size, SHA-256, and source commit metadata."
     },
     {
-      "area": "README and Web GUI onboarding",
-      "result": "The documentation-only change was checked against current CLI help, pyproject requirements, Web entry behavior, browser file-source limits, built-in ELF policy, and release constraints. Every local Markdown target exists, stale V3.3.3/V4.3.3 and MK-Firmware release-history references are absent from both READMEs, Gitee returned HTTP 200, the GitHub repository address matches the configured and queried origin, and git diff validation passed. Runtime code did not change, so automated product suites and real-hardware qualification were not required."
+      "area": "Installed v0.1.3 candidate",
+      "result": "The local v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python process, parsed the requested STM32F103RC AXF into 5,157 symbols, applied a pasted C layout, switched all five RTT encodings, sampled SuperWatch 28,610 times with zero read errors or drops, and passed read-memory plus online connect-reset-disconnect preemption. Normal close released all owned processes and port 8765. The candidate SHA-256 is 70DF1FA953CC8B586534CF9E602E0897E096795E0298CA1AFC55F8C4ABD25B87 and Authenticode status is NotSigned."
     },
     {
-      "area": "Firmware download priority and debug-control repair",
-      "result": "RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. A clean archive of the tested commit replaced the Codex global Skill; the installed copy repeated Keil build/download with verify, served the bundled Web client, completed pyOCD online verify, and resumed the target. Old Skill backups were removed and ports 8765 and 5173 were closed afterward."
+      "area": "Upstream merge",
+      "result": "GitHub reports PR #3 MERGED at 2026-07-23T07:23:40Z. Merge commit 6cff397 has parents 51a2f8d and the qualified fork head d344e5f."
     },
     {
-      "area": "Dedicated feature-branch workflow",
-      "result": "Three baseline pressure scenarios exposed that the previous rules allowed direct master development, treated feature branches as optional, and left stale verification after master advanced ambiguous. Repeating the same scenarios against the revised AGENTS.md and repository skill made every agent select a feature/fix branch, reject direct master development, invalidate evidence after master advanced, and require the automated plus affected real-hardware gates before merge."
+      "area": "Shared symbol automated gate",
+      "result": "Regression coverage includes source ownership, anonymous struct and union expansion, overlapping union aliases, unresolved containers, C natural and packed layout, input limits, fingerprint-scoped overrides, API validation, SuperWatch rebind and restore, manual path UI, and C definition UI."
     },
     {
-      "area": "v0.1.2 final source gate and real hardware",
-      "result": "The final source gate passed Python 948 with 1 skipped, GUI 36 files/400 tests, Rust 6 tests, cargo check, the production Vite build, builder prerequisite checks, and npm production audit with zero vulnerabilities. Against the STM32F103 fixture, the Web runtime uploaded the real AXF and MAP into its user-data workspace, connected with the uploaded AXF through the builtin ELF backend, loaded a 4,851-item symbol catalog, and sampled a selected RAM variable through SuperWatch for about 19,000 read cycles with zero read errors or drops before stop/reset/disconnect."
+      "area": "Symbol-source real hardware",
+      "result": "The repaired service switched between two real AXFs with distinct symbol counts, supported connected reload from a second client path, and preserved SuperWatch operation during an additional reload. After deployment to port 8765, parse-axf selected 4,842/129/107 symbols at generation 2 and connected reload restored 791/150/99 at generation 3. Requested and active paths matched after every operation."
     },
     {
-      "area": "v0.1.2 installed candidate and publication",
-      "result": "The signed standard NSIS overwrote the local v0.1.1 installation under a Windows-system-only PATH. The installed v0.1.2 used one bundled sidecar and no Python child, exposed builtin ELF, discovered one probe without recording its identifier, uploaded the real AXF/MAP into an isolated runtime directory, connected the STM32F103 target, and sampled a selected RAM variable for 3,215 cycles with zero errors or drops. RTT-to-SuperWatch and SuperWatch-to-RTT switching each stopped the previous dashboard automatically. Normal window close removed all product processes and released port 8765. GitHub and Gitee expose the four release attachments, anonymous Gitee installer download passed size/SHA-256 verification, and both latest.json files point to the signed v0.1.2 Gitee payload."
+      "area": "Aggregate-symbol real hardware",
+      "result": "A real STM32 AXF expanded data_save at 0x20000648 into 27 selectable scalar interpretations, including odo, mileage_odo, and trip. SuperWatch completed 32,613 reads with zero read errors and zero read drops. A real unresolved one-byte aggregate accepted a pasted matching C definition, produced a selectable member at the correct RAM address, and was added through the shared SuperWatch API."
     },
     {
-      "area": "Cross-platform USB Web entry",
-      "result": "Focused Web-entry and CLI coverage passed 34/34, the full Python suite passed 945 with 1 skipped, the GUI suite passed 36 files/397 tests, and the production Vite build passed. On Windows, the real user-level protocol and physical MICROKEEN USB HTML reused an existing Web service without changing its PID or stopping it, then independently started one owned loopback GUI, reused the same PID on a second click, and stopped only that owned process. Uninstall removed the owned registry tree and reinstall restored it. macOS and Linux registration/quoting are covered by unit tests but were not run on those operating systems."
+      "area": "SWD arbitration real hardware",
+      "result": "SuperWatch held both probe resources while reading data_save.odo, then a real read-memory operation stopped it before returning eight target bytes and left the device READY with no leases. A second SuperWatch run was preempted by an online connect-reset-disconnect job, which succeeded without erasing or programming Flash; 46,591 reads completed with zero read errors and zero read drops."
     },
     {
-      "area": "RTT View and SuperWatch interaction change",
-      "result": "The full GUI suite passed 36 files/397 tests, the production Vue/Vite build passed, and focused dashboard resource plus RTT/SuperWatch Python tests passed 111/111. A system Edge Web-client run against the STM32F103 fixture verified named RTT channels, chart interaction and retention, both mutual-switch directions, timestamped selected-variable raw logs, and literal L entry in the SuperWatch search. The same browser verified the 390x348 version-history popover stayed within a 1280x800 viewport and supported hover, click pinning, and outside close without layout overlap."
+      "area": "RTT encoding real service",
+      "result": "The source service accepted GBK at RTT start and exposed the active encoding in shared status. Automated byte-boundary tests covered GBK and four-byte GB18030 text plus runtime switching. The current target image did not initialize the AXF RTT control-block symbol, so live text capture was unavailable and startup released resources cleanly."
     },
     {
-      "area": "v0.1.1 automated baseline",
-      "result": "Release source b3c7925 passed Python 915 with 1 skipped, GUI 35 files/387 tests, Rust 6 tests, Vite production build, cargo check, and production npm audit with zero vulnerabilities."
-    },
-    {
-      "area": "Installed application",
-      "result": "The standard NSIS ran with the bundled sidecar under a Windows-system-only PATH, exposed the builtin ELF backend, spawned no Python child, discovered a probe without recording its identifier, and released processes and port 8765 on close."
-    },
-    {
-      "area": "Real V4 offline deployment",
-      "result": "Deployment auto-generated a missing preview, left no staging backup on the probe disk, selected the configured script name, and delivered device output as 87 live line events before successful completion."
-    },
-    {
-      "area": "Published update",
-      "result": "GitHub and Gitee expose the same four v0.1.2 release attachments; anonymous Gitee download and SHA-256 passed, and both public latest.json files point to the signed v0.1.2 Gitee NSIS payload."
-    },
-    {
-      "area": "Repository maintenance workflow",
-      "result": "The repository skill passed skill-creator quick validation; release preparation/publication tests passed 12/12; AI memory validation and git diff checks passed."
-    },
-    {
-      "area": "Repository synchronization",
-      "result": "Obsolete feature branches were removed locally and from GitHub/Gitee. Both hosts retain only master and updates, with matching branch heads and tags before this final handoff."
+      "area": "Real browser UI",
+      "result": "After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens."
     }
   ],
   "decisions": [
-    "FastAPI router-inclusion internals changed in 0.139 without breaking HTTP routing. Regression tests traverse both the older flattened route list and the newer lazy original_router representation instead of pinning a working runtime to an old FastAPI release.",
-    "On Windows, guarded pack-worker wrappers run the stdlib-only process_guard_exec.py through sys._base_executable so Python 3.13+ venv launcher proxies cannot change the expected parent PID or escape the parent Job Object attachment.",
-    "Concurrency tests prove non-blocking behavior through controlled event ordering and watchdog fail-safe release rather than scheduler-sensitive 50 ms wall-clock thresholds.",
-    "Agent-driven firmware download uses an available project IDE's verified native build/download commands first, pyOCD online flash when the IDE path is unavailable or not applicable, and the MKLink offline API last. A backend that has started and failed stops with evidence instead of silently falling through; python -m mklink flash is an explicit compatibility/diagnostic path.",
-    "Automatic FLM resolution ranks bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms, considers all tiers for address coverage, preserves Pack-version discovery order, and lets explicit user selections override the automatic order. HPM remains ROM API/BIN only.",
-    "Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.",
-    "Every runtime or user-facing feature and bug fix now requires the full Python and GUI suites plus a production build, followed by a real-hardware closed loop on the affected Web, Tauri, or device surface before release. Component or mocked tests alone are not release evidence.",
-    "Browser file pickers cannot expose an absolute local path. Web AXF/MAP selection therefore uploads the selected File to a suffix-checked, 256 MiB-limited, content-addressed runtime directory and uses the returned backend path; Tauri continues to use its native dialog without upload.",
-    "The v0.1.2 public release must not start until its signed NSIS has overwritten the local installation and the installed bundled-sidecar application has passed the real-hardware closed loop.",
-    "The USB contains only one identical offline HTML file. Each computer performs one user-level protocol registration when the complete Mklink runtime is deployed; a standalone SKILL.md cannot start a local process under browser security rules.",
-    "The Web entry accepts only mklink-ai-probe://web/start, /open, and /stop with no queries, fragments, commands, or arbitrary paths. It binds loopback, serializes repeated clicks, scans the local port range before spawning, and refuses to compete with an API-only Mklink backend.",
-    "Web-entry process ownership includes PID plus process-creation identity so stale state cannot kill a recycled PID. Uninstall removes the Windows protocol only when its owner and handler markers match the current installation.",
-    "The new web-entry CLI branch and protocol handler are additive. Existing AI/MCP calls, mklink gui, mklink serve, and the Tauri sidecar retain their original code paths and ownership.",
-    "All bridge Dashboard starts share one serialized backend transaction that stops conflicting sessions and releases their leases before atomically acquiring resources for the new session; the RTT-only confirmation prompt was removed.",
-    "RTT auto-detection evaluates the accumulated startup sample window so occasional marker lines cannot replace a majority key-value stream format.",
-    "After a successful RTT status poll, backend running state is authoritative over stale local toolbar state so peer-triggered stops return the hidden RTT view to idle without clearing retained data.",
-    "Waveform global shortcuts yield to input, textarea, select, contenteditable, and textbox-role targets so search and value editing receive literal keystrokes.",
-    "Version history is bundled as structured frontend data so the footer popover works offline; stable release entries must be updated as part of future version preparation.",
-    "Repository instructions and the bundled skills/maintaining-mklink-ai-probe/SKILL.md are the cross-model source of truth. Computer-global workflow skills must not override or add required process to this repository because their contents differ across developer machines.",
-    "Plans, tests, and worktrees scale with risk. Do not impose long plans, separate RED commits, or new worktrees on every task.",
-    "Diagnose before editing, prefer existing patterns, make the smallest complete change, and verify before claiming success.",
-    "Generate only standard NSIS by default. MSI and WebView2-offline packages require explicit authorization.",
-    "Official signing and publication run only on the maintainer's computer or controlled CI; signing keys remain local/CI only.",
-    "GitHub is the primary collaborative repository. Only the maintainer or controlled CI synchronizes official releases to Gitee.",
-    "Publish GitHub/Gitee assets and verify the anonymous Gitee installer before publishing updates/latest.json last.",
-    "HPM targets always use the dedicated ROM API and never discover or load FLM.",
-    "Bundled pyelftools is the default; readelf/addr2line require explicit external-backend selection and never receive automatic fallback traffic.",
-    "Do not commit installers, firmware, Packs, FLM files, logs, screenshots, full probe IDs, COM numbers, usernames, credentials, signing keys, or local hardware paths."
+    "AGENTS.md and the repository skill are the workflow source of truth. Runtime changes use a dedicated feature/fix branch, the full Python and GUI suites plus production build, and an affected real-surface hardware loop before merge.",
+    "Official signing, tags, Releases, latest.json, and Gitee synchronization require explicit maintainer authority. Build standard NSIS by default; MSI and offline WebView2 bundles require explicit authorization.",
+    "HPM targets always use the ROM API and never FLM. Bundled pyelftools is the default ELF/DWARF backend; external GNU tools run only when explicitly selected.",
+    "Agent-driven firmware download prefers an available IDE-native verified flow, then pyOCD online flash, then MKLink offline deployment. Automatic algorithms rank bundled Pack, bundled DAPLink, installed Pack, then custom while explicit choices remain authoritative.",
+    "Web entry accepts only mklink-ai-probe://web start/open/stop operations, binds loopback, serializes launches, and stops only identity-verified processes it owns. Each host needs the complete runtime and one-time protocol registration.",
+    "Browser AXF/MAP selection uploads suffix-checked, size-limited, content-addressed files into runtime project storage; Tauri retains native path selection.",
+    "Dashboard starts share serialized resource arbitration, stop conflicting sessions, and acquire leases atomically. One-shot user SWD operations and online/offline downloads may preempt user:dashboard owners only after their synchronous stop succeeds; stop failure rolls back the new lease, and one user operation never preempts another.",
+    "FastAPI route tests support both flattened and lazy included-router layouts. On Windows, guarded worker wrappers use the base Python interpreter so venv launcher PID proxies cannot escape parent-death protection.",
+    "AXF reload is a shared backend transaction. The current connected Device is authoritative, SuperWatch is rebound to that exact instance, and parse/connect endpoints fail with HTTP 409 when the requested source did not become active.",
+    "Frontend file inputs are pending configuration until the backend reports the same normalized active path. All clients read one server-side active symbol state instead of treating a successful HTTP response as proof.",
+    "Desktop and Web-entry lifecycle follows process ownership: a client closes only a backend process it created and still owns. Browser tabs and desktop windows that reuse an existing service must not terminate that shared service.",
+    "Anonymous struct and union members are flattened into their legal C access paths. All named union interpretations remain visible and are marked as overlapping instead of silently discarding aliases.",
+    "Pasted C layouts are limited to 64 KiB and 512 scalar leaves, reject pointers and bit-fields, require exact AXF storage-size agreement, and are retained only in memory under the AXF path, size, and mtime fingerprint."
+    ,"RTT bridge sessions retain raw target bytes. The RTT Dashboard owns incremental UTF-8, GB2312, GBK, GB18030, or Big5 decoding and publishes the existing UTF-8 browser stream protocol; runtime encoding changes discard only unfinished decoder state and affect subsequent bytes.",
+    "Copied Skills check Gitee then GitHub at first MKLink use in each AI session, cache successful checks for 24 hours, and never interrupt an active debug or flash operation. Installation requires explicit approval, verifies published size and SHA-256, refuses Git checkouts, backs up the Skill, and requires a new AI session after replacement.",
+    "The updates/latest.json document remains compatible with Tauri while adding verified installer and Skill metadata. Both public Releases and both anonymous Gitee asset checks complete before either updates branch is replaced."
   ],
   "hardware": {
-    "probe": "MKLink V4 is available; identifier omitted",
-    "stream_target": "STM32F103RC fixture is available; local path omitted",
+    "probe": "MKLink V4 available; identifier omitted.",
+    "target": "STM32F103RC fixture available; local project path omitted.",
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
-    "Python 3.13 is not installed on this workstation. Its reported Windows venv launcher PID behavior reproduced on Python 3.14.5, and both the real venv process-guard integration and a synthetic Python 3.13 launcher-path regression passed after the fix.",
-    "The available STM32F103 fixture uses pyOCD's bundled builtin target algorithm. Bundled Pack/DAPLink versus installed/custom priority, address fallback, and explicit override behavior are covered by automated catalog/API/UI tests; this fixture did not provide a second physical target that requires a repository-bundled Pack or DAPLink FLM.",
-    "The protocol handler was exercised on Windows only. macOS LaunchServices and Linux xdg-mime behavior still need real-system qualification even though their generated files and quoting have automated coverage.",
-    "Every target computer needs a complete Mklink runtime with GUI dependencies and built gui/dist assets plus one-time web-entry registration; the USB HTML intentionally contains no executable runtime.",
-    "The v0.1.2 NSIS has not been qualified on a second clean Windows machine without development tools.",
-    "The updater payload has Tauri integrity signing but no Windows Authenticode signature, so Windows may show an unknown-publisher warning.",
-    "The installed v0.1.2 Tauri application passed backend and hardware lifecycle qualification, but no automated screenshot capture was available from its WebView2 surface.",
-    "Some optional online Pack operations require outbound HTTPS, and unqualified hardware/power-loss scenarios remain device-specific."
+    "Python 3.13 is not installed locally; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.",
+    "The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.",
+    "The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.",
+    "The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.",
+    "The in-app Browser plugin still exposed no controllable instance after reinstall, so browser qualification used repository Playwright with the installed Chrome executable. The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root."
   ],
   "next_actions": [
-    "Monitor su5176/Mklink-AI-Probe PR #3 for the next review or maintainer merge decision; its qualified product fix is a1dcb8e and no checks are currently reported by GitHub.",
-    "Qualify the same USB HTML and user-level protocol on one current macOS system and one mainstream Linux desktop, including browser confirmation and USB HID/serial permissions.",
-    "Ensure the deployed skill/runtime package carries matching built gui/dist assets and runs web-entry install whenever its absolute installation path changes.",
-    "Confirm an installed older client discovers, downloads, and installs v0.1.2 in the maintainer's normal desktop environment.",
-    "Qualify the standard NSIS on a second clean Windows 10/11 system without Python, Node, Rust, Keil, GNU Arm tools, or a Pack cache."
+    "Commit the qualified fix/symbol-source-state branch, merge it into clean master, and repeat the final release checks from the exact master commit.",
+    "Build and overwrite-install the final signed v0.1.3 standard NSIS, qualify health, probe discovery, bundled-sidecar identity, shutdown, and port release, then prepare exactly five public assets.",
+    "Publish v0.1.3 to GitHub and Gitee, replace updates/latest.json last, anonymously verify both public payloads and manifest metadata, then update the local copied Skill through the public updater.",
+    "Qualify USB Web entry registration and browser launch on current macOS and Linux systems.",
+    "Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools."
   ],
   "continuation_protocol": [
-    "Follow AGENTS.md and skills/maintaining-mklink-ai-probe/SKILL.md.",
-    "Reconcile AI memory with live Git and runtime state before editing.",
-    "Create a dedicated feature or fix branch before runtime or user-facing implementation, complete the required automated and real-hardware gates there, and merge only after the branch passes.",
-    "Before ending, run proportional checks and git diff --check, update memory, render and validate the handoff, then commit and push when authorized."
+    "Validate memory and reconcile it with live Git/runtime state before acting.",
+    "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
+    "Replace stale facts and consolidate evidence; do not append completed task logs that already exist in Git or verification documents."
   ]
 }
