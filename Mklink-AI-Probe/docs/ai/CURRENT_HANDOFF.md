@@ -4,11 +4,11 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T00:24:03+08:00`
-- 分支：`fix/symbol-source-state`
-- HEAD：`The qualified v0.1.3 release branch is based on upstream merge commit 6cff397 and includes shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.`
+- 更新时间：`2026-07-24T00:34:30+08:00`
+- 分支：`master`
+- HEAD：`Master contains the qualified v0.1.3 shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.`
 - 远端 HEAD：`su5176/Mklink-AI-Probe PR #3 merged on 2026-07-23. Gitee was not changed by the PR work.`
-- 工作树：The release implementation, regression tests, rebuilt gui/dist, v0.1.3 version bump, automatic Skill updater, release tooling, and this memory update are ready to commit on fix/symbol-source-state. The earlier local candidate predates the updater and must not be published; all owned processes are closed and port 8765 is free.
+- 工作树：The qualified fix branch was fast-forwarded into an isolated clean master for final release. The earlier local candidate predates the updater and must not be published; the final installer and five public assets must be rebuilt from this master.
 - 当前任务：Publish the qualified v0.1.3 repairs and verified proactive Skill/desktop update mechanism from final master.
 - 状态：`authorized_for_v0.1.3_release`
 

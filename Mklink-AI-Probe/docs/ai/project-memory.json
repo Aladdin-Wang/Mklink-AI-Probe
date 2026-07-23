@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T00:24:03+08:00",
+  "updated_at": "2026-07-24T00:34:30+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/symbol-source-state",
-    "head": "The qualified v0.1.3 release branch is based on upstream merge commit 6cff397 and includes shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.",
+    "branch": "master",
+    "head": "Master contains the qualified v0.1.3 shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.",
     "remote_head": "su5176/Mklink-AI-Probe PR #3 merged on 2026-07-23. Gitee was not changed by the PR work.",
-    "working_tree": "The release implementation, regression tests, rebuilt gui/dist, v0.1.3 version bump, automatic Skill updater, release tooling, and this memory update are ready to commit on fix/symbol-source-state. The earlier local candidate predates the updater and must not be published; all owned processes are closed and port 8765 is free."
+    "working_tree": "The qualified fix branch was fast-forwarded into an isolated clean master for final release. The earlier local candidate predates the updater and must not be published; the final installer and five public assets must be rebuilt from this master."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
