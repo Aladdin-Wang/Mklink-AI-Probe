@@ -1,4 +1,4 @@
-"""Linux exec wrapper that applies a parent-death signal without preexec_fn."""
+"""Exec wrapper that coordinates parent-death protection before startup."""
 
 import ctypes
 import os

@@ -681,35 +681,33 @@ def test_superwatch_subscribe_replays_cached_metadata_without_waiting_for_read(m
         manager._runtime = _MutableWatchRuntime()
         manager.publish_metadata()
         sample_started = threading.Event()
+        release_sample = threading.Event()
+        sample_finished = threading.Event()
 
         def sample_blocks(blocks, **_kwargs):
             assert tuple(blocks) == ("a",)
             sample_started.set()
-            time.sleep(0.2)
-            return SimpleNamespace(origin_us=1, points=[{"a": 1.0}])
+            try:
+                assert release_sample.wait(2.0)
+                return SimpleNamespace(origin_us=1, points=[{"a": 1.0}])
+            finally:
+                sample_finished.set()
 
         monkeypatch.setattr("mklink.superwatch.sample_blocks", sample_blocks)
         manager.set_interval(1.0)
         manager.start(SimpleNamespace(_bridge=object()))
         try:
             assert await asyncio.to_thread(sample_started.wait, 1.0)
-            loop = asyncio.get_running_loop()
-            heartbeat_start = loop.time()
-            heartbeat = asyncio.create_task(asyncio.sleep(0.01))
-            subscribe_start = loop.time()
             queue = hub.subscribe()
-            subscribe_elapsed = loop.time() - subscribe_start
-            await heartbeat
-            heartbeat_elapsed = loop.time() - heartbeat_start
-            metadata = await asyncio.wait_for(queue.get(), timeout=0.05)
+            await asyncio.sleep(0)
+            metadata = await asyncio.wait_for(queue.get(), timeout=0.5)
             assert metadata.flags == SUPERWATCH_METADATA_JSON
             assert decode_superwatch_metadata(metadata.payload)["channels"][0]["name"] == "a"
+            assert not sample_finished.is_set()
             hub.unsubscribe(queue)
         finally:
+            release_sample.set()
             await asyncio.to_thread(manager.stop)
-
-        assert subscribe_elapsed < 0.05
-        assert heartbeat_elapsed < 0.05
 
     asyncio.run(scenario())
 

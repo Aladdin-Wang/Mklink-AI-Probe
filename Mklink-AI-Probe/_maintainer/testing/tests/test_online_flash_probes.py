@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 import pytest
+from route_utils import find_route
 
 
 def test_filter_only_returns_mklink_identity_probe():
@@ -330,10 +331,7 @@ def test_rtt_write_endpoint_runs_device_write_outside_event_loop_thread():
         for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
     }
     client, _state = _dashboard_client(managers)
-    endpoint = next(
-        route.endpoint for route in client.app.routes
-        if route.path == "/api/dash/rtt/write"
-    )
+    endpoint = find_route(client.app, "/api/dash/rtt/write").endpoint
     event_loop_thread = threading.get_ident()
 
     response = asyncio.run(endpoint(data_hex="00ff"))
@@ -789,11 +787,13 @@ def test_dashboard_start_resource_acquisition_does_not_block_event_loop(monkeypa
     from mklink.remote.api import start_dashboard_manager
 
     acquisition_started = threading.Event()
+    release_acquisition = threading.Event()
+    watchdog_released = threading.Event()
 
     def blocking_acquire(_state, dashboard):
         assert dashboard == "superwatch"
         acquisition_started.set()
-        time.sleep(0.2)
+        assert release_acquisition.wait(2.0)
         return []
 
     monkeypatch.setattr(
@@ -803,23 +803,32 @@ def test_dashboard_start_resource_acquisition_does_not_block_event_loop(monkeypa
     state = {"resource_manager": SimpleNamespace(release=lambda _owner: None)}
 
     async def scenario():
-        loop = asyncio.get_running_loop()
-        heartbeat_start = loop.time()
+        def release_from_watchdog():
+            watchdog_released.set()
+            release_acquisition.set()
 
-        async def heartbeat_probe():
-            await asyncio.sleep(0.01)
-            return loop.time() - heartbeat_start
-
-        heartbeat = asyncio.create_task(heartbeat_probe())
+        watchdog = threading.Timer(1.0, release_from_watchdog)
+        watchdog.start()
         start = asyncio.create_task(start_dashboard_manager(
             state, "superwatch", manager, lambda: None,
         ))
-        heartbeat_elapsed, _result = await asyncio.gather(heartbeat, start)
-        return heartbeat_elapsed
+        try:
+            assert await asyncio.to_thread(acquisition_started.wait, 1.0)
+            await asyncio.sleep(0)
+            completed_while_blocked = (
+                not watchdog_released.is_set()
+                and not release_acquisition.is_set()
+            )
+            release_acquisition.set()
+            await start
+            return completed_while_blocked
+        finally:
+            release_acquisition.set()
+            watchdog.cancel()
 
-    heartbeat_elapsed = asyncio.run(scenario())
+    completed_while_blocked = asyncio.run(scenario())
     assert acquisition_started.is_set()
-    assert heartbeat_elapsed < 0.05
+    assert completed_while_blocked
 
 
 def test_dashboard_start_cancel_during_acquisition_releases_late_lease(monkeypatch):

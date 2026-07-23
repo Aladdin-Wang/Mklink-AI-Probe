@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-22T23:00:14+08:00`
-- 分支：`master`
-- HEAD：`local master and the Aladdin-Wang GitHub fork include the AI-first README, firmware-download priority repair, and maintenance workflow updates; upstream PR su5176/Mklink-AI-Probe#3 is open; v0.1.2 remains tagged at 9cd9177`
+- 更新时间：`2026-07-23T14:31:06+08:00`
+- 分支：`fix/upstream-review-blockers`
+- HEAD：`the dedicated fix branch resolves all six reviewer blockers reported against upstream PR su5176/Mklink-AI-Probe#3 and has passed the required clean-environment, Python, GUI, Rust, build, and security gates`
 - 远端 HEAD：`GitHub origin master is published with the current maintenance work and feeds upstream PR #3; Gitee master intentionally remains at e911e62, updates remains 926f046, and v0.1.2 peels to 9cd9177`
-- 工作树：clean after GitHub publication, upstream PR #3 creation, and handoff recording; v0.1.2 remains installed, test services are stopped, and the target is running with the probe released
-- 当前任务：The GitHub fork is current, upstream PR su5176/Mklink-AI-Probe#3 is open with a concise full-project summary, and repository memory is prepared for the next maintainer.
-- 状态：`complete`
+- 工作树：the reviewer-blocker changes and refreshed bundled Web assets are ready for final commit on the fix branch; pre-existing Python bytecode caches remain untracked and are preserved
+- 当前任务：Resolve the upstream PR #3 dependency, FastAPI 0.139.2, Windows venv process-guard, frontend security, path-redaction, and flaky timing-test blockers, then update the Aladdin-Wang PR head.
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -23,9 +23,11 @@
 - **Browser file-source loading** — `complete`。The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory.
 - **AI-first README and Web GUI onboarding** — `complete`。The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites.
 - **Upstream PR and maintainer handoff** — `complete`。The Aladdin-Wang GitHub fork master is published and proposes the complete 237-commit delta to su5176/Mklink-AI-Probe master in PR #3. Gitee was not synchronized because this request authorized GitHub and the upstream PR only.
+- **Upstream PR reviewer blockers** — `in_progress`。All reported blockers are fixed and qualified on fix/upstream-review-blockers: clean test extras include httpx and PyInstaller, FastAPI 0.139.2 route inspection is supported, Windows venv guards bypass launcher PID proxies, frontend high-risk advisories are removed, the local Keil path is redacted, and timing tests use event ordering instead of 50 ms thresholds. The branch still needs commit, merge, and GitHub push.
 
 ## 验证证据
 
+- **Upstream PR reviewer blockers**：A new Windows venv installed only .[gui,test] and resolved FastAPI 0.139.2, httpx 0.28.1, and PyInstaller 6.21.0 before the full Python suite passed 958 with 1 skipped. The three previously failing latest-FastAPI route tests and three Windows venv process-guard failures were reproduced before the fixes; route coverage then passed 252/252 and guard coverage 10/10. Three event-order timing scenarios passed 30 repeated runs (150 parameterized cases). npm ci, all-dependency audit with zero vulnerabilities, GUI 36 files/401 tests, Vite 8.1.5 production build, Rust 6 tests, and cargo check passed. The actual Windows process lifecycle was exercised without hardware; no device workflow changed, so a hardware loop was not applicable.
 - **GitHub publication and upstream PR**：GitHub accepted the origin master push, the origin branch resolved to the published source tip, and su5176/Mklink-AI-Probe PR #3 was read back as OPEN from Aladdin-Wang:master to su5176:master with 331 changed files and no upstream-only commits or reported CI checks. Gitee master was read-only checked and intentionally left at e911e62.
 - **README and Web GUI onboarding**：The documentation-only change was checked against current CLI help, pyproject requirements, Web entry behavior, browser file-source limits, built-in ELF policy, and release constraints. Every local Markdown target exists, stale V3.3.3/V4.3.3 and MK-Firmware release-history references are absent from both READMEs, Gitee returned HTTP 200, the GitHub repository address matches the configured and queried origin, and git diff validation passed. Runtime code did not change, so automated product suites and real-hardware qualification were not required.
 - **Firmware download priority and debug-control repair**：RED tests reproduced all four stale debug CLI resolver calls, installed/custom algorithms outranking bundled sources, missing address-coverage fallback, unstable multi-version selection, and lost explicit custom choices in online/offline flows. Final review found no Critical or Important issues. The final gate passed Python 957 with 1 skipped, GUI 36 files/401 tests, Rust 6 tests, cargo check, and the production Vite build. On the STM32F103 fixture, Keil build completed with zero errors/warnings and native download reported erase/program/verify/application-running success; pyOCD then verified the same HEX, programmed exactly its 56 covered sectors, verified, reset, and disconnected. The repaired resume command succeeded on real hardware and the runtime counter changed after both Keil and pyOCD downloads. A clean archive of the tested commit replaced the Codex global Skill; the installed copy repeated Keil build/download with verify, served the bundled Web client, completed pyOCD online verify, and resumed the target. Old Skill backups were removed and ports 8765 and 5173 were closed afterward.
@@ -43,6 +45,9 @@
 
 ## 架构决策
 
+- FastAPI router-inclusion internals changed in 0.139 without breaking HTTP routing. Regression tests traverse both the older flattened route list and the newer lazy original_router representation instead of pinning a working runtime to an old FastAPI release.
+- On Windows, guarded pack-worker wrappers run the stdlib-only process_guard_exec.py through sys._base_executable so Python 3.13+ venv launcher proxies cannot change the expected parent PID or escape the parent Job Object attachment.
+- Concurrency tests prove non-blocking behavior through controlled event ordering and watchdog fail-safe release rather than scheduler-sensitive 50 ms wall-clock thresholds.
 - Agent-driven firmware download uses an available project IDE's verified native build/download commands first, pyOCD online flash when the IDE path is unavailable or not applicable, and the MKLink offline API last. A backend that has started and failed stops with evidence instead of silently falling through; python -m mklink flash is an explicit compatibility/diagnostic path.
 - Automatic FLM resolution ranks bundled Pack, bundled DAPLink, installed Pack, then registered custom algorithms, considers all tiers for address coverage, preserves Pack-version discovery order, and lets explicit user selections override the automatic order. HPM remains ROM API/BIN only.
 - Every runtime or user-facing feature and bug fix must start on a dedicated feature/<topic> or fix/<topic> branch created from a clean, current master. Required automated tests, production build, project-memory update, and affected real-hardware closed loop must pass on the branch before merge; later code or integration changes invalidate that evidence.
@@ -77,7 +82,7 @@
 
 ## 下一动作
 
-1. Monitor su5176/Mklink-AI-Probe PR #3, answer review feedback on a dedicated feature or fix branch, and merge into Aladdin-Wang master only after the required automated and affected real-hardware gates pass.
+1. Commit the qualified reviewer fixes, merge them into Aladdin-Wang master, push the GitHub PR head, and confirm su5176/Mklink-AI-Probe PR #3 shows the new commit.
 2. Qualify the same USB HTML and user-level protocol on one current macOS system and one mainstream Linux desktop, including browser confirmation and USB HID/serial permissions.
 3. Ensure the deployed skill/runtime package carries matching built gui/dist assets and runs web-entry install whenever its absolute installation path changes.
 4. Confirm an installed older client discovers, downloads, and installs v0.1.2 in the maintainer's normal desktop environment.
@@ -85,6 +90,7 @@
 
 ## 已知限制
 
+- Python 3.13 is not installed on this workstation. Its reported Windows venv launcher PID behavior reproduced on Python 3.14.5, and both the real venv process-guard integration and a synthetic Python 3.13 launcher-path regression passed after the fix.
 - The available STM32F103 fixture uses pyOCD's bundled builtin target algorithm. Bundled Pack/DAPLink versus installed/custom priority, address fallback, and explicit override behavior are covered by automated catalog/API/UI tests; this fixture did not provide a second physical target that requires a repository-bundled Pack or DAPLink FLM.
 - The protocol handler was exercised on Windows only. macOS LaunchServices and Linux xdg-mime behavior still need real-system qualification even though their generated files and quoting have automated coverage.
 - Every target computer needs a complete Mklink runtime with GUI dependencies and built gui/dist assets plus one-time web-entry registration; the USB HTML intentionally contains no executable runtime.

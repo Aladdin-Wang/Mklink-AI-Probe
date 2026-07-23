@@ -14,10 +14,11 @@ from fastapi.testclient import TestClient
 from mklink.dwarf_parser import DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
 from mklink.remote.api import create_app
 from mklink.symbol_catalog import SymbolCatalog
+from route_utils import find_route
 
 
 def _route_endpoint(app, path):
-    return next(route.endpoint for route in app.routes if route.path == path)
+    return find_route(app, path).endpoint
 
 
 def _request(client, path, responses, key):

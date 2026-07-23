@@ -21,6 +21,7 @@ from mklink.bridge import MKLinkSerialBridge
 from mklink.remote.api import create_app
 from mklink.remote.offline_download_api import detect_probe_model
 from mklink.remote.resource_manager import ResourceGroup
+from route_utils import find_route
 
 
 def _config(model="V4"):
@@ -574,11 +575,7 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
     app = create_app(auth_token=None, project_root=".")
     app.state.mklink_state["device"] = Device()
     manager = app.state.mklink_state["resource_manager"]
-    route = next(
-        item
-        for item in app.routes
-        if getattr(item, "path", None) == "/api/offline-download/trigger"
-    )
+    route = find_route(app, "/api/offline-download/trigger")
 
     async def exercise_disconnect():
         async def receive():

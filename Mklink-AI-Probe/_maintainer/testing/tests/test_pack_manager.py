@@ -479,6 +479,29 @@ def test_guard_command_uses_internal_entrypoint_when_frozen(monkeypatch):
     ]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="validates Windows venv launchers")
+def test_guard_command_uses_base_interpreter_on_windows(monkeypatch):
+    import mklink.cmsis_dap.process_guard as process_guard
+
+    monkeypatch.setattr(process_guard.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(process_guard.sys, "executable", r"C:\venv\Scripts\python.exe")
+    monkeypatch.setattr(
+        process_guard.sys,
+        "_base_executable",
+        r"C:\Python313\python.exe",
+        raising=False,
+    )
+    monkeypatch.setattr(process_guard.os, "getpid", lambda: 1234)
+
+    command = process_guard.guarded_process_command(["worker.exe", "--run"])
+
+    assert command[0] == r"C:\Python313\python.exe"
+    assert command[1] == str(
+        Path(process_guard.__file__).with_name("process_guard_exec.py")
+    )
+    assert command[2:] == ["1234", "worker.exe", "--run"]
+
+
 def test_main_routes_internal_process_guard_entrypoint(monkeypatch):
     import runpy
     import mklink.cmsis_dap.process_guard_exec as guard_exec

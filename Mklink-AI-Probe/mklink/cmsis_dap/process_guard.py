@@ -102,6 +102,15 @@ def guarded_process_command(command: Sequence[str]) -> List[str]:
             "--internal-process-guard",
             str(os.getpid()),
         ] + values
+    if os.name == "nt":
+        # Python 3.13+ venv launchers may proxy through another process, which
+        # changes the wrapper's parent PID. Run the stdlib-only guard script
+        # with the base interpreter so Popen owns the process we attach.
+        interpreter = getattr(sys, "_base_executable", None) or sys.executable
+        guard_script = os.path.join(
+            os.path.dirname(__file__), "process_guard_exec.py"
+        )
+        return [interpreter, guard_script, str(os.getpid())] + values
     return [
         sys.executable,
         "-m",

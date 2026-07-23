@@ -653,9 +653,8 @@ Record only masked probe identity and aggregate symbol/memory results.
 
 - [x] **Step 2: Build and flash the stream fixture with Keil**
 
-Use the installed Keil executable under
-`D:\Users\<redacted>\AppData\Local\Keil_v5`. Locate `UV4.exe` without printing
-the username-bearing absolute path into committed files, then run:
+Locate the installed Keil `UV4.exe` without printing its username-bearing
+absolute path into committed files, assign it to `$Uv4`, then run:
 
 ```powershell
 & $Uv4 -b "$StreamRoot\project.uvprojx" -j0

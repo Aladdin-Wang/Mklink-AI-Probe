@@ -233,11 +233,13 @@ def test_superwatch_locking_api_work_does_not_block_health(
 
     manager = get_managers()["superwatch"]
     operation_started = threading.Event()
+    release_operation = threading.Event()
+    watchdog_released = threading.Event()
     responses = []
 
     def blocking_operation(*_args, **_kwargs):
         operation_started.set()
-        time.sleep(0.2)
+        assert release_operation.wait(2.0)
         return {"state": "done"}
 
     monkeypatch.setattr(manager, manager_method, blocking_operation)
@@ -249,14 +251,27 @@ def test_superwatch_locking_api_work_does_not_block_health(
     )
     operation.start()
     assert operation_started.wait(1.0)
-    started = time.perf_counter()
-    health = client.get("/api/health")
-    health_elapsed = time.perf_counter() - started
-    operation.join(timeout=1.0)
+
+    def release_from_watchdog():
+        watchdog_released.set()
+        release_operation.set()
+
+    watchdog = threading.Timer(1.0, release_from_watchdog)
+    watchdog.start()
+    try:
+        health = client.get("/api/health")
+        health_completed_while_blocked = (
+            not watchdog_released.is_set()
+            and not release_operation.is_set()
+        )
+    finally:
+        release_operation.set()
+        watchdog.cancel()
+        operation.join(timeout=1.0)
 
     assert not operation.is_alive()
     assert health.status_code == 200
-    assert health_elapsed < 0.05
+    assert health_completed_while_blocked
     assert responses[0].status_code == 200
 
 
