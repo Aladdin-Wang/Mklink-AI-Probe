@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import struct
 
 
@@ -54,24 +53,26 @@ def parse_exception_stack_frame(data: bytes) -> dict[str, int]:
     return dict(zip(names, values))
 
 
-def addr2line(source: str, *addresses: int) -> dict[int, str]:
+def addr2line(
+    source: str,
+    *addresses: int,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> dict[int, str]:
     if not source or not addresses:
         return {}
-    from mklink.toolchain import resolve_addr2line
-    tool = resolve_addr2line()
-    if not tool:
-        # addr2line is best-effort (source-line decoration); absent tool → skip cleanly.
-        return {}
-    cmd = [tool, "-e", source, "-f", "-p"]
-    cmd.extend(f"0x{a:08X}" for a in addresses)
+    from mklink.elf_backend import lookup_source_locations
+
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return lookup_source_locations(
+            source,
+            addresses,
+            backend=backend,
+            project_root=project_root,
+        )
+    except Exception:
+        # Source decoration is best-effort; fault decoding remains available.
         return {}
-    if result.returncode != 0:
-        return {}
-    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return {addr: line for addr, line in zip(addresses, lines)}
 
 
 def format_hardfault_report(

@@ -46,6 +46,27 @@ describe('DashboardView layout classes', () => {
     routerMock.query = {}
   })
 
+  it('places SuperWatch immediately after RTT View', () => {
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.findAll('.tab-btn').map(button => button.text()).slice(0, 2))
+      .toEqual(['RTT View', 'SuperWatch'])
+    wrapper.unmount()
+  })
+
   it('does not use the full-screen clipped card layout for RTOS Trace', async () => {
     const wrapper = shallowMount(DashboardView, {
       global: {
@@ -106,13 +127,17 @@ describe('DashboardView layout classes', () => {
     expect(source).toMatch(/\.sv-vcpu\s*\{[^}]*overflow-y:\s*auto/s)
   })
 
-  it('batches live SystemView events through animation frames', () => {
+  it('uses the binary SystemView stream with bounded render and table cadences', () => {
     const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
 
-    expect(source).toContain('pendingLiveEvents')
-    expect(source).toContain('function scheduleLiveIngest')
-    expect(source).toContain('requestAnimationFrame(flushLiveIngest)')
-    expect(source).not.toMatch(/evt === 'batch'\)\s*\{\s*ingestEvents\(dp\.events/s)
+    expect(source).toMatch(/useBinaryStream\('systemview'/)
+    expect(source).toMatch(/new RenderScheduler/)
+    expect(source).toMatch(/TABLE_UPDATE_INTERVAL_MS\s*=\s*200/)
+    expect(source).not.toMatch(/passthroughEvents:\s*\['status',\s*'batch'\]/)
+    expect(source).not.toMatch(/pendingLiveEvents/)
+    expect(source).toContain('dp.isr_names')
+    expect(source).toContain('isr_name:')
+    expect(source).toMatch(/event\.kind === 'task_info'/)
   })
 
   it('can open directly on the RTOS Trace tab from the route query', () => {
@@ -137,12 +162,70 @@ describe('DashboardView layout classes', () => {
     expect(wrapper.get('.card').classes()).toContain('card-systemview')
   })
 
-  it('reconnects SystemView SSE when opening an already running trace', () => {
+  it('can open directly on the SuperWatch tab from the route query', () => {
+    routerMock.query = { tab: 'superwatch' }
+
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: { template: '<div class="superwatch-route-probe" />', props: ['deviceConnected'] },
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          VofaTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.find('.superwatch-route-probe').exists()).toBe(true)
+  })
+
+  it('removes the VOFA+ desktop entry and degrades legacy links to RTT View', () => {
+    routerMock.query = { tab: 'vofa' }
+
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: { template: '<div class="rtt-route-probe" />', props: ['deviceConnected'] },
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).not.toContain('VOFA+')
+    expect(wrapper.find('.rtt-route-probe').exists()).toBe(true)
+    const rttButton = wrapper.findAll('button').find(button => button.text() === 'RTT View')
+    expect(rttButton?.classes()).toContain('active')
+  })
+
+  it('reconnects SystemView control and binary streams when opening a running trace', () => {
     const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
 
     expect(source).toContain('async function reconnectRunningTrace')
     expect(source).toContain('dash.getStatus()')
     expect(source).toMatch(/if\s*\(status\?\.running\)/)
-    expect(source).toContain('connect()')
+    expect(source).toContain('connectStatus()')
+    expect(source).toContain('binaryStream.start()')
+  })
+
+  it('stops both SystemView transports when the tab unmounts', () => {
+    const source = readFileSync('src/components/dash/SystemViewTab.vue', 'utf8')
+    const cleanup = source.slice(source.indexOf('onUnmounted(() => {'), source.indexOf('\n})', source.indexOf('onUnmounted(() => {')))
+
+    expect(cleanup).toContain('disconnectStatus()')
+    expect(cleanup).toContain('binaryStream.stop()')
+    expect(cleanup).toContain('cancelPendingConnect()')
+    expect(cleanup).toContain('renderScheduler?.dispose()')
+    expect(cleanup).toContain('tlInstance?.destroy()')
   })
 })

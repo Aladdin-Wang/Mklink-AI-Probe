@@ -8,6 +8,7 @@ MKLink Serial Bridge — RTT 会话管理。
 from __future__ import annotations
 
 import re
+import time
 
 from mklink._types import DeviceState
 from mklink.bridge import MKLinkSerialBridge
@@ -139,13 +140,21 @@ class RTTSession:
         self._bridge._write_raw(data)
         return True
 
+    def reset_failed_start(self) -> str:
+        """Synchronize the probe after a start command returned no RTT address."""
+        return self._bridge.send_command("RTTView.stop()", timeout=5.0)
+
     def stop(self) -> str:
         """停止 RTT 会话。"""
         # 先恢复 READY 状态以便 send_command 工作
+        # Do not wait for a command prompt here: at high RTT rates the prompt
+        # is not reliably observable, and send_command() marks the bridge ERROR
+        # on timeout.  Raw stop + bounded drain mirrors SystemView shutdown.
         remaining = self._bridge._exit_stream()
         try:
-            self._bridge.send_command("RTTView.stop()", timeout=5.0)
-        except (ConnectionError, TimeoutError):
+            self._bridge._write_raw(b"RTTView.stop()\n")
+            time.sleep(0.3)
+        except Exception:
             pass  # 即使停止失败也继续恢复状态
         self._running = False
         return remaining

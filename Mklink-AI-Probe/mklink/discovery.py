@@ -75,7 +75,7 @@ def _probe_port(port_device: str) -> bool:
         return False
 
 
-def find_mklink_cdc_port() -> str | None:
+def find_mklink_cdc_port(serial_number: object = None) -> str | None:
     """自动扫描并识别 MicroLink 的 USB CDC 虚拟串口。
 
     优先使用 USB 设备描述符匹配，然后对每个端口执行2步确认探测：
@@ -84,6 +84,15 @@ def find_mklink_cdc_port() -> str | None:
     逐端口顺序探测，不并发。
     """
     ports = list(list_ports.comports())
+    requested_serial = str(serial_number or "").strip().casefold()
+    if requested_serial:
+        matching = [
+            port_info for port_info in ports
+            if str(getattr(port_info, "serial_number", "") or "").strip().casefold()
+            == requested_serial
+        ]
+        if matching:
+            return matching[0].device
 
     # 优先：USB 描述符匹配（精确匹配，避免 "Microsoft" 误命中）
     for port_info in ports:
@@ -94,7 +103,18 @@ def find_mklink_cdc_port() -> str | None:
             return port_info.device
 
     # 单轮扫描，每端口2步确认
-    for port_info in ports:
+    # Probe physical USB serial ports first. Bluetooth RFCOMM opens can block
+    # for tens of seconds and cannot be an MKLink CDC interface.
+    probe_candidates = [
+        port_info for port_info in ports
+        if not str(getattr(port_info, "hwid", "") or "").upper().startswith("BTHENUM")
+    ]
+    probe_candidates.sort(key=lambda port_info: 0 if (
+        getattr(port_info, "vid", None) is not None
+        or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
+    ) else 1)
+
+    for port_info in probe_candidates:
         if _probe_port(port_info.device):
             return port_info.device
 

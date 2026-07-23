@@ -214,8 +214,14 @@ def list_breakpoints(bridge: MKLinkSerialBridge) -> list[BreakpointSlot]:
     return state.breakpoints
 
 
-def resolve_function_address(source: str, name: str) -> int | None:
-    """Resolve a function name to its Flash address using readelf.
+def resolve_function_address(
+    source: str,
+    name: str,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> int | None:
+    """Resolve a function name to its linked Flash address.
 
     Args:
         source: Path to ELF/AXF file
@@ -224,77 +230,37 @@ def resolve_function_address(source: str, name: str) -> int | None:
     Returns:
         Address of the function, or None if not found
     """
-    import subprocess
-    import re
-    from mklink.toolchain import resolve_readelf
+    from mklink.elf_backend import resolve_function_symbol
 
-    tool = resolve_readelf()
-    if not tool:
-        raise RuntimeError("readelf not found — install arm-none-eabi-readelf or binutils "
-                           "(or set MKLINK_READELF / .mklink/toolchain.json)")
-    result = subprocess.run(
-        [tool, "-s", source],
-        capture_output=True, text=True, timeout=10,
+    return resolve_function_symbol(
+        source,
+        name,
+        backend=backend,
+        project_root=project_root,
     )
 
-    if result.returncode != 0:
-        raise RuntimeError(f"readelf failed: {result.stderr.strip()}")
 
-    # Match FUNC symbols
-    line_re = re.compile(
-        r'^\s*\d+:\s+([0-9a-fA-F]+)\s+(\d+)\s+FUNC\s+\S+\s+\S+\s+\S+\s+(.+)$'
-    )
-
-    for line in result.stdout.splitlines():
-        m = line_re.match(line)
-        if not m:
-            continue
-        sym_name = m.group(3).strip()
-        if sym_name == name:
-            return int(m.group(1), 16)
-
-    return None
-
-
-def search_functions(source: str, pattern: str, max_results: int = 20) -> list[dict]:
+def search_functions(
+    source: str,
+    pattern: str,
+    max_results: int = 20,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> list[dict]:
     """Search for function symbols matching a pattern.
 
     Returns list of dicts with keys: name, address, size
     """
-    import subprocess
-    import re
-    from mklink.toolchain import resolve_readelf
+    from mklink.elf_backend import search_function_symbols
 
-    tool = resolve_readelf()
-    if not tool:
-        raise RuntimeError("readelf not found — install arm-none-eabi-readelf or binutils "
-                           "(or set MKLINK_READELF / .mklink/toolchain.json)")
-    result = subprocess.run(
-        [tool, "-s", source],
-        capture_output=True, text=True, timeout=10,
+    return search_function_symbols(
+        source,
+        pattern,
+        max_results=max_results,
+        backend=backend,
+        project_root=project_root,
     )
-
-    line_re = re.compile(
-        r'^\s*\d+:\s+([0-9a-fA-F]+)\s+(\d+)\s+FUNC\s+\S+\s+\S+\s+\S+\s+(.+)$'
-    )
-    pat_re = re.compile(pattern, re.IGNORECASE)
-
-    matches = []
-    for line in result.stdout.splitlines():
-        m = line_re.match(line)
-        if not m:
-            continue
-        sym_name = m.group(3).strip()
-        if pat_re.search(sym_name):
-            matches.append({
-                "name": sym_name,
-                "address": int(m.group(1), 16),
-                "size": int(m.group(2)),
-            })
-            if len(matches) >= max_results:
-                break
-
-    return matches
 
 
 # --- Core Register Access (via DCRSR/DCRDR, requires CPU halted) ---

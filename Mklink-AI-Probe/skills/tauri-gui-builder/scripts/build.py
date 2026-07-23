@@ -3,7 +3,7 @@
 
 Usage:
     python build.py              # Build exe only (no bundle)
-    python build.py --bundle     # Full bundle with sidecar (MSI/NSIS)
+    python build.py --bundle     # Standard NSIS bundle with sidecar
     python build.py --check      # Check prerequisites only
     python build.py --clean      # Clean build artifacts
 
@@ -16,7 +16,10 @@ import os
 import shutil
 import argparse
 import platform
+import json
+from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -37,13 +40,13 @@ def find_project_root():
 IS_WINDOWS = platform.system() == "Windows"
 
 
-def run(cmd, cwd=None, check=True):
+def run(cmd, cwd=None, check=True, env=None):
     """Run a command and stream output."""
     print(f"\n> {' '.join(cmd) if isinstance(cmd, list) else cmd}")
     use_shell = IS_WINDOWS and isinstance(cmd, list) and cmd[0] in ("npm", "npx", "cargo", "rustc")
     result = subprocess.run(
         cmd, cwd=cwd, check=False,
-        text=True, shell=use_shell,
+        text=True, shell=use_shell, env=env,
     )
     if check and result.returncode != 0:
         print(f"[FAIL] Command exited with code {result.returncode}")
@@ -87,10 +90,61 @@ def check_python_deps():
     return True
 
 
-def build_sidecar():
+def build_builtin_pack_bundle(config_path, roots, output):
+    """Load the colocated bundle builder without making scripts a package."""
+    import importlib.util
+
+    builder_path = Path(__file__).resolve().with_name("builtin_packs.py")
+    spec = importlib.util.spec_from_file_location("mklink_builtin_pack_builder", builder_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load builtin Pack builder")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_bundle(Path(config_path), [Path(root) for root in roots], Path(output))
+
+
+def build_daplinkutility_flm_bundle(executable, output):
+    """Load the pinned Qt resource extractor without making scripts a package."""
+    import importlib.util
+
+    builder_path = Path(__file__).resolve().with_name("daplinkutility_resources.py")
+    spec = importlib.util.spec_from_file_location("mklink_daplinkutility_resources", builder_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load DAPLinkUtility FLM builder")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_bundle(Path(executable), Path(output))
+
+
+def builtin_pack_roots():
+    value = os.environ.get("MKLINK_BUILTIN_PACK_ROOTS", "")
+    roots = [Path(item).resolve() for item in value.split(os.pathsep) if item.strip()]
+    missing = [root for root in roots if not root.is_dir()]
+    if missing:
+        raise RuntimeError("builtin Pack root does not exist: {}".format(missing[0]))
+    return roots
+
+
+def daplinkutility_executable():
+    value = os.environ.get("MKLINK_DAPLINKUTILITY_EXE", "").strip()
+    if not value:
+        return None
+    executable = Path(value).resolve()
+    if not executable.is_file():
+        raise RuntimeError("DAPLinkUtility executable does not exist: {}".format(executable))
+    return executable
+
+
+def build_sidecar(force=False):
     """Build Python sidecar exe with PyInstaller."""
     sidecar_dir = TAURI_DIR / "binaries"
     sidecar_exe = sidecar_dir / "mklink-sidecar-x86_64-pc-windows-msvc.exe"
+    dist_dir = SKILL_DIR / "dist"
+    built = dist_dir / "mklink-sidecar.exe"
+
+    if force:
+        sidecar_exe.unlink(missing_ok=True)
+        built.unlink(missing_ok=True)
 
     if sidecar_exe.exists():
         print(f"[OK] Sidecar already exists: {sidecar_exe}")
@@ -102,17 +156,57 @@ def build_sidecar():
     except ImportError:
         run([sys.executable, "-m", "pip", "install", "pyinstaller"])
 
-    dist_dir = SKILL_DIR / "dist"
-    run([
-        sys.executable, "-m", "PyInstaller",
-        "--onefile", "--name", "mklink-sidecar",
-        "--collect-all", "mklink",
-        "-p", str(SKILL_DIR),
-        str(SKILL_DIR / "mklink" / "__main__.py"),
-    ], cwd=str(SKILL_DIR))
+    with TemporaryDirectory(prefix="mklink-builtin-packs-") as temporary:
+        roots = builtin_pack_roots()
+        builtin_args = []
+        if roots:
+            bundle_dir = Path(temporary) / "builtin_packs"
+            manifest = build_builtin_pack_bundle(
+                SKILL_DIR / "skills" / "tauri-gui-builder" / "builtin-packs.json",
+                roots,
+                bundle_dir,
+            )
+            print("[OK] Built builtin Pack bundle: {} targets".format(manifest["target_count"]))
+            builtin_args = [
+                "--add-data",
+                "{}{}mklink/builtin_packs".format(bundle_dir, os.pathsep),
+            ]
+        else:
+            print("[WARN] MKLINK_BUILTIN_PACK_ROOTS is not set; builtin Pack bundle omitted")
+        daplink_exe = daplinkutility_executable()
+        if daplink_exe is not None:
+            try:
+                import pefile  # noqa: F401
+            except ImportError:
+                run([sys.executable, "-m", "pip", "install", "pefile"])
+            flm_dir = Path(temporary) / "builtin_flm"
+            flm_manifest = build_daplinkutility_flm_bundle(daplink_exe, flm_dir)
+            print(
+                "[OK] Built DAPLinkUtility FLM bundle: {} targets, {} blobs".format(
+                    flm_manifest["target_count"], flm_manifest["blob_count"]
+                )
+            )
+            builtin_args.extend([
+                "--add-data",
+                "{}{}mklink/builtin_flm".format(flm_dir, os.pathsep),
+            ])
+        else:
+            print("[WARN] MKLINK_DAPLINKUTILITY_EXE is not set; builtin FLM bundle omitted")
+        run([
+            sys.executable, "-m", "PyInstaller",
+            "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
+            "--collect-all", "mklink",
+            "--collect-all", "elftools",
+            "--collect-all", "pyocd",
+            "--copy-metadata", "pyocd",
+            "--collect-all", "cmsis_pack_manager",
+            "--collect-all", "hid",
+        ] + builtin_args + [
+            "-p", str(SKILL_DIR),
+            str(SKILL_DIR / "mklink" / "__main__.py"),
+        ], cwd=str(SKILL_DIR))
 
     sidecar_dir.mkdir(parents=True, exist_ok=True)
-    built = dist_dir / "mklink-sidecar.exe"
     if built.exists():
         shutil.copy2(str(built), str(sidecar_exe))
         print(f"[OK] Sidecar copied to {sidecar_exe}")
@@ -121,13 +215,132 @@ def build_sidecar():
     return False
 
 
-def build_tauri(bundle=False):
+@contextmanager
+def temporary_external_bin(config_path):
+    """Add the release sidecar config and restore the exact original bytes."""
+    config_path = Path(config_path)
+    original = config_path.read_bytes()
+    data = json.loads(original.decode("utf-8"))
+    data.setdefault("bundle", {})["externalBin"] = [
+        "binaries/mklink-sidecar"
+    ]
+    config_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        config_path.write_bytes(original)
+
+
+@contextmanager
+def temporary_bundle_config(config_path):
+    """Apply the standard NSIS-only sidecar bundle settings."""
+    config_path = Path(config_path)
+    original = config_path.read_bytes()
+    data = json.loads(original.decode("utf-8"))
+    bundle = data.setdefault("bundle", {})
+    bundle["targets"] = ["nsis"]
+    bundle["externalBin"] = [
+        "binaries/mklink-sidecar"
+    ]
+    config_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        config_path.write_bytes(original)
+
+
+def load_updater_private_key(env=None, home=None):
+    """Load the updater key without adding it to the process environment."""
+    values = os.environ if env is None else env
+    configured = values.get("MKLINK_TAURI_UPDATER_KEY", "").strip()
+    if configured:
+        configured_path = Path(configured).expanduser()
+        try:
+            is_file = configured_path.is_file()
+        except OSError:
+            is_file = False
+        if is_file:
+            configured = configured_path.read_text(encoding="utf-8").strip()
+        if configured:
+            return configured
+
+    key_path = (
+        (Path.home() if home is None else Path(home))
+        / ".config"
+        / "mklink-ai-probe"
+        / "updater.key"
+    )
+    if not key_path.is_file():
+        raise RuntimeError(
+            "updater private key is required; set MKLINK_TAURI_UPDATER_KEY "
+            "or create ~/.config/mklink-ai-probe/updater.key"
+        )
+    key = key_path.read_text(encoding="utf-8").strip()
+    if not key:
+        raise RuntimeError("updater private key is empty")
+    return key
+
+
+def collect_signed_bundle_outputs(bundle_dir):
+    """Return the standard NSIS installer and its Tauri updater signature."""
+    nsis_dir = Path(bundle_dir) / "nsis"
+    setups = sorted(nsis_dir.glob("*.exe"))
+    if not setups:
+        raise RuntimeError("standard NSIS setup executable was not produced")
+    if len(setups) != 1:
+        raise RuntimeError("expected exactly one standard NSIS setup executable")
+    signature = Path(f"{setups[0]}.sig")
+    if not signature.is_file():
+        raise RuntimeError("Tauri updater signature was not produced")
+    return {
+        "setup": setups[0],
+        "updater_signature": signature,
+    }
+
+
+def build_release_bundle():
+    """Build a bundle from the current source with a temporary sidecar config."""
+    signing_key = load_updater_private_key()
+    if not build_sidecar(force=True):
+        raise SystemExit(1)
+    bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
+    if bundle_dir.exists():
+        try:
+            shutil.rmtree(bundle_dir)
+        except OSError as exc:
+            raise RuntimeError(
+                f"failed to remove stale bundle outputs: {bundle_dir}"
+            ) from exc
+        if bundle_dir.exists():
+            raise RuntimeError(
+                f"stale bundle outputs still exist: {bundle_dir}"
+            )
+    with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
+        return build_tauri(bundle=True, signing_key=signing_key)
+
+
+def build_tauri(bundle=False, signing_key=None):
     """Build Tauri application."""
     cmd = ["npx", "tauri", "build"]
     if not bundle:
         cmd.append("--no-bundle")
 
-    run(cmd, cwd=str(GUI_DIR))
+    env = os.environ.copy()
+    env["VITE_MKLINK_API"] = "http://127.0.0.1:8765"
+    if bundle:
+        if not signing_key:
+            raise RuntimeError("updater private key is required for a release bundle")
+        env["TAURI_SIGNING_PRIVATE_KEY"] = signing_key
+        env["TAURI_SIGNING_PRIVATE_KEY_PASSWORD"] = os.environ.get(
+            "MKLINK_TAURI_UPDATER_KEY_PASSWORD", ""
+        )
+    run(cmd, cwd=str(GUI_DIR), env=env)
 
     exe = TAURI_DIR / "target" / "release" / "mklink-ai-probe.exe"
     if exe.exists():
@@ -138,15 +351,14 @@ def build_tauri(bundle=False):
         sys.exit(1)
 
     if bundle:
-        bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
-        if bundle_dir.exists():
-            for fmt in ["msi", "nsis"]:
-                d = bundle_dir / fmt
-                if d.exists():
-                    files = list(d.glob("*"))
-                    for f in files:
-                        size_mb = f.stat().st_size / (1024 * 1024)
-                        print(f"[OK] Bundle: {f} ({size_mb:.1f} MB)")
+        outputs = collect_signed_bundle_outputs(
+            TAURI_DIR / "target" / "release" / "bundle"
+        )
+        for label, path in outputs.items():
+            size_mb = path.stat().st_size / (1024 * 1024)
+            print(f"[OK] {label}: {path} ({size_mb:.1f} MB)")
+        return outputs
+    return {}
 
 
 def clean():
@@ -168,7 +380,7 @@ def main():
     global SKILL_DIR, GUI_DIR, TAURI_DIR
 
     parser = argparse.ArgumentParser(description="Build Mklink AI Probe Tauri GUI")
-    parser.add_argument("--bundle", action="store_true", help="Full bundle (MSI/NSIS) with sidecar")
+    parser.add_argument("--bundle", action="store_true", help="Standard NSIS bundle with sidecar")
     parser.add_argument("--check", action="store_true", help="Check prerequisites only")
     parser.add_argument("--clean", action="store_true", help="Remove build artifacts")
     parser.add_argument("--project-dir", type=str, default=None, help="mklink-ai-probe project root directory")
@@ -211,19 +423,8 @@ def main():
     # Build
     if args.bundle:
         print("\n--- Building sidecar (PyInstaller) ---")
-        if not build_sidecar():
-            sys.exit(1)
-
-        # Restore externalBin in tauri.conf.json for bundling
-        conf = TAURI_DIR / "tauri.conf.json"
-        text = conf.read_text(encoding="utf-8")
-        if "externalBin" not in text:
-            text = text.replace(
-                '"icon":',
-                '"externalBin": ["binaries/mklink-sidecar"],\n    "icon":',
-            )
-            conf.write_text(text, encoding="utf-8")
-            print("[INFO] Added externalBin to tauri.conf.json for sidecar bundling")
+        build_release_bundle()
+        return
 
     print("\n--- Building Tauri application ---")
     build_tauri(bundle=args.bundle)

@@ -8,8 +8,10 @@
 
 | 用户说法 | Agent 应执行 |
 |----------|-------------|
-| "烧录最新程序" / "下载固件" | `python -m mklink flash` |
-| "烧录 IAR 项目" / "IAR 固件烧写" | `python -m mklink flash`（自动检测 IAR 工程） |
+| "烧录最新程序" / "下载固件" | 读取 [firmware-download-priority.md](firmware-download-priority.md)：优先用工程 IDE 原生编译并下载；IDE 不可用/不适用时用 pyOCD 在线烧录；最后才用 MKLink 脱机下载 API |
+| "烧录 Keil 项目" / "Keil 固件烧写" | 默认调用 `UV4.exe -b` 编译，再调用 `UV4.exe -f` 下载；仅在用户明确要求只下载且产物已验证时跳过编译 |
+| "烧录 IAR 项目" / "IAR 固件烧写" | 用 `IarBuild.exe` 编译；仅使用项目已有且验证过的 IDE 下载配置，否则进入 pyOCD 在线烧录 |
+| "使用 mklink flash" / "原生串口烧录" | 用户明确指定后执行 `python -m mklink flash`；这是兼容/诊断入口，不参与自动下载优先级 |
 | "查看 RTT 输出" / "启动 RTT" | `python -m mklink rtt --duration 10` |
 | "RTT View" / "RTT 波形" / "实时图表" | `python -m mklink rtt --visualize --duration 30`（浏览器标题显示 MKLink RTT View + RTT 模式徽章） |
 | "读取 RAM" / "读内存" / "查看 RAM 数据" | `python -m mklink read-ram --addr 0x20000000 --size 256` |
@@ -34,7 +36,7 @@
 | "烧录器版本" / "查看固件版本" / "MKLink 版本" / "MicroLink 版本" | `python -m mklink version`（默认仅当前版本；`--all` 看完整历史；`--raw` 看原始响应） |
 | "查看项目配置" | `python -m mklink project-info` |
 | "初始化项目" | `python -m mklink project-init` |
-| "新 MCU" / "未知 MCU" / "STM32H723" / "缺少 FLM" / "profile 不匹配" | `python -m mklink mcu-detect`；多内部 FLM 候选时先让用户选择，再用 `--flm` 固化 |
+| "新 MCU" / "未知 MCU" / "STM32H723" / "缺少 FLM" / "profile 不匹配" | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、用户自定义 FLM 自动解析；仍无精确匹配时执行 `python -m mklink mcu-detect`，多候选再让用户选择并用 `--flm` 固化 |
 | "解析 IAR 工程" / "查看 IAR 配置" | `python -m mklink iar-parse` |
 | "解析 Keil 工程" / "查看 Keil 配置" | `python -m mklink keil-parse` |
 | "集成 RTT（Keil/IAR）" | `python -m mklink rtt-integrate --project-root .` |

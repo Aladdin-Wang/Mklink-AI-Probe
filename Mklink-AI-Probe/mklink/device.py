@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import re
 import struct
+import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +47,40 @@ class DeviceError(Exception):
 
 class DeviceNotConnectedError(DeviceError):
     pass
+
+
+_RT_THREAD_NAME_RE = re.compile(rb"[A-Za-z_][A-Za-z0-9_.-]*")
+_RT_NAME_MAX_DEFAULT = 8
+_SRAM_START = 0x20000000
+_SRAM_END = 0x40000000
+_FLASH_VERIFY_CHUNK = 1024
+
+
+def _aligned_object_list_offset(name_max: int) -> int:
+    return (name_max + 2 + 3) & ~3
+
+
+def _is_sram_pointer(value: int) -> bool:
+    return _SRAM_START <= value < _SRAM_END and value % 4 == 0
+
+
+def _decode_rt_thread_name(raw: bytes, name_max: int) -> str | None:
+    """Decode a validated inline ``rt_object`` thread name."""
+    list_offset = _aligned_object_list_offset(name_max)
+    if len(raw) < list_offset + 8:
+        return None
+    if raw[name_max] & 0x7F != 0x01:  # RT_Object_Class_Thread
+        return None
+    next_ptr = int.from_bytes(raw[list_offset:list_offset + 4], "little")
+    prev_ptr = int.from_bytes(raw[list_offset + 4:list_offset + 8], "little")
+    if not _is_sram_pointer(next_ptr) or not _is_sram_pointer(prev_ptr):
+        return None
+    name_field = raw[:name_max]
+    nul = name_field.find(b"\x00")
+    candidate = name_field if nul < 0 else name_field[:nul]
+    if candidate and _RT_THREAD_NAME_RE.fullmatch(candidate):
+        return candidate.decode("ascii")
+    return None
 
 
 def initialize_target(
@@ -151,18 +187,23 @@ class Device:
         axf: str | None = None,
         mcu: str | None = None,
         project_root: str = ".",
+        elf_backend: str | None = None,
     ):
         self._port = port
         self._axf = axf
         self._mcu_hint = mcu
         self._project_root = project_root
+        self._elf_backend_requested = elf_backend
+        self._elf_backend = None
         self._bridge = None
         self._flash = None
         self._rtt_session = None
         self._systemview_session = None
         self._systemview_parser = None
         self._dwarf_info = None
-        self._axf_error = None  # reason DWARF load was skipped (e.g. readelf missing)
+        self._symbol_catalog = None
+        self._symbol_lock = threading.RLock()
+        self._axf_error = None  # reason ELF/DWARF loading was skipped
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -263,55 +304,131 @@ class Device:
     # DWARF / symbol loading
     # ------------------------------------------------------------------
     def _load_dwarf_info(self) -> None:
-        from mklink.dwarf_parser import load_dwarf_info
         if self._axf and Path(self._axf).exists():
             try:
-                self._dwarf_info = load_dwarf_info(self._axf)
-                self._axf_error = None
+                self.reparse_axf_atomically()
             except Exception as e:
-                # readelf missing / unreadable ELF / DWARF parse error: never
+                # Unreadable ELF / missing DWARF / parser error: never
                 # let this crash connect() — the bridge is already up. Record
                 # the reason so axf_status / the MCP layer can surface it and
-                # guide the user (e.g. install the GNU Arm toolchain).
-                self._dwarf_info = None
+                # guide the user without losing the connected debug session.
                 self._axf_error = str(e)
 
-    def parse_axf(self, axf_path: str | None = None) -> dict:
+    @property
+    def symbol_catalog(self):
+        with self._symbol_lock:
+            return self._symbol_catalog
+
+    def reparse_axf_atomically(
+        self,
+        axf_path: str | None = None,
+        elf_backend: str | None = None,
+    ):
+        from mklink.dwarf_parser import load_dwarf_info
+        from mklink.elf_backend import resolve_elf_backend
+        from mklink.symbol_catalog import AxfFingerprint, SymbolCatalog
+
+        candidate = str(axf_path or self._axf or "")
+        if not candidate:
+            raise DeviceError("No AXF path set")
+        if not Path(candidate).exists():
+            raise DeviceError(f"AXF not found: {candidate}")
+
+        requested_backend = (
+            elf_backend
+            if elf_backend is not None
+            else self._elf_backend_requested
+        )
+        effective_backend = resolve_elf_backend(
+            requested_backend, project_root=self._project_root
+        )
+        fingerprint = AxfFingerprint.from_path(candidate)
+        info = load_dwarf_info(
+            candidate,
+            backend=effective_backend,
+            project_root=self._project_root,
+        )
+        with self._symbol_lock:
+            generation = (self._symbol_catalog.generation if self._symbol_catalog else 0) + 1
+        catalog = SymbolCatalog.from_dwarf(
+            info,
+            axf_path=candidate,
+            generation=generation,
+            ram_ranges=((_SRAM_START, _SRAM_END),),
+        )
+        if catalog.fingerprint != fingerprint:
+            raise DeviceError("AXF changed while symbols were being parsed")
+
+        with self._symbol_lock:
+            self._axf = candidate
+            self._dwarf_info = info
+            self._symbol_catalog = catalog
+            self._elf_backend_requested = requested_backend
+            self._elf_backend = effective_backend
+            self._axf_error = None
+        return catalog
+
+    def parse_axf(
+        self,
+        axf_path: str | None = None,
+        elf_backend: str | None = None,
+    ) -> dict:
         """手动触发 AXF 解析。返回解析结果摘要。"""
-        if axf_path:
-            self._axf = axf_path
-        if not self._axf:
-            return {"loaded": False, "error": "No AXF path set"}
-        if not Path(self._axf).exists():
-            return {"loaded": False, "error": f"AXF not found: {self._axf}"}
         try:
-            self._load_dwarf_info()
+            self.reparse_axf_atomically(axf_path, elf_backend=elf_backend)
             return self.axf_status
         except Exception as e:
-            return {"loaded": False, "error": str(e)}
+            self._axf_error = str(e)
+            return {"loaded": False, "error": str(e), "active": self.axf_status}
 
     @property
     def axf_status(self) -> dict:
-        """返回 AXF 解析状态摘要（含工具链可用性与失败原因）。"""
-        from mklink.toolchain import status as toolchain_status
-        tc = toolchain_status()
+        """返回 AXF 解析状态摘要（含解析后端能力与失败原因）。"""
+        from mklink.elf_backend import elf_status
+
+        try:
+            tc = elf_status(
+                self._elf_backend or self._elf_backend_requested,
+                project_root=self._project_root,
+            )
+        except Exception as exc:
+            tc = {
+                "elf_backend": self._elf_backend_requested or "invalid",
+                "elf_available": False,
+                "builtin_elf_available": True,
+                "external_elf_available": False,
+                "readelf_available": False,
+                "addr2line_available": False,
+            }
+            if not self._axf_error:
+                self._axf_error = str(exc)
         if not self._dwarf_info:
-            out: dict = {"loaded": False, "axf_path": self._axf,
-                         "readelf_available": tc["readelf_available"]}
+            out: dict = {"loaded": False, "axf_path": self._axf, **tc}
             if self._axf_error:
                 out["error"] = self._axf_error
             elif self._axf and not Path(self._axf).exists():
                 out["error"] = f"AXF file not found: {self._axf}"
             return out
         info = self._dwarf_info
-        return {
+        catalog = self.symbol_catalog
+        out = {
             "loaded": True,
             "axf_path": self._axf,
-            "variable_count": len(info.variables),
+            "variable_count": len(catalog.items) if catalog is not None else 0,
             "struct_count": len(info.structs),
             "enum_count": len(info.enums),
-            "readelf_available": tc["readelf_available"],
+            **tc,
         }
+        if catalog is not None:
+            out.update({
+                "catalog_generation": catalog.generation,
+                "catalog_count": len(catalog.items),
+                "catalog_stale": catalog.is_stale(),
+                "parsed_at": catalog.parsed_at,
+            })
+        if self._axf_error:
+            out["last_error"] = self._axf_error
+        return out
 
     # ------------------------------------------------------------------
     # Flash
@@ -320,6 +437,11 @@ class Device:
         self,
         firmware: str,
         *,
+        target_part: str | None = None,
+        base_address: int | str | None = None,
+        board: str | None = None,
+        hpm_flash_cfg: list[str] | tuple[str, str, str, str] | None = None,
+        swd_clock: int | None = None,
         verify: bool = True,
         reset_after: bool = True,
         progress_callback=None,
@@ -336,6 +458,7 @@ class Device:
         mcu_profile = None
         resolved_key = None
         cfg = {}
+        project_info = {}
         if self._mcu_hint and self._mcu_hint in profiles:
             mcu_profile = profiles[self._mcu_hint]
             resolved_key = self._mcu_hint
@@ -349,10 +472,35 @@ class Device:
         elif self._project_root:
             from mklink.project_config import load_config
             cfg = load_config(self._project_root) or {}
+        if self._project_root:
+            try:
+                from mklink.project_config import load_project_info
+
+                project_info = load_project_info(self._project_root) or {}
+            except Exception:
+                project_info = {}
+        requested_target = str(
+            target_part
+            or project_info.get("device")
+            or project_info.get("target_part")
+            or ""
+        ).strip()
+        if not mcu_profile and requested_target:
+            target_profile_key = match_mcu_by_device(requested_target, profiles)
+            if target_profile_key:
+                mcu_profile = profiles[target_profile_key]
+                resolved_key = target_profile_key
         if not mcu_profile:
             mcu_profile = self._get_mcu_profile()
         explicit_custom = self._mcu_hint == "custom" or cfg.get("mcu_key") == "custom"
-        if not mcu_profile and not explicit_custom:
+        from mklink.hpm_config import is_hpm_target
+
+        project_hpm = is_hpm_target(
+            requested_target,
+            vendor=project_info.get("vendor"),
+            board=board or project_info.get("board"),
+        )
+        if not mcu_profile and not explicit_custom and not requested_target and not project_hpm:
             raise DeviceError(
                 "Unknown MCU profile; run `python -m mklink mcu-detect` "
                 "or `python -m mklink project-init` before flashing"
@@ -372,27 +520,143 @@ class Device:
                 or "hpmicro" in profile_name
                 or profile_prefix.startswith("hpm")
             )
+        if base_address is not None:
+            try:
+                parsed_base_address = (
+                    int(base_address, 0) if isinstance(base_address, str) else int(base_address)
+                )
+            except (TypeError, ValueError):
+                raise DeviceError("Flash base address must be an integer")
+            if parsed_base_address < 0:
+                raise DeviceError("Flash base address must be nonnegative")
+            flash_base = _fmt_hex(parsed_base_address)
 
         # Setup SWD clock (prefer config, fallback to profile default)
-        swd_clock = 1000000
-        if cfg:
+        resolved_swd_clock = 1000000
+        if swd_clock is not None:
+            resolved_swd_clock = swd_clock
+        elif cfg:
             cfg_clock = cfg.get("swd_clock")
             if cfg_clock:
-                swd_clock = int(cfg_clock)
+                resolved_swd_clock = int(cfg_clock)
         elif mcu_profile:
-            swd_clock = mcu_profile.get("swd_clock_default", swd_clock)
-        self._flash.set_swd_clock(swd_clock)
+            resolved_swd_clock = mcu_profile.get("swd_clock_default", resolved_swd_clock)
+        self._flash.set_swd_clock(resolved_swd_clock)
 
-        # Load FLM
+        # Prefer the unified user/builtin Pack catalog when an exact target is
+        # available. Legacy profile FLM paths remain a compatibility fallback.
+        catalog_algorithm = None
+        catalog_selections = ()
+        catalog_image = None
+        resolved_target = requested_target
+        if not resolved_target and self._mcu_hint and self._mcu_hint not in profiles:
+            resolved_target = self._mcu_hint
+
+        from mklink.hpm_config import (
+            default_hpm_board,
+        )
+
+        resolved_board = str(board or project_info.get("board") or "").strip()
+        hpm_target = is_hpm_target(
+            resolved_target,
+            vendor=project_info.get("vendor"),
+            board=resolved_board,
+        ) or is_hpm_profile
+        if hpm_target:
+            if ext != ".bin":
+                raise DeviceError("HPM ROM API only supports BIN firmware")
+            raw_address = base_address
+            if raw_address is None:
+                raw_address = (
+                    project_info.get("bin_base")
+                    or project_info.get("download_base")
+                    or project_info.get("flash_base")
+                )
+            if raw_address is None:
+                raise DeviceError("HPM BIN firmware requires an explicit base address")
+            try:
+                address = int(raw_address, 0) if isinstance(raw_address, str) else int(raw_address)
+            except (TypeError, ValueError):
+                raise DeviceError("HPM BIN base address must be an integer")
+            if address < 0:
+                raise DeviceError("HPM BIN base address must be nonnegative")
+            if not resolved_board:
+                resolved_board = default_hpm_board(resolved_target) or ""
+            resolved_flash_cfg = hpm_flash_cfg or project_info.get("hpm_flash_cfg")
+            if not resolved_board and not resolved_flash_cfg:
+                raise DeviceError("HPM target requires a board or flash configuration")
+            result = self._flash.burn_hpm_bin(
+                firmware,
+                addr=_fmt_hex(address),
+                board=resolved_board or None,
+                flash_cfg=resolved_flash_cfg,
+                progress_callback=progress_callback,
+            )
+            if not result.get("success"):
+                raise DeviceError(f"Flash failed: {result}")
+            result = dict(result)
+            result["algorithm_source"] = "hpm-rom-api"
+            result["verified"] = False
+            if verify:
+                self._verify_firmware_readback(firmware, _fmt_hex(address))
+                result["verified"] = True
+            if reset_after:
+                self.reset()
+            return result
+
+        if resolved_target:
+            from mklink.cmsis_dap.algorithm_catalog import (
+                discover_flash_algorithms,
+                deploy_algorithm_to_probe,
+                resolve_firmware_algorithms,
+            )
+
+            if ext == ".hex":
+                from intelhex import IntelHex
+
+                image = IntelHex(str(firmware))
+                catalog_image = image
+                firmware_ranges = tuple((start, end) for start, end in image.segments())
+            else:
+                firmware_ranges = ((int(flash_base, 0), int(flash_base, 0) + Path(firmware).stat().st_size),)
+            catalog = discover_flash_algorithms(resolved_target)
+            if catalog:
+                catalog_selections = tuple(
+                    resolve_firmware_algorithms(catalog, firmware_ranges)
+                )
+                catalog_algorithm = catalog_selections[0].algorithm
+                if len(catalog_selections) == 1:
+                    flm_path = deploy_algorithm_to_probe(catalog_algorithm)
+                    algorithm_flash_base = _fmt_hex(catalog_algorithm.flash_start)
+                    if ext == ".hex":
+                        flash_base = algorithm_flash_base
+                    selected_ram = catalog_algorithm.ram_start or int(ram_base, 0)
+                    if not self._flash.load_flm(
+                        flm_path,
+                        algorithm_flash_base,
+                        _fmt_hex(selected_ram),
+                    ):
+                        raise DeviceError(f"FLM load failed: {flm_path}")
+            elif not (
+                mcu_profile
+                and resolved_key not in (None, "custom")
+                and mcu_profile.get("flm_path")
+            ):
+                raise DeviceError(
+                    f"Target {resolved_target!r} has no usable Flash algorithm"
+                )
+
+        # Load the legacy profile FLM only when the unified catalog did not
+        # resolve the exact target and firmware address range.
         flm_path = None
-        if mcu_profile:
+        if mcu_profile and catalog_algorithm is None:
             flm_path = mcu_profile.get("flm_path", "")
             if flm_path and not flm_path.startswith("/"):
                 flm_path = "/" + flm_path
-        if flm_path:
+        if flm_path and catalog_algorithm is None:
             if not self._flash.load_flm(flm_path, flash_base, ram_base):
                 raise DeviceError(f"FLM load failed: {flm_path}")
-        elif (
+        elif catalog_algorithm is None and (
             mcu_profile
             and resolved_key != "custom"
             and not explicit_custom
@@ -402,7 +666,45 @@ class Device:
                 f"MCU profile {resolved_key or mcu_profile.get('name', '')!r} has no FLM path"
             )
 
-        if ext == ".hex":
+        if len(catalog_selections) > 1:
+            if ext != ".hex" or catalog_image is None:
+                raise DeviceError("Multiple Flash algorithms require an Intel HEX image")
+            region_results = []
+            with tempfile.TemporaryDirectory(prefix="mklink-flash-regions-") as temporary:
+                for index, selection in enumerate(catalog_selections):
+                    algorithm = selection.algorithm
+                    flm_path = deploy_algorithm_to_probe(algorithm)
+                    selected_ram = algorithm.ram_start or int(ram_base, 0)
+                    if not self._flash.load_flm(
+                        flm_path,
+                        _fmt_hex(algorithm.flash_start),
+                        _fmt_hex(selected_ram),
+                    ):
+                        raise DeviceError(f"FLM load failed: {flm_path}")
+                    region_image = IntelHex()
+                    for start, end in selection.ranges:
+                        region_image.puts(
+                            start,
+                            bytes(catalog_image.tobinarray(start=start, end=end - 1)),
+                        )
+                    region_path = Path(temporary) / "region-{}.hex".format(index)
+                    region_image.write_hex_file(str(region_path))
+
+                    def region_progress(percent: int, region_index: int = index) -> None:
+                        if progress_callback is not None:
+                            progress_callback(
+                                int((region_index * 100 + percent) / len(catalog_selections))
+                            )
+
+                    region_result = self._flash.burn_hex(
+                        str(region_path),
+                        progress_callback=region_progress,
+                    )
+                    if not region_result.get("success"):
+                        raise DeviceError(f"Flash failed: {region_result}")
+                    region_results.append(dict(region_result))
+            result = {"success": True, "regions": region_results}
+        elif ext == ".hex":
             result = self._flash.burn_hex(
                 firmware, progress_callback=progress_callback
             )
@@ -416,10 +718,49 @@ class Device:
         if not result.get("success"):
             raise DeviceError(f"Flash failed: {result}")
 
+        result = dict(result)
+        if catalog_algorithm is not None:
+            result["algorithm_source"] = catalog_algorithm.source_kind
+            result["algorithm_name"] = catalog_algorithm.file_name
+            if len(catalog_selections) > 1:
+                result["algorithm_sources"] = [
+                    selection.algorithm.source_kind for selection in catalog_selections
+                ]
+                result["algorithm_names"] = [
+                    selection.algorithm.file_name for selection in catalog_selections
+                ]
+        result["verified"] = False
+        if verify:
+            self._verify_firmware_readback(firmware, flash_base)
+            result["verified"] = True
+
         if reset_after:
             self.reset()
 
         return result
+
+    def _verify_firmware_readback(self, firmware: str, flash_base: str) -> None:
+        path = Path(firmware)
+        if path.suffix.lower() == ".hex":
+            from intelhex import IntelHex
+
+            image = IntelHex(str(path))
+            regions = [
+                (start, bytes(image.tobinarray(start=start, end=end - 1)))
+                for start, end in image.segments()
+            ]
+        else:
+            regions = [(int(flash_base, 0), path.read_bytes())]
+
+        for start, expected in regions:
+            for offset in range(0, len(expected), _FLASH_VERIFY_CHUNK):
+                chunk = expected[offset:offset + _FLASH_VERIFY_CHUNK]
+                address = start + offset
+                actual = self.read_memory(address, len(chunk))
+                if actual != chunk:
+                    raise DeviceError(
+                        f"Flash verify failed at 0x{address:08X}"
+                    )
 
     def erase_chip(self) -> bool:
         self._require_connected()
@@ -435,9 +776,7 @@ class Device:
 
     def reset(self) -> None:
         self._require_connected()
-        self._bridge.send_command("cmd.set_beep_on()", timeout=3.0)
-        time.sleep(0.05)
-        self._bridge.send_command("cmd.set_beep_off()", timeout=3.0)
+        self._bridge.send_command("cmd.reset_chip()", timeout=10.0)
 
     def _get_mcu_profile(self) -> dict | None:
         from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode, match_mcu_by_device
@@ -562,6 +901,37 @@ class Device:
     # ------------------------------------------------------------------
     # RTT
     # ------------------------------------------------------------------
+    def _read_rtt_down_buffers(self, control_block_addr: int) -> list[dict]:
+        descriptor_size = 24
+        header = self.read_memory(control_block_addr, 24)
+        if len(header) < 24 or header[:10] != b"SEGGER RTT":
+            return []
+
+        max_up = int.from_bytes(header[16:20], "little")
+        max_down = int.from_bytes(header[20:24], "little")
+        if not 1 <= max_up <= 16 or not 1 <= max_down <= 16:
+            return []
+
+        down_address = control_block_addr + 24 + max_up * descriptor_size
+        raw = self.read_memory(down_address, max_down * descriptor_size)
+        if len(raw) != max_down * descriptor_size:
+            return []
+
+        buffers = []
+        for channel in range(max_down):
+            offset = channel * descriptor_size
+            buffer_address = int.from_bytes(raw[offset + 4:offset + 8], "little")
+            size = int.from_bytes(raw[offset + 8:offset + 12], "little")
+            flags = int.from_bytes(raw[offset + 20:offset + 24], "little")
+            buffers.append({
+                "channel": channel,
+                "size": size,
+                "mode": flags,
+                "active": buffer_address != 0 and 0 < size <= 1024 * 1024,
+                "name": "",
+            })
+        return buffers
+
     def rtt_start(
         self,
         addr: str | None = None,
@@ -583,19 +953,59 @@ class Device:
             self._rtt_session.stop()
 
         # 未显式传入时，从 rtt_config.json 解析
-        if mode is None:
+        rtt_cfg = None
+        if mode is None or not addr:
             from mklink.project_config import load_rtt_config, resolve_rtt_storage_mode
             rtt_cfg = load_rtt_config(self._project_root)
+        if mode is None:
             mode = resolve_rtt_storage_mode(rtt_cfg)
+        if mode == 1 and not addr and rtt_cfg:
+            addr = rtt_cfg.get("rtt_addr")
+
+        fallback_down_buffers = []
+        requested_addr = None
+        if addr:
+            try:
+                requested_addr = int(addr, 0)
+                fallback_down_buffers = self._read_rtt_down_buffers(requested_addr)
+            except (TypeError, ValueError, OSError, DeviceError):
+                fallback_down_buffers = []
 
         from mklink.rtt import RTTSession
         self._rtt_session = RTTSession(self._bridge, channel=channel)
-        return self._rtt_session.start(
+        result = self._rtt_session.start(
             addr or "",
             search_size=search_size,
             project_root=self._project_root,
             mode=mode,
         )
+        if mode == 1 and not result.get("control_block_addr") and fallback_down_buffers:
+            self._rtt_session.reset_failed_start()
+            result = self._rtt_session.start(
+                addr or "",
+                search_size=4,
+                project_root=self._project_root,
+                mode=0,
+            )
+            result["storage_mode"] = 1
+            result["probe_compatibility_mode"] = "bounded-scan"
+        result["down_buffer_probe_count"] = len(fallback_down_buffers)
+        if not result.get("control_block_addr"):
+            raise DeviceError("RTT control block was not found")
+        reported_addr = result.get("control_block_addr")
+        if (
+            fallback_down_buffers
+            and requested_addr is not None
+            and reported_addr
+        ):
+            try:
+                reported_matches = int(reported_addr, 0) == requested_addr
+            except (TypeError, ValueError):
+                reported_matches = False
+            if reported_matches:
+                result["down_buffers"] = fallback_down_buffers
+                result["down_buffer_source"] = "target-control-block"
+        return result
 
     def rtt_read(self, duration: float = 10.0) -> str:
         self._require_connected()
@@ -776,28 +1186,51 @@ class Device:
         """直接读 RT-Thread 线程名（不依赖开机 INIT 包）。
 
         task_id（解码器已还原为真实指针）即 ``rt_thread*``。RT-Thread 的
-        ``rt_thread`` 继承 ``rt_object``，``name[RT_NAME_MAX]`` 在 ``rt_object``
-        内（4.x 典型偏移 12：list[8]+type[1]+color[1]+flag[2]），版本间有差异。
-        故扫描候选偏移 [8..28]，对每处取以 ``\\0`` 结尾的 C 标识符（线程名如
-        ``idle/main/tshell``）；指针字段不会匹配标识符模式，故能准确锁定 name。
+        ``rt_thread`` 继承 ``rt_object``，对象以 ``name[RT_NAME_MAX]`` 开头，
+        紧随其后的 ``type`` 必须是 Thread（可带 Static 标志）。同时验证对象
+        类型和名称，避免把错误对齐产生的 task_id 指向的普通 RAM ASCII 片段
+        误报为线程名。
         """
-        import re
         self._require_connected()
-        name_re = re.compile(rb'^[A-Za-z_][A-Za-z0-9_]*')
+        name_max = Device._systemview_rt_name_max(self)
+        list_offset = _aligned_object_list_offset(name_max)
         names: dict[int, str] = {}
         for tid in task_ids:
-            for off in (0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48):
-                try:
-                    raw = self.read_memory(int(tid) + off, 8)
-                except Exception:
-                    break  # bridge 出错则放弃此 tid
-                nul = raw.find(b'\x00')
-                cand = raw if nul < 0 else raw[:nul]
-                m = name_re.match(cand)
-                if m and len(m.group()) >= 2:
-                    names[int(tid)] = m.group().decode('ascii')
-                    break
+            task_id = int(tid)
+            if not _is_sram_pointer(task_id):
+                continue
+            try:
+                raw = self.read_memory(task_id, list_offset + 8)
+            except Exception:
+                continue
+            name = _decode_rt_thread_name(raw, name_max)
+            if name:
+                names[task_id] = name
         return names
+
+    def _systemview_rt_name_max(self) -> int:
+        root = Path(getattr(self, "_project_root", "") or ".")
+        candidates = (
+            (
+                root / "rtconfig.h",
+                re.compile(r"^\s*#define\s+RT_NAME_MAX\s+(\d+)", re.M),
+            ),
+            (
+                root / ".config",
+                re.compile(r"^CONFIG_RT_NAME_MAX=(\d+)", re.M),
+            ),
+        )
+        for path, pattern in candidates:
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            match = pattern.search(content)
+            if match:
+                value = int(match.group(1))
+                if 1 <= value <= 64:
+                    return value
+        return _RT_NAME_MAX_DEFAULT
 
     # ------------------------------------------------------------------
     # Memory
@@ -975,7 +1408,12 @@ class Device:
                 stack_frame = parse_exception_stack_frame(frame_raw)
                 if stack_frame:
                     addrs = [stack_frame.get("pc", 0), stack_frame.get("lr", 0)]
-                    source_locations = addr2line(self._axf, *addrs)
+                    source_locations = addr2line(
+                        self._axf,
+                        *addrs,
+                        backend=self._elf_backend,
+                        project_root=self._project_root,
+                    )
             except Exception:
                 pass
 
@@ -1000,7 +1438,11 @@ class Device:
         if not self._axf:
             raise DeviceError("No AXF/ELF loaded for memory map analysis.")
         from mklink.memmap import analyze_memmap
-        return analyze_memmap(self._axf)
+        return analyze_memmap(
+            self._axf,
+            backend=self._elf_backend,
+            project_root=self._project_root,
+        )
 
 
 # ======================================================================
@@ -1013,6 +1455,7 @@ def connect(
     axf: str | None = None,
     mcu: str | None = None,
     project_root: str = ".",
+    elf_backend: str | None = None,
 ) -> Device:
     """Create and connect a Device.
 
@@ -1026,8 +1469,15 @@ def connect(
         axf: Path to AXF/ELF file for symbol resolution.
         mcu: MCU profile hint (e.g. "stm32f4").
         project_root: Project root for .mklink/ config lookup.
+        elf_backend: Explicit ELF parser backend (builtin or external).
     """
-    dev = Device(port=port, axf=axf, mcu=mcu, project_root=project_root)
+    dev = Device(
+        port=port,
+        axf=axf,
+        mcu=mcu,
+        project_root=project_root,
+        elf_backend=elf_backend,
+    )
     dev._connect()
     return dev
 

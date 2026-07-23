@@ -1,11 +1,9 @@
-"""Resolution + availability for the GNU Arm host tools (readelf, addr2line).
+"""Resolution for the explicitly selected GNU ELF compatibility backend.
 
-mklink shells out to ``arm-none-eabi-readelf`` (symbol table + DWARF parsing)
-and ``arm-none-eabi-addr2line`` (HardFault source-line lookup). These are NOT
-bundled with mklink — they come from the GNU Arm Embedded Toolchain or from
-system binutils. This module centralizes *how* those binaries are located so
-that every call site behaves identically and a missing tool surfaces as one
-clear, actionable error instead of an opaque ``[WinError 2]``.
+MKLink uses bundled pyelftools by default. Only ``elf_backend=external`` shells
+out to ``arm-none-eabi-readelf`` and ``arm-none-eabi-addr2line``. These optional
+binaries are not bundled; this module centralizes how the external adapter
+locates them and reports actionable errors.
 
 Resolution order (first existing hit wins, per tool):
   1. Environment override — ``$MKLINK_READELF`` / ``$MKLINK_ADDR2LINE``.
@@ -17,12 +15,8 @@ Resolution order (first existing hit wins, per tool):
   5. System binutils fallback — plain ``readelf`` / ``addr2line`` (reads any
      ELF; works for ``-s`` / ``--debug-dump`` / ``-e ... -f``).
 
-Call sites should use :func:`require_readelf` / :func:`require_addr2line`
-(raise :class:`ToolchainMissingError` with an install hint when absent) or
-:func:`resolve_readelf` / :func:`resolve_addr2line` (return ``None``) — never
-hardcode the binary name. :func:`status` reports availability for the MCP
-``ping``/``connect`` layer so an agent can guide the user to install the
-toolchain before any AXF feature is touched.
+Only ``mklink.elf_external`` should require these binaries. Status callers may
+use the non-raising resolvers for optional external-backend diagnostics.
 """
 from __future__ import annotations
 
@@ -60,10 +54,14 @@ class ToolchainMissingError(RuntimeError):
 # --------------------------------------------------------------------------
 # Config (.mklink/toolchain.json) — cwd-upward search, git-style.
 # --------------------------------------------------------------------------
-def _find_config() -> dict[str, str]:
+def load_toolchain_overrides(
+    start: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
     """Return overrides from the nearest ``.mklink/toolchain.json``."""
-    start = Path.cwd()
-    for here in [start, *start.parents]:
+    start_path = Path(start).resolve() if start is not None else Path.cwd()
+    if start_path.is_file():
+        start_path = start_path.parent
+    for here in [start_path, *start_path.parents]:
         f = here / ".mklink" / CONFIG_NAME
         if f.is_file():
             try:
@@ -74,6 +72,13 @@ def _find_config() -> dict[str, str]:
                 return {k: str(v) for k, v in data.items() if isinstance(v, str)}
             return {}
     return {}
+
+
+def _find_config(
+    start: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
+    """Backward-compatible private alias for nearest toolchain overrides."""
+    return load_toolchain_overrides(start)
 
 
 # --------------------------------------------------------------------------
@@ -148,61 +153,59 @@ def _expand_first(patterns: list[str]) -> str | None:
 # --------------------------------------------------------------------------
 # Public resolution API. Cached per-process; clear_cache() for tests.
 # --------------------------------------------------------------------------
-@lru_cache(maxsize=1)
-def resolve_readelf() -> str | None:
+@lru_cache(maxsize=None)
+def resolve_readelf(
+    start: str | os.PathLike[str] | None = None,
+) -> str | None:
     """Resolve the readelf binary path, or ``None`` if unavailable."""
     env_path = os.environ.get(ENV_READELF)
     if env_path and Path(env_path).is_file():
         return env_path
-    cfg = _find_config().get("readelf")
+    cfg = _find_config(start).get("readelf")
     if cfg and Path(cfg).is_file():
         return cfg
     return _expand_first(_wellknown_candidates("readelf"))
 
 
-@lru_cache(maxsize=1)
-def resolve_addr2line() -> str | None:
+@lru_cache(maxsize=None)
+def resolve_addr2line(
+    start: str | os.PathLike[str] | None = None,
+) -> str | None:
     """Resolve the addr2line binary path, or ``None`` if unavailable."""
     env_path = os.environ.get(ENV_ADDR2LINE)
     if env_path and Path(env_path).is_file():
         return env_path
-    cfg = _find_config().get("addr2line")
+    cfg = _find_config(start).get("addr2line")
     if cfg and Path(cfg).is_file():
         return cfg
     return _expand_first(_wellknown_candidates("addr2line"))
 
 
-def require_readelf() -> str:
+def require_readelf(
+    start: str | os.PathLike[str] | None = None,
+) -> str:
     """Return the readelf path, raising :class:`ToolchainMissingError` if absent."""
-    p = resolve_readelf()
+    p = resolve_readelf(start)
     if not p:
         raise ToolchainMissingError("readelf")
     return p
 
 
-def require_addr2line() -> str:
+def require_addr2line(
+    start: str | os.PathLike[str] | None = None,
+) -> str:
     """Return the addr2line path, raising :class:`ToolchainMissingError` if absent."""
-    p = resolve_addr2line()
+    p = resolve_addr2line(start)
     if not p:
         raise ToolchainMissingError("addr2line")
     return p
 
 
 def status() -> dict[str, object]:
-    """Snapshot of host-tool availability — for MCP ``ping`` / ``connect``.
+    """Snapshot of built-in ELF and optional GNU host-tool capabilities."""
+    from mklink.elf_backend import elf_status
 
-    Cheap to call: the per-tool resolution is cached. Returns booleans plus
-    the resolved paths so an agent can both gate behavior and tell the user
-    exactly which binary (if any) was found.
-    """
-    r = resolve_readelf()
-    a = resolve_addr2line()
-    return {
-        "readelf_available": bool(r),
-        "readelf_path": r,
-        "addr2line_available": bool(a),
-        "addr2line_path": a,
-    }
+    return elf_status()
 
 
 def clear_cache() -> None:

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Aladdin-Wang/Mklink-AI-Probe/docs/ai/project-memory.schema.json",
+  "title": "Mklink AI Probe project memory",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "updated_at",
+    "repository",
+    "mission",
+    "current_session",
+    "milestones",
+    "verification",
+    "decisions",
+    "known_limits",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "updated_at": { "type": "string" },
+    "repository": { "type": "object" },
+    "mission": { "type": "object" },
+    "current_session": { "type": "object" },
+    "milestones": { "type": "array" },
+    "verification": { "type": "array" },
+    "decisions": { "type": "array" },
+    "hardware": { "type": "object" },
+    "known_limits": { "type": "array" },
+    "next_actions": { "type": "array" },
+    "continuation_protocol": { "type": "array" }
+  },
+  "additionalProperties": false
+}

@@ -118,12 +118,9 @@ def _register_health_tools(mcp: Any) -> None:
         """Health check for the mklink MCP server.
 
         Call this first to confirm the server is alive before invoking any
-        hardware tool. Requires no device connection. Also reports whether
-        the GNU Arm host tools (``arm-none-eabi-readelf`` / ``addr2line``)
-        are resolvable — these gate AXF symbol/variable access and HardFault
-        source-line lookup. If ``readelf_available`` is false, tell the user
-        to install the GNU Arm Embedded Toolchain (or set MKLINK_READELF /
-        .mklink/toolchain.json) before using symbol-dependent features.
+        hardware tool. Requires no device connection. Also reports the
+        effective built-in ELF/DWARF backend and optional external GNU tool
+        availability. AXF features use the bundled backend by default.
         """
         from importlib.metadata import version, PackageNotFoundError
         from mklink.toolchain import status as toolchain_status
@@ -158,6 +155,7 @@ def _register_connection_tools(mcp: Any) -> None:
         axf: str | None = None,
         mcu: str | None = None,
         project_root: str = ".",
+        elf_backend: str | None = None,
     ) -> dict:
         """Connect to an MKLink probe and establish a debug session.
 
@@ -170,19 +168,24 @@ def _register_connection_tools(mcp: Any) -> None:
                 from IDCODE; set only if detection fails.
             project_root: Project root holding ``.mklink/`` config (mcu_key,
                 swd_clock, rtt_config.json). Defaults to current dir.
+            elf_backend: Explicit ``builtin`` or ``external`` selection.
 
         Replaces any existing session (releases the serial lock first).
         """
         import mklink
         _reset_device()
         dev = mklink.connect(
-            port=port, axf=axf, mcu=mcu, project_root=project_root,
+            port=port,
+            axf=axf,
+            mcu=mcu,
+            project_root=project_root,
+            elf_backend=elf_backend,
         )
         with _lock:
             _holder["device"] = dev
             _holder["kwargs"] = {
                 "port": port, "axf": axf, "mcu": mcu,
-                "project_root": project_root,
+                "project_root": project_root, "elf_backend": elf_backend,
             }
         axf_loaded = bool(getattr(dev, "_dwarf_info", None))
         out: dict = {
@@ -191,17 +194,25 @@ def _register_connection_tools(mcp: Any) -> None:
             "idcode": _idcode(dev),
             "mcu": dev.mcu_name if dev.connected else None,
             "axf_loaded": axf_loaded,
+            "elf_backend": dev.axf_status.get("elf_backend"),
         }
         if not axf_loaded and axf:
-            # AXF was requested but symbols didn't load — surface the reason
-            # (typically readelf missing) so the agent can guide the install
-            # instead of the user hitting an opaque error on read_variable.
+            # AXF was requested but symbols did not load; surface the parser
+            # error instead of deferring it until read_variable.
             status = getattr(dev, "axf_status", {}) or {}
             out["axf_error"] = (
                 status.get("error") if isinstance(status, dict) else None
             ) or getattr(dev, "_axf_error", None) or "unknown"
-            from mklink.toolchain import resolve_readelf
-            out["readelf_available"] = bool(resolve_readelf())
+            out.update({
+                key: status.get(key)
+                for key in (
+                    "elf_backend",
+                    "builtin_elf_available",
+                    "external_elf_available",
+                    "readelf_available",
+                    "addr2line_available",
+                )
+            })
         return out
 
     @mcp.tool()
@@ -271,6 +282,10 @@ def _register_flash_tools(mcp: Any) -> None:
     @mcp.tool()
     def flash(
         firmware: str,
+        target_part: str | None = None,
+        base_address: int | None = None,
+        board: str | None = None,
+        hpm_flash_cfg: list[str] | None = None,
         verify: bool = True,
         reset_after: bool = True,
     ) -> dict:
@@ -282,12 +297,29 @@ def _register_flash_tools(mcp: Any) -> None:
 
         Args:
             firmware: Path to .hex or .bin file.
+            target_part: Exact MCU part number. When supplied, the shared
+                user-Pack/builtin-Pack/custom-FLM catalog is used without
+                requiring Keil on the host. HPMicro targets instead use the
+                device-side HPM ROM API and never load an FLM.
+            base_address: Required BIN load address when unavailable from
+                project configuration. HPM SDK images commonly use 0x80000400.
+            board: Optional HPM board name such as hpm5301evklite.
+            hpm_flash_cfg: Optional four-word HPM flash configuration used
+                when no board name is supplied.
             verify: Read back and compare after programming (default True).
             reset_after: Reset the target to entry point after flash (default
                 True). Set False to keep the CPU halted for inspection.
         """
         dev = _connected_device()
-        return dev.flash(firmware, verify=verify, reset_after=reset_after)
+        return dev.flash(
+            firmware,
+            target_part=target_part,
+            base_address=base_address,
+            board=board,
+            hpm_flash_cfg=hpm_flash_cfg,
+            verify=verify,
+            reset_after=reset_after,
+        )
 
     @mcp.tool()
     def erase_chip() -> dict:
@@ -450,7 +482,10 @@ def _register_debug_tools(mcp: Any) -> None:
 
 def _register_symbol_tools(mcp: Any) -> None:
     @mcp.tool()
-    def load_symbols(axf_path: str) -> dict:
+    def load_symbols(
+        axf_path: str,
+        elf_backend: str | None = None,
+    ) -> dict:
         """Load/refresh DWARF symbol info from an AXF/ELF file.
 
         Use when ``connect`` was made without ``axf`` and the user now wants
@@ -458,9 +493,10 @@ def _register_symbol_tools(mcp: Any) -> None:
 
         Args:
             axf_path: Path to the .axf/.elf file.
+            elf_backend: Explicit ``builtin`` or ``external`` selection.
         """
         dev = _connected_device()
-        return dev.parse_axf(axf_path)
+        return dev.parse_axf(axf_path, elf_backend=elf_backend)
 
     @mcp.tool()
     def symbols_status() -> dict:
@@ -794,8 +830,8 @@ def _register_hardfault_tools(mcp: Any) -> None:
 
         Auto-reads CFSR/HFSR, expands them to human-readable flag names
         (e.g. "Imprecise data access violation"), and — if an AXF/ELF is
-        loaded — walks the exception stack frame and runs addr2line on
-        PC/LR to pinpoint the faulting source line. This encodes the full
+        loaded — walks the exception stack frame and resolves PC/LR through
+        the selected ELF backend to pinpoint the source line. This encodes the full
         HardFault debugging playbook (references/commands-memory.md).
         """
         dev = _connected_device()

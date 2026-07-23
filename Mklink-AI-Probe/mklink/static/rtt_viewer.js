@@ -328,8 +328,7 @@ es.onmessage = function(e) {
       return;
     }
     if (data._event === 'interval_change') {
-      currentInterval = data.interval;
-      document.getElementById('interval-input').value = data.interval;
+      syncIntervalFromServer(data.interval);
       return;
     }
     if (data._event === 'channel_metadata') {
@@ -366,13 +365,29 @@ es.onopen = function() {
 // ============================================================
 // Collection control (Start/Pause/Stop + Interval)
 // ============================================================
-var collectionState = 'running';
-var currentInterval = 0;
-var estimatedInterval = 0;
-var estimatedRate = 0;
 var IS_VOFA_MODE = CONFIG.mode === 'VOFA';
 var IS_SUPERWATCH_MODE = CONFIG.mode === 'SuperWatch';
+var collectionState = 'running';
+var currentInterval = IS_SUPERWATCH_MODE ? 0.001 : 0;
+var intervalInput = document.getElementById('interval-input');
+var intervalDirty = false;
+var intervalUpdatePending = false;
+var estimatedInterval = 0;
+var estimatedRate = 0;
 var timeUnit = 'ms';
+
+function syncIntervalFromServer(value) {
+  var normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0 || normalized > 60) return;
+  currentInterval = normalized;
+  if (!intervalDirty && !intervalUpdatePending) {
+    intervalInput.value = String(normalized);
+  }
+}
+
+intervalInput.addEventListener('input', function() {
+  intervalDirty = true;
+});
 
 // Hide interval controls in RTT mode (data rate is firmware-controlled)
 if (!IS_VOFA_MODE && !IS_SUPERWATCH_MODE) {
@@ -469,19 +484,28 @@ document.getElementById('btn-apply-buffer').addEventListener('click', function()
   setBufferCapacity(val);
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
-  var val = parseFloat(document.getElementById('interval-input').value);
+  var val = parseFloat(intervalInput.value);
   if (isNaN(val) || val < 0 || val > 60) {
     alert('Interval must be between 0 and 60 seconds');
     return;
   }
+  intervalDirty = false;
+  intervalUpdatePending = true;
   fetch('/api/interval', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({interval: val})
   })
     .then(function(r){return r.json()})
-    .then(function(d){currentInterval = d.interval})
-    .catch(function(){});
+    .then(function(d){
+      intervalUpdatePending = false;
+      syncIntervalFromServer(d.interval);
+    })
+    .catch(function(){
+      intervalUpdatePending = false;
+      intervalDirty = false;
+      intervalInput.value = String(currentInterval);
+    });
 });
 
 // Sync initial state from server
@@ -492,8 +516,7 @@ fetch('/api/status')
     updateSampleRateBadge(d.estimated_interval, d.estimated_rate);
     applyChannelMetadata(d.channel_metadata || {});
     if (d.interval !== undefined && d.interval > 0) {
-      currentInterval = d.interval;
-      document.getElementById('interval-input').value = d.interval;
+      syncIntervalFromServer(d.interval);
     }
   })
   .catch(function(){});

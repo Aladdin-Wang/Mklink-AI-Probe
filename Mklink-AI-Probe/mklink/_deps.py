@@ -70,6 +70,23 @@ def check_readelf_available() -> tuple[bool, str | None]:
         return False, f"arm-none-eabi-readelf 执行异常: {e}"
 
 
+def check_elf_available(
+    *, project_root: str | None = None
+) -> tuple[bool, str | None]:
+    """检查当前选择的 ELF 后端；默认内置 pyelftools。"""
+    from mklink.elf_backend import elf_status
+
+    try:
+        status = elf_status(project_root=project_root)
+    except Exception as exc:
+        return False, str(exc)
+    if status["elf_available"]:
+        if status["elf_backend"] == "builtin":
+            return True, f"builtin pyelftools {status['builtin_elf_version']}"
+        return True, str(status.get("readelf_path") or "external readelf")
+    return False, f"ELF backend unavailable: {status['elf_backend']}"
+
+
 def require_dependencies() -> None:
     """检查依赖，缺失则打印安装指引并退出。
 

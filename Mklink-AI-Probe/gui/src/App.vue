@@ -13,43 +13,91 @@
         <StatusBar />
       </div>
     </header>
-    <main class="app-main">
-      <router-view />
-    </main>
+    <AppUpdateBanner
+      v-if="!updateDismissed"
+      :state="updateState"
+      :version="updateVersion"
+      :progress="updateProgress"
+      :error="updateError"
+      @install="installAndRelaunch"
+      @retry="retryUpdate"
+      @dismiss="updateDismissed = true"
+    />
+    <div class="app-main">
+      <router-view v-if="initialBackendReady" />
+      <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
+        正在启动本地服务…
+      </div>
+      <div v-else class="backend-recovery" role="alert">
+        <strong>本地服务未启动</strong>
+        <button data-testid="backend-restart" @click="restart">重启服务</button>
+      </div>
+    </div>
+    <footer class="app-footer">
+      <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
+    </footer>
     <ToastContainer />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import AppUpdateBanner from './components/AppUpdateBanner.vue'
+import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 import { useMklinkApi } from './composables/useMklinkApi'
 import { useBackendHealth } from './composables/useBackendHealth'
+import { useAppUpdater } from './composables/useAppUpdater'
 
 const router = useRouter()
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { startHealthPolling, stopHealthPolling } = useBackendHealth()
+const { backendState, startHealthPolling, stopHealthPolling, restart } = useBackendHealth()
+const {
+  state: updateState,
+  version: updateVersion,
+  progress: updateProgress,
+  error: updateError,
+  checkForUpdates,
+  installAndRelaunch,
+  retry: retryUpdate,
+} = useAppUpdater()
+const initialBackendReady = ref(false)
+const updateDismissed = ref(false)
+let statusPollingStarted = false
+const appVersion = __APP_VERSION__
+const buildCommit = __APP_BUILD_COMMIT__
 
 const currentTab = computed(() => route.name as string)
 
 const tabs = [
   { key: 'config', label: '配置' },
   { key: 'dashboard', label: '仪表盘' },
+  { key: 'offline-flash', label: '脱机烧录' },
+  { key: 'online-flash', label: '在线烧录' },
 ]
 
 function navigate(key: string) {
   router.push({ name: key })
 }
 
+watch(backendState, state => {
+  if (state !== 'alive' || initialBackendReady.value) return
+  initialBackendReady.value = true
+  if (!statusPollingStarted) {
+    statusPollingStarted = true
+    startStatusPolling(3000)
+  }
+}, { immediate: true })
+
 onMounted(() => {
-  startStatusPolling(3000)
   startHealthPolling(5000)
+  void checkForUpdates()
 })
 onUnmounted(() => {
-  stopStatusPolling()
+  if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()
 })
 </script>
@@ -136,6 +184,42 @@ body {
   min-height: 0;
   overflow: auto;
   padding: 20px;
+}
+.backend-starting {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.backend-recovery {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--danger);
+}
+.backend-recovery button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.app-footer {
+  flex: 0 0 22px;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 /* ---- shared components ---- */

@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 import json
 import os
 import re
-import subprocess
 import struct
 import threading
 import time
@@ -48,6 +47,7 @@ class WatchItem:
     size: int
     source: str = "ram"
     enum_values: dict[int, str] | None = None
+    scalar_kind: str | None = None
     metadata: dict = field(default_factory=dict)
 
 
@@ -168,7 +168,13 @@ def sample_blocks(
         for item in block.items:
             offset = item.address - block.address
             data = parsed.data[offset:offset + item.size]
-            point[item.name] = decode_value(data, item.type_name, item.enum_values, known_size=item.size)
+            point[item.name] = decode_value(
+                data,
+                item.type_name,
+                None,
+                known_size=item.size,
+                scalar_kind=getattr(item, "scalar_kind", None),
+            )
         points.append(point)
     return SampleResult(points=points, origin_us=current_origin or 0)
 
@@ -178,7 +184,7 @@ def poll_blocks(
     *,
     port: str | None = None,
     duration: float = 0.0,
-    period: float = 0.1,
+    period: float = 0.001,
     read_func=read_memory,
     clock=time.time,
     sleep_func=time.sleep,
@@ -202,13 +208,22 @@ def resolve_watch_items(
     source: str | None = None,
     dwarf_info=None,
     svd_registers: dict[str, SvdRegister] | None = None,
+    backend: str | None = None,
+    project_root: str | None = None,
 ) -> list[WatchItem]:
     if dwarf_info is None and source:
         from mklink.dwarf_parser import load_dwarf_info
 
-        dwarf_info = load_dwarf_info(source)
+        dwarf_info = load_dwarf_info(
+            source, backend=backend, project_root=project_root
+        )
     svd_registers = svd_registers or {}
-    symbol_sizes = _symbol_size_lookup(source) if source else {}
+    symbol_sizes = (
+        _symbol_size_lookup(
+            source, backend=backend, project_root=project_root
+        )
+        if source else {}
+    )
     items: list[WatchItem] = []
     for raw_name in _normalize_names(names):
         reg_key = raw_name.upper().replace("->", ".")
@@ -262,35 +277,25 @@ def resolve_watch_items(
     return items
 
 
-def _symbol_size_lookup(source: str) -> dict[str, int]:
-    from mklink.toolchain import resolve_readelf
-    tool = resolve_readelf()
-    if not tool:
-        return {}
+def _symbol_size_lookup(
+    source: str,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> dict[str, int]:
+    from mklink.elf_backend import list_elf_symbols
+
     try:
-        result = subprocess.run(
-            [tool, "-s", source],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        symbols = list_elf_symbols(
+            source, backend=backend, project_root=project_root
         )
-    except subprocess.TimeoutExpired:
+    except Exception:
         return {}
-    if result.returncode != 0:
-        return {}
-    sizes: dict[str, int] = {}
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 8:
-            continue
-        try:
-            size = int(parts[2], 0)
-        except ValueError:
-            continue
-        name = parts[-1]
-        if size > 0:
-            sizes[name] = size
-    return sizes
+    return {
+        symbol.name: symbol.size
+        for symbol in symbols
+        if symbol.kind == "object" and symbol.size > 0
+    }
 
 
 def _normalize_names(names: list[str]) -> list[str]:
@@ -460,12 +465,14 @@ class SuperWatchRuntime:
         *,
         items: list[WatchItem],
         dwarf_info=None,
+        symbol_catalog=None,
         svd_registers: dict[str, SvdRegister] | None = None,
         port: str | None = None,
         read_lock=None,
     ):
         self.items = list(items)
         self.dwarf_info = dwarf_info
+        self.symbol_catalog = symbol_catalog
         self.svd_registers = svd_registers or {}
         self.port = port
         self.read_lock = read_lock or threading.Lock()
@@ -475,7 +482,19 @@ class SuperWatchRuntime:
     def search(self, query: str) -> list[dict]:
         q = query.strip().lower()
         results: list[dict] = []
-        if self.dwarf_info is not None:
+        if self.symbol_catalog is not None:
+            for descriptor in self.symbol_catalog.items:
+                if q and q not in descriptor.path.lower():
+                    continue
+                results.append({
+                    "name": descriptor.path,
+                    "kind": "variable",
+                    "type": descriptor.type_name,
+                    "size": descriptor.size,
+                })
+                if len(results) >= 50:
+                    break
+        elif self.dwarf_info is not None:
             for name, var in sorted(getattr(self.dwarf_info, "variables", {}).items()):
                 if q and q not in name.lower():
                     continue
@@ -508,17 +527,33 @@ class SuperWatchRuntime:
         existing = next((item for item in self.items if item.name == name), None)
         if existing is not None:
             return {"name": existing.name, **make_channel_metadata([existing])[existing.name]}
-        try:
-            resolved = resolve_watch_items(
-                [name],
-                dwarf_info=self.dwarf_info,
-                svd_registers=self.svd_registers,
+        descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+        if descriptor is not None:
+            item = WatchItem(
+                name=descriptor.path,
+                address=descriptor.address,
+                type_name=descriptor.type_name,
+                size=descriptor.size,
+                source="ram",
+                enum_values={value: label for label, value in descriptor.enum_values.items()},
+                scalar_kind=(
+                    "signed"
+                    if descriptor.scalar_kind == "enum" and descriptor.enum_signed
+                    else descriptor.scalar_kind
+                ),
             )
-        except (KeyError, ValueError) as exc:
-            return {"error": f"Cannot resolve '{name}': {exc}"}
-        if not resolved:
-            return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
-        item = resolved[0]
+        else:
+            try:
+                resolved = resolve_watch_items(
+                    [name],
+                    dwarf_info=self.dwarf_info,
+                    svd_registers=self.svd_registers,
+                )
+            except (KeyError, ValueError) as exc:
+                return {"error": f"Cannot resolve '{name}': {exc}"}
+            if not resolved:
+                return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
+            item = resolved[0]
         self.items.append(item)
         self.blocks = build_read_blocks(self.items, max_gap=256)
         self.blocks_version += 1
@@ -599,7 +634,7 @@ class SuperWatchRuntime:
 def run_superwatch_visualizer(
     *,
     items: list[WatchItem],
-    period: float = 0.1,
+    period: float = 0.001,
     port: str | None = None,
     host: str = "127.0.0.1",
     port_http: int = 0,

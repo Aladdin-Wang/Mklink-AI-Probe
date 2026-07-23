@@ -28,6 +28,7 @@
 | **Modbus RTU** | 完整 Modbus 调试：扫描、读写、轮询、点表生成、Web Dashboard |
 | **串口调试** | 通用 UART 终端，支持自定义协议 Profile |
 | **远程 GUI** | FastAPI 后端 + Vue 3 SPA，浏览器即用 |
+| **U 盘 Web 入口** | 单个 HTML 通过用户级 URL 协议启动已安装的 Web runtime，Windows/macOS/Linux 通用 |
 | **Tauri 桌面** | Rust 桌面应用，Python sidecar，原生窗口体验 |
 | **AI Agent 集成** | Claude / OpenAI Agent 可通过 CLI 直接操控硬件 |
 
@@ -89,6 +90,49 @@ python -m mklink gui
 cd gui && npx tauri dev
 ```
 
+### 生成跨平台 U 盘 Web 入口
+
+电脑首次安装完整 Mklink skill/runtime 后注册一次用户级协议（只复制
+`SKILL.md` 不足以运行 Web 服务）：
+
+```bash
+python -m mklink web-entry install
+```
+
+生成一份可放入任意 U 盘、三个桌面系统通用的单文件 HTML：
+
+```bash
+python -m mklink web-entry html --output "/path/to/usb/启动 Mklink Web.html"
+```
+
+HTML 只调用 `mklink-ai-probe://web/start`，不会从 U 盘执行程序。入口复用现有
+Mklink Web 服务且不取得所有权；停止按钮只结束由入口自身启动的服务。详见
+[跨平台 U 盘 Web 启动入口](references/web-entry.md)。
+
+### High-throughput GUI streams
+
+SystemView, VOFA, RTT, and SuperWatch use an authenticated, versioned binary
+WebSocket data plane. A Web Worker owns fixed-capacity typed buffers, while a
+shared scheduler limits visible canvas work to 30 FPS. Pausing rendering or
+hiding a tab does not pause acquisition; backend and frontend loss counters
+remain independent.
+
+The short release gate sustains 10,000 aggregate samples/s for ten real seconds
+with no sequence error or unreported loss. This local gate is not a claim about
+the probe or target. Physical limits and packaged-app measurements are recorded
+in [the high-throughput qualification report](docs/verification/high-throughput-streams.md).
+
+### 在线烧录与脱机烧录
+
+- **在线烧录**：打开 GUI 的 `/online-flash` 页，由主机通过 pyOCD/CMSIS-DAP 实时控制 **MKLink** 探针；支持目标搜索、CMSIS-Pack 按需下载、HEX/BIN 预览、擦除、编程、校验和复位。在线探针列表只接受 MKLink CMSIS-DAP，不会把其他厂商的 CMSIS-DAP 当作可选设备。
+- **脱机烧录**：打开与“在线烧录”并列的 `/offline-flash` 页，配置有序的多个 HEX/BIN 固件、BIN 基地址、多个 FLM 及其 Flash/RAM 基地址、固件与算法绑定、自动烧录次数、IDCODE 超时和 SWD 速率。FLM 可来自本地文件、项目/Keil 配置或已安装的 CMSIS-Pack，配置可预览并直接部署到 MKLink U 盘。型号通过 `cmd.get_version()` 识别；V2/V3 固定生成 `python/offline_download.py`，V4 支持安全的自定义 `.py` 文件名并由下载器屏幕选择。
+
+在线烧录首次使用某个 MCU 时，先更新 Pack 索引，搜索并下载对应 DFP。Pack 只在需要时下载，安装后缓存在当前用户的 `%LOCALAPPDATA%\MKLink\pyocd` 下（可用 `MKLINK_PYOCD_HOME` 改变根目录）；离线时可继续使用已缓存的索引和 Pack。在 GUI 中可取消当前 Pack 操作或删除未被任务使用的指定版本；不要把 `.pack` 文件放入 Git 或发布资源。索引更新和 Pack 下载使用启动 `mklink serve`/GUI 进程时的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；本地缓存命中不需要网络。
+
+HEX 固件使用文件内的绝对地址；BIN 没有地址信息，必须明确填写与目标 Flash 匹配的基地址（例如 `0x08000000`）。在线烧录与 RTT、SystemView、VOFA、SuperWatch 等调试会话共用目标调试资源；冲突时应先停止或确认交接当前会话。点击“停止”是协作式取消，当前底层操作返回后才会断开并释放资源，不要在等待期间拔除探针。
+
+> **验证边界：**“Pack 可用”只表示 pyOCD 能解析目标和 Flash Algorithm，不等于该 MCU 已通过 MKLink 真机烧录验证。未完成 [真机矩阵](docs/verification/online-flash-hil.md) 的组合应视为未验证，且在线烧录不支持非 MKLink 探针。
+
 ## 命令速查
 
 | 命令 | 说明 |
@@ -111,6 +155,7 @@ cd gui && npx tauri dev
 | `serial` | 通用串口调试 |
 | `serve` | 远程调试 REST API 服务器 |
 | `gui` | 启动 Web GUI（FastAPI + Vue） |
+| `web-entry` | 安装跨平台 HTML 启动协议、生成 HTML、管理入口自有 Web 服务 |
 | `discover` | 发现 MKLink 探针端口 |
 
 完整命令文档见 [references/](references/) 目录。

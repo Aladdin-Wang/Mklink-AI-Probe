@@ -42,12 +42,7 @@ def _api_client_and_state():
     """Build a FastAPI TestClient + its shared _state (mirrors the api tests)."""
     from mklink.remote.api import create_app
     app = create_app(auth_token=None, project_root=".")
-    state = None
-    for route in app.routes:
-        if hasattr(route, "path") and route.path == "/api/health":
-            state = route.endpoint.__closure__[0].cell_contents
-            break
-    return TestClient(app), state
+    return TestClient(app), app.state.mklink_state
 
 
 # ----------------------------------------------------------------------

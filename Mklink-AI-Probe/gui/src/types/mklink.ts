@@ -51,6 +51,14 @@ export interface ConfigStatus {
 export interface AxlStatus {
   loaded: boolean
   axf_path?: string | null
+  elf_backend?: 'builtin' | 'external'
+  elf_available?: boolean
+  builtin_elf_available?: boolean
+  builtin_elf_version?: string | null
+  external_elf_available?: boolean
+  external_source_lookup_available?: boolean
+  readelf_available?: boolean
+  addr2line_available?: boolean
   variable_count?: number
   struct_count?: number
   enum_count?: number
@@ -76,6 +84,7 @@ export interface ConnectRequest {
   port?: string
   axf?: string
   mcu?: string
+  elf_backend?: 'builtin' | 'external'
 }
 
 export interface FlashRequest {
@@ -99,7 +108,7 @@ export interface JsonRpcResponse {
   id: number | string | null
 }
 
-export type DashboardType = 'rtt' | 'serial' | 'modbus' | 'superwatch' | 'vofa' | 'systemview'
+export type DashboardType = 'rtt' | 'serial' | 'modbus' | 'superwatch' | 'systemview'
 
 // SystemView（RTOS 跟踪）解码事件——由后端 SystemViewParser 产出
 export interface SystemViewEvent {
@@ -169,6 +178,79 @@ export interface SymbolTypeInfo {
   members?: unknown[]
 }
 
+export interface RttFindResponse {
+  found: boolean
+  addr?: string
+  source?: string
+  source_path?: string
+  details?: string[]
+  warnings?: string[]
+}
+
+export interface RttWriteResponse {
+  sent_bytes: number
+}
+
+export type SymbolScalarKind = 'signed' | 'unsigned' | 'float' | 'bool' | 'enum'
+
+export interface SymbolDescriptor {
+  path: string
+  address: number
+  type_name: string
+  scalar_kind: SymbolScalarKind
+  size: number
+  writable: boolean
+  enum_values: Record<string, number>
+  enum_signed?: boolean
+  parent_path: string | null
+}
+
+export interface AxfFingerprint {
+  size: number
+  mtime_ns: number
+}
+
+export interface SymbolCatalogPage {
+  generation: number
+  axf_path: string
+  parsed_at: number
+  fingerprint: AxfFingerprint
+  stale: boolean
+  total: number
+  items: SymbolDescriptor[]
+  truncated_roots: string[]
+}
+
+export interface SymbolCatalogStatus {
+  loaded: boolean
+  generation: number
+  axf_path: string
+  parsed_at: number
+  fingerprint: AxfFingerprint
+  stale: boolean
+  total: number
+  truncated_roots: string[]
+}
+
+export interface SymbolRebindSummary {
+  preserved: string[]
+  updated: string[]
+  removed: string[]
+}
+
+export interface SuperWatchWriteResult {
+  path: string
+  generation: number
+  value: number | boolean
+  verified: boolean
+}
+
+export interface SuperWatchTransactionDetail {
+  code: 'superwatch_transaction_failed'
+  phase: 'stop' | 'write' | 'readback' | 'reparse' | 'rebind' | 'restore'
+  message: string
+}
+
 // Memory read result
 export interface MemoryReadResult {
   address: string
@@ -236,4 +318,13 @@ export interface ProbeFirmwareCheck {
   all_uf2s: FirmwareInfo[]
   firmware_dir: string | null
   instructions: string
+}
+
+export type FileSourceKind = 'symbol' | 'map'
+
+export interface UploadedFileSource {
+  path: string
+  name: string
+  size: number
+  sha256: string
 }

@@ -6,7 +6,7 @@ description: |
   能力以 MCP tool 暴露（vendor-neutral，Claude Code / Cursor / ChatGPT 等均可调用），
   亦提供 CLI（python -m mklink）与 FastAPI/GUI。
   触发：Keil/IAR 初始化/烧录、RTT/VOFA 观测、read_ram/watch/superwatch、
-  Modbus 扫描/读写/dashboard/点表生成、串口 open/send/dashboard、resources、symbols/typeinfo、dump-memory、flush-memory、version、serve/gui、
+  Modbus 扫描/读写/dashboard/点表生成、串口 open/send/dashboard、resources、symbols/typeinfo、dump-memory、flush-memory、version、serve/gui、web-entry、U盘HTML快速启动、
   **SystemView RTOS 跟踪**（systemview-integrate 集成/systemview 观测/systemview-analyze 分析/systemview-report 报告，任务切换/ISR/CPU 占用）、
   RTT 控制块静态编译（rtt_storage_mode=1）、散射文件中固定 RTT 地址、MKLINK_RTT_STATIC 宏、`.ARM.__at_0xADDR` 段名。
 ---
@@ -30,13 +30,17 @@ description: |
 
 ## Agent 核心约束
 
-- **MCP 优先**：Claude Code 环境下，烧录/内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；CLI 仅作兜底或 MCP 未覆盖时使用
+- **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用
 - **禁止**编写 Python 脚本替代 MCP tool 或 CLI
+- **固件下载必须按统一优先级路由**：普通 MCU 默认先使用已安装 IDE 的原生命令行完成编译和下载；IDE 不可用或项目只有预编译镜像时，使用 pyOCD 在线烧录；两者都不适用或用户明确要求脱机部署时，最后使用 MKLink 脱机下载 API。执行前必须读取 [firmware-download-priority.md](references/firmware-download-priority.md)。`python -m mklink flash` 是用户显式要求时使用的原生串口/FLM 路径，不再是自动下载首选。
+- **失败不得静默换后端**：只有当前方式不适用或能力不可用时才进入下一优先级；IDE 编译/下载、pyOCD 作业或脱机部署一旦开始后失败，先停止并报告根因，取得用户同意后才能换后端。
+- **FLM 自动选择内置优先**：自动发现按内置 Pack、内置 DAPLink FLM、已安装 Pack、用户自定义 FLM 排序。用户显式指定 `--flm`/算法时尊重用户选择；HPM 目标仍禁止 FLM。
 - Modbus/串口 **同一 COM 口禁止并行访问**（须串行；MCP 层已用跨进程锁 `modbus_locks`/`serial_locks` 保证，探针用 `SerialLock`）
 - Modbus 点表：先 `detect` 汇报并确认，再 `generate`
 - 执行具体操作前：**先 Read 下方路由表对应的 reference**，理解边界（如 flush-memory 分块、RTT 静态模式选型）
-- **符号/AXF 功能依赖 `arm-none-eabi-readelf`**（GNU Arm 工具链，**不内置**）：`load_symbols`/`read_variable`/`write_variable`/`memory_map`/`decode_hardfault` 源码行需它。**首调 `ping` 看 `readelf_available`**；缺失时 `connect(axf=)` 仍成功但返回 `axf_loaded:false` + `axf_error`（提示安装），引导用户 `winget install Arm.GnuArmEmbeddedToolchain` 或设 `MKLINK_READELF`/`.mklink/toolchain.json`。flash/RTT/内存/寄存器/断点/Modbus/串口**不**需要它。
-- **未知 MCU 禁止直接改 `custom` 兜底**：烧录前若项目 MCU 不在 `mcu_profiles.json`，先调用 MCP `detect_mcu_profile` 或 CLI `python -m mklink mcu-detect`。多内部 FLM 候选时把候选报给用户选择，再用 `flm`/`--flm` 固化；找不到本地 FLM/Pack 时停止并提示安装或解包 Keil/Arm Pack。
+- **符号/AXF 默认使用内置 pyelftools**：`load_symbols`/`read_variable`/`write_variable`/`memory_map`/函数断点/`decode_hardfault` 源码行不依赖用户电脑的编译工具链。AI **默认使用内置 pyelftools**，不得因 `readelf_available:false` 阻止 AXF 操作。**仅在用户明确指定** `elf_backend=external` 时，才调用本机 `readelf`/`addr2line`；仅设置工具路径不会自动启用 external。内置解析遇到不支持的文件时先报告原因，取得用户同意后才能切换外部兼容后端。
+- **未知 MCU 禁止直接改 `custom` 兜底**：烧录前若项目 MCU 不在 `mcu_profiles.json`，先调用 MCP `detect_mcu_profile` 或 CLI `python -m mklink mcu-detect`。多内部 FLM 候选时把候选报给用户选择，再用 `flm`/`--flm` 固化；找不到本地 FLM/Pack 时停止并提示安装或解包 Keil/Arm Pack。HPMicro 是明确例外，见下一条。
+- **HPMicro 禁止寻找或加载 FLM**：`HPM*` 型号使用探针设备端 HPM ROM API。MCP `flash` 传 `.bin`、精确 `target_part`、`base_address`，并传 `board`（推荐）或四字 `hpm_flash_cfg`；返回 `algorithm_source: "hpm-rom-api"`。在线、脱机和 CLI 都不得为 HPM 下载 Pack 或调用 `load.flm`。
 
 ## MCP tool 速查（52 tools，按能力域）
 
@@ -52,7 +56,7 @@ description: |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
 | RTT | `rtt_start`(mode=auto/dynamic/static) · `rtt_read` · `rtt_write` · `rtt_stop` · `capture_rtt` | mode 决策见 [rtt-static-mode.md](references/rtt-static-mode.md) |
 | **SystemView** | `systemview_integrate` · `systemview_start` · `systemview_read` · `systemview_stop` · `capture_systemview` · `systemview_decode` · `systemview_analyze` · `systemview_analyze_events` · `systemview_report` | RTOS 跟踪（任务切换/ISR/CPU%）；集成见 [systemview-rtthread.md](references/systemview-rtthread.md)；先 rtt-integrate |
-| HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + addr2line 回溯 |
+| HardFault | `check_hardfault` · `decode_hardfault` | decode 自动 CFSR 展开 + 内置 DWARF 源码回溯 |
 | Modbus | `modbus_open` · `modbus_close` · `modbus_read` · `modbus_write` · `modbus_scan` | 独立串口（非探针） |
 | 串口 | `serial_list` · `serial_open` · `serial_close` · `serial_send` · `serial_read` | 独立串口（非探针） |
 
@@ -64,11 +68,12 @@ description: |
 |------|------|
 | `serve` | 远程调试服务器（REST API + WebSocket JSON-RPC） |
 | `gui` | 启动 GUI（FastAPI 后端 + Vue 前端） |
+| `web-entry` | 安装跨平台 URL Handler、生成单文件 U 盘 HTML、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
 | `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
 | `project-info` | 显示项目配置状态 |
-| `flash` | 一站式烧录（连接 → IDCODE → FLM → 烧录） |
+| `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
 | `rtt` | 一站式 RTT 捕获（支持 `--visualize`） |
 | `read-ram` | 读取 RAM 数据（十六进制 dump） |
 | `read-reg` | 读取内存映射寄存器 |
@@ -78,7 +83,7 @@ description: |
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
 | `vofa` | VOFA+ 实时变量观测（支持 `--visualize`） |
-| `symbols` | 从 ELF/AXF 列出 RAM 变量（需 readelf） |
+| `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
 | `watch` | 按变量名读取快照（支持 `struct.field`） |
 | `superwatch` | 时间戳连续采样（支持 `--visualize`、`--dump-mem`） |
@@ -103,6 +108,7 @@ description: |
 
 | 用户意图 / 关键词 | 读取文档 |
 |------------------|----------|
+| 下载固件、编译并烧录、Keil/IAR、pyOCD、在线/脱机回退、FLM 优先级 | [references/firmware-download-priority.md](references/firmware-download-priority.md) |
 | 安装、pip、readelf、Rust、Tauri | [references/install.md](references/install.md) |
 | 烧录、RTT、project-init、Keil/IAR | [references/commands-flash-rtt.md](references/commands-flash-rtt.md) |
 | RTT 静态编译、rtt_storage_mode、MKLINK_RTT_STATIC、.ARM.__at_0xADDR、CB 固定地址 | [references/rtt-static-mode.md](references/rtt-static-mode.md) |
@@ -111,19 +117,20 @@ description: |
 | Modbus、RS485、点表、dashboard | [references/commands-modbus.md](references/commands-modbus.md) |
 | 串口、UART、协议 profile | [references/commands-serial.md](references/commands-serial.md) |
 | serve、gui、Tauri、桌面应用、远程调试 | [references/commands-remote-gui.md](references/commands-remote-gui.md) |
+| U盘单HTML、Web快速启动、自定义URL协议、web-entry | [references/web-entry.md](references/web-entry.md) |
 | 「用户说 X 我该跑什么」 | [references/triggers.md](references/triggers.md) |
 | 新项目首次烧录、RTT 集成、故障排查 | [references/workflows.md](references/workflows.md) |
 
 ## 快速开始
 
-**MCP 方式**（Claude Code，推荐）：直接调用 `mcp__mklink__*` tool，例如 `connect` → `flash` → `read_variable` → `rtt_start`。
+**MCP 方式**（Claude Code，推荐）：调试操作直接调用 `mcp__mklink__*` tool，例如 `connect` → `read_variable` → `rtt_start`。固件下载仍先执行 [firmware-download-priority.md](references/firmware-download-priority.md) 的 IDE → pyOCD → 脱机 API 路由。
 
 **CLI 方式**（兜底 / 跨 harness）：
 
 ```bash
 python -m pip install -e ".[gui]"   # 首次安装（GUI/MCP 依赖）
 python -m mklink project-init
-python -m mklink flash
+# 按 firmware-download-priority.md 选择 IDE、pyOCD 或脱机 API
 python -m mklink rtt --duration 10
 ```
 

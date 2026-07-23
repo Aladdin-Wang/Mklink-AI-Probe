@@ -1,14 +1,39 @@
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const host = process.env.TAURI_DEV_HOST;
+const projectRoot = fileURLToPath(new URL('.', import.meta.url))
+const tauriConfig = JSON.parse(readFileSync(
+  new URL('./src-tauri/tauri.conf.json', import.meta.url),
+  'utf8',
+)) as { version?: string }
+let buildCommit = process.env.VITE_APP_BUILD_COMMIT?.trim() || ''
+if (!buildCommit) {
+  try {
+    buildCommit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    }).trim()
+  } catch {
+    buildCommit = 'development'
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __APP_VERSION__: JSON.stringify(tauriConfig.version || '0.0.0'),
+    __APP_BUILD_COMMIT__: JSON.stringify(buildCommit),
+  },
   test: {
     environment: 'happy-dom',
     globals: true,
+    // Memory gates use process.memoryUsage(); parallel files contaminate their baseline.
+    fileParallelism: false,
   },
   clearScreen: false,
   server: {

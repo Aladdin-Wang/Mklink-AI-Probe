@@ -75,6 +75,20 @@ describe('systemViewMetrics', () => {
     ])
   })
 
+  it('removes corrupted task names from context rows', () => {
+    const [row] = computeContextRows([
+      {
+        id: 0x20000018,
+        name: 'n_rx\ufffd\u0005corrupt',
+        color: '#1',
+        runUs: 10,
+        switches: 1,
+      },
+    ])
+
+    expect(row.name).toBe('')
+  })
+
   it('keeps legacy CPU rows sorted by total runtime', () => {
     expect(computeTaskRows([
       { id: 1, name: 'a', color: '#1', runUs: 10, switches: 1 },
@@ -131,5 +145,41 @@ describe('systemViewMetrics', () => {
         kind: 'idle',
       },
     ])
+  })
+
+  it('falls back to the task id for a corrupted event context name', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 10,
+      task_id: 0x20000018,
+      task_name: 'n_rx\ufffd\u0005corrupt',
+    }])
+
+    expect(row.context).toBe('0x20000018')
+  })
+
+  it('renders exact tick text instead of a rounded Number timestamp', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 0,
+      t_ticks_exact: '9007199254740993',
+      task_id: 1,
+    }])
+
+    expect(row.time.replaceAll(',', '')).toBe('9007199254740993 tk')
+  })
+
+  it('formats event time when exact ticks are not preferred', () => {
+    const [row] = buildSystemViewEventRows([{
+      kind: 'task_start_exec',
+      t: 1.25,
+      t_ticks_exact: '9007199254740993',
+      task_id: 1,
+    }], {
+      preferExactTicks: false,
+      formatTime: value => `${value.toFixed(6)}s`,
+    })
+
+    expect(row.time).toBe('1.250000s')
   })
 })

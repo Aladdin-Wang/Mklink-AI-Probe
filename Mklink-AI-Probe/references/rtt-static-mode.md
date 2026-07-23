@@ -101,8 +101,9 @@ RW_IRAM_RTT 0x2001F000 0x00001000  {   ; 4KB 区域覆盖 RTT
 grep "_SEGGER_RTT\s+0x" build/keil/List/rt-thread.map
 # 预期：_SEGGER_RTT  0x2001f000  Data/Zero  168  segger_rtt.o(.ARM.__at_0x2001F000)
 
-# 3. 烧录
-python -m mklink flash --port COM5 --hex build/keil/obj/rt-thread.hex
+# 3. 按统一固件下载优先级下载
+# 本例 Keil 工程默认用 UV4.exe -f；IDE 不可用时才进入 pyOCD，最后才是脱机 API。
+# 完整规则见 firmware-download-priority.md。
 
 # 4. 重置设备并等待 RT-Thread init
 python -c "

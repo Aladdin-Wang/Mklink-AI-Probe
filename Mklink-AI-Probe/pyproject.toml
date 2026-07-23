@@ -4,14 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mklink"
-version = "0.1.0"
+version = "0.1.2"
 description = "Mklink AI Probe - Embedded Debug Toolkit"
-requires-python = ">=3.8"
-dependencies = ["pyserial", "pymodbus>=3.0"]
+requires-python = ">=3.9"
+dependencies = ["pyserial", "pymodbus>=3.0", "pyelftools==0.32"]
 
 [project.optional-dependencies]
-gui = ["fastapi>=0.100", "starlette>=0.40,<0.47", "uvicorn>=0.20", "websockets>=11.0"]
-test = ["pytest"]
+gui = [
+    "fastapi>=0.100",
+    "starlette>=0.40,<0.47",
+    "uvicorn>=0.20",
+    "websockets>=11.0",
+    "pyocd>=0.44,<0.45",
+    "intelhex>=2.3",
+    "python-multipart>=0.0.9",
+]
+test = ["pytest", "httpx>=0.27,<1", "pyinstaller>=6.0"]
 e2e = ["pytest", "playwright"]
 hil = ["pytest", "playwright", "requests"]
 mcp = ["fastmcp>=2.0"]

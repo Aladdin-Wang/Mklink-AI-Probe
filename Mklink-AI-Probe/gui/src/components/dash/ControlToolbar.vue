@@ -3,6 +3,15 @@
     <button v-if="state === 'idle'" class="btn btn-primary" @click="$emit('start')" :disabled="!deviceConnected">
       ▶ 开始
     </button>
+    <button v-else-if="state === 'starting'" class="btn btn-primary" disabled>
+      启动中...
+    </button>
+    <template v-else-if="state === 'error'">
+      <button class="btn btn-primary" @click="$emit('start')" :disabled="!deviceConnected">
+        ↻ 重试
+      </button>
+      <button class="btn btn-danger" @click="$emit('stop')">⏹ 停止</button>
+    </template>
     <template v-else-if="state === 'running'">
       <button class="btn" @click="$emit('pause')">⏸ 暂停</button>
       <button class="btn btn-danger" @click="$emit('stop')">⏹ 停止</button>
@@ -20,7 +29,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  state: 'idle' | 'running' | 'paused' | 'error'
+  state: 'idle' | 'starting' | 'running' | 'paused' | 'error'
   error?: string | null
   deviceConnected: boolean
   pointCount?: number

@@ -9,12 +9,16 @@ Zero new Python dependencies.
 from __future__ import annotations
 
 import atexit
+from dataclasses import dataclass
+import math
 import signal
 import struct
 import sys
 import threading
 import time
 import webbrowser
+
+from mklink.remote.stream_protocol import WAVEFORM_SAMPLE_MAJOR_FLOAT32
 
 VOFA_TYPE_INFO = {
     "int8_t": {"type": "int8_t", "size": 1},
@@ -40,6 +44,104 @@ _VOFA_TYPE_ALIASES = {
 
 _VOFA_TYPE_TOKENS = set(_VOFA_TYPE_ALIASES)
 
+# WAVEFORM frame flag bit 0: payload is little-endian Float32 values in
+# sample-major order: sample0.channel0..N, sample1.channel0..N, ... .
+VOFA_SAMPLE_MAJOR_FLOAT32 = WAVEFORM_SAMPLE_MAJOR_FLOAT32
+VOFA_MAX_READ_BLOCK = 2048
+
+
+@dataclass(frozen=True)
+class VofaChannelRead:
+    channel_index: int
+    offset: int
+    size: int
+    type_name: str
+
+
+@dataclass(frozen=True)
+class VofaReadGroup:
+    address: int
+    size: int
+    channels: tuple[VofaChannelRead, ...]
+
+
+def encode_vofa_samples(samples) -> bytes:
+    """Encode rows of numeric channel values as sample-major Float32."""
+    rows = [tuple(row) for row in samples]
+    if not rows:
+        return b""
+    channel_count = len(rows[0])
+    if channel_count <= 0 or any(len(row) != channel_count for row in rows):
+        raise ValueError("VOFA samples must have one consistent channel count")
+    values = []
+    for row in rows:
+        for value in row:
+            number = float(value)
+            if not math.isfinite(number):
+                number = 0.0
+            values.append(number)
+    return struct.pack(f"<{len(values)}f", *values)
+
+
+def decode_vofa_samples(payload: bytes, channel_count: int) -> list[tuple[float, ...]]:
+    """Decode a sample-major Float32 payload (used by tests/clients)."""
+    if channel_count <= 0:
+        raise ValueError("channel_count must be positive")
+    row_size = channel_count * 4
+    if len(payload) % row_size:
+        raise ValueError("VOFA payload is not aligned to complete samples")
+    values = struct.unpack(f"<{len(payload) // 4}f", payload) if payload else ()
+    return [
+        tuple(values[index:index + channel_count])
+        for index in range(0, len(values), channel_count)
+    ]
+
+
+def build_vofa_read_groups(
+    channels: list[dict], *, max_block_size: int = VOFA_MAX_READ_BLOCK,
+) -> list[VofaReadGroup]:
+    """Group channels into 4-byte-aligned, bounded target reads."""
+    if max_block_size < 4:
+        raise ValueError("max_block_size must allow one aligned word")
+    channels = normalize_vofa_channels(channels)
+    normalized = []
+    for index, channel in enumerate(channels):
+        address = channel["addr"]
+        size = channel["size"]
+        aligned_start = address & ~0x3
+        aligned_end = (address + size + 3) & ~0x3
+        if aligned_end - aligned_start > max_block_size:
+            raise ValueError("VOFA channel size exceeds the safe read limit")
+        normalized.append((
+            aligned_start, aligned_end, address, size, index, channel["type"],
+        ))
+    normalized.sort(key=lambda item: (item[0], item[2]))
+    groups = []
+    pending = []
+    group_start = group_end = None
+    for aligned_start, aligned_end, address, size, index, type_name in normalized:
+        can_join = (
+            group_start is not None
+            and aligned_start <= group_end
+            and max(group_end, aligned_end) - group_start <= max_block_size
+        )
+        if not can_join and pending:
+            groups.append(VofaReadGroup(
+                group_start, group_end - group_start, tuple(pending),
+            ))
+            pending = []
+            group_start = group_end = None
+        if group_start is None:
+            group_start, group_end = aligned_start, aligned_end
+        else:
+            group_end = max(group_end, aligned_end)
+        pending.append(VofaChannelRead(index, address - group_start, size, type_name))
+    if pending:
+        groups.append(VofaReadGroup(
+            group_start, group_end - group_start, tuple(pending),
+        ))
+    return groups
+
 
 def normalize_vofa_type(type_token: str) -> dict[str, int | str] | None:
     """Normalize a VOFA input type alias to canonical C type metadata."""
@@ -49,6 +151,54 @@ def normalize_vofa_type(type_token: str) -> dict[str, int | str] | None:
         return None
     info = VOFA_TYPE_INFO[canonical]
     return {"input": type_token, "type": info["type"], "size": info["size"]}
+
+
+def normalize_vofa_channels(channels: list[dict]) -> list[dict]:
+    """Validate and canonicalize one complete VOFA channel snapshot."""
+    if not isinstance(channels, list) or not 1 <= len(channels) <= 64:
+        raise ValueError("VOFA channel count must be between 1 and 64")
+    normalized = []
+    names = set()
+    for index, channel in enumerate(channels):
+        if not isinstance(channel, dict):
+            raise ValueError(f"VOFA channel {index} must be an object")
+        try:
+            raw_address = channel["addr"]
+            if isinstance(raw_address, bool):
+                raise ValueError
+            address = int(raw_address, 0) if isinstance(raw_address, str) else int(raw_address)
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"VOFA channel {index} has an invalid 32-bit address") from None
+        type_token = str(channel.get("type", "float"))
+        type_info = normalize_vofa_type(type_token)
+        if type_info is None:
+            raise ValueError(f"VOFA channel {index} uses unsupported type {type_token!r}")
+        canonical_size = int(type_info["size"])
+        try:
+            size = int(channel.get("size", canonical_size))
+        except (TypeError, ValueError):
+            raise ValueError(f"VOFA channel {index} has an invalid size") from None
+        if size != canonical_size:
+            raise ValueError(
+                f"VOFA channel {index} size {size} does not match "
+                f"{type_info['type']} size {canonical_size}"
+            )
+        if address < 0 or address > 0xFFFFFFFF or address + size > 0x100000000:
+            raise ValueError(f"VOFA channel {index} exceeds the 32-bit address space")
+        default_name = f"0x{address:08x}"
+        name = str(channel.get("name", default_name)).strip()
+        if not name:
+            raise ValueError(f"VOFA channel {index} name must not be empty")
+        if name in names:
+            raise ValueError("VOFA channel names must be unique")
+        names.add(name)
+        normalized.append({
+            "name": name,
+            "addr": address,
+            "type": str(type_info["type"]),
+            "size": canonical_size,
+        })
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +421,13 @@ def infer_channel_metadata_from_dwarf(
     return metadata
 
 
-def resolve_variable_names(variables: list[str], elf_path: str | None = None) -> list[str]:
+def resolve_variable_names(
+    variables: list[str],
+    elf_path: str | None = None,
+    *,
+    backend: str | None = None,
+    project_root: str | None = None,
+) -> list[str]:
     """Resolve symbolic variable names to addresses using symbol_parser.
 
     If a variable token is not a hex address (doesn't start with '0x'), attempt
@@ -288,8 +444,7 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
     if not elf_path:
         return variables
 
-    import subprocess
-    from mklink.symbol_parser import parse_readelf_output, resolve_symbol_names, suggest_similar_symbols
+    from mklink.symbol_parser import resolve_symbol_names, suggest_similar_symbols
 
     # Check if any address-position token looks like a name. In precise mode
     # the odd tokens are type names, so do not try to resolve them.
@@ -315,7 +470,9 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
         try:
             from mklink.dwarf_parser import load_dwarf_info
             from mklink.watch import resolve_variable_path
-            dwarf_info = load_dwarf_info(elf_path)
+            dwarf_info = load_dwarf_info(
+                elf_path, backend=backend, project_root=project_root
+            )
             for dotted in dotted_names:
                 try:
                     addr, type_name, _size, _enum_values = resolve_variable_path(dwarf_info, dotted)
@@ -340,20 +497,24 @@ def resolve_variable_names(variables: list[str], elf_path: str | None = None) ->
     if not name_like:
         return variables
 
-    # Run readelf to get symbols
-    from mklink.toolchain import resolve_readelf
-    tool = resolve_readelf()
-    if not tool:
-        return variables
-    cmd = [tool, "-s", elf_path]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            return variables
-    except subprocess.TimeoutExpired:
-        return variables
+        from mklink.elf_backend import list_elf_symbols
 
-    symbols = parse_readelf_output(result.stdout)
+        normalized = list_elf_symbols(
+            elf_path, backend=backend, project_root=project_root
+        )
+    except Exception:
+        return variables
+    symbols = [
+        {
+            "name": symbol.name,
+            "address": f"0x{symbol.address:08x}",
+            "type": "OBJECT",
+            "size": symbol.size,
+        }
+        for symbol in normalized
+        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
+    ]
     if not symbols:
         return variables
 
@@ -390,6 +551,8 @@ def run_vofa_visualizer(
     max_points: int = 500,
     source: str | None = None,
     original_variables: list[str] | None = None,
+    backend: str | None = None,
+    project_root: str | None = None,
 ) -> None:
     """Run the full VOFA+ visualization pipeline."""
     from mklink.rtt_viewer import VisualizationServer
@@ -415,7 +578,9 @@ def run_vofa_visualizer(
     if source:
         try:
             from mklink.dwarf_parser import load_dwarf_info
-            dwarf_info = load_dwarf_info(source)
+            dwarf_info = load_dwarf_info(
+                source, backend=backend, project_root=project_root
+            )
             dwarf_metadata = infer_channel_metadata_from_dwarf(
                 dwarf_info,
                 variables,

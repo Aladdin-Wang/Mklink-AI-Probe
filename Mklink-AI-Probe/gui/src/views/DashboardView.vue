@@ -3,7 +3,7 @@
     <div
       class="card"
       :class="{
-        'card-full': tab === 'rtt' || tab === 'superwatch' || tab === 'vofa',
+        'card-full': tab === 'rtt' || tab === 'superwatch',
         'card-rtt': tab === 'rtt',
         'card-systemview': tab === 'systemview',
       }"
@@ -23,44 +23,17 @@
       </div>
       <div class="tabs-bar">
         <button :class="['tab-btn', { active: tab === 'rtt' }]" @click="tab = 'rtt'">RTT View</button>
-        <button :class="['tab-btn', { active: tab === 'flash' }]" @click="tab = 'flash'">烧录</button>
+        <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
         <button :class="['tab-btn', { active: tab === 'debug' }]" @click="tab = 'debug'">调试控制</button>
         <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
         <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">符号表</button>
         <button :class="['tab-btn', { active: tab === 'memory' }]" @click="tab = 'memory'">内存</button>
-        <button :class="['tab-btn', { active: tab === 'superwatch' }]" @click="tab = 'superwatch'">SuperWatch</button>
         <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">串口监控</button>
         <button :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
-        <button :class="['tab-btn', { active: tab === 'vofa' }]" @click="tab = 'vofa'">VOFA+</button>
         <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>
       </div>
 
       <RttViewTab v-show="tab === 'rtt'" :device-connected="deviceStatus.connected" />
-
-      <!-- 烧录 -->
-      <div v-if="tab === 'flash'">
-        <div v-if="!deviceStatus.connected" class="alert alert-warn">请先连接设备。</div>
-        <template v-else>
-          <div class="form-row">
-            <span class="form-label">固件文件</span>
-            <input class="form-input" v-model="flashReq.firmware" placeholder=".hex 或 .bin 文件路径" />
-          </div>
-          <div class="form-row">
-            <span class="form-label">烧录后校验</span>
-            <label style="font-size:13px"><input type="checkbox" v-model="flashReq.verify" /> 启用</label>
-          </div>
-          <div class="form-row">
-            <span class="form-label">烧录后复位</span>
-            <label style="font-size:13px"><input type="checkbox" v-model="flashReq.reset_after" /> 启用</label>
-          </div>
-          <div class="form-row">
-            <span class="form-label"></span>
-            <button class="btn btn-primary" @click="doFlash" :disabled="flashing">
-              {{ flashing ? '烧录中...' : '烧录固件' }}
-            </button>
-          </div>
-        </template>
-      </div>
 
       <!-- 调试控制 -->
       <div v-if="tab === 'debug'">
@@ -81,14 +54,13 @@
       <SuperWatchTab v-if="tab === 'superwatch'" :device-connected="deviceStatus.connected" />
       <SerialMonitorTab v-show="tab === 'serial'" :device-connected="deviceStatus.connected" />
       <ModbusTab v-show="tab === 'modbus'" :device-connected="deviceStatus.connected" />
-      <VofaTab v-if="tab === 'vofa'" :device-connected="deviceStatus.connected" />
       <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useToast } from '../composables/useToast'
@@ -100,14 +72,12 @@ import MemoryTab from '../components/dash/MemoryTab.vue'
 import SuperWatchTab from '../components/dash/SuperWatchTab.vue'
 import SerialMonitorTab from '../components/dash/SerialMonitorTab.vue'
 import ModbusTab from '../components/dash/ModbusTab.vue'
-import VofaTab from '../components/dash/VofaTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
 
 const route = useRoute()
 const router = useRouter()
 const {
   deviceStatus,
-  flashDevice,
   resetDevice,
   eraseDevice,
   haltDevice,
@@ -115,11 +85,9 @@ const {
 } = useMklinkApi()
 const toast = useToast()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
-const dashboardTabs = new Set(['rtt', 'watch', 'vofa', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
+const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
-const flashing = ref(false)
-const flashReq = reactive({ firmware: '', verify: true, reset_after: true })
 
 const bridgeOwner = computed(() => getBridgeOwner())
 const bridgeOwnerLabel = computed(() => {
@@ -142,12 +110,6 @@ function goConnect() {
   router.push({ name: 'config' })
 }
 
-async function doFlash() {
-  flashing.value = true
-  try { const r = await flashDevice(flashReq); toast.success('烧录完成: ' + JSON.stringify(r)) }
-  catch (e: any) { toast.error('烧录失败: ' + e.message) }
-  finally { flashing.value = false }
-}
 async function doReset() {
   if (!confirm('确定要复位 CPU？')) return
   try { await resetDevice(); toast.success('已复位') } catch (e: any) { toast.error(e.message) }

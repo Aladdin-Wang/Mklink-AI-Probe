@@ -168,15 +168,8 @@ def _resolve_firmware_root() -> Path:
 _PACKAGE_PARENT_OVERRIDE: Path | None = None
 
 
-def read_device_version(port: str, *, timeout: float = DEFAULT_VERSION_TIMEOUT) -> Version | None:
-    """Read probe firmware version via cmd.get_version().
-
-    Returns the parsed Version, or None if the response cannot be parsed.
-    Raises (TimeoutError, ConnectionError, etc.) on serial errors — caller
-    decides how to recover.
-    """
-    bridge = MKLinkSerialBridge(port)
-    bridge.connect()
+def read_bridge_version(bridge: object, *, timeout: float = DEFAULT_VERSION_TIMEOUT) -> Version | None:
+    """Read and parse the probe version from an already connected bridge."""
     resp = bridge.send_command("cmd.get_version()", timeout=timeout)
     # Reuse the existing CLI parser (single source of truth for the format)
     from mklink.cli import _parse_version_response
@@ -188,6 +181,24 @@ def read_device_version(port: str, *, timeout: float = DEFAULT_VERSION_TIMEOUT) 
     if not m:
         return None
     return Version(int(m.group(2)), int(m.group(3)), int(m.group(4)))
+
+
+def read_device_version(port: str, *, timeout: float = DEFAULT_VERSION_TIMEOUT) -> Version | None:
+    """Read probe firmware version via cmd.get_version().
+
+    Returns the parsed Version, or None if the response cannot be parsed.
+    Raises (TimeoutError, ConnectionError, etc.) on serial errors — caller
+    decides how to recover.
+    """
+    from mklink.bridge import MKLinkSerialBridge
+
+    bridge = MKLinkSerialBridge(port)
+    try:
+        if not bridge.connect():
+            raise ConnectionError("Unable to connect to MKLink CDC port")
+        return read_bridge_version(bridge, timeout=timeout)
+    finally:
+        bridge.close()
 
 
 # Late-bound import: bridge is only needed when read_device_version is called.

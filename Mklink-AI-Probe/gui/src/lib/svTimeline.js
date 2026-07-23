@@ -22,6 +22,15 @@
  *
  * 区间 start/end 用同一时间单位（µs 或 ticks），与 unit 一致。
  */
+export function exactTickFromOffset(origin, offset) {
+  if (typeof origin !== 'bigint' || !Number.isSafeInteger(Math.round(offset))) {
+    throw new RangeError('tick origin must be BigInt and offset must be a safe integer');
+  }
+  return (origin + BigInt(Math.round(offset))).toString();
+}
+
+const FOLLOW_FRAME_INTERVAL_MS = 1000 / 30;
+
 export class SvTimeline {
   constructor(roots, data) {
     this.roots = roots;
@@ -29,6 +38,7 @@ export class SvTimeline {
     this.ctx = this.canvas.getContext('2d');
     this.unit = (data && data.unit) || 'us';
     this.tickHz = Number((data && data.tickHz) || 0);
+    this.tickOrigin = typeof (data && data.tickOrigin) === 'bigint' ? data.tickOrigin : 0n;
     this.PALETTE = ['#5b8cff','#21c7a8','#f5a623','#e056fd','#ff7675','#fdcb6e',
       '#00cec9','#a29bfe','#55efc4','#fab1a0','#74b9ff','#fd79a8'];
     this.nameColW = 116;
@@ -49,6 +59,8 @@ export class SvTimeline {
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followEase = 0.22;
     this._followRaf = 0;
+    this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._renderPaused = (data && data.renderPaused) === true;
     this.setData((data && data.intervals) || []);
     this._bind();
     this._resize();
@@ -58,7 +70,10 @@ export class SvTimeline {
   setData(intervals) {
     // 缓冲溢出丢包会在时间轴上留下巨大假缺口（abs_time 跳变），把真实活动压到
     // 一小撮。先剔到最密连续段再渲染。
-    intervals = this._filterContinuous(intervals || []);
+    this._acceptData(this._filterContinuous(intervals || []));
+  }
+
+  _acceptData(intervals) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
     this._hadIntervals = intervals.length > 0;
@@ -100,9 +115,15 @@ export class SvTimeline {
       }
     }
     this._layout();
-    this._draw();
-    this._updateStatus();
+    const drew = shouldFollow ? this._drawLive() : (this._draw(), true);
+    if (drew) this._updateStatus();
     if (shouldFollow && !viewInvalid && hadIntervalsBefore) this._scheduleFollow();
+  }
+
+  // Live workers already filter the requested visible range. This entrypoint
+  // deliberately avoids slicing/sorting the retained 50k interval history.
+  setPrefilteredIntervals(intervals) {
+    this._acceptData(intervals || []);
   }
 
   _mergeTasks(run, names) {
@@ -145,6 +166,11 @@ export class SvTimeline {
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
+  setTickOrigin(tickOrigin) {
+    if (typeof tickOrigin !== 'bigint') throw new TypeError('tick origin must be BigInt');
+    this.tickOrigin = tickOrigin;
+  }
+
   setFollowMode(enabled) {
     this.follow = !!enabled;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
@@ -168,11 +194,23 @@ export class SvTimeline {
     }
   }
 
+  _drawLive(timestamp = performance.now()) {
+    if (this._renderPaused) return false;
+    const lastRender = Number.isFinite(this._lastLiveRender)
+      ? this._lastLiveRender
+      : Number.NEGATIVE_INFINITY;
+    if (timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
+    this._lastLiveRender = timestamp;
+    this._draw();
+    return true;
+  }
+
   _scheduleFollow() {
-    if (!this.follow || this.windowSize <= 0 || this._followRaf) return;
-    const step = () => {
+    if (this._renderPaused || !this.follow || this.windowSize <= 0 || this._followRaf) return;
+    const step = (timestamp) => {
       this._followRaf = 0;
-      if (!this.follow || this.windowSize <= 0) return;
+      if (this._renderPaused || !this.follow || this.windowSize <= 0) return;
+      const now = Number.isFinite(timestamp) ? timestamp : performance.now();
       const target = this._targetFollowRange();
       const currentEnd = Number.isFinite(this.viewEnd) ? this.viewEnd : target.end;
       const delta = target.end - currentEnd;
@@ -183,8 +221,7 @@ export class SvTimeline {
         this.viewEnd = currentEnd + delta * this.followEase;
         this.viewStart = this.viewEnd - this.windowSize;
       }
-      this._draw();
-      this._updateStatus();
+      if (this._drawLive(now)) this._updateStatus();
       if (Math.abs(target.end - this.viewEnd) >= 0.5) {
         this._followRaf = requestAnimationFrame(step);
       }
@@ -192,13 +229,35 @@ export class SvTimeline {
     this._followRaf = requestAnimationFrame(step);
   }
 
+  pauseRendering() {
+    this._renderPaused = true;
+    if (this._followRaf) {
+      cancelAnimationFrame(this._followRaf);
+      this._followRaf = 0;
+    }
+  }
+
+  resumeRendering() {
+    if (!this._renderPaused) return;
+    this._renderPaused = false;
+    this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._layout();
+    if (this._drawLive()) this._updateStatus();
+    this._scheduleFollow();
+  }
+
   _layout() {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
     const cssH = this.rulerH + this.lanes.length * this.laneH + 4;
-    this.canvas.width = cssW * dpr; this.canvas.height = cssH * dpr;
-    this.canvas.style.height = cssH + 'px';
+    if (!this._renderPaused) {
+      const width = cssW * dpr;
+      const height = cssH * dpr;
+      if (this.canvas.width !== width) this.canvas.width = width;
+      if (this.canvas.height !== height) this.canvas.height = height;
+      this.canvas.style.height = cssH + 'px';
+    }
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.W = cssW; this.H = cssH;
     this.plotX0 = this.nameColW;
@@ -206,7 +265,10 @@ export class SvTimeline {
     this.plotW = this.plotX1 - this.plotX0;
   }
 
-  _resize = () => { this._layout(); this._draw(); }
+  _resize = () => {
+    this._layout();
+    if (!this._renderPaused) this._draw();
+  }
 
   _filterContinuous(intervals) {
     if (intervals.length < 8) return intervals;
@@ -261,6 +323,13 @@ export class SvTimeline {
   }
 
   _fmtTicks(ticks, compact = false) {
+    if (typeof ticks === 'bigint') {
+      const sign = ticks < 0n ? '-' : '';
+      const abs = ticks < 0n ? -ticks : ticks;
+      if (compact && abs >= 1_000_000n) return sign + (Number(abs / 10_000n) / 100).toFixed(2).replace(/\.?0+$/, '') + 'M tk';
+      if (compact && abs >= 1_000n) return sign + (Number(abs / 100n) / 10).toFixed(1).replace(/\.?0+$/, '') + 'k tk';
+      return ticks.toLocaleString() + ' tk';
+    }
     if (!Number.isFinite(ticks)) return '';
     const rounded = Math.round(ticks);
     const abs = Math.abs(rounded);
@@ -275,20 +344,34 @@ export class SvTimeline {
       if (withTicks && this.tickHz > 0) return time + ' / ' + this._fmtTicks(this._ticksFromUs(t), true);
       return time;
     }
-    return this._fmtTicks(t);
+    return this._fmtTicks(BigInt(exactTickFromOffset(this.tickOrigin, t)));
   }
 
   _fmtPoint(time, ticks) {
-    if (this.unit !== 'us') return this._fmt(time);
-    const tickValue = Number.isFinite(ticks) ? ticks : this._ticksFromUs(time);
+    if (this.unit !== 'us') {
+      return this._fmtTicks(typeof ticks === 'bigint'
+        ? ticks
+        : BigInt(exactTickFromOffset(this.tickOrigin, time)));
+    }
+    const tickValue = typeof ticks === 'bigint' || Number.isFinite(ticks)
+      ? ticks
+      : this._ticksFromUs(time);
     const tickText = this._fmtTicks(tickValue);
     return tickText ? `${this._fmtTime(time)} (${tickText})` : this._fmtTime(time);
   }
 
   _fmtDuration(it) {
     const duration = it.end - it.start;
-    if (this.unit !== 'us') return this._fmt(duration);
-    const hasExactTicks = Number.isFinite(it.startTk) && Number.isFinite(it.endTk);
+    if (this.unit !== 'us') {
+      if (typeof it.startTk === 'bigint' && typeof it.endTk === 'bigint') {
+        return this._fmtTicks(it.endTk - it.startTk);
+      }
+      return this._fmtTicks(BigInt(Math.round(duration)));
+    }
+    const hasExactTicks = (
+      (typeof it.startTk === 'bigint' && typeof it.endTk === 'bigint')
+      || (Number.isFinite(it.startTk) && Number.isFinite(it.endTk))
+    );
     const durationTicks = hasExactTicks ? it.endTk - it.startTk : this._ticksFromUs(duration);
     const tickText = this._fmtTicks(durationTicks);
     return tickText ? `${this._fmtTime(duration)} (${tickText})` : this._fmtTime(duration);
@@ -310,6 +393,7 @@ export class SvTimeline {
   }
 
   _draw() {
+    if (this._renderPaused) return;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.font = '11px -apple-system,Segoe UI,Roboto,sans-serif';

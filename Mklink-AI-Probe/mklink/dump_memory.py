@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import binascii
 import struct
+import time
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -361,9 +362,142 @@ def build_dump_mem_command(
     return f"cmd.dump_memory({', '.join(parts)})"
 
 
+def read_dump_memory_once(
+    bridge,
+    address: int,
+    size: int,
+    *,
+    timeout: float = 2.0,
+    poll_interval: float = 0.0005,
+) -> bytes:
+    """Read one complete dump-memory sample and explicitly leave stream mode."""
+    if size <= 0:
+        raise ValueError("dump-memory size must be greater than zero")
+    from mklink._types import DeviceState
+
+    parser = DumpMemoryParser(region_sizes=[size])
+    command = build_dump_mem_command([(address, size)], 0)
+    deadline = time.monotonic() + max(0.001, float(timeout))
+    bridge._enter_stream(DeviceState.DUMP_STREAM)
+    try:
+        bridge._write_raw((command + "\n").encode("utf-8"))
+        while time.monotonic() < deadline:
+            raw = bridge.drain_stream_bytes(max_bytes=1024 * 1024)
+            for frame in parser.feed(raw) if raw else ():
+                for region_index, payload in frame.get("regions", ()):
+                    if region_index == 0 and len(payload) >= size:
+                        return payload[:size]
+            if poll_interval:
+                time.sleep(poll_interval)
+        raise TimeoutError("timed out waiting for one dump-memory sample")
+    finally:
+        try:
+            bridge._write_raw(b"RTTView.stop()\n")
+            try:
+                bridge.drain_stream_bytes()
+            except Exception:
+                pass
+        finally:
+            bridge._exit_stream()
+
+
+class DumpMemoryStreamSession:
+    """Own one MKLink ``cmd.dump_memory`` binary-stream lifecycle.
+
+    Protocol parsing stays in :class:`DumpMemoryParser`; this class only
+    coordinates bridge mode, command delivery, draining, and explicit stop.
+    """
+
+    def __init__(
+        self,
+        bridge,
+        region_pairs: list[tuple[int, int]],
+        period: float,
+        *,
+        stop_grace_s: float = 0.05,
+    ):
+        if not region_pairs:
+            raise ValueError("dump-memory requires at least one region")
+        if len(region_pairs) > MAX_REGIONS:
+            raise ValueError(f"too many regions: {len(region_pairs)} > {MAX_REGIONS}")
+        if period <= 0:
+            raise ValueError("streaming period must be greater than zero")
+        self.bridge = bridge
+        self.region_pairs = list(region_pairs)
+        self.period = float(period)
+        self.stop_grace_s = max(0.0, float(stop_grace_s))
+        self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
+        self.started = False
+        self._protocol_frames = 0
+        self._complete_samples = 0
+        self._firmware_flagged_frames = 0
+        self._firmware_sample_drop_flags = 0
+
+    def start(self) -> None:
+        if self.started:
+            return
+        from mklink._types import DeviceState
+
+        command = build_dump_mem_command(self.region_pairs, self.period)
+        self.bridge._enter_stream(DeviceState.DUMP_STREAM)
+        try:
+            self.bridge._write_raw((command + "\n").encode("utf-8"))
+        except Exception:
+            self.bridge._exit_stream()
+            raise
+        self.started = True
+
+    def read_frames(self, max_bytes: int | None = None) -> list[dict]:
+        if not self.started:
+            raise RuntimeError("dump-memory stream is not started")
+        raw = self.bridge.drain_stream_bytes(max_bytes=max_bytes)
+        frames = self.parser.feed(raw) if raw else []
+        for frame in frames:
+            self._protocol_frames += 1
+            flags = int(frame.get("flags", 0))
+            if flags:
+                self._firmware_flagged_frames += 1
+            if flags & FLAG_SAMPLE_DROPPED:
+                self._firmware_sample_drop_flags += 1
+            if (
+                frame.get("format") != "B1"
+                or frame.get("block_index", 0) + 1 >= frame.get("block_count", 1)
+            ):
+                self._complete_samples += 1
+        return frames
+
+    def stop(self) -> None:
+        if not self.started:
+            return
+        try:
+            command = build_dump_mem_command(self.region_pairs, 0)
+            self.bridge._write_raw((command + "\n").encode("utf-8"))
+            if self.stop_grace_s:
+                time.sleep(self.stop_grace_s)
+            try:
+                self.bridge.drain_stream_bytes()
+            except Exception:
+                pass
+        finally:
+            self.bridge._exit_stream()
+            self.started = False
+
+    @property
+    def stats(self) -> dict[str, int]:
+        return {
+            "protocol_frames": self._protocol_frames,
+            "complete_samples": self._complete_samples,
+            "parser_dropped_bytes": self.parser.dropped_bytes,
+            "parser_dropped_frames": self.parser.dropped_frames,
+            "parser_crc_errors": self.parser.crc_errors,
+            "firmware_flagged_frames": self._firmware_flagged_frames,
+            "firmware_sample_drop_flags": self._firmware_sample_drop_flags,
+        }
+
+
 def decode_frame_to_points(
     frame: dict,
-    block_addresses: list[tuple[int, int, list[tuple[str, str, int, dict | None]]]],
+    block_addresses: list[tuple[int, int, list[tuple]]],
     origin_us: int | None,
 ) -> tuple[list[dict], int | None]:
     """Decode a parsed frame's region data into per-variable point dicts.
@@ -373,7 +507,8 @@ def decode_frame_to_points(
 
     Args:
         frame: Parsed frame from DumpMemoryParser.feed().
-        block_addresses: Per-region info list: [(block_addr, block_size, [(name, type_name, item_offset, enum_values), ...])]
+        block_addresses: Per-region info list with item name, type, offset,
+            byte size, scalar kind, and enum values.
         origin_us: Baseline timestamp in microseconds (from first sample).
 
     Returns:
@@ -395,11 +530,22 @@ def decode_frame_to_points(
             continue
         block_addr, _block_size, items = block_addresses[region_index]
         point: dict = {"_t": relative_t, "timestamp_us": ts}
-        for name, type_name, item_offset, enum_values in items:
-            data = region_data[item_offset:item_offset + _item_size(type_name)]
+        for item in items:
+            if len(item) == 4:
+                name, type_name, item_offset, enum_values = item
+                item_size = _item_size(type_name)
+                scalar_kind = None
+            else:
+                name, type_name, item_offset, item_size, scalar_kind, enum_values = item
+            data = region_data[item_offset:item_offset + item_size]
             if data:
                 # Store raw numeric value for charting; enum display is handled by frontend
-                point[name] = decode_value(data, type_name)
+                point[name] = decode_value(
+                    data,
+                    type_name,
+                    known_size=item_size,
+                    scalar_kind=scalar_kind,
+                )
         points.append(point)
 
     return points, current_origin

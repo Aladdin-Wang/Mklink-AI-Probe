@@ -2,83 +2,172 @@
 
 # MKLink AI Probe
 
-**嵌入式一站式调试工具** — 固件烧录 · RTT/SystemView 可视化 · 内存读写 · HardFault 解码 · Modbus RTU · MCP Agent · 远程 GUI
+**面向嵌入式开发的 AI 调试工具**<br>
+固件烧录 · Web GUI · RTT/SystemView · SuperWatch · 内存与寄存器 · HardFault · Modbus · 串口 · MCP
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=black)](https://tauri.app)
 [![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[功能概览](#功能概览) · [快速开始](#快速开始) · [MCP / AI Agent](#mcp--ai-agent-集成) · [SystemView](#systemview-rtos-跟踪) · [高速内存协议](#高速内存协议dump-memory--flush-memory) · [探针固件](#探针固件mk-firmware) · [命令速查](#命令速查)
+[最便捷安装](#最便捷安装交给-ai) · [Web GUI](#web-gui-安装与使用) · [U 盘入口](#u-盘单-html-快速启动) · [AI / MCP](#ai-agent--mcp) · [命令速查](#命令速查) · [开发构建](#开发构建)
+
+**代码仓库：** [GitHub](https://github.com/Aladdin-Wang/Mklink-AI-Probe) · [Gitee](https://gitee.com/Aladdin-Wang/Mklink-AI-Probe)
 
 </div>
 
 ---
 
-## 功能概览
+## 这是什么
+
+MKLink AI Probe 把 MKLink/MicroLink 探针、嵌入式工程和 AI Agent 连接起来。既可以让 AI 直接完成烧录、读写内存、采集 RTT、分析 HardFault，也可以使用浏览器 Web GUI 或 Windows 桌面上位机手动操作。
 
 | 功能 | 说明 |
 |------|------|
-| **固件烧录** | 一键烧录 Keil/IAR 工程产物（HEX/BIN），自动检测 MCU 与 FLM |
-| **RTT 实时捕获** | SEGGER RTT 数据流捕获，内置波形可视化（RTT View / VOFA+） |
-| **SystemView RTOS 跟踪** | 通过 RTT 通道采集 SEGGER SystemView 事件，解码任务切换、ISR、CPU 占用并提供 GUI 时间轴 |
-| **SuperWatch** | 高频变量连续采样与实时 Web 波形图（支持 `--dump-mem` 高速协议） |
-| **高速内存协议** | `dump-memory` 单次默认 512 KiB（V4.3.3 实测）；`flush-memory` 支持 `ADDR:BYTE*N` 紧凑写入 |
-| **内存读写** | RAM / Flash / 寄存器读写，十六进制查看器 |
-| **探针固件管理** | 内置 V3.3.3 / V4.3.3 `.uf2`，连接时自动版本检查与升级指引 |
-| **符号与类型** | 通过 DWARF/ELF 解析 AXF 符号表、结构体、枚举定义 |
-| **HardFault 解码** | Cortex-M Fault 寄存器自动解码，addr2line 源码定位 |
-| **Modbus RTU** | 完整 Modbus 调试：扫描、读写、轮询、点表生成、Web Dashboard |
-| **串口调试** | 通用 UART 终端，支持自定义协议 Profile |
-| **MCP 能力层** | `python -m mklink mcp` 暴露 51 个 MCP tool，供 Claude Code / Cursor / ChatGPT 等 MCP client 调用 |
-| **远程 GUI** | FastAPI 后端 + Vue 3 SPA，浏览器即用 |
-| **Tauri 桌面** | Rust 桌面应用，Python sidecar，原生窗口体验 |
-| **AI Agent 集成** | MCP tool 优先，CLI 兜底；Skill 文档负责路由、边界和排查方法论 |
+| **固件烧录** | 支持 Keil/IAR 工程、HEX/BIN、pyOCD 在线烧录和 MKLink 脱机下载 |
+| **Web GUI** | 浏览器中完成工程配置、在线/脱机烧录、Dashboard 和文件选择 |
+| **RTT View / VOFA+** | 实时日志与曲线，支持坐标轴、缩放、拖动、暂停保留和通道发送 |
+| **SystemView** | 采集和分析任务切换、ISR、CPU 占用，提供时间轴和报告 |
+| **SuperWatch** | 从 AXF 符号中选择变量并实时绘图，原始数据可带时间戳保存 |
+| **内存与调试** | RAM、Flash、寄存器读写，断点、暂停、继续和单步控制 |
+| **符号与故障分析** | 内置 ELF/DWARF 解析，支持符号、类型、内存布局和 HardFault 定位 |
+| **串口与 Modbus** | 通用串口终端、Modbus RTU 扫描/读写/轮询和 Dashboard |
+| **AI Agent / MCP** | 提供仓库 Skill、MCP tools 和 CLI，方便不同 AI 编码助手调用 |
+| **Windows 桌面端** | Tauri v2 原生窗口，安装包自带后端，不要求用户另装 Python |
+| **U 盘 Web 入口** | 一份普通 HTML 可在 Windows、macOS、Linux 上启动已安装的 Web 客户端 |
 
-## Screenshots
+## 最便捷安装：交给 AI
 
-<table>
-  <tr>
-    <td align="center"><b>ConfigView — 工程配置与设备连接</b></td>
-    <td align="center"><b>Dashboard — RTT 实时波形可视化</b></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><b>SuperWatch — 高频变量实时监控</b></td>
-  </tr>
-</table>
+最省事的方式是把下面任意一个仓库链接交给支持本地文件和终端操作的 AI 编码助手：
 
-## 快速开始
+- GitHub：<https://github.com/Aladdin-Wang/Mklink-AI-Probe>
+- Gitee：<https://gitee.com/Aladdin-Wang/Mklink-AI-Probe>
 
-本仓库同时是 **Claude Code Plugin**、**AI Agent Skill** 和可直接安装的 Python CLI。把 `Mklink-AI-Probe/` 目录交给 AI，它会优先通过 MCP tool 操作硬件；无 MCP 环境时回退到 `python -m mklink <command>`。
+可以直接这样告诉 AI：
 
-### 给 AI 的一句话
+> 请从这个仓库安装 MKLink AI Probe。读取仓库中的 `Mklink-AI-Probe/SKILL.md` 和安装说明，把完整 Skill 安装到你的用户级 Skill 目录，并安装 Web GUI 与 MCP 所需依赖。安装后运行自检，并帮我打开 Web GUI。
 
-> 请读取 `Mklink-AI-Probe/` 目录，安装 Mklink AI Probe Skill，并帮我初始化嵌入式调试环境。
+AI 会根据自己的产品和操作系统选择正确的 Skill 目录，完成下载、依赖安装和验证。不同 AI 的全局目录并不相同，不建议用户手工猜目录或只复制一个 `SKILL.md` 文件；必须保留 `Mklink-AI-Probe/` 中的 Python 包、GUI 资源和 `references/`。
 
-### AI 会做什么
+安装完成后，日常使用只要对 AI 说：
 
-1. 读取 [`Mklink-AI-Probe/SKILL.md`](Mklink-AI-Probe/SKILL.md) — Skill 入口、MCP/CLI 路由、Agent 约束
-2. 识别 [`Mklink-AI-Probe/.claude-plugin/plugin.json`](Mklink-AI-Probe/.claude-plugin/plugin.json) 与 [`Mklink-AI-Probe/.mcp.json`](Mklink-AI-Probe/.mcp.json)
-3. 按 [`Mklink-AI-Probe/references/install.md`](Mklink-AI-Probe/references/install.md) 安装 `mklink` Python 包、GUI 与 MCP 依赖
-4. 根据你的意图查阅 `references/` 下的命令文档，优先调用 MCP tool，必要时执行 `python -m mklink <command>`
+> 打开 MKLink AI Probe 的 Web GUI，并使用我的嵌入式工程。
 
-### 典型工作流（由 AI 代劳）
+> **说明：**普通网页聊天模型无法直接安装本机软件。需要使用能够访问本地文件、执行命令的 Codex、Claude Code、Cursor 等编码助手，或由它们连接到相应的本地执行环境。
 
-```bash
-cd Mklink-AI-Probe
-python -m pip install -e ".[gui,mcp]"
-python -m mklink project-init   # 自动检测 Keil/IAR 工程、MCU、COM 口
-python -m mklink flash          # 烧录固件
-python -m mklink rtt --duration 10   # 捕获 RTT 数据
+## Web GUI 安装与使用
+
+Web GUI 是运行在本机的浏览器上位机。后端负责连接探针，浏览器负责显示配置、烧录、RTT、SystemView、SuperWatch、串口和 Modbus 界面。默认只监听本机 `127.0.0.1`。
+
+### 方式一：让 AI 安装并启动（推荐）
+
+把仓库链接和下面这句话交给 AI：
+
+> 安装 MKLink AI Probe 的完整运行环境，包含 GUI 和 MCP 依赖；确认仓库自带的 `gui/dist` 可用，然后为我的工程启动 `python -m mklink gui`。
+
+AI 完成后会打开浏览器。默认地址是：
+
+```text
+http://127.0.0.1:8765
 ```
 
-启动 GUI：`python -m mklink gui`（浏览器）或 `cd Mklink-AI-Probe/gui && npx tauri dev`（桌面应用）。
+### 方式二：手动从源码安装
 
-> 手动安装说明见 [Mklink-AI-Probe/references/install.md](Mklink-AI-Probe/references/install.md)。
+准备 Python 3.9 或更高版本和 Git。正常使用仓库自带的 Web 页面不需要 Node.js 或 Rust。
 
-## MCP / AI Agent 集成
+```bash
+# GitHub 与 Gitee 二选一
+git clone https://github.com/Aladdin-Wang/Mklink-AI-Probe.git
+# git clone https://gitee.com/Aladdin-Wang/Mklink-AI-Probe.git
 
-`python -m mklink mcp` 以 stdio 方式启动 MCP server，当前暴露 51 个 `mcp__mklink__*` tool，覆盖连接、烧录、内存、变量、断点、符号、RTT、SystemView、HardFault、Modbus 与串口。
+cd Mklink-AI-Probe/Mklink-AI-Probe
+python -m pip install -e ".[gui,mcp]"
+python -m mklink gui
+```
+
+浏览器会自动打开。关闭运行命令的终端或按 `Ctrl+C` 即可停止服务。
+
+常用启动方式：
+
+```bash
+# 把指定工程作为当前工程打开
+python -m mklink gui --project-root "/path/to/project"
+
+# 使用其他端口
+python -m mklink gui --port 8876
+
+# 只启动服务，不自动打开浏览器
+python -m mklink gui --no-browser
+```
+
+如果提示缺少前端资源，说明安装内容不完整。请重新下载完整仓库或完整 Skill；只有在需要重新编译前端时才需要 Node.js。
+
+### 第一次打开怎么用
+
+1. 将 MKLink 探针连接电脑和目标板。
+2. 打开“配置”，选择工程目录和探针；也可以直接选择本机的 AXF/ELF/OUT 与 MAP 文件。
+3. 点击连接，确认目标与符号信息加载成功。
+4. 根据需要进入“在线烧录”“脱机烧录”或“Dashboard”。
+5. 在 Dashboard 中使用 RTT View、VOFA+、SystemView、SuperWatch、内存、串口或 Modbus。
+
+浏览器不能把本机绝对路径直接交给后端，因此网页版选择 AXF/ELF/OUT 或 MAP 时，会把文件上传到当前连接的 Mklink 服务所管理的 `.mklink/uploads/file-sources` 目录。默认本机模式不会把文件发送到互联网；单个文件上限为 256 MiB。Windows 桌面版使用原生文件对话框，不走这一步上传。
+
+RTT View 与 SuperWatch 共用目标调试资源。切换后点击开始时，系统会先停止原来的采集功能，再启动新的功能，避免同时占用探针。
+
+Web GUI 默认只绑定 `127.0.0.1`。普通用户不要把服务改为 `0.0.0.0` 或直接暴露到公网；需要远程集成时请使用 `serve` 的认证接口，并先阅读 [远程服务与 GUI](Mklink-AI-Probe/references/commands-remote-gui.md)。
+
+### Windows 桌面上位机
+
+不想使用 Python 和命令行的 Windows 用户，可以从仓库 Release 页面下载标准 NSIS 安装包：
+
+- [GitHub Releases](https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases)
+- [Gitee 仓库](https://gitee.com/Aladdin-Wang/Mklink-AI-Probe)
+
+桌面版已打包 Python 后端和 Web 前端。安装后直接打开 **Mklink AI Probe**，不需要另外启动浏览器服务。Windows 可能对未做 Authenticode 签名的安装包显示“未知发布者”，请从上述官方仓库下载并核对 Release 中的校验信息。
+
+## U 盘单 HTML 快速启动
+
+U 盘中只需保存一份普通 HTML，Windows、macOS 和 Linux 使用同一个文件。受浏览器安全限制，HTML 本身不能携带或启动 Python 程序，所以每台电脑仍需提前安装一次完整 Mklink runtime，并注册用户级启动协议。
+
+### 每台电脑只做一次
+
+可以让 AI 执行：
+
+> 为已安装的 MKLink AI Probe 注册 Web U 盘启动入口，并验证 `web-entry status`。
+
+对应命令：
+
+```bash
+python -m mklink web-entry install
+```
+
+### 生成 U 盘 HTML
+
+```bash
+python -m mklink web-entry html --output "/path/to/usb/启动 Mklink Web.html"
+```
+
+也可以注册协议并同时生成：
+
+```bash
+python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
+```
+
+以后用户双击 U 盘中的 HTML，再点击“启动 Web 客户端”即可。入口会复用已有 Mklink Web 服务；停止按钮只结束由这个入口启动的服务，不会关闭 AI/MCP、手动启动的 `serve` 或 Windows 桌面上位机。
+
+| 系统 | 一次性准备 |
+|------|------------|
+| Windows 10/11 | 安装完整 runtime，执行 `web-entry install`，首次点击时允许浏览器打开协议处理器 |
+| macOS | 安装与 Intel/Apple Silicon 匹配的 runtime，执行注册，首次点击时确认打开 Launcher |
+| Linux 桌面 | 安装 runtime 和 `xdg-utils`，执行注册，并准备 USB HID/串口权限或 udev 规则 |
+
+Windows 已完成真实协议和 U 盘 HTML 闭环验证；macOS 与 Linux 的注册文件和命令已有自动化测试，但仍需在对应操作系统上完成实机验证。
+
+完整说明与故障排查见 [跨平台 U 盘 Web 启动入口](Mklink-AI-Probe/references/web-entry.md)。
+
+## AI Agent / MCP
+
+仓库中的 [SKILL.md](Mklink-AI-Probe/SKILL.md) 是 AI 能力入口，`references/` 提供按任务拆分的详细说明。支持 MCP 的客户端优先使用结构化 tools，不支持 MCP 时可回退到 CLI。
 
 ```bash
 cd Mklink-AI-Probe
@@ -86,221 +175,134 @@ python -m pip install -e ".[mcp]"
 python -m mklink mcp
 ```
 
-- **MCP 优先**：Claude Code / Cursor / ChatGPT 等 MCP client 可直接调用结构化 tool。
-- **CLI 兜底**：无 MCP 或需要可视化工作流时，使用 `python -m mklink <command>`。
-- **Skill 方法论**：`SKILL.md` 与 `references/` 负责说明何时用哪个 tool、边界条件和排查步骤。
+Agent 驱动的固件下载优先使用工程已有 IDE 的原生流程，例如先由 Keil 编译并直接下载；IDE 不可用或不适用时再使用 pyOCD 在线烧录，最后才使用 MKLink 脱机下载 API。某个后端已经开始执行后如果失败，会停止并报告原因，不会静默换后端继续烧录。
 
-## SystemView RTOS 跟踪
-
-mklink 已内置 SEGGER SystemView RTOS Trace 支持：目标固件把事件写入 RTT 上行通道 1，PC 端直接解码任务切换、ISR、CPU 占用并在 CLI/HTML/GUI 中展示，不依赖 J-Link 或 SEGGER PC 工具。
+## 典型工作流
 
 ```bash
-python -m mklink rtt-integrate --project-root .          # 先集成 RTT
-python -m mklink systemview-integrate --project-root .   # 集成 SEGGER_SYSVIEW 到 RT-Thread 工程
-python -m mklink systemview --duration 10                # 实时打印事件
-python -m mklink systemview-analyze --duration 6         # CPU% / 切换 / ISR 分析
+# 自动识别 Keil/IAR 工程、MCU 和探针
+python -m mklink project-init
+
+# 烧录固件
+python -m mklink flash
+
+# 捕获 10 秒 RTT
+python -m mklink rtt --duration 10
+
+# 启动浏览器上位机
+python -m mklink gui
+```
+
+### SystemView RTOS 跟踪
+
+目标固件通过 RTT 上行通道输出 SystemView 事件，Mklink 可以直接解码任务切换、ISR 和 CPU 占用，不依赖 J-Link PC 工具。
+
+```bash
+python -m mklink rtt-integrate --project-root .
+python -m mklink systemview-integrate --project-root .
+python -m mklink systemview --duration 10
+python -m mklink systemview-analyze --duration 6
 python -m mklink systemview-report --duration 6 --out report.html
-python -m mklink gui                                    # Dashboard -> RTOS Trace
 ```
 
-MCP 等价能力：`systemview_integrate`、`systemview_start`、`capture_systemview`、`systemview_analyze`、`systemview_report`。详细集成说明见 [systemview-rtthread.md](Mklink-AI-Probe/references/systemview-rtthread.md)。
+详细说明见 [SystemView 与 RT-Thread 集成](Mklink-AI-Probe/references/systemview-rtthread.md)。
 
-## 高速内存协议（dump-memory / flush-memory）
+### 高速内存读写
 
-V3.3.3 / V4.3.3 探针固件继续增强 `cmd.dump_memory` 与 `cmd.flush_memory` 公共 API；老固件仍可使用基础功能，但大块读写边界更保守。
-
-### dump-memory — 高速采集（固件侧自动分块）
-
-调用 `cmd.dump_memory(addr, size, ..., period)`，返回 `MPMDMPMD` 二进制帧：
-
-| 协议 | 触发条件 | 说明 |
-|------|----------|------|
-| **OLD** | 单次总量 ≤ 2048 B | 单帧返回全部数据 |
-| **B1** | 单次总量 > 2048 B | 固件按 **2048 B/block** 自动分块；CLI 重组后计为 1 个完整样本 |
-
-- 单次默认上限 **512 KiB**（多 region 合计，V4.3.3 实测整片 Flash 稳定）；老固件建议限制到 ≤32 KiB
-- 支持最多 16 个 region（`ADDR:SIZE`）
-- SuperWatch `--dump-mem` 优先走此协议，不支持时回退 `read_ram` 轮询
+`dump-memory` 适合连续或大块读取，`flush-memory` 适合不干扰采集流的 RAM 写入。实际边界取决于探针、目标芯片和连接质量，应从较小数据量开始验证。
 
 ```bash
-python -m mklink dump-memory 0x20000000:16              # OLD 帧
-python -m mklink dump-memory 0x08020000:2049            # 触发 B1 分块
+python -m mklink dump-memory 0x20000000:16
 python -m mklink dump-memory 0x08000000:524288 --save flash.bin
-python -m mklink dump-memory 0x20000000:16 --period 0.01 --frames 10
+python -m mklink flush-memory 0x20010000:0xDE,0xAD,0xBE,0xEF --verify
+python -m mklink flush-memory "0x20008000:0xAA*4096" --verify
 ```
 
-### flush-memory — 静默写入（适合与 dump 并发）
-
-成功时**不输出 hexdump**，不会污染 `dump-memory` 二进制流（`write-ram` 会打断帧解析）。
-
-| 场景 | 推荐边界 |
-|------|----------|
-| 单地址 `ADDR:BYTE,...` | 1~16 字节稳定（varargs 上限约 20 B） |
-| 单地址重复字节 `ADDR:BYTE*N` | ≤ 12 KB 推荐；V4.3.3 实测约 16.1 KiB 上限，不建议压线 |
-| 多地址一次提交 | ≤ 8 个地址项，单块 ≤ 12 KB |
-
-```bash
-python -m mklink flush-memory 0x20010000:0xDE,0xAD,0xBE,0xEF
-python -m mklink flush-memory "0x20008000:0xAA*12288" --verify
-python -m mklink flush-memory 0x20010000:0x11,0x22 0x20010100:0x44,0x55 --verify
-```
-
-> 边界详情：[references/flush-memory.md](Mklink-AI-Probe/references/flush-memory.md) · 命令总览：[references/commands-memory.md](Mklink-AI-Probe/references/commands-memory.md)
-
-## 探针固件（MK-Firmware）
-
-| 文件 | 适用探针 | 状态 |
-|------|----------|------|
-| `MK-Firmware/MicroLink_V3.3.3.uf2` | MicroLink V3 | **最新** |
-| `MK-Firmware/MicroLink_V4.3.3.uf2` | MicroLink V4 | **最新** |
-
-### V3.3.3 / V4.3.3 更新内容
-
-- 继承 V3.3.2 / V4.3.2 的 M0 内核下载提速与脱机下载兼容性修复。
-- `dump_memory` 大块读取边界提升：V4.3.3 已验证 512 KiB Flash dump（256 个 B1 块）稳定。
-- `flush_memory` 重复字节写入边界重新验证，推荐用 `ADDR:BYTE*N` 短表达式并按 12 KB 分块。
-
-`firmware_check.py` 在 `project-init` 和 GUI 连接时自动比对探针版本，过低时提示拖入同 major 号的 `.uf2` 升级。`dump-memory` / `flush-memory` 需 V3.3.1 / V4.3.1 及以上固件，大块稳定性建议使用 V3.3.3 / V4.3.3。
-
-```bash
-python -m mklink version       # 查看当前探针固件版本
-```
-
-可通过 `MKLINK_FIRMWARE_DIR` 环境变量覆盖固件目录。
+边界和格式见 [dump-memory](Mklink-AI-Probe/references/commands-memory.md) 与 [flush-memory](Mklink-AI-Probe/references/flush-memory.md)。
 
 ## 命令速查
 
 | 命令 | 说明 |
 |------|------|
-| `mcp` | 启动 MCP server（stdio，供 Claude Code / Cursor / ChatGPT 等 MCP client 调用） |
-| `project-init` / `project-info` | 初始化 / 查看项目配置 |
-| `flash` | 一站式烧录（连接 → IDCODE → FLM → 烧录） |
-| `version` | 读取烧录器固件版本 |
-| `rtt` / `rtt-integrate` / `rtt-find` | RTT 捕获 / 源码集成 / 地址查找 |
+| `project-init` / `project-info` | 初始化或查看工程配置 |
+| `flash` | 兼容的一站式在线烧录命令 |
+| `gui` | 启动 Web GUI 并打开浏览器 |
+| `serve` | 启动 REST、WebSocket 和 Web 静态服务 |
+| `web-entry` | 注册 U 盘 HTML 协议、生成 HTML、启动/停止入口服务 |
+| `mcp` | 启动供 AI Agent 使用的 MCP server |
+| `rtt` / `rtt-integrate` / `rtt-find` | RTT 捕获、源码集成和控制块定位 |
+| `vofa` / `watch` / `superwatch` | 变量观测和高速采样 |
+| `systemview*` | SystemView 集成、采集、分析和报告 |
 | `read-ram` / `write-ram` / `read-flash` / `read-reg` | 内存与寄存器读写 |
-| `dump-memory` (`dump`) | 高速二进制帧采集（B1 自动分块，V4.3.3 单次默认 512 KiB） |
-| `flush-memory` | 静默写 RAM，支持 `ADDR:BYTE*N` 紧凑语法，适合与 dump 并发 |
-| `vofa` / `watch` / `superwatch` | 变量观测与高频采样 |
-| `systemview` | 一站式 SystemView RTOS 跟踪，实时解码任务切换 / ISR |
-| `systemview-integrate` | 集成 SEGGER_SYSVIEW 到 RT-Thread 工程 |
-| `systemview-analyze` / `systemview-report` | 采集 SystemView 并输出运行态分析或 HTML 报告 |
-| `symbols` / `typeinfo` / `memmap` | AXF 符号、DWARF 类型、段表分析 |
-| `hardfault` | Cortex-M Fault 寄存器解码 |
-| `modbus` / `serial` | Modbus RTU / 通用串口调试 |
-| `resources` | 本地资源管理（释放 stale 串口锁） |
-| `serve` / `gui` | 远程 API 服务 / Web GUI |
-| `discover` / `test` | 发现探针端口 / 连接测试 |
-| `halt` / `resume` / `step` / `break` | CPU 调试控制 |
+| `dump-memory` / `flush-memory` | 高速内存采集与静默写入 |
+| `symbols` / `typeinfo` / `memmap` | ELF/DWARF 符号、类型和内存布局 |
+| `hardfault` | Cortex-M Fault 寄存器与源码定位 |
+| `modbus` / `serial` | Modbus RTU 与通用串口调试 |
+| `halt` / `resume` / `step` / `break` | CPU 运行控制与断点 |
+| `resources` | 查看或释放本地资源占用 |
+| `discover` / `test` / `version` | 发现探针、连接测试和版本查询 |
 
-完整命令文档见 [Mklink-AI-Probe/references/](Mklink-AI-Probe/references/) 目录。
+完整命令文档见 [references 目录](Mklink-AI-Probe/references/)。
 
 ## 架构
 
-```
-┌─────────────────────────────────────────────┐
-│            Tauri 桌面应用 / 浏览器 GUI         │
-│          (Vue 3 + TypeScript SPA)           │
-├─────────────────────────────────────────────┤
-│         FastAPI 服务 (REST + SSE + WS)       │
-│               port 8765                     │
-├─────────────────────────────────────────────┤
-│         Device / DeviceDispatcher            │
-│      MKLinkSerialBridge (pyserial)          │
-│            进程级 SerialLock                 │
-├─────────────────────────────────────────────┤
-│         MKLink 探针 (USB CDC)               │
-│              SWD / JTAG                     │
-├─────────────────────────────────────────────┤
-│         目标 MCU (ARM Cortex 内核)           │
-└─────────────────────────────────────────────┘
+```text
+AI Agent / MCP       浏览器 Web GUI       Windows Tauri 桌面端
+        \                  |                  /
+         +--------- Python FastAPI ----------+
+                  REST / SSE / WebSocket
+                            |
+                Device / Resource Manager
+                            |
+                 MKLink (USB CDC / CMSIS-DAP)
+                            |
+                       目标 MCU
 ```
 
-**三种使用方式：**
-
-- **MCP 模式** — `python -m mklink mcp`，供 AI Agent 调用结构化 tool
-- **CLI 模式** — `python -m mklink <command>`，适合脚本化、人工操作和无 MCP 环境
-- **GUI 模式** — 浏览器或 Tauri 桌面窗口，可视化操作
+三种主要使用方式可以并存：AI 通过 MCP/CLI 调用，用户通过 Web GUI 操作，Windows 用户也可以使用自带 sidecar 的桌面上位机。U 盘 HTML 只是 Web GUI 的快捷入口，不会改变其他模式的生命周期。
 
 ## 开发构建
 
-工作目录为 `Mklink-AI-Probe/`（含 `pyproject.toml` 的 Skill 根目录）。
-
-### Python 包
+开发目录是包含 `pyproject.toml` 的 `Mklink-AI-Probe/`：
 
 ```bash
 cd Mklink-AI-Probe
-pip install -e .                    # 基础安装
-pip install -e ".[gui]"             # 含 GUI 依赖
-pip install -e ".[mcp]"             # 含 MCP server 依赖
-python -m mklink mcp                # 启动 MCP server（stdio）
-python -m mklink serve --port 8765  # 启动 API 服务
-```
+python -m pip install -e ".[gui,mcp,test]"
+python -m pytest
 
-### Tauri 桌面应用
-
-```bash
-cd Mklink-AI-Probe/gui
+cd gui
 npm install
-npm run build:test                  # 测试模式构建
-npx tauri dev                       # 开发模式
-npx tauri build                     # 生产构建（MSI + NSIS）
+npm test
+npm run build
 ```
 
-> Tauri 构建需要 Rust 工具链和 MSVC Build Tools，详见 [references/install.md](Mklink-AI-Probe/references/install.md)。
+Tauri 开发与标准 NSIS 构建需要 Node.js、Rust 和 Windows MSVC Build Tools。仓库默认只生成标准 NSIS；详细流程见 [安装说明](Mklink-AI-Probe/references/install.md) 和仓库内 [Tauri 构建 Skill](Mklink-AI-Probe/skills/tauri-gui-builder/SKILL.md)。
 
-### 测试
+内置 `pyelftools` 是默认 ELF/DWARF 后端。GNU Arm 的 `readelf`、`addr2line` 只在用户明确选择外部后端时才需要，不是 Web GUI、符号或 HardFault 功能的默认前置条件。
 
-```bash
-cd Mklink-AI-Probe
-pytest                              # Python 单元测试
-cd gui && npm test                  # 前端单元测试
-```
+## 支持范围
 
-## 可选依赖
-
-| 工具 | 用途 | 安装 |
-|------|------|------|
-| `arm-none-eabi-readelf` | AXF 符号解析、DWARF 类型查询、HardFault 源码定位 | `winget install Arm.GnuArmEmbeddedToolchain` |
-| Node.js | Tauri 桌面应用、Vue 前端构建 | `winget install OpenJS.NodeJS.LTS` |
-| Rust | Tauri v2 桌面应用编译 | [rustup.rs](https://rustup.rs) |
-
-## 支持的 MCU
-
-支持所有 **ARM Cortex 内核** MCU（Cortex-M / Cortex-A 等），通过 MKLink 探针的 SWD/JTAG 接口连接，不限于特定厂商或型号。
-
-- 探针自动读取芯片 IDCODE，匹配烧录算法（FLM）
-- 内存映射、Flash 参数等通过 `mklink/mcu_profiles.json` 配置，可按需扩展
-- 已内置多厂商常用型号配置（ST、Nationstech、GD、MM32 等），新芯片只需添加对应 profile
+- 通过 SWD/JTAG 调试 ARM Cortex 目标，具体型号取决于内置 profile、pyOCD target 或可用 CMSIS-Pack。
+- 常用 ST、Nationstech、GD、MM32 等目标已有配置；其他芯片可以补充 profile 或 Pack。
+- HPM 目标使用专用 ROM API/BIN 下载流程，不使用 FLM。
+- 在线烧录页面只接受 MKLink CMSIS-DAP 探针，不把其他厂商探针列为可选设备。
 
 ## 项目结构
 
-```
-Mklink-AI-Probe/              # 本仓库根目录
-├── README.md                 # 总览文档
-├── LICENSE
-└── Mklink-AI-Probe/          # Skill 与 Python 包根目录
-    ├── .claude-plugin/       # Claude Code plugin manifest
-    ├── .mcp.json             # MCP server 启动配置
-    ├── SKILL.md              # AI Agent Skill 入口
-    ├── commands/             # Agent/命令快捷入口
-    ├── mklink/               # 核心 Python 包
-    │   ├── cli.py            # CLI 命令调度
-    │   ├── mcp_server.py     # MCP tools
-    │   ├── dump_memory.py    # dump_memory 二进制帧解析（OLD + B1）
-    │   ├── firmware_check.py # 探针固件版本检查
-    │   ├── systemview*.py    # SystemView 采集、解析、分析、报告
-    │   ├── flash.py / rtt.py / superwatch.py
-    │   ├── remote/           # FastAPI 远程服务
-    │   ├── modbus/           # Modbus RTU
-    │   └── serial/           # 串口通信
-    ├── gui/                  # Vue 3 + Tauri GUI
-    │   └── src/components/dash/SystemViewTab.vue
-    ├── references/           # 命令与安装文档（AI 按需读取）
-    ├── MK-Firmware/          # MicroLink 烧录器固件 (.uf2)
-    ├── skills/               # 子技能 / 辅助构建 skill
-    └── scripts/              # 示例脚本
+```text
+Mklink-AI-Probe/                 # Git 仓库根目录
+├── README.md                    # 项目首页与用户指南
+└── Mklink-AI-Probe/             # Skill、Python 包和 GUI 根目录
+    ├── SKILL.md                 # AI Agent 能力入口
+    ├── .mcp.json                # MCP server 配置
+    ├── mklink/                  # Python 核心、CLI、MCP 与远程服务
+    ├── gui/                     # Vue 3 + Tauri，dist 为已构建 Web GUI
+    ├── references/              # 安装、命令和工作流说明
+    ├── skills/                  # 仓库内维护与构建流程
+    ├── docs/                    # 项目记忆和验证资料
+    └── _maintainer/testing/     # 自动化测试
 ```
 
 ## License
 
-MIT License
+[MIT License](LICENSE)

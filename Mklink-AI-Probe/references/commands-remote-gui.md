@@ -10,6 +10,28 @@ GUI 与 Tauri 桌面应用依赖安装详见 [references/install.md](install.md)
 
 ## Web GUI（浏览器模式）
 
+### High-rate binary stream data plane
+
+SystemView, VOFA, RTT, and SuperWatch high-rate payloads are delivered through
+`/ws/streams/{name}` as versioned binary frames. REST and SSE remain control or
+legacy low-rate paths; clients must not use their copied event arrays for the
+high-rate render loop. The browser transfers each `ArrayBuffer` to a Worker,
+which owns bounded typed rings and reports transport gaps separately from
+backend-reported drops.
+
+Visible charts are decimated to a min/max pixel envelope and scheduled at no
+more than 30 FPS. Pausing a chart or hiding the document suppresses render work
+without stopping acquisition. Use the short transport gate before release:
+
+```powershell
+python -m pytest _maintainer/testing/tests/test_stream_performance.py -q
+```
+
+This ten-second local gate targets 10,000 aggregate samples/s and is not MKLink
+HIL. For physical rate sweeps, 30-minute zero-drop soaks, packaged-app checks,
+and the required evidence fields, follow
+[`docs/verification/high-throughput-streams.md`](../docs/verification/high-throughput-streams.md).
+
 ### serve — 远程调试服务器
 
 ```powershell
@@ -34,9 +56,29 @@ python -m mklink gui --port 8765 --device-port COM6
 python -m mklink gui --no-browser
 ```
 
-GUI 启动后在浏览器中提供两个页面：
+GUI 启动后在浏览器中提供三个主页面：
 - **配置页** (`/config`) — COM 口选择、MCU 配置、项目初始化
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
+- **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
+
+浏览器版“配置 > 文件来源”可直接选择本机 AXF/ELF/OUT 和 MAP 文件。浏览器
+不会暴露本机绝对路径，因此前端使用 multipart 将文件上传到本机 Mklink 服务的
+受控 `.mklink/uploads/file-sources` 目录，再把服务端路径用于连接和符号解析。
+单文件上限为 256 MiB；Tauri 桌面版继续使用原生文件对话框，不经过上传。
+
+### web-entry — U 盘单 HTML 快速启动
+
+`web-entry` 为已经安装完整 Mklink skill/runtime 的电脑注册
+`mklink-ai-probe://` 用户级协议。U 盘只需保存一个跨 Windows、macOS、Linux
+通用的 HTML 文件：
+
+```bash
+python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
+```
+
+入口会复用现有 Web 服务；只停止自己启动的进程，不改变 `serve`、MCP 或 Tauri
+sidecar 的所有权。平台安装位置、权限和故障排查见
+[跨平台 U 盘 Web 启动入口](web-entry.md)。
 
 
 ## Tauri 桌面应用（原生窗口）
@@ -57,6 +99,24 @@ npx tauri dev
 ```
 
 开发模式下 Tauri 窗口连接 `http://localhost:8765` 上的 Python 后端。前端热重载通过 Vite dev server (port 5173) 实现。
+
+## 在线烧录 API
+
+`/online-flash` 页调用以下 `/api/online-flash` 端点：
+
+| 用途 | 端点 |
+|------|------|
+| 列出 MKLink 探针 | `GET /probes` |
+| 搜索目标 | `GET /targets?q=...&vendor=...&installed=...` |
+| Pack 状态/更新索引 | `GET /packs/status`、`POST /packs/index/update` |
+| 安装/导入/取消/删除 Pack | `POST /packs/install`、`POST /packs/import`、`POST /packs/cancel`、`DELETE /packs/{pack_id}/{version}` |
+| 检查与分页预览固件 | `POST /images/inspect`、`GET /images/{image_id}/preview` |
+| 启动/查询/停止任务 | `POST /jobs`、`GET /jobs/active`、`GET /jobs/{job_id}`、`POST /jobs/{job_id}/stop` |
+| 重放式任务事件 | `GET /jobs/{job_id}/events?after={sequence}` (SSE) |
+
+Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Windows 默认为 `%LOCALAPPDATA%\MKLink\pyocd`；可在启动服务前设置 `MKLINK_PYOCD_HOME` 覆盖。这些缓存不是仓库或 Tauri 发布资源，`.pack`、上传文件和测试产物不应进入 Git。更新索引和下载 Pack 继承服务进程的 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境；断网时可用最后一份有效索引和已安装 Pack。
+
+在线烧录会申请 `TARGET_DEBUG` 资源，与 RTT、SystemView、VOFA、SuperWatch 等会话冲突时返回 HTTP 409 及当前 owner/resource；先停止或由用户确认交接冲突会话。`POST /jobs/{job_id}/stop` 只设置协作式取消：运行中的底层操作返回后，任务才进入 `stopped`，执行 disconnect 并释放租约。页面显示“停止中”时不要立即开启新任务或拔除探针。
 
 ### 发布构建
 

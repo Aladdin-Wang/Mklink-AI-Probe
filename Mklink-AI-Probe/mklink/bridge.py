@@ -14,6 +14,7 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Callable
 
 import serial
 
@@ -32,6 +33,7 @@ _STREAM_STOP_COMMANDS = [
     b'vofa.send(0x20000000, "uint8_t", 0)\n',
     b"cmd.dump_memory(0x20000054, 4, 0)\n",
 ]
+_STREAM_READ_POLL_INTERVAL = 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +165,7 @@ class MKLinkSerialBridge:
         self._echo_prefix = "[SERIAL] "
         self._echo_offset = 0
         self._echo_pending = ""
+        self._echo_callback: Callable[[str], None] | None = None
 
     # ------------------------------------------------------------------
     # 连接管理
@@ -293,6 +296,7 @@ class MKLinkSerialBridge:
         timeout: float = 5.0,
         echo: bool = False,
         echo_prefix: str = "[SERIAL] ",
+        on_output: Callable[[str], None] | None = None,
     ) -> str:
         """发送 PikaScript 命令，等待 >>> 提示符后返回完整响应。"""
         with self._cmd_lock:
@@ -308,6 +312,8 @@ class MKLinkSerialBridge:
             self._echo_prefix = echo_prefix
             self._echo_offset = 0
             self._echo_pending = ""
+            self._echo_callback = on_output
+            stream_output = echo or on_output is not None
 
             if echo:
                 print(f"[TX] {cmd}", flush=True)
@@ -317,28 +323,32 @@ class MKLinkSerialBridge:
             except serial.SerialException as e:
                 self._ctx.state = DeviceState.ERROR
                 self._echo_enabled = False
+                self._echo_callback = None
                 raise ConnectionError(f"写入串口失败: {e}") from e
 
             deadline = time.monotonic() + timeout
             while True:
                 if self._prompt_event.wait(timeout=0.005):
                     break
-                if echo:
+                if stream_output:
                     self._flush_echo_buffer()
                 if time.monotonic() >= deadline:
                     self._ctx.state = DeviceState.ERROR
-                    if echo:
+                    if stream_output:
                         self._flush_echo_buffer(final=True)
                     self._echo_enabled = False
+                    self._echo_callback = None
                     raise TimeoutError(f"命令超时 ({timeout}s): {cmd}")
 
-            if echo:
+            if stream_output:
                 self._flush_echo_buffer(final=True)
+            if echo:
                 print("[RX] <<<", flush=True)
 
             with self._buffer_lock:
                 response = "".join(self._response_buffer)
             self._echo_enabled = False
+            self._echo_callback = None
             return response
 
     def send_script(self, commands: list[str]) -> list[str]:
@@ -362,7 +372,9 @@ class MKLinkSerialBridge:
                 self._response_buffer.clear()
             if chunk:
                 collected.append(chunk)
-            time.sleep(0.05)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(_STREAM_READ_POLL_INTERVAL, remaining))
 
         return "".join(collected)
 
@@ -581,6 +593,9 @@ class MKLinkSerialBridge:
                 text = "".join(parts)
 
         if self._echo_offset >= len(text):
+            if final and self._echo_pending:
+                self._emit_echo_line(self._echo_pending)
+                self._echo_pending = ""
             return
 
         chunk = text[self._echo_offset:]
@@ -609,9 +624,18 @@ class MKLinkSerialBridge:
         for line in complete_lines:
             if not line:
                 continue
-            print(f"{self._echo_prefix}{line}", flush=True)
+            self._emit_echo_line(line)
 
         self._echo_offset += len(chunk)
+
+    def _emit_echo_line(self, line: str) -> None:
+        if self._echo_enabled:
+            print(f"{self._echo_prefix}{line}", flush=True)
+        if self._echo_callback is not None:
+            try:
+                self._echo_callback(line)
+            except Exception:
+                pass
 
     @staticmethod
     def _safe_path(path: str) -> str:

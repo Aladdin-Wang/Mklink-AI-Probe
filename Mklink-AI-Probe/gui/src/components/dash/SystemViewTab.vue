@@ -15,12 +15,12 @@
       <div class="sv-toolbar">
         <ControlToolbar
           v-if="!offlineMode"
-          :state="dash.state.value"
+          :state="toolbarState"
           :error="dash.error.value"
           :device-connected="deviceConnected"
           @start="onStart"
-          @pause="dash.pause()"
-          @resume="dash.resume()"
+          @pause="onPauseRender"
+          @resume="onResumeRender"
           @stop="onStop"
         />
         <button v-else class="btn-clear sv-mode-btn" @click="returnToLive">实时</button>
@@ -210,12 +210,19 @@
 import { ref, shallowRef, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useDashboard } from '../../composables/useDashboard'
 import { useEventSource } from '../../composables/useEventSource'
+import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useResourceStatus } from '../../composables/useResourceStatus'
 import { SvTimeline } from '../../lib/svTimeline'
+import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import { appendManyToLast } from '../../lib/boundedBuffer'
 import { takeNewStreamPoints } from '../../lib/streamCursor'
 import { ingestSystemViewIntervals, type SystemViewIntervalState } from '../../lib/systemViewIntervals'
-import { buildSystemViewEventRows, computeContextRows, computeRuntimeRows } from '../../lib/systemViewMetrics'
+import {
+  buildSystemViewEventRows,
+  computeContextRows,
+  computeRuntimeRows,
+  normalizeSystemViewName,
+} from '../../lib/systemViewMetrics'
 import { appendAndTrimEventsByTime, appendAndTrimRanges, filterRangesByWindow } from '../../lib/systemViewTimeBuffer'
 import { formatScheduleCount } from '../../lib/systemViewLabels'
 import { importSystemViewJsonl } from '../../lib/systemViewImport'
@@ -224,14 +231,19 @@ import ControlToolbar from './ControlToolbar.vue'
 const props = defineProps<{ deviceConnected: boolean }>()
 
 const dash = useDashboard('systemview')
-const { data, connect, disconnect } = useEventSource('/api/dash/systemview/stream', {
-  passthroughEvents: ['status', 'batch'],
+const { data: statusData, connect: connectStatus, disconnect: disconnectStatus } = useEventSource('/api/dash/systemview/stream', {
+  passthroughEvents: ['status'],
 })
+const binaryStream = useBinaryStream('systemview', { capacity: 100_000, channelCount: 1 })
+const renderPaused = ref(false)
+const toolbarState = computed(() => (
+  dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+))
 const { checkConflict } = useResourceStatus()
 
 // ---- 状态 ----
 interface TaskStat { id: number; name: string; color: string; runUs: number; switches: number; prio?: number }
-interface TaskInterval { taskId: number; start: number; end: number; startTk?: number; endTk?: number }
+interface TaskInterval { taskId: number; start: number; end: number; startTk?: number | bigint; endTk?: number | bigint }
 interface SystemViewLogItem { path: string; summary_path?: string }
 
 const PALETTE = ['#5b8cff', '#21c7a8', '#f5a623', '#e056fd', '#ff7675', '#fdcb6e',
@@ -253,6 +265,7 @@ const meta = reactive({
   cpuFreq: 0,
   cpuFreqSource: '',
   taskNames: {} as Record<number, string>,
+  isrNames: {} as Record<number, string>,
   recordingPath: '',
   recordingSummaryPath: '',
   recordingError: '',
@@ -267,6 +280,9 @@ const importStatus = ref('')
 const importError = ref(false)
 const latestLog = ref<SystemViewLogItem | null>(null)
 let importAbort: AbortController | null = null
+let connectTimer: ReturnType<typeof setTimeout> | null = null
+let mounted = false
+let operationGeneration = 0
 
 // ---- 交互式 canvas 时间轴 ----
 const tlCanvas = ref<HTMLCanvasElement | null>(null)
@@ -274,6 +290,12 @@ const tlTip = ref<HTMLDivElement | null>(null)
 const tlLegend = ref<HTMLDivElement | null>(null)
 const tlVcpu = ref<HTMLDivElement | null>(null)
 let tlInstance: SvTimeline | null = null
+let renderScheduler: RenderScheduler | null = null
+let visibleRequestId = 0
+let latestBinaryTime: number | null = null
+let binaryTickOrigin = 0n
+let lastTableUpdate = Number.NEGATIVE_INFINITY
+const TABLE_UPDATE_INTERVAL_MS = 200
 
 function tlGetIntervals() {
   const visible = meta.cpuFreq
@@ -288,6 +310,8 @@ function tlGetIntervals() {
 function tlReset() { tlInstance?.reset() }
 
 onMounted(() => {
+  mounted = true
+  const generation = ++operationGeneration
   refreshLogList()
   if (tlCanvas.value && tlTip.value && tlLegend.value && tlVcpu.value) {
     tlInstance = new SvTimeline(
@@ -296,30 +320,56 @@ onMounted(() => {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
         tickHz: meta.cpuFreq || undefined,
+        tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
+        renderPaused: renderPaused.value,
       },
     )
   }
-  reconnectRunningTrace()
+  renderScheduler = new RenderScheduler(() => {
+    if (offlineMode.value) {
+      tlInstance?.setData(tlGetIntervals())
+      return
+    }
+    const end = latestBinaryTime ?? Number.MAX_SAFE_INTEGER
+    const windowTicks = meta.cpuFreq
+      ? windowUs.value * meta.cpuFreq / 1_000_000
+      : windowUs.value
+    const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
+    binaryStream.requestVisibleRange(++visibleRequestId, start, end, tlCanvas.value?.clientWidth || 800)
+  })
+  renderScheduler.start()
+  reconnectRunningTrace(generation)
 })
 onUnmounted(() => {
-  clearLiveIngestQueue()
+  mounted = false
+  operationGeneration++
   abortImport()
+  cancelPendingConnect()
+  disconnectStatus()
+  binaryStream.stop()
+  renderScheduler?.dispose()
+  renderScheduler = null
   tlInstance?.destroy()
   tlInstance = null
 })
 
-// intervals 变化时喂给时间轴（rAF 节流：高频事件下 intervals 频繁 push，
-// 每次 setData+canvas redraw 会卡死浏览器；标记 dirty，每帧最多 redraw 一次）
-let tlDirty = false
-let tlRaf = 0
-function tlFlush() { tlRaf = 0; if (tlInstance && tlDirty) { tlDirty = false; tlInstance.setData(tlGetIntervals()) } }
 function scheduleTimelineFlush() {
-  tlDirty = true
-  if (!tlRaf) tlRaf = requestAnimationFrame(tlFlush)
+  renderScheduler?.invalidate('data')
 }
-watch(intervals, scheduleTimelineFlush)
+
+function cancelPendingConnect() {
+  if (connectTimer !== null) {
+    clearTimeout(connectTimer)
+    connectTimer = null
+  }
+}
+
+function operationIsActive(generation: number): boolean {
+  return mounted && generation === operationGeneration
+}
+watch(intervals, () => { if (offlineMode.value) scheduleTimelineFlush() })
 watch(windowUs, () => {
   tlInstance?.setWindowSize(windowUs.value)
   scheduleTimelineFlush()
@@ -334,8 +384,10 @@ watch(() => meta.cpuFreq, () => {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
         tickHz: meta.cpuFreq || undefined,
+        tickOrigin: binaryTickOrigin,
         follow: true,
         windowSize: windowUs.value,
+        renderPaused: renderPaused.value,
       },
     )
   }
@@ -345,23 +397,26 @@ const MAX_EVENTS = 800
 const ANALYSIS_EVENTS = 100_000
 const MAX_INTERVALS = 50_000
 const ANALYSIS_BUFFER_US = 60_000_000
-const LIVE_INGEST_MAX_PENDING = 10_000
-let pendingLiveEvents: any[] = []
-let pendingLiveCountEvents = false
-let liveIngestRaf = 0
 
 function taskNameFromMeta(id: number): string {
-  return meta.taskNames[id] || meta.taskNames[String(id) as any] || ''
+  return normalizeSystemViewName(meta.taskNames[id] || meta.taskNames[String(id) as any])
 }
 
-function applyTaskNames(names: Record<number, string>) {
-  meta.taskNames = names
-  for (const [idText, name] of Object.entries(names)) {
+function isrNameFromMeta(id: number): string {
+  return normalizeSystemViewName(meta.isrNames[id] || meta.isrNames[String(id) as any])
+}
+
+function applyTaskNames(names: Record<number, unknown>) {
+  const cleanNames: Record<number, string> = {}
+  for (const [idText, rawName] of Object.entries(names)) {
     const id = Number(idText)
+    const name = normalizeSystemViewName(rawName)
+    if (Number.isFinite(id) && name) cleanNames[id] = name
     if (Number.isFinite(id) && taskStats[id] && name) {
       taskStats[id].name = name
     }
   }
+  meta.taskNames = cleanNames
 }
 
 function colorFor(id: number): string {
@@ -371,10 +426,17 @@ function colorFor(id: number): string {
 }
 
 function ensureTask(id: number, name?: string): TaskStat {
+  const cleanName = normalizeSystemViewName(name)
   if (!taskStats[id]) {
-    taskStats[id] = { id, name: name || taskNameFromMeta(id), color: colorFor(id), runUs: 0, switches: 0 }
+    taskStats[id] = {
+      id,
+      name: cleanName || taskNameFromMeta(id),
+      color: colorFor(id),
+      runUs: 0,
+      switches: 0,
+    }
   }
-  const resolvedName = name || taskNameFromMeta(id)
+  const resolvedName = cleanName || taskNameFromMeta(id)
   if (resolvedName && !taskStats[id].name) taskStats[id].name = resolvedName
   return taskStats[id]
 }
@@ -441,47 +503,23 @@ function ingestEvents(events: any[], countEvents = true) {
   }
 }
 
-function flushLiveIngest() {
-  liveIngestRaf = 0
-  const events = pendingLiveEvents.splice(0, pendingLiveEvents.length)
-  const countEvents = pendingLiveCountEvents
-  pendingLiveCountEvents = false
-  if (events.length) ingestEvents(events, countEvents)
-}
-
-function scheduleLiveIngest(events: any[], countEvents = true) {
-  if (!events.length) return
-  pendingLiveEvents.push(...events)
-  if (pendingLiveEvents.length > LIVE_INGEST_MAX_PENDING) {
-    pendingLiveEvents = pendingLiveEvents.slice(-LIVE_INGEST_MAX_PENDING)
-  }
-  pendingLiveCountEvents = pendingLiveCountEvents || countEvents
-  if (!liveIngestRaf) liveIngestRaf = requestAnimationFrame(flushLiveIngest)
-}
-
-function clearLiveIngestQueue() {
-  pendingLiveEvents = []
-  pendingLiveCountEvents = false
-  if (liveIngestRaf) {
-    cancelAnimationFrame(liveIngestRaf)
-    liveIngestRaf = 0
-  }
-}
-
-async function reconnectRunningTrace() {
+async function reconnectRunningTrace(generation: number) {
   if (offlineMode.value) return
   try {
     const status = await dash.getStatus()
+    if (!operationIsActive(generation)) return
     if (status?.running) {
       await dash.start()
-      connect()
+      if (!operationIsActive(generation)) return
+      connectStatus()
+      binaryStream.start()
     }
   } catch {
     // Best effort: opening the tab should not surface a stale-status error.
   }
 }
 
-watch(data, (nw) => {
+watch(statusData, (nw) => {
   if (offlineMode.value) return
   const fresh = takeNewStreamPoints(nw as any[], lastStreamSeq)
   for (const dp of fresh.points as any[]) {
@@ -499,13 +537,63 @@ watch(data, (nw) => {
     const backendEvents = Number(dp.stats?.events)
     if (Number.isFinite(backendEvents)) totalEventCount.value = Math.max(totalEventCount.value, backendEvents)
     if (dp.task_names) applyTaskNames(dp.task_names)
-    if (evt === 'status' || evt === 'history') {
-      continue
-    }
-    if (evt === 'batch') { scheduleLiveIngest(dp.events || [], !Number.isFinite(backendEvents)); continue }
-    if (evt === 'data' || !evt) scheduleLiveIngest([dp])
+    if (dp.isr_names) meta.isrNames = dp.isr_names
+    if (evt !== 'status') continue
   }
   lastStreamSeq = fresh.nextSeq
+})
+
+watch(binaryStream.telemetry, telemetry => {
+  if (!telemetry || offlineMode.value) return
+  renderScheduler?.recordCollection(telemetry.bufferedSamples)
+  renderScheduler?.invalidate('data')
+})
+
+watch(binaryStream.systemViewVisible, visible => {
+  if (!visible || renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
+  latestBinaryTime = visible.latestTime
+  binaryTickOrigin = visible.tickOrigin
+  const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
+  const taskIds = new Uint32Array(visible.taskIds)
+  const starts = new Float64Array(visible.starts)
+  const ends = new Float64Array(visible.ends)
+  const startTicks = new BigUint64Array(visible.startTicks)
+  const endTicks = new BigUint64Array(visible.endTicks)
+  const nextIntervals: TaskInterval[] = []
+  Object.keys(taskStats).forEach(key => delete taskStats[Number(key)])
+  for (let index = 0; index < visible.intervalCount; index++) {
+    const task = ensureTask(taskIds[index])
+    const start = starts[index] * tickScale
+    const end = ends[index] * tickScale
+    task.runUs += end - start
+    task.switches++
+    nextIntervals.push({
+      taskId: taskIds[index], start, end,
+      startTk: startTicks[index], endTk: endTicks[index],
+    })
+  }
+  for (const event of visible.events) {
+    if (event.kind === 'task_info' && event.task_id !== undefined && event.prio !== undefined) {
+      ensureTask(event.task_id).prio = event.prio
+    }
+  }
+  intervals.value = nextIntervals
+  lastT = visible.latestTime * tickScale
+  tlInstance?.setTickOrigin(binaryTickOrigin)
+  tlInstance?.setPrefilteredIntervals(tlGetIntervals())
+
+  const now = performance.now()
+  if (now - lastTableUpdate >= TABLE_UPDATE_INTERVAL_MS) {
+    lastTableUpdate = now
+    eventList.value = visible.events.map(event => ({
+      ...event,
+      task_name: event.task_id === undefined ? undefined : taskNameFromMeta(event.task_id),
+      isr_name: event.isr_id === undefined ? undefined : isrNameFromMeta(event.isr_id),
+      t: event.t_us ?? (event.t_relative ?? 0) * tickScale,
+      tk: event.t_ticks,
+    }))
+    analysisBufferCount.value = binaryStream.telemetry.value?.bufferedSamples || 0
+  }
 })
 
 // ---- 计算属性 ----
@@ -516,6 +604,7 @@ const tableEvents = computed(() => eventList.value.slice(-120))
 const eventRows = computed(() => buildSystemViewEventRows(tableEvents.value, {
   firstIndex: Math.max(1, totalEventCount.value - tableEvents.value.length + 1),
   formatTime: value => fmtTime(value),
+  preferExactTicks: !meta.cpuFreq,
 }))
 const runtimeRows = computed(() => computeRuntimeRows(Object.values(taskStats), intervals.value))
 const contextRows = computed(() => computeContextRows(Object.values(taskStats)))
@@ -547,7 +636,7 @@ function evtColor(k: string) {
   return ''
 }
 function clearAll() {
-  clearLiveIngestQueue()
+  binaryStream.reset()
   eventList.value = []
   analysisEvents = []
   analysisBufferCount.value = 0
@@ -556,12 +645,16 @@ function clearAll() {
   intervalState = { currentTaskId: null, currentStart: null }
   totalEventCount.value = 0
   idleUs.value = 0; firstT = 0; lastT = 0; lastStreamSeq = 0
+  latestBinaryTime = null
+  binaryTickOrigin = 0n
+  lastTableUpdate = Number.NEGATIVE_INFINITY
   meta.synced = false
   meta.dropped = 0
   meta.sessionDropped = 0
   meta.cpuFreq = 0
   meta.cpuFreqSource = ''
   meta.taskNames = {}
+  meta.isrNames = {}
   meta.recordingPath = ''
   meta.recordingSummaryPath = ''
   meta.recordingError = ''
@@ -596,10 +689,16 @@ async function onImportFileChange(event: Event) {
 }
 
 async function importLogFile(file: File) {
+  operationGeneration++
   abortImport()
+  cancelPendingConnect()
   const controller = new AbortController()
   importAbort = controller
-  disconnect()
+  disconnectStatus()
+  binaryStream.stop()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   if (dash.state.value !== 'idle') {
     await dash.stop()
   }
@@ -652,7 +751,10 @@ function applyImportedMeta(record: Record<string, unknown>) {
     meta.dropped = Math.max(0, Number.isFinite(runtimeDropped) ? runtimeDropped : droppedBytes || 0) + Math.max(0, droppedPackets || 0)
   }
   if (record.task_names && typeof record.task_names === 'object' && !Array.isArray(record.task_names)) {
-    applyTaskNames(record.task_names as Record<number, string>)
+    applyTaskNames(record.task_names as Record<number, unknown>)
+  }
+  if (record.isr_names && typeof record.isr_names === 'object' && !Array.isArray(record.isr_names)) {
+    meta.isrNames = record.isr_names as Record<number, string>
   }
 }
 
@@ -678,24 +780,55 @@ function isAbortError(value: unknown): boolean {
 }
 
 async function onStart() {
+  const generation = ++operationGeneration
   abortImport()
+  cancelPendingConnect()
   offlineMode.value = false
   offlineFileName.value = ''
   importStatus.value = ''
   importError.value = false
   latestLog.value = null
   const conflicts = await checkConflict('systemview')
+  if (!operationIsActive(generation)) return
   if (conflicts.length > 0) {
     const names = conflicts.map(c => c).join('、')
     if (!confirm(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`)) return
   }
   clearAll()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   await dash.start()
-  setTimeout(() => connect(), 500)
+  if (!operationIsActive(generation)) return
+  connectTimer = setTimeout(() => {
+    connectTimer = null
+    if (!operationIsActive(generation)) return
+    connectStatus()
+    binaryStream.start()
+  }, 500)
+}
+function onPauseRender() {
+  renderPaused.value = true
+  visibleRequestId++
+  renderScheduler?.stop()
+  tlInstance?.pauseRendering()
+}
+function onResumeRender() {
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
+  renderScheduler?.invalidate('data')
 }
 async function onStop() {
-  disconnect()
+  const generation = ++operationGeneration
+  cancelPendingConnect()
+  disconnectStatus()
+  binaryStream.stop()
+  renderPaused.value = false
+  tlInstance?.resumeRendering()
+  renderScheduler?.start()
   await dash.stop()
+  if (!operationIsActive(generation)) return
   await refreshLogList()
 }
 </script>

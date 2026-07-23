@@ -68,8 +68,12 @@ IDCODE 响应: idcode = 0X2BA01477
 
 ### 烧录操作
 
+自动处理“下载固件”请求前，必须先读取 [firmware-download-priority.md](firmware-download-priority.md)。普通 MCU 的默认顺序是 IDE 原生编译并下载、pyOCD 在线烧录、MKLink 脱机下载 API。只有能力不可用/不适用时才能进入下一后端；执行中的后端失败必须停止并报告。
+
+Keil 工程默认先调用 `UV4.exe -b <project> -t <target>` 编译，再调用 `UV4.exe -f <project> -t <target>` 下载。只有用户明确要求只下载并确认现有产物有效时才能跳过编译。IAR 先用 `IarBuild.exe` 编译，仅在项目已有可靠下载配置时使用 IDE 下载，否则进入 pyOCD。
+
 #### `python -m mklink flash [--port COM6] [--hex path.hex]`
-一站式烧录。`load.hex()` / `load.bin()` 内部按扇区边擦边写，无需单独擦除（独立擦除命令为全片擦除）。自动从 `.mklink/keil_project.json` 读取 HEX 路径和 MCU 配置。
+显式原生 MKLink 串口/FLM 烧录入口，用于用户指定、旧流程兼容或诊断，不是自动下载首选。`load.hex()` / `load.bin()` 内部按扇区边擦边写，无需单独擦除（独立擦除命令为全片擦除）。命令自动从 `.mklink/keil_project.json` 读取 HEX 路径和 MCU 配置。
 
 ```
 [AUTO] 从 project_info.json 自动获取 hex_path: path/to/build/firmware.hex
@@ -83,6 +87,8 @@ IDCODE 响应: idcode = 0X2BA01477
 1. MICROKEEN 磁盘已插入（FLM 文件需在其 FLM 目录中）
 2. 已运行 `project-init`（或 `.mklink/` 配置已存在）
 3. HEX 文件已编译生成
+
+自动解析 FLM 时依次使用发布包内置 Pack、发布包内置 DAPLink FLM、已安装 Pack、已登记的自定义 FLM。用户在命令或界面显式选择的算法覆盖自动顺序。HPM 目标始终使用 ROM API/BIN，禁止加载 FLM。
 
 ### RTT 调试
 
@@ -206,6 +212,33 @@ python -m mklink rtt --visualize --parser csv --csv-headers "counter,adc,sensor"
 # 固定端口，不打开浏览器（用于远程查看）
 python -m mklink rtt --visualize --port-http 8888 --no-browser
 ```
+
+### HPMicro BIN 下载
+
+HPM SDK 工程会走设备端 `hpm.program()` 下载路径。HPM 型号不使用 FLM，也不需要 Pack；算法发现必须直接返回空。`project-init` 识别到 HPM board 后，会把 `hpm_flash_cfg` 写入 `project_info.json`；手动配置时必须使用 4 个参数：
+
+```json
+"hpm_flash_cfg": ["0xfcf90002U", "0x00000005U", "0x00001000U", "0xf3000000U"]
+```
+
+这 4 个参数依次对应 `hpm.flash_cfg(header,opt0,opt1,xpi_base_addr)`。不要再使用旧的 3 参数写法，因为下载算法里的 XPI 基址不应固定。
+
+MCP/AI 调用示例：
+
+```text
+flash(
+  firmware="build/demo.bin",
+  target_part="HPM5301xEGx",
+  base_address=0x80000400,
+  board="hpm5301evklite"
+)
+```
+
+只支持 BIN；未提供工程配置时必须显式传 `base_address`。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得先调用 `detect_mcu_profile`、安装 Pack 或加载 FLM。
+
+XPI 基址按芯片族选择：
+- `0xf3000000U`: HPM5300/HPM5301/HPM5E/HPM6E/HPM6P/HPM6800
+- `0xf3040000U`: HPM6200/HPM6300/HPM6750
 
 ### MICROKEEN 磁盘管理
 

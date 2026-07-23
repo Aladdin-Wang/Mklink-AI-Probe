@@ -52,6 +52,15 @@ export interface SystemViewEventRow {
 export interface SystemViewEventRowOptions {
   firstIndex?: number
   formatTime?: (value: number) => string
+  preferExactTicks?: boolean
+}
+
+export function normalizeSystemViewName(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const name = value.trim()
+  if (!name || [...name].length > 32 || name.includes('\ufffd')) return ''
+  if (/[\p{Cc}\p{Cf}\p{Cs}]/u.test(name)) return ''
+  return name
 }
 
 export function computeTaskRows(tasks: SystemViewTaskRuntime[]): SystemViewTaskRow[] {
@@ -112,7 +121,7 @@ export function computeContextRows(tasks: SystemViewTaskRuntime[]): SystemViewCo
   return tasks
     .map(task => ({
       id: task.id,
-      name: task.name,
+      name: normalizeSystemViewName(task.name),
       color: task.color,
       type: 'Task',
       priority: task.prio,
@@ -129,17 +138,25 @@ export function buildSystemViewEventRows(
 ): SystemViewEventRow[] {
   const firstIndex = options.firstIndex ?? 1
   const formatTime = options.formatTime || ((value: number) => String(value))
+  const preferExactTicks = options.preferExactTicks ?? true
 
   return events.map((event, offset) => {
     const kind = String(event.kind || 'event')
     const taskId = typeof event.task_id === 'number' ? hexId(event.task_id) : ''
-    const isrName = event.isr_name || (event.isr_id !== undefined ? `ISR #${event.isr_id}` : '')
-    const taskName = event.task_name || taskId
+    const isrName = normalizeSystemViewName(event.isr_name)
+      || (event.isr_id !== undefined ? `ISR #${event.isr_id}` : '')
+    const taskName = normalizeSystemViewName(event.task_name) || taskId
     const context = taskName || isrName || (kind === 'idle' ? 'Idle' : '')
 
     return {
       index: firstIndex + offset,
-      time: typeof event.t === 'number' ? formatTime(event.t) : '',
+      time: preferExactTicks && typeof event.t_ticks_exact === 'string'
+        ? `${BigInt(event.t_ticks_exact).toLocaleString()} tk`
+        : typeof event.t === 'number'
+          ? formatTime(event.t)
+          : typeof event.t_ticks_exact === 'string'
+            ? `${BigInt(event.t_ticks_exact).toLocaleString()} tk`
+            : '',
       context,
       event: labelEvent(kind),
       resource: resourceForEvent(event, kind),

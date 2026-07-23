@@ -12,17 +12,23 @@ import type {
   FlashRequest,
   ProjectHistory,
   ProbeFirmwareCheck,
+  RttFindResponse,
+  RttWriteResponse,
+  FileSourceKind,
+  UploadedFileSource,
 } from '../types/mklink'
+import { toHexPayload } from '../lib/rttTransmit'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers)
+  if (!(options?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => null)
@@ -71,6 +77,15 @@ export function useMklinkApi() {
       method: 'PUT',
       body: JSON.stringify(config),
     })
+  }
+
+  async function uploadFileSource(
+    kind: FileSourceKind,
+    file: File,
+  ): Promise<UploadedFileSource> {
+    const body = new FormData()
+    body.append('file', file)
+    return api(`/api/files/${kind}`, { method: 'POST', body })
   }
 
   async function getConfigStatus(): Promise<ConfigStatus> {
@@ -132,10 +147,13 @@ export function useMklinkApi() {
     }
   }
 
-  async function parseAxf(axf?: string) {
+  async function parseAxf(axf?: string, elfBackend?: 'builtin' | 'external') {
     const result = await api('/api/device/parse-axf', {
       method: 'POST',
-      body: JSON.stringify(axf ? { axf } : {}),
+      body: JSON.stringify({
+        ...(axf ? { axf } : {}),
+        ...(elfBackend ? { elf_backend: elfBackend } : {}),
+      }),
     })
     await refreshStatus()
     return result
@@ -201,13 +219,18 @@ export function useMklinkApi() {
     return api(`/api/project-root/browse?path=${encodeURIComponent(path)}`)
   }
 
-  async function findRtt(): Promise<{
-    found: boolean
-    addr?: string
-    source?: string
-    details?: string[]
-  }> {
-    return api('/api/rtt-find', { method: 'POST' })
+  async function findRtt(sourcePath?: string): Promise<RttFindResponse> {
+    return api('/api/rtt-find', {
+      method: 'POST',
+      body: JSON.stringify(sourcePath ? { source_path: sourcePath } : {}),
+    })
+  }
+
+  async function writeRtt(data: Uint8Array): Promise<RttWriteResponse> {
+    return api('/api/dash/rtt/write', {
+      method: 'POST',
+      body: JSON.stringify({ data_hex: toHexPayload(data) }),
+    })
   }
 
   async function getProjectHistory(): Promise<ProjectHistory> {
@@ -234,6 +257,7 @@ export function useMklinkApi() {
     getProfiles,
     getConfig,
     updateConfig,
+    uploadFileSource,
     getConfigStatus,
     getProjectInfo,
     getRttConfig,
@@ -256,6 +280,7 @@ export function useMklinkApi() {
     getProjectRoot,
     browseProjectRoot,
     findRtt,
+    writeRtt,
     getProjectHistory,
     addProjectHistory,
     removeProjectHistory,

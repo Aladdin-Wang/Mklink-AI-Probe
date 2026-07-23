@@ -22,13 +22,84 @@ from __future__ import annotations
 # See the eager-import block below for the required FastAPI/Pydantic types.
 
 import asyncio
+from contextlib import asynccontextmanager, contextmanager
+import contextvars
+import hashlib
 import json
 import logging
 import os
+from pathlib import Path
+import secrets
 import sys
+import threading
 from typing import Any
+import weakref
 
 logger = logging.getLogger(__name__)
+
+_FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
+_FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
+
+
+def _store_uploaded_file_source(
+    upload: Any,
+    project_root: Path | str,
+    allowed_suffixes: tuple[str, ...],
+) -> dict[str, object]:
+    original_name = str(upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    suffix = Path(original_name).suffix.casefold()
+    if suffix not in allowed_suffixes:
+        raise ValueError("file must use one of: {}".format(", ".join(allowed_suffixes)))
+
+    uploads = (
+        Path(project_root).resolve() / ".mklink" / "uploads" / "file-sources"
+    ).resolve()
+    uploads.mkdir(parents=True, exist_ok=True)
+    temporary = (uploads / (secrets.token_hex(24) + ".tmp")).resolve()
+    if temporary.parent != uploads:
+        raise ValueError("invalid upload path")
+
+    digest = hashlib.sha256()
+    total = 0
+    descriptor = os.open(str(temporary), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            while True:
+                chunk = upload.file.read(_FILE_SOURCE_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _FILE_SOURCE_UPLOAD_LIMIT:
+                    raise ValueError("file exceeds 256 MiB upload limit")
+                digest.update(chunk)
+                output.write(chunk)
+        if total == 0:
+            raise ValueError("file is empty")
+        checksum = digest.hexdigest()
+        destination = (uploads / (checksum + suffix)).resolve()
+        if destination.parent != uploads:
+            raise ValueError("invalid upload path")
+        if destination.exists():
+            temporary.unlink()
+        else:
+            os.replace(temporary, destination)
+        return {
+            "path": str(destination),
+            "name": original_name,
+            "size": total,
+            "sha256": checksum,
+        }
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+_NATIVE_TARGET_COORDINATOR = threading.RLock()
+_NATIVE_TARGET_CONTEXT = threading.local()
+_ASYNC_TARGET_CONTEXT = contextvars.ContextVar("mklink_async_target_context", default=())
+_ASYNC_TARGET_LOCKS = weakref.WeakKeyDictionary()
+_ASYNC_TARGET_LOCKS_GUARD = threading.Lock()
 
 _DASHBOARD_OWNER_TO_MANAGER = {
     "user:dashboard:rtt": "rtt",
@@ -48,6 +119,28 @@ _OWNER_REQUIRES_STOP_EVEN_IF_NOT_RUNNING = {
     "user:dashboard:serial",
     "user:dashboard:modbus",
 }
+
+_TARGET_DEBUG_RPC_METHODS = {
+    "flash", "erase_chip", "reset", "rtt_start", "rtt_read", "rtt_write",
+    "rtt_stop", "read_memory", "write_memory", "read_variable",
+    "write_variable", "read_register", "halt", "resume", "step",
+    "set_breakpoint", "clear_breakpoint", "read_core_registers",
+    "check_hardfault", "decode_hardfault",
+}
+
+
+class DashboardStopPending(Exception):
+    def __init__(self, dashboard: str):
+        self.dashboard = dashboard
+        self.detail = {"code": "stop_pending", "dashboard": dashboard}
+        super().__init__(f"Dashboard {dashboard} worker is still active")
+
+
+def _dashboard_worker_alive(manager) -> bool:
+    thread = getattr(manager, "_thread", None)
+    if thread is not None:
+        return bool(thread.is_alive())
+    return bool(getattr(manager, "running", False))
 
 
 def _resource_group_from_name(resource: str):
@@ -112,13 +205,275 @@ def release_resource_by_name(
         return {"owner": None, "resources": [], "stopped": []}
     return release_resource_owner(state, lease.owner, stop_active=stop_active)
 
+
+def _resource_error_detail(error) -> dict[str, str]:
+    return {
+        "code": "PROBE_BUSY",
+        "resource": error.resource.value,
+        "conflict_owner": error.conflict_owner,
+    }
+
+
+@contextmanager
+def target_debug_lease(state: dict[str, Any], operation: str):
+    """Lease native target access for one API operation."""
+    from mklink.remote.resource_manager import ResourceGroup
+
+    owner = f"user:api:{operation}"
+    manager = state["resource_manager"]
+    with _NATIVE_TARGET_COORDINATOR:
+        stack = getattr(_NATIVE_TARGET_CONTEXT, "stack", None)
+        if stack is None:
+            stack = []
+            _NATIVE_TARGET_CONTEXT.stack = stack
+        nested = bool(stack and stack[-1][0] is manager)
+        lease_owner = stack[-1][1] if nested else owner
+        if not nested:
+            manager.acquire(
+                ResourceGroup.TARGET_DEBUG,
+                owner,
+                preempt=True,
+            )
+        stack.append((manager, lease_owner, not nested))
+        try:
+            yield lease_owner
+        finally:
+            _manager, active_owner, acquired = stack.pop()
+            if acquired:
+                manager.release(active_owner)
+            if not stack:
+                del _NATIVE_TARGET_CONTEXT.stack
+
+
+def _async_target_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    with _ASYNC_TARGET_LOCKS_GUARD:
+        lock = _ASYNC_TARGET_LOCKS.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            _ASYNC_TARGET_LOCKS[loop] = lock
+        return lock
+
+
+@asynccontextmanager
+async def async_target_debug_lease(state: dict[str, Any], operation: str):
+    """Task-aware target lease for async handlers spanning awaits."""
+    from mklink.remote.resource_manager import ResourceGroup
+
+    owner = f"user:api:{operation}"
+    manager = state["resource_manager"]
+    task = asyncio.current_task()
+    stack = _ASYNC_TARGET_CONTEXT.get()
+    same_task = bool(stack and stack[-1][0] is task)
+    nested = bool(same_task and stack[-1][1] is manager)
+
+    if nested:
+        lease_owner = stack[-1][2]
+        token = _ASYNC_TARGET_CONTEXT.set(
+            stack + ((task, manager, lease_owner, False),)
+        )
+        try:
+            yield lease_owner
+        finally:
+            _ASYNC_TARGET_CONTEXT.reset(token)
+        return
+
+    async_lock = _async_target_lock()
+    acquired_async_lock = False
+    if not same_task:
+        await async_lock.acquire()
+        acquired_async_lock = True
+    _NATIVE_TARGET_COORDINATOR.acquire()
+    try:
+        manager.acquire(
+            ResourceGroup.TARGET_DEBUG,
+            owner,
+            preempt=True,
+        )
+    except Exception:
+        _NATIVE_TARGET_COORDINATOR.release()
+        if acquired_async_lock:
+            async_lock.release()
+        raise
+
+    token = _ASYNC_TARGET_CONTEXT.set(stack + ((task, manager, owner, True),))
+    try:
+        yield owner
+    finally:
+        _ASYNC_TARGET_CONTEXT.reset(token)
+        manager.release(owner)
+        _NATIVE_TARGET_COORDINATOR.release()
+        if acquired_async_lock:
+            async_lock.release()
+
+
+def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[str]:
+    """Stop bridge peers, then atomically lease resources for a dashboard."""
+    from mklink.remote.dashboards import stop_bridge_dashboards
+    from mklink.remote.resource_manager import ResourceGroup
+
+    owner = f"user:dashboard:{dashboard}"
+    manager = state["resource_manager"]
+    stopped = stop_bridge_dashboards(
+        exclude=dashboard,
+        resource_manager=manager,
+    )
+    manager.acquire_many(
+        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        owner,
+        preempt=True,
+    )
+    return stopped
+
+
+def _dashboard_start_lock(state: dict[str, Any]) -> asyncio.Lock:
+    lock = state.get("_dashboard_start_lock")
+    if lock is None:
+        lock = asyncio.Lock()
+        state["_dashboard_start_lock"] = lock
+    return lock
+
+
+async def start_dashboard_manager(
+    state: dict[str, Any], dashboard: str, manager, start_call
+) -> tuple[str, list[str]]:
+    async with _dashboard_start_lock(state):
+        return await _start_dashboard_manager_transaction(
+            state, dashboard, manager, start_call,
+        )
+
+
+async def _start_dashboard_manager_transaction(
+    state: dict[str, Any], dashboard: str, manager, start_call
+) -> tuple[str, list[str]]:
+    """Start a dashboard as a cancellation-safe acquire/start transaction.
+
+    Cancellation is delivered only after the in-flight executor phase settles
+    and its lease/manager effects have been rolled back.  Waiting remains
+    asynchronous; the event loop never joins a hardware worker directly.
+    """
+    if _dashboard_worker_alive(manager):
+        if manager.running:
+            return "already_running", []
+        raise DashboardStopPending(dashboard)
+    loop = asyncio.get_running_loop()
+    owner = f"user:dashboard:{dashboard}"
+    release_lock = threading.Lock()
+    owner_released = False
+
+    def release_owner_once():
+        nonlocal owner_released
+        with release_lock:
+            if owner_released:
+                return []
+            owner_released = True
+            return state["resource_manager"].release(owner)
+
+    def rollback_started_manager():
+        if not _dashboard_worker_alive(manager):
+            release_owner_once()
+            return
+        error = None
+        try:
+            manager.stop()
+        except Exception as exc:
+            error = exc
+        if _dashboard_worker_alive(manager):
+            raise DashboardStopPending(dashboard) from error
+        release_owner_once()
+        if error is not None:
+            raise error
+
+    async def rollback_start_effects():
+        if _dashboard_worker_alive(manager):
+            cleanup_future = loop.run_in_executor(
+                None, rollback_started_manager,
+            )
+            cleanup_phase = asyncio.create_task(
+                _capture_executor_outcome(cleanup_future)
+            )
+            await _wait_executor_completion(cleanup_phase)
+        else:
+            release_owner_once()
+
+    acquire_future = loop.run_in_executor(
+        None, acquire_dashboard_resources, state, dashboard,
+    )
+    acquire_phase = asyncio.create_task(_capture_executor_outcome(acquire_future))
+    try:
+        acquire_ok, acquire_result = await asyncio.shield(acquire_phase)
+    except asyncio.CancelledError:
+        await _wait_executor_completion(acquire_phase)
+        release_owner_once()
+        raise
+    if not acquire_ok:
+        release_owner_once()
+        raise acquire_result
+    stopped = acquire_result
+    setter = getattr(manager, "set_start_failure_callback", None)
+    if callable(setter):
+        generation = object()
+        manager._api_start_generation = generation
+
+        def release_failed_start(_error):
+            if getattr(manager, "_api_start_generation", None) is generation:
+                release_owner_once()
+
+        setter(release_failed_start)
+    start_future = loop.run_in_executor(None, start_call)
+    start_phase = asyncio.create_task(_capture_executor_outcome(start_future))
+    try:
+        start_ok, start_result = await asyncio.shield(start_phase)
+    except asyncio.CancelledError:
+        await _wait_executor_completion(start_phase)
+        await rollback_start_effects()
+        raise
+    if not start_ok:
+        await rollback_start_effects()
+        raise start_result
+    return "started", stopped
+
+
+async def _capture_executor_outcome(future):
+    """Normalize executor completion so a cancelled shield cannot log errors."""
+    try:
+        return True, await future
+    except BaseException as exc:
+        return False, exc
+
+
+async def _wait_executor_completion(future):
+    """Await an executor future despite repeated cancellation requests."""
+    while True:
+        if future.done():
+            return future.result()
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            if future.done():
+                return future.result()
+
+
+def stop_dashboard_manager(state: dict[str, Any], dashboard: str, manager) -> None:
+    """Stop a dashboard, retaining leases while its worker remains active."""
+    error = None
+    try:
+        manager.stop()
+    except Exception as exc:
+        error = exc
+    if _dashboard_worker_alive(manager):
+        raise DashboardStopPending(dashboard) from error
+    state["resource_manager"].release(f"user:dashboard:{dashboard}")
+    if error is not None:
+        raise error
+
 # Eager-import FastAPI types so that typing.get_type_hints() can resolve
 # annotations in closures (e.g. the /ws handler).  The module can still be
 # imported without FastAPI — _check_fastapi() gates actual usage.
 try:
     from fastapi import (                      # noqa: F401
         FastAPI, WebSocket, WebSocketDisconnect,
-        HTTPException, Query, Body, Request,
+        HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
     from pydantic import BaseModel                    # noqa: F401
@@ -156,7 +511,10 @@ def create_app(
     # imports above are needed so that from __future__ import annotations
     # does not break closure type hints (especially the WebSocket parameter
     # in the /ws handler).
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body, Request
+    from fastapi import (
+        FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Body,
+        Request, File, UploadFile,
+    )
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 
@@ -176,7 +534,7 @@ def create_app(
     )
 
     # --- Shared state ---
-    from mklink.remote.resource_manager import ResourceManager, ResourceGroup
+    from mklink.remote.resource_manager import ResourceError, ResourceManager, ResourceGroup
     _state = {
         "device": None,
         "dispatcher": None,
@@ -191,6 +549,103 @@ def create_app(
     # run_server(auto_connect=True)) can populate it without rebuilding the
     # closure. Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
+
+    from mklink.remote import stream_api
+    from mklink.remote.dashboards import get_managers
+
+    stream_registry = stream_api.create_stream_registry()
+    stream_types = dict(stream_api.STREAM_TYPES)
+    app.state.stream_registry = stream_registry
+    app.state.stream_types = stream_types
+    dashboard_managers = get_managers()
+    systemview_manager = dashboard_managers["systemview"]
+    set_stream_hub = getattr(systemview_manager, "set_stream_hub", None)
+    if callable(set_stream_hub):
+        set_stream_hub(stream_registry["systemview"])
+    vofa_manager = dashboard_managers["vofa"]
+    set_vofa_stream_hub = getattr(vofa_manager, "set_stream_hub", None)
+    if callable(set_vofa_stream_hub):
+        set_vofa_stream_hub(stream_registry["vofa"])
+    for stream_name in ("rtt", "superwatch"):
+        manager = dashboard_managers[stream_name]
+        setter = getattr(manager, "set_stream_hub", None)
+        if callable(setter):
+            setter(stream_registry[stream_name])
+    app.include_router(stream_api.create_stream_router(
+        stream_registry, stream_types, auth_token,
+    ))
+
+    from starlette.concurrency import run_in_threadpool
+    from mklink.remote import online_flash_api
+
+    online_flash = online_flash_api.create_default_online_flash_services(
+        _state["resource_manager"]
+    )
+    app.state.online_flash = online_flash
+    app.include_router(online_flash_api.create_online_flash_router(online_flash))
+    from mklink.remote import offline_download_api
+    app.include_router(
+        offline_download_api.create_offline_download_router(
+            online_flash,
+            _state["resource_manager"],
+            lambda: _state.get("device"),
+        )
+    )
+
+    async def shutdown_online_flash() -> None:
+        await run_in_threadpool(
+            online_flash_api.shutdown_online_flash_services,
+            online_flash,
+        )
+
+    app.add_event_handler("shutdown", shutdown_online_flash)
+
+    async def shutdown_stream_producers() -> None:
+        for stream_name in ("vofa", "rtt", "superwatch"):
+            manager = dashboard_managers[stream_name]
+            hub = stream_registry[stream_name]
+            if getattr(manager, "_stream_hub", None) is not hub:
+                continue
+            if getattr(manager, "running", False):
+                await run_in_threadpool(manager.stop)
+            detach = getattr(manager, "detach_stream_hub", None)
+            if callable(detach):
+                detach(hub)
+
+    app.add_event_handler("shutdown", shutdown_stream_producers)
+
+    @app.exception_handler(ResourceError)
+    async def resource_error_handler(_request, error):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=409,
+            content={"detail": _resource_error_detail(error)},
+        )
+
+    @app.exception_handler(DashboardStopPending)
+    async def dashboard_stop_pending_handler(_request, error):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=409, content={"detail": error.detail})
+
+    async def dispatch_rpc(dispatcher, method: str, params: dict, req_id):
+        loop = asyncio.get_event_loop()
+        if method not in _TARGET_DEBUG_RPC_METHODS:
+            return await loop.run_in_executor(
+                None, dispatcher.dispatch, method, params, req_id
+            )
+        try:
+            async with async_target_debug_lease(_state, method):
+                return await loop.run_in_executor(
+                    None, dispatcher.dispatch, method, params, req_id
+                )
+        except ResourceError as error:
+            return make_error(
+                -32009,
+                json.dumps(_resource_error_detail(error)),
+                req_id,
+            )
 
     # Auto-restore last project from history on startup（仅当未显式指定 project_root）
     if project_root == ".":
@@ -294,6 +749,18 @@ def create_app(
         if mcu_key is not None:
             config["mcu_key"] = mcu_key
         if swd_clock is not None:
+            try:
+                parsed_swd_clock = int(swd_clock, 0)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
+                )
+            if parsed_swd_clock < 1 or parsed_swd_clock > 10_000_000:
+                raise HTTPException(
+                    status_code=422,
+                    detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
+                )
             config["swd_clock"] = swd_clock
         save_config(_state["project_root"], config)
         return config
@@ -337,15 +804,30 @@ def create_app(
         return rtt_config
 
     @app.post("/api/rtt-find")
-    async def rtt_find():
+    async def rtt_find(
+        source_path: str | None = Body(default=None, embed=True),
+    ):
         """Auto-detect RTT control block address from MAP/ELF file.
 
         Scans the project for MAP files and resolves _SEGGER_RTT address.
         If found, updates rtt_config automatically.
         """
         from mklink.project_config import (
-            ensure_rtt_config_updated, load_rtt_config, load_keil_project,
+            load_rtt_config, load_keil_project,
         )
+        from mklink.rtt_addr import diagnose_rtt_addr
+
+        if source_path:
+            result = await asyncio.to_thread(diagnose_rtt_addr, source_path)
+            return {
+                "found": bool(result.addr),
+                "addr": result.addr,
+                "source": result.source,
+                "source_path": source_path,
+                "details": result.details,
+                "warnings": result.warnings,
+            }
+
         project_root = _state["project_root"]
         project_info = load_keil_project(project_root) or {}
         map_path = project_info.get("map_path")
@@ -358,8 +840,7 @@ def create_app(
                 map_path = str(candidates[0])
 
         if map_path:
-            from mklink.rtt_addr import diagnose_rtt_addr
-            result = diagnose_rtt_addr(map_path)
+            result = await asyncio.to_thread(diagnose_rtt_addr, map_path)
             if result.addr:
                 # Update rtt_config with found address
                 cfg = load_rtt_config(project_root) or {}
@@ -369,15 +850,28 @@ def create_app(
                     "found": True,
                     "addr": result.addr,
                     "source": result.source,
+                    "source_path": map_path,
+                    "details": result.details,
+                    "warnings": result.warnings,
                     "map_path": map_path,
                 }
             return {
                 "found": False,
                 "addr": None,
+                "source": result.source,
+                "source_path": map_path,
                 "details": result.details,
+                "warnings": result.warnings,
                 "map_path": map_path,
             }
-        return {"found": False, "addr": None, "details": ["未找到 MAP 文件"]}
+        return {
+            "found": False,
+            "addr": None,
+            "source": "",
+            "source_path": None,
+            "details": ["未找到 MAP 文件"],
+            "warnings": [],
+        }
 
     @app.post("/api/project-init")
     async def project_init():
@@ -456,9 +950,8 @@ def create_app(
         copy_flm = bool(body.get("copy_flm", True))
         read_idcode = bool(body.get("read_idcode", bool(port)))
 
-        return await loop.run_in_executor(
-            None,
-            lambda: detect_mcu_profile(
+        def _detect():
+            return detect_mcu_profile(
                 project_root=project_root,
                 device=device,
                 flm=flm,
@@ -466,8 +959,12 @@ def create_app(
                 write_profile=write_profile,
                 copy_flm=copy_flm,
                 read_idcode=read_idcode,
-            ),
-        )
+            )
+
+        if port and read_idcode:
+            async with async_target_debug_lease(_state, "mcu-detect"):
+                return await loop.run_in_executor(None, _detect)
+        return await loop.run_in_executor(None, _detect)
 
     # ===================================================================
     # REST API — Device Discovery
@@ -481,7 +978,8 @@ def create_app(
     @app.get("/api/ports/discover")
     async def discover_mklink_port():
         from mklink.discovery import find_mklink_cdc_port
-        port = find_mklink_cdc_port()
+        loop = asyncio.get_running_loop()
+        port = await loop.run_in_executor(None, find_mklink_cdc_port)
         return {"port": port}
 
     @app.get("/api/profiles")
@@ -504,6 +1002,30 @@ def create_app(
             "available": disk is not None,
         }
 
+    async def _upload_file_source(
+        file: UploadFile,
+        allowed_suffixes: tuple[str, ...],
+    ) -> dict[str, object]:
+        try:
+            return await run_in_threadpool(
+                _store_uploaded_file_source,
+                file,
+                _state["project_root"],
+                allowed_suffixes,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            await file.close()
+
+    @app.post("/api/files/symbol")
+    async def upload_symbol_file(file: UploadFile = File(...)):
+        return await _upload_file_source(file, (".axf", ".elf", ".out"))
+
+    @app.post("/api/files/map")
+    async def upload_map_file(file: UploadFile = File(...)):
+        return await _upload_file_source(file, (".map",))
+
     # ===================================================================
     # REST API — Device Lifecycle
     # ===================================================================
@@ -512,12 +1034,14 @@ def create_app(
         port: str | None = None
         axf: str | None = None
         mcu: str | None = None
+        elf_backend: str | None = None
 
     @app.post("/api/device/connect")
     async def connect_device(
         port: str | None = Body(default=None),
         axf: str | None = Body(default=None),
         mcu: str | None = Body(default=None),
+        elf_backend: str | None = Body(default=None),
     ):
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
@@ -527,6 +1051,7 @@ def create_app(
                 "idcode": hex(dev.idcode) if dev.idcode else "0x0",
                 "port": dev.port,
                 "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
+                "elf_backend": dev.axf_status.get("elf_backend"),
             }
 
         import mklink
@@ -544,12 +1069,14 @@ def create_app(
                 axf=axf,
                 mcu=mcu,
                 project_root=_state["project_root"],
+                elf_backend=elf_backend,
             )
 
-        try:
-            device = await loop.run_in_executor(None, _connect)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "connect"):
+            try:
+                device = await loop.run_in_executor(None, _connect)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
         _state["device"] = device
         _state["dispatcher"] = DeviceDispatcher(device)
@@ -559,6 +1086,7 @@ def create_app(
             "idcode": hex(device.idcode) if device.idcode else "0x0",
             "port": device.port,
             "axf_loaded": bool(getattr(device, "_dwarf_info", None)),
+            "elf_backend": device.axf_status.get("elf_backend"),
         }
 
     @app.post("/api/device/disconnect")
@@ -621,14 +1149,34 @@ def create_app(
     @app.post("/api/device/parse-axf")
     async def parse_axf(
         axf: str | None = Body(default=None, embed=True),
+        elf_backend: str | None = Body(default=None, embed=True),
     ):
         """手动触发 AXF/ELF 符号表解析。"""
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, lambda: _state["device"].parse_axf(axf)
-        )
+        from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
+
+        device = _state["device"]
+        manager = get_managers()["superwatch"]
+        try:
+            if manager._runtime is not None and getattr(device, "symbol_catalog", None) is not None:
+                if elf_backend is None:
+                    summary = await run_in_threadpool(manager.reparse_symbols, axf)
+                else:
+                    summary = await run_in_threadpool(
+                        manager.reparse_symbols, axf, elf_backend
+                    )
+                result = dict(device.axf_status)
+                result["rebind"] = summary
+            else:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None, lambda: device.parse_axf(axf, elf_backend=elf_backend)
+                )
+                if manager._runtime is not None and not result.get("error"):
+                    manager.prepare(device)
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
         if result.get("error"):
             raise HTTPException(status_code=500, detail=result["error"])
         return result
@@ -646,54 +1194,60 @@ def create_app(
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: _state["device"].flash(
-                    firmware, verify=verify, reset_after=reset_after
-                ),
-            )
-            return result
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "flash"):
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: _state["device"].flash(
+                        firmware, verify=verify, reset_after=reset_after
+                    ),
+                )
+                return result
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/reset")
     async def reset_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        _state["device"].reset()
+        with target_debug_lease(_state, "reset"):
+            _state["device"].reset()
         return {"status": "ok"}
 
     @app.post("/api/device/erase")
     async def erase_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            ok = _state["device"].erase_chip()
-            return {"success": ok}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        with target_debug_lease(_state, "erase"):
+            try:
+                ok = _state["device"].erase_chip()
+                return {"success": ok}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/halt")
     async def halt_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        s = _state["device"].halt()
+        with target_debug_lease(_state, "halt"):
+            s = _state["device"].halt()
         return {"halted": s.halted}
 
     @app.post("/api/device/resume")
     async def resume_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        s = _state["device"].resume()
+        with target_debug_lease(_state, "resume"):
+            s = _state["device"].resume()
         return {"halted": s.halted}
 
     @app.get("/api/device/hardfault")
     async def check_hardfault():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        return _state["device"].check_hardfault()
+        with target_debug_lease(_state, "hardfault"):
+            return _state["device"].check_hardfault()
 
     # ===================================================================
     # WebSocket — JSON-RPC (reuses DeviceDispatcher)
@@ -722,7 +1276,8 @@ def create_app(
                             k: v for k, v in auth_data.get("params", {}).items()
                             if k != "token"
                         }
-                        result = dispatcher.dispatch(
+                        result = await dispatch_rpc(
+                            dispatcher,
                             auth_data["method"],
                             rpc_params,
                             auth_data.get("id"),
@@ -757,9 +1312,8 @@ def create_app(
                     )
                     continue
 
-                loop = asyncio.get_event_loop()
-                result_json = await loop.run_in_executor(
-                    None, dispatcher.dispatch, method, params, req_id
+                result_json = await dispatch_rpc(
+                    dispatcher, method, params, req_id
                 )
                 await websocket.send_text(result_json)
         except WebSocketDisconnect:
@@ -814,19 +1368,12 @@ def create_app(
             )
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
-        stopped = stop_bridge_dashboards(exclude="rtt")
-        rm = _state["resource_manager"]
-        for name in stopped:
-            rm.release(f"user:dashboard:{name}")
-        rm.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:rtt", preempt=True)
         managers = get_managers()
         rtt = managers["rtt"]
-        if rtt.running:
-            return {"status": "already_running"}
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
+        status, stopped = await start_dashboard_manager(
+            _state,
+            "rtt",
+            rtt,
             lambda: rtt.start(
                 _state["device"],
                 addr=addr,
@@ -835,14 +1382,39 @@ def create_app(
                 search_size=search_size,
             ),
         )
-        return {"status": "started", "stopped": stopped}
+        return {"status": status, "stopped": stopped}
 
     @app.post("/api/dash/rtt/stop")
     async def rtt_stop():
         managers = get_managers()
-        managers["rtt"].stop()
-        _state["resource_manager"].release("user:dashboard:rtt")
+        stop_dashboard_manager(_state, "rtt", managers["rtt"])
         return {"status": "stopped"}
+
+    @app.post("/api/dash/rtt/write")
+    async def rtt_write(
+        data_hex: str = Body(..., embed=True),
+    ):
+        if len(data_hex) > 65536 * 2:
+            raise HTTPException(
+                status_code=422,
+                detail="data_hex payload must contain 1..65536 bytes",
+            )
+        if (
+            not data_hex
+            or len(data_hex) % 2
+            or any(char not in "0123456789abcdefABCDEF" for char in data_hex)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="data_hex must be even hexadecimal",
+            )
+        data = bytes.fromhex(data_hex)
+        managers = get_managers()
+        try:
+            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"sent_bytes": sent_bytes}
 
     @app.post("/api/dash/rtt/pause")
     async def rtt_pause():
@@ -898,19 +1470,12 @@ def create_app(
             )
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
-        stopped = stop_bridge_dashboards(exclude="systemview")
-        rm = _state["resource_manager"]
-        for name in stopped:
-            rm.release(f"user:dashboard:{name}")
-        rm.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:systemview", preempt=True)
         managers = get_managers()
         sv = managers["systemview"]
-        if sv.running:
-            return {"status": "already_running"}
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
+        status, stopped = await start_dashboard_manager(
+            _state,
+            "systemview",
+            sv,
             lambda: sv.start(
                 _state["device"],
                 addr=addr,
@@ -919,13 +1484,12 @@ def create_app(
                 search_size=search_size,
             ),
         )
-        return {"status": "started", "stopped": stopped}
+        return {"status": status, "stopped": stopped}
 
     @app.post("/api/dash/systemview/stop")
     async def systemview_stop():
         managers = get_managers()
-        managers["systemview"].stop()
-        _state["resource_manager"].release("user:dashboard:systemview")
+        stop_dashboard_manager(_state, "systemview", managers["systemview"])
         return {"status": "stopped"}
 
     @app.post("/api/dash/systemview/pause")
@@ -1005,47 +1569,77 @@ def create_app(
     async def superwatch_start():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
-        stopped = stop_bridge_dashboards(exclude="superwatch")
-        rm = _state["resource_manager"]
-        for name in stopped:
-            rm.release(f"user:dashboard:{name}")
-        rm.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:superwatch", preempt=True)
         managers = get_managers()
         sw = managers["superwatch"]
-        if sw.running:
-            return {"status": "already_running"}
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: sw.start(_state["device"]))
-        return {"status": "started", "stopped": stopped}
+        status, stopped = await start_dashboard_manager(
+            _state,
+            "superwatch",
+            sw,
+            lambda: sw.start(_state["device"]),
+        )
+        return {"status": status, "stopped": stopped}
 
     @app.post("/api/dash/superwatch/stop")
     async def superwatch_stop():
         managers = get_managers()
-        managers["superwatch"].stop()
-        _state["resource_manager"].release("user:dashboard:superwatch")
+        await run_in_threadpool(
+            stop_dashboard_manager,
+            _state,
+            "superwatch",
+            managers["superwatch"],
+        )
         return {"status": "stopped"}
 
     @app.post("/api/dash/superwatch/add")
     async def superwatch_add(name: str = Body(..., embed=True)):
         managers = get_managers()
         sw = managers["superwatch"]
-        if sw._runtime is None and _state["device"] and _state["device"].connected:
-            sw.prepare(_state["device"])
-        return sw.add_watch(name)
+        def prepare_and_add():
+            if sw._runtime is None and _state["device"] and _state["device"].connected:
+                sw.prepare(_state["device"])
+            return sw.add_watch(name)
+
+        return await run_in_threadpool(prepare_and_add)
 
     @app.post("/api/dash/superwatch/remove")
     async def superwatch_remove(name: str = Body(..., embed=True)):
         managers = get_managers()
         sw = managers["superwatch"]
-        if sw._runtime is None and _state["device"] and _state["device"].connected:
-            sw.prepare(_state["device"])
-        return sw.remove_watch(name)
+        def prepare_and_remove():
+            if sw._runtime is None and _state["device"] and _state["device"].connected:
+                sw.prepare(_state["device"])
+            return sw.remove_watch(name)
+
+        return await run_in_threadpool(prepare_and_remove)
+
+    @app.post("/api/dash/superwatch/write")
+    async def superwatch_write(
+        path: str = Body(...),
+        generation: int = Body(...),
+        value: object = Body(...),
+    ):
+        if not _state["device"] or not _state["device"].connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        from mklink.remote.dashboards import SuperWatchTransactionError
+
+        manager = get_managers()["superwatch"]
+        if manager._device is None:
+            manager.prepare(_state["device"])
+        try:
+            return await run_in_threadpool(
+                manager.write_symbol,
+                path,
+                generation=generation,
+                value=value,
+            )
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
 
     @app.get("/api/dash/superwatch/items")
     async def superwatch_items():
         managers = get_managers()
-        return {"items": managers["superwatch"].list_watches()}
+        items = await run_in_threadpool(managers["superwatch"].list_watches)
+        return {"items": items}
 
     @app.get("/api/dash/superwatch/inspect")
     async def superwatch_inspect(name: str):
@@ -1076,13 +1670,16 @@ def create_app(
     @app.post("/api/dash/superwatch/interval")
     async def superwatch_interval(interval: float = Body(..., embed=True)):
         managers = get_managers()
-        actual = managers["superwatch"].set_interval(interval)
+        try:
+            actual = managers["superwatch"].set_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"interval": actual}
 
     @app.get("/api/dash/superwatch/status")
     async def superwatch_status():
         managers = get_managers()
-        return managers["superwatch"].get_status()
+        return await run_in_threadpool(managers["superwatch"].get_status)
 
     # ===================================================================
     # Integrated Dashboard SSE — Serial Monitor
@@ -1340,16 +1937,13 @@ def create_app(
         """
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
-        stopped = stop_bridge_dashboards(exclude="vofa")
-        rm = _state["resource_manager"]
-        for name in stopped:
-            rm.release(f"user:dashboard:{name}")
-        rm.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:vofa", preempt=True)
+        from mklink.remote.dashboards import normalize_vofa_interval
+        try:
+            interval = normalize_vofa_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         vm = managers["vofa"]
-        if vm.running:
-            return {"status": "already_running"}
         if not channels:
             channels = list(getattr(vm, "_channels", []) or [])
         if not channels:
@@ -1357,17 +1951,23 @@ def create_app(
                 status_code=400,
                 detail="VOFA channels are required before starting",
             )
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, lambda: vm.start(_state["device"], channels, interval)
+        from mklink.vofa_viewer import normalize_vofa_channels
+        try:
+            channels = normalize_vofa_channels(channels)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        status, stopped = await start_dashboard_manager(
+            _state,
+            "vofa",
+            vm,
+            lambda: vm.start(_state["device"], channels, interval),
         )
-        return {"status": "started", "stopped": stopped, "channels": channels}
+        return {"status": status, "stopped": stopped, "channels": channels}
 
     @app.post("/api/dash/vofa/stop")
     async def vofa_stop():
         managers = get_managers()
-        managers["vofa"].stop()
-        _state["resource_manager"].release("user:dashboard:vofa")
+        stop_dashboard_manager(_state, "vofa", managers["vofa"])
         return {"status": "stopped"}
 
     @app.post("/api/dash/vofa/pause")
@@ -1390,7 +1990,10 @@ def create_app(
     @app.post("/api/dash/vofa/interval")
     async def vofa_interval(interval: float = Body(..., embed=True)):
         managers = get_managers()
-        actual = managers["vofa"].set_interval(interval)
+        try:
+            actual = managers["vofa"].set_interval(interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"interval": actual}
 
     # ===================================================================
@@ -1404,21 +2007,22 @@ def create_app(
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            addr = int(address, 0) if isinstance(address, str) else address
-            data = await loop.run_in_executor(
-                None, lambda: _state["device"].read_memory(addr, size)
-            )
-            import base64
-            return {
-                "address": hex(addr),
-                "size": size,
-                "data_base64": base64.b64encode(data).decode(),
-                "data_hex": data.hex(),
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "read-memory"):
+            try:
+                loop = asyncio.get_event_loop()
+                addr = int(address, 0) if isinstance(address, str) else address
+                data = await loop.run_in_executor(
+                    None, lambda: _state["device"].read_memory(addr, size)
+                )
+                import base64
+                return {
+                    "address": hex(addr),
+                    "size": size,
+                    "data_base64": base64.b64encode(data).decode(),
+                    "data_hex": data.hex(),
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/write-memory")
     async def write_memory(
@@ -1427,29 +2031,31 @@ def create_app(
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            addr = int(address, 0) if isinstance(address, str) else address
-            data = bytes.fromhex(data_hex)
-            await loop.run_in_executor(
-                None, lambda: _state["device"].write_memory(addr, data)
-            )
-            return {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "write-memory"):
+            try:
+                loop = asyncio.get_event_loop()
+                addr = int(address, 0) if isinstance(address, str) else address
+                data = bytes.fromhex(data_hex)
+                await loop.run_in_executor(
+                    None, lambda: _state["device"].write_memory(addr, data)
+                )
+                return {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/read-variable")
     async def read_variable(name: str = Body(..., embed=True)):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            value = await loop.run_in_executor(
-                None, lambda: _state["device"].read_variable(name)
-            )
-            return {"name": name, "value": value}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "read-variable"):
+            try:
+                loop = asyncio.get_event_loop()
+                value = await loop.run_in_executor(
+                    None, lambda: _state["device"].read_variable(name)
+                )
+                return {"name": name, "value": value}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/write-variable")
     async def write_variable(
@@ -1458,64 +2064,68 @@ def create_app(
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, lambda: _state["device"].write_variable(name, value)
-            )
-            return {"status": "ok", "name": name, "value": value}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "write-variable"):
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, lambda: _state["device"].write_variable(name, value)
+                )
+                return {"status": "ok", "name": name, "value": value}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/device/read-register")
     async def read_register(name: str = Body(..., embed=True)):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            value = await loop.run_in_executor(
-                None, lambda: _state["device"].read_register(name)
-            )
-            return {"name": name, "value": value, "hex": hex(value)}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "read-register"):
+            try:
+                loop = asyncio.get_event_loop()
+                value = await loop.run_in_executor(
+                    None, lambda: _state["device"].read_register(name)
+                )
+                return {"name": name, "value": value, "hex": hex(value)}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/device/core-registers")
     async def core_registers():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            regs = await loop.run_in_executor(
-                None, _state["device"].read_core_registers
-            )
-            return {"registers": regs}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "core-registers"):
+            try:
+                loop = asyncio.get_event_loop()
+                regs = await loop.run_in_executor(
+                    None, _state["device"].read_core_registers
+                )
+                return {"registers": regs}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/device/hardfault-detail")
     async def hardfault_detail():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        try:
-            loop = asyncio.get_event_loop()
-            report = await loop.run_in_executor(
-                None, _state["device"].decode_hardfault
-            )
-            if report is None:
-                return {"fault": None, "summary": "No HardFault detected"}
-            return {
-                "fault": True,
-                "cfsr": report.cfsr,
-                "hfsr": report.hfsr,
-                "cfsr_flags": report.cfsr_flags,
-                "hfsr_flags": report.hfsr_flags,
-                "stack_frame": report.stack_frame,
-                "source_locations": report.source_locations,
-                "summary": report.summary,
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        async with async_target_debug_lease(_state, "hardfault-detail"):
+            try:
+                loop = asyncio.get_event_loop()
+                report = await loop.run_in_executor(
+                    None, _state["device"].decode_hardfault
+                )
+                if report is None:
+                    return {"fault": None, "summary": "No HardFault detected"}
+                return {
+                    "fault": True,
+                    "cfsr": report.cfsr,
+                    "hfsr": report.hfsr,
+                    "cfsr_flags": report.cfsr_flags,
+                    "hfsr_flags": report.hfsr_flags,
+                    "stack_frame": report.stack_frame,
+                    "source_locations": report.source_locations,
+                    "summary": report.summary,
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/device/memory-map")
     async def memory_map():
@@ -1534,27 +2144,76 @@ def create_app(
     # Symbols / DWARF API
     # ===================================================================
 
-    @app.get("/api/symbols/search")
-    async def symbols_search(q: str = ""):
+    def _require_symbol_catalog():
         device = _state.get("device")
         if not device:
             raise HTTPException(status_code=400, detail="No device instance")
-        dwarf = getattr(device, "_dwarf_info", None)
-        if not dwarf:
+        catalog = getattr(device, "symbol_catalog", None)
+        if catalog is None:
             raise HTTPException(status_code=400, detail="No DWARF info loaded (need AXF/ELF)")
+        return catalog
+
+    @app.get("/api/symbols/status")
+    async def symbols_status():
+        catalog = _require_symbol_catalog()
+        return {
+            "loaded": True,
+            "generation": catalog.generation,
+            "axf_path": catalog.axf_path,
+            "parsed_at": catalog.parsed_at,
+            "fingerprint": catalog.fingerprint.to_dict(),
+            "stale": catalog.is_stale(),
+            "total": len(catalog.items),
+            "truncated_roots": list(catalog.truncated_roots),
+        }
+
+    @app.get("/api/symbols/catalog")
+    async def symbols_catalog(
+        q: str = "",
+        writable: bool = False,
+        offset: int = 0,
+        limit: int = 200,
+    ):
+        catalog = _require_symbol_catalog()
+        return catalog.to_page(
+            query=q,
+            writable=writable,
+            offset=offset,
+            limit=limit,
+        )
+
+    @app.post("/api/symbols/reparse")
+    async def symbols_reparse():
+        device = _state.get("device")
+        if not device or not device.connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        from mklink.remote.dashboards import SuperWatchTransactionError
+
+        manager = get_managers()["superwatch"]
         try:
-            results = []
-            q_lower = q.lower()
-            for name, var in dwarf.variables.items():
-                if q_lower in name.lower():
-                    results.append({
-                        "name": name,
-                        "address": var.address,
-                        "type": var.type_name,
-                        "size": var.size,
-                    })
-                    if len(results) >= 50:
-                        break
+            if manager._runtime is not None:
+                result = await run_in_threadpool(manager.reparse_symbols)
+            else:
+                result = await run_in_threadpool(device.parse_axf)
+        except SuperWatchTransactionError as exc:
+            raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
+        if result.get("error"):
+            raise HTTPException(status_code=422, detail=result["error"])
+        return result
+
+    @app.get("/api/symbols/search")
+    async def symbols_search(q: str = ""):
+        try:
+            page = _require_symbol_catalog().to_page(query=q, limit=50)
+            results = [
+                {
+                    "name": item["path"],
+                    "address": item["address"],
+                    "type": item["type_name"],
+                    "size": item["size"],
+                }
+                for item in page["items"]
+            ]
             return {"results": results}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -1563,28 +2222,17 @@ def create_app(
     async def symbols_typeinfo(name: str = ""):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        dwarf = _state["device"]._dwarf_info
-        if not dwarf:
-            raise HTTPException(status_code=400, detail="No DWARF info loaded (need AXF/ELF)")
         try:
-            var = dwarf.variables.get(name)
-            if not var:
+            descriptor = _require_symbol_catalog().by_path(name)
+            if descriptor is None:
                 return {"name": name, "found": False}
-            # 查找 struct 成员信息
-            members = []
-            struct_def = dwarf.structs.get(var.type_name)
-            if struct_def:
-                members = [
-                    {"name": m.name, "offset": m.offset, "type": m.type_name, "size": m.size}
-                    for m in struct_def.members
-                ]
             return {
                 "name": name,
                 "found": True,
-                "type": var.type_name,
-                "size": var.size,
-                "address": var.address,
-                "members": members,
+                "type": descriptor.type_name,
+                "size": descriptor.size,
+                "address": descriptor.address,
+                "members": [],
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -1596,9 +2244,12 @@ def create_app(
     @app.get("/api/health")
     async def health():
         dev = _state["device"]
+        from mklink.elf_backend import elf_status
+
         return {
             "status": "ok",
             "device_connected": dev.connected if dev else False,
+            **elf_status(project_root=_state["project_root"]),
         }
 
     # ===================================================================
@@ -1669,21 +2320,25 @@ def create_app(
         rm = _state["resource_manager"]
         group_map = {
             "mklink_bridge": ResourceGroup.MKLINK_BRIDGE,
+            "target_debug": ResourceGroup.TARGET_DEBUG,
             "serial_port": ResourceGroup.SERIAL_PORT,
             "modbus_port": ResourceGroup.MODBUS_PORT,
         }
         owner = f"ai:session:{session_id}"
-        acquired = []
+        requested = [(name, group_map[name]) for name in resources if name in group_map]
         try:
-            for r in resources:
-                rg = group_map.get(r)
-                if not rg:
-                    continue
-                rm.acquire(rg, owner, ttl=ttl, preempt=False)
-                acquired.append(r)
-            return {"status": "acquired", "owner": owner, "resources": acquired}
+            rm.acquire_many(
+                [group for _name, group in requested],
+                owner,
+                ttl=ttl,
+                preempt=False,
+            )
+            return {
+                "status": "acquired",
+                "owner": owner,
+                "resources": [name for name, _group in requested],
+            }
         except RErr as e:
-            rm.release(owner)
             raise HTTPException(
                 status_code=409,
                 detail={"conflict": e.conflict_owner, "resource": e.resource.value},
@@ -1766,17 +2421,32 @@ def run_server(
 
     if auto_connect:
         import mklink
+        from mklink.remote.resource_manager import ResourceManager
+
+        mks = getattr(app.state, "mklink_state", None)
+        if mks is None:
+            mks = {
+                "device": None,
+                "dispatcher": None,
+                "resource_manager": ResourceManager(),
+            }
+            app.state.mklink_state = mks
+        elif "resource_manager" not in mks:
+            mks["resource_manager"] = ResourceManager()
         try:
-            device = mklink.connect(port=device_port, axf=axf, project_root=project_root)
+            with target_debug_lease(mks, "auto-connect"):
+                device = mklink.connect(
+                    port=device_port,
+                    axf=axf,
+                    project_root=project_root,
+                )
             # mklink.connect() now initializes idcode/MCU inside Device._connect,
             # so device.idcode is valid here. Store the device in the app's shared
             # state so the API endpoints actually serve it (previously this
             # connected then orphaned the device via a dead loop).
-            mks = getattr(app.state, "mklink_state", None)
-            if mks is not None:
-                from mklink.remote.server import DeviceDispatcher
-                mks["device"] = device
-                mks["dispatcher"] = DeviceDispatcher(device)
+            from mklink.remote.server import DeviceDispatcher
+            mks["device"] = device
+            mks["dispatcher"] = DeviceDispatcher(device)
             logger.info("Auto-connected device: MCU=%s IDCODE=0x%08X",
                         device.mcu_name, device.idcode)
         except Exception as e:

@@ -48,11 +48,24 @@ def analyze_events(events: list[dict]) -> dict:
             {"kind": "no_data", "severity": "warn", "detail": "未采集到 SystemView 事件"}
         ]}
 
+    all_events = events
+    overflow_events = [
+        (index, event)
+        for index, event in enumerate(all_events)
+        if event.get("kind") == "overflow"
+    ]
+    if overflow_events:
+        # An overflow timestamp includes the interval since the target last
+        # enqueued a packet. On initial attachment that interval predates the
+        # capture, so analyze only the latest continuous trace segment.
+        events = all_events[overflow_events[-1][0] + 1:]
+
     times = [_t(e) for e in events]
     first = min(times) if times else 0.0
     last = max(times) if times else 0.0
     observed = max(last - first, 1.0)
-    unit = "us" if isinstance(events[-1].get("t_us"), (int, float)) else "ticks"
+    unit_source = events[-1] if events else all_events[-1]
+    unit = "us" if isinstance(unit_source.get("t_us"), (int, float)) else "ticks"
 
     # ---- 任务执行区间（task_start_exec / task_stop_exec）----
     pending: dict[int, float] = {}
@@ -129,9 +142,21 @@ def analyze_events(events: list[dict]) -> dict:
 
     # ---- 异常检测 ----
     anomalies: list[dict] = []
+    if overflow_events:
+        target_drop_count = overflow_events[-1][1].get("drop_count")
+        anomalies.append({
+            "kind": "trace_overflow",
+            "severity": "high",
+            "detail": (
+                "SystemView target buffer overflowed; CPU/ISR analysis uses "
+                "only the continuous segment after the latest overflow "
+                f"(target cumulative drop count: {target_drop_count})."
+            ),
+        })
     switches_per_sec = switch_count / (observed / 1_000_000.0) if unit == "us" and observed else 0.0
-    # ISR 占比相对 total_run（注意 ISR 与任务执行有重叠，>100% 属正常现象）
-    isr_cpu = round(isr_total / total_run * 100, 2) if total_run else 0.0
+    # ISR intervals are wall-time intervals. Incomplete task slices are not a
+    # valid denominator when capture starts mid-task.
+    isr_cpu = round(isr_total / observed * 100, 2) if observed else 0.0
 
     if unit == "us":
         # CPU 饥饿：单任务 > 90%
@@ -173,7 +198,13 @@ def analyze_events(events: list[dict]) -> dict:
         "unit": unit,
         "observed_us": round(observed, 1) if unit == "us" else None,
         "observed_ticks": round(observed, 1) if unit == "ticks" else None,
-        "event_count": len(events),
+        "event_count": len(all_events),
+        "analyzed_event_count": len(events),
+        "target_overflow_events": len(overflow_events),
+        "target_drop_count": (
+            overflow_events[-1][1].get("drop_count")
+            if overflow_events else 0
+        ),
         "switch_count": switch_count,
         "switches_per_sec": round(switches_per_sec, 1) if unit == "us" else None,
         "task_count": len(tasks),
