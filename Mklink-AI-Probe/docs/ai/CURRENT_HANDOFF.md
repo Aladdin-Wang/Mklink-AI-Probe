@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-23T14:31:06+08:00`
-- 分支：`fix/upstream-review-blockers`
-- HEAD：`the dedicated fix branch resolves all six reviewer blockers reported against upstream PR su5176/Mklink-AI-Probe#3 and has passed the required clean-environment, Python, GUI, Rust, build, and security gates`
-- 远端 HEAD：`GitHub origin master is published with the current maintenance work and feeds upstream PR #3; Gitee master intentionally remains at e911e62, updates remains 926f046, and v0.1.2 peels to 9cd9177`
-- 工作树：the reviewer-blocker changes and refreshed bundled Web assets are ready for final commit on the fix branch; pre-existing Python bytecode caches remain untracked and are preserved
-- 当前任务：Resolve the upstream PR #3 dependency, FastAPI 0.139.2, Windows venv process-guard, frontend security, path-redaction, and flaky timing-test blockers, then update the Aladdin-Wang PR head.
-- 状态：`in_progress`
+- 更新时间：`2026-07-23T14:36:15+08:00`
+- 分支：`master`
+- HEAD：`local master contains reviewer-blocker fix a1dcb8e followed by the final handoff, resolving all six issues reported against upstream PR su5176/Mklink-AI-Probe#3`
+- 远端 HEAD：`GitHub origin master and upstream PR #3 contain qualified product fix a1dcb8e; Gitee master intentionally remains at e911e62, updates remains 926f046, and v0.1.2 peels to 9cd9177`
+- 工作树：clean apart from the three pre-existing untracked Python bytecode cache directories; v0.1.2 remains installed, test services are stopped, and no hardware state was changed
+- 当前任务：Upstream PR #3 now includes the qualified dependency, FastAPI 0.139.2, Windows venv process-guard, frontend security, path-redaction, and timing-test fixes at a1dcb8e.
+- 状态：`complete`
 
 ## 里程碑
 
@@ -23,7 +23,7 @@
 - **Browser file-source loading** — `complete`。The Web configuration page uses a native browser file input and multipart upload for AXF/ELF/OUT and MAP sources, while Tauri keeps its native path dialog. Uploaded files are suffix-checked, size-limited, content-addressed, and stored under the runtime project .mklink directory.
 - **AI-first README and Web GUI onboarding** — `complete`。The repository landing page gives users GitHub and Gitee links for AI-assisted Skill installation, documents complete Web GUI setup and use, distinguishes the Windows desktop and USB HTML entry, and removes obsolete V3.3.3/V4.3.3 firmware release content and stale toolchain prerequisites.
 - **Upstream PR and maintainer handoff** — `complete`。The Aladdin-Wang GitHub fork master is published and proposes the complete 237-commit delta to su5176/Mklink-AI-Probe master in PR #3. Gitee was not synchronized because this request authorized GitHub and the upstream PR only.
-- **Upstream PR reviewer blockers** — `in_progress`。All reported blockers are fixed and qualified on fix/upstream-review-blockers: clean test extras include httpx and PyInstaller, FastAPI 0.139.2 route inspection is supported, Windows venv guards bypass launcher PID proxies, frontend high-risk advisories are removed, the local Keil path is redacted, and timing tests use event ordering instead of 50 ms thresholds. The branch still needs commit, merge, and GitHub push.
+- **Upstream PR reviewer blockers** — `complete`。All reported blockers were fixed and qualified on fix/upstream-review-blockers, fast-forwarded into master as a1dcb8e, pushed to GitHub, and read back as the OPEN upstream PR #3 head. Clean test extras include httpx and PyInstaller, FastAPI 0.139.2 route inspection is supported, Windows venv guards bypass launcher PID proxies, frontend high-risk advisories are removed, the local Keil path is redacted, and timing tests use event ordering instead of 50 ms thresholds.
 
 ## 验证证据
 
@@ -82,7 +82,7 @@
 
 ## 下一动作
 
-1. Commit the qualified reviewer fixes, merge them into Aladdin-Wang master, push the GitHub PR head, and confirm su5176/Mklink-AI-Probe PR #3 shows the new commit.
+1. Monitor su5176/Mklink-AI-Probe PR #3 for the next review or maintainer merge decision; its qualified product fix is a1dcb8e and no checks are currently reported by GitHub.
 2. Qualify the same USB HTML and user-level protocol on one current macOS system and one mainstream Linux desktop, including browser confirmation and USB HID/serial permissions.
 3. Ensure the deployed skill/runtime package carries matching built gui/dist assets and runs web-entry install whenever its absolute installation path changes.
 4. Confirm an installed older client discovers, downloads, and installs v0.1.2 in the maintainer's normal desktop environment.
