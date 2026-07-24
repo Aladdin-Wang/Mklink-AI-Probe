@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T16:09:28+08:00`
+- 更新时间：`2026-07-24T16:48:53+08:00`
 - 分支：`master`
-- HEAD：`Local master contains the verified v0.1.3 release-history correction at 6ce6836, the stale Web app cache fix at f9ecec3, refreshed Web assets at ea0a235, and the final local-only handoff. It remains ahead of origin/master only on this computer.`
+- HEAD：`Local master contains the verified v0.1.3 release-history correction, stale Web app cache fix, refreshed Web assets, final local-only handoff, and the maintenance source-root discovery correction prepared for GitHub.`
 - 远端 HEAD：`GitHub origin/master remains at 6ce6836 with the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
-- 工作树：The main worktree is clean after generated Tauri, PyInstaller, junction, Web build, and Python cache outputs were removed. The final local installer, updater signature, and Skill ZIP remain outside Git under release/20260724-155059.
-- 当前任务：Keep the cache-corrected local v0.1.3 refresh available without republishing it, and carry the corrected history plus cache fix into the next explicitly authorized v0.1.4 release.
-- 状态：`v0.1.3_local_cache_fix_complete`
+- 工作树：The old merged worktree and branch, generated build caches, superseded release directories, frontend node_modules, and the obsolete qualification install were removed. The maintenance source-root discovery correction is committed with its rendered handoff, leaving the main worktree clean. The final local installer, updater signature, and Skill ZIP remain outside Git under release/20260724-155059.
+- 当前任务：Start future maintenance sessions by resolving the unique project source root before reading AGENTS.md, docs/ai, scripts, or repository Skills. Preserve the local v0.1.3 artifacts and wait for explicit authorization before any v0.1.4 release work.
+- 状态：`maintenance_source_root_resolution_ready_for_handoff`
 
 ## 里程碑
 
@@ -42,6 +42,7 @@
 - **Copied Skill and user-level Web entry**：The copied user-level Skill remains version 0.1.3 and now records source commit ea0a235bc9d11bcc5bc40ddae63433a7efb80753. Its validated local archive is 2,512,975 bytes with SHA-256 39BEB97D861B696BCC6735F4247EC7BE35133A6200F591C49EB486E37F3A95CC; installation retained a pre-update backup and its editable gui+mcp package reports version 0.1.3 from the copied Skill. Web-entry registration was regenerated from that Skill rather than the developer checkout; its handler inserts the copied Skill root, owns the Python GUI process on 127.0.0.1:8765, and serves builtin pyelftools 0.32 health successfully.
 - **Shared Web and desktop lifecycle**：With the user-level Web entry owning port 8765, the normally installed Tauri desktop app opened using the existing service, spawned only its WebView2 child, and did not launch a second mklink sidecar. Closing the desktop window normally returned exit code 0 while the original Web-entry PID and healthy API remained unchanged. After packaged qualification, Web-entry was restarted and intentionally left owning port 8765.
 - **Stale Web app cache correction**：A real Edge tab displayed cached v0.1.2 assets while the same port served the copied v0.1.3 Skill. Root cause was that index.html and SPA fallback responses had no cache policy and Web-entry reopened a stable URL. The f9ecec3 fix serves the app shell with Cache-Control no-store, revalidates unhashed static files, serves hashed assets as one-year immutable, and opens a URL containing the current index SHA-256 prefix. Focused tests passed 53; the full gate passed Python 991 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, Vite production build, npm audit with zero vulnerabilities, and the Tauri prerequisite check. Actual isolated Microsoft Edge opened ?build=51b73617dadd#/config, displayed v0.1.3 and build f9ecec30a315, showed four release entries and five v0.1.3 notes with the current badge, and had no console errors or failed requests.
+- **Workspace cleanup and source-root handoff**：The workspace was reduced from about 8.88 GB to 85 MB while preserving release/20260724-155059 and its three verified hashes. Git now lists only the main worktree, project memory validates, and the user-level Web entry remains healthy and owned on port 8765. The repository and copied user-level maintenance Skills now resolve a unique source root from the Git top-level before reading relative handoff paths; both passed quick_validate.py, and the current nested checkout resolved uniquely to the inner Mklink-AI-Probe source directory.
 
 ## 架构决策
 
@@ -64,6 +65,7 @@
 - Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.
 - End-user Web entry, Web GUI, and MCP installation must use the complete copied user-level Skill/runtime as their source. Run web-entry registration from that Skill after install or update so its absolute handler path never depends on a developer checkout; desktop clients may reuse the resulting service without taking ownership.
 - Web app shells and SPA fallbacks must use no-store so a same-port runtime update cannot retain an old index. Content-hashed assets may be immutable, and Web-entry URLs carry the current index digest before the hash route so a newly opened client navigates to the installed build even when the browser has an older tab or cache entry.
+- Maintenance instructions must resolve the unique project source root before using relative AGENTS.md, docs, scripts, or repository Skill paths. The Git/workspace root and source root may differ; release and worktree storage remain anchored at the live Git/workspace root.
 
 ## 真机环境
 

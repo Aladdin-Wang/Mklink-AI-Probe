@@ -10,13 +10,25 @@ skills installed on one developer's computer.
 
 ## Start From Live State
 
-1. Read `AGENTS.md`, `docs/ai/CURRENT_HANDOFF.md`, and
-   `docs/ai/project-memory.json`.
-2. Run `python scripts/ai_memory.py validate`, `git status --short --branch`,
-   and `git log -12 --oneline`.
-3. Reconcile recorded state with Git and the running system. Correct stale
+1. Resolve the project source root before reading relative paths. Start with
+   the Git top-level directory. If it does not contain `AGENTS.md`,
+   `docs/ai/project-memory.json`, `scripts/ai_memory.py`, and
+   `skills/maintaining-mklink-ai-probe/SKILL.md`, inspect its direct child
+   directories and select the only directory containing all four markers. Do
+   not assume the current working directory or Git top-level is the source
+   root; stop and inspect if no unique candidate exists.
+2. Treat `AGENTS.md`, `docs/`, `scripts/`, and `skills/` paths below as
+   relative to the resolved source root. Treat `release/` and `.worktrees/` as
+   relative to the Git/workspace root unless the live repository says
+   otherwise.
+3. Read `AGENTS.md`, `docs/ai/CURRENT_HANDOFF.md`, and
+   `docs/ai/project-memory.json` from the resolved source root.
+4. From the resolved source root, run `python scripts/ai_memory.py validate`.
+   Run `git status --short --branch` and `git log -12 --oneline` in the same
+   repository.
+5. Reconcile recorded state with Git and the running system. Correct stale
    memory instead of repeating completed work.
-4. Check `git worktree list`. Reuse the current isolated worktree when one
+6. Check `git worktree list`. Reuse the current isolated worktree when one
    already exists; create another only when isolation is useful and authorized.
 
 ## Develop On A Branch

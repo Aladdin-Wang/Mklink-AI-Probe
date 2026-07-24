@@ -1,5 +1,12 @@
 # Repository Agent Protocol
 
+Resolve the project source root before using any relative path in this file.
+The source root is the directory containing this `AGENTS.md`,
+`docs/ai/project-memory.json`, `scripts/ai_memory.py`, and
+`skills/maintaining-mklink-ai-probe/SKILL.md`. It may be a direct child of the
+Git/workspace root. Do not assume the current working directory or Git
+top-level is the source root.
+
 All coding agents and models must use the repository-bundled skill at
 `skills/maintaining-mklink-ai-probe/SKILL.md`. It is the shared maintenance
 workflow; global or user-installed skills are optional and must not be required
