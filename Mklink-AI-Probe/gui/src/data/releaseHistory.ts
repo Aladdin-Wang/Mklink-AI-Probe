@@ -7,6 +7,18 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.1.3',
+    date: '2026-07-24',
+    summary: '修复符号解析并完善调试资源协同',
+    changes: [
+      '修复 AXF/ELF 文件源切换与共享符号状态，重新解析后立即使用当前文件。',
+      '支持匿名 struct/union 成员展开，并可粘贴 C 语言定义恢复复杂结构变量。',
+      'RTT View 增加 UTF-8、GB2312、GBK、GB18030 和 Big5 中文编码切换。',
+      '统一 SuperWatch、RTT、内存读写和在线/脱机下载的 SWD 资源互斥。',
+      '新增 AI Skill 主动版本提醒，以及经用户确认后的桌面端与 Skill 自动更新。',
+    ],
+  },
+  {
     version: '0.1.2',
     date: '2026-07-22',
     summary: '完善 Web 调试交互与快速启动',

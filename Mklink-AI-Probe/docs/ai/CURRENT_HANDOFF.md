@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T00:45:30+08:00`
-- 分支：`master`
-- HEAD：`Master contains the published v0.1.3 release commit and the post-release memory handoff; tag v0.1.3 points to f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
+- 更新时间：`2026-07-24T14:16:59+08:00`
+- 分支：`fix/version-history-v013`
+- HEAD：`The dedicated fix branch adds the missing v0.1.3 release-history entry and rebuilt Web assets on top of published master b66badb; the published v0.1.3 tag remains unchanged at f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
 - 远端 HEAD：`GitHub and Gitee master, tag v0.1.3, Releases, and updates/latest.json were published and anonymously verified on 2026-07-24.`
-- 工作树：The release clone is clean after publication. The original developer worktree retains only its pre-existing runtime caches and handoff edits; no user files were removed.
-- 当前任务：Maintain the published v0.1.3 baseline and let installed Skills detect future releases.
-- 状态：`v0.1.3_published`
+- 工作树：The correction is isolated in the clean release clone on fix/version-history-v013. The original developer worktree and its pre-existing changes were not modified.
+- 当前任务：Carry the verified missing v0.1.3 release-note correction on its fix branch without moving the published tag or publishing an unapproved follow-up release.
+- 状态：`v0.1.3_history_fix_verified`
 
 ## 里程碑
 
@@ -22,6 +22,7 @@
 - **Aggregate symbol recovery** — `complete`。Anonymous struct and union layers expand transparently, overlapping union interpretations remain selectable, unsupported aggregates remain visible as containers, and a bounded pycparser-backed C layout override is shared by Web, Tauri, and AI-launched services.
 - **RTT encoding and SWD arbitration** — `complete`。RTT preserves device bytes until the Dashboard applies UTF-8, GB2312, GBK, GB18030, or Big5 decoding. One-shot SWD and download operations safely preempt Dashboard owners but never another user operation.
 - **Proactive verified updates** — `complete`。The installed Skill checks the public update manifest once per AI session with a 24-hour cache, reports newer releases without blocking hardware work, and updates the desktop app and copied Skill only after explicit approval with size and SHA-256 verification.
+- **Release-history accuracy** — `complete`。The source release history and rebuilt Web assets now include the omitted v0.1.3 summary and five user-facing changes, with regression coverage for the current-version badge and entry count.
 
 ## 验证证据
 
@@ -36,6 +37,7 @@
 - **RTT encoding real service**：The source service accepted GBK at RTT start and exposed the active encoding in shared status. Automated byte-boundary tests covered GBK and four-byte GB18030 text plus runtime switching. The current target image did not initialize the AXF RTT control-block symbol, so live text capture was unavailable and startup released resources cleanly.
 - **Real browser UI**：After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens.
 - **v0.1.3 publication and local Skill update**：GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart.
+- **v0.1.3 version-history correction**：The full gate passed Python 989 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, the Vite production build, and npm audit with zero vulnerabilities. Local Chrome Playwright opened the real config page at desktop 1440x900 and mobile 390x844, clicked the footer version, and found v0.1.3 first with the current-version badge, all five release notes, four stable entries, no failed requests, no framework overlay, and no console warnings or errors.
 
 ## 架构决策
 
@@ -55,6 +57,7 @@
 - RTT bridge sessions retain raw target bytes. The RTT Dashboard owns incremental UTF-8, GB2312, GBK, GB18030, or Big5 decoding and publishes the existing UTF-8 browser stream protocol; runtime encoding changes discard only unfinished decoder state and affect subsequent bytes.
 - Copied Skills check Gitee then GitHub at first MKLink use in each AI session, cache successful checks for 24 hours, and never interrupt an active debug or flash operation. Installation requires explicit approval, verifies published size and SHA-256, refuses Git checkouts, backs up the Skill, and requires a new AI session after replacement.
 - The updates/latest.json document remains compatible with Tauri while adding verified installer and Skill metadata. Both public Releases and both anonymous Gitee asset checks complete before either updates branch is replaced.
+- Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.
 
 ## 真机环境
 
@@ -64,7 +67,7 @@
 
 ## 下一动作
 
-1. Restart the current AI client or open a new session so it loads the updated v0.1.3 Skill text.
+1. Review and merge fix/version-history-v013 into master, then include the correction in the next explicitly authorized release without moving the published v0.1.3 tag.
 2. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
 3. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
 
@@ -74,7 +77,7 @@
 - The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.
 - The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.
 - The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.
-- The in-app Browser plugin still exposed no controllable instance after reinstall, so browser qualification used repository Playwright with the installed Chrome executable. The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.
+- The in-app Browser plugin briefly selected Chrome after reinstall but the next discovery returned no available instances. Browser qualification therefore used repository Playwright with the installed Chrome executable. The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.
 
 ## 延续协议
 
