@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T15:28:29+08:00`
+- 更新时间：`2026-07-24T16:09:28+08:00`
 - 分支：`master`
-- HEAD：`Local master contains the verified v0.1.3 release-history correction at 6ce6836 plus a local-only documentation handoff for the refreshed installer, copied Skill, and user-level Web entry.`
+- HEAD：`Local master contains the verified v0.1.3 release-history correction at 6ce6836, the stale Web app cache fix at f9ecec3, refreshed Web assets at ea0a235, and the final local-only handoff. It remains ahead of origin/master only on this computer.`
 - 远端 HEAD：`GitHub origin/master remains at 6ce6836 with the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
-- 工作树：The main worktree is clean after generated Tauri, PyInstaller, Web asset, and Python cache outputs were removed. The workspace-level local installer remains outside Git under release/20260724-145717.
-- 当前任务：Keep the local v0.1.3 refresh available without republishing it, and carry the corrected history plus any subsequent fixes into the next explicitly authorized v0.1.4 release.
-- 状态：`v0.1.3_local_refresh_complete`
+- 工作树：The main worktree is clean after generated Tauri, PyInstaller, junction, Web build, and Python cache outputs were removed. The final local installer, updater signature, and Skill ZIP remain outside Git under release/20260724-155059.
+- 当前任务：Keep the cache-corrected local v0.1.3 refresh available without republishing it, and carry the corrected history plus cache fix into the next explicitly authorized v0.1.4 release.
+- 状态：`v0.1.3_local_cache_fix_complete`
 
 ## 里程碑
 
@@ -38,9 +38,10 @@
 - **Real browser UI**：After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens.
 - **v0.1.3 publication and local Skill update**：GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart.
 - **v0.1.3 version-history correction**：The full gate passed Python 989 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, the Vite production build, and npm audit with zero vulnerabilities. Local Chrome Playwright opened the real config page at desktop 1440x900 and mobile 390x844, clicked the footer version, and found v0.1.3 first with the current-version badge, all five release notes, four stable entries, no failed requests, no framework overlay, and no console warnings or errors.
-- **Local-only v0.1.3 desktop refresh**：A fresh standard NSIS bundle from 6ce6836 was copied to release/20260724-145717 as Mklink-AI-Probe-v0.1.3-local-6ce6836-x64-Setup.exe. Its size is 65,560,891 bytes, SHA-256 is 0667304F8897E9CBC9A444EF8CA2E69AD6FAB5631678B73797750630D615A8E1, updater-signature SHA-256 is 8D99218AE05B5B50ED2C1D54AC7AAFE7459FA729C8A15009183049208210DEEA, product version is 0.1.3, and Authenticode is NotSigned. Restricted-PATH qualification passed bundled-sidecar health and probe discovery with no Python child, and normal close released both sidecars and port 8765. The same installer was then placed in the normal per-user install location and both desktop and Start Menu shortcuts were verified.
-- **Copied Skill and user-level Web entry**：The copied user-level Skill remains version 0.1.3 and now records source commit 6ce6836da48027d9b4ea046590cbd095bb050e6a. Its editable gui+mcp installation reports package version 0.1.3, imports mklink from the copied Skill, and retains a pre-update backup. Web-entry registration was regenerated from that Skill rather than the developer checkout; its handler inserts the copied Skill root, owns the Python GUI process on 127.0.0.1:8765, and serves builtin pyelftools 0.32 health successfully.
-- **Shared Web and desktop lifecycle**：With the user-level Web entry owning port 8765, the normally installed Tauri desktop app opened using the existing service, spawned only its WebView2 child, and did not launch a second mklink sidecar. Closing the desktop window normally returned exit code 0 while the original Web-entry PID and healthy API remained unchanged. In-app Chrome opened the real config page, expanded the footer version, found v0.1.3 first with the current-version badge, five release notes and four stable entries, and reported no console warnings or errors.
+- **Local-only v0.1.3 desktop refresh**：The final cache-corrected standard NSIS bundle from f9ecec3 was copied to release/20260724-155059 as Mklink-AI-Probe-v0.1.3-local-f9ecec3-x64-Setup.exe. Its size is 65,560,254 bytes, SHA-256 is 55BACCDD7DC0D2652DDC3FE1062E29AB277098E0B45766556CE3940423FC23E6, updater-signature SHA-256 is EA0B5E082B628026B93C2D8159A5E4AF1148C13D7290BFCC311639AE229D00FB, product version is 0.1.3, and Authenticode is NotSigned. Restricted-PATH qualification passed bundled-sidecar health, builtin ELF 0.32, and probe discovery with no Python child; normal close released both sidecars and port 8765. The installer was placed in the normal per-user location and both desktop and Start Menu shortcuts were verified.
+- **Copied Skill and user-level Web entry**：The copied user-level Skill remains version 0.1.3 and now records source commit ea0a235bc9d11bcc5bc40ddae63433a7efb80753. Its validated local archive is 2,512,975 bytes with SHA-256 39BEB97D861B696BCC6735F4247EC7BE35133A6200F591C49EB486E37F3A95CC; installation retained a pre-update backup and its editable gui+mcp package reports version 0.1.3 from the copied Skill. Web-entry registration was regenerated from that Skill rather than the developer checkout; its handler inserts the copied Skill root, owns the Python GUI process on 127.0.0.1:8765, and serves builtin pyelftools 0.32 health successfully.
+- **Shared Web and desktop lifecycle**：With the user-level Web entry owning port 8765, the normally installed Tauri desktop app opened using the existing service, spawned only its WebView2 child, and did not launch a second mklink sidecar. Closing the desktop window normally returned exit code 0 while the original Web-entry PID and healthy API remained unchanged. After packaged qualification, Web-entry was restarted and intentionally left owning port 8765.
+- **Stale Web app cache correction**：A real Edge tab displayed cached v0.1.2 assets while the same port served the copied v0.1.3 Skill. Root cause was that index.html and SPA fallback responses had no cache policy and Web-entry reopened a stable URL. The f9ecec3 fix serves the app shell with Cache-Control no-store, revalidates unhashed static files, serves hashed assets as one-year immutable, and opens a URL containing the current index SHA-256 prefix. Focused tests passed 53; the full gate passed Python 991 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, Vite production build, npm audit with zero vulnerabilities, and the Tauri prerequisite check. Actual isolated Microsoft Edge opened ?build=51b73617dadd#/config, displayed v0.1.3 and build f9ecec30a315, showed four release entries and five v0.1.3 notes with the current badge, and had no console errors or failed requests.
 
 ## 架构决策
 
@@ -62,6 +63,7 @@
 - The updates/latest.json document remains compatible with Tauri while adding verified installer and Skill metadata. Both public Releases and both anonymous Gitee asset checks complete before either updates branch is replaced.
 - Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.
 - End-user Web entry, Web GUI, and MCP installation must use the complete copied user-level Skill/runtime as their source. Run web-entry registration from that Skill after install or update so its absolute handler path never depends on a developer checkout; desktop clients may reuse the resulting service without taking ownership.
+- Web app shells and SPA fallbacks must use no-store so a same-port runtime update cannot retain an old index. Content-hashed assets may be immutable, and Web-entry URLs carry the current index digest before the hash route so a newly opened client navigates to the installed build even when the browser has an older tab or cache entry.
 
 ## 真机环境
 
@@ -71,7 +73,7 @@
 
 ## 下一动作
 
-1. Carry the merged v0.1.3 history correction into the next explicitly authorized v0.1.4 installer release without moving or republishing the v0.1.3 tag, and resolve or explain the 390 px in-app Chrome horizontal overflow first.
+1. Carry the merged v0.1.3 history correction and f9ecec3 Web cache correction into the next explicitly authorized v0.1.4 installer release without moving or republishing the v0.1.3 tag, and resolve or explain the 390 px in-app Chrome horizontal overflow first.
 2. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
 3. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
 
