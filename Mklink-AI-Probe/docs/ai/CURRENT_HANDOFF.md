@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T14:24:20+08:00`
+- 更新时间：`2026-07-24T15:28:29+08:00`
 - 分支：`master`
-- HEAD：`Master contains the tested v0.1.3 release-history correction from f5e24d4, including rebuilt Web assets and regression coverage; the published v0.1.3 tag remains unchanged at f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
-- 远端 HEAD：`GitHub origin/master contains the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
-- 工作树：The release clone is clean after the verified fix was fast-forwarded into master and pushed. The original developer worktree and its pre-existing changes were not modified.
-- 当前任务：Maintain the corrected master baseline and include the v0.1.3 history text in the next explicitly authorized installer release without moving the published tag.
-- 状态：`v0.1.3_history_fix_merged`
+- HEAD：`Local master contains the verified v0.1.3 release-history correction at 6ce6836 plus a local-only documentation handoff for the refreshed installer, copied Skill, and user-level Web entry.`
+- 远端 HEAD：`GitHub origin/master remains at 6ce6836 with the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
+- 工作树：The main worktree is clean after generated Tauri, PyInstaller, Web asset, and Python cache outputs were removed. The workspace-level local installer remains outside Git under release/20260724-145717.
+- 当前任务：Keep the local v0.1.3 refresh available without republishing it, and carry the corrected history plus any subsequent fixes into the next explicitly authorized v0.1.4 release.
+- 状态：`v0.1.3_local_refresh_complete`
 
 ## 里程碑
 
@@ -38,6 +38,9 @@
 - **Real browser UI**：After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens.
 - **v0.1.3 publication and local Skill update**：GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart.
 - **v0.1.3 version-history correction**：The full gate passed Python 989 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, the Vite production build, and npm audit with zero vulnerabilities. Local Chrome Playwright opened the real config page at desktop 1440x900 and mobile 390x844, clicked the footer version, and found v0.1.3 first with the current-version badge, all five release notes, four stable entries, no failed requests, no framework overlay, and no console warnings or errors.
+- **Local-only v0.1.3 desktop refresh**：A fresh standard NSIS bundle from 6ce6836 was copied to release/20260724-145717 as Mklink-AI-Probe-v0.1.3-local-6ce6836-x64-Setup.exe. Its size is 65,560,891 bytes, SHA-256 is 0667304F8897E9CBC9A444EF8CA2E69AD6FAB5631678B73797750630D615A8E1, updater-signature SHA-256 is 8D99218AE05B5B50ED2C1D54AC7AAFE7459FA729C8A15009183049208210DEEA, product version is 0.1.3, and Authenticode is NotSigned. Restricted-PATH qualification passed bundled-sidecar health and probe discovery with no Python child, and normal close released both sidecars and port 8765. The same installer was then placed in the normal per-user install location and both desktop and Start Menu shortcuts were verified.
+- **Copied Skill and user-level Web entry**：The copied user-level Skill remains version 0.1.3 and now records source commit 6ce6836da48027d9b4ea046590cbd095bb050e6a. Its editable gui+mcp installation reports package version 0.1.3, imports mklink from the copied Skill, and retains a pre-update backup. Web-entry registration was regenerated from that Skill rather than the developer checkout; its handler inserts the copied Skill root, owns the Python GUI process on 127.0.0.1:8765, and serves builtin pyelftools 0.32 health successfully.
+- **Shared Web and desktop lifecycle**：With the user-level Web entry owning port 8765, the normally installed Tauri desktop app opened using the existing service, spawned only its WebView2 child, and did not launch a second mklink sidecar. Closing the desktop window normally returned exit code 0 while the original Web-entry PID and healthy API remained unchanged. In-app Chrome opened the real config page, expanded the footer version, found v0.1.3 first with the current-version badge, five release notes and four stable entries, and reported no console warnings or errors.
 
 ## 架构决策
 
@@ -58,6 +61,7 @@
 - Copied Skills check Gitee then GitHub at first MKLink use in each AI session, cache successful checks for 24 hours, and never interrupt an active debug or flash operation. Installation requires explicit approval, verifies published size and SHA-256, refuses Git checkouts, backs up the Skill, and requires a new AI session after replacement.
 - The updates/latest.json document remains compatible with Tauri while adding verified installer and Skill metadata. Both public Releases and both anonymous Gitee asset checks complete before either updates branch is replaced.
 - Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.
+- End-user Web entry, Web GUI, and MCP installation must use the complete copied user-level Skill/runtime as their source. Run web-entry registration from that Skill after install or update so its absolute handler path never depends on a developer checkout; desktop clients may reuse the resulting service without taking ownership.
 
 ## 真机环境
 
@@ -67,7 +71,7 @@
 
 ## 下一动作
 
-1. Include the merged v0.1.3 history correction in the next explicitly authorized installer release without moving the published v0.1.3 tag.
+1. Carry the merged v0.1.3 history correction into the next explicitly authorized v0.1.4 installer release without moving or republishing the v0.1.3 tag, and resolve or explain the 390 px in-app Chrome horizontal overflow first.
 2. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
 3. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
 
@@ -77,7 +81,8 @@
 - The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.
 - The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.
 - The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.
-- The in-app Browser plugin briefly selected Chrome after reinstall but the next discovery returned no available instances. Browser qualification therefore used repository Playwright with the installed Chrome executable. The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.
+- The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.
+- The refreshed user-level Web GUI passed its desktop browser check, but an in-app Chrome viewport forced to 390x844 reported document scrollWidth 456 and visibly compressed top navigation labels. Earlier standalone Playwright evidence reported no mobile overflow, so reconcile the browser zoom/extension environment and responsive header behavior before the next installer release.
 
 ## 延续协议
 
