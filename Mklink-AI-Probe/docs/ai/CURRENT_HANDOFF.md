@@ -4,10 +4,10 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T16:48:53+08:00`
+- 更新时间：`2026-07-24T16:50:46+08:00`
 - 分支：`master`
-- HEAD：`Local master contains the verified v0.1.3 release-history correction, stale Web app cache fix, refreshed Web assets, final local-only handoff, and the maintenance source-root discovery correction prepared for GitHub.`
-- 远端 HEAD：`GitHub origin/master remains at 6ce6836 with the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
+- HEAD：`Local master matches GitHub origin/master and contains the verified v0.1.3 release-history correction, stale Web app cache fix, refreshed Web assets, final local-only handoff, and maintenance source-root discovery correction.`
+- 远端 HEAD：`GitHub origin/master includes the maintenance source-root discovery correction. The published v0.1.3 tag, Releases, and updates/latest.json remain unchanged.`
 - 工作树：The old merged worktree and branch, generated build caches, superseded release directories, frontend node_modules, and the obsolete qualification install were removed. The maintenance source-root discovery correction is committed with its rendered handoff, leaving the main worktree clean. The final local installer, updater signature, and Skill ZIP remain outside Git under release/20260724-155059.
 - 当前任务：Start future maintenance sessions by resolving the unique project source root before reading AGENTS.md, docs/ai, scripts, or repository Skills. Preserve the local v0.1.3 artifacts and wait for explicit authorization before any v0.1.4 release work.
 - 状态：`maintenance_source_root_resolution_ready_for_handoff`
