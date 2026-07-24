@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T14:16:59+08:00`
-- 分支：`fix/version-history-v013`
-- HEAD：`The dedicated fix branch adds the missing v0.1.3 release-history entry and rebuilt Web assets on top of published master b66badb; the published v0.1.3 tag remains unchanged at f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
-- 远端 HEAD：`GitHub and Gitee master, tag v0.1.3, Releases, and updates/latest.json were published and anonymously verified on 2026-07-24.`
-- 工作树：The correction is isolated in the clean release clone on fix/version-history-v013. The original developer worktree and its pre-existing changes were not modified.
-- 当前任务：Carry the verified missing v0.1.3 release-note correction on its fix branch without moving the published tag or publishing an unapproved follow-up release.
-- 状态：`v0.1.3_history_fix_verified`
+- 更新时间：`2026-07-24T14:24:20+08:00`
+- 分支：`master`
+- HEAD：`Master contains the tested v0.1.3 release-history correction from f5e24d4, including rebuilt Web assets and regression coverage; the published v0.1.3 tag remains unchanged at f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
+- 远端 HEAD：`GitHub origin/master contains the verified v0.1.3 release-history correction. The published tag, Releases, and updates/latest.json remain unchanged.`
+- 工作树：The release clone is clean after the verified fix was fast-forwarded into master and pushed. The original developer worktree and its pre-existing changes were not modified.
+- 当前任务：Maintain the corrected master baseline and include the v0.1.3 history text in the next explicitly authorized installer release without moving the published tag.
+- 状态：`v0.1.3_history_fix_merged`
 
 ## 里程碑
 
@@ -67,7 +67,7 @@
 
 ## 下一动作
 
-1. Review and merge fix/version-history-v013 into master, then include the correction in the next explicitly authorized release without moving the published v0.1.3 tag.
+1. Include the merged v0.1.3 history correction in the next explicitly authorized installer release without moving the published v0.1.3 tag.
 2. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
 3. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
 
