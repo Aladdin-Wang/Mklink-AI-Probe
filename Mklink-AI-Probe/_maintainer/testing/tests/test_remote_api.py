@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import time
 from pathlib import Path
@@ -726,3 +727,21 @@ def test_health_reports_builtin_elf_capability():
     body = response.json()
     assert body["elf_backend"] == "builtin"
     assert body["builtin_elf_available"] is True
+
+
+def test_web_app_shell_is_not_cached_but_hashed_assets_are_immutable():
+    app = create_app(auth_token=None, project_root=".")
+
+    with TestClient(app) as client:
+        index = client.get("/")
+        fallback = client.get("/config")
+        asset_path = re.search(r'src="(/assets/[^"]+\.js)"', index.text).group(1)
+        asset = client.get(asset_path)
+
+    assert index.status_code == 200
+    assert index.headers["cache-control"] == "no-store, max-age=0"
+    assert index.headers["pragma"] == "no-cache"
+    assert fallback.status_code == 200
+    assert fallback.headers["cache-control"] == "no-store, max-age=0"
+    assert asset.status_code == 200
+    assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"

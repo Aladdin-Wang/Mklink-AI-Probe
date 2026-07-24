@@ -2448,16 +2448,35 @@ def create_app(
     if _gui_dist.is_dir():
         import mimetypes
 
+        _app_shell_headers = {
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+        _asset_headers = {
+            "Cache-Control": "public, max-age=31536000, immutable",
+        }
+        _static_headers = {
+            "Cache-Control": "no-cache",
+        }
+
         @app.get("/")
         async def serve_index():
-            return FileResponse(_gui_dist / "index.html")
+            return FileResponse(
+                _gui_dist / "index.html",
+                headers=_app_shell_headers,
+            )
 
         @app.get("/assets/{file_path:path}")
         async def serve_assets(file_path: str):
             f = _gui_dist / "assets" / file_path
             if f.is_file():
                 ct, _ = mimetypes.guess_type(str(f))
-                return FileResponse(f, media_type=ct or "application/octet-stream")
+                return FileResponse(
+                    f,
+                    media_type=ct or "application/octet-stream",
+                    headers=_asset_headers,
+                )
             from fastapi.responses import JSONResponse
             return JSONResponse(status_code=404, content={"error": "not found"})
 
@@ -2466,8 +2485,15 @@ def create_app(
             candidate = _gui_dist / full_path
             if full_path and candidate.is_file():
                 ct, _ = mimetypes.guess_type(str(candidate))
-                return FileResponse(candidate, media_type=ct or "application/octet-stream")
-            return FileResponse(_gui_dist / "index.html")
+                return FileResponse(
+                    candidate,
+                    media_type=ct or "application/octet-stream",
+                    headers=_static_headers,
+                )
+            return FileResponse(
+                _gui_dist / "index.html",
+                headers=_app_shell_headers,
+            )
 
     return app
 

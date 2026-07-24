@@ -125,6 +125,21 @@ def test_gui_server_command_reuses_the_existing_cli_without_touching_mcp_or_serv
     assert "mcp" not in command
 
 
+def test_web_entry_url_changes_with_the_frontend_build(tmp_path):
+    dist = tmp_path / "gui" / "dist"
+    dist.mkdir(parents=True)
+    index = dist / "index.html"
+    index.write_text("old", encoding="utf-8")
+    old_url = web_entry.web_entry_url(8765, root=tmp_path)
+
+    index.write_text("new", encoding="utf-8")
+    new_url = web_entry.web_entry_url(8765, root=tmp_path)
+
+    assert old_url.startswith("http://127.0.0.1:8765/?build=")
+    assert old_url.endswith("#/config")
+    assert new_url != old_url
+
+
 def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_path):
     spawned = []
     opened = []
@@ -139,7 +154,7 @@ def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_p
 
     assert result == {"status": "reused", "port": 8765, "owned": False}
     assert spawned == []
-    assert opened == ["http://127.0.0.1:8765/"]
+    assert opened == [web_entry.web_entry_url(8765)]
     assert not (tmp_path / "state.json").exists()
 
 
@@ -155,7 +170,7 @@ def test_start_scans_the_port_range_before_starting_a_competing_backend(tmp_path
     )
 
     assert result == {"status": "reused", "port": 8766, "owned": False}
-    assert opened == ["http://127.0.0.1:8766/"]
+    assert opened == [web_entry.web_entry_url(8766)]
 
 
 def test_start_refuses_to_compete_with_a_running_mklink_api_without_web_assets(tmp_path):

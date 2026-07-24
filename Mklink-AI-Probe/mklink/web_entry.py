@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 import plistlib
@@ -36,6 +37,18 @@ WINDOWS_OWNER_ID = "com.microkeen.mklink-ai-probe.web-entry"
 
 class WebEntryError(RuntimeError):
     pass
+
+
+def web_entry_url(port: int, *, root: Path | None = None) -> str:
+    """Return a build-specific URL so browsers cannot reuse an old app shell."""
+    root = Path(root or repository_root())
+    index = root / "gui" / "dist" / "index.html"
+    try:
+        build = hashlib.sha256(index.read_bytes()).hexdigest()[:12]
+    except OSError:
+        build = ""
+    query = f"?build={build}" if build else ""
+    return f"http://127.0.0.1:{int(port)}/{query}#/config"
 
 
 def parse_protocol_uri(uri: str) -> str:
@@ -463,7 +476,7 @@ def start_web_entry(
             and current_identity == saved_identity
             and probe(state_port) == "web"
         ):
-            browser_open(f"http://127.0.0.1:{state_port}/")
+            browser_open(web_entry_url(state_port))
             return {
                 "status": "reused",
                 "port": state_port,
@@ -476,7 +489,7 @@ def start_web_entry(
     for port in range(preferred_port, preferred_port + MAX_PORT_ATTEMPTS):
         detected = probe(port)
         if detected == "web":
-            browser_open(f"http://127.0.0.1:{port}/")
+            browser_open(web_entry_url(port))
             return {"status": "reused", "port": port, "owned": False}
         if detected == "api":
             raise WebEntryError(
@@ -520,7 +533,7 @@ def start_web_entry(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if probe(selected_port) == "web":
-            url = f"http://127.0.0.1:{selected_port}/"
+            url = web_entry_url(selected_port, root=root)
             browser_open(url)
             return {
                 "status": "started",
