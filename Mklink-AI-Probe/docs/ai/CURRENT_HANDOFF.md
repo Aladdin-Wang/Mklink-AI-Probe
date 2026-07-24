@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-24T00:34:30+08:00`
+- 更新时间：`2026-07-24T00:45:30+08:00`
 - 分支：`master`
-- HEAD：`Master contains the qualified v0.1.3 shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.`
-- 远端 HEAD：`su5176/Mklink-AI-Probe PR #3 merged on 2026-07-23. Gitee was not changed by the PR work.`
-- 工作树：The qualified fix branch was fast-forwarded into an isolated clean master for final release. The earlier local candidate predates the updater and must not be published; the final installer and five public assets must be rebuilt from this master.
-- 当前任务：Publish the qualified v0.1.3 repairs and verified proactive Skill/desktop update mechanism from final master.
-- 状态：`authorized_for_v0.1.3_release`
+- HEAD：`Master contains the published v0.1.3 release commit and the post-release memory handoff; tag v0.1.3 points to f9f2f70a9da4607312542ace4a1ddd0e9202d20f.`
+- 远端 HEAD：`GitHub and Gitee master, tag v0.1.3, Releases, and updates/latest.json were published and anonymously verified on 2026-07-24.`
+- 工作树：The release clone is clean after publication. The original developer worktree retains only its pre-existing runtime caches and handoff edits; no user files were removed.
+- 当前任务：Maintain the published v0.1.3 baseline and let installed Skills detect future releases.
+- 状态：`v0.1.3_published`
 
 ## 里程碑
 
@@ -27,7 +27,7 @@
 
 - **Latest source gate**：Python passed 989 with 1 skipped; GUI passed 36 files/412 tests; Rust passed 6 tests; cargo check, Vite 8.1.5 production build, npm audit with zero vulnerabilities, and the Tauri builder prerequisite check passed.
 - **Update and release automation**：Focused updater and publisher coverage passed 20 tests. Real public-manifest checking saw public v0.1.2 from the v0.1.3 source without a false update. Release preparation now requires a verified flat installable Skill archive, and publication preserves Tauri compatibility while adding installer and Skill URL, size, SHA-256, and source commit metadata.
-- **Installed v0.1.3 candidate**：The local v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python process, parsed the requested STM32F103RC AXF into 5,157 symbols, applied a pasted C layout, switched all five RTT encodings, sampled SuperWatch 28,610 times with zero read errors or drops, and passed read-memory plus online connect-reset-disconnect preemption. Normal close released all owned processes and port 8765. The candidate SHA-256 is 70DF1FA953CC8B586534CF9E602E0897E096795E0298CA1AFC55F8C4ABD25B87 and Authenticode status is NotSigned.
+- **Installed v0.1.3 candidate**：The final v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python child, connected the STM32F103RC fixture with the requested AXF through builtin ELF, loaded 5,157 symbols, read eight bytes at 0x20000648, and disconnected cleanly. Normal close released all MKLink processes and port 8765. The published installer SHA-256 is 9A85059E94C3A8E1A3B16268AA2306746F59A555ECFC6252E0C207730F79CEC1 and Authenticode status is NotSigned.
 - **Upstream merge**：GitHub reports PR #3 MERGED at 2026-07-23T07:23:40Z. Merge commit 6cff397 has parents 51a2f8d and the qualified fork head d344e5f.
 - **Shared symbol automated gate**：Regression coverage includes source ownership, anonymous struct and union expansion, overlapping union aliases, unresolved containers, C natural and packed layout, input limits, fingerprint-scoped overrides, API validation, SuperWatch rebind and restore, manual path UI, and C definition UI.
 - **Symbol-source real hardware**：The repaired service switched between two real AXFs with distinct symbol counts, supported connected reload from a second client path, and preserved SuperWatch operation during an additional reload. After deployment to port 8765, parse-axf selected 4,842/129/107 symbols at generation 2 and connected reload restored 791/150/99 at generation 3. Requested and active paths matched after every operation.
@@ -35,6 +35,7 @@
 - **SWD arbitration real hardware**：SuperWatch held both probe resources while reading data_save.odo, then a real read-memory operation stopped it before returning eight target bytes and left the device READY with no leases. A second SuperWatch run was preempted by an online connect-reset-disconnect job, which succeeded without erasing or programming Flash; 46,591 reads completed with zero read errors and zero read drops.
 - **RTT encoding real service**：The source service accepted GBK at RTT start and exposed the active encoding in shared status. Automated byte-boundary tests covered GBK and four-byte GB18030 text plus runtime switching. The current target image did not initialize the AXF RTT control-block symbol, so live text capture was unavailable and startup released resources cleanly.
 - **Real browser UI**：After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens.
+- **v0.1.3 publication and local Skill update**：GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart.
 
 ## 架构决策
 
@@ -63,11 +64,9 @@
 
 ## 下一动作
 
-1. Commit the qualified fix/symbol-source-state branch, merge it into clean master, and repeat the final release checks from the exact master commit.
-2. Build and overwrite-install the final signed v0.1.3 standard NSIS, qualify health, probe discovery, bundled-sidecar identity, shutdown, and port release, then prepare exactly five public assets.
-3. Publish v0.1.3 to GitHub and Gitee, replace updates/latest.json last, anonymously verify both public payloads and manifest metadata, then update the local copied Skill through the public updater.
-4. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
-5. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
+1. Restart the current AI client or open a new session so it loads the updated v0.1.3 Skill text.
+2. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
+3. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
 
 ## 已知限制
 

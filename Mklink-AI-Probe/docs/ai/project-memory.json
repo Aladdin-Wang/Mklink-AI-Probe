@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T00:34:30+08:00",
+  "updated_at": "2026-07-24T00:45:30+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "Master contains the qualified v0.1.3 shared symbol-source repair, aggregate-symbol recovery, RTT encoding, unified SWD arbitration, and proactive verified Skill updates.",
-    "remote_head": "su5176/Mklink-AI-Probe PR #3 merged on 2026-07-23. Gitee was not changed by the PR work.",
-    "working_tree": "The qualified fix branch was fast-forwarded into an isolated clean master for final release. The earlier local candidate predates the updater and must not be published; the final installer and five public assets must be rebuilt from this master."
+    "head": "Master contains the published v0.1.3 release commit and the post-release memory handoff; tag v0.1.3 points to f9f2f70a9da4607312542ace4a1ddd0e9202d20f.",
+    "remote_head": "GitHub and Gitee master, tag v0.1.3, Releases, and updates/latest.json were published and anonymously verified on 2026-07-24.",
+    "working_tree": "The release clone is clean after publication. The original developer worktree retains only its pre-existing runtime caches and handoff edits; no user files were removed."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
     "maintenance": "Keep only the current integration baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions here; use Git history and detailed verification documents for completed chronology."
   },
   "current_session": {
-    "status": "authorized_for_v0.1.3_release",
-    "current_task": "Publish the qualified v0.1.3 repairs and verified proactive Skill/desktop update mechanism from final master.",
-    "release": "The maintainer explicitly authorized official v0.1.3 publication to GitHub and Gitee. v0.1.2 remains public until the final master build, overwrite-install qualification, five-asset publication, and updates/latest.json verification complete."
+    "status": "v0.1.3_published",
+    "current_task": "Maintain the published v0.1.3 baseline and let installed Skills detect future releases.",
+    "release": "v0.1.3 is published on GitHub and Gitee with five assets. Both public updates/latest.json documents point to the Gitee installer and Skill package with matching size, SHA-256, and source commit metadata."
   },
   "milestones": [
     {
@@ -71,7 +71,7 @@
     },
     {
       "area": "Installed v0.1.3 candidate",
-      "result": "The local v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python process, parsed the requested STM32F103RC AXF into 5,157 symbols, applied a pasted C layout, switched all five RTT encodings, sampled SuperWatch 28,610 times with zero read errors or drops, and passed read-memory plus online connect-reset-disconnect preemption. Normal close released all owned processes and port 8765. The candidate SHA-256 is 70DF1FA953CC8B586534CF9E602E0897E096795E0298CA1AFC55F8C4ABD25B87 and Authenticode status is NotSigned."
+      "result": "The final v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python child, connected the STM32F103RC fixture with the requested AXF through builtin ELF, loaded 5,157 symbols, read eight bytes at 0x20000648, and disconnected cleanly. Normal close released all MKLink processes and port 8765. The published installer SHA-256 is 9A85059E94C3A8E1A3B16268AA2306746F59A555ECFC6252E0C207730F79CEC1 and Authenticode status is NotSigned."
     },
     {
       "area": "Upstream merge",
@@ -100,6 +100,10 @@
     {
       "area": "Real browser UI",
       "result": "After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens."
+    },
+    {
+      "area": "v0.1.3 publication and local Skill update",
+      "result": "GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart."
     }
   ],
   "decisions": [
@@ -133,9 +137,7 @@
     "The in-app Browser plugin still exposed no controllable instance after reinstall, so browser qualification used repository Playwright with the installed Chrome executable. The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root."
   ],
   "next_actions": [
-    "Commit the qualified fix/symbol-source-state branch, merge it into clean master, and repeat the final release checks from the exact master commit.",
-    "Build and overwrite-install the final signed v0.1.3 standard NSIS, qualify health, probe discovery, bundled-sidecar identity, shutdown, and port release, then prepare exactly five public assets.",
-    "Publish v0.1.3 to GitHub and Gitee, replace updates/latest.json last, anonymously verify both public payloads and manifest metadata, then update the local copied Skill through the public updater.",
+    "Restart the current AI client or open a new session so it loads the updated v0.1.3 Skill text.",
     "Qualify USB Web entry registration and browser launch on current macOS and Linux systems.",
     "Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools."
   ],
