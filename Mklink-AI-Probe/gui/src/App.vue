@@ -24,7 +24,11 @@
       @dismiss="updateDismissed = true"
     />
     <div class="app-main">
-      <router-view v-if="initialBackendReady" />
+      <router-view v-if="initialBackendReady" v-slot="{ Component }">
+        <KeepAlive include="OnlineFlashView,OfflineFlashView">
+          <component :is="Component" />
+        </KeepAlive>
+      </router-view>
       <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
         正在启动本地服务…
       </div>
@@ -178,6 +182,37 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+@media (max-width: 720px) {
+  .app-header {
+    height: auto;
+    min-height: 48px;
+    padding: 0 8px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 8px;
+  }
+  .app-nav {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .nav-tab {
+    flex: 0 0 auto;
+    padding: 12px 8px;
+  }
+  .header-right {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    padding-bottom: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .header-right .status-bar {
+    width: max-content;
+  }
 }
 .app-main {
   flex: 1;

@@ -144,8 +144,29 @@ export interface DataPoint {
 }
 
 // HardFault detail
+export interface HardFaultCallFrame {
+  index: number
+  address: number
+  lookup_address: number
+  function?: string | null
+  location?: string
+  source: 'exception_pc' | 'exception_lr' | 'stack_scan'
+  confidence: 'exact' | 'high' | 'heuristic'
+  stack_address?: number
+}
+
+export interface HardFaultExceptionStack {
+  pointer: 'msp' | 'psp'
+  pointer_address: number
+  frame_address: number
+  frame_offset: number
+  exc_return?: number | null
+  handler_lr: number
+  extended_frame: boolean
+}
+
 export interface HardFaultDetail {
-  fault: boolean
+  fault: boolean | null
   cfsr?: number
   hfsr?: number
   cfsr_flags?: string[]
@@ -153,6 +174,11 @@ export interface HardFaultDetail {
   stack_frame?: Record<string, number> | null
   source_locations?: Record<string, string> | null
   summary?: string
+  fault_function?: string | null
+  fault_location?: string | null
+  exception_stack?: HardFaultExceptionStack | null
+  call_stack?: HardFaultCallFrame[]
+  core_registers?: Record<string, number> | null
 }
 
 // Core registers

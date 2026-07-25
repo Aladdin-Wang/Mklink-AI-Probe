@@ -31,6 +31,7 @@ DEFAULT_MANIFEST_URLS = (
     "https://raw.githubusercontent.com/Aladdin-Wang/Mklink-AI-Probe/updates/latest.json",
 )
 USER_AGENT = "Mklink-AI-Probe-Skill-Updater"
+MANAGED_CONTENT_ROOTS = (PurePosixPath("gui/dist"),)
 
 
 def utc_now() -> str:
@@ -200,6 +201,58 @@ def _backup_root(root: Path, version: str) -> Path:
     return backup
 
 
+def _installed_manifest_files(root: Path) -> set[PurePosixPath]:
+    marker = root / ".mklink-skill-install.json"
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+        values = payload.get("files", [])
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return set()
+    if not isinstance(values, list):
+        return set()
+    files = set()
+    for value in values:
+        relative = PurePosixPath(str(value))
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+            continue
+        files.add(relative)
+    return files
+
+
+def _remove_obsolete_installed_files(
+    root: Path, previous_files: set[PurePosixPath], installed_files: set[PurePosixPath],
+) -> None:
+    for relative in sorted(previous_files - installed_files, key=lambda path: len(path.parts), reverse=True):
+        target = root.joinpath(*relative.parts)
+        if target.is_file() or target.is_symlink():
+            target.unlink()
+        parent = target.parent
+        while parent != root:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
+
+
+def _remove_unlisted_managed_files(
+    root: Path, installed_files: set[PurePosixPath],
+) -> None:
+    for managed_root in MANAGED_CONTENT_ROOTS:
+        directory = root.joinpath(*managed_root.parts)
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            relative = PurePosixPath(path.relative_to(root).as_posix())
+            if (path.is_file() or path.is_symlink()) and relative not in installed_files:
+                path.unlink()
+            elif path.is_dir():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+
+
 def install_skill_archive(
     *, root: Path, archive_path: Path, expected_version: str, source_commit: str,
 ) -> dict[str, object]:
@@ -214,7 +267,8 @@ def install_skill_archive(
             raise RuntimeError("skill plugin version does not match the update manifest")
         previous_version = current_version(root)
         backup = _backup_root(root, previous_version)
-        installed_files = []
+        previous_files = _installed_manifest_files(root)
+        installed_files: set[PurePosixPath] = set()
         for path in source.rglob("*"):
             if not path.is_file():
                 continue
@@ -222,13 +276,15 @@ def install_skill_archive(
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, destination)
-            installed_files.append(relative.as_posix())
+            installed_files.add(PurePosixPath(relative.as_posix()))
+        _remove_obsolete_installed_files(root, previous_files, installed_files)
+        _remove_unlisted_managed_files(root, installed_files)
         marker = root / ".mklink-skill-install.json"
         marker.write_text(json.dumps({
             "version": expected_version,
             "source_commit": source_commit,
             "updated_at": utc_now(),
-            "files": sorted(installed_files),
+            "files": sorted(path.as_posix() for path in installed_files),
         }, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     return {
         "previous_version": previous_version,

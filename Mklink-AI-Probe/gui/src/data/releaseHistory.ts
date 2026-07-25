@@ -7,6 +7,21 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.1.4',
+    date: '2026-07-25',
+    summary: '完善烧录、符号解析与 HardFault 定位',
+    changes: [
+      'BIN 文件加载后主动提示填写下载地址，并在加载前使用中性扇区提示，避免误判固件检查失败。',
+      '本地设备和文件来源改为自动保存，切换页面后配置保持不丢失。',
+      '在线与脱机烧录支持拖拽加载、文件路径保持和重新编译后自动刷新。',
+      '脱机烧录仅刷新 MICROKEEN U 盘；V2/V3 固定 offline_download.py，V4 可自定义脚本名，刷新过程不再弹出命令行窗口。',
+      '桌面端显示用户选择的完整 AXF 路径，浏览器端继续使用安全上传路径。',
+      '符号、变量、RTT 搜索与 HardFault 默认使用内置 pyelftools，外部工具仅作为显式兼容后端。',
+      'HardFault 分析新增故障函数、源码位置、异常栈帧和调用栈展示。',
+      'AI Skill 默认通过 MKLink 读取目标数据，并隔离 MCP 串口日志，避免污染 JSON-RPC；仅在读取失败后使用 pyOCD 只读后备。',
+    ],
+  },
+  {
     version: '0.1.3',
     date: '2026-07-24',
     summary: '修复符号解析并完善调试资源协同',

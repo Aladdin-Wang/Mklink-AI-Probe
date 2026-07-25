@@ -13,7 +13,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from mklink.dwarf_parser import DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
-from mklink.remote.api import create_app
+from mklink.remote.api import _project_root_drives, create_app
 from mklink.symbol_catalog import SymbolCatalog
 from route_utils import find_route
 
@@ -27,6 +27,14 @@ def _request(client, path, responses, key):
         responses[key] = client.get(path)
     except BaseException as exc:  # Preserve failures raised in request threads.
         responses[key] = exc
+
+
+def test_project_browser_exposes_native_roots_on_each_desktop_platform():
+    assert _project_root_drives(system="Linux") == ["/"]
+    assert _project_root_drives(system="Darwin") == ["/"]
+    assert _project_root_drives(
+        system="Windows", exists=lambda path: path in {"C:\\", "E:\\"},
+    ) == ["C:", "E:"]
 
 
 def test_port_discovery_does_not_block_health_check():

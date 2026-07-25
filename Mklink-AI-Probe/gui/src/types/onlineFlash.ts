@@ -52,6 +52,13 @@ export interface ImageInspection {
   sectors: SectorRecord[]
 }
 
+export interface FirmwareSourceStatus {
+  available: boolean
+  file_name: string
+  size: number
+  mtime_ns: number
+}
+
 export interface PreviewPage {
   address: number
   length: number

@@ -87,15 +87,17 @@ def test_macos_info_plist_registers_the_same_uri_scheme():
     assert schemes == ["mklink-ai-probe"]
 
 
-def test_macos_launcher_shell_quotes_runtime_and_handler_paths(tmp_path):
-    script = web_entry.render_macos_launcher(
+def test_macos_launcher_handles_url_apple_events_and_shell_quotes_paths(tmp_path):
+    script = web_entry.render_macos_applescript(
         PurePosixPath("/Users/O'Brien/MKLink $runtime/python3"),
         PurePosixPath("/Users/test/handler.py"),
     )
 
-    assert "exec '/Users/O'\"'\"'Brien/MKLink $runtime/python3'" in script
-    assert "'$1'" not in script
-    assert '"$1"' in script
+    assert "on open location theURL" in script
+    assert "quoted form of theURL" in script
+    assert "MKLink $runtime/python3" in script
+    assert "/Users/test/handler.py" in script
+    assert '\\"' in script
 
 
 def test_windows_registry_command_uses_an_absolute_handler_and_quoted_uri(tmp_path):
@@ -300,19 +302,37 @@ def test_linux_install_creates_a_user_desktop_handler(tmp_path):
 
 
 def test_macos_install_creates_a_user_application_bundle(tmp_path):
+    compiler = tmp_path / "osacompile"
+    compiler.write_text("", encoding="utf-8")
+
+    def compile_app(command, **_kwargs):
+        app = Path(command[command.index("-o") + 1])
+        contents = app / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        with (contents / "Info.plist").open("wb") as stream:
+            import plistlib
+            plistlib.dump({"CFBundleExecutable": "applet"}, stream)
+        (contents / "MacOS" / "applet").write_text("", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="")
+
     result = web_entry.install_protocol(
         system="Darwin",
         data_dir=tmp_path / "data",
         home=tmp_path / "home",
         environment={},
         python_executable=Path("/opt/mklink/python3"),
-        runner=lambda *_args, **_kwargs: None,
+        macos_compiler=compiler,
+        runner=compile_app,
     )
 
     app = Path(result["registration"])
     assert app == tmp_path / "home" / "Applications" / "Mklink AI Probe Web Launcher.app"
     assert (app / "Contents" / "Info.plist").is_file()
-    assert (app / "Contents" / "MacOS" / "mklink-web-entry").is_file()
+    assert (app / "Contents" / "MacOS" / "applet").is_file()
+    with (app / "Contents" / "Info.plist").open("rb") as stream:
+        import plistlib
+        info = plistlib.load(stream)
+    assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["mklink-ai-probe"]
 
 
 def test_windows_install_writes_only_the_user_protocol_keys(tmp_path, monkeypatch):

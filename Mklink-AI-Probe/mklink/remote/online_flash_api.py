@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -131,6 +131,12 @@ def shutdown_online_flash_services(services: OnlineFlashServices) -> None:
 
 class PackInstallBody(BaseModel):
     part_number: str
+
+
+class LocalImageBody(BaseModel):
+    path: str
+    part_number: str
+    base_address: Optional[Union[str, int]] = None
 
 
 class JobBody(BaseModel):
@@ -494,6 +500,20 @@ def _upload_path(paths: object, file_name: str, allowed_suffixes: Sequence[str])
     return candidate
 
 
+def _local_firmware_path(raw_path: str, limit: int) -> Path:
+    source = Path(str(raw_path or "")).expanduser().resolve()
+    if source.suffix.casefold() not in (".bin", ".hex"):
+        raise ValueError("firmware path must use .bin or .hex")
+    if not source.is_file():
+        raise ValueError("firmware path is not a readable file")
+    size = source.stat().st_size
+    if size <= 0:
+        raise ValueError("firmware file is empty")
+    if size > limit:
+        raise ValueError("firmware file exceeds {} bytes".format(limit))
+    return source
+
+
 def _stream_upload(
     upload: UploadFile,
     paths: object,
@@ -537,11 +557,14 @@ def _unlink(path: Optional[Path]) -> None:
         pass
 
 
-def _parse_base_address(value: Optional[str]) -> Optional[int]:
-    if value is None or value.strip() == "":
+def _parse_base_address(value: Optional[Union[str, int]]) -> Optional[int]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
         return None
     try:
-        result = int(value.strip(), 0)
+        result = int(text, 0)
     except ValueError as error:
         raise ValueError("base_address must be a decimal or 0x-prefixed integer") from error
     if result < 0:
@@ -961,6 +984,47 @@ def _start_job_with_configuration(
 def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     router = APIRouter(prefix="/api/online-flash", tags=["online-flash"])
 
+    async def inspect_source(
+        source: Path,
+        part_number: str,
+        base_address: Optional[Union[str, int]],
+    ) -> object:
+        from mklink.hpm_config import is_hpm_target
+
+        target = await _blocking(_resolved_target, services.catalog, part_number)
+        if is_hpm_target(target.part_number) and source.suffix.casefold() != ".bin":
+            _raise_http(FlashError(
+                FlashErrorCode.FILE_FORMAT_ERROR,
+                "HPM ROM API only supports BIN firmware",
+            ))
+        regions, fingerprint, _paths = await _blocking(
+            _target_flash_configuration, services, target.part_number
+        )
+        parsed_base = await _blocking(_parse_base_address, base_address)
+        inspection = await _blocking(
+            services.image_inspector.inspect,
+            source,
+            regions,
+            base_address=parsed_base,
+        )
+        if is_hpm_target(target.part_number):
+            from mklink.cmsis_dap.images import SectorCoverage
+
+            coverage = SectorCoverage((), False)
+        else:
+            coverage = await _blocking(
+                services.image_inspector.covered_sectors,
+                inspection.image_id,
+                regions,
+            )
+        services.image_targets[inspection.image_id] = (
+            target.part_number.casefold(), fingerprint
+        )
+        payload = _json_primitive(inspection, hide_paths=True)
+        payload["sector_operations_available"] = coverage.sector_operations_available
+        payload["sectors"] = _json_primitive(coverage.sectors)
+        return payload
+
     @router.get("/probes")
     async def probes() -> object:
         return _json_primitive(await _blocking(_enumerate_probes, services.probe_provider))
@@ -1166,47 +1230,39 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     ) -> object:
         temporary = None  # type: Optional[Path]
         try:
-            from mklink.hpm_config import is_hpm_target
-
-            target = await _blocking(_resolved_target, services.catalog, part_number)
-            if is_hpm_target(target.part_number) and not str(file.filename or "").casefold().endswith(".bin"):
-                _raise_http(FlashError(
-                    FlashErrorCode.FILE_FORMAT_ERROR,
-                    "HPM ROM API only supports BIN firmware",
-                ))
-            regions, fingerprint, _paths = await _blocking(
-                _target_flash_configuration, services, target.part_number
-            )
-            parsed_base = await _blocking(_parse_base_address, base_address)
             temporary, _digest, _size = await _blocking(
                 _stream_upload, file, services.paths, (".hex", ".bin"), services.upload_limit
             )
-            inspection = await _blocking(
-                services.image_inspector.inspect,
-                temporary,
-                regions,
-                base_address=parsed_base,
-            )
-            if is_hpm_target(target.part_number):
-                from mklink.cmsis_dap.images import SectorCoverage
-
-                coverage = SectorCoverage((), False)
-            else:
-                coverage = await _blocking(
-                    services.image_inspector.covered_sectors,
-                    inspection.image_id,
-                    regions,
-                )
-            services.image_targets[inspection.image_id] = (
-                target.part_number.casefold(), fingerprint
-            )
-            payload = _json_primitive(inspection, hide_paths=True)
-            payload["sector_operations_available"] = coverage.sector_operations_available
-            payload["sectors"] = _json_primitive(coverage.sectors)
-            return payload
+            return await inspect_source(temporary, part_number, base_address)
         finally:
             await run_in_threadpool(_unlink, temporary)
             await file.close()
+
+    @router.post("/images/inspect-path")
+    async def image_inspect_path(body: LocalImageBody) -> object:
+        try:
+            source = await _blocking(
+                _local_firmware_path, body.path, services.upload_limit
+            )
+        except (OSError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error))
+        return await inspect_source(source, body.part_number, body.base_address)
+
+    @router.get("/images/source-status")
+    async def image_source_status(path: str = Query(...)) -> object:
+        try:
+            source = await _blocking(
+                _local_firmware_path, path, services.upload_limit
+            )
+            stat = await _blocking(source.stat)
+        except (OSError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error))
+        return {
+            "available": True,
+            "file_name": source.name,
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+        }
 
     @router.get("/images/{image_id}/preview")
     async def image_preview(

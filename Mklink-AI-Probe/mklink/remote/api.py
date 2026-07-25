@@ -41,6 +41,22 @@ _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
 
 
+def _project_root_drives(
+    *, system: str | None = None, exists: Any = os.path.exists,
+) -> list[str]:
+    import platform
+    import string
+
+    system = system or platform.system()
+    if system != "Windows":
+        return ["/"]
+    drives = []
+    for letter in string.ascii_uppercase:
+        if exists(f"{letter}:\\"):
+            drives.append(f"{letter}:")
+    return drives
+
+
 def _same_file_source_path(left: str | None, right: str | None) -> bool:
     if not left or not right:
         return False
@@ -754,10 +770,9 @@ def create_app(
     @app.get("/api/project-root/browse")
     async def browse_project_root(path: str = ""):
         import os
-        import string
         p = os.path.abspath(path) if path else os.getcwd()
         if not os.path.isdir(p):
-            p = os.path.dirname(p) or "C:\\"
+            p = os.path.dirname(p) or os.path.sep
         parent = os.path.dirname(p)
         entries = []
         try:
@@ -767,12 +782,7 @@ def create_app(
                     entries.append({"name": name, "path": full})
         except PermissionError:
             pass
-        # 检测可用盘符
-        available_drives = []
-        for letter in string.ascii_uppercase:
-            drive = f"{letter}:\\"
-            if os.path.exists(drive):
-                available_drives.append(f"{letter}:")
+        available_drives = _project_root_drives()
         return {"current": p, "parent": parent, "dirs": entries, "drives": available_drives}
 
     @app.get("/api/project-history")
@@ -2187,6 +2197,11 @@ def create_app(
                     "stack_frame": report.stack_frame,
                     "source_locations": report.source_locations,
                     "summary": report.summary,
+                    "fault_function": report.fault_function,
+                    "fault_location": report.fault_location,
+                    "exception_stack": report.exception_stack,
+                    "call_stack": report.call_stack,
+                    "core_registers": report.core_registers,
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))

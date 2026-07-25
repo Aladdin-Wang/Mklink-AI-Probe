@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FolderOpen, Save, ScanSearch } from '@lucide/vue'
+import { FolderOpen, ScanSearch } from '@lucide/vue'
 import { isMapFilePath, isSameFileSourcePath, isSymbolFilePath } from '../../lib/desktopSettings'
 import type { AxlStatus } from '../../types/mklink'
 
 const props = defineProps<{
   symbolPath: string
+  symbolDisplayPath?: string
   mapPath: string
+  mapDisplayPath?: string
   connected: boolean
   symbolStatus: AxlStatus
   browsing?: boolean
-  saving?: boolean
   parsing?: boolean
 }>()
 
@@ -19,7 +20,6 @@ const emit = defineEmits<{
   (event: 'update:mapPath', value: string): void
   (event: 'browse-symbol'): void
   (event: 'browse-map'): void
-  (event: 'save'): void
   (event: 'parse'): void
 }>()
 
@@ -36,6 +36,26 @@ const sourcePending = computed(() => (
   && Boolean(props.symbolPath.trim())
   && !sourceMatches.value
 ))
+const displayedSymbolPath = computed(() => props.symbolDisplayPath?.trim() || props.symbolPath)
+const displayedMapPath = computed(() => props.mapDisplayPath?.trim() || props.mapPath)
+const browserSymbolUpload = computed(() => Boolean(
+  props.symbolDisplayPath?.trim()
+  && !isSameFileSourcePath(props.symbolDisplayPath, props.symbolPath),
+))
+const browserMapUpload = computed(() => Boolean(
+  props.mapDisplayPath?.trim()
+  && !isSameFileSourcePath(props.mapDisplayPath, props.mapPath),
+))
+const activeSymbolPath = computed(() => (
+  sourceMatches.value && browserSymbolUpload.value
+    ? displayedSymbolPath.value
+    : props.symbolStatus.axf_path
+))
+const parserBackend = computed(() => {
+  if (props.symbolStatus.elf_backend === 'external') return '外部 GNU 工具'
+  const version = props.symbolStatus.builtin_elf_version
+  return `内置 pyelftools${version ? ` ${version}` : ''}`
+})
 </script>
 
 <template>
@@ -61,7 +81,9 @@ const sourcePending = computed(() => (
       data-testid="active-symbol-path"
     >
       <span>当前加载</span>
-      <code>{{ symbolStatus.axf_path }}</code>
+      <code :title="symbolStatus.axf_path || undefined">{{ activeSymbolPath }}</code>
+      <span>解析后端</span>
+      <code data-testid="symbol-parser-backend">{{ parserBackend }}</code>
     </div>
 
     <div class="source-row">
@@ -71,7 +93,7 @@ const sourcePending = computed(() => (
           id="symbol-path"
           class="form-input path-input"
           data-testid="symbol-path"
-          :value="props.symbolPath"
+          :value="displayedSymbolPath"
           placeholder=".axf 或 .elf 文件路径"
           @input="emit('update:symbolPath', inputValue($event))"
         />
@@ -92,7 +114,7 @@ const sourcePending = computed(() => (
       data-testid="symbol-path-validation"
       :class="['path-validation', { invalid: symbolPath.trim() && !isSymbolFilePath(symbolPath) }]"
     >
-      {{ !symbolPath.trim() ? '未配置 AXF / ELF 文件' : isSymbolFilePath(symbolPath) ? '路径格式有效' : '仅支持 .axf、.elf 或 .out 文件' }}
+      {{ !symbolPath.trim() ? '未配置 AXF / ELF 文件' : browserSymbolUpload ? `浏览器上传 · ${displayedSymbolPath}（解析文件已缓存到本机服务）` : isSymbolFilePath(symbolPath) ? '路径格式有效' : '仅支持 .axf、.elf 或 .out 文件' }}
     </div>
 
     <div class="source-row">
@@ -102,7 +124,7 @@ const sourcePending = computed(() => (
           id="map-path"
           class="form-input path-input"
           data-testid="map-path"
-          :value="props.mapPath"
+          :value="displayedMapPath"
           placeholder=".map 文件路径"
           @input="emit('update:mapPath', inputValue($event))"
         />
@@ -123,22 +145,13 @@ const sourcePending = computed(() => (
       data-testid="map-path-validation"
       :class="['path-validation', { invalid: mapPath.trim() && !isMapFilePath(mapPath) }]"
     >
-      {{ !mapPath.trim() ? '未配置 MAP 文件' : isMapFilePath(mapPath) ? '路径格式有效' : '仅支持 .map 文件' }}
+      {{ !mapPath.trim() ? '未配置 MAP 文件' : browserMapUpload ? `浏览器上传 · ${displayedMapPath}（文件已缓存到本机服务）` : isMapFilePath(mapPath) ? '路径格式有效' : '仅支持 .map 文件' }}
     </div>
 
     <div v-if="symbolStatus.error" class="alert alert-error">{{ symbolStatus.error }}</div>
 
     <footer class="panel-actions">
-      <button
-        class="btn"
-        type="button"
-        data-testid="save-files"
-        :disabled="saving"
-        @click="emit('save')"
-      >
-        <Save :size="15" aria-hidden="true" />
-        {{ saving ? '保存中...' : '保存文件路径' }}
-      </button>
+      <span class="action-state" data-testid="files-auto-save">路径修改后自动保存</span>
       <button
         class="btn btn-primary"
         type="button"

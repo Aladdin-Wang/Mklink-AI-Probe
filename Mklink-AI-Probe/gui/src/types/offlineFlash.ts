@@ -7,11 +7,6 @@ export interface OfflineDiskStatus {
   flm_dir: string | null
 }
 
-export interface OfflineModelResult {
-  model: 'V2' | 'V3' | 'V4'
-  version: string
-}
-
 export interface OfflineAlgorithmCandidate {
   id: string
   file_name: string
@@ -40,11 +35,12 @@ export interface OfflineFirmwareConfig {
   format: 'bin' | 'hex'
   base_address: string | null
   algorithm_id: string
-  upload_index: number
+  upload_index?: number | null
+  source_path?: string | null
 }
 
 export interface OfflineConfigPayload {
-  model: 'auto' | 'V2' | 'V3' | 'V4'
+  model: 'V2' | 'V3' | 'V4'
   port?: string | null
   script_name: string
   auto_download_count: number

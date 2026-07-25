@@ -135,6 +135,22 @@ def list_available_ports() -> list[dict]:
     ]
 
 
+def _windows_volume_label(root: str) -> str | None:
+    """Read a Windows volume label without spawning a console process."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        label = ctypes.create_unicode_buffer(261)
+        available = ctypes.windll.kernel32.GetVolumeInformationW(
+            root, label, len(label), None, None, None, None, 0
+        )
+        return label.value if available else None
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
 def find_microkeen_disk() -> str | None:
     """查找 MICROKEEN 磁盘路径。
 
@@ -171,15 +187,7 @@ def find_microkeen_disk() -> str | None:
         path = f"{letter}:\\"
         try:
             if os.path.exists(path):
-                # 检查是否为可移动介质或包含 MICROKEEN 标识
-                import subprocess
-                # 注意：vol 命令不支持尾部反斜杠，必须使用 "E:" 而不是 "E:\"
-                vol_path = f"{letter}:"
-                result = subprocess.run(
-                    ["cmd", "/c", "vol", vol_path],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2
-                )
-                if "microkeen" in result.stdout.lower():
+                if (_windows_volume_label(path) or "").casefold() == _MICROKEEN_DISK_NAME.casefold():
                     return path
         except Exception:
             continue

@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-24T16:50:46+08:00",
+  "updated_at": "2026-07-25T16:17:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Local master matches GitHub origin/master and contains the verified v0.1.3 release-history correction, stale Web app cache fix, refreshed Web assets, final local-only handoff, and maintenance source-root discovery correction.",
+    "branch": "fix/gui-flash-workflow",
+    "head": "The qualified v0.1.4 fix branch is authorized for an official release and remains based on origin/master 86bea5a before its release commit. The public v0.1.3 tag and update manifest remain unchanged until the ordered publisher completes.",
     "remote_head": "GitHub origin/master includes the maintenance source-root discovery correction. The published v0.1.3 tag, Releases, and updates/latest.json remain unchanged.",
-    "working_tree": "The old merged worktree and branch, generated build caches, superseded release directories, frontend node_modules, and the obsolete qualification install were removed. The maintenance source-root discovery correction is committed with its rendered handoff, leaving the main worktree clean. The final local installer, updater signature, and Skill ZIP remain outside Git under release/20260724-155059."
+    "working_tree": "The intended v0.1.4 source, tests, rebuilt Web assets, complete release history, full-path symbol display, builtin-first AXF/RTT/HardFault parsing, MCP stdio isolation, and flash workflow corrections are ready for their release commit. The maintainer explicitly authorized commit, master merge, GitHub publication, Gitee synchronization, and the public update manifest."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
     "maintenance": "Keep only the current integration baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions here; use Git history and detailed verification documents for completed chronology."
   },
   "current_session": {
-    "status": "maintenance_source_root_resolution_ready_for_handoff",
-    "current_task": "Start future maintenance sessions by resolving the unique project source root before reading AGENTS.md, docs/ai, scripts, or repository Skills. Preserve the local v0.1.3 artifacts and wait for explicit authorization before any v0.1.4 release work.",
-    "release": "Public v0.1.3 remains unchanged. A cache-corrected local-only v0.1.3 installer was built from f9ecec3, installed to the normal per-user location, and paired with a copied Skill archive from ea0a235; no tag, Release, update manifest, or remote branch was changed."
+    "status": "v014_release_authorized_pending_publish",
+    "current_task": "Commit the qualified v0.1.4 fixes, fast-forward master, rerun the master release gate, build the signed standard NSIS, and publish the same five verified assets plus latest.json to GitHub and Gitee.",
+    "release": "The maintainer explicitly authorized the official v0.1.4 release without changing its version. Public v0.1.3 remains unchanged until the ordered publisher pushes master and the annotated v0.1.4 tag, creates both Releases, verifies the Gitee assets, and publishes updates/latest.json last."
   },
   "milestones": [
     {
@@ -63,12 +63,17 @@
       "name": "Release-history accuracy",
       "status": "complete",
       "notes": "The source release history and rebuilt Web assets now include the omitted v0.1.3 summary and five user-facing changes, with regression coverage for the current-version badge and entry count."
+    },
+    {
+      "name": "GUI flash-workflow usability",
+      "status": "complete",
+      "notes": "Version history scrolls, device and symbol-source settings save automatically, online and offline firmware workspaces accept drag/drop and retain native paths, rebuilt files reload automatically, offline model detection was removed, and V2/V3 script naming is fixed while V4 remains customizable. Local BIN inspection accepts numeric or string base addresses, the sector panel distinguishes not-yet-loaded firmware from unavailable geometry, and Windows disk refresh reads volume labels without spawning cmd.exe."
     }
   ],
   "verification": [
     {
       "area": "Latest source gate",
-      "result": "Python passed 989 with 1 skipped; GUI passed 36 files/412 tests; Rust passed 6 tests; cargo check, Vite 8.1.5 production build, npm audit with zero vulnerabilities, and the Tauri builder prerequisite check passed."
+      "result": "After MCP stdio isolation and the final HardFault response fields were added, Python passed 1011 with 1 skipped, GUI passed 38 files/422 tests, Rust passed 6 tests, cargo check completed, the Vite 8.1.5 production build completed, runtime npm audit reported zero vulnerabilities, the Tauri prerequisite check passed, and git diff --check passed."
     },
     {
       "area": "Update and release automation",
@@ -120,11 +125,11 @@
     },
     {
       "area": "Copied Skill and user-level Web entry",
-      "result": "The copied user-level Skill remains version 0.1.3 and now records source commit ea0a235bc9d11bcc5bc40ddae63433a7efb80753. Its validated local archive is 2,512,975 bytes with SHA-256 39BEB97D861B696BCC6735F4247EC7BE35133A6200F591C49EB486E37F3A95CC; installation retained a pre-update backup and its editable gui+mcp package reports version 0.1.3 from the copied Skill. Web-entry registration was regenerated from that Skill rather than the developer checkout; its handler inserts the copied Skill root, owns the Python GUI process on 127.0.0.1:8765, and serves builtin pyelftools 0.32 health successfully."
+      "result": "The copied user-level Skill was replaced from the final validated local 0.1.4 archive, records source commit 86bea5a21bd0e728ea0c17065b604e2a07503b98, and retained recovery backups. Its gui/dist/assets directory exactly matches the source build at 18 files and 18 SHA-256 values, with no obsolete hashed assets. The editable gui+mcp package resolves to C:/Users/akqbd/.codex/skills/mklink-ai-probe from an unrelated working directory. The protocol handler inserts that copied Skill root, not the developer checkout."
     },
     {
       "area": "Shared Web and desktop lifecycle",
-      "result": "With the user-level Web entry owning port 8765, the normally installed Tauri desktop app opened using the existing service, spawned only its WebView2 child, and did not launch a second mklink sidecar. Closing the desktop window normally returned exit code 0 while the original Web-entry PID and healthy API remained unchanged. After packaged qualification, Web-entry was restarted and intentionally left owning port 8765."
+      "result": "The copied user-level Web entry now owns port 8765 as PID 22716 and is the only intentionally retained MKLink service. The overwrite-installed v0.1.4 Tauri app had already reused this shared-service design, shown the persisted rtthread.bin as automatically inspected at 0x08005000-0x08020D70 with an FLM-verified sector table, and refreshed G: without a console window. Normal desktop close preserves the shared Web service rather than restoring an older user service."
     },
     {
       "area": "Stale Web app cache correction",
@@ -133,6 +138,30 @@
     {
       "area": "Workspace cleanup and source-root handoff",
       "result": "The workspace was reduced from about 8.88 GB to 85 MB while preserving release/20260724-155059 and its three verified hashes. Git now lists only the main worktree, project memory validates, and the user-level Web entry remains healthy and owned on port 8765. The repository and copied user-level maintenance Skills now resolve a unique source root from the Git top-level before reading relative handoff paths; both passed quick_validate.py, and the current nested checkout resolved uniquely to the inner Mklink-AI-Probe source directory."
+    },
+    {
+      "area": "GUI flash-workflow automated gate",
+      "result": "After the final responsive-header edit, Python passed 994 with 1 skipped; GUI passed 36 files/416 tests; Rust passed 6 tests; cargo check, the Vite 8.1.5 production build, npm audit with zero vulnerabilities, and the Tauri prerequisite check all passed."
+    },
+    {
+      "area": "GUI flash-workflow real hardware",
+      "result": "The available STM32 fixture was rebuilt and exercised with its bootloader at 0x08000000 and application at 0x08005000. Online programming and independent read-only verification succeeded for both images. Changing and rebuilding the application changed the watched file fingerprint, triggered automatic reload, programmed at the application address, and then the original source, binary, and target image were restored and reverified. V2/V3/V4 offline previews enforced the intended script-name rules; a V4 dual-image offline trigger completed and both target ranges verified afterward."
+    },
+    {
+      "area": "GUI flash-workflow debug and browser qualification",
+      "result": "Builtin ELF loaded 5,170 symbols and read live variables and RAM. SuperWatch completed 1,387 focused samples with zero read errors or drops, RTT channel 0 found the initialized control block after reset, and SystemView channel 1 synchronized, decoded RTOS events, and resolved task names with zero parser packet drops. Chrome drove four online/offline round trips while a 10-second process monitor saw zero new cmd.exe processes. Version history scrolled from top to the final entries; V2/V3 forced offline_download.py and disabled editing while V4 restored the custom name. The 390x844 document width fell from 625 to 390 after the responsive-header fix, with zero application overflow or relevant console warnings/errors."
+    },
+    {
+      "area": "Latest post-install regression gate",
+      "result": "Fresh validation on 2026-07-25 passed Python 999 with 1 skipped, GUI 38 files/421 tests, Rust 6 tests, cargo check, the Vite 8.1.5 production build, runtime npm audit with zero vulnerabilities, and git diff --check. Full npm audit newly reports six high-severity development-only findings through @vue/test-utils -> js-beautify -> glob/minimatch -> brace-expansion; npm offers only a forced breaking downgrade, so no unrelated dependency mutation was applied. The real source service inspected the 114,032-byte STM32F103RC rtthread.bin at numeric base 0x08005000, returned range 0x08005000-0x08020D70 and 56 verified sectors, and Chrome completed the address dialog and rendered the sector table. Before loading, the panel showed the neutral 加载固件后显示扇区表 state. Six real offline disk refreshes during an 18-second Win32 process-start trace created zero cmd.exe processes. Desktop 1222x735 and mobile 390x844 had no document overflow or relevant console warning/error."
+    },
+    {
+      "area": "Local v0.1.4 hardware and installer qualification",
+      "result": "Keil V6.24 rebuilt the STM32F103RC project with zero errors and warnings. A temporary UDF HardFault resolved the exact exception PC to mklink_hardfault_leaf at applications/main.c:387, then mklink_hardfault_caller and main plus bounded RT-Thread frames. The injection was removed, main.c returned to SHA-256 FA05F99E1E1443B1DF6D66943CA9B6C471EFA256495A5B286FACA767089449DE, and Keil reprogrammed the normal app with Verify OK and Application running. MKLink MCP then loaded the requested full rt-thread.axf through builtin pyelftools, read mklink_sv_user_event_counter as 0, and reported no HardFault. The final standard NSIS rebuilt without changing version 0.1.4, overwrite-installed under a restricted PATH, served healthy builtin ELF 0.32, discovered one redacted probe, and contained no Python process. Its installed sidecar loaded the same AXF, read the same variable, reported no HardFault, and normal window close released all Mklink processes and port 8765."
+    },
+    {
+      "area": "Synchronized v0.1.4 desktop, Web, and AI runtime",
+      "result": "The copied-Skill Web API resolves the real rt-thread.axf RTT symbol through builtin pyelftools, and repeated RTT search plus offline disk refresh monitoring launches no cmd.exe or GNU/IAR process. Chrome verified config, online flash, and offline flash at an actual 390x844 viewport with document width 390 and no relevant console warnings or errors. The MCP factory exposes 52 tools; ping returns sdk_version 0.1.4, builtin pyelftools 0.32, and no public update because local 0.1.4 is newer than public 0.1.3. A real FastMCP stdio client completed ping, connect, HardFault decode, variable read, and disconnect while bridge echo appeared only on stderr and produced zero JSON-RPC parsing errors."
     }
   ],
   "decisions": [
@@ -155,7 +184,13 @@
     "Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.",
     "End-user Web entry, Web GUI, and MCP installation must use the complete copied user-level Skill/runtime as their source. Run web-entry registration from that Skill after install or update so its absolute handler path never depends on a developer checkout; desktop clients may reuse the resulting service without taking ownership.",
     "Web app shells and SPA fallbacks must use no-store so a same-port runtime update cannot retain an old index. Content-hashed assets may be immutable, and Web-entry URLs carry the current index digest before the hash route so a newly opened client navigates to the installed build even when the browser has an older tab or cache entry.",
-    "Maintenance instructions must resolve the unique project source root before using relative AGENTS.md, docs, scripts, or repository Skill paths. The Git/workspace root and source root may differ; release and worktree storage remain anchored at the live Git/workspace root."
+    "Maintenance instructions must resolve the unique project source root before using relative AGENTS.md, docs, scripts, or repository Skill paths. The Git/workspace root and source root may differ; release and worktree storage remain anchored at the live Git/workspace root.",
+    "Tauri firmware selection retains the native file path and polls its size and modification time so the current online or offline workspace can reload a newly compiled BIN/HEX without losing the selection across route changes. Browser uploads remain content-based because browsers do not expose a reusable native path.",
+    "Offline downloader models are explicit user choices. V2 and V3 always deploy offline_download.py; only V4 accepts a custom script name. Opening the offline page only refreshes the MICROKEEN disk and must not probe the downloader firmware version.",
+    "Desktop local BIN inspection accepts decimal integers and decimal or 0x-prefixed strings at the API boundary while the GUI serializes the address as a string. The flash-map empty state is neutral until an inspection exists; only a completed inspection without reliable geometry shows a warning.",
+    "Windows MICROKEEN discovery reads volume labels through GetVolumeInformationW and must not invoke cmd.exe or parse localized vol command output.",
+    "Copied-Skill updates remove only files listed by the previous installation manifest that are absent from the new archive. They keep unrelated user files, back up the prior Skill first, reject unsafe manifest paths, and prevent obsolete hashed Web assets from surviving a runtime replacement.",
+    "MCP stdio owns stdout exclusively for JSON-RPC. The MCP entry redirects ordinary Python print output to stderr while preserving the original stdout buffer for FastMCP transport; CLI, Web, and desktop logging behavior remains unchanged."
   ],
   "hardware": {
     "probe": "MKLink V4 available; identifier omitted.",
@@ -168,10 +203,14 @@
     "The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.",
     "The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.",
     "The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.",
-    "The refreshed user-level Web GUI passed its desktop browser check, but an in-app Chrome viewport forced to 390x844 reported document scrollWidth 456 and visibly compressed top navigation labels. Earlier standalone Playwright evidence reported no mobile overflow, so reconcile the browser zoom/extension environment and responsive header behavior before the next installer release."
+    "The first real V4 offline trigger after deployment returned a transient failed state with no device output; an immediate complete retry succeeded and both target ranges verified. Retain this as a device-side reliability risk until it is reproduced with diagnostic output or ruled out across additional cold starts.",
+    "Full npm audit currently reports six high-severity development-only findings through @vue/test-utils 2.4.10 and js-beautify 1.15.4 to glob/minimatch/brace-expansion. Runtime audit is clean, and npm offers only a forced breaking downgrade; reassess when the upstream test dependency publishes a non-breaking remediation.",
+    "The high-event-rate SystemView fixture reported target-side overflow while the host parser remained synchronized with zero packet drops; reduce fixture event pressure or increase the target RTT buffer when evaluating loss-sensitive RTOS timing."
   ],
   "next_actions": [
-    "Carry the merged v0.1.3 history correction and f9ecec3 Web cache correction into the next explicitly authorized v0.1.4 installer release without moving or republishing the v0.1.3 tag, and resolve or explain the 390 px in-app Chrome horizontal overflow first.",
+    "Open a new Codex session before the next AI-driven MKLink operation so the client reloads the final copied 0.1.4 Skill instructions; the CLI, MCP package, user-level Web service, and desktop app use the synchronized code.",
+    "Complete the explicitly authorized v0.1.4 commit, master merge, signed standard NSIS build, GitHub/Gitee Releases, and updates/latest.json publication in the repository release order.",
+    "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Qualify USB Web entry registration and browser launch on current macOS and Linux systems.",
     "Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools."
   ],

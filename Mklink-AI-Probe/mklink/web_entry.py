@@ -156,7 +156,7 @@ def macos_info_plist() -> dict[str, Any]:
         "CFBundleVersion": "1",
         "CFBundleShortVersionString": "1.0",
         "CFBundlePackageType": "APPL",
-        "CFBundleExecutable": "mklink-web-entry",
+        "CFBundleExecutable": "applet",
         "LSUIElement": True,
         "CFBundleURLTypes": [{
             "CFBundleURLName": "MKLink Web Entry",
@@ -165,15 +165,20 @@ def macos_info_plist() -> dict[str, Any]:
     }
 
 
-def render_macos_launcher(
+def render_macos_applescript(
     python_executable: Path,
     handler_path: Path,
 ) -> str:
-    return (
-        "#!/bin/sh\nexec "
+    command = (
         f"{shlex.quote(str(python_executable))} "
-        f"{shlex.quote(str(handler_path))} \"$1\"\n"
+        f"{shlex.quote(str(handler_path))} "
     )
+    command = command.replace("\\", "\\\\").replace('"', '\\"')
+    return "\n".join([
+        "on open location theURL",
+        f'  do shell script "{command}" & quoted form of theURL & " >/dev/null 2>&1 &"',
+        "end open location",
+    ])
 
 
 def _icon_data_uri() -> str:
@@ -698,19 +703,38 @@ def _install_macos_protocol(
     *,
     home: Path,
     runner: Callable[..., Any],
+    compiler: Path,
 ) -> Path:
     app = home / "Applications" / f"{HANDLER_NAME}.app"
-    contents = app / "Contents"
-    macos = contents / "MacOS"
-    macos.mkdir(parents=True, exist_ok=True)
-    with (contents / "Info.plist").open("wb") as stream:
-        plistlib.dump(macos_info_plist(), stream)
-    executable = macos / "mklink-web-entry"
-    executable.write_text(
-        render_macos_launcher(python_executable, handler),
+    if not compiler.is_file():
+        raise WebEntryError("macOS osacompile is unavailable; install the system developer tools")
+    if app.exists():
+        shutil.rmtree(app)
+    completed = runner(
+        [str(compiler), "-o", str(app), "-e", render_macos_applescript(
+            python_executable, handler,
+        )],
+        check=False,
+        capture_output=True,
         encoding="utf-8",
+        errors="replace",
+        text=True,
     )
-    executable.chmod(0o755)
+    if getattr(completed, "returncode", 0) != 0:
+        detail = str(getattr(completed, "stderr", "") or "").strip()
+        raise WebEntryError(f"macOS protocol launcher compilation failed: {detail}")
+    contents = app / "Contents"
+    info_path = contents / "Info.plist"
+    if not info_path.is_file():
+        raise WebEntryError("macOS protocol launcher was not created")
+    try:
+        with info_path.open("rb") as stream:
+            info = plistlib.load(stream)
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise WebEntryError(f"macOS protocol launcher metadata is invalid: {error}") from error
+    info.update(macos_info_plist())
+    with info_path.open("wb") as stream:
+        plistlib.dump(info, stream)
     register = Path(
         "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
         "LaunchServices.framework/Support/lsregister"
@@ -755,6 +779,7 @@ def install_protocol(
     home: Path | None = None,
     environment: dict[str, str] | None = None,
     python_executable: Path | None = None,
+    macos_compiler: Path | None = None,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, str]:
     import platform
@@ -771,7 +796,11 @@ def install_protocol(
         registration = _install_windows_protocol(python_executable, handler)
     elif system == "Darwin":
         registration = _install_macos_protocol(
-            python_executable, handler, home=home, runner=runner,
+            python_executable,
+            handler,
+            home=home,
+            runner=runner,
+            compiler=macos_compiler or Path("/usr/bin/osacompile"),
         )
     elif system == "Linux":
         registration = _install_linux_protocol(

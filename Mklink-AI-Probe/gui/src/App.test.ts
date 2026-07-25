@@ -1,6 +1,7 @@
 import { shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
+import { readFileSync } from 'node:fs'
 import App from './App.vue'
 import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 
@@ -72,6 +73,15 @@ describe('App version footer', () => {
       buildCommit: expect.stringMatching(/^[0-9a-f]{7,}$/),
     })
     wrapper.unmount()
+  })
+
+  it('contains the narrow-window header overflow guard', () => {
+    const source = readFileSync('src/App.vue', 'utf8')
+
+    expect(source).toContain('@media (max-width: 720px)')
+    expect(source).toContain('grid-template-columns: auto minmax(0, 1fr)')
+    expect(source).toContain('.header-right .status-bar')
+    expect(source).toContain('width: max-content')
   })
 
   it('does not mount route views or poll device state before the backend API is ready', async () => {

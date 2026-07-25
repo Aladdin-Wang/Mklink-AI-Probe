@@ -1,15 +1,18 @@
 """
 MKLink Serial Bridge — RTT 地址查找（从 .map / .elf / .out 文件）。
 
-零外部依赖（仅 stdlib），零内部依赖。
+默认使用随包内置的 pyelftools；外部 GNU/IAR 工具仅用于格式兼容后备。
 """
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from mklink.elf_backend import ElfParseError, list_elf_symbols
 
 
 # 静态模式（rtt_storage_mode=1）地址解析：优先从 Keil .uvprojx 宏定义 + scatter 段定位
@@ -131,7 +134,31 @@ def _candidate_binary_paths(map_path: Path) -> list[Path]:
 
 
 def _find_rtt_in_binary(path: Path, result: RTTFindResult) -> str | None:
-    """通过符号工具查找 ELF/OUT 中的 RTT 符号。"""
+    """优先用内置 pyelftools，格式不兼容时再调用外部符号工具。"""
+    try:
+        symbols = list_elf_symbols(str(path), backend="builtin")
+    except (ImportError, ElfParseError) as error:
+        result.warnings.append(f"内置 pyelftools 无法解析 {path.name}: {error}")
+        return _find_rtt_in_binary_external(path, result)
+
+    for symbol in symbols:
+        if symbol.name != "_SEGGER_RTT":
+            continue
+        if _is_valid_ram_addr(symbol.address):
+            result.details.append("内置 pyelftools 已解析 _SEGGER_RTT")
+            return f"0x{symbol.address:08x}"
+        result.warnings.append(
+            f"内置 pyelftools 找到 _SEGGER_RTT，但地址不在 RAM 范围: "
+            f"0x{symbol.address:08x}"
+        )
+        return None
+
+    result.details.append("内置 pyelftools 已解析符号表，但未找到 _SEGGER_RTT")
+    return None
+
+
+def _find_rtt_in_binary_external(path: Path, result: RTTFindResult) -> str | None:
+    """兼容 pyelftools 无法解析的 GNU/IAR 二进制格式。"""
     tools = [
         ["arm-none-eabi-nm", str(path)],
         ["D:\\IAR\\arm\\bin\\ielfdumparm.exe", str(path)],
@@ -148,6 +175,11 @@ def _find_rtt_in_binary(path: Path, result: RTTFindResult) -> str | None:
                 encoding="utf-8",
                 errors="ignore",
                 timeout=10,
+                creationflags=(
+                    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    if os.name == "nt"
+                    else 0
+                ),
             )
         except FileNotFoundError:
             saw_missing_tool = True

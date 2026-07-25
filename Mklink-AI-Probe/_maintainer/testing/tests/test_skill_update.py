@@ -98,6 +98,62 @@ def test_copy_installed_skill_is_backed_up_and_replaced(
     assert marker["source_commit"] == "a" * 40
 
 
+def test_copy_installed_skill_removes_files_absent_from_new_archive(
+    updater, monkeypatch, tmp_path,
+):
+    root = make_root(tmp_path / "installed", "0.1.2")
+    stale = root / "gui" / "dist" / "assets" / "old-hash.js"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old", encoding="utf-8")
+    (root / ".mklink-skill-install.json").write_text(json.dumps({
+        "files": ["gui/dist/assets/old-hash.js", "../outside.txt"],
+    }), encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep", encoding="utf-8")
+    source = make_root(tmp_path / "source", "0.1.3", skill_text="new skill")
+    archive = make_archive(tmp_path / "skill.zip", source)
+    cache = tmp_path / "cache" / "skill-update-check.json"
+    monkeypatch.setattr(updater, "default_cache_file", lambda: cache)
+
+    updater.install_skill_archive(
+        root=root,
+        archive_path=archive,
+        expected_version="0.1.3",
+        source_commit="a" * 40,
+    )
+
+    assert not stale.exists()
+    assert outside.read_text(encoding="utf-8") == "keep"
+
+
+def test_copy_installed_skill_removes_untracked_stale_web_assets(
+    updater, monkeypatch, tmp_path,
+):
+    root = make_root(tmp_path / "installed", "0.1.2")
+    stale = root / "gui" / "dist" / "assets" / "pre_manifest_hash.js"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old", encoding="utf-8")
+    (root / ".mklink-skill-install.json").write_text(
+        json.dumps({"files": []}), encoding="utf-8"
+    )
+    outside = root / "user-note.txt"
+    outside.write_text("keep", encoding="utf-8")
+    source = make_root(tmp_path / "source", "0.1.3", skill_text="new skill")
+    archive = make_archive(tmp_path / "skill.zip", source)
+    cache = tmp_path / "cache" / "skill-update-check.json"
+    monkeypatch.setattr(updater, "default_cache_file", lambda: cache)
+
+    updater.install_skill_archive(
+        root=root,
+        archive_path=archive,
+        expected_version="0.1.3",
+        source_commit="a" * 40,
+    )
+
+    assert not stale.exists()
+    assert outside.read_text(encoding="utf-8") == "keep"
+
+
 def test_git_checkout_is_never_overwritten(updater, tmp_path):
     root = make_root(tmp_path / "checkout", "0.1.2")
     (root / ".git").mkdir()

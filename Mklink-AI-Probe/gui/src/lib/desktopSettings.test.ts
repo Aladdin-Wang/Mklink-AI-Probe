@@ -27,6 +27,8 @@ function settings(overrides: Partial<DesktopSettings> = {}): DesktopSettings {
     version: 1,
     symbolPath: '',
     mapPath: '',
+    symbolDisplayPath: '',
+    mapDisplayPath: '',
     rttAddress: '',
     rttEncoding: 'utf-8',
     transmitMode: 'text',
@@ -76,6 +78,8 @@ describe('desktop settings', () => {
     const original = settings({
       symbolPath: 'C:\\firmware\\app.axf',
       mapPath: 'C:\\firmware\\app.map',
+      symbolDisplayPath: 'app.axf',
+      mapDisplayPath: 'app.map',
       rttAddress: '0x20001A40',
       rttEncoding: 'gb18030',
       transmitMode: 'hex',
@@ -92,6 +96,8 @@ describe('desktop settings', () => {
     expect(loadDesktopSettings(storage)).toEqual(settings({
       symbolPath: 'C:\\firmware\\app.axf',
       mapPath: 'C:\\firmware\\app.map',
+      symbolDisplayPath: 'app.axf',
+      mapDisplayPath: 'app.map',
       rttAddress: '0x20001A40',
       rttEncoding: 'gb18030',
       transmitMode: 'hex',

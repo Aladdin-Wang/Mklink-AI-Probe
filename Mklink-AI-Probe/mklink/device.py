@@ -39,6 +39,11 @@ class HardFaultReport:
     stack_frame: dict[str, int] | None
     source_locations: dict[int, str] | None
     summary: str
+    fault_function: str | None
+    fault_location: str | None
+    exception_stack: dict[str, Any] | None
+    call_stack: list[dict[str, Any]]
+    core_registers: dict[str, int] | None
 
 
 class DeviceError(Exception):
@@ -1489,7 +1494,7 @@ class Device:
 
         from mklink.hardfault import (
             decode_cfsr, decode_hfsr,
-            parse_exception_stack_frame, addr2line, format_hardfault_report,
+            addr2line, build_call_stack, find_exception_stack,
         )
 
         cfsr = fault_regs.get("SCB.CFSR", 0)
@@ -1499,20 +1504,90 @@ class Device:
 
         stack_frame = None
         source_locations = None
+        fault_function = None
+        fault_location = None
+        exception_stack = None
+        call_stack: list[dict[str, Any]] = []
+        core_registers = None
+        executable_ranges = [(0x00000000, 0x20000000)]
+        function_symbols = []
+
         if self._axf:
             try:
-                frame_raw = self.read_memory(0xE000EDF8, 32)
-                stack_frame = parse_exception_stack_frame(frame_raw)
-                if stack_frame:
-                    addrs = [stack_frame.get("pc", 0), stack_frame.get("lr", 0)]
-                    source_locations = addr2line(
+                from mklink.elf_backend import list_elf_sections, list_elf_symbols
+
+                executable_ranges = [
+                    (section.address, section.address + section.size)
+                    for section in list_elf_sections(
                         self._axf,
-                        *addrs,
                         backend=self._elf_backend,
                         project_root=self._project_root,
                     )
+                    if section.size > 0 and section.flags & 0x4
+                ] or executable_ranges
+                function_symbols = list_elf_symbols(
+                    self._axf,
+                    backend=self._elf_backend,
+                    project_root=self._project_root,
+                )
             except Exception:
                 pass
+
+        try:
+            try:
+                self.halt()
+            except Exception:
+                # A locked-up core can already be halted even if the halt helper
+                # cannot obtain a complete debug-state snapshot.
+                pass
+            core_registers = self.read_core_registers()
+            stack_regions: dict[str, tuple[int, bytes]] = {}
+            for pointer_name in ("msp", "psp"):
+                pointer = int(core_registers.get(pointer_name, 0)) & ~3
+                if not _is_sram_pointer(pointer):
+                    continue
+                try:
+                    stack_regions[pointer_name] = (pointer, self.read_memory(pointer, 512))
+                except Exception:
+                    continue
+
+            located = find_exception_stack(
+                core_registers,
+                stack_regions,
+                executable_ranges,
+            )
+            if located:
+                stack_frame = located["frame"]
+                stack_data = located.pop("stack_data")
+                exception_stack = located
+                stack_base = int(exception_stack["pointer_address"])
+                call_stack = build_call_stack(
+                    stack_frame,
+                    frame_address=int(exception_stack["frame_address"]),
+                    stack_base=stack_base,
+                    stack_data=stack_data,
+                    executable_ranges=executable_ranges,
+                    symbols=function_symbols,
+                )
+                if self._axf and call_stack:
+                    lookups = [int(item["lookup_address"]) for item in call_stack]
+                    resolved = addr2line(
+                        self._axf,
+                        *lookups,
+                        backend=self._elf_backend,
+                        project_root=self._project_root,
+                    )
+                    source_locations = {}
+                    for item in call_stack:
+                        location = resolved.get(int(item["lookup_address"]))
+                        if location:
+                            item["location"] = location
+                            source_locations[int(item["address"])] = location
+                if call_stack:
+                    fault_function = call_stack[0].get("function")
+                    fault_location = call_stack[0].get("location")
+        except Exception:
+            pass
 
         flags = cfsr_flags + hfsr_flags
         summary = "; ".join(flags) if flags else "Unknown fault"
@@ -1525,6 +1600,11 @@ class Device:
             stack_frame=stack_frame,
             source_locations=source_locations,
             summary=summary,
+            fault_function=fault_function,
+            fault_location=fault_location,
+            exception_stack=exception_stack,
+            call_stack=call_stack,
+            core_registers=core_registers,
         )
 
     # ------------------------------------------------------------------

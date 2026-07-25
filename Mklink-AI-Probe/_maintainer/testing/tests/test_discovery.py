@@ -30,3 +30,21 @@ def test_discovery_probes_usb_before_virtual_and_skips_bluetooth(monkeypatch):
 
     assert discovery.find_mklink_cdc_port() == "COM227"
     assert probed == ["COM228", "COM227"]
+
+
+def test_microkeen_disk_reads_volume_labels_without_console_process(monkeypatch):
+    monkeypatch.setattr(discovery.os, "name", "nt")
+    monkeypatch.setattr(
+        discovery.os.path,
+        "exists",
+        lambda path: path in {"C:\\", "G:\\"},
+    )
+    labels = []
+    monkeypatch.setattr(
+        discovery,
+        "_windows_volume_label",
+        lambda path: labels.append(path) or ("MICROKEEN" if path == "G:\\" else "System"),
+    )
+
+    assert discovery.find_microkeen_disk() == "G:\\"
+    assert labels == ["C:\\", "G:\\"]

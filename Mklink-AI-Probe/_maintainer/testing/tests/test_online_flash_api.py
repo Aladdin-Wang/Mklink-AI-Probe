@@ -150,11 +150,13 @@ class Inspector:
             "image-1", "fw.bin", "C:/secret/snapshot.bin", "bin", 4, "abc", 0x1000, 0x1004
         )
         self.seen_path = None
+        self.seen_base = None
         self.preview_length = None
         self.seen_regions = ()
 
     def inspect(self, path, regions, base_address=None):
         self.seen_path = Path(path)
+        self.seen_base = base_address
         assert self.seen_path.exists()
         self.seen_regions = tuple(regions)
         assert self.seen_regions[0].start == 0x1000
@@ -1121,6 +1123,64 @@ def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, serv
     assert body["sectors"] == [{"address": 0x1000, "size": 0x100}]
     assert "file_path" not in body
     assert not services.image_inspector.seen_path.exists()
+
+
+def test_local_firmware_path_status_and_inspection_track_recompiled_files(app, services):
+    source = services.paths.root / "build" / "fw.bin"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"abcd")
+
+    first_status = request(
+        app, "GET", "/api/online-flash/images/source-status", params={"path": str(source)}
+    )
+    inspected = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect-path",
+        json={"path": str(source), "part_number": "DEVICE_A", "base_address": "0x1000"},
+    )
+    source.write_bytes(b"abcdefgh")
+    second_status = request(
+        app, "GET", "/api/online-flash/images/source-status", params={"path": str(source)}
+    )
+
+    assert first_status.status_code == 200
+    assert first_status.json()["size"] == 4
+    assert inspected.status_code == 200, inspected.text
+    assert services.image_inspector.seen_path == source.resolve()
+    assert source.is_file()
+    assert second_status.json()["size"] == 8
+
+
+def test_local_firmware_path_accepts_numeric_bin_base_from_desktop_clients(app, services):
+    source = services.paths.root / "build" / "fw.bin"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"abcd")
+
+    inspected = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect-path",
+        json={"path": str(source), "part_number": "DEVICE_A", "base_address": 0x1000},
+    )
+
+    assert inspected.status_code == 200, inspected.text
+    assert services.image_inspector.seen_base == 0x1000
+
+
+def test_local_firmware_path_rejects_missing_or_unsupported_sources(app, tmp_path):
+    unsupported = tmp_path / "firmware.txt"
+    unsupported.write_text("data", encoding="ascii")
+
+    missing = request(
+        app, "GET", "/api/online-flash/images/source-status", params={"path": str(tmp_path / "missing.bin")}
+    )
+    wrong_suffix = request(
+        app, "GET", "/api/online-flash/images/source-status", params={"path": str(unsupported)}
+    )
+
+    assert missing.status_code == 422
+    assert wrong_suffix.status_code == 422
 
 
 def test_inspect_requires_exact_installed_target_and_enforces_upload_limit(app, services):

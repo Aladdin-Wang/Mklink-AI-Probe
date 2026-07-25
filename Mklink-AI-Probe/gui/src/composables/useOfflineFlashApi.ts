@@ -3,7 +3,6 @@ import type {
   OfflineConfigPayload,
   OfflineDeployResult,
   OfflineDiskStatus,
-  OfflineModelResult,
   OfflinePreview,
   OfflineTriggerResult,
 } from '../types/offlineFlash'
@@ -57,13 +56,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function useOfflineFlashApi() {
   function getStatus(): Promise<OfflineDiskStatus> {
     return request('/status')
-  }
-
-  function detectModel(port?: string): Promise<OfflineModelResult> {
-    return request('/detect-model', {
-      method: 'POST',
-      body: JSON.stringify(port ? { port } : {}),
-    })
   }
 
   function listAlgorithms(partNumber: string): Promise<OfflineAlgorithmCandidate[]> {
@@ -153,5 +145,5 @@ export function useOfflineFlashApi() {
     return result
   }
 
-  return { getStatus, detectModel, listAlgorithms, preview, deploy, trigger }
+  return { getStatus, listAlgorithms, preview, deploy, trigger }
 }
