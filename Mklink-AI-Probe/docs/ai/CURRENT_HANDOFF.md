@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-25T16:17:00+08:00`
-- 分支：`fix/gui-flash-workflow`
-- HEAD：`The qualified v0.1.4 fix branch is authorized for an official release and remains based on origin/master 86bea5a before its release commit. The public v0.1.3 tag and update manifest remain unchanged until the ordered publisher completes.`
-- 远端 HEAD：`GitHub origin/master includes the maintenance source-root discovery correction. The published v0.1.3 tag, Releases, and updates/latest.json remain unchanged.`
-- 工作树：The intended v0.1.4 source, tests, rebuilt Web assets, complete release history, full-path symbol display, builtin-first AXF/RTT/HardFault parsing, MCP stdio isolation, and flash workflow corrections are ready for their release commit. The maintainer explicitly authorized commit, master merge, GitHub publication, Gitee synchronization, and the public update manifest.
-- 当前任务：Commit the qualified v0.1.4 fixes, fast-forward master, rerun the master release gate, build the signed standard NSIS, and publish the same five verified assets plus latest.json to GitHub and Gitee.
-- 状态：`v014_release_authorized_pending_publish`
+- 更新时间：`2026-07-25T18:17:31+08:00`
+- 分支：`master`
+- HEAD：`Official tag v0.1.4 resolves to release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. The functional fix commit is abbc985852b8d5e87db206b71046d11ad53d0abc and the following build-assets commit is 1cc9147.`
+- 远端 HEAD：`GitHub and Gitee master both contain release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. Their annotated v0.1.4 tags peel to the same commit, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.`
+- 工作树：The v0.1.4 source and public assets are published. This documentation-only follow-up records publication evidence without moving the immutable release tag.
+- 当前任务：Preserve the published v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.
+- 状态：`v014_published`
 
 ## 里程碑
 
@@ -50,6 +50,8 @@
 - **Latest post-install regression gate**：Fresh validation on 2026-07-25 passed Python 999 with 1 skipped, GUI 38 files/421 tests, Rust 6 tests, cargo check, the Vite 8.1.5 production build, runtime npm audit with zero vulnerabilities, and git diff --check. Full npm audit newly reports six high-severity development-only findings through @vue/test-utils -> js-beautify -> glob/minimatch -> brace-expansion; npm offers only a forced breaking downgrade, so no unrelated dependency mutation was applied. The real source service inspected the 114,032-byte STM32F103RC rtthread.bin at numeric base 0x08005000, returned range 0x08005000-0x08020D70 and 56 verified sectors, and Chrome completed the address dialog and rendered the sector table. Before loading, the panel showed the neutral 加载固件后显示扇区表 state. Six real offline disk refreshes during an 18-second Win32 process-start trace created zero cmd.exe processes. Desktop 1222x735 and mobile 390x844 had no document overflow or relevant console warning/error.
 - **Local v0.1.4 hardware and installer qualification**：Keil V6.24 rebuilt the STM32F103RC project with zero errors and warnings. A temporary UDF HardFault resolved the exact exception PC to mklink_hardfault_leaf at applications/main.c:387, then mklink_hardfault_caller and main plus bounded RT-Thread frames. The injection was removed, main.c returned to SHA-256 FA05F99E1E1443B1DF6D66943CA9B6C471EFA256495A5B286FACA767089449DE, and Keil reprogrammed the normal app with Verify OK and Application running. MKLink MCP then loaded the requested full rt-thread.axf through builtin pyelftools, read mklink_sv_user_event_counter as 0, and reported no HardFault. The final standard NSIS rebuilt without changing version 0.1.4, overwrite-installed under a restricted PATH, served healthy builtin ELF 0.32, discovered one redacted probe, and contained no Python process. Its installed sidecar loaded the same AXF, read the same variable, reported no HardFault, and normal window close released all Mklink processes and port 8765.
 - **Synchronized v0.1.4 desktop, Web, and AI runtime**：The copied-Skill Web API resolves the real rt-thread.axf RTT symbol through builtin pyelftools, and repeated RTT search plus offline disk refresh monitoring launches no cmd.exe or GNU/IAR process. Chrome verified config, online flash, and offline flash at an actual 390x844 viewport with document width 390 and no relevant console warnings or errors. The MCP factory exposes 52 tools; ping returns sdk_version 0.1.4, builtin pyelftools 0.32, and no public update because local 0.1.4 is newer than public 0.1.3. A real FastMCP stdio client completed ping, connect, HardFault decode, variable read, and disconnect while bridge echo appeared only on stderr and produced zero JSON-RPC parsing errors.
+- **Official v0.1.4 publication**：The clean master release source is 1cc9147787ff1ab18a6028f5d7c37a535d3320ac and annotated tag v0.1.4 peels to it on GitHub and Gitee. Both Releases contain the same five uploaded assets, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e. The 65,593,331-byte installer SHA-256 is 32199809C0CE98D7191A4A3F0C16FE8C190C9FF6294E3716B83B6B43741C805E; its 428-byte updater-signature SHA-256 is C703805EF486BCBCAF27BFB9801EF67591C82B25E37858A5E28FEDB0BAA80B93; the 2,559,746-byte Skill SHA-256 is 682430685EE4E2098572CE3B9499746D3D7AF8FF783B37C6C815AF433F45C0EC. Both public latest.json documents report version 0.1.4 and the same sizes, hashes, source commit, notes, and Gitee download URLs.
+- **Published v0.1.4 local deployment**：The formal standard NSIS overwrite-installed with a restricted PATH and product version 0.1.4. Its bundled sidecar served healthy builtin ELF, discovered one redacted real probe, launched no Python process, and normal desktop close released all Mklink processes and port 8765. The formal Release Skill atomically replaced the copied same-version prerelease, recorded source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac, retained a recovery backup, and a forced public check reported current 0.1.4 with no update. The copied Skill re-registered the protocol handler, and its owned user-level Web service is the only intentionally retained MKLink service on 127.0.0.1:8765 with healthy builtin ELF.
 
 ## 架构决策
 
@@ -88,8 +90,8 @@
 
 ## 下一动作
 
-1. Open a new Codex session before the next AI-driven MKLink operation so the client reloads the final copied 0.1.4 Skill instructions; the CLI, MCP package, user-level Web service, and desktop app use the synchronized code.
-2. Complete the explicitly authorized v0.1.4 commit, master merge, signed standard NSIS build, GitHub/Gitee Releases, and updates/latest.json publication in the repository release order.
+1. Open a new Codex session before the next AI-driven MKLink operation so the client reloads the formal copied 0.1.4 Skill instructions from source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.
+2. Repeat the copied-Skill variable read and no-fault check when the MKLink CDC interface is enumerated; use pyOCD only as the documented read-only fallback after a reproducible MKLink read failure.
 3. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
 4. Qualify USB Web entry registration and browser launch on current macOS and Linux systems.
 5. Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools.
@@ -104,6 +106,7 @@
 - The first real V4 offline trigger after deployment returned a transient failed state with no device output; an immediate complete retry succeeded and both target ranges verified. Retain this as a device-side reliability risk until it is reproduced with diagnostic output or ruled out across additional cold starts.
 - Full npm audit currently reports six high-severity development-only findings through @vue/test-utils 2.4.10 and js-beautify 1.15.4 to glob/minimatch/brace-expansion. Runtime audit is clean, and npm offers only a forced breaking downgrade; reassess when the upstream test dependency publishes a non-breaking remediation.
 - The high-event-rate SystemView fixture reported target-side overflow while the host parser remained synchronized with zero packet drops; reduce fixture event pressure or increase the target RTT buffer when evaluating loss-sensitive RTOS timing.
+- A post-publication copied-Skill CLI watch retry could not enumerate the MKLink CDC interface even though the installed desktop still discovered one CMSIS-DAP probe. No target write or silent backend switch occurred. The earlier same-source MCP and installed-sidecar hardware loops remain the release evidence; repeat the CLI read and HardFault check when the CDC interface is available.
 
 ## 延续协议
 
