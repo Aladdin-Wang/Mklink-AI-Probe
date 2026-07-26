@@ -4,20 +4,20 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-25T18:17:31+08:00`
+- 更新时间：`2026-07-26T09:27:13+08:00`
 - 分支：`master`
-- HEAD：`Official tag v0.1.4 resolves to release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. The functional fix commit is abbc985852b8d5e87db206b71046d11ad53d0abc and the following build-assets commit is 1cc9147.`
-- 远端 HEAD：`GitHub and Gitee master both contain release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. Their annotated v0.1.4 tags peel to the same commit, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.`
-- 工作树：The v0.1.4 source and public assets are published. This documentation-only follow-up records publication evidence without moving the immutable release tag.
-- 当前任务：Preserve the published v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.
-- 状态：`v014_published`
+- HEAD：`Upstream master contains the qualified v0.1.4 fork head 5c9021d37e9ce22a888d3de2c793827688532660 through PR #4 merge commit 02444752be0a692eb5136ef3e160ca20e45bef6a. The immutable v0.1.4 release source remains 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.`
+- 远端 HEAD：`GitHub su5176/Mklink-AI-Probe master points to merge commit 02444752be0a692eb5136ef3e160ca20e45bef6a and reports PR #4 merged. The Aladdin-Wang fork and Gitee release baseline retain source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac, while both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.`
+- 工作树：The upstream v0.1.4 integration is complete. This documentation-only follow-up records PR #4 merge evidence without changing runtime code, release tags, or published assets.
+- 当前任务：Preserve the merged upstream v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.
+- 状态：`upstream_v014_merged`
 
 ## 里程碑
 
 - **Product baseline** — `complete`。Online/offline flash, debug control, symbols and types, bounded streaming, Serial, Modbus, MCP, and resource arbitration are implemented.
 - **Web and desktop distribution** — `complete`。The Vue Web client, Tauri v2 desktop app, bundled Python sidecar, strict USB Web entry protocol, browser file uploads, and signed updater flow are available.
 - **Compatibility hardening** — `complete`。Builtin pyelftools is the default, FastAPI 0.139.2 is supported, Windows venv process guards are stable, test extras are complete, and the frontend audit is clean.
-- **Upstream integration** — `complete`。su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f into upstream master as 6cff397.
+- **Upstream integration** — `complete`。su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f as 6cff397, and PR #4 merged the qualified v0.1.4 fork head 5c9021d as 0244475.
 - **Shared symbol-source state** — `complete`。Symbol reparsing now binds the current Device explicitly, serializes SuperWatch stop/rebind/restart, uses one transaction for parse and connected-reload endpoints, rejects requested/active path mismatches, and exposes active versus pending AXF state consistently in the frontend.
 - **Aggregate symbol recovery** — `complete`。Anonymous struct and union layers expand transparently, overlapping union interpretations remain selectable, unsupported aggregates remain visible as containers, and a bounded pycparser-backed C layout override is shared by Web, Tauri, and AI-launched services.
 - **RTT encoding and SWD arbitration** — `complete`。RTT preserves device bytes until the Dashboard applies UTF-8, GB2312, GBK, GB18030, or Big5 decoding. One-shot SWD and download operations safely preempt Dashboard owners but never another user operation.
@@ -30,7 +30,7 @@
 - **Latest source gate**：After MCP stdio isolation and the final HardFault response fields were added, Python passed 1011 with 1 skipped, GUI passed 38 files/422 tests, Rust passed 6 tests, cargo check completed, the Vite 8.1.5 production build completed, runtime npm audit reported zero vulnerabilities, the Tauri prerequisite check passed, and git diff --check passed.
 - **Update and release automation**：Focused updater and publisher coverage passed 20 tests. Real public-manifest checking saw public v0.1.2 from the v0.1.3 source without a false update. Release preparation now requires a verified flat installable Skill archive, and publication preserves Tauri compatibility while adding installer and Skill URL, size, SHA-256, and source commit metadata.
 - **Installed v0.1.3 candidate**：The final v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python child, connected the STM32F103RC fixture with the requested AXF through builtin ELF, loaded 5,157 symbols, read eight bytes at 0x20000648, and disconnected cleanly. Normal close released all MKLink processes and port 8765. The published installer SHA-256 is 9A85059E94C3A8E1A3B16268AA2306746F59A555ECFC6252E0C207730F79CEC1 and Authenticode status is NotSigned.
-- **Upstream merge**：GitHub reports PR #3 MERGED at 2026-07-23T07:23:40Z. Merge commit 6cff397 has parents 51a2f8d and the qualified fork head d344e5f.
+- **Upstream merge**：GitHub reports PR #4 MERGED at 2026-07-26T01:26:42Z. Merge commit 0244475 has parents 6cff397 and the qualified fork head 5c9021d. The PR was clean, based directly on current upstream master, and had no review comments or GitHub checks. Independent upstream review passed project-memory validation, git diff --check, GUI 38 files/422 tests, Rust 6 tests, cargo check, the Vite production build, and runtime npm audit with zero vulnerabilities; the exact PR branch records Python 1011 passed with 1 skipped and the affected STM32F103RC hardware loops.
 - **Shared symbol automated gate**：Regression coverage includes source ownership, anonymous struct and union expansion, overlapping union aliases, unresolved containers, C natural and packed layout, input limits, fingerprint-scoped overrides, API validation, SuperWatch rebind and restore, manual path UI, and C definition UI.
 - **Symbol-source real hardware**：The repaired service switched between two real AXFs with distinct symbol counts, supported connected reload from a second client path, and preserved SuperWatch operation during an additional reload. After deployment to port 8765, parse-axf selected 4,842/129/107 symbols at generation 2 and connected reload restored 791/150/99 at generation 3. Requested and active paths matched after every operation.
 - **Aggregate-symbol real hardware**：A real STM32 AXF expanded data_save at 0x20000648 into 27 selectable scalar interpretations, including odo, mileage_odo, and trip. SuperWatch completed 32,613 reads with zero read errors and zero read drops. A real unresolved one-byte aggregate accepted a pasted matching C definition, produced a selectable member at the correct RAM address, and was added through the shared SuperWatch API.
@@ -98,7 +98,7 @@
 
 ## 已知限制
 
-- Python 3.13 is not installed locally; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.
+- Python 3.13 was not installed on the release-qualification workstation; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.
 - The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.
 - The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.
 - The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.

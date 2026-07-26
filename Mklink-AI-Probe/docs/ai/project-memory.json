@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-25T18:17:31+08:00",
+  "updated_at": "2026-07-26T09:27:13+08:00",
   "repository": {
-    "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
+    "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "Official tag v0.1.4 resolves to release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. The functional fix commit is abbc985852b8d5e87db206b71046d11ad53d0abc and the following build-assets commit is 1cc9147.",
-    "remote_head": "GitHub and Gitee master both contain release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. Their annotated v0.1.4 tags peel to the same commit, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.",
-    "working_tree": "The v0.1.4 source and public assets are published. This documentation-only follow-up records publication evidence without moving the immutable release tag."
+    "head": "Upstream master contains the qualified v0.1.4 fork head 5c9021d37e9ce22a888d3de2c793827688532660 through PR #4 merge commit 02444752be0a692eb5136ef3e160ca20e45bef6a. The immutable v0.1.4 release source remains 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.",
+    "remote_head": "GitHub su5176/Mklink-AI-Probe master points to merge commit 02444752be0a692eb5136ef3e160ca20e45bef6a and reports PR #4 merged. The Aladdin-Wang fork and Gitee release baseline retain source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac, while both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.",
+    "working_tree": "The upstream v0.1.4 integration is complete. This documentation-only follow-up records PR #4 merge evidence without changing runtime code, release tags, or published assets."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
     "maintenance": "Keep only the current integration baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions here; use Git history and detailed verification documents for completed chronology."
   },
   "current_session": {
-    "status": "v014_published",
-    "current_task": "Preserve the published v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.",
+    "status": "upstream_v014_merged",
+    "current_task": "Preserve the merged upstream v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.",
     "release": "Official v0.1.4 was published on 2026-07-25 from source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. GitHub and Gitee Releases expose the same five uploaded assets, and both public updates/latest.json documents report 0.1.4 after release verification completed."
   },
   "milestones": [
@@ -37,7 +37,7 @@
     {
       "name": "Upstream integration",
       "status": "complete",
-      "notes": "su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f into upstream master as 6cff397."
+      "notes": "su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f as 6cff397, and PR #4 merged the qualified v0.1.4 fork head 5c9021d as 0244475."
     },
     {
       "name": "Shared symbol-source state",
@@ -85,7 +85,7 @@
     },
     {
       "area": "Upstream merge",
-      "result": "GitHub reports PR #3 MERGED at 2026-07-23T07:23:40Z. Merge commit 6cff397 has parents 51a2f8d and the qualified fork head d344e5f."
+      "result": "GitHub reports PR #4 MERGED at 2026-07-26T01:26:42Z. Merge commit 0244475 has parents 6cff397 and the qualified fork head 5c9021d. The PR was clean, based directly on current upstream master, and had no review comments or GitHub checks. Independent upstream review passed project-memory validation, git diff --check, GUI 38 files/422 tests, Rust 6 tests, cargo check, the Vite production build, and runtime npm audit with zero vulnerabilities; the exact PR branch records Python 1011 passed with 1 skipped and the affected STM32F103RC hardware loops."
     },
     {
       "area": "Shared symbol automated gate",
@@ -206,7 +206,7 @@
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
-    "Python 3.13 is not installed locally; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.",
+    "Python 3.13 was not installed on the release-qualification workstation; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.",
     "The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.",
     "The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.",
     "The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.",
