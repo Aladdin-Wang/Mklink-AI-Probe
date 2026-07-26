@@ -29,7 +29,13 @@ def test_build_latest_document_matches_tauri_v2_schema(publisher):
         notes="Stable release",
         published_at="2026-07-21T01:02:03Z",
         signature="signed-value",
-        url="https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
+        updater_url="https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
+        updater_sha256="a" * 64,
+        updater_size=123,
+        skill_url="https://gitee.example/Mklink-AI-Probe-v0.1.0-Skill.zip",
+        skill_sha256="b" * 64,
+        skill_size=456,
+        source_commit="c" * 40,
     )
 
     assert document == {
@@ -40,7 +46,16 @@ def test_build_latest_document_matches_tauri_v2_schema(publisher):
             "windows-x86_64": {
                 "signature": "signed-value",
                 "url": "https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
+                "sha256": "a" * 64,
+                "size": 123,
             }
+        },
+        "skill": {
+            "version": "0.1.0",
+            "url": "https://gitee.example/Mklink-AI-Probe-v0.1.0-Skill.zip",
+            "sha256": "b" * 64,
+            "size": 456,
+            "source_commit": "c" * 40,
         },
     }
 
@@ -191,6 +206,7 @@ def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
     names = [
         f"Mklink-AI-Probe-v{version}-x64-Setup.exe",
         f"Mklink-AI-Probe-v{version}-x64-Setup.exe.sig",
+        f"Mklink-AI-Probe-v{version}-Skill.zip",
     ]
     assets = []
     for name in names:
@@ -306,8 +322,10 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
     events = []
     installer = tmp_path / "Mklink-AI-Probe-v0.1.0-x64-Setup.exe"
     signature = tmp_path / "Mklink-AI-Probe-v0.1.0-x64-Setup.exe.sig"
+    skill = tmp_path / "Mklink-AI-Probe-v0.1.0-Skill.zip"
     installer.write_bytes(b"installer")
     signature.write_text("signature", encoding="ascii")
+    skill.write_bytes(b"skill")
 
     monkeypatch.setattr(
         publisher,
@@ -320,7 +338,10 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         publisher,
         "publish_gitee_release",
         lambda **_kwargs: events.append("gitee") or {
-            "updater_url": "https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe"
+            "asset_urls": {
+                installer.name: "https://gitee.example/Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
+                "Mklink-AI-Probe-v0.1.0-Skill.zip": "https://gitee.example/Mklink-AI-Probe-v0.1.0-Skill.zip",
+            }
         },
     )
     monkeypatch.setattr(
@@ -333,6 +354,7 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         "publish_updates_branch",
         lambda **_kwargs: events.append("updates"),
     )
+    monkeypatch.setattr(publisher, "git_output", lambda *_args: "c" * 40)
 
     publisher.publish_update_release(
         version="0.1.0",
@@ -347,4 +369,6 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
         repository=tmp_path,
     )
 
-    assert events == ["preflight", "tag", "github", "gitee", "verify", "updates"]
+    assert events == [
+        "preflight", "tag", "github", "gitee", "verify", "verify", "updates"
+    ]

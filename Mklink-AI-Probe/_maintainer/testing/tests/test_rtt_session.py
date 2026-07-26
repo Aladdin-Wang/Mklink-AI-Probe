@@ -1,6 +1,9 @@
-from mklink._types import DeviceState
+import threading
+
 import pytest
 
+from mklink._types import DeviceState
+from mklink.bridge import MKLinkSerialBridge
 from mklink.device import Device, DeviceError
 from mklink.rtt import RTTSession
 
@@ -32,6 +35,16 @@ class StopSensitiveBridge:
 
     def _enter_stream(self, state):
         self.state = state
+
+
+def test_bridge_rtt_byte_reader_preserves_non_utf8_payload():
+    bridge = object.__new__(MKLinkSerialBridge)
+    bridge._running = True
+    bridge._buffer_lock = threading.Lock()
+    payload = "中文".encode("gbk")
+    bridge._response_buffer = [payload[:1], payload[1:]]
+
+    assert bridge.read_stream_bytes(duration=0.001) == payload
 
 
 def test_rtt_stop_uses_raw_stop_and_allows_immediate_restart():

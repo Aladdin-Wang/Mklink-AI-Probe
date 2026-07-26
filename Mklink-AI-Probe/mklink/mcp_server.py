@@ -31,11 +31,44 @@ Tools are registered with ``@mcp.tool()`` and grouped by capability
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import logging
+import sys
 import threading
-from typing import Any
+from typing import Any, Iterator, TextIO
 
 log = logging.getLogger("mklink.mcp")
+
+
+class _McpProtocolStdout:
+    """Keep JSON-RPC on stdout while routing ordinary prints to stderr."""
+
+    def __init__(self, protocol_stream: TextIO, diagnostic_stream: TextIO) -> None:
+        self._protocol_stream = protocol_stream
+        self._diagnostic_stream = diagnostic_stream
+
+    @property
+    def buffer(self) -> Any:
+        return self._protocol_stream.buffer
+
+    def write(self, text: str) -> int:
+        return self._diagnostic_stream.write(text)
+
+    def flush(self) -> None:
+        self._diagnostic_stream.flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._diagnostic_stream, name)
+
+
+@contextmanager
+def _isolate_stdio_protocol() -> Iterator[None]:
+    protocol_stdout = sys.stdout
+    sys.stdout = _McpProtocolStdout(protocol_stdout, sys.stderr)
+    try:
+        yield
+    finally:
+        sys.stdout = protocol_stdout
 
 # --------------------------------------------------------------------------
 # Lazy Device singleton (double-checked locking).
@@ -124,6 +157,7 @@ def _register_health_tools(mcp: Any) -> None:
         """
         from importlib.metadata import version, PackageNotFoundError
         from mklink.toolchain import status as toolchain_status
+        from mklink.update_check import check_for_update
         try:
             ver = version("mklink")
         except PackageNotFoundError:  # pragma: no cover
@@ -133,6 +167,7 @@ def _register_health_tools(mcp: Any) -> None:
             "server": "mklink-ai-probe",
             "transport": "stdio",
             "sdk_version": ver,
+            "update": check_for_update(),
             **toolchain_status(),
         }
 
@@ -847,6 +882,11 @@ def _register_hardfault_tools(mcp: Any) -> None:
             "stack_frame": rep.stack_frame,
             "source_locations": rep.source_locations,
             "summary": rep.summary,
+            "fault_function": rep.fault_function,
+            "fault_location": rep.fault_location,
+            "exception_stack": rep.exception_stack,
+            "call_stack": rep.call_stack,
+            "core_registers": rep.core_registers,
         }
 
 
@@ -1272,7 +1312,8 @@ def run() -> None:
     global mcp
     if mcp is None:
         mcp = build_server()
-    mcp.run(transport="stdio")
+    with _isolate_stdio_protocol():
+        mcp.run(transport="stdio")
 
 
 __all__ = ["build_server", "run", "configure_device"]

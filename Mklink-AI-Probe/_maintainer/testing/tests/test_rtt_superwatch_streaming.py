@@ -139,6 +139,60 @@ def test_rtt_arbitrary_chunks_preserve_utf8_crlf_and_partial_tail():
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("encoding", "text"),
+    [("gbk", "中文输出"), ("gb18030", "扩展字符𠀀")],
+)
+def test_rtt_chinese_encoding_preserves_characters_split_across_chunks(
+    encoding, text,
+):
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=4)
+        queue = hub.subscribe()
+        manager = RttStreamManager(stream_hub=hub, raw_batch_lines=8)
+        manager.set_encoding(encoding)
+        encoded = f"{text}\n".encode(encoding)
+
+        manager.feed_rtt_bytes(encoded[:1])
+        manager.feed_rtt_bytes(encoded[1:-1])
+        manager.feed_rtt_bytes(encoded[-1:])
+        manager.flush_pending(final=True)
+
+        batch = await queue.get()
+        assert [line.text for line in decode_rtt_lines(batch.payload, 1)] == [text]
+        assert manager.get_status()["encoding"] == encoding
+        hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
+def test_rtt_runtime_encoding_switch_only_changes_future_bytes():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=4)
+        queue = hub.subscribe()
+        manager = RttStreamManager(stream_hub=hub, raw_batch_lines=8)
+
+        manager.feed_rtt_bytes("旧编码\n".encode("utf-8"))
+        assert manager.set_encoding("gbk") == "gbk"
+        manager.feed_rtt_bytes("新编码\n".encode("gbk"))
+        manager.flush_pending(final=True)
+
+        batch = await queue.get()
+        assert [line.text for line in decode_rtt_lines(batch.payload, 2)] == [
+            "旧编码", "新编码",
+        ]
+        hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
+def test_rtt_rejects_unsupported_text_encoding():
+    manager = RttStreamManager()
+
+    with pytest.raises(ValueError, match="Unsupported RTT encoding"):
+        manager.set_encoding("shift-jis")
+
+
 def test_rtt_invalid_utf8_is_replaced_and_empty_final_tail_is_not_emitted():
     async def scenario():
         hub = StreamHub(max_batches_per_client=4)
@@ -1244,7 +1298,7 @@ def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path
 
     device.reparse_axf_atomically = reparse_axf_atomically
     manager = SuperWatchStreamManager()
-    manager._device = device
+    manager._device = SimpleNamespace(symbol_catalog=old_catalog)
     manager._runtime = SuperWatchRuntime(
         items=[WatchItem("gain", 0x20000020, "float", 4)],
         dwarf_info=old_info,
@@ -1266,10 +1320,76 @@ def test_superwatch_reparse_rebinds_selected_names_and_restores_running(tmp_path
     monkeypatch.setattr(manager, "stop", stop)
     monkeypatch.setattr(manager, "start", start)
 
-    result = manager.reparse_symbols(str(second_axf))
+    result = manager.reparse_symbols(str(second_axf), device=device)
 
     assert operations == ["stop", ("reparse", str(second_axf)), "start"]
     assert result == {"preserved": [], "updated": ["gain"], "removed": []}
     assert manager._runtime.items[0].name == "gain"
     assert manager._runtime.items[0].address == 0x20000040
+    assert manager._device is device
     assert manager.get_status()["state"] == "running"
+
+
+def test_superwatch_applies_c_layout_and_restores_paused_collection(tmp_path, monkeypatch):
+    from mklink.c_layout import parse_c_layout
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.superwatch import SuperWatchRuntime
+    from mklink.symbol_catalog import SymbolCatalog
+
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)},
+        variables={"opaque": DwarfVariable("opaque", 10, None, 0x20000020, 8, "Opaque")},
+    )
+    old_catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)]
+    )
+    layout = parse_c_layout(
+        "typedef struct { uint32_t low; uint32_t high; } Opaque;",
+        preferred_type="Opaque",
+    )
+    new_catalog = old_catalog.with_c_layout("opaque", 0x20000020, layout)
+    operations = []
+    device = SimpleNamespace(symbol_catalog=old_catalog, _dwarf_info=info, _port=None)
+
+    def apply_c_definition(variable, definition, pack):
+        operations.append(("apply", variable, pack))
+        device.symbol_catalog = new_catalog
+        return new_catalog, layout
+
+    device.apply_c_definition = apply_c_definition
+    manager = SuperWatchStreamManager()
+    manager._runtime = SuperWatchRuntime(items=[], dwarf_info=info, symbol_catalog=old_catalog)
+    manager._device = device
+    manager._running = True
+    manager._stop_event.clear()
+    manager._collecting.clear()
+
+    def stop():
+        operations.append("stop")
+        manager._running = False
+
+    def start(_device):
+        operations.append("start")
+        manager._running = True
+        manager._collecting.set()
+
+    def pause():
+        operations.append("pause")
+        manager._collecting.clear()
+
+    monkeypatch.setattr(manager, "stop", stop)
+    monkeypatch.setattr(manager, "start", start)
+    monkeypatch.setattr(manager, "pause", pause)
+
+    result = manager.apply_c_definition(
+        "opaque", "typedef struct { uint32_t low; uint32_t high; } Opaque;", 4,
+        device=device,
+    )
+
+    assert operations == ["stop", ("apply", "opaque", 4), "start", "pause"]
+    assert result["layout"]["leaf_count"] == 2
+    assert manager._runtime.symbol_catalog is new_catalog
+    assert manager.running is True
+    assert manager._collecting.is_set() is False

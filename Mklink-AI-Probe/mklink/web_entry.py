@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 import plistlib
@@ -36,6 +37,18 @@ WINDOWS_OWNER_ID = "com.microkeen.mklink-ai-probe.web-entry"
 
 class WebEntryError(RuntimeError):
     pass
+
+
+def web_entry_url(port: int, *, root: Path | None = None) -> str:
+    """Return a build-specific URL so browsers cannot reuse an old app shell."""
+    root = Path(root or repository_root())
+    index = root / "gui" / "dist" / "index.html"
+    try:
+        build = hashlib.sha256(index.read_bytes()).hexdigest()[:12]
+    except OSError:
+        build = ""
+    query = f"?build={build}" if build else ""
+    return f"http://127.0.0.1:{int(port)}/{query}#/config"
 
 
 def parse_protocol_uri(uri: str) -> str:
@@ -143,7 +156,7 @@ def macos_info_plist() -> dict[str, Any]:
         "CFBundleVersion": "1",
         "CFBundleShortVersionString": "1.0",
         "CFBundlePackageType": "APPL",
-        "CFBundleExecutable": "mklink-web-entry",
+        "CFBundleExecutable": "applet",
         "LSUIElement": True,
         "CFBundleURLTypes": [{
             "CFBundleURLName": "MKLink Web Entry",
@@ -152,15 +165,20 @@ def macos_info_plist() -> dict[str, Any]:
     }
 
 
-def render_macos_launcher(
+def render_macos_applescript(
     python_executable: Path,
     handler_path: Path,
 ) -> str:
-    return (
-        "#!/bin/sh\nexec "
+    command = (
         f"{shlex.quote(str(python_executable))} "
-        f"{shlex.quote(str(handler_path))} \"$1\"\n"
+        f"{shlex.quote(str(handler_path))} "
     )
+    command = command.replace("\\", "\\\\").replace('"', '\\"')
+    return "\n".join([
+        "on open location theURL",
+        f'  do shell script "{command}" & quoted form of theURL & " >/dev/null 2>&1 &"',
+        "end open location",
+    ])
 
 
 def _icon_data_uri() -> str:
@@ -463,7 +481,7 @@ def start_web_entry(
             and current_identity == saved_identity
             and probe(state_port) == "web"
         ):
-            browser_open(f"http://127.0.0.1:{state_port}/")
+            browser_open(web_entry_url(state_port))
             return {
                 "status": "reused",
                 "port": state_port,
@@ -476,7 +494,7 @@ def start_web_entry(
     for port in range(preferred_port, preferred_port + MAX_PORT_ATTEMPTS):
         detected = probe(port)
         if detected == "web":
-            browser_open(f"http://127.0.0.1:{port}/")
+            browser_open(web_entry_url(port))
             return {"status": "reused", "port": port, "owned": False}
         if detected == "api":
             raise WebEntryError(
@@ -520,7 +538,7 @@ def start_web_entry(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if probe(selected_port) == "web":
-            url = f"http://127.0.0.1:{selected_port}/"
+            url = web_entry_url(selected_port, root=root)
             browser_open(url)
             return {
                 "status": "started",
@@ -685,19 +703,38 @@ def _install_macos_protocol(
     *,
     home: Path,
     runner: Callable[..., Any],
+    compiler: Path,
 ) -> Path:
     app = home / "Applications" / f"{HANDLER_NAME}.app"
-    contents = app / "Contents"
-    macos = contents / "MacOS"
-    macos.mkdir(parents=True, exist_ok=True)
-    with (contents / "Info.plist").open("wb") as stream:
-        plistlib.dump(macos_info_plist(), stream)
-    executable = macos / "mklink-web-entry"
-    executable.write_text(
-        render_macos_launcher(python_executable, handler),
+    if not compiler.is_file():
+        raise WebEntryError("macOS osacompile is unavailable; install the system developer tools")
+    if app.exists():
+        shutil.rmtree(app)
+    completed = runner(
+        [str(compiler), "-o", str(app), "-e", render_macos_applescript(
+            python_executable, handler,
+        )],
+        check=False,
+        capture_output=True,
         encoding="utf-8",
+        errors="replace",
+        text=True,
     )
-    executable.chmod(0o755)
+    if getattr(completed, "returncode", 0) != 0:
+        detail = str(getattr(completed, "stderr", "") or "").strip()
+        raise WebEntryError(f"macOS protocol launcher compilation failed: {detail}")
+    contents = app / "Contents"
+    info_path = contents / "Info.plist"
+    if not info_path.is_file():
+        raise WebEntryError("macOS protocol launcher was not created")
+    try:
+        with info_path.open("rb") as stream:
+            info = plistlib.load(stream)
+    except (OSError, plistlib.InvalidFileException) as error:
+        raise WebEntryError(f"macOS protocol launcher metadata is invalid: {error}") from error
+    info.update(macos_info_plist())
+    with info_path.open("wb") as stream:
+        plistlib.dump(info, stream)
     register = Path(
         "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
         "LaunchServices.framework/Support/lsregister"
@@ -742,6 +779,7 @@ def install_protocol(
     home: Path | None = None,
     environment: dict[str, str] | None = None,
     python_executable: Path | None = None,
+    macos_compiler: Path | None = None,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, str]:
     import platform
@@ -758,7 +796,11 @@ def install_protocol(
         registration = _install_windows_protocol(python_executable, handler)
     elif system == "Darwin":
         registration = _install_macos_protocol(
-            python_executable, handler, home=home, runner=runner,
+            python_executable,
+            handler,
+            home=home,
+            runner=runner,
+            compiler=macos_compiler or Path("/usr/bin/osacompile"),
         )
     elif system == "Linux":
         registration = _install_linux_protocol(

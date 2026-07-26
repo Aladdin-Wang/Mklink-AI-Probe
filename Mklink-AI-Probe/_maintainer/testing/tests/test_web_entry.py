@@ -87,15 +87,17 @@ def test_macos_info_plist_registers_the_same_uri_scheme():
     assert schemes == ["mklink-ai-probe"]
 
 
-def test_macos_launcher_shell_quotes_runtime_and_handler_paths(tmp_path):
-    script = web_entry.render_macos_launcher(
+def test_macos_launcher_handles_url_apple_events_and_shell_quotes_paths(tmp_path):
+    script = web_entry.render_macos_applescript(
         PurePosixPath("/Users/O'Brien/MKLink $runtime/python3"),
         PurePosixPath("/Users/test/handler.py"),
     )
 
-    assert "exec '/Users/O'\"'\"'Brien/MKLink $runtime/python3'" in script
-    assert "'$1'" not in script
-    assert '"$1"' in script
+    assert "on open location theURL" in script
+    assert "quoted form of theURL" in script
+    assert "MKLink $runtime/python3" in script
+    assert "/Users/test/handler.py" in script
+    assert '\\"' in script
 
 
 def test_windows_registry_command_uses_an_absolute_handler_and_quoted_uri(tmp_path):
@@ -125,6 +127,21 @@ def test_gui_server_command_reuses_the_existing_cli_without_touching_mcp_or_serv
     assert "mcp" not in command
 
 
+def test_web_entry_url_changes_with_the_frontend_build(tmp_path):
+    dist = tmp_path / "gui" / "dist"
+    dist.mkdir(parents=True)
+    index = dist / "index.html"
+    index.write_text("old", encoding="utf-8")
+    old_url = web_entry.web_entry_url(8765, root=tmp_path)
+
+    index.write_text("new", encoding="utf-8")
+    new_url = web_entry.web_entry_url(8765, root=tmp_path)
+
+    assert old_url.startswith("http://127.0.0.1:8765/?build=")
+    assert old_url.endswith("#/config")
+    assert new_url != old_url
+
+
 def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_path):
     spawned = []
     opened = []
@@ -139,7 +156,7 @@ def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_p
 
     assert result == {"status": "reused", "port": 8765, "owned": False}
     assert spawned == []
-    assert opened == ["http://127.0.0.1:8765/"]
+    assert opened == [web_entry.web_entry_url(8765)]
     assert not (tmp_path / "state.json").exists()
 
 
@@ -155,7 +172,7 @@ def test_start_scans_the_port_range_before_starting_a_competing_backend(tmp_path
     )
 
     assert result == {"status": "reused", "port": 8766, "owned": False}
-    assert opened == ["http://127.0.0.1:8766/"]
+    assert opened == [web_entry.web_entry_url(8766)]
 
 
 def test_start_refuses_to_compete_with_a_running_mklink_api_without_web_assets(tmp_path):
@@ -285,19 +302,37 @@ def test_linux_install_creates_a_user_desktop_handler(tmp_path):
 
 
 def test_macos_install_creates_a_user_application_bundle(tmp_path):
+    compiler = tmp_path / "osacompile"
+    compiler.write_text("", encoding="utf-8")
+
+    def compile_app(command, **_kwargs):
+        app = Path(command[command.index("-o") + 1])
+        contents = app / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        with (contents / "Info.plist").open("wb") as stream:
+            import plistlib
+            plistlib.dump({"CFBundleExecutable": "applet"}, stream)
+        (contents / "MacOS" / "applet").write_text("", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="")
+
     result = web_entry.install_protocol(
         system="Darwin",
         data_dir=tmp_path / "data",
         home=tmp_path / "home",
         environment={},
         python_executable=Path("/opt/mklink/python3"),
-        runner=lambda *_args, **_kwargs: None,
+        macos_compiler=compiler,
+        runner=compile_app,
     )
 
     app = Path(result["registration"])
     assert app == tmp_path / "home" / "Applications" / "Mklink AI Probe Web Launcher.app"
     assert (app / "Contents" / "Info.plist").is_file()
-    assert (app / "Contents" / "MacOS" / "mklink-web-entry").is_file()
+    assert (app / "Contents" / "MacOS" / "applet").is_file()
+    with (app / "Contents" / "Info.plist").open("rb") as stream:
+        import plistlib
+        info = plistlib.load(stream)
+    assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["mklink-ai-probe"]
 
 
 def test_windows_install_writes_only_the_user_protocol_keys(tmp_path, monkeypatch):

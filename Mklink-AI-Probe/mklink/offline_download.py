@@ -37,7 +37,8 @@ class OfflineFirmware:
     format: str
     base_address: Optional[int]
     algorithm_id: str
-    upload_index: int
+    upload_index: Optional[int]
+    source_path: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -248,6 +249,17 @@ def parse_offline_config(
             base_address = _parse_int(raw.get("base_address"), "BIN base address")
         elif hpm_target:
             raise OfflineDownloadError("HPM ROM API only supports BIN firmware")
+        raw_upload_index = raw.get("upload_index")
+        source_path = str(raw.get("source_path") or "").strip() or None
+        upload_index = (
+            _parse_int(raw_upload_index, "firmware upload index")
+            if raw_upload_index is not None
+            else None
+        )
+        if (upload_index is None) == (source_path is None):
+            raise OfflineDownloadError(
+                "firmware requires exactly one upload index or local source path"
+            )
         firmwares.append(
             OfflineFirmware(
                 id=firmware_id,
@@ -255,7 +267,8 @@ def parse_offline_config(
                 format=image_format,
                 base_address=base_address,
                 algorithm_id=algorithm_id,
-                upload_index=_parse_int(raw.get("upload_index", index), "firmware upload index"),
+                upload_index=upload_index,
+                source_path=source_path,
             )
         )
     if not firmwares:

@@ -39,6 +39,11 @@ class HardFaultReport:
     stack_frame: dict[str, int] | None
     source_locations: dict[int, str] | None
     summary: str
+    fault_function: str | None
+    fault_location: str | None
+    exception_stack: dict[str, Any] | None
+    call_stack: list[dict[str, Any]]
+    core_registers: dict[str, int] | None
 
 
 class DeviceError(Exception):
@@ -202,6 +207,7 @@ class Device:
         self._systemview_parser = None
         self._dwarf_info = None
         self._symbol_catalog = None
+        self._symbol_layout_overrides: dict[tuple[str, int, int], dict[str, tuple[str, int | None]]] = {}
         self._symbol_lock = threading.RLock()
         self._axf_error = None  # reason ELF/DWARF loading was skipped
         self._connected = False
@@ -356,6 +362,22 @@ class Device:
             generation=generation,
             ram_ranges=((_SRAM_START, _SRAM_END),),
         )
+        override_key = (
+            str(Path(candidate).resolve()),
+            fingerprint.size,
+            fingerprint.mtime_ns,
+        )
+        for variable_name, (definition, pack) in self._symbol_layout_overrides.get(
+            override_key, {}
+        ).items():
+            catalog, _layout = self._catalog_with_c_definition(
+                info,
+                catalog,
+                variable_name,
+                definition,
+                pack,
+                generation=generation,
+            )
         if catalog.fingerprint != fingerprint:
             raise DeviceError("AXF changed while symbols were being parsed")
 
@@ -367,6 +389,79 @@ class Device:
             self._elf_backend = effective_backend
             self._axf_error = None
         return catalog
+
+    @staticmethod
+    def _catalog_with_c_definition(
+        info,
+        catalog,
+        variable_name: str,
+        definition: str,
+        pack: int | None,
+        *,
+        generation: int | None = None,
+    ):
+        from mklink.c_layout import CLayoutError, parse_c_layout
+
+        variable = info.variables.get(variable_name)
+        if variable is None or variable.address is None:
+            raise CLayoutError(
+                f"variable '{variable_name}' was not found or has no fixed address"
+            )
+        if variable.size <= 0:
+            raise CLayoutError(f"variable '{variable_name}' has no known storage size")
+        layout = parse_c_layout(
+            definition,
+            preferred_type=(
+                variable.type_name
+                if re.fullmatch(r"[A-Za-z_]\w*", variable.type_name or "")
+                else None
+            ),
+            pack=pack,
+        )
+        if layout.size != variable.size:
+            raise CLayoutError(
+                f"C layout size {layout.size} does not match AXF variable size "
+                f"{variable.size} for '{variable_name}'"
+            )
+        return (
+            catalog.with_c_layout(
+                variable_name,
+                int(variable.address),
+                layout,
+                generation=generation,
+            ),
+            layout,
+        )
+
+    def apply_c_definition(
+        self,
+        variable_name: str,
+        definition: str,
+        pack: int | None = None,
+    ):
+        """Apply a bounded C aggregate layout to the active symbol catalog."""
+        with self._symbol_lock:
+            info = self._dwarf_info
+            catalog = self._symbol_catalog
+            if info is None or catalog is None:
+                raise DeviceError("No AXF symbol catalog is loaded")
+            new_catalog, layout = self._catalog_with_c_definition(
+                info,
+                catalog,
+                variable_name,
+                definition,
+                pack,
+            )
+            override_key = (
+                str(Path(catalog.axf_path).resolve()),
+                catalog.fingerprint.size,
+                catalog.fingerprint.mtime_ns,
+            )
+            overrides = dict(self._symbol_layout_overrides.get(override_key, {}))
+            overrides[variable_name] = (definition, pack)
+            self._symbol_layout_overrides[override_key] = overrides
+            self._symbol_catalog = new_catalog
+            return new_catalog, layout
 
     def parse_axf(
         self,
@@ -423,6 +518,7 @@ class Device:
             out.update({
                 "catalog_generation": catalog.generation,
                 "catalog_count": len(catalog.items),
+                "catalog_container_count": len(catalog.containers),
                 "catalog_stale": catalog.is_stale(),
                 "parsed_at": catalog.parsed_at,
             })
@@ -1013,6 +1109,12 @@ class Device:
             raise DeviceError("RTT not started. Call rtt_start() first.")
         return self._rtt_session.read_output(duration=duration)
 
+    def rtt_read_bytes(self, duration: float = 10.0) -> bytes:
+        self._require_connected()
+        if not self._rtt_session or not self._rtt_session._running:
+            raise DeviceError("RTT not started. Call rtt_start() first.")
+        return self._rtt_session.read_output_bytes(duration=duration)
+
     def rtt_write(self, data: bytes | str) -> bool:
         self._require_connected()
         if not self._rtt_session or not self._rtt_session._running:
@@ -1392,7 +1494,7 @@ class Device:
 
         from mklink.hardfault import (
             decode_cfsr, decode_hfsr,
-            parse_exception_stack_frame, addr2line, format_hardfault_report,
+            addr2line, build_call_stack, find_exception_stack,
         )
 
         cfsr = fault_regs.get("SCB.CFSR", 0)
@@ -1402,20 +1504,90 @@ class Device:
 
         stack_frame = None
         source_locations = None
+        fault_function = None
+        fault_location = None
+        exception_stack = None
+        call_stack: list[dict[str, Any]] = []
+        core_registers = None
+        executable_ranges = [(0x00000000, 0x20000000)]
+        function_symbols = []
+
         if self._axf:
             try:
-                frame_raw = self.read_memory(0xE000EDF8, 32)
-                stack_frame = parse_exception_stack_frame(frame_raw)
-                if stack_frame:
-                    addrs = [stack_frame.get("pc", 0), stack_frame.get("lr", 0)]
-                    source_locations = addr2line(
+                from mklink.elf_backend import list_elf_sections, list_elf_symbols
+
+                executable_ranges = [
+                    (section.address, section.address + section.size)
+                    for section in list_elf_sections(
                         self._axf,
-                        *addrs,
                         backend=self._elf_backend,
                         project_root=self._project_root,
                     )
+                    if section.size > 0 and section.flags & 0x4
+                ] or executable_ranges
+                function_symbols = list_elf_symbols(
+                    self._axf,
+                    backend=self._elf_backend,
+                    project_root=self._project_root,
+                )
             except Exception:
                 pass
+
+        try:
+            try:
+                self.halt()
+            except Exception:
+                # A locked-up core can already be halted even if the halt helper
+                # cannot obtain a complete debug-state snapshot.
+                pass
+            core_registers = self.read_core_registers()
+            stack_regions: dict[str, tuple[int, bytes]] = {}
+            for pointer_name in ("msp", "psp"):
+                pointer = int(core_registers.get(pointer_name, 0)) & ~3
+                if not _is_sram_pointer(pointer):
+                    continue
+                try:
+                    stack_regions[pointer_name] = (pointer, self.read_memory(pointer, 512))
+                except Exception:
+                    continue
+
+            located = find_exception_stack(
+                core_registers,
+                stack_regions,
+                executable_ranges,
+            )
+            if located:
+                stack_frame = located["frame"]
+                stack_data = located.pop("stack_data")
+                exception_stack = located
+                stack_base = int(exception_stack["pointer_address"])
+                call_stack = build_call_stack(
+                    stack_frame,
+                    frame_address=int(exception_stack["frame_address"]),
+                    stack_base=stack_base,
+                    stack_data=stack_data,
+                    executable_ranges=executable_ranges,
+                    symbols=function_symbols,
+                )
+                if self._axf and call_stack:
+                    lookups = [int(item["lookup_address"]) for item in call_stack]
+                    resolved = addr2line(
+                        self._axf,
+                        *lookups,
+                        backend=self._elf_backend,
+                        project_root=self._project_root,
+                    )
+                    source_locations = {}
+                    for item in call_stack:
+                        location = resolved.get(int(item["lookup_address"]))
+                        if location:
+                            item["location"] = location
+                            source_locations[int(item["address"])] = location
+                if call_stack:
+                    fault_function = call_stack[0].get("function")
+                    fault_location = call_stack[0].get("location")
+        except Exception:
+            pass
 
         flags = cfsr_flags + hfsr_flags
         summary = "; ".join(flags) if flags else "Unknown fault"
@@ -1428,6 +1600,11 @@ class Device:
             stack_frame=stack_frame,
             source_locations=source_locations,
             summary=summary,
+            fault_function=fault_function,
+            fault_location=fault_location,
+            exception_stack=exception_stack,
+            call_stack=call_stack,
+            core_registers=core_registers,
         )
 
     # ------------------------------------------------------------------

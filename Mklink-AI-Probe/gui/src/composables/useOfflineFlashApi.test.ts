@@ -15,7 +15,7 @@ describe('useOfflineFlashApi', () => {
       },
     }), { status: 409, statusText: 'Conflict' })))
 
-    const error = await useOfflineFlashApi().detectModel().catch(value => value)
+    const error = await useOfflineFlashApi().preview({} as never).catch(value => value)
 
     expect(error).toBeInstanceOf(Error)
     expect(error.message).toBe('探针正被 SuperWatch 占用，请先停止该功能后重试。')

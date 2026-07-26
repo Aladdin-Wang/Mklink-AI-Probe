@@ -451,23 +451,49 @@ def test_trigger_api_runs_the_configured_v4_script_with_both_resources_leased(mo
     assert app.state.mklink_state["resource_manager"].get_status() == {}
 
 
-def test_trigger_api_preserves_a_conflicting_resource_lease(monkeypatch):
+def test_trigger_api_preempts_and_stops_the_rtt_dashboard(monkeypatch):
+    stopped = []
+
+    class Bridge:
+        def __init__(self, _port):
+            pass
+
+        def connect(self):
+            return True
+
+        def send_command(self, _command, timeout, echo=False):
+            assert timeout == 600
+            assert echo is True
+            return "offline download finished"
+
+        def close(self):
+            pass
+
+    class RttManager:
+        running = True
+
+        def stop(self):
+            self.running = False
+            stopped.append("rtt")
+
+    monkeypatch.setattr("mklink.bridge.MKLinkSerialBridge", Bridge)
     monkeypatch.setattr("mklink.discovery.find_mklink_cdc_port", lambda: "TEST_CDC")
     app = create_app(auth_token=None, project_root=".")
     manager = app.state.mklink_state["resource_manager"]
     manager.acquire(ResourceGroup.MKLINK_BRIDGE, "user:dashboard:rtt")
 
-    with TestClient(app) as client:
+    with patch(
+        "mklink.remote.dashboards.get_managers", return_value={"rtt": RttManager()},
+    ), TestClient(app) as client:
         response = client.post("/api/offline-download/trigger", json={})
 
-    assert response.status_code == 409
-    lease = manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE)
-    assert lease is not None
-    assert lease.owner == "user:dashboard:rtt"
-    assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert stopped == ["rtt"]
+    assert manager.get_status() == {}
 
 
-def test_offline_api_reuses_the_connected_device_bridge():
+def test_offline_api_requires_manual_model_and_reuses_bridge_only_for_trigger():
     calls = []
 
     class Bridge:
@@ -492,23 +518,19 @@ def test_offline_api_reuses_the_connected_device_bridge():
         detected = client.post("/api/offline-download/detect-model", json={})
         preview = client.post(
             "/api/offline-download/preview",
-            json={**_config(), "model": "auto"},
+            json=_config("V4"),
         )
         triggered = client.post(
             "/api/offline-download/trigger",
             json={"model": "V4", "script_name": "factory-line-a.py"},
         )
 
-    assert detected.json() == {"model": "V4", "version": "V4.3.4"}
+    assert detected.status_code in (404, 405)
     assert preview.status_code == 200, preview.text
     assert preview.json()["model"] == "V4"
     assert triggered.status_code == 200, triggered.text
     assert triggered.json()["status"] == "completed"
-    assert calls == [
-        ("cmd.get_version()", 5.0, False),
-        ("cmd.get_version()", 5.0, False),
-        ('load.offline("Python/factory-line-a.py")', 600, True),
-    ]
+    assert calls == [('load.offline("Python/factory-line-a.py")', 600, True)]
 
 
 def test_trigger_api_streams_device_output_before_the_terminal_result(monkeypatch):
@@ -631,3 +653,31 @@ def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):
     assert (disk / "python" / "factory-line-a.py").is_file()
     assert (disk / "boot.bin").read_bytes() == b"boot"
     assert (disk / "FLM" / "STM32F10x_1024.FLM").read_bytes() == b"internal"
+
+
+def test_deploy_api_reads_current_local_firmware_paths(tmp_path):
+    disk = tmp_path / "MICROKEEN"
+    disk.mkdir()
+    payload = _config()
+    for index, firmware in enumerate(payload["firmwares"]):
+        source = tmp_path / firmware["file_name"]
+        source.write_bytes(f"current-{index}".encode("ascii"))
+        firmware.pop("upload_index")
+        firmware["source_path"] = str(source)
+    app = create_app(auth_token=None, project_root=".")
+    files = [
+        ("flm_files", ("internal.flm", b"internal", "application/octet-stream")),
+        ("flm_files", ("external.flm", b"external", "application/octet-stream")),
+    ]
+
+    with patch("mklink.discovery.find_microkeen_disk", return_value=str(disk)), TestClient(app) as client:
+        response = client.post(
+            "/api/offline-download/deploy",
+            data={"config_json": json.dumps(payload)},
+            files=files,
+        )
+
+    assert response.status_code == 200, response.text
+    assert (disk / "boot.bin").read_bytes() == b"current-0"
+    assert (disk / "rt-thread.hex").read_bytes() == b"current-1"
+    assert (disk / "assets.bin").read_bytes() == b"current-2"

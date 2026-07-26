@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
-import { RefreshCw, Search, Save, TriangleAlert, Unplug, Usb } from '@lucide/vue'
+import { RefreshCw, Search, TriangleAlert, Unplug, Usb } from '@lucide/vue'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
 import { useSymbolCatalog } from '../composables/useSymbolCatalog'
 import {
+  isSameFileSourcePath,
   isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
 } from '../lib/desktopSettings'
 import { pickMapFile, pickSymbolFile, type PickedFile } from '../lib/filePicker'
-import type { FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
+import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
 import FirmwareUpdateModal from '../components/config/FirmwareUpdateModal.vue'
@@ -44,8 +45,8 @@ const savingLocal = ref(false)
 const connecting = ref(false)
 const disconnecting = ref(false)
 const browsingFiles = ref(false)
-const savingFiles = ref(false)
 const parsingSymbols = ref(false)
+const localSaveState = ref<'idle' | 'saving' | 'saved'>('idle')
 
 const remoteUrl = ref('ws://127.0.0.1:8765')
 const remoteToken = ref('')
@@ -75,7 +76,10 @@ async function autoDiscover() {
   portsLoading.value = true
   try {
     const result = await discoverPort()
-    if (result.port) localPort.value = result.port
+    if (result.port) {
+      localPort.value = result.port
+      await saveLocalConfig()
+    }
   } catch (error: any) {
     toast.error('自动检测失败: ' + error.message)
   } finally {
@@ -102,14 +106,16 @@ async function saveLocalConfig() {
     }
   }
   savingLocal.value = true
+  localSaveState.value = 'saving'
   try {
     config.value = await updateConfig({
       ...config.value,
       com_port: localPort.value || undefined,
       swd_clock: rawClock || undefined,
     })
-    toast.success('设备配置已保存')
+    localSaveState.value = 'saved'
   } catch (error: any) {
+    localSaveState.value = 'idle'
     toast.error('保存配置失败: ' + error.message)
   } finally {
     savingLocal.value = false
@@ -143,18 +149,26 @@ async function disconnectLocal() {
   }
 }
 
-async function selectedFilePath(kind: FileSourceKind, selected: PickedFile): Promise<string | null> {
+interface SelectedFileSource {
+  path: string
+  displayPath: string
+}
+
+async function selectedFilePath(
+  kind: FileSourceKind,
+  selected: PickedFile,
+): Promise<SelectedFileSource | null> {
   if (!selected) return null
-  if (typeof selected === 'string') return selected
+  if (typeof selected === 'string') return { path: selected, displayPath: selected }
   const uploaded = await uploadFileSource(kind, selected)
-  return uploaded.path
+  return { path: uploaded.path, displayPath: uploaded.name || selected.name }
 }
 
 async function browseSymbolFile() {
   browsingFiles.value = true
   try {
-    const path = await selectedFilePath('symbol', await pickSymbolFile())
-    if (path) settings.value.symbolPath = path
+    const source = await selectedFilePath('symbol', await pickSymbolFile())
+    if (source) updateFilePath('symbol', source.path, source.displayPath)
   } catch (error: any) {
     toast.error('加载 AXF / ELF 文件失败: ' + error.message)
   } finally {
@@ -165,8 +179,8 @@ async function browseSymbolFile() {
 async function browseMapFile() {
   browsingFiles.value = true
   try {
-    const path = await selectedFilePath('map', await pickMapFile())
-    if (path) settings.value.mapPath = path
+    const source = await selectedFilePath('map', await pickMapFile())
+    if (source) updateFilePath('map', source.path, source.displayPath)
   } catch (error: any) {
     toast.error('加载 MAP 文件失败: ' + error.message)
   } finally {
@@ -174,27 +188,36 @@ async function browseMapFile() {
   }
 }
 
-function saveFilePaths() {
-  savingFiles.value = true
+function persistFilePaths() {
   try {
     saveDesktopSettings(window.localStorage, settings.value)
-    toast.success('文件路径已保存')
   } catch (error: any) {
     toast.error('保存文件路径失败: ' + error.message)
-  } finally {
-    savingFiles.value = false
   }
+}
+
+function updateFilePath(kind: 'symbol' | 'map', value: string, displayPath = value) {
+  if (kind === 'symbol') {
+    settings.value.symbolPath = value
+    settings.value.symbolDisplayPath = displayPath === value ? '' : displayPath
+  } else {
+    settings.value.mapPath = value
+    settings.value.mapDisplayPath = displayPath === value ? '' : displayPath
+  }
+  persistFilePaths()
 }
 
 async function parseSymbols() {
   if (!deviceStatus.value.connected || !isSymbolFilePath(settings.value.symbolPath)) return
   parsingSymbols.value = true
   try {
-    const result = await parseAxf(settings.value.symbolPath.trim()) as {
-      loaded?: boolean
-      variable_count?: number
-    }
+    const requestedPath = settings.value.symbolPath.trim()
+    const result = await parseAxf(requestedPath) as AxlStatus
     if (result.loaded) {
+      if (!isSameFileSourcePath(requestedPath, result.axf_path)) {
+        toast.error(`AXF 解析失败: 后端仍在使用 ${result.axf_path || '未知文件'}`)
+        return
+      }
       try {
         await symbolCatalog.ensureLoaded(true)
       } catch (error: any) {
@@ -263,7 +286,7 @@ onMounted(async () => {
 
         <div class="form-row">
           <label class="form-label" for="local-port">串口</label>
-          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port">
+          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" @change="saveLocalConfig">
             <option value="">自动检测</option>
             <option v-for="port in portOptions" :key="port.value" :value="port.value">
               {{ port.label }}
@@ -303,20 +326,14 @@ onMounted(async () => {
             class="form-input"
             data-testid="swd-clock"
             placeholder="如 1000000"
+            @change="saveLocalConfig"
           />
         </div>
 
         <div class="local-actions">
-          <button
-            class="btn icon-command"
-            type="button"
-            data-testid="save-local"
-            :disabled="savingLocal"
-            @click="saveLocalConfig"
-          >
-            <Save :size="15" aria-hidden="true" />
-            {{ savingLocal ? '保存中...' : '保存配置' }}
-          </button>
+          <span class="auto-save-state" data-testid="local-auto-save">
+            {{ localSaveState === 'saving' ? '自动保存中...' : localSaveState === 'saved' ? '已自动保存' : '修改后自动保存' }}
+          </span>
           <button
             class="btn btn-primary icon-command"
             type="button"
@@ -344,17 +361,17 @@ onMounted(async () => {
       <FileSourcesPanel
         v-else-if="activeSection === 'files'"
         :symbol-path="settings.symbolPath"
+        :symbol-display-path="settings.symbolDisplayPath"
         :map-path="settings.mapPath"
+        :map-display-path="settings.mapDisplayPath"
         :connected="deviceStatus.connected"
         :symbol-status="deviceStatus.axf"
         :browsing="browsingFiles"
-        :saving="savingFiles"
         :parsing="parsingSymbols"
-        @update:symbol-path="settings.symbolPath = $event"
-        @update:map-path="settings.mapPath = $event"
+        @update:symbol-path="updateFilePath('symbol', $event)"
+        @update:map-path="updateFilePath('map', $event)"
         @browse-symbol="browseSymbolFile"
         @browse-map="browseMapFile"
-        @save="saveFilePaths"
         @parse="parseSymbols"
       />
 
@@ -471,6 +488,11 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   margin: 18px 0 20px 110px;
+}
+
+.auto-save-state {
+  color: var(--dim);
+  font-size: 12px;
 }
 
 .firmware-banner {

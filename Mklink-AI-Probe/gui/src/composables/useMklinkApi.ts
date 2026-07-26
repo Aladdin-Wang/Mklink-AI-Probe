@@ -18,6 +18,7 @@ import type {
   UploadedFileSource,
 } from '../types/mklink'
 import { toHexPayload } from '../lib/rttTransmit'
+import type { RttEncoding } from '../lib/desktopSettings'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -37,7 +38,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
       const d = err.detail
       if (typeof d === 'string') msg = d
       else if (Array.isArray(d)) msg = d.map((e: any) => e.msg || String(e)).join('; ')
-      else if (d) msg = String(d)
+      else if (d && typeof d === 'object' && 'message' in d) msg = String(d.message)
+      else if (d) msg = JSON.stringify(d)
     }
     throw new Error(msg)
   }
@@ -233,6 +235,13 @@ export function useMklinkApi() {
     })
   }
 
+  async function setRttEncoding(encoding: RttEncoding): Promise<{ encoding: RttEncoding }> {
+    return api('/api/dash/rtt/encoding', {
+      method: 'POST',
+      body: JSON.stringify({ encoding }),
+    })
+  }
+
   async function getProjectHistory(): Promise<ProjectHistory> {
     return api('/api/project-history')
   }
@@ -281,6 +290,7 @@ export function useMklinkApi() {
     browseProjectRoot,
     findRtt,
     writeRtt,
+    setRttEncoding,
     getProjectHistory,
     addProjectHistory,
     removeProjectHistory,

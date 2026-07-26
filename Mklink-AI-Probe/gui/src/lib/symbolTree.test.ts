@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SymbolDescriptor } from '../types/mklink'
+import type { SymbolContainerDescriptor, SymbolDescriptor } from '../types/mklink'
 import { buildSymbolTree, collectBranchKeys, visibleSymbolRows } from './symbolTree'
 
 function symbol(path: string, parentPath: string | null = null): SymbolDescriptor {
@@ -91,6 +91,28 @@ describe('symbolTree', () => {
     })
 
     expect(rows.map(row => row.node.key)).toEqual(['counter'])
+  })
+
+  it('shows unresolved aggregate containers as searchable terminal rows', () => {
+    const container: SymbolContainerDescriptor = {
+      path: 'data_save',
+      address: 0x20000648,
+      type_name: 'DATASAVE_TYPEDEF',
+      size: 32,
+      reason: 'unsupported_layout',
+    }
+    const roots = buildSymbolTree([], [container])
+    const rows = visibleSymbolRows(roots, {
+      expanded: new Set<string>(),
+      selected: new Set<string>(),
+      query: 'datasave',
+      selectedOnly: false,
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].node.kind).toBe('container')
+    expect(rows[0].node.container).toEqual(container)
+    expect(rows[0].node.leafCount).toBe(0)
   })
 
   it('keeps a 4660-leaf catalog bounded while roots are collapsed', () => {

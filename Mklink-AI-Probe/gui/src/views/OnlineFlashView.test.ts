@@ -825,13 +825,31 @@ describe('online flash task workspace behavior', () => {
     await chooseFirmware(wrapper, 'firmware.bin')
     await new Promise(resolve => setTimeout(resolve, 250))
 
+    expect(wrapper.get('[data-testid="bin-address-dialog"]').attributes('role')).toBeUndefined()
+    expect(wrapper.get('[data-testid="bin-address-dialog"] [role="dialog"]').attributes('aria-modal')).toBe('true')
     expect(wrapper.get('[data-testid="base-error"]').text()).toContain('BIN 基地址')
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(false)
 
-    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="bin-address-dialog-input"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
 
     await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
+    expect(wrapper.find('[data-testid="bin-address-dialog"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-base"]').element.value).toBe('0x80000000')
     expect(wrapper.text()).toContain('已自动检查')
+    wrapper.unmount()
+  })
+
+  it('prompts for a BIN base when firmware is dropped into the workspace', async () => {
+    const wrapper = mount(await onlineFlashView())
+    const file = new File(['firmware'], 'dropped.bin')
+
+    await wrapper.get('[data-testid="firmware-drop-zone"]').trigger('drop', {
+      dataTransfer: { files: [file] },
+    })
+
+    expect(wrapper.get('[data-testid="bin-address-dialog"]').text()).toContain('dropped.bin')
+    expect(wrapper.get('[data-testid="confirm-bin-address"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -1291,7 +1309,8 @@ describe('online flash task workspace behavior', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('全片擦除'))
     expect(wrapper.get('[data-testid="select-all-sectors"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="range-erase"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('扇区几何信息不可验证')
+    expect(wrapper.text()).toContain('加载固件后显示扇区表')
+    expect(wrapper.text()).not.toContain('扇区几何信息不可验证')
     wrapper.unmount()
   })
   it('exposes stable packaged-HIL selectors', async () => {
@@ -1407,6 +1426,20 @@ describe('online flash component quality', () => {
     expect(input.classes()).toContain('visually-hidden')
     await trigger.trigger('keydown', { key: 'Enter' })
     expect(click).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts firmware dropped into the online workspace', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, sourcePath: '', baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+    } })
+    const file = new File(['hex'], 'dropped.hex')
+
+    await wrapper.get('[data-testid="firmware-drop-zone"]').trigger('drop', {
+      dataTransfer: { files: [file] },
+    })
+
+    expect(wrapper.emitted('dropFiles')?.[0]).toEqual([[file]])
   })
 
   it('wraps the action bar controls for narrow layouts', () => {

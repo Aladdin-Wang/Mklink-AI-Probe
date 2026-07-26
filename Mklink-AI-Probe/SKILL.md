@@ -28,9 +28,30 @@ description: |
 - MCP 未覆盖的：`project-init`、`dashboard`（Web 可视化）、`modbus pointmap detect/generate`、`vofa`/`superwatch` Web、`serve`/`gui` → 走 CLI
 - OpenAI/Codex 或无 MCP → 走 CLI（`python -m mklink`）
 
+## 版本检查与自动更新
+
+- 每个 AI 会话第一次实际使用 MKLink 能力时，在占用探针、串口或启动下载前，运行：
+  `python <skill-root>/scripts/skill_update.py check --json`。脚本默认缓存 24 小时，
+  网络不可用时不阻塞当前任务，也不要反复提示。
+- MCP 客户端首次调用 `ping` 时也会在返回值的 `update` 字段中自动执行同一套
+  24 小时缓存检查。AI 必须读取该字段；当 `update_available: true` 时，主动提醒
+  用户并取得确认，不能静默忽略，也不能在未确认时安装。
+- 当返回 `update_available: true` 时，主动告诉用户当前版本、最新版本和发布说明，
+  并询问是否现在更新。安全关键操作或已经开始的烧录/调试会话不得被更新检查打断。
+- 只有用户明确同意后才运行：
+  `python <skill-root>/scripts/skill_update.py install --yes --json`。该命令从公开
+  `updates/latest.json` 获取版本化桌面安装包和 Skill 包，逐项校验公开的大小与
+  SHA-256，关闭状态下覆盖安装桌面版，并更新本地 Skill。只更新 Skill 可加
+  `--skill-only`，只更新桌面版可加 `--app-only`。
+- Skill 更新完成后提醒用户重启当前 AI 客户端或开启新会话；当前会话已加载的
+  Skill 文本不会在运行中自动替换。由 Git 管理的开发工作区不会被自动覆盖。
+- 本机制从包含 `scripts/skill_update.py` 的版本开始生效；更旧的本地 Skill 需要
+  首次手动重装或由维护者协助升级一次。
+
 ## Agent 核心约束
 
 - **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用
+- **目标数据读取必须 MKLink 优先**：变量、RAM、寄存器、符号、类型和 HardFault 首先使用本 Skill 的 MCP tool；无 MCP 时使用 `python -m mklink` 对应命令。只有 MKLink 已明确连接失败、目标固件不支持相应能力或返回了可复现的读取错误时，才报告原因并尝试 pyOCD 只读兜底；不得在 MKLink 可读时直接绕过本 Skill。
 - **禁止**编写 Python 脚本替代 MCP tool 或 CLI
 - **固件下载必须按统一优先级路由**：普通 MCU 默认先使用已安装 IDE 的原生命令行完成编译和下载；IDE 不可用或项目只有预编译镜像时，使用 pyOCD 在线烧录；两者都不适用或用户明确要求脱机部署时，最后使用 MKLink 脱机下载 API。执行前必须读取 [firmware-download-priority.md](references/firmware-download-priority.md)。`python -m mklink flash` 是用户显式要求时使用的原生串口/FLM 路径，不再是自动下载首选。
 - **失败不得静默换后端**：只有当前方式不适用或能力不可用时才进入下一优先级；IDE 编译/下载、pyOCD 作业或脱机部署一旦开始后失败，先停止并报告根因，取得用户同意后才能换后端。

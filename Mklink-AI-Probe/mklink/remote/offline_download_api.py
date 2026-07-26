@@ -318,25 +318,6 @@ def create_offline_download_router(
             return None
         return getattr(device, "_bridge", None)
 
-    async def _detect(port: Optional[str]) -> dict:
-        from mklink.remote.resource_manager import ResourceGroup
-
-        owner = f"user:offline-download:detect:{uuid.uuid4().hex}"
-        try:
-            resource_manager.acquire(ResourceGroup.MKLINK_BRIDGE, owner, preempt=False)
-            return await asyncio.to_thread(
-                detect_probe_model,
-                port,
-                _connected_bridge(port),
-            )
-        finally:
-            resource_manager.release(owner)
-
-    async def _resolved_model(payload: Mapping[str, object]) -> Optional[str]:
-        if str(payload.get("model") or "auto").upper() != "AUTO":
-            return None
-        return (await _detect(payload.get("port")))["model"]
-
     def _send_trigger(
         command: str,
         active_bridge: Optional[object],
@@ -398,6 +379,7 @@ def create_offline_download_router(
                         [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
                         owner,
                         preempt=False,
+                        preempt_user_dashboard=True,
                     )
                     response = await asyncio.to_thread(
                         _send_trigger,
@@ -458,13 +440,6 @@ def create_offline_download_router(
             "flm_dir": str(root / "FLM") if root else None,
         }
 
-    @router.post("/detect-model")
-    async def detect_model(port: Optional[str] = Body(default=None, embed=True)) -> object:
-        try:
-            return await _detect(port)
-        except OfflineDownloadError as error:
-            raise HTTPException(status_code=400, detail=str(error))
-
     @router.get("/algorithms")
     async def algorithms(part_number: str) -> object:
         from mklink.discovery import find_microkeen_disk
@@ -484,8 +459,7 @@ def create_offline_download_router(
     @router.post("/preview")
     async def preview(payload: dict = Body(...)) -> object:
         try:
-            model = await _resolved_model(payload)
-            config = parse_offline_config(payload, resolved_model=model)
+            config = parse_offline_config(payload)
             return {
                 "model": config.model,
                 "script_name": config.script_name,
@@ -506,8 +480,7 @@ def create_offline_download_router(
             payload = json.loads(config_json)
             if not isinstance(payload, Mapping):
                 raise OfflineDownloadError("offline config must be an object")
-            model = await _resolved_model(payload)
-            config = parse_offline_config(payload, resolved_model=model)
+            config = parse_offline_config(payload)
             disk = await asyncio.to_thread(find_microkeen_disk)
             if not disk:
                 raise OfflineDownloadError("MICROKEEN disk is unavailable")
@@ -515,13 +488,32 @@ def create_offline_download_router(
             total = [0]
             with tempfile.TemporaryDirectory(prefix="mklink-offline-") as raw_temp:
                 temp = Path(raw_temp)
-                firmware_sources = []
+                uploaded_firmwares = []
                 for index, upload in enumerate(firmware_files):
-                    firmware_sources.append(
+                    uploaded_firmwares.append(
                         await asyncio.to_thread(
                             _copy_upload, upload, temp / f"firmware-{index}", total
                         )
                     )
+                firmware_sources: Dict[str, Path] = {}
+                for firmware in config.firmwares:
+                    if firmware.source_path:
+                        source = Path(firmware.source_path).expanduser().resolve()
+                        if source.suffix.casefold() != f".{firmware.format}" or not source.is_file():
+                            raise OfflineDownloadError(
+                                f"local firmware source is unavailable: {firmware.file_name}"
+                            )
+                        if source.stat().st_size <= 0 or source.stat().st_size > _MAX_UPLOAD_SIZE:
+                            raise OfflineDownloadError(
+                                f"local firmware source has an invalid size: {firmware.file_name}"
+                            )
+                        firmware_sources[firmware.id] = source
+                    elif firmware.upload_index is not None and firmware.upload_index < len(uploaded_firmwares):
+                        firmware_sources[firmware.id] = uploaded_firmwares[firmware.upload_index]
+                    else:
+                        raise OfflineDownloadError(
+                            f"missing firmware source: {firmware.file_name}"
+                        )
                 uploaded_flms = []
                 for index, upload in enumerate(flm_files):
                     uploaded_flms.append(
@@ -572,9 +564,7 @@ def create_offline_download_router(
         port = str(raw_port) if raw_port else None
         try:
             if values:
-                model = str(values.get("model") or "auto").upper()
-                if model == "AUTO":
-                    model = (await _detect(port))["model"]
+                model = str(values.get("model") or "").upper()
                 command = offline_trigger_command(
                     model,
                     str(values.get("script_name") or "offline_download.py"),
@@ -599,6 +589,7 @@ def create_offline_download_router(
                 [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
                 owner,
                 preempt=False,
+                preempt_user_dashboard=True,
             )
 
             response = await asyncio.to_thread(

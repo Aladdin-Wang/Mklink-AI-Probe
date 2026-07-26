@@ -67,6 +67,27 @@ describe('DashboardView layout classes', () => {
     wrapper.unmount()
   })
 
+  it('places debug control immediately after memory', () => {
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    const labels = wrapper.findAll('.tab-btn').map(button => button.text())
+    expect(labels.indexOf('调试控制')).toBe(labels.indexOf('内存') + 1)
+    wrapper.unmount()
+  })
+
   it('does not use the full-screen clipped card layout for RTOS Trace', async () => {
     const wrapper = shallowMount(DashboardView, {
       global: {

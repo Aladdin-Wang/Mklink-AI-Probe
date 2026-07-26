@@ -29,6 +29,7 @@
       data-testid="version-history-panel"
       role="dialog"
       aria-label="版本更新记录"
+      @wheel.stop
     >
       <header class="version-panel-header">
         <div>
@@ -174,7 +175,11 @@ onBeforeUnmount(() => {
   z-index: 1200;
   width: min(390px, calc(100vw - 24px));
   max-height: min(520px, calc(100vh - 88px));
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
   padding: 14px 16px 16px;
   border: 1px solid var(--border);
   border-radius: 6px;

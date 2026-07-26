@@ -309,25 +309,46 @@ def test_backend_failure_is_mapped_and_disconnects_once(stage, code):
     assert "target_debug" not in resources.get_status()
 
 
-def test_resource_conflict_fails_job_and_ai_owner_can_be_preempted():
+def test_online_flash_preempts_dashboard_but_not_another_user_operation():
     inspected = image()
     resources = ResourceManager()
     resources.acquire(ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt")
-    blocked_backend = FakeBackend()
-    blocked = OnlineFlashJobManager(
-        lambda: blocked_backend,
+    preempted = []
+    resources.on_preempt(
+        lambda lease, _new_owner: (
+            preempted.append(lease.owner), resources.release(lease.owner)
+        )
+    )
+    dashboard_backend = FakeBackend()
+    dashboard_switch = OnlineFlashJobManager(
+        lambda: dashboard_backend,
         resources,
         image_provider=lambda _image_id: inspected,
     )
 
-    failed = blocked.wait(blocked.start(JobRequest.full_sequence(inspected)), timeout=2)
-    blocked.shutdown()
+    switched = dashboard_switch.wait(
+        dashboard_switch.start(JobRequest.full_sequence(inspected)), timeout=2,
+    )
+    dashboard_switch.shutdown()
 
+    assert switched.state is JobState.SUCCEEDED
+    assert preempted == ["user:dashboard:rtt"]
+
+    resources.acquire(ResourceGroup.TARGET_DEBUG, "user:online-flash:other")
+    blocked_backend = FakeBackend()
+    blocked = OnlineFlashJobManager(
+        lambda: blocked_backend, resources, image_provider=lambda _image_id: inspected,
+    )
+    failed = blocked.wait(
+        blocked.start(JobRequest.full_sequence(inspected)), timeout=2,
+    )
+    blocked.shutdown()
     assert failed.state is JobState.FAILED
     assert failed.error_code == FlashErrorCode.PROBE_BUSY.value
-    assert "user:dashboard:rtt" in failed.error_message
+    assert "user:online-flash:other" in failed.error_message
     assert blocked_backend.calls == []
-    resources.release("user:dashboard:rtt")
+    resources.release("user:online-flash:other")
+
     resources.acquire(ResourceGroup.TARGET_DEBUG, "ai:session:observer")
     backend = FakeBackend()
     preempting = OnlineFlashJobManager(

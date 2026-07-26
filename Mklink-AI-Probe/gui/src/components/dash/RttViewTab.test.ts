@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   api: {
     findRtt: vi.fn(),
     writeRtt: vi.fn(),
+    setRttEncoding: vi.fn(),
   },
   status: { running: false, numeric_channels: [], down_buffers: [] } as Record<string, unknown>,
   scheduler: {
@@ -89,6 +90,7 @@ describe('RttViewTab binary migration', () => {
     mocks.dash.stop.mockResolvedValue(true)
     mocks.api.findRtt.mockResolvedValue({ found: true, addr: '0x20001A40' })
     mocks.api.writeRtt.mockResolvedValue({ sent_bytes: 1 })
+    mocks.api.setRttEncoding.mockImplementation(async encoding => ({ encoding }))
     mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
     vi.stubGlobal('localStorage', new MemoryStorage())
     localStorage.clear()
@@ -105,6 +107,7 @@ describe('RttViewTab binary migration', () => {
       symbolPath: '',
       mapPath: '',
       rttAddress: '',
+      rttEncoding: 'utf-8',
       transmitMode: 'text',
       lineEnding: '',
       sendHistory: [],
@@ -162,13 +165,58 @@ describe('RttViewTab binary migration', () => {
     await flushPromises()
     expect(mocks.binary.reset).toHaveBeenCalled()
     expect(mocks.dash.start).toHaveBeenCalledWith({
-      addr: '0x20000000', mode: 0, search_size: 1024,
+      addr: '0x20000000', mode: 0, search_size: 1024, encoding: 'utf-8',
     })
     expect(mocks.binary.start).toHaveBeenCalled()
     mocks.dash.state.value = 'running'
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
     expect(mocks.binary.stop).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('persists the selected encoding and sends it when RTT starts', async () => {
+    mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
+    mocks.dash.start.mockImplementationOnce(async () => {
+      mocks.status = {
+        running: true,
+        control_block_addr: '0x20000000',
+        encoding: 'gbk',
+        numeric_channels: [],
+        down_buffers: [],
+      }
+      return true
+    })
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-encoding"]').setValue('gbk')
+    await wrapper.get('.btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(mocks.dash.start).toHaveBeenCalledWith({
+      addr: '0x20000000', mode: 0, search_size: 1024, encoding: 'gbk',
+    })
+    expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}').rttEncoding)
+      .toBe('gbk')
+    wrapper.unmount()
+  })
+
+  it('switches decoder encoding while RTT is running', async () => {
+    mocks.status = {
+      running: true,
+      encoding: 'utf-8',
+      numeric_channels: [],
+      down_buffers: [],
+    }
+    mocks.dash.state.value = 'running'
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="rtt-encoding"]').setValue('gb18030')
+    await flushPromises()
+
+    expect(mocks.api.setRttEncoding).toHaveBeenCalledWith('gb18030')
+    expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}').rttEncoding)
+      .toBe('gb18030')
     wrapper.unmount()
   })
 

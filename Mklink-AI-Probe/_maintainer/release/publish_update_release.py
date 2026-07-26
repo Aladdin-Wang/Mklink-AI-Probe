@@ -50,6 +50,7 @@ def _release_names(version: str) -> dict[str, str]:
     return {
         "setup": f"{prefix}-Setup.exe",
         "updater_signature": f"{prefix}-Setup.exe.sig",
+        "skill": f"Mklink-AI-Probe-v{version}-Skill.zip",
         "checksums": "SHA256SUMS.txt",
         "manifest": "release-manifest.json",
     }
@@ -91,10 +92,10 @@ def validate_release_preflight(
     if manifest.get("release_version") != version or manifest.get("source_commit") != head:
         raise RuntimeError("release manifest version or source commit does not match HEAD")
     expected_payload_names = {
-        names["setup"], names["updater_signature"]
+        names["setup"], names["updater_signature"], names["skill"]
     }
     assets = manifest.get("assets")
-    if not isinstance(assets, list) or len(assets) != 2 or not all(
+    if not isinstance(assets, list) or len(assets) != 3 or not all(
         isinstance(value, dict) for value in assets
     ) or {
         value.get("name") for value in assets if isinstance(value, dict)
@@ -112,19 +113,33 @@ def validate_release_preflight(
     if actual_checksums != checksum_lines:
         raise RuntimeError("SHA256SUMS.txt does not match the release manifest")
     return [release_dir / names[key] for key in (
-        "setup", "updater_signature", "checksums", "manifest"
+        "setup", "updater_signature", "skill", "checksums", "manifest"
     )]
 
 
 def build_latest_document(
-    *, version: str, notes: str, published_at: str, signature: str, url: str
+    *, version: str, notes: str, published_at: str, signature: str,
+    updater_url: str, updater_sha256: str, updater_size: int,
+    skill_url: str, skill_sha256: str, skill_size: int, source_commit: str,
 ) -> dict[str, object]:
     return {
         "version": version,
         "notes": notes,
         "pub_date": published_at,
         "platforms": {
-            "windows-x86_64": {"signature": signature, "url": url}
+            "windows-x86_64": {
+                "signature": signature,
+                "url": updater_url,
+                "sha256": updater_sha256,
+                "size": updater_size,
+            }
+        },
+        "skill": {
+            "version": version,
+            "url": skill_url,
+            "sha256": skill_sha256,
+            "size": skill_size,
+            "source_commit": source_commit,
         },
     }
 
@@ -425,22 +440,26 @@ def publish_github_release(
 
 def publish_gitee_release(
     *, repo: str, tag: str, title: str, notes: str, token: str,
-    assets: Sequence[Path], updater_name: str,
+    assets: Sequence[Path], required_urls: Sequence[str],
 ) -> dict[str, object]:
     owner, name = repo.split("/", 1)
     release = ensure_gitee_release(
         owner=owner, repo=name, token=token, tag=tag, title=title, notes=notes
     )
-    updater_url = ""
+    asset_urls: dict[str, str] = {}
     for path in assets:
         asset = upload_gitee_asset(
             owner=owner, repo=name, token=token, release=release, path=path
         )
-        if path.name == updater_name:
-            updater_url = _asset_url(asset)
-    if not updater_url:
-        raise RuntimeError("Gitee updater installer URL was not returned")
-    return {"release": release, "updater_url": updater_url}
+        url = _asset_url(asset)
+        if url:
+            asset_urls[path.name] = url
+    missing = set(required_urls) - set(asset_urls)
+    if missing:
+        raise RuntimeError(
+            "Gitee release asset URLs were not returned: " + ", ".join(sorted(missing))
+        )
+    return {"release": release, "asset_urls": asset_urls}
 
 
 def publish_updates_branch(
@@ -492,20 +511,41 @@ def publish_update_release(
     )
     gitee = publish_gitee_release(
         repo=gitee_repo, tag=tag, title=title, notes=notes, token=gitee_token,
-        assets=required, updater_name=updater_installer.name,
+        assets=required,
+        required_urls=(
+            updater_installer.name,
+            f"Mklink-AI-Probe-v{version}-Skill.zip",
+        ),
     )
-    updater_url = str(gitee["updater_url"])
+    asset_urls = gitee["asset_urls"]
+    if not isinstance(asset_urls, dict):
+        raise RuntimeError("Gitee release asset URL map is invalid")
+    skill_archive = release_dir / f"Mklink-AI-Probe-v{version}-Skill.zip"
+    updater_url = str(asset_urls[updater_installer.name])
+    skill_url = str(asset_urls[skill_archive.name])
     verify_public_asset(
         url=updater_url,
         expected_sha256=sha256(updater_installer),
         expected_size=updater_installer.stat().st_size,
     )
+    verify_public_asset(
+        url=skill_url,
+        expected_sha256=sha256(skill_archive),
+        expected_size=skill_archive.stat().st_size,
+    )
+    source_commit = git_output(repository, "rev-parse", "HEAD")
     document = build_latest_document(
         version=version,
         notes=notes,
         published_at=published_at,
         signature=signature,
-        url=updater_url,
+        updater_url=updater_url,
+        updater_sha256=sha256(updater_installer),
+        updater_size=updater_installer.stat().st_size,
+        skill_url=skill_url,
+        skill_sha256=sha256(skill_archive),
+        skill_size=skill_archive.stat().st_size,
+        source_commit=source_commit,
     )
     publish_updates_branch(
         document=document, github_repo=github_repo, gitee_repo=gitee_repo,

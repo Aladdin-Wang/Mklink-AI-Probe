@@ -6,7 +6,6 @@ import router from '../router'
 
 const offlineMocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
-  detectModel: vi.fn(),
   listAlgorithms: vi.fn(),
   preview: vi.fn(),
   deploy: vi.fn(),
@@ -29,13 +28,19 @@ vi.mock('../composables/useOnlineFlashApi', () => ({
 describe('OfflineFlashView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => { stored.set(key, value) },
+      removeItem: (key: string) => { stored.delete(key) },
+      clear: () => { stored.clear() },
+    })
     offlineMocks.getStatus.mockResolvedValue({
       available: true,
       disk_path: 'TEST_DISK',
       python_dir: 'TEST_DISK/python',
       flm_dir: 'TEST_DISK/FLM',
     })
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V3', version: 'V3.3.1' })
     offlineMocks.listAlgorithms.mockResolvedValue([])
     onlineMocks.searchTargets.mockResolvedValue([])
     onlineMocks.installPack.mockResolvedValue({ result: { status: 'installed' }, events: [] })
@@ -59,13 +64,17 @@ describe('OfflineFlashView', () => {
     expect(route?.path).toBe('/offline-flash')
   })
 
-  it('uses cmd.get_version result and forces the V2/V3 script name', async () => {
+  it('requires a manual model selection and forces the V2/V3 script name', async () => {
     const wrapper = mount(OfflineFlashView)
     await flushPromises()
 
-    expect(offlineMocks.detectModel).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('V3.3.1')
+    expect(wrapper.text()).not.toContain('识别版本')
+    expect(wrapper.get('[data-testid="offline-model"]').element).toHaveProperty('value', '')
+    await wrapper.get('[data-testid="offline-model"]').setValue('V3')
     expect(wrapper.text()).toContain('offline_download.py')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="offline-script-name"]').element.value).toBe('offline_download.py')
+    expect(wrapper.get('[data-testid="offline-script-name"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('option[value="auto"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="offline-deploy"]').attributes('disabled')).toBeDefined()
   })
 
@@ -78,6 +87,18 @@ describe('OfflineFlashView', () => {
     expect(source).toContain('v-model="item.ram_base"')
     expect(source).toContain('自动烧录次数')
     expect(source).toContain('SWD 速率')
+  })
+
+  it('loads dropped firmware into the offline workspace', async () => {
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="offline-firmware-drop-zone"]').trigger('drop', {
+      dataTransfer: { files: [new File(['hex'], 'dropped.hex')] },
+    })
+
+    expect(wrapper.findAll('[data-testid="offline-firmware-row"]')).toHaveLength(1)
+    expect(wrapper.get<HTMLInputElement>('.firmware-row .file-name').element.value).toBe('dropped.hex')
   })
 
   it('keeps same-range algorithms from different sources selectable', async () => {
@@ -109,7 +130,6 @@ describe('OfflineFlashView', () => {
   })
 
   it('triggers the deployed V4 script by its configured file name', async () => {
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     onlineMocks.searchTargets.mockResolvedValue([{
       part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
       pack_version: '2.4.1', installed: true, source: 'installed',
@@ -121,6 +141,7 @@ describe('OfflineFlashView', () => {
     }])
     const wrapper = mount(OfflineFlashView)
     await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
 
     expect(wrapper.get('[data-testid="offline-trigger"]').attributes('disabled')).toBeDefined()
     await wrapper.get('.target-result').trigger('click')
@@ -145,9 +166,7 @@ describe('OfflineFlashView', () => {
       expect.any(Function),
     )
 
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V3', version: 'V3.3.1' })
-    const detectButton = wrapper.findAll('button').find(button => button.text() === '识别版本')
-    await detectButton!.trigger('click')
+    await wrapper.get('[data-testid="offline-model"]').setValue('V3')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="offline-trigger"]').attributes('disabled')).toBeDefined()
@@ -155,7 +174,6 @@ describe('OfflineFlashView', () => {
   })
 
   it('generates the preview automatically before deploying', async () => {
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     offlineMocks.preview.mockResolvedValue({
       model: 'V4',
       script_name: 'factory-download.py',
@@ -172,6 +190,7 @@ describe('OfflineFlashView', () => {
     }])
     const wrapper = mount(OfflineFlashView)
     await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
     await wrapper.get('.target-result').trigger('click')
     await flushPromises()
     const input = wrapper.get('input[type="file"][multiple]')
@@ -192,7 +211,6 @@ describe('OfflineFlashView', () => {
   })
 
   it('renders trigger output while the V4 command is still running', async () => {
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     offlineMocks.preview.mockResolvedValue({
       model: 'V4', script_name: 'factory-download.py', script: '# preview',
     })
@@ -213,6 +231,7 @@ describe('OfflineFlashView', () => {
     }])
     const wrapper = mount(OfflineFlashView)
     await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
     await wrapper.get('.target-result').trigger('click')
     await flushPromises()
     const input = wrapper.get('input[type="file"][multiple]')
@@ -232,13 +251,13 @@ describe('OfflineFlashView', () => {
   })
 
   it('configures HPM BIN download without Pack or FLM algorithms', async () => {
-    offlineMocks.detectModel.mockResolvedValue({ model: 'V4', version: 'V4.3.4' })
     onlineMocks.searchTargets.mockResolvedValue([{
       part_number: 'HPM5301xEGx', vendor: 'HPMicro', pack_id: null,
       pack_version: null, installed: true, source: 'builtin',
     }])
     const wrapper = mount(OfflineFlashView)
     await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
 
     await wrapper.get('.target-result').trigger('click')
     await flushPromises()

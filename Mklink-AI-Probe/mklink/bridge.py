@@ -153,10 +153,9 @@ class MKLinkSerialBridge:
         self._ctx = DeviceContext()
         self._reader_thread: threading.Thread | None = None
         self._running = False
-        self._response_buffer: list[str] = []
-        # 增量 UTF-8 解码器：把跨 read() 边界的不完整多字节序列（如中文 3 字节）
-        # 缓存到下次读取，避免每个 4096 字节块独立 decode 时半字符被替换成 �。
-        # 流会话边界（_enter_stream / _exit_stream / stop_stream）会 reset() 清空残留。
+        self._response_buffer: list[str | bytes] = []
+        # 命令响应和兼容文本流共用增量 UTF-8 解码器。RTT 原始字节不在
+        # reader 线程中解码，以便上层选择目标固件实际使用的文本编码。
         self._utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._prompt_event = threading.Event()
         self._buffer_lock = threading.Lock()
@@ -362,13 +361,22 @@ class MKLinkSerialBridge:
     # 流式读取
     # ------------------------------------------------------------------
     def read_stream(self, duration: float = 10.0) -> str:
-        """流式读取（RTT/SystemView/VOFA），持续指定时长。"""
-        collected: list[str] = []
+        """兼容文本流读取，按 UTF-8 增量解码 RTT 原始字节。"""
+        raw = self.read_stream_bytes(duration=duration)
+        return self._utf8_decoder.decode(raw, final=False)
+
+    def read_stream_bytes(self, duration: float = 10.0) -> bytes:
+        """读取 RTT 原始字节，持续指定时长。"""
+        collected: list[bytes] = []
         deadline = time.monotonic() + duration
 
         while time.monotonic() < deadline and self._running:
             with self._buffer_lock:
-                chunk = "".join(self._response_buffer)
+                parts = self._response_buffer
+                chunk = b"".join(
+                    part if isinstance(part, bytes) else part.encode("utf-8")
+                    for part in parts
+                )
                 self._response_buffer.clear()
             if chunk:
                 collected.append(chunk)
@@ -376,12 +384,16 @@ class MKLinkSerialBridge:
             if remaining > 0:
                 time.sleep(min(_STREAM_READ_POLL_INTERVAL, remaining))
 
-        return "".join(collected)
+        return b"".join(collected)
 
     def stop_stream(self) -> str:
         """停止当前流式读取，返回剩余数据并恢复 READY 状态。"""
         with self._buffer_lock:
-            remaining = "".join(self._response_buffer)
+            parts = self._response_buffer
+            if parts and isinstance(parts[0], bytes):
+                remaining = self._utf8_decoder.decode(b"".join(parts), final=True)
+            else:
+                remaining = "".join(parts)
             self._response_buffer.clear()
         self._utf8_decoder.reset()  # 停止流：丢弃可能残留的半字符
         self._ctx.state = DeviceState.READY
@@ -459,7 +471,7 @@ class MKLinkSerialBridge:
         with self._buffer_lock:
             parts = self._response_buffer
             if parts and isinstance(parts[0], bytes):
-                remaining = b"".join(parts).decode("utf-8", errors="replace")
+                remaining = self._utf8_decoder.decode(b"".join(parts), final=True)
             else:
                 remaining = "".join(parts)
             self._response_buffer.clear()
@@ -550,10 +562,9 @@ class MKLinkSerialBridge:
                     with self._buffer_lock:
                         self._response_buffer.append(data)
                 else:
-                    # RTT 文本流：增量 UTF-8 解码（缓存跨 read 边界的半字符），存 str
-                    text = self._utf8_decoder.decode(data, final=False)
+                    # RTT 编码由上层会话选择；桥接层必须保留设备原始字节。
                     with self._buffer_lock:
-                        self._response_buffer.append(text)
+                        self._response_buffer.append(data)
                 line_buf = ""
                 continue
 

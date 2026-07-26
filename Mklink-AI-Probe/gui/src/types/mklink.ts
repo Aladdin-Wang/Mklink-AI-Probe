@@ -144,8 +144,29 @@ export interface DataPoint {
 }
 
 // HardFault detail
+export interface HardFaultCallFrame {
+  index: number
+  address: number
+  lookup_address: number
+  function?: string | null
+  location?: string
+  source: 'exception_pc' | 'exception_lr' | 'stack_scan'
+  confidence: 'exact' | 'high' | 'heuristic'
+  stack_address?: number
+}
+
+export interface HardFaultExceptionStack {
+  pointer: 'msp' | 'psp'
+  pointer_address: number
+  frame_address: number
+  frame_offset: number
+  exc_return?: number | null
+  handler_lr: number
+  extended_frame: boolean
+}
+
 export interface HardFaultDetail {
-  fault: boolean
+  fault: boolean | null
   cfsr?: number
   hfsr?: number
   cfsr_flags?: string[]
@@ -153,6 +174,11 @@ export interface HardFaultDetail {
   stack_frame?: Record<string, number> | null
   source_locations?: Record<string, string> | null
   summary?: string
+  fault_function?: string | null
+  fault_location?: string | null
+  exception_stack?: HardFaultExceptionStack | null
+  call_stack?: HardFaultCallFrame[]
+  core_registers?: Record<string, number> | null
 }
 
 // Core registers
@@ -203,6 +229,16 @@ export interface SymbolDescriptor {
   enum_values: Record<string, number>
   enum_signed?: boolean
   parent_path: string | null
+  overlapping?: boolean
+  source?: 'dwarf' | 'c_override'
+}
+
+export interface SymbolContainerDescriptor {
+  path: string
+  address: number
+  type_name: string
+  size: number
+  reason: 'unsupported_layout'
 }
 
 export interface AxfFingerprint {
@@ -219,6 +255,7 @@ export interface SymbolCatalogPage {
   total: number
   items: SymbolDescriptor[]
   truncated_roots: string[]
+  containers: SymbolContainerDescriptor[]
 }
 
 export interface SymbolCatalogStatus {
@@ -229,6 +266,7 @@ export interface SymbolCatalogStatus {
   fingerprint: AxfFingerprint
   stale: boolean
   total: number
+  container_count: number
   truncated_roots: string[]
 }
 
@@ -236,6 +274,21 @@ export interface SymbolRebindSummary {
   preserved: string[]
   updated: string[]
   removed: string[]
+}
+
+export interface SymbolCLayoutResult {
+  layout: {
+    type_name: string
+    size: number
+    alignment: number
+    pack: number | null
+    leaf_count: number
+  }
+  rebind: SymbolRebindSummary
+  generation: number
+  axf_path: string
+  total: number
+  container_count: number
 }
 
 export interface SuperWatchWriteResult {

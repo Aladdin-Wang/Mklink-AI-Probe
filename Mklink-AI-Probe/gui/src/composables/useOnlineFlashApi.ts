@@ -1,5 +1,6 @@
 import type {
   CustomFlmRecord,
+  FirmwareSourceStatus,
   ImageInspection,
   JobEvent,
   JobCreateResult,
@@ -260,6 +261,27 @@ export function useOnlineFlashApi() {
     return request('/images/inspect', { method: 'POST', body, signal })
   }
 
+  function inspectImagePath(
+    path: string,
+    partNumber: string,
+    baseAddress?: number | string | null,
+    signal?: AbortSignal,
+  ): Promise<ImageInspection> {
+    return request('/images/inspect-path', {
+      method: 'POST',
+      body: JSON.stringify({
+        path,
+        part_number: partNumber,
+        base_address: baseAddress === undefined || baseAddress === null ? null : String(baseAddress),
+      }),
+      signal,
+    })
+  }
+
+  function getImageSourceStatus(path: string, signal?: AbortSignal): Promise<FirmwareSourceStatus> {
+    return request(`/images/source-status?path=${encoded(path)}`, { signal })
+  }
+
   function previewImage(
     imageId: string,
     offset = 0,
@@ -370,6 +392,8 @@ export function useOnlineFlashApi() {
     addCustomFlm,
     removeCustomFlm,
     inspectImage,
+    inspectImagePath,
+    getImageSourceStatus,
     previewImage,
     createJob,
     getActiveJob,

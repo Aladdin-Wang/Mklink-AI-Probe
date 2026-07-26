@@ -84,6 +84,7 @@ async function mountView() {
 describe('ConfigView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.api.parseAxf.mockReset()
     Object.assign(mocks.deviceStatus, {
       connected: false,
       state: 'disconnected',
@@ -100,7 +101,11 @@ describe('ConfigView', () => {
     mocks.api.updateConfig.mockResolvedValue({})
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
-    mocks.api.parseAxf.mockResolvedValue({ loaded: true, variable_count: 3 })
+    mocks.api.parseAxf.mockResolvedValue({
+      loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
+      variable_count: 3,
+    })
     mocks.api.uploadFileSource.mockResolvedValue({ path: '' })
     mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
@@ -137,6 +142,7 @@ describe('ConfigView', () => {
   it('distinguishes readable variables from DWARF type definitions', async () => {
     mocks.deviceStatus.axf = {
       loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
       variable_count: 801,
       struct_count: 150,
       enum_count: 12,
@@ -148,6 +154,23 @@ describe('ConfigView', () => {
     expect(wrapper.text()).toContain('801 个固定可读变量')
     expect(wrapper.text()).toContain('150 种结构体类型')
     expect(wrapper.text()).toContain('12 种枚举类型')
+  })
+
+  it('shows the active symbol source when the edited path is not loaded', async () => {
+    mocks.deviceStatus.axf = {
+      loaded: true,
+      axf_path: 'C:\\old\\firmware.axf',
+      variable_count: 801,
+      struct_count: 150,
+      enum_count: 12,
+    }
+
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="symbol-source-state"]').text()).toContain('待解析')
+    expect(wrapper.get('[data-testid="active-symbol-path"]').text())
+      .toContain('C:\\old\\firmware.axf')
   })
 
   it('connects locally with the configured port and saved AXF path without an MCU hint', async () => {
@@ -163,12 +186,11 @@ describe('ConfigView', () => {
     expect(mocks.api.connectDevice.mock.calls[0][0]).not.toHaveProperty('mcu')
   })
 
-  it('keeps serial discovery, refresh, SWD saving, and disconnect in Local Device', async () => {
+  it('automatically saves serial discovery and SWD changes without a save button', async () => {
     const wrapper = await mountView()
 
     await wrapper.get('[data-testid="auto-port"]').trigger('click')
     await wrapper.get('[data-testid="swd-clock"]').setValue('4000000')
-    await wrapper.get('[data-testid="save-local"]').trigger('click')
     await flushPromises()
 
     expect(mocks.api.discoverPort).toHaveBeenCalledOnce()
@@ -176,6 +198,8 @@ describe('ConfigView', () => {
       com_port: 'TEST_PORT_B',
       swd_clock: '4000000',
     }))
+    expect(wrapper.find('[data-testid="save-local"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('自动保存')
     expect(wrapper.get('[data-testid="disconnect-local"]').attributes('disabled')).toBeDefined()
   })
 
@@ -185,14 +209,13 @@ describe('ConfigView', () => {
     expect(input.attributes('max')).toBe('10000000')
 
     await input.setValue('10000001')
-    await wrapper.get('[data-testid="save-local"]').trigger('click')
     await flushPromises()
 
     expect(mocks.api.updateConfig).not.toHaveBeenCalled()
     expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('10 MHz'))
   })
 
-  it('restores, browses, and saves independently editable AXF/ELF and MAP paths', async () => {
+  it('restores and automatically saves independently editable AXF/ELF and MAP paths', async () => {
     const wrapper = await mountView()
     await wrapper.get('[data-testid="config-section-files"]').trigger('click')
 
@@ -209,7 +232,6 @@ describe('ConfigView', () => {
 
     await wrapper.get('[data-testid="map-path"]').setValue('D:\\build\\next.map')
     await wrapper.get('[data-testid="browse-map"]').trigger('click')
-    await wrapper.get('[data-testid="save-files"]').trigger('click')
 
     expect(mocks.saveDesktopSettings).toHaveBeenCalledWith(
       window.localStorage,
@@ -218,6 +240,8 @@ describe('ConfigView', () => {
         mapPath: 'D:\\build\\next.map',
       }),
     )
+    expect(wrapper.find('[data-testid="save-files"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="files-auto-save"]').text()).toContain('自动保存')
   })
 
   it('parses the saved AXF path when a device is connected', async () => {
@@ -234,7 +258,8 @@ describe('ConfigView', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('3'))
   })
 
-  it('uploads a browser-selected AXF and uses the backend path', async () => {
+  it('shows the browser-selected AXF name while parsing the backend cache path', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
     const selected = new File(['ELF'], 'browser.axf', { type: 'application/octet-stream' })
     mocks.pickSymbolFile.mockResolvedValueOnce(selected)
     mocks.api.uploadFileSource.mockResolvedValueOnce({
@@ -248,7 +273,35 @@ describe('ConfigView', () => {
 
     expect(mocks.api.uploadFileSource).toHaveBeenCalledWith('symbol', selected)
     expect(wrapper.get<HTMLInputElement>('[data-testid="symbol-path"]').element.value)
-      .toBe('C:\\Users\\test\\.mklink\\uploads\\file-sources\\uploaded.axf')
+      .toBe('browser.axf')
+    expect(wrapper.get('[data-testid="symbol-path-validation"]').text()).toContain('浏览器上传')
+
+    mocks.api.parseAxf.mockResolvedValueOnce({
+      loaded: true,
+      axf_path: 'C:\\Users\\test\\.mklink\\uploads\\file-sources\\uploaded.axf',
+      variable_count: 3,
+      elf_backend: 'builtin',
+      builtin_elf_version: '0.32',
+    })
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.parseAxf).toHaveBeenCalledWith(
+      'C:\\Users\\test\\.mklink\\uploads\\file-sources\\uploaded.axf',
+    )
+  })
+
+  it('shows the active builtin symbol parser', async () => {
+    mocks.deviceStatus.axf = {
+      loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
+      variable_count: 3,
+      elf_backend: 'builtin',
+      builtin_elf_version: '0.32',
+    }
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+    expect(wrapper.get('[data-testid="symbol-parser-backend"]').text())
+      .toBe('内置 pyelftools 0.32')
   })
 
   it('reports a catalog refresh failure separately from successful AXF parsing', async () => {
@@ -263,6 +316,24 @@ describe('ConfigView', () => {
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
     expect(mocks.toastError).toHaveBeenCalledWith('符号目录刷新失败: catalog unavailable')
     expect(mocks.toastError).not.toHaveBeenCalledWith(expect.stringContaining('AXF 解析失败'))
+  })
+
+  it('rejects a parse response that still reports another active AXF', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
+    mocks.api.parseAxf.mockResolvedValueOnce({
+      loaded: true,
+      axf_path: 'C:\\old\\firmware.axf',
+      variable_count: 801,
+    })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.refreshSymbolCatalog).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('C:\\old\\firmware.axf'))
   })
 
   it('shows inline path validation and does not let an invalid symbol path block connection', async () => {

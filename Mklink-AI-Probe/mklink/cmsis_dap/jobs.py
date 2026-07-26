@@ -238,13 +238,17 @@ class OnlineFlashJobManager:
                 if is_hpm_target(job.request.target_part):
                     resources.append(ResourceGroup.MKLINK_BRIDGE)
                     self._resource_manager.acquire_many(
-                        resources, owner, preempt=job.request.preempt_ai
+                        resources,
+                        owner,
+                        preempt=job.request.preempt_ai,
+                        preempt_user_dashboard=True,
                     )
                 else:
                     self._resource_manager.acquire(
                         ResourceGroup.TARGET_DEBUG,
                         owner,
                         preempt=job.request.preempt_ai,
+                        preempt_user_dashboard=True,
                     )
                 with self._condition:
                     cancelled_after_acquire = job.cancel_requested

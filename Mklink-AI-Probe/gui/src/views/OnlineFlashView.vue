@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FlashMapPanel from '../components/online-flash/FlashMapPanel.vue'
@@ -8,19 +8,23 @@ import ProbeSettingsPanel from '../components/online-flash/ProbeSettingsPanel.vu
 import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
 import { HexPreviewModel, type FormattedHexRow } from '../lib/hexPreview'
 import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnlineFlashApi'
+import { listenForFirmwarePathDrops, pickFirmwareFiles } from '../lib/filePicker'
 import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const PROBE_DISCOVERY_ATTEMPTS = 6
 const PROBE_DISCOVERY_DELAY_MS = 500
 const AUTO_INSPECT_DELAY_MS = 150
+const SOURCE_POLL_INTERVAL_MS = 1000
 const ONLINE_FREQUENCIES = new Set([1_000_000, 2_000_000, 4_000_000, 8_000_000, 10_000_000])
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
 const CANONICAL_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
 const api = useOnlineFlashApi()
 
-interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; hpmBoard?: string }
+defineOptions({ name: 'OnlineFlashView' })
+
+interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; hpmBoard?: string; firmwarePath?: string; baseAddress?: string }
 function savedSettings(): SavedSettings {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as SavedSettings } catch { return {} }
 }
@@ -55,7 +59,11 @@ const customFlms = ref<CustomFlmRecord[]>([])
 const customFlmBusy = ref(false)
 const customFlmError = ref('')
 const firmware = ref<File | null>(null)
-const baseAddress = ref('')
+const firmwarePath = ref(saved.firmwarePath ?? '')
+const nativeDropActive = ref(false)
+const baseAddress = ref(saved.baseAddress ?? '')
+const binAddressOpen = ref(false)
+const binAddressDraft = ref('')
 const inspection = ref<ImageInspection | null>(null)
 const selectedSectorAddresses = ref<number[]>([])
 const inspectBusy = ref(false)
@@ -80,11 +88,16 @@ let targetSearchController: AbortController | null = null
 let packOperationToken = 0
 let customFlmToken = 0
 let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
+let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
+let sourcePollingEnabled = false
+let sourceFingerprint = ''
+let stopNativeDropListener: (() => void) | null = null
 let disposed = false
 let storageWarningReported = false
 
 const preview = new HexPreviewModel((imageId, offset, length, signal) => api.previewImage(imageId, offset, length, signal))
-const isBin = computed(() => firmware.value?.name.toLowerCase().endsWith('.bin') ?? false)
+const firmwareName = computed(() => firmware.value?.name || firmwarePath.value.split(/[\\/]/).pop() || '')
+const isBin = computed(() => firmwareName.value.toLowerCase().endsWith('.bin'))
 const parsedBase = computed(() => {
   if (!isBin.value) return null
   if (!/^0x[0-9a-f]+$/i.test(baseAddress.value)) return null
@@ -92,6 +105,7 @@ const parsedBase = computed(() => {
   return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff ? value : null
 })
 const baseError = computed(() => isBin.value && parsedBase.value === null ? 'BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）' : '')
+const binAddressDraftValid = computed(() => /^0x[0-9a-f]+$/i.test(binAddressDraft.value) && Number.parseInt(binAddressDraft.value.slice(2), 16) <= 0xffff_ffff)
 const active = computed(() => !!jobId.value && !!jobState.value && !TERMINAL.has(jobState.value))
 const stopping = computed(() => jobState.value === 'stopping')
 const geometryReliable = computed(() => (
@@ -116,7 +130,7 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
     && values.some(action => FLASH_ACTIONS.has(action))
 }
 function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmware.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
 const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value)
 const hpmAlgorithmNotRequired = computed(() => (
   selectedTarget.value?.part_number.toLowerCase().startsWith('hpm') ?? false
@@ -153,6 +167,8 @@ function persist(): void {
       connectMode: connectMode.value,
       resetMode: resetMode.value,
       hpmBoard: hpmBoard.value,
+      firmwarePath: firmwarePath.value || undefined,
+      baseAddress: baseAddress.value || undefined,
     }))
   } catch {
     if (!storageWarningReported) {
@@ -161,7 +177,7 @@ function persist(): void {
     }
   }
 }
-watch([frequency, connectMode, resetMode, desiredPart, hpmBoard], persist)
+watch([frequency, connectMode, resetMode, desiredPart, hpmBoard, baseAddress], persist)
 
 async function refreshProbes(retryWhenEmpty = false): Promise<void> {
   probeBusy.value = true; probeError.value = ''
@@ -364,23 +380,134 @@ function resetInspection(): void {
   inspectBusy.value = false
   inspection.value = null; selectedSectorAddresses.value = []; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
 }
-function setFirmware(file: File | null): void { firmware.value = file; resetInspection() }
-function setBase(value: string): void { if (value !== baseAddress.value) { baseAddress.value = value; resetInspection() } }
+function setFirmware(file: File | null): void {
+  firmware.value = file
+  firmwarePath.value = ''
+  sourceFingerprint = ''
+  resetInspection()
+  persist()
+  promptForBinAddress(file?.name ?? '')
+}
+
+function setFirmwarePath(path: string): void {
+  const suffix = path.split('.').pop()?.toLowerCase()
+  if (suffix !== 'bin' && suffix !== 'hex') {
+    inspectError.value = '固件只支持 BIN 或 HEX'
+    return
+  }
+  firmware.value = null
+  firmwarePath.value = path
+  sourceFingerprint = ''
+  resetInspection()
+  persist()
+  void pollFirmwareSource(true)
+  promptForBinAddress(path)
+}
+
+function promptForBinAddress(source: string): void {
+  if (!source.toLowerCase().endsWith('.bin')) {
+    binAddressOpen.value = false
+    return
+  }
+  binAddressDraft.value = baseAddress.value
+  binAddressOpen.value = true
+}
+
+function confirmBinAddress(): void {
+  if (!binAddressDraftValid.value) return
+  setBase(binAddressDraft.value)
+  binAddressOpen.value = false
+  scheduleAutoInspection()
+}
+
+function cancelBinAddress(): void {
+  binAddressOpen.value = false
+  setBase('')
+}
+
+function acceptFirmwareSources(sources: Array<string | File>): void {
+  const source = sources[0]
+  if (typeof source === 'string') setFirmwarePath(source)
+  else if (source instanceof File) setFirmware(source)
+}
+
+async function browseFirmware(): Promise<void> {
+  acceptFirmwareSources(await pickFirmwareFiles(false))
+}
+
+async function startNativeDropListener(): Promise<void> {
+  if (stopNativeDropListener) return
+  stopNativeDropListener = await listenForFirmwarePathDrops(
+    paths => acceptFirmwareSources(paths),
+    active => { nativeDropActive.value = active },
+  )
+}
+
+function stopNativeDrops(): void {
+  stopNativeDropListener?.()
+  stopNativeDropListener = null
+  nativeDropActive.value = false
+}
+
+async function pollFirmwareSource(initial = false): Promise<void> {
+  const path = firmwarePath.value
+  if (!path || disposed) return
+  try {
+    const status = await api.getImageSourceStatus(path)
+    if (path !== firmwarePath.value || disposed) return
+    const fingerprint = `${status.size}:${status.mtime_ns}`
+    if (!sourceFingerprint) {
+      sourceFingerprint = fingerprint
+    } else if (fingerprint !== sourceFingerprint) {
+      sourceFingerprint = fingerprint
+      resetInspection()
+      appendLog(`[FILE] 已自动加载重新编译的 ${status.file_name}`)
+      scheduleAutoInspection()
+    }
+  } catch (error) {
+    if (initial) inspectError.value = `固件路径不可用：${message(error)}`
+  }
+}
+
+function startSourcePolling(): void {
+  if (sourcePollingEnabled) return
+  sourcePollingEnabled = true
+  const run = async () => {
+    await pollFirmwareSource()
+    if (!disposed && sourcePollingEnabled) sourcePollTimer = setTimeout(run, SOURCE_POLL_INTERVAL_MS)
+  }
+  void run()
+}
+
+function stopSourcePolling(): void {
+  sourcePollingEnabled = false
+  if (sourcePollTimer !== null) clearTimeout(sourcePollTimer)
+  sourcePollTimer = null
+}
+function setBase(value: string): void {
+  if (value !== baseAddress.value) {
+    baseAddress.value = value
+    resetInspection()
+  }
+  if (/^0x[0-9a-f]+$/i.test(value) && Number.parseInt(value.slice(2), 16) <= 0xffff_ffff) {
+    binAddressOpen.value = false
+  }
+}
 
 function scheduleAutoInspection(): void {
   if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
   autoInspectTimer = null
-  if (!firmware.value || !selectedTarget.value?.installed || baseError.value) return
+  if (!firmwareName.value || !selectedTarget.value?.installed || baseError.value || binAddressOpen.value) return
   autoInspectTimer = setTimeout(() => {
     autoInspectTimer = null
     void inspectImage()
   }, AUTO_INSPECT_DELAY_MS)
 }
 
-watch([firmware, () => selectedTarget.value?.part_number, baseAddress], scheduleAutoInspection)
+watch([firmware, firmwarePath, () => selectedTarget.value?.part_number, baseAddress], scheduleAutoInspection)
 
 async function inspectImage(): Promise<void> {
-  if (!firmware.value || !selectedTarget.value?.installed || baseError.value) {
+  if (!firmwareName.value || !selectedTarget.value?.installed || baseError.value) {
     inspectError.value = !selectedTarget.value?.installed ? '请先选择已安装的精确器件型号' : baseError.value || '请选择固件'
     return
   }
@@ -389,7 +516,9 @@ async function inspectImage(): Promise<void> {
   const controller = new AbortController()
   inspectionController = controller
   try {
-    const result = await api.inspectImage(firmware.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
+    const result = firmwarePath.value
+      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
+      : await api.inspectImage(firmware.value!, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error('服务端返回的镜像地址范围无效')
     inspection.value = result
@@ -489,8 +618,19 @@ function toggleSector(address: number): void {
 }
 
 onMounted(() => { void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(desiredPart.value)]) })
+onActivated(() => {
+  disposed = false
+  startSourcePolling()
+  void startNativeDropListener()
+})
+onDeactivated(() => {
+  stopSourcePolling()
+  stopNativeDrops()
+})
 onBeforeUnmount(() => {
   disposed = true
+  stopSourcePolling()
+  stopNativeDrops()
   if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
   inspectionController?.abort()
   inspectionGeneration += 1
@@ -510,15 +650,31 @@ onBeforeUnmount(() => {
       <label v-if="hpmMode" class="hpm-setting"><span>HPM 板卡</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
-      <FirmwareWorkspace :file="firmware" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @base="setBase" @scroll="loadVisible" />
+      <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" />
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
+    <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
+      <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">
+        <h2 id="bin-address-title">设置 BIN 下载地址</h2>
+        <p>请输入 {{ firmwareName }} 在目标 Flash 中的起始地址。</p>
+        <label>
+          <span>下载地址</span>
+          <input v-model.trim="binAddressDraft" data-testid="bin-address-dialog-input" autofocus placeholder="如 0x08005000" @keydown.enter.prevent="confirmBinAddress" />
+        </label>
+        <p v-if="binAddressDraft && !binAddressDraftValid" class="bin-address-error">请输入 0x00000000–0xFFFFFFFF 范围内的十六进制地址。</p>
+        <footer>
+          <button type="button" class="bin-address-cancel" @click="cancelBinAddress">取消</button>
+          <button type="button" class="bin-address-confirm" data-testid="confirm-bin-address" :disabled="!binAddressDraftValid" @click="confirmBinAddress">确认</button>
+        </footer>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .online-flash-grid{--of-bg:#11151a;--of-surface:#1d2229;--of-input:#252b33;--of-border:#343c46;--of-text:#e6e9ed;--of-muted:#929ba7;--of-accent:#58a6d6;--of-danger:#f07178;--of-danger-bg:#3b2428;--of-ok:#65c18c;--of-ok-bg:#20372d;--of-warn:#d8ad62;--of-mono:var(--mono,ui-monospace,Consolas,monospace);box-sizing:border-box;height:calc(100dvh - 92px);min-height:0;display:grid;grid-template-columns:minmax(230px,.85fr) minmax(520px,1.9fr) minmax(240px,.9fr);grid-template-rows:minmax(0,1fr) minmax(130px,185px);gap:10px;padding:10px;border-radius:var(--radius,7px);background:var(--of-bg);color:var(--of-text);text-align:left;font-size:12px}.workspace-zone{min-width:0;min-height:0;overflow:hidden;border:1px solid var(--of-border);border-radius:7px;background:var(--of-surface)}.settings-zone,.flash-map-zone{overflow:auto}.firmware-zone{min-height:0;display:flex;flex-direction:column}.firmware-zone :deep(.hex-scroll){min-height:0;flex:1}.logs-zone{grid-column:1/-1;font-family:var(--of-mono)}@media(max-width:1050px){.online-flash-grid{height:auto;min-height:660px;grid-template-columns:minmax(220px,.8fr) minmax(500px,1.6fr);grid-template-rows:auto}.flash-map-zone{grid-column:1/-1}.logs-zone{grid-column:1/-1}}@media(max-width:760px){.online-flash-grid{grid-template-columns:1fr;grid-template-rows:none}.flash-map-zone,.logs-zone{grid-column:auto}.firmware-zone{min-height:560px}}
 .hpm-setting{display:grid;gap:5px;padding:10px;border-top:1px solid var(--of-border);color:var(--of-muted)}.hpm-setting select{min-width:0;width:100%;height:30px;border:1px solid var(--of-border);border-radius:5px;background:var(--of-input);color:var(--of-text);padding:0 8px}
+.bin-address-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.58)}.bin-address-dialog{width:min(420px,100%);padding:20px;border:1px solid var(--of-border);border-radius:7px;background:var(--of-surface);box-shadow:0 18px 50px rgba(0,0,0,.35)}.bin-address-dialog h2{margin:0 0 8px;font-size:17px;letter-spacing:0}.bin-address-dialog>p{margin:0 0 16px;color:var(--of-muted);line-height:1.5}.bin-address-dialog label{display:grid;gap:6px;color:var(--of-muted)}.bin-address-dialog input{height:36px;padding:0 10px;border:1px solid var(--of-border);border-radius:5px;background:var(--of-input);color:var(--of-text);font-family:var(--of-mono);font-size:14px}.bin-address-dialog input:focus{outline:2px solid var(--of-accent);outline-offset:1px}.bin-address-dialog .bin-address-error{margin:8px 0 0;color:var(--of-danger);font-size:11px}.bin-address-dialog footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.bin-address-dialog button{min-width:72px;height:32px;border:1px solid var(--of-border);border-radius:5px;cursor:pointer}.bin-address-cancel{background:var(--of-input);color:var(--of-text)}.bin-address-confirm{border-color:var(--of-accent)!important;background:var(--of-accent);color:#0d1720}.bin-address-confirm:disabled{cursor:not-allowed;opacity:.45}
 </style>

@@ -9,6 +9,7 @@ function settings(overrides: Partial<DesktopSettings> = {}): DesktopSettings {
     symbolPath: '',
     mapPath: '',
     rttAddress: '',
+    rttEncoding: 'utf-8',
     transmitMode: 'text',
     lineEnding: '',
     sendHistory: [],
