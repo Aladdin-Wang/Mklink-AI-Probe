@@ -1,0 +1,16 @@
+MKLink Site Agent portable control application
+
+The control application is built with Rust crates whose license metadata is
+recorded by Cargo.lock. The embedded MKLink core is the separately audited
+mklink v0.1.4 PyInstaller onedir payload. Its distribution metadata and
+licenses are retained below bin/_internal/.
+
+The portable core includes mklink-stcp.dll, an in-process bridge built from
+official github.com/fatedier/frp client packages at version 0.69.1. FRP is
+Copyright 2015-2026 fatedier and contributors and is licensed under the
+Apache License, Version 2.0:
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+No frpc executable, bundled frps server, relay, NAT-traversal, or
+public-tunnel component is included.
