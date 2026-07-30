@@ -161,11 +161,19 @@ class AgentConfig:
     device_port: str | None = None
     axf: str | None = None
     project_root: str = "."
+    transport: str = "direct"
+    transport_status: Callable[[], Mapping[str, Any]] | None = field(
+        default=None,
+        repr=False,
+    )
     limits: ProtocolLimits = field(default_factory=ProtocolLimits)
+    ready_callback: Callable[[dict[str, Any]], None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.port, bool) or not isinstance(self.port, int) or not 0 <= self.port <= 65535:
             raise ValueError("port must be in range 0..65535")
+        if self.transport not in {"direct", "lan-stcp"}:
+            raise ValueError("transport must be direct or lan-stcp")
         validate_bind(self.host, self.token, allow_lan=self.allow_lan)
 
 
@@ -259,14 +267,36 @@ class SiteAgent:
         )
 
     def health(self) -> dict[str, Any]:
-        return {
+        result = {
             "ready": self.ready,
             "listener": self.ready,
             "probe_connected": self._device_connected(),
         }
+        if self.config.transport != "direct":
+            tunnel = self._transport_status()
+            result.update(
+                {
+                    "transport": self.config.transport,
+                    "transport_ready": bool(tunnel.get("ready")),
+                }
+            )
+        return result
+
+    def _transport_status(self) -> Mapping[str, Any]:
+        provider = self.config.transport_status
+        if provider is None:
+            return {"state": "not-configured", "ready": False}
+        try:
+            value = provider()
+        except Exception:
+            return {"state": "failed", "ready": False}
+        return value if isinstance(value, Mapping) else {
+            "state": "failed",
+            "ready": False,
+        }
 
     def status(self) -> dict[str, Any]:
-        return {
+        result = {
             **self.health(),
             "host": self.config.host,
             "port": self._bound_port,
@@ -274,6 +304,9 @@ class SiteAgent:
             "last_error": self._last_error,
             "resources": self._resources.get_status(),
         }
+        if self.config.transport != "direct":
+            result["transport_status"] = dict(self._transport_status())
+        return result
 
     def ports(self) -> list[Any]:
         try:
@@ -406,6 +439,8 @@ class SiteAgent:
                     raise RuntimeError("agent listener did not expose a socket")
                 self._bound_port = int(sockets[0].getsockname()[1])
                 self._ready.set()
+                if self.config.ready_callback:
+                    self.config.ready_callback(self.status())
                 await self._async_stop.wait()
         finally:
             self._ready.clear()

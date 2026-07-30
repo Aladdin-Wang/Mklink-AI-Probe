@@ -31,9 +31,11 @@ class _Registry:
         return self.client_instance
 
 
-def test_help_identifies_direct_lan_transport_and_high_risk_confirmation(capsys):
+def test_help_identifies_supported_lan_transports_and_high_risk_confirmation(capsys):
     parser = cli.build_parser()
     assert "direct LAN/VPN" in parser.description
+    assert "in-process LAN STCP" in parser.description
+    assert "no frpc executable" in parser.description
 
     with pytest.raises(SystemExit) as help_exit:
         parser.parse_args(["call", "--help"])

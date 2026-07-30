@@ -6,11 +6,14 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
 _DEFAULT_TOKEN_ENV = "MKLINK_REMOTE_TOKEN"
+_DEFAULT_STCP_AUTH_ENV = "MKLINK_STCP_AUTH_TOKEN"
+_DEFAULT_STCP_SECRET_ENV = "MKLINK_STCP_SECRET"
 
 
 class _SecretSafeArgumentParser(argparse.ArgumentParser):
@@ -26,6 +29,16 @@ class _SecretSafeArgumentParser(argparse.ArgumentParser):
             self.error(
                 "direct token values are not supported; "
                 "use --token-env or --token-file"
+            )
+        prohibited = ("--stcp-auth-token", "--stcp-secret")
+        if any(
+            value == name or value.startswith(f"{name}=")
+            for value in values
+            for name in prohibited
+        ):
+            self.error(
+                "secret values are not supported on the command line; "
+                "use the matching environment or file option"
             )
         return super().parse_known_args(values, namespace)
 
@@ -69,10 +82,38 @@ def _token(args: argparse.Namespace) -> str:
     return value
 
 
+def _required_secret(
+    *,
+    environment_name: str,
+    file_path: Path | None,
+    label: str,
+) -> str:
+    if file_path is not None:
+        from mklink.remote.transfer import has_owner_only_permissions
+
+        try:
+            path = file_path.expanduser().resolve()
+            if not path.is_file() or not has_owner_only_permissions(path):
+                raise PermissionError
+            value = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(
+                f"{label} file must exist and grant owner-only access"
+            ) from exc
+    else:
+        value = os.environ.get(environment_name, "").strip()
+    if not value:
+        raise ValueError(f"the configured {label} source is empty")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _SecretSafeArgumentParser(
         prog="mklink-remote",
-        description="Mklink site client for direct LAN/VPN field sites.",
+        description=(
+            "Mklink site client for direct LAN/VPN or in-process LAN STCP "
+            "(no frpc executable)."
+        ),
         allow_abbrev=False,
     )
     parser.add_argument("--site", default=None, help="registered site name")
@@ -142,7 +183,73 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stop.add_argument("--yes", action="store_true", required=True)
 
+    stcp = commands.add_parser(
+        "stcp",
+        help="run an in-process LAN STCP visitor without frpc.exe",
+    )
+    stcp_commands = stcp.add_subparsers(dest="stcp_command", required=True)
+    visitor = stcp_commands.add_parser(
+        "visitor",
+        help="bind a loopback port for one registered STCP provider",
+    )
+    visitor.add_argument("--server-addr", required=True)
+    visitor.add_argument("--server-port", type=int, default=7000)
+    visitor.add_argument("--user", default="")
+    visitor.add_argument("--proxy-name", required=True)
+    visitor.add_argument("--bind-addr", default="127.0.0.1")
+    visitor.add_argument("--bind-port", type=int, required=True)
+    auth_source = visitor.add_mutually_exclusive_group()
+    auth_source.add_argument("--stcp-auth-token-env", default=_DEFAULT_STCP_AUTH_ENV)
+    auth_source.add_argument("--stcp-auth-token-file", type=Path)
+    secret_source = visitor.add_mutually_exclusive_group()
+    secret_source.add_argument("--stcp-secret-env", default=_DEFAULT_STCP_SECRET_ENV)
+    secret_source.add_argument("--stcp-secret-file", type=Path)
+    visitor.add_argument("--stcp-library", type=Path)
     return parser
+
+
+def _run_stcp_visitor(args: argparse.Namespace) -> int:
+    from mklink.remote.stcp import STCPSession, STCPVisitorConfig
+
+    auth_token = _required_secret(
+        environment_name=args.stcp_auth_token_env,
+        file_path=args.stcp_auth_token_file,
+        label="FRP authentication token",
+    )
+    secret_key = _required_secret(
+        environment_name=args.stcp_secret_env,
+        file_path=args.stcp_secret_file,
+        label="STCP secret",
+    )
+    if auth_token == secret_key:
+        raise ValueError("FRP authentication token and STCP secret must be distinct")
+    session = STCPSession(
+        STCPVisitorConfig(
+            server_addr=args.server_addr,
+            server_port=args.server_port,
+            auth_token=auth_token,
+            user=args.user,
+            proxy_name=args.proxy_name,
+            secret_key=secret_key,
+            bind_addr=args.bind_addr,
+            bind_port=args.bind_port,
+        ),
+        library=args.stcp_library,
+    )
+    try:
+        status = session.start()
+        _emit(
+            {
+                **status,
+                "url": f"ws://{args.bind_addr}:{args.bind_port}",
+            }
+        )
+        while True:
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        session.close()
 
 
 def _client(args: argparse.Namespace):
@@ -173,6 +280,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
+        if args.command == "stcp":
+            return _run_stcp_visitor(args)
         if args.command == "sites":
             from mklink.remote.sites import default_registry
 
@@ -279,6 +388,12 @@ def build_agent_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--allow-lan", action="store_true")
+    parser.add_argument(
+        "--transport",
+        choices=("direct", "lan-stcp"),
+        default="direct",
+        help="direct LAN/VPN or in-process LAN STCP (no frpc executable)",
+    )
     token_source = parser.add_mutually_exclusive_group()
     token_source.add_argument("--token-env", default=_DEFAULT_TOKEN_ENV)
     token_source.add_argument("--token-file", type=Path)
@@ -290,7 +405,55 @@ def build_agent_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device-port")
     parser.add_argument("--axf")
     parser.add_argument("--project-root", default=".")
+    parser.add_argument("--stcp-server-addr")
+    parser.add_argument("--stcp-server-port", type=int, default=7000)
+    parser.add_argument("--stcp-user", default="")
+    parser.add_argument("--stcp-proxy-name")
+    auth_source = parser.add_mutually_exclusive_group()
+    auth_source.add_argument("--stcp-auth-token-env", default=_DEFAULT_STCP_AUTH_ENV)
+    auth_source.add_argument("--stcp-auth-token-file", type=Path)
+    secret_source = parser.add_mutually_exclusive_group()
+    secret_source.add_argument("--stcp-secret-env", default=_DEFAULT_STCP_SECRET_ENV)
+    secret_source.add_argument("--stcp-secret-file", type=Path)
+    parser.add_argument("--stcp-library", type=Path)
     return parser
+
+
+def _agent_stcp_session(args: argparse.Namespace, token: str | None):
+    if args.transport != "lan-stcp":
+        return None
+    if token is None:
+        raise ValueError("LAN STCP requires Site Agent authentication")
+    auth_token = _required_secret(
+        environment_name=args.stcp_auth_token_env,
+        file_path=args.stcp_auth_token_file,
+        label="FRP authentication token",
+    )
+    secret_key = _required_secret(
+        environment_name=args.stcp_secret_env,
+        file_path=args.stcp_secret_file,
+        label="STCP secret",
+    )
+    if len({token, auth_token, secret_key}) != 3:
+        raise ValueError(
+            "Site Agent token, FRP authentication token, and STCP secret "
+            "must be distinct"
+        )
+    from mklink.remote.stcp import STCPProviderConfig, STCPSession
+
+    return STCPSession(
+        STCPProviderConfig(
+            server_addr=args.stcp_server_addr,
+            server_port=args.stcp_server_port,
+            auth_token=auth_token,
+            user=args.stcp_user,
+            proxy_name=args.stcp_proxy_name,
+            secret_key=secret_key,
+            local_addr=args.host,
+            local_port=args.port,
+        ),
+        library=args.stcp_library,
+    )
 
 
 def agent_main(argv: Sequence[str] | None = None) -> int:
@@ -299,6 +462,12 @@ def agent_main(argv: Sequence[str] | None = None) -> int:
         token = None if args.no_token else _token(args)
     except ValueError as exc:
         print(f"mklink remote agent: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        transport = _agent_stcp_session(args, token)
+    except Exception:
+        print("mklink remote agent: transport configuration failed", file=sys.stderr)
         return 2
 
     from mklink.remote.agent import AgentConfig, run_agent
@@ -313,6 +482,17 @@ def agent_main(argv: Sequence[str] | None = None) -> int:
         device_port=args.device_port,
         axf=args.axf,
         project_root=args.project_root,
+        transport=args.transport,
+        transport_status=(
+            transport.status
+            if transport is not None
+            else None
+        ),
+        ready_callback=(
+            (lambda _status: transport.start())
+            if transport is not None
+            else None
+        ),
     )
 
     def device_factory(*, port: str | None = None, axf: str | None = None):
@@ -334,6 +514,8 @@ def agent_main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     finally:
+        if transport is not None:
+            transport.close()
         dispatcher.close()
 
 
