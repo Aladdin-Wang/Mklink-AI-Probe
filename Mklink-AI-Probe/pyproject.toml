@@ -7,9 +7,22 @@ name = "mklink"
 version = "0.1.4"
 description = "Mklink AI Probe - Embedded Debug Toolkit"
 requires-python = ">=3.9"
-dependencies = ["pyserial", "pymodbus>=3.0", "pyelftools==0.32", "pycparser>=2.22,<4"]
+dependencies = [
+    "pyserial",
+    "pymodbus>=3.0",
+    "pyelftools==0.32",
+    "pycparser>=2.22,<4",
+    "websockets>=11.0",
+]
+
+[project.scripts]
+mklink = "mklink.cli:main"
+mklink-remote = "mklink.remote.cli:main"
+mklink-remote-agent = "mklink.remote.cli:agent_main"
+mklink-remote-mcp = "mklink.remote.mcp:main"
 
 [project.optional-dependencies]
+remote = ["websockets>=11.0"]
 gui = [
     "fastapi>=0.100",
     "starlette>=0.40,<0.47",
@@ -22,7 +35,7 @@ gui = [
 test = ["pytest", "httpx>=0.27,<1", "pyinstaller>=6.0"]
 e2e = ["pytest", "playwright"]
 hil = ["pytest", "playwright", "requests"]
-mcp = ["fastmcp>=2.0"]
+mcp = ["fastmcp>=2.0", "pydantic<2.13"]
 
 [tool.pytest.ini_options]
 testpaths = ["_maintainer/testing/tests"]
