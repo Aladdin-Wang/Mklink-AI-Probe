@@ -36,6 +36,23 @@ _STREAM_STOP_COMMANDS = [
 _STREAM_READ_POLL_INTERVAL = 0.01
 
 
+def quote_probe_string(value: str) -> str:
+    """Return a single-quoted literal accepted by the MicroKeen REPL.
+
+    Several MicroKeen firmware revisions discard double quotes in commands
+    received through the CDC REPL.  A single-quoted, escaped literal works on
+    those revisions as well as on the usual Python-compatible interpreter.
+    """
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+    return f"'{escaped}'"
+
+
 # ---------------------------------------------------------------------------
 # 进程级串口互斥锁（文件锁）
 # ---------------------------------------------------------------------------
@@ -422,7 +439,7 @@ class MKLinkSerialBridge:
         if not self._validate_addr(ram_base):
             raise ValueError(f"无效的 ram_base: {ram_base}")
 
-        cmd = f'load.flm("{flm_path}",{flash_base},{ram_base})'
+        cmd = f"load.flm({quote_probe_string(flm_path)},{flash_base},{ram_base})"
         resp = self.send_command(cmd, timeout=timeout)
 
         # load.flm 返回 0 表示成功

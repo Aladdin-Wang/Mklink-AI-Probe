@@ -243,8 +243,8 @@ def _wheel_contract(wheel: Path) -> dict[str, object]:
     }
     if not {"pycparser", "websockets"}.issubset(core_names):
         raise RuntimeError("core runtime must include pycparser and websockets")
-    if "websockets" not in remote_names:
-        raise RuntimeError("remote extra must include websockets")
+    if not {"websockets", "intelhex"}.issubset(remote_names):
+        raise RuntimeError("remote extra must include websockets and intelhex")
     if "fastmcp" not in mcp_names:
         raise RuntimeError("mcp extra must remain explicitly separate")
     if not {"build", "pyinstaller", "setuptools", "wheel"}.issubset(build_names):
@@ -831,7 +831,14 @@ def _audit_pyinstaller_archive(
         for name in names
         if "::" in name
     }
-    required_roots = ("elftools", "pymodbus", "pycparser", "serial", "websockets")
+    required_roots = (
+        "elftools",
+        "intelhex",
+        "pymodbus",
+        "pycparser",
+        "serial",
+        "websockets",
+    )
     for root_name in required_roots:
         if not any(
             name == root_name or name.startswith(f"{root_name}.")

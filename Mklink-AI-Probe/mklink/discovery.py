@@ -160,6 +160,23 @@ def find_microkeen_disk() -> str | None:
     if os.name != "nt":
         return None
 
+    # Service and scheduled-task sessions can enumerate removable volumes
+    # differently from an interactive shell.  An operator may provide a
+    # concrete root, but it is accepted only after the same MICROKEEN label
+    # verification used by automatic discovery.
+    configured_root = os.environ.get("MKLINK_MICROKEEN_DISK", "").strip()
+    if configured_root:
+        root = configured_root.rstrip("\\/") + "\\"
+        try:
+            if os.path.isdir(root) and (
+                (_windows_volume_label(root) or "").casefold()
+                == _MICROKEEN_DISK_NAME.casefold()
+            ):
+                return root
+        except Exception:
+            pass
+        return None
+
     # 尝试通过 drivedddata 注册表查找
     try:
         import winreg

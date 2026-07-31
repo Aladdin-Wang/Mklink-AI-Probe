@@ -179,7 +179,7 @@ def test_v014_metadata_preserves_core_remote_and_separate_optional_surfaces():
         "mklink-site-agent": "mklink.remote.package_agent:main",
         "mklink-remote-mcp": "mklink.remote.mcp:main",
     }
-    assert extras["remote"] == ["websockets>=11.0"]
+    assert extras["remote"] == ["websockets>=11.0", "intelhex>=2.3"]
     assert extras["mcp"] == ["fastmcp>=2.0", "pydantic<2.13"]
     assert {
         "build==1.5.0",

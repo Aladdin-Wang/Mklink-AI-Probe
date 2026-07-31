@@ -20,7 +20,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(errors="replace", encoding="utf-8")
     sys.stderr.reconfigure(errors="replace", encoding="utf-8")
 
-from mklink.bridge import MKLinkSerialBridge
+from mklink.bridge import MKLinkSerialBridge, quote_probe_string
 from mklink.discovery import find_microkeen_disk
 from mklink.hpm_config import HPM_BOARD_FLASH_CFG, default_hpm_board, is_hpm_target
 from mklink.profiles import load_mcu_profiles
@@ -192,7 +192,7 @@ class MKLinkFlash:
             True 成功，False 失败
         """
         resp = self._bridge.send_command(
-            f'load.flm("{flm_path}",{flash_base},{ram_base})',
+            f"load.flm({quote_probe_string(flm_path)},{flash_base},{ram_base})",
             echo=True,
         )
         has_zero = False
@@ -260,7 +260,7 @@ class MKLinkFlash:
         # 2. 发送烧录命令
         start = time.time()
         resp = self._bridge.send_command(
-            f'load.hex("{filename}")',
+            f"load.hex({quote_probe_string(filename)})",
             timeout=FLM_LOAD_TIMEOUT,
             echo=True,
         )
@@ -327,7 +327,9 @@ class MKLinkFlash:
             raise FlashError("无法将文件拷贝到 MICROKEEN 磁盘")
 
         start = time.time()
-        resp = self._bridge.send_command(f'load.bin("{filename}",{addr})', echo=True)
+        resp = self._bridge.send_command(
+            f"load.bin({quote_probe_string(filename)},{addr})", echo=True
+        )
         time.sleep(0.5)
 
         elapsed_ms = int((time.time() - start) * 1000)
