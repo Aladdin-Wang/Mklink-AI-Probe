@@ -238,7 +238,7 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         "size": artifact.stat().st_size,
     }
     assert manifest["audit"]["surfaces"] == {
-        "archive_entries": 578,
+        "archive_entries": 586,
         "bundle_files": 101,
         "manifest": 1,
         "zip_members": 101,
@@ -305,7 +305,7 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         / "mklink-remote-agent.exe"
     )
     entries = _recursive_archive_entries(executable)
-    assert len(entries) == 578
+    assert len(entries) == 586
     names = [name for name, _data, _code in entries]
     assert hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest() == (
         manifest["audit"]["archive_names_sha256"]
