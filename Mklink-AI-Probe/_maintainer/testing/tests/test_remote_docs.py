@@ -513,17 +513,20 @@ def test_exact_high_risk_schema_is_gated_by_cli_mcp_and_field_agent(
     assert documented_high_risk == HIGH_RISK_OPERATIONS
 
     class FakeClient:
-        def __init__(self):
+        def __init__(self, *, terminal_flash: bool = False):
             self.calls: list[tuple[str, dict[str, Any]]] = []
+            self.terminal_flash = terminal_flash
 
         def supports(self, _capability: str) -> bool:
             return True
 
         def call(self, method: str, **params: Any) -> dict[str, Any]:
             self.calls.append((method, params))
+            if method == "flash.program" and self.terminal_flash:
+                return {"state": "succeeded", "result": {"method": method}}
             return {"method": method}
 
-    cli_client = FakeClient()
+    cli_client = FakeClient(terminal_flash=True)
     monkeypatch.setattr(remote_cli, "_client", lambda _args: cli_client)
     monkeypatch.setattr(sites, "close_all", lambda: None)
     for operation in sorted(HIGH_RISK_OPERATIONS):

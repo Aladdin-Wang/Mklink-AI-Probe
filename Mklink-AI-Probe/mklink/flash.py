@@ -328,7 +328,9 @@ class MKLinkFlash:
 
         start = time.time()
         resp = self._bridge.send_command(
-            f"load.bin({quote_probe_string(filename)},{addr})", echo=True
+            f"load.bin({quote_probe_string(filename)},{addr})",
+            timeout=FLM_LOAD_TIMEOUT,
+            echo=True,
         )
         time.sleep(0.5)
 

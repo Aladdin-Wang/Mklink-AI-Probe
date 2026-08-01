@@ -1,3 +1,4 @@
+from mklink._types import FLM_LOAD_TIMEOUT
 from mklink.bridge import quote_probe_string
 from mklink.flash import MKLinkFlash
 
@@ -5,9 +6,11 @@ from mklink.flash import MKLinkFlash
 class _Bridge:
     def __init__(self):
         self.commands = []
+        self.options = []
 
-    def send_command(self, command, **_kwargs):
+    def send_command(self, command, **kwargs):
         self.commands.append(command)
+        self.options.append(kwargs)
         return "0\n"
 
 
@@ -30,3 +33,4 @@ def test_probe_paths_use_single_quoted_literals():
         "load.hex('image.hex')",
         "load.bin('image.bin',0x08000000)",
     ]
+    assert bridge.options[-1]["timeout"] == FLM_LOAD_TIMEOUT

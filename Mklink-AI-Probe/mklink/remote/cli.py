@@ -50,6 +50,11 @@ def _emit(value: Any) -> None:
     )
 
 
+def _flash_exit_code(value: Any) -> int:
+    succeeded = isinstance(value, Mapping) and value.get("state") == "succeeded"
+    return 0 if succeeded else 2
+
+
 def _object(value: str) -> dict[str, Any]:
     try:
         parsed = json.loads(value)
@@ -337,8 +342,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             params = dict(args.params)
             if args.yes:
                 params["confirm"] = True
-            _emit(_invoke(args, args.operation, params))
-            return 0
+            result = _invoke(args, args.operation, params)
+            _emit(result)
+            return _flash_exit_code(result) if args.operation == "flash.program" else 0
         if args.command == "upload":
             client = _client(args)
             _require_support(client, "transfer.upload")
@@ -359,8 +365,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 value = getattr(args, name)
                 if value is not None:
                     params[name] = value
-            _emit(client.call("flash.program", **params))
-            return 0
+            result = client.call("flash.program", **params)
+            _emit(result)
+            return _flash_exit_code(result)
     except Exception as exc:
         # Structured protocol errors are already public and redacted by the
         # field agent.  Other exceptions may contain local paths or secrets.
