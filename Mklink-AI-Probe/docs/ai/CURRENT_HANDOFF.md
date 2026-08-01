@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-07-31T12:51:03+08:00`
+- 更新时间：`2026-08-01T10:01:28+08:00`
 - 分支：`feature/remote-stcp-site-agent`
-- HEAD：`The formally qualified runtime tip is e071982825c85b91d51ecccac8ce5531f86df876. A documentation-only HIL handoff may follow it; PR #5 headRefOid is the authoritative HIL head and must retain e071982 as an ancestor with only docs/ai and docs/verification changes after it.`
-- 远端 HEAD：`Branch feature/remote-stcp-site-agent is published as GitHub PR #5 against master. Verify the live PR headRefOid, mergeability, and base immediately before HIL and merge rather than relying on this self-referential memory commit.`
-- 工作树：The isolated feature branch contains the qualified six-layer runtime stack plus the real-hardware acceptance handoff at docs/verification/remote-site-agent-hil.md. No runtime change is authorized after qualification without invalidating the old evidence.
-- 当前任务：Execute the signed-off real-hardware matrix in docs/verification/remote-site-agent-hil.md against the live PR #5 head; after every required row passes with no P0/P1 and the target is restored, merge PR #5 without adding another development gate.
-- 状态：`remote_stcp_site_agent_hil_pending`
+- HEAD：`The real-hardware-qualified runtime tip is ddf7ff27deaad6156b6c5b88b977b3331e0ed0ac. Only the documentation-only HIL results and generated project-memory closeout may follow it before merge.`
+- 远端 HEAD：`Branch feature/remote-stcp-site-agent is published as GitHub PR #5 against master. Push the qualified runtime and documentation closeout normally, then verify the live PR headRefOid, CI, mergeability, and base immediately before merge.`
+- 工作树：The isolated feature branch contains the qualified remote Site Agent runtime, the signed-off HIL procedure, and the final real-hardware result. HIL-00 through HIL-11 passed on the non-production fixture and the target was restored.
+- 当前任务：The real-hardware merge gate is complete. Push the qualified branch, verify PR #5 against the live master and required CI, merge it directly, and verify master contains the tested runtime tip.
+- 状态：`remote_stcp_site_agent_hil_passed`
 
 ## 里程碑
 
@@ -18,8 +18,8 @@
 - **Remote core and in-process STCP** — `complete`。Engineer-side SDK/CLI/MCP, authenticated direct WebSocket protocol, site registry, atomic upload, high-risk confirmation, and pinned in-process STCP bridge are isolated in commit layers 1 and 2.
 - **Standalone Site Agent and Windows hardening** — `complete`。The field-machine Site Agent, GUI/package inputs, platform reservation hardening, and real Windows Tauri/WebView2 surface are isolated in commit layers 3 and 4.
 - **Tests, deterministic metadata, and handoff** — `complete`。Focused remote tests, exact build-tool pins, typed pending package provenance, direct deployment documentation, and generated project memory are isolated in commit layers 5 and 6.
-- **Final replay and package proof** — `complete`。N4T froze runtime tip e071982825c85b91d51ecccac8ce5531f86df876. N5/N5T produced byte-identical Windows x86_64 packages twice: ZIP 18,358,681 bytes with SHA-256 b771eaf0fa308b7fecfeb2c4acae126f521eb6d62fe0e44e477a9b688fb9b709 and manifest SHA-256 6d72fb12dbc32a7659974c4699534776790c7183c88cb2244991d2e20e3d35a7.
-- **Real hardware HIL and merge** — `pending`。docs/verification/remote-site-agent-hil.md is the sole remaining merge gate. Required direct-LAN, LAN-STCP, probe/target, safe-RAM, approved-flash, RTT, recovery, and cleanup rows must pass with no P0/P1; then PR #5 may be merged directly.
+- **Final replay and package proof** — `complete`。After the HIL-discovered flash timeout and terminal-status fixes, final runtime tip ddf7ff27deaad6156b6c5b88b977b3331e0ed0ac produced byte-identical Windows x86_64 packages twice: ZIP 18,487,420 bytes with SHA-256 f59db9c3e4db2c9c9b0345062e1e2f8d9d1498b9961c52e8f55fc911864ac428 and manifest SHA-256 b5d0774117f18c8c1fef35366c7d109211795e4e1662e4ceae5de543fcbf083c.
+- **Real hardware HIL and merge** — `complete`。HIL-00 through HIL-11 passed against runtime tip ddf7ff27 on the managed-VPN field host and recoverable non-production target. Required direct transport, LAN STCP, probe/target, safe RAM, approved flash, RTT, recovery, and cleanup passed; physical unplug on the fixed fixture is an approved N/A; no P0/P1 remains and the target was restored.
 
 ## 验证证据
 
@@ -27,8 +27,9 @@
 - **Remote core and STCP qualification**：N2T approved commit layers 1 and 2: full Python 1,094 passed with 1 unrelated skip, focused remote 81 passed, Go 1.25.11 with CGO and UCRT64 GCC passed, contract alignment passed 7 rows, 27 changed paths were inside the ledger, and sensitive-data hits were zero.
 - **Site Agent, GUI, and Windows qualification**：N3T approved commit layers 3 and 4: Site Agent Rust 5 passed plus cargo check, Python platform tests 4 passed, GUI 38 files/422 tests plus test and production builds passed, and a genuine Tauri/WebView2 window served healthy port 8765 before deterministic owned-process cleanup and byte-for-byte schema restoration.
 - **Deterministic metadata and focused tests**：N4 commit layer 5 collected 107 new remote test nodes and ran 24 package-metadata, direct-only, exact-pin, STCP, and upstream-integration checks successfully. Package provenance is explicitly pending N5 and contains no candidate artifact SHA-256 or size.
-- **Final package evidence**：N5/N5T passed. Clean A/B builds are byte-identical: ZIP 18,358,681 bytes, SHA-256 b771eaf0fa308b7fecfeb2c4acae126f521eb6d62fe0e44e477a9b688fb9b709; manifest 27,199 bytes, SHA-256 6d72fb12dbc32a7659974c4699534776790c7183c88cb2244991d2e20e3d35a7; mklink-stcp.dll SHA-256 758e428fe9ed6bcbd9489d6db1990fce5a18680887137ea3ca6d348c27a77c07. Extracted loopback lifecycle passed and no local-path, credential, forbidden-suffix, signing, tag, Release, upload, or merge action occurred.
-- **Final integration and publication handoff**：Formal final integration passed: Python 1,202 passed with 1 unrelated skip; GUI 422 tests plus test/production builds and HTTP smoke; Rust Site Agent 5/5 and GUI 6/6 plus checks/builds; Go test/build and canonical DLL reproduction; final audit 23/23 and requirements 34/34. Runtime tip e071982 was pushed normally and opened as GitHub PR #5 with base master; real hardware HIL remains the only merge gate.
+- **Final package evidence**：Final clean A/B builds from ddf7ff27 are byte-identical: ZIP 18,487,420 bytes, SHA-256 f59db9c3e4db2c9c9b0345062e1e2f8d9d1498b9961c52e8f55fc911864ac428; manifest 27,243 bytes, SHA-256 b5d0774117f18c8c1fef35366c7d109211795e4e1662e4ceae5de543fcbf083c; mklink-stcp.dll SHA-256 0d17b6ce89de3d15e6629f4c5a087e0bbf1d809bf4516aa52786be7175d2e9e9. The 101-member package contains no frpc, field hashes matched before launch, and no signing, tag, Release, or release upload occurred.
+- **Final integration and publication handoff**：Final integration passed: Python 1,208 passed with 1 unrelated skip; GUI 422 tests plus test/production builds; Rust Site Agent 5/5 and GUI 6/6 plus checks/builds; Go test/build and formal DLL input audit. A direct minimal maintainer audit passed and Phase 4 repetition was waived based on final-HEAD-bound formal tests. PR #5 remains the publication vehicle; signing and release publication are out of scope.
+- **Real hardware HIL**：docs/verification/remote-site-agent-hil-results.md records PASS for HIL-00 through HIL-11 on the managed-VPN field host and non-production STM32F40x fixture. Direct and STCP transport, negative authentication, probe identity, safe RAM restore, approved verified flash/reset, RTT read/write/stop, interruption recovery, recovery reflash, and zero-residue cleanup passed. The fixed-fixture physical unplug row is an approved N/A; no P0/P1 remains.
 
 ## 架构决策
 
@@ -43,33 +44,32 @@
 - LAN STCP is implemented as a pinned in-process library bridge. No frpc/frps executable is launched or packaged, and tunnel, Site Agent, and local operator confirmation credentials remain distinct.
 - Uploads are atomic and inert until a later operation consumes the opaque reference. Flash, erase, writes, activation, and Agent stop require explicit local confirmation plus server-side validation.
 - The unsigned package is acceptable only for internal HIL on an isolated LAN or managed VPN. A ZIP hash is not a publisher signature; Authenticode and official publication remain separate maintainer-only release gates.
-- docs/verification/remote-site-agent-hil.md is the only remaining PR #5 merge gate. HIL must bind the live PR head and frozen package identity, redact hardware identifiers and credentials, restore scratch RAM and approved recovery firmware, and finish with no P0/P1.
+- docs/verification/remote-site-agent-hil.md is the authoritative procedure and docs/verification/remote-site-agent-hil-results.md is the final result. The real-hardware gate passed against ddf7ff27 with redacted evidence, restored scratch RAM and recovery firmware, zero P0/P1, and zero runtime residue.
 
 ## 真机环境
 
-- **probe**：No probe or identifier was accessed by the automated replay, package proof, publication, or HIL-document preparation. The HIL operator must record only a redacted probe model/suffix.
-- **target**：No target, serial port, Modbus device, or firmware image was accessed during automated qualification. The required target identity, safe-RAM, approved-flash, RTT, recovery, and cleanup matrix is documented but remains PENDING.
-- **permission**：The maintainer requested a written real-machine acceptance gate and authorized completion of all non-hardware work. Actual hardware actions must be performed by the authorized HIL operators under docs/verification/remote-site-agent-hil.md; destructive steps still require the document's local confirmations.
+- **probe**：The authorized HIL used a real MKLink/MicroLink probe through the final Site Agent. Reconnect, identity, core registers, RAM, flash, and RTT closed loops passed; full probe and COM identifiers were intentionally not retained.
+- **target**：A recoverable non-production STM32F40x fixture passed safe 4-byte RAM restore, approved STM32F407VETx firmware flash/verify/reset, RTT, recovery reflash, identity, and flash-prefix checks. The approved firmware and scratch value were restored before cleanup.
+- **permission**：The maintainer authorized the non-production fixture HIL and direct merge after PASS. Confirmation gates were observed for RAM, flash, RTT, stop, and cleanup. Physical probe unplug is an approved N/A because the fixture is fixed; software reconnect passed.
 
 ## 下一动作
 
-1. Push the documentation-only HIL handoff, verify PR #5 remains OPEN/MERGEABLE/CLEAN, and record its live headRefOid.
-2. Authorized HIL operators execute docs/verification/remote-site-agent-hil.md against the exact PR head and frozen ZIP/manifest, fill every result row, redact evidence, restore target state, and sign the final verdict.
-3. When all required rows pass, conditional rows pass or have approved N/A, open P0/P1 is zero, and target restoration is confirmed, merge PR #5 directly. If any runtime fix or master update occurs first, re-run the final automated/package/HIL gates.
-4. After merge, obtain separate explicit maintainer authority and certificate access before Authenticode signing, tag, GitHub Release, latest.json, upload, or Gitee synchronization.
+1. Push the qualified runtime and documentation closeout, then verify PR #5 remains OPEN, targets master, contains ddf7ff27, passes required CI, and is mergeable without a new master change.
+2. Merge PR #5 directly. If master advanced or conflict resolution changes runtime content, stop and rerun the final automated, package, and HIL gates.
+3. After merge, verify master contains ddf7ff27, project memory validates, and no tracked work remains.
+4. Obtain separate explicit maintainer authority and certificate access before Authenticode signing, tag, GitHub Release, latest.json, release upload, or Gitee synchronization.
 
 ## 已知限制
 
-- Real hardware HIL is not yet executed. Automated, mock, extracted-loopback, Tauri/WebView2, and package evidence do not replace the required probe/target closed loop.
 - The candidate is unsigned and may be used only for internal isolated-LAN or managed-VPN HIL. Signing and official publication require separate maintainer authority.
 - The plan-owned GUI has no registered mock GUI E2E directory or --run-e2e surface; unit, test-build, production-build, and real Tauri/WebView2 evidence passed. The final HIL artifact is the standalone Site Agent ZIP, not a Tauri installer.
-- The repository has no _maintainer/testing/tests/e2e/hil directory. The signed-off manual CLI matrix in docs/verification/remote-site-agent-hil.md is the authoritative HIL gate.
-- Any runtime change, conflict resolution, or master update after the frozen qualification invalidates the old final evidence and requires requalification before merge.
+- The repository has no _maintainer/testing/tests/e2e/hil directory. The signed-off manual CLI matrix and redacted result document are the authoritative real-hardware evidence.
+- Any runtime change, conflict resolution, or master update after ddf7ff27 invalidates the final package and HIL evidence and requires requalification before merge.
 
 ## 延续协议
 
 - Validate docs/ai/project-memory.json, render docs/ai/CURRENT_HANDOFF.md, validate again, and compare the generated handoff before acting.
-- Resolve the live Git/source root; verify e071982 is an ancestor of the live PR #5 head and that every later path is documentation-only before accepting the existing automated evidence.
-- Bind HIL to ZIP SHA-256 b771eaf0fa308b7fecfeb2c4acae126f521eb6d62fe0e44e477a9b688fb9b709 and manifest SHA-256 6d72fb12dbc32a7659974c4699534776790c7183c88cb2244991d2e20e3d35a7; do not substitute an unrecorded rebuild.
-- Use docs/verification/remote-site-agent-hil.md as the sole remaining merge gate. Never record full probe IDs, COM numbers, credentials, signing keys, local paths, screenshots, firmware binaries, or raw logs in Git.
-- Merge only after the HIL final verdict is PASS. Stop for new authority before signing, tag, Release, latest.json, upload, Gitee synchronization, or any out-of-scope publication.
+- Resolve the live Git/source root; verify ddf7ff27 is an ancestor of the live PR #5 head and that every later path is documentation-only before accepting the final evidence.
+- Bind the real-hardware result to ZIP SHA-256 f59db9c3e4db2c9c9b0345062e1e2f8d9d1498b9961c52e8f55fc911864ac428 and manifest SHA-256 b5d0774117f18c8c1fef35366c7d109211795e4e1662e4ceae5de543fcbf083c; do not substitute an unrecorded rebuild.
+- Use docs/verification/remote-site-agent-hil.md and docs/verification/remote-site-agent-hil-results.md as the procedure and final verdict. Never record full probe IDs, COM numbers, credentials, signing keys, local paths, screenshots, firmware binaries, or raw logs in Git.
+- The HIL verdict is PASS and direct PR merge is authorized. Stop for new authority before signing, tag, Release, latest.json, release upload, Gitee synchronization, or any out-of-scope publication.
