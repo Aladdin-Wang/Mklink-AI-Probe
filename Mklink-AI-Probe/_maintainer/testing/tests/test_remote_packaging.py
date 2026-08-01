@@ -251,7 +251,9 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         "frp_version": "0.69.1",
         "frpc_executable": False,
         "library": "mklink-stcp.dll",
-        "sha256": "758e428fe9ed6bcbd9489d6db1990fce5a18680887137ea3ca6d348c27a77c07",
+        "sha256": sha256(
+            ROOT / "native" / "stcp_bridge" / "build" / "mklink-stcp.dll"
+        ),
         "source": "official github.com/fatedier/frp client packages",
     }
     _assert_content_clean("manifest", manifest_path.read_bytes(), markers)
