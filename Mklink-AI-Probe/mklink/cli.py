@@ -3769,6 +3769,13 @@ def _cli_mcu_detect(
 
 def main():
     """CLI 入口，首先执行依赖检查。"""
+    # Keep the direct-site CLI isolated in its owning module.  Early routing
+    # also lets ``mklink remote --help`` render the complete remote parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "remote":
+        from mklink.remote.cli import main as remote_main
+
+        return remote_main(sys.argv[2:])
+
     # Windows 控制台 UTF-8 支持
     _enable_utf8_console()
 
@@ -3785,6 +3792,12 @@ def main():
         description="MKLink Flash Programmer CLI",
     )
     subparsers = parser.add_subparsers(dest="command")
+
+    subparsers.add_parser(
+        "remote",
+        add_help=False,
+        help="manage and use direct VPN/LAN field sites",
+    )
 
     # test 子命令
     test_parser = subparsers.add_parser("test", help="基本连接测试")

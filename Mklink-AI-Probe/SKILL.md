@@ -2,11 +2,13 @@
 name: mklink-ai-probe
 description: |
   MKLink/MicroLink 嵌入式调试：固件烧录、RTT View/VOFA/SuperWatch 可视化、RAM/寄存器读写、
-  AXF 符号与 HardFault 调试、Modbus RTU、通用串口调试、远程 GUI/API。
+  AXF 符号与 HardFault 调试、Modbus RTU、通用串口调试、本地 GUI/API、
+  VPN/局域网直连远程调试。
   能力以 MCP tool 暴露（vendor-neutral，Claude Code / Cursor / ChatGPT 等均可调用），
   亦提供 CLI（python -m mklink）与 FastAPI/GUI。
   触发：Keil/IAR 初始化/烧录、RTT/VOFA 观测、read_ram/watch/superwatch、
   Modbus 扫描/读写/dashboard/点表生成、串口 open/send/dashboard、resources、symbols/typeinfo、dump-memory、flush-memory、version、serve/gui、web-entry、U盘HTML快速启动、
+  VPN/局域网远程调试、远程烧录、Site Agent、现场机、remote sites/status/capabilities/upload、
   **SystemView RTOS 跟踪**（systemview-integrate 集成/systemview 观测/systemview-analyze 分析/systemview-report 报告，任务切换/ISR/CPU 占用）、
   RTT 控制块静态编译（rtt_storage_mode=1）、散射文件中固定 RTT 地址、MKLINK_RTT_STATIC 宏、`.ARM.__at_0xADDR` 段名。
 ---
@@ -27,6 +29,18 @@ description: |
 - 在有 MCP 的环境（Claude Code）→ **优先调 MCP tool**（更可靠、有校验、有增值）
 - MCP 未覆盖的：`project-init`、`dashboard`（Web 可视化）、`modbus pointmap detect/generate`、`vofa`/`superwatch` Web、`serve`/`gui` → 走 CLI
 - OpenAI/Codex 或无 MCP → 走 CLI（`python -m mklink`）
+
+### 远程场景的两端角色
+
+- **现场机**只运行官方独立 Site Agent ZIP/EXE；它不读取本 Skill，也不需要
+  Codex、工程师 Skill、源码目录或全局 Python/Node/Rust 工具链。
+- **工程师机**读取本 Skill，通过 SDK、`python -m mklink remote` 或可选
+  `mklink-remote-mcp` 操作已注册站点。
+- 两端只使用带身份验证的直连
+  `ws://<VPN_OR_LAN_HOST>:<PORT>`。默认监听回环地址；现场机监听 VPN/局域网
+  地址时必须显式使用 `--allow-lan` 并配置 token。
+- 完整部署、注册、传输、诊断和高风险确认边界见
+  [references/commands-remote.md](references/commands-remote.md)。
 
 ## 版本检查与自动更新
 
@@ -52,6 +66,10 @@ description: |
 
 - **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用
 - **目标数据读取必须 MKLink 优先**：变量、RAM、寄存器、符号、类型和 HardFault 首先使用本 Skill 的 MCP tool；无 MCP 时使用 `python -m mklink` 对应命令。只有 MKLink 已明确连接失败、目标固件不支持相应能力或返回了可复现的读取错误时，才报告原因并尝试 pyOCD 只读兜底；不得在 MKLink 可读时直接绕过本 Skill。
+- **直连远程必须先读专用 reference**：远程现场机、remote sites、VPN/局域网调试、
+  远程烧录或文件上传均先读 [commands-remote.md](references/commands-remote.md)。
+  现场机永不消费 Skill；token 只来自环境变量或 owner-only secret file，不能写进
+  命令、URL、日志、项目配置或回答。
 - **禁止**编写 Python 脚本替代 MCP tool 或 CLI
 - **固件下载必须按统一优先级路由**：普通 MCU 默认先使用已安装 IDE 的原生命令行完成编译和下载；IDE 不可用或项目只有预编译镜像时，使用 pyOCD 在线烧录；两者都不适用或用户明确要求脱机部署时，最后使用 MKLink 脱机下载 API。执行前必须读取 [firmware-download-priority.md](references/firmware-download-priority.md)。`python -m mklink flash` 是用户显式要求时使用的原生串口/FLM 路径，不再是自动下载首选。
 - **失败不得静默换后端**：只有当前方式不适用或能力不可用时才进入下一优先级；IDE 编译/下载、pyOCD 作业或脱机部署一旦开始后失败，先停止并报告根因，取得用户同意后才能换后端。
@@ -91,6 +109,7 @@ description: |
 | `gui` | 启动 GUI（FastAPI 后端 + Vue 前端） |
 | `web-entry` | 安装跨平台 URL Handler、生成单文件 U 盘 HTML、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
+| `remote` | 工程师侧直连 VPN/局域网站点：注册/选择、状态、能力、重连、原子上传与高风险操作 |
 | `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
 | `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
 | `project-info` | 显示项目配置状态 |
@@ -137,7 +156,8 @@ description: |
 | RAM、VOFA、watch、HardFault、AXF | [references/commands-memory.md](references/commands-memory.md) |
 | Modbus、RS485、点表、dashboard | [references/commands-modbus.md](references/commands-modbus.md) |
 | 串口、UART、协议 profile | [references/commands-serial.md](references/commands-serial.md) |
-| serve、gui、Tauri、桌面应用、远程调试 | [references/commands-remote-gui.md](references/commands-remote-gui.md) |
+| VPN/局域网远程调试、远程烧录、Site Agent、现场机、remote sites/status/capabilities/upload、远程 MCP | [references/commands-remote.md](references/commands-remote.md) |
+| serve、gui、Tauri、桌面应用、本地 Web GUI/API | [references/commands-remote-gui.md](references/commands-remote-gui.md) |
 | U盘单HTML、Web快速启动、自定义URL协议、web-entry | [references/web-entry.md](references/web-entry.md) |
 | 「用户说 X 我该跑什么」 | [references/triggers.md](references/triggers.md) |
 | 新项目首次烧录、RTT 集成、故障排查 | [references/workflows.md](references/workflows.md) |

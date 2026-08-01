@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MKLink Site Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">MKLINK · PORTABLE</p>
+          <h1>现场调试代理</h1>
+          <p class="subtitle">支持 LAN / VPN 直连或局域网 STCP；STCP 客户端在进程内运行，不需要 frpc.exe。</p>
+        </div>
+        <span id="core-badge" class="badge neutral">正在读取</span>
+      </header>
+
+      <section class="status-grid">
+        <article>
+          <span>运行状态</span>
+          <strong id="core-state">—</strong>
+        </article>
+        <article>
+          <span>连接方式</span>
+          <strong id="transport-state">—</strong>
+        </article>
+        <article>
+          <span>当前端点</span>
+          <strong id="active-endpoint">未启动</strong>
+        </article>
+        <article>
+          <span>访问令牌</span>
+          <strong id="token-state">未配置</strong>
+        </article>
+        <article>
+          <span>STCP 凭据</span>
+          <strong id="stcp-credential-state">未配置</strong>
+        </article>
+        <article>
+          <span>MKLink</span>
+          <strong id="probe-state">未连接</strong>
+        </article>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <div>
+            <h2>连接配置</h2>
+            <p>LAN STCP 模式会强制现场服务仅监听 127.0.0.1，并通过进程内客户端向局域网 frps 注册。</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label>
+            连接方式
+            <select id="transport">
+              <option value="direct">LAN / VPN 直接连接</option>
+              <option value="lan-stcp">LAN STCP（无 frpc.exe）</option>
+            </select>
+          </label>
+          <label>
+            Site Agent 端口
+            <input id="port" type="number" min="1" max="65535" value="8766" />
+          </label>
+          <label>
+            监听地址
+            <select id="bind-host"></select>
+          </label>
+          <label class="stcp-only hidden">
+            局域网 frps 地址
+            <input id="stcp-server-addr" type="text" autocomplete="off" placeholder="192.168.1.10" />
+          </label>
+          <label class="stcp-only hidden">
+            frps 端口
+            <input id="stcp-server-port" type="number" min="1" max="65535" value="7000" />
+          </label>
+          <label class="stcp-only hidden">
+            FRP 用户名（可选）
+            <input id="stcp-user" type="text" autocomplete="off" />
+          </label>
+          <label class="stcp-only hidden">
+            STCP 代理名
+            <input id="stcp-proxy-name" type="text" autocomplete="off" placeholder="mklink-field-a" />
+          </label>
+          <label class="wide">
+            现场工程目录
+            <input id="project-root" type="text" autocomplete="off" />
+          </label>
+          <label class="check wide">
+            <input id="allow-lan" type="checkbox" />
+            <span>允许 LAN / VPN 直接连接（STCP 模式下自动关闭）</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="save" class="secondary">保存</button>
+          <button id="save-restart" class="secondary">保存并重启</button>
+          <button id="start" class="primary">启动</button>
+          <button id="stop" class="danger">停止</button>
+          <button id="restart" class="secondary">重启</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <div>
+            <h2>访问令牌</h2>
+            <p>明文只会复制到 Windows 剪贴板，不会进入页面、参数或日志。</p>
+          </div>
+          <button id="token" class="secondary">生成 / 轮换并复制</button>
+        </div>
+        <p id="fingerprint" class="mono">指纹：—</p>
+      </section>
+
+      <section class="stcp-only hidden">
+        <div class="section-title">
+          <div>
+            <h2>LAN STCP 凭据</h2>
+            <p>FRP 认证令牌和 STCP 密钥使用 Windows DPAPI 加密保存；不会写入 config.json、命令行或日志。</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label>
+            FRP 认证令牌
+            <input id="stcp-auth-token" type="password" autocomplete="new-password" spellcheck="false" />
+          </label>
+          <label>
+            STCP 密钥
+            <input id="stcp-secret" type="password" autocomplete="new-password" spellcheck="false" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="stcp-credentials" class="secondary">加密保存 / 轮换</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <div>
+            <h2>运行日志</h2>
+            <p>仅显示现场代理生命周期信息；敏感字段会被隐藏。</p>
+          </div>
+        </div>
+        <pre id="logs">暂无日志</pre>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <div>
+            <h2>现场探针与串口</h2>
+            <p>显示现场机真实发现结果，不包含令牌或本地路径。</p>
+          </div>
+          <button id="refresh" class="ghost">刷新</button>
+        </div>
+        <ul id="probe-list"><li>尚未刷新</li></ul>
+      </section>
+
+      <div id="notice" role="status" aria-live="polite"></div>
+    </main>
+  </body>
+</html>

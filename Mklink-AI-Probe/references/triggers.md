@@ -42,6 +42,24 @@
 | "集成 RTT（Keil/IAR）" | `python -m mklink rtt-integrate --project-root .` |
 | "拷贝 FLM" | 先确认 profile 已存在；必要时 `python -m mklink mcu-detect`，再 `python -m mklink copy-flm` |
 
+## VPN/局域网直连远程调试
+
+> 以下意图统一先读取 [commands-remote.md](commands-remote.md)。现场机只运行
+> 官方独立 Site Agent；本 Skill 只在工程师机使用。
+
+| 用户说法 | Agent 应执行 |
+|----------|-------------|
+| "远程调试" / "VPN 调试现场板" / "局域网远程烧录" / "连接现场机" | 先确认现场机与工程师机已有受管 VPN/局域网直连，再按 `sites add` → `sites use` → `status` → `capabilities` 顺序建立工程师侧上下文 |
+| "部署 Site Agent" / "现场机不装 Skill" / "现场服务" | 让现场维护者部署官方 Site Agent ZIP/EXE；默认先在回环地址验证，非回环监听必须显式 `--allow-lan` 并从环境变量或 owner-only secret file 读取 token |
+| "注册远程站点" | 从环境变量读取 token，执行 `python -m mklink remote sites add field-a "ws://<VPN_OR_LAN_HOST>:8766" --token-env MKLINK_REMOTE_TOKEN`；不得把 token 放进 URL 或命令参数 |
+| "项目使用现场站点" / "切换远程站点" | `python -m mklink remote --project-root . sites use field-a`；用户级默认切换使用 `sites switch field-a` |
+| "查看远程状态" / "远程能力" / "远程端口" | 依次使用 `python -m mklink remote --site field-a health`、`status`、`capabilities`、`ports`，先做无探针健康检查再做设备操作 |
+| "远程探针重连" | `python -m mklink remote --site field-a reconnect`；该命令重连现场探针，不修复 VPN/局域网链路 |
+| "远程上传 AXF/固件" | `python -m mklink remote --site field-a upload <LOCAL_FILE>`；上传完成只返回 inert opaque reference，不会自动修改目标 |
+| "远程烧录" / "远程擦除" / "远程写内存" | 先展示站点、目标、文件摘要和影响并取得本地明确授权；烧录使用带 `--yes` 的专用 `flash`，其他 schema 标记的高风险操作使用 `call ... --yes` |
+| "停止或替换现场 Agent" | 先取得现场维护者授权；远程停止仅使用 `python -m mklink remote --site field-a stop-agent --yes`，替换文件必须由现场维护者在进程退出后使用已验证的官方包完成 |
+| "远程 MCP" / "AI 操作现场站点" | 工程师机按可选 MCP 依赖启动 `mklink-remote-mcp` stdio；高风险 tool 调用必须传 `confirm=True` |
+
 
 ## Modbus
 

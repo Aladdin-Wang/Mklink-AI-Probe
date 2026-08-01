@@ -156,6 +156,90 @@ def test_device_flash_uses_catalog_algorithm_for_external_flash(
     ]
 
 
+def test_device_flash_uses_verified_profile_when_catalog_deploy_fails(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+
+    firmware = tmp_path / "firmware.hex"
+    _write_hex(firmware, b"fallback", 0x08020000)
+    algorithm = FlashAlgorithm(
+        algorithm_id="f" * 64,
+        target_part="DEVICE_A",
+        file_name="Catalog.FLM",
+        flash_start=0x08000000,
+        flash_size=0x100000,
+        ram_start=0x20000000,
+        ram_size=0x20000,
+        default=True,
+        source_kind="daplink-builtin",
+        source_name="builtin",
+        source_token="catalog:builtin:DEVICE_A:0",
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda _part_number: [algorithm],
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.deploy_algorithm_to_probe",
+        lambda _selected: (_ for _ in ()).throw(OSError("volume unavailable")),
+    )
+    profile = {
+        "name": "Verified MCU",
+        "flm_path": "FLM/Verified.FLM",
+        "flash_base": "0x08000000",
+        "ram_base": "0x20000000",
+    }
+    monkeypatch.setattr("mklink.profiles.load_mcu_profiles", lambda: {"verified": profile})
+    device = _device(lambda _address, size: b"fallback"[:size])
+    device._mcu_hint = "verified"
+
+    result = device.flash(
+        str(firmware), target_part="DEVICE_A", verify=False, reset_after=False
+    )
+
+    assert result["algorithm_source"] == "legacy-profile-fallback"
+    assert device._flash.loaded == [
+        ("/FLM/Verified.FLM", "0x08000000", "0x20000000"),
+    ]
+
+
+def test_device_flash_uses_profile_for_packaged_catalog_import_failure_and_bin_offset(
+    tmp_path: Path,
+    monkeypatch,
+):
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"fallback")
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda _part_number: (_ for _ in ()).throw(ImportError("not packaged")),
+    )
+    profile = {
+        "name": "Verified MCU",
+        "flm_path": "FLM/Verified.FLM",
+        "flash_base": "0x08000000",
+        "ram_base": "0x20000000",
+    }
+    monkeypatch.setattr("mklink.profiles.load_mcu_profiles", lambda: {"verified": profile})
+    device = _device(lambda _address, size: b"fallback"[:size])
+    device._mcu_hint = "verified"
+
+    result = device.flash(
+        str(firmware),
+        target_part="DEVICE_A",
+        base_address="0x08020000",
+        verify=False,
+        reset_after=False,
+    )
+
+    assert result["algorithm_source"] == "legacy-profile-fallback"
+    assert device._flash.loaded == [
+        ("/FLM/Verified.FLM", "0x08000000", "0x20000000"),
+    ]
+    assert device._flash.burned == [("bin", "firmware.bin", "0x08020000")]
+
+
 def test_device_flash_splits_mixed_hex_across_catalog_algorithms(tmp_path: Path, monkeypatch):
     from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
 
