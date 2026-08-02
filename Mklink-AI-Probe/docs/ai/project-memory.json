@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-02T23:29:21+08:00",
+  "updated_at": "2026-08-03T01:15:04+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "feature/integrate-remote-site-agent",
-    "head": "The integration branch combines the complete v0.1.5 Dashboard candidate and Vite WebSocket proxy fix with su5176/master commit 3d23762 and its remote Site Agent/STCP implementation. Integration regression is pending.",
+    "head": "The local integration branch combines the complete v0.1.5 Dashboard candidate and Vite WebSocket proxy fix with su5176/master commit 3d23762. Full combined automation, a freshly packaged Site Agent real-hardware loop, and the available STM32 Web/hardware regression gates passed at 2b2defd; the final memory commit is local and unpushed.",
     "remote_head": "origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.",
-    "working_tree": "The su5176/master merge is being resolved on the local integration branch. Local .mklink state and Python caches remain excluded. No push, master merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized."
+    "working_tree": "The combined branch is qualified and ready for maintainer review. Generated build products and caches were removed; local .mklink state remains excluded. No push, master merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "remote_site_agent_integration_pending_regression",
-    "current_task": "Resolve the su5176/master integration, then rerun the complete Python, GUI, Go, Rust/Tauri, local Web, and real-hardware gates before the branch can be reviewed.",
-    "release": "Official v0.1.4 remains the published baseline. The integration branch has no qualified installer or package; the previous Site Agent package and HIL evidence were bound to ddf7ff27 and are invalidated by this runtime merge. No tag, signature, latest.json update, publication, or Gitee synchronization has been performed."
+    "status": "remote_site_agent_integration_qualified_for_review",
+    "current_task": "Review the qualified local integration branch, decide whether managed-LAN STCP needs a fresh external-frps gate, and authorize any later push or master merge separately.",
+    "release": "Official v0.1.4 remains the published baseline. The local integration branch has passed its combined automation and available real-hardware gates, but no installer release, tag, signature, latest.json update, publication, or Gitee synchronization has been performed."
   },
   "milestones": [
     {
@@ -66,14 +66,14 @@
     },
     {
       "name": "Remote Site Agent and in-process STCP integration",
-      "status": "in_progress",
-      "notes": "su5176/master at 3d23762 adds the authenticated direct WebSocket protocol, engineer-side SDK/CLI/MCP, site registry, atomic transfer, in-process STCP bridge, standalone Windows Site Agent, Tauri control plane, deterministic packaging, and security hardening. The fork had passed its own automated and STM32F40x HIL gates at ddf7ff27, but the combined v0.1.5 runtime requires fresh qualification."
+      "status": "complete",
+      "notes": "su5176/master at 3d23762 adds the authenticated direct WebSocket protocol, engineer-side SDK/CLI/MCP, site registry, atomic transfer, in-process STCP bridge, standalone Windows Site Agent, Tauri control plane, deterministic packaging, and security hardening. The combined v0.1.5 runtime passed fresh Python, GUI, Go, Rust/Tauri, package, local Web, Site Agent, and available STM32 real-hardware qualification. External managed-LAN STCP was not rerun because no separate LAN frps endpoint was available."
     }
   ],
   "verification": [
     {
       "area": "Current automated gate",
-      "result": "Python passed 1044 tests with 1 skipped; GUI passed 47 files and 488 tests; the Vite 8.1.5 production build and git diff --check passed. The GUI total includes the new Vite development-proxy regression test."
+      "result": "At 2b2defd, GUI passed 47 files and 488 tests plus the Vite 8.1.5 production build; main Tauri Rust passed 6 tests and cargo check/build; Site Agent Rust passed 5 tests and cargo check/build; Go STCP passed go test ./... and built mklink-stcp.dll; Python passed 1,229 tests with 1 skipped and 12 symlink-specific tests deselected. The deselected tests require Windows Developer Mode or SeCreateSymbolicLinkPrivilege and remain strict rather than silently skipped."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -81,7 +81,7 @@
     },
     {
       "area": "Imported Site Agent baseline evidence",
-      "result": "The fork recorded Python 1,208 passed with one skip, GUI 422 tests and builds, Rust Site Agent and GUI tests/checks/builds, Go tests/build, deterministic package replay, and HIL-00 through HIL-11 on a recoverable STM32F40x fixture. These results establish the imported baseline only; they do not qualify the new combined branch because v0.1.5 runtime changes and conflict resolution occurred afterward."
+      "result": "The clean combined-branch Windows Site Agent package had SHA-256 713FD6C34A4232455E42747AB41B2492E5B2B3E3ABDD1D8ADE78D13982E7FAE3 and contained no frpc/frps. Loopback health/status/capabilities/ports, token isolation, reconnect, STM32F10x probe.info, halted registers, confirmed superwatch_ch00 write/read/restore, RTT channel 0 HIL_PING echo, SystemView channel 1 with 8,148 bytes and 1,991 parsed events/tasks, cleanup, site deletion, and port release passed. Direct use of the user project root was correctly rejected because its remote-upload ACL was not owner-only; an isolated Agent state root with the AXF specified separately passed. External managed-LAN STCP was not rerun because no independent LAN frps endpoint was available."
     },
     {
       "area": "Large-array symbol browsing",
@@ -109,7 +109,11 @@
     },
     {
       "area": "Current live surface",
-      "result": "The current source Web GUI is available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765. It is left on RTT View with Device connected, all Dashboard acquisition stopped, Serial Assistant closed, and no resource owners. The persistent header action disconnected and restored the real STM32 Device, large-array range nodes exposed the [1792..2047] tail page without loading [0], Online and Offline Flash pages passed non-writing smoke checks, and the 768px viewport had document width exactly equal to the viewport. Browser warning/error logs are empty."
+      "result": "The source Web GUI remains available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765 and commit badge 2b2defd3c029. Device is connected to the real STM32F10x target, every Dashboard acquisition is stopped, Serial Assistant and Modbus are closed, and the resource map is empty. The current-source Vite proxy returned binary CONTROL frames for rtt, superwatch, systemview, and vofa WebSockets through port 5173. Existing current-branch browser and automated evidence covers Online/Offline Flash non-writing smoke and the 768px no-overflow layout; the browser plugin became unresponsive during the final repeated navigation pass, so no new console-log snapshot was recorded after that interruption."
+    },
+    {
+      "area": "Combined STM32F103RC Web and hardware regression",
+      "result": "On the real STM32F103RC, 16-channel SuperWatch ran in dump-memory mode around 844-858 Hz with zero read, parser, firmware, backend, or transport drops; all 16 curves filled the full canvas, the legend auto-hid, pause retained 200,000 transport samples, changing the history limit from 50,000 to 250,000 points/channel preserved the paused viewport, and stopping kept Device connected. RTT channel 0 accepted help and returned the MSH prompt with zero stream drops. HardFault reported no fault; Memory read 64 bytes at 0x20000000; halt/core-register/resume returned plausible ARM registers and restored execution. SystemView captured 14,320 events and 56,865 bytes in four seconds at 72 MHz, recovered six task names plus SysTick, had no event-packet or target-overflow drops, and stopped cleanly. _thread_stack returned exactly 256 tail elements from [1792] through [2047]. The paired virtual UART passed a synchronized bidirectional REST/OS loop with exact 9-byte TX and 11-byte RX, Modbus returned HTTP 409 while the serial port was occupied without closing Serial Assistant, and explicit Serial stop allowed immediate native reopen."
     },
     {
       "area": "RTT terminal Web and STM32 hardware loop",
@@ -162,7 +166,8 @@
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
-    "The imported Site Agent package hashes and STM32F40x HIL verdict are bound to ddf7ff27 and cannot qualify this combined branch. Fresh local automation and hardware regression are required, and equivalent managed-VPN field-host coverage may remain unavailable.",
+    "The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.",
+    "Twelve strict Windows symlink tests require Developer Mode or SeCreateSymbolicLinkPrivilege and were deselected in the final Python gate on this machine. Their strict failure behavior remains intact; they were not converted to silent skips.",
     "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
     "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
     "Full npm audit reports six high-severity development-only findings through the test dependency chain; runtime audit is clean and the available npm fix is a breaking downgrade.",
@@ -170,7 +175,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "Complete the v0.1.5 and su5176/master merge, then run the full Python, GUI, Go, Rust/Tauri, local Web, and available STM32 hardware regression gates before review.",
+    "Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
