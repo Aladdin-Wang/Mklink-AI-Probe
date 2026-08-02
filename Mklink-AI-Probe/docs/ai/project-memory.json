@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-02T11:35:02+08:00",
+  "updated_at": "2026-08-02T12:42:28+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/hpm5301-online-symbols",
-    "head": "The active fix branch is based on documentation commit 5c9021d37e9ce22a888d3de2c793827688532660. All work described here is uncommitted.",
-    "remote_head": "GitHub and Gitee master contain the v0.1.4 source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.",
-    "working_tree": "Dirty by design with all qualified development work still uncommitted. Preserve every existing change; no commit, merge, push, tag, or release is authorized."
+    "head": "Branch fix/hpm5301-online-symbols contains Serial Assistant implementation commit 4e5ff35; the current handoff commit records that branch checkpoint.",
+    "remote_head": "The authorized GitHub branch push carries implementation commit 4e5ff35 and its handoff record to origin/fix/hpm5301-online-symbols. GitHub and Gitee master remain on the published v0.1.4 baseline.",
+    "working_tree": "Serial Assistant source, tests, production assets, and project memory are committed. Only excluded local .mklink state and Python caches remain untracked. No merge, additional push, tag, or release is authorized."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "handoff_ready_after_rtt_terminal_newline_qualification",
-    "current_task": "RTT View now has the confirmed fixed-channel-0 日志 | 终端 switch. The terminal uses bundled xterm.js for common ANSI control sequences, normalizes SEGGER fixed macros, keeps terminal history while hidden, sends keyboard input through the RTT Down Buffer, and treats both bare LF and CRLF as display newlines. The strategy intentionally excludes termios, PTY/ConPTY, multi-channel UI, and SEGGER virtual terminals. STM32F103RC Web hardware validation is complete; preserve the dirty branch and do not repeat completed qualification unless later changes invalidate it.",
-    "release": "Official v0.1.4 remains the published baseline. Current branch changes are development work and have not been committed or released."
+    "status": "serial_assistant_automated_and_web_ready_awaiting_uart_hardware",
+    "current_task": "Serial Monitor is renamed Serial Assistant and now has confirmed 日志 | 终端 modes. Immediate Base64 raw chunks feed the xterm terminal without waiting for LF while structured RX/TX line events remain parallel for Log mode. Serial Assistant no longer depends on MKLink deviceConnected, preserves the backend session across component unmounts, restores a running port from status, keeps serial transmit history separate from RTT, and only renders RX in the terminal so target echo remains authoritative. Automated and disconnected-device Web checks are complete; real UART RX/TX, ANSI, keyboard, reconnect, same-port conflict, and simultaneous RTT validation must run after the maintainer connects the serial fixture.",
+    "release": "Official v0.1.4 remains the published baseline. Serial Assistant implementation checkpoint 4e5ff35 is pushed only to the GitHub fix branch and remains unreleased pending real-UART qualification."
   },
   "milestones": [
     {
@@ -37,7 +37,7 @@
     {
       "name": "Global GUI localization and navigation",
       "status": "complete",
-      "notes": "One persistent Chinese/English switch controls the Web/Tauri shell and embedded waveform workspace. The shell brand is MKLink. Technical English names remain unchanged. Dashboard order is RTT View, SuperWatch, HardFault, Memory, Debug Control, Serial Monitor, Modbus, RTOS Trace, and Symbols last. The content card starts directly with a compact tab row; the redundant Dashboard heading is removed and the resource-owner status shares that row. RTT View keeps address/source on one row and grouped acquisition, encoding, metrics, and secondary actions on the next; data-format examples open on demand instead of consuming a permanent third row."
+      "notes": "One persistent Chinese/English switch controls the Web/Tauri shell and embedded waveform workspace. The shell brand is MKLink. Technical English names remain unchanged. Dashboard order is RTT View, SuperWatch, HardFault, Memory, Debug Control, Serial Assistant, Modbus, RTOS Trace, and Symbols last. The content card starts directly with a compact tab row; the redundant Dashboard heading is removed and the resource-owner status shares that row. RTT View keeps address/source on one row and grouped acquisition, encoding, metrics, and secondary actions on the next; data-format examples open on demand instead of consuming a permanent third row."
     },
     {
       "name": "Lazy large-array symbol browsing",
@@ -53,12 +53,17 @@
       "name": "RTT terminal mode",
       "status": "complete",
       "notes": "RTT remains channel 0 only. Binary terminal chunks decode incrementally without waiting for LF, while existing line and waveform parsing remain parallel. The Web view switches between 日志 and 终端 without restarting RTT; xterm.js handles common ANSI colors, cursor movement, erase, and clear controls, with SEGGER 2;3Xm and 4;4Xm compatibility normalization. xterm convertEol is enabled so RT-Thread bare LF and conventional CRLF both begin the next display row at column zero without rewriting backend data. Keyboard input is batched and serialized through the existing RTT Down Buffer write API; termios, PTY/ConPTY, multi-channel UI, and SEGGER virtual terminals are intentionally out of scope."
+    },
+    {
+      "name": "Serial Assistant terminal and independent lifecycle",
+      "status": "awaiting_hardware",
+      "notes": "Serial Assistant provides 日志 and xterm terminal modes without requiring an MKLink target connection. The backend publishes immediate exact RX/TX chunks alongside existing structured events; the terminal consumes RX only, uses shared ANSI/SEGGER normalization and convertEol, and forwards serialized keyboard bytes only while the selected UART is open. Explicit Open/Close controls own the backend lifecycle; mode, dashboard-tab, and route changes close only the browser subscription. Serial and RTT keep separate resources, settings, histories, status, and transports. Automated and disconnected-device Web validation passed; real UART qualification remains required."
     }
   ],
   "verification": [
     {
       "area": "Current automated gate",
-      "result": "Python passed 1034 tests with 1 skipped; GUI passed 42 files and 474 tests; the Vite 8.1.5 production build and git diff --check passed. Focused RTT terminal/newline coverage passed 35 tests; focused RTT backend coverage passed 56 tests and the earlier focused stream, symbol, API, SuperWatch, and large-array coverage also passed."
+      "result": "Python passed 1037 tests with 1 skipped; GUI passed 44 files and 477 tests; the Vite 8.1.5 production build and git diff --check passed. Focused Serial Assistant coverage passed 3 Python tests and 27 GUI tests together with the shared RTT terminal/transmit and dashboard navigation coverage."
     },
     {
       "area": "Large-array symbol browsing",
@@ -91,6 +96,10 @@
     {
       "area": "RTT terminal Web and STM32 hardware loop",
       "result": "The STM32F103RC test firmware rebuilt with Keil ARMClang without errors or warnings and was downloaded with IDE verify OK. Triggering its controlled ANSI self-test rendered RT-Thread green/yellow/red/magenta log colors, SEGGER normal and bright foreground/background macros, ESC[2K line erase, cursor overwrite, ESC[2J clear/home, and a split CSI sequence in the xterm terminal. Terminal keyboard input reached RTT channel 0 and returned 0d (Enter), 7f (Backspace), and 1b 5b 41 (ArrowUp) through the diagnostic loopback. With the later Agile Console RTT firmware, the real MSH help command emitted bare-LF lines that all rendered from column zero; the prompt and consecutive rows had no staircase or extra blank lines, while Log mode retained all 37 raw rows. Log/terminal switching and view-local clear worked without stopping RTT; transport/backend drops stayed at 0. At a 768px viewport document width equaled the viewport and the terminal/control rows remained contained; browser warning/error logs were empty."
+    },
+    {
+      "area": "Serial Assistant automated and disconnected-device Web loop",
+      "result": "A synthetic partial prompt without LF reached the terminal chunk callback immediately while the structured log remained line-based. Base64 preserved ANSI and non-ASCII bytes exactly; RX/TX byte counters counted chunks once. Vue coverage verified no MKLink gate, session recovery from backend status, no local TX echo, exact keyboard HEX transmission, visible-mode-only clear, separate serial send history, and no backend stop on unmount. The real Web page rendered Serial Assistant in both modes with MKLink disconnected. Desktop and 768px checks had no document overflow, no control outside the Serial Assistant container, and no page warning/error logs. No physical UART was opened for this qualification."
     }
   ],
   "decisions": [
@@ -106,6 +115,7 @@
     "SuperWatch defaults to one shared plot. One visible channel may move to a lower plot with an independent persisted Y range while both plots share X navigation. The auto-hiding legend uses a compact reveal button, and a persistent split divider names the independent channel and provides Merge.",
     "The global GUI language defaults to Chinese and persists under mklink_lang. English technical product names are not translated. Post-flash reconnection was explicitly canceled and must not be inferred.",
     "RTT View is intentionally fixed to channel 0 with a compact 日志 | 终端 mode switch. Terminal mode uses xterm.js with convertEol enabled so bare LF and CRLF are both display newlines, common ANSI parsing plus SEGGER macro normalization, retained history while hidden, and keyboard forwarding through the existing Down Buffer API. Backend and Log-mode bytes remain unchanged. Do not add termios, PTY/ConPTY, multi-channel UI, or SEGGER virtual-terminal support without a new confirmed strategy.",
+    "Serial Assistant is independent of MKLink deviceConnected and uses the SERIAL_PORT resource while RTT uses MKLINK_BRIDGE/TARGET_DEBUG. Immediate raw serial chunks feed the terminal without waiting for LF; structured events remain parallel for Log mode. The terminal displays RX only and forwards raw keyboard bytes without local echo. Mode/tab/route changes preserve the backend session and close only the browser subscription; explicit Close Port is authoritative. Serial transmit settings/history remain separate from RTT. Physical UART and Modbus access to one COM port must still fail clearly rather than run concurrently.",
     "RTT View and RTOS Trace share one valid RTT address. SystemView uses SystemView.start plus the SEGGER recorder handshake and matching stop sequence on both ARM/SWD and HPM RISC-V/JTAG. START supplies INIT/SYSDESC/SYSTIME, delayed TaskList recovers startup metadata, ram_base=0 and id_shift=0 are valid, and late attach hydrates task, ISR, clock, drop, and recording metadata from backend status.",
     "SystemView uses complete bounded intervals for exact Runtime/Context analysis, retains inactive contexts, keeps 60 seconds of exact history and a 300,000-event browser ring, and offers 10/30/60-second views. JSONL recording is independent of display/acquisition, and offline replay is incremental and bounded with pause, speed, progress, and restart.",
     "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged."
@@ -119,9 +129,11 @@
     "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
     "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
     "Full npm audit reports six high-severity development-only findings through the test dependency chain; runtime audit is clean and the available npm fix is a breaking downgrade.",
+    "Serial Assistant still requires a real-UART Web loop for partial prompts, ANSI colors, bare LF/CRLF, RX/TX logging, keyboard controls, reconnect, same-port conflict, and simultaneous RTT operation. Automated and disconnected-device Web checks are complete but do not replace this gate.",
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "After the maintainer connects the UART fixture, restart the source GUI on the updated backend and qualify Serial Assistant RX/TX, ANSI, keyboard input, reconnect, explicit stop, same-port conflict, and concurrent RTT on separate ports.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
@@ -129,7 +141,7 @@
   ],
   "continuation_protocol": [
     "Validate project memory and reconcile it with live Git and runtime state before acting.",
-    "Preserve the dirty branch and all user changes; do not repeat completed HPM, localization, SuperWatch, large-array symbol, or SystemView work.",
+    "Preserve Serial Assistant implementation checkpoint 4e5ff35; continue with its pending real-UART qualification without repeating completed HPM, localization, SuperWatch, large-array symbol, SystemView, RTT terminal, automated Serial Assistant, or disconnected-device Web work.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
     "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]
