@@ -628,6 +628,10 @@ def _windows_security_snapshot(root: Path) -> dict[str, tuple[str, bool, str]]:
     if os.name != "nt":
         return {}
     environment = os.environ.copy()
+    # Windows PowerShell 5.1 cannot load PowerShell 7's Security module.
+    for name in tuple(environment):
+        if name.casefold() == "psmodulepath":
+            environment.pop(name)
     environment["MKLINK_TEST_ACL_ROOT"] = str(root)
     script = r"""
 $ErrorActionPreference = "Stop"

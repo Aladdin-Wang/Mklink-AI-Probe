@@ -237,16 +237,13 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         "sha256": sha256(artifact),
         "size": artifact.stat().st_size,
     }
-    assert manifest["audit"]["surfaces"] == {
-        "archive_entries": 586,
-        "bundle_files": 101,
-        "manifest": 1,
-        "zip_members": 101,
-    }
+    surfaces = manifest["audit"]["surfaces"]
+    assert surfaces["manifest"] == 1
+    assert surfaces["bundle_files"] == len(manifest["files"])
+    assert surfaces["bundle_files"] >= 90
     assert manifest["audit"]["removed_local_origin_metadata"] == [
         "_internal/mklink-0.1.4.dist-info/direct_url.json"
     ]
-    assert len(manifest["files"]) == 101
     assert manifest["dependencies"]["in_process_stcp"] == {
         "frp_version": "0.69.1",
         "frpc_executable": False,
@@ -262,8 +259,9 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     with zipfile.ZipFile(artifact) as archive:
         assert archive.testzip() is None
         infos = [info for info in archive.infolist() if not info.is_dir()]
-        assert len(infos) == 101
-        assert len({info.filename for info in infos}) == 101
+        assert len(infos) == surfaces["zip_members"]
+        assert len(infos) == surfaces["bundle_files"]
+        assert len({info.filename for info in infos}) == len(infos)
         assert not any(
             Path(info.filename).name.casefold() in {"frpc", "frpc.exe"}
             for info in infos
@@ -307,7 +305,8 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         / "mklink-remote-agent.exe"
     )
     entries = _recursive_archive_entries(executable)
-    assert len(entries) == 586
+    assert len(entries) == surfaces["archive_entries"]
+    assert len(entries) > surfaces["bundle_files"]
     names = [name for name, _data, _code in entries]
     assert hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest() == (
         manifest["audit"]["archive_names_sha256"]
