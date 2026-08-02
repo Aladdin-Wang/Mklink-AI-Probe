@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-02T23:14:47+08:00`
-- 分支：`fix/hpm5301-online-symbols`
-- HEAD：`Branch fix/hpm5301-online-symbols contains the complete verified v0.1.5 candidate plus a local verified Vite WebSocket proxy fix for binary Dashboard streams.`
-- 远端 HEAD：`origin/fix/hpm5301-online-symbols is the GitHub review branch for the verified v0.1.5 candidate. GitHub and Gitee master remain on the published v0.1.4 baseline.`
-- 工作树：The Vite /ws proxy fix, its regression test, and this updated handoff are intentionally uncommitted pending maintainer review. The earlier v0.1.5 candidate remains pushed to the GitHub review branch. Local .mklink state and Python caches remain excluded. No commit, push, merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized.
-- 当前任务：The source Web GUI regression caused by the missing Vite /ws proxy is fixed and fully verified on the current branch. The local fix remains intentionally uncommitted and unpushed pending maintainer review.
-- 状态：`vite_websocket_proxy_fixed_and_verified`
+- 更新时间：`2026-08-02T23:29:21+08:00`
+- 分支：`feature/integrate-remote-site-agent`
+- HEAD：`The integration branch combines the complete v0.1.5 Dashboard candidate and Vite WebSocket proxy fix with su5176/master commit 3d23762 and its remote Site Agent/STCP implementation. Integration regression is pending.`
+- 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
+- 工作树：The su5176/master merge is being resolved on the local integration branch. Local .mklink state and Python caches remain excluded. No push, master merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized.
+- 当前任务：Resolve the su5176/master integration, then rerun the complete Python, GUI, Go, Rust/Tauri, local Web, and real-hardware gates before the branch can be reviewed.
+- 状态：`remote_site_agent_integration_pending_regression`
 
 ## 里程碑
 
@@ -23,11 +23,13 @@
 - **RTT terminal mode** — `complete`。RTT remains channel 0 only. Binary terminal chunks decode incrementally without waiting for LF, while existing line and waveform parsing remain parallel. The Web view switches between 日志 and 终端 without restarting RTT; xterm.js handles common ANSI colors, cursor movement, erase, and clear controls, with SEGGER 2;3Xm and 4;4Xm compatibility normalization. xterm convertEol is enabled so RT-Thread bare LF and conventional CRLF both begin the next display row at column zero without rewriting backend data. Keyboard input is batched and serialized through the existing RTT Down Buffer write API; termios, PTY/ConPTY, multi-channel UI, and SEGGER virtual terminals are intentionally out of scope.
 - **Serial Assistant terminal and explicit Device lifecycle** — `complete`。Serial Assistant provides 日志 and xterm terminal modes without requiring an MKLink target connection. The backend publishes immediate exact RX/TX chunks alongside existing structured events; the terminal consumes RX only, uses shared ANSI/SEGGER normalization and convertEol, and forwards serialized keyboard bytes only while the selected UART is open. Explicit Open/Close controls own the serial lifecycle; mode, dashboard-tab, and route changes close only the browser subscription. Serial and RTT keep separate resources, settings, histories, status, and transports. Stopping the last MKLink Dashboard keeps the shared Device connected. Only the persistent Dashboard header Disconnect action releases the probe, stops MKLink-dependent Dashboards, and leaves Serial Assistant and Modbus untouched. Automated, Web, real-target, and paired-virtual-UART qualification passed.
 - **Offline flash UX and conservative device labeling** — `complete`。Offline Flash requests include only algorithms referenced by firmware rows, so unused missing FLMs do not block deployment. Selected unavailable FLMs are highlighted and can be replaced with a local upload; common backend failures are translated into actionable guidance with expandable technical details. RTT View and Serial Assistant default to Terminal mode. Header links expose only 在线文档 and 淘宝店 labels. The STM32F10x profile no longer claims Medium Density from a family-level IDCODE match.
+- **Remote Site Agent and in-process STCP integration** — `in_progress`。su5176/master at 3d23762 adds the authenticated direct WebSocket protocol, engineer-side SDK/CLI/MCP, site registry, atomic transfer, in-process STCP bridge, standalone Windows Site Agent, Tauri control plane, deterministic packaging, and security hardening. The fork had passed its own automated and STM32F40x HIL gates at ddf7ff27, but the combined v0.1.5 runtime requires fresh qualification.
 
 ## 验证证据
 
 - **Current automated gate**：Python passed 1044 tests with 1 skipped; GUI passed 47 files and 488 tests; the Vite 8.1.5 production build and git diff --check passed. The GUI total includes the new Vite development-proxy regression test.
 - **Vite WebSocket proxy and source Web regression**：The source Vite server had proxied only /api since its introduction, while RTT, SuperWatch, SystemView, and VOFA later moved to /ws/streams/*. REST calls therefore remained healthy at port 5173 while binary streams bypassed the backend. vite.config.ts now forwards /ws with WebSocket upgrade enabled to port 8765, and a Node-environment Vitest test pins both /api and /ws proxy contracts. On the real STM32F103RC through http://127.0.0.1:5173, RTT delivered MSH output, 16-channel SuperWatch accumulated 631,520 complete samples around 859 Hz with zero host/target errors or drops, RTOS Trace received about 154,089 events, and a direct VOFA WebSocket handshake reached Open through the Vite proxy.
+- **Imported Site Agent baseline evidence**：The fork recorded Python 1,208 passed with one skip, GUI 422 tests and builds, Rust Site Agent and GUI tests/checks/builds, Go tests/build, deterministic package replay, and HIL-00 through HIL-11 on a recoverable STM32F40x fixture. These results establish the imported baseline only; they do not qualify the new combined branch because v0.1.5 runtime changes and conflict resolution occurred afterward.
 - **Large-array symbol browsing**：On the real STM32 AXF, _thread_stack exposed eight 256-element ranges through [1792..2047]. The tail request returned exactly _thread_stack[1792] through _thread_stack[2047], exact search found unloaded _thread_stack[2047], type lookup reported uint8_t at 0x20009A63, and target read returned 35. No write was performed because the available large arrays are active stack/buffer memory; the dynamic write path is covered automatically. SuperWatch and Symbols Web views both rendered only the selected tail page, omitted [0], removed the old warning, and produced no console warnings or errors.
 - **HPM5301 flash and dump-memory**：The hello_world sample rebuilt, programmed, and verified through the HPM ROM API at 0x80000400. One 4-byte region sustained 6,935.9 Hz and three regions totaling 9 bytes sustained 2,416.4 Hz in 30-second runs with no flags, parser warnings, or failures. SuperWatch also accumulated more than 100,000 complete samples without host drops and released the probe before online flash.
 - **STM32F103RC dump-memory throughput**：Keil ARMClang rebuilt and downloaded the STM32F103RC target with no errors or warnings. Separate-region dump-memory sweeps reached about 30.22/16.53/8.87/4.50/2.29 kHz for 1/2/4/8/16 regions; the 16-region 30-second run sustained 2,262.44 Hz with zero flags or mismatches. SuperWatch coalesced 16 contiguous floats into one 64-byte block and rendered all channels at 6,636.66 Hz over 30 seconds with no acquisition, parser, backend, or transport drops; the Hz-only badge matched an independent counter measurement.
@@ -42,6 +44,10 @@
 
 ## 架构决策
 
+- Remote field machines run only the standalone Site Agent. Engineer machines use the Skill, SDK, remote CLI, or optional remote MCP over authenticated direct ws/wss or managed LAN/VPN transport.
+- Non-loopback remote listeners require explicit --allow-lan and token configuration. Tokens come only from environment variables or owner-only files, and local operator confirmation remains mandatory for flash, erase, writes, activation, and Agent stop.
+- LAN STCP uses the pinned in-process library bridge. No frpc/frps executable is launched or packaged, and tunnel, Site Agent, and local confirmation credentials remain distinct.
+- Any combined-runtime change after the fork's ddf7ff27 qualification invalidates its deterministic package hashes and HIL verdict for release purposes; the integration branch must be rebuilt and requalified before merge or publication.
 - The source Vite development server must proxy both REST /api traffic and binary /ws WebSocket upgrades to the same local backend. Any new browser transport prefix requires an explicit development-proxy contract test so source-Web behavior cannot silently diverge from the bundled backend surface.
 - AGENTS.md and the repository maintenance Skill are authoritative. Before changing a product, interaction, architecture, workflow, or testing strategy, present the problem, options, tradeoffs, recommendation, and acceptance criteria, then wait for explicit maintainer confirmation. Confirmed-strategy root-cause fixes may proceed directly. Runtime changes require a fix/feature branch, full Python and GUI suites, production build, git diff check, project-memory update, and affected real-hardware loop. Never infer authority to commit, merge, push, sign, tag, publish, modify latest.json, or synchronize Gitee.
 - HPM targets always use the dedicated ROM API and never FLM. Agent-driven download routing is IDE-native build/download, then pyOCD online flash, then MKLink offline deployment; do not silently switch after a started operation fails.
@@ -67,19 +73,21 @@
 ## 真机环境
 
 - **probe**：MKLink V4 is available; identifiers are intentionally omitted.
-- **target**：STM32F103RC and HPM5301 EVK Lite fixtures are available; local paths are intentionally omitted.
+- **target**：STM32F103RC and HPM5301 EVK Lite fixtures are available locally; the fork's earlier STM32F40x Site Agent HIL fixture is not assumed available in this session. Local paths are intentionally omitted.
 - **serial_fixture**：A paired ELTIMA virtual serial-port fixture is available; concrete COM numbers are intentionally omitted.
 - **permission**：Firmware build/flash and read-only target validation are permitted when required by the active task.
 
 ## 下一动作
 
-1. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
-2. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
-3. Qualify USB Web entry on current macOS and Linux systems.
-4. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
+1. Complete the v0.1.5 and su5176/master merge, then run the full Python, GUI, Go, Rust/Tauri, local Web, and available STM32 hardware regression gates before review.
+2. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
+3. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
+4. Qualify USB Web entry on current macOS and Linux systems.
+5. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
 
 ## 已知限制
 
+- The imported Site Agent package hashes and STM32F40x HIL verdict are bound to ddf7ff27 and cannot qualify this combined branch. Fresh local automation and hardware regression are required, and equivalent managed-VPN field-host coverage may remain unavailable.
 - High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.
 - The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.
 - Full npm audit reports six high-severity development-only findings through the test dependency chain; runtime audit is clean and the available npm fix is a breaking downgrade.
@@ -89,6 +97,6 @@
 ## 延续协议
 
 - Validate project memory and reconcile it with live Git and runtime state before acting.
-- Preserve the complete verified v0.1.5 candidate on fix/hpm5301-online-symbols. The lifecycle strategy is confirmed and qualified: stopping the last MKLink Dashboard must keep Device connected; only the persistent header Disconnect action releases the probe, and neither Device action may own Serial Assistant or Modbus.
+- Preserve the complete verified v0.1.5 candidate on fix/hpm5301-online-symbols while qualifying the combined runtime only on feature/integrate-remote-site-agent. The lifecycle strategy remains authoritative: stopping the last MKLink Dashboard keeps Device connected; only the persistent header Disconnect action releases the probe, and neither Device action owns Serial Assistant or Modbus.
 - Follow the repository branch, automated gate, real-surface, and release-authority rules.
 - Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs.

@@ -32,7 +32,10 @@ class _PortLock:
     def __init__(self, port: str):
         safe_port = re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
         lock_dir = os.path.join(os.environ.get("TEMP", "/tmp"), "mklink_modbus_locks")
-        self._path = os.path.join(lock_dir, f"{safe_port}.lock")
+        # A basename such as ``COM6.lock`` still resolves to the reserved
+        # Windows device ``COM6``.  Prefix the filename so it is always a real
+        # filesystem entry before applying the byte-range lock.
+        self._path = os.path.join(lock_dir, f"port_{safe_port}.lock")
         self._fd = None
         self._locked = False
 
@@ -41,10 +44,21 @@ class _PortLock:
             return True
         with self._guard:
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            self._fd = open(self._path, "a+")
+            # Use a binary descriptor for msvcrt.locking().  Text/append mode
+            # produces EINVAL on real Windows hosts even with a materialized
+            # byte, which made every port look permanently busy.
+            self._fd = open(self._path, "a+b")
             try:
                 if os.name == "nt":
                     import msvcrt
+                    # Windows byte-range locks cannot reliably lock beyond EOF.
+                    # A freshly created lock file is empty, which caused every
+                    # first acquisition to be misclassified as "port busy" on
+                    # real field hosts.  Materialize the byte before locking it.
+                    self._fd.seek(0, os.SEEK_END)
+                    if self._fd.tell() == 0:
+                        self._fd.write(b"\0")
+                        self._fd.flush()
                     self._fd.seek(0)
                     msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
@@ -56,7 +70,7 @@ class _PortLock:
                 return False
             self._fd.seek(0)
             self._fd.truncate()
-            self._fd.write(str(os.getpid()))
+            self._fd.write(str(os.getpid()).encode("ascii"))
             self._fd.flush()
             self._locked = True
             return True

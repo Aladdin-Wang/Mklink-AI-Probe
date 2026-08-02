@@ -36,6 +36,22 @@ python -m mklink rtt
 
 **生产固件：** 从工程定义中移除 `USE_RTT` 宏即可禁用所有 RTT 输出。
 
+### VPN/局域网现场机直连
+
+1. 先读 [commands-remote.md](commands-remote.md)，确认现场机只部署官方独立
+   Site Agent，工程师机才读取本 Skill。
+2. 现场维护者先在回环地址完成 readiness/health 验证；需要监听受管 VPN/局域网
+   地址时，显式使用 `--allow-lan` 并配置 token。
+3. 工程师机从环境变量读取 token，用 `sites add` 注册
+   `ws://<VPN_OR_LAN_HOST>:<PORT>`，再用 `sites use` 设置项目 active pointer。
+4. 按 `health` → `status` → `capabilities` → `ports` 顺序检查监听器、协议协商、
+   能力和探针状态；不要把网络故障误当成探针故障。
+5. 普通读操作可通过 SDK、CLI 或可选 MCP 执行。文件先原子上传并取得 opaque
+   reference；只有后续消费该 reference 的操作才会产生设备影响。
+6. 烧录、擦除、写内存/变量、上传后激活、停止或替换现场 Agent 前，向用户展示
+   站点、目标、输入摘要和影响，取得本地明确授权，再使用 CLI `--yes` 或 MCP
+   `confirm=True`。替换 Agent 文件只能由现场维护者在旧进程退出后完成。
+
 ---
 
 ## 错误处理
@@ -52,3 +68,9 @@ python -m mklink rtt
 | 头文件目录不存在 | 检查项目的 Include Path 配置，使用 --inc-dir 指定正确路径 |
 | HEX 文件未找到 | 先编译项目，再运行 `python -m mklink project-init` 更新路径 |
 | 项目未配置 | `python -m mklink project-init` |
+| 远程 listener 不可达 | 先检查受管 VPN/局域网可达性、现场 Agent 进程和 host/port；不要打印 token，也不要把 `remote reconnect` 当成网络修复 |
+| 远程认证失败 | 确认工程师侧 `--token-env` 与现场 Agent 的环境变量或 owner-only token file 指向同一密钥；不要把密钥复制到 URL、日志或聊天 |
+| `health` 成功但探针未连接 | 用 `status`/`ports` 检查现场探针，再运行 `remote reconnect`；该操作只重连探针 |
+| capability unavailable | 以 `remote capabilities` 的协商结果为准；停止调用未发布能力，不猜测 operation 或参数 |
+| 上传中断或校验失败 | 重新执行 `remote upload`；协议会中止未完成 session，不支持续传，也不接受客户端指定现场路径 |
+| 高风险操作被拒绝 | 回到工程师本地确认站点、目标和影响；CLI 添加 `--yes`，MCP 传 `confirm=True`，SDK 传 `confirm=True`，不得绕过现场 Agent 的二次校验 |

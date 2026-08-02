@@ -1,7 +1,10 @@
-# 远程服务与 GUI
+# 本地 Web 服务与 GUI
 
-> 触发词：serve、gui、FastAPI、uvicorn、Tauri、桌面应用、远程调试
+> 触发词：serve、gui、FastAPI、uvicorn、Tauri、桌面应用、本地 Web GUI/API
 > 返回索引：[SKILL.md](../SKILL.md)
+
+VPN/局域网站点、独立 Site Agent、工程师侧 remote CLI/SDK/MCP 请改读
+[直连远程调试](commands-remote.md)；本页只描述本地 FastAPI、GUI 和 Tauri。
 
 ## 依赖安装
 
