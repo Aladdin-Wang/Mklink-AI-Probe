@@ -2076,7 +2076,7 @@ class SerialStreamManager:
         self._bridge = AsyncBridge()
         self._monitor = None
         self._running = False
-        self._port_config: dict = {}
+        self._port_config: list[dict] = []
         self._profile: dict | None = None
         self._auto_reply_rules: list[dict] | None = None
         self._rx_count = 0
@@ -2127,10 +2127,8 @@ class SerialStreamManager:
 
             if event.direction == "RX":
                 self._rx_count += 1
-                self._rx_bytes += len(event.raw)
             else:
                 self._tx_count += 1
-                self._tx_bytes += len(event.raw)
 
             self._bridge.put({
                 "event": "data",
@@ -2143,15 +2141,34 @@ class SerialStreamManager:
                 "crc_valid": crc_valid,
             })
 
+        def _chunk_callback(
+            port: str,
+            direction: str,
+            data: bytes,
+            timestamp: float,
+        ):
+            if direction == "RX":
+                self._rx_bytes += len(data)
+            else:
+                self._tx_bytes += len(data)
+            self._bridge.put({
+                "event": "terminal",
+                "timestamp": timestamp,
+                "port": port,
+                "direction": direction,
+                "data_base64": base64.b64encode(data).decode("ascii"),
+            })
+
         self._monitor = SerialMonitor(
             ports=ports,
             profile=profile,
             auto_reply_rules=auto_reply_rules,
             event_callback=_event_callback,
+            chunk_callback=_chunk_callback,
         )
         self._monitor.start()
         self._running = True
-        self._bridge.put({"event": "status", "ports": {cfg["port"]: "open" for cfg in ports}})
+        self._bridge.put({"event": "status", **self.get_status()})
 
     def stop(self) -> None:
         if self._monitor:
@@ -2178,6 +2195,7 @@ class SerialStreamManager:
         return {
             "running": self._running,
             "ports": ports,
+            "config": [dict(config) for config in self._port_config],
             "stats": {
                 "rx_count": self._rx_count,
                 "tx_count": self._tx_count,

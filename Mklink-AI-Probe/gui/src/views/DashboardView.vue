@@ -3,7 +3,7 @@
     <div
       class="card"
       :class="{
-        'card-full': tab === 'rtt' || tab === 'superwatch',
+        'card-full': tab === 'rtt' || tab === 'superwatch' || tab === 'serial',
         'card-rtt': tab === 'rtt',
         'card-systemview': tab === 'systemview',
       }"
@@ -15,7 +15,7 @@
           <button :class="['tab-btn', { active: tab === 'hardfault' }]" @click="tab = 'hardfault'">HardFault</button>
           <button :class="['tab-btn', { active: tab === 'memory' }]" @click="tab = 'memory'">Memory</button>
           <button :class="['tab-btn', { active: tab === 'debug' }]" @click="tab = 'debug'">{{ tr('调试控制', 'Debug Control') }}</button>
-          <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">{{ tr('串口监控', 'Serial Monitor') }}</button>
+          <button :class="['tab-btn', { active: tab === 'serial' }]" @click="tab = 'serial'">{{ tr('串口助手', 'Serial Assistant') }}</button>
           <button :class="['tab-btn', { active: tab === 'modbus' }]" @click="tab = 'modbus'">Modbus</button>
           <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>
           <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">{{ tr('符号表', 'Symbols') }}</button>
@@ -50,7 +50,7 @@
       <HardFaultTab v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" />
       <MemoryTab v-if="tab === 'memory'" :device-connected="deviceStatus.connected" />
       <SuperWatchTab v-if="tab === 'superwatch'" :device-connected="deviceStatus.connected" />
-      <SerialMonitorTab v-show="tab === 'serial'" :device-connected="deviceStatus.connected" />
+      <SerialMonitorTab v-show="tab === 'serial'" />
       <ModbusTab v-show="tab === 'modbus'" :device-connected="deviceStatus.connected" />
       <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
       <SymbolsTab v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" />
@@ -170,6 +170,11 @@ async function doResume() { try { await resumeDevice(); toast.success(tr('CPU �
   align-items: stretch;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);
+}
+.card-full :deep(.serial-assistant) {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 .dashboard-nav-row .tabs-bar {
   flex: 1;

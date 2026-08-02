@@ -31,12 +31,14 @@ class SerialMonitor:
         auto_reply_rules: list[dict] | None = None,
         logger: FileLogger | None = None,
         event_callback: Callable[[SerialEvent], None] | None = None,
+        chunk_callback: Callable[[str, str, bytes, float], None] | None = None,
     ):
         self._port_configs = ports
         self._profile = profile
         self._auto_reply_rules = auto_reply_rules
         self._logger = logger
         self._event_callback = event_callback
+        self._chunk_callback = chunk_callback
 
         self._events: collections.deque[SerialEvent] = collections.deque(maxlen=10000)
         self._stop_event = threading.Event()
@@ -99,8 +101,10 @@ class SerialMonitor:
             except Exception:
                 return False
 
+        timestamp = time.time()
+        self._emit_chunk(port, "TX", data, timestamp)
         evt = SerialEvent(
-            timestamp=time.time(),
+            timestamp=timestamp,
             port=port,
             direction="TX",
             raw=data,
@@ -152,6 +156,20 @@ class SerialMonitor:
             except Exception:
                 pass
 
+    def _emit_chunk(
+        self,
+        port: str,
+        direction: str,
+        data: bytes,
+        timestamp: float,
+    ) -> None:
+        if not data or self._chunk_callback is None:
+            return
+        try:
+            self._chunk_callback(port, direction, data, timestamp)
+        except Exception:
+            pass
+
     def _reader_loop(self, cfg: dict) -> None:
         port_name = cfg["port"]
         baudrate = cfg.get("baudrate", 115200)
@@ -169,7 +187,7 @@ class SerialMonitor:
             )
             if not sp.open():
                 with self._lock:
-                    self._port_statuses[port_name] = "error: failed to open"
+                    self._port_statuses[port_name] = "error: port is busy or unavailable"
                 self._stop_event.wait(2.0)
                 continue
 
@@ -186,6 +204,8 @@ class SerialMonitor:
                     if not data:
                         self._stop_event.wait(0.01)
                         continue
+
+                    self._emit_chunk(port_name, "RX", data, time.time())
 
                     if parser:
                         frames = parser.feed(data)
@@ -262,8 +282,10 @@ class SerialMonitor:
             except Exception:
                 return
 
+        timestamp = time.time()
+        self._emit_chunk(port_name, "TX", data, timestamp)
         evt = SerialEvent(
-            timestamp=time.time(),
+            timestamp=timestamp,
             port=port_name,
             direction="TX",
             raw=data,

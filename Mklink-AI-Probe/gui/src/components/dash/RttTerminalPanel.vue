@@ -1,7 +1,7 @@
 <template>
   <div
     ref="host" class="rtt-terminal-panel" role="application" tabindex="-1"
-    :aria-label="tr('RTT 终端', 'RTT terminal')" @mousedown="focus"
+    :aria-label="ariaLabel || tr('RTT 终端', 'RTT terminal')" @mousedown="focus"
   />
 </template>
 
@@ -13,7 +13,7 @@ import '@xterm/xterm/css/xterm.css'
 import { tr } from '../../composables/useLanguage'
 import { SeggerAnsiNormalizer } from '../../lib/seggerAnsi'
 
-const props = defineProps<{ inputEnabled: boolean }>()
+const props = defineProps<{ inputEnabled: boolean, ariaLabel?: string }>()
 const emit = defineEmits<{ input: [data: string] }>()
 const host = ref<HTMLElement | null>(null)
 const normalizer = new SeggerAnsiNormalizer()
