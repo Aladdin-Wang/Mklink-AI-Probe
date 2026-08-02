@@ -1,13 +1,13 @@
 <template>
   <div class="symbols-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">请先连接设备。</div>
+    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
     <template v-else>
       <div class="sym-controls">
         <input
           v-model="query"
           data-testid="symbol-search"
           class="form-input"
-          placeholder="搜索变量名或类型"
+          :placeholder="tr('搜索变量名或类型', 'Search variable name or type')"
         />
         <button
           v-if="catalog.stale.value"
@@ -16,54 +16,75 @@
           :disabled="catalog.reparsing.value"
           @click="reparseSymbols"
         >
-          {{ catalog.reparsing.value ? '解析中' : '重新解析' }}
+          {{ catalog.reparsing.value ? tr('解析中', 'Parsing') : tr('重新解析', 'Reparse') }}
         </button>
       </div>
 
       <div class="sym-summary">
-        <span>第 {{ catalog.generation.value }} 代</span>
-        <span>{{ filtered.length }} 个变量</span>
-        <span v-if="catalog.stale.value" class="stale-label">AXF 已变化</span>
+        <span>{{ tr(`第 ${catalog.generation.value} 代`, `Generation ${catalog.generation.value}`) }}</span>
+        <span>{{ rows.length }} {{ tr('个节点', 'nodes') }}</span>
+        <span v-if="catalog.stale.value" class="stale-label">{{ tr('AXF 已变化', 'AXF changed') }}</span>
       </div>
-      <div v-if="catalog.truncatedRoots.value.length" class="truncated-banner">
-        以下大型变量仅展开前 256 个可读叶子：{{ catalog.truncatedRoots.value.join('、') }}
-      </div>
-
-      <div v-if="catalog.loading.value" class="sym-empty">正在加载符号表...</div>
-      <div v-else-if="visibleItems.length" class="sym-results">
-        <button
-          v-for="symbol in visibleItems"
-          :key="symbol.path"
-          class="sym-item"
-          type="button"
-          :data-symbol="symbol.path"
-          @click="selectSymbol(symbol.path)"
-        >
-          <span class="sym-name">{{ symbol.path }}</span>
-          <span class="sym-type">{{ symbol.type_name }}</span>
-          <span class="sym-addr">{{ formatAddr(symbol.address) }}</span>
-          <span class="sym-size">{{ symbol.size }}B</span>
-        </button>
+      <div v-if="catalog.loading.value" class="sym-empty">{{ tr('正在加载符号表...', 'Loading symbols...') }}</div>
+      <div v-else-if="rows.length" class="sym-results">
+        <template v-for="row in rows" :key="row.node.key">
+          <button
+            v-if="row.node.kind === 'branch' || row.node.kind === 'range'"
+            class="sym-item sym-branch"
+            type="button"
+            :data-symbol="row.node.key"
+            :style="{ paddingLeft: rowIndent(row.depth) }"
+            @click="toggleBranch(row.node)"
+          >
+            <LoaderCircle v-if="catalog.browseLoading.value.has(row.node.key)" class="sym-spinner" :size="14" aria-hidden="true" />
+            <ChevronDown v-else-if="row.expanded" :size="14" aria-hidden="true" />
+            <ChevronRight v-else :size="14" aria-hidden="true" />
+            <span class="sym-name">{{ row.node.label }}</span>
+            <span class="sym-type">{{ row.node.browse?.type_name }}</span>
+            <span class="sym-size">{{ row.node.childCount ?? '' }}</span>
+          </button>
+          <button
+            v-else-if="row.node.descriptor"
+            class="sym-item"
+            type="button"
+            :data-symbol="row.node.descriptor.path"
+            :style="{ paddingLeft: rowIndent(row.depth) }"
+            @click="selectSymbol(row.node.descriptor.path)"
+          >
+            <span class="sym-tree-spacer" aria-hidden="true"></span>
+            <span class="sym-name">{{ row.node.label }}</span>
+            <span class="sym-type">{{ row.node.descriptor.type_name }}</span>
+            <span class="sym-addr">{{ formatAddr(row.node.descriptor.address) }}</span>
+            <span class="sym-size">{{ row.node.descriptor.size }}B</span>
+          </button>
+          <div
+            v-else-if="row.node.container"
+            class="sym-item sym-container"
+            :style="{ paddingLeft: rowIndent(row.depth) }"
+          >
+            <span class="sym-tree-spacer" aria-hidden="true"></span>
+            <span class="sym-name">{{ row.node.label }}</span>
+            <span class="sym-type">{{ row.node.container.type_name }}</span>
+            <span class="sym-addr">{{ formatAddr(row.node.container.address) }}</span>
+            <span class="sym-size">{{ row.node.container.size }}B</span>
+          </div>
+        </template>
       </div>
       <div v-else class="sym-empty">
-        {{ query ? '无匹配变量' : '当前 AXF 中没有可运行时读取的变量' }}
-      </div>
-
-      <div v-if="filtered.length > visibleItems.length" class="sym-limit">
-        仅显示前 {{ visibleItems.length }} 项，请缩小搜索范围。
+        {{ query ? tr('无匹配变量', 'No matching variables') : tr('当前 AXF 中没有可运行时读取的变量', 'The current AXF has no runtime-readable variables') }}
       </div>
 
       <div v-if="selectedType" class="sym-detail">
-        <h4>类型信息: {{ selectedType.name }}</h4>
+        <h4>{{ tr('类型信息:', 'Type Information:') }} {{ selectedType.name }}</h4>
         <table v-if="selectedType.found" class="desc-table">
           <tbody>
-            <tr><th>类型</th><td>{{ selectedType.type }}</td></tr>
-            <tr><th>大小</th><td>{{ selectedType.size }} bytes</td></tr>
-            <tr><th>地址</th><td>{{ formatAddr(selectedType.address) }}</td></tr>
+            <tr><th>{{ tr('类型', 'Type') }}</th><td>{{ selectedType.type }}</td></tr>
+            <tr><th>{{ tr('大小', 'Size') }}</th><td>{{ selectedType.size }} bytes</td></tr>
+            <tr><th>{{ tr('地址', 'Address') }}</th><td>{{ formatAddr(selectedType.address) }}</td></tr>
           </tbody>
         </table>
         <div v-if="selectedType.members?.length" class="sym-members">
-          <h5>成员</h5>
+          <h5>{{ tr('成员', 'Members') }}</h5>
           <div v-for="(member, index) in selectedType.members" :key="index" class="sym-member">
             {{ JSON.stringify(member) }}
           </div>
@@ -74,11 +95,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { ChevronDown, ChevronRight, LoaderCircle } from '@lucide/vue'
 import { useSymbolsApi } from '../../composables/useDashboard'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
-import type { SymbolTypeInfo } from '../../types/mklink'
+import { buildBrowseTree, buildSymbolTree, visibleSymbolRows } from '../../lib/symbolTree'
+import type { SymbolTreeNode } from '../../lib/symbolTree'
+import type { SymbolDescriptor, SymbolTypeInfo } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 
@@ -87,16 +112,19 @@ const symbols = useSymbolsApi()
 const toast = useToast()
 const query = ref('')
 const selectedType = ref<SymbolTypeInfo | null>(null)
+const expanded = shallowRef(new Set<string>())
+const searchItems = shallowRef<SymbolDescriptor[]>([])
+let searchRequest = 0
 
-const filtered = computed(() => {
-  const key = query.value.trim().toLocaleLowerCase()
-  if (!key) return catalog.items.value
-  return catalog.items.value.filter(symbol => (
-    symbol.path.toLocaleLowerCase().includes(key)
-    || symbol.type_name.toLocaleLowerCase().includes(key)
-  ))
-})
-const visibleItems = computed(() => filtered.value.slice(0, 500))
+const tree = computed(() => query.value.trim()
+  ? buildSymbolTree(searchItems.value, catalog.containers.value)
+  : buildBrowseTree(catalog.browseRoots.value, catalog.browseChildren.value))
+const rows = computed(() => visibleSymbolRows(tree.value, {
+  expanded: expanded.value,
+  selected: new Set<string>(),
+  query: query.value,
+  selectedOnly: false,
+}))
 
 async function loadCatalog(): Promise<void> {
   if (!props.deviceConnected) return
@@ -113,11 +141,32 @@ async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
     toast.success(
-      `符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`,
+      tr(`符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`, `Symbols updated: ${summary.preserved.length} preserved, ${summary.updated.length} updated, ${summary.removed.length} removed`),
     )
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
   }
+}
+
+async function toggleBranch(node: SymbolTreeNode): Promise<void> {
+  if (query.value.trim()) return
+  if (expanded.value.has(node.key)) {
+    expanded.value = new Set([...expanded.value].filter(key => key !== node.key))
+    return
+  }
+  if (node.browse) {
+    try {
+      await catalog.loadBrowseChildren(node.browse)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause))
+      return
+    }
+  }
+  expanded.value = new Set(expanded.value).add(node.key)
+}
+
+function rowIndent(depth: number): string {
+  return `${9 + depth * 16}px`
 }
 
 async function selectSymbol(path: string): Promise<void> {
@@ -140,6 +189,20 @@ onMounted(loadCatalog)
 watch(() => props.deviceConnected, connected => {
   if (connected) void loadCatalog()
 })
+watch(query, value => {
+  const key = value.trim()
+  if (!key) {
+    searchItems.value = []
+    searchRequest += 1
+    return
+  }
+  const requestId = ++searchRequest
+  void catalog.searchSymbols(key).then(items => {
+    if (requestId === searchRequest) searchItems.value = items
+  }).catch(cause => {
+    if (requestId === searchRequest) toast.error(cause instanceof Error ? cause.message : String(cause))
+  })
+})
 </script>
 
 <style scoped>
@@ -148,16 +211,10 @@ watch(() => props.deviceConnected, connected => {
 .sym-controls .form-input { flex: 1; min-width: 0; }
 .sym-summary { display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
 .stale-label { color: var(--warn); }
-.truncated-banner {
-  color: var(--warn);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
 .sym-results { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); }
 .sym-item {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 120px 100px 44px;
+  grid-template-columns: 16px minmax(180px, 1fr) 120px 100px 44px;
   gap: 12px;
   width: 100%;
   padding: 7px 9px;
@@ -170,13 +227,17 @@ watch(() => props.deviceConnected, connected => {
   font-family: Consolas, monospace;
   font-size: 12px;
 }
+.sym-branch { grid-template-columns: 16px minmax(180px, 1fr) 120px 44px; }
+.sym-container { cursor: default; }
+.sym-tree-spacer { width: 14px; }
+.sym-spinner { animation: sym-spin 0.8s linear infinite; }
+@keyframes sym-spin { to { transform: rotate(360deg); } }
 .sym-item:last-child { border-bottom: 0; }
 .sym-item:hover { background: var(--surface); }
 .sym-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .sym-type, .sym-addr { color: var(--info); }
 .sym-size { color: var(--muted); text-align: right; }
-.sym-empty, .sym-limit { color: var(--muted); padding: 16px; text-align: center; }
-.sym-limit { padding: 6px; font-size: 12px; }
+.sym-empty { color: var(--muted); padding: 16px; text-align: center; }
 .sym-detail { border-top: 1px solid var(--border); padding-top: 12px; }
 .sym-detail h4 { margin: 0 0 8px; font-size: 13px; }
 .sym-members { margin-top: 8px; }
@@ -185,7 +246,8 @@ watch(() => props.deviceConnected, connected => {
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
 
 @media (max-width: 720px) {
-  .sym-item { grid-template-columns: minmax(140px, 1fr) 90px 44px; }
+  .sym-item { grid-template-columns: 16px minmax(140px, 1fr) 90px 44px; }
+  .sym-branch { grid-template-columns: 16px minmax(140px, 1fr) 90px 44px; }
   .sym-addr { display: none; }
 }
 </style>

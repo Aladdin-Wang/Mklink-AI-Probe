@@ -2,6 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useOfflineFlashApi } from '../composables/useOfflineFlashApi'
 import { useOnlineFlashApi } from '../composables/useOnlineFlashApi'
+import { tr } from '../composables/useLanguage'
 import { listenForFirmwarePathDrops, pickFirmwareFiles } from '../lib/filePicker'
 import type { TargetRecord } from '../types/onlineFlash'
 import type {
@@ -144,8 +145,8 @@ function message(value: unknown): string {
 }
 
 function targetAction(target: TargetRecord): string {
-  if (isHpmPart(target.part_number)) return '使用 ROM API'
-  return target.installed ? '加入算法' : '下载 Pack'
+  if (isHpmPart(target.part_number)) return tr('使用 ROM API', 'Use ROM API')
+  return target.installed ? tr('加入算法', 'Add Algorithm') : tr('下载 Pack', 'Download Pack')
 }
 
 async function refreshDisk(): Promise<void> {
@@ -191,15 +192,15 @@ async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
       algorithms.value = []
       hpmBoard.value = defaultHpmBoard(target.part_number)
       firmwares.value.forEach(item => { item.algorithm_id = '' })
-      notice.value = `${target.part_number} 使用 HPM ROM API，无需 Pack 或 FLM`
+      notice.value = tr(`${target.part_number} 使用 HPM ROM API，无需 Pack 或 FLM`, `${target.part_number} uses HPM ROM API; no Pack or FLM required`)
       return
     }
     hpmBoard.value = ''
     if (!target.installed) await online.installPack(target.part_number)
     const items = await offline.listAlgorithms(target.part_number)
-    if (!items.length) throw new Error(`未找到 ${target.part_number} 的 FLM 算法`)
+    if (!items.length) throw new Error(tr(`未找到 ${target.part_number} 的 FLM 算法`, `No FLM algorithm found for ${target.part_number}`))
     mergeAlgorithms(items)
-    notice.value = `已加入 ${items.length} 个 ${target.part_number} 算法候选`
+    notice.value = tr(`已加入 ${items.length} 个 ${target.part_number} 算法候选`, `Added ${items.length} algorithm candidates for ${target.part_number}`)
   } catch (value) { error.value = message(value) }
   finally { targetBusy.value = false }
 }
@@ -210,7 +211,7 @@ function addManualFlm(event: Event): void {
   input.value = ''
   if (!file) return
   if (!file.name.toLowerCase().endsWith('.flm')) {
-    error.value = '下载算法必须是 .FLM 文件'
+    error.value = tr('下载算法必须是 .FLM 文件', 'Flash algorithm must be an .FLM file')
     return
   }
   const id = nextId('flm')
@@ -247,11 +248,11 @@ function addFirmwareSources(sources: Array<string | File>): void {
     const name = file?.name || path.split(/[\\/]/).pop() || ''
     const suffix = name.split('.').pop()?.toLowerCase()
     if (suffix !== 'bin' && suffix !== 'hex') {
-      error.value = '固件只支持 BIN 或 HEX'
+      error.value = tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')
       continue
     }
     if (hpmMode.value && suffix !== 'bin') {
-      error.value = 'HPM ROM API 只支持 BIN 固件'
+      error.value = tr('HPM ROM API 只支持 BIN 固件', 'HPM ROM API supports BIN firmware only')
       continue
     }
     firmwares.value.push({
@@ -307,11 +308,11 @@ async function pollFirmwareSources(): Promise<void> {
         preview.value = null
         deployedScriptName.value = ''
         deployedModel.value = ''
-        notice.value = `已自动加载重新编译的 ${status.file_name}`
+        notice.value = tr(`已自动加载重新编译的 ${status.file_name}`, `Automatically loaded rebuilt ${status.file_name}`)
       }
       item.source_stamp = stamp
     } catch (value) {
-      error.value = `固件路径不可用：${message(value)}`
+      error.value = tr(`固件路径不可用：${message(value)}`, `Firmware path is unavailable: ${message(value)}`)
     }
   }
 }
@@ -350,7 +351,7 @@ function buildRequest(): {
   const algorithmPayload: OfflineAlgorithmConfig[] = algorithms.value.map(item => {
     let uploadIndex: number | null = null
     if (item.source_kind === 'upload') {
-      if (!item.file) throw new Error(`请选择 ${item.file_name} 的 FLM 文件`)
+      if (!item.file) throw new Error(tr(`请选择 ${item.file_name} 的 FLM 文件`, `Select the FLM file for ${item.file_name}`))
       uploadIndex = flmFiles.push(item.file) - 1
     }
     return {
@@ -376,7 +377,7 @@ function buildRequest(): {
       source_path: item.source_path,
     }
   })
-  if (!model.value) throw new Error('请选择下载器型号')
+  if (!model.value) throw new Error(tr('请选择下载器型号', 'Select a probe model'))
   return {
     payload: {
       model: model.value,
@@ -400,7 +401,7 @@ async function generatePreview(): Promise<void> {
   notice.value = ''
   try {
     preview.value = await offline.preview(buildRequest().payload)
-    notice.value = `已生成 ${preview.value.script_name}`
+    notice.value = tr(`已生成 ${preview.value.script_name}`, `Generated ${preview.value.script_name}`)
   } catch (value) { error.value = message(value) }
   finally { operationBusy.value = false }
 }
@@ -417,7 +418,7 @@ async function deploy(): Promise<void> {
     const result = await offline.deploy(request.payload, request.firmwareFiles, request.flmFiles)
     deployedScriptName.value = result.script_name
     deployedModel.value = result.model
-    notice.value = `已部署 ${result.files.length} 个文件，脚本 ${result.script_name}`
+    notice.value = tr(`已部署 ${result.files.length} 个文件，脚本 ${result.script_name}`, `Deployed ${result.files.length} files with script ${result.script_name}`)
     await refreshDisk()
   } catch (value) { error.value = message(value) }
   finally { operationBusy.value = false }
@@ -437,7 +438,7 @@ async function triggerOffline(): Promise<void> {
       },
     )
     triggerLines.value = result.lines
-    notice.value = result.status === 'completed' ? '脱机下载执行完成' : '脱机下载执行失败'
+    notice.value = result.status === 'completed' ? tr('脱机下载执行完成', 'Offline flashing completed') : tr('脱机下载执行失败', 'Offline flashing failed')
   } catch (value) { error.value = message(value) }
   finally { operationBusy.value = false }
 }
@@ -462,11 +463,11 @@ onBeforeUnmount(() => {
 <template>
   <div class="offline-page">
     <header class="status-strip">
-      <div><span class="status-label">下载器</span><b>{{ effectiveModel || '未选择' }}</b></div>
-      <div><span class="status-label">U 盘</span><b :class="disk?.available ? 'ok' : 'bad'">{{ disk?.available ? disk.disk_path : '未发现' }}</b></div>
-      <div><span class="status-label">脚本</span><b>{{ effectiveScriptName }}</b></div>
+      <div><span class="status-label">{{ tr('下载器', 'Probe') }}</span><b>{{ effectiveModel || tr('未选择', 'Not selected') }}</b></div>
+      <div><span class="status-label">{{ tr('U 盘', 'USB Drive') }}</span><b :class="disk?.available ? 'ok' : 'bad'">{{ disk?.available ? disk.disk_path : tr('未发现', 'Not found') }}</b></div>
+      <div><span class="status-label">{{ tr('脚本', 'Script') }}</span><b>{{ effectiveScriptName }}</b></div>
       <div class="status-actions">
-        <button class="btn" :disabled="operationBusy" @click="refreshDisk">刷新 U 盘</button>
+        <button class="btn" :disabled="operationBusy" @click="refreshDisk">{{ tr('刷新 U 盘', 'Refresh USB Drive') }}</button>
       </div>
     </header>
 
@@ -475,10 +476,10 @@ onBeforeUnmount(() => {
 
     <div class="offline-workspace">
       <section class="work-panel target-panel">
-        <div class="panel-heading"><h2>器件与下载算法</h2><label v-if="!hpmMode" class="btn btn-sm file-button">添加 FLM<input type="file" accept=".flm" @change="addManualFlm"></label></div>
+        <div class="panel-heading"><h2>{{ tr('器件与下载算法', 'Targets and Flash Algorithms') }}</h2><label v-if="!hpmMode" class="btn btn-sm file-button">{{ tr('添加 FLM', 'Add FLM') }}<input type="file" accept=".flm" @change="addManualFlm"></label></div>
         <div class="target-search">
           <input v-model="targetQuery" class="form-input" data-testid="offline-target-search" @keydown.enter="searchTargets">
-          <button class="btn" :disabled="targetBusy" @click="searchTargets">搜索器件</button>
+          <button class="btn" :disabled="targetBusy" @click="searchTargets">{{ tr('搜索器件', 'Search Targets') }}</button>
         </div>
         <div class="target-results">
           <button v-for="target in targets" :key="target.part_number" class="target-result" :disabled="targetBusy" @click="addTargetAlgorithms(target)">
@@ -486,58 +487,58 @@ onBeforeUnmount(() => {
             <em>{{ targetAction(target) }}</em>
           </button>
         </div>
-        <p v-if="hpmMode" class="hpm-mode">HPM ROM API · 无需 Pack 或 FLM</p>
+        <p v-if="hpmMode" class="hpm-mode">HPM ROM API · {{ tr('无需 Pack 或 FLM', 'No Pack or FLM required') }}</p>
         <div v-else class="algorithm-list">
           <div v-for="(item, index) in algorithms" :key="item.id" class="algorithm-row" data-testid="offline-algorithm-row">
-            <div class="row-title"><input v-model="item.file_name" class="compact-input mono"><span>{{ item.origin }}</span><button class="icon-command" title="移除算法" @click="removeAlgorithm(index)">×</button></div>
+            <div class="row-title"><input v-model="item.file_name" class="compact-input mono"><span>{{ item.origin === '本地文件' ? tr('本地文件', 'Local file') : item.origin }}</span><button class="icon-command" :title="tr('移除算法', 'Remove algorithm')" @click="removeAlgorithm(index)">×</button></div>
             <label>Flash<input v-model="item.flash_base" class="compact-input mono"></label>
             <label>RAM<input v-model="item.ram_base" class="compact-input mono"></label>
           </div>
-          <p v-if="!algorithms.length" class="empty-state">尚未配置 FLM</p>
+          <p v-if="!algorithms.length" class="empty-state">{{ tr('尚未配置 FLM', 'No FLM configured') }}</p>
         </div>
       </section>
 
       <section class="work-panel firmware-panel" :class="{ dragging: firmwareDropActive }" data-testid="offline-firmware-drop-zone" @dragenter.prevent="firmwareDropActive = true" @dragover.prevent="firmwareDropActive = true" @dragleave.prevent="firmwareDropActive = false" @drop.prevent="dropFirmware">
-        <div class="panel-heading"><h2>烧录顺序</h2><button class="btn btn-sm" type="button" @click="browseFirmware">添加固件</button><input class="visually-hidden" data-testid="offline-firmware-input" type="file" multiple accept=".bin,.hex" @change="addFirmware"></div>
+        <div class="panel-heading"><h2>{{ tr('烧录顺序', 'Flash Sequence') }}</h2><button class="btn btn-sm" type="button" @click="browseFirmware">{{ tr('添加固件', 'Add Firmware') }}</button><input class="visually-hidden" data-testid="offline-firmware-input" type="file" multiple accept=".bin,.hex" @change="addFirmware"></div>
         <div class="firmware-list">
           <div v-for="(item, index) in firmwares" :key="item.id" class="firmware-row" data-testid="offline-firmware-row">
             <div class="sequence-number">{{ index + 1 }}</div>
             <div class="firmware-fields">
               <input v-model="item.file_name" class="compact-input mono file-name">
               <select v-if="!hpmMode" v-model="item.algorithm_id" class="compact-input">
-                <option value="" disabled>选择 FLM</option>
+                <option value="" disabled>{{ tr('选择 FLM', 'Select FLM') }}</option>
                 <option v-for="algorithm in algorithms" :key="algorithm.id" :value="algorithm.id">{{ algorithm.file_name }}</option>
               </select>
               <span v-else class="embedded-address">HPM ROM API</span>
-              <input v-if="item.format === 'bin'" v-model="item.base_address" class="compact-input mono" placeholder="BIN 基地址">
-              <span v-else class="embedded-address">HEX 文件内地址</span>
+              <input v-if="item.format === 'bin'" v-model="item.base_address" class="compact-input mono" :placeholder="tr('BIN 基地址', 'BIN base address')">
+              <span v-else class="embedded-address">{{ tr('HEX 文件内地址', 'Address embedded in HEX') }}</span>
             </div>
             <div class="row-actions">
-              <button class="icon-command" title="上移" :disabled="index === 0" @click="moveFirmware(index, -1)">↑</button>
-              <button class="icon-command" title="下移" :disabled="index === firmwares.length - 1" @click="moveFirmware(index, 1)">↓</button>
-              <button class="icon-command" title="移除固件" @click="firmwares.splice(index, 1)">×</button>
+              <button class="icon-command" :title="tr('上移', 'Move up')" :disabled="index === 0" @click="moveFirmware(index, -1)">↑</button>
+              <button class="icon-command" :title="tr('下移', 'Move down')" :disabled="index === firmwares.length - 1" @click="moveFirmware(index, 1)">↓</button>
+              <button class="icon-command" :title="tr('移除固件', 'Remove firmware')" @click="firmwares.splice(index, 1)">×</button>
             </div>
           </div>
-          <p v-if="!firmwares.length" class="empty-state">拖拽 BIN / HEX 到此工作区，或点击“添加固件”</p>
+          <p v-if="!firmwares.length" class="empty-state">{{ tr('拖拽 BIN / HEX 到此工作区，或点击“添加固件”', 'Drop BIN / HEX into this workspace, or click Add Firmware') }}</p>
         </div>
       </section>
 
       <section class="work-panel settings-panel">
-        <div class="panel-heading"><h2>量产配置</h2></div>
-        <label class="setting-row"><span>下载器型号</span><select v-model="model" class="form-select" data-testid="offline-model" @change="modelChanged"><option value="" disabled>请选择</option><option value="V2">V2</option><option value="V3">V3</option><option value="V4">V4</option></select></label>
-        <label v-if="hpmMode" class="setting-row"><span>HPM 板卡</span><select v-model="hpmBoard" class="form-select"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
-        <label class="setting-row"><span>脚本文件名</span><input v-model="scriptFieldName" class="form-input mono" data-testid="offline-script-name" :disabled="effectiveModel !== 'V4'"></label>
-        <label class="setting-row"><span>自动烧录次数</span><input v-model.number="automaticCount" type="number" min="1" max="9999" class="form-input" :disabled="effectiveModel === 'V2'"></label>
-        <label class="setting-row"><span>IDCODE 超时</span><input v-model.number="idcodeTimeout" type="number" min="500" max="600000" step="500" class="form-input"><em>ms</em></label>
-        <label class="setting-row"><span>SWD 速率</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option></select></label>
+        <div class="panel-heading"><h2>{{ tr('量产配置', 'Production Settings') }}</h2></div>
+        <label class="setting-row"><span>{{ tr('下载器型号', 'Probe Model') }}</span><select v-model="model" class="form-select" data-testid="offline-model" @change="modelChanged"><option value="" disabled>{{ tr('请选择', 'Select') }}</option><option value="V2">V2</option><option value="V3">V3</option><option value="V4">V4</option></select></label>
+        <label v-if="hpmMode" class="setting-row"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" class="form-select"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
+        <label class="setting-row"><span>{{ tr('脚本文件名', 'Script File Name') }}</span><input v-model="scriptFieldName" class="form-input mono" data-testid="offline-script-name" :disabled="effectiveModel !== 'V4'"></label>
+        <label class="setting-row"><span>{{ tr('自动烧录次数', 'Automatic Flash Count') }}</span><input v-model.number="automaticCount" type="number" min="1" max="9999" class="form-input" :disabled="effectiveModel === 'V2'"></label>
+        <label class="setting-row"><span>{{ tr('IDCODE 超时', 'IDCODE Timeout') }}</span><input v-model.number="idcodeTimeout" type="number" min="500" max="600000" step="500" class="form-input"><em>ms</em></label>
+        <label class="setting-row"><span>{{ tr('SWD 速率', 'SWD Rate') }}</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option></select></label>
         <div class="deploy-actions">
-          <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">生成预览</button>
-          <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild" @click="deploy">部署到 U 盘</button>
-          <button class="btn" data-testid="offline-trigger" :disabled="!canTrigger" @click="triggerOffline">触发测试</button>
+          <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">{{ tr('生成预览', 'Generate Preview') }}</button>
+          <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild" @click="deploy">{{ tr('部署到 U 盘', 'Deploy to USB Drive') }}</button>
+          <button class="btn" data-testid="offline-trigger" :disabled="!canTrigger" @click="triggerOffline">{{ tr('触发测试', 'Run Test') }}</button>
         </div>
         <div class="script-preview">
           <div class="preview-title"><span>{{ preview?.script_name || effectiveScriptName }}</span><span>{{ preview?.model || effectiveModel }}</span></div>
-          <pre>{{ preview?.script || '等待生成配置' }}</pre>
+          <pre>{{ preview?.script || tr('等待生成配置', 'Waiting to generate configuration') }}</pre>
         </div>
         <pre v-if="triggerLines.length" class="trigger-log">{{ triggerLines.join('\n') }}</pre>
       </section>

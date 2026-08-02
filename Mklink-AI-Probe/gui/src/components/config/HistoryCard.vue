@@ -1,6 +1,6 @@
 <template>
   <div class="card" v-if="history.length > 0">
-    <div class="card-title">最近项目</div>
+    <div class="card-title">{{ tr('最近项目', 'Recent Projects') }}</div>
     <div class="history-list">
       <div
         v-for="entry in history"
@@ -14,7 +14,7 @@
           <span class="history-path" :title="entry.path">{{ truncatePath(entry.path) }}</span>
         </div>
         <span class="history-time">{{ relativeTime(entry.last_used) }}</span>
-        <button class="btn-remove" @click.stop="remove(entry.path)" title="移除">✕</button>
+        <button class="btn-remove" @click.stop="remove(entry.path)" :title="tr('移除', 'Remove')">✕</button>
       </div>
     </div>
   </div>
@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import { useProjectHistory } from '../../composables/useProjectHistory'
+import { tr } from '../../composables/useLanguage'
 
 defineProps<{
   currentPath: string
@@ -50,12 +51,12 @@ function relativeTime(iso: string): string {
     const now = Date.now()
     const diffMs = now - then
     const minutes = Math.floor(diffMs / 60000)
-    if (minutes < 1) return '刚刚'
-    if (minutes < 60) return `${minutes}分钟前`
+    if (minutes < 1) return tr('刚刚', 'Just now')
+    if (minutes < 60) return tr(`${minutes}分钟前`, `${minutes} min ago`)
     const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours}小时前`
+    if (hours < 24) return tr(`${hours}小时前`, `${hours} hr ago`)
     const days = Math.floor(hours / 24)
-    if (days < 30) return `${days}天前`
+    if (days < 30) return tr(`${days}天前`, `${days} d ago`)
     return new Date(iso).toLocaleDateString()
   } catch {
     return ''

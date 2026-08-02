@@ -7,7 +7,7 @@
       @visibility-change="setChannelVisibility"
       @selection-removed="clearChannelVisibility"
     />
-    <div class="workspace-resizer" title="调整变量目录宽度" @mousedown="startResize"></div>
+    <div class="workspace-resizer" :title="tr('调整变量目录宽度', 'Resize variable catalog')" @mousedown="startResize"></div>
     <div class="waveform-pane">
       <WaveformViewer
         mode="SuperWatch"
@@ -23,6 +23,7 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
 import SymbolVariablePanel from './SymbolVariablePanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
+import { tr } from '../../composables/useLanguage'
 
 defineProps<{ deviceConnected: boolean }>()
 

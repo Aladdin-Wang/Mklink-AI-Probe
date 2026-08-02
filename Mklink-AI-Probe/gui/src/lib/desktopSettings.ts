@@ -1,4 +1,5 @@
 export const DESKTOP_SETTINGS_STORAGE_KEY = 'mklink.desktop.settings.v1'
+export const DESKTOP_SETTINGS_CHANGED_EVENT = 'mklink:desktop-settings-changed'
 export const DESKTOP_SETTINGS_VERSION = 1 as const
 export const MAX_SEND_HISTORY = 20
 
@@ -143,6 +144,9 @@ export function saveDesktopSettings(
 ): DesktopSettings {
   const saved = normalize(settings)
   storage.setItem(DESKTOP_SETTINGS_STORAGE_KEY, JSON.stringify(saved))
+  if (typeof window !== 'undefined' && storage === window.localStorage) {
+    window.dispatchEvent(new CustomEvent(DESKTOP_SETTINGS_CHANGED_EVENT))
+  }
   return normalize(saved)
 }
 

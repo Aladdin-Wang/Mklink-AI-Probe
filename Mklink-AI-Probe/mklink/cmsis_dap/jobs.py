@@ -71,6 +71,7 @@ class OnlineFlashJobManager:
         resource_manager: object,
         image_provider: Optional[Callable[[str], ImageInspection]] = None,
         *,
+        prepare_connect: Optional[Callable[[JobRequest], None]] = None,
         max_completed: int = 20,
         max_events: int = 5000,
     ) -> None:
@@ -83,6 +84,7 @@ class OnlineFlashJobManager:
         self._backend_factory = backend_factory
         self._resource_manager = resource_manager
         self._image_provider = image_provider
+        self._prepare_connect = prepare_connect
         self._max_completed = max_completed
         self._max_events = max_events
         self._jobs: Dict[str, _Job] = {}
@@ -254,6 +256,16 @@ class OnlineFlashJobManager:
                     cancelled_after_acquire = job.cancel_requested
 
                 if not cancelled_after_acquire:
+                    if self._prepare_connect is not None:
+                        try:
+                            self._prepare_connect(job.request)
+                        except FlashError:
+                            raise
+                        except Exception as exc:
+                            raise FlashError(
+                                FlashErrorCode.CONNECT_FAIL,
+                                f"online flash connection preparation failed: {exc}",
+                            ) from exc
                     backend = self._backend_factory()
                     for index, action in enumerate(job.request.actions[:-1]):
                         with self._condition:
@@ -454,8 +466,8 @@ class OnlineFlashJobManager:
     def _fail_locked(self, job: _Job, error: FlashError) -> None:
         job.error_code = error.code.value
         job.error_message = error.message
-        self._transition_locked(job, JobState.FAILED)
         self._emit_locked(job, "error", message=error.message, state=JobState.FAILED)
+        self._transition_locked(job, JobState.FAILED)
 
     def _emit_locked(
         self,

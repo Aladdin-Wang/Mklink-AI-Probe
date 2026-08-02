@@ -12,7 +12,12 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mklink.elf_backend import ElfParseError, list_elf_symbols
+from mklink.elf_backend import (
+    ElfParseError,
+    address_is_writable,
+    list_elf_symbols,
+    writable_memory_ranges,
+)
 
 
 # 静态模式（rtt_storage_mode=1）地址解析：优先从 Keil .uvprojx 宏定义 + scatter 段定位
@@ -137,6 +142,7 @@ def _find_rtt_in_binary(path: Path, result: RTTFindResult) -> str | None:
     """优先用内置 pyelftools，格式不兼容时再调用外部符号工具。"""
     try:
         symbols = list_elf_symbols(str(path), backend="builtin")
+        writable_ranges = writable_memory_ranges(str(path), backend="builtin")
     except (ImportError, ElfParseError) as error:
         result.warnings.append(f"内置 pyelftools 无法解析 {path.name}: {error}")
         return _find_rtt_in_binary_external(path, result)
@@ -144,11 +150,15 @@ def _find_rtt_in_binary(path: Path, result: RTTFindResult) -> str | None:
     for symbol in symbols:
         if symbol.name != "_SEGGER_RTT":
             continue
-        if _is_valid_ram_addr(symbol.address):
+        if address_is_writable(
+            symbol.address,
+            getattr(symbol, "size", 1),
+            writable_ranges,
+        ):
             result.details.append("内置 pyelftools 已解析 _SEGGER_RTT")
             return f"0x{symbol.address:08x}"
         result.warnings.append(
-            f"内置 pyelftools 找到 _SEGGER_RTT，但地址不在 RAM 范围: "
+            f"内置 pyelftools 找到 _SEGGER_RTT，但地址不在 ELF 可写内存段: "
             f"0x{symbol.address:08x}"
         )
         return None

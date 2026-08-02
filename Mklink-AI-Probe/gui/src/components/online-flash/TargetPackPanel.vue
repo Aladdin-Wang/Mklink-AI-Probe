@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CustomFlmRecord, PackStatus, TargetRecord } from '../../types/onlineFlash'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ targets: TargetRecord[]; selectedPart: string; status: PackStatus | null; busy: boolean; cancelPending: boolean; progress: number; phase: string; error: string; algorithms: CustomFlmRecord[]; algorithmBusy: boolean; algorithmError: string; canManageAlgorithms: boolean; algorithmNotRequired: boolean }>()
 const emit = defineEmits<{ search: [value: string]; select: [target: TargetRecord]; updateIndex: []; importPack: [file: File]; cancel: []; addAlgorithm: [file: File]; removeAlgorithm: [algorithmId: string] }>()
@@ -28,39 +29,39 @@ function selectTarget(target: TargetRecord): void {
   emit('select', target)
 }
 function targetAvailability(target: TargetRecord): string {
-  if (target.part_number.toLowerCase().startsWith('hpm')) return '内置 ROM API'
-  if (target.source === 'bundle' || target.source === 'builtin') return '内置可用'
-  if (target.installed) return '本地 Pack'
-  return '可导入或联网下载'
+  if (target.part_number.toLowerCase().startsWith('hpm')) return tr('内置 ROM API', 'Built-in ROM API')
+  if (target.source === 'bundle' || target.source === 'builtin') return tr('内置可用', 'Built-in')
+  if (target.installed) return tr('本地 Pack', 'Local Pack')
+  return tr('可导入或联网下载', 'Import or download')
 }
 function hex(value: number): string { return `0x${value.toString(16).toUpperCase().padStart(8, '0')}` }
 const phaseLabel = computed(() => ({
-  preparing: '准备',
-  downloading: '下载',
-  refreshing: '安装并刷新',
-}[props.phase] || '处理中'))
+  preparing: tr('准备', 'Preparing'),
+  downloading: tr('下载', 'Downloading'),
+  refreshing: tr('安装并刷新', 'Installing and refreshing'),
+}[props.phase] || tr('处理中', 'Processing')))
 </script>
 
 <template>
   <section class="target-panel">
-    <div class="title-row"><h3>器件选择</h3><span data-testid="pack-status" class="badge" :class="selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? 'ok' : ''">{{ selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? '已安装' : '未就绪' }}</span></div>
-    <input v-model="query" data-testid="target-search" type="search" placeholder="搜索型号 / 厂商 / 系列" aria-label="搜索器件">
+    <div class="title-row"><h3>{{ tr('器件选择', 'Target Selection') }}</h3><span data-testid="pack-status" class="badge" :class="selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? 'ok' : ''">{{ selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? tr('已安装', 'Installed') : tr('未就绪', 'Not ready') }}</span></div>
+    <input v-model="query" data-testid="target-search" type="search" :placeholder="tr('搜索型号 / 厂商 / 系列', 'Search model / vendor / family')" :aria-label="tr('搜索器件', 'Search targets')">
     <div class="target-list">
       <button v-for="target in targets" :key="target.part_number" :data-testid="`target-${target.part_number}`" :disabled="busy || algorithmBusy" :class="{ active: selectedPart === target.part_number }" @click="selectTarget(target)">
-        <strong>{{ target.part_number }}</strong><small>{{ target.vendor }} · {{ target.pack_id || '内置' }}</small><span>{{ targetAvailability(target) }}</span>
+        <strong>{{ target.part_number }}</strong><small>{{ target.vendor }} · {{ target.pack_id || tr('内置', 'Built-in') }}</small><span>{{ targetAvailability(target) }}</span>
       </button>
     </div>
-    <div v-if="busy" class="pack-progress"><progress :value="progress" max="1"/><span data-testid="pack-progress-label">{{ phaseLabel }} {{ Math.round(progress * 100) }}%</span><button data-testid="pack-cancel" :disabled="cancelPending" @click="emit('cancel')">{{ cancelPending ? '取消中…' : '取消' }}</button></div>
+    <div v-if="busy" class="pack-progress"><progress :value="progress" max="1"/><span data-testid="pack-progress-label">{{ phaseLabel }} {{ Math.round(progress * 100) }}%</span><button data-testid="pack-cancel" :disabled="cancelPending" @click="emit('cancel')">{{ cancelPending ? tr('取消中…', 'Canceling…') : tr('取消', 'Cancel') }}</button></div>
     <p v-if="error" class="error">{{ error }}</p>
-    <div class="pack-footer"><span>索引 {{ status?.index_available ? '可用' : '不可用' }} · {{ status?.target_count ?? 0 }} 型号</span><div class="pack-actions"><label class="file-button" :class="{ disabled: busy || algorithmBusy }">导入 Pack<input data-testid="pack-import-input" type="file" accept=".pack" :disabled="busy || algorithmBusy" @change="importPack"></label><button data-testid="pack-update-index" :disabled="busy || algorithmBusy" @click="emit('updateIndex')">联网更新</button></div></div>
-    <div v-if="algorithmNotRequired" class="algorithm-not-required"><strong>HPM ROM API</strong><span>无需 FLM</span></div>
-    <div v-else class="algorithm-heading"><span>自定义下载算法</span><label class="file-button" :class="{ disabled: !canManageAlgorithms || algorithmBusy }">添加 FLM<input data-testid="custom-flm-input" type="file" accept=".flm" :disabled="!canManageAlgorithms || algorithmBusy" @change="addAlgorithm"></label></div>
+    <div class="pack-footer"><span>{{ tr('索引', 'Index') }} {{ status?.index_available ? tr('可用', 'available') : tr('不可用', 'unavailable') }} · {{ status?.target_count ?? 0 }} {{ tr('型号', 'targets') }}</span><div class="pack-actions"><label class="file-button" :class="{ disabled: busy || algorithmBusy }">{{ tr('导入 Pack', 'Import Pack') }}<input data-testid="pack-import-input" type="file" accept=".pack" :disabled="busy || algorithmBusy" @change="importPack"></label><button data-testid="pack-update-index" :disabled="busy || algorithmBusy" @click="emit('updateIndex')">{{ tr('联网更新', 'Update Online') }}</button></div></div>
+    <div v-if="algorithmNotRequired" class="algorithm-not-required"><strong>HPM ROM API</strong><span>{{ tr('无需 FLM', 'No FLM required') }}</span></div>
+    <div v-else class="algorithm-heading"><span>{{ tr('自定义下载算法', 'Custom Flash Algorithms') }}</span><label class="file-button" :class="{ disabled: !canManageAlgorithms || algorithmBusy }">{{ tr('添加 FLM', 'Add FLM') }}<input data-testid="custom-flm-input" type="file" accept=".flm" :disabled="!canManageAlgorithms || algorithmBusy" @change="addAlgorithm"></label></div>
     <div v-if="!algorithmNotRequired && algorithms.length" class="algorithm-list">
       <div v-for="algorithm in algorithms" :key="algorithm.algorithm_id" :data-testid="`custom-flm-${algorithm.algorithm_id}`" class="algorithm-row">
-        <strong>{{ algorithm.file_name }}</strong><span>{{ hex(algorithm.flash_start) }} · {{ algorithm.flash_size }} B</span><button :disabled="algorithmBusy" @click="emit('removeAlgorithm', algorithm.algorithm_id)">移除</button>
+        <strong>{{ algorithm.file_name }}</strong><span>{{ hex(algorithm.flash_start) }} · {{ algorithm.flash_size }} B</span><button :disabled="algorithmBusy" @click="emit('removeAlgorithm', algorithm.algorithm_id)">{{ tr('移除', 'Remove') }}</button>
       </div>
     </div>
-    <p v-else-if="!algorithmNotRequired" class="algorithm-empty">当前器件未添加自定义 FLM</p>
+    <p v-else-if="!algorithmNotRequired" class="algorithm-empty">{{ tr('当前器件未添加自定义 FLM', 'No custom FLM added for this target') }}</p>
     <p v-if="algorithmError" class="error">{{ algorithmError }}</p>
   </section>
 </template>

@@ -1,24 +1,24 @@
 <template>
   <div class="control-toolbar">
     <button v-if="state === 'idle'" class="btn btn-primary" @click="$emit('start')" :disabled="!deviceConnected">
-      ▶ 开始
+      ▶ {{ tr('开始', 'Start') }}
     </button>
     <button v-else-if="state === 'starting'" class="btn btn-primary" disabled>
-      启动中...
+      {{ tr('启动中...', 'Starting...') }}
     </button>
     <template v-else-if="state === 'error'">
       <button class="btn btn-primary" @click="$emit('start')" :disabled="!deviceConnected">
-        ↻ 重试
+        ↻ {{ tr('重试', 'Retry') }}
       </button>
-      <button class="btn btn-danger" @click="$emit('stop')">⏹ 停止</button>
+      <button class="btn btn-danger" @click="$emit('stop')">⏹ {{ tr('停止', 'Stop') }}</button>
     </template>
     <template v-else-if="state === 'running'">
-      <button class="btn" @click="$emit('pause')">⏸ 暂停</button>
-      <button class="btn btn-danger" @click="$emit('stop')">⏹ 停止</button>
+      <button class="btn" @click="$emit('pause')">⏸ {{ tr('暂停', 'Pause') }}</button>
+      <button class="btn btn-danger" @click="$emit('stop')">⏹ {{ tr('停止', 'Stop') }}</button>
     </template>
     <template v-else-if="state === 'paused'">
-      <button class="btn btn-primary" @click="$emit('resume')">▶ 继续</button>
-      <button class="btn btn-danger" @click="$emit('stop')">⏹ 停止</button>
+      <button class="btn btn-primary" @click="$emit('resume')">▶ {{ tr('继续', 'Resume') }}</button>
+      <button class="btn btn-danger" @click="$emit('stop')">⏹ {{ tr('停止', 'Stop') }}</button>
     </template>
     <span v-if="state === 'running'" class="status-dot running"></span>
     <span v-else-if="state === 'paused'" class="status-dot paused"></span>
@@ -28,6 +28,8 @@
 </template>
 
 <script setup lang="ts">
+import { tr } from '../../composables/useLanguage'
+
 defineProps<{
   state: 'idle' | 'starting' | 'running' | 'paused' | 'error'
   error?: string | null

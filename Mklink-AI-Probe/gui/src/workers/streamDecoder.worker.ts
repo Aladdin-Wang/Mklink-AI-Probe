@@ -1,5 +1,5 @@
 import {
-  decodeFrame, RTT_RAW_UTF8_LINES, StreamType, SUPERWATCH_METADATA_JSON,
+  decodeFrame, RTT_RAW_UTF8_LINES, RTT_TERMINAL_UTF8, StreamType, SUPERWATCH_METADATA_JSON,
   SUPERWATCH_SAMPLE_MAJOR_FLOAT32, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
 } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
@@ -88,12 +88,30 @@ export type WorkerOutput =
       latestTime: number
       tickOrigin: bigint
       taskIds: ArrayBuffer
+      contextTypes: ArrayBuffer
       starts: ArrayBuffer
       ends: ArrayBuffer
       startTicks: ArrayBuffer
       endTicks: ArrayBuffer
       events: SystemViewEvent[]
+      contexts: SystemViewContextSummary[]
     }
+  | { type: 'rtt-terminal'; sequence: bigint; text: string }
+
+export interface SystemViewContextSummary {
+  id: number
+  type: number
+  priority?: number
+  stackBase?: number
+  stackSize?: number
+  count: number
+  totalTicks: number
+  minTicks: number
+  p25Ticks: number
+  p50Ticks: number
+  p75Ticks: number
+  maxTicks: number
+}
 
 export interface SystemViewEvent {
   kind: string
@@ -107,6 +125,29 @@ export interface SystemViewEvent {
   prio?: number
   cause?: number
   event_id?: number
+  stack_base?: number
+  stack_size?: number
+  duration_ticks?: number
+}
+
+const CONTEXT_TASK = 1
+const CONTEXT_ISR = 2
+const CONTEXT_SCHEDULER = 3
+const CONTEXT_IDLE = 4
+
+interface ActiveSystemViewContext {
+  type: number
+  id: number
+  tick: bigint
+  openingEvent?: SystemViewEvent
+}
+
+interface SystemViewContextMetadata {
+  type: number
+  id: number
+  priority?: number
+  stackBase?: number
+  stackSize?: number
 }
 
 const SYSTEMVIEW_RECORD_SIZE = 48
@@ -142,6 +183,18 @@ function nonNegativeInteger(value: unknown): number | null {
     : null
 }
 
+function systemViewQuantile(sortedValues: number[], q: number): number {
+  if (!sortedValues.length) return 0
+  if (sortedValues.length === 1) return sortedValues[0]
+  const position = (sortedValues.length - 1) * q
+  const base = Math.floor(position)
+  const fraction = position - base
+  const next = sortedValues[base + 1]
+  return next === undefined
+    ? sortedValues[base]
+    : sortedValues[base] + fraction * (next - sortedValues[base])
+}
+
 export class StreamDecoder {
   private readonly post: PostOutput
   private ring: TypedRingBuffer | null = null
@@ -154,9 +207,9 @@ export class StreamDecoder {
   private systemViewMode = false
   private systemViewEvents: SystemViewEventRing<SystemViewEvent> | null = null
   private systemViewIntervals: SystemViewIntervalRing | null = null
-  private currentTask: { taskId: number; tick: bigint } | null = null
-  private suspendedTask: { taskId: number } | null = null
-  private isrDepth = 0
+  private currentContext: ActiveSystemViewContext | null = null
+  private suspendedContexts: Array<{ type: number; id: number }> = []
+  private systemViewContextCatalog = new Map<string, SystemViewContextMetadata>()
   private tickOrigin: bigint | null = null
   private latestSystemViewTick = 0n
   private lastNumericTimestampMs: number | null = null
@@ -198,9 +251,9 @@ export class StreamDecoder {
       this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
       this.systemViewIntervals = new SystemViewIntervalRing(capacity)
       this.systemViewMode = false
-      this.currentTask = null
-      this.suspendedTask = null
-      this.isrDepth = 0
+      this.currentContext = null
+      this.suspendedContexts = []
+      this.systemViewContextCatalog.clear()
       this.tickOrigin = null
       this.latestSystemViewTick = 0n
       this.lastNumericTimestampMs = null
@@ -282,10 +335,19 @@ export class StreamDecoder {
   }
 
   private acceptRttRawFrame(decoded: StreamFrame): void {
-    if (decoded.flags !== RTT_RAW_UTF8_LINES) {
-      throw new RangeError('RTT_RAW payload must use UTF-8 line records')
-    }
     this.requireNextSequence(decoded.sequence, 'RTT_RAW')
+    if (decoded.flags === RTT_TERMINAL_UTF8) {
+      if (decoded.itemCount !== 1 || decoded.payload.byteLength === 0) {
+        throw new RangeError('RTT terminal payload must contain one non-empty UTF-8 chunk')
+      }
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(decoded.payload)
+      this.commitSequence(decoded.sequence)
+      this.post({ type: 'rtt-terminal', sequence: decoded.sequence, text })
+      return
+    }
+    if (decoded.flags !== RTT_RAW_UTF8_LINES) {
+      throw new RangeError('RTT_RAW payload has unsupported flags')
+    }
     const bytes = new Uint8Array(decoded.payload)
     const view = new DataView(decoded.payload)
     const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -551,6 +613,10 @@ export class StreamDecoder {
       if (kindId === 2) event.isr_id = contextId
       if (kindId === 9) event.prio = Math.trunc(aux0)
       if (kindId === 7) event.cause = Math.trunc(aux0)
+      if (kindId === 21) {
+        event.stack_base = Math.trunc(aux0)
+        event.stack_size = Math.trunc(aux1)
+      }
       if (kindId === 23) {
         event.kind = `raw_${contextId}`
         event.event_id = contextId
@@ -573,51 +639,101 @@ export class StreamDecoder {
 
   private ingestSystemViewEvent(event: SystemViewEvent, ticks: bigint): void {
     if (ticks > this.latestSystemViewTick) this.latestSystemViewTick = ticks
+    if (event.kind === 'task_info' && event.task_id !== undefined) {
+      this.updateSystemViewContext(CONTEXT_TASK, event.task_id, { priority: event.prio })
+    } else if (event.kind === 'stack_info' && event.task_id !== undefined) {
+      this.updateSystemViewContext(CONTEXT_TASK, event.task_id, {
+        stackBase: event.stack_base,
+        stackSize: event.stack_size,
+      })
+    }
+
     if (event.kind === 'task_start_exec' && event.task_id !== undefined) {
-      this.suspendedTask = null
-      this.isrDepth = 0
+      this.updateSystemViewContext(CONTEXT_TASK, event.task_id)
+      this.suspendedContexts = []
       this.closeCurrentSystemViewInterval(ticks)
-      this.currentTask = { taskId: event.task_id, tick: ticks }
+      this.openSystemViewContext(CONTEXT_TASK, event.task_id, ticks, event)
     } else if (
       (event.kind === 'task_stop_exec' || event.kind === 'task_stop_ready')
-      && event.task_id === this.currentTask?.taskId
+      && this.currentContext?.type === CONTEXT_TASK
+      && event.task_id === this.currentContext.id
     ) {
       this.closeCurrentSystemViewInterval(ticks)
-      if (this.suspendedTask?.taskId === event.task_id) this.suspendedTask = null
     } else if (event.kind === 'isr_enter') {
-      if (this.isrDepth === 0 && this.currentTask) {
-        this.suspendedTask = { taskId: this.currentTask.taskId }
+      if (this.currentContext) {
+        this.suspendedContexts.push({
+          type: this.currentContext.type,
+          id: this.currentContext.id,
+        })
         this.closeCurrentSystemViewInterval(ticks)
       }
-      this.isrDepth += 1
+      const isrId = event.isr_id ?? 0
+      this.updateSystemViewContext(CONTEXT_ISR, isrId)
+      this.openSystemViewContext(CONTEXT_ISR, isrId, ticks, event)
     } else if (event.kind === 'isr_exit') {
-      if (this.isrDepth > 0) this.isrDepth -= 1
-      if (this.isrDepth === 0 && this.suspendedTask) {
-        this.currentTask = { taskId: this.suspendedTask.taskId, tick: ticks }
-        this.suspendedTask = null
+      if (this.currentContext?.type === CONTEXT_ISR) {
+        event.isr_id = this.currentContext.id
+        this.closeCurrentSystemViewInterval(ticks)
       }
-    } else if (event.kind === 'isr_to_scheduler' || event.kind === 'overflow') {
+      const resume = this.suspendedContexts.pop()
+      if (resume) this.openSystemViewContext(resume.type, resume.id, ticks)
+    } else if (event.kind === 'isr_to_scheduler') {
+      if (this.currentContext?.type === CONTEXT_ISR) {
+        event.isr_id = this.currentContext.id
+        this.closeCurrentSystemViewInterval(ticks)
+      }
+      this.suspendedContexts = []
+      this.updateSystemViewContext(CONTEXT_SCHEDULER, 0)
+      this.openSystemViewContext(CONTEXT_SCHEDULER, 0, ticks, event)
+    } else if (event.kind === 'overflow' || event.kind === 'trace_stop') {
+      this.closeCurrentSystemViewInterval(ticks)
       this.abandonSystemViewContext()
     } else if (event.kind === 'idle') {
       this.closeCurrentSystemViewInterval(ticks)
-      this.suspendedTask = null
-      this.isrDepth = 0
+      this.suspendedContexts = []
+      this.updateSystemViewContext(CONTEXT_IDLE, 0)
+      this.openSystemViewContext(CONTEXT_IDLE, 0, ticks, event)
     }
     this.systemViewEvents?.append(event, ticks)
   }
 
+  private contextKey(type: number, id: number): string {
+    return `${type}:${id >>> 0}`
+  }
+
+  private updateSystemViewContext(
+    type: number,
+    id: number,
+    patch: Partial<SystemViewContextMetadata> = {},
+  ): void {
+    const key = this.contextKey(type, id)
+    const current = this.systemViewContextCatalog.get(key) || { type, id: id >>> 0 }
+    this.systemViewContextCatalog.set(key, { ...current, ...patch, type, id: id >>> 0 })
+  }
+
+  private openSystemViewContext(
+    type: number,
+    id: number,
+    tick: bigint,
+    openingEvent?: SystemViewEvent,
+  ): void {
+    this.currentContext = { type, id: id >>> 0, tick, openingEvent }
+  }
+
   private closeCurrentSystemViewInterval(endTick: bigint): void {
-    const current = this.currentTask
+    const current = this.currentContext
     if (current && endTick > current.tick) {
-      this.systemViewIntervals?.append(current.taskId, current.tick, endTick)
+      this.systemViewIntervals?.append(current.id, current.tick, endTick, current.type)
+      if (current.openingEvent) {
+        current.openingEvent.duration_ticks = safeTickDifference(endTick, current.tick)
+      }
     }
-    this.currentTask = null
+    this.currentContext = null
   }
 
   private abandonSystemViewContext(): void {
-    this.currentTask = null
-    this.suspendedTask = null
-    this.isrDepth = 0
+    this.currentContext = null
+    this.suspendedContexts = []
   }
 
   private updateBackendDrops(payload: ArrayBuffer): void {
@@ -719,20 +835,36 @@ export class StreamDecoder {
     const rangeEnd = origin + BigInt(Math.floor(message.end))
     const intervalRing = this.systemViewIntervals as SystemViewIntervalRing
     const selection = intervalRing.selectEnvelope(rangeStart, rangeEnd, message.pixelWidth)
-    const taskIds = new Uint32Array(selection.count)
-    const starts = new Float64Array(selection.count)
-    const ends = new Float64Array(selection.count)
-    const startTicks = new BigUint64Array(selection.count)
-    const endTicks = new BigUint64Array(selection.count)
+    const openContextVisible = this.currentContext !== null
+      && this.latestSystemViewTick > this.currentContext.tick
+      && this.currentContext.tick <= rangeEnd
+      && this.latestSystemViewTick >= rangeStart
+    const intervalCount = selection.count + (openContextVisible ? 1 : 0)
+    const taskIds = new Uint32Array(intervalCount)
+    const contextTypes = new Uint8Array(intervalCount)
+    const starts = new Float64Array(intervalCount)
+    const ends = new Float64Array(intervalCount)
+    const startTicks = new BigUint64Array(intervalCount)
+    const endTicks = new BigUint64Array(intervalCount)
     for (let outputIndex = 0; outputIndex < selection.count; outputIndex++) {
       const logical = selection.logicalIndices[outputIndex]
       const startTick = intervalRing.startTickAt(logical)
       const endTick = intervalRing.endTickAt(logical)
       taskIds[outputIndex] = intervalRing.taskIdAt(logical)
+      contextTypes[outputIndex] = intervalRing.contextTypeAt(logical)
       starts[outputIndex] = safeTickDifference(startTick, origin)
       ends[outputIndex] = safeTickDifference(endTick, origin)
       startTicks[outputIndex] = startTick
       endTicks[outputIndex] = endTick
+    }
+    if (openContextVisible && this.currentContext) {
+      const outputIndex = selection.count
+      taskIds[outputIndex] = this.currentContext.id
+      contextTypes[outputIndex] = this.currentContext.type
+      starts[outputIndex] = safeTickDifference(this.currentContext.tick, origin)
+      ends[outputIndex] = safeTickDifference(this.latestSystemViewTick, origin)
+      startTicks[outputIndex] = this.currentContext.tick
+      endTicks[outputIndex] = this.latestSystemViewTick
     }
 
     const eventRing = this.systemViewEvents as SystemViewEventRing<SystemViewEvent>
@@ -753,21 +885,78 @@ export class StreamDecoder {
     const output: Extract<WorkerOutput, { type: 'systemview-visible' }> = {
       type: 'systemview-visible',
       requestId: message.requestId,
-      intervalCount: selection.count,
+      intervalCount,
       candidateIntervalCount: selection.candidateCount,
       eventCount,
       latestTime: safeTickDifference(this.latestSystemViewTick, origin),
       tickOrigin: origin,
       taskIds: taskIds.buffer,
+      contextTypes: contextTypes.buffer,
       starts: starts.buffer,
       ends: ends.buffer,
       startTicks: startTicks.buffer,
       endTicks: endTicks.buffer,
       events,
+      contexts: this.buildSystemViewContextSummaries(rangeStart, rangeEnd),
     }
     this.post(output, [
-      output.taskIds, output.starts, output.ends, output.startTicks, output.endTicks,
+      output.taskIds, output.contextTypes, output.starts, output.ends,
+      output.startTicks, output.endTicks,
     ])
+  }
+
+  private buildSystemViewContextSummaries(
+    rangeStart: bigint,
+    rangeEnd: bigint,
+  ): SystemViewContextSummary[] {
+    const durations = new Map<string, number[]>()
+    const intervalRing = this.systemViewIntervals as SystemViewIntervalRing
+    const addInterval = (type: number, id: number, start: bigint, end: bigint) => {
+      const clippedStart = start < rangeStart ? rangeStart : start
+      const clippedEnd = end > rangeEnd ? rangeEnd : end
+      if (clippedEnd <= clippedStart) return
+      this.updateSystemViewContext(type, id)
+      const key = this.contextKey(type, id)
+      const values = durations.get(key) || []
+      values.push(safeTickDifference(clippedEnd, clippedStart))
+      durations.set(key, values)
+    }
+    for (let logical = 0; logical < intervalRing.length; logical++) {
+      const start = intervalRing.startTickAt(logical)
+      if (start > rangeEnd) break
+      const end = intervalRing.endTickAt(logical)
+      if (end < rangeStart) continue
+      addInterval(
+        intervalRing.contextTypeAt(logical), intervalRing.taskIdAt(logical), start, end,
+      )
+    }
+    if (this.currentContext && this.latestSystemViewTick > this.currentContext.tick) {
+      addInterval(
+        this.currentContext.type,
+        this.currentContext.id,
+        this.currentContext.tick,
+        this.latestSystemViewTick,
+      )
+    }
+
+    return [...this.systemViewContextCatalog.entries()].map(([key, metadata]) => {
+      const values = (durations.get(key) || []).sort((a, b) => a - b)
+      const totalTicks = values.reduce((sum, value) => sum + value, 0)
+      return {
+        id: metadata.id,
+        type: metadata.type,
+        priority: metadata.priority,
+        stackBase: metadata.stackBase,
+        stackSize: metadata.stackSize,
+        count: values.length,
+        totalTicks,
+        minTicks: values[0] || 0,
+        p25Ticks: systemViewQuantile(values, 0.25),
+        p50Ticks: systemViewQuantile(values, 0.5),
+        p75Ticks: systemViewQuantile(values, 0.75),
+        maxTicks: values[values.length - 1] || 0,
+      }
+    })
   }
 
   private reset(): void {
@@ -781,9 +970,9 @@ export class StreamDecoder {
     this.systemViewMode = false
     this.systemViewEvents?.clear()
     this.systemViewIntervals?.clear()
-    this.currentTask = null
-    this.suspendedTask = null
-    this.isrDepth = 0
+    this.currentContext = null
+    this.suspendedContexts = []
+    this.systemViewContextCatalog.clear()
     this.tickOrigin = null
     this.latestSystemViewTick = 0n
     this.lastNumericTimestampMs = null

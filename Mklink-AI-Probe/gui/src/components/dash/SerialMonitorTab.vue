@@ -1,45 +1,45 @@
 <template>
   <div>
-    <div v-if="!deviceConnected" class="alert alert-warn">请先连接设备。</div>
+    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
     <template v-else>
       <!-- Config + controls -->
       <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:end">
         <div>
-          <label class="form-label" style="font-size:12px">端口</label>
+          <label class="form-label" style="font-size:12px">{{ tr('端口', 'Port') }}</label>
           <select v-model="portName" class="form-input" style="width:120px">
             <option v-for="p in ports" :key="p.device" :value="p.device">{{ p.device }}</option>
           </select>
         </div>
         <div>
-          <label class="form-label" style="font-size:12px">波特率</label>
+          <label class="form-label" style="font-size:12px">{{ tr('波特率', 'Baud Rate') }}</label>
           <select v-model="baudrate" class="form-input" style="width:100px">
             <option v-for="b in [9600,19200,38400,57600,115200,230400,460800,921600]" :key="b" :value="b">{{ b }}</option>
           </select>
         </div>
         <div>
-          <label class="form-label" style="font-size:12px">数据位</label>
+          <label class="form-label" style="font-size:12px">{{ tr('数据位', 'Data Bits') }}</label>
           <select v-model="databits" class="form-input" style="width:60px">
             <option :value="8">8</option>
             <option :value="7">7</option>
           </select>
         </div>
         <div>
-          <label class="form-label" style="font-size:12px">停止位</label>
+          <label class="form-label" style="font-size:12px">{{ tr('停止位', 'Stop Bits') }}</label>
           <select v-model="stopbits" class="form-input" style="width:60px">
             <option :value="1">1</option>
             <option :value="2">2</option>
           </select>
         </div>
         <div>
-          <label class="form-label" style="font-size:12px">校验</label>
+          <label class="form-label" style="font-size:12px">{{ tr('校验', 'Parity') }}</label>
           <select v-model="parity" class="form-input" style="width:60px">
-            <option value="N">无</option>
-            <option value="E">偶</option>
-            <option value="O">奇</option>
+            <option value="N">{{ tr('无', 'None') }}</option>
+            <option value="E">{{ tr('偶', 'Even') }}</option>
+            <option value="O">{{ tr('奇', 'Odd') }}</option>
           </select>
         </div>
-        <button v-if="!running" class="btn btn-primary" @click="doStart">开始监控</button>
-        <button v-else class="btn btn-danger" @click="doStop">停止</button>
+        <button v-if="!running" class="btn btn-primary" @click="doStart">{{ tr('开始监控', 'Start Monitor') }}</button>
+        <button v-else class="btn btn-danger" @click="doStop">{{ tr('停止', 'Stop') }}</button>
       </div>
 
       <!-- Send panel -->
@@ -47,22 +47,22 @@
         <input
           v-model="sendText"
           class="form-input" style="flex:1"
-          placeholder="输入要发送的数据..."
+          :placeholder="tr('输入要发送的数据...', 'Enter data to send...')"
           @keydown.enter="doSend"
         />
         <label style="font-size:12px;display:flex;align-items:center;gap:4px">
           <input type="checkbox" v-model="sendHex" /> HEX
         </label>
-        <button class="btn" @click="doSend" :disabled="!sendText.trim()">发送</button>
-        <button class="btn" @click="doClear">清空</button>
+        <button class="btn" @click="doSend" :disabled="!sendText.trim()">{{ tr('发送', 'Send') }}</button>
+        <button class="btn" @click="doClear">{{ tr('清空', 'Clear') }}</button>
       </div>
 
       <!-- Stats -->
       <div v-if="running" style="margin-top:8px;font-size:12px;color:#888;display:flex;gap:16px">
         <span>RX: {{ stats.rx_count }} ({{ stats.rx_bytes }}B)</span>
         <span>TX: {{ stats.tx_count }} ({{ stats.tx_bytes }}B)</span>
-        <span>速率: {{ stats.bytes_per_sec }} B/s</span>
-        <span>端口: {{ currentPortStatus }}</span>
+        <span>{{ tr('速率:', 'Rate:') }} {{ stats.bytes_per_sec }} B/s</span>
+        <span>{{ tr('端口:', 'Port:') }} {{ currentPortStatus }}</span>
       </div>
 
       <!-- Event log -->
@@ -83,6 +83,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useToast } from '../../composables/useToast'
 import type { SerialEvent, PortInfo } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
@@ -119,7 +120,7 @@ onUnmounted(() => {
 })
 
 async function doStart() {
-  if (!portName.value) { toast.error('请选择端口'); return }
+  if (!portName.value) { toast.error(tr('请选择端口', 'Select a port')); return }
   try {
     await fetch(`${API_BASE}/api/dash/serial/start`, {
       method: 'POST',
@@ -132,9 +133,9 @@ async function doStart() {
     running.value = true
     events.value = []
     connectSSE()
-    toast.success('串口监控已启动')
+    toast.success(tr('串口监控已启动', 'Serial monitor started'))
   } catch (e: any) {
-    toast.error('启动失败: ' + e.message)
+    toast.error(tr('启动失败: ', 'Start failed: ') + e.message)
   }
 }
 
@@ -143,7 +144,7 @@ function doStop() {
   if (!running.value) return
   running.value = false
   fetch(`${API_BASE}/api/dash/serial/stop`, { method: 'POST' }).catch(() => {})
-  toast.info('串口监控已停止')
+  toast.info(tr('串口监控已停止', 'Serial monitor stopped'))
 }
 
 function connectSSE() {
@@ -181,7 +182,7 @@ async function doSend() {
     })
     sendText.value = ''
   } catch (e: any) {
-    toast.error('发送失败: ' + e.message)
+    toast.error(tr('发送失败: ', 'Send failed: ') + e.message)
   }
 }
 

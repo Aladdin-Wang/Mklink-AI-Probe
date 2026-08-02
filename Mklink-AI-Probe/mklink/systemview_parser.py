@@ -144,6 +144,10 @@ class _NeedMore(Exception):
 class _FramingError(Exception):
     """分帧错误，需要重新同步。"""
 
+    def __init__(self, message: str, *, discard: int = 1) -> None:
+        super().__init__(message)
+        self.discard = max(1, discard)
+
 
 class SystemViewParser:
     """流式 SEGGER SystemView 事件解码器。
@@ -178,6 +182,7 @@ class SystemViewParser:
         self._task_names: dict[int, str] = {}
         self._isr_names: dict[int, str] = {}
         self._current_task: int | None = None   # 跟踪当前运行任务（STOP_EXEC 无 task id）
+        self._num_modules = 0
 
     # -- 公开属性 --------------------------------------------------------
     @property
@@ -237,10 +242,11 @@ class SystemViewParser:
                 ev = self._parse_packet()
             except _NeedMore:
                 break  # 半包，保留缓冲等下一轮
-            except _FramingError:
+            except _FramingError as exc:
                 # 未对齐：丢 1 字节重试（连续流无同步头，靠此在任意位置恢复对齐）
-                self._dropped_bytes += 1
-                del self._buf[:1]
+                discard = min(exc.discard, len(self._buf))
+                self._dropped_bytes += discard
+                del self._buf[:discard]
                 self._synced = False
                 continue
             self._synced = True
@@ -295,20 +301,33 @@ class SystemViewParser:
         first = self._peek(pos)
         if first & 0x80:
             event_id, pos = self._read_varint(pos)       # 模块事件 ≥128
+            event_id_end = pos
             length, pos = self._read_varint(pos)
         elif first >= _LENGTH_PREFIX_THRESHOLD:
             event_id = first
             pos += 1
+            event_id_end = pos
             length, pos = self._read_varint(pos)
         else:
             event_id = first
             pos += 1
+            event_id_end = pos
             length = None  # 无 length，按 EventId 规范解码
 
         # 合法事件 ID：核心 0-31，中间件模块 512-4096。其余视为分帧错误（垃圾数据）
         # —— 这让乱码尽快触发重同步，而不是被当成假包一路吃进同步序列。
         if not (event_id <= 31 or 512 <= event_id <= 4096):
             raise _FramingError(f"implausible event id {event_id}")
+        # A timestamp tail can look like a valid multi-byte module event while
+        # recovering after target overflow.  Module events are impossible until the
+        # target has declared at least one module, so reject that false framing and
+        # continue the byte-wise resynchronization instead of swallowing following
+        # TASK_INFO / STACK_INFO packets as one opaque raw payload.
+        if event_id >= 512 and self._num_modules <= 0:
+            raise _FramingError(
+                f"module event {event_id} before module declaration",
+                discard=event_id_end,
+            )
 
         # 载荷长度上限：corrupt 的 length varint 会让缓冲朝 length 无限增长 → OOM
         if length is not None and length > _MAX_PACKET_PAYLOAD:
@@ -377,7 +396,9 @@ class SystemViewParser:
         if kind == "init":
             self._cpu_freq = ev.get("cpu_freq", 0) or self._cpu_freq
             self._ram_base = ev.get("ram_base", 0)
-            self._id_shift = ev.get("id_shift", 2) or 2
+            # Zero is valid: HPM FreeRTOS reports ram_base=0/id_shift=0.
+            id_shift = ev.get("id_shift")
+            self._id_shift = 2 if id_shift is None else int(id_shift)
         elif kind == "task_info":
             tid = ev.get("task_id")
             name = ev.get("name")
@@ -392,6 +413,8 @@ class SystemViewParser:
             desc = ev.get("desc", "") or ""
             for m in _ISR_DESC_RE.finditer(desc):
                 self._isr_names[int(m.group(1))] = m.group(2)
+        elif kind == "nummodules":
+            self._num_modules = max(0, int(ev.get("num_modules", 0) or 0))
         elif kind == "task_start_exec":
             self._current_task = ev.get("task_id")
         elif kind == "task_stop_exec":

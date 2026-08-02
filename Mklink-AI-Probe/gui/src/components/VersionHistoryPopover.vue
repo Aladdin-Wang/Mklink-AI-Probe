@@ -14,7 +14,7 @@
       aria-haspopup="dialog"
       aria-controls="version-history-panel"
       :aria-expanded="open"
-      title="查看版本更新记录"
+      :title="tr('查看版本更新记录', 'View release history')"
       @click="togglePinned"
       @focus="showFromFocus"
     >
@@ -28,18 +28,18 @@
       class="version-panel"
       data-testid="version-history-panel"
       role="dialog"
-      aria-label="版本更新记录"
+      :aria-label="tr('版本更新记录', 'Release history')"
       @wheel.stop
     >
       <header class="version-panel-header">
         <div>
-          <h2>版本更新</h2>
-          <p>当前构建 {{ buildCommit }}</p>
+          <h2>{{ tr('版本更新', 'Release History') }}</h2>
+          <p>{{ tr('当前构建', 'Current build') }} {{ buildCommit }}</p>
         </div>
         <span class="current-version">v{{ version }}</span>
       </header>
 
-      <div class="release-heading">稳定版记录</div>
+      <div class="release-heading">{{ tr('稳定版记录', 'Stable releases') }}</div>
       <ol class="release-list">
         <li
           v-for="entry in releaseHistory"
@@ -50,12 +50,12 @@
         >
           <div class="release-meta">
             <strong>v{{ entry.version }}</strong>
-            <span v-if="entry.version === version" class="current-badge">当前版本</span>
+            <span v-if="entry.version === version" class="current-badge">{{ tr('当前版本', 'Current') }}</span>
             <time :datetime="entry.date">{{ entry.date }}</time>
           </div>
-          <div class="release-summary">{{ entry.summary }}</div>
+          <div class="release-summary">{{ tr(entry.summary, entry.summaryEn) }}</div>
           <ul>
-            <li v-for="change in entry.changes" :key="change">{{ change }}</li>
+            <li v-for="change in (language === 'zh' ? entry.changes : entry.changesEn)" :key="change">{{ change }}</li>
           </ul>
         </li>
       </ol>
@@ -67,6 +67,7 @@
 import { History } from '@lucide/vue'
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { releaseHistory } from '../data/releaseHistory'
+import { language, tr } from '../composables/useLanguage'
 
 defineProps<{
   version: string

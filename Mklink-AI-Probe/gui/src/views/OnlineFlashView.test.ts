@@ -731,7 +731,8 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get('[data-testid="hpm-board"]').element).toHaveProperty('value', 'hpm5300evk')
     expect(wrapper.text()).toContain('内置 ROM API')
     await chooseFirmware(wrapper)
-    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000400')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
+    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
@@ -837,6 +838,39 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.find('[data-testid="bin-address-dialog"]').exists()).toBe(false)
     expect(wrapper.get<HTMLInputElement>('[data-testid="bin-base"]').element.value).toBe('0x80000000')
     expect(wrapper.text()).toContain('已自动检查')
+    wrapper.unmount()
+  })
+
+  it('uses the HPM XIP base when an HPM target is selected', async () => {
+    const fetchMock = viewFetch([hpmTarget])
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-HPM5300"]').exists()).toBe(true))
+
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+    await chooseFirmware(wrapper)
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
+    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
+    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-base"]').element.value).toBe('0x80000400')
+    wrapper.unmount()
+  })
+
+  it('does not carry a BIN base across different targets', async () => {
+    const fetchMock = viewFetch([regularTarget, hpmTarget])
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-address-dialog-input"]').setValue('0x08000400')
+    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="firmware-drop-zone"]').text()).toContain('固件检查失败'))
+    await wrapper.get('[data-testid="target-HPM5300"]').trigger('click')
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-base"]').element.value).toBe('0x80000400')
     wrapper.unmount()
   })
 
@@ -1055,6 +1089,23 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.text()).toContain('BACKEND_LOST')
     await wrapper.get('[data-testid="reconnect-stream"]').trigger('click')
     expect(FakeEventSource.instances[1].url).toContain('after=7')
+    wrapper.unmount()
+  })
+
+  it('shows the terminal backend error before the job stream closes', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    const source = FakeEventSource.instances[0]
+
+    source.emit('error', {
+      job_id: 'job-1', sequence: 6, timestamp: 1, event: 'error',
+      message: 'Failed to connect to MKLink on COM48', state: 'failed', progress: null,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('FAILED')
+    expect(wrapper.text()).toContain('Failed to connect to MKLink on COM48')
+    expect(source.closed).toBe(true)
     wrapper.unmount()
   })
 

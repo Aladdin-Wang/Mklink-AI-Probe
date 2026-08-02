@@ -31,6 +31,7 @@ from typing import Any, Generator
 
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
+    RTT_TERMINAL_UTF8,
     SUPERWATCH_METADATA_JSON,
     SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
     WAVEFORM_SAMPLE_MAJOR_FLOAT32,
@@ -242,8 +243,12 @@ class RttStreamManager:
         self._raw_batch_lines = max(1, int(raw_batch_lines))
         self._waveform_batch_samples = max(1, int(waveform_batch_samples))
         self._line_assembler = _RttLineAssembler()
+        self._terminal_decoder = codecs.getincrementaldecoder("utf-8")(
+            errors="replace"
+        )
         self._decode_lock = threading.RLock()
         self._pending_raw: list[RttLine] = []
+        self._pending_terminal: list[str] = []
         self._pending_numeric: list[tuple[float, ...]] = []
         self._numeric_channels: tuple[str, ...] = ()
         self._numeric_candidate_channels: tuple[str, ...] = ()
@@ -282,7 +287,16 @@ class RttStreamManager:
 
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
         with self._decode_lock:
+            terminal_text = self._terminal_decoder.decode(
+                bytes(chunk), final=final
+            )
             lines = self._line_assembler.feed(chunk, final=final)
+            if final:
+                self._terminal_decoder = codecs.getincrementaldecoder(
+                    self._line_assembler.encoding
+                )(errors="replace")
+        if terminal_text:
+            self._pending_terminal.append(terminal_text)
         for raw_line in lines:
             line = raw_line.strip()
             timestamp_ns = time.time_ns()
@@ -343,6 +357,17 @@ class RttStreamManager:
                 flags=RTT_RAW_UTF8_LINES, stream_type=StreamType.RTT_RAW,
             )
 
+    def _flush_terminal_batch(self) -> None:
+        if not self._pending_terminal:
+            return
+        text = "".join(self._pending_terminal)
+        self._pending_terminal = []
+        if self._stream_hub is not None:
+            self._stream_hub.publish(
+                text.encode("utf-8"), item_count=1,
+                flags=RTT_TERMINAL_UTF8, stream_type=StreamType.RTT_RAW,
+            )
+
     def _flush_numeric_batch(self) -> None:
         if not self._pending_numeric:
             return
@@ -360,6 +385,7 @@ class RttStreamManager:
             self.feed_rtt_bytes(b"", final=True)
         self._flush_raw_batch()
         self._flush_numeric_batch()
+        self._flush_terminal_batch()
 
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 1024,
@@ -396,7 +422,11 @@ class RttStreamManager:
         self._error = None
         with self._decode_lock:
             self._line_assembler.reset(encoding)
+            self._terminal_decoder = codecs.getincrementaldecoder(
+                self._line_assembler.encoding
+            )(errors="replace")
         self._pending_raw.clear()
+        self._pending_terminal.clear()
         self._pending_numeric.clear()
         self._numeric_channels = ()
         self._numeric_candidate_channels = ()
@@ -527,6 +557,10 @@ class RttStreamManager:
         normalized = normalize_rtt_encoding(encoding)
         with self._decode_lock:
             self._line_assembler.reset(normalized)
+            self._terminal_decoder = codecs.getincrementaldecoder(normalized)(
+                errors="replace"
+            )
+        self._pending_terminal.clear()
         return normalized
 
     def get_history(self) -> list[dict]:
@@ -639,16 +673,20 @@ class SystemViewStreamManager:
         self._name_resolution_attempted: set[int] = set()
         self._last_name_resolution = 0.0
         self._cpu_freq_source = ""
+        self._recording_lock = threading.RLock()
         self._recording = None
         self._recording_path = ""
         self._recording_summary_path = ""
         self._recording_error = ""
+        self._recording_device = None
+        self._recording_meta: dict[str, Any] = {}
         self._target_overflow_events = 0
         self._target_drop_count_baseline: int | None = None
         self._target_drop_count: int | None = None
         self._start_failure_callback = None
         self._startup_progress_timeout_s = 3.0
         self._startup_progress_min_bytes = 4096
+        self._startup_no_data_timeout_s = 5.0
         self._progress_state = "idle"
         self._progress_error = ""
         self._raw_bytes_without_events = 0
@@ -688,10 +726,15 @@ class SystemViewStreamManager:
         self._name_resolution_attempted.clear()
         self._last_name_resolution = 0.0
         self._cpu_freq_source = ""
-        self._recording = None
-        self._recording_path = ""
-        self._recording_summary_path = ""
-        self._recording_error = ""
+        with self._recording_lock:
+            self._recording = None
+            self._recording_path = ""
+            self._recording_summary_path = ""
+            self._recording_error = ""
+            self._recording_device = device
+            self._recording_meta = {
+                "addr": addr, "channel": channel, "mode": mode,
+            }
         self._target_overflow_events = 0
         self._target_drop_count_baseline = None
         self._target_drop_count = None
@@ -710,13 +753,10 @@ class SystemViewStreamManager:
                 )
                 initialized = True
                 self._apply_cpu_freq_hint(device, start_result)
-                self._start_recording(
-                    device,
-                    {"addr": addr, "channel": channel, "mode": mode},
-                )
                 start_time = time.time()
                 empty_cycles = 0
                 no_event_started = None
+                last_read_error = None
                 while not stop_event.is_set():
                     if time.time() - start_time > duration:
                         break
@@ -727,7 +767,12 @@ class SystemViewStreamManager:
                         raw = device.systemview_read_bytes(
                             duration=0.1, max_bytes=64 * 1024
                         )
-                    except Exception:
+                    except Exception as exc:
+                        last_read_error = exc
+                        if time.time() - start_time >= self._startup_no_data_timeout_s:
+                            raise RuntimeError(
+                                f"SystemView 读取失败: {exc}"
+                            ) from exc
                         time.sleep(0.1)
                         continue
                     if not raw:
@@ -741,10 +786,19 @@ class SystemViewStreamManager:
                                     search_size=search_size,
                                 )
                                 self._apply_cpu_freq_hint(device, start_result)
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                last_read_error = exc
+                        if time.time() - start_time >= self._startup_no_data_timeout_s:
+                            detail = (
+                                f"：{last_read_error}" if last_read_error is not None else ""
+                            )
+                            raise RuntimeError(
+                                "SystemView 启动后未收到数据，请检查 RTT 地址、"
+                                f"通道和下位机 SystemView 配置{detail}"
+                            )
                         continue
                     empty_cycles = 0
+                    last_read_error = None
                     self._stats["bytes"] += len(raw)
                     now = time.time()
                     evs = self._parser.feed(raw)
@@ -793,6 +847,7 @@ class SystemViewStreamManager:
                 try:
                     if getattr(self, "_generation", None) is generation:
                         self._running = False
+                        self._recording_device = None
                         if self._progress_state != "error":
                             self._progress_state = "stopped"
                         try:
@@ -971,53 +1026,78 @@ class SystemViewStreamManager:
             self._history = self._history[-self._max_history:]
 
     def _start_recording(self, device, extra_meta: dict | None = None) -> None:
-        try:
-            from mklink.systemview_logger import SystemViewJsonlLogger
+        with self._recording_lock:
+            try:
+                from mklink.systemview_logger import SystemViewJsonlLogger
 
-            project_root = getattr(device, "_project_root", None) or "."
-            meta = {
-                **self._status_meta(),
-                **(extra_meta or {}),
-            }
-            self._recording = SystemViewJsonlLogger(project_root, meta)
-            self._recording_path = str(self._recording.path)
-            self._recording_summary_path = str(self._recording.summary_path)
-            self._recording_error = ""
-        except Exception as e:
-            self._recording = None
-            self._recording_error = str(e)
+                project_root = getattr(device, "_project_root", None) or "."
+                meta = {
+                    **self._status_meta(),
+                    **(extra_meta or {}),
+                }
+                self._recording = SystemViewJsonlLogger(project_root, meta)
+                self._recording_path = str(self._recording.path)
+                self._recording_summary_path = str(self._recording.summary_path)
+                self._recording_error = ""
+            except Exception as e:
+                self._recording = None
+                self._recording_error = str(e)
+
+    def start_recording(self) -> dict:
+        if not self.running:
+            raise RuntimeError("SystemView stream is not running")
+        with self._recording_lock:
+            if self._recording is None:
+                if self._recording_device is None:
+                    raise RuntimeError("SystemView device is unavailable")
+                self._start_recording(
+                    self._recording_device, dict(self._recording_meta),
+                )
+            if self._recording is None:
+                raise RuntimeError(
+                    self._recording_error or "Unable to start recording"
+                )
+            return self.get_status()
+
+    def stop_recording(self) -> dict:
+        self._close_recording()
+        return self.get_status()
 
     def _record_events(self, events: list[dict]) -> None:
-        if not self._recording or not events:
+        if not events:
             return
-        try:
-            self._recording.write_events(events)
-        except Exception as e:
-            self._recording_error = str(e)
+        with self._recording_lock:
+            if not self._recording:
+                return
             try:
-                self._recording.close({"events": self._stats.get("events", 0)})
-            except Exception:
-                pass
-            self._recording = None
+                self._recording.write_events(events)
+            except Exception as e:
+                self._recording_error = str(e)
+                try:
+                    self._recording.close({"events": self._stats.get("events", 0)})
+                except Exception:
+                    pass
+                self._recording = None
 
     def _close_recording(self) -> None:
-        if not self._recording:
-            return
-        try:
-            self._recording.close({
-                "events": self._stats.get("events", 0),
-                "bytes": self._stats.get("bytes", 0),
-                "history_size": len(self._history),
-                "cpu_freq": _positive_int(getattr(self._parser, "cpu_freq", 0)),
-                "cpu_freq_source": self._cpu_freq_source,
-                "dropped_bytes": getattr(self._parser, "dropped_bytes", 0),
-                "dropped_packets": getattr(self._parser, "dropped_packets", 0),
-                **self._target_overflow_status(),
-            })
-        except Exception as e:
-            self._recording_error = str(e)
-        finally:
-            self._recording = None
+        with self._recording_lock:
+            if not self._recording:
+                return
+            try:
+                self._recording.close({
+                    "events": self._stats.get("events", 0),
+                    "bytes": self._stats.get("bytes", 0),
+                    "history_size": len(self._history),
+                    "cpu_freq": _positive_int(getattr(self._parser, "cpu_freq", 0)),
+                    "cpu_freq_source": self._cpu_freq_source,
+                    "dropped_bytes": getattr(self._parser, "dropped_bytes", 0),
+                    "dropped_packets": getattr(self._parser, "dropped_packets", 0),
+                    **self._target_overflow_status(),
+                })
+            except Exception as e:
+                self._recording_error = str(e)
+            finally:
+                self._recording = None
 
     def _target_overflow_status(self) -> dict:
         baseline = self._target_drop_count_baseline
@@ -1050,6 +1130,7 @@ class SystemViewStreamManager:
                 **self._target_overflow_status(),
                 "task_names": {},
                 "isr_names": {},
+                "recording": self._recording is not None,
                 "recording_path": self._recording_path,
                 "recording_summary_path": self._recording_summary_path,
                 "recording_error": self._recording_error,
@@ -1069,6 +1150,7 @@ class SystemViewStreamManager:
             **self._target_overflow_status(),
             "task_names": dict(p._task_names),
             "isr_names": dict(p._isr_names),
+            "recording": self._recording is not None,
             "recording_path": self._recording_path,
             "recording_summary_path": self._recording_summary_path,
             "recording_error": self._recording_error,
@@ -1084,7 +1166,7 @@ class SystemViewStreamManager:
         # RAM resolution remains a fallback only when startup names were lost.
         if p._task_names:
             return set()
-        ram_base = _positive_int(getattr(p, "_ram_base", 0)) or 0x20000000
+        ram_base = int(getattr(p, "_ram_base", 0x20000000))
         ids: set[int] = set()
         for ev in events:
             tid = ev.get("task_id")
@@ -1110,7 +1192,7 @@ class SystemViewStreamManager:
 
     def _resolve_task_names(self, device, task_ids: set[int]) -> dict[int, str]:
         p = self._parser
-        ram_base = _positive_int(getattr(p, "_ram_base", 0)) or 0x20000000
+        ram_base = int(getattr(p, "_ram_base", 0x20000000))
         ids = {int(tid) for tid in task_ids if int(tid) >= ram_base}
         if not ids:
             return {}
@@ -1258,7 +1340,10 @@ class SuperWatchStreamManager:
     efficient block-based memory reads.
     """
 
-    def __init__(self, stream_hub=None, *, batch_samples: int = 32):
+    def __init__(
+        self, stream_hub=None, *, batch_samples: int = 32,
+        clock=time.perf_counter,
+    ):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
@@ -1274,6 +1359,7 @@ class SuperWatchStreamManager:
         self._origin_us: int | None = None
         self._stream_hub = stream_hub
         self._batch_samples = max(1, int(batch_samples))
+        self._clock = clock
         self._pending_samples: list[tuple[float, ...]] = []
         # Empty layout version 1 is the immutable bootstrap replay for clients
         # that subscribe before a runtime is prepared.  Cache replacement is
@@ -1293,6 +1379,8 @@ class SuperWatchStreamManager:
         self._completed_read_cycles = 0
         self._dropped_read_cycles = 0
         self._read_errors = 0
+        self._rate_timestamps = deque()
+        self._actual_rate = 0.0
         self._binary_dropped_batches = 0
         self._binary_dropped_items = 0
         self._acquisition_mode = "idle"
@@ -1402,6 +1490,8 @@ class SuperWatchStreamManager:
         with self._read_lock:
             self._origin_us = None
             self._flush_binary_batch_locked()
+            self._rate_timestamps.clear()
+            self._actual_rate = 0.0
 
         def _poll():
             try:
@@ -1829,6 +1919,18 @@ class SuperWatchStreamManager:
             return False
         if time.monotonic() - self._last_metadata_publish_monotonic >= 1.0:
             self._publish_cached_metadata()
+        completed_at = self._clock()
+        self._rate_timestamps.append(completed_at)
+        cutoff = completed_at - 1.0
+        while self._rate_timestamps and self._rate_timestamps[0] < cutoff:
+            self._rate_timestamps.popleft()
+        if len(self._rate_timestamps) >= 2:
+            elapsed = self._rate_timestamps[-1] - self._rate_timestamps[0]
+            self._actual_rate = (
+                (len(self._rate_timestamps) - 1) / elapsed if elapsed > 0 else 0.0
+            )
+        else:
+            self._actual_rate = 0.0
         self._pending_samples.append(row)
         if len(self._pending_samples) >= self._batch_samples:
             self._flush_binary_batch_locked()
@@ -1865,15 +1967,25 @@ class SuperWatchStreamManager:
 
     def pause(self) -> None:
         self._collecting.clear()
+        with self._read_lock:
+            self._rate_timestamps.clear()
+            self._actual_rate = 0.0
 
     def resume(self) -> None:
+        with self._read_lock:
+            self._rate_timestamps.clear()
+            self._actual_rate = 0.0
         self._collecting.set()
 
     def start_collecting(self) -> None:
         self._collecting.set()
 
     def set_interval(self, interval: float) -> float:
-        self._interval = normalize_superwatch_interval(interval)
+        normalized = normalize_superwatch_interval(interval)
+        with self._read_lock:
+            self._interval = normalized
+            self._rate_timestamps.clear()
+            self._actual_rate = 0.0
         self._dump_restart.set()
         return self._interval
 
@@ -1893,6 +2005,7 @@ class SuperWatchStreamManager:
             "read_cycles": self._completed_read_cycles,
             "read_drops": self._dropped_read_cycles,
             "read_errors": self._read_errors,
+            "actual_rate": round(self._actual_rate, 6),
             "binary_drops": {
                 "batches": self._binary_dropped_batches,
                 "items": self._binary_dropped_items,

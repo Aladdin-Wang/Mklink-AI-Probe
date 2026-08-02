@@ -35,6 +35,8 @@ import threading
 from typing import Any
 import weakref
 
+from mklink.symbol_catalog import SymbolCatalogError
+
 logger = logging.getLogger(__name__)
 
 _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
@@ -231,6 +233,25 @@ def release_resource_by_name(
             )
         return {"owner": None, "resources": [], "stopped": []}
     return release_resource_owner(state, lease.owner, stop_active=stop_active)
+
+
+def prepare_online_flash_connect(state: dict[str, Any], request) -> None:
+    """Release the shared CDC Device before an HPM online-flash connection."""
+    from mklink.hpm_config import is_hpm_target
+
+    if not is_hpm_target(request.target_part):
+        return
+
+    from mklink.remote.dashboards import stop_bridge_dashboards
+
+    stop_bridge_dashboards(resource_manager=state["resource_manager"])
+    device = state.get("device")
+    if device is None:
+        return
+    device.close()
+    if state.get("device") is device:
+        state["device"] = None
+        state["dispatcher"] = None
 
 
 def _resource_error_detail(error) -> dict[str, str]:
@@ -662,7 +683,8 @@ def create_app(
         return result
 
     online_flash = online_flash_api.create_default_online_flash_services(
-        _state["resource_manager"]
+        _state["resource_manager"],
+        prepare_connect=lambda request: prepare_online_flash_connect(_state, request),
     )
     app.state.online_flash = online_flash
     app.include_router(online_flash_api.create_online_flash_router(online_flash))
@@ -1583,6 +1605,19 @@ def create_app(
         managers = get_managers()
         return managers["systemview"].get_status()
 
+    @app.post("/api/dash/systemview/recording/start")
+    async def systemview_recording_start():
+        managers = get_managers()
+        try:
+            return managers["systemview"].start_recording()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/dash/systemview/recording/stop")
+    async def systemview_recording_stop():
+        managers = get_managers()
+        return managers["systemview"].stop_recording()
+
     @app.get("/api/dash/systemview/history")
     async def systemview_history():
         managers = get_managers()
@@ -2262,6 +2297,29 @@ def create_app(
             limit=limit,
         )
 
+    @app.get("/api/symbols/browse")
+    async def symbols_browse(
+        path: str = "",
+        offset: int | None = None,
+        limit: int = 256,
+    ):
+        catalog = _require_symbol_catalog()
+        try:
+            nodes = (
+                catalog.browse_children(path, offset=offset, limit=limit)
+                if path
+                else catalog.browse_roots()
+            )
+        except SymbolCatalogError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "generation": catalog.generation,
+            "axf_path": catalog.axf_path,
+            "fingerprint": catalog.fingerprint.to_dict(),
+            "parent": path or None,
+            "nodes": [node.to_dict() for node in nodes],
+        }
+
     @app.post("/api/symbols/reparse")
     async def symbols_reparse():
         result = await _reparse_active_symbols(error_status=422)
@@ -2300,15 +2358,16 @@ def create_app(
     @app.get("/api/symbols/search")
     async def symbols_search(q: str = ""):
         try:
-            page = _require_symbol_catalog().to_page(query=q, limit=50)
+            catalog = _require_symbol_catalog()
             results = [
                 {
-                    "name": item["path"],
-                    "address": item["address"],
-                    "type": item["type_name"],
-                    "size": item["size"],
+                    "name": item.path,
+                    "address": item.address,
+                    "type": item.type_name,
+                    "size": item.size,
+                    "descriptor": item.to_dict(),
                 }
-                for item in page["items"]
+                for item in catalog.search(q, limit=50)
             ]
             return {"results": results}
         except Exception as e:

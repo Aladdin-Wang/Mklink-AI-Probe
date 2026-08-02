@@ -6,12 +6,13 @@ import type {
   OfflinePreview,
   OfflineTriggerResult,
 } from '../types/offlineFlash'
+import { tr } from './useLanguage'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const BASE = `${API_BASE}/api/offline-download`
 
 function resourceOwnerLabel(owner: unknown): string {
-  if (typeof owner !== 'string') return '其他功能'
+  if (typeof owner !== 'string') return tr('其他功能', 'another feature')
   const name = owner.split(':').at(-1)?.toLowerCase()
   if (name === 'superwatch') return 'SuperWatch'
   if (name === 'rtt') return 'RTT View'
@@ -25,7 +26,7 @@ function detailMessage(detail: unknown, fallback: string): string {
   if (detail && typeof detail === 'object') {
     const value = detail as Record<string, unknown>
     if (value.code === 'PROBE_BUSY') {
-      return `探针正被 ${resourceOwnerLabel(value.conflict_owner ?? value.owner)} 占用，请先停止该功能后重试。`
+      return tr(`探针正被 ${resourceOwnerLabel(value.conflict_owner ?? value.owner)} 占用，请先停止该功能后重试。`, `The probe is in use by ${resourceOwnerLabel(value.conflict_owner ?? value.owner)}. Stop it and retry.`)
     }
     if (typeof value.message === 'string') return value.message
     try { return JSON.stringify(value) } catch { return fallback }
@@ -101,7 +102,7 @@ export function useOfflineFlashApi() {
     if (!response.headers.get('Content-Type')?.toLowerCase().includes('application/x-ndjson')) {
       return response.json()
     }
-    if (!response.body) throw new Error('脱机下载未返回实时日志数据流')
+    if (!response.body) throw new Error(tr('脱机下载未返回实时日志数据流', 'Offline flashing did not return a live log stream'))
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -119,9 +120,9 @@ export function useOfflineFlashApi() {
         return
       }
       if (message.type === 'error') {
-        throw new Error(detailMessage(message.detail, '脱机下载执行失败'))
+        throw new Error(detailMessage(message.detail, tr('脱机下载执行失败', 'Offline flashing failed')))
       }
-      throw new Error('脱机下载返回了无效的实时日志消息')
+      throw new Error(tr('脱机下载返回了无效的实时日志消息', 'Offline flashing returned an invalid live log message'))
     }
 
     try {
@@ -141,7 +142,7 @@ export function useOfflineFlashApi() {
       await reader.cancel().catch(() => undefined)
       throw value
     }
-    if (result === null) throw new Error('脱机下载实时日志在返回结果前中断')
+    if (result === null) throw new Error(tr('脱机下载实时日志在返回结果前中断', 'Offline flash log stream ended before returning a result'))
     return result
   }
 

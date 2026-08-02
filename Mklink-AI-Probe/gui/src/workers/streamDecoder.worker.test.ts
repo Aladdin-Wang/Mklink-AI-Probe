@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { StreamType } from '../lib/stream/protocol'
+import { RTT_TERMINAL_UTF8, StreamType } from '../lib/stream/protocol'
 import {
   StreamDecoder,
   type WorkerOutput,
@@ -124,8 +124,23 @@ describe('StreamDecoder worker controller', () => {
     })
   })
 
+  it('decodes immediate RTT terminal chunks without line metadata', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        1n, 1, new TextEncoder().encode('\x1b[31mwarn\r'),
+        StreamType.RTT_RAW, 20n, RTT_TERMINAL_UTF8,
+      ),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    expect(messages.find(message => message.type === 'rtt-terminal')).toEqual({
+      type: 'rtt-terminal', sequence: 1n, text: '\x1b[31mwarn\r',
+    })
+  })
+
   it.each([
-    ['unknown flags', 0x02, rttLines({ timestampNs: 1n, level: 0, text: 'x' })],
+    ['unknown flags', 0x80, rttLines({ timestampNs: 1n, level: 0, text: 'x' })],
     ['invalid level', 0x01, rttLines({ timestampNs: 1n, level: 9, text: 'x' })],
     ['truncated record', 0x01, new Uint8Array(12)],
     ['invalid UTF-8', 0x01, Uint8Array.from([1,0,0,0,0,0,0,0,0,1,0,0,0,0xff])],
@@ -674,7 +689,8 @@ describe('StreamDecoder worker controller', () => {
     expect(Array.from(new Float64Array(visible.starts))).toEqual([20])
     expect(Array.from(new Float64Array(visible.ends))).toEqual([40])
     expect(transfers.at(-1)).toEqual([
-      visible.taskIds, visible.starts, visible.ends, visible.startTicks, visible.endTicks,
+      visible.taskIds, visible.contextTypes, visible.starts, visible.ends,
+      visible.startTicks, visible.endTicks,
     ])
   })
 
@@ -749,9 +765,51 @@ describe('StreamDecoder worker controller', () => {
     decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 50, pixelWidth: 400 })
     const visible = messages.at(-1)
     if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
-    expect(Array.from(new Uint32Array(visible.taskIds))).toEqual([7, 7])
-    expect(Array.from(new Float64Array(visible.starts))).toEqual([0, 20])
-    expect(Array.from(new Float64Array(visible.ends))).toEqual([10, 30])
+    expect(Array.from(new Uint32Array(visible.taskIds))).toEqual([7, 15, 16, 15, 7])
+    expect(Array.from(new Uint8Array(visible.contextTypes))).toEqual([1, 2, 2, 2, 1])
+    expect(Array.from(new Float64Array(visible.starts))).toEqual([0, 10, 12, 14, 20])
+    expect(Array.from(new Float64Array(visible.ends))).toEqual([10, 12, 14, 20, 30])
+  })
+
+  it('keeps inactive task metadata and computes exact Task ISR Scheduler Idle statistics', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 32, channelCount: 1 })
+    const records = systemViewRecords(
+      { kind: 9, taskId: 1, ticks: 1n, timeUs: 1, aux0: 10 },
+      { kind: 21, taskId: 1, ticks: 2n, timeUs: 2, aux0: 0x20001000, aux1: 1024 },
+      { kind: 9, taskId: 2, ticks: 3n, timeUs: 3, aux0: 20 },
+      { kind: 4, taskId: 1, ticks: 10n, timeUs: 10 },
+      { kind: 5, taskId: 1, ticks: 20n, timeUs: 20 },
+      { kind: 2, taskId: 15, ticks: 20n, timeUs: 20 },
+      { kind: 18, taskId: 0, ticks: 22n, timeUs: 22 },
+      { kind: 17, taskId: 0, ticks: 23n, timeUs: 23 },
+      { kind: 2, taskId: 15, ticks: 30n, timeUs: 30 },
+      { kind: 18, taskId: 0, ticks: 32n, timeUs: 32 },
+      { kind: 4, taskId: 1, ticks: 33n, timeUs: 33 },
+      { kind: 11, taskId: 0, ticks: 40n, timeUs: 40 },
+    )
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 12, records, StreamType.SYSTEMVIEW),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({ type: 'visible-range', requestId: 7, start: 0, end: 50, pixelWidth: 400 })
+
+    const visible = messages.at(-1)
+    if (visible?.type !== 'systemview-visible') throw new Error('expected SystemView visible data')
+    const byContext = new Map(visible.contexts.map(context => [`${context.type}:${context.id}`, context]))
+    expect(byContext.get('1:1')).toMatchObject({
+      priority: 10, stackBase: 0x20001000, stackSize: 1024,
+      count: 2, totalTicks: 17, minTicks: 7, maxTicks: 10,
+    })
+    expect(byContext.get('1:2')).toMatchObject({ priority: 20, count: 0, totalTicks: 0 })
+    expect(byContext.get('2:15')).toMatchObject({ count: 2, totalTicks: 4 })
+    expect(byContext.get('3:0')).toMatchObject({ count: 2, totalTicks: 2 })
+    expect(byContext.get('4:0')).toMatchObject({ count: 1, totalTicks: 7 })
+    expect(visible.events.find(event => event.kind === 'idle')).toMatchObject({ duration_ticks: 7 })
+    expect(visible.events.filter(event => event.kind === 'isr_to_scheduler'))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ isr_id: 15, duration_ticks: 1 }),
+      ]))
   })
 
   it('breaks interval pairing across a dropped batch and reset clears pending context', () => {

@@ -48,7 +48,39 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline.tasks.map(task => task.name)).toEqual(['afe', 'svfast'])
   })
 
-  it('keeps visible CPU status order stable when percentages cross', () => {
+  it('places explicit ISR, Scheduler, Task, and Idle contexts in the requested order', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      PALETTE: ['#1', '#2', '#3'],
+      hidden: new Set(),
+      follow: false,
+      windowSize: 0,
+      viewStart: null,
+      viewEnd: null,
+      _hadIntervals: false,
+      _explicitContexts: [],
+      _filterContinuous: intervals => intervals,
+      _layout: () => {},
+      _draw: () => {},
+      _updateStatus: () => {},
+    })
+    timeline.setData([
+      { tid: 4, name: 'Idle', type: 'Idle', start: 0, end: 20 },
+      { tid: 3, name: 'main', type: 'Task', start: 20, end: 30 },
+      { tid: 1, name: 'mchtmr', type: 'ISR', start: 30, end: 31 },
+      { tid: 2, name: 'Scheduler', type: 'Scheduler', start: 31, end: 32 },
+    ])
+    timeline.setContexts([
+      { tid: 1, name: 'mchtmr', type: 'ISR' },
+      { tid: 2, name: 'Scheduler', type: 'Scheduler' },
+      { tid: 3, name: 'main', type: 'Task' },
+      { tid: 4, name: 'Idle', type: 'Idle' },
+    ])
+
+    expect(timeline.tasks.map(task => task.name)).toEqual(['mchtmr', 'Scheduler', 'main', 'Idle'])
+  })
+
+  it('keeps context legend order stable without repeating CPU percentages', () => {
     const timeline = Object.create(SvTimeline.prototype)
     timeline.hidden = new Set()
     timeline.tasks = [
@@ -63,23 +95,114 @@ describe('SvTimeline continuous filtering', () => {
     timeline.viewEnd = 100
     timeline.roots = {
       legend: document.createElement('div'),
-      vcpu: document.createElement('div'),
     }
     timeline.toggleTask = vi.fn()
 
     timeline._updateStatus()
 
     const labels = [...timeline.roots.legend.querySelectorAll('.sv-lg')]
-      .map(el => el.textContent.trim().replace(/\s+\d+(\.\d+)?%$/, ''))
+      .map(el => el.textContent.trim())
     expect(labels).toEqual(['afe', 'svfast'])
+    expect(timeline.roots.legend.textContent).not.toContain('%')
   })
 
-  it('lets ordinary wheel events scroll the surrounding dashboard', () => {
+  it('keeps the axis and interval labels in microseconds', () => {
     const timeline = Object.create(SvTimeline.prototype)
+    timeline.unit = 'us'
 
-    expect(timeline._shouldZoomWheel({ ctrlKey: false, shiftKey: false })).toBe(false)
-    expect(timeline._shouldZoomWheel({ ctrlKey: true, shiftKey: false })).toBe(true)
-    expect(timeline._shouldZoomWheel({ ctrlKey: false, shiftKey: true })).toBe(true)
+    expect(timeline._fmtAxisValue(32.768, 0.1)).toBe('32.8 us')
+    expect(timeline._fmtIntervalLabel({ start: 0, end: 0.6 })).toBe('0.6 us')
+    expect(timeline._fmtIntervalLabel({ start: 0, end: 443.5 })).toBe('443.5 us')
+    expect(timeline._fmtTime(1_250_000)).toBe('1,250,000 us')
+  })
+
+  it('uses conventional context colors for ISR, Scheduler, and Idle', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    timeline.PALETTE = ['#task']
+
+    expect(timeline._contextColor('ISR', 0)).toBe('#c52832')
+    expect(timeline._contextColor('Scheduler', 0)).toBe('#727983')
+    expect(timeline._contextColor('Idle', 0)).toBe('#8b929a')
+    expect(timeline._contextColor('Task', 0)).toBe('#task')
+  })
+
+  it('zooms with an ordinary wheel event over the plot and then pans by dragging', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    const canvas = document.createElement('canvas')
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 240, height: 80, right: 240, bottom: 80, x: 0, y: 0, toJSON: () => ({}) })
+    Object.assign(timeline, {
+      roots: { canvas }, canvas, unit: 'us', W: 240, H: 80,
+      plotX0: 40, plotX1: 240, plotW: 200,
+      tMin: 0, tMax: 1_000, viewStart: 0, viewEnd: 1_000,
+      dragging: false, follow: true,
+      _resize: vi.fn(), _draw: vi.fn(), _updateStatus: vi.fn(),
+      _hitTest: vi.fn(() => null), _showTip: vi.fn(), _hideTip: vi.fn(),
+    })
+
+    timeline._bind()
+    const wheel = new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true })
+    Object.defineProperties(wheel, {
+      clientX: { value: 140 },
+      clientY: { value: 20 },
+    })
+    canvas.dispatchEvent(wheel)
+
+    expect(wheel.defaultPrevented).toBe(true)
+    expect(timeline.follow).toBe(false)
+    expect(timeline.viewEnd - timeline.viewStart).toBeCloseTo(800)
+    const zoomedStart = timeline.viewStart
+
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 140, clientY: 30, button: 0, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 30 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120, clientY: 30 }))
+
+    expect(timeline.viewStart).toBeGreaterThan(zoomedStart)
+    expect(timeline.viewEnd - timeline.viewStart).toBeCloseTo(800)
+    timeline.destroy()
+  })
+
+  it('leaves wheel scrolling available over the task-name column', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    timeline.plotX0 = 40
+    timeline.plotX1 = 240
+
+    expect(timeline._shouldZoomWheel(20)).toBe(false)
+    expect(timeline._shouldZoomWheel(140)).toBe(true)
+  })
+
+  it('keeps the inspected live frame stable until follow mode resumes', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    timeline.follow = false
+    timeline._hadIntervals = true
+    timeline.intervals = [{ tid: 1, name: 'main', start: 100, end: 200 }]
+    timeline._acceptData = vi.fn()
+
+    timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
+    expect(timeline._acceptData).not.toHaveBeenCalled()
+
+    timeline.follow = true
+    timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
+    expect(timeline._acceptData).toHaveBeenCalledOnce()
+  })
+
+  it('positions an interval tooltip without throwing at the viewport edge', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    const tooltip = document.createElement('div')
+    Object.defineProperties(tooltip, {
+      offsetWidth: { value: 120 },
+      offsetHeight: { value: 60 },
+    })
+    timeline.roots = { tooltip }
+    timeline.unit = 'us'
+    timeline.tickOrigin = 0n
+    timeline.tickHz = 0
+
+    expect(() => timeline._showTip(window.innerWidth, window.innerHeight, {
+      tid: 1, name: '<main>', start: 10, end: 20,
+    })).not.toThrow()
+    expect(tooltip.style.left).toBe(`${window.innerWidth - 128}px`)
+    expect(tooltip.style.top).toBe(`${window.innerHeight - 68}px`)
+    expect(tooltip.innerHTML).toContain('&lt;main&gt;')
   })
 
   it('removes window listeners after destroy', () => {

@@ -1,231 +1,136 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-25T18:17:31+08:00",
+  "updated_at": "2026-08-02T11:35:02+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Official tag v0.1.4 resolves to release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. The functional fix commit is abbc985852b8d5e87db206b71046d11ad53d0abc and the following build-assets commit is 1cc9147.",
-    "remote_head": "GitHub and Gitee master both contain release source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. Their annotated v0.1.4 tags peel to the same commit, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e.",
-    "working_tree": "The v0.1.4 source and public assets are published. This documentation-only follow-up records publication evidence without moving the immutable release tag."
+    "branch": "fix/hpm5301-online-symbols",
+    "head": "The active fix branch is based on documentation commit 5c9021d37e9ce22a888d3de2c793827688532660. All work described here is uncommitted.",
+    "remote_head": "GitHub and Gitee master contain the v0.1.4 source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.",
+    "working_tree": "Dirty by design with all qualified development work still uncommitted. Preserve every existing change; no commit, merge, push, tag, or release is authorized."
   },
   "mission": {
-    "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, RTT/SystemView/VOFA/SuperWatch streaming, symbols, memory, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
-    "maintenance": "Keep only the current integration baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions here; use Git history and detailed verification documents for completed chronology."
+    "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
+    "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v014_published",
-    "current_task": "Preserve the published v0.1.4 baseline, keep the formal copied Skill and user-level Web entry synchronized, and address only the remaining cross-platform and device-reliability qualifications.",
-    "release": "Official v0.1.4 was published on 2026-07-25 from source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac. GitHub and Gitee Releases expose the same five uploaded assets, and both public updates/latest.json documents report 0.1.4 after release verification completed."
+    "status": "handoff_ready_after_rtt_terminal_newline_qualification",
+    "current_task": "RTT View now has the confirmed fixed-channel-0 日志 | 终端 switch. The terminal uses bundled xterm.js for common ANSI control sequences, normalizes SEGGER fixed macros, keeps terminal history while hidden, sends keyboard input through the RTT Down Buffer, and treats both bare LF and CRLF as display newlines. The strategy intentionally excludes termios, PTY/ConPTY, multi-channel UI, and SEGGER virtual terminals. STM32F103RC Web hardware validation is complete; preserve the dirty branch and do not repeat completed qualification unless later changes invalidate it.",
+    "release": "Official v0.1.4 remains the published baseline. Current branch changes are development work and have not been committed or released."
   },
   "milestones": [
     {
-      "name": "Product baseline",
+      "name": "Product and distribution baseline",
       "status": "complete",
-      "notes": "Online/offline flash, debug control, symbols and types, bounded streaming, Serial, Modbus, MCP, and resource arbitration are implemented."
+      "notes": "Online/offline flash, debug control, symbols and types, bounded binary streaming, Serial, Modbus, MCP, Web, Tauri v2, bundled Python sidecar, USB Web entry, browser file uploads, updater flow, and resource arbitration are implemented."
     },
     {
-      "name": "Web and desktop distribution",
+      "name": "Flash, symbols, and RTT correctness",
       "status": "complete",
-      "notes": "The Vue Web client, Tauri v2 desktop app, bundled Python sidecar, strict USB Web entry protocol, browser file uploads, and signed updater flow are available."
+      "notes": "Builtin pyelftools is authoritative by default; aggregate symbols and bounded pasted C layouts work; symbol reload is a shared device transaction; HPM low-address writable ELF sections can supply _SEGGER_RTT; successful automatic connections backfill the actual serial port; online/offline flash workflows retain files and rebuilt-image changes correctly."
     },
     {
-      "name": "Compatibility hardening",
+      "name": "HPM5301 ROM API and SuperWatch",
       "status": "complete",
-      "notes": "Builtin pyelftools is the default, FastAPI 0.139.2 is supported, Windows venv process guards are stable, test extras are complete, and the frontend audit is clean."
+      "notes": "HPM targets use the device ROM API without FLM. SuperWatch uses a fixed-duration oscilloscope timeline that follows live data with an adjustable fixed lag, freezes on pause, and supports retained-history navigation. HPM online flash synchronously stops SuperWatch, closes the shared Device, and releases the probe before programming."
     },
     {
-      "name": "Upstream integration",
+      "name": "Global GUI localization and navigation",
       "status": "complete",
-      "notes": "su5176/Mklink-AI-Probe PR #3 merged fork commit d344e5f into upstream master as 6cff397."
+      "notes": "One persistent Chinese/English switch controls the Web/Tauri shell and embedded waveform workspace. The shell brand is MKLink. Technical English names remain unchanged. Dashboard order is RTT View, SuperWatch, HardFault, Memory, Debug Control, Serial Monitor, Modbus, RTOS Trace, and Symbols last. The content card starts directly with a compact tab row; the redundant Dashboard heading is removed and the resource-owner status shares that row. RTT View keeps address/source on one row and grouped acquisition, encoding, metrics, and secondary actions on the next; data-format examples open on demand instead of consuming a permanent third row."
     },
     {
-      "name": "Shared symbol-source state",
+      "name": "Lazy large-array symbol browsing",
       "status": "complete",
-      "notes": "Symbol reparsing now binds the current Device explicitly, serializes SuperWatch stop/rebind/restart, uses one transaction for parse and connected-reload endpoints, rejects requested/active path mismatches, and exposes active versus pending AXF state consistently in the frontend."
+      "notes": "Arrays are grouped into 256-direct-element range nodes and expanded on demand. Structure arrays and nested arrays retain their hierarchy; exact backend search resolves unloaded paths; later elements support type lookup and the normal SuperWatch/read/write descriptor path. The old first-256-leaves warning is removed."
     },
     {
-      "name": "Aggregate symbol recovery",
+      "name": "HPM5301 SystemView recorder and analysis",
       "status": "complete",
-      "notes": "Anonymous struct and union layers expand transparently, overlapping union interpretations remain selectable, unsupported aggregates remain visible as containers, and a bounded pycparser-backed C layout override is shared by Web, Tauri, and AI-launched services."
+      "notes": "RTOS Trace shares RTT address state with RTT View and uses the probe SystemView bridge plus SEGGER UART Recorder handshake. Delayed TaskList recovery, parser framing recovery, valid HPM ram_base=0/id_shift=0, exact Runtime/Context analysis, inactive task retention, and running-session metadata hydration restore task1/task2/task3/Tmr Svc correctly. Timeline uses a microsecond ruler, 10-second default, 10/30/60-second choices, 300,000-event browser ring, wheel zoom, drag pan, and Fit All. Explicit JSONL recording is independent of display and acquisition; offline replay is bounded and supports pause, speed, progress, and restart."
     },
     {
-      "name": "RTT encoding and SWD arbitration",
+      "name": "RTT terminal mode",
       "status": "complete",
-      "notes": "RTT preserves device bytes until the Dashboard applies UTF-8, GB2312, GBK, GB18030, or Big5 decoding. One-shot SWD and download operations safely preempt Dashboard owners but never another user operation."
-    },
-    {
-      "name": "Proactive verified updates",
-      "status": "complete",
-      "notes": "The installed Skill checks the public update manifest once per AI session with a 24-hour cache, reports newer releases without blocking hardware work, and updates the desktop app and copied Skill only after explicit approval with size and SHA-256 verification."
-    },
-    {
-      "name": "Release-history accuracy",
-      "status": "complete",
-      "notes": "The source release history and rebuilt Web assets now include the omitted v0.1.3 summary and five user-facing changes, with regression coverage for the current-version badge and entry count."
-    },
-    {
-      "name": "GUI flash-workflow usability",
-      "status": "complete",
-      "notes": "Version history scrolls, device and symbol-source settings save automatically, online and offline firmware workspaces accept drag/drop and retain native paths, rebuilt files reload automatically, offline model detection was removed, and V2/V3 script naming is fixed while V4 remains customizable. Local BIN inspection accepts numeric or string base addresses, the sector panel distinguishes not-yet-loaded firmware from unavailable geometry, and Windows disk refresh reads volume labels without spawning cmd.exe."
+      "notes": "RTT remains channel 0 only. Binary terminal chunks decode incrementally without waiting for LF, while existing line and waveform parsing remain parallel. The Web view switches between 日志 and 终端 without restarting RTT; xterm.js handles common ANSI colors, cursor movement, erase, and clear controls, with SEGGER 2;3Xm and 4;4Xm compatibility normalization. xterm convertEol is enabled so RT-Thread bare LF and conventional CRLF both begin the next display row at column zero without rewriting backend data. Keyboard input is batched and serialized through the existing RTT Down Buffer write API; termios, PTY/ConPTY, multi-channel UI, and SEGGER virtual terminals are intentionally out of scope."
     }
   ],
   "verification": [
     {
-      "area": "Latest source gate",
-      "result": "After MCP stdio isolation and the final HardFault response fields were added, Python passed 1011 with 1 skipped, GUI passed 38 files/422 tests, Rust passed 6 tests, cargo check completed, the Vite 8.1.5 production build completed, runtime npm audit reported zero vulnerabilities, the Tauri prerequisite check passed, and git diff --check passed."
+      "area": "Current automated gate",
+      "result": "Python passed 1034 tests with 1 skipped; GUI passed 42 files and 474 tests; the Vite 8.1.5 production build and git diff --check passed. Focused RTT terminal/newline coverage passed 35 tests; focused RTT backend coverage passed 56 tests and the earlier focused stream, symbol, API, SuperWatch, and large-array coverage also passed."
     },
     {
-      "area": "Update and release automation",
-      "result": "Focused updater and publisher coverage passed 20 tests. Real public-manifest checking saw public v0.1.2 from the v0.1.3 source without a false update. Release preparation now requires a verified flat installable Skill archive, and publication preserves Tauri compatibility while adding installer and Skill URL, size, SHA-256, and source commit metadata."
+      "area": "Large-array symbol browsing",
+      "result": "On the real STM32 AXF, _thread_stack exposed eight 256-element ranges through [1792..2047]. The tail request returned exactly _thread_stack[1792] through _thread_stack[2047], exact search found unloaded _thread_stack[2047], type lookup reported uint8_t at 0x20009A63, and target read returned 35. No write was performed because the available large arrays are active stack/buffer memory; the dynamic write path is covered automatically. SuperWatch and Symbols Web views both rendered only the selected tail page, omitted [0], removed the old warning, and produced no console warnings or errors."
     },
     {
-      "area": "Installed v0.1.3 candidate",
-      "result": "The final v0.1.3 standard NSIS overwrite-installed with a restricted PATH, served health and probe discovery from its bundled sidecar with no Python child, connected the STM32F103RC fixture with the requested AXF through builtin ELF, loaded 5,157 symbols, read eight bytes at 0x20000648, and disconnected cleanly. Normal close released all MKLink processes and port 8765. The published installer SHA-256 is 9A85059E94C3A8E1A3B16268AA2306746F59A555ECFC6252E0C207730F79CEC1 and Authenticode status is NotSigned."
+      "area": "HPM5301 flash and dump-memory",
+      "result": "The hello_world sample rebuilt, programmed, and verified through the HPM ROM API at 0x80000400. One 4-byte region sustained 6,935.9 Hz and three regions totaling 9 bytes sustained 2,416.4 Hz in 30-second runs with no flags, parser warnings, or failures. SuperWatch also accumulated more than 100,000 complete samples without host drops and released the probe before online flash."
     },
     {
-      "area": "Upstream merge",
-      "result": "GitHub reports PR #3 MERGED at 2026-07-23T07:23:40Z. Merge commit 6cff397 has parents 51a2f8d and the qualified fork head d344e5f."
+      "area": "STM32F103RC dump-memory throughput",
+      "result": "Keil ARMClang rebuilt and downloaded the STM32F103RC target with no errors or warnings. Separate-region dump-memory sweeps reached about 30.22/16.53/8.87/4.50/2.29 kHz for 1/2/4/8/16 regions; the 16-region 30-second run sustained 2,262.44 Hz with zero flags or mismatches. SuperWatch coalesced 16 contiguous floats into one 64-byte block and rendered all channels at 6,636.66 Hz over 30 seconds with no acquisition, parser, backend, or transport drops; the Hz-only badge matched an independent counter measurement."
     },
     {
-      "area": "Shared symbol automated gate",
-      "result": "Regression coverage includes source ownership, anonymous struct and union expansion, overlapping union aliases, unresolved containers, C natural and packed layout, input limits, fingerprint-scoped overrides, API validation, SuperWatch rebind and restore, manual path UI, and C definition UI."
+      "area": "SuperWatch Web interaction baseline",
+      "result": "Real STM32 Web tests qualified the complete current interaction model: configurable history up to 1,000,000 points/channel without changing the live span, frozen pause history with pan/zoom/minimap browsing, live X zoom and navigation that preserve a fixed lag while advancing, double-click reset to the newest window, independent split-channel Y axes with shared X, persistent merge control, and an auto-hiding channel legend. The one-request-in-flight Worker envelope scheduler remains responsive near 9.26 kHz, and the tested surfaces produced no transport/backend drops or browser warnings/errors."
     },
     {
-      "area": "Symbol-source real hardware",
-      "result": "The repaired service switched between two real AXFs with distinct symbol counts, supported connected reload from a second client path, and preserved SuperWatch operation during an additional reload. After deployment to port 8765, parse-axf selected 4,842/129/107 symbols at generation 2 and connected reload restored 791/150/99 at generation 3. Requested and active paths matched after every operation."
+      "area": "Symbols, RTT, and GUI hardware loop",
+      "result": "Builtin ELF resolved HPM low-address _SEGGER_RTT and portable writable variables. RTT auto-search and address sharing worked. The source Web GUI was exercised in Chinese and English at desktop and mobile sizes without relevant console errors or document overflow."
     },
     {
-      "area": "Aggregate-symbol real hardware",
-      "result": "A real STM32 AXF expanded data_save at 0x20000648 into 27 selectable scalar interpretations, including odo, mileage_odo, and trip. SuperWatch completed 32,613 reads with zero read errors and zero read drops. A real unresolved one-byte aggregate accepted a pasted matching C definition, produced a selectable member at the correct RAM address, and was added through the shared SuperWatch API."
+      "area": "SystemView hardware loop",
+      "result": "The HPM target streamed at 360 MHz with four correctly named tasks, late-attach metadata recovery, 10/30/60-second views, a 300,000-event browser ring, and zero parser packet drops. Independent JSONL recording captured about 42,844 events over 21 seconds while Trace continued; bounded replay supports pause, speed, progress, and restart."
     },
     {
-      "area": "SWD arbitration real hardware",
-      "result": "SuperWatch held both probe resources while reading data_save.odo, then a real read-memory operation stopped it before returning eight target bytes and left the device READY with no leases. A second SuperWatch run was preempted by an online connect-reset-disconnect job, which succeeded without erasing or programming Flash; 46,591 reads completed with zero read errors and zero read drops."
+      "area": "Current live surface",
+      "result": "The source Web GUI is available at http://127.0.0.1:8765 with the STM32 project connected and its AXF loaded. It is left on the updated RTT View in terminal mode. Desktop and 768px-wide browser checks confirmed the MKLink brand, two-row RTT controls, contained format-help popover, preserved resource status, no document-width overflow, and no console warnings or errors."
     },
     {
-      "area": "RTT encoding real service",
-      "result": "The source service accepted GBK at RTT start and exposed the active encoding in shared status. Automated byte-boundary tests covered GBK and four-byte GB18030 text plus runtime switching. The current target image did not initialize the AXF RTT control-block symbol, so live text capture was unavailable and startup released resources cleanly."
-    },
-    {
-      "area": "Real browser UI",
-      "result": "After rebuilding gui/dist for v0.1.3, Playwright drove the installed Chrome executable against the source Web service at desktop and 390 px mobile viewports. UTF-8, GB2312, GBK, GB18030, and Big5 were selectable; Symbols and the SuperWatch manual-variable/C-layout controls opened; console errors and document overflow were zero. Dashboard tabs were hardened to remain single-line and scroll within the tab bar on narrow screens."
-    },
-    {
-      "area": "v0.1.3 publication and local Skill update",
-      "result": "GitHub and Gitee Releases contain the same five assets. Anonymous Gitee installer and Skill downloads match the local sizes and SHA-256 values; both public updates/latest.json files report version 0.1.3 and source commit f9f2f70a9da4607312542ace4a1ddd0e9202d20f. The copied local Skill was bootstrapped from 0.1.2 and updated through the public Skill updater to 0.1.3; a forced check now reports update_available=false and requires an AI restart."
-    },
-    {
-      "area": "v0.1.3 version-history correction",
-      "result": "The full gate passed Python 989 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, the Vite production build, and npm audit with zero vulnerabilities. Local Chrome Playwright opened the real config page at desktop 1440x900 and mobile 390x844, clicked the footer version, and found v0.1.3 first with the current-version badge, all five release notes, four stable entries, no failed requests, no framework overlay, and no console warnings or errors."
-    },
-    {
-      "area": "Local-only v0.1.3 desktop refresh",
-      "result": "The final cache-corrected standard NSIS bundle from f9ecec3 was copied to release/20260724-155059 as Mklink-AI-Probe-v0.1.3-local-f9ecec3-x64-Setup.exe. Its size is 65,560,254 bytes, SHA-256 is 55BACCDD7DC0D2652DDC3FE1062E29AB277098E0B45766556CE3940423FC23E6, updater-signature SHA-256 is EA0B5E082B628026B93C2D8159A5E4AF1148C13D7290BFCC311639AE229D00FB, product version is 0.1.3, and Authenticode is NotSigned. Restricted-PATH qualification passed bundled-sidecar health, builtin ELF 0.32, and probe discovery with no Python child; normal close released both sidecars and port 8765. The installer was placed in the normal per-user location and both desktop and Start Menu shortcuts were verified."
-    },
-    {
-      "area": "Copied Skill and user-level Web entry",
-      "result": "The copied user-level Skill was replaced from the final validated local 0.1.4 archive, records source commit 86bea5a21bd0e728ea0c17065b604e2a07503b98, and retained recovery backups. Its gui/dist/assets directory exactly matches the source build at 18 files and 18 SHA-256 values, with no obsolete hashed assets. The editable gui+mcp package resolves to C:/Users/akqbd/.codex/skills/mklink-ai-probe from an unrelated working directory. The protocol handler inserts that copied Skill root, not the developer checkout."
-    },
-    {
-      "area": "Shared Web and desktop lifecycle",
-      "result": "The copied user-level Web entry now owns port 8765 as PID 22716 and is the only intentionally retained MKLink service. The overwrite-installed v0.1.4 Tauri app had already reused this shared-service design, shown the persisted rtthread.bin as automatically inspected at 0x08005000-0x08020D70 with an FLM-verified sector table, and refreshed G: without a console window. Normal desktop close preserves the shared Web service rather than restoring an older user service."
-    },
-    {
-      "area": "Stale Web app cache correction",
-      "result": "A real Edge tab displayed cached v0.1.2 assets while the same port served the copied v0.1.3 Skill. Root cause was that index.html and SPA fallback responses had no cache policy and Web-entry reopened a stable URL. The f9ecec3 fix serves the app shell with Cache-Control no-store, revalidates unhashed static files, serves hashed assets as one-year immutable, and opens a URL containing the current index SHA-256 prefix. Focused tests passed 53; the full gate passed Python 991 with 1 skipped, GUI 36 files/412 tests, Rust 6 tests, cargo check, Vite production build, npm audit with zero vulnerabilities, and the Tauri prerequisite check. Actual isolated Microsoft Edge opened ?build=51b73617dadd#/config, displayed v0.1.3 and build f9ecec30a315, showed four release entries and five v0.1.3 notes with the current badge, and had no console errors or failed requests."
-    },
-    {
-      "area": "Workspace cleanup and source-root handoff",
-      "result": "The workspace was reduced from about 8.88 GB to 85 MB while preserving release/20260724-155059 and its three verified hashes. Git now lists only the main worktree, project memory validates, and the user-level Web entry remains healthy and owned on port 8765. The repository and copied user-level maintenance Skills now resolve a unique source root from the Git top-level before reading relative handoff paths; both passed quick_validate.py, and the current nested checkout resolved uniquely to the inner Mklink-AI-Probe source directory."
-    },
-    {
-      "area": "GUI flash-workflow automated gate",
-      "result": "After the final responsive-header edit, Python passed 994 with 1 skipped; GUI passed 36 files/416 tests; Rust passed 6 tests; cargo check, the Vite 8.1.5 production build, npm audit with zero vulnerabilities, and the Tauri prerequisite check all passed."
-    },
-    {
-      "area": "GUI flash-workflow real hardware",
-      "result": "The available STM32 fixture was rebuilt and exercised with its bootloader at 0x08000000 and application at 0x08005000. Online programming and independent read-only verification succeeded for both images. Changing and rebuilding the application changed the watched file fingerprint, triggered automatic reload, programmed at the application address, and then the original source, binary, and target image were restored and reverified. V2/V3/V4 offline previews enforced the intended script-name rules; a V4 dual-image offline trigger completed and both target ranges verified afterward."
-    },
-    {
-      "area": "GUI flash-workflow debug and browser qualification",
-      "result": "Builtin ELF loaded 5,170 symbols and read live variables and RAM. SuperWatch completed 1,387 focused samples with zero read errors or drops, RTT channel 0 found the initialized control block after reset, and SystemView channel 1 synchronized, decoded RTOS events, and resolved task names with zero parser packet drops. Chrome drove four online/offline round trips while a 10-second process monitor saw zero new cmd.exe processes. Version history scrolled from top to the final entries; V2/V3 forced offline_download.py and disabled editing while V4 restored the custom name. The 390x844 document width fell from 625 to 390 after the responsive-header fix, with zero application overflow or relevant console warnings/errors."
-    },
-    {
-      "area": "Latest post-install regression gate",
-      "result": "Fresh validation on 2026-07-25 passed Python 999 with 1 skipped, GUI 38 files/421 tests, Rust 6 tests, cargo check, the Vite 8.1.5 production build, runtime npm audit with zero vulnerabilities, and git diff --check. Full npm audit newly reports six high-severity development-only findings through @vue/test-utils -> js-beautify -> glob/minimatch -> brace-expansion; npm offers only a forced breaking downgrade, so no unrelated dependency mutation was applied. The real source service inspected the 114,032-byte STM32F103RC rtthread.bin at numeric base 0x08005000, returned range 0x08005000-0x08020D70 and 56 verified sectors, and Chrome completed the address dialog and rendered the sector table. Before loading, the panel showed the neutral 加载固件后显示扇区表 state. Six real offline disk refreshes during an 18-second Win32 process-start trace created zero cmd.exe processes. Desktop 1222x735 and mobile 390x844 had no document overflow or relevant console warning/error."
-    },
-    {
-      "area": "Local v0.1.4 hardware and installer qualification",
-      "result": "Keil V6.24 rebuilt the STM32F103RC project with zero errors and warnings. A temporary UDF HardFault resolved the exact exception PC to mklink_hardfault_leaf at applications/main.c:387, then mklink_hardfault_caller and main plus bounded RT-Thread frames. The injection was removed, main.c returned to SHA-256 FA05F99E1E1443B1DF6D66943CA9B6C471EFA256495A5B286FACA767089449DE, and Keil reprogrammed the normal app with Verify OK and Application running. MKLink MCP then loaded the requested full rt-thread.axf through builtin pyelftools, read mklink_sv_user_event_counter as 0, and reported no HardFault. The final standard NSIS rebuilt without changing version 0.1.4, overwrite-installed under a restricted PATH, served healthy builtin ELF 0.32, discovered one redacted probe, and contained no Python process. Its installed sidecar loaded the same AXF, read the same variable, reported no HardFault, and normal window close released all Mklink processes and port 8765."
-    },
-    {
-      "area": "Synchronized v0.1.4 desktop, Web, and AI runtime",
-      "result": "The copied-Skill Web API resolves the real rt-thread.axf RTT symbol through builtin pyelftools, and repeated RTT search plus offline disk refresh monitoring launches no cmd.exe or GNU/IAR process. Chrome verified config, online flash, and offline flash at an actual 390x844 viewport with document width 390 and no relevant console warnings or errors. The MCP factory exposes 52 tools; ping returns sdk_version 0.1.4, builtin pyelftools 0.32, and no public update because local 0.1.4 is newer than public 0.1.3. A real FastMCP stdio client completed ping, connect, HardFault decode, variable read, and disconnect while bridge echo appeared only on stderr and produced zero JSON-RPC parsing errors."
-    },
-    {
-      "area": "Official v0.1.4 publication",
-      "result": "The clean master release source is 1cc9147787ff1ab18a6028f5d7c37a535d3320ac and annotated tag v0.1.4 peels to it on GitHub and Gitee. Both Releases contain the same five uploaded assets, and both updates branches point to e61a714987e0260464349ecca929d4ef08b0d26e. The 65,593,331-byte installer SHA-256 is 32199809C0CE98D7191A4A3F0C16FE8C190C9FF6294E3716B83B6B43741C805E; its 428-byte updater-signature SHA-256 is C703805EF486BCBCAF27BFB9801EF67591C82B25E37858A5E28FEDB0BAA80B93; the 2,559,746-byte Skill SHA-256 is 682430685EE4E2098572CE3B9499746D3D7AF8FF783B37C6C815AF433F45C0EC. Both public latest.json documents report version 0.1.4 and the same sizes, hashes, source commit, notes, and Gitee download URLs."
-    },
-    {
-      "area": "Published v0.1.4 local deployment",
-      "result": "The formal standard NSIS overwrite-installed with a restricted PATH and product version 0.1.4. Its bundled sidecar served healthy builtin ELF, discovered one redacted real probe, launched no Python process, and normal desktop close released all Mklink processes and port 8765. The formal Release Skill atomically replaced the copied same-version prerelease, recorded source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac, retained a recovery backup, and a forced public check reported current 0.1.4 with no update. The copied Skill re-registered the protocol handler, and its owned user-level Web service is the only intentionally retained MKLink service on 127.0.0.1:8765 with healthy builtin ELF."
+      "area": "RTT terminal Web and STM32 hardware loop",
+      "result": "The STM32F103RC test firmware rebuilt with Keil ARMClang without errors or warnings and was downloaded with IDE verify OK. Triggering its controlled ANSI self-test rendered RT-Thread green/yellow/red/magenta log colors, SEGGER normal and bright foreground/background macros, ESC[2K line erase, cursor overwrite, ESC[2J clear/home, and a split CSI sequence in the xterm terminal. Terminal keyboard input reached RTT channel 0 and returned 0d (Enter), 7f (Backspace), and 1b 5b 41 (ArrowUp) through the diagnostic loopback. With the later Agile Console RTT firmware, the real MSH help command emitted bare-LF lines that all rendered from column zero; the prompt and consecutive rows had no staircase or extra blank lines, while Log mode retained all 37 raw rows. Log/terminal switching and view-local clear worked without stopping RTT; transport/backend drops stayed at 0. At a 768px viewport document width equaled the viewport and the terminal/control rows remained contained; browser warning/error logs were empty."
     }
   ],
   "decisions": [
-    "AGENTS.md and the repository skill are the workflow source of truth. Runtime changes use a dedicated feature/fix branch, the full Python and GUI suites plus production build, and an affected real-surface hardware loop before merge.",
-    "Official signing, tags, Releases, latest.json, and Gitee synchronization require explicit maintainer authority. Build standard NSIS by default; MSI and offline WebView2 bundles require explicit authorization.",
-    "HPM targets always use the ROM API and never FLM. Bundled pyelftools is the default ELF/DWARF backend; external GNU tools run only when explicitly selected.",
-    "Agent-driven firmware download prefers an available IDE-native verified flow, then pyOCD online flash, then MKLink offline deployment. Automatic algorithms rank bundled Pack, bundled DAPLink, installed Pack, then custom while explicit choices remain authoritative.",
-    "Web entry accepts only mklink-ai-probe://web start/open/stop operations, binds loopback, serializes launches, and stops only identity-verified processes it owns. Each host needs the complete runtime and one-time protocol registration.",
-    "Browser AXF/MAP selection uploads suffix-checked, size-limited, content-addressed files into runtime project storage; Tauri retains native path selection.",
-    "Dashboard starts share serialized resource arbitration, stop conflicting sessions, and acquire leases atomically. One-shot user SWD operations and online/offline downloads may preempt user:dashboard owners only after their synchronous stop succeeds; stop failure rolls back the new lease, and one user operation never preempts another.",
-    "FastAPI route tests support both flattened and lazy included-router layouts. On Windows, guarded worker wrappers use the base Python interpreter so venv launcher PID proxies cannot escape parent-death protection.",
-    "AXF reload is a shared backend transaction. The current connected Device is authoritative, SuperWatch is rebound to that exact instance, and parse/connect endpoints fail with HTTP 409 when the requested source did not become active.",
-    "Frontend file inputs are pending configuration until the backend reports the same normalized active path. All clients read one server-side active symbol state instead of treating a successful HTTP response as proof.",
-    "Desktop and Web-entry lifecycle follows process ownership: a client closes only a backend process it created and still owns. Browser tabs and desktop windows that reuse an existing service must not terminate that shared service.",
-    "Anonymous struct and union members are flattened into their legal C access paths. All named union interpretations remain visible and are marked as overlapping instead of silently discarding aliases.",
-    "Pasted C layouts are limited to 64 KiB and 512 scalar leaves, reject pointers and bit-fields, require exact AXF storage-size agreement, and are retained only in memory under the AXF path, size, and mtime fingerprint."
-    ,"RTT bridge sessions retain raw target bytes. The RTT Dashboard owns incremental UTF-8, GB2312, GBK, GB18030, or Big5 decoding and publishes the existing UTF-8 browser stream protocol; runtime encoding changes discard only unfinished decoder state and affect subsequent bytes.",
-    "Copied Skills check Gitee then GitHub at first MKLink use in each AI session, cache successful checks for 24 hours, and never interrupt an active debug or flash operation. Installation requires explicit approval, verifies published size and SHA-256, refuses Git checkouts, backs up the Skill, and requires a new AI session after replacement.",
-    "The updates/latest.json document remains compatible with Tauri while adding verified installer and Skill metadata. Both public Releases and both anonymous Gitee asset checks complete before either updates branch is replaced.",
-    "Published release tags are immutable. The missing v0.1.3 history text is corrected in subsequent source and release artifacts; do not move or republish the existing v0.1.3 tag.",
-    "End-user Web entry, Web GUI, and MCP installation must use the complete copied user-level Skill/runtime as their source. Run web-entry registration from that Skill after install or update so its absolute handler path never depends on a developer checkout; desktop clients may reuse the resulting service without taking ownership.",
-    "Web app shells and SPA fallbacks must use no-store so a same-port runtime update cannot retain an old index. Content-hashed assets may be immutable, and Web-entry URLs carry the current index digest before the hash route so a newly opened client navigates to the installed build even when the browser has an older tab or cache entry.",
-    "Maintenance instructions must resolve the unique project source root before using relative AGENTS.md, docs, scripts, or repository Skill paths. The Git/workspace root and source root may differ; release and worktree storage remain anchored at the live Git/workspace root.",
-    "Tauri firmware selection retains the native file path and polls its size and modification time so the current online or offline workspace can reload a newly compiled BIN/HEX without losing the selection across route changes. Browser uploads remain content-based because browsers do not expose a reusable native path.",
-    "Offline downloader models are explicit user choices. V2 and V3 always deploy offline_download.py; only V4 accepts a custom script name. Opening the offline page only refreshes the MICROKEEN disk and must not probe the downloader firmware version.",
-    "Desktop local BIN inspection accepts decimal integers and decimal or 0x-prefixed strings at the API boundary while the GUI serializes the address as a string. The flash-map empty state is neutral until an inspection exists; only a completed inspection without reliable geometry shows a warning.",
-    "Windows MICROKEEN discovery reads volume labels through GetVolumeInformationW and must not invoke cmd.exe or parse localized vol command output.",
-    "Copied-Skill updates remove only files listed by the previous installation manifest that are absent from the new archive. They keep unrelated user files, back up the prior Skill first, reject unsafe manifest paths, and prevent obsolete hashed Web assets from surviving a runtime replacement.",
-    "MCP stdio owns stdout exclusively for JSON-RPC. The MCP entry redirects ordinary Python print output to stderr while preserving the original stdout buffer for FastMCP transport; CLI, Web, and desktop logging behavior remains unchanged."
+    "AGENTS.md and the repository maintenance Skill are authoritative. Before changing a product, interaction, architecture, workflow, or testing strategy, present the problem, options, tradeoffs, recommendation, and acceptance criteria, then wait for explicit maintainer confirmation. Confirmed-strategy root-cause fixes may proceed directly. Runtime changes require a fix/feature branch, full Python and GUI suites, production build, git diff check, project-memory update, and affected real-hardware loop. Never infer authority to commit, merge, push, sign, tag, publish, modify latest.json, or synchronize Gitee.",
+    "HPM targets always use the dedicated ROM API and never FLM. Agent-driven download routing is IDE-native build/download, then pyOCD online flash, then MKLink offline deployment; do not silently switch after a started operation fails.",
+    "Builtin pyelftools is the default ELF/DWARF backend. External GNU tools run only when explicitly selected. _SEGGER_RTT in ELF/AXF is accepted only when its complete storage lies in an allocated writable section.",
+    "Symbol reload is one shared backend transaction bound to the current Device. Requested and active paths must match, and SuperWatch must be stopped/rebound/restarted serially. Pasted C layouts remain bounded and fingerprint-scoped.",
+    "Large arrays page by 256 direct elements, represented as explicit [start..end] range nodes that load only when expanded. Paging is recursive for structure and nested arrays. Exact search resolves unloaded paths through the backend, and dynamically resolved descriptors remain valid for SuperWatch, type lookup, and read/write. Do not restore a first-256-readable-leaves limit or its UI warning.",
+    "Dashboard sessions and one-shot debug/flash operations use serialized resource leases. User operations may preempt Dashboard owners only after synchronous stop succeeds; one user operation never preempts another. HPM online flash also closes the shared CDC Device before opening its ROM-API backend.",
+    "Desktop and Web-entry clients stop only backend processes they created and still own. Web app shells use no-store, hashed assets may be immutable, and copied user-level Skill/runtime installations must not depend on the development checkout.",
+    "SuperWatch uses a fixed-duration timeline independent of history capacity, defaults to zoom 2 at the newest window, and supports up to 1,000,000 points/channel with a 48-byte-per-point memory estimate and a warning above 512 MiB. Live horizontal interactions preserve the chosen time lag and span while advancing; pause freezes the complete frontend history and viewport; resume clears the snapshot; double-click restores the newest default window. VOFA retains its adaptive timeline.",
+    "SuperWatch effective rate counts complete sample rows rather than variables and never uses the requested interval as the result. The backend uses a one-second perf_counter window as the authoritative status value; the binary viewer uses producer batch timestamps over at least 0.5 seconds for responsive updates between status polls and resets the statistic at stream/layout boundaries.",
+    "SuperWatch defaults to one shared plot. One visible channel may move to a lower plot with an independent persisted Y range while both plots share X navigation. The auto-hiding legend uses a compact reveal button, and a persistent split divider names the independent channel and provides Merge.",
+    "The global GUI language defaults to Chinese and persists under mklink_lang. English technical product names are not translated. Post-flash reconnection was explicitly canceled and must not be inferred.",
+    "RTT View is intentionally fixed to channel 0 with a compact 日志 | 终端 mode switch. Terminal mode uses xterm.js with convertEol enabled so bare LF and CRLF are both display newlines, common ANSI parsing plus SEGGER macro normalization, retained history while hidden, and keyboard forwarding through the existing Down Buffer API. Backend and Log-mode bytes remain unchanged. Do not add termios, PTY/ConPTY, multi-channel UI, or SEGGER virtual-terminal support without a new confirmed strategy.",
+    "RTT View and RTOS Trace share one valid RTT address. SystemView uses SystemView.start plus the SEGGER recorder handshake and matching stop sequence on both ARM/SWD and HPM RISC-V/JTAG. START supplies INIT/SYSDESC/SYSTIME, delayed TaskList recovers startup metadata, ram_base=0 and id_shift=0 are valid, and late attach hydrates task, ISR, clock, drop, and recording metadata from backend status.",
+    "SystemView uses complete bounded intervals for exact Runtime/Context analysis, retains inactive contexts, keeps 60 seconds of exact history and a 300,000-event browser ring, and offers 10/30/60-second views. JSONL recording is independent of display/acquisition, and offline replay is incremental and bounded with pause, speed, progress, and restart.",
+    "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged."
   ],
   "hardware": {
-    "probe": "MKLink V4 available; identifier omitted.",
-    "target": "STM32F103RC fixture available; local project path omitted.",
+    "probe": "MKLink V4 is available; identifiers are intentionally omitted.",
+    "target": "STM32F103RC and HPM5301 EVK Lite fixtures are available; local paths are intentionally omitted.",
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
-    "Python 3.13 is not installed locally; its Windows venv launcher behavior reproduced on Python 3.14.5 and passed the real process-guard integration after the fix.",
-    "The USB Web entry has real Windows coverage only; macOS LaunchServices and Linux xdg-mime still need physical-system qualification.",
-    "The standard NSIS still needs qualification on a second clean Windows 10/11 machine and an older-client updater check. The installer has Tauri integrity signing but no Windows Authenticode signature.",
-    "The available target covers the builtin STM32 algorithm. Other Pack/DAPLink/custom priority paths are automated-test evidence only; optional network and power-loss cases remain environment-specific.",
-    "The packaged sidecar intentionally serves API only; the installed frontend is loaded from Tauri resources rather than from the sidecar HTTP root.",
-    "The first real V4 offline trigger after deployment returned a transient failed state with no device output; an immediate complete retry succeeded and both target ranges verified. Retain this as a device-side reliability risk until it is reproduced with diagnostic output or ruled out across additional cold starts.",
-    "Full npm audit currently reports six high-severity development-only findings through @vue/test-utils 2.4.10 and js-beautify 1.15.4 to glob/minimatch/brace-expansion. Runtime audit is clean, and npm offers only a forced breaking downgrade; reassess when the upstream test dependency publishes a non-breaking remediation.",
-    "The high-event-rate SystemView fixture reported target-side overflow while the host parser remained synchronized with zero packet drops; reduce fixture event pressure or increase the target RTT buffer when evaluating loss-sensitive RTOS timing.",
-    "A post-publication copied-Skill CLI watch retry could not enumerate the MKLink CDC interface even though the installed desktop still discovered one CMSIS-DAP probe. No target write or silent backend switch occurred. The earlier same-source MCP and installed-sidecar hardware loops remain the release evidence; repeat the CLI read and HardFault check when the CDC interface is available."
+    "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
+    "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
+    "Full npm audit reports six high-severity development-only findings through the test dependency chain; runtime audit is clean and the available npm fix is a breaking downgrade.",
+    "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "Open a new Codex session before the next AI-driven MKLink operation so the client reloads the formal copied 0.1.4 Skill instructions from source commit 1cc9147787ff1ab18a6028f5d7c37a535d3320ac.",
-    "Repeat the copied-Skill variable read and no-fault check when the MKLink CDC interface is enumerated; use pyOCD only as the documented read-only fallback after a reproducible MKLink read failure.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
-    "Qualify USB Web entry registration and browser launch on current macOS and Linux systems.",
-    "Qualify the standard NSIS and older-client updater on a clean Windows machine without development tools."
+    "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
+    "Qualify USB Web entry on current macOS and Linux systems.",
+    "Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine."
   ],
   "continuation_protocol": [
-    "Validate memory and reconcile it with live Git/runtime state before acting.",
+    "Validate project memory and reconcile it with live Git and runtime state before acting.",
+    "Preserve the dirty branch and all user changes; do not repeat completed HPM, localization, SuperWatch, large-array symbol, or SystemView work.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
-    "Replace stale facts and consolidate evidence; do not append completed task logs that already exist in Git or verification documents."
+    "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]
 }

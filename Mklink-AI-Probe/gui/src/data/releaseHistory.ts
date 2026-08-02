@@ -2,7 +2,9 @@ export interface ReleaseHistoryEntry {
   version: string
   date: string
   summary: string
+  summaryEn: string
   changes: string[]
+  changesEn: string[]
 }
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
@@ -10,6 +12,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
     version: '0.1.4',
     date: '2026-07-25',
     summary: '完善烧录、符号解析与 HardFault 定位',
+    summaryEn: 'Improved flashing, symbol parsing, and HardFault diagnostics',
     changes: [
       'BIN 文件加载后主动提示填写下载地址，并在加载前使用中性扇区提示，避免误判固件检查失败。',
       '本地设备和文件来源改为自动保存，切换页面后配置保持不丢失。',
@@ -20,11 +23,22 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'HardFault 分析新增故障函数、源码位置、异常栈帧和调用栈展示。',
       'AI Skill 默认通过 MKLink 读取目标数据，并隔离 MCP 串口日志，避免污染 JSON-RPC；仅在读取失败后使用 pyOCD 只读后备。',
     ],
+    changesEn: [
+      'Prompt for a BIN base address after loading and use neutral sector guidance before inspection.',
+      'Automatically save local device and file-source settings across page changes.',
+      'Support drag-and-drop, retained paths, and automatic reloads after rebuilds for online and offline flashing.',
+      'Refresh only the MICROKEEN drive for offline flashing; use fixed scripts for V2/V3 and custom script names for V4.',
+      'Show the complete AXF path on desktop while retaining safe upload paths in browsers.',
+      'Use built-in pyelftools by default for symbols, variables, RTT search, and HardFault analysis.',
+      'Show fault functions, source locations, exception frames, and call stacks in HardFault reports.',
+      'Read targets through MKLink by default in the AI Skill, with isolated MCP serial logs and read-only pyOCD fallback.',
+    ],
   },
   {
     version: '0.1.3',
     date: '2026-07-24',
     summary: '修复符号解析并完善调试资源协同',
+    summaryEn: 'Fixed symbol parsing and improved debug resource coordination',
     changes: [
       '修复 AXF/ELF 文件源切换与共享符号状态，重新解析后立即使用当前文件。',
       '支持匿名 struct/union 成员展开，并可粘贴 C 语言定义恢复复杂结构变量。',
@@ -32,34 +46,58 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '统一 SuperWatch、RTT、内存读写和在线/脱机下载的 SWD 资源互斥。',
       '新增 AI Skill 主动版本提醒，以及经用户确认后的桌面端与 Skill 自动更新。',
     ],
+    changesEn: [
+      'Fixed AXF/ELF source switching and shared symbol state so reparsing immediately uses the current file.',
+      'Expanded anonymous struct/union members and added pasted C definitions for complex variables.',
+      'Added UTF-8, GB2312, GBK, GB18030, and Big5 encoding selection to RTT View.',
+      'Unified SWD resource ownership across SuperWatch, RTT, memory access, and flashing.',
+      'Added proactive AI Skill update notices and approved desktop/Skill updates.',
+    ],
   },
   {
     version: '0.1.2',
     date: '2026-07-22',
     summary: '完善 Web 调试交互与快速启动',
+    summaryEn: 'Improved Web debugging interactions and quick launch',
     changes: [
       'RTT View 增加曲线开关、坐标轴、缩放拖动，并在暂停或停止后保留曲线。',
       'SuperWatch 增加时间戳原始数据保存、功能互斥和输入框快捷键隔离。',
       '增加离线版本历史、跨平台 U 盘单 HTML 启动入口和网页版 AXF/MAP 文件上传。',
+    ],
+    changesEn: [
+      'Added charts, axes, zooming, and panning to RTT View while retaining plots after pause or stop.',
+      'Added timestamped raw-data export, resource coordination, and input shortcut isolation to SuperWatch.',
+      'Added offline release history, a portable single-HTML launcher, and browser AXF/MAP upload.',
     ],
   },
   {
     version: '0.1.1',
     date: '2026-07-21',
     summary: '增强 V4 脱机烧录过程反馈',
+    summaryEn: 'Improved V4 offline flashing feedback',
     changes: [
       'V4 脱机烧录下载过程支持按脚本名称实时显示设备输出。',
       '完善签名更新包的 GitHub/Gitee 发布与校验流程。',
+    ],
+    changesEn: [
+      'Streamed V4 offline flashing output under the selected script name.',
+      'Improved signed GitHub/Gitee update publication and verification.',
     ],
   },
   {
     version: '0.1.0',
     date: '2026-07-21',
     summary: '首个稳定桌面版本',
+    summaryEn: 'First stable desktop release',
     changes: [
       '提供在线烧录、脱机烧录以及目标与算法管理。',
       '集成 RTT、SuperWatch、SystemView、串口和 Modbus 调试视图。',
       '加入符号、内存、HardFault 分析和签名自动更新能力。',
+    ],
+    changesEn: [
+      'Provided online and offline flashing with target and algorithm management.',
+      'Integrated RTT, SuperWatch, SystemView, serial, and Modbus debug views.',
+      'Added symbol, memory, HardFault analysis, and signed automatic updates.',
     ],
   },
 ]

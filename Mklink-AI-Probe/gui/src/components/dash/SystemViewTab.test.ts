@@ -2,6 +2,21 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, shallowRef } from 'vue'
 import SystemViewTab from './SystemViewTab.vue'
+import {
+  DESKTOP_SETTINGS_STORAGE_KEY,
+  saveDesktopSettings,
+  type DesktopSettings,
+} from '../../lib/desktopSettings'
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>()
+  get length(): number { return this.values.size }
+  clear(): void { this.values.clear() }
+  getItem(key: string): string | null { return this.values.get(key) ?? null }
+  key(index: number): string | null { return [...this.values.keys()][index] ?? null }
+  removeItem(key: string): void { this.values.delete(key) }
+  setItem(key: string, value: string): void { this.values.set(key, value) }
+}
 
 const mocks = vi.hoisted(() => ({
   dash: {
@@ -30,6 +45,9 @@ const mocks = vi.hoisted(() => ({
     setPrefilteredIntervals: vi.fn(),
   },
   importLog: vi.fn(),
+  api: {
+    findRtt: vi.fn(),
+  },
 }))
 
 vi.mock('../../composables/useDashboard', () => ({ useDashboard: () => mocks.dash }))
@@ -38,6 +56,7 @@ vi.mock('../../composables/useBinaryStream', () => ({ useBinaryStream: () => moc
 vi.mock('../../composables/useResourceStatus', () => ({
   useResourceStatus: () => ({ checkConflict: mocks.checkConflict }),
 }))
+vi.mock('../../composables/useMklinkApi', () => ({ useMklinkApi: () => mocks.api }))
 vi.mock('../../lib/svTimeline', () => ({
   SvTimeline: class {
     constructor(_roots: unknown, data: unknown) { mocks.timeline.construct(data) }
@@ -70,6 +89,22 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function desktopSettings(overrides: Partial<DesktopSettings> = {}): DesktopSettings {
+  return {
+    version: 1,
+    symbolPath: '',
+    mapPath: '',
+    symbolDisplayPath: '',
+    mapDisplayPath: '',
+    rttAddress: '0x0008E488',
+    rttEncoding: 'utf-8',
+    transmitMode: 'text',
+    lineEnding: '',
+    sendHistory: [],
+    ...overrides,
+  }
+}
+
 describe('SystemViewTab asynchronous lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -79,9 +114,114 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     mocks.binary.telemetry = shallowRef(null) as typeof mocks.binary.telemetry
     mocks.binary.systemViewVisible = shallowRef(null) as typeof mocks.binary.systemViewVisible
     mocks.dash.stop.mockResolvedValue(undefined)
+    mocks.dash.start.mockResolvedValue(true)
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
     mocks.checkConflict.mockResolvedValue([])
+    mocks.api.findRtt.mockResolvedValue({
+      found: true,
+      addr: '0x0008E488',
+      source: 'binary:rtthread.elf',
+    })
     mocks.importLog.mockResolvedValue({ events: 0, skipped: 0, parseErrors: 0 })
+    vi.stubGlobal('localStorage', new MemoryStorage())
+    localStorage.clear()
+    saveDesktopSettings(localStorage, desktopSettings())
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
+  })
+
+  it('searches and persists an RTT address without visiting RTT View', async () => {
+    localStorage.setItem(DESKTOP_SETTINGS_STORAGE_KEY, JSON.stringify(desktopSettings({
+      symbolPath: 'D:\\project\\rtthread.elf',
+      rttAddress: '',
+    })))
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="systemview-rtt-search"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.findRtt).toHaveBeenCalledWith('D:\\project\\rtthread.elf')
+    expect((wrapper.get('[data-testid="systemview-rtt-address"]').element as HTMLInputElement).value)
+      .toBe('0x0008E488')
+    expect(JSON.parse(localStorage.getItem(DESKTOP_SETTINGS_STORAGE_KEY) ?? '{}').rttAddress)
+      .toBe('0x0008E488')
+    wrapper.unmount()
+  })
+
+  it('starts with the shared RTT address and SystemView channel', async () => {
+    mocks.dash.getStatus
+      .mockResolvedValueOnce({ running: false })
+      .mockResolvedValue({ running: true, progress_state: 'streaming', stats: { bytes: 64 } })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(mocks.dash.start).toHaveBeenCalledWith({
+      addr: '0x0008E488',
+      channel: 1,
+      mode: 0,
+      search_size: 1024,
+    })
+    wrapper.unmount()
+  })
+
+  it('updates its address when RTT View saves a new shared value', async () => {
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    saveDesktopSettings(localStorage, desktopSettings({ rttAddress: '0x20001A40' }))
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="systemview-rtt-address"]').element as HTMLInputElement).value)
+      .toBe('0x20001A40')
+    wrapper.unmount()
+  })
+
+  it('starts and stops durable recording without stopping RTOS Trace', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockReset()
+    fetchMock.mockImplementation(async input => {
+      const url = String(input)
+      if (url.endsWith('/recording/start')) return {
+        ok: true,
+        json: async () => ({
+          recording: true,
+          recording_path: 'D:\\logs\\trace.jsonl',
+          recording_summary_path: 'D:\\logs\\trace-summary.txt',
+        }),
+      } as Response
+      if (url.endsWith('/recording/stop')) return {
+        ok: true,
+        json: async () => ({
+          recording: false,
+          recording_path: 'D:\\logs\\trace.jsonl',
+          recording_summary_path: 'D:\\logs\\trace-summary.txt',
+        }),
+      } as Response
+      return { ok: true, json: async () => ({ logs: [] }) } as Response
+    })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    mocks.dash.state.value = 'running'
+    await nextTick()
+
+    const button = wrapper.get('[data-testid="systemview-recording"]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/dash/systemview/recording/start', { method: 'POST' })
+    expect(button.text()).toContain('停止保存')
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/dash/systemview/recording/stop', { method: 'POST' })
+    expect(button.text()).toContain('实时保存')
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('does not start either transport when getStatus resolves after unmount', async () => {
@@ -96,6 +236,35 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     expect(mocks.dash.start).not.toHaveBeenCalled()
     expect(mocks.status.connect).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()
+  })
+
+  it('restores task metadata when attaching to an already running trace', async () => {
+    mocks.dash.getStatus.mockResolvedValue({
+      running: true,
+      synced: true,
+      cpu_freq: 360_000_000,
+      cpu_freq_source: 'INIT',
+      dropped_bytes: 8,
+      dropped_packets: 0,
+      task_names: {
+        528400: 'task3',
+        530576: 'task1',
+        532752: 'task2',
+        535216: 'Tmr Svc',
+      },
+    })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    const healthText = wrapper.find('.sv-health-grid').text()
+    expect(healthText).toContain('Tasks4')
+    expect(wrapper.text()).toContain('task1')
+    expect(wrapper.text()).toContain('task2')
+    expect(wrapper.text()).toContain('task3')
+    expect(wrapper.text()).toContain('Tmr Svc')
+    expect(mocks.status.connect).toHaveBeenCalledOnce()
+    expect(mocks.binary.start).toHaveBeenCalledOnce()
+    wrapper.unmount()
   })
 
   it('does not connect when a running-trace start resolves after unmount', async () => {
@@ -216,6 +385,30 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
     wrapper.unmount()
   })
+
+  it('streams an imported JSONL file through offline replay controls', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    mocks.importLog.mockImplementation(async (options: any) => {
+      await options.onSession?.({ cpu_freq: 1_000_000 })
+      await options.onProgress?.(128)
+      await options.onBatch([{ kind: 'task_start_exec', task_id: 1, t_us: 10, t_ticks: 10 }])
+      return { events: 1, skipped: 0, parseErrors: 0 }
+    })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const input = wrapper.get('input[type="file"]')
+    const file = new File(['x'.repeat(128)], 'trace.jsonl', { type: 'application/x-ndjson' })
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(mocks.importLog).toHaveBeenCalledWith(expect.objectContaining({ batchSize: 500 }))
+    expect(wrapper.get('[data-testid="systemview-replay-controls"]').text()).toContain('重新播放')
+    expect(wrapper.get('.sv-replay-progress').text()).toBe('100.0%')
+    expect(wrapper.text()).toContain('回放完成 1')
+    wrapper.unmount()
+  })
 })
 
 function publishVisibleEvent(cpuFreq: number) {
@@ -262,7 +455,7 @@ describe('SystemViewTab event time units', () => {
     publishVisibleEvent(1_000_000)
     await nextTick()
 
-    expect(wrapper.find('.sv-events-table tbody tr td:nth-child(2)').text()).toBe('0.000001s')
+    expect(wrapper.find('.sv-events-table tbody tr td:nth-child(2)').text()).toBe('0.000001000s')
     wrapper.unmount()
   })
 

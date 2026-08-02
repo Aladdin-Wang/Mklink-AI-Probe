@@ -12,6 +12,7 @@ export interface SystemViewImportOptions {
   onBatch: (events: any[]) => void | Promise<void>
   onSession?: (record: Record<string, unknown>) => void | Promise<void>
   onSummary?: (record: Record<string, unknown>) => void | Promise<void>
+  onProgress?: (bytesRead: number) => void | Promise<void>
   signal?: AbortSignal
 }
 
@@ -32,6 +33,7 @@ export async function importSystemViewJsonl(
   const reader = options.stream.getReader()
   const decoder = new TextDecoder()
   let pending = ''
+  let bytesRead = 0
 
   async function flushBatch() {
     if (!batch.length) return
@@ -85,6 +87,8 @@ export async function importSystemViewJsonl(
       throwIfAborted(options.signal)
       const { done, value } = await reader.read()
       if (done) break
+      bytesRead += value.byteLength
+      await options.onProgress?.(bytesRead)
       pending += decoder.decode(value, { stream: true })
       const lines = pending.split('\n')
       pending = lines.pop() ?? ''

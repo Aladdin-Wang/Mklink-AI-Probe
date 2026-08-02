@@ -1,9 +1,10 @@
 import { shallowMount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { readFileSync } from 'node:fs'
 import App from './App.vue'
 import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
+import { setLanguage } from './composables/useLanguage'
 
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 const startStatusPolling = vi.fn()
@@ -57,6 +58,19 @@ function mountApp() {
 }
 
 describe('App version footer', () => {
+  beforeEach(() => setLanguage('zh'))
+
+  it('switches the global navigation between Chinese and English', async () => {
+    const wrapper = mountApp()
+
+    expect(wrapper.get('.app-title').text()).toBe('MKLink')
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录'])
+    await wrapper.get('[data-testid="global-language-toggle"]').trigger('click')
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['Config', 'Dashboard', 'Offline Flash', 'Online Flash'])
+    expect(wrapper.get('[data-testid="global-language-toggle"]').text()).toContain('中文')
+    wrapper.unmount()
+  })
+
   it('checks for desktop updates when the application starts', () => {
     checkForUpdates.mockClear()
     const wrapper = mountApp()

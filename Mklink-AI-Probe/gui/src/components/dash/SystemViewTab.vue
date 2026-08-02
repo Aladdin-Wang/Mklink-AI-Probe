@@ -8,34 +8,91 @@
       @change="onImportFileChange"
     >
     <div v-if="!deviceConnected && !offlineMode" class="sv-toolbar sv-offline-toolbar">
-      <button class="btn-clear sv-tool-btn" @click="triggerImport">导入JSONL</button>
+      <button class="btn-clear sv-tool-btn" @click="triggerImport">{{ tr('导入 JSONL', 'Import JSONL') }}</button>
     </div>
-    <div v-if="!deviceConnected && !offlineMode" class="alert alert-warn">请先连接设备。</div>
+    <div v-if="!deviceConnected && !offlineMode" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
     <template v-if="deviceConnected || offlineMode">
+      <div v-if="deviceConnected && !offlineMode" class="sv-address-row">
+        <label for="systemview-rtt-address">{{ tr('RTT 地址', 'RTT Address') }}</label>
+        <input
+          id="systemview-rtt-address" v-model="rttAddress" data-testid="systemview-rtt-address"
+          type="text" spellcheck="false" placeholder="0x20000000" @input="onAddressInput"
+        >
+        <button
+          data-testid="systemview-rtt-search" type="button" class="btn-search"
+          :disabled="searching || starting" @click="searchRttAddress"
+        >
+          <Search :size="15" />
+          <span>{{ searching ? tr('搜索中', 'Searching') : tr('自动搜索', 'Auto Search') }}</span>
+        </button>
+        <span v-if="addressError" class="address-error" role="alert">{{ addressError }}</span>
+        <span v-else-if="addressSource" class="address-source">{{ tr('来源:', 'Source:') }} {{ addressSource }}</span>
+      </div>
       <div class="sv-toolbar">
         <ControlToolbar
           v-if="!offlineMode"
           :state="toolbarState"
-          :error="dash.error.value"
-          :device-connected="deviceConnected"
+          :error="runtimeError || dash.error.value"
+          :device-connected="deviceConnected && !searching"
           @start="onStart"
           @pause="onPauseRender"
           @resume="onResumeRender"
           @stop="onStop"
         />
-        <button v-else class="btn-clear sv-mode-btn" @click="returnToLive">实时</button>
-        <button class="btn-clear sv-tool-btn" @click="triggerImport">导入JSONL</button>
-        <button class="btn-clear sv-tool-btn" :disabled="!currentJsonlPath" @click="exportLog(currentJsonlPath)">导出JSONL</button>
-        <button class="btn-clear sv-tool-btn" :disabled="!currentSummaryPath" @click="exportLog(currentSummaryPath)">导出摘要</button>
+        <button v-else class="btn-clear sv-mode-btn" @click="returnToLive">{{ tr('返回实时', 'Back to Live') }}</button>
+        <button
+          v-if="!offlineMode" data-testid="systemview-recording" type="button"
+          class="btn-clear sv-tool-btn sv-record-btn" :class="{ active: meta.recording }"
+          :disabled="recordingBusy || dash.state.value !== 'running'" @click="toggleRecording"
+          :title="meta.recording ? tr('停止保存并完成当前 JSONL 文件', 'Stop and finalize the current JSONL file') : tr('将后续事件实时保存为 JSONL', 'Save subsequent events to JSONL in real time')"
+        >
+          <Square v-if="meta.recording" :size="13" />
+          <Circle v-else :size="13" />
+          <span>{{ meta.recording ? tr('停止保存', 'Stop Saving') : tr('实时保存', 'Record') }}</span>
+        </button>
+        <button class="btn-clear sv-tool-btn" @click="triggerImport">{{ tr('导入 JSONL', 'Import JSONL') }}</button>
+        <button class="btn-clear sv-tool-btn" :disabled="!currentJsonlPath" @click="exportLog(currentJsonlPath)">{{ tr('导出 JSONL', 'Export JSONL') }}</button>
+        <button class="btn-clear sv-tool-btn" :disabled="!currentSummaryPath" @click="exportLog(currentSummaryPath)">{{ tr('导出摘要', 'Export Summary') }}</button>
         <label class="sv-window">
-          窗口
+          {{ tr('窗口', 'Window') }}
           <select v-model.number="windowUs">
             <option :value="500_000">0.5s</option>
             <option :value="1_000_000">1s</option>
             <option :value="2_000_000">2s</option>
             <option :value="5_000_000">5s</option>
+            <option :value="10_000_000">10s</option>
+            <option :value="30_000_000">30s</option>
+            <option :value="60_000_000">60s</option>
           </select>
         </label>
+      </div>
+      <div v-if="offlineMode" class="sv-replay-bar" data-testid="systemview-replay-controls">
+        <button
+          type="button" class="btn-clear sv-replay-command"
+          :disabled="replayState === 'ended'" @click="toggleReplay"
+          :title="replayState === 'playing' ? tr('暂停回放', 'Pause replay') : tr('继续回放', 'Resume replay')"
+        >
+          <Pause v-if="replayState === 'playing'" :size="14" />
+          <Play v-else :size="14" />
+          <span>{{ replayState === 'playing' ? tr('暂停', 'Pause') : tr('播放', 'Play') }}</span>
+        </button>
+        <button type="button" class="btn-clear sv-replay-command" @click="restartReplay" :title="tr('从头重新回放', 'Replay from the beginning')">
+          <RotateCcw :size="14" />
+          <span>{{ tr('重新播放', 'Restart') }}</span>
+        </button>
+        <label class="sv-replay-speed">
+          {{ tr('速度', 'Speed') }}
+          <select v-model.number="replaySpeed">
+            <option :value="0.5">0.5x</option>
+            <option :value="1">1x</option>
+            <option :value="2">2x</option>
+            <option :value="4">4x</option>
+            <option :value="10">10x</option>
+          </select>
+        </label>
+        <progress :value="replayProgress" max="100"></progress>
+        <span class="sv-replay-progress">{{ replayProgress.toFixed(1) }}%</span>
+        <span class="sv-replay-status" :title="importStatus">{{ importStatus }}</span>
       </div>
 
       <div class="sv-health-grid">
@@ -72,11 +129,11 @@
       <div class="sv-section sv-events-section" :class="{ collapsed: !showEventStream }">
         <div class="sv-section-title">
           <span>Events List</span>
-          <span class="sv-section-subtitle">最近 {{ eventRows.length }} 条</span>
+          <span class="sv-section-subtitle">{{ tr(`最近 ${eventRows.length} 条`, `Latest ${eventRows.length}`) }}</span>
           <span class="sv-section-actions">
-            <button v-if="eventList.length > 0" class="btn-clear" @click="clearAll">清除</button>
+            <button v-if="eventList.length > 0" class="btn-clear" @click="clearAll">{{ tr('清除', 'Clear') }}</button>
             <button class="btn-clear" @click="showEventStream = !showEventStream">
-              {{ showEventStream ? '折叠' : '展开' }}
+              {{ showEventStream ? tr('折叠', 'Collapse') : tr('展开', 'Expand') }}
             </button>
           </span>
         </div>
@@ -102,32 +159,30 @@
                 <td>{{ row.detail }}</td>
               </tr>
               <tr v-if="eventRows.length === 0">
-                <td colspan="6" class="sv-empty-cell">等待 SystemView 事件。</td>
+                <td colspan="6" class="sv-empty-cell">{{ tr('等待 SystemView 事件。', 'Waiting for SystemView events.') }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- 甘特时间轴（交互式 canvas：Ctrl/Shift+滚轮缩放 · 拖拽平移 · hover · 图例隐藏 · 可见CPU%） -->
+      <!-- 交互式 SystemView 时间轴 -->
       <div class="sv-section sv-gantt-section">
         <div class="sv-section-title">
           <span>Timeline</span>
-          <span class="sv-section-subtitle">Ctrl/Shift+滚轮缩放 · 拖拽平移 · hover 详情 · 点图例隐藏</span>
-          <button class="btn-clear" @click="tlReset">全览</button>
+          <span class="sv-section-subtitle">{{ tr('微秒标尺与任务运行区间', 'Microsecond scale and execution intervals') }}</span>
+          <button class="btn-clear" @click="tlReset">{{ tr('全览', 'Fit All') }}</button>
         </div>
         <div class="sv-legend" ref="tlLegend"></div>
-        <div class="sv-canvas-wrap"><canvas ref="tlCanvas"></canvas></div>
+        <div class="sv-canvas-wrap"><canvas ref="tlCanvas" :title="tr('滚轮缩放，按住鼠标左键拖动，双击恢复全览', 'Wheel to zoom, drag with the left mouse button, double-click to fit all')"></canvas></div>
         <div class="sv-tip" ref="tlTip"></div>
-        <div class="sv-vcpu-title">可见窗口内 CPU 占用</div>
-        <div class="sv-vcpu" ref="tlVcpu"></div>
       </div>
 
       <div class="sv-bottom-grid">
         <div class="sv-section sv-runtime-section">
           <div class="sv-section-title">
             <span>Runtime</span>
-            <span class="sv-section-subtitle">单次运行片段分布</span>
+            <span class="sv-section-subtitle">{{ tr('单次运行片段分布', 'Single-run segment distribution') }}</span>
           </div>
           <div class="sv-table-wrap">
             <table class="sv-table sv-runtime-table">
@@ -158,7 +213,7 @@
                   </td>
                 </tr>
                 <tr v-if="runtimeRows.length === 0">
-                  <td colspan="8" class="sv-empty-cell">还没有运行片段。</td>
+                  <td colspan="8" class="sv-empty-cell">{{ tr('还没有运行片段。', 'No runtime segments yet.') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -168,7 +223,7 @@
         <div class="sv-section sv-context-section">
           <div class="sv-section-title">
             <span>Context</span>
-            <span class="sv-section-subtitle">任务活动概览</span>
+            <span class="sv-section-subtitle">{{ tr('任务活动概览', 'Task activity overview') }}</span>
           </div>
           <div class="sv-table-wrap">
             <table class="sv-table sv-context-table">
@@ -195,7 +250,7 @@
                   </td>
                 </tr>
                 <tr v-if="contextRows.length === 0">
-                  <td colspan="6" class="sv-empty-cell">还没有任务上下文。</td>
+                  <td colspan="6" class="sv-empty-cell">{{ tr('还没有任务上下文。', 'No task contexts yet.') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -208,10 +263,18 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Circle, Pause, Play, RotateCcw, Search, Square } from '@lucide/vue'
 import { useDashboard } from '../../composables/useDashboard'
 import { useEventSource } from '../../composables/useEventSource'
 import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useResourceStatus } from '../../composables/useResourceStatus'
+import { useMklinkApi } from '../../composables/useMklinkApi'
+import {
+  DESKTOP_SETTINGS_CHANGED_EVENT,
+  loadDesktopSettings,
+  saveDesktopSettings,
+  type DesktopSettings,
+} from '../../lib/desktopSettings'
 import { SvTimeline } from '../../lib/svTimeline'
 import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import { appendManyToLast } from '../../lib/boundedBuffer'
@@ -227,22 +290,46 @@ import { appendAndTrimEventsByTime, appendAndTrimRanges, filterRangesByWindow } 
 import { formatScheduleCount } from '../../lib/systemViewLabels'
 import { importSystemViewJsonl } from '../../lib/systemViewImport'
 import ControlToolbar from './ControlToolbar.vue'
+import { language, tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
+const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 const dash = useDashboard('systemview')
 const { data: statusData, connect: connectStatus, disconnect: disconnectStatus } = useEventSource('/api/dash/systemview/stream', {
   passthroughEvents: ['status'],
 })
-const binaryStream = useBinaryStream('systemview', { capacity: 100_000, channelCount: 1 })
+const binaryStream = useBinaryStream('systemview', { capacity: 300_000, channelCount: 1 })
 const renderPaused = ref(false)
+const desktopStorage = localStorage
+const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
+const rttAddress = ref(settings.value.rttAddress)
+const addressError = ref('')
+const addressSource = ref('')
+const searching = ref(false)
+const starting = ref(false)
+const runtimeError = ref<string | null>(null)
+const { findRtt } = useMklinkApi()
 const toolbarState = computed(() => (
-  dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
+  runtimeError.value ? 'error' :
+    starting.value ? 'starting' :
+      dash.state.value === 'running' && renderPaused.value ? 'paused' : dash.state.value
 ))
 const { checkConflict } = useResourceStatus()
 
 // ---- 状态 ----
-interface TaskStat { id: number; name: string; color: string; runUs: number; switches: number; prio?: number }
+interface TaskStat {
+  id: number
+  rawId: number
+  name: string
+  color: string
+  runUs: number
+  switches: number
+  prio?: number
+  type?: string
+  stackBase?: number
+  stackSize?: number
+}
 interface TaskInterval { taskId: number; start: number; end: number; startTk?: number | bigint; endTk?: number | bigint }
 interface SystemViewLogItem { path: string; summary_path?: string }
 
@@ -254,6 +341,7 @@ let analysisEvents: any[] = []
 const analysisBufferCount = ref(0)
 const taskStats = reactive<Record<number, TaskStat>>({})
 const intervals = shallowRef<TaskInterval[]>([])
+const exactRuntimeRows = shallowRef<any[]>([])
 let intervalState: SystemViewIntervalState = { currentTaskId: null, currentStart: null }
 const idleUs = ref(0)
 let firstT = 0
@@ -266,13 +354,14 @@ const meta = reactive({
   cpuFreqSource: '',
   taskNames: {} as Record<number, string>,
   isrNames: {} as Record<number, string>,
+  recording: false,
   recordingPath: '',
   recordingSummaryPath: '',
   recordingError: '',
 })
 let lastStreamSeq = 0
 const totalEventCount = ref(0)
-const windowUs = ref(2_000_000)
+const windowUs = ref(10_000_000)
 const showEventStream = ref(true)
 const offlineMode = ref(false)
 const offlineFileName = ref('')
@@ -280,15 +369,72 @@ const importStatus = ref('')
 const importError = ref(false)
 const latestLog = ref<SystemViewLogItem | null>(null)
 let importAbort: AbortController | null = null
+let replayFile: File | null = null
+let replayLastTime: number | null = null
+let replayWake: (() => void) | null = null
+const replayState = ref<'idle' | 'playing' | 'paused' | 'ended'>('idle')
+const replaySpeed = ref(1)
+const replayProgress = ref(0)
+const recordingBusy = ref(false)
 let connectTimer: ReturnType<typeof setTimeout> | null = null
 let mounted = false
 let operationGeneration = 0
+const SYSTEMVIEW_CHANNEL = 1
+const RTT_SEARCH_SIZE = 1024
+
+function persistSettings(next: DesktopSettings): void {
+  settings.value = saveDesktopSettings(desktopStorage, next)
+}
+
+function isRttAddress(value: string): boolean {
+  return /^0x[0-9a-f]{1,8}$/i.test(value)
+}
+
+function syncRttAddressFromSettings(): void {
+  const latest = loadDesktopSettings(desktopStorage)
+  settings.value = latest
+  if (latest.rttAddress !== rttAddress.value) {
+    rttAddress.value = latest.rttAddress
+    addressError.value = ''
+    addressSource.value = ''
+  }
+}
+
+function onAddressInput(): void {
+  addressError.value = ''
+  addressSource.value = ''
+  const address = rttAddress.value.trim()
+  if (isRttAddress(address)) {
+    persistSettings({ ...settings.value, rttAddress: address })
+  }
+}
+
+async function searchRttAddress(): Promise<void> {
+  if (searching.value || starting.value) return
+  searching.value = true
+  addressError.value = ''
+  const latest = loadDesktopSettings(desktopStorage)
+  settings.value = latest
+  const source = latest.symbolPath.trim() || latest.mapPath.trim() || undefined
+  try {
+    const result = await findRtt(source)
+    if (!result.addr || !isRttAddress(result.addr)) {
+      throw new Error(result.details?.join(tr('；', '; ')) || result.warnings?.join(tr('；', '; ')) || tr('未找到 RTT 地址', 'RTT address not found'))
+    }
+    rttAddress.value = result.addr
+    addressSource.value = result.source || (source ? tr('所选文件', 'Selected file') : tr('工程自动检测', 'Project auto-detection'))
+    persistSettings({ ...latest, rttAddress: result.addr })
+  } catch (caught) {
+    addressError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    searching.value = false
+  }
+}
 
 // ---- 交互式 canvas 时间轴 ----
 const tlCanvas = ref<HTMLCanvasElement | null>(null)
 const tlTip = ref<HTMLDivElement | null>(null)
 const tlLegend = ref<HTMLDivElement | null>(null)
-const tlVcpu = ref<HTMLDivElement | null>(null)
 let tlInstance: SvTimeline | null = null
 let renderScheduler: RenderScheduler | null = null
 let visibleRequestId = 0
@@ -304,18 +450,26 @@ function tlGetIntervals() {
   return visible.map(it => ({
     tid: it.taskId,
     name: taskStats[it.taskId]?.name || meta.taskNames[it.taskId] || ('0x' + (it.taskId >>> 0).toString(16).toUpperCase()),
+    type: taskStats[it.taskId]?.type || 'Task',
     start: it.start, end: it.end, startTk: it.startTk, endTk: it.endTk,
   }))
+}
+function tlGetContexts() {
+  const order: Record<string, number> = { ISR: 0, Scheduler: 1, Task: 2, Idle: 3 }
+  return Object.values(taskStats)
+    .sort((a, b) => (order[a.type || 'Task'] ?? 2) - (order[b.type || 'Task'] ?? 2))
+    .map(context => ({ tid: context.id, name: context.name, type: context.type || 'Task' }))
 }
 function tlReset() { tlInstance?.reset() }
 
 onMounted(() => {
   mounted = true
+  window.addEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
   const generation = ++operationGeneration
   refreshLogList()
-  if (tlCanvas.value && tlTip.value && tlLegend.value && tlVcpu.value) {
+  if (tlCanvas.value && tlTip.value && tlLegend.value) {
     tlInstance = new SvTimeline(
-      { canvas: tlCanvas.value, tooltip: tlTip.value, legend: tlLegend.value, vcpu: tlVcpu.value },
+      { canvas: tlCanvas.value, tooltip: tlTip.value, legend: tlLegend.value },
       {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
@@ -324,6 +478,7 @@ onMounted(() => {
         follow: true,
         windowSize: windowUs.value,
         renderPaused: renderPaused.value,
+        emptyText: tr('窗口内无任务', 'No tasks in this window'),
       },
     )
   }
@@ -345,6 +500,7 @@ onMounted(() => {
 onUnmounted(() => {
   mounted = false
   operationGeneration++
+  window.removeEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
   abortImport()
   cancelPendingConnect()
   disconnectStatus()
@@ -374,12 +530,13 @@ watch(windowUs, () => {
   tlInstance?.setWindowSize(windowUs.value)
   scheduleTimelineFlush()
 })
+watch(language, () => tlInstance?.setLabels({ emptyText: tr('窗口内无任务', 'No tasks in this window') }))
 // cpuFreq 变了切换单位（重建）
 watch(() => meta.cpuFreq, () => {
-  if (tlCanvas.value && tlTip.value && tlLegend.value && tlVcpu.value) {
+  if (tlCanvas.value && tlTip.value && tlLegend.value) {
     tlInstance?.destroy()
     tlInstance = new SvTimeline(
-      { canvas: tlCanvas.value, tooltip: tlTip.value, legend: tlLegend.value, vcpu: tlVcpu.value },
+      { canvas: tlCanvas.value, tooltip: tlTip.value, legend: tlLegend.value },
       {
         intervals: tlGetIntervals(),
         unit: meta.cpuFreq ? 'us' : 'tk',
@@ -388,6 +545,7 @@ watch(() => meta.cpuFreq, () => {
         follow: true,
         windowSize: windowUs.value,
         renderPaused: renderPaused.value,
+        emptyText: tr('窗口内无任务', 'No tasks in this window'),
       },
     )
   }
@@ -412,11 +570,24 @@ function applyTaskNames(names: Record<number, unknown>) {
     const id = Number(idText)
     const name = normalizeSystemViewName(rawName)
     if (Number.isFinite(id) && name) cleanNames[id] = name
-    if (Number.isFinite(id) && taskStats[id] && name) {
-      taskStats[id].name = name
-    }
   }
   meta.taskNames = cleanNames
+  for (const [idText, name] of Object.entries(cleanNames)) {
+    ensureContext(1, Number(idText)).name = name
+  }
+}
+
+function applyIsrNames(names: Record<number, unknown>) {
+  const cleanNames: Record<number, string> = {}
+  for (const [idText, rawName] of Object.entries(names)) {
+    const id = Number(idText)
+    const name = normalizeSystemViewName(rawName)
+    if (!Number.isFinite(id) || !name) continue
+    cleanNames[id] = name
+    const laneId = contextLaneId(2, id)
+    if (taskStats[laneId]) taskStats[laneId].name = name
+  }
+  meta.isrNames = cleanNames
 }
 
 function colorFor(id: number): string {
@@ -425,15 +596,57 @@ function colorFor(id: number): string {
   return PALETTE[idx]
 }
 
+function contextLaneId(type: number, id: number): number {
+  if (type === 1) return id >>> 0
+  if (type === 2) return (0x80000000 | (id & 0x7fffffff)) >>> 0
+  if (type === 3) return 0xfffffffe
+  return 0xffffffff
+}
+
+function contextTypeName(type: number): string {
+  if (type === 2) return 'ISR'
+  if (type === 3) return 'Scheduler'
+  if (type === 4) return 'Idle'
+  return 'Task'
+}
+
+function contextDisplayName(type: number, id: number): string {
+  if (type === 2) return isrNameFromMeta(id) || `ISR #${id}`
+  if (type === 3) return 'Scheduler'
+  if (type === 4) return 'Idle'
+  return taskNameFromMeta(id) || hexId(id)
+}
+
+function ensureContext(type: number, rawId: number): TaskStat {
+  const laneId = contextLaneId(type, rawId)
+  const resolvedName = contextDisplayName(type, rawId)
+  if (!taskStats[laneId]) {
+    taskStats[laneId] = {
+      id: laneId,
+      rawId: rawId >>> 0,
+      name: resolvedName,
+      color: colorFor(laneId),
+      runUs: 0,
+      switches: 0,
+      type: contextTypeName(type),
+    }
+  } else if (resolvedName) {
+    taskStats[laneId].name = resolvedName
+  }
+  return taskStats[laneId]
+}
+
 function ensureTask(id: number, name?: string): TaskStat {
   const cleanName = normalizeSystemViewName(name)
   if (!taskStats[id]) {
     taskStats[id] = {
       id,
+      rawId: id,
       name: cleanName || taskNameFromMeta(id),
       color: colorFor(id),
       runUs: 0,
       switches: 0,
+      type: 'Task',
     }
   }
   const resolvedName = cleanName || taskNameFromMeta(id)
@@ -509,6 +722,18 @@ async function reconnectRunningTrace(generation: number) {
     const status = await dash.getStatus()
     if (!operationIsActive(generation)) return
     if (status?.running) {
+      if (status.synced !== undefined) meta.synced = !!status.synced
+      if (status.cpu_freq !== undefined) meta.cpuFreq = Number(status.cpu_freq) || 0
+      if (status.cpu_freq_source !== undefined) meta.cpuFreqSource = status.cpu_freq_source || ''
+      if (status.dropped_bytes !== undefined) {
+        meta.sessionDropped = Number(status.dropped_bytes || 0) + Number(status.dropped_packets || 0)
+      }
+      if (status.recording !== undefined) meta.recording = !!status.recording
+      if (status.recording_path) meta.recordingPath = status.recording_path
+      if (status.recording_summary_path) meta.recordingSummaryPath = status.recording_summary_path
+      if (status.recording_error !== undefined) meta.recordingError = status.recording_error || ''
+      if (status.task_names) applyTaskNames(status.task_names)
+      if (status.isr_names) applyIsrNames(status.isr_names)
       await dash.start()
       if (!operationIsActive(generation)) return
       connectStatus()
@@ -531,13 +756,17 @@ watch(statusData, (nw) => {
     }
     if (dp.cpu_freq !== undefined) meta.cpuFreq = dp.cpu_freq
     if (dp.cpu_freq_source !== undefined) meta.cpuFreqSource = dp.cpu_freq_source || ''
+    if (dp.recording !== undefined) meta.recording = !!dp.recording
     if (dp.recording_path !== undefined) meta.recordingPath = dp.recording_path || meta.recordingPath
     if (dp.recording_summary_path !== undefined) meta.recordingSummaryPath = dp.recording_summary_path || meta.recordingSummaryPath
     if (dp.recording_error !== undefined) meta.recordingError = dp.recording_error || ''
+    if (dp.progress_state === 'error' && dp.progress_error) {
+      runtimeError.value = String(dp.progress_error)
+    }
     const backendEvents = Number(dp.stats?.events)
     if (Number.isFinite(backendEvents)) totalEventCount.value = Math.max(totalEventCount.value, backendEvents)
     if (dp.task_names) applyTaskNames(dp.task_names)
-    if (dp.isr_names) meta.isrNames = dp.isr_names
+    if (dp.isr_names) applyIsrNames(dp.isr_names)
     if (evt !== 'status') continue
   }
   lastStreamSeq = fresh.nextSeq
@@ -555,31 +784,53 @@ watch(binaryStream.systemViewVisible, visible => {
   binaryTickOrigin = visible.tickOrigin
   const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
   const taskIds = new Uint32Array(visible.taskIds)
+  const contextTypes = visible.contextTypes
+    ? new Uint8Array(visible.contextTypes)
+    : new Uint8Array(visible.intervalCount).fill(1)
   const starts = new Float64Array(visible.starts)
   const ends = new Float64Array(visible.ends)
   const startTicks = new BigUint64Array(visible.startTicks)
   const endTicks = new BigUint64Array(visible.endTicks)
   const nextIntervals: TaskInterval[] = []
-  Object.keys(taskStats).forEach(key => delete taskStats[Number(key)])
   for (let index = 0; index < visible.intervalCount; index++) {
-    const task = ensureTask(taskIds[index])
+    const context = ensureContext(contextTypes[index] || 1, taskIds[index])
     const start = starts[index] * tickScale
     const end = ends[index] * tickScale
-    task.runUs += end - start
-    task.switches++
     nextIntervals.push({
-      taskId: taskIds[index], start, end,
+      taskId: context.id, start, end,
       startTk: startTicks[index], endTk: endTicks[index],
     })
   }
-  for (const event of visible.events) {
-    if (event.kind === 'task_info' && event.task_id !== undefined && event.prio !== undefined) {
-      ensureTask(event.task_id).prio = event.prio
-    }
+
+  for (const context of Object.values(taskStats)) {
+    context.runUs = 0
+    context.switches = 0
   }
+  const summaries = visible.contexts || []
+  const totalTicks = summaries.reduce((sum, context) => sum + context.totalTicks, 0)
+  exactRuntimeRows.value = summaries.map(contextSummary => {
+    const context = ensureContext(contextSummary.type, contextSummary.id)
+    context.prio = contextSummary.priority
+    context.stackBase = contextSummary.stackBase
+    context.stackSize = contextSummary.stackSize
+    context.runUs = contextSummary.totalTicks * tickScale
+    context.switches = contextSummary.count
+    return {
+      ...context,
+      count: contextSummary.count,
+      minUs: contextSummary.minTicks * tickScale,
+      p25Us: contextSummary.p25Ticks * tickScale,
+      p50Us: contextSummary.p50Ticks * tickScale,
+      p75Us: contextSummary.p75Ticks * tickScale,
+      maxUs: contextSummary.maxTicks * tickScale,
+      totalUs: contextSummary.totalTicks * tickScale,
+      pct: totalTicks > 0 ? contextSummary.totalTicks / totalTicks * 100 : 0,
+    }
+  }).sort((a, b) => b.totalUs - a.totalUs || a.name.localeCompare(b.name))
   intervals.value = nextIntervals
   lastT = visible.latestTime * tickScale
   tlInstance?.setTickOrigin(binaryTickOrigin)
+  tlInstance?.setContexts?.(tlGetContexts())
   tlInstance?.setPrefilteredIntervals(tlGetIntervals())
 
   const now = performance.now()
@@ -589,8 +840,11 @@ watch(binaryStream.systemViewVisible, visible => {
       ...event,
       task_name: event.task_id === undefined ? undefined : taskNameFromMeta(event.task_id),
       isr_name: event.isr_id === undefined ? undefined : isrNameFromMeta(event.isr_id),
-      t: event.t_us ?? (event.t_relative ?? 0) * tickScale,
+      t: (event.t_relative ?? 0) * tickScale,
       tk: event.t_ticks,
+      duration_us: event.duration_ticks === undefined
+        ? undefined
+        : event.duration_ticks * tickScale,
     }))
     analysisBufferCount.value = binaryStream.telemetry.value?.bufferedSamples || 0
   }
@@ -598,7 +852,7 @@ watch(binaryStream.systemViewVisible, visible => {
 
 // ---- 计算属性 ----
 const eventCount = computed(() => totalEventCount.value)
-const taskCount = computed(() => Object.keys(taskStats).length)
+const taskCount = computed(() => Object.values(taskStats).filter(task => task.type === 'Task').length)
 
 const tableEvents = computed(() => eventList.value.slice(-120))
 const eventRows = computed(() => buildSystemViewEventRows(tableEvents.value, {
@@ -606,7 +860,9 @@ const eventRows = computed(() => buildSystemViewEventRows(tableEvents.value, {
   formatTime: value => fmtTime(value),
   preferExactTicks: !meta.cpuFreq,
 }))
-const runtimeRows = computed(() => computeRuntimeRows(Object.values(taskStats), intervals.value))
+const runtimeRows = computed(() => offlineMode.value
+  ? computeRuntimeRows(Object.values(taskStats), intervals.value)
+  : exactRuntimeRows.value)
 const contextRows = computed(() => computeContextRows(Object.values(taskStats)))
 const currentJsonlPath = computed(() => meta.recordingPath || latestLog.value?.path || '')
 const currentSummaryPath = computed(() => meta.recordingSummaryPath || latestLog.value?.summary_path || '')
@@ -618,7 +874,10 @@ function fmtCpuFreq(freq: number) {
   return freq >= 1_000_000 ? (freq / 1_000_000).toFixed(0) + 'MHz' : freq.toLocaleString() + 'Hz'
 }
 function fmtTime(t: any) {
-  if (typeof t === 'number' && meta.cpuFreq) return (t / 1_000_000).toFixed(6) + 's'
+  if (typeof t === 'number' && meta.cpuFreq) {
+    const seconds = t / 1_000_000
+    return seconds.toFixed(Math.abs(seconds) < 0.001 ? 9 : 6) + 's'
+  }
   if (typeof t === 'number') return Math.round(t).toLocaleString() + ' tk'
   return ''
 }
@@ -641,6 +900,7 @@ function clearAll() {
   analysisEvents = []
   analysisBufferCount.value = 0
   intervals.value = []
+  exactRuntimeRows.value = []
   Object.keys(taskStats).forEach(k => delete taskStats[Number(k)])
   intervalState = { currentTaskId: null, currentStart: null }
   totalEventCount.value = 0
@@ -655,6 +915,7 @@ function clearAll() {
   meta.cpuFreqSource = ''
   meta.taskNames = {}
   meta.isrNames = {}
+  meta.recording = false
   meta.recordingPath = ''
   meta.recordingSummaryPath = ''
   meta.recordingError = ''
@@ -662,7 +923,7 @@ function clearAll() {
 
 async function refreshLogList() {
   try {
-    const res = await fetch('/api/dash/systemview/logs')
+    const res = await fetch(`${API_BASE}/api/dash/systemview/logs`)
     if (!res.ok) return
     const body = await res.json()
     latestLog.value = Array.isArray(body.logs) ? body.logs[0] || null : null
@@ -673,7 +934,28 @@ async function refreshLogList() {
 
 function exportLog(path: string) {
   if (!path) return
-  window.open(`/api/dash/systemview/logs/download?path=${encodeURIComponent(path)}`, '_blank')
+  window.open(`${API_BASE}/api/dash/systemview/logs/download?path=${encodeURIComponent(path)}`, '_blank')
+}
+
+async function toggleRecording() {
+  if (recordingBusy.value || offlineMode.value) return
+  recordingBusy.value = true
+  runtimeError.value = null
+  try {
+    const action = meta.recording ? 'stop' : 'start'
+    const response = await fetch(`${API_BASE}/api/dash/systemview/recording/${action}`, { method: 'POST' })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.detail || tr('保存操作失败', 'Recording operation failed'))
+    meta.recording = !!body.recording
+    if (body.recording_path) meta.recordingPath = body.recording_path
+    if (body.recording_summary_path) meta.recordingSummaryPath = body.recording_summary_path
+    meta.recordingError = body.recording_error || ''
+    if (!meta.recording) await refreshLogList()
+  } catch (caught) {
+    runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    recordingBusy.value = false
+  }
 }
 
 function triggerImport() {
@@ -703,40 +985,121 @@ async function importLogFile(file: File) {
     await dash.stop()
   }
   clearAll()
+  replayFile = file
+  replayLastTime = null
+  replayState.value = 'playing'
+  replayProgress.value = 0
   offlineMode.value = true
   offlineFileName.value = file.name
-  importStatus.value = '导入中'
+  importStatus.value = tr('准备回放', 'Preparing replay')
   importError.value = false
   meta.synced = true
 
   try {
     const result = await importSystemViewJsonl({
       stream: file.stream(),
-      batchSize: 1000,
+      batchSize: 500,
       signal: controller.signal,
       onSession: record => applyImportedMeta(record),
       onSummary: record => applyImportedMeta(record),
-      onBatch: events => {
+      onProgress: bytesRead => {
+        replayProgress.value = file.size > 0 ? Math.min(100, bytesRead / file.size * 100) : 100
+      },
+      onBatch: async events => {
+        await paceReplayBatch(events, controller.signal)
         ingestEvents(events, true)
-        importStatus.value = `导入中 ${totalEventCount.value.toLocaleString()}`
+        importStatus.value = tr(`回放中 ${totalEventCount.value.toLocaleString()}`, `Replaying ${totalEventCount.value.toLocaleString()}`)
       },
     })
     if (importAbort !== controller) return
     const suffix = result.parseErrors || result.skipped
-      ? `，跳过 ${result.skipped.toLocaleString()}，错误 ${result.parseErrors.toLocaleString()}`
+      ? tr(`，跳过 ${result.skipped.toLocaleString()}，错误 ${result.parseErrors.toLocaleString()}`, `, skipped ${result.skipped.toLocaleString()}, errors ${result.parseErrors.toLocaleString()}`)
       : ''
-    importStatus.value = `已导入 ${result.events.toLocaleString()}${suffix}`
+    replayState.value = 'ended'
+    replayProgress.value = 100
+    importStatus.value = tr(`回放完成 ${result.events.toLocaleString()}${suffix}`, `Replay complete ${result.events.toLocaleString()}${suffix}`)
     importError.value = result.parseErrors > 0
   } catch (e) {
     if (importAbort !== controller) return
     importError.value = !isAbortError(e)
+    if (!isAbortError(e)) replayState.value = 'ended'
     importStatus.value = isAbortError(e)
-      ? '已取消'
-      : `导入失败：${e instanceof Error ? e.message : String(e)}`
+      ? tr('已取消', 'Canceled')
+      : tr(`导入失败：${e instanceof Error ? e.message : String(e)}`, `Import failed: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     if (importAbort === controller) importAbort = null
     scheduleTimelineFlush()
   }
+}
+
+function replayEventTime(event: any): number | null {
+  if (typeof event?.t_us === 'number' && Number.isFinite(event.t_us)) return event.t_us
+  if (typeof event?.t_ticks === 'number' && Number.isFinite(event.t_ticks) && meta.cpuFreq > 0) {
+    return event.t_ticks * 1_000_000 / meta.cpuFreq
+  }
+  return null
+}
+
+async function paceReplayBatch(events: any[], signal: AbortSignal) {
+  await waitForReplayResume(signal)
+  const last = [...events].reverse().map(replayEventTime).find(value => value !== null) ?? null
+  if (last !== null && replayLastTime !== null && last >= replayLastTime) {
+    await waitReplayDelay((last - replayLastTime) / Math.max(0.1, replaySpeed.value), signal)
+  }
+  await waitForReplayResume(signal)
+  if (last !== null) replayLastTime = last
+}
+
+async function waitForReplayResume(signal: AbortSignal) {
+  while (replayState.value === 'paused') {
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        replayWake = null
+        reject(new Error('SystemView import aborted'))
+      }
+      replayWake = () => {
+        signal.removeEventListener('abort', onAbort)
+        replayWake = null
+        resolve()
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+  }
+  if (signal.aborted) throw new Error('SystemView import aborted')
+}
+
+async function waitReplayDelay(delayUs: number, signal: AbortSignal) {
+  let remainingMs = Math.max(0, delayUs / 1000)
+  while (remainingMs > 0) {
+    const chunkMs = Math.min(remainingMs, 100)
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, chunkMs)
+      const onAbort = () => {
+        clearTimeout(timer)
+        reject(new Error('SystemView import aborted'))
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    remainingMs -= chunkMs
+    await waitForReplayResume(signal)
+  }
+}
+
+function toggleReplay() {
+  if (replayState.value === 'playing') {
+    replayState.value = 'paused'
+  } else if (replayState.value === 'paused') {
+    replayState.value = 'playing'
+    replayWake?.()
+  }
+}
+
+function restartReplay() {
+  const file = replayFile
+  if (file) void importLogFile(file)
 }
 
 function applyImportedMeta(record: Record<string, unknown>) {
@@ -763,6 +1126,8 @@ function abortImport() {
     importAbort.abort()
     importAbort = null
   }
+  replayWake?.()
+  replayWake = null
 }
 
 function returnToLive() {
@@ -771,6 +1136,9 @@ function returnToLive() {
   offlineFileName.value = ''
   importStatus.value = ''
   importError.value = false
+  replayState.value = 'idle'
+  replayProgress.value = 0
+  replayLastTime = null
   clearAll()
   refreshLogList()
 }
@@ -779,7 +1147,40 @@ function isAbortError(value: unknown): boolean {
   return value instanceof Error && /aborted/i.test(value.message)
 }
 
+async function waitForSystemViewReady(generation: number, timeoutMs = 8_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (operationIsActive(generation) && Date.now() < deadline) {
+    try {
+      const status = await dash.getStatus()
+      if (!operationIsActive(generation)) return false
+      if (status?.progress_state === 'error') {
+        runtimeError.value = status.progress_error || tr('SystemView 启动失败', 'SystemView startup failed')
+        return false
+      }
+      if (status?.progress_state === 'streaming' || Number(status?.stats?.bytes) > 0) {
+        return true
+      }
+      if (status?.running === false && status?.progress_state !== 'starting') {
+        runtimeError.value = status?.progress_error || tr('SystemView 会话已停止', 'SystemView session stopped')
+        return false
+      }
+    } catch (caught) {
+      runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+      return false
+    }
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  if (operationIsActive(generation)) {
+    runtimeError.value = tr(
+      'SystemView 启动超时，请检查 RTT 地址、通道和下位机配置',
+      'SystemView startup timed out. Check the RTT address, channel, and target configuration',
+    )
+  }
+  return false
+}
+
 async function onStart() {
+  if (searching.value || starting.value) return
   const generation = ++operationGeneration
   abortImport()
   cancelPendingConnect()
@@ -788,24 +1189,45 @@ async function onStart() {
   importStatus.value = ''
   importError.value = false
   latestLog.value = null
+  runtimeError.value = null
+  const latest = loadDesktopSettings(desktopStorage)
+  settings.value = latest
+  const address = rttAddress.value.trim() || latest.rttAddress.trim()
+  if (!isRttAddress(address)) {
+    addressError.value = tr('请输入有效的 RTT 地址，或先执行自动搜索', 'Enter a valid RTT address or run Auto Search first')
+    return
+  }
+  rttAddress.value = address
+  persistSettings({ ...latest, rttAddress: address })
   const conflicts = await checkConflict('systemview')
   if (!operationIsActive(generation)) return
   if (conflicts.length > 0) {
     const names = conflicts.map(c => c).join('、')
-    if (!confirm(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`)) return
+    if (!confirm(tr(`启动 SystemView 将停止当前运行的 ${names} 会话。确认？`, `Starting SystemView will stop the active ${names} session. Continue?`))) return
   }
   clearAll()
   renderPaused.value = false
   tlInstance?.resumeRendering()
   renderScheduler?.start()
-  await dash.start()
-  if (!operationIsActive(generation)) return
-  connectTimer = setTimeout(() => {
-    connectTimer = null
-    if (!operationIsActive(generation)) return
-    connectStatus()
-    binaryStream.start()
-  }, 500)
+  starting.value = true
+  try {
+    const started = await dash.start({
+      addr: address,
+      channel: SYSTEMVIEW_CHANNEL,
+      mode: 0,
+      search_size: RTT_SEARCH_SIZE,
+    })
+    if (!started || !operationIsActive(generation)) return
+    connectTimer = setTimeout(() => {
+      connectTimer = null
+      if (!operationIsActive(generation)) return
+      connectStatus()
+      binaryStream.start()
+    }, 500)
+    await waitForSystemViewReady(generation)
+  } finally {
+    if (operationIsActive(generation)) starting.value = false
+  }
 }
 function onPauseRender() {
   renderPaused.value = true
@@ -829,6 +1251,8 @@ async function onStop() {
   renderScheduler?.start()
   await dash.stop()
   if (!operationIsActive(generation)) return
+  runtimeError.value = null
+  meta.recording = false
   await refreshLogList()
 }
 </script>
@@ -837,6 +1261,13 @@ async function onStop() {
 .sv-tab { display: flex; flex-direction: column; height: 100%; gap: 8px; }
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
 .sv-toolbar { display: flex; align-items: center; gap: 12px; padding: 6px 0; flex-wrap: wrap; }
+.sv-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 4px 0; }
+.sv-address-row label { font-size: 12px; color: var(--muted); }
+.sv-address-row input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.btn-search { height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }
+.btn-search:disabled { opacity: .45; cursor: not-allowed; }
+.address-error { min-width: 0; color: var(--danger, #dc2626); font-size: 12px; overflow-wrap: anywhere; }
+.address-source { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .sv-offline-toolbar { padding-bottom: 0; }
 .sv-file-input { display: none; }
 .sv-stat { font-size: 12px; color: var(--muted); }
@@ -852,6 +1283,16 @@ async function onStop() {
 .btn-clear:disabled { opacity: .45; cursor: not-allowed; }
 .sv-tool-btn,
 .sv-mode-btn { margin-left: 0; }
+.sv-record-btn,
+.sv-replay-command { display: inline-flex; align-items: center; gap: 5px; }
+.sv-record-btn.active { color: #b42318; border-color: #e6a8a2; background: #fff4f2; }
+.sv-replay-bar { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: #f7f8fa; }
+.sv-replay-command { margin-left: 0; padding: 3px 8px; }
+.sv-replay-speed { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.sv-replay-speed select { border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; padding: 2px 4px; }
+.sv-replay-bar progress { flex: 1; min-width: 100px; height: 7px; accent-color: #2878c8; }
+.sv-replay-progress { width: 46px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.sv-replay-status { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
 .sv-section-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .sv-section-actions .btn-clear { margin-left: 0; }
 .sv-empty { color: var(--dim); font-size: 12px; padding: 12px; text-align: center; }
@@ -867,20 +1308,13 @@ async function onStop() {
 
 /* 甘特 */
 .sv-gantt-section { flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; }
-.sv-legend { display: flex; gap: 6px; flex-wrap: wrap; align-content: flex-start; height: 28px; overflow-y: auto; scrollbar-gutter: stable; margin: 4px 0; }
-.sv-legend :deep(.sv-lg) { display: inline-flex; align-items: center; gap: 4px; background: #fbfaf5; color: #374151; border: 1px solid #ddd8ca; border-radius: 12px; padding: 2px 9px; font-size: 11px; cursor: pointer; user-select: none; box-shadow: inset 0 -1px 0 rgba(0,0,0,.03); }
-.sv-legend :deep(.sv-lg i) { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.sv-legend :deep(.sv-lg em) { color: #6b7280; font-style: normal; }
+.sv-legend { display: flex; gap: 5px; flex-wrap: wrap; align-content: flex-start; height: 26px; overflow-y: auto; scrollbar-gutter: stable; margin: 3px 0 5px; }
+.sv-legend :deep(.sv-lg) { display: inline-flex; align-items: center; gap: 4px; background: #f7f8fa; color: #374151; border: 1px solid #d9dde3; border-radius: 4px; padding: 2px 7px; font-size: 11px; cursor: pointer; user-select: none; }
+.sv-legend :deep(.sv-lg i) { width: 3px; height: 11px; border-radius: 1px; display: inline-block; }
 .sv-legend :deep(.sv-lg-off) { opacity: .4; text-decoration: line-through; }
-.sv-canvas-wrap { position: relative; background: #fbfaf5; border: 1px solid var(--border); border-radius: var(--radius); overflow: visible; }
-.sv-canvas-wrap :deep(canvas) { display: block; width: 100%; cursor: crosshair; }
+.sv-canvas-wrap { position: relative; background: #f7f8fa; border: 1px solid #cfd4dc; border-radius: 4px; overflow: visible; }
+.sv-canvas-wrap :deep(canvas) { display: block; width: 100%; cursor: grab; user-select: none; }
 .sv-tip { position: fixed; display: none; background: #1c2128; border: 1px solid #444c56; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #f0f6fc; pointer-events: none; z-index: 99; font-family: var(--font-mono, monospace); white-space: nowrap; }
-.sv-vcpu-title { font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
-.sv-vcpu { display: flex; flex-direction: column; gap: 1px; height: 96px; overflow-y: auto; scrollbar-gutter: stable; padding-right: 2px; }
-.sv-vcpu :deep(.sv-vcpu-row) { display: flex; align-items: center; gap: 8px; font-size: 11px; margin: 1px 0; }
-.sv-vcpu :deep(.sv-vcpu-n) { width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
-.sv-vcpu :deep(.sv-vcpu-bg) { flex: 1; height: 11px; background: #e7e2d6; border-radius: 6px; overflow: hidden; }
-.sv-vcpu :deep(.sv-vcpu-bar) { height: 100%; border-radius: 6px; }
 
 /* 事件列表 */
 .sv-events-section { flex: 0 0 auto; display: flex; flex-direction: column; }
@@ -922,5 +1356,7 @@ async function onStop() {
 @media (max-width: 1100px) {
   .sv-health-grid { grid-template-columns: repeat(3, minmax(118px, 1fr)); }
   .sv-bottom-grid { grid-template-columns: 1fr; }
+  .sv-replay-bar { flex-wrap: wrap; }
+  .sv-replay-bar progress { flex-basis: 160px; }
 }
 </style>

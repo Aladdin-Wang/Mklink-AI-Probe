@@ -10,9 +10,13 @@ var I18N = {
     save_project_tip: '保存项目', load_project_tip: '加载项目',
     thresholds_tip: '配置阈值', export_csv_tip: '导出 CSV (Ctrl+E)',
     export_png_tip: '导出 PNG', help_tip: '使用说明',
+    x_axis_tip: '横轴：滚轮缩放；按住鼠标左键拖动；双击恢复默认视图',
+    x_axis_live_tip: '运行中可缩放和移动；视口保持与最新数据的时间差并继续前移；双击回到最新窗口',
+    y_axis_tip: '纵轴：滚轮缩放；按住鼠标左键拖动；双击恢复自动范围',
     // Control toolbar
     start: '开始', pause: '暂停', resume: '恢复', stop: '停止',
     running: '运行中', buffer: '缓冲区', interval: '间隔', apply: '应用',
+    buffer_memory_tip: '前端历史缓存预计内存',
     // Trigger toolbar
     trigger: '触发', idle: '空闲', armed: '待触发', triggered: '已触发', done: '完成',
     source: '源', edge: '边沿', level: '电平', mode: '模式', pretrig: '预触发',
@@ -21,10 +25,14 @@ var I18N = {
     force_trigger: '强制触发',
     // SuperWatch
     sw_search_placeholder: '搜索或输入变量名...', add: '添加', time: '时间', inspect: '检查',
+    split_channel: '分离', merge_channel: '合并', split_panel: '独立通道',
+    split_channel_tip: '将此通道移到独立纵轴面板', merge_channel_tip: '将此通道合并回主面板',
+    show_channel_legend_tip: '显示通道列表', hide_channel_legend_tip: '隐藏通道列表',
     // Watch panel
     watch: '监视', columns: '列', columns_tip: '显示/隐藏列', collapse_watch: '折叠监视面板',
     // Raw Log
     raw_log: '原始日志', clear: '清除', clear_log: '清除日志', close_panel: '关闭面板',
+    save_raw_log_tip: '保存带时间戳的原始数据',
     // Threshold dialog
     channel: '通道', warn_low: '警告下限', warn_high: '警告上限',
     alarm_low: '报警下限', alarm_high: '报警上限', cancel: '取消',
@@ -40,9 +48,9 @@ var I18N = {
     help_cursors: '测量光标 (Cursors)', help_export: '数据导出',
     help_shortcuts: '键盘快捷键', help_rawlog: 'Raw Log 面板', help_pause_resume: '暂停 / 恢复',
     help_chart_items: [
-      '<strong>鼠标滚轮</strong> — 缩放时间轴（以鼠标位置为中心）',
-      '<strong>鼠标拖拽</strong> — 平移视图（缩放后可用）',
-      '<strong>点击通道芯片</strong> — 选中通道，在图表区域内滚动鼠标滚轮可调整该通道的 Y 轴范围'
+      '<strong>图表滚轮</strong> — 调整指针所在面板的 Y 轴范围；按住 Shift 滚动可缩放时间轴',
+      '<strong>图表拖拽</strong> — 调整指针所在面板的 Y 轴位置；横向拖动可移动时间轴',
+      '<strong>运行中横轴</strong> — 缩放或移动后保持与最新数据的固定时间差并继续前移；双击横轴回到最新窗口'
     ],
     help_var_items: [
       '<strong>单击芯片</strong> — 切换通道显示 / 隐藏',
@@ -65,8 +73,8 @@ var I18N = {
     ],
     help_minimap_items: [
       '底部显示完整数据的历史概览',
-      '<strong>单击</strong> — 跳转到对应时间位置',
-      '<strong>拖拽视口框</strong> — 平移查看范围'
+      '<strong>单击</strong> — 移动到对应时间位置；运行中保持新的相对时间差继续前移',
+      '<strong>拖拽视口框</strong> — 平移查看范围；运行中保持新的相对时间差继续前移'
     ],
     help_cursors_items: [
       '点击 <strong>Cursors</strong> 按钮或按 <span class="help-kbd">C</span> 键开启 A/B 测量光标',
@@ -78,8 +86,8 @@ var I18N = {
       '<strong>PNG</strong> — 截取当前图表为 PNG 图片'
     ],
     help_kbd_rows: [
-      ['<span class="help-kbd">Space</span>+拖动', '手型拖动平移时间轴'],
-      ['<span class="help-kbd">P</span>', '暂停 / 恢复数据采集'],
+      ['<span class="help-kbd">Space</span>+拖动', '平移时间轴；运行中保持相对时间差'],
+      ['<span class="help-kbd">P</span>', '暂停 / 恢复前端显示'],
       ['<span class="help-kbd">L</span>', '打开 / 关闭 Raw Log 面板'],
       ['<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>', '导出 CSV 文件'],
       ['<span class="help-kbd">C</span>', '切换 A/B 测量光标'],
@@ -91,10 +99,10 @@ var I18N = {
       '<strong>Clear</strong> 按钮 — 清除日志内容'
     ],
     help_pause_items: [
-      '按 <span class="help-kbd">P</span> 键切换暂停状态',
-      '按住 <span class="help-kbd">Space</span> + 鼠标拖动平移时间轴',
-      '暂停时，顶部状态显示为 <strong style="color:var(--warn)">paused</strong>',
-      '暂停期间已接收的数据仍可正常查看、缩放和导出'
+      '按 <span class="help-kbd">P</span> 键暂停 / 恢复前端显示；后端采集不会停止',
+      '暂停会冻结当前前端历史快照，可缩放、平移和导出已有数据',
+      '恢复时会清空冻结快照，并重新跟随最新实时窗口',
+      '暂停时，顶部状态显示为 <strong style="color:var(--warn)">paused</strong>'
     ],
     no_inspector_data: '无检查数据',
     lang_label: '中/En'
@@ -106,16 +114,24 @@ var I18N = {
     save_project_tip: 'Save Project', load_project_tip: 'Load Project',
     thresholds_tip: 'Configure Thresholds', export_csv_tip: 'Export CSV (Ctrl+E)',
     export_png_tip: 'Export PNG', help_tip: 'Help',
+    x_axis_tip: 'X axis: scroll to zoom; hold the left mouse button and drag; double-click to reset',
+    x_axis_live_tip: 'Zoom and pan while running; the view keeps a fixed lag from the latest data and moves forward; double-click to return live',
+    y_axis_tip: 'Y axis: scroll to zoom; hold the left mouse button and drag; double-click for auto range',
     start: 'Start', pause: 'Pause', resume: 'Resume', stop: 'Stop',
     running: 'Running', buffer: 'Buffer', interval: 'Interval', apply: 'Apply',
+    buffer_memory_tip: 'Estimated frontend history memory',
     trigger: 'Trigger', idle: 'Idle', armed: 'Armed', triggered: 'Triggered', done: 'Done',
     source: 'Source', edge: 'Edge', level: 'Level', mode: 'Mode', pretrig: 'Pre-trig',
     rising: 'Rising', falling: 'Falling', both: 'Both',
     auto: 'Auto', normal: 'Normal', single: 'Single',
     force_trigger: 'Force Trigger',
     sw_search_placeholder: 'Search or type variable name...', add: 'Add', time: 'Time', inspect: 'Inspect',
+    split_channel: 'Split', merge_channel: 'Merge', split_panel: 'Split channel',
+    split_channel_tip: 'Move this channel to an independent Y-axis panel', merge_channel_tip: 'Merge this channel into the main panel',
+    show_channel_legend_tip: 'Show channel list', hide_channel_legend_tip: 'Hide channel list',
     watch: 'Watch', columns: 'Columns', columns_tip: 'Show or hide columns', collapse_watch: 'Collapse Watch',
     raw_log: 'Raw Log', clear: 'Clear', clear_log: 'Clear log', close_panel: 'Close panel',
+    save_raw_log_tip: 'Save timestamped raw data',
     channel: 'Channel', warn_low: 'Warn low', warn_high: 'Warn high',
     alarm_low: 'Alarm low', alarm_high: 'Alarm high', cancel: 'Cancel',
     server_shutdown: 'Server Shut Down', server_stopped_msg: 'The visualization server has been stopped.',
@@ -127,9 +143,9 @@ var I18N = {
     help_cursors: 'Measurement Cursors', help_export: 'Data Export',
     help_shortcuts: 'Keyboard Shortcuts', help_rawlog: 'Raw Log Panel', help_pause_resume: 'Pause / Resume',
     help_chart_items: [
-      '<strong>Mouse wheel</strong> — Zoom time axis (centered on cursor)',
-      '<strong>Mouse drag</strong> — Pan view (available after zoom)',
-      '<strong>Click channel chip</strong> — Select channel, then scroll in chart area to adjust Y-axis range'
+      '<strong>Chart wheel</strong> — Adjust the Y range of the panel under the pointer; Shift+wheel zooms the timeline',
+      '<strong>Chart drag</strong> — Adjust the Y position of the panel under the pointer; horizontal drag pans the timeline',
+      '<strong>Running X axis</strong> — Zooming or panning keeps a fixed lag from the latest data and continues moving forward; double-click returns live'
     ],
     help_var_items: [
       '<strong>Single click chip</strong> — Toggle channel visibility',
@@ -152,8 +168,8 @@ var I18N = {
     ],
     help_minimap_items: [
       'Bottom bar shows full data history overview',
-      '<strong>Click</strong> — Jump to corresponding time position',
-      '<strong>Drag viewport</strong> — Pan visible range'
+      '<strong>Click</strong> — Move to the corresponding time; while running, keep the new relative lag and move forward',
+      '<strong>Drag viewport</strong> — Pan the visible range; while running, keep the new relative lag and move forward'
     ],
     help_cursors_items: [
       'Click <strong>Cursors</strong> button or press <span class="help-kbd">C</span> to enable A/B measurement cursors',
@@ -165,8 +181,8 @@ var I18N = {
       '<strong>PNG</strong> — Capture current chart as PNG image'
     ],
     help_kbd_rows: [
-      ['<span class="help-kbd">Space</span>+drag', 'Pan time axis by dragging'],
-      ['<span class="help-kbd">P</span>', 'Pause / resume data collection'],
+      ['<span class="help-kbd">Space</span>+drag', 'Pan the timeline; keep relative lag while running'],
+      ['<span class="help-kbd">P</span>', 'Pause / resume frontend rendering'],
       ['<span class="help-kbd">L</span>', 'Open / close Raw Log panel'],
       ['<span class="help-kbd">Ctrl</span>+<span class="help-kbd">E</span>', 'Export CSV file'],
       ['<span class="help-kbd">C</span>', 'Toggle A/B measurement cursors'],
@@ -178,10 +194,10 @@ var I18N = {
       '<strong>Clear</strong> button — Clear log content'
     ],
     help_pause_items: [
-      'Press <span class="help-kbd">P</span> to toggle pause state',
-      'Hold <span class="help-kbd">Space</span> + mouse drag to pan time axis',
-      'When paused, status shows <strong style="color:var(--warn)">paused</strong>',
-      'Data received during pause can still be viewed, zoomed and exported'
+      'Press <span class="help-kbd">P</span> to pause / resume frontend rendering; backend acquisition continues',
+      'Pause freezes the current frontend history snapshot for zooming, panning, and export',
+      'Resume clears the frozen snapshot and follows the latest live window again',
+      'When paused, status shows <strong style="color:var(--warn)">paused</strong>'
     ],
     no_inspector_data: 'No inspector data',
     lang_label: '中/En'
