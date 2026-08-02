@@ -1,6 +1,13 @@
 <template>
   <div class="memory-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('内存读写只需要 MKLink 设备连接。', 'Memory access only requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
     <template v-else>
       <div class="mem-controls">
         <input class="form-input addr-input" v-model="address" placeholder="0x20000000" />
@@ -26,7 +33,9 @@
 import { ref } from 'vue'
 import { useDeviceApi } from '../../composables/useDashboard'
 import { useToast } from '../../composables/useToast'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import HexMemoryView from './HexMemoryView.vue'
+import SetupHint from './SetupHint.vue'
 import type { MemoryReadResult } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
 
@@ -34,6 +43,7 @@ defineProps<{ deviceConnected: boolean }>()
 
 const device = useDeviceApi()
 const toast = useToast()
+const { connecting, quickConnect } = useDashboardSetup()
 const address = ref('0x20000000')
 const size = ref(64)
 const writeAddr = ref('')

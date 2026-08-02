@@ -48,6 +48,14 @@
         {{ stopping ? tr('停止中', 'Stopping') : tr('关闭串口', 'Close Port') }}
       </button>
     </div>
+    <SetupHint
+      v-if="portsLoaded && !ports.length && !running"
+      kind="info"
+      :message="tr('未检测到可用串口。串口助手可独立于 MKLink 设备使用。', 'No serial ports detected. Serial Assistant works independently of the MKLink device.')"
+      :primary-label="tr('刷新串口', 'Refresh Ports')"
+      :busy="refreshingPorts"
+      @primary="refreshPorts"
+    />
 
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
@@ -119,6 +127,7 @@ import {
 import type { PortInfo, SerialEvent } from '../../types/mklink'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
+import SetupHint from './SetupHint.vue'
 
 interface SerialStatus {
   running?: boolean
@@ -141,11 +150,12 @@ const running = ref(false)
 const starting = ref(false)
 const stopping = ref(false)
 const refreshingPorts = ref(false)
+const portsLoaded = ref(false)
 const events = ref<SerialEvent[]>([])
 const stats = ref({ rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 })
 const portStatuses = ref<Record<string, string>>({})
 const runtimeError = ref('')
-const viewMode = ref<'log' | 'terminal'>('log')
+const viewMode = ref<'log' | 'terminal'>('terminal')
 const logEl = ref<HTMLElement | null>(null)
 const terminalPanel = ref<InstanceType<typeof RttTerminalPanel> | null>(null)
 const serialSettings = ref<SerialAssistantSettings>(loadSerialAssistantSettings(localStorage))
@@ -214,6 +224,7 @@ async function refreshPorts(): Promise<void> {
     toast.error(caught instanceof Error ? caught.message : String(caught))
   } finally {
     refreshingPorts.value = false
+    portsLoaded.value = true
   }
 }
 

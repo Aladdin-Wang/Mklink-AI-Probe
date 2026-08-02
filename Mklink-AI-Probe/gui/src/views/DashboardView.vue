@@ -20,15 +20,33 @@
           <button :class="['tab-btn', { active: tab === 'systemview' }]" @click="tab = 'systemview'">RTOS Trace</button>
           <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">{{ tr('符号表', 'Symbols') }}</button>
         </div>
-        <div v-if="!deviceStatus.connected || bridgeOwner" class="title-right">
-          <span v-if="!deviceStatus.connected" class="device-link" @click="goConnect">
-            {{ tr('设备未连接，点击连接', 'Device not connected. Click to connect') }}
-          </span>
-          <span v-else-if="bridgeOwner" class="resource-status-inline">
+        <div class="title-right">
+          <span v-if="bridgeOwner" class="resource-status-inline">
             <span class="status-dot" :class="bridgeOwner.startsWith('ai:') ? 'dot-ai' : 'dot-user'"></span>
             <span v-if="bridgeOwner.startsWith('ai:')">{{ tr('AI 正在使用设备', 'AI is using the device') }}</span>
             <span v-else>{{ bridgeOwnerLabel }}</span>
           </span>
+          <span v-if="deviceStatus.connected" class="device-summary" :title="deviceStatus.port || ''">
+            {{ deviceStatus.mcu || tr('已连接', 'Connected') }}
+          </span>
+          <button
+            type="button"
+            class="device-quick-action"
+            :class="{ connected: deviceStatus.connected }"
+            :disabled="connecting || disconnecting"
+            :title="deviceStatus.connected ? tr('断开 MKLink 设备', 'Disconnect MKLink device') : tr('使用上次成功配置连接', 'Connect with the last successful settings')"
+            data-testid="device-quick-action"
+            @click="deviceStatus.connected ? quickDisconnect() : quickConnect()"
+          >
+            <LoaderCircle v-if="connecting || disconnecting" class="spinning" :size="14" aria-hidden="true" />
+            <Unplug v-else-if="deviceStatus.connected" :size="14" aria-hidden="true" />
+            <Usb v-else :size="14" aria-hidden="true" />
+            <span>{{ connecting ? tr('连接中', 'Connecting') : disconnecting ? tr('断开中', 'Disconnecting') : deviceStatus.connected ? tr('断开', 'Disconnect') : tr('连接设备', 'Connect Device') }}</span>
+          </button>
+          <div v-if="connectionError" class="device-quick-error" role="alert">
+            <span>{{ connectionError }}</span>
+            <button type="button" @click="goConnect">{{ tr('打开配置', 'Open Config') }}</button>
+          </div>
         </div>
       </div>
 
@@ -36,7 +54,14 @@
 
       <!-- 调试控制 -->
       <div v-if="tab === 'debug'">
-        <div v-if="!deviceStatus.connected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect the device first.') }}</div>
+        <SetupHint
+          v-if="!deviceStatus.connected"
+          kind="device"
+          :message="tr('调试控制需要 MKLink 设备连接。', 'Debug Control requires an MKLink device connection.')"
+          :primary-label="tr('连接设备', 'Connect Device')"
+          :busy="connecting"
+          @primary="quickConnect"
+        />
         <template v-else>
           <div class="btn-group">
             <button class="btn" @click="doHalt">{{ tr('暂停 CPU', 'Halt CPU') }}</button>
@@ -47,23 +72,25 @@
         </template>
       </div>
 
-      <HardFaultTab v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" />
+      <HardFaultTab v-if="tab === 'hardfault'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" />
       <MemoryTab v-if="tab === 'memory'" :device-connected="deviceStatus.connected" />
-      <SuperWatchTab v-if="tab === 'superwatch'" :device-connected="deviceStatus.connected" />
+      <SuperWatchTab v-if="tab === 'superwatch'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
       <SerialMonitorTab v-show="tab === 'serial'" />
-      <ModbusTab v-show="tab === 'modbus'" :device-connected="deviceStatus.connected" />
+      <ModbusTab v-show="tab === 'modbus'" />
       <SystemViewTab v-show="tab === 'systemview'" :device-connected="deviceStatus.connected" />
-      <SymbolsTab v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" />
+      <SymbolsTab v-if="tab === 'symbols'" :device-connected="deviceStatus.connected" :symbol-loaded="deviceStatus.axf?.loaded === true" :symbol-error="deviceStatus.axf?.error" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { LoaderCircle, Unplug, Usb } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useToast } from '../composables/useToast'
 import { useResourceStatus } from '../composables/useResourceStatus'
+import { useDashboardSetup } from '../composables/useDashboardSetup'
 import RttViewTab from '../components/dash/RttViewTab.vue'
 import HardFaultTab from '../components/dash/HardFaultTab.vue'
 import SymbolsTab from '../components/dash/SymbolsTab.vue'
@@ -72,6 +99,7 @@ import SuperWatchTab from '../components/dash/SuperWatchTab.vue'
 import SerialMonitorTab from '../components/dash/SerialMonitorTab.vue'
 import ModbusTab from '../components/dash/ModbusTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
+import SetupHint from '../components/dash/SetupHint.vue'
 import { tr } from '../composables/useLanguage'
 
 const route = useRoute()
@@ -84,6 +112,13 @@ const {
   resumeDevice,
 } = useMklinkApi()
 const toast = useToast()
+const {
+  connecting,
+  disconnecting,
+  connectionError,
+  quickConnect,
+  quickDisconnect,
+} = useDashboardSetup()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
@@ -183,6 +218,7 @@ async function doResume() { try { await resumeDevice(); toast.success(tr('CPU �
   border-bottom: 0;
 }
 .title-right {
+  position: relative;
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 8px;
   padding: 0 8px;
@@ -191,17 +227,61 @@ async function doResume() { try { await resumeDevice(); toast.success(tr('CPU �
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--muted);
 }
-.device-link {
+.device-summary {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--muted);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.device-quick-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  background: var(--accent-bg);
   color: var(--accent);
   cursor: pointer;
-  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
 }
-.device-link:hover { text-decoration: underline; }
+.device-quick-action.connected { border-color: var(--border); background: transparent; color: var(--muted); }
+.device-quick-action:disabled { cursor: wait; opacity: 0.65; }
+.device-quick-error {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 8px;
+  display: grid;
+  gap: 6px;
+  width: min(300px, calc(100vw - 24px));
+  padding: 9px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
+}
+.device-quick-error button { justify-self: end; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.spinning { animation: device-spin 0.8s linear infinite; }
+@keyframes device-spin { to { transform: rotate(360deg); } }
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block;
 }
 .dot-user { background: var(--success); }
 .dot-ai { background: var(--warn); }
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: #f5f0e1; }
+@media (max-width: 900px) {
+  .dashboard-nav-row { flex-wrap: wrap; }
+  .dashboard-nav-row .tabs-bar { flex-basis: 100%; }
+  .title-right { width: 100%; justify-content: flex-end; padding: 6px 4px; border-top: 1px solid var(--border-subtle); }
+}
+@media (max-width: 520px) {
+  .resource-status-inline { display: none; }
+  .device-summary { max-width: 92px; }
+}
 </style>

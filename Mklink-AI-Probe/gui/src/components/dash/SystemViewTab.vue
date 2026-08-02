@@ -7,10 +7,16 @@
       accept=".jsonl,application/x-ndjson,application/json"
       @change="onImportFileChange"
     >
-    <div v-if="!deviceConnected && !offlineMode" class="sv-toolbar sv-offline-toolbar">
-      <button class="btn-clear sv-tool-btn" @click="triggerImport">{{ tr('导入 JSONL', 'Import JSONL') }}</button>
-    </div>
-    <div v-if="!deviceConnected && !offlineMode" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected && !offlineMode"
+      kind="device"
+      :message="tr('实时跟踪需要 MKLink 设备；已保存的 JSONL 可直接离线回放。', 'Live trace requires an MKLink device; saved JSONL can be replayed offline.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :secondary-label="tr('导入 JSONL', 'Import JSONL')"
+      :busy="connecting"
+      @primary="quickConnect"
+      @secondary="triggerImport"
+    />
     <template v-if="deviceConnected || offlineMode">
       <div v-if="deviceConnected && !offlineMode" class="sv-address-row">
         <label for="systemview-rtt-address">{{ tr('RTT 地址', 'RTT Address') }}</label>
@@ -28,6 +34,14 @@
         <span v-if="addressError" class="address-error" role="alert">{{ addressError }}</span>
         <span v-else-if="addressSource" class="address-source">{{ tr('来源:', 'Source:') }} {{ addressSource }}</span>
       </div>
+      <SetupHint
+        v-if="deviceConnected && !offlineMode && !hasAddressFileSource"
+        kind="symbols"
+        :message="tr('加载 AXF / ELF 后，自动搜索可直接定位 RTOS Trace 的 RTT 控制块。', 'Load AXF / ELF so Auto Search can locate the RTOS Trace RTT control block.')"
+        :primary-label="tr('加载 AXF / ELF', 'Load AXF / ELF')"
+        :busy="loadingSymbols"
+        @primary="loadSymbolFile"
+      />
       <div class="sv-toolbar">
         <ControlToolbar
           v-if="!offlineMode"
@@ -269,8 +283,11 @@ import { useEventSource } from '../../composables/useEventSource'
 import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useResourceStatus } from '../../composables/useResourceStatus'
 import { useMklinkApi } from '../../composables/useMklinkApi'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
   DESKTOP_SETTINGS_CHANGED_EVENT,
+  isMapFilePath,
+  isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
@@ -290,6 +307,7 @@ import { appendAndTrimEventsByTime, appendAndTrimRanges, filterRangesByWindow } 
 import { formatScheduleCount } from '../../lib/systemViewLabels'
 import { importSystemViewJsonl } from '../../lib/systemViewImport'
 import ControlToolbar from './ControlToolbar.vue'
+import SetupHint from './SetupHint.vue'
 import { language, tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
@@ -303,6 +321,9 @@ const binaryStream = useBinaryStream('systemview', { capacity: 300_000, channelC
 const renderPaused = ref(false)
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
+const hasAddressFileSource = computed(() => (
+  isSymbolFilePath(settings.value.symbolPath) || isMapFilePath(settings.value.mapPath)
+))
 const rttAddress = ref(settings.value.rttAddress)
 const addressError = ref('')
 const addressSource = ref('')
@@ -310,6 +331,7 @@ const searching = ref(false)
 const starting = ref(false)
 const runtimeError = ref<string | null>(null)
 const { findRtt } = useMklinkApi()
+const { connecting, loadingSymbols, quickConnect, loadSymbolFile } = useDashboardSetup()
 const toolbarState = computed(() => (
   runtimeError.value ? 'error' :
     starting.value ? 'starting' :
@@ -1181,6 +1203,10 @@ async function waitForSystemViewReady(generation: number, timeoutMs = 8_000): Pr
 
 async function onStart() {
   if (searching.value || starting.value) return
+  if (!props.deviceConnected) {
+    runtimeError.value = tr('请先连接 MKLink 设备', 'Connect the MKLink device first')
+    return
+  }
   const generation = ++operationGeneration
   abortImport()
   cancelPendingConnect()

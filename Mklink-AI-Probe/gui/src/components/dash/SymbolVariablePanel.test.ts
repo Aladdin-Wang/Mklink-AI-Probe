@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   loadBrowseChildren: vi.fn(),
   searchSymbols: vi.fn(),
   applyingLayout: { value: false },
+  error: { value: null as string | null },
 }))
 
 const catalogItems = [
@@ -85,6 +86,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
     loading: ref(false),
     reparsing: ref(false),
     applyingLayout: mocks.applyingLayout,
+    error: mocks.error,
     ensureLoaded: mocks.ensureLoaded,
     reparse: mocks.reparse,
     applyCLayout: mocks.applyCLayout,

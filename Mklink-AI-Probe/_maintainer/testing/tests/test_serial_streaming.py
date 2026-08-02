@@ -4,9 +4,50 @@ import asyncio
 import base64
 import threading
 
+from fastapi.testclient import TestClient
+
+from mklink.local_resources import local_resource_status
+from mklink.remote.api import create_app
 from mklink.remote.dashboards import SerialStreamManager
 from mklink.serial import _monitor as monitor_module
 from mklink.serial._monitor import SerialEvent, SerialMonitor
+from mklink.serial._port import _PortLock
+
+
+def test_serial_port_lock_releases_owner_and_can_be_reacquired(monkeypatch, tmp_path):
+    monkeypatch.setenv("TEMP", str(tmp_path))
+
+    for _ in range(2):
+        lock = _PortLock("TEST_PORT")
+        assert lock.acquire() is True
+        lock.release()
+
+        status = local_resource_status("TEST_PORT")["serial_locks"][0]
+        assert status["owner_pid"] == 0
+        assert status["owner_alive"] is False
+
+
+def test_modbus_start_reports_busy_serial_port(monkeypatch, tmp_path):
+    class BusyModbusClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def open(self):
+            return False
+
+    monkeypatch.setattr("mklink.modbus._client.ModbusClient", BusyModbusClient)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post("/api/dash/modbus/start", json={"port": "BUSY_PORT"})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {
+            "conflict": "serial port BUSY_PORT is busy or unavailable",
+            "resource": "modbus_port",
+        },
+    }
 
 
 def test_serial_monitor_emits_partial_rx_chunk_before_line_event(monkeypatch):

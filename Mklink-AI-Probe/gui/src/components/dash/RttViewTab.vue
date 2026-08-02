@@ -1,7 +1,15 @@
 <template>
   <div class="rtt-view-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
-    <template v-else>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('RTT 实时采集需要连接 MKLink 设备。', 'Live RTT capture requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :secondary-label="!hasAddressFileSource ? tr('加载 AXF / ELF', 'Load AXF / ELF') : ''"
+      :busy="connecting || loadingSymbols"
+      @primary="quickConnect"
+      @secondary="loadSymbolFile"
+    />
       <div class="rtt-address-row">
         <label for="rtt-address">{{ tr('RTT 地址', 'RTT Address') }}</label>
         <input
@@ -17,6 +25,14 @@
           {{ tr('来源:', 'Source:') }} {{ addressSource }}
         </span>
       </div>
+      <SetupHint
+        v-if="deviceConnected && !hasAddressFileSource"
+        kind="symbols"
+        :message="tr('自动搜索 RTT 地址时，加载 AXF / ELF 可直接定位 _SEGGER_RTT。', 'Load AXF / ELF so Auto Search can locate _SEGGER_RTT directly.')"
+        :primary-label="tr('加载 AXF / ELF', 'Load AXF / ELF')"
+        :busy="loadingSymbols"
+        @primary="loadSymbolFile"
+      />
       <div class="rtt-view-toolbar">
         <div class="rtt-primary-tools">
           <ControlToolbar
@@ -114,7 +130,6 @@
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
       />
-    </template>
   </div>
 </template>
 
@@ -124,8 +139,11 @@ import { Eye, EyeOff, Info, ScrollText, Search, SquareTerminal, Trash2 } from '@
 import { useDashboard } from '../../composables/useDashboard'
 import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useMklinkApi } from '../../composables/useMklinkApi'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
   DESKTOP_SETTINGS_CHANGED_EVENT,
+  isMapFilePath,
+  isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
@@ -136,14 +154,24 @@ import ControlToolbar from './ControlToolbar.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
+import SetupHint from './SetupHint.vue'
 import { language, tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
 const binary = useBinaryStream('rtt', { capacity: 200_000, channelCount: 1 })
 const { findRtt, writeRtt, setRttEncoding } = useMklinkApi()
+const {
+  connecting,
+  loadingSymbols,
+  quickConnect,
+  loadSymbolFile,
+} = useDashboardSetup()
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
+const hasAddressFileSource = computed(() => (
+  isMapFilePath(settings.value.mapPath) || isSymbolFilePath(settings.value.symbolPath)
+))
 const rttAddress = ref(settings.value.rttAddress)
 const rttEncoding = ref<RttEncoding>(settings.value.rttEncoding)
 const addressError = ref('')
@@ -161,7 +189,7 @@ const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
 const numericChannelNames = ref<string[]>([])
 const chartEnabled = ref(true)
-const viewMode = ref<'log' | 'terminal'>('log')
+const viewMode = ref<'log' | 'terminal'>('terminal')
 const formatHelpOpen = ref(false)
 const hasChartData = ref(false)
 const renderPaused = ref(false)
@@ -175,7 +203,6 @@ const transmitEnabled = computed(() => (
   statusRunning.value
   && !stopping.value
   && !runtimeError.value
-  && props.deviceConnected
   && downBuffers.value.some(buffer => (
     buffer.channel === RTT_CHANNEL && buffer.active === true
   ))
@@ -726,6 +753,10 @@ async function stopTimedOutRtt(maxAttempts = 3): Promise<boolean> {
 
 async function onStart(): Promise<void> {
   if (searching.value || starting.value) return
+  if (!props.deviceConnected) {
+    runtimeError.value = tr('请先连接 MKLink 设备', 'Connect the MKLink device first')
+    return
+  }
   const address = rttAddress.value.trim()
   if (!isRttAddress(address)) {
     addressError.value = tr('请输入有效的 RTT 地址，例如 0x20001A40', 'Enter a valid RTT address, for example 0x20001A40')

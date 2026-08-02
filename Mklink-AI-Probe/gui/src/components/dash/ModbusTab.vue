@@ -1,7 +1,13 @@
 <template>
   <div>
-    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
-    <template v-else>
+      <SetupHint
+        v-if="portsLoaded && !ports.length"
+        kind="info"
+        :message="tr('未检测到可用串口。Modbus 不依赖 MKLink 设备连接。', 'No serial ports detected. Modbus does not depend on the MKLink device connection.')"
+        :primary-label="tr('刷新串口', 'Refresh Ports')"
+        :busy="refreshingPorts"
+        @primary="refreshPorts"
+      />
       <!-- Config -->
       <div class="form-row" style="gap:8px;flex-wrap:wrap;align-items:end">
         <div>
@@ -32,7 +38,7 @@
           <label class="form-label" style="font-size:12px">{{ tr('轮询(ms)', 'Polling (ms)') }}</label>
           <input type="number" v-model.number="interval" class="form-input" style="width:80px" min="100" step="100" />
         </div>
-        <button v-if="!running" class="btn btn-primary" @click="doStart">{{ tr('连接', 'Connect') }}</button>
+        <button v-if="!running" class="btn btn-primary" :disabled="!portName" @click="doStart">{{ tr('连接', 'Connect') }}</button>
         <button v-else class="btn btn-danger" @click="doStop">{{ tr('断开', 'Disconnect') }}</button>
       </div>
 
@@ -75,7 +81,6 @@
           </div>
         </div>
       </div>
-    </template>
   </div>
 </template>
 
@@ -85,10 +90,10 @@ import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useToast } from '../../composables/useToast'
 import type { PortInfo } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
+import SetupHint from './SetupHint.vue'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
-const props = defineProps<{ deviceConnected: boolean }>()
 const toast = useToast()
 const { listPorts: fetchPorts } = useMklinkApi()
 
@@ -104,15 +109,27 @@ const running = ref(false)
 const registers = ref<{ addr: number; value: number | null }[]>([])
 const writeTarget = ref<{ addr: number } | null>(null)
 const writeValue = ref('')
+const refreshingPorts = ref(false)
+const portsLoaded = ref(false)
 
 let es: EventSource | null = null
 
-onMounted(async () => {
+async function refreshPorts(): Promise<void> {
+  refreshingPorts.value = true
   try {
     ports.value = await fetchPorts()
-    if (ports.value.length) portName.value = ports.value[0].device
-  } catch { /* ignore */ }
-})
+    if (!ports.value.some(port => port.device === portName.value)) {
+      portName.value = ports.value[0]?.device || ''
+    }
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  } finally {
+    refreshingPorts.value = false
+    portsLoaded.value = true
+  }
+}
+
+onMounted(refreshPorts)
 
 onUnmounted(() => {
   doStop()
@@ -134,7 +151,7 @@ async function doStart() {
     for (let i = 0; i < regCount.value; i++) {
       regSpecs.push({ addr: regStart.value + i, type: 'uint16', name: `R${regStart.value + i}` })
     }
-    await fetch(`${API_BASE}/api/dash/modbus/start`, {
+    const response = await fetch(`${API_BASE}/api/dash/modbus/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -146,6 +163,12 @@ async function doStart() {
         interval: interval.value / 1000,
       }),
     })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const detail = payload?.detail
+      const conflict = detail && typeof detail === 'object' ? detail.conflict : ''
+      throw new Error(typeof detail === 'string' ? detail : conflict || response.statusText)
+    }
     running.value = true
     registers.value = buildRegGrid()
     connectSSE()

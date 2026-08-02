@@ -2,6 +2,8 @@
   <div class="superwatch-workspace" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
     <SymbolVariablePanel
       :device-connected="deviceConnected"
+      :symbol-loaded="symbolLoaded"
+      :symbol-error="symbolError"
       :latest-values="latestValues"
       :hidden-channels="hiddenChannels"
       @visibility-change="setChannelVisibility"
@@ -25,7 +27,14 @@ import SymbolVariablePanel from './SymbolVariablePanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
 import { tr } from '../../composables/useLanguage'
 
-defineProps<{ deviceConnected: boolean }>()
+withDefaults(defineProps<{
+  deviceConnected: boolean
+  symbolLoaded?: boolean
+  symbolError?: string
+}>(), {
+  symbolLoaded: true,
+  symbolError: '',
+})
 
 const panelWidth = ref(340)
 const latestValues = shallowRef<Record<string, number | boolean>>({})

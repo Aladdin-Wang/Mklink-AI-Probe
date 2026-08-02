@@ -37,6 +37,7 @@ class _PortLock:
             try:
                 if os.name == "nt":
                     import msvcrt
+                    self._fd.seek(0)
                     msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
                     import fcntl
@@ -56,6 +57,10 @@ class _PortLock:
         if not self._locked or self._fd is None:
             return
         try:
+            self._fd.seek(0)
+            self._fd.truncate()
+            self._fd.write("0")
+            self._fd.flush()
             if os.name == "nt":
                 import msvcrt
                 self._fd.seek(0)

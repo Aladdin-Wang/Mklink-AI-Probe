@@ -129,6 +129,68 @@ describe('OfflineFlashView', () => {
     expect(wrapper.text()).toContain('用户 FLM')
   })
 
+  it('deploys only algorithms referenced by the flash sequence', async () => {
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
+      pack_version: '2.4.1', installed: true, source: 'installed',
+    }])
+    offlineMocks.listAlgorithms.mockResolvedValue([
+      {
+        id: 'used', file_name: 'STM32F10x_512.FLM', flash_base: '0x08000000', ram_base: '0x20000000',
+        source_kind: 'existing', source_token: null, origin: 'MCU profile', available: true, on_probe: true,
+      },
+      {
+        id: 'unused', file_name: 'STM32F10x_1024.FLM', flash_base: '0x08000000', ram_base: '0x20000000',
+        source_kind: 'existing', source_token: null, origin: 'MCU profile', available: false, on_probe: false,
+      },
+    ])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[type="file"][multiple]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['hex'], 'firmware.hex')],
+    })
+    await input.trigger('change')
+    await wrapper.get('select.compact-input').setValue('used')
+    await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+    await flushPromises()
+
+    expect(offlineMocks.deploy).toHaveBeenCalledOnce()
+    expect(offlineMocks.deploy.mock.calls[0][0].algorithms).toEqual([
+      expect.objectContaining({ id: 'used', file_name: 'STM32F10x_512.FLM' }),
+    ])
+  })
+
+  it('shows an actionable warning when the selected FLM is unavailable', async () => {
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',
+      pack_version: '2.4.1', installed: true, source: 'installed',
+    }])
+    offlineMocks.listAlgorithms.mockResolvedValue([{
+      id: 'missing', file_name: 'STM32F10x_1024.FLM', flash_base: '0x08000000', ram_base: '0x20000000',
+      source_kind: 'existing', source_token: null, origin: 'MCU profile', available: false, on_probe: false,
+    }])
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('input[type="file"][multiple]')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['hex'], 'firmware.hex')],
+    })
+    await input.trigger('change')
+
+    expect(wrapper.get('[data-testid="offline-selection-warning"]').text()).toContain('STM32F10x_1024.FLM')
+    expect(wrapper.get('[data-testid="offline-algorithm-unavailable"]').text()).toContain('选择本地 FLM')
+    expect(wrapper.get('[data-testid="offline-deploy"]').attributes('disabled')).toBeDefined()
+  })
+
   it('triggers the deployed V4 script by its configured file name', async () => {
     onlineMocks.searchTargets.mockResolvedValue([{
       part_number: 'STM32F103RC', vendor: 'STMicroelectronics', pack_id: 'Keil.STM32F1xx_DFP',

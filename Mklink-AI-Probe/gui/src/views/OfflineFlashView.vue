@@ -78,12 +78,16 @@ const targets = ref<TargetRecord[]>([])
 const targetBusy = ref(false)
 const operationBusy = ref(false)
 const error = ref('')
+const errorTitle = ref('')
+const errorDetail = ref('')
 const notice = ref('')
 const preview = ref<OfflinePreview | null>(null)
 const triggerLines = ref<string[]>([])
 const deployedScriptName = ref('')
 const deployedModel = ref<'V2' | 'V3' | 'V4' | ''>('')
 const firmwareDropActive = ref(false)
+const replacementAlgorithmId = ref('')
+const replacementFlmInput = ref<HTMLInputElement | null>(null)
 let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollingEnabled = false
 let stopNativeDropListener: (() => void) | null = null
@@ -102,15 +106,28 @@ const scriptFieldName = computed({
   set: value => { if (effectiveModel.value === 'V4') scriptName.value = value },
 })
 const hpmMode = computed(() => isHpmPart(targetPart.value))
+const selectedAlgorithmIds = computed(() => new Set(
+  firmwares.value.map(item => item.algorithm_id).filter(Boolean),
+))
+const selectedAlgorithms = computed(() => algorithms.value.filter(item => selectedAlgorithmIds.value.has(item.id)))
+const unavailableSelectedAlgorithms = computed(() => selectedAlgorithms.value.filter(item => (
+  item.source_kind === 'upload' ? !item.file : !item.available
+)))
+const selectionWarning = computed(() => unavailableSelectedAlgorithms.value.length
+  ? tr(
+    `烧录顺序使用的下载算法不可用：${unavailableSelectedAlgorithms.value.map(item => item.file_name).join('、')}。请选择本地 FLM 替换，或为固件选择其他算法。`,
+    `The flash sequence uses unavailable algorithms: ${unavailableSelectedAlgorithms.value.map(item => item.file_name).join(', ')}. Choose a local FLM replacement or select another algorithm.`,
+  )
+  : '')
 const canBuild = computed(() => (
   !!effectiveModel.value
   && !!disk.value?.available
   && firmwares.value.length > 0
   && (hpmMode.value
     ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && item.format === 'bin' && !!item.base_address)
-    : algorithms.value.length > 0
-      && algorithms.value.every(item => item.source_kind !== 'upload' || item.file)
-      && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id))
+    : selectedAlgorithms.value.length > 0
+      && unavailableSelectedAlgorithms.value.length === 0
+      && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id && algorithms.value.some(algorithm => algorithm.id === item.algorithm_id)))
 ))
 const canTrigger = computed(() => (
   !!disk.value?.available
@@ -144,6 +161,42 @@ function message(value: unknown): string {
   return value instanceof Error ? value.message : String(value)
 }
 
+function setError(value: unknown): void {
+  const raw = message(value)
+  error.value = raw
+  errorTitle.value = ''
+  errorDetail.value = ''
+  const missingFlm = raw.match(/existing FLM is missing:\s*(.+)$/i)
+  if (missingFlm) {
+    errorTitle.value = tr(`缺少下载算法 ${missingFlm[1]}`, `Missing flash algorithm ${missingFlm[1]}`)
+    errorDetail.value = tr(
+      `当前烧录顺序使用了这个 FLM，但下载器 U 盘中没有对应文件。请选择本地 FLM 替换，或为固件选择其他算法。`,
+      `The current flash sequence uses this FLM, but it is not on the probe USB drive. Choose a local FLM replacement or select another algorithm for the firmware.`,
+    )
+    return
+  }
+  if (/MICROKEEN disk is unavailable/i.test(raw)) {
+    errorTitle.value = tr('未找到脱机下载器 U 盘', 'Offline probe USB drive not found')
+    errorDetail.value = tr('请插入下载器 U 盘后刷新状态，再重新部署。', 'Insert the probe USB drive, refresh its status, and deploy again.')
+    return
+  }
+  if (/missing firmware source|firmware source is unavailable/i.test(raw)) {
+    errorTitle.value = tr('固件文件不可用', 'Firmware source unavailable')
+    errorDetail.value = tr('请重新选择或拖入对应的 BIN / HEX 文件。', 'Choose or drop the corresponding BIN / HEX file again.')
+    return
+  }
+  if (/offline destination names must be unique/i.test(raw)) {
+    errorTitle.value = tr('烧录目标文件名重复', 'Duplicate deployment file name')
+    errorDetail.value = tr('请修改烧录顺序中的文件名，使每个目标文件名唯一。', 'Rename the files in the flash sequence so each deployment name is unique.')
+  }
+}
+
+function clearError(): void {
+  error.value = ''
+  errorTitle.value = ''
+  errorDetail.value = ''
+}
+
 function targetAction(target: TargetRecord): string {
   if (isHpmPart(target.part_number)) return tr('使用 ROM API', 'Use ROM API')
   return target.installed ? tr('加入算法', 'Add Algorithm') : tr('下载 Pack', 'Download Pack')
@@ -151,7 +204,7 @@ function targetAction(target: TargetRecord): string {
 
 async function refreshDisk(): Promise<void> {
   try { disk.value = await offline.getStatus() }
-  catch (value) { error.value = message(value) }
+  catch (value) { setError(value) }
 }
 
 function modelChanged(): void {
@@ -161,9 +214,9 @@ function modelChanged(): void {
 
 async function searchTargets(): Promise<void> {
   targetBusy.value = true
-  error.value = ''
+  clearError()
   try { targets.value = await online.searchTargets(targetQuery.value, { limit: 30 }) }
-  catch (value) { error.value = message(value) }
+  catch (value) { setError(value) }
   finally { targetBusy.value = false }
 }
 
@@ -184,7 +237,7 @@ function mergeAlgorithms(items: OfflineAlgorithmCandidate[]): void {
 
 async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
   targetBusy.value = true
-  error.value = ''
+  clearError()
   notice.value = ''
   try {
     targetPart.value = target.part_number
@@ -201,7 +254,7 @@ async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
     if (!items.length) throw new Error(tr(`未找到 ${target.part_number} 的 FLM 算法`, `No FLM algorithm found for ${target.part_number}`))
     mergeAlgorithms(items)
     notice.value = tr(`已加入 ${items.length} 个 ${target.part_number} 算法候选`, `Added ${items.length} algorithm candidates for ${target.part_number}`)
-  } catch (value) { error.value = message(value) }
+  } catch (value) { setError(value) }
   finally { targetBusy.value = false }
 }
 
@@ -211,7 +264,7 @@ function addManualFlm(event: Event): void {
   input.value = ''
   if (!file) return
   if (!file.name.toLowerCase().endsWith('.flm')) {
-    error.value = tr('下载算法必须是 .FLM 文件', 'Flash algorithm must be an .FLM file')
+    setError(new Error(tr('下载算法必须是 .FLM 文件', 'Flash algorithm must be an .FLM file')))
     return
   }
   const id = nextId('flm')
@@ -232,6 +285,32 @@ function addManualFlm(event: Event): void {
   }
 }
 
+function chooseReplacement(id: string): void {
+  replacementAlgorithmId.value = id
+  replacementFlmInput.value?.click()
+}
+
+function replaceAlgorithm(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const algorithm = algorithms.value.find(item => item.id === replacementAlgorithmId.value)
+  replacementAlgorithmId.value = ''
+  if (!file || !algorithm) return
+  if (!file.name.toLowerCase().endsWith('.flm')) {
+    setError(new Error(tr('下载算法必须是 .FLM 文件', 'Flash algorithm must be an .FLM file')))
+    return
+  }
+  algorithm.source_kind = 'upload'
+  algorithm.source_token = null
+  algorithm.origin = tr('本地替换', 'Local replacement')
+  algorithm.available = true
+  algorithm.on_probe = false
+  algorithm.file = file
+  clearError()
+  preview.value = null
+}
+
 function removeAlgorithm(index: number): void {
   const [removed] = algorithms.value.splice(index, 1)
   const fallback = algorithms.value[0]?.id || ''
@@ -248,11 +327,11 @@ function addFirmwareSources(sources: Array<string | File>): void {
     const name = file?.name || path.split(/[\\/]/).pop() || ''
     const suffix = name.split('.').pop()?.toLowerCase()
     if (suffix !== 'bin' && suffix !== 'hex') {
-      error.value = tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')
+      setError(new Error(tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')))
       continue
     }
     if (hpmMode.value && suffix !== 'bin') {
-      error.value = tr('HPM ROM API 只支持 BIN 固件', 'HPM ROM API supports BIN firmware only')
+      setError(new Error(tr('HPM ROM API 只支持 BIN 固件', 'HPM ROM API supports BIN firmware only')))
       continue
     }
     firmwares.value.push({
@@ -312,7 +391,7 @@ async function pollFirmwareSources(): Promise<void> {
       }
       item.source_stamp = stamp
     } catch (value) {
-      error.value = tr(`固件路径不可用：${message(value)}`, `Firmware path is unavailable: ${message(value)}`)
+      setError(new Error(tr(`固件路径不可用：${message(value)}`, `Firmware path is unavailable: ${message(value)}`)))
     }
   }
 }
@@ -348,7 +427,9 @@ function buildRequest(): {
   flmFiles: File[]
 } {
   const flmFiles: File[] = []
-  const algorithmPayload: OfflineAlgorithmConfig[] = algorithms.value.map(item => {
+  const algorithmPayload: OfflineAlgorithmConfig[] = algorithms.value
+    .filter(item => selectedAlgorithmIds.value.has(item.id))
+    .map(item => {
     let uploadIndex: number | null = null
     if (item.source_kind === 'upload') {
       if (!item.file) throw new Error(tr(`请选择 ${item.file_name} 的 FLM 文件`, `Select the FLM file for ${item.file_name}`))
@@ -363,7 +444,7 @@ function buildRequest(): {
       source_token: item.source_token,
       upload_index: uploadIndex,
     }
-  })
+    })
   const firmwareFiles: File[] = []
   const firmwarePayload: OfflineFirmwareConfig[] = firmwares.value.map(item => {
     const uploadIndex = item.file ? firmwareFiles.push(item.file) - 1 : null
@@ -397,18 +478,18 @@ function buildRequest(): {
 
 async function generatePreview(): Promise<void> {
   operationBusy.value = true
-  error.value = ''
+  clearError()
   notice.value = ''
   try {
     preview.value = await offline.preview(buildRequest().payload)
     notice.value = tr(`已生成 ${preview.value.script_name}`, `Generated ${preview.value.script_name}`)
-  } catch (value) { error.value = message(value) }
+  } catch (value) { setError(value) }
   finally { operationBusy.value = false }
 }
 
 async function deploy(): Promise<void> {
   operationBusy.value = true
-  error.value = ''
+  clearError()
   notice.value = ''
   try {
     const request = buildRequest()
@@ -420,13 +501,13 @@ async function deploy(): Promise<void> {
     deployedModel.value = result.model
     notice.value = tr(`已部署 ${result.files.length} 个文件，脚本 ${result.script_name}`, `Deployed ${result.files.length} files with script ${result.script_name}`)
     await refreshDisk()
-  } catch (value) { error.value = message(value) }
+  } catch (value) { setError(value) }
   finally { operationBusy.value = false }
 }
 
 async function triggerOffline(): Promise<void> {
   operationBusy.value = true
-  error.value = ''
+  clearError()
   triggerLines.value = []
   try {
     const result = await offline.trigger(
@@ -439,7 +520,7 @@ async function triggerOffline(): Promise<void> {
     )
     triggerLines.value = result.lines
     notice.value = result.status === 'completed' ? tr('脱机下载执行完成', 'Offline flashing completed') : tr('脱机下载执行失败', 'Offline flashing failed')
-  } catch (value) { error.value = message(value) }
+  } catch (value) { setError(value) }
   finally { operationBusy.value = false }
 }
 
@@ -471,7 +552,12 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div v-if="error" class="alert alert-error">{{ error }}</div>
+    <div v-if="error" class="alert alert-error" data-testid="offline-error">
+      <strong>{{ errorTitle || tr('脱机烧录无法继续', 'Offline flash could not continue') }}</strong>
+      <span v-if="errorDetail" class="error-detail">{{ errorDetail }}</span>
+      <details v-if="errorDetail" class="technical-error"><summary>{{ tr('技术详情', 'Technical details') }}</summary><code>{{ error }}</code></details>
+    </div>
+    <div v-if="selectionWarning" class="alert alert-warn" data-testid="offline-selection-warning">{{ selectionWarning }}</div>
     <div v-if="notice" class="alert alert-success">{{ notice }}</div>
 
     <div class="offline-workspace">
@@ -489,8 +575,12 @@ onBeforeUnmount(() => {
         </div>
         <p v-if="hpmMode" class="hpm-mode">HPM ROM API · {{ tr('无需 Pack 或 FLM', 'No Pack or FLM required') }}</p>
         <div v-else class="algorithm-list">
-          <div v-for="(item, index) in algorithms" :key="item.id" class="algorithm-row" data-testid="offline-algorithm-row">
+          <div v-for="(item, index) in algorithms" :key="item.id" class="algorithm-row" :class="{ unavailable: !item.available && item.source_kind !== 'upload' }" data-testid="offline-algorithm-row">
             <div class="row-title"><input v-model="item.file_name" class="compact-input mono"><span>{{ item.origin === '本地文件' ? tr('本地文件', 'Local file') : item.origin }}</span><button class="icon-command" :title="tr('移除算法', 'Remove algorithm')" @click="removeAlgorithm(index)">×</button></div>
+            <div v-if="!item.available && item.source_kind !== 'upload'" class="algorithm-warning" data-testid="offline-algorithm-unavailable">
+              <span>{{ tr('U 盘中不可用', 'Unavailable on USB drive') }}</span>
+              <button class="btn btn-sm" type="button" @click="chooseReplacement(item.id)">{{ tr('选择本地 FLM', 'Choose local FLM') }}</button>
+            </div>
             <label>Flash<input v-model="item.flash_base" class="compact-input mono"></label>
             <label>RAM<input v-model="item.ram_base" class="compact-input mono"></label>
           </div>
@@ -507,7 +597,7 @@ onBeforeUnmount(() => {
               <input v-model="item.file_name" class="compact-input mono file-name">
               <select v-if="!hpmMode" v-model="item.algorithm_id" class="compact-input">
                 <option value="" disabled>{{ tr('选择 FLM', 'Select FLM') }}</option>
-                <option v-for="algorithm in algorithms" :key="algorithm.id" :value="algorithm.id">{{ algorithm.file_name }}</option>
+                <option v-for="algorithm in algorithms" :key="algorithm.id" :value="algorithm.id">{{ algorithm.file_name }}{{ !algorithm.available && algorithm.source_kind !== 'upload' ? ` · ${tr('不可用', 'unavailable')}` : '' }}</option>
               </select>
               <span v-else class="embedded-address">HPM ROM API</span>
               <input v-if="item.format === 'bin'" v-model="item.base_address" class="compact-input mono" :placeholder="tr('BIN 基地址', 'BIN base address')">
@@ -543,10 +633,11 @@ onBeforeUnmount(() => {
         <pre v-if="triggerLines.length" class="trigger-log">{{ triggerLines.join('\n') }}</pre>
       </section>
     </div>
+    <input ref="replacementFlmInput" class="visually-hidden" type="file" accept=".flm" @change="replaceAlgorithm">
   </div>
 </template>
 
 <style scoped>
 .firmware-panel{outline:2px solid transparent;outline-offset:-2px}.firmware-panel.dragging{outline-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.hpm-mode{padding:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--success);font-size:12px}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:#fff}.algorithm-row{padding:8px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
+.offline-page{min-height:0;display:flex;flex-direction:column;gap:10px}.status-strip{display:flex;align-items:center;gap:28px;min-height:46px;padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface)}.status-strip>div{display:flex;align-items:baseline;gap:8px;min-width:0}.status-strip b{font-size:12px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-label{font-size:11px;color:var(--muted)}.status-actions{margin-left:auto}.ok{color:var(--success)}.bad{color:var(--danger)}.error-detail{display:block;margin-top:4px}.technical-error{margin-top:6px;color:var(--muted);font-size:11px}.technical-error code{display:block;margin-top:4px;white-space:pre-wrap;word-break:break-word;font:11px/1.45 var(--font-mono)}.offline-workspace{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.25fr) minmax(300px,1fr);gap:10px;min-height:620px}.work-panel{min-width:0;min-height:0;padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);overflow:auto}.panel-heading{height:34px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-subtle);margin-bottom:10px}.panel-heading h2{font-size:14px}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;cursor:pointer}.target-search{display:grid;grid-template-columns:1fr auto;gap:6px}.target-results{display:grid;gap:5px;max-height:150px;overflow:auto;margin:8px 0 12px}.target-result{display:flex;align-items:center;justify-content:space-between;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--fg);cursor:pointer}.target-result span{display:grid}.target-result small{font-size:10px;color:var(--muted)}.target-result em{font-style:normal;font-size:10px;color:var(--accent)}.hpm-mode{padding:12px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--success);font-size:12px}.algorithm-list,.firmware-list{display:grid;gap:7px}.algorithm-row,.firmware-row{border:1px solid var(--border);border-radius:5px;background:#fff}.algorithm-row{padding:8px}.algorithm-row.unavailable{border-color:var(--warn)}.algorithm-warning{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;margin-bottom:5px;border-radius:4px;background:#f5f0e1;color:var(--warn);font-size:11px}.row-title{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;margin-bottom:7px}.row-title span{font-size:10px;color:var(--muted)}.algorithm-row>label{display:grid;grid-template-columns:42px 1fr;align-items:center;gap:6px;margin-top:5px;font-size:10px;color:var(--muted)}.compact-input{width:100%;height:27px;padding:0 7px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--fg);min-width:0}.mono{font-family:var(--font-mono)}.icon-command{width:27px;height:27px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}.icon-command:hover{color:var(--accent);border-color:var(--accent)}.icon-command:disabled{opacity:.35;cursor:not-allowed}.firmware-row{display:grid;grid-template-columns:34px 1fr 28px;padding:8px;gap:7px}.sequence-number{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;background:var(--bg);font-family:var(--font-mono);font-weight:600}.firmware-fields{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(110px,1fr);gap:6px}.firmware-fields .file-name{grid-column:1/-1}.embedded-address{align-self:center;font-size:11px;color:var(--muted)}.row-actions{display:grid;gap:4px}.setting-row{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:8px;margin-bottom:9px}.setting-row>span{font-size:12px;color:var(--muted);text-align:right}.setting-row em{font-size:10px;color:var(--muted);font-style:normal}.deploy-actions{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.script-preview{border:1px solid var(--border);border-radius:5px;overflow:hidden}.preview-title{display:flex;justify-content:space-between;padding:6px 9px;background:var(--bg);font-size:10px;color:var(--muted)}.script-preview pre,.trigger-log{margin:0;padding:10px;max-height:310px;overflow:auto;background:#16191d;color:#d9dee5;font:11px/1.55 var(--font-mono);white-space:pre}.trigger-log{margin-top:8px;border-radius:5px}.empty-state{padding:20px 8px;text-align:center;color:var(--dim);font-size:12px}@media(max-width:1100px){.offline-workspace{grid-template-columns:1fr 1.25fr}.settings-panel{grid-column:1/-1}}@media(max-width:760px){.status-strip{align-items:flex-start;flex-wrap:wrap}.status-actions{margin-left:0}.offline-workspace{grid-template-columns:1fr}.settings-panel{grid-column:auto}.firmware-fields{grid-template-columns:1fr}.firmware-fields .file-name{grid-column:auto}}
 </style>

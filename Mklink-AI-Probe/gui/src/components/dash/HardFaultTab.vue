@@ -1,7 +1,22 @@
 <template>
   <div class="hardfault-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('HardFault 现场采集需要连接 MKLink 设备。', 'HardFault capture requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
     <template v-else>
+      <SetupHint
+        v-if="!symbolLoaded"
+        kind="info"
+        :message="tr('不加载符号也可检查；加载 AXF / ELF 后可解析函数和源码位置。', 'Capture works without symbols; load AXF / ELF to resolve functions and source locations.')"
+        :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载符号', 'Load Symbols')"
+        :busy="loadingSymbols"
+        @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
+      />
       <button class="btn btn-primary" @click="check" :disabled="loading">
         {{ loading ? tr('检查中...', 'Checking...') : tr('检查 HardFault', 'Check HardFault') }}
       </button>
@@ -84,13 +99,28 @@
 import { ref } from 'vue'
 import { useDeviceApi } from '../../composables/useDashboard'
 import { useToast } from '../../composables/useToast'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import type { HardFaultDetail } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
+import SetupHint from './SetupHint.vue'
 
-defineProps<{ deviceConnected: boolean }>()
+const props = withDefaults(defineProps<{
+  deviceConnected: boolean
+  symbolLoaded?: boolean
+}>(), {
+  symbolLoaded: true,
+})
 
 const device = useDeviceApi()
 const toast = useToast()
+const {
+  connecting,
+  loadingSymbols,
+  hasSymbolSource,
+  quickConnect,
+  loadSymbolFile,
+  parseSelectedSymbols,
+} = useDashboardSetup()
 const loading = ref(false)
 const report = ref<HardFaultDetail | null>(null)
 

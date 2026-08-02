@@ -71,6 +71,27 @@ describe('App version footer', () => {
     wrapper.unmount()
   })
 
+  it('exposes documentation and store as browser links without showing raw URLs', () => {
+    const wrapper = mountApp()
+    const docs = wrapper.get('[data-testid="online-docs-link"]')
+    const store = wrapper.get('[data-testid="taobao-link"]')
+    expect(docs.attributes()).toMatchObject({
+      href: 'https://microboot.readthedocs.io/zh-cn/latest/tools/microlink/microlink/',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    })
+    expect(store.attributes()).toMatchObject({
+      href: 'https://item.taobao.com/item.htm?ft=t&id=1020501356342',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    })
+    expect(docs.text()).toBe('在线文档')
+    expect(store.text()).toBe('淘宝店')
+    expect(wrapper.text()).not.toContain('microboot.readthedocs.io')
+    expect(wrapper.text()).not.toContain('item.taobao.com')
+    wrapper.unmount()
+  })
+
   it('checks for desktop updates when the application starts', () => {
     checkForUpdates.mockClear()
     const wrapper = mountApp()

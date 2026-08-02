@@ -1,12 +1,26 @@
 import { shallowMount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
 import { readFileSync } from 'node:fs'
 import DashboardView from './DashboardView.vue'
 import { setLanguage } from '../composables/useLanguage'
 
 const routerMock = vi.hoisted(() => ({
   query: {} as Record<string, string>,
+}))
+const apiMock = vi.hoisted(() => ({
+  deviceStatus: {
+    __v_isRef: true,
+    value: {
+      connected: true,
+      state: 'connected',
+      mcu: 'STM32F103RC',
+      idcode: '0x410',
+      port: 'PROBE_PORT',
+      axf: { loaded: true },
+    },
+  },
+  connectDevice: vi.fn(),
+  disconnectDevice: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -16,7 +30,11 @@ vi.mock('vue-router', () => ({
 
 vi.mock('../composables/useMklinkApi', () => ({
   useMklinkApi: () => ({
-    deviceStatus: reactive({ connected: true }),
+    deviceStatus: apiMock.deviceStatus,
+    connectDevice: apiMock.connectDevice,
+    disconnectDevice: apiMock.disconnectDevice,
+    uploadFileSource: vi.fn(),
+    parseAxf: vi.fn(),
     flashDevice: vi.fn(),
     resetDevice: vi.fn(),
     eraseDevice: vi.fn(),
@@ -45,7 +63,43 @@ const dashStub = { template: '<div />', props: ['deviceConnected'] }
 describe('DashboardView layout classes', () => {
   afterEach(() => {
     routerMock.query = {}
+    apiMock.deviceStatus.value.connected = true
+    apiMock.deviceStatus.value.mcu = 'STM32F103RC'
+    apiMock.deviceStatus.value.axf = { loaded: true }
+    vi.clearAllMocks()
     setLanguage('zh')
+  })
+
+  it('keeps an explicit Device connect or disconnect action in the dashboard header', async () => {
+    apiMock.disconnectDevice.mockImplementationOnce(async () => {
+      apiMock.deviceStatus.value.connected = false
+    })
+    apiMock.connectDevice.mockImplementationOnce(async () => {
+      apiMock.deviceStatus.value.connected = true
+      return apiMock.deviceStatus.value
+    })
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="device-quick-action"]').text()).toContain('断开')
+    await wrapper.get('[data-testid="device-quick-action"]').trigger('click')
+    expect(apiMock.disconnectDevice).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-testid="device-quick-action"]').text()).toContain('连接设备')
+
+    await wrapper.get('[data-testid="device-quick-action"]').trigger('click')
+    expect(apiMock.connectDevice).toHaveBeenCalledWith(expect.objectContaining({ restore_last: true }))
   })
 
   it('places SuperWatch immediately after RTT View', () => {

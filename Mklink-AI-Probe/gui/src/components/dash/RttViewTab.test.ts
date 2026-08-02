@@ -124,12 +124,27 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('keeps RTT setup available while disconnected but requires an explicit connection', async () => {
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: false } })
+
+    expect(wrapper.get('.setup-device').text()).toContain('连接 MKLink 设备')
+    expect(wrapper.get('[data-testid="rtt-address"]').exists()).toBe(true)
+    expect(wrapper.get('.control-toolbar .btn-primary').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('.control-toolbar .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(mocks.dash.start).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).props('inputEnabled')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('switches between log and terminal views without restarting RTT', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
 
-    expect(wrapper.get('[data-testid="rtt-log-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('.rtt-view-log').isVisible()).toBe(true)
-    expect(wrapper.get('.rtt-terminal-shell').attributes('style')).toContain('display: none')
+    expect(wrapper.get('[data-testid="rtt-terminal-mode"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.rtt-view-log').attributes('style')).toContain('display: none')
+    expect(wrapper.get('.rtt-terminal-shell').attributes('style') ?? '').not.toContain('display: none')
 
     mocks.binary.rttTerminal.value = {
       type: 'rtt-terminal', sequence: 1n, text: '\x1b[31merror\x1b[0m\r',
@@ -175,6 +190,7 @@ describe('RttViewTab binary migration', () => {
 
   it('groups RTT setup and stream controls into two compact rows', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
 
     expect(wrapper.find('.rtt-address-row').exists()).toBe(true)
     expect(wrapper.find('.rtt-primary-tools .control-toolbar').exists()).toBe(true)
@@ -552,6 +568,7 @@ describe('RttViewTab binary migration', () => {
 
   it('requests the numeric envelope over the actual Worker buffer time range', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     mocks.binary.telemetry.value = { bufferedSamples: 256 }
     mocks.binary.waveformBatch.value = {
       type: 'waveform-batch', sequence: 1n, timestampNs: 2_000_000_000n,
@@ -582,6 +599,7 @@ describe('RttViewTab binary migration', () => {
       lineWidth: 1,
     } as unknown as CanvasRenderingContext2D)
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     mocks.binary.waveformBatch.value = {
       type: 'waveform-batch', sequence: 1n, timestampNs: 2_000_000_000n,
       itemCount: 2, channelCount: 1, layout: 'sample-major-float32',
@@ -628,6 +646,7 @@ describe('RttViewTab binary migration', () => {
       lineWidth: 1,
     } as unknown as CanvasRenderingContext2D)
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     mocks.binary.telemetry.value = { bufferedSamples: 256 }
     mocks.binary.waveformBatch.value = {
       type: 'waveform-batch', sequence: 1n, timestampNs: 10_000_000_000n,
@@ -736,6 +755,7 @@ describe('RttViewTab binary migration', () => {
       down_buffers: [],
     }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     mocks.dash.state.value = 'running'
     await flushPromises()
     mocks.binary.start.mockClear()
@@ -754,7 +774,7 @@ describe('RttViewTab binary migration', () => {
     expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(0)
 
     await wrapper.get('.control-toolbar .btn-primary').trigger('click')
-    expect(mocks.scheduler.start).toHaveBeenCalledTimes(2)
+    expect(mocks.scheduler.start).toHaveBeenCalledTimes(3)
     expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
     expect(mocks.dash.resume).not.toHaveBeenCalled()
     expect(mocks.binary.start).not.toHaveBeenCalled()

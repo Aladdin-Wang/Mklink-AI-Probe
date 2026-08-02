@@ -8,6 +8,20 @@
           :class="['nav-tab', { active: currentTab === tab.key }]"
           @click="navigate(tab.key)"
         >{{ tab.label }}</button>
+        <a
+          class="external-link"
+          data-testid="online-docs-link"
+          href="https://microboot.readthedocs.io/zh-cn/latest/tools/microlink/microlink/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ tr('在线文档', 'Docs') }}</a>
+        <a
+          class="external-link"
+          data-testid="taobao-link"
+          href="https://item.taobao.com/item.htm?ft=t&id=1020501356342"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ tr('淘宝店', 'Store') }}</a>
       </nav>
       <div class="header-right">
         <button
@@ -196,6 +210,18 @@ body {
   align-items: center;
   gap: 8px;
 }
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.external-link:hover { color: var(--accent); border-bottom-color: var(--border); }
 .language-toggle {
   height: 28px;
   display: inline-flex;
@@ -229,6 +255,7 @@ body {
     flex: 0 0 auto;
     padding: 12px 8px;
   }
+  .external-link { height: 44px; padding: 0 8px; }
   .header-right {
     grid-column: 1 / -1;
     width: 100%;

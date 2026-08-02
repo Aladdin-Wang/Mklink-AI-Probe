@@ -85,6 +85,7 @@ export interface ConnectRequest {
   axf?: string
   mcu?: string
   elf_backend?: 'builtin' | 'external'
+  restore_last?: boolean
 }
 
 export interface FlashRequest {

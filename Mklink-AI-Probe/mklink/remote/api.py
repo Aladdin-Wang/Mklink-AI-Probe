@@ -235,6 +235,35 @@ def release_resource_by_name(
     return release_resource_owner(state, lease.owner, stop_active=stop_active)
 
 
+def remember_device_connection(
+    state: dict[str, Any],
+    device,
+    *,
+    mcu: str | None = None,
+) -> dict[str, Any] | None:
+    """Remember the successful inputs used by an explicit quick reconnect."""
+    if device is None or not getattr(device, "connected", False):
+        return None
+
+    try:
+        axf_status = dict(getattr(device, "axf_status", {}) or {})
+    except Exception:
+        axf_status = {}
+    device_state = getattr(device, "__dict__", {})
+    details = {
+        "port": getattr(device, "port", None),
+        "axf": axf_status.get("axf_path") or device_state.get("_axf"),
+        "mcu": mcu if mcu is not None else device_state.get("_mcu_hint"),
+        "elf_backend": (
+            axf_status.get("elf_backend")
+            or device_state.get("_elf_backend")
+            or device_state.get("_elf_backend_requested")
+        ),
+    }
+    state["last_device_connection"] = details
+    return details
+
+
 def prepare_online_flash_connect(state: dict[str, Any], request) -> None:
     """Release the shared CDC Device before an HPM online-flash connection."""
     from mklink.hpm_config import is_hpm_target
@@ -588,6 +617,7 @@ def create_app(
     _state = {
         "device": None,
         "dispatcher": None,
+        "last_device_connection": None,
         "auth_token": auth_token,
         "project_root": project_root,
         "resource_manager": ResourceManager(),
@@ -608,6 +638,7 @@ def create_app(
     app.state.stream_registry = stream_registry
     app.state.stream_types = stream_types
     dashboard_managers = get_managers()
+    _state["dashboard_managers"] = dashboard_managers
     systemview_manager = dashboard_managers["systemview"]
     set_stream_hub = getattr(systemview_manager, "set_stream_hub", None)
     if callable(set_stream_hub):
@@ -1141,7 +1172,18 @@ def create_app(
         axf: str | None = Body(default=None),
         mcu: str | None = Body(default=None),
         elf_backend: str | None = Body(default=None),
+        restore_last: bool = Body(default=False),
     ):
+        if restore_last:
+            previous = _state.get("last_device_connection") or {}
+            port = port if port is not None else previous.get("port")
+            axf = axf if axf is not None else previous.get("axf")
+            mcu = mcu if mcu is not None else previous.get("mcu")
+            elf_backend = (
+                elf_backend
+                if elf_backend is not None
+                else previous.get("elf_backend")
+            )
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]
@@ -1149,6 +1191,7 @@ def create_app(
                 await _reparse_active_symbols(axf, elf_backend)
             elif manager._device is not dev:
                 await run_in_threadpool(manager.prepare, dev)
+            remember_device_connection(_state, dev, mcu=mcu)
             return {
                 "status": "already_connected",
                 "mcu": dev.mcu_name,
@@ -1186,6 +1229,7 @@ def create_app(
         _state["device"] = device
         _state["dispatcher"] = DeviceDispatcher(device)
         await run_in_threadpool(get_managers()["superwatch"].prepare, device)
+        remember_device_connection(_state, device, mcu=mcu)
         return {
             "status": "connected",
             "mcu": device.mcu_name,
@@ -1197,20 +1241,25 @@ def create_app(
 
     @app.post("/api/device/disconnect")
     async def disconnect_device():
-        # 停止所有 Dashboard StreamManager，防止孤立后台线程
-        from mklink.remote.dashboards import get_managers
-        for _name, mgr in get_managers().items():
-            if mgr.running:
-                mgr.stop()
-        # 释放所有资源租约
-        if "resource_manager" in _state:
-            _state["resource_manager"].release_all()
-        # 关闭设备
-        if _state["device"]:
-            _state["device"].close()
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+
+        stopped = []
+        for name in BRIDGE_DASHBOARD_TYPES:
+            manager = dashboard_managers.get(name)
+            if manager is not None and _dashboard_worker_alive(manager):
+                await run_in_threadpool(manager.stop)
+                if _dashboard_worker_alive(manager):
+                    raise DashboardStopPending(name)
+                stopped.append(name)
+            _state["resource_manager"].release(f"user:dashboard:{name}")
+
+        device = _state["device"]
+        if device:
+            remember_device_connection(_state, device)
+            await run_in_threadpool(device.close)
             _state["device"] = None
             _state["dispatcher"] = None
-        return {"status": "disconnected"}
+        return {"status": "disconnected", "stopped": stopped}
 
     @app.get("/api/device/status")
     async def device_status():
@@ -1453,7 +1502,10 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if not _state["device"] or not _state["device"].connected:
-            raise HTTPException(status_code=400, detail="Device not connected")
+            raise HTTPException(
+                status_code=400,
+                detail="Device not connected",
+            )
         managers = get_managers()
         rtt = managers["rtt"]
         status, stopped = await start_dashboard_manager(
@@ -1955,7 +2007,17 @@ def create_app(
             from mklink.modbus._client import ModbusClient
             client = ModbusClient(port=port, baudrate=baudrate,
                                   parity=parity, stopbits=stopbits)
-            client.connect()
+            if not client.open():
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "conflict": f"serial port {port} is busy or unavailable",
+                        "resource": ResourceGroup.MODBUS_PORT.value,
+                    },
+                )
+        except HTTPException:
+            release_resource_owner(_state, owner, stop_active=False)
+            raise
         except Exception as e:
             release_resource_owner(_state, owner, stop_active=False)
             raise HTTPException(status_code=500, detail=f"Modbus connect failed: {e}")
@@ -2609,6 +2671,7 @@ def run_server(
             mks = {
                 "device": None,
                 "dispatcher": None,
+                "last_device_connection": None,
                 "resource_manager": ResourceManager(),
             }
             app.state.mklink_state = mks
@@ -2628,6 +2691,7 @@ def run_server(
             from mklink.remote.server import DeviceDispatcher
             mks["device"] = device
             mks["dispatcher"] = DeviceDispatcher(device)
+            remember_device_connection(mks, device)
             logger.info("Auto-connected device: MCU=%s IDCODE=0x%08X",
                         device.mcu_name, device.idcode)
         except Exception as e:

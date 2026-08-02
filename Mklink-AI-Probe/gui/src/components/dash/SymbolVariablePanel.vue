@@ -69,7 +69,32 @@
     </div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
-    <div v-if="!deviceConnected" class="empty-state">{{ tr('请先连接设备', 'Connect a device first') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('SuperWatch 读取变量前需要连接 MKLink 设备。', 'Connect the MKLink device before reading variables with SuperWatch.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
+    <SetupHint
+      v-else-if="symbolError || catalog.error.value"
+      kind="error"
+      :message="tr('符号文件解析失败：', 'Symbol parsing failed: ') + (symbolError || catalog.error.value)"
+      :primary-label="tr('重新选择', 'Choose Another File')"
+      :secondary-label="hasSymbolSource ? tr('重试解析', 'Retry Parsing') : ''"
+      :busy="loadingSymbols"
+      @primary="loadSymbolFile"
+      @secondary="parseSelectedSymbols"
+    />
+    <SetupHint
+      v-else-if="!symbolLoaded"
+      kind="symbols"
+      :message="hasSymbolSource ? tr('已选择 AXF / ELF，解析后即可浏览变量。', 'An AXF / ELF file is selected. Parse it to browse variables.') : tr('SuperWatch 需要 AXF / ELF 中的变量和类型信息。', 'SuperWatch needs variable and type information from an AXF / ELF file.')"
+      :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载 AXF / ELF', 'Load AXF / ELF')"
+      :busy="loadingSymbols"
+      @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
+    />
     <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
     <div v-else class="variable-groups">
       <h3 class="variable-root-heading">{{ tr('全局变量', 'Global Variables') }}</h3>
@@ -267,18 +292,25 @@ import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Plus, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import { buildBrowseTree, buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
 import type { SymbolDescriptor } from '../../types/mklink'
 import type { SymbolTreeNode } from '../../lib/symbolTree'
 import { tr } from '../../composables/useLanguage'
+import SetupHint from './SetupHint.vue'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   deviceConnected: boolean
+  symbolLoaded?: boolean
+  symbolError?: string
   latestValues: Record<string, number | boolean>
   hiddenChannels?: ReadonlySet<string>
-}>()
+}>(), {
+  symbolLoaded: true,
+  symbolError: '',
+})
 
 const emit = defineEmits<{
   'visibility-change': [path: string, visible: boolean]
@@ -287,6 +319,14 @@ const emit = defineEmits<{
 
 const catalog = useSymbolCatalog()
 const toast = useToast()
+const {
+  connecting,
+  loadingSymbols,
+  hasSymbolSource,
+  quickConnect,
+  loadSymbolFile,
+  parseSelectedSymbols,
+} = useDashboardSetup()
 const query = ref('')
 const manualAddOpen = ref(false)
 const manualPath = ref('')
@@ -338,7 +378,7 @@ async function request(path: string, options?: RequestInit): Promise<any> {
 }
 
 async function loadWorkspace(): Promise<void> {
-  if (!props.deviceConnected) return
+  if (!props.deviceConnected || !props.symbolLoaded) return
   try {
     await catalog.ensureLoaded()
     const response = await request('/api/dash/superwatch/items')
@@ -549,7 +589,10 @@ function formatValue(value: number | boolean | undefined): string {
 
 onMounted(loadWorkspace)
 watch(() => props.deviceConnected, connected => {
-  if (connected) void loadWorkspace()
+  if (connected && props.symbolLoaded) void loadWorkspace()
+})
+watch(() => props.symbolLoaded, loaded => {
+  if (loaded && props.deviceConnected) void loadWorkspace()
 })
 watch(query, (next, previous) => {
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)

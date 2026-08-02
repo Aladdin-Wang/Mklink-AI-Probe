@@ -1,6 +1,31 @@
 <template>
   <div class="symbols-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">{{ tr('请先连接设备。', 'Connect a device first.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('符号表的运行时读取需要连接 MKLink 设备。', 'Runtime symbol inspection requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
+    <SetupHint
+      v-else-if="symbolError || catalog.error.value"
+      kind="error"
+      :message="tr('符号文件解析失败：', 'Symbol parsing failed: ') + (symbolError || catalog.error.value)"
+      :primary-label="tr('重新选择', 'Choose Another File')"
+      :secondary-label="hasSymbolSource ? tr('重试解析', 'Retry Parsing') : ''"
+      :busy="loadingSymbols"
+      @primary="loadSymbolFile"
+      @secondary="parseSelectedSymbols"
+    />
+    <SetupHint
+      v-else-if="!symbolLoaded"
+      kind="symbols"
+      :message="hasSymbolSource ? tr('已选择 AXF / ELF，解析后即可查看符号。', 'An AXF / ELF file is selected. Parse it to inspect symbols.') : tr('加载 AXF / ELF 以查看变量、类型和地址。', 'Load AXF / ELF to inspect variables, types, and addresses.')"
+      :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载 AXF / ELF', 'Load AXF / ELF')"
+      :busy="loadingSymbols"
+      @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
+    />
     <template v-else>
       <div class="sym-controls">
         <input
@@ -100,16 +125,33 @@ import { ChevronDown, ChevronRight, LoaderCircle } from '@lucide/vue'
 import { useSymbolsApi } from '../../composables/useDashboard'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import { buildBrowseTree, buildSymbolTree, visibleSymbolRows } from '../../lib/symbolTree'
 import type { SymbolTreeNode } from '../../lib/symbolTree'
 import type { SymbolDescriptor, SymbolTypeInfo } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
+import SetupHint from './SetupHint.vue'
 
-const props = defineProps<{ deviceConnected: boolean }>()
+const props = withDefaults(defineProps<{
+  deviceConnected: boolean
+  symbolLoaded?: boolean
+  symbolError?: string
+}>(), {
+  symbolLoaded: true,
+  symbolError: '',
+})
 
 const catalog = useSymbolCatalog()
 const symbols = useSymbolsApi()
 const toast = useToast()
+const {
+  connecting,
+  loadingSymbols,
+  hasSymbolSource,
+  quickConnect,
+  loadSymbolFile,
+  parseSelectedSymbols,
+} = useDashboardSetup()
 const query = ref('')
 const selectedType = ref<SymbolTypeInfo | null>(null)
 const expanded = shallowRef(new Set<string>())
@@ -127,7 +169,7 @@ const rows = computed(() => visibleSymbolRows(tree.value, {
 }))
 
 async function loadCatalog(): Promise<void> {
-  if (!props.deviceConnected) return
+  if (!props.deviceConnected || !props.symbolLoaded) return
   try {
     await catalog.ensureLoaded()
     await catalog.refreshStatus().catch(() => undefined)
@@ -187,7 +229,10 @@ function formatAddr(address: unknown): string {
 
 onMounted(loadCatalog)
 watch(() => props.deviceConnected, connected => {
-  if (connected) void loadCatalog()
+  if (connected && props.symbolLoaded) void loadCatalog()
+})
+watch(() => props.symbolLoaded, loaded => {
+  if (loaded && props.deviceConnected) void loadCatalog()
 })
 watch(query, value => {
   const key = value.trim()

@@ -158,6 +158,8 @@ describe('SerialMonitorTab', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(SerialMonitorTab)
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    expect(wrapper.get('[data-testid="serial-terminal-mode"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-testid="serial-log-mode"]').attributes('aria-pressed')).toBe('false')
     const stream = FakeEventSource.instances[0]
     stream.emit({
       event: 'data', timestamp: '12:00:00.000', direction: 'RX',
