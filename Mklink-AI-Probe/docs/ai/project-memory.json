@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-02T21:55:19+08:00",
+  "updated_at": "2026-08-02T23:14:47+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/hpm5301-online-symbols",
-    "head": "Branch fix/hpm5301-online-symbols contains the complete verified v0.1.5 candidate: diagnostics/dashboard expansion, independent Serial Assistant and RTT terminals, explicit Device ownership, contextual setup guidance, Offline Flash usability fixes, and regression coverage.",
+    "head": "Branch fix/hpm5301-online-symbols contains the complete verified v0.1.5 candidate plus a local verified Vite WebSocket proxy fix for binary Dashboard streams.",
     "remote_head": "origin/fix/hpm5301-online-symbols is the GitHub review branch for the verified v0.1.5 candidate. GitHub and Gitee master remain on the published v0.1.4 baseline.",
-    "working_tree": "All tracked v0.1.5 candidate implementation, regression tests, and handoff state are committed and pushed to the GitHub review branch. Local .mklink state and Python caches remain excluded. No merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized."
+    "working_tree": "The Vite /ws proxy fix, its regression test, and this updated handoff are intentionally uncommitted pending maintainer review. The earlier v0.1.5 candidate remains pushed to the GitHub review branch. Local .mklink state and Python caches remain excluded. No commit, push, merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, and Tauri desktop workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v0_1_5_candidate_pushed_for_review",
-    "current_task": "The verified v0.1.5 candidate is summarized and pushed to the GitHub fix/hpm5301-online-symbols review branch. It remains intentionally unmerged and unpublished pending maintainer review and explicit release authorization.",
+    "status": "vite_websocket_proxy_fixed_and_verified",
+    "current_task": "The source Web GUI regression caused by the missing Vite /ws proxy is fixed and fully verified on the current branch. The local fix remains intentionally uncommitted and unpushed pending maintainer review.",
     "release": "Official v0.1.4 remains the published baseline. The complete v0.1.5 candidate is pushed only to the GitHub review branch; master is not merged, and no tag, installer, signature, latest.json update, publication, or Gitee synchronization has been performed."
   },
   "milestones": [
@@ -68,7 +68,11 @@
   "verification": [
     {
       "area": "Current automated gate",
-      "result": "Python passed 1044 tests with 1 skipped; GUI passed 46 files and 487 tests; the Vite 8.1.5 production build and git diff --check passed. Focused Offline Flash, header, RTT, and Serial Assistant coverage passed 52 tests."
+      "result": "Python passed 1044 tests with 1 skipped; GUI passed 47 files and 488 tests; the Vite 8.1.5 production build and git diff --check passed. The GUI total includes the new Vite development-proxy regression test."
+    },
+    {
+      "area": "Vite WebSocket proxy and source Web regression",
+      "result": "The source Vite server had proxied only /api since its introduction, while RTT, SuperWatch, SystemView, and VOFA later moved to /ws/streams/*. REST calls therefore remained healthy at port 5173 while binary streams bypassed the backend. vite.config.ts now forwards /ws with WebSocket upgrade enabled to port 8765, and a Node-environment Vitest test pins both /api and /ws proxy contracts. On the real STM32F103RC through http://127.0.0.1:5173, RTT delivered MSH output, 16-channel SuperWatch accumulated 631,520 complete samples around 859 Hz with zero host/target errors or drops, RTOS Trace received about 154,089 events, and a direct VOFA WebSocket handshake reached Open through the Vite proxy."
     },
     {
       "area": "Large-array symbol browsing",
@@ -96,7 +100,7 @@
     },
     {
       "area": "Current live surface",
-      "result": "The current source Web GUI is available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765. It is left on RTT View with Device, RTT, and Serial Assistant explicitly stopped, the saved real RTT address visible, both physical ports free, and no resource owners. Desktop and 768px-wide browser checks confirmed the persistent header action can restore and explicitly release Device settings, contextual setup actions remain usable without document overflow, and the browser warning/error logs are empty."
+      "result": "The current source Web GUI is available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765. It is left on RTT View with Device connected, all Dashboard acquisition stopped, Serial Assistant closed, and no resource owners. The persistent header action disconnected and restored the real STM32 Device, large-array range nodes exposed the [1792..2047] tail page without loading [0], Online and Offline Flash pages passed non-writing smoke checks, and the 768px viewport had document width exactly equal to the viewport. Browser warning/error logs are empty."
     },
     {
       "area": "RTT terminal Web and STM32 hardware loop",
@@ -116,6 +120,7 @@
     }
   ],
   "decisions": [
+    "The source Vite development server must proxy both REST /api traffic and binary /ws WebSocket upgrades to the same local backend. Any new browser transport prefix requires an explicit development-proxy contract test so source-Web behavior cannot silently diverge from the bundled backend surface.",
     "AGENTS.md and the repository maintenance Skill are authoritative. Before changing a product, interaction, architecture, workflow, or testing strategy, present the problem, options, tradeoffs, recommendation, and acceptance criteria, then wait for explicit maintainer confirmation. Confirmed-strategy root-cause fixes may proceed directly. Runtime changes require a fix/feature branch, full Python and GUI suites, production build, git diff check, project-memory update, and affected real-hardware loop. Never infer authority to commit, merge, push, sign, tag, publish, modify latest.json, or synchronize Gitee.",
     "HPM targets always use the dedicated ROM API and never FLM. Agent-driven download routing is IDE-native build/download, then pyOCD online flash, then MKLink offline deployment; do not silently switch after a started operation fails.",
     "Builtin pyelftools is the default ELF/DWARF backend. External GNU tools run only when explicitly selected. _SEGGER_RTT in ELF/AXF is accepted only when its complete storage lies in an allocated writable section.",
