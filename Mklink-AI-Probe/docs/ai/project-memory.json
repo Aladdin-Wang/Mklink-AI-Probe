@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T10:00:00+08:00",
+  "updated_at": "2026-08-03T12:43:38+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Official v0.1.5 is published from source commit 76a66b6 with matching GitHub and Gitee tags, five release assets, and updates/latest.json. The tag remains fixed at the qualified release commit; this project-memory update is a later documentation-only master commit.",
-    "remote_head": "origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.",
-    "working_tree": "Official v0.1.5 publication is complete. Generated build products and caches were removed; local .mklink state remains excluded."
+    "branch": "fix/web-entry-launch-feedback",
+    "head": "The branch fixes browser-hosted Web GUI API and WebSocket routing on dynamic ports while preserving the configured port 8765 endpoint inside Tauri. The offline Web entry page adds a 25-second countdown, timeout guidance, and a reminder to re-register after Skill updates or moves.",
+    "remote_head": "The branch is local and based on origin/fix/v015-skill-web-dist at 6899d10. Pull request su5176/Mklink-AI-Probe#7 remains open on the parent branch and is not broadened by this follow-up fix.",
+    "working_tree": "Commit 1fd998d contains the qualified runtime endpoint and Web entry fix. The unchanged-version local Skill package was installed and the MICROKEEN launcher was regenerated. This final project-memory update is pending commit; local .mklink state remains excluded."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v0.1.5_published",
-    "current_task": "Monitor v0.1.5 field feedback and address any confirmed regression on a dedicated fix branch.",
-    "release": "Official v0.1.5 is published on GitHub and Gitee from source commit 76a66b6. Both hosts carry the same annotated tag, five public assets, and updates/latest.json; the Gitee installer and Skill archive passed anonymous size and SHA-256 verification."
+    "status": "web_entry_dynamic_port_fix_deployed",
+    "current_task": "Review the committed fix and cold-start evidence before deciding whether to push it or layer it onto the existing synchronization pull request.",
+    "release": "Product version remains 0.1.5. This follow-up does not move the published tag, modify updates/latest.json, republish assets, or alter pull request #7."
   },
   "milestones": [
     {
@@ -72,8 +72,8 @@
   ],
   "verification": [
     {
-      "area": "Current automated gate",
-      "result": "At 2b2defd, GUI passed 47 files and 488 tests plus the Vite 8.1.5 production build; main Tauri Rust passed 6 tests and cargo check/build; Site Agent Rust passed 5 tests and cargo check/build; Go STCP passed go test ./... and built mklink-stcp.dll; Python passed 1,229 tests with 1 skipped and 12 symlink-specific tests deselected. The deselected tests require Windows Developer Mode or SeCreateSymbolicLinkPrivilege and remain strict rather than silently skipped."
+      "area": "Web entry dynamic-port and launch-feedback gate",
+      "result": "On fix/web-entry-launch-feedback, browser-hosted REST, SSE, JSON-RPC, and binary streams use the current page origin while Tauri retains its configured port 8765 sidecar endpoint. The Web entry page shows a 25-second countdown over the existing 20-second backend readiness timeout, gives actionable timeout guidance, and reminds users to re-register after Skill updates or moves. GUI passed 48 files and 491 tests; the Vite 8.1.5 production build passed with VITE_APP_BUILD_COMMIT=6899d10e008e; the raw Python suite reached 1,227 passed and 1 skipped with only the 12 known symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable reduced gate passed 1,227 tests with 1 skipped and 15 explicit deselections. A source Web service served health and the new runtime-marked bundle successfully on non-default port 8770. Commit 1fd998d was archived as an unchanged-version 0.1.5 Skill package with SHA-256 D511CA0804BE2B43673684F6E03C959F31EB2F499989376EAE3C2CF617777DDF and installed into the user Skill root. With a benign server occupying 8765, the installed Web entry selected 8766; health, root, and the new bundle returned HTTP 200. A real Edge network capture observed 475 references to the 8766 origin across health, Device, RTT, Serial, SystemView, and assets, and zero references to 8765. Web entry stop released owned port 8766, the test blocker released 8765, the current-user protocol handler was re-registered, and G:/启动 MKLink Web.html contains the countdown, timeout guidance, update reminder, and protocol link."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -109,7 +109,7 @@
     },
     {
       "area": "Current live surface",
-      "result": "The source Web GUI remains available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765 and commit badge 2b2defd3c029. Device is connected to the real STM32F10x target, every Dashboard acquisition is stopped, Serial Assistant and Modbus are closed, and the resource map is empty. The current-source Vite proxy returned binary CONTROL frames for rtt, superwatch, systemview, and vofa WebSockets through port 5173. Existing current-branch browser and automated evidence covers Online/Offline Flash non-writing smoke and the 768px no-overflow layout; the browser plugin became unresponsive during the final repeated navigation pass, so no new console-log snapshot was recorded after that interruption."
+      "result": "The installed Skill Web GUI is running as an owned Web entry service at http://127.0.0.1:8765/#/dashboard and returns HTTP 200 from /api/health. The Device is disconnected, no AXF is loaded, and the regenerated MICROKEEN launcher remains at G:/启动 MKLink Web.html. The browser and Windows-control plugins were unavailable during final visual handoff, so the system browser was opened through the Web entry itself; the preceding real Edge network capture provides the page-level dynamic-origin evidence."
     },
     {
       "area": "Combined STM32F103RC Web and hardware regression",
@@ -174,6 +174,7 @@
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
+    "The current Web entry gate could not complete three Site Agent package tests because native/stcp_bridge/build/mklink-stcp.dll is unavailable on this machine. The previous qualified release baseline covers those components; this fix changes Web runtime endpoint selection, the offline launcher, tests, and tracked Web assets.",
     "The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.",
     "Twelve strict Windows symlink tests require Developer Mode or SeCreateSymbolicLinkPrivilege and were deselected in the final Python gate on this machine. Their strict failure behavior remains intact; they were not converted to silent skips.",
     "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
@@ -183,7 +184,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.",
+    "Review the local fix/web-entry-launch-feedback commit and its MICROKEEN USB cold-start evidence before deciding whether to push it or layer it onto su5176/Mklink-AI-Probe#7. Release-asset replacement and updater metadata changes remain out of scope.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
@@ -191,7 +192,7 @@
   ],
   "continuation_protocol": [
     "Validate project memory and reconcile it with live Git and runtime state before acting.",
-    "Preserve the complete verified v0.1.5 candidate on fix/hpm5301-online-symbols while qualifying the combined runtime only on feature/integrate-remote-site-agent. The lifecycle strategy remains authoritative: stopping the last MKLink Dashboard keeps Device connected; only the persistent header Disconnect action releases the probe, and neither Device action owns Serial Assistant or Modbus.",
+    "Preserve the published v0.1.5 tag and updates/latest.json. Pull request su5176/Mklink-AI-Probe#7 remains scoped to the qualified v0.1.5 synchronization and copied-Skill asset refresh; the dependent local fix/web-entry-launch-feedback branch must not be pushed into that PR without separate maintainer direction.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
     "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]

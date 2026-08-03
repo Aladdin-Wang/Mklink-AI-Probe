@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import type { JsonRpcRequest, JsonRpcResponse } from '../types/mklink'
-
-const WS_BASE = import.meta.env.VITE_MKLINK_WS || ''
+import { WS_BASE } from '../lib/runtimeEndpoint'
 
 let ws: WebSocket | null = null
 let rpcId = 0

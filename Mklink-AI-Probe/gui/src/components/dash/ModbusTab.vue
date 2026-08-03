@@ -91,8 +91,7 @@ import { useToast } from '../../composables/useToast'
 import type { PortInfo } from '../../types/mklink'
 import { tr } from '../../composables/useLanguage'
 import SetupHint from './SetupHint.vue'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const toast = useToast()
 const { listPorts: fetchPorts } = useMklinkApi()

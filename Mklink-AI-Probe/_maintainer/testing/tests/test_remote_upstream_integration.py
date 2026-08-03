@@ -155,7 +155,7 @@ def test_local_fastapi_and_site_agent_keep_resource_policies_isolated(tmp_path):
     }.issuperset({"/api/health", "/api/device/hardfault"})
 
 
-def test_v014_metadata_preserves_core_remote_and_separate_optional_surfaces():
+def test_v015_metadata_preserves_core_remote_and_separate_optional_surfaces():
     try:
         import tomllib
     except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10 test hosts
@@ -166,7 +166,7 @@ def test_v014_metadata_preserves_core_remote_and_separate_optional_surfaces():
     scripts = project["scripts"]
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.1.4"
+    assert project["version"] == "0.1.5"
     assert {
         "pyelftools==0.32",
         "pycparser>=2.22,<4",

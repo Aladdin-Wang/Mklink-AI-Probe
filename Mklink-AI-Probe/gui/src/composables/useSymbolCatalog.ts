@@ -13,8 +13,7 @@ import type {
   SuperWatchWriteResult,
 } from '../types/mklink'
 import { tr } from './useLanguage'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 const PAGE_SIZE = 500
 
 const items = shallowRef<SymbolDescriptor[]>([])

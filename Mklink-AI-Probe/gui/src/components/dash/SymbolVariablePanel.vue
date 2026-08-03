@@ -298,8 +298,7 @@ import type { SymbolDescriptor } from '../../types/mklink'
 import type { SymbolTreeNode } from '../../lib/symbolTree'
 import { tr } from '../../composables/useLanguage'
 import SetupHint from './SetupHint.vue'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const props = withDefaults(defineProps<{
   deviceConnected: boolean

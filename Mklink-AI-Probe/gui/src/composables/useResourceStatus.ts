@@ -1,6 +1,5 @@
 import { ref, readonly } from 'vue'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 
 export interface ResourceLeaseStatus {
   owner: string

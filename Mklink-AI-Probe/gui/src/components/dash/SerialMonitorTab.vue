@@ -128,6 +128,7 @@ import type { PortInfo, SerialEvent } from '../../types/mklink'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
 import SetupHint from './SetupHint.vue'
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 interface SerialStatus {
   running?: boolean
@@ -136,7 +137,6 @@ interface SerialStatus {
   stats?: typeof stats.value
 }
 
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const baudrates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 const toast = useToast()
 const { listPorts: fetchPorts } = useMklinkApi()

@@ -309,9 +309,9 @@ import { importSystemViewJsonl } from '../../lib/systemViewImport'
 import ControlToolbar from './ControlToolbar.vue'
 import SetupHint from './SetupHint.vue'
 import { language, tr } from '../../composables/useLanguage'
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const props = defineProps<{ deviceConnected: boolean }>()
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 const dash = useDashboard('systemview')
 const { data: statusData, connect: connectStatus, disconnect: disconnectStatus } = useEventSource('/api/dash/systemview/stream', {

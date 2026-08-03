@@ -7,8 +7,7 @@ import type {
   OfflineTriggerResult,
 } from '../types/offlineFlash'
 import { tr } from './useLanguage'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 const BASE = `${API_BASE}/api/offline-download`
 
 function resourceOwnerLabel(owner: unknown): string {

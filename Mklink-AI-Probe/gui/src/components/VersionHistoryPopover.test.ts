@@ -5,11 +5,11 @@ import VersionHistoryPopover from './VersionHistoryPopover.vue'
 describe('VersionHistoryPopover', () => {
   it('shows the current release notes and stable release history', async () => {
     const wrapper = mount(VersionHistoryPopover, {
-      props: { version: '0.1.4', buildCommit: 'local' },
+      props: { version: '0.1.5', buildCommit: 'local' },
       attachTo: document.body,
     })
 
-    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.4 · local')
+    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.5 · local')
     expect(wrapper.find('[data-testid="version-history-panel"]').exists()).toBe(false)
 
     await wrapper.trigger('mouseenter')
@@ -22,8 +22,8 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(5)
-    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.4')
+    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(6)
+    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.5')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
     wrapper.unmount()
   })

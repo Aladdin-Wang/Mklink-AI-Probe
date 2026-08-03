@@ -156,6 +156,7 @@ import RttTerminalPanel from './RttTerminalPanel.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 import SetupHint from './SetupHint.vue'
 import { language, tr } from '../../composables/useLanguage'
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
@@ -674,8 +675,7 @@ function detachBinary(): void {
 
 async function refreshStatus(): Promise<Record<string, any> | null> {
   try {
-    const apiBase = import.meta.env.VITE_MKLINK_API || ''
-    const response = await fetch(`${apiBase}/api/dash/rtt/status`)
+    const response = await fetch(`${API_BASE}/api/dash/rtt/status`)
     if (response.ok) {
       const status = await response.json()
       statusKnown.value = true
