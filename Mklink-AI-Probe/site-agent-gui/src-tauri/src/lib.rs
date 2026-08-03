@@ -750,7 +750,7 @@ fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
         configured_endpoint: configured_endpoint(&runtime.config),
         active_endpoint: runtime.active_endpoint.clone(),
         protocol_version: "1.0".into(),
-        mklink_version: "0.1.4".into(),
+        mklink_version: env!("CARGO_PKG_VERSION").into(),
         token_configured: fingerprint.is_some(),
         token_fingerprint: fingerprint,
         stcp_credentials_configured: secret::stcp_configured(&runtime.root),

@@ -12,7 +12,13 @@ const mocks = vi.hoisted(() => ({
   stale: { value: false },
   items: null as any,
   containers: null as any,
+  browseRoots: null as any,
+  browseChildren: null as any,
+  browseLoading: null as any,
+  loadBrowseChildren: vi.fn(),
+  searchSymbols: vi.fn(),
   applyingLayout: { value: false },
+  error: { value: null as string | null },
 }))
 
 const catalogItems = [
@@ -35,6 +41,38 @@ const catalogContainers = [{
   size: 32, reason: 'unsupported_layout',
 }]
 
+function browseLeaf(descriptor: typeof catalogItems[number]) {
+  return {
+    key: descriptor.path,
+    path: descriptor.path,
+    label: descriptor.path.split('.').at(-1)!,
+    kind: 'leaf',
+    type_name: descriptor.type_name,
+    size: descriptor.size,
+    address: descriptor.address,
+    descriptor,
+    container: null,
+    child_count: null,
+    range_start: null,
+    range_end: null,
+  }
+}
+
+const defaultBrowseRoots = [
+  {
+    key: 'controller', path: 'controller', label: 'controller', kind: 'branch',
+    type_name: 'Controller', size: 8, address: 0x20000024,
+    descriptor: null, container: null, child_count: 2, range_start: null, range_end: null,
+  },
+  browseLeaf(catalogItems[2]),
+  {
+    key: 'data_save', path: 'data_save', label: 'data_save', kind: 'container',
+    type_name: 'DATASAVE_TYPEDEF', size: 32, address: 0x20000648,
+    descriptor: null, container: catalogContainers[0], child_count: null,
+    range_start: null, range_end: null,
+  },
+]
+
 vi.mock('../../composables/useSymbolCatalog', () => ({
   useSymbolCatalog: () => ({
     items: mocks.items ??= shallowRef(catalogItems),
@@ -42,13 +80,19 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
     generation: ref(1),
     stale: mocks.stale,
     truncatedRoots: shallowRef(['controller']),
+    browseRoots: mocks.browseRoots ??= shallowRef(defaultBrowseRoots),
+    browseChildren: mocks.browseChildren ??= shallowRef(new Map()),
+    browseLoading: mocks.browseLoading ??= shallowRef(new Set()),
     loading: ref(false),
     reparsing: ref(false),
     applyingLayout: mocks.applyingLayout,
+    error: mocks.error,
     ensureLoaded: mocks.ensureLoaded,
     reparse: mocks.reparse,
     applyCLayout: mocks.applyCLayout,
     writeSymbol: mocks.writeSymbol,
+    loadBrowseChildren: mocks.loadBrowseChildren,
+    searchSymbols: mocks.searchSymbols,
   }),
 }))
 
@@ -73,6 +117,12 @@ describe('SymbolVariablePanel', () => {
     mocks.items.value = catalogItems
     mocks.containers ??= shallowRef(catalogContainers)
     mocks.containers.value = catalogContainers
+    mocks.browseRoots ??= shallowRef(defaultBrowseRoots)
+    mocks.browseRoots.value = defaultBrowseRoots
+    mocks.browseChildren ??= shallowRef(new Map())
+    mocks.browseChildren.value = new Map()
+    mocks.browseLoading ??= shallowRef(new Set())
+    mocks.browseLoading.value = new Set()
     mocks.applyingLayout.value = false
     mocks.ensureLoaded.mockResolvedValue(undefined)
     mocks.reparse.mockResolvedValue({ preserved: ['gain'], updated: [], removed: [] })
@@ -81,6 +131,16 @@ describe('SymbolVariablePanel', () => {
       layout: { leaf_count: 3 },
       rebind: { preserved: [], updated: [], removed: [] },
     })
+    mocks.loadBrowseChildren.mockImplementation(async (node: { key: string }) => {
+      const next = new Map(mocks.browseChildren.value)
+      if (node.key === 'controller') {
+        next.set('controller', catalogItems.slice(0, 2).map(browseLeaf))
+      }
+      mocks.browseChildren.value = next
+    })
+    mocks.searchSymbols.mockImplementation(async (query: string) => catalogItems.filter(item => (
+      item.path.includes(query) || item.type_name.includes(query)
+    )))
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ items: [{ name: 'gain' }] })))
   })
 
@@ -95,7 +155,7 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.find('[data-testid="leaf-controller.target"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="branch-controller"]').text()).toContain('0 / 2')
     expect(wrapper.get('[data-testid="latest-gain"]').text()).toContain('1.25')
-    expect(wrapper.text()).toContain('前 256 个')
+    expect(wrapper.text()).not.toContain('前 256 个')
 
     await wrapper.get('[data-testid="branch-controller"]').trigger('click')
     expect(wrapper.get('[data-testid="leaf-controller.target"]').exists()).toBe(true)
@@ -145,7 +205,7 @@ describe('SymbolVariablePanel', () => {
     expect(fetchMock).toHaveBeenLastCalledWith('/api/dash/superwatch/add', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ name: 'data_save.odo' }),
     }))
-    expect(wrapper.text()).toContain('1 / 3')
+    expect(wrapper.text()).toContain('已选 1')
   })
 
   it('opens an unresolved container and applies its pasted C definition', async () => {
@@ -263,8 +323,11 @@ describe('SymbolVariablePanel', () => {
     await wrapper.get('[data-testid="branch-controller"]').trigger('click')
     await wrapper.get('[data-testid="variable-search"]').setValue('target')
     mocks.items.value = [catalogItems[2]]
-    mocks.reparse.mockResolvedValueOnce({
-      preserved: ['gain'], updated: [], removed: ['controller.enabled', 'controller.target'],
+    mocks.reparse.mockImplementationOnce(async () => {
+      mocks.browseChildren.value = new Map()
+      return {
+        preserved: ['gain'], updated: [], removed: ['controller.enabled', 'controller.target'],
+      }
     })
     await wrapper.get('[data-testid="reparse-symbols"]').trigger('click')
     await flushPromises()
@@ -277,18 +340,88 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.find('[data-testid="leaf-controller.target"]').exists()).toBe(false)
   })
 
-  it('mounts only collapsed roots for a catalog with thousands of structured leaves', async () => {
-    mocks.items.value = Array.from({ length: 4660 }, (_, index) => ({
-      ...catalogItems[1],
-      path: `root${Math.floor(index / 256)}.values[${index % 256}]`,
-      parent_path: `root${Math.floor(index / 256)}`,
-    }))
+  it('mounts only the lazy root for an array with thousands of elements', async () => {
+    mocks.browseRoots.value = [{
+      key: 'values', path: 'values', label: 'values', kind: 'branch',
+      type_name: 'float[]', size: 4660 * 4, address: 0x20001000,
+      descriptor: null, container: null, child_count: 4660, range_start: null, range_end: null,
+    }]
     const wrapper = mount(SymbolVariablePanel, {
       props: { deviceConnected: true, latestValues: {} },
     })
     await flushPromises()
 
     expect(wrapper.findAll('.variable-row')).toHaveLength(0)
-    expect(wrapper.findAll('.branch-row').length).toBeLessThan(32)
+    expect(wrapper.findAll('.branch-row')).toHaveLength(1)
+  })
+
+  it('opens a chosen 256-element range without loading earlier ranges', async () => {
+    const valueDescriptor = (index: number) => ({
+      ...catalogItems[2],
+      path: `values[${index}]`,
+      address: 0x20001000 + index * 4,
+      type_name: 'uint32_t',
+      scalar_kind: 'unsigned',
+      parent_path: 'values',
+    })
+    mocks.browseRoots.value = [{
+      key: 'values', path: 'values', label: 'values', kind: 'branch',
+      type_name: 'uint32_t[]', size: 1000 * 4, address: 0x20001000,
+      descriptor: null, container: null, child_count: 1000, range_start: null, range_end: null,
+    }]
+    mocks.loadBrowseChildren.mockImplementation(async (node: { key: string }) => {
+      const next = new Map(mocks.browseChildren.value)
+      if (node.key === 'values') {
+        next.set('values', [0, 256, 512, 768].map(start => ({
+          key: `values::range:${start}:${Math.min(start + 255, 999)}`,
+          path: 'values', label: `[${start}..${Math.min(start + 255, 999)}]`, kind: 'range',
+          type_name: 'uint32_t[]', size: 0, address: 0x20001000,
+          descriptor: null, container: null,
+          child_count: Math.min(256, 1000 - start), range_start: start, range_end: Math.min(start + 255, 999),
+        })))
+      } else if (node.key === 'values::range:256:511') {
+        next.set(node.key, [browseLeaf(valueDescriptor(256)), browseLeaf(valueDescriptor(511))])
+      }
+      mocks.browseChildren.value = next
+    })
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: {} },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="branch-values"]').trigger('click')
+    await flushPromises()
+    const secondRange = wrapper.findAll('.branch-row').find(row => row.text().includes('[256..511]'))
+    expect(secondRange).toBeDefined()
+    await secondRange!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="leaf-values[256]"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="leaf-values[511]"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="leaf-values[0]"]').exists()).toBe(false)
+  })
+
+  it('shows an exact unloaded array path returned by backend search', async () => {
+    const descriptor = {
+      ...catalogItems[2],
+      path: 'values[999]',
+      address: 0x20001000 + 999 * 4,
+      type_name: 'uint32_t',
+      scalar_kind: 'unsigned',
+      parent_path: 'values',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ items: [] })))
+    mocks.searchSymbols.mockImplementation(async (query: string) => (
+      query === 'values[999]' ? [descriptor] : []
+    ))
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: {} },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="variable-search"]').setValue('values[999]')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="leaf-values[999]"]').exists()).toBe(true)
   })
 })

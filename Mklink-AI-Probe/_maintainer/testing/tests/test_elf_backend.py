@@ -2,12 +2,15 @@ import pytest
 from types import SimpleNamespace
 
 from mklink.elf_backend import (
+    address_is_writable,
     ElfSection,
     ElfSymbol,
     ElfBackendConfigError,
     elf_status,
     get_elf_backend,
+    list_writable_object_symbols,
     resolve_elf_backend,
+    writable_memory_ranges,
 )
 from mklink.elf_external import ExternalElfBackend
 from mklink.memmap import analyze_memmap
@@ -136,7 +139,7 @@ def test_builtin_consumers_use_structured_service_without_subprocess(monkeypatch
     monkeypatch.setattr(
         "mklink.elf_backend.list_elf_sections",
         lambda *_args, **_kwargs: [
-            ElfSection(".data", 0x20000000, 16, 0x3, "SHT_PROGBITS")
+            ElfSection(".data", 0x20000000, 32, 0x3, "SHT_PROGBITS")
         ],
     )
     monkeypatch.setattr(
@@ -154,6 +157,47 @@ def test_builtin_consumers_use_structured_service_without_subprocess(monkeypatch
         ["g_counter", "uint32_t"], "firmware.axf", backend="builtin"
     )
 
-    assert summary["ram_used"] == 16
+    assert summary["ram_used"] == 32
     assert sizes == {"g_counter": 4}
     assert resolved == ["0x20000010", "uint32_t"]
+
+
+def test_writable_memory_ranges_support_hpm_dlm_and_exclude_xip(monkeypatch):
+    monkeypatch.setattr(
+        "mklink.elf_backend.list_elf_sections",
+        lambda *_args, **_kwargs: [
+            ElfSection(".sbss.value", 0x00080300, 4, 0x3, "SHT_NOBITS"),
+            ElfSection(".data.more", 0x00080304, 8, 0x3, "SHT_PROGBITS"),
+            ElfSection(".text", 0x80003000, 32, 0x6, "SHT_PROGBITS"),
+            ElfSection(".rodata", 0x80004000, 16, 0x2, "SHT_PROGBITS"),
+            ElfSection(".ahb", 0xF0400000, 16, 0x3, "SHT_NOBITS"),
+        ],
+    )
+
+    ranges = writable_memory_ranges("demo.elf")
+
+    assert ranges == ((0x00080300, 0x0008030C), (0xF0400000, 0xF0400010))
+    assert address_is_writable(0x00080304, 4, ranges)
+    assert not address_is_writable(0x80003000, 4, ranges)
+
+
+def test_writable_object_symbols_use_elf_sections_instead_of_arm_address_window(monkeypatch):
+    monkeypatch.setattr(
+        "mklink.elf_backend.list_elf_sections",
+        lambda *_args, **_kwargs: [
+            ElfSection(".sbss", 0x00080300, 16, 0x3, "SHT_NOBITS"),
+            ElfSection(".rodata", 0x80003000, 16, 0x2, "SHT_PROGBITS"),
+        ],
+    )
+    monkeypatch.setattr(
+        "mklink.elf_backend.list_elf_symbols",
+        lambda *_args, **_kwargs: [
+            ElfSymbol("vofa_test_sin", 0x00080304, 4, "object", "global", "default", 1),
+            ElfSymbol("banner", 0x80003000, 8, "object", "local", "default", 2),
+            ElfSymbol("main", 0x80003100, 8, "function", "global", "default", 3),
+        ],
+    )
+
+    symbols = list_writable_object_symbols("demo.elf")
+
+    assert [symbol.name for symbol in symbols] == ["vofa_test_sin"]

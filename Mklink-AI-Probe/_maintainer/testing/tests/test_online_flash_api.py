@@ -1456,8 +1456,8 @@ def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, servic
     services.image_inspector.shutdown = shutdown("images")
     factory_calls = []
 
-    def factory(resource_manager):
-        factory_calls.append(resource_manager)
+    def factory(resource_manager, prepare_connect=None):
+        factory_calls.append((resource_manager, prepare_connect))
         return services
 
     monkeypatch.setattr(
@@ -1468,12 +1468,58 @@ def test_create_app_mounts_services_once_and_shuts_them_down(monkeypatch, servic
     mounted = create_app(project_root=".")
     assert mounted.state.online_flash is services
     assert len(factory_calls) == 1
-    assert factory_calls[0] is mounted.state.mklink_state["resource_manager"]
+    assert factory_calls[0][0] is mounted.state.mklink_state["resource_manager"]
+    assert callable(factory_calls[0][1])
 
     with TestClient(mounted) as client:
         assert client.get("/api/online-flash/packs/status").status_code == 200
 
     assert calls == ["jobs", "packs", "images"]
+
+
+def test_create_app_hpm_online_flash_preparation_releases_shared_device(
+    monkeypatch, services
+):
+    captured = {}
+
+    def factory(resource_manager, prepare_connect=None):
+        captured["resource_manager"] = resource_manager
+        captured["prepare_connect"] = prepare_connect
+        return services
+
+    stopped = []
+    monkeypatch.setattr(
+        "mklink.remote.online_flash_api.create_default_online_flash_services",
+        factory,
+    )
+    monkeypatch.setattr(
+        "mklink.remote.dashboards.stop_bridge_dashboards",
+        lambda resource_manager=None: stopped.append(resource_manager) or [],
+    )
+    mounted = create_app(project_root=".")
+    state = mounted.state.mklink_state
+
+    class Device:
+        def __init__(self):
+            self.close_calls = 0
+
+        def close(self):
+            self.close_calls += 1
+
+    device = Device()
+    state["device"] = device
+    state["dispatcher"] = object()
+    prepare = captured["prepare_connect"]
+
+    prepare(JobRequest(actions=("connect", "disconnect"), target_part="STM32F103RC"))
+    assert device.close_calls == 0
+    assert state["device"] is device
+
+    prepare(JobRequest(actions=("connect", "disconnect"), target_part="HPM5301xEGx"))
+    assert stopped == [captured["resource_manager"]]
+    assert device.close_calls == 1
+    assert state["device"] is None
+    assert state["dispatcher"] is None
 
 
 def test_service_shutdown_is_bounded_for_blocked_backend_and_cleans_components(

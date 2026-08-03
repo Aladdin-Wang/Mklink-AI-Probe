@@ -1,16 +1,19 @@
 import { readonly, ref, shallowRef } from 'vue'
 import type {
   AxfFingerprint,
+  SymbolBrowseNode,
+  SymbolBrowsePage,
   SymbolCatalogPage,
   SymbolCatalogStatus,
   SymbolCLayoutResult,
   SymbolContainerDescriptor,
   SymbolDescriptor,
   SymbolRebindSummary,
+  SymbolSearchResult,
   SuperWatchWriteResult,
 } from '../types/mklink'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { tr } from './useLanguage'
+import { API_BASE } from '../lib/runtimeEndpoint'
 const PAGE_SIZE = 500
 
 const items = shallowRef<SymbolDescriptor[]>([])
@@ -22,6 +25,9 @@ const fingerprint = shallowRef<AxfFingerprint | null>(null)
 const stale = ref(false)
 const total = ref(0)
 const truncatedRoots = shallowRef<string[]>([])
+const browseRoots = shallowRef<SymbolBrowseNode[]>([])
+const browseChildren = shallowRef<Map<string, SymbolBrowseNode[]>>(new Map())
+const browseLoading = shallowRef<Set<string>>(new Set())
 const loading = ref(false)
 const reparsing = ref(false)
 const applyingLayout = ref(false)
@@ -89,6 +95,59 @@ function publishCatalog(catalog: SymbolCatalogPage): void {
   stale.value = catalog.stale
   total.value = catalog.total
   truncatedRoots.value = catalog.truncated_roots ?? []
+  browseRoots.value = catalog.browse_roots ?? []
+  browseChildren.value = new Map()
+  browseLoading.value = new Set()
+}
+
+function sameIdentity(page: SymbolBrowsePage): boolean {
+  const current = fingerprint.value
+  return page.generation === generation.value
+    && page.axf_path === axfPath.value
+    && current !== null
+    && page.fingerprint.size === current.size
+    && page.fingerprint.mtime_ns === current.mtime_ns
+}
+
+async function fetchBrowse(path = '', offset: number | null = null): Promise<SymbolBrowsePage> {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE > 256 ? 256 : PAGE_SIZE) })
+  if (path) params.set('path', path)
+  if (offset !== null) params.set('offset', String(offset))
+  return request<SymbolBrowsePage>(`/api/symbols/browse?${params.toString()}`)
+}
+
+function setBrowseLoading(key: string, enabled: boolean): void {
+  const next = new Set(browseLoading.value)
+  if (enabled) next.add(key)
+  else next.delete(key)
+  browseLoading.value = next
+}
+
+async function loadBrowseChildren(node: SymbolBrowseNode): Promise<void> {
+  if (node.kind !== 'branch' && node.kind !== 'range') return
+  if (browseChildren.value.has(node.key)) return
+  if (browseLoading.value.has(node.key)) return
+  setBrowseLoading(node.key, true)
+  try {
+    const page = await fetchBrowse(
+      node.path,
+      node.kind === 'range' ? node.range_start : null,
+    )
+    if (!sameIdentity(page)) throw new Error('Symbol catalog changed while loading; retry')
+    const next = new Map(browseChildren.value)
+    next.set(node.key, page.nodes)
+    browseChildren.value = next
+  } finally {
+    setBrowseLoading(node.key, false)
+  }
+}
+
+async function searchSymbols(query: string): Promise<SymbolDescriptor[]> {
+  const params = new URLSearchParams({ q: query })
+  const payload = await request<{ results: SymbolSearchResult[] }>(
+    `/api/symbols/search?${params.toString()}`,
+  )
+  return payload.results.map(result => result.descriptor).filter(Boolean)
 }
 
 async function loadCatalog(): Promise<void> {
@@ -198,8 +257,8 @@ async function applyCLayout(
 }
 
 async function writeSymbol(path: string, value: unknown): Promise<SuperWatchWriteResult> {
-  if (stale.value) throw new Error('AXF 已变化，请重新解析符号后再写入')
-  if (generation.value <= 0) throw new Error('符号表尚未加载')
+  if (stale.value) throw new Error(tr('AXF 已变化，请重新解析符号后再写入', 'AXF changed. Reparse symbols before writing.'))
+  if (generation.value <= 0) throw new Error(tr('符号表尚未加载', 'Symbol table is not loaded'))
   return request<SuperWatchWriteResult>('/api/dash/superwatch/write', {
     method: 'POST',
     body: JSON.stringify({ path, generation: generation.value, value }),
@@ -217,6 +276,9 @@ export function useSymbolCatalog() {
     stale: readonly(stale),
     total: readonly(total),
     truncatedRoots: readonly(truncatedRoots),
+    browseRoots: readonly(browseRoots),
+    browseChildren: readonly(browseChildren),
+    browseLoading: readonly(browseLoading),
     loading: readonly(loading),
     reparsing: readonly(reparsing),
     applyingLayout: readonly(applyingLayout),
@@ -226,5 +288,7 @@ export function useSymbolCatalog() {
     reparse,
     applyCLayout,
     writeSymbol,
+    loadBrowseChildren,
+    searchSymbols,
   }
 }

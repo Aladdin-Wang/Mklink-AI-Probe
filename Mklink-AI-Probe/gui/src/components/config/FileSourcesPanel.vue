@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { FolderOpen, ScanSearch } from '@lucide/vue'
 import { isMapFilePath, isSameFileSourcePath, isSymbolFilePath } from '../../lib/desktopSettings'
 import type { AxlStatus } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   symbolPath: string
@@ -52,9 +53,9 @@ const activeSymbolPath = computed(() => (
     : props.symbolStatus.axf_path
 ))
 const parserBackend = computed(() => {
-  if (props.symbolStatus.elf_backend === 'external') return '外部 GNU 工具'
+  if (props.symbolStatus.elf_backend === 'external') return tr('外部 GNU 工具', 'External GNU tools')
   const version = props.symbolStatus.builtin_elf_version
-  return `内置 pyelftools${version ? ` ${version}` : ''}`
+  return `${tr('内置', 'Built-in')} pyelftools${version ? ` ${version}` : ''}`
 })
 </script>
 
@@ -62,16 +63,16 @@ const parserBackend = computed(() => {
   <section class="card source-panel" aria-labelledby="file-sources-title">
     <header class="panel-header">
       <div>
-        <h2 id="file-sources-title">文件来源</h2>
+        <h2 id="file-sources-title">{{ tr('文件来源', 'File Sources') }}</h2>
         <span
           data-testid="symbol-source-state"
           :class="['badge', symbolStatus.loaded && !sourcePending ? 'badge-ok' : 'badge-warn']"
         >
-          {{ sourcePending ? '待解析' : symbolStatus.loaded ? '符号已加载' : '符号未加载' }}
+          {{ sourcePending ? tr('待解析', 'Pending') : symbolStatus.loaded ? tr('符号已加载', 'Symbols loaded') : tr('符号未加载', 'Symbols not loaded') }}
         </span>
       </div>
       <span v-if="symbolStatus.loaded" class="symbol-counts">
-        {{ symbolStatus.variable_count || 0 }} 个固定可读变量 · {{ symbolStatus.struct_count || 0 }} 种结构体类型 · {{ symbolStatus.enum_count || 0 }} 种枚举类型
+        {{ symbolStatus.variable_count || 0 }} {{ tr('个固定可读变量', 'fixed readable variables') }} · {{ symbolStatus.struct_count || 0 }} {{ tr('种结构体类型', 'struct types') }} · {{ symbolStatus.enum_count || 0 }} {{ tr('种枚举类型', 'enum types') }}
       </span>
     </header>
 
@@ -80,9 +81,9 @@ const parserBackend = computed(() => {
       class="active-symbol-path"
       data-testid="active-symbol-path"
     >
-      <span>当前加载</span>
+      <span>{{ tr('当前加载', 'Loaded File') }}</span>
       <code :title="symbolStatus.axf_path || undefined">{{ activeSymbolPath }}</code>
-      <span>解析后端</span>
+      <span>{{ tr('解析后端', 'Parser') }}</span>
       <code data-testid="symbol-parser-backend">{{ parserBackend }}</code>
     </div>
 
@@ -94,19 +95,19 @@ const parserBackend = computed(() => {
           class="form-input path-input"
           data-testid="symbol-path"
           :value="displayedSymbolPath"
-          placeholder=".axf 或 .elf 文件路径"
+          :placeholder="tr('.axf 或 .elf 文件路径', '.axf or .elf file path')"
           @input="emit('update:symbolPath', inputValue($event))"
         />
         <button
           class="btn icon-command"
           type="button"
-          title="浏览 AXF 或 ELF 文件"
+          :title="tr('浏览 AXF 或 ELF 文件', 'Browse for AXF or ELF file')"
           data-testid="browse-symbol"
           :disabled="browsing"
           @click="emit('browse-symbol')"
         >
           <FolderOpen :size="15" aria-hidden="true" />
-          浏览
+          {{ tr('浏览', 'Browse') }}
         </button>
       </div>
     </div>
@@ -114,7 +115,7 @@ const parserBackend = computed(() => {
       data-testid="symbol-path-validation"
       :class="['path-validation', { invalid: symbolPath.trim() && !isSymbolFilePath(symbolPath) }]"
     >
-      {{ !symbolPath.trim() ? '未配置 AXF / ELF 文件' : browserSymbolUpload ? `浏览器上传 · ${displayedSymbolPath}（解析文件已缓存到本机服务）` : isSymbolFilePath(symbolPath) ? '路径格式有效' : '仅支持 .axf、.elf 或 .out 文件' }}
+      {{ !symbolPath.trim() ? tr('未配置 AXF / ELF 文件', 'No AXF / ELF file configured') : browserSymbolUpload ? tr(`浏览器上传 · ${displayedSymbolPath}（解析文件已缓存到本机服务）`, `Browser upload · ${displayedSymbolPath} (cached by local service)`) : isSymbolFilePath(symbolPath) ? tr('路径格式有效', 'Valid path') : tr('仅支持 .axf、.elf 或 .out 文件', 'Only .axf, .elf, or .out files are supported') }}
     </div>
 
     <div class="source-row">
@@ -125,19 +126,19 @@ const parserBackend = computed(() => {
           class="form-input path-input"
           data-testid="map-path"
           :value="displayedMapPath"
-          placeholder=".map 文件路径"
+          :placeholder="tr('.map 文件路径', '.map file path')"
           @input="emit('update:mapPath', inputValue($event))"
         />
         <button
           class="btn icon-command"
           type="button"
-          title="浏览 MAP 文件"
+          :title="tr('浏览 MAP 文件', 'Browse for MAP file')"
           data-testid="browse-map"
           :disabled="browsing"
           @click="emit('browse-map')"
         >
           <FolderOpen :size="15" aria-hidden="true" />
-          浏览
+          {{ tr('浏览', 'Browse') }}
         </button>
       </div>
     </div>
@@ -145,13 +146,13 @@ const parserBackend = computed(() => {
       data-testid="map-path-validation"
       :class="['path-validation', { invalid: mapPath.trim() && !isMapFilePath(mapPath) }]"
     >
-      {{ !mapPath.trim() ? '未配置 MAP 文件' : browserMapUpload ? `浏览器上传 · ${displayedMapPath}（文件已缓存到本机服务）` : isMapFilePath(mapPath) ? '路径格式有效' : '仅支持 .map 文件' }}
+      {{ !mapPath.trim() ? tr('未配置 MAP 文件', 'No MAP file configured') : browserMapUpload ? tr(`浏览器上传 · ${displayedMapPath}（文件已缓存到本机服务）`, `Browser upload · ${displayedMapPath} (cached by local service)`) : isMapFilePath(mapPath) ? tr('路径格式有效', 'Valid path') : tr('仅支持 .map 文件', 'Only .map files are supported') }}
     </div>
 
     <div v-if="symbolStatus.error" class="alert alert-error">{{ symbolStatus.error }}</div>
 
     <footer class="panel-actions">
-      <span class="action-state" data-testid="files-auto-save">路径修改后自动保存</span>
+      <span class="action-state" data-testid="files-auto-save">{{ tr('路径修改后自动保存', 'Paths are saved automatically') }}</span>
       <button
         class="btn btn-primary"
         type="button"
@@ -160,9 +161,9 @@ const parserBackend = computed(() => {
         @click="emit('parse')"
       >
         <ScanSearch :size="15" aria-hidden="true" />
-        {{ parsing ? '解析中...' : '解析符号' }}
+        {{ parsing ? tr('解析中...', 'Parsing...') : tr('解析符号', 'Parse Symbols') }}
       </button>
-      <span v-if="!connected" class="action-state">需先连接设备</span>
+      <span v-if="!connected" class="action-state">{{ tr('需先连接设备', 'Connect a device first') }}</span>
     </footer>
   </section>
 </template>

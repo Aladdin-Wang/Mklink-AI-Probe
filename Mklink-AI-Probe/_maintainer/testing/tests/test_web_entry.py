@@ -33,6 +33,10 @@ def test_launcher_html_is_one_offline_file_with_cross_platform_protocol_links(tm
     assert "mklink-ai-probe://web/start" in html
     assert "mklink-ai-probe://web/stop" in html
     assert "data:image/png;base64,AA==" in html
+    assert "launchTimeoutSeconds = 25" in html
+    assert "启动超时" in html
+    assert "更新 Skill 或改变安装位置后" in html
+    assert "重新注册一次快速启动器" in html
     assert "http://" not in html
     assert "https://" not in html
     assert list(tmp_path.iterdir()) == [output]
@@ -222,6 +226,26 @@ def test_start_spawns_one_owned_gui_and_stop_only_terminates_that_pid(tmp_path):
         process_identity=lambda pid: f"process-{pid}",
     )
     assert stopped == {"status": "stopped", "port": 8765, "pid": 4321}
+    assert terminated == [4321]
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_start_timeout_terminates_the_owned_process_and_clears_state(tmp_path):
+    terminated = []
+
+    with pytest.raises(web_entry.WebEntryError, match="did not become ready"):
+        web_entry.start_web_entry(
+            data_dir=tmp_path,
+            probe=lambda _port: None,
+            port_available=lambda port: port == 8765,
+            spawn=lambda *_args, **_kwargs: SimpleNamespace(pid=4321),
+            terminate=terminated.append,
+            browser_open=lambda _url: pytest.fail("must not open before ready"),
+            process_identity=lambda pid: f"process-{pid}",
+            sleep=lambda _seconds: None,
+            timeout=0,
+        )
+
     assert terminated == [4321]
     assert not (tmp_path / "state.json").exists()
 

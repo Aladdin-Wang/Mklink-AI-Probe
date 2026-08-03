@@ -27,6 +27,10 @@ def _digest(data):
 
 def _windows_acl(path: Path) -> dict:
     environment = os.environ.copy()
+    # Windows PowerShell 5.1 cannot load PowerShell 7's Security module.
+    for name in tuple(environment):
+        if name.casefold() == "psmodulepath":
+            environment.pop(name)
     environment["MKLINK_TEST_ACL_PATH"] = str(path)
     script = r"""
 $ErrorActionPreference = "Stop"

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from mklink.dwarf_parser import DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
+from mklink.dwarf_parser import DwarfArray, DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
 from mklink.remote.api import _project_root_drives, create_app
 from mklink.symbol_catalog import SymbolCatalog
 from route_utils import find_route
@@ -324,6 +324,24 @@ def _connected_symbol_device(tmp_path):
     return device, axf
 
 
+def _connected_large_array_device(tmp_path):
+    device, axf = _connected_symbol_device(tmp_path)
+    dwarf = device._dwarf_info
+    dwarf.base_types[4] = ("uint32_t", 4)
+    dwarf.arrays[5] = DwarfArray(
+        5, element_type_offset=4, dimensions=(1000,), size=4000,
+    )
+    dwarf.variables["values"] = DwarfVariable(
+        "values", 12, 5, 0x20001000, 4000, "uint32_t[]",
+    )
+    device.symbol_catalog = SymbolCatalog.from_dwarf(
+        dwarf,
+        axf_path=str(axf),
+        ram_ranges=[(0x20000000, 0x20010000)],
+    )
+    return device, axf
+
+
 def test_symbol_catalog_api_lists_valid_variables_immediately(tmp_path):
     device, _axf = _connected_symbol_device(tmp_path)
     app = create_app(auth_token=None, project_root=".")
@@ -338,6 +356,37 @@ def test_symbol_catalog_api_lists_valid_variables_immediately(tmp_path):
     assert [item["path"] for item in body["items"]] == [
         "controller.enabled", "controller.target", "gain",
     ]
+
+
+def test_symbol_browse_api_loads_any_large_array_range_and_exact_search(tmp_path):
+    device, _axf = _connected_large_array_device(tmp_path)
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        roots = client.get("/api/symbols/browse")
+        ranges = client.get("/api/symbols/browse", params={"path": "values"})
+        tail = client.get(
+            "/api/symbols/browse", params={"path": "values", "offset": 768},
+        )
+        search = client.get("/api/symbols/search", params={"q": "values[999]"})
+        typeinfo = client.get(
+            "/api/symbols/typeinfo", params={"name": "values[999]"},
+        )
+
+    assert roots.status_code == 200
+    values = next(node for node in roots.json()["nodes"] if node["path"] == "values")
+    assert values["kind"] == "branch"
+    assert values["child_count"] == 1000
+    assert [node["label"] for node in ranges.json()["nodes"]] == [
+        "[0..255]", "[256..511]", "[512..767]", "[768..999]",
+    ]
+    tail_nodes = tail.json()["nodes"]
+    assert len(tail_nodes) == 232
+    assert tail_nodes[0]["descriptor"]["path"] == "values[768]"
+    assert tail_nodes[-1]["descriptor"]["path"] == "values[999]"
+    assert [item["name"] for item in search.json()["results"]] == ["values[999]"]
+    assert typeinfo.json()["address"] == 0x20001000 + 999 * 4
 
 
 def test_symbol_typeinfo_accepts_flattened_catalog_path(tmp_path):

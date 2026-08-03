@@ -2234,9 +2234,9 @@ def _cli_symbols(
         python -m mklink symbols --source <axf>
         python -m mklink symbols --source <axf> --filter <regex>
     """
-    from mklink.elf_backend import list_elf_symbols
+    from mklink.elf_backend import list_writable_object_symbols
     try:
-        normalized = list_elf_symbols(
+        normalized = list_writable_object_symbols(
             source, backend=backend, project_root=project_root
         )
     except Exception as e:
@@ -2249,7 +2249,6 @@ def _cli_symbols(
             "size": symbol.size,
         }
         for symbol in normalized
-        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
     ]
 
     if not symbols:

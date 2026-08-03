@@ -17,6 +17,7 @@ from mklink.dump_memory import MAGIC
 from mklink.remote.stream_hub import StreamHub
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
+    RTT_TERMINAL_UTF8,
     SUPERWATCH_METADATA_JSON,
     SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
     StreamType,
@@ -202,7 +203,7 @@ def test_rtt_invalid_utf8_is_replaced_and_empty_final_tail_is_not_emitted():
         manager.flush_pending(final=True)
         batch = await queue.get()
         assert [line.text for line in decode_rtt_lines(batch.payload, 1)] == ["bad:\ufffd"]
-        assert hub.stats().produced_items == 1
+        assert hub.stats().produced_items == 2
         hub.unsubscribe(queue)
 
     asyncio.run(scenario())
@@ -320,7 +321,11 @@ def test_rtt_default_batches_keep_12khz_dual_stream_below_100_frames_per_second(
     manager.flush_pending()
 
     batches = hub.snapshot()
-    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    raw = [
+        batch for batch in batches
+        if batch.stream_type is StreamType.RTT_RAW
+        and batch.flags == RTT_RAW_UTF8_LINES
+    ]
     waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
     assert sum(batch.item_count for batch in raw) == 12_000
     assert sum(batch.item_count for batch in waveform) == 12_000
@@ -339,7 +344,11 @@ def test_rtt_marker_lines_do_not_reset_stable_csv_waveform_layout():
     manager.flush_pending()
 
     batches = hub.snapshot()
-    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    raw = [
+        batch for batch in batches
+        if batch.stream_type is StreamType.RTT_RAW
+        and batch.flags == RTT_RAW_UTF8_LINES
+    ]
     waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
     assert sum(batch.item_count for batch in raw) == 363
     assert sum(batch.item_count for batch in waveform) == 360
@@ -376,7 +385,11 @@ def test_rtt_default_marker_mix_stays_near_100fps_and_keeps_30hz_waveform():
     manager.flush_pending()
 
     batches = hub.snapshot()
-    raw = [batch for batch in batches if batch.stream_type is StreamType.RTT_RAW]
+    raw = [
+        batch for batch in batches
+        if batch.stream_type is StreamType.RTT_RAW
+        and batch.flags == RTT_RAW_UTF8_LINES
+    ]
     waveform = [batch for batch in batches if batch.stream_type is StreamType.WAVEFORM]
     assert sum(batch.item_count for batch in raw) == 11_100
     assert sum(batch.item_count for batch in waveform) == 11_000
@@ -660,6 +673,64 @@ def test_superwatch_sample_rows_are_aligned_and_metadata_is_versioned():
         hub.unsubscribe(queue)
 
     asyncio.run(scenario())
+
+
+def test_rtt_terminal_chunks_publish_without_waiting_for_newline():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=4)
+        queue = hub.subscribe()
+        manager = RttStreamManager(stream_hub=hub)
+
+        manager.feed_rtt_bytes(b"\x1b[31mwarning\r")
+        manager.flush_pending()
+
+        batch = await queue.get()
+        assert batch.stream_type is StreamType.RTT_RAW
+        assert batch.flags == RTT_TERMINAL_UTF8
+        assert batch.item_count == 1
+        assert batch.payload.decode("utf-8") == "\x1b[31mwarning\r"
+        hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
+def test_rtt_terminal_decoder_preserves_gbk_characters_across_chunks():
+    async def scenario():
+        hub = StreamHub(max_batches_per_client=4)
+        queue = hub.subscribe()
+        manager = RttStreamManager(stream_hub=hub)
+        manager.set_encoding("gbk")
+        encoded = "警告".encode("gbk")
+
+        manager.feed_rtt_bytes(encoded[:1])
+        manager.flush_pending()
+        manager.feed_rtt_bytes(encoded[1:] + b"\r")
+        manager.flush_pending()
+
+        batch = await queue.get()
+        assert batch.flags == RTT_TERMINAL_UTF8
+        assert batch.payload.decode("utf-8") == "警告\r"
+        hub.unsubscribe(queue)
+
+    asyncio.run(scenario())
+
+
+def test_superwatch_actual_rate_counts_only_complete_samples_on_a_monotonic_window():
+    now = [0.0]
+    manager = SuperWatchStreamManager(clock=lambda: now[0])
+    manager._runtime = SimpleNamespace(items=[
+        SimpleNamespace(name="a"), SimpleNamespace(name="b"),
+    ])
+
+    assert not manager.publish_sample_points([{"a": 1.0}])
+    assert manager.get_status()["actual_rate"] == 0.0
+    for timestamp in (0.0, 0.25, 0.5, 0.75, 1.0):
+        now[0] = timestamp
+        assert manager.publish_sample_points([{"a": timestamp, "b": timestamp + 1}])
+
+    status = manager.get_status()
+    assert status["read_cycles"] == 0
+    assert status["actual_rate"] == pytest.approx(4.0)
 
 
 def test_superwatch_rejects_partial_and_nonfinite_samples_atomically():

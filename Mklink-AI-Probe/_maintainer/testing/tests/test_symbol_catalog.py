@@ -7,12 +7,14 @@ import pytest
 
 from mklink.dwarf_parser import (
     DwarfEnum,
+    DwarfArray,
     DwarfInfo,
     DwarfMember,
     DwarfStruct,
     DwarfVariable,
 )
 from mklink.device import Device
+from mklink.elf_backend import ElfSection
 from mklink.c_layout import CLayoutError
 from mklink.symbol_catalog import (
     SymbolCatalog,
@@ -108,7 +110,7 @@ def test_catalog_rejects_flash_locals_unresolved_and_pointers(tmp_path):
     assert catalog.by_path("controller.next") is None
 
 
-def test_catalog_caps_each_root_at_256_scalar_leaves_and_reports_truncation(tmp_path):
+def test_catalog_pages_large_array_without_losing_later_elements(tmp_path):
     axf = tmp_path / "app.axf"
     axf.write_bytes(b"axf")
     info = _dwarf_fixture()
@@ -128,11 +130,110 @@ def test_catalog_caps_each_root_at_256_scalar_leaves_and_reports_truncation(tmp_
     values = [item for item in catalog.items if item.parent_path == "values"]
     assert len(values) == 256
     assert catalog.by_path("values[255]") is not None
-    assert catalog.by_path("values[256]") is None
-    assert catalog.truncated_roots == ("values",)
+    assert catalog.by_path("values[256]").address == 0x20001000 + 256 * 4
+    assert catalog.by_path("values[299]").address == 0x20001000 + 299 * 4
+    assert catalog.truncated_roots == ()
     assert [item.path for item in values[:12]] == [
         f"values[{index}]" for index in range(12)
     ]
+    root = next(item for item in catalog.browse_roots() if item.path == "values")
+    assert root.kind == "branch"
+    assert root.child_count == 300
+    ranges = catalog.browse_children("values")
+    assert [(item.label, item.range_start, item.range_end) for item in ranges] == [
+        ("[0..255]", 0, 255),
+        ("[256..299]", 256, 299),
+    ]
+    tail = catalog.browse_children("values", offset=256)
+    assert len(tail) == 44
+    assert tail[0].descriptor.path == "values[256]"
+    assert tail[-1].descriptor.path == "values[299]"
+
+
+def test_catalog_pages_struct_arrays_by_direct_element(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = _dwarf_fixture()
+    info.arrays[24] = DwarfArray(24, element_type_offset=30, dimensions=(300,), size=300 * 28)
+    info.variables["many_controllers"] = DwarfVariable(
+        "many_controllers", 110, 24, 0x20001000, 300 * 28, "Controller[]",
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info,
+        axf_path=str(axf),
+        ram_ranges=[(0x20000000, 0x20010000)],
+    )
+
+    ranges = catalog.browse_children("many_controllers")
+    assert [item.label for item in ranges] == ["[0..255]", "[256..299]"]
+    tail = catalog.browse_children("many_controllers", offset=256)
+    assert len(tail) == 44
+    assert all(item.kind == "branch" for item in tail)
+    members = catalog.browse_children("many_controllers[299]")
+    assert {item.label for item in members} >= {"target", "enabled", "samples"}
+    samples = catalog.browse_children("many_controllers[299].samples")
+    assert samples[-1].descriptor.path == "many_controllers[299].samples[7]"
+    assert catalog.by_path("many_controllers[299].target").address == 0x20001000 + 299 * 28
+
+
+def test_catalog_pages_each_dimension_of_nested_arrays(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)},
+        arrays={2: DwarfArray(2, element_type_offset=1, dimensions=(4, 300), size=4 * 300 * 4)},
+        variables={
+            "matrix": DwarfVariable(
+                "matrix", 100, 2, 0x20001000, 4 * 300 * 4, "uint32_t[][]",
+            ),
+        },
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info,
+        axf_path=str(axf),
+        ram_ranges=[(0x20000000, 0x20010000)],
+    )
+
+    rows = catalog.browse_children("matrix")
+    assert [item.path for item in rows] == [f"matrix[{index}]" for index in range(4)]
+    assert all(item.child_count == 300 for item in rows)
+    ranges = catalog.browse_children("matrix[2]")
+    assert [item.label for item in ranges] == ["[0..255]", "[256..299]"]
+    tail = catalog.browse_children("matrix[2]", offset=256)
+    assert tail[-1].descriptor.path == "matrix[2][299]"
+    assert catalog.by_path("matrix[2][299]").address == 0x20001000 + (2 * 300 + 299) * 4
+
+
+def test_device_reads_and_writes_array_elements_beyond_initial_catalog_page(tmp_path):
+    axf = tmp_path / "app.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)},
+        arrays={2: DwarfArray(2, element_type_offset=1, dimensions=(1000,), size=4000)},
+        variables={
+            "values": DwarfVariable(
+                "values", 100, 2, 0x20001000, 4000, "uint32_t[]",
+            ),
+        },
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info,
+        axf_path=str(axf),
+        ram_ranges=[(0x20000000, 0x20010000)],
+    )
+    device = Device(axf=str(axf))
+    device._connected = True
+    device._bridge = object()
+    device._dwarf_info = info
+    device._symbol_catalog = catalog
+    writes = []
+    device.read_memory = lambda address, size: struct.pack("<I", 0x12345678)
+    device.write_memory = lambda address, data: writes.append((address, data))
+
+    assert device.read_variable("values[999]") == 0x12345678
+    device.write_variable("values[999]", 0xAABBCCDD)
+
+    assert writes == [(0x20001000 + 999 * 4, struct.pack("<I", 0xAABBCCDD))]
 
 
 def test_catalog_does_not_report_truncation_for_unsupported_tail_after_exact_limit(tmp_path):
@@ -457,6 +558,36 @@ def test_device_reparse_publishes_catalog_atomically(tmp_path, monkeypatch):
     assert len(first.items) > 4
 
 
+def test_device_reparse_uses_writable_elf_sections_for_hpm_dlm(tmp_path, monkeypatch):
+    axf = tmp_path / "demo.elf"
+    axf.write_bytes(b"elf")
+    info = DwarfInfo(
+        base_types={1: ("float", 4)},
+        base_type_encodings={1: 4},
+        variables={
+            "vofa_test_sin": DwarfVariable(
+                "vofa_test_sin", 100, 1, 0x0008035C, 4, "float"
+            ),
+            "flash_constant": DwarfVariable(
+                "flash_constant", 101, 1, 0x80003000, 4, "float"
+            ),
+        },
+    )
+    monkeypatch.setattr("mklink.dwarf_parser.load_dwarf_info", lambda *_args, **_kwargs: info)
+    monkeypatch.setattr(
+        "mklink.elf_backend.list_elf_sections",
+        lambda *_args, **_kwargs: [
+            ElfSection(".sbss", 0x00080300, 0x100, 0x3, "SHT_NOBITS"),
+            ElfSection(".rodata", 0x80003000, 0x100, 0x2, "SHT_PROGBITS"),
+        ],
+    )
+
+    catalog = Device(axf=str(axf)).reparse_axf_atomically()
+
+    assert catalog.by_path("vofa_test_sin").address == 0x0008035C
+    assert catalog.by_path("flash_constant") is None
+
+
 def _opaque_layout_fixture() -> DwarfInfo:
     opaque = DwarfStruct(
         name="Opaque",
@@ -491,6 +622,9 @@ def test_device_applies_and_reuses_c_layout_for_the_same_axf(tmp_path, monkeypat
     assert layout.size == 8
     assert [item.path for item in applied.items] == ["opaque.high", "opaque.low"]
     assert all(item.source == "c_override" for item in applied.items)
+    assert [item.path for item in applied.browse_children("opaque")] == [
+        "opaque.high", "opaque.low",
+    ]
     monkeypatch.setattr("mklink.dwarf_parser.load_dwarf_info", lambda *_args, **_kwargs: info)
     reparsed = device.reparse_axf_atomically()
     assert [item.path for item in reparsed.items] == ["opaque.high", "opaque.low"]

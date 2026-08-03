@@ -1,21 +1,28 @@
 <template>
   <div class="memory-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">请先连接设备。</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('内存读写只需要 MKLink 设备连接。', 'Memory access only requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
     <template v-else>
       <div class="mem-controls">
         <input class="form-input addr-input" v-model="address" placeholder="0x20000000" />
         <input class="form-input size-input" v-model.number="size" type="number" placeholder="64" min="1" max="4096" />
-        <button class="btn btn-primary" @click="doRead" :disabled="loading">读取</button>
+        <button class="btn btn-primary" @click="doRead" :disabled="loading">{{ tr('读取', 'Read') }}</button>
       </div>
       <div v-if="result" class="mem-result">
         <HexMemoryView :data-hex="result.data_hex" :base-address="result.address" />
       </div>
       <div class="mem-write" v-if="result">
-        <h4>写入内存</h4>
+        <h4>{{ tr('写入内存', 'Write Memory') }}</h4>
         <div class="mem-controls">
-          <input class="form-input addr-input" v-model="writeAddr" placeholder="地址" />
-          <input class="form-input" v-model="writeHex" placeholder="十六进制数据 (如: 0102A0FF)" />
-          <button class="btn" @click="doWrite" :disabled="writing">写入</button>
+          <input class="form-input addr-input" v-model="writeAddr" :placeholder="tr('地址', 'Address')" />
+          <input class="form-input" v-model="writeHex" :placeholder="tr('十六进制数据 (如: 0102A0FF)', 'Hex data (e.g. 0102A0FF)')" />
+          <button class="btn" @click="doWrite" :disabled="writing">{{ tr('写入', 'Write') }}</button>
         </div>
       </div>
     </template>
@@ -26,13 +33,17 @@
 import { ref } from 'vue'
 import { useDeviceApi } from '../../composables/useDashboard'
 import { useToast } from '../../composables/useToast'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import HexMemoryView from './HexMemoryView.vue'
+import SetupHint from './SetupHint.vue'
 import type { MemoryReadResult } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 defineProps<{ deviceConnected: boolean }>()
 
 const device = useDeviceApi()
 const toast = useToast()
+const { connecting, quickConnect } = useDashboardSetup()
 const address = ref('0x20000000')
 const size = ref(64)
 const writeAddr = ref('')
@@ -58,7 +69,7 @@ async function doWrite() {
   writing.value = true
   try {
     await device.writeMemory(writeAddr.value, writeHex.value.replace(/\s/g, ''))
-    toast.success('写入成功')
+    toast.success(tr('写入成功', 'Write successful'))
     await doRead()
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : String(e))

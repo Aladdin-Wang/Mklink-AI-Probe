@@ -8,6 +8,20 @@ const firstPage = {
   stale: false,
   truncated_roots: ['controller'],
   containers: [],
+  browse_roots: [
+    {
+      key: 'controller', path: 'controller', label: 'controller', kind: 'branch',
+      type_name: 'Controller', size: 8, address: 0x20000024,
+      descriptor: null, container: null, child_count: 1,
+      range_start: null, range_end: null,
+    },
+    {
+      key: 'gain', path: 'gain', label: 'gain', kind: 'leaf',
+      type_name: 'float', size: 4, address: 0x20000020,
+      descriptor: null, container: null, child_count: null,
+      range_start: null, range_end: null,
+    },
+  ],
   total: 2,
   items: [
     {
@@ -66,6 +80,37 @@ describe('useSymbolCatalog', () => {
     expect(second.items.value.map(item => item.path)).toEqual(['controller.target', 'gain'])
     expect(second.generation.value).toBe(1)
     expect(second.truncatedRoots.value).toEqual(['controller'])
+    expect(second.browseRoots.value.map(node => node.path)).toEqual(['controller', 'gain'])
+  })
+
+  it('loads and caches one lazy child page with catalog identity checks', async () => {
+    const root = firstPage.browse_roots[0]
+    const childPage = {
+      generation: firstPage.generation,
+      axf_path: firstPage.axf_path,
+      fingerprint: firstPage.fingerprint,
+      parent: 'controller',
+      nodes: [{
+        key: 'controller.target', path: 'controller.target', label: 'target', kind: 'leaf',
+        type_name: 'float', size: 4, address: 0x20000024,
+        descriptor: firstPage.items[0], container: null, child_count: null,
+        range_start: null, range_end: null,
+      }],
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse(childPage))
+    vi.stubGlobal('fetch', fetchMock)
+    const symbols = await freshCatalog()
+
+    await symbols.ensureLoaded()
+    await symbols.loadBrowseChildren(root as any)
+    await symbols.loadBrowseChildren(root as any)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/symbols/browse?')
+    expect(fetchMock.mock.calls[1][0]).toContain('path=controller')
+    expect(symbols.browseChildren.value.get('controller')?.[0].path).toBe('controller.target')
   })
 
   it('queues a forced refresh behind an in-flight catalog load', async () => {

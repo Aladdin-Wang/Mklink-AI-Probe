@@ -224,6 +224,13 @@ def resolve_watch_items(
         )
         if source else {}
     )
+    writable_ranges = None
+    if source:
+        from mklink.elf_backend import writable_memory_ranges
+
+        writable_ranges = writable_memory_ranges(
+            source, backend=backend, project_root=project_root
+        )
     items: list[WatchItem] = []
     for raw_name in _normalize_names(names):
         reg_key = raw_name.upper().replace("->", ".")
@@ -245,11 +252,15 @@ def resolve_watch_items(
             if size <= 0 or type_name == "unknown":
                 size = int(symbol_sizes.get(raw_name, 0) or 4)
                 type_name = {1: "uint8_t", 2: "uint16_t", 4: "uint32_t", 8: "uint64_t"}.get(size, "uint32_t")
-            # Warn and skip variables in Flash region (0x00000000-0x1FFFFFFF)
-            # ARM Cortex-M SRAM is typically at 0x20000000+
-            if 0 <= address < 0x20000000:
-                print(f"[WARN] Skipping '{raw_name}': address 0x{address:08X} is outside SRAM region")
-                continue
+            if writable_ranges is not None:
+                from mklink.elf_backend import address_is_writable
+
+                if not address_is_writable(address, size, writable_ranges):
+                    print(
+                        f"[WARN] Skipping '{raw_name}': address "
+                        f"0x{address:08X} is outside writable memory"
+                    )
+                    continue
             items.append(
                 WatchItem(
                     name=raw_name,
@@ -483,17 +494,13 @@ class SuperWatchRuntime:
         q = query.strip().lower()
         results: list[dict] = []
         if self.symbol_catalog is not None:
-            for descriptor in self.symbol_catalog.items:
-                if q and q not in descriptor.path.lower():
-                    continue
+            for descriptor in self.symbol_catalog.search(query, limit=50):
                 results.append({
                     "name": descriptor.path,
                     "kind": "variable",
                     "type": descriptor.type_name,
                     "size": descriptor.size,
                 })
-                if len(results) >= 50:
-                    break
         elif self.dwarf_info is not None:
             for name, var in sorted(getattr(self.dwarf_info, "variables", {}).items()):
                 if q and q not in name.lower():

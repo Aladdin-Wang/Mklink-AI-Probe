@@ -59,6 +59,13 @@ python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
 
 生成结果是一个无外部 CSS、JavaScript、图片或网络链接依赖的 HTML。图标以内嵌 data URI 保存。
 
+点击启动后，页面显示 25 秒倒计时。启动器内部仍以 20 秒作为本地服务就绪
+超时，成功后自动打开 Web GUI；页面倒计时额外留出浏览器调用自定义协议的时间。
+若倒计时结束仍未打开，页面会提示检查浏览器协议授权和完整 Skill 安装。
+
+Skill 更新或安装位置变化后，应重新执行 `web-entry install`，使协议处理器继续
+指向当前 Skill；U 盘 HTML 会常驻显示这项提醒。
+
 ## 服务生命周期
 
 ```bash
@@ -76,6 +83,8 @@ python -m mklink web-entry uninstall
 - `stop` 只终止 `web-entry` 自己启动并记录为 `owned=true` 的进程。
 - 所有权同时校验 PID 和进程创建身份，陈旧状态不会误停复用后的其他进程。
 - 连续点击由用户级操作锁串行处理，不会同时拉起两个后端。
+- 新服务在 20 秒内未就绪时，入口终止自己启动的进程、清除状态并显示系统错误；
+  U 盘页面在 25 秒后显示对应排障提醒。
 - 若发现正在运行的 Mklink API 没有 Web 静态资源，入口报错并停止，不启动第二个竞争硬件的后端。
 - 现有 `mklink gui`、`mklink serve`、`mklink mcp` 和 Tauri sidecar 生命周期不变。
 - 协议安装、HTML 文件和状态目录均为新增旁路，不修改 AI/MCP 配置或 Tauri 启动逻辑。

@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 import struct
 import time
 
@@ -51,6 +52,20 @@ def test_systemview_fixed_records_round_trip_and_reject_malformed_payload():
     malformed_flags[1] = 0x80
     with pytest.raises(ValueError, match="malformed"):
         decode_systemview_events(malformed_flags)
+
+
+def test_systemview_stack_metadata_round_trips_in_fixed_records():
+    [decoded] = decode_systemview_events(encode_systemview_events([{
+        "kind": "stack_info",
+        "task_id": 0x825B0,
+        "stack_base": 0x83000,
+        "stack_size": 1024,
+        "t_ticks": 12,
+    }]))
+
+    assert decoded["task_id"] == 0x825B0
+    assert decoded["stack_base"] == 0x83000
+    assert decoded["stack_size"] == 1024
 
 
 @pytest.mark.parametrize("flags", [0, 0x07], ids=["flags-off", "flags-on"])
@@ -159,6 +174,30 @@ def test_slow_browser_drops_live_batches_without_truncating_recording():
     asyncio.run(scenario())
 
 
+def test_recording_is_explicit_and_can_stop_without_stopping_trace(tmp_path):
+    manager = SystemViewStreamManager()
+    manager._parser = manager._create_parser()
+    manager._running = True
+    manager._recording_device = type(
+        "Device", (), {"_project_root": str(tmp_path)}
+    )()
+    manager._recording_meta = {"addr": "0x000870A4", "channel": 1, "mode": 0}
+
+    assert manager.get_status()["recording"] is False
+    started = manager.start_recording()
+    path = Path(started["recording_path"])
+    assert started["recording"] is True
+
+    manager._process_events(_events(3), now=123.0)
+    stopped = manager.stop_recording()
+
+    assert stopped["recording"] is False
+    assert manager.running is True
+    assert path.is_file()
+    text = path.read_text(encoding="utf-8")
+    assert text.count('"type":"event"') == 3
+
+
 def test_status_separates_target_overflow_from_parser_framing_drops():
     manager = SystemViewStreamManager()
     manager._parser = manager._create_parser()
@@ -240,3 +279,34 @@ def test_raw_bytes_without_decodable_events_fail_with_sync_diagnostic():
     assert status["raw_bytes_without_events"] >= 128
     assert device.stop_calls == 1
     assert failure and failure[0] is not None
+
+
+def test_no_systemview_bytes_fail_instead_of_staying_in_starting_forever():
+    class Device:
+        def __init__(self):
+            self.stop_calls = 0
+
+        def systemview_start(self, *_args, **_kwargs):
+            return {"control_block_addr": "0x0008E488"}
+
+        def systemview_read_bytes(self, **_kwargs):
+            return b""
+
+        def systemview_stop(self):
+            self.stop_calls += 1
+
+    device = Device()
+    manager = SystemViewStreamManager()
+    manager._startup_no_data_timeout_s = 0.02
+    manager._start_recording = lambda *_args, **_kwargs: None
+
+    manager.start(device)
+    deadline = time.monotonic() + 1.0
+    while manager.running and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+    status = manager.get_status()
+    assert status["running"] is False
+    assert status["progress_state"] == "error"
+    assert "未收到数据" in status["progress_error"]
+    assert device.stop_calls >= 1

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Cable, FileCode, Radio, Server } from '@lucide/vue'
+import { computed } from 'vue'
+import { tr } from '../../composables/useLanguage'
 
 export type ConfigSection = 'local' | 'files' | 'remote' | 'serve'
 
@@ -9,16 +11,16 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: ConfigSection): void
 }>()
 
-const sections = [
-  { id: 'local' as const, label: '本地设备', icon: Cable },
-  { id: 'files' as const, label: '文件来源', icon: FileCode },
-  { id: 'remote' as const, label: '远程连接', icon: Radio },
-  { id: 'serve' as const, label: '启动服务', icon: Server },
-]
+const sections = computed(() => [
+  { id: 'local' as const, label: tr('本地设备', 'Local Device'), icon: Cable },
+  { id: 'files' as const, label: tr('文件来源', 'File Sources'), icon: FileCode },
+  { id: 'remote' as const, label: tr('远程连接', 'Remote Connection'), icon: Radio },
+  { id: 'serve' as const, label: tr('启动服务', 'Start Service'), icon: Server },
+])
 </script>
 
 <template>
-  <nav class="section-nav" aria-label="配置区域">
+  <nav class="section-nav" :aria-label="tr('配置区域', 'Configuration sections')">
     <button
       v-for="section in sections"
       :key="section.id"

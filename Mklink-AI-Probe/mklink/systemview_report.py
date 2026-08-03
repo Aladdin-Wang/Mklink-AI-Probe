@@ -203,13 +203,6 @@ th{{color:#5e5d59;font-weight:600;font-size:12px}}td{{color:#141413}}
 .tl-canvas-wrap{{position:relative;background:#0d1117;border:1px solid #e8e6dc;border-radius:8px;margin-top:6px;overflow:hidden}}
 .tl-canvas-wrap canvas{{display:block;width:100%;cursor:crosshair}}
 .tl-tip{{position:fixed;display:none;background:#ffffff;border:1px solid #e8e6dc;border-radius:6px;padding:6px 10px;font-size:11px;color:#141413;pointer-events:none;z-index:99;box-shadow:0 4px 12px rgba(0,0,0,.15);font-family:monospace;white-space:nowrap}}
-.tl-vct{{color:#5e5d59;font-size:12px;margin:12px 0 4px}}
-.tl-vcpu{{display:flex;flex-direction:column;gap:1px}}
-.sv-vcpu-row{{display:flex;align-items:center;gap:8px;font-size:11px;margin:1px 0}}
-.sv-vcpu-n{{width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:#141413}}
-.sv-vcpu-bg{{flex:1;height:11px;background:#2a2a2a;border-radius:6px;overflow:hidden}}
-.sv-vcpu-bar{{height:100%;border-radius:6px}}
-.sv-vcpu-p{{width:52px;text-align:right;color:#5e5d59;font-variant-numeric:tabular-nums}}
 .isr-box{{background:#ffffff;border:1px solid #e8e6dc;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:13px;color:#141413}}
 .empty{{color:#87867f;font-style:italic;padding:8px}}
 .grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
@@ -230,13 +223,11 @@ th{{color:#5e5d59;font-weight:600;font-size:12px}}td{{color:#141413}}
 </div>
 <div class="tl-canvas-wrap"><canvas id="sv-canvas"></canvas></div>
 <div class="tl-tip" id="sv-tip"></div>
-<div class="tl-vct">可见窗口内 CPU 占用（随缩放实时重算）</div>
-<div class="tl-vcpu" id="sv-vcpu"></div>
 <script id="sv-data" type="application/json">{intervals_json}</script>
 <script>{sv_js}
 (function(){{try{{var d=JSON.parse(document.getElementById('sv-data').textContent);
 new SvTimeline({{canvas:document.getElementById('sv-canvas'),tooltip:document.getElementById('sv-tip'),
-legend:document.getElementById('sv-legend'),vcpu:document.getElementById('sv-vcpu'),
+legend:document.getElementById('sv-legend'),
 resetBtn:document.getElementById('sv-reset')}},{{intervals:d.intervals,unit:d.unit}});}}catch(e){{console.error(e);}}}})();
 </script>
 </body></html>"""

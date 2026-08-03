@@ -2,7 +2,7 @@
   "$schema": "mklink-mcu-profiles-v1",
   "mcus": {
     "stm32f1": {
-      "name": "STM32F10x (Medium Density)",
+      "name": "STM32F10x",
       "idcode_pattern": "0x1BA01477",
       "device_prefix": "STM32F10",
       "flm_path": "FLM/STM32F10x_1024.FLM",

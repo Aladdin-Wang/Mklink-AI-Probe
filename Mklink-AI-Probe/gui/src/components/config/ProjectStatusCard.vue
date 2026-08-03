@@ -1,6 +1,6 @@
 <template>
   <div class="card">
-    <div class="card-title">项目状态</div>
+    <div class="card-title">{{ tr('项目状态', 'Project Status') }}</div>
     <div v-if="hasData" class="status-grid">
       <div class="status-field">
         <span class="field-label">HEX</span>
@@ -15,23 +15,23 @@
         <span class="field-value">{{ projectInfo?.flm_name || '—' }}</span>
       </div>
       <div class="status-field">
-        <span class="field-label">Flash 基址</span>
+        <span class="field-label">{{ tr('Flash 基址', 'Flash Base') }}</span>
         <span class="field-value mono">{{ projectInfo?.flash_base || '—' }}</span>
       </div>
       <div class="status-field">
         <span class="field-label">MICROKEEN</span>
-        <span v-if="microkeen?.available" class="badge badge-ok">可用 {{ microkeen.disk_path }}</span>
-        <span v-else class="badge badge-err">未找到</span>
+        <span v-if="microkeen?.available" class="badge badge-ok">{{ tr('可用', 'Available') }} {{ microkeen.disk_path }}</span>
+        <span v-else class="badge badge-err">{{ tr('未找到', 'Not found') }}</span>
       </div>
       <div class="status-field">
-        <span class="field-label">配置</span>
-        <span v-if="configStatus?.is_valid && !configStatus?.warnings?.length" class="badge badge-ok">正常</span>
-        <span v-else-if="configStatus?.errors?.length" class="badge badge-err">{{ configStatus.errors.length }} 错误</span>
-        <span v-else-if="configStatus?.warnings?.length" class="badge badge-warn">{{ configStatus.warnings.length }} 警告</span>
-        <span v-else class="badge">未加载</span>
+        <span class="field-label">{{ tr('配置', 'Config') }}</span>
+        <span v-if="configStatus?.is_valid && !configStatus?.warnings?.length" class="badge badge-ok">{{ tr('正常', 'Valid') }}</span>
+        <span v-else-if="configStatus?.errors?.length" class="badge badge-err">{{ configStatus.errors.length }} {{ tr('错误', 'errors') }}</span>
+        <span v-else-if="configStatus?.warnings?.length" class="badge badge-warn">{{ configStatus.warnings.length }} {{ tr('警告', 'warnings') }}</span>
+        <span v-else class="badge">{{ tr('未加载', 'Not loaded') }}</span>
       </div>
     </div>
-    <div v-else class="empty-hint">暂无工程信息，请先设置项目目录并运行初始化。</div>
+    <div v-else class="empty-hint">{{ tr('暂无工程信息，请先设置项目目录并运行初始化。', 'No project information. Set a project directory and initialize it first.') }}</div>
     <div v-if="configStatus?.errors?.length" class="alert alert-error" style="margin-top:8px">
       <ul><li v-for="e in configStatus.errors" :key="e">{{ e }}</li></ul>
     </div>
@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ProjectInfo, ConfigStatus, MicrokeenInfo } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   projectInfo: ProjectInfo | null

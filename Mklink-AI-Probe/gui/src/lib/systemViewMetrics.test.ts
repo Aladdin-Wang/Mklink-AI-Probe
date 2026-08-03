@@ -45,6 +45,15 @@ describe('systemViewMetrics', () => {
     })
   })
 
+  it('keeps registered contexts with no runtime intervals', () => {
+    const rows = computeRuntimeRows(
+      [{ id: 2, name: 'waiting', color: '#2', runUs: 0, switches: 0 }],
+      [],
+    )
+
+    expect(rows).toEqual([expect.objectContaining({ id: 2, count: 0, totalUs: 0, pct: 0 })])
+  })
+
   it('computes context rows sorted by CPU load', () => {
     const rows = computeContextRows([
       { id: 1, name: 'svfast', color: '#1', runUs: 150, switches: 4, prio: 12 },
@@ -130,9 +139,9 @@ describe('systemViewMetrics', () => {
         index: 44,
         time: '25 us',
         context: '',
-        event: 'ISR To Scheduler',
+        event: 'ISR Exit',
         resource: 'ISR',
-        detail: '',
+        detail: 'Returns to Scheduler',
         kind: 'isr_to_scheduler',
       },
       {

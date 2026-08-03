@@ -1,7 +1,6 @@
 import { ref, shallowRef, readonly, onUnmounted } from 'vue'
 import type { DataPoint } from '../types/mklink'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 
 interface EventSourceOptions {
   passthroughEvents?: string[]

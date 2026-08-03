@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { isTauri } from '@tauri-apps/api/core'
 import type { FormattedHexRow } from '../../lib/hexPreview'
 import type { ImageInspection } from '../../types/onlineFlash'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ file: File | null; sourcePath?: string; nativeDropActive?: boolean; baseAddress: string; baseError: string; inspection: ImageInspection | null; rows: FormattedHexRow[]; paddingTop: number; paddingBottom: number; loading: boolean; error: string }>()
 const emit = defineEmits<{ file: [file: File | null]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number] }>()
@@ -33,21 +34,21 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
     @drop.prevent="dropped"
   >
   <div class="firmware-toolbar">
-    <button v-if="nativeApp" data-testid="firmware-trigger" class="file-button" type="button" @click="emit('browse')">选择 BIN / HEX</button>
-    <label v-else data-testid="firmware-trigger" class="file-button" role="button" tabindex="0" @keydown.enter.prevent="openFile" @keydown.space.prevent="openFile">选择 BIN / HEX<input ref="fileInput" class="visually-hidden" data-testid="firmware-input" type="file" accept=".bin,.hex" @change="fileChanged"></label>
-    <span class="filename">{{ sourceName || '拖拽 BIN / HEX 到此处，或选择固件' }}</span>
-    <label v-if="isBin" class="base-field">基地址<input data-testid="bin-base" :value="baseAddress" placeholder="如 0x08000000" @input="emit('base', ($event.target as HTMLInputElement).value)"></label>
-    <span v-if="loading" class="inspection-status">自动检查中…</span>
-    <span v-else-if="inspection" class="inspection-status inspection-ok">已自动检查</span>
+    <button v-if="nativeApp" data-testid="firmware-trigger" class="file-button" type="button" @click="emit('browse')">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}</button>
+    <label v-else data-testid="firmware-trigger" class="file-button" role="button" tabindex="0" @keydown.enter.prevent="openFile" @keydown.space.prevent="openFile">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}<input ref="fileInput" class="visually-hidden" data-testid="firmware-input" type="file" accept=".bin,.hex" @change="fileChanged"></label>
+    <span class="filename">{{ sourceName || tr('拖拽 BIN / HEX 到此处，或选择固件', 'Drop BIN / HEX here, or select firmware') }}</span>
+    <label v-if="isBin" class="base-field">{{ tr('基地址', 'Base Address') }}<input data-testid="bin-base" :value="baseAddress" :placeholder="tr('如 0x08000000', 'e.g. 0x08000000')" @input="emit('base', ($event.target as HTMLInputElement).value)"></label>
+    <span v-if="loading" class="inspection-status">{{ tr('自动检查中…', 'Inspecting…') }}</span>
+    <span v-else-if="inspection" class="inspection-status inspection-ok">{{ tr('已自动检查', 'Inspected') }}</span>
   </div>
   <p v-if="baseError" data-testid="base-error" class="error">{{ baseError }}</p><p v-if="error" class="error">{{ error }}</p>
   <div v-if="inspection" class="metadata"><span>{{ inspection.format.toUpperCase() }}</span><span>{{ inspection.size }} bytes</span><span>{{ address(inspection.start) }} — {{ address(inspection.end) }}</span><span>SHA-256 {{ inspection.sha256.slice(0, 12) }}…</span></div>
-  <div class="hex-head"><span>地址</span><span>00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F</span><span>ASCII</span></div>
+  <div class="hex-head"><span>{{ tr('地址', 'Address') }}</span><span>00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F</span><span>ASCII</span></div>
   <div class="hex-scroll" @scroll="scrolled">
     <div :style="{ height: `${paddingTop}px` }" />
     <div v-for="row in rows" :key="row.address" class="hex-row"><span>{{ row.address }}</span><span class="cells"><i v-for="(cell, index) in row.hex" :key="index" :class="{ gap: cell === '--' }">{{ cell }}</i></span><span>{{ row.ascii }}</span></div>
     <div :style="{ height: `${paddingBottom}px` }" />
-    <div v-if="!inspection" class="empty">选择已安装器件与固件后将自动检查，预览按需加载，不会一次渲染整个文件。</div>
+    <div v-if="!inspection" class="empty">{{ tr('选择已安装器件与固件后将自动检查，预览按需加载，不会一次渲染整个文件。', 'Select an installed target and firmware to inspect it. Preview data loads on demand.') }}</div>
   </div>
   </div>
 </template>

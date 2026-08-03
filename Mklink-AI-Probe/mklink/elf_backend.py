@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 ELF_BACKENDS = frozenset({"builtin", "external"})
 ENV_ELF_BACKEND = "MKLINK_ELF_BACKEND"
+DEFAULT_WRITABLE_MEMORY_RANGES = ((0x20000000, 0x40000000),)
 
 
 class ElfBackendConfigError(ValueError):
@@ -167,6 +168,65 @@ def list_elf_sections(
     project_root: str | os.PathLike[str] | None = None,
 ) -> list[ElfSection]:
     return get_elf_backend(backend, project_root=project_root).sections(source)
+
+
+def writable_memory_ranges(
+    source: str,
+    *,
+    backend: str | None = None,
+    project_root: str | os.PathLike[str] | None = None,
+    fallback: Iterable[tuple[int, int]] = DEFAULT_WRITABLE_MEMORY_RANGES,
+) -> tuple[tuple[int, int], ...]:
+    """Return merged address ranges for allocated, writable ELF sections."""
+    try:
+        sections = list_elf_sections(
+            source, backend=backend, project_root=project_root
+        )
+    except Exception:
+        return tuple((int(start), int(end)) for start, end in fallback)
+
+    ranges = sorted(
+        (section.address, section.address + section.size)
+        for section in sections
+        if section.size > 0 and section.flags & 0x3 == 0x3
+    )
+    if not ranges:
+        return tuple((int(start), int(end)) for start, end in fallback)
+
+    merged: list[tuple[int, int]] = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def address_is_writable(
+    address: int,
+    size: int,
+    ranges: Iterable[tuple[int, int]],
+) -> bool:
+    end = int(address) + max(1, int(size))
+    return any(start <= address and end <= limit for start, limit in ranges)
+
+
+def list_writable_object_symbols(
+    source: str,
+    *,
+    backend: str | None = None,
+    project_root: str | os.PathLike[str] | None = None,
+) -> list[ElfSymbol]:
+    symbols = list_elf_symbols(source, backend=backend, project_root=project_root)
+    ranges = writable_memory_ranges(
+        source, backend=backend, project_root=project_root
+    )
+    return [
+        symbol
+        for symbol in symbols
+        if symbol.kind == "object"
+        and address_is_writable(symbol.address, symbol.size, ranges)
+    ]
 
 
 def lookup_source_locations(

@@ -32,6 +32,30 @@ def test_binary_symbol_search_uses_builtin_pyelftools_without_subprocess(
     assert result.details == ["内置 pyelftools 已解析 _SEGGER_RTT"]
 
 
+def test_binary_symbol_search_accepts_portable_writable_memory_ranges(
+    monkeypatch, tmp_path,
+):
+    binary = tmp_path / "hpm.elf"
+    binary.write_bytes(b"ELF")
+    monkeypatch.setattr(
+        rtt_addr,
+        "list_elf_symbols",
+        lambda source, backend: [
+            SimpleNamespace(name="_SEGGER_RTT", address=0x0008E488, size=168),
+        ],
+    )
+    monkeypatch.setattr(
+        rtt_addr,
+        "writable_memory_ranges",
+        lambda source, backend: ((0x00080000, 0x00100000),),
+    )
+
+    result = rtt_addr.diagnose_rtt_addr(str(binary))
+
+    assert result.addr == "0x0008e488"
+    assert result.details == ["内置 pyelftools 已解析 _SEGGER_RTT"]
+
+
 def test_binary_symbol_search_does_not_fallback_when_builtin_has_no_symbol(
     monkeypatch, tmp_path,
 ):

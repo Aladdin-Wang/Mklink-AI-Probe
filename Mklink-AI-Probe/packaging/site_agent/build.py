@@ -154,7 +154,28 @@ def _source_input_records(
     return records, digest.hexdigest()
 
 
-def _load_provenance(script_dir: Path) -> dict[str, object]:
+def _project_version(root: Path) -> str:
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    project_table = re.search(
+        r"(?ms)^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)",
+        pyproject,
+    )
+    if project_table is None:
+        raise RuntimeError("pyproject.toml has no [project] table")
+    version = re.search(
+        r'(?m)^version\s*=\s*"(?P<value>[^"\r\n]+)"\s*(?:#.*)?$',
+        project_table.group("body"),
+    )
+    if version is None:
+        raise RuntimeError("pyproject.toml has no static project version")
+    return version.group("value")
+
+
+def _load_provenance(
+    script_dir: Path,
+    *,
+    product_version: str,
+) -> dict[str, object]:
     provenance_path = script_dir / "build-provenance.json"
     try:
         provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
@@ -169,8 +190,10 @@ def _load_provenance(script_dir: Path) -> dict[str, object]:
         value = provenance.get(name)
         if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
             raise RuntimeError(f"invalid Site Agent provenance field: {name}")
-    if provenance.get("product_version") != "0.1.4":
-        raise RuntimeError("Site Agent provenance must target product version 0.1.4")
+    if provenance.get("product_version") != product_version:
+        raise RuntimeError(
+            "Site Agent provenance product version does not match pyproject.toml"
+        )
     return provenance
 
 
@@ -181,7 +204,11 @@ def _requirement_name(requirement: str) -> str:
     return match.group(1).replace("_", "-").casefold()
 
 
-def _wheel_contract(wheel: Path) -> dict[str, object]:
+def _wheel_contract(
+    wheel: Path,
+    *,
+    product_version: str,
+) -> dict[str, object]:
     with zipfile.ZipFile(wheel) as archive:
         metadata_names = [
             name
@@ -209,7 +236,7 @@ def _wheel_contract(wheel: Path) -> dict[str, object]:
         fields.setdefault(current_name, []).append(value.strip())
 
     version_values = fields.get("version", [])
-    if version_values != ["0.1.4"]:
+    if version_values != [product_version]:
         raise RuntimeError(f"unexpected Mklink wheel version: {version_values}")
     requirements = sorted(fields.get("requires-dist", []), key=str.casefold)
     core = sorted(
@@ -855,7 +882,11 @@ def _audit_pyinstaller_archive(
     }
 
 
-def _bundle_distributions(bundle: Path) -> list[dict[str, str]]:
+def _bundle_distributions(
+    bundle: Path,
+    *,
+    product_version: str,
+) -> list[dict[str, str]]:
     distributions: list[dict[str, str]] = []
     for metadata in _files(bundle):
         if (
@@ -885,8 +916,10 @@ def _bundle_distributions(bundle: Path) -> list[dict[str, str]]:
         (item["name"].replace("_", "-").casefold(), item["version"])
         for item in distributions
     }
-    if ("mklink", "0.1.4") not in available:
-        raise RuntimeError("bundled Mklink v0.1.4 metadata is absent")
+    if ("mklink", product_version) not in available:
+        raise RuntimeError(
+            f"bundled Mklink v{product_version} metadata is absent"
+        )
     if not any(name == "pycparser" for name, _version in available):
         raise RuntimeError("bundled pycparser metadata is absent")
     return distributions
@@ -992,7 +1025,11 @@ def build(
     script_dir = Path(__file__).resolve().parent
     root = script_dir.parents[1]
     worktree_root = _resolve_worktree_root(root)
-    provenance = _load_provenance(script_dir)
+    product_version = _project_version(root)
+    provenance = _load_provenance(
+        script_dir,
+        product_version=product_version,
+    )
     source_input_records, source_input_sha256 = _source_input_records(
         root,
         script_dir,
@@ -1091,7 +1128,10 @@ def build(
     if len(wheels) != 1:
         raise RuntimeError("expected exactly one current-repository wheel")
     wheel = wheels[0]
-    wheel_contract = _wheel_contract(wheel)
+    wheel_contract = _wheel_contract(
+        wheel,
+        product_version=product_version,
+    )
     _run(
         [str(python), "-m", "pip", "uninstall", "--yes", "mklink"],
         cwd=root,
@@ -1167,7 +1207,10 @@ def build(
         bundle,
         policy=policy,
     )
-    bundled_distributions = _bundle_distributions(bundle)
+    bundled_distributions = _bundle_distributions(
+        bundle,
+        product_version=product_version,
+    )
     _deterministic_zip(bundle, artifact)
     _audit_zip(
         artifact,

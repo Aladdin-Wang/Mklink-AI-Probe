@@ -356,11 +356,18 @@ class Device:
         )
         with self._symbol_lock:
             generation = (self._symbol_catalog.generation if self._symbol_catalog else 0) + 1
+        from mklink.elf_backend import writable_memory_ranges
+
         catalog = SymbolCatalog.from_dwarf(
             info,
             axf_path=candidate,
             generation=generation,
-            ram_ranges=((_SRAM_START, _SRAM_END),),
+            ram_ranges=writable_memory_ranges(
+                candidate,
+                backend=effective_backend,
+                project_root=self._project_root,
+                fallback=((_SRAM_START, _SRAM_END),),
+            ),
         )
         override_key = (
             str(Path(candidate).resolve()),
@@ -1412,7 +1419,14 @@ class Device:
                 self._dwarf_info, name
             )
         except KeyError:
-            return self._read_variable_from_map(name)
+            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+            if descriptor is None:
+                return self._read_variable_from_map(name)
+            from mklink.symbol_catalog import decode_descriptor
+
+            return decode_descriptor(
+                descriptor, self.read_memory(descriptor.address, descriptor.size),
+            )
         raw = self.read_memory(addr, size)
         return decode_value(raw, type_name, enum_values, known_size=size)
 
@@ -1439,7 +1453,16 @@ class Device:
                 "No AXF/ELF loaded. Pass axf= to connect() for variable access."
             )
         from mklink.watch import resolve_variable_path, TYPE_FORMATS
-        addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
+        try:
+            addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
+        except KeyError:
+            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+            if descriptor is None:
+                raise
+            from mklink.symbol_catalog import encode_descriptor
+
+            self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
+            return
         key = type_name.strip().lower()
         fmt_entry = TYPE_FORMATS.get(key)
         if fmt_entry:

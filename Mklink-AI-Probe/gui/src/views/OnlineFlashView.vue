@@ -8,6 +8,7 @@ import ProbeSettingsPanel from '../components/online-flash/ProbeSettingsPanel.vu
 import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
 import { HexPreviewModel, type FormattedHexRow } from '../lib/hexPreview'
 import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnlineFlashApi'
+import { tr } from '../composables/useLanguage'
 import { listenForFirmwarePathDrops, pickFirmwareFiles } from '../lib/filePicker'
 import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
 
@@ -24,7 +25,7 @@ const api = useOnlineFlashApi()
 
 defineOptions({ name: 'OnlineFlashView' })
 
-interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; hpmBoard?: string; firmwarePath?: string; baseAddress?: string }
+interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; hpmBoard?: string; firmwarePath?: string; baseAddress?: string; baseAddressTarget?: string }
 function savedSettings(): SavedSettings {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as SavedSettings } catch { return {} }
 }
@@ -61,7 +62,7 @@ const customFlmError = ref('')
 const firmware = ref<File | null>(null)
 const firmwarePath = ref(saved.firmwarePath ?? '')
 const nativeDropActive = ref(false)
-const baseAddress = ref(saved.baseAddress ?? '')
+const baseAddress = ref(saved.baseAddressTarget === saved.targetPart ? (saved.baseAddress ?? '') : '')
 const binAddressOpen = ref(false)
 const binAddressDraft = ref('')
 const inspection = ref<ImageInspection | null>(null)
@@ -104,7 +105,7 @@ const parsedBase = computed(() => {
   const value = Number.parseInt(baseAddress.value.slice(2), 16)
   return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff ? value : null
 })
-const baseError = computed(() => isBin.value && parsedBase.value === null ? 'BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）' : '')
+const baseError = computed(() => isBin.value && parsedBase.value === null ? tr('BIN 基地址必须是有效的 0x 地址（0x00000000–0xFFFFFFFF）', 'BIN base address must be a valid 0x address (0x00000000-0xFFFFFFFF)') : '')
 const binAddressDraftValid = computed(() => /^0x[0-9a-f]+$/i.test(binAddressDraft.value) && Number.parseInt(binAddressDraft.value.slice(2), 16) <= 0xffff_ffff)
 const active = computed(() => !!jobId.value && !!jobState.value && !TERMINAL.has(jobState.value))
 const stopping = computed(() => jobState.value === 'stopping')
@@ -149,6 +150,9 @@ function defaultHpmBoard(partNumber: string): string {
   ].find(([prefix]) => part.startsWith(prefix))
   return match?.[1] ?? ''
 }
+function defaultBinAddress(partNumber: string): string {
+  return isHpmPart(partNumber) ? '0x80000400' : ''
+}
 const hpmMode = computed(() => isHpmPart(selectedTarget.value?.part_number ?? ''))
 
 function message(error: unknown): string {
@@ -169,11 +173,12 @@ function persist(): void {
       hpmBoard: hpmBoard.value,
       firmwarePath: firmwarePath.value || undefined,
       baseAddress: baseAddress.value || undefined,
+      baseAddressTarget: selectedTarget.value?.part_number || desiredPart.value || undefined,
     }))
   } catch {
     if (!storageWarningReported) {
       storageWarningReported = true
-      appendLog('[WARN] 本地设置未保存；当前交互仍可继续。')
+      appendLog(tr('[WARN] 本地设置未保存；当前交互仍可继续。', '[WARN] Local settings were not saved; the current session can continue.'))
     }
   }
 }
@@ -211,7 +216,10 @@ async function searchTargets(query = '', commit = true): Promise<TargetRecord[]>
     if (commit && generation === targetSearchGeneration && !disposed) {
       targets.value = records
       const exact = records.find(target => target.part_number === desiredPart.value)
-      if (exact?.installed) selectedTarget.value = exact
+      if (exact?.installed) {
+        selectedTarget.value = exact
+        if (!baseAddress.value) baseAddress.value = defaultBinAddress(exact.part_number)
+      }
     }
     return records
   } catch (error) {
@@ -240,18 +248,20 @@ function applyPackEvent(event: Awaited<ReturnType<typeof api.installPack>>['even
 
 async function selectTarget(target: TargetRecord): Promise<void> {
   if (active.value || packBusy.value) return
+  const targetChanged = selectedTarget.value?.part_number !== target.part_number
   desiredPart.value = target.part_number
   hpmBoard.value = isHpmPart(target.part_number)
     ? (defaultHpmBoard(target.part_number) || hpmBoard.value)
     : ''
   resetInspection()
+  if (targetChanged) baseAddress.value = defaultBinAddress(target.part_number)
   selectedTarget.value = null
   if (isHpmPart(target.part_number) && !target.installed) {
-    packError.value = `${target.part_number} 应由内置 HPM ROM API 提供，当前版本未发现该目标`
+    packError.value = tr(`${target.part_number} 应由内置 HPM ROM API 提供，当前版本未发现该目标`, `${target.part_number} should be provided by the built-in HPM ROM API, but is unavailable in this version`)
     return
   }
   if (!target.installed) {
-    if (!confirm(`器件 ${target.part_number} 本机尚无下载算法。可先导入本地 Pack；是否现在联网下载对应 Pack？`)) return
+    if (!confirm(tr(`器件 ${target.part_number} 本机尚无下载算法。可先导入本地 Pack；是否现在联网下载对应 Pack？`, `No local flash algorithm is available for ${target.part_number}. You can import a Pack; download one now?`))) return
     const operation = ++packOperationToken
     packBusy.value = true; packProgress.value = 0; packPhase.value = 'preparing'; packError.value = ''
     try {
@@ -259,7 +269,7 @@ async function selectTarget(target: TargetRecord): Promise<void> {
       const result = response.result
       if (result.status === 'installed') {
         const installedPack = 'part_number' in result ? result.part_number : `${result.pack_id}@${result.version}`
-        appendLog(`[PACK] 已安装 ${installedPack}`)
+        appendLog(tr(`[PACK] 已安装 ${installedPack}`, `[PACK] Installed ${installedPack}`))
       }
       const [, refreshedTargets] = await Promise.all([refreshPackStatus(), searchTargets(target.part_number, false)])
       packProgress.value = 1
@@ -267,7 +277,7 @@ async function selectTarget(target: TargetRecord): Promise<void> {
       if (refreshed) selectedTarget.value = refreshed
       else {
         selectedTarget.value = null
-        packError.value = `Pack 安装完成，但安装后索引仍未确认 ${target.part_number} 已安装，请刷新索引后重试。`
+        packError.value = tr(`Pack 安装完成，但安装后索引仍未确认 ${target.part_number} 已安装，请刷新索引后重试。`, `Pack installation completed, but the index still does not show ${target.part_number} as installed. Refresh the index and retry.`)
       }
     } catch (error) { packError.value = message(error) } finally {
       if (operation === packOperationToken) { packBusy.value = false; packCancelPending.value = false }
@@ -322,7 +332,7 @@ async function addCustomFlm(file: File): Promise<void> {
 async function removeCustomFlm(algorithmId: string): Promise<void> {
   const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
   if (!partNumber || customFlmBusy.value || active.value) return
-  if (!confirm('移除此自定义 FLM？已有固件检查结果将失效。')) return
+  if (!confirm(tr('移除此自定义 FLM？已有固件检查结果将失效。', 'Remove this custom FLM? Existing firmware inspection results will be invalidated.'))) return
   customFlmBusy.value = true
   customFlmError.value = ''
   try {
@@ -358,7 +368,7 @@ async function importPack(file: File): Promise<void> {
     const importedPack = 'pack_id' in response.result
       ? `${response.result.pack_id}@${response.result.version}`
       : 'part_number' in response.result ? response.result.part_number : 'Pack'
-    appendLog(`[PACK] 已导入 ${importedPack}`)
+    appendLog(tr(`[PACK] 已导入 ${importedPack}`, `[PACK] Imported ${importedPack}`))
     await Promise.all([refreshPackStatus(), searchTargets(desiredPart.value)])
     packProgress.value = 1
   } catch (error) { packError.value = message(error) } finally {
@@ -392,7 +402,7 @@ function setFirmware(file: File | null): void {
 function setFirmwarePath(path: string): void {
   const suffix = path.split('.').pop()?.toLowerCase()
   if (suffix !== 'bin' && suffix !== 'hex') {
-    inspectError.value = '固件只支持 BIN 或 HEX'
+    inspectError.value = tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')
     return
   }
   firmware.value = null
@@ -409,7 +419,7 @@ function promptForBinAddress(source: string): void {
     binAddressOpen.value = false
     return
   }
-  binAddressDraft.value = baseAddress.value
+  binAddressDraft.value = baseAddress.value || defaultBinAddress(selectedTarget.value?.part_number ?? '')
   binAddressOpen.value = true
 }
 
@@ -461,11 +471,11 @@ async function pollFirmwareSource(initial = false): Promise<void> {
     } else if (fingerprint !== sourceFingerprint) {
       sourceFingerprint = fingerprint
       resetInspection()
-      appendLog(`[FILE] 已自动加载重新编译的 ${status.file_name}`)
+      appendLog(tr(`[FILE] 已自动加载重新编译的 ${status.file_name}`, `[FILE] Automatically loaded rebuilt ${status.file_name}`))
       scheduleAutoInspection()
     }
   } catch (error) {
-    if (initial) inspectError.value = `固件路径不可用：${message(error)}`
+    if (initial) inspectError.value = tr(`固件路径不可用：${message(error)}`, `Firmware path is unavailable: ${message(error)}`)
   }
 }
 
@@ -508,7 +518,7 @@ watch([firmware, firmwarePath, () => selectedTarget.value?.part_number, baseAddr
 
 async function inspectImage(): Promise<void> {
   if (!firmwareName.value || !selectedTarget.value?.installed || baseError.value) {
-    inspectError.value = !selectedTarget.value?.installed ? '请先选择已安装的精确器件型号' : baseError.value || '请选择固件'
+    inspectError.value = !selectedTarget.value?.installed ? tr('请先选择已安装的精确器件型号', 'Select an installed exact target first') : baseError.value || tr('请选择固件', 'Select firmware')
     return
   }
   resetInspection(); inspectBusy.value = true; inspectError.value = ''
@@ -520,7 +530,7 @@ async function inspectImage(): Promise<void> {
       ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
       : await api.inspectImage(firmware.value!, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
-    if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error('服务端返回的镜像地址范围无效')
+    if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error(tr('服务端返回的镜像地址范围无效', 'The server returned an invalid image address range'))
     inspection.value = result
     selectedSectorAddresses.value = result.sector_operations_available
       ? result.sectors.map(sector => sector.address)
@@ -528,7 +538,7 @@ async function inspectImage(): Promise<void> {
     preview.setSource({ imageId: result.image_id, start: result.start, size: result.end - result.start })
     await loadVisible(0, 360)
   } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `固件检查失败：${message(error)}`
+    if (!(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = tr(`固件检查失败：${message(error)}`, `Firmware inspection failed: ${message(error)}`)
   } finally {
     if (inspectionController === controller) { inspectionController = null; inspectBusy.value = false }
   }
@@ -543,7 +553,7 @@ async function loadVisible(scrollTop: number, height: number): Promise<void> {
     const nextRows = await preview.loadRows(range.startRow, range.endRow)
     if (generation === viewportGeneration) rows.value = nextRows
   } catch (error) {
-    if (generation === viewportGeneration && !(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = `预览加载失败：${message(error)}`
+    if (generation === viewportGeneration && !(error instanceof DOMException && error.name === 'AbortError')) inspectError.value = tr(`预览加载失败：${message(error)}`, `Preview loading failed: ${message(error)}`)
   }
 }
 
@@ -589,14 +599,14 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
     if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
-    appendLog(`[JOB] 已创建 ${result.job_id}`); subscribe(0)
+    appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
   } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
   finally { creatingJob.value = false }
 }
 async function stopJob(): Promise<void> {
   if (!jobId.value || stopping.value) return
   const previousState = jobState.value
-  jobState.value = 'stopping'; appendLog('[JOB] STOPPING：等待探针安全停止')
+  jobState.value = 'stopping'; appendLog(tr('[JOB] STOPPING：等待探针安全停止', '[JOB] STOPPING: waiting for the probe to stop safely'))
   try {
     const snapshot = await api.stopJob(jobId.value)
     if ((!jobState.value || !TERMINAL.has(jobState.value)) && TERMINAL.has(snapshot.state)) {
@@ -605,12 +615,12 @@ async function stopJob(): Promise<void> {
   }
   catch (error) {
     if (jobState.value === 'stopping') jobState.value = previousState
-    appendLog(`[ERROR] 停止请求失败：${message(error)}`)
+    appendLog(tr(`[ERROR] 停止请求失败：${message(error)}`, `[ERROR] Stop request failed: ${message(error)}`))
   }
 }
-function chipErase(): void { if (confirm('全片擦除将永久删除芯片中的全部闪存内容，确定继续？')) void startJob(['connect', 'erase', 'disconnect'], []) }
-function selectedErase(): void { if (selectedSectorAddresses.value.length && confirm('确定擦除所选扇区？')) void startJob(['connect', 'erase', 'disconnect'], selectedSectorAddresses.value) }
-function rangeErase(): void { if (inspection.value?.sectors.length && confirm('确定擦除镜像覆盖范围？')) void startJob(['connect', 'erase', 'disconnect'], inspection.value.sectors.map(sector => sector.address)) }
+function chipErase(): void { if (confirm(tr('全片擦除将永久删除芯片中的全部闪存内容，确定继续？', 'Chip erase permanently deletes all flash contents. Continue?'))) void startJob(['connect', 'erase', 'disconnect'], []) }
+function selectedErase(): void { if (selectedSectorAddresses.value.length && confirm(tr('确定擦除所选扇区？', 'Erase the selected sectors?'))) void startJob(['connect', 'erase', 'disconnect'], selectedSectorAddresses.value) }
+function rangeErase(): void { if (inspection.value?.sectors.length && confirm(tr('确定擦除镜像覆盖范围？', 'Erase the range covered by the image?'))) void startJob(['connect', 'erase', 'disconnect'], inspection.value.sectors.map(sector => sector.address)) }
 function toggleSector(address: number): void {
   selectedSectorAddresses.value = selectedSectorAddresses.value.includes(address)
     ? selectedSectorAddresses.value.filter(value => value !== address)
@@ -647,7 +657,7 @@ onBeforeUnmount(() => {
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
       <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
-      <label v-if="hpmMode" class="hpm-setting"><span>HPM 板卡</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
+      <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" />
@@ -657,16 +667,16 @@ onBeforeUnmount(() => {
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">
-        <h2 id="bin-address-title">设置 BIN 下载地址</h2>
-        <p>请输入 {{ firmwareName }} 在目标 Flash 中的起始地址。</p>
+        <h2 id="bin-address-title">{{ tr('设置 BIN 下载地址', 'Set BIN Download Address') }}</h2>
+        <p>{{ tr(`请输入 ${firmwareName} 在目标 Flash 中的起始地址。`, `Enter the start address of ${firmwareName} in target Flash.`) }}</p>
         <label>
-          <span>下载地址</span>
-          <input v-model.trim="binAddressDraft" data-testid="bin-address-dialog-input" autofocus placeholder="如 0x08005000" @keydown.enter.prevent="confirmBinAddress" />
+          <span>{{ tr('下载地址', 'Download Address') }}</span>
+          <input v-model.trim="binAddressDraft" data-testid="bin-address-dialog-input" autofocus :placeholder="tr('如 0x08005000', 'e.g. 0x08005000')" @keydown.enter.prevent="confirmBinAddress" />
         </label>
-        <p v-if="binAddressDraft && !binAddressDraftValid" class="bin-address-error">请输入 0x00000000–0xFFFFFFFF 范围内的十六进制地址。</p>
+        <p v-if="binAddressDraft && !binAddressDraftValid" class="bin-address-error">{{ tr('请输入 0x00000000–0xFFFFFFFF 范围内的十六进制地址。', 'Enter a hexadecimal address from 0x00000000 to 0xFFFFFFFF.') }}</p>
         <footer>
-          <button type="button" class="bin-address-cancel" @click="cancelBinAddress">取消</button>
-          <button type="button" class="bin-address-confirm" data-testid="confirm-bin-address" :disabled="!binAddressDraftValid" @click="confirmBinAddress">确认</button>
+          <button type="button" class="bin-address-cancel" @click="cancelBinAddress">{{ tr('取消', 'Cancel') }}</button>
+          <button type="button" class="bin-address-confirm" data-testid="confirm-bin-address" :disabled="!binAddressDraftValid" @click="confirmBinAddress">{{ tr('确认', 'Confirm') }}</button>
         </footer>
       </section>
     </div>

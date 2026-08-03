@@ -2,6 +2,7 @@ import { computed, onUnmounted, readonly, ref, shallowRef } from 'vue'
 import { StreamClient } from '../lib/stream/streamClient'
 import type { StreamClientOptions, StreamClientState } from '../lib/stream/streamClient'
 import type { StreamTelemetry, WorkerOutput } from '../workers/streamDecoder.worker'
+import { API_BASE } from '../lib/runtimeEndpoint'
 
 export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'superwatch'
 
@@ -26,9 +27,8 @@ type RenderEnvelope = Extract<WorkerOutput, { type: 'render-envelope' }>
 type SystemViewVisible = Extract<WorkerOutput, { type: 'systemview-visible' }>
 type WaveformBatch = Extract<WorkerOutput, { type: 'waveform-batch' }>
 type RttLines = Extract<WorkerOutput, { type: 'rtt-lines' }>
+type RttTerminal = Extract<WorkerOutput, { type: 'rtt-terminal' }>
 type SuperWatchMetadata = Extract<WorkerOutput, { type: 'superwatch-metadata' }>
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 function streamUrl(stream: BinaryStreamName): string {
   if (API_BASE) {
@@ -54,6 +54,7 @@ export function useBinaryStream(
   const systemViewVisible = shallowRef<SystemViewVisible | null>(null)
   const waveformBatch = shallowRef<WaveformBatch | null>(null)
   const rttLines = shallowRef<RttLines | null>(null)
+  const rttTerminal = shallowRef<RttTerminal | null>(null)
   const superwatchMetadata = shallowRef<SuperWatchMetadata | null>(null)
   const error = ref<string | null>(null)
 
@@ -81,6 +82,9 @@ export function useBinaryStream(
         break
       case 'rtt-lines':
         rttLines.value = message
+        break
+      case 'rtt-terminal':
+        rttTerminal.value = message
         break
       case 'superwatch-metadata':
         superwatchMetadata.value = message
@@ -116,6 +120,7 @@ export function useBinaryStream(
     systemViewVisible.value = null
     waveformBatch.value = null
     rttLines.value = null
+    rttTerminal.value = null
     superwatchMetadata.value = null
     error.value = null
     client.reset()
@@ -126,6 +131,8 @@ export function useBinaryStream(
     telemetry.value = null
     envelope.value = null
     waveformBatch.value = null
+    rttLines.value = null
+    rttTerminal.value = null
     superwatchMetadata.value = null
     client.configure(options.capacity, nextChannelCount)
   }
@@ -152,6 +159,7 @@ export function useBinaryStream(
     systemViewVisible: readonly(systemViewVisible),
     waveformBatch: readonly(waveformBatch),
     rttLines: readonly(rttLines),
+    rttTerminal: readonly(rttTerminal),
     superwatchMetadata: readonly(superwatchMetadata),
     error: readonly(error),
     start,

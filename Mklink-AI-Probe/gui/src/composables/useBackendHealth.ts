@@ -1,14 +1,8 @@
 import { ref, onUnmounted } from 'vue'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE, IS_TAURI } from '../lib/runtimeEndpoint'
 
 /** 'starting' = backend not yet checked / currently booting */
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
-const isTauri = !!(
-  typeof window !== 'undefined' &&
-  (window as any).__TAURI__
-)
-
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let refCount = 0
 let firstCheckDone = false
@@ -23,7 +17,7 @@ async function checkBackendHealth(): Promise<boolean> {
 }
 
 async function refreshHealth() {
-  const alive = isTauri
+  const alive = IS_TAURI
     ? await checkViaTauri()
     : await checkBackendHealth()
 
@@ -79,7 +73,7 @@ function stopHealthPolling() {
 async function restart(): Promise<void> {
   backendState.value = 'starting'
   firstCheckDone = false
-  if (isTauri) {
+  if (IS_TAURI) {
     try {
       await (window as any).__TAURI__.invoke('restart_sidecar')
     } catch (e) {
@@ -113,7 +107,7 @@ export function useBackendHealth() {
 
   return {
     backendState,
-    isTauri,
+    isTauri: IS_TAURI,
     startHealthPolling,
     stopHealthPolling,
     restart,

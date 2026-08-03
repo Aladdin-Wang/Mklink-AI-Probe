@@ -19,8 +19,7 @@ import type {
 } from '../types/mklink'
 import { toHexPayload } from '../lib/rttTransmit'
 import type { RttEncoding } from '../lib/desktopSettings'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)

@@ -44,6 +44,22 @@ def test_task_info_uses_segger_task_id_priority_name_order():
     assert parser.task_name(task_id_raw << 2) == "svuser"
 
 
+def test_hpm_init_preserves_zero_ram_base_and_id_shift():
+    parser = SystemViewParser()
+
+    parser._post_process({
+        "kind": "init",
+        "cpu_freq": 360_000_000,
+        "ram_base": 0,
+        "id_shift": 0,
+        "delta_ticks": 0,
+        "t_ticks": 0,
+    })
+
+    assert parser._ram_base == 0
+    assert parser._id_shift == 0
+
+
 def test_stack_info_consumes_stack_end_before_timestamp_delta():
     task_id_raw = 0x123
     stack_base = 0x20001000
@@ -116,3 +132,28 @@ def test_task_info_rejects_non_printable_names_from_false_packet_alignment():
     ]
     assert parser.task_name(task_id_raw << 2) is None
     assert parser.dropped_packets == 1
+
+
+def test_overflow_recovery_does_not_swallow_stack_info_as_a_phantom_module_event():
+    stack_packet = b"".join(
+        (
+            bytes((EVTID_STACK_INFO,)),
+            _encode_u32(0x123),
+            _encode_u32(0x20001000),
+            _encode_u32(1024),
+            _encode_u32(0),
+            _encode_u32(7),
+        )
+    )
+    # d1 05 is the tail of a packet timestamp seen at a recovery boundary.  If
+    # accepted as module event 721, its following length byte (STACK_INFO=21)
+    # causes the parser to consume the task metadata as opaque payload.
+    stream = _encode_u32(721) + stack_packet
+
+    parser = SystemViewParser()
+    events = parser.feed(stream)
+
+    assert [event["kind"] for event in events] == ["stack_info"]
+    assert events[0]["task_id"] == 0x123 << 2
+    assert events[0]["stack_size"] == 1024
+    assert parser.dropped_bytes == 2

@@ -414,9 +414,9 @@ function updateSampleRateBadge(interval, rate) {
   var badge = document.getElementById('sample-rate-badge');
   if (!badge) return;
   if (estimatedRate > 0) {
-    badge.textContent = 'rate ' + estimatedRate.toFixed(2) + ' Hz / ' + (estimatedInterval * 1000).toFixed(1) + ' ms';
+    badge.textContent = estimatedRate.toFixed(2) + ' Hz';
   } else {
-    badge.textContent = 'rate -- Hz';
+    badge.textContent = '-- Hz';
   }
 }
 

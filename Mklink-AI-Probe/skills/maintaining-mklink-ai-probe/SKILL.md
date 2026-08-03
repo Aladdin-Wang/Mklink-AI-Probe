@@ -56,17 +56,23 @@ skills installed on one developer's computer.
    users, constraints, and a concrete success signal.
 2. Inspect the relevant code, tests, logs, UI, hardware state, and existing
    patterns before choosing a solution.
-3. Ask only when an unanswered choice would materially change the result or
-   require new authority. Otherwise state the smallest reversible assumption
-   and continue.
-4. Find the root cause. Keep the change within the owning module and avoid
+3. Before changing a product, interaction, architecture, workflow, or testing
+   strategy, present the observed problem, viable options, tradeoffs,
+   recommended choice, and concrete acceptance criteria. Wait for explicit
+   maintainer confirmation before implementation. Once the strategy is
+   confirmed, root-cause fixes that preserve it may proceed without asking
+   again.
+4. Ask only when another unanswered choice would materially change the result
+   or require new authority. Otherwise state the smallest reversible
+   assumption and continue.
+5. Find the root cause. Keep the change within the owning module and avoid
    speculative abstractions or unrelated cleanup.
-5. Use a short written plan for multi-step, risky, or cross-module work. Small
+6. Use a short written plan for multi-step, risky, or cross-module work. Small
    fixes can proceed without a long plan, but still require a fix branch. Update
    the plan when evidence changes it.
-6. Add regression coverage when it is useful and economical. Do not require a
+7. Add regression coverage when it is useful and economical. Do not require a
    separate RED commit, a test-first ceremony, or broad tests for a narrow edit.
-7. Prefer repository scripts and established APIs. Keep runtime dependencies
+8. Prefer repository scripts and established APIs. Keep runtime dependencies
    bundled when users should not need a local toolchain.
 
 ## Project Invariants

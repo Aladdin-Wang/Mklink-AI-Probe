@@ -12,10 +12,10 @@ from pathlib import Path, PurePosixPath
 
 
 BUNDLE_VERSION = "0.1.5"
-CORE_VERSION = "0.1.4"
-CORE_ZIP_SHA256 = "42f25d6513d87574b259bf5f3a7a99aab7abc0c323e76229c7a6ad4b4c00970b"
-CORE_EXE_SHA256 = "c954bcf0e02fe1c91763aff002c7356190df53f8e3092a39f9ed3632254e9cf0"
-STCP_DLL_SHA256 = "036cd32ef6c1da0a341a9b3c50cecbda0c22594d15ddf03514760141494d989b"
+CORE_VERSION = "0.1.5"
+CORE_ZIP_SHA256 = "bf67ddf54c68f8dd7d36eb74dcb549cd83a019c829020398c3d9e06211f432ea"
+CORE_EXE_SHA256 = "f7b1181b98b25cdbb9d574857a0a1a671608981129c005e2d30f7288e559351d"
+STCP_DLL_SHA256 = "0d17b6ce89de3d15e6629f4c5a087e0bbf1d809bf4516aa52786be7175d2e9e9"
 ROOT_NAME = "MKLink-Site-Agent-v0.1.5-windows-x86_64-portable"
 ZIP_NAME = f"{ROOT_NAME}.zip"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
@@ -119,6 +119,8 @@ def build_portable(
     core_zip = core_zip.expanduser().resolve()
     gui_exe = gui_exe.expanduser().resolve()
     source_root = source_root.expanduser().resolve()
+    if BUNDLE_VERSION != CORE_VERSION or f"v{CORE_VERSION}" not in ROOT_NAME:
+        raise RuntimeError("portable bundle and core versions must match")
     if "v0.1.4" in output.as_posix().casefold():
         raise RuntimeError("refusing a v0.1.4 output path")
     output.mkdir(parents=True, exist_ok=True)
@@ -127,7 +129,7 @@ def build_portable(
     if candidate.exists() or external_manifest.exists():
         raise RuntimeError("candidate already exists; use a new task-owned output directory")
     if sha256(core_zip) != CORE_ZIP_SHA256:
-        raise RuntimeError("protected v0.1.4 core ZIP hash mismatch")
+        raise RuntimeError(f"protected v{CORE_VERSION} core ZIP hash mismatch")
     if pe_subsystem(gui_exe) != 2:
         raise RuntimeError("portable GUI executable is not Windows GUI subsystem")
 
@@ -149,7 +151,9 @@ def build_portable(
                 destination.write_bytes(archive.read(info))
         core_exe = bin_root / "mklink-remote-agent.exe"
         if not core_exe.is_file() or sha256(core_exe) != CORE_EXE_SHA256:
-            raise RuntimeError("embedded v0.1.4 core executable hash mismatch")
+            raise RuntimeError(
+                f"embedded v{CORE_VERSION} core executable hash mismatch"
+            )
         if pe_subsystem(core_exe) != 3:
             raise RuntimeError("embedded core executable is not Windows console subsystem")
         stcp_dll = bin_root / "mklink-stcp.dll"

@@ -186,6 +186,18 @@ describe('ConfigView', () => {
     expect(mocks.api.connectDevice.mock.calls[0][0]).not.toHaveProperty('mcu')
   })
 
+  it('fills the detected serial port after an automatic connection succeeds', async () => {
+    mocks.api.getConfig.mockResolvedValue({})
+    mocks.api.connectDevice.mockResolvedValue({ port: 'TEST_PORT_B' })
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="local-port"]').element as HTMLSelectElement).value)
+      .toBe('TEST_PORT_B')
+  })
+
   it('automatically saves serial discovery and SWD changes without a save button', async () => {
     const wrapper = await mountView()
 

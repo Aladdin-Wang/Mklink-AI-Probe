@@ -5,13 +5,13 @@
         v-model="query"
         class="form-input"
         data-testid="variable-search"
-        placeholder="搜索变量"
+        :placeholder="tr('搜索变量', 'Search variables')"
       />
       <button
         class="icon-button"
         type="button"
-        title="手动添加变量"
-        aria-label="手动添加变量"
+        :title="tr('手动添加变量', 'Add variable manually')"
+        :aria-label="tr('手动添加变量', 'Add variable manually')"
         data-testid="show-manual-add"
         @click="manualAddOpen = !manualAddOpen"
       >
@@ -20,8 +20,8 @@
       <button
         class="icon-button"
         type="button"
-        title="粘贴 C 结构定义"
-        aria-label="粘贴 C 结构定义"
+        :title="tr('粘贴 C 结构定义', 'Paste C structure definition')"
+        :aria-label="tr('粘贴 C 结构定义', 'Paste C structure definition')"
         data-testid="show-c-layout"
         @click="openCLayout()"
       >
@@ -30,8 +30,8 @@
       <button
         class="icon-button"
         type="button"
-        title="重新解析符号"
-        aria-label="重新解析符号"
+        :title="tr('重新解析符号', 'Reparse symbols')"
+        :aria-label="tr('重新解析符号', 'Reparse symbols')"
         :disabled="catalog.reparsing.value"
         data-testid="reparse-symbols"
         @click="reparseSymbols"
@@ -45,14 +45,14 @@
         v-model="manualPath"
         class="form-input"
         data-testid="manual-variable-path"
-        placeholder="变量或成员路径"
+        :placeholder="tr('变量或成员路径', 'Variable or member path')"
         autocomplete="off"
       />
       <button
         class="icon-button"
         type="submit"
-        title="添加到 SuperWatch"
-        aria-label="添加到 SuperWatch"
+        :title="tr('添加到 SuperWatch', 'Add to SuperWatch')"
+        :aria-label="tr('添加到 SuperWatch', 'Add to SuperWatch')"
         data-testid="add-manual-variable"
         :disabled="manualAdding || !manualPath.trim()"
       >
@@ -63,33 +63,58 @@
     <div class="panel-filters">
       <label>
         <input v-model="selectedOnly" type="checkbox" data-testid="selected-only" />
-        仅已选
+        {{ tr('仅已选', 'Selected Only') }}
       </label>
-      <span>{{ selected.size }} / {{ catalog.items.value.length }}</span>
+      <span>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</span>
     </div>
 
-    <div v-if="catalog.stale.value" class="stale-banner">AXF 已变化，请重新解析</div>
-    <div v-if="catalog.truncatedRoots.value.length" class="truncated-banner">
-      以下大型变量仅展开前 256 个可读叶子：{{ catalog.truncatedRoots.value.join('、') }}
-    </div>
-    <div v-if="!deviceConnected" class="empty-state">请先连接设备</div>
-    <div v-else-if="catalog.loading.value" class="empty-state">正在加载符号...</div>
+    <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('SuperWatch 读取变量前需要连接 MKLink 设备。', 'Connect the MKLink device before reading variables with SuperWatch.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :busy="connecting"
+      @primary="quickConnect"
+    />
+    <SetupHint
+      v-else-if="symbolError || catalog.error.value"
+      kind="error"
+      :message="tr('符号文件解析失败：', 'Symbol parsing failed: ') + (symbolError || catalog.error.value)"
+      :primary-label="tr('重新选择', 'Choose Another File')"
+      :secondary-label="hasSymbolSource ? tr('重试解析', 'Retry Parsing') : ''"
+      :busy="loadingSymbols"
+      @primary="loadSymbolFile"
+      @secondary="parseSelectedSymbols"
+    />
+    <SetupHint
+      v-else-if="!symbolLoaded"
+      kind="symbols"
+      :message="hasSymbolSource ? tr('已选择 AXF / ELF，解析后即可浏览变量。', 'An AXF / ELF file is selected. Parse it to browse variables.') : tr('SuperWatch 需要 AXF / ELF 中的变量和类型信息。', 'SuperWatch needs variable and type information from an AXF / ELF file.')"
+      :primary-label="hasSymbolSource ? tr('解析已选文件', 'Parse Selected File') : tr('加载 AXF / ELF', 'Load AXF / ELF')"
+      :busy="loadingSymbols"
+      @primary="hasSymbolSource ? parseSelectedSymbols() : loadSymbolFile()"
+    />
+    <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
     <div v-else class="variable-groups">
-      <h3 class="variable-root-heading">全局变量</h3>
+      <h3 class="variable-root-heading">{{ tr('全局变量', 'Global Variables') }}</h3>
       <template v-for="row in rows" :key="row.node.key">
         <button
-          v-if="row.node.kind === 'branch'"
+          v-if="row.node.kind === 'branch' || row.node.kind === 'range'"
           class="branch-row"
           type="button"
           :data-testid="`branch-${row.node.key}`"
           :title="row.node.key"
           :style="{ paddingLeft: rowIndent(row.depth) }"
-          @click="toggleBranch(row.node.key)"
+          @click="toggleBranch(row.node)"
         >
-          <ChevronDown v-if="row.expanded" :size="15" aria-hidden="true" />
+          <LoaderCircle v-if="catalog.browseLoading.value.has(row.node.key)" class="branch-spinner" :size="15" aria-hidden="true" />
+          <ChevronDown v-else-if="row.expanded" :size="15" aria-hidden="true" />
           <ChevronRight v-else :size="15" aria-hidden="true" />
           <span class="branch-name">{{ row.node.label }}</span>
-          <span class="branch-count">{{ row.selectedLeafCount }} / {{ row.node.leafCount }}</span>
+          <span v-if="row.node.childCount !== null" class="branch-count">
+            {{ row.node.kind === 'range' ? row.node.childCount : `${row.selectedLeafCount} / ${row.node.childCount}` }}
+          </span>
         </button>
         <button
           v-else-if="row.node.kind === 'container' && row.node.container"
@@ -103,7 +128,7 @@
           <Code2 :size="15" aria-hidden="true" />
           <span class="branch-name">{{ row.node.label }}</span>
           <span class="container-type">{{ row.node.container.type_name }}</span>
-          <span class="container-state">待定义</span>
+          <span class="container-state">{{ tr('待定义', 'Needs definition') }}</span>
         </button>
         <div
           v-else-if="row.node.descriptor"
@@ -117,7 +142,7 @@
               :checked="selected.has(row.node.descriptor.path)"
               :data-testid="`toggle-${row.node.descriptor.path}`"
               :disabled="selectionBusy.has(row.node.descriptor.path)"
-              @change="toggleSelection(row.node.descriptor.path, $event)"
+              @change="toggleSelection(row.node.descriptor, $event)"
             />
             <span class="visibility-slot">
               <button
@@ -126,9 +151,9 @@
                 type="button"
                 :class="{ hidden: hiddenChannels?.has(row.node.descriptor.path) }"
                 :data-testid="`visibility-${row.node.descriptor.path}`"
-                :aria-label="hiddenChannels?.has(row.node.descriptor.path) ? `显示 ${row.node.descriptor.path} 波形` : `隐藏 ${row.node.descriptor.path} 波形`"
+                :aria-label="hiddenChannels?.has(row.node.descriptor.path) ? tr(`显示 ${row.node.descriptor.path} 波形`, `Show ${row.node.descriptor.path} waveform`) : tr(`隐藏 ${row.node.descriptor.path} 波形`, `Hide ${row.node.descriptor.path} waveform`)"
                 :aria-pressed="!hiddenChannels?.has(row.node.descriptor.path)"
-                :title="hiddenChannels?.has(row.node.descriptor.path) ? '显示波形' : '隐藏波形'"
+                :title="hiddenChannels?.has(row.node.descriptor.path) ? tr('显示波形', 'Show waveform') : tr('隐藏波形', 'Hide waveform')"
                 @click.stop="toggleVisibility(row.node.descriptor.path)"
               >
                 <EyeOff v-if="hiddenChannels?.has(row.node.descriptor.path)" :size="15" aria-hidden="true" />
@@ -152,10 +177,10 @@
               type="button"
               :data-testid="`edit-${row.node.descriptor.path}`"
               :disabled="catalog.stale.value || !row.node.descriptor.writable"
-              title="设置变量"
+              :title="tr('设置变量', 'Set variable')"
               @click="beginEdit(row.node.descriptor)"
             >
-              编辑
+              {{ tr('编辑', 'Edit') }}
             </button>
           </div>
 
@@ -191,32 +216,32 @@
               :disabled="writing.has(row.node.descriptor.path)"
               @click="writeValue(row.node.descriptor)"
             >
-              {{ writing.has(row.node.descriptor.path) ? '写入中' : '写入' }}
+              {{ writing.has(row.node.descriptor.path) ? tr('写入中', 'Writing') : tr('写入', 'Write') }}
             </button>
-            <button type="button" class="btn btn-secondary" @click="editing = null">取消</button>
+            <button type="button" class="btn btn-secondary" @click="editing = null">{{ tr('取消', 'Cancel') }}</button>
           </div>
           <div
             v-if="writeSuccess[row.node.descriptor.path] !== undefined"
             class="write-success"
             :data-testid="`write-ok-${row.node.descriptor.path}`"
           >
-            已验证: {{ formatValue(writeSuccess[row.node.descriptor.path]) }}
+            {{ tr('已验证:', 'Verified:') }} {{ formatValue(writeSuccess[row.node.descriptor.path]) }}
           </div>
         </div>
       </template>
-      <div v-if="rows.length === 0" class="empty-state">无匹配变量</div>
+      <div v-if="rows.length === 0" class="empty-state">{{ tr('无匹配变量', 'No matching variables') }}</div>
     </div>
 
     <div v-if="cLayoutOpen" class="modal-overlay" data-testid="c-layout-modal" @click.self="closeCLayout">
       <section class="layout-modal" role="dialog" aria-modal="true" aria-labelledby="c-layout-title">
         <header class="layout-modal-header">
-          <h3 id="c-layout-title"><Code2 :size="17" aria-hidden="true" />应用 C 结构定义</h3>
-          <button class="icon-button" type="button" title="关闭" aria-label="关闭" @click="closeCLayout">
+          <h3 id="c-layout-title"><Code2 :size="17" aria-hidden="true" />{{ tr('应用 C 结构定义', 'Apply C Structure Definition') }}</h3>
+          <button class="icon-button" type="button" :title="tr('关闭', 'Close')" :aria-label="tr('关闭', 'Close')" @click="closeCLayout">
             <X :size="16" aria-hidden="true" />
           </button>
         </header>
         <label class="layout-field">
-          <span>变量</span>
+          <span>{{ tr('变量', 'Variable') }}</span>
           <input
             v-model="cLayoutVariable"
             class="form-input"
@@ -226,9 +251,9 @@
           />
         </label>
         <label class="layout-field">
-          <span>对齐</span>
+          <span>{{ tr('对齐', 'Alignment') }}</span>
           <select v-model="cLayoutPack" class="form-input" data-testid="c-layout-pack">
-            <option value="">自动</option>
+            <option value="">{{ tr('自动', 'Auto') }}</option>
             <option value="1">pack(1)</option>
             <option value="2">pack(2)</option>
             <option value="4">pack(4)</option>
@@ -236,7 +261,7 @@
           </select>
         </label>
         <label class="layout-field layout-definition">
-          <span>C 定义</span>
+          <span>{{ tr('C 定义', 'C Definition') }}</span>
           <textarea
             v-model="cLayoutDefinition"
             class="form-input"
@@ -246,7 +271,7 @@
           />
         </label>
         <footer class="layout-modal-actions">
-          <button type="button" class="btn btn-secondary" @click="closeCLayout">取消</button>
+          <button type="button" class="btn btn-secondary" @click="closeCLayout">{{ tr('取消', 'Cancel') }}</button>
           <button
             type="button"
             class="btn btn-primary"
@@ -254,7 +279,7 @@
             :disabled="catalog.applyingLayout.value || !cLayoutVariable.trim() || !cLayoutDefinition.trim()"
             @click="applyCLayout"
           >
-            {{ catalog.applyingLayout.value ? '解析中' : '应用' }}
+            {{ catalog.applyingLayout.value ? tr('解析中', 'Parsing') : tr('应用', 'Apply') }}
           </button>
         </footer>
       </section>
@@ -264,19 +289,27 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { ChevronDown, ChevronRight, Code2, Eye, EyeOff, Plus, RefreshCw, X } from '@lucide/vue'
+import { ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Plus, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
-import { buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
+import { buildBrowseTree, buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
 import type { SymbolDescriptor } from '../../types/mklink'
+import type { SymbolTreeNode } from '../../lib/symbolTree'
+import { tr } from '../../composables/useLanguage'
+import SetupHint from './SetupHint.vue'
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
-
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   deviceConnected: boolean
+  symbolLoaded?: boolean
+  symbolError?: string
   latestValues: Record<string, number | boolean>
   hiddenChannels?: ReadonlySet<string>
-}>()
+}>(), {
+  symbolLoaded: true,
+  symbolError: '',
+})
 
 const emit = defineEmits<{
   'visibility-change': [path: string, visible: boolean]
@@ -285,6 +318,14 @@ const emit = defineEmits<{
 
 const catalog = useSymbolCatalog()
 const toast = useToast()
+const {
+  connecting,
+  loadingSymbols,
+  hasSymbolSource,
+  quickConnect,
+  loadSymbolFile,
+  parseSelectedSymbols,
+} = useDashboardSetup()
 const query = ref('')
 const manualAddOpen = ref(false)
 const manualPath = ref('')
@@ -301,9 +342,20 @@ const editing = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const writeSuccess = reactive<Record<string, number | boolean | undefined>>({})
 const expanded = shallowRef(new Set<string>())
+const searchItems = shallowRef<SymbolDescriptor[]>([])
+const selectedDescriptors = shallowRef(new Map<string, SymbolDescriptor>())
 let searchExpansionSnapshot: Set<string> | null = null
+let searchRequest = 0
 
-const tree = computed(() => buildSymbolTree(catalog.items.value, catalog.containers.value))
+const tree = computed(() => {
+  if (query.value.trim()) {
+    return buildSymbolTree(searchItems.value, catalog.containers.value)
+  }
+  if (selectedOnly.value) {
+    return buildSymbolTree([...selectedDescriptors.value.values()])
+  }
+  return buildBrowseTree(catalog.browseRoots.value, catalog.browseChildren.value)
+})
 const rows = computed(() => visibleSymbolRows(tree.value, {
   expanded: expanded.value,
   selected: selected.value,
@@ -325,13 +377,14 @@ async function request(path: string, options?: RequestInit): Promise<any> {
 }
 
 async function loadWorkspace(): Promise<void> {
-  if (!props.deviceConnected) return
+  if (!props.deviceConnected || !props.symbolLoaded) return
   try {
     await catalog.ensureLoaded()
     const response = await request('/api/dash/superwatch/items')
     selected.value = new Set(
       Array.isArray(response.items) ? response.items.map((item: { name: string }) => item.name) : [],
     )
+    await refreshSelectedDescriptors()
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
   }
@@ -344,16 +397,29 @@ function withSet(source: Set<string>, path: string, enabled: boolean): Set<strin
   return next
 }
 
-function toggleBranch(path: string): void {
+async function toggleBranch(node: SymbolTreeNode): Promise<void> {
   if (query.value.trim() || selectedOnly.value) return
-  expanded.value = withSet(expanded.value, path, !expanded.value.has(path))
+  if (expanded.value.has(node.key)) {
+    expanded.value = withSet(expanded.value, node.key, false)
+    return
+  }
+  if (node.browse) {
+    try {
+      await catalog.loadBrowseChildren(node.browse)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause))
+      return
+    }
+  }
+  expanded.value = withSet(expanded.value, node.key, true)
 }
 
 function rowIndent(depth: number): string {
   return `${8 + depth * 16}px`
 }
 
-async function toggleSelection(path: string, event: Event): Promise<void> {
+async function toggleSelection(symbol: SymbolDescriptor, event: Event): Promise<void> {
+  const path = symbol.path
   const checked = (event.target as HTMLInputElement).checked
   selectionBusy.value = withSet(selectionBusy.value, path, true)
   try {
@@ -363,6 +429,10 @@ async function toggleSelection(path: string, event: Event): Promise<void> {
       body: JSON.stringify({ name: path }),
     })
     selected.value = withSet(selected.value, path, checked)
+    const descriptors = new Map(selectedDescriptors.value)
+    if (checked) descriptors.set(path, symbol)
+    else descriptors.delete(path)
+    selectedDescriptors.value = descriptors
     if (!checked) emit('selection-removed', path)
   } catch (cause) {
     ;(event.target as HTMLInputElement).checked = !checked
@@ -385,6 +455,7 @@ async function addManualVariable(): Promise<void> {
     if (response?.error || item?.error) throw new Error(response?.error || item.error)
     const addedPath = typeof item?.name === 'string' ? item.name : path
     selected.value = withSet(selected.value, addedPath, true)
+    await resolveSelectedDescriptor(addedPath)
     manualPath.value = ''
     manualAddOpen.value = false
   } catch (cause) {
@@ -401,6 +472,29 @@ function applyRebindSummary(summary: { removed: string[] }): void {
     emit('selection-removed', path)
   })
   selected.value = next
+  const descriptors = new Map(selectedDescriptors.value)
+  summary.removed.forEach(path => descriptors.delete(path))
+  selectedDescriptors.value = descriptors
+}
+
+async function resolveSelectedDescriptor(path: string): Promise<void> {
+  const matches = await catalog.searchSymbols(path)
+  const descriptor = matches.find(item => item.path === path)
+  if (!descriptor) return
+  const next = new Map(selectedDescriptors.value)
+  next.set(path, descriptor)
+  selectedDescriptors.value = next
+}
+
+async function refreshSelectedDescriptors(): Promise<void> {
+  const paths = [...selected.value]
+  const resolved = await Promise.all(paths.map(async path => {
+    const matches = await catalog.searchSymbols(path).catch(() => [])
+    return matches.find(item => item.path === path)
+  }))
+  selectedDescriptors.value = new Map(
+    resolved.filter((item): item is SymbolDescriptor => Boolean(item)).map(item => [item.path, item]),
+  )
 }
 
 function openCLayout(variable = ''): void {
@@ -422,7 +516,7 @@ async function applyCLayout(): Promise<void> {
     )
     applyRebindSummary(result.rebind)
     cLayoutOpen.value = false
-    toast.success(`已解析 ${result.layout.leaf_count} 个成员`)
+    toast.success(tr(`已解析 ${result.layout.leaf_count} 个成员`, `Parsed ${result.layout.leaf_count} members`))
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
   }
@@ -452,11 +546,11 @@ function typedValue(symbol: SymbolDescriptor): unknown {
   if (symbol.scalar_kind === 'enum') return raw
   if (symbol.scalar_kind === 'signed' || symbol.scalar_kind === 'unsigned') {
     const value = Number(raw)
-    if (!Number.isInteger(value)) throw new Error('请输入整数')
+    if (!Number.isInteger(value)) throw new Error(tr('请输入整数', 'Enter an integer'))
     return value
   }
   const value = Number(raw)
-  if (!Number.isFinite(value)) throw new Error('请输入有限数值')
+  if (!Number.isFinite(value)) throw new Error(tr('请输入有限数值', 'Enter a finite number'))
   return value
 }
 
@@ -477,8 +571,9 @@ async function reparseSymbols(): Promise<void> {
   try {
     const summary = await catalog.reparse()
     applyRebindSummary(summary)
+    await refreshSelectedDescriptors()
     toast.success(
-      `符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`,
+      tr(`符号已更新：保留 ${summary.preserved.length}，更新 ${summary.updated.length}，移除 ${summary.removed.length}`, `Symbols updated: ${summary.preserved.length} preserved, ${summary.updated.length} updated, ${summary.removed.length} removed`),
     )
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
@@ -493,16 +588,31 @@ function formatValue(value: number | boolean | undefined): string {
 
 onMounted(loadWorkspace)
 watch(() => props.deviceConnected, connected => {
-  if (connected) void loadWorkspace()
+  if (connected && props.symbolLoaded) void loadWorkspace()
+})
+watch(() => props.symbolLoaded, loaded => {
+  if (loaded && props.deviceConnected) void loadWorkspace()
 })
 watch(query, (next, previous) => {
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
   if (!next.trim() && previous.trim() && searchExpansionSnapshot) {
     expanded.value = searchExpansionSnapshot
     searchExpansionSnapshot = null
+    searchItems.value = []
+    searchRequest += 1
+    return
   }
+  const value = next.trim()
+  if (!value) return
+  const requestId = ++searchRequest
+  void catalog.searchSymbols(value).then(items => {
+    if (requestId === searchRequest) searchItems.value = items
+  }).catch(cause => {
+    if (requestId === searchRequest) toast.error(cause instanceof Error ? cause.message : String(cause))
+  })
 })
 watch(tree, roots => {
+  if (query.value.trim() || selectedOnly.value) return
   const valid = collectBranchKeys(roots)
   expanded.value = new Set([...expanded.value].filter(path => valid.has(path)))
   if (searchExpansionSnapshot) {
@@ -529,14 +639,6 @@ watch(tree, roots => {
 .panel-filters { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
-.truncated-banner {
-  padding: 7px 10px;
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
 .variable-groups { min-height: 0; overflow: auto; }
 .variable-root-heading { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
 .branch-row {
@@ -557,6 +659,8 @@ watch(tree, roots => {
   text-align: left;
 }
 .branch-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.branch-spinner { animation: branch-spin 0.8s linear infinite; }
+@keyframes branch-spin { to { transform: rotate(360deg); } }
 .container-row {
   display: grid;
   grid-template-columns: 18px minmax(70px, 1fr) minmax(64px, auto) auto;
