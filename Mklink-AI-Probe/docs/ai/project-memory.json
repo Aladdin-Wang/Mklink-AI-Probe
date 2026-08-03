@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T20:52:01+08:00",
+  "updated_at": "2026-08-03T20:54:44+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "feature/gui-site-agent-integration",
-    "head": "The qualified v0.1.6 feature branch starts from su5176/master ba56901. It adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.",
-    "remote_head": "origin/master remains at ba56901 before this feature is merged. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.",
-    "working_tree": "Task-owned v0.1.6 source and generated GUI dist changes are pending on the feature branch. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target."
+    "branch": "master",
+    "head": "Qualified feature commit ca031f6 is merged into master by f985dba. v0.1.6 adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.",
+    "remote_head": "origin/master contains merge commit f985dba and qualified feature commit ca031f6. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.",
+    "working_tree": "The v0.1.6 code merge is pushed to origin/master. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v016_hil_qualified_pending_merge_and_release_key",
+    "status": "v016_merged_pending_release_key",
     "current_task": "Integrate Site Agent into the main Tauri GUI and unified Python sidecar while retaining the standalone portable Windows client, then merge and publish v0.1.6 to the su5176 GitHub Releases page.",
     "release": "All active product, plugin, main-Tauri, standalone-Tauri, core-package, portable-package, and release-history surfaces use 0.1.6. GitHub merge and publication are authorized by the maintainer request, and the fresh GEC1900 hardware gate is complete. A signed NSIS build still awaits the established Tauri updater private key or an explicit narrower portable-only publication decision. Gitee/latest.json synchronization is not authorized by the current GitHub-only request."
   },
@@ -201,7 +201,7 @@
   ],
   "next_actions": [
     "Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.",
-    "Render and validate memory, commit the qualified feature branch, merge the tested tip into master, and push origin/master. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",
+    "After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",

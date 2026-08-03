@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T20:52:01+08:00`
-- 分支：`feature/gui-site-agent-integration`
-- HEAD：`The qualified v0.1.6 feature branch starts from su5176/master ba56901. It adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.`
-- 远端 HEAD：`origin/master remains at ba56901 before this feature is merged. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.`
-- 工作树：Task-owned v0.1.6 source and generated GUI dist changes are pending on the feature branch. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target.
+- 更新时间：`2026-08-03T20:54:44+08:00`
+- 分支：`master`
+- HEAD：`Qualified feature commit ca031f6 is merged into master by f985dba. v0.1.6 adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.`
+- 远端 HEAD：`origin/master contains merge commit f985dba and qualified feature commit ca031f6. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.`
+- 工作树：The v0.1.6 code merge is pushed to origin/master. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target.
 - 当前任务：Integrate Site Agent into the main Tauri GUI and unified Python sidecar while retaining the standalone portable Windows client, then merge and publish v0.1.6 to the su5176 GitHub Releases page.
-- 状态：`v016_hil_qualified_pending_merge_and_release_key`
+- 状态：`v016_merged_pending_release_key`
 
 ## 里程碑
 
@@ -91,7 +91,7 @@
 ## 下一动作
 
 1. Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.
-2. Render and validate memory, commit the qualified feature branch, merge the tested tip into master, and push origin/master. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
+2. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
 3. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
 4. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
 5. Qualify USB Web entry on current macOS and Linux systems.
