@@ -206,13 +206,12 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('polls RTT status through the configured packaged API origin', async () => {
-    vi.stubEnv('VITE_MKLINK_API', 'http://127.0.0.1:8765')
+  it('polls RTT status through the browser page origin', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await flushPromises()
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:8765/api/dash/rtt/status',
+      '/api/dash/rtt/status',
     )
     wrapper.unmount()
   })

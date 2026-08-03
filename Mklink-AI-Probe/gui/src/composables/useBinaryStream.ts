@@ -2,6 +2,7 @@ import { computed, onUnmounted, readonly, ref, shallowRef } from 'vue'
 import { StreamClient } from '../lib/stream/streamClient'
 import type { StreamClientOptions, StreamClientState } from '../lib/stream/streamClient'
 import type { StreamTelemetry, WorkerOutput } from '../workers/streamDecoder.worker'
+import { API_BASE } from '../lib/runtimeEndpoint'
 
 export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'superwatch'
 
@@ -28,8 +29,6 @@ type WaveformBatch = Extract<WorkerOutput, { type: 'waveform-batch' }>
 type RttLines = Extract<WorkerOutput, { type: 'rtt-lines' }>
 type RttTerminal = Extract<WorkerOutput, { type: 'rtt-terminal' }>
 type SuperWatchMetadata = Extract<WorkerOutput, { type: 'superwatch-metadata' }>
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 
 function streamUrl(stream: BinaryStreamName): string {
   if (API_BASE) {

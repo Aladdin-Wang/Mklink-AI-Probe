@@ -996,8 +996,8 @@ describe('VOFA viewer hot path source guard', () => {
     expect(i18nSource).toContain("y_axis_tip: 'Y axis: scroll to zoom; hold the left mouse button and drag; double-click for auto range'")
   })
 
-  it('routes packaged waveform API calls through the configured backend origin', () => {
-    expect(componentSource).toContain("const API_BASE = import.meta.env.VITE_MKLINK_API || ''")
+  it('routes waveform API calls through the runtime-selected backend origin', () => {
+    expect(componentSource).toContain("import { API_BASE } from '../../lib/runtimeEndpoint'")
     expect(componentSource).toContain('fetch(`${API_BASE}/api/dash/${')
     expect(componentSource).toContain('apiBase: ${JSON.stringify(API_BASE)}')
     expect(source).toContain("var API_BASE = CONFIG.apiBase || '';")

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T11:46:00+08:00`
-- 分支：`fix/v015-skill-web-dist`
-- HEAD：`The fix branch refreshes the tracked gui/dist assets used by copied Skill installations so the Web GUI reports v0.1.5 instead of the stale v0.1.4 build. The published v0.1.5 tag and updates metadata remain unchanged.`
-- 远端 HEAD：`origin/fix/v015-skill-web-dist tracks the validated fix branch. Pull request su5176/Mklink-AI-Probe#7 is open against su5176/master and is reported mergeable with a clean merge state.`
-- 工作树：The validated runtime fix and PR handoff are committed and pushed. Local .mklink state remains excluded.
-- 当前任务：Monitor su5176/Mklink-AI-Probe#7 and respond to maintainer review without broadening the verified fix.
-- 状态：`v0.1.5_skill_web_dist_pr_open`
+- 更新时间：`2026-08-03T12:30:00+08:00`
+- 分支：`fix/web-entry-launch-feedback`
+- HEAD：`The branch fixes browser-hosted Web GUI API and WebSocket routing on dynamic ports while preserving the configured port 8765 endpoint inside Tauri. The offline Web entry page adds a 25-second countdown, timeout guidance, and a reminder to re-register after Skill updates or moves.`
+- 远端 HEAD：`The branch is local and based on origin/fix/v015-skill-web-dist at 6899d10. Pull request su5176/Mklink-AI-Probe#7 remains open on the parent branch and is not broadened by this follow-up fix.`
+- 工作树：The runtime endpoint fix, Web entry feedback, tests, rebuilt gui/dist, documentation, and this project-memory update are ready for a local commit. Local .mklink state remains excluded.
+- 当前任务：Commit the qualified Web entry fix, install a local unchanged-version Skill archive, generate the MICROKEEN USB launcher, and complete a cold-start loop.
+- 状态：`web_entry_dynamic_port_fix_qualified`
 
 ## 里程碑
 
@@ -27,7 +27,7 @@
 
 ## 验证证据
 
-- **Current v0.1.5 Skill Web asset gate**：On fix/v015-skill-web-dist, GUI passed all 47 files and 488 tests, and the Vite production build completed with VITE_APP_BUILD_COMMIT=a83d46044467. The regenerated bundle contains v0.1.5 and a83d46044467 and no longer contains the stale v0.1.4 / 841c1717a8b9 footer. The reduced release-equivalent Python gate passed 1,224 tests with 1 skipped and 12 symlink-privilege tests deselected.
+- **Web entry dynamic-port and launch-feedback gate**：On fix/web-entry-launch-feedback, browser-hosted REST, SSE, JSON-RPC, and binary streams use the current page origin while Tauri retains its configured port 8765 sidecar endpoint. The Web entry page shows a 25-second countdown over the existing 20-second backend readiness timeout, gives actionable timeout guidance, and reminds users to re-register after Skill updates or moves. GUI passed 48 files and 491 tests; the Vite 8.1.5 production build passed with VITE_APP_BUILD_COMMIT=6899d10e008e; the raw Python suite reached 1,227 passed and 1 skipped with only the 12 known symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable reduced gate passed 1,227 tests with 1 skipped and 15 explicit deselections. A source Web service served health and the new runtime-marked bundle successfully on non-default port 8770.
 - **Vite WebSocket proxy and source Web regression**：The source Vite server had proxied only /api since its introduction, while RTT, SuperWatch, SystemView, and VOFA later moved to /ws/streams/*. REST calls therefore remained healthy at port 5173 while binary streams bypassed the backend. vite.config.ts now forwards /ws with WebSocket upgrade enabled to port 8765, and a Node-environment Vitest test pins both /api and /ws proxy contracts. On the real STM32F103RC through http://127.0.0.1:5173, RTT delivered MSH output, 16-channel SuperWatch accumulated 631,520 complete samples around 859 Hz with zero host/target errors or drops, RTOS Trace received about 154,089 events, and a direct VOFA WebSocket handshake reached Open through the Vite proxy.
 - **Imported Site Agent baseline evidence**：The clean combined-branch Windows Site Agent package had SHA-256 713FD6C34A4232455E42747AB41B2492E5B2B3E3ABDD1D8ADE78D13982E7FAE3 and contained no frpc/frps. Loopback health/status/capabilities/ports, token isolation, reconnect, STM32F10x probe.info, halted registers, confirmed superwatch_ch00 write/read/restore, RTT channel 0 HIL_PING echo, SystemView channel 1 with 8,148 bytes and 1,991 parsed events/tasks, cleanup, site deletion, and port release passed. Direct use of the user project root was correctly rejected because its remote-upload ACL was not owner-only; an isolated Agent state root with the AXF specified separately passed. External managed-LAN STCP was not rerun because no independent LAN frps endpoint was available.
 - **Large-array symbol browsing**：On the real STM32 AXF, _thread_stack exposed eight 256-element ranges through [1792..2047]. The tail request returned exactly _thread_stack[1792] through _thread_stack[2047], exact search found unloaded _thread_stack[2047], type lookup reported uint8_t at 0x20009A63, and target read returned 35. No write was performed because the available large arrays are active stack/buffer memory; the dynamic write path is covered automatically. SuperWatch and Symbols Web views both rendered only the selected tail page, omitted [0], removed the old warning, and produced no console warnings or errors.
@@ -82,7 +82,7 @@
 
 ## 下一动作
 
-1. Review su5176/Mklink-AI-Probe#7 and decide separately whether to merge it. Release-asset replacement and updater metadata changes remain out of scope.
+1. Review the local fix/web-entry-launch-feedback commit and its MICROKEEN USB cold-start evidence before deciding whether to push it or layer it onto su5176/Mklink-AI-Probe#7. Release-asset replacement and updater metadata changes remain out of scope.
 2. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
 3. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
 4. Qualify USB Web entry on current macOS and Linux systems.
@@ -90,7 +90,7 @@
 
 ## 已知限制
 
-- The current v0.1.5 Skill Web asset gate did not rerun three Site Agent package tests because this machine lacks Go and native/stcp_bridge/build/mklink-stcp.dll. The previous qualified release baseline covers those components; this fix changes only tracked Web assets and version-baseline tests.
+- The current Web entry gate could not complete three Site Agent package tests because native/stcp_bridge/build/mklink-stcp.dll is unavailable on this machine. The previous qualified release baseline covers those components; this fix changes Web runtime endpoint selection, the offline launcher, tests, and tracked Web assets.
 - The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.
 - Twelve strict Windows symlink tests require Developer Mode or SeCreateSymbolicLinkPrivilege and were deselected in the final Python gate on this machine. Their strict failure behavior remains intact; they were not converted to silent skips.
 - High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.
@@ -102,6 +102,6 @@
 ## 延续协议
 
 - Validate project memory and reconcile it with live Git and runtime state before acting.
-- Preserve the published v0.1.5 tag and updates/latest.json. Pull request su5176/Mklink-AI-Probe#7 carries the qualified v0.1.5 synchronization plus the copied-Skill Web asset refresh; merging and any publication remain separate maintainer decisions.
+- Preserve the published v0.1.5 tag and updates/latest.json. Pull request su5176/Mklink-AI-Probe#7 remains scoped to the qualified v0.1.5 synchronization and copied-Skill asset refresh; the dependent local fix/web-entry-launch-feedback branch must not be pushed into that PR without separate maintainer direction.
 - Follow the repository branch, automated gate, real-surface, and release-authority rules.
 - Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs.

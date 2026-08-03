@@ -216,6 +216,8 @@ a {{ display:inline-flex; align-items:center; justify-content:center; min-height
 a.primary {{ border-color:#bd4b2d; background:#bd4b2d; color:white; }}
 a:hover {{ border-color:#278075; }}
 #status {{ min-height:20px; margin:12px 0 0; color:#4f6268; font-size:12px; }}
+#status.running {{ color:#286b63; }}
+#status.error {{ color:#b33d2e; }}
 .note {{ margin-top:16px; padding-top:14px; border-top:1px solid #e3e7ea; color:#737d86; font-size:11px; line-height:1.6; }}
 </style>
 </head>
@@ -228,15 +230,50 @@ a:hover {{ border-color:#278075; }}
       <a href="{SCHEME}://web/stop" data-action="stop">停止服务</a>
     </div>
     <div id="status" role="status">点击启动后，浏览器会请求打开已安装的 Mklink 启动器。</div>
-    <div class="note">首次使用时请允许浏览器打开 Mklink AI Probe。此文件不包含程序，也不会从 U 盘执行脚本。</div>
+    <div class="note">首次使用时请允许浏览器打开 Mklink AI Probe。更新 Skill 或改变安装位置后，请重新注册一次快速启动器。此文件不包含程序，也不会从 U 盘执行脚本。</div>
   </div>
 </main>
 <script>
+var launchInterval = null;
+var launchTimeout = null;
+var launchTimeoutSeconds = 25;
+
+function clearLaunchTimers() {{
+  if (launchInterval !== null) window.clearInterval(launchInterval);
+  if (launchTimeout !== null) window.clearTimeout(launchTimeout);
+  launchInterval = null;
+  launchTimeout = null;
+}}
+
+function startLaunchCountdown() {{
+  clearLaunchTimers();
+  var remaining = launchTimeoutSeconds;
+  var status = document.getElementById('status');
+  status.className = 'running';
+  status.textContent = '正在启动本地服务，最长约 ' + remaining + ' 秒，完成后会自动打开 Web 客户端...';
+  launchInterval = window.setInterval(function() {{
+    remaining -= 1;
+    if (remaining > 0) {{
+      status.textContent = '正在启动本地服务，最长约 ' + remaining + ' 秒，完成后会自动打开 Web 客户端...';
+    }}
+  }}, 1000);
+  launchTimeout = window.setTimeout(function() {{
+    clearLaunchTimers();
+    status.className = 'error';
+    status.textContent = '启动超时：请确认浏览器已允许打开 Mklink 启动器，并检查完整 Skill 是否已安装。如果刚更新或移动了 Skill，请重新注册快速启动器后再试。';
+  }}, launchTimeoutSeconds * 1000);
+}}
+
 document.querySelectorAll('[data-action]').forEach(function(link) {{
   link.addEventListener('click', function() {{
-    document.getElementById('status').textContent = link.dataset.action === 'stop'
-      ? '已请求停止由此入口启动的 Web 服务。'
-      : '正在启动本地服务，完成后会自动打开 Web 客户端...';
+    if (link.dataset.action === 'stop') {{
+      clearLaunchTimers();
+      var status = document.getElementById('status');
+      status.className = '';
+      status.textContent = '已请求停止由此入口启动的 Web 服务。';
+      return;
+    }}
+    startLaunchCountdown();
   }});
 }});
 </script>
@@ -463,6 +500,7 @@ def start_web_entry(
     probe: Callable[[int], str | None] = probe_server,
     port_available: Callable[[int], bool] = port_available,
     spawn: Callable[..., Any] = spawn_gui_process,
+    terminate: Callable[[int], None] = terminate_owned_process,
     browser_open: Callable[[str], Any] = webbrowser.open,
     process_identity: Callable[[int], str | None] = get_process_identity,
     sleep: Callable[[float], None] = time.sleep,
@@ -522,7 +560,7 @@ def start_web_entry(
     pid = int(process.pid)
     identity = process_identity(pid)
     if not identity:
-        terminate_owned_process(pid)
+        terminate(pid)
         raise WebEntryError("Unable to verify the started MKLink Web process")
     _save_state(data_dir, {
         "version": 1,
@@ -548,7 +586,7 @@ def start_web_entry(
             }
         sleep(0.15)
 
-    terminate_owned_process(pid)
+    terminate(pid)
     _clear_state(data_dir)
     raise WebEntryError("MKLink Web service did not become ready")
 

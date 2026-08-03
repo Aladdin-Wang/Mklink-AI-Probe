@@ -20,8 +20,7 @@ import type {
   TargetSearchOptions,
 } from '../types/onlineFlash'
 import { tr } from './useLanguage'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../lib/runtimeEndpoint'
 const ONLINE_FLASH_BASE = '/api/online-flash'
 const TERMINAL_STATES = new Set(['succeeded', 'failed', 'stopped'])
 

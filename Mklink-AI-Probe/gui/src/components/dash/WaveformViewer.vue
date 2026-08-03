@@ -15,8 +15,7 @@ import '../../assets/rtt_viewer.css'
 import i18nUrl from '../../assets/rtt_i18n.js?url'
 import viewerUrl from '../../assets/rtt_viewer.js?url'
 import { language } from '../../composables/useLanguage'
-
-const API_BASE = import.meta.env.VITE_MKLINK_API || ''
+import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
