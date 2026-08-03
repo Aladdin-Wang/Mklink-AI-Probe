@@ -2234,9 +2234,9 @@ def _cli_symbols(
         python -m mklink symbols --source <axf>
         python -m mklink symbols --source <axf> --filter <regex>
     """
-    from mklink.elf_backend import list_elf_symbols
+    from mklink.elf_backend import list_writable_object_symbols
     try:
-        normalized = list_elf_symbols(
+        normalized = list_writable_object_symbols(
             source, backend=backend, project_root=project_root
         )
     except Exception as e:
@@ -2249,7 +2249,6 @@ def _cli_symbols(
             "size": symbol.size,
         }
         for symbol in normalized
-        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
     ]
 
     if not symbols:
@@ -3769,6 +3768,13 @@ def _cli_mcu_detect(
 
 def main():
     """CLI 入口，首先执行依赖检查。"""
+    # Keep the direct-site CLI isolated in its owning module.  Early routing
+    # also lets ``mklink remote --help`` render the complete remote parser.
+    if len(sys.argv) > 1 and sys.argv[1] == "remote":
+        from mklink.remote.cli import main as remote_main
+
+        return remote_main(sys.argv[2:])
+
     # Windows 控制台 UTF-8 支持
     _enable_utf8_console()
 
@@ -3785,6 +3791,12 @@ def main():
         description="MKLink Flash Programmer CLI",
     )
     subparsers = parser.add_subparsers(dest="command")
+
+    subparsers.add_parser(
+        "remote",
+        add_help=False,
+        help="manage and use direct VPN/LAN field sites",
+    )
 
     # test 子命令
     test_parser = subparsers.add_parser("test", help="基本连接测试")

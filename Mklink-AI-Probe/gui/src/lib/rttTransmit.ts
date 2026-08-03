@@ -1,4 +1,5 @@
 import type { RttLineEnding, RttTransmitMode } from './desktopSettings'
+import { tr } from '../composables/useLanguage'
 
 const encoder = new TextEncoder()
 
@@ -23,10 +24,10 @@ export function encodeRttTransmit(
 
   const compact = text.replace(/[\x09-\x0d\x20]/g, '')
   if (!/^[0-9a-f]*$/i.test(compact)) {
-    throw new Error('HEX 输入只能包含十六进制字符和空白')
+    throw new Error(tr('HEX 输入只能包含十六进制字符和空白', 'HEX input may contain only hexadecimal characters and whitespace'))
   }
   if (compact.length % 2 !== 0) {
-    throw new Error('HEX 输入必须包含偶数个字符')
+    throw new Error(tr('HEX 输入必须包含偶数个字符', 'HEX input must contain an even number of characters'))
   }
 
   const payload = new Uint8Array(compact.length / 2)

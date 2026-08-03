@@ -219,6 +219,167 @@ def test_dashboard_start_holds_both_target_resources_and_stop_releases(
     assert state["resource_manager"].get_status() == {}
 
 
+def test_stopping_last_mklink_dashboard_keeps_probe_and_serial_running():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    class DashboardManager:
+        def __init__(self, running=False):
+            self.running = running
+            self.start = MagicMock()
+            self.stop = MagicMock(side_effect=self._stop)
+
+        def _stop(self):
+            self.running = False
+
+    managers = {
+        name: DashboardManager(running=name in ("rtt", "serial"))
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    device = MagicMock()
+    device.connected = True
+    device.port = "PROBE_PORT"
+    device.axf_status = {
+        "loaded": True,
+        "axf_path": "firmware.axf",
+        "elf_backend": "builtin",
+    }
+    state["device"] = device
+    state["dispatcher"] = object()
+    state["resource_manager"].acquire_many(
+        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        "user:dashboard:rtt",
+    )
+
+    response = client.post("/api/dash/rtt/stop")
+
+    assert response.status_code == 200
+    device.close.assert_not_called()
+    assert state["device"] is device
+    assert state["dispatcher"] is not None
+    assert managers["serial"].running is True
+    managers["serial"].stop.assert_not_called()
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_stopping_rtt_retains_device_while_another_mklink_dashboard_is_active():
+    class DashboardManager:
+        def __init__(self, running=False):
+            self.running = running
+            self.start = MagicMock()
+            self.stop = MagicMock(side_effect=self._stop)
+
+        def _stop(self):
+            self.running = False
+
+    managers = {
+        name: DashboardManager(running=name in ("rtt", "systemview"))
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    device = MagicMock()
+    device.connected = True
+    state["device"] = device
+
+    response = client.post("/api/dash/rtt/stop")
+
+    assert response.status_code == 200
+    device.close.assert_not_called()
+    assert state["device"] is device
+    assert managers["systemview"].running is True
+
+
+def test_rtt_start_requires_an_explicit_device_connection():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["superwatch"].prepare = MagicMock()
+    client, state = _dashboard_client(managers)
+    state["device"] = None
+    state["dispatcher"] = None
+    state["last_device_connection"] = {
+        "port": "PROBE_PORT",
+        "axf": "firmware.axf",
+        "mcu": "stm32f103rc",
+        "elf_backend": "builtin",
+    }
+    with patch("mklink.connect") as connect:
+        response = client.post(
+            "/api/dash/rtt/start",
+            json={"addr": "0x20000ac8", "encoding": "gbk"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Device not connected"
+    connect.assert_not_called()
+    managers["rtt"].start.assert_not_called()
+
+
+def test_quick_connect_restores_last_successful_device_inputs():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["superwatch"].prepare = MagicMock()
+    client, state = _dashboard_client(managers)
+    state["device"] = None
+    state["last_device_connection"] = {
+        "port": "PROBE_PORT",
+        "axf": "firmware.axf",
+        "mcu": "stm32f103rc",
+        "elf_backend": "builtin",
+    }
+    restored = MagicMock()
+    restored.connected = True
+    restored.port = "PROBE_PORT"
+    restored.mcu_name = "STM32F103RC"
+    restored.idcode = 0x410
+    restored.axf_status = {
+        "loaded": True,
+        "axf_path": "firmware.axf",
+        "elf_backend": "builtin",
+    }
+
+    with patch("mklink.connect", return_value=restored) as connect:
+        response = client.post(
+            "/api/device/connect",
+            json={"restore_last": True},
+        )
+
+    assert response.status_code == 200
+    connect.assert_called_once_with(
+        port="PROBE_PORT",
+        axf="firmware.axf",
+        mcu="stm32f103rc",
+        project_root=state["project_root"],
+        elf_backend="builtin",
+    )
+    managers["superwatch"].prepare.assert_called_once_with(restored)
+    assert state["device"] is restored
+    assert state["dispatcher"] is not None
+
+
+def test_rtt_start_failure_keeps_the_explicit_device_connection():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    managers["rtt"].start.side_effect = RuntimeError("RTT start failed")
+    managers["superwatch"].prepare = MagicMock()
+    client, state = _dashboard_client(managers)
+    device = MagicMock()
+    device.connected = True
+    state["device"] = device
+
+    response = client.post("/api/dash/rtt/start", json={})
+
+    assert response.status_code == 500
+    device.close.assert_not_called()
+    assert state["device"] is device
+    assert state["resource_manager"].get_status() == {}
+
+
 def test_dashboard_start_stops_running_peer_before_acquiring_resources():
     class DashboardManager:
         def __init__(self):
@@ -607,13 +768,14 @@ def test_rtt_encoding_routes_validate_and_update_the_shared_manager():
     managers["rtt"].set_encoding.assert_called_once_with("gbk")
 
 
-def test_disconnect_cleanup_is_not_blocked_by_target_lease():
+def test_disconnect_stops_only_mklink_dashboards_and_preserves_serial_resources():
     from mklink.remote.resource_manager import ResourceGroup
 
     managers = {
-        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        name: SimpleNamespace(running=name in ("rtt", "serial", "modbus"), start=MagicMock(), stop=MagicMock())
         for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
     }
+    managers["rtt"].stop.side_effect = lambda: setattr(managers["rtt"], "running", False)
     client, state = _dashboard_client(managers)
     device = MagicMock()
     device.connected = True
@@ -621,12 +783,20 @@ def test_disconnect_cleanup_is_not_blocked_by_target_lease():
     state["resource_manager"].acquire(
         ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
     )
+    state["resource_manager"].acquire(
+        ResourceGroup.SERIAL_PORT, "user:dashboard:serial"
+    )
 
     response = client.post("/api/device/disconnect")
 
     assert response.status_code == 200
     device.close.assert_called_once()
-    assert state["resource_manager"].get_status() == {}
+    managers["rtt"].stop.assert_called_once_with()
+    managers["serial"].stop.assert_not_called()
+    managers["modbus"].stop.assert_not_called()
+    status = state["resource_manager"].get_status()
+    assert status["serial_port"]["owner"] == "user:dashboard:serial"
+    assert "target_debug" not in status
 
 
 def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():

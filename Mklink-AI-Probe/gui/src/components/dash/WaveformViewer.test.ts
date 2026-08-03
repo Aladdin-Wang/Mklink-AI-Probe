@@ -31,6 +31,9 @@ const mocks = vi.hoisted(() => ({
 const viewerSource = fs.readFileSync(
   path.resolve(process.cwd(), 'src/assets/rtt_viewer.js'), 'utf8',
 )
+const i18nSource = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/assets/rtt_i18n.js'), 'utf8',
+)
 const componentSource = fs.readFileSync(
   path.resolve(process.cwd(), 'src/components/dash/WaveformViewer.vue'), 'utf8',
 )
@@ -201,10 +204,17 @@ window.__rttTestProbe = {
   channelYState: function() { return channelYState; },
   globalYView: function() { return globalYView; },
   sharedYRange: function() { return getSharedYRange(); },
+  splitChannel: function() { return splitChannelName; },
+  panelLayout: function() { return chartPanelLayout; },
+  panelYRange: function(panel) { return getPanelYRange(panel); },
+  setSplitChannel: setSplitChannel,
+  clearSplitChannel: clearSplitChannel,
+  setBufferCapacity: setBufferCapacity,
   serializeState: serializeState,
   deserializeState: deserializeState,
   timeline: function() { return timelineView; },
   fullTimeRange: function() { return getFullTimeRange(); },
+  visibleTimeRange: function() { return getVisibleTimeRange(); },
   binaryEnvelope: function() { return binaryEnvelope; },
   addSuperwatchName: superwatchAddName
 };`
@@ -444,7 +454,8 @@ describe('WaveformViewer VOFA binary transport', () => {
       const bufferInput = document.getElementById('buffer-input') as HTMLInputElement
       expect(bufferInput.value).toBe('50000')
       expect(bufferInput.min).toBe('50000')
-      expect(bufferInput.max).toBe('200000')
+      expect(bufferInput.max).toBe('1000000')
+      expect(bufferInput.step).toBe('10000')
       expect(input.value).toBe('0.001')
       expect(input.min).toBe('0.00001')
       expect(input.step).toBe('0.00001')
@@ -478,6 +489,210 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(runtime.probe.currentInterval()).toBe(0.00001)
       expect(input.value).toBe('0.00001')
       expect(runtime.probe.collectionState().state).toBe('running')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('estimates frontend history memory from the requested capacity and channel count', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const input = document.getElementById('buffer-input') as HTMLInputElement
+      const estimate = document.getElementById('buffer-memory-estimate')!
+      input.value = '1000000'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+
+      expect(estimate.textContent).toBe('~92 MB')
+      expect(estimate.dataset.bytes).toBe(String(1_000_000 * 2 * 48))
+      expect(estimate.title).toContain('2 ch x 1000000 pts')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps the live time window unchanged when retained history capacity grows', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.25, actual_rate: 4, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_750_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 1000 + i * 250).buffer,
+      })).toBe(true)
+      const before = runtime.probe.visibleTimeRange()
+      const beforeSpan = before.tMax - before.tMin
+      expect(beforeSpan).toBeCloseTo(0.875, 12)
+
+      expect(runtime.probe.setBufferCapacity(16)).toBe(true)
+      const resized = runtime.probe.visibleTimeRange()
+      expect(resized.tMax - resized.tMin).toBeCloseTo(beforeSpan, 12)
+      expect(resized.tMax).toBeCloseTo(before.tMax, 12)
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 4_750_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i + 8).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 3000 + i * 250).buffer,
+      })).toBe(true)
+      const filled = runtime.probe.visibleTimeRange()
+      expect(filled.tMax - filled.tMin).toBeCloseTo(beforeSpan, 12)
+      expect(filled.tMax).toBeCloseTo(3.75, 12)
+
+      document.getElementById('btn-pause')!.click()
+      expect(runtime.probe.fullTimeRange()).toEqual({ tMin: 0, tMax: 3.75 })
+      runtime.probe.timeline().offset = 0
+      expect(runtime.probe.visibleTimeRange()).toEqual({ tMin: 0, tMax: 0.875 })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps live SuperWatch X zoom and pan at a fixed lag from the latest data', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.25, actual_rate: 4, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_750_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 1000 + i * 250).buffer,
+      })).toBe(true)
+      expect(runtime.probe.setBufferCapacity(16)).toBe(true)
+
+      const axis = document.getElementById('x-axis-hit')!
+      const minimap = document.getElementById('minimap-canvas')!
+      const beforeRange = runtime.probe.visibleTimeRange()
+      const beforeSpan = beforeRange.tMax - beforeRange.tMin
+
+      axis.dispatchEvent(wheelEvent({ deltaY: -100, clientX: 400, bubbles: true }))
+      const zoomed = runtime.probe.visibleTimeRange()
+      expect(zoomed.tMax - zoomed.tMin).toBeLessThan(beforeSpan)
+      expect(axis.classList.contains('is-live-locked')).toBe(false)
+      expect(axis.title).toBe('x_axis_live_tip')
+
+      axis.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 500, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 700, bubbles: true }))
+      window.dispatchEvent(new MouseEvent('mouseup', { clientX: 700, bubbles: true }))
+      const lagged = runtime.probe.visibleTimeRange()
+      const lag = runtime.probe.fullTimeRange().tMax - lagged.tMax
+      const laggedSpan = lagged.tMax - lagged.tMin
+      expect(lag).toBeGreaterThan(0)
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 4_750_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i + 8).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 3000 + i * 250).buffer,
+      })).toBe(true)
+      const advanced = runtime.probe.visibleTimeRange()
+      expect(advanced.tMax - advanced.tMin).toBeCloseTo(laggedSpan, 12)
+      expect(runtime.probe.fullTimeRange().tMax - advanced.tMax).toBeCloseTo(lag, 12)
+      expect(advanced.tMax - lagged.tMax).toBeCloseTo(2, 12)
+
+      minimap.dispatchEvent(new MouseEvent('click', { clientX: 40, bubbles: true }))
+      expect(runtime.probe.visibleTimeRange().tMax).toBeLessThan(advanced.tMax)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('resets retained history when SuperWatch restarts after stop', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.25, actual_rate: 4, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 2_750_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, i) => i).buffer,
+        times: Float64Array.from({ length: 8 }, (_, i) => 1000 + i * 250).buffer,
+      })).toBe(true)
+      expect(runtime.probe.setBufferCapacity(16)).toBe(true)
+
+      runtime.probe.syncStatus({ state: 'stopped', items: [] })
+      const axis = document.getElementById('x-axis-hit')!
+      for (let i = 0; i < 8; i++) {
+        axis.dispatchEvent(wheelEvent({ deltaY: 100, clientX: 400, bubbles: true }))
+      }
+      expect(runtime.probe.timeline()).toMatchObject({ zoom: 1, offset: 0 })
+      expect(runtime.probe.fields().signal.ringBuf.count).toBe(8)
+
+      runtime.probe.syncStatus({ state: 'running', items: [] })
+      expect(runtime.probe.timeline()).toMatchObject({ zoom: 2, offset: 1 })
+      expect(runtime.probe.fields().signal.ringBuf.count).toBe(0)
+      expect(runtime.probe.collectionState()).toMatchObject({
+        state: 'running', paused: false, renderPaused: false,
+      })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('right-aligns SuperWatch samples in a fixed timeline while the ring buffer fills', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      expect(runtime.probe.timeline()).toMatchObject({ zoom: 2, offset: 1 })
+      runtime.probe.syncStatus({ state: 'running', interval: 0.25 })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_500_000_000n, itemCount: 3, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 2, 3).buffer,
+        times: Float64Array.of(1000, 1250, 1500).buffer,
+      })).toBe(true)
+      expect(runtime.probe.fullTimeRange()).toEqual({ tMin: -1.25, tMax: 0.5 })
+      expect(runtime.probe.visibleTimeRange()).toEqual({ tMin: -0.375, tMax: 0.5 })
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 2_000_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(4, 5).buffer,
+        times: Float64Array.of(1750, 2000).buffer,
+      })).toBe(true)
+      expect(runtime.probe.fullTimeRange()).toEqual({ tMin: -0.75, tMax: 1 })
+      expect(runtime.probe.visibleTimeRange()).toEqual({ tMin: 0.125, tMax: 1 })
+
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 3n, timestampNs: 3_000_000_000n, itemCount: 4, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(6, 7, 8, 9).buffer,
+        times: Float64Array.of(2250, 2500, 2750, 3000).buffer,
+      })).toBe(true)
+      expect(runtime.probe.fullTimeRange()).toEqual({ tMin: 0.25, tMax: 2 })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('shows measured SuperWatch rate from complete binary samples and resets it with the stream', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.probe.syncStatus({ state: 'running', interval: 0.00001, items: [] })
+      runtime.viewer.configureBinaryChannels([{ name: 'signal' }])
+      const send = (sequence: bigint, timestampNs: bigint, itemCount: number) => {
+        const endMs = Number(timestampNs) / 1_000_000
+        return runtime.viewer.acceptBinaryBatch({
+          sequence, timestampNs, itemCount, channelCount: 1,
+          layout: 'sample-major-float32',
+          values: new Float32Array(itemCount).buffer,
+          times: Float64Array.from(
+            { length: itemCount }, (_, index) => endMs - itemCount + index + 1,
+          ).buffer,
+        })
+      }
+
+      expect(document.getElementById('sample-rate-badge')?.textContent).toBe('-- Hz')
+      expect(send(1n, 1_000_000_000n, 32)).toBe(true)
+      expect(send(2n, 1_250_000_000n, 250)).toBe(true)
+      expect(document.getElementById('sample-rate-badge')?.textContent).toBe('-- Hz')
+      expect(send(3n, 1_500_000_000n, 250)).toBe(true)
+      expect(document.getElementById('sample-rate-badge')?.textContent)
+        .toBe('1000.00 Hz')
+
+      runtime.viewer.resetBinaryStream()
+      expect(document.getElementById('sample-rate-badge')?.textContent).toBe('-- Hz')
+
+      runtime.probe.syncStatus({
+        state: 'running', interval: 0.00001, actual_rate: 6250, items: [],
+      })
+      expect(document.getElementById('sample-rate-badge')?.textContent)
+        .toBe('6250.00 Hz')
     } finally {
       runtime.cleanup()
     }
@@ -559,6 +774,44 @@ describe('WaveformViewer VOFA binary transport', () => {
     mocks.binary.envelope.value = envelope
     await nextTick()
     expect(renderBinaryEnvelope).toHaveBeenCalledWith(envelope)
+    wrapper.unmount()
+  })
+
+  it('coalesces delayed Worker envelopes and immediately requests the latest visible range', async () => {
+    const acceptBinaryBatch = vi.fn()
+    const getBinaryVisibleRange = vi.fn()
+      .mockReturnValueOnce({ start: 10, end: 20, pixelWidth: 640 })
+      .mockReturnValueOnce({ start: 30, end: 40, pixelWidth: 640 })
+    const renderBinaryEnvelope = vi.fn()
+    ;(window as any).__waveformViewers.VOFA = {
+      acceptBinaryBatch, getBinaryVisibleRange, renderBinaryEnvelope,
+    }
+    const wrapper = mount(WaveformViewer, { props: { mode: 'VOFA', deviceConnected: true } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    ;(window as any).__waveformViewers.VOFA = {
+      acceptBinaryBatch, getBinaryVisibleRange, renderBinaryEnvelope,
+    }
+
+    mocks.schedulerInstances[0].render()
+    mocks.schedulerInstances[0].render()
+    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledTimes(1)
+    const firstRequestId = mocks.binary.requestVisibleRange.mock.calls[0][0]
+
+    if (!mocks.binary.envelope) throw new Error('missing envelope ref')
+    mocks.binary.envelope.value = {
+      type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+      requestId: firstRequestId, pixelWidth: 640, channelCount: 2, pointCount: 2,
+      candidateSampleCount: 2, channelOffsets: Uint32Array.of(0, 1, 2).buffer,
+      times: Float64Array.of(1, 2).buffer, timeIndices: Uint32Array.of(0, 1).buffer,
+      values: Float32Array.of(1, 20).buffer,
+    }
+    await nextTick()
+
+    expect(renderBinaryEnvelope).toHaveBeenCalledOnce()
+    expect(mocks.binary.requestVisibleRange).toHaveBeenCalledTimes(2)
+    expect(mocks.binary.requestVisibleRange).toHaveBeenLastCalledWith(
+      expect.any(Number), 30, 40, 640,
+    )
     wrapper.unmount()
   })
 
@@ -725,7 +978,23 @@ describe('WaveformViewer VOFA binary transport', () => {
 })
 
 describe('VOFA viewer hot path source guard', () => {
+  it('uses the application language and does not inject a local language button', () => {
+    const componentSource = fs.readFileSync('src/components/dash/WaveformViewer.vue', 'utf8')
+
+    expect(componentSource).toContain("import { language } from '../../composables/useLanguage'")
+    expect(componentSource).not.toContain('id="btn-lang-toggle"')
+  })
+
   const source = viewerSource
+
+  it('describes coordinate-axis zoom, drag, and reset interactions in both languages', () => {
+    expect(componentSource).toContain('data-i18n-title="x_axis_tip"')
+    expect(componentSource).toContain('data-i18n-title="y_axis_tip"')
+    expect(i18nSource).toContain("x_axis_tip: '横轴：滚轮缩放；按住鼠标左键拖动；双击恢复默认视图'")
+    expect(i18nSource).toContain("y_axis_tip: '纵轴：滚轮缩放；按住鼠标左键拖动；双击恢复自动范围'")
+    expect(i18nSource).toContain("x_axis_tip: 'X axis: scroll to zoom; hold the left mouse button and drag; double-click to reset'")
+    expect(i18nSource).toContain("y_axis_tip: 'Y axis: scroll to zoom; hold the left mouse button and drag; double-click for auto range'")
+  })
 
   it('routes packaged waveform API calls through the configured backend origin', () => {
     expect(componentSource).toContain("const API_BASE = import.meta.env.VITE_MKLINK_API || ''")
@@ -776,7 +1045,105 @@ describe('VOFA viewer hot path source guard', () => {
     expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #control-toolbar')
     expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #trigger-toolbar')
     expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop #transport-health-badge')
+    expect(viewerCss).toContain(
+      '.waveform-viewer.superwatch-desktop #sample-rate-badge {\n' +
+      '    width: 104px;\n    overflow: hidden;',
+    )
     expect(viewerCss).toContain('flex-wrap: nowrap')
+    expect(viewerCss).toContain('flex: 1 1 140px')
+    expect(viewerCss).toContain('text-overflow: ellipsis')
+  })
+
+  it('documents live and paused SuperWatch navigation accurately in both languages', () => {
+    expect(i18nSource).toContain('后端采集不会停止')
+    expect(i18nSource).toContain('恢复时会清空冻结快照')
+    expect(i18nSource).toContain('保持与最新数据的固定时间差并继续前移')
+    expect(i18nSource).toContain('backend acquisition continues')
+    expect(i18nSource).toContain('Resume clears the frozen snapshot')
+    expect(i18nSource).toContain('keeps a fixed lag from the latest data and continues moving forward')
+  })
+
+  it('bounds the channel layout legend inside the chart on narrow viewports', () => {
+    expect(componentSource).toContain('id="chart-legend-toggle"')
+    expect(viewerCss).toContain('max-width: calc(100% - 84px)')
+    expect(viewerCss).toContain('.chart-legend-row {\n  display: grid;')
+    expect(viewerCss).toContain('max-width: 100%;')
+    expect(viewerCss).toContain('#chart-legend.is-visible')
+    expect(i18nSource).toContain("show_channel_legend_tip: '显示通道列表'")
+  })
+
+  it('auto-hides the channel legend and reveals it while the pointer is nearby', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    vi.useFakeTimers()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const toggle = document.getElementById('chart-legend-toggle')!
+      const legend = document.getElementById('chart-legend')!
+
+      expect(toggle.hidden).toBe(false)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      vi.advanceTimersByTime(2000)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(legend.getAttribute('aria-hidden')).toBe('true')
+
+      toggle.dispatchEvent(new MouseEvent('mouseenter'))
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      toggle.dispatchEvent(new MouseEvent('mouseleave'))
+      vi.advanceTimersByTime(699)
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      legend.dispatchEvent(new MouseEvent('mouseenter'))
+      vi.advanceTimersByTime(1)
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      legend.dispatchEvent(new MouseEvent('mouseleave'))
+      vi.advanceTimersByTime(700)
+      expect(legend.classList.contains('is-visible')).toBe(false)
+    } finally {
+      runtime.cleanup()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the channel legend visible while a channel is being split', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    vi.useFakeTimers()
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 3_000_000n, itemCount: 3, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 10, 2, 20, 3, 30).buffer,
+        times: Float64Array.of(0, 1, 2).buffer,
+      })).toBe(true)
+      vi.advanceTimersByTime(2000)
+      const legend = document.getElementById('chart-legend')!
+      document.getElementById('chart-legend-toggle')!
+        .dispatchEvent(new MouseEvent('mouseenter'))
+      expect(runtime.probe.setSplitChannel('A')).toBe(true)
+
+      expect(runtime.probe.splitChannel()).toBe('A')
+      expect(legend.classList.contains('is-visible')).toBe(true)
+      expect(legend.querySelector<HTMLButtonElement>('[data-channel="A"]')?.textContent)
+        .toBe('merge_channel')
+    } finally {
+      runtime.cleanup()
+      vi.useRealTimers()
+    }
   })
 
   it('hides selected curves without stopping their binary samples', async () => {
@@ -867,6 +1234,103 @@ describe('VOFA viewer hot path source guard', () => {
         .map(Number)
       expect(signalTicks).toHaveLength(6)
       expect(Math.max(...signalTicks)).toBeLessThan(3)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('splits one SuperWatch channel into an independent Y panel and merges it back', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'small' }, { name: 'large' }])
+      expect(runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_200_000_000n, itemCount: 3, channelCount: 2,
+        layout: 'sample-major-float32', values: Float32Array.of(1, 100, 2, 200, 3, 300).buffer,
+        times: Float64Array.of(1000, 1100, 1200).buffer,
+      })).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+
+      expect(runtime.probe.setSplitChannel('large')).toBe(true)
+      runtime.viewer.renderBinaryFrame()
+      expect(runtime.probe.splitChannel()).toBe('large')
+      expect(runtime.probe.panelLayout()).toMatchObject({ split: true })
+
+      const mainPanel = { kind: 'main' }
+      const splitPanel = { kind: 'split', name: 'large' }
+      const mainBefore = runtime.probe.panelYRange(mainPanel)
+      const splitBefore = runtime.probe.panelYRange(splitPanel)
+      expect(mainBefore.yMax).toBeLessThan(10)
+      expect(splitBefore.yMin).toBeGreaterThan(50)
+
+      const layout = runtime.probe.panelLayout()
+      const splitY = layout.splitTop + layout.splitHeight / 2
+      const canvas = document.getElementById('chart')!
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, clientX: 400, clientY: splitY, bubbles: true, cancelable: true,
+      }))
+      const splitZoomed = runtime.probe.panelYRange(splitPanel)
+      expect(runtime.probe.panelYRange(mainPanel)).toEqual(mainBefore)
+      expect(splitZoomed.yMax - splitZoomed.yMin)
+        .toBeCloseTo((splitBefore.yMax - splitBefore.yMin) * 0.8, 12)
+
+      canvas.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0, clientX: 400, clientY: splitY, bubbles: true, cancelable: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: 400, clientY: splitY + 20, bubbles: true,
+      }))
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: 400, clientY: splitY + 20 }))
+      const splitPanned = runtime.probe.panelYRange(splitPanel)
+      expect(runtime.probe.panelYRange(mainPanel)).toEqual(mainBefore)
+      expect(splitPanned.yMin).toBeGreaterThan(splitZoomed.yMin)
+      expect(splitPanned.yMax).toBeGreaterThan(splitZoomed.yMax)
+
+      const timeline = runtime.probe.timeline()
+      const beforeTimelineZoom = timeline.zoom
+      const beforeSplitRange = runtime.probe.panelYRange(splitPanel)
+      canvas.dispatchEvent(wheelEvent({
+        deltaY: -100, shiftKey: true, clientX: 400, clientY: splitY,
+        bubbles: true, cancelable: true,
+      }))
+      expect(timeline.zoom).toBeGreaterThan(beforeTimelineZoom)
+      expect(runtime.probe.panelYRange(splitPanel)).toEqual(beforeSplitRange)
+      expect(runtime.probe.panelYRange(mainPanel)).toEqual(mainBefore)
+
+      const saved = runtime.probe.serializeState()
+      expect(saved.splitChannel).toBe('large')
+      runtime.probe.clearSplitChannel()
+      expect(runtime.probe.panelLayout().split).toBe(false)
+      expect(runtime.probe.deserializeState(saved)).toBe(true)
+      expect(runtime.probe.splitChannel()).toBe('large')
+      expect(runtime.probe.panelLayout().split).toBe(true)
+
+      const yAxis = document.getElementById('y-axis-hit')!
+      yAxis.dispatchEvent(new MouseEvent('dblclick', {
+        clientY: splitY, bubbles: true, cancelable: true,
+      }))
+      expect(runtime.probe.panelYRange(splitPanel)).toEqual({ yMin: 80, yMax: 320 })
+      expect(runtime.probe.panelYRange(mainPanel)).toEqual(mainBefore)
+
+      runtime.probe.clearSplitChannel()
+      expect(runtime.probe.splitChannel()).toBe(null)
+      expect(runtime.probe.panelLayout().split).toBe(false)
+
+      runtime.probe.setSplitChannel('large')
+      runtime.viewer.renderBinaryFrame()
+      const splitControl = document.getElementById('split-panel-control')!
+      expect(splitControl.hidden).toBe(false)
+      expect(document.getElementById('split-panel-name')?.textContent).toBe('large')
+      document.getElementById('split-panel-merge')!.click()
+      expect(runtime.probe.splitChannel()).toBe(null)
+      expect(splitControl.hidden).toBe(true)
     } finally {
       runtime.cleanup()
     }
@@ -1097,6 +1561,22 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('resets the SuperWatch X axis to its right-aligned half-window default', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      const timeline = runtime.probe.timeline()
+      expect(timeline).toMatchObject({ zoom: 2, offset: 1 })
+      timeline.zoom = 5
+      timeline.offset = 0.25
+      document.getElementById('x-axis-hit')!.dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true }),
+      )
+      expect(timeline).toMatchObject({ zoom: 2, offset: 1 })
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('zooms, pans, and resets an absolute shared SuperWatch Y range through its hit region', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
@@ -1276,13 +1756,13 @@ describe('VOFA viewer hot path source guard', () => {
         button: 0, clientX: 500, clientY: 160, bubbles: true, cancelable: true,
       }))
       window.dispatchEvent(new MouseEvent('mousemove', {
-        clientX: 300, clientY: 160, bubbles: true,
+        clientX: 700, clientY: 160, bubbles: true,
       }))
       window.dispatchEvent(new MouseEvent('mouseup', {
-        button: 0, clientX: 300, clientY: 160, bubbles: true,
+        button: 0, clientX: 700, clientY: 160, bubbles: true,
       }))
 
-      expect(runtime.probe.timeline().offset).toBeGreaterThan(beforeOffset)
+      expect(runtime.probe.timeline().offset).toBeLessThan(beforeOffset)
       expect(runtime.probe.globalYView()).toEqual({
         zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null,
       })
@@ -1370,14 +1850,14 @@ describe('VOFA viewer hot path source guard', () => {
         button: 0, clientX: 500, clientY: 160, bubbles: true, cancelable: true,
       }))
       window.dispatchEvent(new MouseEvent('mousemove', {
-        clientX: 300, clientY: 220, bubbles: true,
+        clientX: 700, clientY: 220, bubbles: true,
       }))
       window.dispatchEvent(new MouseEvent('mouseup', {
-        button: 0, clientX: 300, clientY: 220, bubbles: true,
+        button: 0, clientX: 700, clientY: 220, bubbles: true,
       }))
 
       const afterY = runtime.probe.sharedYRange()
-      expect(runtime.probe.timeline().offset).toBeGreaterThan(beforeTimelineOffset)
+      expect(runtime.probe.timeline().offset).toBeLessThan(beforeTimelineOffset)
       expect(afterY.yMax - afterY.yMin).toBeCloseTo(beforeY.yMax - beforeY.yMin, 12)
       expect(afterY.yMin).toBeGreaterThan(beforeY.yMin)
       expect(afterY.yMax).toBeGreaterThan(beforeY.yMax)
@@ -1618,6 +2098,66 @@ describe('VOFA viewer hot path source guard', () => {
       expect(runtime.probe.fullTimeRange()).toEqual(frozenTime)
       expect(runtime.probe.sharedYRange()).toEqual(frozenY)
       expect(Array.from(runtime.probe.binaryEnvelope().values)).toEqual(frozenEnvelope)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('keeps the full SuperWatch history navigable while render pause is active', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 8_000_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, index) => index + 1).buffer,
+        times: Float64Array.from({ length: 8 }, (_, index) => index * 1_000).buffer,
+      })
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 100, channelCount: 1, pointCount: 4,
+        candidateSampleCount: 4, times: Float64Array.of(4_000, 5_000, 6_000, 7_000).buffer,
+        timeIndices: Uint32Array.of(0, 1, 2, 3).buffer,
+        values: Float32Array.of(5, 6, 7, 8).buffer,
+        channelOffsets: Uint32Array.of(0, 4).buffer,
+      })
+      runtime.probe.syncStatus({ state: 'running', items: [{ name: 'A' }] })
+      document.getElementById('btn-pause')!.click()
+
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 2n, timestampNs: 16_000_000_000n, itemCount: 8, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.from({ length: 8 }, (_, index) => index + 9).buffer,
+        times: Float64Array.from({ length: 8 }, (_, index) => (index + 8) * 1_000).buffer,
+      })
+
+      const ring = runtime.probe.fields().A.ringBuf
+      expect(ring.count).toBe(8)
+      expect(ring.oldest().y).toBe(1)
+      expect(ring.latest().y).toBe(8)
+      expect(runtime.probe.binary().lastSequence).toBe(2n)
+
+      const canvas = document.getElementById('chart') as HTMLCanvasElement
+      ;(window as any).__ringPointVisits = 0
+      canvas.onmousedown?.({
+        button: 0, altKey: true, clientX: 100, clientY: 200,
+        preventDefault: vi.fn(),
+      } as unknown as MouseEvent)
+      canvas.onmousemove?.({ clientX: 1_600, clientY: 200 } as MouseEvent)
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        button: 0, clientX: 1_600, clientY: 200, bubbles: true,
+      }))
+
+      expect(runtime.probe.timeline().offset).toBe(0)
+      expect((window as any).__ringPointVisits).toBeGreaterThan(0)
+
+      document.getElementById('btn-pause')!.click()
+      expect(ring.count).toBe(0)
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 3n, timestampNs: 18_000_000_000n, itemCount: 2, channelCount: 1,
+        layout: 'sample-major-float32', values: Float32Array.of(17, 18).buffer,
+        times: Float64Array.of(16_000, 17_000).buffer,
+      })
+      expect(ring.count).toBe(2)
+      expect(ring.latest().y).toBe(18)
     } finally {
       runtime.cleanup()
     }
@@ -1990,6 +2530,8 @@ describe('VOFA viewer typed-ring runtime', () => {
       expect(document.getElementById('transport-health-badge')?.textContent).toContain('transport 1')
       expect(document.getElementById('transport-health-badge')?.textContent).toContain('backend 3/80')
       expect(document.getElementById('transport-health-badge')?.textContent).toContain('buffer 200000')
+      expect(document.getElementById('transport-health-badge')?.title)
+        .toBe('transport 1 / backend 3/80 / buffer 200000')
       expect(document.getElementById('transport-health-badge')?.className).toContain('badge-warn')
     } finally {
       runtime.cleanup()

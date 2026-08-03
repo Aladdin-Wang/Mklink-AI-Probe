@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import type { ImageSegment, SectorRecord } from '../../types/onlineFlash'
+import { tr } from '../../composables/useLanguage'
 defineProps<{ segments: ImageSegment[]; sectors: SectorRecord[]; selectedAddresses: number[]; inspectionReady: boolean; geometryReliable: boolean; canErase: boolean }>()
 defineEmits<{ chipErase: []; selectedErase: []; rangeErase: []; selectAll: []; clearSelection: []; toggleSector: [address: number] }>()
 const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8, '0')}`
 </script>
 <template>
-  <div class="map-summary"><h3>闪存映射</h3><div v-if="segments.length" v-for="segment in segments" :key="segment.start" class="region"><strong>镜像范围</strong><span>{{ hex(segment.start) }}</span><span>{{ hex(segment.end) }} · {{ segment.end - segment.start }} B</span></div><p v-else>等待服务端固件检查结果</p></div>
+  <div class="map-summary"><h3>{{ tr('闪存映射', 'Flash Map') }}</h3><div v-if="segments.length" v-for="segment in segments" :key="segment.start" class="region"><strong>{{ tr('镜像范围', 'Image Range') }}</strong><span>{{ hex(segment.start) }}</span><span>{{ hex(segment.end) }} · {{ segment.end - segment.start }} B</span></div><p v-else>{{ tr('等待服务端固件检查结果', 'Waiting for firmware inspection') }}</p></div>
   <div class="sector-panel">
     <div class="sector-title">
-      <h3>扇区</h3>
-      <span v-if="inspectionReady" class="badge">{{ geometryReliable ? 'FLM 已验证' : '几何未验证' }}</span>
+      <h3>{{ tr('扇区', 'Sectors') }}</h3>
+      <span v-if="inspectionReady" class="badge">{{ geometryReliable ? tr('FLM 已验证', 'FLM verified') : tr('几何未验证', 'Geometry unverified') }}</span>
     </div>
-    <p v-if="inspectionReady && !geometryReliable" class="warning">扇区几何信息不可验证，已禁用选择与普通烧录擦除。</p>
-    <div class="sector-actions"><button data-testid="select-all-sectors" :disabled="!geometryReliable" @click="$emit('selectAll')">全选</button><button :disabled="!geometryReliable" @click="$emit('clearSelection')">清空</button></div>
+    <p v-if="inspectionReady && !geometryReliable" class="warning">{{ tr('扇区几何信息不可验证，已禁用选择与普通烧录擦除。', 'Sector geometry could not be verified. Selection and normal flash erase are disabled.') }}</p>
+    <div class="sector-actions"><button data-testid="select-all-sectors" :disabled="!geometryReliable" @click="$emit('selectAll')">{{ tr('全选', 'Select All') }}</button><button :disabled="!geometryReliable" @click="$emit('clearSelection')">{{ tr('清空', 'Clear') }}</button></div>
     <div v-if="geometryReliable" class="sector-list"><label v-for="sector in sectors" :key="sector.address" class="sector-row"><input type="checkbox" :checked="selectedAddresses.includes(sector.address)" @change="$emit('toggleSector', sector.address)"><span>{{ hex(sector.address) }}</span><span>{{ sector.size }} B</span></label></div>
-    <div v-else class="sector-empty">{{ inspectionReady ? '服务端未提供可靠扇区表' : '加载固件后显示扇区表' }}</div>
-    <button :disabled="!geometryReliable || !canErase || !selectedAddresses.length" @click="$emit('selectedErase')">擦除所选</button><button data-testid="range-erase" :disabled="!geometryReliable || !canErase" @click="$emit('rangeErase')">范围擦除</button><button data-testid="chip-erase" :disabled="!canErase" class="danger" @click="$emit('chipErase')">全片擦除</button>
+    <div v-else class="sector-empty">{{ inspectionReady ? tr('服务端未提供可靠扇区表', 'No reliable sector table is available') : tr('加载固件后显示扇区表', 'Load firmware to display sectors') }}</div>
+    <button :disabled="!geometryReliable || !canErase || !selectedAddresses.length" @click="$emit('selectedErase')">{{ tr('擦除所选', 'Erase Selected') }}</button><button data-testid="range-erase" :disabled="!geometryReliable || !canErase" @click="$emit('rangeErase')">{{ tr('范围擦除', 'Erase Range') }}</button><button data-testid="chip-erase" :disabled="!canErase" class="danger" @click="$emit('chipErase')">{{ tr('全片擦除', 'Chip Erase') }}</button>
   </div>
 </template>
 <style scoped>

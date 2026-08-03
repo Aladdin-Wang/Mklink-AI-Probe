@@ -1,17 +1,17 @@
 <template>
   <div class="card" style="margin-bottom:16px">
-    <div class="card-title">项目目录</div>
+    <div class="card-title">{{ tr('项目目录', 'Project Directory') }}</div>
     <div class="form-row autocomplete-wrapper">
       <input
         ref="inputRef"
         class="form-input path-input"
         v-model="localPath"
-        placeholder="输入或浏览选择项目根目录"
+        :placeholder="tr('输入或浏览选择项目根目录', 'Enter or browse for the project root')"
         @focus="showDropdown = true"
         @keydown.escape="showDropdown = false"
         @keydown.enter="apply"
       />
-      <button class="btn btn-primary" @click="apply" :disabled="applying">应用</button>
+      <button class="btn btn-primary" @click="apply" :disabled="applying">{{ tr('应用', 'Apply') }}</button>
       <!-- Autocomplete dropdown -->
       <div v-if="showDropdown && filtered.length > 0" class="autocomplete-dropdown">
         <div
@@ -27,15 +27,15 @@
       </div>
     </div>
     <div class="form-row" style="margin-top:4px">
-      <button class="btn btn-sm" @click="$emit('toggleBrowser')">{{ browserOpen ? '收起浏览' : '浏览...' }}</button>
+      <button class="btn btn-sm" @click="$emit('toggleBrowser')">{{ browserOpen ? tr('收起浏览', 'Hide Browser') : tr('浏览...', 'Browse...') }}</button>
       <button class="btn btn-sm btn-primary" @click="$emit('initProject')" :disabled="initing" style="margin-left:8px">
-        {{ initing ? '初始化中...' : '初始化工程' }}
+        {{ initing ? tr('初始化中...', 'Initializing...') : tr('初始化工程', 'Initialize Project') }}
       </button>
     </div>
     <div v-if="initResult" class="init-result" style="margin-top:8px">
       <div class="init-header">
-        <span class="init-title">{{ initResult.success ? '初始化结果' : '初始化失败' }}</span>
-        <button class="btn btn-sm" @click="$emit('clearInitResult')">关闭</button>
+        <span class="init-title">{{ initResult.success ? tr('初始化结果', 'Initialization Result') : tr('初始化失败', 'Initialization Failed') }}</span>
+        <button class="btn btn-sm" @click="$emit('clearInitResult')">{{ tr('关闭', 'Close') }}</button>
       </div>
       <pre v-if="initResult.output" class="init-output">{{ initResult.output }}</pre>
       <div v-if="initResult.error" class="alert alert-error">{{ initResult.error }}</div>
@@ -50,6 +50,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useProjectHistory } from '../../composables/useProjectHistory'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   modelValue: string
@@ -99,11 +100,11 @@ function relativeTime(iso: string): string {
   try {
     const diffMs = Date.now() - new Date(iso).getTime()
     const m = Math.floor(diffMs / 60000)
-    if (m < 1) return '刚刚'
-    if (m < 60) return `${m}分钟前`
+    if (m < 1) return tr('刚刚', 'Just now')
+    if (m < 60) return tr(`${m}分钟前`, `${m} min ago`)
     const h = Math.floor(m / 60)
-    if (h < 24) return `${h}小时前`
-    return `${Math.floor(h / 24)}天前`
+    if (h < 24) return tr(`${h}小时前`, `${h} hr ago`)
+    return tr(`${Math.floor(h / 24)}天前`, `${Math.floor(h / 24)} d ago`)
   } catch { return '' }
 }
 

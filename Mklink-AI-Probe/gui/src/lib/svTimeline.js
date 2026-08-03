@@ -3,18 +3,18 @@
  *
  * 被 HTML 报告（systemview-report，内联）与 Vue Dashboard（SystemViewTab，import）共用。
  *
- * 能力（核心三件 + 派生分析）：
+ * 能力：
  *   - 滚轮缩放（以光标为中心）
  *   - 拖拽平移
- *   - hover 提示（任务名 / 时长 / 起止时间）
- *   - 自适应时间标尺
+ *   - 时间游标与 hover 提示（任务名 / 时长 / 起止时间）
+ *   - 固定微秒单位的自适应主/次标尺
+ *   - 运行区间内时长标签
  *   - 图例点击隐藏/显示任务泳道
- *   - 「可见窗口内重算 CPU%」
  *   - 缩放全览 / 重置
  *
  * 用法：
  *   const tl = new SvTimeline(
- *     { canvas, tooltip, legend, vcpu, resetBtn, hint },
+ *     { canvas, tooltip, legend, resetBtn, hint },
  *     { intervals: [{tid,name,start,end}], unit: 'us'|'tk' }
  *   );
  *   tl.setData(newIntervals);   // Vue 实时更新
@@ -39,15 +39,18 @@ export class SvTimeline {
     this.unit = (data && data.unit) || 'us';
     this.tickHz = Number((data && data.tickHz) || 0);
     this.tickOrigin = typeof (data && data.tickOrigin) === 'bigint' ? data.tickOrigin : 0n;
-    this.PALETTE = ['#5b8cff','#21c7a8','#f5a623','#e056fd','#ff7675','#fdcb6e',
-      '#00cec9','#a29bfe','#55efc4','#fab1a0','#74b9ff','#fd79a8'];
-    this.nameColW = 116;
-    this.rulerH = 26;
-    this.laneH = 22;
-    this.padR = 8;
+    this.PALETTE = ['#4f7fc7','#2e9f86','#be7d28','#8b67b4','#bf5b63','#9a8a2f',
+      '#278e9a','#6b75bd','#4f996d','#b27052','#517cae','#a75f86'];
+    this.nameColW = 132;
+    this.rulerH = 42;
+    this.laneH = 28;
+    this.padR = 6;
     this.hidden = new Set();
     this.hover = null;
+    this.markerTime = null;
+    this.markerPinned = false;
     this.dragging = false;
+    this.dragMoved = false;
     this.dragX0 = 0;
     this.dragView0 = null;
     this.viewStart = null;
@@ -55,12 +58,14 @@ export class SvTimeline {
     this._hadIntervals = false;
     this._taskOrder = [];
     this._taskMeta = new Map();
+    this._explicitContexts = [];
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followEase = 0.22;
     this._followRaf = 0;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
     this._renderPaused = (data && data.renderPaused) === true;
+    this.emptyText = (data && data.emptyText) || '窗口内无任务';
     this.setData((data && data.intervals) || []);
     this._bind();
     this._resize();
@@ -73,17 +78,35 @@ export class SvTimeline {
     this._acceptData(this._filterContinuous(intervals || []));
   }
 
+  setContexts(contexts) {
+    this._explicitContexts = Array.isArray(contexts) ? contexts : [];
+    this._acceptData(this.intervals || []);
+  }
+
+  setLabels(labels) {
+    if (labels && labels.emptyText) this.emptyText = labels.emptyText;
+    this._draw();
+    this._updateStatus();
+  }
+
   _acceptData(intervals) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
     this._hadIntervals = intervals.length > 0;
     this.intervals = intervals;
-    const run = new Map(), names = new Map();
+    const run = new Map(), names = new Map(), types = new Map();
     for (const it of this.intervals) {
       run.set(it.tid, (run.get(it.tid) || 0) + (it.end - it.start));
       names.set(it.tid, it.name);
+      if (it.type) types.set(it.tid, it.type);
     }
-    this.tasks = this._mergeTasks(run, names);
+    for (const context of (this._explicitContexts || [])) {
+      if (!context || !Number.isFinite(context.tid)) continue;
+      if (!run.has(context.tid)) run.set(context.tid, 0);
+      if (context.name) names.set(context.tid, context.name);
+      if (context.type) types.set(context.tid, context.type);
+    }
+    this.tasks = this._mergeTasks(run, names, types);
     this.taskOf = new Map(this.tasks.map(t => [t.tid, t]));
     // 时间范围
     if (this.intervals.length) {
@@ -123,17 +146,24 @@ export class SvTimeline {
   // Live workers already filter the requested visible range. This entrypoint
   // deliberately avoids slicing/sorting the retained 50k interval history.
   setPrefilteredIntervals(intervals) {
+    // User interaction leaves follow mode so the inspected frame stays stable
+    // while acquisition and the Runtime/Context tables continue updating.
+    if (!this.follow && this._hadIntervals) return;
     this._acceptData(intervals || []);
   }
 
-  _mergeTasks(run, names) {
+  _mergeTasks(run, names, types = new Map()) {
     if (!this._taskOrder) this._taskOrder = [];
     if (!this._taskMeta) this._taskMeta = new Map();
 
-    const ranked = [...run.entries()]
+    const rankedByRuntime = [...run.entries()]
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 12)
       .map(([tid]) => tid);
+    const explicitOrder = (this._explicitContexts || [])
+      .map(context => context && context.tid)
+      .filter(tid => Number.isFinite(tid) && run.has(tid));
+    const stableRemainder = this._taskOrder.filter(tid => run.has(tid) && !explicitOrder.includes(tid));
+    const ranked = [...new Set([...explicitOrder, ...stableRemainder, ...rankedByRuntime])].slice(0, 20);
     const active = new Set(ranked);
 
     for (const tid of ranked) {
@@ -142,23 +172,29 @@ export class SvTimeline {
         this._taskMeta.set(tid, {
           tid,
           name,
-          color: this.PALETTE[this._taskMeta.size % this.PALETTE.length],
+          type: types.get(tid) || 'Task',
+          color: this._contextColor(types.get(tid), this._taskMeta.size),
         });
       } else if (name) {
         this._taskMeta.get(tid).name = name;
+        if (types.get(tid)) this._taskMeta.get(tid).type = types.get(tid);
       }
       if (!this._taskOrder.includes(tid)) this._taskOrder.push(tid);
     }
 
-    this._taskOrder = this._taskOrder.filter(tid => active.has(tid));
-    for (const tid of ranked) {
-      if (!this._taskOrder.includes(tid)) this._taskOrder.push(tid);
-    }
+    this._taskOrder = ranked.filter(tid => active.has(tid));
 
     return this._taskOrder
       .map(tid => this._taskMeta.get(tid))
       .filter(Boolean)
-      .slice(0, 12);
+      .slice(0, 20);
+  }
+
+  _contextColor(type, paletteIndex) {
+    if (type === 'ISR') return '#c52832';
+    if (type === 'Scheduler') return '#727983';
+    if (type === 'Idle') return '#8b929a';
+    return this.PALETTE[paletteIndex % this.PALETTE.length];
   }
 
   setWindowSize(windowSize) {
@@ -312,10 +348,28 @@ export class SvTimeline {
   }
 
   _fmtTime(us) {
-    const abs = Math.abs(us);
-    if (abs >= 1e6) return (us / 1e6).toFixed(3) + ' s';
-    if (abs >= 1e3) return (us / 1e3).toFixed(2) + ' ms';
-    return us.toFixed(0) + ' us';
+    return this._fmtMicroseconds(us, 3);
+  }
+
+  _fmtMicroseconds(value, maxDecimals = 3) {
+    if (!Number.isFinite(value)) return '';
+    const rounded = Number(value.toFixed(maxDecimals));
+    const text = rounded.toLocaleString('en-US', { maximumFractionDigits: maxDecimals });
+    return `${text} us`;
+  }
+
+  _fmtAxisValue(value, step) {
+    if (this.unit !== 'us') return this._fmtTicks(BigInt(exactTickFromOffset(this.tickOrigin, value)));
+    const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+    const rounded = Number(value.toFixed(decimals));
+    const text = rounded.toLocaleString('en-US', { maximumFractionDigits: decimals });
+    return `${text} us`;
+  }
+
+  _fmtIntervalLabel(it) {
+    const duration = it.end - it.start;
+    if (this.unit !== 'us') return this._fmtTicks(Math.round(duration), true);
+    return this._fmtMicroseconds(duration, 3);
   }
 
   _ticksFromUs(us) {
@@ -397,27 +451,19 @@ export class SvTimeline {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.W, this.H);
     ctx.font = '11px -apple-system,Segoe UI,Roboto,sans-serif';
-    // 时间标尺
+    this._drawLaneBackgrounds();
     this._drawRuler();
-    // 泳道
     this.lanes.forEach((task, i) => {
       const y = this.rulerH + i * this.laneH;
-      // 背景交替
-      ctx.fillStyle = '#fffdf8';
-      ctx.fillRect(0, y, this.nameColW, this.laneH);
-      ctx.fillStyle = '#d4cabc';
-      ctx.fillRect(this.nameColW - 1, y, 1, this.laneH);
-      ctx.fillStyle = i % 2 ? '#f6f4ed' : '#fbfaf5';
-      ctx.fillRect(this.plotX0, y, this.plotW, this.laneH);
-      // 任务名
-      ctx.fillStyle = '#605a50'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
-      ctx.fillText(task.name.slice(0, 14), this.nameColW - 18, y + this.laneH / 2);
-      // 颜色点
+      ctx.fillStyle = '#343a43'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.font = task.type === 'ISR'
+        ? '600 11px -apple-system,Segoe UI,Roboto,sans-serif'
+        : '11px -apple-system,Segoe UI,Roboto,sans-serif';
+      ctx.fillText(task.name.slice(0, 16), 17, y + this.laneH / 2);
       ctx.fillStyle = task.color;
-      ctx.fillRect(this.nameColW - 11, y + this.laneH / 2 - 3, 6, 6);
+      ctx.fillRect(5, y + 4, 4, this.laneH - 8);
     });
-    // 区间
-    ctx.textAlign = 'left';
+    ctx.font = '11px -apple-system,Segoe UI,Roboto,sans-serif';
     for (const it of this.intervals) {
       const task = this.taskOf.get(it.tid);
       if (!task || this.hidden.has(it.tid)) continue;
@@ -427,16 +473,26 @@ export class SvTimeline {
       const x0 = Math.max(this._t2x(it.start), this.plotX0);
       const x1 = Math.min(this._t2x(it.end), this.plotX1);
       if (x1 - x0 < 0.4) continue; // 太细跳过
-      const y = this.rulerH + laneIdx * this.laneH + 4;
+      const y = this.rulerH + laneIdx * this.laneH + 3;
       const w = Math.max(x1 - x0, 0.8);
-      const h = this.laneH - 8;
-      ctx.fillStyle = task.color;
+      const h = this.laneH - 6;
+      ctx.fillStyle = task.type === 'Scheduler' ? '#eef0f3'
+        : task.type === 'Idle' ? '#f7f8fa' : task.color;
       ctx.fillRect(x0, y, w, h);
-      ctx.strokeStyle = 'rgba(31, 41, 55, 0.22)';
+      ctx.strokeStyle = task.type === 'Scheduler' || task.type === 'Idle'
+        ? '#969da6' : 'rgba(31, 41, 55, 0.32)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(w - 1, 0.8), Math.max(h - 1, 1));
+      const durationLabel = this._fmtIntervalLabel(it);
+      ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
+      const labelWidth = this._labelWidth(durationLabel);
+      if (w >= labelWidth + 10) {
+        ctx.fillStyle = task.type === 'Scheduler' || task.type === 'Idle' ? '#4b535d' : '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(durationLabel, x0 + w / 2, y + h / 2 + 0.5);
+      }
     }
-    // hover 高亮
     if (this.hover) {
       const task = this.taskOf.get(this.hover.tid);
       const laneIdx = this.lanes.indexOf(task);
@@ -446,33 +502,100 @@ export class SvTimeline {
         const y = this.rulerH + laneIdx * this.laneH + 2;
         ctx.strokeStyle = '#111827'; ctx.lineWidth = 1.25;
         ctx.strokeRect(x0 - 0.5, y - 0.5, Math.max(x1 - x0, 1.5) + 1, this.laneH - 4);
+        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = 'rgba(17, 24, 39, .55)';
+        for (const x of [x0, x1]) {
+          ctx.beginPath(); ctx.moveTo(x, this.rulerH); ctx.lineTo(x, this.H); ctx.stroke();
+        }
+        ctx.setLineDash([]);
       }
     }
+    this._drawMarker();
+  }
+
+  _drawLaneBackgrounds() {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#f1f3f5';
+    ctx.fillRect(0, this.rulerH, this.nameColW, this.H - this.rulerH);
+    this.lanes.forEach((_task, index) => {
+      const y = this.rulerH + index * this.laneH;
+      ctx.fillStyle = index % 2 ? '#f4f7f4' : '#f8faf8';
+      ctx.fillRect(this.plotX0, y, this.plotW, this.laneH);
+      ctx.fillStyle = '#d9dde2';
+      ctx.fillRect(0, y + this.laneH - 1, this.W, 1);
+    });
+    ctx.fillStyle = '#bfc5cc';
+    ctx.fillRect(this.nameColW - 1, this.rulerH, 1, this.H - this.rulerH);
   }
 
   _drawRuler() {
     const ctx = this.ctx;
-    ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, this.W, this.rulerH);
-    ctx.fillStyle = '#ddd8ca'; ctx.fillRect(0, this.rulerH - 1, this.W, 1);
+    ctx.fillStyle = '#eceff2'; ctx.fillRect(0, 0, this.W, this.rulerH);
+    ctx.fillStyle = '#d2d7dd'; ctx.fillRect(0, this.rulerH - 1, this.W, 1);
+    ctx.fillStyle = '#343a43';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.font = '600 11px -apple-system,Segoe UI,Roboto,sans-serif';
+    ctx.fillText('Core 0', 17, this.rulerH / 2 + 1);
+    ctx.fillStyle = '#bfc5cc';
+    ctx.fillRect(this.nameColW - 1, 0, 1, this.rulerH);
+
     const span = this.viewEnd - this.viewStart;
-    const targetLabels = Math.max(2, Math.floor(this.plotW / 150));
+    const targetLabels = Math.max(2, Math.floor(this.plotW / 110));
     const step = this._niceStep(span / targetLabels);
-    ctx.fillStyle = '#746d61'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.font = '10px monospace';
+    const minorStep = step / 5;
+    const minorStart = Math.ceil(this.viewStart / minorStep) * minorStep;
+    ctx.lineWidth = 1;
+    for (let t = minorStart; t <= this.viewEnd + minorStep * 0.1; t += minorStep) {
+      const x = this._t2x(t);
+      if (x < this.plotX0 || x > this.plotX1) continue;
+      const major = Math.abs(t / step - Math.round(t / step)) < 1e-6;
+      ctx.strokeStyle = major ? '#cbd1d7' : '#e5e8eb';
+      ctx.beginPath();
+      ctx.moveTo(x, major ? 24 : 32);
+      ctx.lineTo(x, this.H);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#636b75'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
     const t0 = Math.ceil(this.viewStart / step) * step;
     let lastLabelRight = -Infinity;
     for (let t = t0; t <= this.viewEnd; t += step) {
       const x = this._t2x(t);
       if (x < this.plotX0 || x > this.plotX1) continue;
-      ctx.strokeStyle = '#e4ded1'; ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x, this.rulerH - 2); ctx.stroke();
-      const label = this._fmt(t, true);
+      const label = this._fmtAxisValue(t, step);
       const half = this._labelWidth(label) / 2;
       const labelX = Math.min(Math.max(x, this.plotX0 + half + 2), this.plotX1 - half - 2);
       const labelLeft = labelX - half;
       const labelRight = labelX + half;
       if (labelLeft <= lastLabelRight + 10) continue;
-      ctx.fillText(label, labelX, this.rulerH / 2);
+      ctx.fillText(label, labelX, 12);
       lastLabelRight = labelRight;
     }
+  }
+
+  _drawMarker() {
+    if (!Number.isFinite(this.markerTime)) return;
+    const x = this._t2x(this.markerTime);
+    if (x < this.plotX0 || x > this.plotX1) return;
+    const ctx = this.ctx;
+    ctx.strokeStyle = '#2563c9';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 19); ctx.lineTo(x, this.H); ctx.stroke();
+    ctx.fillStyle = '#2563c9';
+    ctx.beginPath(); ctx.moveTo(x - 4, 19); ctx.lineTo(x + 4, 19); ctx.lineTo(x, 24); ctx.closePath(); ctx.fill();
+
+    const label = this.unit === 'us'
+      ? this._fmtMicroseconds(this.markerTime, 3)
+      : this._fmt(this.markerTime);
+    ctx.font = '600 10px ui-monospace,SFMono-Regular,Consolas,monospace';
+    const width = this._labelWidth(label) + 8;
+    const labelX = Math.min(Math.max(x, this.plotX0 + width / 2), this.plotX1 - width / 2);
+    ctx.fillStyle = '#eceff2';
+    ctx.fillRect(labelX - width / 2, 22, width, 17);
+    ctx.fillStyle = '#174ea6';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, labelX, 30.5);
   }
 
   _hitTest(mx, my) {
@@ -493,25 +616,38 @@ export class SvTimeline {
     if (this._listenersBound) return;
 
     this._onWheel = (e) => {
-      if (!this._shouldZoomWheel(e)) return;
-      e.preventDefault();
-      this.setFollowMode(false);
       const rect = this.canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
+      if (!this._shouldZoomWheel(mx) || e.deltaY === 0) return;
+      e.preventDefault();
+      this.setFollowMode(false);
       const t = this._x2t(mx);
       const factor = e.deltaY < 0 ? 0.8 : 1.25; // 缩放因子
-      let ns = t - (t - this.viewStart) * factor;
-      let ne = t + (this.viewEnd - t) * factor;
-      // 限制最小窗口
-      if (ne - ns < (this.tMax - this.tMin) * 1e-5) { ns = t - (ne - ns) / 2; ne = t + (ne - ns) / 2; }
+      const fullSpan = Math.max(this.tMax - this.tMin, Number.EPSILON);
+      const currentSpan = Math.max(this.viewEnd - this.viewStart, Number.EPSILON);
+      const minSpan = Math.max(fullSpan * 1e-5, this.unit === 'us' ? 0.001 : 1);
+      const nextSpan = Math.min(fullSpan, Math.max(minSpan, currentSpan * factor));
+      const anchor = Math.min(1, Math.max(0, (mx - this.plotX0) / this.plotW));
+      let ns = t - nextSpan * anchor;
+      let ne = ns + nextSpan;
+      if (ns < this.tMin) { ne += this.tMin - ns; ns = this.tMin; }
+      if (ne > this.tMax) { ns -= ne - this.tMax; ne = this.tMax; }
       this.viewStart = Math.max(this.tMin, ns);
       this.viewEnd = Math.min(this.tMax, ne);
       this._draw(); this._updateStatus();
     };
 
     this._onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      if (mx < this.plotX0 || mx > this.plotX1) return;
+      e.preventDefault();
       this.setFollowMode(false);
-      this.dragging = true; this.dragX0 = e.clientX; this.dragView0 = [this.viewStart, this.viewEnd];
+      this.dragging = true;
+      this.dragMoved = false;
+      this.dragX0 = e.clientX;
+      this.dragView0 = [this.viewStart, this.viewEnd];
       this.canvas.style.cursor = 'grabbing';
     };
 
@@ -520,6 +656,7 @@ export class SvTimeline {
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       if (this.dragging) {
         const dx = e.clientX - this.dragX0;
+        if (Math.abs(dx) >= 3) this.dragMoved = true;
         const dt = -dx / this.plotW * (this.dragView0[1] - this.dragView0[0]);
         let ns = this.dragView0[0] + dt, ne = this.dragView0[1] + dt;
         if (ns < this.tMin) { ne += this.tMin - ns; ns = this.tMin; }
@@ -529,26 +666,50 @@ export class SvTimeline {
       } else if (mx >= 0 && mx <= this.W && my >= 0 && my <= this.H) {
         const hit = this._hitTest(mx, my);
         this.hover = hit;
-        this.canvas.style.cursor = hit ? 'pointer' : 'crosshair';
+        if (!this.markerPinned && mx >= this.plotX0 && mx <= this.plotX1) {
+          this.markerTime = this._x2t(mx);
+        }
+        this.canvas.style.cursor = hit ? 'pointer' : 'grab';
         if (hit) this._showTip(e.clientX, e.clientY, hit); else this._hideTip();
         this._draw();
       }
     };
 
-    this._onMouseUp = () => { this.dragging = false; this.canvas.style.cursor = 'crosshair'; };
-    this._onMouseLeave = () => { this.hover = null; this._hideTip(); this._draw(); };
+    this._onMouseUp = (e) => {
+      if (this.dragging && !this.dragMoved) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = Math.min(this.plotX1, Math.max(this.plotX0, e.clientX - rect.left));
+        this.markerTime = this._x2t(mx);
+        this.markerPinned = true;
+      }
+      this.dragging = false;
+      this.canvas.style.cursor = 'grab';
+      this._draw();
+    };
+    this._onMouseLeave = () => {
+      this.hover = null;
+      if (!this.markerPinned) this.markerTime = null;
+      this._hideTip();
+      this._draw();
+    };
+    this._onDoubleClick = () => {
+      this.markerPinned = false;
+      this.markerTime = null;
+      this.reset();
+    };
 
     this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
     this.canvas.addEventListener('mousedown', this._onMouseDown);
     window.addEventListener('mousemove', this._onMouseMove);
     window.addEventListener('mouseup', this._onMouseUp);
     this.canvas.addEventListener('mouseleave', this._onMouseLeave);
+    this.canvas.addEventListener('dblclick', this._onDoubleClick);
     if (this.roots.resetBtn) this.roots.resetBtn.onclick = () => this.reset();
     this._listenersBound = true;
   }
 
-  _shouldZoomWheel(e) {
-    return !!(e.ctrlKey || e.shiftKey);
+  _shouldZoomWheel(mx) {
+    return Number.isFinite(mx) && mx >= this.plotX0 && mx <= this.plotX1;
   }
 
   _escapeHtml(value) {
@@ -565,40 +726,22 @@ export class SvTimeline {
     tip.style.display = 'block';
     tip.innerHTML = `<b>${this._escapeHtml(it.name)}</b><br>duration ${this._fmtDuration(it)}<br>`
       + `start ${this._fmtPoint(it.start, it.startTk)}<br>end ${this._fmtPoint(it.end, it.endTk)}`;
-    const w = tip.offsetWidth, h = tip.offsetHeight;
-    tip.style.left = (cx + 14) + 'px'; tip.style.top = (cy + 14) + 'px';
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(cx + 14, window.innerWidth - w - 8)) + 'px';
+    tip.style.top = Math.max(8, Math.min(cy + 14, window.innerHeight - h - 8)) + 'px';
   }
   _hideTip() { if (this.roots.tooltip) this.roots.tooltip.style.display = 'none'; }
 
   _updateStatus() {
-    // 可见窗口内每任务 CPU% = 任务在窗口内的运行 / 窗口内所有任务运行
-    const vis = this.intervals.filter(it =>
-      it.end > this.viewStart && it.start < this.viewEnd && !this.hidden.has(it.tid));
-    const run = new Map();
-    for (const it of vis) {
-      const s = Math.max(it.start, this.viewStart), e = Math.min(it.end, this.viewEnd);
-      run.set(it.tid, (run.get(it.tid) || 0) + (e - s));
-    }
-    const total = [...run.values()].reduce((a, b) => a + b, 0) || 1;
-    const items = this.tasks.map(t => ({ ...t, pct: ((run.get(t.tid) || 0) / total * 100) }))
-      .filter(t => t.pct > 0.001);
-    // 图例
     if (this.roots.legend) {
-      this.roots.legend.innerHTML = items.map(t =>
+      this.roots.legend.innerHTML = this.tasks.map(t =>
         `<span class="sv-lg${this.hidden.has(t.tid) ? ' sv-lg-off' : ''}" data-tid="${t.tid}">`
-        + `<i style="background:${t.color}"></i>${t.name.slice(0,12)} <em>${t.pct.toFixed(1)}%</em></span>`
+        + `<i style="background:${t.color}"></i>${this._escapeHtml(t.name.slice(0, 16))}</span>`
       ).join('');
       this.roots.legend.querySelectorAll('.sv-lg').forEach(el => {
         el.onclick = () => { const tid = +el.dataset.tid; this.toggleTask(tid); };
       });
-    }
-    // 可见 CPU 面板
-    if (this.roots.vcpu) {
-      this.roots.vcpu.innerHTML = items.map(t =>
-        `<div class="sv-vcpu-row"><span class="sv-vcpu-n">${t.name.slice(0,14)}</span>`
-        + `<div class="sv-vcpu-bg"><div class="sv-vcpu-bar" style="width:${Math.max(0.3,t.pct)}%;background:${t.color}"></div></div>`
-        + `<span class="sv-vcpu-p">${t.pct.toFixed(2)}%</span></div>`
-      ).join('') || '<div class="sv-empty">窗口内无任务</div>';
     }
   }
 
@@ -608,6 +751,8 @@ export class SvTimeline {
   }
 
   reset() {
+    this.markerPinned = false;
+    this.markerTime = null;
     if (this.windowSize > 0) {
       this.setFollowMode(true);
       return;
@@ -627,6 +772,7 @@ export class SvTimeline {
       window.removeEventListener('mousemove', this._onMouseMove);
       window.removeEventListener('mouseup', this._onMouseUp);
       this.canvas.removeEventListener('mouseleave', this._onMouseLeave);
+      this.canvas.removeEventListener('dblclick', this._onDoubleClick);
       if (this.roots.resetBtn) this.roots.resetBtn.onclick = null;
       this._listenersBound = false;
     }

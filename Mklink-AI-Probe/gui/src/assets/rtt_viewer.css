@@ -130,6 +130,135 @@ header h1 {
   border-right: none;
 }
 #chart-wrap canvas { display: block; width: 100%; height: 100%; }
+#chart-legend-toggle {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 72px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--dim);
+  font: 16px/1 var(--font-body);
+  cursor: pointer;
+  opacity: 0.78;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+#chart-legend-toggle:hover,
+#chart-legend-toggle[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  color: var(--accent);
+  opacity: 1;
+}
+#chart-legend-toggle[hidden] { display: none; }
+#chart-legend {
+  position: absolute;
+  z-index: 5;
+  top: 42px;
+  left: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: calc(100% - 84px);
+  max-height: calc(50% - 48px);
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s, visibility 0s linear 0.15s;
+}
+#chart-legend.is-visible {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+.chart-legend-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  max-width: 100%;
+  padding: 1px 2px 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--fg);
+  font: 11px var(--font-body);
+}
+.chart-legend-row.is-split {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background: var(--surface);
+}
+.chart-legend-swatch {
+  width: 12px;
+  height: 3px;
+}
+.chart-legend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-legend-action {
+  min-width: 36px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--dim);
+  font: 10px var(--font-body);
+  cursor: pointer;
+}
+.chart-legend-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.split-panel-control {
+  position: absolute;
+  z-index: 6;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 88px);
+  min-height: 24px;
+  padding: 2px 3px 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--dim);
+  font: 10px var(--font-body);
+  transform: translateY(-50%);
+}
+.split-panel-control[hidden] { display: none; }
+.split-panel-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#split-panel-merge {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--accent);
+  font: 10px var(--font-body);
+  cursor: pointer;
+}
+#split-panel-merge:hover { border-color: var(--accent); }
 .axis-hit-region {
   position: absolute;
   z-index: 4;
@@ -239,10 +368,17 @@ header h1 {
     flex-shrink: 0;
   }
   .waveform-viewer.superwatch-desktop #pts-count { width: 86px; }
-  .waveform-viewer.superwatch-desktop #sample-rate-badge { width: 92px; }
+  .waveform-viewer.superwatch-desktop #sample-rate-badge {
+    width: 104px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .waveform-viewer.superwatch-desktop #transport-state-badge { width: 132px; }
   .waveform-viewer.superwatch-desktop #transport-health-badge {
-    width: 260px;
+    flex: 1 1 140px;
+    min-width: 110px;
+    max-width: 260px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -935,6 +1071,13 @@ tr.watch-child-row td[data-col="value"] {
 #buffer-input:focus { border-color: var(--accent); }
 .interval-unit,
 .buffer-unit { color: var(--dim); font-size: 11px; }
+.buffer-memory-estimate {
+  min-width: 62px;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.buffer-memory-estimate.is-high { color: var(--warn); }
 
 #inspector-panel {
   display:none;

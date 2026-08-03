@@ -48,3 +48,19 @@ def test_microkeen_disk_reads_volume_labels_without_console_process(monkeypatch)
 
     assert discovery.find_microkeen_disk() == "G:\\"
     assert labels == ["C:\\", "G:\\"]
+
+
+def test_microkeen_disk_accepts_only_a_label_verified_configured_root(monkeypatch):
+    monkeypatch.setattr(discovery.os, "name", "nt")
+    monkeypatch.setenv("MKLINK_MICROKEEN_DISK", "E:")
+    monkeypatch.setattr(discovery.os.path, "isdir", lambda path: path == "E:\\")
+    monkeypatch.setattr(
+        discovery,
+        "_windows_volume_label",
+        lambda path: "MICROKEEN" if path == "E:\\" else None,
+    )
+
+    assert discovery.find_microkeen_disk() == "E:\\"
+
+    monkeypatch.setattr(discovery, "_windows_volume_label", lambda _path: "OTHER")
+    assert discovery.find_microkeen_disk() is None

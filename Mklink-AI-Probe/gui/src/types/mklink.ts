@@ -85,6 +85,7 @@ export interface ConnectRequest {
   axf?: string
   mcu?: string
   elf_backend?: 'builtin' | 'external'
+  restore_last?: boolean
 }
 
 export interface FlashRequest {
@@ -241,6 +242,39 @@ export interface SymbolContainerDescriptor {
   reason: 'unsupported_layout'
 }
 
+export type SymbolBrowseKind = 'leaf' | 'branch' | 'range' | 'container'
+
+export interface SymbolBrowseNode {
+  key: string
+  path: string
+  label: string
+  kind: SymbolBrowseKind
+  type_name: string
+  size: number
+  address: number | null
+  descriptor: SymbolDescriptor | null
+  container: SymbolContainerDescriptor | null
+  child_count: number | null
+  range_start: number | null
+  range_end: number | null
+}
+
+export interface SymbolBrowsePage {
+  generation: number
+  axf_path: string
+  fingerprint: AxfFingerprint
+  parent: string | null
+  nodes: SymbolBrowseNode[]
+}
+
+export interface SymbolSearchResult {
+  name: string
+  address: number
+  type: string
+  size: number
+  descriptor: SymbolDescriptor
+}
+
 export interface AxfFingerprint {
   size: number
   mtime_ns: number
@@ -256,6 +290,7 @@ export interface SymbolCatalogPage {
   items: SymbolDescriptor[]
   truncated_roots: string[]
   containers: SymbolContainerDescriptor[]
+  browse_roots?: SymbolBrowseNode[]
 }
 
 export interface SymbolCatalogStatus {

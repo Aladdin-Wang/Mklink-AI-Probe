@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProbeRecord } from '../../types/onlineFlash'
+import { tr } from '../../composables/useLanguage'
 
 defineProps<{
   probes: ProbeRecord[]
@@ -22,36 +23,36 @@ defineEmits<{
 
 <template>
   <section class="panel-block">
-    <div class="panel-title"><span>设备接入</span><button :disabled="busy" @click="$emit('refresh')">刷新</button></div>
-    <label>MKLink 探针
+    <div class="panel-title"><span>{{ tr('设备接入', 'Probe Connection') }}</span><button :disabled="busy" @click="$emit('refresh')">{{ tr('刷新', 'Refresh') }}</button></div>
+    <label>{{ tr('MKLink 探针', 'MKLink Probe') }}
       <select data-testid="probe-select" :value="selectedId" :disabled="busy" @change="$emit('update:selectedId', ($event.target as HTMLSelectElement).value)">
-        <option value="">请选择探针</option>
+        <option value="">{{ tr('请选择探针', 'Select a probe') }}</option>
         <option v-for="probe in probes" :key="probe.unique_id" :value="probe.unique_id">
           {{ probe.product_name }} · {{ probe.serial_number || probe.unique_id }}
         </option>
       </select>
     </label>
-    <p v-if="!probes.length" class="hint">未发现精确匹配的 MKLink CMSIS-DAP 探针</p>
+    <p v-if="!probes.length" class="hint">{{ tr('未发现精确匹配的 MKLink CMSIS-DAP 探针', 'No exact MKLink CMSIS-DAP probe found') }}</p>
     <p v-if="error" class="error">{{ error }}</p>
   </section>
   <section class="panel-block">
-    <h3>基本设置</h3>
-    <label>SWD 频率
+    <h3>{{ tr('基本设置', 'Basic Settings') }}</h3>
+    <label>{{ tr('SWD 频率', 'SWD Frequency') }}
       <select data-testid="frequency" :value="frequency" @change="$emit('update:frequency', Number(($event.target as HTMLSelectElement).value))">
         <option :value="1000000">1 MHz</option><option :value="2000000">2 MHz</option>
         <option :value="4000000">4 MHz</option><option :value="8000000">8 MHz</option>
         <option :value="10000000">10 MHz</option>
       </select>
     </label>
-    <label>连接方式
+    <label>{{ tr('连接方式', 'Connection Mode') }}
       <select data-testid="connect-mode" :value="connectMode" @change="$emit('update:connectMode', ($event.target as HTMLSelectElement).value)">
-        <option value="halt">连接后暂停</option><option value="attach">保持运行</option>
-        <option value="under-reset">复位下连接</option>
+        <option value="halt">{{ tr('连接后暂停', 'Halt after connect') }}</option><option value="attach">{{ tr('保持运行', 'Keep running') }}</option>
+        <option value="under-reset">{{ tr('复位下连接', 'Connect under reset') }}</option>
       </select>
     </label>
-    <label>复位方式
+    <label>{{ tr('复位方式', 'Reset Mode') }}
       <select :value="resetMode" @change="$emit('update:resetMode', ($event.target as HTMLSelectElement).value)">
-        <option value="default">默认</option><option value="hardware">硬件复位</option><option value="software">软件复位</option>
+        <option value="default">{{ tr('默认', 'Default') }}</option><option value="hardware">{{ tr('硬件复位', 'Hardware reset') }}</option><option value="software">{{ tr('软件复位', 'Software reset') }}</option>
       </select>
     </label>
   </section>

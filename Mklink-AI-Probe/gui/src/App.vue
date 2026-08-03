@@ -1,15 +1,40 @@
 <template>
   <div class="app-root">
     <header class="app-header">
-      <h1 class="app-title">MKLink Flash</h1>
+      <h1 class="app-title">MKLink</h1>
       <nav class="app-nav">
         <button
           v-for="tab in tabs" :key="tab.key"
           :class="['nav-tab', { active: currentTab === tab.key }]"
           @click="navigate(tab.key)"
         >{{ tab.label }}</button>
+        <a
+          class="external-link"
+          data-testid="online-docs-link"
+          href="https://microboot.readthedocs.io/zh-cn/latest/tools/microlink/microlink/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ tr('在线文档', 'Docs') }}</a>
+        <a
+          class="external-link"
+          data-testid="taobao-link"
+          href="https://item.taobao.com/item.htm?ft=t&id=1020501356342"
+          target="_blank"
+          rel="noopener noreferrer"
+        >{{ tr('淘宝店', 'Store') }}</a>
       </nav>
       <div class="header-right">
+        <button
+          class="language-toggle"
+          type="button"
+          data-testid="global-language-toggle"
+          :title="tr('切换到 English', 'Switch to Chinese')"
+          :aria-label="tr('切换到 English', 'Switch to Chinese')"
+          @click="toggleLanguage"
+        >
+          <Languages :size="15" aria-hidden="true" />
+          <span>{{ language === 'zh' ? 'EN' : '中文' }}</span>
+        </button>
         <StatusBar />
       </div>
     </header>
@@ -30,11 +55,11 @@
         </KeepAlive>
       </router-view>
       <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
-        正在启动本地服务…
+        {{ tr('正在启动本地服务…', 'Starting local service…') }}
       </div>
       <div v-else class="backend-recovery" role="alert">
-        <strong>本地服务未启动</strong>
-        <button data-testid="backend-restart" @click="restart">重启服务</button>
+        <strong>{{ tr('本地服务未启动', 'Local service is not running') }}</strong>
+        <button data-testid="backend-restart" @click="restart">{{ tr('重启服务', 'Restart Service') }}</button>
       </div>
     </div>
     <footer class="app-footer">
@@ -47,6 +72,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { Languages } from '@lucide/vue'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
@@ -54,6 +80,7 @@ import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 import { useMklinkApi } from './composables/useMklinkApi'
 import { useBackendHealth } from './composables/useBackendHealth'
 import { useAppUpdater } from './composables/useAppUpdater'
+import { language, toggleLanguage, tr } from './composables/useLanguage'
 
 const router = useRouter()
 const route = useRoute()
@@ -76,12 +103,12 @@ const buildCommit = __APP_BUILD_COMMIT__
 
 const currentTab = computed(() => route.name as string)
 
-const tabs = [
-  { key: 'config', label: '配置' },
-  { key: 'dashboard', label: '仪表盘' },
-  { key: 'offline-flash', label: '脱机烧录' },
-  { key: 'online-flash', label: '在线烧录' },
-]
+const tabs = computed(() => [
+  { key: 'config', label: tr('配置', 'Config') },
+  { key: 'dashboard', label: tr('仪表盘', 'Dashboard') },
+  { key: 'offline-flash', label: tr('脱机烧录', 'Offline Flash') },
+  { key: 'online-flash', label: tr('在线烧录', 'Online Flash') },
+])
 
 function navigate(key: string) {
   router.push({ name: key })
@@ -183,6 +210,33 @@ body {
   align-items: center;
   gap: 8px;
 }
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.external-link:hover { color: var(--accent); border-bottom-color: var(--border); }
+.language-toggle {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 11px/1 var(--font-body);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.language-toggle:hover { color: var(--accent); border-color: var(--accent); }
 @media (max-width: 720px) {
   .app-header {
     height: auto;
@@ -201,6 +255,7 @@ body {
     flex: 0 0 auto;
     padding: 12px 8px;
   }
+  .external-link { height: 44px; padding: 0 8px; }
   .header-right {
     grid-column: 1 / -1;
     width: 100%;

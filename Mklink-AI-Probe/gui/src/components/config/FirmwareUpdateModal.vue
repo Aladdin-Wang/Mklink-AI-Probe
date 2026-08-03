@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { ProbeFirmwareCheck, FirmwareInfo } from '../../types/mklink'
 import { useTauri } from '../../composables/useTauri'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ check: ProbeFirmwareCheck }>()
 const emit = defineEmits<{
@@ -30,38 +31,38 @@ function fwLabel(fw: FirmwareInfo): string {
   <div class="modal-backdrop" @click.self="emit('close')">
     <div class="modal firmware-modal" role="dialog" aria-labelledby="fw-title">
       <header class="modal-header">
-        <h2 id="fw-title">探针固件需要升级</h2>
-        <button class="close-btn" aria-label="关闭" @click="emit('close')">×</button>
+        <h2 id="fw-title">{{ tr('探针固件需要升级', 'Probe Firmware Update Required') }}</h2>
+        <button class="close-btn" :aria-label="tr('关闭', 'Close')" @click="emit('close')">×</button>
       </header>
       <div class="modal-body">
         <section class="fw-steps">
-          <h3>升级步骤</h3>
+          <h3>{{ tr('升级步骤', 'Update Steps') }}</h3>
           <ol>
             <li v-for="(line, i) in steps" :key="i">{{ line }}</li>
           </ol>
         </section>
         <section class="fw-files">
-          <h3>固件</h3>
+          <h3>{{ tr('固件', 'Firmware') }}</h3>
           <div v-if="check.recommended_uf2" class="fw-card recommended">
-            <strong>推荐：</strong>
+            <strong>{{ tr('推荐：', 'Recommended:') }}</strong>
             <code>{{ fwLabel(check.recommended_uf2) }}</code>
             <div class="fw-path">{{ check.recommended_uf2.path }}</div>
           </div>
           <div v-else>
-            <p>无法识别探针型号，请从下方任选一个 UF2：</p>
+            <p>{{ tr('无法识别探针型号，请从下方任选一个 UF2：', 'Probe model could not be identified. Choose a UF2 below:') }}</p>
             <div v-for="fw in check.all_uf2s" :key="fw.name" class="fw-card">
               <code>{{ fwLabel(fw) }}</code>
               <div class="fw-path">{{ fw.path }}</div>
             </div>
           </div>
           <button class="open-dir-btn" @click="onOpenDir">
-            打开 MK-Firmware 所在位置
+            {{ tr('打开 MK-Firmware 所在位置', 'Open MK-Firmware Location') }}
           </button>
         </section>
       </div>
       <footer class="modal-footer">
-        <button class="recheck-btn" @click="emit('recheck')">重新检测</button>
-        <button class="close-action" @click="emit('close')">关闭</button>
+        <button class="recheck-btn" @click="emit('recheck')">{{ tr('重新检测', 'Check Again') }}</button>
+        <button class="close-action" @click="emit('close')">{{ tr('关闭', 'Close') }}</button>
       </footer>
     </div>
   </div>

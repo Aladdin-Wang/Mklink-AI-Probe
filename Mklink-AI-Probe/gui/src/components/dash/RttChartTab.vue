@@ -30,6 +30,7 @@ import VariableChips from './VariableChips.vue'
 import CrossPickerCanvas from './CrossPickerCanvas.vue'
 import RawLogPanel from './RawLogPanel.vue'
 import { takeNewStreamPoints } from '../../lib/streamCursor'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 
@@ -85,7 +86,7 @@ async function onStart() {
   const conflicts = await checkConflict('rtt')
   if (conflicts.length > 0) {
     const names = conflicts.map(c => DASH_NAMES[c] || c).join('、')
-    if (!confirm(`启动 RTT 将停止当前运行的 ${names} 会话。确认？`)) return
+    if (!confirm(tr(`启动 RTT 将停止当前运行的 ${names} 会话。确认？`, `Starting RTT will stop the active ${names} session. Continue?`))) return
   }
   await dash.start()
   setTimeout(() => {

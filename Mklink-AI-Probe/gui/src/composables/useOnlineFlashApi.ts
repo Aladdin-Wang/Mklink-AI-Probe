@@ -19,6 +19,7 @@ import type {
   TargetRecord,
   TargetSearchOptions,
 } from '../types/onlineFlash'
+import { tr } from './useLanguage'
 
 const API_BASE = import.meta.env.VITE_MKLINK_API || ''
 const ONLINE_FLASH_BASE = '/api/online-flash'
@@ -133,7 +134,7 @@ async function packOperationRequest(
     for (const event of legacy.events || []) onEvent?.(event)
     return legacy
   }
-  if (!response.body) throw new Error('Pack 操作未返回进度数据流')
+  if (!response.body) throw new Error(tr('Pack 操作未返回进度数据流', 'Pack operation did not return a progress stream'))
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -159,7 +160,7 @@ async function packOperationRequest(
       const status = typeof message.status === 'number' ? message.status : 500
       throw new OnlineFlashApiError(status, `HTTP ${status}`, { detail: message.detail })
     }
-    throw new Error('Pack 操作返回了无效的进度消息')
+    throw new Error(tr('Pack 操作返回了无效的进度消息', 'Pack operation returned an invalid progress message'))
   }
 
   try {
@@ -179,7 +180,7 @@ async function packOperationRequest(
     await reader.cancel().catch(() => undefined)
     throw error
   }
-  if (result === null) throw new Error('Pack 操作在返回结果前中断')
+  if (result === null) throw new Error(tr('Pack 操作在返回结果前中断', 'Pack operation ended before returning a result'))
   return { result, events }
 }
 

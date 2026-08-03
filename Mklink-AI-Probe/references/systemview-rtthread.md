@@ -7,23 +7,30 @@ SEGGER SystemView 是 RTOS 实时跟踪的事实标准：捕获**任务切换、
 饥饿、ISR 延迟、调度抖动。传统上依赖正版 J-Link。
 
 mklink 把 SystemView 做成**原生功能**：RTOS 的 `SEGGER_SYSVIEW` 集成把跟踪包写进
-**RTT 上行通道 1**，mklink 直接读这个通道、用自带解码器（`SystemViewParser`）解出
-SEGGER 事件——**不依赖 J-Link、不依赖 SEGGER PC 工具、不依赖探针固件的
-`SystemView.*` 模块**。这与 RTT/VOFA+/JScope 的"原生解码 + 自带可视化"一脉相承。
+**RTT 上行通道 1**，探针固件的 `SystemView.*` 模块负责读取并转发这个通道，PC 端
+用自带解码器（`SystemViewParser`）解出 SEGGER 事件。整条链路**不依赖 J-Link，
+也不依赖 SEGGER PC 工具**。
+
+探针内部对 SWD 和 RISC-V/JTAG 使用同一个 SystemView 转发模块，因此 ARM 与 HPM
+目标共用同一条上位机实现，不需要按 CPU 架构切换后端。
 
 ## 工作原理
 
 ```
 RT-Thread (SEGGER_SYSVIEW 钩子) ──事件包──▶ RTT 上行通道 1 ("SysView" 缓冲)
-                                              │ SWD
-                                       MKLink 探针 ──CDC──▶ PC
-                                              │
-                       mklink SystemViewParser 解码 SEGGER 包
-                                              │
-            CLI 实时打印 / systemview-analyze 分析 / systemview-report HTML / GUI 甘特
+                                              │ SWD 或 RISC-V/JTAG
+                              MKLink 探针 SystemView 转发 ──CDC──▶ PC
+                                                                  │
+                                           Recorder 握手 + SystemViewParser
+                                                                  │
+                   CLI 实时打印 / systemview-analyze / HTML 报告 / GUI 时间轴
 ```
 
-- **数据获取**：复用 RTT（`RTTView.start(addr, search, channel=1)`）。所以**必须先集成 RTT**。
+- **地址发现**：RTT View 与 RTOS Trace 各自都能从 AXF/ELF、MAP 或工程配置搜索
+  `_SEGGER_RTT`；两边共享最近一次搜索或手工输入的地址。
+- **数据获取**：PC 端调用 `SystemView.start(addr, search_size, channel=1)`，随后完成
+  SEGGER UART Recorder 的 `SV` 握手并发送开始命令。停止时发送 Recorder 停止命令和
+  `SystemView.stop()`，让探针恢复命令行。所以目标工程**必须先集成 RTT**。
 - **协议解码**：`mklink/systemview_parser.py`，逐字节对照 `SEGGER_SYSVIEW.c`
   （`_SendPacket`/`_EncodeU32`/`_SendSync`）实现；连续模式（无同步头）从任意位置对齐解析。
 - **嵌入式端**：用户固件集成 `SEGGER_SYSVIEW` + RT-Thread 钩子（下述）。
@@ -85,6 +92,10 @@ python -m mklink systemview-report --duration 6 --out report.html
 python -m mklink gui
 ```
 
+GUI 中可直接在 RTOS Trace 页输入 RTT 地址或点击 **Auto Search**，不需要先打开
+RTT View。若任一页面搜索或修改了地址，另一页面会立即复用；新打开的页面也会从
+持久化设置读取同一地址。
+
 MCP（Agent）等价：`systemview_start` / `capture_systemview` / `systemview_analyze` /
 `systemview_report` / `systemview_integrate`。
 
@@ -116,17 +127,19 @@ MCP（Agent）等价：`systemview_start` / `capture_systemview` / `systemview_a
 | AC5 `#59 function call in constant expression` | `RT_VERSION_CHECK()` 在 4.x 未定义 | 改用 `RT_VERSION >= 5` 整数比较 |
 | 链接 `SYSVIEW_X_OS_TraceAPI undefined` | 适配器未提供 OS API | 适配器内置 `_cbGetTime`/`_cbSendTaskList` + 该符号（注意大小写 `TraceAPI`） |
 | RTT 控制块被 `###` 覆盖 | RT-Thread `HEAP_END=0x20020000` 越界覆盖静态 RTT 区 | `HEAP_END=0x2001F000` |
-| `RTTView.start` 高频通道不回 `>>>` | 通道1立即推流 | mklink 用 `read_memory` 验 magic + raw 写命令进流模式 |
+| `RTTView.start` 与 Recorder 协议不匹配 | SystemView 需要双向控制命令和握手 | 改用探针 `SystemView.start` + `SV` Recorder 握手 |
 | 解码 0 事件 | 连续模式无同步头 | 解码器改为从任意位置对齐解析 |
 | CPU% 跨次翻倍 | 32 位 CYCCNT 翻卷 | `abs_time` 单调累加（不掩码） |
 | 缓冲裁掉 40KB 喂入 | `_MAX_BUF=32KB` 太小 | 调到 1MB |
-| `systemview_stop` 置 bridge ERROR | 流模式无 prompt | raw 写 `RTTView.stop`（与 start 对称） |
+| `systemview_stop` 置 bridge ERROR | 流模式无 prompt | raw 写 Recorder Stop + `SystemView.stop()`，固件恢复命令行 |
 
 ## 故障排查
 
 | 现象 | 排查 |
 |---|---|
-| `未找到 RTT 控制块` | 先 `rtt-integrate`；确认 `HEAP_END` 没覆盖 RTT 区；重连/拔插探针 |
+| `未找到 RTT 控制块` | 在 RTOS Trace 中 Auto Search；确认 AXF/ELF 或 MAP 路径、`rtt-integrate` 和 `HEAP_END`；必要时重连探针 |
+| `Recorder 握手超时/失败` | 确认探针固件包含 `SystemView.*` 转发并已更新；停止旧会话后重试 |
+| 启动后一直无数据 | 检查 RTT 地址、通道 1、`USE_SYSTEMVIEW` 和目标是否正在运行；后端会在超时后报告错误，不会永久停在 starting |
 | 解码 0 事件 / `未同步` | 确认 `USE_SYSTEMVIEW` 已定义、固件已重烧；`rt_trace_init` 自动注册（看启动 `kprintf`）|
 | 任务名全 `0x...` | 检查 axf 已加载；`task_id` 是否还原成真实指针（`ram_base` 对不对）|
 | µs/秒率为空 | `SystemCoreClock` 读取失败（axf 未加载或符号缺失）→ 回退 ticks |

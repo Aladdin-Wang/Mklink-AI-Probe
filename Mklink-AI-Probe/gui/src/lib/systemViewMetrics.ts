@@ -5,6 +5,7 @@ export interface SystemViewTaskRuntime {
   runUs: number
   switches: number
   prio?: number
+  type?: string
 }
 
 export interface SystemViewTaskRow extends SystemViewTaskRuntime {
@@ -111,7 +112,6 @@ export function computeRuntimeRows(
         pct: totalRun > 0 ? totalUs / totalRun * 100 : 0,
       }
     })
-    .filter(row => row.count > 0)
     .sort((a, b) => b.totalUs - a.totalUs)
 }
 
@@ -123,7 +123,7 @@ export function computeContextRows(tasks: SystemViewTaskRuntime[]): SystemViewCo
       id: task.id,
       name: normalizeSystemViewName(task.name),
       color: task.color,
-      type: 'Task',
+      type: task.type || 'Task',
       priority: task.prio,
       activations: task.switches,
       totalRunUs: Math.max(task.runUs, 0),
@@ -178,6 +178,7 @@ function quantile(sortedValues: number[], q: number): number {
 
 function labelEvent(kind: string): string {
   if (kind === 'idle') return 'System Idle'
+  if (kind === 'isr_to_scheduler') return 'ISR Exit'
   if (kind.startsWith('isr_')) return 'ISR ' + titleWords(kind.replace(/^isr_/, ''))
   return kind
     .split('_')
@@ -196,9 +197,26 @@ function resourceForEvent(event: any, kind: string): string {
 function detailForEvent(event: any, kind: string, taskId: string): string {
   const parts: string[] = []
   if (taskId && kind.startsWith('task_')) parts.push(taskId)
-  if (kind === 'idle' && event.cpu_delta_us !== undefined) parts.push(`idle ${Math.round(event.cpu_delta_us).toLocaleString()} us`)
+  if (kind === 'idle' && event.duration_us !== undefined) {
+    parts.push(`Idle for ${formatEventDuration(event.duration_us)}`)
+  } else if (kind === 'idle' && event.cpu_delta_us !== undefined) {
+    parts.push(`idle ${Math.round(event.cpu_delta_us).toLocaleString()} us`)
+  } else if ((kind === 'isr_enter' || kind === 'task_start_exec') && event.duration_us !== undefined) {
+    parts.push(`Runs for ${formatEventDuration(event.duration_us)}`)
+  } else if (kind === 'isr_to_scheduler') {
+    parts.push('Returns to Scheduler')
+  } else if (kind === 'isr_exit') {
+    parts.push('Returns from ISR')
+  }
   if (event.cause !== undefined) parts.push(`cause=${event.cause}`)
   return parts.join(' ')
+}
+
+function formatEventDuration(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '-'
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(6)} s`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(3)} ms`
+  return `${value.toFixed(3)} us`
 }
 
 function hexId(id: number): string {

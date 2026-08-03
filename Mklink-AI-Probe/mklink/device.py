@@ -356,11 +356,18 @@ class Device:
         )
         with self._symbol_lock:
             generation = (self._symbol_catalog.generation if self._symbol_catalog else 0) + 1
+        from mklink.elf_backend import writable_memory_ranges
+
         catalog = SymbolCatalog.from_dwarf(
             info,
             axf_path=candidate,
             generation=generation,
-            ram_ranges=((_SRAM_START, _SRAM_END),),
+            ram_ranges=writable_memory_ranges(
+                candidate,
+                backend=effective_backend,
+                project_root=self._project_root,
+                fallback=((_SRAM_START, _SRAM_END),),
+            ),
         )
         override_key = (
             str(Path(candidate).resolve()),
@@ -603,10 +610,12 @@ class Device:
             )
 
         flash_base = "0x08000000"
+        profile_flash_base = flash_base
         ram_base = "0x20000000"
         is_hpm_profile = False
         if mcu_profile:
             flash_base = mcu_profile.get("flash_base", flash_base)
+            profile_flash_base = flash_base
             ram_base = mcu_profile.get("ram_base", ram_base)
             profile_key = str(resolved_key or "").lower()
             profile_name = str(mcu_profile.get("name", "")).lower()
@@ -644,6 +653,7 @@ class Device:
         catalog_algorithm = None
         catalog_selections = ()
         catalog_image = None
+        catalog_fallback = False
         resolved_target = requested_target
         if not resolved_target and self._mcu_hint and self._mcu_hint not in profiles:
             resolved_target = self._mcu_hint
@@ -702,6 +712,7 @@ class Device:
 
         if resolved_target:
             from mklink.cmsis_dap.algorithm_catalog import (
+                FlashAlgorithmError,
                 discover_flash_algorithms,
                 deploy_algorithm_to_probe,
                 resolve_firmware_algorithms,
@@ -715,32 +726,54 @@ class Device:
                 firmware_ranges = tuple((start, end) for start, end in image.segments())
             else:
                 firmware_ranges = ((int(flash_base, 0), int(flash_base, 0) + Path(firmware).stat().st_size),)
-            catalog = discover_flash_algorithms(resolved_target)
-            if catalog:
-                catalog_selections = tuple(
-                    resolve_firmware_algorithms(catalog, firmware_ranges)
-                )
-                catalog_algorithm = catalog_selections[0].algorithm
-                if len(catalog_selections) == 1:
-                    flm_path = deploy_algorithm_to_probe(catalog_algorithm)
-                    algorithm_flash_base = _fmt_hex(catalog_algorithm.flash_start)
-                    if ext == ".hex":
-                        flash_base = algorithm_flash_base
-                    selected_ram = catalog_algorithm.ram_start or int(ram_base, 0)
-                    if not self._flash.load_flm(
-                        flm_path,
-                        algorithm_flash_base,
-                        _fmt_hex(selected_ram),
-                    ):
-                        raise DeviceError(f"FLM load failed: {flm_path}")
-            elif not (
-                mcu_profile
-                and resolved_key not in (None, "custom")
-                and mcu_profile.get("flm_path")
+            try:
+                catalog = discover_flash_algorithms(resolved_target)
+                if catalog:
+                    catalog_selections = tuple(
+                        resolve_firmware_algorithms(catalog, firmware_ranges)
+                    )
+                    catalog_algorithm = catalog_selections[0].algorithm
+                    if len(catalog_selections) == 1:
+                        flm_path = deploy_algorithm_to_probe(catalog_algorithm)
+                        algorithm_flash_base = _fmt_hex(catalog_algorithm.flash_start)
+                        if ext == ".hex":
+                            flash_base = algorithm_flash_base
+                        selected_ram = catalog_algorithm.ram_start or int(ram_base, 0)
+                        if not self._flash.load_flm(
+                            flm_path,
+                            algorithm_flash_base,
+                            _fmt_hex(selected_ram),
+                        ):
+                            raise DeviceError(f"FLM load failed: {flm_path}")
+                elif not (
+                    mcu_profile
+                    and resolved_key not in (None, "custom")
+                    and mcu_profile.get("flm_path")
+                ):
+                    raise DeviceError(
+                        f"Target {resolved_target!r} has no usable Flash algorithm"
+                    )
+            except (
+                DeviceError,
+                FlashAlgorithmError,
+                ImportError,
+                OSError,
+                RuntimeError,
             ):
-                raise DeviceError(
-                    f"Target {resolved_target!r} has no usable Flash algorithm"
-                )
+                # A verified profile remains a conservative compatibility
+                # fallback when a standalone package omits the catalog or a
+                # catalog payload cannot be deployed to the probe's volume.
+                # This is intentionally unavailable to custom/unknown targets.
+                if not (
+                    mcu_profile
+                    and resolved_key not in (None, "custom")
+                    and not explicit_custom
+                    and mcu_profile.get("flm_path")
+                ):
+                    raise
+                catalog_algorithm = None
+                catalog_selections = ()
+                catalog_fallback = True
 
         # Load the legacy profile FLM only when the unified catalog did not
         # resolve the exact target and firmware address range.
@@ -750,7 +783,12 @@ class Device:
             if flm_path and not flm_path.startswith("/"):
                 flm_path = "/" + flm_path
         if flm_path and catalog_algorithm is None:
-            if not self._flash.load_flm(flm_path, flash_base, ram_base):
+            legacy_flash_base = (
+                profile_flash_base
+                if resolved_key not in (None, "custom") and not explicit_custom
+                else flash_base
+            )
+            if not self._flash.load_flm(flm_path, legacy_flash_base, ram_base):
                 raise DeviceError(f"FLM load failed: {flm_path}")
         elif catalog_algorithm is None and (
             mcu_profile
@@ -825,6 +863,8 @@ class Device:
                 result["algorithm_names"] = [
                     selection.algorithm.file_name for selection in catalog_selections
                 ]
+        elif catalog_fallback:
+            result["algorithm_source"] = "legacy-profile-fallback"
         result["verified"] = False
         if verify:
             self._verify_firmware_readback(firmware, flash_base)
@@ -1379,7 +1419,14 @@ class Device:
                 self._dwarf_info, name
             )
         except KeyError:
-            return self._read_variable_from_map(name)
+            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+            if descriptor is None:
+                return self._read_variable_from_map(name)
+            from mklink.symbol_catalog import decode_descriptor
+
+            return decode_descriptor(
+                descriptor, self.read_memory(descriptor.address, descriptor.size),
+            )
         raw = self.read_memory(addr, size)
         return decode_value(raw, type_name, enum_values, known_size=size)
 
@@ -1406,7 +1453,16 @@ class Device:
                 "No AXF/ELF loaded. Pass axf= to connect() for variable access."
             )
         from mklink.watch import resolve_variable_path, TYPE_FORMATS
-        addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
+        try:
+            addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
+        except KeyError:
+            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
+            if descriptor is None:
+                raise
+            from mklink.symbol_catalog import encode_descriptor
+
+            self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
+            return
         key = type_name.strip().lower()
         fmt_entry = TYPE_FORMATS.get(key)
         if fmt_entry:

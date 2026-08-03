@@ -18,6 +18,7 @@ MAX_PAYLOAD_SIZE = 4 * 1024 * 1024
 # WAVEFORM payload is little-endian Float32 in sample-major order.
 WAVEFORM_SAMPLE_MAJOR_FLOAT32 = 0x01
 RTT_RAW_UTF8_LINES = 0x01
+RTT_TERMINAL_UTF8 = 0x02
 SUPERWATCH_SAMPLE_MAJOR_FLOAT32 = 0x01
 SUPERWATCH_METADATA_JSON = 0x02
 
@@ -392,6 +393,8 @@ def decode_systemview_events(payload: bytes) -> list[dict]:
             event["resource_id"] = context_id
         if kind == 9:
             event["prio"] = int(aux0)
+        elif kind == 21:
+            event["stack_base"] = int(aux0)
             event["stack_size"] = int(aux1)
         elif kind == 7:
             event["cause"] = int(aux0)

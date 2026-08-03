@@ -100,25 +100,32 @@ export class SystemViewEventRing<T> extends TickRingBase {
 /** Fixed-capacity struct-of-arrays task intervals with exact 64-bit ticks. */
 export class SystemViewIntervalRing extends TickRingBase {
   private readonly taskIds: Uint32Array
+  private readonly contextTypes: Uint8Array
   private readonly startTicks: BigUint64Array
   private readonly endTicks: BigUint64Array
 
   constructor(capacity: number) {
     super(capacity)
     this.taskIds = new Uint32Array(capacity)
+    this.contextTypes = new Uint8Array(capacity)
     this.startTicks = new BigUint64Array(capacity)
     this.endTicks = new BigUint64Array(capacity)
   }
 
-  append(taskId: number, startTick: bigint, endTick: bigint): void {
+  append(taskId: number, startTick: bigint, endTick: bigint, contextType = 1): void {
     const index = this.appendIndex()
     this.taskIds[index] = taskId
+    this.contextTypes[index] = contextType
     this.startTicks[index] = startTick
     this.endTicks[index] = endTick
   }
 
   taskIdAt(logicalIndex: number): number {
     return this.taskIds[this.physical(logicalIndex)]
+  }
+
+  contextTypeAt(logicalIndex: number): number {
+    return this.contextTypes[this.physical(logicalIndex)]
   }
 
   startTickAt(logicalIndex: number): bigint {

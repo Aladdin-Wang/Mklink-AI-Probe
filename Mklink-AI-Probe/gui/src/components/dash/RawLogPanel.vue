@@ -1,11 +1,11 @@
 <template>
   <div class="raw-log-panel" :class="{ collapsed }">
     <div class="log-header" @click="collapsed = !collapsed">
-      <span>原始日志 ({{ lines.length }})</span>
+      <span>{{ tr('原始日志', 'Raw Log') }} ({{ lines.length }})</span>
       <button class="toggle-btn" @click.stop="collapsed = !collapsed">
         {{ collapsed ? '▸' : '▾' }}
       </button>
-      <button class="clear-btn" @click.stop="$emit('clear')">清除</button>
+      <button class="clear-btn" @click.stop="$emit('clear')">{{ tr('清除', 'Clear') }}</button>
     </div>
     <div v-if="!collapsed" class="log-body" ref="logBody">
       <div v-for="(line, i) in visibleLines" :key="i" class="log-line">{{ line }}</div>
@@ -15,6 +15,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   lines: string[]

@@ -75,7 +75,10 @@ def _production_probe_provider() -> Sequence[object]:
     return DebugProbeAggregator.get_all_connected_probes()
 
 
-def create_default_online_flash_services(resource_manager: object) -> OnlineFlashServices:
+def create_default_online_flash_services(
+    resource_manager: object,
+    prepare_connect: Optional[Callable[[JobRequest], None]] = None,
+) -> OnlineFlashServices:
     """Build lazy production services without enumerating USB or accessing the network."""
     from mklink.cmsis_dap.backend import RoutingFlashBackend
     from mklink.cmsis_dap.custom_flm import CustomFlmCatalog
@@ -95,6 +98,7 @@ def create_default_online_flash_services(resource_manager: object) -> OnlineFlas
             RoutingFlashBackend,
             resource_manager,
             inspector.validate_unchanged,
+            prepare_connect=prepare_connect,
         ),
         probe_provider=_production_probe_provider,
         target_memory_provider=lambda part_number: default_target_memory_provider(

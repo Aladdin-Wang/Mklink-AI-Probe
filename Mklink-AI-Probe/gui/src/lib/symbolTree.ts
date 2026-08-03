@@ -1,13 +1,15 @@
-import type { SymbolContainerDescriptor, SymbolDescriptor } from '../types/mklink'
+import type { SymbolBrowseNode, SymbolContainerDescriptor, SymbolDescriptor } from '../types/mklink'
 
 export interface SymbolTreeNode {
   key: string
   label: string
-  kind: 'branch' | 'leaf' | 'container'
+  kind: 'branch' | 'leaf' | 'container' | 'range'
   descriptor: SymbolDescriptor | null
   container: SymbolContainerDescriptor | null
+  browse: SymbolBrowseNode | null
   children: SymbolTreeNode[]
   leafCount: number
+  childCount: number | null
 }
 
 export interface VisibleSymbolRow {
@@ -50,9 +52,11 @@ function createNode(
     kind: descriptor ? 'leaf' : container ? 'container' : 'branch',
     descriptor,
     container,
+    browse: null,
     children: [],
     childIndex: new Map(),
     leafCount: descriptor ? 1 : 0,
+    childCount: null,
   }
 }
 
@@ -64,11 +68,36 @@ function finalizeNode(node: MutableSymbolTreeNode): SymbolTreeNode {
     kind: node.kind,
     descriptor: node.descriptor,
     container: node.container,
+    browse: node.browse,
     children,
     leafCount: node.kind === 'leaf'
       ? 1
-      : children.reduce((total, child) => total + child.leafCount, 0),
+        : children.reduce((total, child) => total + child.leafCount, 0),
+    childCount: node.childCount,
   }
+}
+
+export function buildBrowseTree(
+  roots: readonly SymbolBrowseNode[],
+  childPages: ReadonlyMap<string, readonly SymbolBrowseNode[]>,
+): SymbolTreeNode[] {
+  function convert(entry: SymbolBrowseNode): SymbolTreeNode {
+    const children = (childPages.get(entry.key) ?? []).map(convert)
+    return {
+      key: entry.key,
+      label: entry.label,
+      kind: entry.kind,
+      descriptor: entry.descriptor,
+      container: entry.container,
+      browse: entry,
+      children,
+      leafCount: entry.kind === 'leaf'
+        ? 1
+        : children.reduce((total, child) => total + child.leafCount, 0),
+      childCount: entry.child_count,
+    }
+  }
+  return roots.map(convert)
 }
 
 export function buildSymbolTree(
@@ -156,7 +185,7 @@ export function visibleSymbolRows(
           || container.type_name.toLocaleLowerCase().includes(query)),
       )
     } else {
-      result = node.children.some(isVisible)
+      result = query ? node.children.some(isVisible) : true
     }
     visible.set(node.key, result)
     return result
@@ -167,7 +196,7 @@ export function visibleSymbolRows(
     if (cached !== undefined) return cached
     const count = node.kind === 'leaf'
       ? Number(options.selected.has(node.key))
-      : node.kind === 'branch'
+      : node.kind === 'branch' || node.kind === 'range'
         ? node.children.reduce((total, child) => total + selectedLeafCount(child), 0)
         : 0
     selectedCounts.set(node.key, count)
@@ -177,7 +206,8 @@ export function visibleSymbolRows(
   const rows: VisibleSymbolRow[] = []
   function appendVisible(node: SymbolTreeNode, depth: number): void {
     if (!isVisible(node)) return
-    const expanded = node.kind === 'branch' && (forceExpanded || options.expanded.has(node.key))
+    const expandable = node.kind === 'branch' || node.kind === 'range'
+    const expanded = expandable && (forceExpanded || options.expanded.has(node.key))
     rows.push({
       node,
       depth,
@@ -195,7 +225,7 @@ export function visibleSymbolRows(
 export function collectBranchKeys(roots: readonly SymbolTreeNode[]): Set<string> {
   const keys = new Set<string>()
   function visit(node: SymbolTreeNode): void {
-    if (node.kind !== 'branch') return
+    if (node.kind !== 'branch' && node.kind !== 'range') return
     keys.add(node.key)
     node.children.forEach(visit)
   }

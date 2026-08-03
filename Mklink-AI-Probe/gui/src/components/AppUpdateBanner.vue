@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CircleArrowUp, Download, RefreshCw, TriangleAlert } from '@lucide/vue'
 import type { AppUpdateState } from '../composables/useAppUpdater'
+import { tr } from '../composables/useLanguage'
 
 defineProps<{
   state: AppUpdateState
@@ -29,16 +30,16 @@ defineEmits<{
     <RefreshCw v-else-if="state === 'installing'" :size="15" class="spin" aria-hidden="true" />
     <CircleArrowUp v-else :size="15" aria-hidden="true" />
 
-    <span v-if="state === 'downloading'">正在下载 v{{ version }}</span>
-    <span v-else-if="state === 'ready'">v{{ version }} 已下载完成</span>
-    <span v-else-if="state === 'installing'">正在安装更新并重新启动</span>
-    <span v-else>更新失败：{{ error }}</span>
+    <span v-if="state === 'downloading'">{{ tr('正在下载', 'Downloading') }} v{{ version }}</span>
+    <span v-else-if="state === 'ready'">{{ tr(`v${version} 已下载完成`, `v${version} is ready`) }}</span>
+    <span v-else-if="state === 'installing'">{{ tr('正在安装更新并重新启动', 'Installing update and restarting') }}</span>
+    <span v-else>{{ tr('更新失败：', 'Update failed: ') }}{{ error }}</span>
 
     <progress
       v-if="state === 'downloading'"
       :value="progress ?? undefined"
       max="1"
-      aria-label="软件更新下载进度"
+      :aria-label="tr('软件更新下载进度', 'Software update download progress')"
     />
     <div v-if="state === 'ready'" class="update-actions">
       <button
@@ -48,14 +49,14 @@ defineEmits<{
         @click="$emit('install')"
       >
         <CircleArrowUp :size="13" aria-hidden="true" />
-        立即安装
+        {{ tr('立即安装', 'Install Now') }}
       </button>
       <button
         class="btn btn-sm"
         data-testid="later-update"
         type="button"
         @click="$emit('dismiss')"
-      >稍后</button>
+      >{{ tr('稍后', 'Later') }}</button>
     </div>
     <button
       v-else-if="state === 'error'"
@@ -65,7 +66,7 @@ defineEmits<{
       @click="$emit('retry')"
     >
       <RefreshCw :size="13" aria-hidden="true" />
-      重试
+      {{ tr('重试', 'Retry') }}
     </button>
   </div>
 </template>

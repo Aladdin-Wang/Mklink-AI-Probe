@@ -1,52 +1,52 @@
 <template>
   <div class="rtt-transmit-wrapper">
-    <div data-testid="rtt-transmit-bar" class="rtt-transmit-bar">
+    <div :data-testid="testId('transmit-bar')" class="rtt-transmit-bar">
       <button
-        data-testid="rtt-format" class="format-toggle" type="button"
-        :title="mode === 'text' ? '切换到 HEX 发送' : '切换到字符串发送'"
+        :data-testid="testId('format')" class="format-toggle" type="button"
+        :title="mode === 'text' ? tr('切换到 HEX 发送', 'Switch to HEX mode') : tr('切换到字符串发送', 'Switch to text mode')"
         :disabled="sending"
         @click="toggleMode"
       >{{ mode === 'text' ? 'Abc' : 'Hex' }}</button>
-      <ArrowRight data-testid="rtt-direction" class="direction-icon" :size="16" aria-hidden="true" />
+      <ArrowRight :data-testid="testId('direction')" class="direction-icon" :size="16" aria-hidden="true" />
       <input
-        v-model="input" data-testid="rtt-input" class="transmit-input" type="text"
-        :placeholder="mode === 'text' ? '输入要发送的字符串' : '输入十六进制字节，例如 AA 55'"
+        v-model="input" :data-testid="testId('input')" class="transmit-input" type="text"
+        :placeholder="mode === 'text' ? tr('输入要发送的字符串', 'Enter text to send') : tr('输入十六进制字节，例如 AA 55', 'Enter hex bytes, e.g. AA 55')"
         :disabled="sending" autocomplete="off" spellcheck="false" @keydown="onKeydown"
       >
       <button
-        data-testid="rtt-clear" class="icon-button" type="button" title="清空输入"
+        :data-testid="testId('clear')" class="icon-button" type="button" :title="tr('清空输入', 'Clear input')"
         :disabled="sending || !input" @click="clearInput"
       ><Trash2 :size="16" /></button>
       <div class="history-control">
         <button
-          data-testid="rtt-history" class="history-button" type="button" title="发送历史"
+          :data-testid="testId('history')" class="history-button" type="button" :title="tr('发送历史', 'Send history')"
           :aria-expanded="historyOpen" :disabled="sending" @click="historyOpen = !historyOpen"
         ><History :size="16" /></button>
         <div v-if="historyOpen" class="history-menu" @click.stop>
           <button
             v-for="(entry, index) in settings.sendHistory" :key="`${entry.timestamp}-${index}`"
-            :data-testid="`rtt-history-item-${index}`" type="button" @click="restoreHistory(entry)"
+            :data-testid="`${testId('history-item')}-${index}`" type="button" @click="restoreHistory(entry)"
           >
-            <span>{{ entry.text || '(空)' }}</span>
+            <span>{{ entry.text || tr('(空)', '(empty)') }}</span>
             <small>{{ entry.mode === 'text' ? 'Abc' : 'Hex' }} {{ endingLabel(entry.lineEnding) }}</small>
           </button>
-          <span v-if="!settings.sendHistory.length" class="history-empty">暂无历史</span>
+          <span v-if="!settings.sendHistory.length" class="history-empty">{{ tr('暂无历史', 'No history') }}</span>
         </div>
       </div>
       <select
-        v-model="lineEnding" data-testid="rtt-ending" class="ending-select" title="发送尾端"
+        v-model="lineEnding" :data-testid="testId('ending')" class="ending-select" :title="tr('发送尾端', 'Line ending')"
         :disabled="sending"
         @change="updateSettings()"
       >
-        <option :value="''">无</option>
+        <option :value="''">{{ tr('无', 'None') }}</option>
         <option :value="'\r'">\r</option>
         <option :value="'\n'">\n</option>
         <option :value="'\r\n'">\r\n</option>
       </select>
       <button
-        data-testid="rtt-send" class="send-button" type="button" title="发送"
+        :data-testid="testId('send')" class="send-button" type="button" :title="tr('发送', 'Send')"
         :disabled="!canSend" @click="submit"
-      ><Send :size="16" /><span>发送</span></button>
+      ><Send :size="16" /><span>{{ tr('发送', 'Send') }}</span></button>
     </div>
     <div v-if="error" class="transmit-error" role="alert">{{ error }}</div>
   </div>
@@ -63,11 +63,13 @@ import {
   type RttTransmitMode,
 } from '../../lib/desktopSettings'
 import { encodeRttTransmit } from '../../lib/rttTransmit'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   enabled: boolean
   settings: DesktopSettings
   send: (payload: Uint8Array) => Promise<void>
+  idPrefix?: string
 }>()
 const emit = defineEmits<{ 'settings-change': [settings: DesktopSettings] }>()
 
@@ -87,6 +89,10 @@ const canSend = computed(() => (
   && !sending.value
   && (hasMainPayload.value || lineEnding.value.length > 0)
 ))
+
+function testId(suffix: string): string {
+  return `${props.idPrefix || 'rtt'}-${suffix}`
+}
 
 watch(() => props.settings, settings => {
   mode.value = settings.transmitMode
@@ -114,7 +120,7 @@ function toggleMode(): void {
 }
 
 function endingLabel(value: RttLineEnding): string {
-  if (value === '') return '无'
+  if (value === '') return tr('无', 'None')
   return value.replace('\r', '\\r').replace('\n', '\\n')
 }
 

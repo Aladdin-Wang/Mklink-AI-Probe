@@ -5,6 +5,7 @@ import { useMklinkApi } from '../composables/useMklinkApi'
 import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
 import { useSymbolCatalog } from '../composables/useSymbolCatalog'
+import { tr } from '../composables/useLanguage'
 import {
   isSameFileSourcePath,
   isSymbolFilePath,
@@ -66,7 +67,7 @@ async function refreshPorts() {
       value: port.device,
     }))
   } catch (error: any) {
-    toast.error('读取串口失败: ' + error.message)
+    toast.error(tr('读取串口失败: ', 'Failed to read serial ports: ') + error.message)
   } finally {
     portsLoading.value = false
   }
@@ -81,7 +82,7 @@ async function autoDiscover() {
       await saveLocalConfig()
     }
   } catch (error: any) {
-    toast.error('自动检测失败: ' + error.message)
+    toast.error(tr('自动检测失败: ', 'Auto-detection failed: ') + error.message)
   } finally {
     portsLoading.value = false
   }
@@ -92,7 +93,7 @@ async function loadConfig() {
     config.value = await getConfig()
     localPort.value = config.value.com_port || ''
   } catch (error: any) {
-    toast.error('读取配置失败: ' + error.message)
+    toast.error(tr('读取配置失败: ', 'Failed to load configuration: ') + error.message)
   }
 }
 
@@ -101,7 +102,7 @@ async function saveLocalConfig() {
   if (rawClock) {
     const clock = Number(rawClock)
     if (!Number.isInteger(clock) || clock < 1 || clock > 10_000_000) {
-      toast.error('SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数')
+      toast.error(tr('SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数', 'SWD clock must be an integer from 1 Hz to 10 MHz'))
       return
     }
   }
@@ -116,7 +117,7 @@ async function saveLocalConfig() {
     localSaveState.value = 'saved'
   } catch (error: any) {
     localSaveState.value = 'idle'
-    toast.error('保存配置失败: ' + error.message)
+    toast.error(tr('保存配置失败: ', 'Failed to save configuration: ') + error.message)
   } finally {
     savingLocal.value = false
   }
@@ -125,14 +126,19 @@ async function saveLocalConfig() {
 async function connectLocal() {
   connecting.value = true
   try {
-    await connectDevice({
+    const result = await connectDevice({
       port: localPort.value || config.value.com_port || undefined,
       axf: isSymbolFilePath(settings.value.symbolPath)
         ? settings.value.symbolPath.trim()
         : undefined,
     })
+    const connectedPort = result.port || deviceStatus.value.port
+    if (connectedPort) {
+      localPort.value = connectedPort
+      config.value = { ...config.value, com_port: connectedPort }
+    }
   } catch (error: any) {
-    toast.error('连接失败: ' + error.message)
+    toast.error(tr('连接失败: ', 'Connection failed: ') + error.message)
   } finally {
     connecting.value = false
   }
@@ -143,7 +149,7 @@ async function disconnectLocal() {
   try {
     await disconnectDevice()
   } catch (error: any) {
-    toast.error('断开失败: ' + error.message)
+    toast.error(tr('断开失败: ', 'Disconnect failed: ') + error.message)
   } finally {
     disconnecting.value = false
   }
@@ -170,7 +176,7 @@ async function browseSymbolFile() {
     const source = await selectedFilePath('symbol', await pickSymbolFile())
     if (source) updateFilePath('symbol', source.path, source.displayPath)
   } catch (error: any) {
-    toast.error('加载 AXF / ELF 文件失败: ' + error.message)
+    toast.error(tr('加载 AXF / ELF 文件失败: ', 'Failed to load AXF / ELF file: ') + error.message)
   } finally {
     browsingFiles.value = false
   }
@@ -182,7 +188,7 @@ async function browseMapFile() {
     const source = await selectedFilePath('map', await pickMapFile())
     if (source) updateFilePath('map', source.path, source.displayPath)
   } catch (error: any) {
-    toast.error('加载 MAP 文件失败: ' + error.message)
+    toast.error(tr('加载 MAP 文件失败: ', 'Failed to load MAP file: ') + error.message)
   } finally {
     browsingFiles.value = false
   }
@@ -192,7 +198,7 @@ function persistFilePaths() {
   try {
     saveDesktopSettings(window.localStorage, settings.value)
   } catch (error: any) {
-    toast.error('保存文件路径失败: ' + error.message)
+    toast.error(tr('保存文件路径失败: ', 'Failed to save file paths: ') + error.message)
   }
 }
 
@@ -215,21 +221,21 @@ async function parseSymbols() {
     const result = await parseAxf(requestedPath) as AxlStatus
     if (result.loaded) {
       if (!isSameFileSourcePath(requestedPath, result.axf_path)) {
-        toast.error(`AXF 解析失败: 后端仍在使用 ${result.axf_path || '未知文件'}`)
+        toast.error(tr(`AXF 解析失败: 后端仍在使用 ${result.axf_path || '未知文件'}`, `AXF parsing failed: backend is still using ${result.axf_path || 'an unknown file'}`))
         return
       }
       try {
         await symbolCatalog.ensureLoaded(true)
       } catch (error: any) {
-        toast.error('符号目录刷新失败: ' + error.message)
+        toast.error(tr('符号目录刷新失败: ', 'Failed to refresh symbol catalog: ') + error.message)
         return
       }
-      toast.success(`AXF 解析成功: ${result.variable_count || 0} 个固定可读变量`)
+      toast.success(tr(`AXF 解析成功: ${result.variable_count || 0} 个固定可读变量`, `AXF parsed: ${result.variable_count || 0} fixed readable variables`))
     } else {
-      toast.error('AXF 解析失败')
+      toast.error(tr('AXF 解析失败', 'AXF parsing failed'))
     }
   } catch (error: any) {
-    toast.error('AXF 解析失败: ' + error.message)
+    toast.error(tr('AXF 解析失败: ', 'AXF parsing failed: ') + error.message)
   } finally {
     parsingSymbols.value = false
   }
@@ -278,16 +284,16 @@ onMounted(async () => {
         aria-labelledby="local-device-title"
       >
         <header class="panel-header">
-          <h2 id="local-device-title">本地设备</h2>
+          <h2 id="local-device-title">{{ tr('本地设备', 'Local Device') }}</h2>
           <span :class="['badge', deviceStatus.connected ? 'badge-ok' : 'badge-err']">
-            {{ deviceStatus.connected ? '已连接' : '未连接' }}
+            {{ deviceStatus.connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
           </span>
         </header>
 
         <div class="form-row">
-          <label class="form-label" for="local-port">串口</label>
+          <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
           <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" @change="saveLocalConfig">
-            <option value="">自动检测</option>
+            <option value="">{{ tr('自动检测', 'Auto-detect') }}</option>
             <option v-for="port in portOptions" :key="port.value" :value="port.value">
               {{ port.label }}
             </option>
@@ -295,7 +301,7 @@ onMounted(async () => {
           <button
             class="btn btn-sm icon-button"
             type="button"
-            title="刷新串口"
+            :title="tr('刷新串口', 'Refresh serial ports')"
             data-testid="refresh-ports"
             :disabled="portsLoading"
             @click="refreshPorts"
@@ -310,12 +316,12 @@ onMounted(async () => {
             @click="autoDiscover"
           >
             <Search :size="14" aria-hidden="true" />
-            自动
+            {{ tr('自动', 'Auto') }}
           </button>
         </div>
 
         <div class="form-row">
-          <label class="form-label" for="swd-clock">SWD 时钟</label>
+          <label class="form-label" for="swd-clock">{{ tr('SWD 时钟', 'SWD Clock') }}</label>
           <input
             id="swd-clock"
             v-model="config.swd_clock"
@@ -325,14 +331,14 @@ onMounted(async () => {
             step="1"
             class="form-input"
             data-testid="swd-clock"
-            placeholder="如 1000000"
+            :placeholder="tr('如 1000000', 'e.g. 1000000')"
             @change="saveLocalConfig"
           />
         </div>
 
         <div class="local-actions">
           <span class="auto-save-state" data-testid="local-auto-save">
-            {{ localSaveState === 'saving' ? '自动保存中...' : localSaveState === 'saved' ? '已自动保存' : '修改后自动保存' }}
+            {{ localSaveState === 'saving' ? tr('自动保存中...', 'Saving...') : localSaveState === 'saved' ? tr('已自动保存', 'Saved') : tr('修改后自动保存', 'Changes save automatically') }}
           </span>
           <button
             class="btn btn-primary icon-command"
@@ -342,7 +348,7 @@ onMounted(async () => {
             @click="connectLocal"
           >
             <Usb :size="15" aria-hidden="true" />
-            {{ connecting ? '连接中...' : '连接设备' }}
+            {{ connecting ? tr('连接中...', 'Connecting...') : tr('连接设备', 'Connect Device') }}
           </button>
           <button
             class="btn icon-command"
@@ -352,7 +358,7 @@ onMounted(async () => {
             @click="disconnectLocal"
           >
             <Unplug :size="15" aria-hidden="true" />
-            {{ disconnecting ? '断开中...' : '断开' }}
+            {{ disconnecting ? tr('断开中...', 'Disconnecting...') : tr('断开', 'Disconnect') }}
           </button>
         </div>
 
@@ -377,42 +383,42 @@ onMounted(async () => {
 
       <section v-else-if="activeSection === 'remote'" class="card remote-panel">
         <header class="panel-header">
-          <h2>远程连接</h2>
+          <h2>{{ tr('远程连接', 'Remote Connection') }}</h2>
           <span :class="['badge', wsConnected ? 'badge-ok' : 'badge-err']">
-            {{ wsConnected ? '已连接' : '未连接' }}
+            {{ wsConnected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
           </span>
         </header>
         <div class="form-row">
-          <label class="form-label" for="remote-url">服务器地址</label>
+          <label class="form-label" for="remote-url">{{ tr('服务器地址', 'Server Address') }}</label>
           <input id="remote-url" v-model="remoteUrl" class="form-input" data-testid="remote-url" placeholder="ws://192.168.1.100:8765" />
         </div>
         <div class="form-row">
-          <label class="form-label" for="remote-token">认证 Token</label>
-          <input id="remote-token" v-model="remoteToken" class="form-input" data-testid="remote-token" type="password" placeholder="可选" />
+          <label class="form-label" for="remote-token">{{ tr('认证 Token', 'Authentication Token') }}</label>
+          <input id="remote-token" v-model="remoteToken" class="form-input" data-testid="remote-token" type="password" :placeholder="tr('可选', 'Optional')" />
         </div>
         <div class="panel-actions">
-          <button class="btn btn-primary" type="button" data-testid="connect-remote" :disabled="wsConnecting" @click="connectRemote">连接</button>
-          <button class="btn" type="button" data-testid="disconnect-remote" :disabled="!wsConnected" @click="wsDisconnect">断开</button>
+          <button class="btn btn-primary" type="button" data-testid="connect-remote" :disabled="wsConnecting" @click="connectRemote">{{ tr('连接', 'Connect') }}</button>
+          <button class="btn" type="button" data-testid="disconnect-remote" :disabled="!wsConnected" @click="wsDisconnect">{{ tr('断开', 'Disconnect') }}</button>
         </div>
       </section>
 
       <section v-else class="card serve-panel">
-        <header class="panel-header"><h2>启动服务</h2></header>
-        <div class="alert alert-info">在本地启动 MKLink 远程服务，供其他客户端连接。</div>
+        <header class="panel-header"><h2>{{ tr('启动服务', 'Start Service') }}</h2></header>
+        <div class="alert alert-info">{{ tr('在本地启动 MKLink 远程服务，供其他客户端连接。', 'Start the MKLink remote service locally for other clients.') }}</div>
         <div class="form-row">
-          <label class="form-label" for="serve-host">绑定地址</label>
+          <label class="form-label" for="serve-host">{{ tr('绑定地址', 'Bind Address') }}</label>
           <input id="serve-host" v-model="serveConfig.host" class="form-input" data-testid="serve-host" />
         </div>
         <div class="form-row">
-          <label class="form-label" for="serve-port">端口</label>
+          <label class="form-label" for="serve-port">{{ tr('端口', 'Port') }}</label>
           <input id="serve-port" v-model.number="serveConfig.port" class="form-input" data-testid="serve-port" type="number" />
         </div>
         <div class="form-row">
           <label class="form-label" for="serve-token">Token</label>
-          <input id="serve-token" v-model="serveConfig.token" class="form-input" data-testid="serve-token" type="password" placeholder="可选" />
+          <input id="serve-token" v-model="serveConfig.token" class="form-input" data-testid="serve-token" type="password" :placeholder="tr('可选', 'Optional')" />
         </div>
         <div class="panel-actions">
-          <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">启动服务</button>
+          <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">{{ tr('启动服务', 'Start Service') }}</button>
         </div>
       </section>
     </main>
@@ -423,9 +429,9 @@ onMounted(async () => {
       data-testid="firmware-warning"
     >
       <TriangleAlert :size="18" aria-hidden="true" />
-      <span>探针固件需要升级</span>
-      <button class="btn btn-sm" type="button" @click="showFirmwareModal = true">查看升级步骤</button>
-      <button class="btn btn-sm" type="button" @click="recheckFirmware(true)">重新检测</button>
+      <span>{{ tr('探针固件需要升级', 'Probe firmware update required') }}</span>
+      <button class="btn btn-sm" type="button" @click="showFirmwareModal = true">{{ tr('查看升级步骤', 'View Update Steps') }}</button>
+      <button class="btn btn-sm" type="button" @click="recheckFirmware(true)">{{ tr('重新检测', 'Check Again') }}</button>
     </div>
 
     <FirmwareUpdateModal

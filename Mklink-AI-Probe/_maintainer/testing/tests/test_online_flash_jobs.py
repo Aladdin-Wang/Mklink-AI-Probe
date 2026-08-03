@@ -67,6 +67,80 @@ def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     manager.shutdown()
 
 
+def test_hpm_prepare_connect_runs_after_resource_preemption_before_backend_connect():
+    backend = FakeBackend()
+    resources = ResourceManager()
+    resources.acquire_many(
+        [ResourceGroup.TARGET_DEBUG, ResourceGroup.MKLINK_BRIDGE],
+        "user:dashboard:superwatch",
+    )
+    order = []
+    resources.on_preempt(
+        lambda lease, _new_owner: (
+            order.append("preempt"), resources.release(lease.owner)
+        )
+    )
+
+    def prepare(request):
+        assert request.target_part == "HPM5301xEGx"
+        assert backend.calls == []
+        assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG).owner.startswith(
+            "user:online-flash:"
+        )
+        assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE).owner.startswith(
+            "user:online-flash:"
+        )
+        order.append("prepare")
+
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        resources,
+        prepare_connect=prepare,
+    )
+    request = JobRequest(
+        actions=("connect", "disconnect"),
+        probe_id="probe",
+        target_part="HPM5301xEGx",
+        board="hpm5301evklite",
+    )
+
+    result = manager.wait(manager.start(request), timeout=2)
+    manager.shutdown()
+
+    assert result.state is JobState.SUCCEEDED
+    assert order == ["preempt", "prepare"]
+    assert [name for name, _value in backend.calls] == ["connect", "disconnect"]
+
+
+def test_prepare_connect_failure_is_connect_fail_and_never_opens_backend():
+    backend = FakeBackend()
+    resources = ResourceManager()
+
+    def fail_prepare(_request):
+        raise RuntimeError("shared device close failed")
+
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        resources,
+        prepare_connect=fail_prepare,
+    )
+    result = manager.wait(
+        manager.start(JobRequest(actions=("connect", "disconnect"))), timeout=2
+    )
+    events = manager.events(result.job_id)
+    manager.shutdown()
+
+    assert result.state is JobState.FAILED
+    assert result.error_code == FlashErrorCode.CONNECT_FAIL.value
+    assert "shared device close failed" in result.error_message
+    assert backend.calls == []
+    assert resources.get_status() == {}
+    assert [(event.event, event.state) for event in events[-2:]] == [
+        ("error", JobState.FAILED),
+        ("state", JobState.FAILED),
+    ]
+
+
 class BlockingBackend(FakeBackend):
     def __init__(self):
         super().__init__()

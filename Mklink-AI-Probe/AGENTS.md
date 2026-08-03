@@ -44,6 +44,11 @@ If repository memory is stale, verify reality and correct the memory.
 ## Authority
 
 - Make the smallest change that fully solves the developer's actual need.
+- Before changing a product, interaction, architecture, workflow, or testing
+  strategy, present the observed problem, viable options, tradeoffs, recommended
+  choice, and concrete acceptance criteria to the maintainer. Do not implement
+  the strategy until the maintainer explicitly confirms it. Once a strategy is
+  confirmed, root-cause fixes that preserve it may proceed without asking again.
 - Ask only when ambiguity materially changes the result or requires new
   authority; otherwise use a small reversible assumption.
 - Never discard unrelated user changes.

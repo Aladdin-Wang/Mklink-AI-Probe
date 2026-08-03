@@ -498,9 +498,9 @@ def resolve_variable_names(
         return variables
 
     try:
-        from mklink.elf_backend import list_elf_symbols
+        from mklink.elf_backend import list_writable_object_symbols
 
-        normalized = list_elf_symbols(
+        normalized = list_writable_object_symbols(
             elf_path, backend=backend, project_root=project_root
         )
     except Exception:
@@ -513,7 +513,6 @@ def resolve_variable_names(
             "size": symbol.size,
         }
         for symbol in normalized
-        if symbol.kind == "object" and 0x20000000 <= symbol.address < 0x60000000
     ]
     if not symbols:
         return variables

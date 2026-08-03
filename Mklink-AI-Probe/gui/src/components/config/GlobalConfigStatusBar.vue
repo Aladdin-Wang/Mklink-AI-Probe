@@ -2,7 +2,7 @@
   <div class="global-status-bar">
     <div class="status-item">
       <span :class="['status-dot', connected ? 'dot-ok' : 'dot-err']"></span>
-      <span class="status-text">{{ connected ? `已连接 ${mcu || ''}` : '未连接' }}</span>
+      <span class="status-text">{{ connected ? `${tr('已连接', 'Connected')} ${mcu || ''}` : tr('未连接', 'Disconnected') }}</span>
     </div>
     <div class="status-divider"></div>
     <div class="status-item">
@@ -11,16 +11,16 @@
       <span v-else-if="warningCount" class="status-icon icon-warn">!</span>
       <span v-else class="status-icon icon-dim">—</span>
       <span class="status-text">
-        <template v-if="!configStatus">未加载</template>
-        <template v-else-if="errorCount">{{ errorCount }} 错误</template>
-        <template v-else-if="warningCount">{{ warningCount }} 警告</template>
-        <template v-else>配置正常</template>
+        <template v-if="!configStatus">{{ tr('未加载', 'Not loaded') }}</template>
+        <template v-else-if="errorCount">{{ errorCount }} {{ tr('错误', 'errors') }}</template>
+        <template v-else-if="warningCount">{{ warningCount }} {{ tr('警告', 'warnings') }}</template>
+        <template v-else>{{ tr('配置正常', 'Configuration valid') }}</template>
       </span>
     </div>
     <div class="status-divider"></div>
     <div class="status-item">
       <span :class="['status-dot', microkeenAvailable ? 'dot-ok' : 'dot-dim']"></span>
-      <span class="status-text">{{ microkeenAvailable ? 'MICROKEEN 可用' : 'MICROKEEN 未找到' }}</span>
+      <span class="status-text">{{ microkeenAvailable ? tr('MICROKEEN 可用', 'MICROKEEN available') : tr('MICROKEEN 未找到', 'MICROKEEN not found') }}</span>
     </div>
   </div>
 </template>
@@ -28,6 +28,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ConfigStatus, DeviceStatus, MicrokeenInfo } from '../../types/mklink'
+import { tr } from '../../composables/useLanguage'
 
 const props = defineProps<{
   deviceStatus: DeviceStatus

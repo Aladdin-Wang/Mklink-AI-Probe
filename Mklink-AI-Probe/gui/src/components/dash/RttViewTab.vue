@@ -1,81 +1,149 @@
 <template>
   <div class="rtt-view-tab">
-    <div v-if="!deviceConnected" class="alert alert-warn">请先连接设备。</div>
-    <template v-else>
+    <SetupHint
+      v-if="!deviceConnected"
+      kind="device"
+      :message="tr('RTT 实时采集需要连接 MKLink 设备。', 'Live RTT capture requires an MKLink device connection.')"
+      :primary-label="tr('连接设备', 'Connect Device')"
+      :secondary-label="!hasAddressFileSource ? tr('加载 AXF / ELF', 'Load AXF / ELF') : ''"
+      :busy="connecting || loadingSymbols"
+      @primary="quickConnect"
+      @secondary="loadSymbolFile"
+    />
       <div class="rtt-address-row">
-        <label for="rtt-address">RTT 地址</label>
+        <label for="rtt-address">{{ tr('RTT 地址', 'RTT Address') }}</label>
         <input
           id="rtt-address" v-model="rttAddress" data-testid="rtt-address"
           type="text" spellcheck="false" placeholder="0x20000000" @input="onAddressInput"
         >
         <button data-testid="rtt-search" type="button" class="btn-search" @click="searchRttAddress">
           <Search :size="15" />
-          <span>{{ searching ? '搜索中' : '自动搜索' }}</span>
+          <span>{{ searching ? tr('搜索中', 'Searching') : tr('自动搜索', 'Auto Search') }}</span>
         </button>
         <span v-if="addressError" class="address-error" role="alert">{{ addressError }}</span>
-        <span v-else-if="addressSource" class="address-source">来源: {{ addressSource }}</span>
-      </div>
-      <div class="rtt-view-toolbar">
-        <ControlToolbar
-          :state="toolbarState" :error="runtimeError || dash.error.value"
-          :device-connected="deviceConnected && !searching"
-          @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
-        />
-        <label class="encoding-control" for="rtt-encoding">
-          <span>编码</span>
-          <select
-            id="rtt-encoding" v-model="rttEncoding" data-testid="rtt-encoding"
-            :disabled="starting || stopping" @change="onEncodingChange"
-          >
-            <option value="utf-8">UTF-8</option>
-            <option value="gb2312">GB2312</option>
-            <option value="gbk">GBK</option>
-            <option value="gb18030">GB18030</option>
-            <option value="big5">Big5</option>
-          </select>
-        </label>
-        <span class="line-count">{{ retainedCount }} 行</span>
-        <span class="stream-health">
-          buffer {{ binary.telemetry.value?.bufferedSamples ?? 0 }} ·
-          drops {{ binary.telemetry.value?.transportDroppedBatches ?? 0 }}/{{ binary.telemetry.value?.backendDroppedBatches ?? 0 }}
+        <span v-else-if="addressSource" class="address-source" :title="addressSource">
+          {{ tr('来源:', 'Source:') }} {{ addressSource }}
         </span>
-        <button
-          data-testid="rtt-chart-toggle" type="button" class="btn-chart-toggle"
-          :aria-pressed="chartEnabled" @click="toggleChart"
-        >
-          <EyeOff v-if="chartEnabled" :size="14" />
-          <Eye v-else :size="14" />
-          <span>{{ chartEnabled ? '关闭曲线' : '打开曲线' }}</span>
-        </button>
-        <button class="btn-clear" @click="clearLogs">清除</button>
       </div>
-      <div class="rtt-format-note">
-        <Info :size="14" />
-        <span>数据格式：每行输出同一组数值，例如 <code>temp=25.3,speed=1200</code> 或 <code>25.3,1200</code>。</span>
+      <SetupHint
+        v-if="deviceConnected && !hasAddressFileSource"
+        kind="symbols"
+        :message="tr('自动搜索 RTT 地址时，加载 AXF / ELF 可直接定位 _SEGGER_RTT。', 'Load AXF / ELF so Auto Search can locate _SEGGER_RTT directly.')"
+        :primary-label="tr('加载 AXF / ELF', 'Load AXF / ELF')"
+        :busy="loadingSymbols"
+        @primary="loadSymbolFile"
+      />
+      <div class="rtt-view-toolbar">
+        <div class="rtt-primary-tools">
+          <ControlToolbar
+            :state="toolbarState" :error="runtimeError || dash.error.value"
+            :device-connected="deviceConnected && !searching"
+            @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
+          />
+          <label class="encoding-control" for="rtt-encoding">
+            <span>{{ tr('编码', 'Encoding') }}</span>
+            <select
+              id="rtt-encoding" v-model="rttEncoding" data-testid="rtt-encoding"
+              :disabled="starting || stopping" @change="onEncodingChange"
+            >
+              <option value="utf-8">UTF-8</option>
+              <option value="gb2312">GB2312</option>
+              <option value="gbk">GBK</option>
+              <option value="gb18030">GB18030</option>
+              <option value="big5">Big5</option>
+            </select>
+          </label>
+          <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
+            <button
+              data-testid="rtt-log-mode" type="button" :class="{ active: viewMode === 'log' }"
+              :aria-pressed="viewMode === 'log'" @click="setViewMode('log')"
+            >
+              <ScrollText :size="14" aria-hidden="true" />
+              <span>{{ tr('日志', 'Log') }}</span>
+            </button>
+            <button
+              data-testid="rtt-terminal-mode" type="button" :class="{ active: viewMode === 'terminal' }"
+              :aria-pressed="viewMode === 'terminal'" @click="setViewMode('terminal')"
+            >
+              <SquareTerminal :size="14" aria-hidden="true" />
+              <span>{{ tr('终端', 'Terminal') }}</span>
+            </button>
+          </div>
+          <div class="stream-metrics" aria-label="RTT stream status">
+            <span>{{ retainedCount }} {{ tr('行', 'lines') }}</span>
+            <span>buffer {{ binary.telemetry.value?.bufferedSamples ?? 0 }}</span>
+            <span>drops {{ binary.telemetry.value?.transportDroppedBatches ?? 0 }}/{{ binary.telemetry.value?.backendDroppedBatches ?? 0 }}</span>
+          </div>
+        </div>
+        <div class="rtt-secondary-tools">
+          <div v-if="viewMode === 'log'" class="format-help">
+            <button
+              data-testid="rtt-format-help" type="button" class="icon-action"
+              :title="tr('数据格式说明', 'Data format help')"
+              :aria-label="tr('数据格式说明', 'Data format help')"
+              :aria-expanded="formatHelpOpen"
+              @click="formatHelpOpen = !formatHelpOpen"
+            >
+              <Info :size="15" aria-hidden="true" />
+            </button>
+            <div v-if="formatHelpOpen" class="format-help-popover" role="note">
+              <strong>{{ tr('数据格式', 'Data format') }}</strong>
+              <span>{{ tr('每行输出同一组数值，例如', 'Output one value set per line, for example') }}</span>
+              <code>temp=25.3,speed=1200</code>
+              <span>{{ tr('或', 'or') }}</span>
+              <code>25.3,1200</code>
+            </div>
+          </div>
+          <button
+            v-if="viewMode === 'log'" data-testid="rtt-chart-toggle" type="button" class="btn-chart-toggle"
+            :aria-pressed="chartEnabled" @click="toggleChart"
+          >
+            <EyeOff v-if="chartEnabled" :size="14" aria-hidden="true" />
+            <Eye v-else :size="14" aria-hidden="true" />
+            <span>{{ chartEnabled ? tr('关闭曲线', 'Hide Chart') : tr('打开曲线', 'Show Chart') }}</span>
+          </button>
+          <button
+            data-testid="rtt-clear-logs" class="btn-clear icon-action" type="button"
+            :title="viewMode === 'terminal' ? tr('清除终端', 'Clear terminal') : tr('清除日志', 'Clear log')"
+            :aria-label="viewMode === 'terminal' ? tr('清除终端', 'Clear terminal') : tr('清除日志', 'Clear log')"
+            @click="clearVisibleOutput"
+          >
+            <Trash2 :size="15" aria-hidden="true" />
+          </button>
+        </div>
       </div>
-      <div v-if="chartEnabled && hasChartData" class="rtt-chart-shell">
+      <div v-if="viewMode === 'log' && chartEnabled && hasChartData" class="rtt-chart-shell">
         <canvas
           ref="chart" class="rtt-numeric-chart"
           @wheel.prevent="onChartWheel" @mousedown="onChartMouseDown" @dblclick="resetChartViewport"
         />
-        <div class="rtt-chart-hint">滚轮缩放坐标 · 左键拖动曲线 · 双击复位</div>
+        <div class="rtt-chart-hint">{{ tr('滚轮缩放坐标 · 左键拖动曲线 · 双击复位', 'Wheel to zoom axes · Left-drag to pan · Double-click to reset') }}</div>
       </div>
-      <VirtualLogPanel ref="logPanel" class="rtt-view-log" />
+      <VirtualLogPanel v-show="viewMode === 'log'" ref="logPanel" class="rtt-view-log" />
+      <div v-show="viewMode === 'terminal'" class="rtt-terminal-shell">
+        <RttTerminalPanel
+          ref="terminalPanel" :input-enabled="transmitEnabled"
+          @input="queueTerminalInput"
+        />
+      </div>
       <RttTransmitBar
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
       />
-    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Eye, EyeOff, Info, Search } from '@lucide/vue'
+import { Eye, EyeOff, Info, ScrollText, Search, SquareTerminal, Trash2 } from '@lucide/vue'
 import { useDashboard } from '../../composables/useDashboard'
 import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useMklinkApi } from '../../composables/useMklinkApi'
+import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
+  DESKTOP_SETTINGS_CHANGED_EVENT,
+  isMapFilePath,
+  isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
@@ -84,14 +152,26 @@ import {
 import { RenderScheduler } from '../../lib/stream/renderScheduler'
 import ControlToolbar from './ControlToolbar.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
+import RttTerminalPanel from './RttTerminalPanel.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
+import SetupHint from './SetupHint.vue'
+import { language, tr } from '../../composables/useLanguage'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 const dash = useDashboard('rtt')
 const binary = useBinaryStream('rtt', { capacity: 200_000, channelCount: 1 })
 const { findRtt, writeRtt, setRttEncoding } = useMklinkApi()
+const {
+  connecting,
+  loadingSymbols,
+  quickConnect,
+  loadSymbolFile,
+} = useDashboardSetup()
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
+const hasAddressFileSource = computed(() => (
+  isMapFilePath(settings.value.mapPath) || isSymbolFilePath(settings.value.symbolPath)
+))
 const rttAddress = ref(settings.value.rttAddress)
 const rttEncoding = ref<RttEncoding>(settings.value.rttEncoding)
 const addressError = ref('')
@@ -103,11 +183,14 @@ const statusRunning = ref(false)
 const statusKnown = ref(false)
 const downBuffers = ref<Array<{ channel?: number, active?: boolean }>>([])
 const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
+const terminalPanel = ref<InstanceType<typeof RttTerminalPanel> | null>(null)
 const chart = ref<HTMLCanvasElement | null>(null)
 const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const numericChannelCount = ref(0)
 const numericChannelNames = ref<string[]>([])
 const chartEnabled = ref(true)
+const viewMode = ref<'log' | 'terminal'>('terminal')
+const formatHelpOpen = ref(false)
 const hasChartData = ref(false)
 const renderPaused = ref(false)
 const runtimeError = ref<string | null>(null)
@@ -120,7 +203,6 @@ const transmitEnabled = computed(() => (
   statusRunning.value
   && !stopping.value
   && !runtimeError.value
-  && props.deviceConnected
   && downBuffers.value.some(buffer => (
     buffer.channel === RTT_CHANNEL && buffer.active === true
   ))
@@ -156,9 +238,23 @@ let chartDrag: {
 } | null = null
 const CHART_MARGIN = { left: 58, right: 18, top: 14, bottom: 38 }
 const CHART_COLORS = ['#4f8ff7', '#34c47c', '#f2ad3d', '#ed5d68', '#9b7af5', '#28b8c7']
+const terminalEncoder = new TextEncoder()
+let terminalInput = ''
+let terminalInputTimer: ReturnType<typeof setTimeout> | null = null
+let terminalSendChain = Promise.resolve()
 
 function persistSettings(next: DesktopSettings): void {
   settings.value = saveDesktopSettings(desktopStorage, next)
+}
+
+function syncRttAddressFromSettings(): void {
+  const latest = loadDesktopSettings(desktopStorage)
+  settings.value = latest
+  if (latest.rttAddress !== rttAddress.value) {
+    rttAddress.value = latest.rttAddress
+    addressError.value = ''
+    addressSource.value = ''
+  }
 }
 
 function isRttAddress(value: string): boolean {
@@ -187,10 +283,10 @@ async function searchRttAddress(): Promise<void> {
     const result = await findRtt(source)
     if (disposed || generation !== searchGeneration) return
     if (!result.addr || !isRttAddress(result.addr)) {
-      throw new Error(result.details?.join('；') || result.warnings?.join('；') || '未找到 RTT 地址')
+      throw new Error(result.details?.join(tr('；', '; ')) || result.warnings?.join(tr('；', '; ')) || tr('未找到 RTT 地址', 'RTT address not found'))
     }
     rttAddress.value = result.addr
-    addressSource.value = result.source || (source ? '所选文件' : '工程自动检测')
+    addressSource.value = result.source || (source ? tr('所选文件', 'Selected file') : tr('工程自动检测', 'Project auto-detection'))
     persistSettings({ ...settings.value, rttAddress: result.addr })
   } catch (caught) {
     if (!disposed && generation === searchGeneration) {
@@ -218,6 +314,7 @@ async function onEncodingChange(): Promise<void> {
 }
 
 const scheduler = new RenderScheduler(() => {
+  if (viewMode.value !== 'log') return
   const canvas = chart.value
   if (!canvas || !chartEnabled.value || !hasChartData.value || numericChannelCount.value <= 0) return
   const telemetry = binary.telemetry.value
@@ -235,6 +332,11 @@ watch(() => binary.rttLines.value, batch => {
   logPanel.value?.append(batch.lines.map(line => ({
     time: line.timestampNs, level: line.level, text: line.text,
   } satisfies VirtualLogInput)))
+})
+
+watch(() => binary.rttTerminal.value, chunk => {
+  if (!chunk || renderPaused.value) return
+  terminalPanel.value?.write(chunk.text)
 })
 
 watch(() => binary.waveformBatch.value, batch => {
@@ -255,7 +357,9 @@ watch(() => binary.waveformBatch.value, batch => {
     if (!manualTimeline && !renderPaused.value) visibleRange = { ...dataRange }
   }
   scheduler.recordCollection(batch.itemCount)
-  if (!renderPaused.value && chartEnabled.value) scheduler.invalidate('data')
+  if (!renderPaused.value && chartEnabled.value && viewMode.value === 'log') {
+    scheduler.invalidate('data')
+  }
 })
 
 watch(() => binary.envelope.value, envelope => {
@@ -280,6 +384,7 @@ watch(chart, canvas => {
     if (!renderPaused.value) scheduler.invalidate('resize')
   })
 })
+watch(language, () => scheduler.invalidate('resize'))
 
 function drawEnvelope(envelope: NonNullable<typeof binary.envelope.value>): void {
   const canvas = chart.value
@@ -342,11 +447,11 @@ function drawEnvelope(envelope: NonNullable<typeof binary.envelope.value>): void
     )
   }
   context.textAlign = 'center'
-  context.fillText('时间', CHART_MARGIN.left + plotWidth / 2, height - 3)
+  context.fillText(tr('时间', 'Time'), CHART_MARGIN.left + plotWidth / 2, height - 3)
   context.save()
   context.translate(12, CHART_MARGIN.top + plotHeight / 2)
   context.rotate(-Math.PI / 2)
-  context.fillText('数值', 0, 0)
+  context.fillText(tr('数值', 'Value'), 0, 0)
   context.restore()
   context.save()
   context.beginPath()
@@ -403,6 +508,40 @@ function toggleChart(): void {
   }
   if (!renderPaused.value) scheduler.start()
   void nextTick(() => scheduler.invalidate('resize'))
+}
+
+function setViewMode(mode: 'log' | 'terminal'): void {
+  if (viewMode.value === mode) return
+  viewMode.value = mode
+  formatHelpOpen.value = false
+  if (mode === 'terminal') {
+    scheduler.stop()
+    void nextTick(() => terminalPanel.value?.activate())
+  } else if (!renderPaused.value && chartEnabled.value) {
+    scheduler.start()
+    void nextTick(() => scheduler.invalidate('resize'))
+  }
+}
+
+function queueTerminalInput(data: string): void {
+  if (!transmitEnabled.value || !data) return
+  terminalInput += data
+  if (terminalInputTimer === null) {
+    terminalInputTimer = setTimeout(flushTerminalInput, 8)
+  }
+}
+
+function flushTerminalInput(): void {
+  terminalInputTimer = null
+  if (!terminalInput) return
+  const payload = terminalEncoder.encode(terminalInput)
+  terminalInput = ''
+  terminalSendChain = terminalSendChain
+    .then(() => sendRtt(payload))
+    .then(() => { runtimeError.value = null })
+    .catch(caught => {
+      runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+    })
 }
 
 function resetChartViewport(): void {
@@ -590,13 +729,13 @@ async function waitForRttReady(timeoutMs = 11_000): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 100))
   }
   if (!disposed) {
-    runtimeError.value = 'RTT 启动超时，请检查地址后重试'
+    runtimeError.value = tr('RTT 启动超时，请检查地址后重试', 'RTT startup timed out. Check the address and retry.')
     detachBinary()
     const stopped = await stopTimedOutRtt()
     statusRunning.value = false
     downBuffers.value = []
     if (!stopped) {
-      runtimeError.value = 'RTT 启动超时，后台仍在停止，请点击停止重试'
+      runtimeError.value = tr('RTT 启动超时，后台仍在停止，请点击停止重试', 'RTT startup timed out while the backend is still stopping. Click Stop and retry.')
     }
   }
   return false
@@ -614,16 +753,20 @@ async function stopTimedOutRtt(maxAttempts = 3): Promise<boolean> {
 
 async function onStart(): Promise<void> {
   if (searching.value || starting.value) return
+  if (!props.deviceConnected) {
+    runtimeError.value = tr('请先连接 MKLink 设备', 'Connect the MKLink device first')
+    return
+  }
   const address = rttAddress.value.trim()
   if (!isRttAddress(address)) {
-    addressError.value = '请输入有效的 RTT 地址，例如 0x20001A40'
+    addressError.value = tr('请输入有效的 RTT 地址，例如 0x20001A40', 'Enter a valid RTT address, for example 0x20001A40')
     return
   }
   persistSettings({ ...settings.value, rttAddress: address })
   starting.value = true
   try {
     stopping.value = false
-    clearLogs()
+    clearAllOutputs()
     resetChartData()
     renderPaused.value = false
     runtimeError.value = null
@@ -652,8 +795,10 @@ function onPauseRender(): void {
 function onResumeRender(): void {
   renderPaused.value = false
   if (!manualTimeline && dataRange) visibleRange = { ...dataRange }
-  scheduler.start()
-  scheduler.invalidate('data')
+  if (viewMode.value === 'log') {
+    scheduler.start()
+    scheduler.invalidate('data')
+  }
 }
 
 async function onStop(): Promise<void> {
@@ -664,17 +809,24 @@ async function onStop(): Promise<void> {
   detachBinary()
   try {
     const stopped = await dash.stop()
-    runtimeError.value = stopped ? null : (dash.error.value || 'RTT 停止未完成，请再次停止')
+    runtimeError.value = stopped ? null : (dash.error.value || tr('RTT 停止未完成，请再次停止', 'RTT did not stop completely. Stop it again.'))
   } finally {
     stopping.value = false
   }
 }
 
-function clearLogs(): void {
+function clearAllOutputs(): void {
   logPanel.value?.clear()
+  terminalPanel.value?.clear()
+}
+
+function clearVisibleOutput(): void {
+  if (viewMode.value === 'terminal') terminalPanel.value?.clear()
+  else logPanel.value?.clear()
 }
 
 onMounted(() => {
+  window.addEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
   window.addEventListener('mousemove', onChartMouseMove)
   window.addEventListener('mouseup', onChartMouseUp)
   scheduler.start()
@@ -685,6 +837,10 @@ onUnmounted(() => {
   disposed = true
   searchGeneration++
   if (statusTimer !== null) clearTimeout(statusTimer)
+  if (terminalInputTimer !== null) clearTimeout(terminalInputTimer)
+  terminalInputTimer = null
+  terminalInput = ''
+  window.removeEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
   window.removeEventListener('mousemove', onChartMouseMove)
   window.removeEventListener('mouseup', onChartMouseUp)
   resizeObserver?.disconnect()
@@ -696,27 +852,45 @@ onUnmounted(() => {
 <style scoped>
 .rtt-view-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
-.rtt-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 4px 0; }
+.rtt-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 38px; padding: 2px 0 7px; border-bottom: 1px solid var(--border-subtle); }
 .rtt-address-row label { font-size: 12px; color: var(--muted); }
 .rtt-address-row input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .btn-search { height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }
 .address-error { min-width: 0; color: var(--danger, #dc2626); font-size: 12px; overflow-wrap: anywhere; }
-.address-source { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.rtt-view-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.address-source { min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.rtt-view-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 42px; padding: 7px 0; }
+.rtt-primary-tools, .rtt-secondary-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rtt-primary-tools { flex: 1 1 auto; flex-wrap: wrap; }
+.rtt-secondary-tools { flex: 0 0 auto; }
+.rtt-view-toolbar :deep(.control-toolbar) { flex: 0 0 auto; gap: 6px; padding: 0; }
 .encoding-control { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
 .encoding-control select { height: 26px; padding: 0 24px 0 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
-.line-count, .stream-health { color: var(--muted); font-size: 12px; }
-.btn-clear { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 2px 8px; }
+.view-mode-switch { display: inline-flex; height: 26px; overflow: hidden; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.view-mode-switch button { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border: 0; border-right: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; }
+.view-mode-switch button:last-child { border-right: 0; }
+.view-mode-switch button.active { background: var(--accent); color: #fff; }
+.stream-metrics { display: inline-flex; align-items: center; min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.stream-metrics span + span::before { margin: 0 6px; color: var(--dim); content: '\00b7'; }
+.format-help { position: relative; }
+.icon-action { display: inline-grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; }
+.icon-action:hover { border-color: var(--accent); color: var(--accent); }
+.format-help-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; grid-template-columns: auto auto; gap: 5px 8px; width: max-content; max-width: min(360px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / 14%); color: var(--muted); font-size: 12px; }
+.format-help-popover strong { grid-column: 1 / -1; color: var(--fg); }
+.format-help-popover code { color: var(--fg); font-family: var(--font-mono); }
+.btn-clear { flex: 0 0 auto; }
 .btn-chart-toggle { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; cursor: pointer; }
-.rtt-format-note { display: flex; align-items: center; gap: 6px; min-height: 24px; color: var(--muted); font-size: 12px; }
-.rtt-format-note code { color: var(--text); font-family: var(--font-mono); }
 .rtt-chart-shell { position: relative; flex: 0 0 226px; min-height: 226px; }
 .rtt-numeric-chart { display: block; width: 100%; height: 220px; border: 1px solid var(--border); border-radius: var(--radius); background: #10151d; cursor: grab; }
 .rtt-numeric-chart:active { cursor: grabbing; }
 .rtt-chart-hint { position: absolute; top: 7px; right: 10px; pointer-events: none; color: #78869a; font-size: 11px; }
 .rtt-view-log { flex: 1 1 auto; min-height: 160px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+.rtt-terminal-shell { display: flex; flex: 1 1 auto; min-height: 220px; overflow: hidden; }
+.rtt-terminal-shell :deep(.rtt-terminal-panel) { width: 100%; }
 @media (max-width: 720px) {
   .rtt-address-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .address-error, .address-source { grid-column: 1 / -1; }
+  .rtt-view-toolbar { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .rtt-secondary-tools { align-self: flex-end; }
+  .format-help-popover { right: -70px; }
 }
 </style>
