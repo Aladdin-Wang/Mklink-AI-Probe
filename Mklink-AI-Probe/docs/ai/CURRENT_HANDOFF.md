@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T11:31:00+08:00`
+- 更新时间：`2026-08-03T11:46:00+08:00`
 - 分支：`fix/v015-skill-web-dist`
 - HEAD：`The fix branch refreshes the tracked gui/dist assets used by copied Skill installations so the Web GUI reports v0.1.5 instead of the stale v0.1.4 build. The published v0.1.5 tag and updates metadata remain unchanged.`
-- 远端 HEAD：`The fix branch is local and unpushed. Official GitHub and Gitee v0.1.5 publication remains based on source commit 76a66b6.`
-- 工作树：The regenerated gui/dist assets, version-baseline test corrections, and this project-memory update are ready for a local fix commit. Local .mklink state remains excluded.
-- 当前任务：Commit the unchanged-version Web asset refresh, install a locally rebuilt Skill archive, and verify its Web GUI footer on port 8766.
-- 状态：`v0.1.5_skill_web_dist_fixed`
+- 远端 HEAD：`origin/fix/v015-skill-web-dist tracks the validated fix branch. Pull request su5176/Mklink-AI-Probe#7 is open against su5176/master and is reported mergeable with a clean merge state.`
+- 工作树：The validated runtime fix and PR handoff are committed and pushed. Local .mklink state remains excluded.
+- 当前任务：Monitor su5176/Mklink-AI-Probe#7 and respond to maintainer review without broadening the verified fix.
+- 状态：`v0.1.5_skill_web_dist_pr_open`
 
 ## 里程碑
 
@@ -82,12 +82,11 @@
 
 ## 下一动作
 
-1. Review the local fix/v015-skill-web-dist commit and separately authorize any merge, push, release-asset replacement, or updater metadata change if desired.
-2. Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.
-3. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
-4. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
-5. Qualify USB Web entry on current macOS and Linux systems.
-6. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
+1. Review su5176/Mklink-AI-Probe#7 and decide separately whether to merge it. Release-asset replacement and updater metadata changes remain out of scope.
+2. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
+3. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
+4. Qualify USB Web entry on current macOS and Linux systems.
+5. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
 
 ## 已知限制
 
@@ -103,6 +102,6 @@
 ## 延续协议
 
 - Validate project memory and reconcile it with live Git and runtime state before acting.
-- Preserve the published v0.1.5 tag and updates/latest.json. The local fix/v015-skill-web-dist branch refreshes only copied Skill Web assets and associated regression expectations; merge, push, and publication require separate authority.
+- Preserve the published v0.1.5 tag and updates/latest.json. Pull request su5176/Mklink-AI-Probe#7 carries the qualified v0.1.5 synchronization plus the copied-Skill Web asset refresh; merging and any publication remain separate maintainer decisions.
 - Follow the repository branch, automated gate, real-surface, and release-authority rules.
 - Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs.
