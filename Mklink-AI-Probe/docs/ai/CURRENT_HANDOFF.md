@@ -4,9 +4,9 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T09:31:00+08:00`
+- 更新时间：`2026-08-03T09:35:00+08:00`
 - 分支：`master`
-- HEAD：`The v0.1.5 candidate is merged into master at 3820c56 after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. The release commit remains local until the authorized publication push.`
+- HEAD：`The v0.1.5 candidate is merged into master after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. Skill metadata is aligned to 0.1.5 and the final release commit is ready for the authorized publication push.`
 - 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
 - 工作树：The v0.1.5 candidate is merged into master and ready for the authorized publication procedure. Generated build products are temporary release inputs; local .mklink state remains excluded.
 - 当前任务：Publish the authorized v0.1.5 release from clean master, then verify GitHub/Gitee assets and latest update metadata.
