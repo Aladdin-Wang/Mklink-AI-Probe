@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T15:40:44+08:00",
+  "updated_at": "2026-08-03T15:47:06+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/pr8-site-agent-v015",
-    "head": "PR #8 contains tested runtime tip efbc44f, which aligns the Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, and GUI status with product version 0.1.5. The following verification and project-memory changes are documentation-only.",
-    "remote_head": "Target origin/master remains at the PR #8 base until merge. The final PR head must contain tested runtime tip efbc44f and this documentation-only handoff before it is merged.",
-    "working_tree": "No additional runtime change is pending. Task-owned build and HIL outputs remain outside Git and temporary sites, listeners, product processes, and plaintext credentials were cleaned."
+    "branch": "master",
+    "head": "Master contains PR #8 merge commit 77a4433, qualified PR head 18af032, and tested runtime tip efbc44f. Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, and GUI status use product version 0.1.5; this final project-memory update is documentation-only.",
+    "remote_head": "origin/master contains PR #8 merge commit 77a4433 and the complete qualified head. The final documentation-only completion commit follows that merge without changing runtime code.",
+    "working_tree": "No runtime or documentation change is pending after the final project-memory commit. Task-owned build and HIL outputs remain outside Git and temporary sites, listeners, product processes, and plaintext credentials were cleaned."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "pr8_merge_gate_passed",
-    "current_task": "Merge su5176/Mklink-AI-Probe#8 after verifying its live head contains tested runtime tip efbc44f and target master has not advanced incompatibly.",
+    "status": "pr8_merged",
+    "current_task": "Pull request su5176/Mklink-AI-Probe#8 is merged. No PR implementation or release/publication task is active.",
     "release": "Product and Site Agent package contracts are 0.1.5. The v0.1.5 tag, Releases, and latest-channel publication recorded below belong to the Aladdin-Wang fork, not the su5176 target repository. This merge gate does not sign, tag, publish, modify updates/latest.json, or synchronize Gitee."
   },
   "milestones": [
@@ -72,8 +72,8 @@
   ],
   "verification": [
     {
-      "area": "PR #8 Site Agent v0.1.5 merge gate",
-      "result": "Tested runtime tip efbc44f aligns the Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, GUI status, README, and third-party notice with product version 0.1.5. Independent A/B core ZIPs matched at SHA-256 BF67DDF54C68F8DD7D36EB74DCB549CD83A019C829020398C3D9E06211F432EA; independent portable GUI ZIPs matched at 031DD8C564619C1DE67FFF4CFA00753FBCB4CE4CCA28518C8DC51877E9972E8F. Clean package audit passed 4 tests, full Python passed 1,242 with 1 skipped, GUI passed 48 files and 491 tests plus type check and Vite 8.1.5 production build, Site Agent Rust passed 5 tests and release build, runtime npm audit was clean, and the full npm tree had one development-only high finding. The new packaged process passed ready, wrong-token rejection, health/status/capabilities, cooperative stop, and zero-residue cleanup. No MKLink CDC probe was connected for a fresh physical rerun; commit 2bbbcc0 with combined STM32 Site Agent HIL is an ancestor, and mklink/remote plus native/stcp_bridge have identical Git trees through efbc44f, so no new physical result is inferred and the code-identical hardware evidence remains applicable."
+      "area": "PR #8 Site Agent v0.1.5 merge and final gate",
+      "result": "Tested runtime tip efbc44f aligns the Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, GUI status, README, and third-party notice with product version 0.1.5. Independent A/B core ZIPs matched at SHA-256 BF67DDF54C68F8DD7D36EB74DCB549CD83A019C829020398C3D9E06211F432EA; independent portable GUI ZIPs matched at 031DD8C564619C1DE67FFF4CFA00753FBCB4CE4CCA28518C8DC51877E9972E8F. Clean package audit passed 4 tests, full Python passed 1,242 with 1 skipped, GUI passed 48 files and 491 tests plus type check and Vite 8.1.5 production build, Site Agent Rust passed 5 tests and release build, runtime npm audit was clean, and the full npm tree had one development-only high finding. The new packaged process passed ready, wrong-token rejection, health/status/capabilities, cooperative stop, and zero-residue cleanup. No MKLink CDC probe was connected for a fresh physical rerun; commit 2bbbcc0 with combined STM32 Site Agent HIL is an ancestor, and mklink/remote plus native/stcp_bridge have identical Git trees through efbc44f, so no new physical result is inferred and the code-identical hardware evidence remains applicable. GitHub merged qualified head 18af032 into su5176/master as merge commit 77a4433 after confirming the PR remained CLEAN and had no configured status checks; origin/master was then verified to contain the qualified head."
     },
     {
       "area": "Web entry dynamic-port and launch-feedback gate",
@@ -81,7 +81,7 @@
     },
     {
       "area": "Web entry master integration and branch cleanup",
-      "result": "The verified fix branch was pushed, merged into master without conflicts through merge commit 4b83331, and pushed to origin/master. The four product and plugin version declarations remain 0.1.5. origin/master was verified to contain fix tip 7a69fce before the local and origin fix/web-entry-launch-feedback and fix/v015-skill-web-dist branches were deleted. The remaining origin fix/hpm5301-online-symbols branch and its local tracking branch were also deleted after confirming that master already contains its work. GitHub closed su5176/Mklink-AI-Probe#7 when its deleted source branch disappeared; it was not merged. Replacement pull request su5176/Mklink-AI-Probe#8 is open and mergeable from Aladdin-Wang:master to su5176:master with the complete v0.1.5 synchronization and dynamic-port Web entry evidence. No tag, release asset, updater manifest, or Gitee state changed."
+      "result": "The verified fix branch was pushed, merged into master without conflicts through merge commit 4b83331, and pushed to origin/master. The four product and plugin version declarations remain 0.1.5. origin/master was verified to contain fix tip 7a69fce before the local and origin fix/web-entry-launch-feedback and fix/v015-skill-web-dist branches were deleted. The remaining origin fix/hpm5301-online-symbols branch and its local tracking branch were also deleted after confirming that master already contains its work. GitHub closed su5176/Mklink-AI-Probe#7 when its deleted source branch disappeared; it was not merged. Replacement pull request su5176/Mklink-AI-Probe#8 was opened from Aladdin-Wang:master with the complete v0.1.5 synchronization and dynamic-port Web entry evidence; its later qualified merge is recorded in the current PR #8 gate entry. No tag, release asset, updater manifest, or Gitee state changed."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -191,7 +191,6 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "Merge su5176/Mklink-AI-Probe#8 only if its live head contains tested runtime tip efbc44f, target master has not advanced incompatibly, and the PR remains mergeable. Release-asset replacement and updater metadata changes remain out of scope.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
@@ -199,7 +198,7 @@
   ],
   "continuation_protocol": [
     "Validate project memory and reconcile it with live Git and runtime state before acting.",
-    "Preserve the fork's published v0.1.5 tag and updates/latest.json, and do not infer publication state for the su5176 target repository. Reconcile pull request #8 and target master with live GitHub state before acting.",
+    "Preserve the fork's published v0.1.5 tag and updates/latest.json, and do not infer publication state for the su5176 target repository. Pull request #8 is merged as 77a4433; reconcile later remote state with live GitHub before acting.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
     "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]

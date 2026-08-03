@@ -80,3 +80,12 @@ The `v0.1.5` version strategy and affected package surfaces are qualified for
 merge. External managed-LAN STCP was not rerun because no independent LAN
 `frps` endpoint was available; this remains an existing conditional limit and
 is not represented as a fresh PASS.
+
+## Merge result
+
+GitHub merged qualified PR head `18af03269783ade4638823b7e9bb1e2bcfd17cfe`
+into `su5176/master` as merge commit
+`77a4433a14ec93cecdb49621632eb17b941392d8`. Immediately before merge, the
+pull request was `OPEN`, `MERGEABLE`, and `CLEAN`, its head matched the
+qualified OID, and the repository had zero configured status checks. After
+merge, `origin/master` was fetched and verified to contain the qualified head.
