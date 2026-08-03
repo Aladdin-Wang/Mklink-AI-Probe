@@ -1,6 +1,6 @@
 [package]
 name = "mklink-ai-probe"
-version = "0.1.5"
+version = "0.1.6"
 description = "Mklink AI Probe"
 authors = ["MicroKeen"]
 edition = "2021"
@@ -13,10 +13,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+base64 = "0.22"
+get_if_addrs = "0.5"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -27,4 +31,11 @@ windows = { version = "0.61", features = [
     "Win32_System_Threading",
     "Win32_Foundation",
     "Win32_Security",
+] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
 ] }

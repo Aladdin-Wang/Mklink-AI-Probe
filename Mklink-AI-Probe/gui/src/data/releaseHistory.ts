@@ -9,6 +9,26 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.1.6',
+    date: '2026-08-03',
+    summary: '主 GUI 内置现场 Agent，并统一远程与本地后端',
+    summaryEn: 'Embedded Site Agent in the main GUI with one unified backend',
+    changes: [
+      '主 GUI 新增 Site Agent 页面，统一管理直连与 LAN STCP 配置、运行状态和工程师连接入口。',
+      '本地 GUI 与远程 Agent 共用同一个 sidecar、探针设备实例和资源管理器。',
+      '访问令牌与 STCP 凭据使用 Windows DPAPI 加密保存，明文不进入命令行或前端状态。',
+      '启用现场服务后关闭主窗口会转入托盘，显式退出才停止统一后端。',
+      '正式 Release 同时提供主安装包、Skill 包和独立 Site Agent portable ZIP。',
+    ],
+    changesEn: [
+      'Add a Site Agent page for direct and LAN STCP configuration, runtime status, and engineer connection guidance.',
+      'Share one sidecar, probe device instance, and resource manager between the local GUI and remote Agent.',
+      'Protect Site Agent and STCP credentials with Windows DPAPI without exposing plaintext to command lines or frontend status.',
+      'Keep the unified backend in the tray while Site Agent is enabled and stop it only on explicit exit.',
+      'Publish the standalone Site Agent portable ZIP alongside the installer and Skill archive.',
+    ],
+  },
+  {
     version: '0.1.5',
     date: '2026-08-03',
     summary: '集成远程 Site Agent 并完善调试工作流',

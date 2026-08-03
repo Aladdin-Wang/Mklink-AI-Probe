@@ -630,6 +630,58 @@ def create_app(
     # closure. Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
 
+    from mklink.remote.embedded_agent import (
+        EmbeddedAgentSettings,
+        EmbeddedSiteAgentController,
+    )
+
+    def reconnect_shared_device(config):
+        """Reconnect the one GUI-owned device for a remote lifecycle request."""
+        import mklink
+
+        previous = _state.get("last_device_connection") or {}
+        port = config.device_port or previous.get("port")
+        axf = config.axf or previous.get("axf")
+        mcu = previous.get("mcu")
+        elf_backend = previous.get("elf_backend")
+        with target_debug_lease(_state, "site-agent-reconnect"):
+            current = _state.get("device")
+            if current is not None:
+                remember_device_connection(_state, current, mcu=mcu)
+                current.close()
+                _state["device"] = None
+                _state["dispatcher"] = None
+            device = mklink.connect(
+                port=port,
+                axf=axf,
+                mcu=mcu,
+                project_root=_state["project_root"],
+                elf_backend=elf_backend,
+            )
+            _state["device"] = device
+            _state["dispatcher"] = DeviceDispatcher(device)
+            remember_device_connection(_state, device, mcu=mcu)
+            return device
+
+    site_agent = EmbeddedSiteAgentController(
+        EmbeddedAgentSettings.from_environment(),
+        project_root=project_root,
+        resource_manager=_state["resource_manager"],
+        device_getter=lambda: _state.get("device"),
+        device_reconnector=reconnect_shared_device,
+    )
+    app.state.site_agent = site_agent
+
+    async def startup_site_agent() -> None:
+        site_agent.project_root = _state["project_root"]
+        await site_agent.start()
+
+    async def shutdown_site_agent() -> None:
+        await site_agent.stop()
+
+    app.add_event_handler("startup", startup_site_agent)
+    app.add_event_handler("shutdown", shutdown_site_agent)
+
     from mklink.remote import stream_api
     from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
 
@@ -818,6 +870,10 @@ def create_app(
         if not os.path.isdir(p):
             raise HTTPException(status_code=400, detail=f"目录不存在: {p}")
         _state["project_root"] = p
+        if site_agent.settings.enabled and site_agent.project_root != p:
+            await site_agent.stop()
+            site_agent.project_root = p
+            await site_agent.start()
         return {"project_root": p}
 
     @app.get("/api/project-root/browse")
@@ -1187,7 +1243,8 @@ def create_app(
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]
-            if axf is not None or elf_backend is not None:
+            active_axf = axf or (getattr(dev, "axf_status", {}) or {}).get("axf_path")
+            if active_axf and (axf is not None or elf_backend is not None):
                 await _reparse_active_symbols(axf, elf_backend)
             elif manager._device is not dev:
                 await run_in_threadpool(manager.prepare, dev)
@@ -2468,6 +2525,10 @@ def create_app(
             "device_connected": dev.connected if dev else False,
             **elf_status(project_root=_state["project_root"]),
         }
+
+    @app.get("/api/site-agent/status")
+    async def site_agent_status():
+        return site_agent.status()
 
     # ===================================================================
     # Static frontend (Vue 3 dist) — catch-all, lowest priority

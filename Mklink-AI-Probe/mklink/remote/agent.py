@@ -192,14 +192,21 @@ class SiteAgent:
         *,
         capability_provider: CapabilityProvider | None = None,
         request_dispatcher: RequestDispatcher | Callable[..., Any] | None = None,
+        device_getter: Callable[[], Any | None] | None = None,
+        device_reconnector: Callable[[AgentConfig], Any | None] | None = None,
+        resource_manager: ResourceManager | None = None,
     ):
         self.config = config
         self._device_factory = device_factory
         self._capability_provider = capability_provider
         self._request_dispatcher = request_dispatcher
         self._device: Any | None = None
+        self._device_getter = device_getter
+        self._device_reconnector = device_reconnector
+        self._owns_device = device_getter is None
         self._target_lifecycle = _TargetLifecycleCoordinator()
-        self._resources = ResourceManager()
+        self._resources = resource_manager or ResourceManager()
+        self._owns_resources = resource_manager is None
         self._stop_requested = threading.Event()
         self._ready = threading.Event()
         self._bound_port: int | None = None
@@ -325,6 +332,14 @@ class SiteAgent:
         with self._target_lifecycle.lifecycle():
             if self._target_lifecycle.closing:
                 return {"connected": False, "error": "Agent is stopping"}
+            if self._device_reconnector is not None:
+                try:
+                    self._device_reconnector(self.config)
+                except (Exception, SystemExit):
+                    self._last_error = "Device connection failed"
+                    return {"connected": False, "error": self._last_error}
+                self._last_error = None
+                return {"connected": self._device_connected()}
             self._close_device_locked()
             try:
                 kwargs = {"port": self.config.device_port, "axf": self.config.axf}
@@ -347,8 +362,10 @@ class SiteAgent:
     def close(self) -> None:
         self._target_lifecycle.request_close()
         with self._target_lifecycle.lifecycle():
-            self._close_device_locked()
-            self._resources.release_all()
+            if self._owns_device:
+                self._close_device_locked()
+            if self._owns_resources:
+                self._resources.release_all()
 
     async def _enter_target_dispatch(self) -> None:
         admission = asyncio.create_task(
@@ -402,13 +419,21 @@ class SiteAgent:
         # Device mutation is serialized, but diagnostics must not wait behind
         # a slow factory or lower-level reconnect.  Reconnect publishes None
         # before opening and atomically replaces this reference on success.
-        device = self._device
+        device = self._current_device()
         if device is None:
             return False
         try:
             return bool(getattr(device, "connected", True))
         except Exception:
             return False
+
+    def _current_device(self) -> Any | None:
+        if self._device_getter is None:
+            return self._device
+        try:
+            return self._device_getter()
+        except Exception:
+            return None
 
     async def serve(self) -> int:
         """Run the standards-compliant WebSocket listener until stopped."""
@@ -542,7 +567,7 @@ class SiteAgent:
         await self._enter_target_dispatch()
         try:
             context = AgentDispatchContext(
-                device=self._device,
+                device=self._current_device(),
                 resource_manager=self._resources,
             )
             try:

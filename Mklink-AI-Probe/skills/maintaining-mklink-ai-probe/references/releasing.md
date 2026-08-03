@@ -38,7 +38,7 @@ Build standard NSIS only unless the user explicitly requests MSI or a
 WebView2-offline package. A signed bundle must produce one NSIS `.exe` and its
 adjacent `.exe.sig`.
 
-## Prepare Five Public Assets
+## Prepare Five Payloads And Two Integrity Files
 
 Create an empty workspace-level `release/<YYYYMMDD-HHMMSS>/` directory outside
 the source repository. From the repository root:
@@ -47,6 +47,7 @@ the source repository. From the repository root:
 $Version = "X.Y.Z"
 $SourceCommit = git rev-parse HEAD
 $ReleaseDir = "..\release\<YYYYMMDD-HHMMSS>"
+$PortableWork = "..\release\<YYYYMMDD-HHMMSS>-portable-work"
 $NsisFiles = @(Get-ChildItem "gui\src-tauri\target\release\bundle\nsis\*.exe")
 if ($NsisFiles.Count -ne 1) { throw "Expected exactly one NSIS executable" }
 $Nsis = $NsisFiles[0]
@@ -54,13 +55,26 @@ $SkillArchive = Join-Path $env:TEMP "Mklink-AI-Probe-v$Version-source-skill.zip"
 git -C .. archive --format=zip --prefix="Mklink-AI-Probe-v$Version/" `
   --output $SkillArchive HEAD:Mklink-AI-Probe
 
+python packaging/site_agent/build.py --output "$PortableWork\core"
+Push-Location site-agent-gui\src-tauri
+cargo build --release
+Pop-Location
+python packaging/site_agent/build_gui.py `
+  --output "$PortableWork\gui" `
+  --core-zip "$PortableWork\core\mklink-remote-site-agent-windows-x86_64.zip" `
+  --core-manifest "$PortableWork\core\mklink-remote-site-agent-windows-x86_64.manifest.json" `
+  --gui-exe "site-agent-gui\src-tauri\target\release\MKLink-Site-Agent.exe" `
+  --source-root .
+
 python _maintainer/release/prepare_release.py `
   --version $Version `
   --source-commit $SourceCommit `
   --output $ReleaseDir `
   --nsis $Nsis.FullName `
   --updater-signature "$($Nsis.FullName).sig" `
-  --skill-archive $SkillArchive
+  --skill-archive $SkillArchive `
+  --site-agent-archive "$PortableWork\gui\MKLink-Site-Agent-v$Version-windows-x86_64-portable.zip" `
+  --site-agent-manifest "$PortableWork\gui\MKLink-Site-Agent-v$Version-windows-x86_64-portable.manifest.json"
 ```
 
 The directory must contain exactly:
@@ -68,6 +82,8 @@ The directory must contain exactly:
 - `Mklink-AI-Probe-vX.Y.Z-x64-Setup.exe`
 - `Mklink-AI-Probe-vX.Y.Z-x64-Setup.exe.sig`
 - `Mklink-AI-Probe-vX.Y.Z-Skill.zip`
+- `MKLink-Site-Agent-vX.Y.Z-windows-x86_64-portable.zip`
+- `MKLink-Site-Agent-vX.Y.Z-windows-x86_64-portable.manifest.json`
 - `SHA256SUMS.txt`
 - `release-manifest.json`
 
@@ -96,7 +112,7 @@ The publisher verifies clean `master`, version agreement, source commit, exact
 asset set, sizes, and hashes. It then:
 
 1. pushes `master` and the annotated version tag to GitHub and Gitee;
-2. creates or verifies both Releases and uploads the same five assets;
+2. creates or verifies both Releases and uploads the same seven public files;
 3. anonymously downloads the Gitee installer and verifies size and SHA-256;
 4. publishes the single-file `updates/latest.json` branch to both hosts last.
 

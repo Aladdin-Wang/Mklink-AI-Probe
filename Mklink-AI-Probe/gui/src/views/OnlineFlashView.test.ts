@@ -47,6 +47,7 @@ vi.mock('../composables/useBackendHealth', () => ({
     backendState: ref('alive'),
     startHealthPolling: vi.fn(),
     stopHealthPolling: vi.fn(),
+    isTauri: true,
   }),
 }))
 
@@ -126,7 +127,7 @@ describe('online flash navigation and workspace', () => {
     })
 
     const labels = wrapper.findAll('.nav-tab').map(tab => tab.text())
-    expect(labels).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录'])
+    expect(labels).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '现场 Agent'])
 
     await wrapper.findAll('.nav-tab')[2].trigger('click')
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('offline-flash'))

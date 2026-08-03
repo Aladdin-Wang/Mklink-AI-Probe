@@ -13,6 +13,7 @@ const checkForUpdates = vi.fn()
 const installAndRelaunch = vi.fn()
 const retryUpdate = vi.fn()
 const updateState = ref<'idle' | 'checking' | 'downloading' | 'ready' | 'installing' | 'error'>('idle')
+const nativeRuntime = ref(true)
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -29,6 +30,7 @@ vi.mock('./composables/useBackendHealth', () => ({
     startHealthPolling: vi.fn(),
     stopHealthPolling: vi.fn(),
     restart,
+    isTauri: nativeRuntime.value,
   }),
 }))
 
@@ -58,16 +60,27 @@ function mountApp() {
 }
 
 describe('App version footer', () => {
-  beforeEach(() => setLanguage('zh'))
+  beforeEach(() => {
+    setLanguage('zh')
+    nativeRuntime.value = true
+  })
 
   it('switches the global navigation between Chinese and English', async () => {
     const wrapper = mountApp()
 
     expect(wrapper.get('.app-title').text()).toBe('MKLink')
-    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录'])
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '现场 Agent'])
     await wrapper.get('[data-testid="global-language-toggle"]').trigger('click')
-    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['Config', 'Dashboard', 'Offline Flash', 'Online Flash'])
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['Config', 'Dashboard', 'Offline Flash', 'Online Flash', 'Site Agent'])
     expect(wrapper.get('[data-testid="global-language-toggle"]').text()).toContain('中文')
+    wrapper.unmount()
+  })
+
+  it('does not offer native Site Agent configuration in the browser GUI', () => {
+    nativeRuntime.value = false
+    const wrapper = mountApp()
+
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).not.toContain('现场 Agent')
     wrapper.unmount()
   })
 

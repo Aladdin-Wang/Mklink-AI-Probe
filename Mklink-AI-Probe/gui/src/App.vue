@@ -85,7 +85,7 @@ import { language, toggleLanguage, tr } from './composables/useLanguage'
 const router = useRouter()
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { backendState, startHealthPolling, stopHealthPolling, restart } = useBackendHealth()
+const { backendState, startHealthPolling, stopHealthPolling, restart, isTauri } = useBackendHealth()
 const {
   state: updateState,
   version: updateVersion,
@@ -108,7 +108,8 @@ const tabs = computed(() => [
   { key: 'dashboard', label: tr('仪表盘', 'Dashboard') },
   { key: 'offline-flash', label: tr('脱机烧录', 'Offline Flash') },
   { key: 'online-flash', label: tr('在线烧录', 'Online Flash') },
-])
+  { key: 'site-agent', label: tr('现场 Agent', 'Site Agent') },
+].filter(entry => entry.key !== 'site-agent' || isTauri))
 
 function navigate(key: string) {
   router.push({ name: key })

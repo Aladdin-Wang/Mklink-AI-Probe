@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 from mklink.remote.agent import AgentConfig, SiteAgent
+from mklink.remote.resource_manager import ResourceGroup, ResourceManager
 
 
 def _run(coro):
@@ -271,3 +272,49 @@ def test_cooperative_stop_releases_device_and_listener_resources():
         assert device.closed.is_set()
 
     _run(scenario())
+
+
+def test_embedded_agent_observes_shared_device_and_does_not_own_gui_resources():
+    device = _Device()
+    shared = {"device": device}
+    resources = ResourceManager()
+    resources.acquire(ResourceGroup.TARGET_DEBUG, "user:gui-test")
+    agent = SiteAgent(
+        AgentConfig(),
+        device_factory=lambda: None,
+        device_getter=lambda: shared["device"],
+        resource_manager=resources,
+    )
+
+    assert agent.health()["probe_connected"] is True
+    agent.close()
+
+    assert not device.closed.is_set()
+    assert resources.get_status()[ResourceGroup.TARGET_DEBUG.value]["owner"] == "user:gui-test"
+
+
+def test_embedded_agent_reconnect_replaces_the_shared_gui_device():
+    first = _Device()
+    second = _Device()
+    shared = {"device": first}
+    seen = []
+
+    def reconnect(config):
+        seen.append((config.device_port, config.axf))
+        shared["device"].close()
+        shared["device"] = second
+        return second
+
+    agent = SiteAgent(
+        AgentConfig(device_port="COM7", axf="firmware.axf"),
+        device_factory=lambda: None,
+        device_getter=lambda: shared["device"],
+        device_reconnector=reconnect,
+        resource_manager=ResourceManager(),
+    )
+
+    assert agent.reconnect() == {"connected": True}
+    assert seen == [("COM7", "firmware.axf")]
+    assert first.closed.is_set()
+    agent.close()
+    assert not second.closed.is_set()

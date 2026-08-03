@@ -813,6 +813,10 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+fn should_start_core_on_launch(config: &SiteConfig, token_configured: bool) -> bool {
+    config.start_core_on_launch && token_configured
+}
+
 #[cfg(windows)]
 fn spawn_focus_listener(app: tauri::AppHandle) -> Result<(), String> {
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
@@ -879,6 +883,37 @@ fn run_primary(root: PathBuf, instance: InstanceGuard) {
             initialize(&app.state::<AppState>(), root, instance)
                 .map_err(std::io::Error::other)?;
             spawn_focus_listener(app.handle().clone()).map_err(std::io::Error::other)?;
+            let auto_start = {
+                let state = app.state::<AppState>();
+                state
+                    .runtime
+                    .lock()
+                    .ok()
+                    .and_then(|runtime| {
+                        runtime.as_ref().map(|runtime| {
+                            should_start_core_on_launch(
+                                &runtime.config,
+                                secret::configured(&runtime.root),
+                            )
+                        })
+                    })
+                    .unwrap_or(false)
+            };
+            if auto_start {
+                let startup = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("mklink-core-auto-start".into())
+                    .spawn(move || {
+                        let state = startup.state::<AppState>();
+                        let result = state
+                            .begin_operation()
+                            .and_then(|operation| start_owned(&state, &operation));
+                        if let Err(error) = result {
+                            log(&state.logs, format!("[gui:error] auto-start failed: {error}"));
+                        }
+                    })
+                    .map_err(std::io::Error::other)?;
+            }
             let supervisor = app.handle().clone();
             std::thread::Builder::new()
                 .name("mklink-core-supervisor".into())
@@ -967,7 +1002,17 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{InstanceGate, InstanceGuard};
+    use super::{should_start_core_on_launch, InstanceGate, InstanceGuard, SiteConfig};
+
+    #[test]
+    fn auto_start_requires_both_operator_preference_and_a_token() {
+        let root = std::env::current_dir().expect("current directory");
+        let mut config = SiteConfig::defaults(&root);
+        assert!(should_start_core_on_launch(&config, true));
+        assert!(!should_start_core_on_launch(&config, false));
+        config.start_core_on_launch = false;
+        assert!(!should_start_core_on_launch(&config, true));
+    }
 
     #[test]
     fn secondary_gate_skips_tauri() {

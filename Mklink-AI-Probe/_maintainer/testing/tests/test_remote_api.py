@@ -734,6 +734,40 @@ def test_device_connect_refreshes_symbols_when_already_connected(tmp_path):
     reparse_mock.assert_called_once_with(str(next_axf), device=device)
 
 
+def test_device_restore_last_without_axf_keeps_shared_connection(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    device.axf_status = {
+        "loaded": False,
+        "axf_path": None,
+        "elf_backend": "builtin",
+    }
+    device.symbol_catalog = None
+    device._dwarf_info = None
+
+    def unexpected_parse(*_args, **_kwargs):
+        raise AssertionError("restore-last must not parse without an AXF path")
+
+    device.parse_axf = unexpected_parse
+    manager = get_managers()["superwatch"]
+    manager._device = device
+    app = create_app(auth_token=None, project_root=".")
+
+    with patch("mklink.connect", return_value=device) as connect, TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        response = client.post(
+            "/api/device/connect",
+            json={"restore_last": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "already_connected"
+    assert response.json()["axf_loaded"] is False
+    assert response.json()["elf_backend"] == "builtin"
+    assert connect.call_count == 1
+
+
 def test_device_connect_forwards_explicit_elf_backend(tmp_path):
     device, _axf = _connected_symbol_device(tmp_path)
     app = create_app(auth_token=None, project_root=".")

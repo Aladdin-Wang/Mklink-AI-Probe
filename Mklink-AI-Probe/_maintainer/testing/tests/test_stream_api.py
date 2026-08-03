@@ -11,6 +11,14 @@ from mklink.remote.api import create_app
 from mklink.remote.stream_protocol import StreamType, decode_frame
 
 
+def _receive_data_frame(websocket):
+    """Ignore protocol heartbeats while waiting for the published batch."""
+    while True:
+        frame = decode_frame(websocket.receive_bytes())
+        if frame.stream_type is not StreamType.CONTROL:
+            return frame
+
+
 @pytest.fixture
 def app():
     return create_app(auth_token=None, project_root=".")
@@ -166,8 +174,8 @@ def test_fanout_clients_share_publish_timestamp_and_batch_metadata(
         assert decode_frame(first.receive_bytes()).stream_type is StreamType.CONTROL
         assert decode_frame(second.receive_bytes()).stream_type is StreamType.CONTROL
         expected_sequence = hub.publish(b"shared", item_count=5)
-        first_frame = decode_frame(first.receive_bytes())
-        second_frame = decode_frame(second.receive_bytes())
+        first_frame = _receive_data_frame(first)
+        second_frame = _receive_data_frame(second)
 
     assert first_frame.sequence == second_frame.sequence == expected_sequence
     assert first_frame.item_count == second_frame.item_count == 5

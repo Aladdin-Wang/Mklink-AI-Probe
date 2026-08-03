@@ -5,25 +5,26 @@ import VersionHistoryPopover from './VersionHistoryPopover.vue'
 describe('VersionHistoryPopover', () => {
   it('shows the current release notes and stable release history', async () => {
     const wrapper = mount(VersionHistoryPopover, {
-      props: { version: '0.1.5', buildCommit: 'local' },
+      props: { version: '0.1.6', buildCommit: 'local' },
       attachTo: document.body,
     })
 
-    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.5 · local')
+    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.6 · local')
     expect(wrapper.find('[data-testid="version-history-panel"]').exists()).toBe(false)
 
     await wrapper.trigger('mouseenter')
 
     const panel = wrapper.get('[data-testid="version-history-panel"]')
     expect(panel.text()).toContain('版本更新')
+    expect(panel.text()).toContain('主 GUI 内置现场 Agent')
     expect(panel.text()).toContain('修复符号解析并完善调试资源协同')
     expect(panel.text()).toContain('匿名 struct/union 成员展开')
     expect(panel.text()).toContain('AI Skill 主动版本提醒')
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(6)
-    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.5')
+    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(7)
+    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.6')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
     wrapper.unmount()
   })

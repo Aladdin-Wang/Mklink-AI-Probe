@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { IS_TAURI } from './lib/runtimeEndpoint'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -26,6 +27,12 @@ const router = createRouter({
       path: '/online-flash',
       name: 'online-flash',
       component: () => import('./views/OnlineFlashView.vue'),
+    },
+    {
+      path: '/site-agent',
+      name: 'site-agent',
+      component: () => import('./views/SiteAgentView.vue'),
+      beforeEnter: () => IS_TAURI || { name: 'config' },
     },
   ],
 })

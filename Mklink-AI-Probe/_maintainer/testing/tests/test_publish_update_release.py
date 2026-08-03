@@ -207,11 +207,30 @@ def release_fixture(publisher, tmp_path, *, version="0.1.0", head="a" * 40):
         f"Mklink-AI-Probe-v{version}-x64-Setup.exe",
         f"Mklink-AI-Probe-v{version}-x64-Setup.exe.sig",
         f"Mklink-AI-Probe-v{version}-Skill.zip",
+        f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.zip",
     ]
-    assets = []
     for name in names:
         path = release_dir / name
         path.write_bytes(name.encode())
+    portable = release_dir / names[-1]
+    portable_manifest = release_dir / (
+        f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.manifest.json"
+    )
+    portable_manifest.write_text(
+        json.dumps({
+            "bundle": {"version": version},
+            "artifact": {
+                "name": portable.name,
+                "size": portable.stat().st_size,
+                "sha256": publisher.sha256(portable),
+            },
+        }),
+        encoding="utf-8",
+    )
+    names.append(portable_manifest.name)
+    assets = []
+    for name in names:
+        path = release_dir / name
         assets.append({
             "name": name,
             "size": path.stat().st_size,
