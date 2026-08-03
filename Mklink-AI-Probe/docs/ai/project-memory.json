@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T09:08:06+08:00",
+  "updated_at": "2026-08-03T09:31:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "feature/integrate-remote-site-agent",
-    "head": "The local integration branch contains the complete v0.1.5 Dashboard candidate, Vite WebSocket proxy fix, and su5176/master commit 3d23762. Installer preparation and local qualification were recorded in d1ae6ea; the branch remains local and unpushed.",
+    "branch": "master",
+    "head": "The v0.1.5 candidate is merged into master at 3820c56 after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. The release commit remains local until the authorized publication push.",
     "remote_head": "origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.",
-    "working_tree": "The v0.1.5 version bump, release history, installer qualification evidence, and handoff memory are ready for maintainer review. Generated build products and caches were removed; local .mklink state remains excluded. No push, master merge, tag, publication, latest.json update, or Gitee synchronization is authorized."
+    "working_tree": "The v0.1.5 candidate is merged into master and ready for the authorized publication procedure. Generated build products are temporary release inputs; local .mklink state remains excluded."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v0.1.5_installed_and_qualified_locally",
-    "current_task": "Review the locally installed v0.1.5 candidate and decide separately whether managed-LAN STCP needs a fresh external-frps gate before any push or master merge.",
-    "release": "A standard NSIS installer for v0.1.5 was built, signed, installed over v0.1.4, and locally qualified. Installer publication, tag, latest.json update, push, master merge, and Gitee synchronization remain unauthorized."
+    "status": "v0.1.5_master_release_candidate",
+    "current_task": "Publish the authorized v0.1.5 release from clean master, then verify GitHub/Gitee assets and latest update metadata.",
+    "release": "A standard NSIS installer for v0.1.5 was built, signed, installed over v0.1.4, and locally qualified. The candidate is merged into master; publication, tag, push, and latest.json update are now explicitly authorized."
   },
   "milestones": [
     {

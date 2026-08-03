@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T09:08:06+08:00`
-- 分支：`feature/integrate-remote-site-agent`
-- HEAD：`The local integration branch contains the complete v0.1.5 Dashboard candidate, Vite WebSocket proxy fix, and su5176/master commit 3d23762. Installer preparation and local qualification were recorded in d1ae6ea; the branch remains local and unpushed.`
+- 更新时间：`2026-08-03T09:31:00+08:00`
+- 分支：`master`
+- HEAD：`The v0.1.5 candidate is merged into master at 3820c56 after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. The release commit remains local until the authorized publication push.`
 - 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
-- 工作树：The v0.1.5 version bump, release history, installer qualification evidence, and handoff memory are ready for maintainer review. Generated build products and caches were removed; local .mklink state remains excluded. No push, master merge, tag, publication, latest.json update, or Gitee synchronization is authorized.
-- 当前任务：Review the locally installed v0.1.5 candidate and decide separately whether managed-LAN STCP needs a fresh external-frps gate before any push or master merge.
-- 状态：`v0.1.5_installed_and_qualified_locally`
+- 工作树：The v0.1.5 candidate is merged into master and ready for the authorized publication procedure. Generated build products are temporary release inputs; local .mklink state remains excluded.
+- 当前任务：Publish the authorized v0.1.5 release from clean master, then verify GitHub/Gitee assets and latest update metadata.
+- 状态：`v0.1.5_master_release_candidate`
 
 ## 里程碑
 
