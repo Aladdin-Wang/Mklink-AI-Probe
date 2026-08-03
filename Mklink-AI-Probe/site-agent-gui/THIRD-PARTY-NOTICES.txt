@@ -2,7 +2,7 @@ MKLink Site Agent portable control application
 
 The control application is built with Rust crates whose license metadata is
 recorded by Cargo.lock. The embedded MKLink core is the separately audited
-mklink v0.1.4 PyInstaller onedir payload. Its distribution metadata and
+mklink v0.1.5 PyInstaller onedir payload. Its distribution metadata and
 licenses are retained below bin/_internal/.
 
 The portable core includes mklink-stcp.dll, an in-process bridge built from

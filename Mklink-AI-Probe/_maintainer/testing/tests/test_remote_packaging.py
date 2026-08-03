@@ -208,6 +208,18 @@ def test_final_package_evidence_is_explicitly_deferred_to_n5():
     }
     assert "sha256" not in evidence
     assert "size" not in evidence
+    project_version = re.search(
+        r'(?m)^version\s*=\s*"(?P<value>[^"\r\n]+)"\s*$',
+        (ROOT / "pyproject.toml").read_text("utf-8"),
+    )
+    assert project_version is not None
+    expected_version = project_version.group("value")
+    assert provenance["product_version"] == expected_version
+    gui_builder = (
+        ROOT / "packaging" / "site_agent" / "build_gui.py"
+    ).read_text("utf-8")
+    assert f'BUNDLE_VERSION = "{expected_version}"' in gui_builder
+    assert f'CORE_VERSION = "{expected_version}"' in gui_builder
 
 
 def test_clean_environment_emits_a_self_consistent_artifact(clean_package):
@@ -242,7 +254,7 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     assert surfaces["bundle_files"] == len(manifest["files"])
     assert surfaces["bundle_files"] >= 90
     assert manifest["audit"]["removed_local_origin_metadata"] == [
-        "_internal/mklink-0.1.4.dist-info/direct_url.json"
+        "_internal/mklink-0.1.5.dist-info/direct_url.json"
     ]
     assert manifest["dependencies"]["in_process_stcp"] == {
         "frp_version": "0.69.1",
