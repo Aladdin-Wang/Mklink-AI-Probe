@@ -9,6 +9,26 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.1.5',
+    date: '2026-08-03',
+    summary: '集成远程 Site Agent 并完善调试工作流',
+    summaryEn: 'Integrated remote Site Agent and completed the debugging workflows',
+    changes: [
+      '集成远程 Site Agent、远程 SDK/CLI/MCP 与认证的直接 WebSocket 协议。',
+      '修复开发服务器对 RTT、SuperWatch、SystemView 和 VOFA 二进制 WebSocket 的代理。',
+      '完善 RTT View、串口助手终端模式、ANSI 解析和独立资源生命周期。',
+      'SuperWatch 支持 16 通道、高吞吐采集、历史暂停浏览和独立纵轴分离。',
+      '大数组符号按 256 项分页展开，支持继续浏览数组尾部。',
+    ],
+    changesEn: [
+      'Integrate the remote Site Agent, remote SDK/CLI/MCP, and authenticated direct WebSocket protocol.',
+      'Proxy RTT, SuperWatch, SystemView, and VOFA binary WebSocket streams in the development server.',
+      'Improve RTT View and Serial Assistant terminal modes, ANSI parsing, and independent resource lifecycles.',
+      'Support 16-channel high-rate SuperWatch acquisition, paused history browsing, and split Y axes.',
+      'Browse large symbol arrays in 256-item pages, including later tail ranges.',
+    ],
+  },
+  {
     version: '0.1.4',
     date: '2026-07-25',
     summary: '完善烧录、符号解析与 HardFault 定位',

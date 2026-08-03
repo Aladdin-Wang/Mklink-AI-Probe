@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T01:15:04+08:00`
+- 更新时间：`2026-08-03T09:08:06+08:00`
 - 分支：`feature/integrate-remote-site-agent`
-- HEAD：`The local integration branch combines the complete v0.1.5 Dashboard candidate and Vite WebSocket proxy fix with su5176/master commit 3d23762. Full combined automation, a freshly packaged Site Agent real-hardware loop, and the available STM32 Web/hardware regression gates passed at 2b2defd; the final memory commit is local and unpushed.`
+- HEAD：`The local integration branch contains the complete v0.1.5 Dashboard candidate, Vite WebSocket proxy fix, and su5176/master commit 3d23762. Installer preparation and local qualification were recorded in d1ae6ea; the branch remains local and unpushed.`
 - 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
-- 工作树：The combined branch is qualified and ready for maintainer review. Generated build products and caches were removed; local .mklink state remains excluded. No push, master merge, tag, signed build, publication, latest.json update, or Gitee synchronization is authorized.
-- 当前任务：Review the qualified local integration branch, decide whether managed-LAN STCP needs a fresh external-frps gate, and authorize any later push or master merge separately.
-- 状态：`remote_site_agent_integration_qualified_for_review`
+- 工作树：The v0.1.5 version bump, release history, installer qualification evidence, and handoff memory are ready for maintainer review. Generated build products and caches were removed; local .mklink state remains excluded. No push, master merge, tag, publication, latest.json update, or Gitee synchronization is authorized.
+- 当前任务：Review the locally installed v0.1.5 candidate and decide separately whether managed-LAN STCP needs a fresh external-frps gate before any push or master merge.
+- 状态：`v0.1.5_installed_and_qualified_locally`
 
 ## 里程碑
 
@@ -42,6 +42,7 @@
 - **Serial Assistant Web and paired virtual UART loop**：A Windows ELTIMA paired virtual serial fixture exercised the real OS serial API with concrete port identifiers intentionally omitted. A partial prompt produced an immediate terminal event before its later LF; ANSI color data, bare LF, CRLF, and a CSI sequence split across writes arrived exactly while structured Log events remained line-based. Reverse TX matched all 18 expected bytes for ASCII plus CRLF, binary 00 AA 55 FF, Enter, Backspace, and ArrowUp; terminal events preserved TX for statistics while the UI remains RX-only. Explicit stop released the OS port, reconnect reset counters and restored traffic, ended SSE subscribers did not stop acquisition, a second native open was denied, and 500 fixed-size lines delivered 3,000 of 3,000 bytes with 500 of 500 rows. Repeated CLI sends passed after the byte-zero lock fix; released lock markers report no owner. Modbus access to the occupied serial port returned HTTP 409 and left Serial Assistant open. Automated coverage still verifies no MKLink gate, separate send history, no local TX echo, status recovery, mode-local clear, and no stop on unmount; disconnected desktop and 768px Web layouts have no overflow or page errors.
 - **Dashboard Device ownership and independent serial lifecycle**：On the STM32 target, RTT and Serial Assistant ran concurrently. Stopping RTT while it was the last running MKLink-dependent Dashboard left Device connected and Serial Assistant running. The persistent header Disconnect action then stopped RTT and released Device while Serial Assistant stayed open and transmitted again through the real Windows serial API. Header quick connect restored the last successful probe and target settings without affecting Serial Assistant. Explicit Serial Assistant Close released its OS port for immediate native reopen while Device remained connected; final explicit header Disconnect left Device and all Dashboards stopped with an empty resource map.
 - **Scheme 2 Web regression**：After restarting the local backend to load the new profile, the real Chrome Web GUI showed label-only 在线文档 and 淘宝店 links with exact target URLs, RTT View Terminal pressed by default, Serial Assistant Terminal pressed by default, and no raw link address in visible text. The Offline Flash page loaded against the detected probe drive and retained disabled build actions until a valid firmware/algorithm sequence was configured. The device status no longer reported Medium Density after the new profile was loaded; disconnected status correctly omitted the MCU badge.
+- **v0.1.5 NSIS installer qualification**：The standard x64 NSIS installer Mklink-AI-Probe-v0.1.5-x64-Setup.exe installed over the registered v0.1.4 application with exit code 0; registry DisplayVersion is 0.1.5. The installed Tauri app started with bundled mklink-sidecar.exe, GET /api/health and /api/online-flash/probes returned HTTP 200, and no python.exe/pythonw.exe process was present. Closing the app normally released port 8765 and left no Mklink or Python processes. SHA-256: D8D07B655D908A0685A0C4F3B68CF831FEAF4A8E01019070B542DDC30294DF23 for the installer and 1CB683A7A38FBE6DC8E9F096F9B3A944B545778157B1DCBE90A85C649DAB07F4 for its signature.
 
 ## 架构决策
 
