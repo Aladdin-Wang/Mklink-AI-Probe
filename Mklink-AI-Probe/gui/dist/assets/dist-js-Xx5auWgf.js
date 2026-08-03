@@ -1,0 +1,1 @@
+import{r as e}from"./index-DLQ4RYDN.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};

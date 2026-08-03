@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T10:00:00+08:00",
+  "updated_at": "2026-08-03T11:31:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Official v0.1.5 is published from source commit 76a66b6 with matching GitHub and Gitee tags, five release assets, and updates/latest.json. The tag remains fixed at the qualified release commit; this project-memory update is a later documentation-only master commit.",
-    "remote_head": "origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.",
-    "working_tree": "Official v0.1.5 publication is complete. Generated build products and caches were removed; local .mklink state remains excluded."
+    "branch": "fix/v015-skill-web-dist",
+    "head": "The fix branch refreshes the tracked gui/dist assets used by copied Skill installations so the Web GUI reports v0.1.5 instead of the stale v0.1.4 build. The published v0.1.5 tag and updates metadata remain unchanged.",
+    "remote_head": "The fix branch is local and unpushed. Official GitHub and Gitee v0.1.5 publication remains based on source commit 76a66b6.",
+    "working_tree": "The regenerated gui/dist assets, version-baseline test corrections, and this project-memory update are ready for a local fix commit. Local .mklink state remains excluded."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v0.1.5_published",
-    "current_task": "Monitor v0.1.5 field feedback and address any confirmed regression on a dedicated fix branch.",
-    "release": "Official v0.1.5 is published on GitHub and Gitee from source commit 76a66b6. Both hosts carry the same annotated tag, five public assets, and updates/latest.json; the Gitee installer and Skill archive passed anonymous size and SHA-256 verification."
+    "status": "v0.1.5_skill_web_dist_fixed",
+    "current_task": "Commit the unchanged-version Web asset refresh, install a locally rebuilt Skill archive, and verify its Web GUI footer on port 8766.",
+    "release": "Product version remains 0.1.5. This fix does not move the published tag, modify updates/latest.json, publish assets, merge, or push."
   },
   "milestones": [
     {
@@ -72,8 +72,8 @@
   ],
   "verification": [
     {
-      "area": "Current automated gate",
-      "result": "At 2b2defd, GUI passed 47 files and 488 tests plus the Vite 8.1.5 production build; main Tauri Rust passed 6 tests and cargo check/build; Site Agent Rust passed 5 tests and cargo check/build; Go STCP passed go test ./... and built mklink-stcp.dll; Python passed 1,229 tests with 1 skipped and 12 symlink-specific tests deselected. The deselected tests require Windows Developer Mode or SeCreateSymbolicLinkPrivilege and remain strict rather than silently skipped."
+      "area": "Current v0.1.5 Skill Web asset gate",
+      "result": "On fix/v015-skill-web-dist, GUI passed all 47 files and 488 tests, and the Vite production build completed with VITE_APP_BUILD_COMMIT=a83d46044467. The regenerated bundle contains v0.1.5 and a83d46044467 and no longer contains the stale v0.1.4 / 841c1717a8b9 footer. The reduced release-equivalent Python gate passed 1,224 tests with 1 skipped and 12 symlink-privilege tests deselected."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -174,6 +174,7 @@
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
+    "The current v0.1.5 Skill Web asset gate did not rerun three Site Agent package tests because this machine lacks Go and native/stcp_bridge/build/mklink-stcp.dll. The previous qualified release baseline covers those components; this fix changes only tracked Web assets and version-baseline tests.",
     "The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.",
     "Twelve strict Windows symlink tests require Developer Mode or SeCreateSymbolicLinkPrivilege and were deselected in the final Python gate on this machine. Their strict failure behavior remains intact; they were not converted to silent skips.",
     "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
@@ -183,6 +184,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "Review the local fix/v015-skill-web-dist commit and separately authorize any merge, push, release-asset replacement, or updater metadata change if desired.",
     "Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
@@ -191,7 +193,7 @@
   ],
   "continuation_protocol": [
     "Validate project memory and reconcile it with live Git and runtime state before acting.",
-    "Preserve the complete verified v0.1.5 candidate on fix/hpm5301-online-symbols while qualifying the combined runtime only on feature/integrate-remote-site-agent. The lifecycle strategy remains authoritative: stopping the last MKLink Dashboard keeps Device connected; only the persistent header Disconnect action releases the probe, and neither Device action owns Serial Assistant or Modbus.",
+    "Preserve the published v0.1.5 tag and updates/latest.json. The local fix/v015-skill-web-dist branch refreshes only copied Skill Web assets and associated regression expectations; merge, push, and publication require separate authority.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
     "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]

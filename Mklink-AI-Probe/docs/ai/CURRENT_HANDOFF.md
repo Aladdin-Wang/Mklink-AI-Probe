@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T10:00:00+08:00`
-- 分支：`master`
-- HEAD：`Official v0.1.5 is published from source commit 76a66b6 with matching GitHub and Gitee tags, five release assets, and updates/latest.json. The tag remains fixed at the qualified release commit; this project-memory update is a later documentation-only master commit.`
-- 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
-- 工作树：Official v0.1.5 publication is complete. Generated build products and caches were removed; local .mklink state remains excluded.
-- 当前任务：Monitor v0.1.5 field feedback and address any confirmed regression on a dedicated fix branch.
-- 状态：`v0.1.5_published`
+- 更新时间：`2026-08-03T11:31:00+08:00`
+- 分支：`fix/v015-skill-web-dist`
+- HEAD：`The fix branch refreshes the tracked gui/dist assets used by copied Skill installations so the Web GUI reports v0.1.5 instead of the stale v0.1.4 build. The published v0.1.5 tag and updates metadata remain unchanged.`
+- 远端 HEAD：`The fix branch is local and unpushed. Official GitHub and Gitee v0.1.5 publication remains based on source commit 76a66b6.`
+- 工作树：The regenerated gui/dist assets, version-baseline test corrections, and this project-memory update are ready for a local fix commit. Local .mklink state remains excluded.
+- 当前任务：Commit the unchanged-version Web asset refresh, install a locally rebuilt Skill archive, and verify its Web GUI footer on port 8766.
+- 状态：`v0.1.5_skill_web_dist_fixed`
 
 ## 里程碑
 
@@ -27,7 +27,7 @@
 
 ## 验证证据
 
-- **Current automated gate**：At 2b2defd, GUI passed 47 files and 488 tests plus the Vite 8.1.5 production build; main Tauri Rust passed 6 tests and cargo check/build; Site Agent Rust passed 5 tests and cargo check/build; Go STCP passed go test ./... and built mklink-stcp.dll; Python passed 1,229 tests with 1 skipped and 12 symlink-specific tests deselected. The deselected tests require Windows Developer Mode or SeCreateSymbolicLinkPrivilege and remain strict rather than silently skipped.
+- **Current v0.1.5 Skill Web asset gate**：On fix/v015-skill-web-dist, GUI passed all 47 files and 488 tests, and the Vite production build completed with VITE_APP_BUILD_COMMIT=a83d46044467. The regenerated bundle contains v0.1.5 and a83d46044467 and no longer contains the stale v0.1.4 / 841c1717a8b9 footer. The reduced release-equivalent Python gate passed 1,224 tests with 1 skipped and 12 symlink-privilege tests deselected.
 - **Vite WebSocket proxy and source Web regression**：The source Vite server had proxied only /api since its introduction, while RTT, SuperWatch, SystemView, and VOFA later moved to /ws/streams/*. REST calls therefore remained healthy at port 5173 while binary streams bypassed the backend. vite.config.ts now forwards /ws with WebSocket upgrade enabled to port 8765, and a Node-environment Vitest test pins both /api and /ws proxy contracts. On the real STM32F103RC through http://127.0.0.1:5173, RTT delivered MSH output, 16-channel SuperWatch accumulated 631,520 complete samples around 859 Hz with zero host/target errors or drops, RTOS Trace received about 154,089 events, and a direct VOFA WebSocket handshake reached Open through the Vite proxy.
 - **Imported Site Agent baseline evidence**：The clean combined-branch Windows Site Agent package had SHA-256 713FD6C34A4232455E42747AB41B2492E5B2B3E3ABDD1D8ADE78D13982E7FAE3 and contained no frpc/frps. Loopback health/status/capabilities/ports, token isolation, reconnect, STM32F10x probe.info, halted registers, confirmed superwatch_ch00 write/read/restore, RTT channel 0 HIL_PING echo, SystemView channel 1 with 8,148 bytes and 1,991 parsed events/tasks, cleanup, site deletion, and port release passed. Direct use of the user project root was correctly rejected because its remote-upload ACL was not owner-only; an isolated Agent state root with the AXF specified separately passed. External managed-LAN STCP was not rerun because no independent LAN frps endpoint was available.
 - **Large-array symbol browsing**：On the real STM32 AXF, _thread_stack exposed eight 256-element ranges through [1792..2047]. The tail request returned exactly _thread_stack[1792] through _thread_stack[2047], exact search found unloaded _thread_stack[2047], type lookup reported uint8_t at 0x20009A63, and target read returned 35. No write was performed because the available large arrays are active stack/buffer memory; the dynamic write path is covered automatically. SuperWatch and Symbols Web views both rendered only the selected tail page, omitted [0], removed the old warning, and produced no console warnings or errors.
@@ -82,14 +82,16 @@
 
 ## 下一动作
 
-1. Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.
-2. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
-3. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
-4. Qualify USB Web entry on current macOS and Linux systems.
-5. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
+1. Review the local fix/v015-skill-web-dist commit and separately authorize any merge, push, release-asset replacement, or updater metadata change if desired.
+2. Review the qualified feature/integrate-remote-site-agent branch and decide separately whether to rerun external managed-LAN STCP before authorizing a push or master merge.
+3. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
+4. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
+5. Qualify USB Web entry on current macOS and Linux systems.
+6. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
 
 ## 已知限制
 
+- The current v0.1.5 Skill Web asset gate did not rerun three Site Agent package tests because this machine lacks Go and native/stcp_bridge/build/mklink-stcp.dll. The previous qualified release baseline covers those components; this fix changes only tracked Web assets and version-baseline tests.
 - The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.
 - Twelve strict Windows symlink tests require Developer Mode or SeCreateSymbolicLinkPrivilege and were deselected in the final Python gate on this machine. Their strict failure behavior remains intact; they were not converted to silent skips.
 - High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.
@@ -101,6 +103,6 @@
 ## 延续协议
 
 - Validate project memory and reconcile it with live Git and runtime state before acting.
-- Preserve the complete verified v0.1.5 candidate on fix/hpm5301-online-symbols while qualifying the combined runtime only on feature/integrate-remote-site-agent. The lifecycle strategy remains authoritative: stopping the last MKLink Dashboard keeps Device connected; only the persistent header Disconnect action releases the probe, and neither Device action owns Serial Assistant or Modbus.
+- Preserve the published v0.1.5 tag and updates/latest.json. The local fix/v015-skill-web-dist branch refreshes only copied Skill Web assets and associated regression expectations; merge, push, and publication require separate authority.
 - Follow the repository branch, automated gate, real-surface, and release-authority rules.
 - Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs.

@@ -39,7 +39,7 @@ const componentSource = fs.readFileSync(
 )
 const viewerCss = fs.readFileSync(
   path.resolve(process.cwd(), 'src/assets/rtt_viewer.css'), 'utf8',
-)
+).replaceAll('\r\n', '\n')
 
 function waveformFrame(
   sequence: bigint, itemCount: number, timestampNs: bigint, payload: Float32Array,
