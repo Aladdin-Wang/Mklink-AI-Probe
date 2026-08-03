@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T09:35:00+08:00",
+  "updated_at": "2026-08-03T10:00:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "The v0.1.5 candidate is merged into master after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. Skill metadata is aligned to 0.1.5 and the final release commit is ready for the authorized publication push.",
+    "head": "Official v0.1.5 is published from source commit 76a66b6 with matching GitHub and Gitee tags, five release assets, and updates/latest.json. The tag remains fixed at the qualified release commit; this project-memory update is a later documentation-only master commit.",
     "remote_head": "origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.",
-    "working_tree": "The v0.1.5 candidate is merged into master and ready for the authorized publication procedure. Generated build products are temporary release inputs; local .mklink state remains excluded."
+    "working_tree": "Official v0.1.5 publication is complete. Generated build products and caches were removed; local .mklink state remains excluded."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v0.1.5_master_release_candidate",
-    "current_task": "Publish the authorized v0.1.5 release from clean master, then verify GitHub/Gitee assets and latest update metadata.",
-    "release": "A standard NSIS installer for v0.1.5 was built, signed, installed over v0.1.4, and locally qualified. The candidate is merged into master; publication, tag, push, and latest.json update are now explicitly authorized."
+    "status": "v0.1.5_published",
+    "current_task": "Monitor v0.1.5 field feedback and address any confirmed regression on a dedicated fix branch.",
+    "release": "Official v0.1.5 is published on GitHub and Gitee from source commit 76a66b6. Both hosts carry the same annotated tag, five public assets, and updates/latest.json; the Gitee installer and Skill archive passed anonymous size and SHA-256 verification."
   },
   "milestones": [
     {
@@ -134,6 +134,10 @@
     {
       "area": "v0.1.5 NSIS installer qualification",
       "result": "The standard x64 NSIS installer Mklink-AI-Probe-v0.1.5-x64-Setup.exe installed over the registered v0.1.4 application with exit code 0; registry DisplayVersion is 0.1.5. The installed Tauri app started with bundled mklink-sidecar.exe, GET /api/health and /api/online-flash/probes returned HTTP 200, and no python.exe/pythonw.exe process was present. Closing the app normally released port 8765 and left no Mklink or Python processes. SHA-256: D8D07B655D908A0685A0C4F3B68CF831FEAF4A8E01019070B542DDC30294DF23 for the installer and 1CB683A7A38FBE6DC8E9F096F9B3A944B545778157B1DCBE90A85C649DAB07F4 for its signature."
+    },
+    {
+      "area": "Official v0.1.5 publication",
+      "result": "GitHub and Gitee master, annotated v0.1.5 tag, and updates branch were synchronized. Both Releases contain the installer, updater signature, Skill archive, SHA256SUMS.txt, and release-manifest.json. The published installer is 65,895,556 bytes with SHA-256 8B85845A9858762808B4B5FEE0DC581D11D46AC92CC55C3F3C6DD45C41893321; the Skill archive is 3,035,282 bytes with SHA-256 8492E85059915690E63BADD5DF7D9B96BA02231070E71E4E6CDB17795DCF8A1F. Anonymous Gitee downloads matched both values, and GitHub/Gitee latest.json resolve version 0.1.5 and source commit 76a66b6bad79b289398f80edbbe604e5b2f2fce5."
     }
   ],
   "decisions": [

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-03T09:35:00+08:00`
+- 更新时间：`2026-08-03T10:00:00+08:00`
 - 分支：`master`
-- HEAD：`The v0.1.5 candidate is merged into master after the complete Dashboard, remote Site Agent, WebSocket proxy, real-hardware, and installed NSIS qualification gates passed. Skill metadata is aligned to 0.1.5 and the final release commit is ready for the authorized publication push.`
+- HEAD：`Official v0.1.5 is published from source commit 76a66b6 with matching GitHub and Gitee tags, five release assets, and updates/latest.json. The tag remains fixed at the qualified release commit; this project-memory update is a later documentation-only master commit.`
 - 远端 HEAD：`origin/fix/hpm5301-online-symbols retains the reviewed v0.1.5 candidate, while su5176/master is tracked at 3d23762. The new integration branch remains local and unpushed.`
-- 工作树：The v0.1.5 candidate is merged into master and ready for the authorized publication procedure. Generated build products are temporary release inputs; local .mklink state remains excluded.
-- 当前任务：Publish the authorized v0.1.5 release from clean master, then verify GitHub/Gitee assets and latest update metadata.
-- 状态：`v0.1.5_master_release_candidate`
+- 工作树：Official v0.1.5 publication is complete. Generated build products and caches were removed; local .mklink state remains excluded.
+- 当前任务：Monitor v0.1.5 field feedback and address any confirmed regression on a dedicated fix branch.
+- 状态：`v0.1.5_published`
 
 ## 里程碑
 
@@ -43,6 +43,7 @@
 - **Dashboard Device ownership and independent serial lifecycle**：On the STM32 target, RTT and Serial Assistant ran concurrently. Stopping RTT while it was the last running MKLink-dependent Dashboard left Device connected and Serial Assistant running. The persistent header Disconnect action then stopped RTT and released Device while Serial Assistant stayed open and transmitted again through the real Windows serial API. Header quick connect restored the last successful probe and target settings without affecting Serial Assistant. Explicit Serial Assistant Close released its OS port for immediate native reopen while Device remained connected; final explicit header Disconnect left Device and all Dashboards stopped with an empty resource map.
 - **Scheme 2 Web regression**：After restarting the local backend to load the new profile, the real Chrome Web GUI showed label-only 在线文档 and 淘宝店 links with exact target URLs, RTT View Terminal pressed by default, Serial Assistant Terminal pressed by default, and no raw link address in visible text. The Offline Flash page loaded against the detected probe drive and retained disabled build actions until a valid firmware/algorithm sequence was configured. The device status no longer reported Medium Density after the new profile was loaded; disconnected status correctly omitted the MCU badge.
 - **v0.1.5 NSIS installer qualification**：The standard x64 NSIS installer Mklink-AI-Probe-v0.1.5-x64-Setup.exe installed over the registered v0.1.4 application with exit code 0; registry DisplayVersion is 0.1.5. The installed Tauri app started with bundled mklink-sidecar.exe, GET /api/health and /api/online-flash/probes returned HTTP 200, and no python.exe/pythonw.exe process was present. Closing the app normally released port 8765 and left no Mklink or Python processes. SHA-256: D8D07B655D908A0685A0C4F3B68CF831FEAF4A8E01019070B542DDC30294DF23 for the installer and 1CB683A7A38FBE6DC8E9F096F9B3A944B545778157B1DCBE90A85C649DAB07F4 for its signature.
+- **Official v0.1.5 publication**：GitHub and Gitee master, annotated v0.1.5 tag, and updates branch were synchronized. Both Releases contain the installer, updater signature, Skill archive, SHA256SUMS.txt, and release-manifest.json. The published installer is 65,895,556 bytes with SHA-256 8B85845A9858762808B4B5FEE0DC581D11D46AC92CC55C3F3C6DD45C41893321; the Skill archive is 3,035,282 bytes with SHA-256 8492E85059915690E63BADD5DF7D9B96BA02231070E71E4E6CDB17795DCF8A1F. Anonymous Gitee downloads matched both values, and GitHub/Gitee latest.json resolve version 0.1.5 and source commit 76a66b6bad79b289398f80edbbe604e5b2f2fce5.
 
 ## 架构决策
 
