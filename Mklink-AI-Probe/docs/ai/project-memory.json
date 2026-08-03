@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T13:42:19+08:00",
+  "updated_at": "2026-08-03T13:53:23+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
     "head": "Master contains the v0.1.5 copied-Skill Web assets and the browser-hosted dynamic-port Web entry fix through merge commit 4b83331. Tauri retains its configured 8765 sidecar endpoint, while browser-hosted REST, SSE, JSON-RPC, and binary streams use the current page origin.",
-    "remote_head": "origin/master contains merge commit 4b83331 and the verified fix tip 7a69fce. The local and origin fix/web-entry-launch-feedback and fix/v015-skill-web-dist branches were deleted; deleting the latter closed su5176/Mklink-AI-Probe#7 without merging it.",
+    "remote_head": "origin/master contains merge commit 4b83331 and the verified fix tip 7a69fce. The local and origin fix/web-entry-launch-feedback, fix/v015-skill-web-dist, and fix/hpm5301-online-symbols branches were deleted. Pull request su5176/Mklink-AI-Probe#8 is open and mergeable from Aladdin-Wang:master to su5176:master.",
     "working_tree": "No runtime or documentation change is pending. Local .mklink state remains intentionally untracked."
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "web_entry_dynamic_port_fix_merged",
-    "current_task": "No active implementation task. Future work may open a new synchronization pull request to su5176 from master if that upstream sync is still desired.",
+    "status": "v015_master_sync_pr_open",
+    "current_task": "Review su5176/Mklink-AI-Probe#8 and respond to upstream feedback. No local implementation task is active.",
     "release": "Product version remains 0.1.5. This follow-up does not move the published tag, modify updates/latest.json, republish assets, or alter pull request #7."
   },
   "milestones": [
@@ -77,7 +77,7 @@
     },
     {
       "area": "Web entry master integration and branch cleanup",
-      "result": "The verified fix branch was pushed, merged into master without conflicts through merge commit 4b83331, and pushed to origin/master. The four product and plugin version declarations remain 0.1.5. origin/master was verified to contain fix tip 7a69fce before the local and origin fix/web-entry-launch-feedback and fix/v015-skill-web-dist branches were deleted. GitHub closed su5176/Mklink-AI-Probe#7 when its deleted source branch disappeared; it was not merged into su5176/master. No tag, release asset, updater manifest, or Gitee state changed."
+      "result": "The verified fix branch was pushed, merged into master without conflicts through merge commit 4b83331, and pushed to origin/master. The four product and plugin version declarations remain 0.1.5. origin/master was verified to contain fix tip 7a69fce before the local and origin fix/web-entry-launch-feedback and fix/v015-skill-web-dist branches were deleted. The remaining origin fix/hpm5301-online-symbols branch and its local tracking branch were also deleted after confirming that master already contains its work. GitHub closed su5176/Mklink-AI-Probe#7 when its deleted source branch disappeared; it was not merged. Replacement pull request su5176/Mklink-AI-Probe#8 is open and mergeable from Aladdin-Wang:master to su5176:master with the complete v0.1.5 synchronization and dynamic-port Web entry evidence. No tag, release asset, updater manifest, or Gitee state changed."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -188,7 +188,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "If synchronization to su5176 is still desired, open a new pull request from the updated Aladdin-Wang master; pull request #7 closed when its source branch was deleted. Release-asset replacement and updater metadata changes remain out of scope.",
+    "Review and respond to su5176/Mklink-AI-Probe#8, the open replacement synchronization pull request from Aladdin-Wang:master. Release-asset replacement and updater metadata changes remain out of scope.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
@@ -196,7 +196,7 @@
   ],
   "continuation_protocol": [
     "Validate project memory and reconcile it with live Git and runtime state before acting.",
-    "Preserve the published v0.1.5 tag and updates/latest.json. origin/master contains the qualified Web entry fix; the two completed fix branches are deleted and su5176/Mklink-AI-Probe#7 is closed without merge. Any future fork synchronization requires a new pull request from master.",
+    "Preserve the published v0.1.5 tag and updates/latest.json. origin/master contains the qualified Web entry fix; the three completed origin fix branches are deleted, su5176/Mklink-AI-Probe#7 is closed without merge, and replacement pull request #8 is open from master.",
     "Follow the repository branch, automated gate, real-surface, and release-authority rules.",
     "Keep future memory updates consolidated; use Git history for completed chronology instead of appending session logs."
   ]
