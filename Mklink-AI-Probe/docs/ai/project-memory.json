@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T12:30:00+08:00",
+  "updated_at": "2026-08-03T12:43:38+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/web-entry-launch-feedback",
     "head": "The branch fixes browser-hosted Web GUI API and WebSocket routing on dynamic ports while preserving the configured port 8765 endpoint inside Tauri. The offline Web entry page adds a 25-second countdown, timeout guidance, and a reminder to re-register after Skill updates or moves.",
     "remote_head": "The branch is local and based on origin/fix/v015-skill-web-dist at 6899d10. Pull request su5176/Mklink-AI-Probe#7 remains open on the parent branch and is not broadened by this follow-up fix.",
-    "working_tree": "The runtime endpoint fix, Web entry feedback, tests, rebuilt gui/dist, documentation, and this project-memory update are ready for a local commit. Local .mklink state remains excluded."
+    "working_tree": "Commit 1fd998d contains the qualified runtime endpoint and Web entry fix. The unchanged-version local Skill package was installed and the MICROKEEN launcher was regenerated. This final project-memory update is pending commit; local .mklink state remains excluded."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "web_entry_dynamic_port_fix_qualified",
-    "current_task": "Commit the qualified Web entry fix, install a local unchanged-version Skill archive, generate the MICROKEEN USB launcher, and complete a cold-start loop.",
+    "status": "web_entry_dynamic_port_fix_deployed",
+    "current_task": "Review the committed fix and cold-start evidence before deciding whether to push it or layer it onto the existing synchronization pull request.",
     "release": "Product version remains 0.1.5. This follow-up does not move the published tag, modify updates/latest.json, republish assets, or alter pull request #7."
   },
   "milestones": [
@@ -73,7 +73,7 @@
   "verification": [
     {
       "area": "Web entry dynamic-port and launch-feedback gate",
-      "result": "On fix/web-entry-launch-feedback, browser-hosted REST, SSE, JSON-RPC, and binary streams use the current page origin while Tauri retains its configured port 8765 sidecar endpoint. The Web entry page shows a 25-second countdown over the existing 20-second backend readiness timeout, gives actionable timeout guidance, and reminds users to re-register after Skill updates or moves. GUI passed 48 files and 491 tests; the Vite 8.1.5 production build passed with VITE_APP_BUILD_COMMIT=6899d10e008e; the raw Python suite reached 1,227 passed and 1 skipped with only the 12 known symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable reduced gate passed 1,227 tests with 1 skipped and 15 explicit deselections. A source Web service served health and the new runtime-marked bundle successfully on non-default port 8770."
+      "result": "On fix/web-entry-launch-feedback, browser-hosted REST, SSE, JSON-RPC, and binary streams use the current page origin while Tauri retains its configured port 8765 sidecar endpoint. The Web entry page shows a 25-second countdown over the existing 20-second backend readiness timeout, gives actionable timeout guidance, and reminds users to re-register after Skill updates or moves. GUI passed 48 files and 491 tests; the Vite 8.1.5 production build passed with VITE_APP_BUILD_COMMIT=6899d10e008e; the raw Python suite reached 1,227 passed and 1 skipped with only the 12 known symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable reduced gate passed 1,227 tests with 1 skipped and 15 explicit deselections. A source Web service served health and the new runtime-marked bundle successfully on non-default port 8770. Commit 1fd998d was archived as an unchanged-version 0.1.5 Skill package with SHA-256 D511CA0804BE2B43673684F6E03C959F31EB2F499989376EAE3C2CF617777DDF and installed into the user Skill root. With a benign server occupying 8765, the installed Web entry selected 8766; health, root, and the new bundle returned HTTP 200. A real Edge network capture observed 475 references to the 8766 origin across health, Device, RTT, Serial, SystemView, and assets, and zero references to 8765. Web entry stop released owned port 8766, the test blocker released 8765, the current-user protocol handler was re-registered, and G:/启动 MKLink Web.html contains the countdown, timeout guidance, update reminder, and protocol link."
     },
     {
       "area": "Vite WebSocket proxy and source Web regression",
@@ -109,7 +109,7 @@
     },
     {
       "area": "Current live surface",
-      "result": "The source Web GUI remains available at http://127.0.0.1:5173/#/dashboard with the current backend at http://127.0.0.1:8765 and commit badge 2b2defd3c029. Device is connected to the real STM32F10x target, every Dashboard acquisition is stopped, Serial Assistant and Modbus are closed, and the resource map is empty. The current-source Vite proxy returned binary CONTROL frames for rtt, superwatch, systemview, and vofa WebSockets through port 5173. Existing current-branch browser and automated evidence covers Online/Offline Flash non-writing smoke and the 768px no-overflow layout; the browser plugin became unresponsive during the final repeated navigation pass, so no new console-log snapshot was recorded after that interruption."
+      "result": "The installed Skill Web GUI is running as an owned Web entry service at http://127.0.0.1:8765/#/dashboard and returns HTTP 200 from /api/health. The Device is disconnected, no AXF is loaded, and the regenerated MICROKEEN launcher remains at G:/启动 MKLink Web.html. The browser and Windows-control plugins were unavailable during final visual handoff, so the system browser was opened through the Web entry itself; the preceding real Edge network capture provides the page-level dynamic-origin evidence."
     },
     {
       "area": "Combined STM32F103RC Web and hardware regression",
