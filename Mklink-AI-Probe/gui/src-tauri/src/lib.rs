@@ -1,12 +1,19 @@
+mod site_agent_config;
+mod site_agent_network;
+mod site_agent_secret;
+
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State};
 
 #[cfg(target_os = "windows")]
 use windows::core::PCWSTR;
 #[cfg(target_os = "windows")]
-use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::{CloseHandle, HANDLE};
 #[cfg(target_os = "windows")]
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
@@ -20,11 +27,20 @@ struct JobHandle(HANDLE);
 unsafe impl Send for JobHandle {}
 #[cfg(target_os = "windows")]
 unsafe impl Sync for JobHandle {}
+#[cfg(target_os = "windows")]
+impl Drop for JobHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
 
 struct Sidecar {
     child: Mutex<Option<Child>>,
     port: u16,
     project_root: String,
+    site_agent_root: Mutex<Option<PathBuf>>,
     #[cfg(target_os = "windows")]
     job: Mutex<Option<JobHandle>>,
 }
@@ -73,6 +89,164 @@ fn resolve_sidecar_launch() -> Result<SidecarLaunch, String> {
 
 fn default_project_root() -> String {
     ".".into()
+}
+
+fn configured_site_agent_root(state: &Sidecar) -> Result<PathBuf, String> {
+    state
+        .site_agent_root
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone()
+        .ok_or_else(|| "Site Agent storage is not initialized".to_string())
+}
+
+fn apply_site_agent_environment(command: &mut Command, root: Option<&Path>) {
+    const VARIABLES: &[&str] = &[
+        "MKLINK_SITE_AGENT_ENABLED",
+        "MKLINK_SITE_AGENT_HOST",
+        "MKLINK_SITE_AGENT_PORT",
+        "MKLINK_SITE_AGENT_ALLOW_LAN",
+        "MKLINK_SITE_AGENT_TRANSPORT",
+        "MKLINK_SITE_AGENT_CONFIGURATION_ERROR",
+        "MKLINK_REMOTE_TOKEN",
+        "MKLINK_STCP_SERVER_ADDR",
+        "MKLINK_STCP_SERVER_PORT",
+        "MKLINK_STCP_USER",
+        "MKLINK_STCP_PROXY_NAME",
+        "MKLINK_STCP_AUTH_TOKEN",
+        "MKLINK_STCP_SECRET",
+        "MKLINK_STCP_LIBRARY",
+    ];
+    for name in VARIABLES {
+        command.env_remove(name);
+    }
+    let Some(root) = root else {
+        command.env("MKLINK_SITE_AGENT_ENABLED", "0");
+        return;
+    };
+    let prepared = (|| {
+        let config = site_agent_config::load(root)?;
+        if !config.enabled {
+            return Ok::<_, String>((config, None, None));
+        }
+        let token = site_agent_secret::load(root)?;
+        let stcp = if config.transport == "lan-stcp" {
+            Some(site_agent_secret::load_stcp(root)?)
+        } else {
+            None
+        };
+        config.validate(true, stcp.is_some())?;
+        if !site_agent_network::is_local_bind(&config.bind_host) {
+            return Err("The configured Site Agent bind address is not active".into());
+        }
+        if let Some(credentials) = stcp.as_ref() {
+            if credentials.auth_token == token || credentials.secret_key == token {
+                return Err("Site Agent and STCP credentials must be distinct".into());
+            }
+        }
+        Ok((config, Some(token), stcp))
+    })();
+    let (config, token, stcp) = match prepared {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("[tauri] Site Agent configuration disabled: {error}");
+            command.env("MKLINK_SITE_AGENT_ENABLED", "0").env(
+                "MKLINK_SITE_AGENT_CONFIGURATION_ERROR",
+                "Site Agent configuration or credentials are invalid",
+            );
+            return;
+        }
+    };
+    if !config.enabled {
+        command.env("MKLINK_SITE_AGENT_ENABLED", "0");
+        return;
+    }
+    command
+        .env("MKLINK_SITE_AGENT_ENABLED", "1")
+        .env("MKLINK_SITE_AGENT_HOST", &config.bind_host)
+        .env("MKLINK_SITE_AGENT_PORT", config.port.to_string())
+        .env(
+            "MKLINK_SITE_AGENT_ALLOW_LAN",
+            if config.allow_lan { "1" } else { "0" },
+        )
+        .env("MKLINK_SITE_AGENT_TRANSPORT", &config.transport)
+        .env(
+            "MKLINK_REMOTE_TOKEN",
+            token.expect("enabled configuration has a token"),
+        );
+    if let Some(credentials) = stcp {
+        command
+            .env("MKLINK_STCP_SERVER_ADDR", &config.stcp_server_addr)
+            .env(
+                "MKLINK_STCP_SERVER_PORT",
+                config.stcp_server_port.to_string(),
+            )
+            .env("MKLINK_STCP_USER", &config.stcp_user)
+            .env("MKLINK_STCP_PROXY_NAME", &config.stcp_proxy_name)
+            .env("MKLINK_STCP_AUTH_TOKEN", credentials.auth_token)
+            .env("MKLINK_STCP_SECRET", credentials.secret_key);
+    }
+}
+
+#[tauri::command]
+fn site_agent_config_get(
+    state: State<Sidecar>,
+) -> Result<site_agent_config::SiteAgentConfig, String> {
+    site_agent_config::load(&configured_site_agent_root(state.inner())?)
+}
+
+#[tauri::command]
+fn site_agent_config_save(
+    config: site_agent_config::SiteAgentConfig,
+    state: State<Sidecar>,
+) -> Result<bool, String> {
+    let root = configured_site_agent_root(state.inner())?;
+    config.validate(
+        site_agent_secret::configured(&root),
+        site_agent_secret::stcp_configured(&root),
+    )?;
+    if config.enabled && !site_agent_network::is_local_bind(&config.bind_host) {
+        return Err("The selected Site Agent bind address is not active on this host".into());
+    }
+    let previous = site_agent_config::load(&root)?;
+    let restart_required =
+        serde_json::to_value(&previous).ok() != serde_json::to_value(&config).ok();
+    site_agent_config::save(&root, &config)?;
+    Ok(restart_required)
+}
+
+#[tauri::command]
+fn site_agent_secret_state(
+    state: State<Sidecar>,
+) -> Result<site_agent_secret::SecretState, String> {
+    Ok(site_agent_secret::state(&configured_site_agent_root(
+        state.inner(),
+    )?))
+}
+
+#[tauri::command]
+fn site_agent_generate_token_and_copy(
+    state: State<Sidecar>,
+) -> Result<site_agent_secret::TokenResult, String> {
+    site_agent_secret::generate_and_copy(&configured_site_agent_root(state.inner())?)
+}
+
+#[tauri::command]
+fn site_agent_stcp_credentials_configure(
+    auth_token: String,
+    secret_key: String,
+    state: State<Sidecar>,
+) -> Result<(), String> {
+    site_agent_secret::store_stcp(
+        &configured_site_agent_root(state.inner())?,
+        &auth_token,
+        &secret_key,
+    )
+}
+
+#[tauri::command]
+fn site_agent_bind_addresses() -> Vec<String> {
+    site_agent_network::local_bind_addresses()
 }
 
 #[cfg(target_os = "windows")]
@@ -127,7 +301,6 @@ fn create_kill_on_close_job() -> Result<JobHandle, String> {
 /// Assign a child process to the job object so it dies when we die.
 #[cfg(target_os = "windows")]
 fn assign_to_job(job: &JobHandle, child: &Child) -> Result<(), String> {
-    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
 
     unsafe {
@@ -142,7 +315,12 @@ fn assign_to_job(job: &JobHandle, child: &Child) -> Result<(), String> {
     }
 }
 
-fn spawn_sidecar(launch: &SidecarLaunch, port: u16, project_root: &str) -> Result<Child, String> {
+fn spawn_sidecar(
+    launch: &SidecarLaunch,
+    port: u16,
+    project_root: &str,
+    site_agent_root: Option<&Path>,
+) -> Result<Child, String> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
     // CREATE_NO_WINDOW = 0x08000000 — prevents Python console window from flashing
@@ -167,7 +345,18 @@ fn spawn_sidecar(launch: &SidecarLaunch, port: u16, project_root: &str) -> Resul
             "--project-root",
             project_root,
         ])
-        .env("MKLINK_PARENT_JOB_BREAKAWAY_OK", "1")
+        .env("MKLINK_PARENT_JOB_BREAKAWAY_OK", "1");
+    apply_site_agent_environment(&mut command, site_agent_root);
+    if let SidecarLaunch::Bundled(path) = launch {
+        let stcp_library = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("mklink-stcp.dll");
+        if stcp_library.is_file() {
+            command.env("MKLINK_STCP_LIBRARY", stcp_library);
+        }
+    }
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -200,7 +389,12 @@ fn spawn_registered_sidecar(
         *job_guard = Some(create_kill_on_close_job()?);
     }
     let job = job_guard.as_ref().expect("job was initialized");
-    let child = spawn_sidecar(launch, port, project_root)?;
+    let site_agent_root = state
+        .site_agent_root
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    let child = spawn_sidecar(launch, port, project_root, site_agent_root.as_deref())?;
     retain_child_if_registered(
         child,
         |child| assign_to_job(job, child),
@@ -209,6 +403,26 @@ fn spawn_registered_sidecar(
             let _ = child.wait();
         },
     )
+}
+
+fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
+    let child = state.child.lock().map_err(|e| e.to_string())?.take();
+
+    // A PyInstaller onefile executable can leave the actual Python worker in
+    // the app-owned Job after its tracked launcher exits. Closing the Job is
+    // the authoritative way to terminate every process owned by this sidecar
+    // generation before starting another one.
+    #[cfg(target_os = "windows")]
+    {
+        let job = state.job.lock().map_err(|e| e.to_string())?.take();
+        drop(job);
+    }
+
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
 }
 
 /// Minimal HTTP health check using raw TCP — no external deps needed.
@@ -264,6 +478,7 @@ fn start_sidecar(
     project_root: Option<String>,
     port: Option<u16>,
 ) -> Result<u16, String> {
+    let port = port.unwrap_or(state.port);
     let mut guard = state.child.lock().map_err(|e| e.to_string())?;
     if guard.is_some()
         && guard
@@ -273,10 +488,12 @@ fn start_sidecar(
             .map(|s| s.is_none())
             .unwrap_or(false)
     {
-        return Ok(port.unwrap_or(state.port));
+        return Ok(port);
+    }
+    if check_health(port) {
+        return Ok(port);
     }
 
-    let port = port.unwrap_or(state.port);
     let project_root = project_root.unwrap_or_else(|| state.project_root.clone());
 
     let launch = resolve_sidecar_launch()?;
@@ -288,26 +505,19 @@ fn start_sidecar(
 
 #[tauri::command]
 fn stop_sidecar(state: State<Sidecar>) -> Result<(), String> {
-    let mut guard = state.child.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = guard.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    Ok(())
+    terminate_sidecar_tree(state.inner())
 }
 
 #[tauri::command]
 fn restart_sidecar(state: State<Sidecar>) -> Result<u16, String> {
-    // Stop
-    {
-        let mut guard = state.child.lock().map_err(|e| e.to_string())?;
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+    terminate_sidecar_tree(state.inner())?;
+    for _ in 0..20 {
+        if !check_health(state.port) {
+            return start_sidecar(state, None, None);
         }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    start_sidecar(state, None, None)
+    Err("The previous sidecar did not release its API port".into())
 }
 
 #[tauri::command]
@@ -381,12 +591,8 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
                 }
             };
 
-            match spawn_registered_sidecar(
-                state.inner(),
-                &launch,
-                state.port,
-                &state.project_root,
-            ) {
+            match spawn_registered_sidecar(state.inner(), &launch, state.port, &state.project_root)
+            {
                 Ok(child) => {
                     let mut guard = state.child.lock().unwrap();
                     *guard = Some(child);
@@ -435,6 +641,7 @@ pub fn run() {
             child: Mutex::new(None),
             port: 8765,
             project_root: default_project_root(),
+            site_agent_root: Mutex::new(None),
             #[cfg(target_os = "windows")]
             job: Mutex::new(None),
         })
@@ -444,24 +651,85 @@ pub fn run() {
             stop_sidecar,
             restart_sidecar,
             backend_alive,
+            site_agent_config_get,
+            site_agent_config_save,
+            site_agent_secret_state,
+            site_agent_generate_token_and_copy,
+            site_agent_stcp_credentials_configure,
+            site_agent_bind_addresses,
         ])
         .setup(move |app| {
+            let site_agent_root = app.path().app_local_data_dir()?.join("site-agent");
+            site_agent_config::ensure_root(&site_agent_root)?;
+            {
+                let state: State<Sidecar> = app.state();
+                *state
+                    .site_agent_root
+                    .lock()
+                    .map_err(|error| error.to_string())? = Some(site_agent_root);
+            }
             let handle = app.handle().clone();
             let shutdown_clone = shutdown.clone();
 
-            // Kill sidecar when main window closes
+            let show_item = MenuItem::with_id(app, "show", "Show MKLink", true, None::<&str>)?;
+            let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&show_item, &exit_item])?;
+            let tray_shutdown = shutdown.clone();
+            TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "exit" => {
+                        tray_shutdown.store(true, Ordering::Relaxed);
+                        let state: State<Sidecar> = app.state();
+                        let _ = terminate_sidecar_tree(state.inner());
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Keep the unified sidecar alive in the tray while Site Agent is enabled.
             let cleanup_handle = app.handle().clone();
             let cleanup_shutdown = shutdown.clone();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let state: State<Sidecar> = cleanup_handle.state();
+                        let keep_running = configured_site_agent_root(state.inner())
+                            .ok()
+                            .and_then(|root| site_agent_config::load(&root).ok())
+                            .is_some_and(|config| config.enabled);
+                        if keep_running {
+                            api.prevent_close();
+                            if let Some(window) = cleanup_handle.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                            return;
+                        }
                         eprintln!("[tauri] window closing, cleaning up sidecar...");
                         cleanup_shutdown.store(true, Ordering::Relaxed);
-                        let state: State<Sidecar> = cleanup_handle.state();
-                        let mut guard = state.child.lock().unwrap();
-                        if let Some(mut child) = guard.take() {
-                            let _ = child.kill();
-                            let _ = child.wait();
+                        if terminate_sidecar_tree(state.inner()).is_ok() {
                             eprintln!("[tauri] sidecar killed");
                         }
                     }
@@ -550,5 +818,48 @@ mod tests {
 
         assert_eq!(result.unwrap(), "child");
         assert!(!cleaned);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn terminating_sidecar_closes_job_and_kills_untracked_worker() {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        fn sleeping_child() -> Child {
+            Command::new("cmd.exe")
+                .args(["/D", "/C", "ping -n 60 127.0.0.1 >NUL"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .expect("spawn sleeping child")
+        }
+
+        let job = create_kill_on_close_job().expect("create job");
+        let tracked = sleeping_child();
+        assign_to_job(&job, &tracked).expect("assign tracked child");
+        let mut worker = sleeping_child();
+        assign_to_job(&job, &worker).expect("assign untracked worker");
+
+        let state = Sidecar {
+            child: Mutex::new(Some(tracked)),
+            port: 8765,
+            project_root: default_project_root(),
+            site_agent_root: Mutex::new(None),
+            job: Mutex::new(Some(job)),
+        };
+
+        terminate_sidecar_tree(&state).expect("terminate sidecar tree");
+        assert!(state.child.lock().unwrap().is_none());
+        assert!(state.job.lock().unwrap().is_none());
+
+        for _ in 0..40 {
+            if worker.try_wait().expect("poll worker").is_some() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let _ = worker.kill();
+        let _ = worker.wait();
+        panic!("untracked worker survived closing the app-owned job");
     }
 }

@@ -88,6 +88,25 @@ def _validate_skill_archive(path: Path, version: str) -> None:
             raise ValueError("Skill archive plugin version does not match the release")
 
 
+def _validate_site_agent_portable(
+    archive: Path,
+    manifest_path: Path,
+    version: str,
+) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_name = f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.zip"
+    if archive.name != expected_name:
+        raise ValueError("Site Agent portable archive name does not match the release")
+    bundle = manifest.get("bundle")
+    artifact = manifest.get("artifact")
+    if not isinstance(bundle, dict) or str(bundle.get("version")) != version:
+        raise ValueError("Site Agent portable version does not match the release")
+    if not isinstance(artifact, dict) or artifact.get("name") != archive.name:
+        raise ValueError("Site Agent portable manifest has an unexpected artifact")
+    if artifact.get("size") != archive.stat().st_size or artifact.get("sha256") != _sha256(archive):
+        raise ValueError("Site Agent portable manifest hash or size mismatch")
+
+
 def prepare_release(
     *,
     version: str,
@@ -96,6 +115,8 @@ def prepare_release(
     nsis: Path | str,
     updater_signature: Path | str,
     skill_archive: Path | str,
+    site_agent_archive: Path | str,
+    site_agent_manifest: Path | str,
 ) -> dict[str, object]:
     if not version or any(separator in version for separator in ("/", "\\")):
         raise ValueError("release version must be a path-safe value")
@@ -106,6 +127,13 @@ def prepare_release(
 
     skill_source = _require_file(skill_archive)
     _validate_skill_archive(skill_source, version)
+    site_agent_source = _require_file(site_agent_archive)
+    site_agent_manifest_source = _require_file(site_agent_manifest)
+    _validate_site_agent_portable(
+        site_agent_source,
+        site_agent_manifest_source,
+        version,
+    )
     sources = [
         (_require_file(nsis), f"Mklink-AI-Probe-v{version}-x64-Setup.exe"),
         (
@@ -115,6 +143,14 @@ def prepare_release(
         (
             skill_source,
             f"Mklink-AI-Probe-v{version}-Skill.zip",
+        ),
+        (
+            site_agent_source,
+            f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.zip",
+        ),
+        (
+            site_agent_manifest_source,
+            f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.manifest.json",
         ),
     ]
 
@@ -170,6 +206,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--nsis", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
     parser.add_argument("--skill-archive", required=True, type=Path)
+    parser.add_argument("--site-agent-archive", required=True, type=Path)
+    parser.add_argument("--site-agent-manifest", required=True, type=Path)
     return parser
 
 
@@ -182,6 +220,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         nsis=args.nsis,
         updater_signature=args.updater_signature,
         skill_archive=args.skill_archive,
+        site_agent_archive=args.site_agent_archive,
+        site_agent_manifest=args.site_agent_manifest,
     )
     print(json.dumps({
         "release_version": manifest["release_version"],

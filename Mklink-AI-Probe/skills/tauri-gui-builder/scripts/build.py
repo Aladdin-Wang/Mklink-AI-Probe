@@ -215,15 +215,50 @@ def build_sidecar(force=False):
     return False
 
 
+def stage_stcp_library():
+    """Stage the validated in-process STCP bridge for the NSIS bundle."""
+    source = (
+        SKILL_DIR / "native" / "stcp_bridge" / "build" / "mklink-stcp.dll"
+    ).resolve()
+    try:
+        header = source.read_bytes()[:2]
+    except OSError:
+        header = b""
+    if not source.is_file() or header != b"MZ":
+        raise RuntimeError(
+            "a valid native/stcp_bridge/build/mklink-stcp.dll is required"
+        )
+
+    destination = TAURI_DIR / "resources" / "mklink-stcp.dll"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return destination
+
+
+def add_stcp_bundle_resource(bundle):
+    """Map the staged bridge beside the installed sidecar on Windows."""
+    resources = bundle.get("resources", [])
+    if isinstance(resources, list):
+        resources = {name: name for name in resources}
+    elif isinstance(resources, dict):
+        resources = dict(resources)
+    else:
+        raise RuntimeError("bundle resources must be a list or mapping")
+    resources["resources/mklink-stcp.dll"] = "mklink-stcp.dll"
+    bundle["resources"] = resources
+
+
 @contextmanager
 def temporary_external_bin(config_path):
     """Add the release sidecar config and restore the exact original bytes."""
     config_path = Path(config_path)
     original = config_path.read_bytes()
     data = json.loads(original.decode("utf-8"))
-    data.setdefault("bundle", {})["externalBin"] = [
+    bundle = data.setdefault("bundle", {})
+    bundle["externalBin"] = [
         "binaries/mklink-sidecar"
     ]
+    add_stcp_bundle_resource(bundle)
     config_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -245,6 +280,7 @@ def temporary_bundle_config(config_path):
     bundle["externalBin"] = [
         "binaries/mklink-sidecar"
     ]
+    add_stcp_bundle_resource(bundle)
     config_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -309,20 +345,24 @@ def build_release_bundle():
     signing_key = load_updater_private_key()
     if not build_sidecar(force=True):
         raise SystemExit(1)
-    bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
-    if bundle_dir.exists():
-        try:
-            shutil.rmtree(bundle_dir)
-        except OSError as exc:
-            raise RuntimeError(
-                f"failed to remove stale bundle outputs: {bundle_dir}"
-            ) from exc
+    staged_stcp = stage_stcp_library()
+    try:
+        bundle_dir = TAURI_DIR / "target" / "release" / "bundle"
         if bundle_dir.exists():
-            raise RuntimeError(
-                f"stale bundle outputs still exist: {bundle_dir}"
-            )
-    with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
-        return build_tauri(bundle=True, signing_key=signing_key)
+            try:
+                shutil.rmtree(bundle_dir)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"failed to remove stale bundle outputs: {bundle_dir}"
+                ) from exc
+            if bundle_dir.exists():
+                raise RuntimeError(
+                    f"stale bundle outputs still exist: {bundle_dir}"
+                )
+        with temporary_bundle_config(TAURI_DIR / "tauri.conf.json"):
+            return build_tauri(bundle=True, signing_key=signing_key)
+    finally:
+        staged_stcp.unlink(missing_ok=True)
 
 
 def build_tauri(bundle=False, signing_key=None):

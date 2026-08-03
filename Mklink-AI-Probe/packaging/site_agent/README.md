@@ -1,4 +1,4 @@
-# Mklink Site Agent package v0.1.5
+# Mklink Site Agent package v0.1.6
 
 This ZIP is the standalone Windows field-side Site Agent. It includes the
 Python runtime and remote-agent dependencies; the field machine does not need

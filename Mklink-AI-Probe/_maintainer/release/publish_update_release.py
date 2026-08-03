@@ -51,6 +51,8 @@ def _release_names(version: str) -> dict[str, str]:
         "setup": f"{prefix}-Setup.exe",
         "updater_signature": f"{prefix}-Setup.exe.sig",
         "skill": f"Mklink-AI-Probe-v{version}-Skill.zip",
+        "site_agent": f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.zip",
+        "site_agent_manifest": f"MKLink-Site-Agent-v{version}-windows-x86_64-portable.manifest.json",
         "checksums": "SHA256SUMS.txt",
         "manifest": "release-manifest.json",
     }
@@ -82,7 +84,7 @@ def validate_release_preflight(
     expected_files = {release_dir / name for name in names.values()}
     actual_files = {path for path in release_dir.iterdir() if path.is_file()}
     if actual_files != expected_files:
-        raise RuntimeError("release directory must contain exactly the four public assets")
+        raise RuntimeError("release directory has an unexpected public asset set")
     if updater_installer.resolve() != (release_dir / names["setup"]).resolve():
         raise RuntimeError("updater installer filename does not match the release version")
     if updater_signature.resolve() != (release_dir / names["updater_signature"]).resolve():
@@ -92,10 +94,11 @@ def validate_release_preflight(
     if manifest.get("release_version") != version or manifest.get("source_commit") != head:
         raise RuntimeError("release manifest version or source commit does not match HEAD")
     expected_payload_names = {
-        names["setup"], names["updater_signature"], names["skill"]
+        names["setup"], names["updater_signature"], names["skill"],
+        names["site_agent"], names["site_agent_manifest"],
     }
     assets = manifest.get("assets")
-    if not isinstance(assets, list) or len(assets) != 3 or not all(
+    if not isinstance(assets, list) or len(assets) != 5 or not all(
         isinstance(value, dict) for value in assets
     ) or {
         value.get("name") for value in assets if isinstance(value, dict)
@@ -112,8 +115,20 @@ def validate_release_preflight(
     ).splitlines()
     if actual_checksums != checksum_lines:
         raise RuntimeError("SHA256SUMS.txt does not match the release manifest")
+    portable_manifest = json.loads(
+        (release_dir / names["site_agent_manifest"]).read_text(encoding="utf-8")
+    )
+    portable_artifact = portable_manifest.get("artifact")
+    portable = release_dir / names["site_agent"]
+    if not isinstance(portable_artifact, dict) or portable_artifact != {
+        "name": portable.name,
+        "sha256": sha256(portable),
+        "size": portable.stat().st_size,
+    }:
+        raise RuntimeError("Site Agent portable manifest does not match its archive")
     return [release_dir / names[key] for key in (
-        "setup", "updater_signature", "skill", "checksums", "manifest"
+        "setup", "updater_signature", "skill", "site_agent",
+        "site_agent_manifest", "checksums", "manifest"
     )]
 
 
@@ -561,7 +576,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-dir", required=True, type=Path)
     parser.add_argument("--updater-installer", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
-    parser.add_argument("--github-repo", default="Aladdin-Wang/Mklink-AI-Probe")
+    parser.add_argument("--github-repo", default="su5176/Mklink-AI-Probe")
     parser.add_argument("--gitee-repo", default="Aladdin-Wang/Mklink-AI-Probe")
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     return parser

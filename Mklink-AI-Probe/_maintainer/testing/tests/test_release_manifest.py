@@ -37,11 +37,31 @@ def release_inputs(tmp_path):
             json.dumps({"version": "0.1.0"}),
         )
         archive.writestr(f"{root}/scripts/skill_update.py", "# updater\n")
-    return nsis, signature, skill
+    portable = tmp_path / "MKLink-Site-Agent-v0.1.0-windows-x86_64-portable.zip"
+    portable.write_bytes(b"portable")
+    portable_manifest = tmp_path / "portable.manifest.json"
+    portable_manifest.write_text(
+        json.dumps({
+            "bundle": {"version": "0.1.0"},
+            "artifact": {
+                "name": portable.name,
+                "size": portable.stat().st_size,
+                "sha256": release_module_sha256(portable),
+            },
+        }),
+        encoding="utf-8",
+    )
+    return nsis, signature, skill, portable, portable_manifest
+
+
+def release_module_sha256(path):
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp_path):
-    nsis, signature, skill = release_inputs(tmp_path)
+    nsis, signature, skill, portable, portable_manifest = release_inputs(tmp_path)
     output = tmp_path / "release"
 
     result = release_module.prepare_release(
@@ -51,12 +71,16 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
         nsis=nsis,
         updater_signature=signature,
         skill_archive=skill,
+        site_agent_archive=portable,
+        site_agent_manifest=portable_manifest,
     )
 
     assert {asset["name"] for asset in result["assets"]} == {
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe",
         "Mklink-AI-Probe-v0.1.0-x64-Setup.exe.sig",
         "Mklink-AI-Probe-v0.1.0-Skill.zip",
+        "MKLink-Site-Agent-v0.1.0-windows-x86_64-portable.zip",
+        "MKLink-Site-Agent-v0.1.0-windows-x86_64-portable.manifest.json",
     }
     assert all(len(asset["sha256"]) == 64 for asset in result["assets"])
     assert all(set(asset) == {"name", "size", "sha256"} for asset in result["assets"])
@@ -71,7 +95,7 @@ def test_prepare_release_copies_named_assets_and_hashes_them(release_module, tmp
 
 
 def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
-    _nsis, signature, skill = release_inputs(tmp_path)
+    _nsis, signature, skill, portable, portable_manifest = release_inputs(tmp_path)
     with pytest.raises(FileNotFoundError, match="release input does not exist"):
         release_module.prepare_release(
             version="0.1.0",
@@ -80,13 +104,15 @@ def test_prepare_release_rejects_missing_inputs(release_module, tmp_path):
             nsis=tmp_path / "missing.exe",
             updater_signature=signature,
             skill_archive=skill,
+            site_agent_archive=portable,
+            site_agent_manifest=portable_manifest,
         )
 
 
 def test_prepare_release_rejects_nested_repository_skill_layout(
     release_module, tmp_path,
 ):
-    nsis, signature, _skill = release_inputs(tmp_path)
+    nsis, signature, _skill, portable, portable_manifest = release_inputs(tmp_path)
     nested = tmp_path / "nested.zip"
     with zipfile.ZipFile(nested, "w") as archive:
         root = "Mklink-AI-Probe-v0.1.0/Mklink-AI-Probe"
@@ -106,4 +132,6 @@ def test_prepare_release_rejects_nested_repository_skill_layout(
             nsis=nsis,
             updater_signature=signature,
             skill_archive=nested,
+            site_agent_archive=portable,
+            site_agent_manifest=portable_manifest,
         )

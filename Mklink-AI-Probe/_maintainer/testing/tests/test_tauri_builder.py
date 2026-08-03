@@ -52,13 +52,24 @@ def builtin_pack_builder():
     return module
 
 
+def configure_stub_stcp(builder, root):
+    builder.SKILL_DIR = root
+    library = root / "native" / "stcp_bridge" / "build" / "mklink-stcp.dll"
+    library.parent.mkdir(parents=True, exist_ok=True)
+    library.write_bytes(b"MZnative")
+
+
 def test_external_bin_patch_restores_exact_config(builder, tmp_path):
     config = tmp_path / "tauri.conf.json"
     original = b'{"bundle":{"active":true,"icon":[]}}\n'
     config.write_bytes(original)
 
     with builder.temporary_external_bin(config):
-        assert "externalBin" in config.read_text(encoding="utf-8")
+        patched = json.loads(config.read_text(encoding="utf-8"))
+        assert "externalBin" in patched["bundle"]
+        assert patched["bundle"]["resources"]["resources/mklink-stcp.dll"] == (
+            "mklink-stcp.dll"
+        )
 
     assert config.read_bytes() == original
 
@@ -78,6 +89,7 @@ def test_external_bin_patch_restores_after_failure(builder, tmp_path):
 def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     calls = []
     builder.TAURI_DIR = tmp_path
+    configure_stub_stcp(builder, tmp_path)
     (tmp_path / "tauri.conf.json").write_text(
         '{"bundle":{"active":true,"icon":[]}}', encoding="utf-8"
     )
@@ -116,6 +128,7 @@ def test_tauri_build_injects_packaged_api_origin(builder, monkeypatch, tmp_path)
 
 def test_release_bundle_removes_stale_bundle_outputs(builder, monkeypatch, tmp_path):
     builder.TAURI_DIR = tmp_path
+    configure_stub_stcp(builder, tmp_path)
     (tmp_path / "tauri.conf.json").write_text(
         '{"version":"0.1.0-rc.2","bundle":{"active":true}}',
         encoding="utf-8",
@@ -144,6 +157,7 @@ def test_release_bundle_aborts_when_stale_outputs_cannot_be_removed(
     builder, monkeypatch, tmp_path,
 ):
     builder.TAURI_DIR = tmp_path
+    configure_stub_stcp(builder, tmp_path)
     (tmp_path / "tauri.conf.json").write_text(
         '{"version":"0.1.0-rc.2","bundle":{"active":true}}',
         encoding="utf-8",
@@ -178,6 +192,7 @@ def test_bundle_config_preserves_product_version_and_builds_only_nsis(builder, t
         assert '"nsis"' in patched
         assert '"msi"' not in patched
         assert '"externalBin"' in patched
+        assert '"resources/mklink-stcp.dll": "mklink-stcp.dll"' in patched
 
     assert config.read_bytes() == original
 

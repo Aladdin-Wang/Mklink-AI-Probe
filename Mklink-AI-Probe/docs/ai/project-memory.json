@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T15:47:06+08:00",
+  "updated_at": "2026-08-03T20:52:01+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Master contains PR #8 merge commit 77a4433, qualified PR head 18af032, and tested runtime tip efbc44f. Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, and GUI status use product version 0.1.5; this final project-memory update is documentation-only.",
-    "remote_head": "origin/master contains PR #8 merge commit 77a4433 and the complete qualified head. The final documentation-only completion commit follows that merge without changing runtime code.",
-    "working_tree": "No runtime or documentation change is pending after the final project-memory commit. Task-owned build and HIL outputs remain outside Git and temporary sites, listeners, product processes, and plaintext credentials were cleaned."
+    "branch": "feature/gui-site-agent-integration",
+    "head": "The qualified v0.1.6 feature branch starts from su5176/master ba56901. It adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.",
+    "remote_head": "origin/master remains at ba56901 before this feature is merged. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.",
+    "working_tree": "Task-owned v0.1.6 source and generated GUI dist changes are pending on the feature branch. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "pr8_merged",
-    "current_task": "Pull request su5176/Mklink-AI-Probe#8 is merged. No PR implementation or release/publication task is active.",
-    "release": "Product and Site Agent package contracts are 0.1.5. The v0.1.5 tag, Releases, and latest-channel publication recorded below belong to the Aladdin-Wang fork, not the su5176 target repository. This merge gate does not sign, tag, publish, modify updates/latest.json, or synchronize Gitee."
+    "status": "v016_hil_qualified_pending_merge_and_release_key",
+    "current_task": "Integrate Site Agent into the main Tauri GUI and unified Python sidecar while retaining the standalone portable Windows client, then merge and publish v0.1.6 to the su5176 GitHub Releases page.",
+    "release": "All active product, plugin, main-Tauri, standalone-Tauri, core-package, portable-package, and release-history surfaces use 0.1.6. GitHub merge and publication are authorized by the maintainer request, and the fresh GEC1900 hardware gate is complete. A signed NSIS build still awaits the established Tauri updater private key or an explicit narrower portable-only publication decision. Gitee/latest.json synchronization is not authorized by the current GitHub-only request."
   },
   "milestones": [
     {
@@ -67,10 +67,14 @@
     {
       "name": "Remote Site Agent and in-process STCP integration",
       "status": "complete",
-      "notes": "su5176/master at 3d23762 adds the authenticated direct WebSocket protocol, engineer-side SDK/CLI/MCP, site registry, atomic transfer, in-process STCP bridge, standalone Windows Site Agent, Tauri control plane, deterministic packaging, and security hardening. The combined v0.1.5 runtime passed fresh Python, GUI, Go, Rust/Tauri, package, local Web, Site Agent, and available STM32 real-hardware qualification. External managed-LAN STCP was not rerun because no separate LAN frps endpoint was available."
+      "notes": "The standalone field client remains a portable Windows EXE/ZIP with direct WebSocket and in-process LAN STCP. The pending v0.1.6 main Tauri GUI adds a native-only Site Agent page and hosts the same listener inside the existing Python sidecar, borrowing the GUI Device and ResourceManager instead of opening a second backend or probe. DPAPI-protected credentials are passed only through the owned child environment; enabled service lifecycle is retained in the tray."
     }
   ],
   "verification": [
+    {
+      "area": "v0.1.6 unified main-GUI Site Agent final gate",
+      "result": "On feature/gui-site-agent-integration from ba56901, full Python passed 1,253 with 1 skipped; full GUI passed 49 files and 494 tests; vue-tsc and Vite 8.1.5 production build passed. Main Tauri Rust passed 10 tests, rustfmt check, and optimized release build. The isolated PyInstaller sidecar build and local health smoke passed. Fresh GEC1900 Windows HIL opened the actual Site Agent page, generated and stored a DPAPI CurrentUser token, applied LAN configuration, and verified a 8766-to-8767-to-8766 restart sequence. The engineer CLI passed health, status, ports, capabilities, reconnect, and probe.info through the LAN Agent. GUI, Agent, and remote call agreed on the same STM32F40x target while sharing one sidecar worker and probe connection. Alt+F4 hid the GUI to tray without stopping either listener or the target connection. Two HIL defects were fixed and regressed: the Windows Job Object now terminates the complete PyInstaller child generation before restart, and restore_last no longer requests symbol parsing when a shared connection has no AXF. The final field runtime was restarted without the temporary WebView debug port, reconnected read-only, and left ready; temporary plaintext token files, CLI site registration, debug environment, and scheduled tasks were removed. No flash, reset, halt, RAM write, register write, or firmware change was performed. The updater private key remains unavailable, so signed NSIS publication is still blocked."
+    },
     {
       "area": "PR #8 Site Agent v0.1.5 merge and final gate",
       "result": "Tested runtime tip efbc44f aligns the Site Agent core, provenance, wheel/distribution audit, portable GUI manifest, GUI status, README, and third-party notice with product version 0.1.5. Independent A/B core ZIPs matched at SHA-256 BF67DDF54C68F8DD7D36EB74DCB549CD83A019C829020398C3D9E06211F432EA; independent portable GUI ZIPs matched at 031DD8C564619C1DE67FFF4CFA00753FBCB4CE4CCA28518C8DC51877E9972E8F. Clean package audit passed 4 tests, full Python passed 1,242 with 1 skipped, GUI passed 48 files and 491 tests plus type check and Vite 8.1.5 production build, Site Agent Rust passed 5 tests and release build, runtime npm audit was clean, and the full npm tree had one development-only high finding. The new packaged process passed ready, wrong-token rejection, health/status/capabilities, cooperative stop, and zero-residue cleanup. No MKLink CDC probe was connected for a fresh physical rerun; commit 2bbbcc0 with combined STM32 Site Agent HIL is an ancestor, and mklink/remote plus native/stcp_bridge have identical Git trees through efbc44f, so no new physical result is inferred and the code-identical hardware evidence remains applicable. GitHub merged qualified head 18af032 into su5176/master as merge commit 77a4433 after confirming the PR remained CLEAN and had no configured status checks; origin/master was then verified to contain the qualified head."
@@ -149,7 +153,12 @@
     }
   ],
   "decisions": [
-    "Remote field machines run only the standalone Site Agent. Engineer machines use the Skill, SDK, remote CLI, or optional remote MCP over authenticated direct ws/wss or managed LAN/VPN transport.",
+    "The main Windows Tauri GUI exposes Site Agent configuration only in the native runtime. Its remote listener runs inside the existing Python sidecar and shares the current GUI Device and ResourceManager; Web-only GUI builds do not expose native credential controls. The standalone portable Site Agent remains a separately runnable EXE/ZIP for field-only deployments.",
+    "The main Tauri process owns every bundled sidecar generation through a Windows Job Object. Restart and shutdown close that Job before launching a replacement, so PyInstaller one-file workers cannot outlive their tracked launcher or retain the API/Agent ports.",
+    "Restoring a shared Device connection without an AXF is valid. The backend reparses symbols only when an active or requested AXF path exists; restore_last must not turn an already-connected probe into a No AXF path set failure.",
+    "Main-GUI Site Agent configuration is stored in LocalAppData, while the access token and STCP credentials are DPAPI CurrentUser ciphertext. Plaintext is generated or entered only for provisioning, never returned by status APIs or placed on command lines, and inherited Site Agent/STCP environment variables are removed before controlled child injection.",
+    "Product version 0.1.6 is one coordinated release across Python, plugin, main Tauri, standalone Tauri, core and portable package metadata, and GUI history. A complete Release contains five payloads—NSIS, updater signature, Skill ZIP, portable ZIP, and portable manifest—plus SHA256SUMS.txt and release-manifest.json.",
+    "A field machine may run Site Agent from the integrated main Windows GUI when local GUI workflows are needed, or from the standalone portable EXE for field-only deployment. Engineer machines use the Skill, SDK, remote CLI, or optional remote MCP over authenticated direct ws/wss or managed LAN/VPN transport.",
     "Non-loopback remote listeners require explicit --allow-lan and token configuration. Tokens come only from environment variables or owner-only files, and local operator confirmation remains mandatory for flash, erase, writes, activation, and Agent stop.",
     "LAN STCP uses the pinned in-process library bridge. No frpc/frps executable is launched or packaged, and tunnel, Site Agent, and local confirmation credentials remain distinct.",
     "Any combined-runtime change after the fork's ddf7ff27 qualification invalidates its deterministic package hashes and HIL verdict for release purposes; the integration branch must be rebuilt and requalified before merge or publication.",
@@ -176,14 +185,14 @@
     "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged."
   ],
   "hardware": {
-    "probe": "No MKLink CDC probe was connected during the final PR #8 merge gate; existing qualified probes and all identifiers are intentionally omitted.",
-    "target": "Existing STM32F103RC, HPM5301 EVK Lite, and earlier STM32F40x evidence remains recorded, but no target fixture is assumed connected in the final PR #8 merge session. Local paths are intentionally omitted.",
+    "probe": "Fresh v0.1.6 GEC1900 qualification used a real MKLink CDC probe and detected the MICROKEEN removable drive. Concrete port and device identifiers remain intentionally omitted.",
+    "target": "Fresh v0.1.6 GEC1900 qualification recognized an STM32F40x through the main GUI, unified Site Agent, and engineer CLI. Validation was read-only; no target state or firmware was changed. Existing STM32F103RC and HPM5301 EVK Lite evidence remains recorded.",
     "serial_fixture": "A paired ELTIMA virtual serial-port fixture is available; concrete COM numbers are intentionally omitted.",
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
   "known_limits": [
-    "The final PR #8 merge host had no connected MKLink CDC probe. The new v0.1.5 package passed real packaged lifecycle, authentication, health, and cleanup; physical probe behavior remains covered by the ancestor combined-branch HIL whose mklink/remote and native/stcp_bridge Git trees are identical to the tested runtime tip.",
-    "The combined branch passed direct loopback Site Agent automation and real STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh combined-branch proof.",
+    "The maintainer host has GitHub release access but no existing Tauri updater private key in MKLINK_TAURI_UPDATER_KEY or ~/.config/mklink-ai-probe/updater.key. Do not generate or substitute a new trust key implicitly; either provide the established key or explicitly narrow publication to unsigned non-updater assets.",
+    "The v0.1.6 branch passed direct LAN Site Agent automation and fresh STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh v0.1.6 proof.",
     "High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.",
     "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
     "Full npm audit reports one high-severity development-only transitive finding in brace-expansion; the runtime dependency audit is clean.",
@@ -191,6 +200,8 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.",
+    "Render and validate memory, commit the qualified feature branch, merge the tested tip into master, and push origin/master. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",

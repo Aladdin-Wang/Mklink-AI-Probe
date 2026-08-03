@@ -1,4 +1,4 @@
-"""Build the v0.1.5 candidate-only portable Site Agent GUI bundle."""
+"""Build the v0.1.6 portable Site Agent GUI bundle."""
 
 from __future__ import annotations
 
@@ -11,12 +11,9 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 
-BUNDLE_VERSION = "0.1.5"
-CORE_VERSION = "0.1.5"
-CORE_ZIP_SHA256 = "bf67ddf54c68f8dd7d36eb74dcb549cd83a019c829020398c3d9e06211f432ea"
-CORE_EXE_SHA256 = "f7b1181b98b25cdbb9d574857a0a1a671608981129c005e2d30f7288e559351d"
-STCP_DLL_SHA256 = "0d17b6ce89de3d15e6629f4c5a087e0bbf1d809bf4516aa52786be7175d2e9e9"
-ROOT_NAME = "MKLink-Site-Agent-v0.1.5-windows-x86_64-portable"
+BUNDLE_VERSION = "0.1.6"
+CORE_VERSION = "0.1.6"
+ROOT_NAME = "MKLink-Site-Agent-v0.1.6-windows-x86_64-portable"
 ZIP_NAME = f"{ROOT_NAME}.zip"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 FIXED_FILE_MODE = 0o100644
@@ -112,24 +109,41 @@ def build_portable(
     *,
     output: Path,
     core_zip: Path,
+    core_manifest: Path,
     gui_exe: Path,
     source_root: Path,
 ) -> tuple[Path, Path]:
     output = output.expanduser().resolve()
     core_zip = core_zip.expanduser().resolve()
+    core_manifest = core_manifest.expanduser().resolve()
     gui_exe = gui_exe.expanduser().resolve()
     source_root = source_root.expanduser().resolve()
     if BUNDLE_VERSION != CORE_VERSION or f"v{CORE_VERSION}" not in ROOT_NAME:
         raise RuntimeError("portable bundle and core versions must match")
-    if "v0.1.4" in output.as_posix().casefold():
-        raise RuntimeError("refusing a v0.1.4 output path")
     output.mkdir(parents=True, exist_ok=True)
     candidate = output / ZIP_NAME
     external_manifest = output / f"{ROOT_NAME}.manifest.json"
     if candidate.exists() or external_manifest.exists():
         raise RuntimeError("candidate already exists; use a new task-owned output directory")
-    if sha256(core_zip) != CORE_ZIP_SHA256:
-        raise RuntimeError(f"protected v{CORE_VERSION} core ZIP hash mismatch")
+    core_metadata = json.loads(core_manifest.read_text(encoding="utf-8"))
+    if str(core_metadata.get("product", {}).get("version")) != CORE_VERSION:
+        raise RuntimeError("core package version does not match the portable bundle")
+    core_artifact = core_metadata.get("artifact")
+    if not isinstance(core_artifact, dict) or core_artifact != {
+        "name": core_zip.name,
+        "sha256": sha256(core_zip),
+        "size": core_zip.stat().st_size,
+    }:
+        raise RuntimeError("core ZIP does not match its package manifest")
+    core_files = {
+        record.get("path"): record
+        for record in core_metadata.get("files", [])
+        if isinstance(record, dict)
+    }
+    core_exe_record = core_files.get("mklink-remote-agent.exe")
+    stcp_dll_record = core_files.get("mklink-stcp.dll")
+    if not isinstance(core_exe_record, dict) or not isinstance(stcp_dll_record, dict):
+        raise RuntimeError("core package manifest is missing required runtime files")
     if pe_subsystem(gui_exe) != 2:
         raise RuntimeError("portable GUI executable is not Windows GUI subsystem")
 
@@ -150,14 +164,14 @@ def build_portable(
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(archive.read(info))
         core_exe = bin_root / "mklink-remote-agent.exe"
-        if not core_exe.is_file() or sha256(core_exe) != CORE_EXE_SHA256:
+        if not core_exe.is_file() or sha256(core_exe) != core_exe_record.get("sha256"):
             raise RuntimeError(
                 f"embedded v{CORE_VERSION} core executable hash mismatch"
             )
         if pe_subsystem(core_exe) != 3:
             raise RuntimeError("embedded core executable is not Windows console subsystem")
         stcp_dll = bin_root / "mklink-stcp.dll"
-        if not stcp_dll.is_file() or sha256(stcp_dll) != STCP_DLL_SHA256:
+        if not stcp_dll.is_file() or sha256(stcp_dll) != stcp_dll_record.get("sha256"):
             raise RuntimeError("embedded in-process STCP library hash mismatch")
 
         shutil.copy2(gui_exe, bundle / "MKLink-Site-Agent.exe")
@@ -189,7 +203,7 @@ def build_portable(
                 "size": core_exe.stat().st_size,
                 "pe_subsystem": "windows-console-hidden-by-gui",
                 "source_zip": core_zip.name,
-                "source_zip_sha256": CORE_ZIP_SHA256,
+                "source_zip_sha256": str(core_artifact["sha256"]),
             },
             "stcp_dll": {
                 "name": "bin/mklink-stcp.dll",
@@ -269,6 +283,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--core-zip", type=Path, required=True)
+    parser.add_argument("--core-manifest", type=Path, required=True)
     parser.add_argument("--gui-exe", type=Path, required=True)
     parser.add_argument(
         "--source-root",
@@ -279,6 +294,7 @@ def main() -> int:
     candidate, manifest = build_portable(
         output=args.output,
         core_zip=args.core_zip,
+        core_manifest=args.core_manifest,
         gui_exe=args.gui_exe,
         source_root=args.source_root,
     )
