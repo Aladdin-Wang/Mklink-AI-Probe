@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-10T00:00:00+08:00`
-- 分支：`integration/v016-fixes`
-- HEAD：`v0.1.6 integration combines the HPM6E00 composite-CDC/browser firmware refresh fix and the CST92 relative-FLM sector geometry fix.`
-- 远端 HEAD：`origin/master remains 6360843 until this tested integration is merged; both repair branches are pushed to origin. No v0.1.6 tag, GitHub Release, updater manifest, or Gitee sync is part of this task.`
-- 工作树：The integration worktree contains both repair branches and is being rebuilt and requalified before merging into master.
-- 当前任务：Rebuild and qualify the combined HPM6E00 browser/port and CST92 relative-FLM fixes, then merge into master and prepare the local v0.1.6 installer, Skill, and Web GUI.
-- 状态：`v016_integration_pending_final_gate`
+- 更新时间：`2026-08-10T01:00:00+08:00`
+- 分支：`master`
+- HEAD：`b073f1e combines the HPM6E00 composite-CDC/browser firmware refresh fix and the CST92 relative-FLM sector geometry fix.`
+- 远端 HEAD：`origin/master contains b073f1e. No v0.1.6 tag, GitHub Release, updater manifest, or Gitee sync was changed.`
+- 工作树：The tested integration was fast-forwarded to master and pushed. Release artifacts are kept outside Git; local Skill v0.1.6 and Web GUI are installed.
+- 当前任务：Keep the merged v0.1.6 master, local installation, Skill, and same-source Web GUI available for maintainer validation.
+- 状态：`v016_master_installed_and_web_serving`
 
 ## 里程碑
 
@@ -48,6 +48,8 @@
 - **v0.1.5 NSIS installer qualification**：The standard x64 NSIS installer Mklink-AI-Probe-v0.1.5-x64-Setup.exe installed over the registered v0.1.4 application with exit code 0; registry DisplayVersion is 0.1.5. The installed Tauri app started with bundled mklink-sidecar.exe, GET /api/health and /api/online-flash/probes returned HTTP 200, and no python.exe/pythonw.exe process was present. Closing the app normally released port 8765 and left no Mklink or Python processes. SHA-256: D8D07B655D908A0685A0C4F3B68CF831FEAF4A8E01019070B542DDC30294DF23 for the installer and 1CB683A7A38FBE6DC8E9F096F9B3A944B545778157B1DCBE90A85C649DAB07F4 for its signature.
 - **Fork-only v0.1.5 publication**：This publication evidence belongs to the Aladdin-Wang fork and does not describe the su5176 target repository. In that fork, GitHub and Gitee master, annotated v0.1.5 tag, and updates branch were synchronized; both Releases contain the installer, updater signature, Skill archive, SHA256SUMS.txt, and release-manifest.json. The published installer is 65,895,556 bytes with SHA-256 8B85845A9858762808B4B5FEE0DC581D11D46AC92CC55C3F3C6DD45C41893321; the Skill archive is 3,035,282 bytes with SHA-256 8492E85059915690E63BADD5DF7D9B96BA02231070E71E4E6CDB17795DCF8A1F. Anonymous Gitee downloads matched both values, and the fork's GitHub/Gitee latest.json resolve version 0.1.5 and source commit 76a66b6bad79b289398f80edbbe604e5b2f2fce5.
 - **CST92F41 relative Pack FLM geometry**：The installed Chipsea CST92Fxx Pack declares a 1 MiB PDSC flash region at 0x00400000 while its FLM declares the same 1 MiB device and 4 KiB sectors from 0x0. The old static intersection and pyOCD FlmFlashRegionBuilder therefore both produced no usable sector geometry. A bounded compatibility rule now rebases only non-overlapping FLM ranges that fit wholly inside the owning PDSC region, and the runtime copies the FLM before changing its start so shared Pack metadata is not mutated. The customer Intel HEX digest 86c75c18600af4cd71f68a65ea72c41d0a8c3c0699c67bdf2299658fdecd5eba spans 0x00404000-0x0043CEEC. Static inspection and a real pyOCD FLM finalisation produced 4 KiB geometry; the Web GUI showed FLM verified, 57 selected sectors from 0x00404000 through 0x0043C000, and an enabled Start Flash button with no console errors. Online-flash focused coverage passed 195 tests; full GUI passed 49 files and 494 tests; vue-tsc and Vite 8.1.5 production build passed. Python raw full reached 1,242 passed and 1 skipped with the same 12 Windows symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable gate passed 1,242 with 1 skipped and 15 explicit deselections. No CST target erase, program, reset, or hardware connection was performed.
+- **v0.1.6 combined master final gate and local distribution**：Integration commit b073f1e was fast-forwarded to master and pushed to origin/master. The combined Python suite passed 1,243 with 1 skipped; the comparable gate passed 1,243 with 1 skipped and 15 explicit deselections; GUI passed 49 files and 497 tests; vue-tsc and Vite 8.1.5 production build passed; focused HPM/CST online-flash regression tests passed 150. The signed standard NSIS installer built with the repository Tauri builder, installed over the local app with exit code 0, registered DisplayVersion 0.1.6, and passed installed /api/health and /api/online-flash/probes checks. The installed process tree contained Tauri and bundled sidecar processes but no Python; the app was terminated with the Computer Use helper unavailable, and port 8765 plus Mklink processes were released. Installer SHA-256 is 0508D9B7924B31DCC53C87E437FE883C6C5FF27D6CFB3C572B1C55860D987904; signature SHA-256 is AF6441E0FC126F249A1B2EEB3681E6D95E3F36D9D63BB4ED6B88CA5EEEFA3200.
+- **v0.1.6 local Skill and same-source Web GUI**：The v0.1.6 Skill archive was built from b073f1e with fresh gui/dist, validated by _validate_skill_archive, and installed into the user Skill root. web-entry install was re-registered. The installed Skill GUI is serving from http://127.0.0.1:8766 with /api/health status ok, root HTTP 200, and a hashed production asset HTTP 200. Skill SHA-256 is AEA573BC36095B4544E3A46F6597A2461CEEC08C26BBAC4D30754AAC7A2F2F97.
 
 ## 架构决策
 
@@ -94,7 +96,7 @@
 
 ## 下一动作
 
-1. Run the combined v0.1.6 Python, GUI, production-build, installer, Skill, and Web gates; preserve the explicit CST hardware-gate waiver in the release handoff.
+1. Keep the local v0.1.6 Web GUI available for maintainer UI validation; stop it only when the validation session is complete.
 2. Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.
 3. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
 4. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
@@ -104,14 +106,14 @@
 
 ## 已知限制
 
-- The maintainer host has GitHub release access but no existing Tauri updater private key in MKLINK_TAURI_UPDATER_KEY or ~/.config/mklink-ai-probe/updater.key. Do not generate or substitute a new trust key implicitly; either provide the established key or explicitly narrow publication to unsigned non-updater assets.
+- The maintainer host has an established local Tauri updater private key and the v0.1.6 installer was signed for local qualification. Official publication still requires separate maintainer authorization; do not change tags, releases, updater manifests, or Gitee state implicitly.
 - The v0.1.6 branch passed direct LAN Site Agent automation and fresh STM32 hardware qualification, but external managed-LAN STCP was not rerun because no independent LAN frps endpoint was available. The imported fork STCP/HIL evidence remains supplementary rather than fresh v0.1.6 proof.
 - High-event-rate SystemView can overflow the target RTT buffer. Host TaskList retry recovers metadata, but physically dropped event packets cannot be reconstructed; increase the target buffer for loss-sensitive timing analysis.
 - The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.
 - Full npm audit reports one high-severity development-only transitive finding in brace-expansion; the runtime dependency audit is clean.
 - Serial Assistant's closed loop used a paired virtual serial driver and therefore does not qualify USB-UART electrical behavior, cable faults, or adapter-specific driver latency; the host software and Windows serial API path are qualified.
 - Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection; repeated selection of the same path is supported.
-- The CST92F41 relative-FLM fix has real Pack, customer-image, pyOCD finalisation, and Web interaction evidence, but no physical CST92 target was available for erase/program/verify HIL. Do not merge or release it without that hardware gate or an explicit maintainer waiver.
+- The CST92F41 relative-FLM fix has real Pack, customer-image, pyOCD finalisation, and Web interaction evidence, but no physical CST92 target was available for erase/program/verify HIL. This merge uses the maintainer's explicit hardware-gate waiver; future physical CST release evidence remains pending.
 - USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage.
 
 ## 延续协议
