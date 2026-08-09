@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import type { FormattedHexRow } from '../../lib/hexPreview'
 import type { ImageInspection } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
+import { supportsTrackedFirmwarePicker } from '../../lib/filePicker'
 
 const props = defineProps<{ file: File | null; sourcePath?: string; nativeDropActive?: boolean; baseAddress: string; baseError: string; inspection: ImageInspection | null; rows: FormattedHexRow[]; paddingTop: number; paddingBottom: number; loading: boolean; error: string }>()
 const emit = defineEmits<{ file: [file: File | null]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number] }>()
@@ -12,8 +13,14 @@ const isBin = computed(() => sourceName.value.toLowerCase().endsWith('.bin'))
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
 const nativeApp = isTauri()
+const trackedBrowserPicker = supportsTrackedFirmwarePicker()
 function openFile() { fileInput.value?.click() }
-function fileChanged(event: Event) { emit('file', (event.target as HTMLInputElement).files?.[0] ?? null) }
+function fileChanged(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+  emit('file', file)
+}
 function dropped(event: DragEvent) {
   dragging.value = false
   const files = Array.from(event.dataTransfer?.files || [])
@@ -34,7 +41,7 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
     @drop.prevent="dropped"
   >
   <div class="firmware-toolbar">
-    <button v-if="nativeApp" data-testid="firmware-trigger" class="file-button" type="button" @click="emit('browse')">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}</button>
+    <button v-if="nativeApp || trackedBrowserPicker" data-testid="firmware-trigger" class="file-button" type="button" @click="emit('browse')">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}</button>
     <label v-else data-testid="firmware-trigger" class="file-button" role="button" tabindex="0" @keydown.enter.prevent="openFile" @keydown.space.prevent="openFile">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}<input ref="fileInput" class="visually-hidden" data-testid="firmware-input" type="file" accept=".bin,.hex" @change="fileChanged"></label>
     <span class="filename">{{ sourceName || tr('拖拽 BIN / HEX 到此处，或选择固件', 'Drop BIN / HEX here, or select firmware') }}</span>
     <label v-if="isBin" class="base-field">{{ tr('基地址', 'Base Address') }}<input data-testid="bin-base" :value="baseAddress" :placeholder="tr('如 0x08000000', 'e.g. 0x08000000')" @input="emit('base', ($event.target as HTMLInputElement).value)"></label>
