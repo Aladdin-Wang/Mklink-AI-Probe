@@ -1661,6 +1661,47 @@ def test_installed_pack_memory_map_uses_pyocd_flm_geometry(tmp_path, monkeypatch
     ]
 
 
+def test_installed_pack_relocates_relative_flm_geometry(tmp_path, monkeypatch):
+    pack_path = tmp_path / "Vendor.Device.pack"
+    pack_path.write_bytes(b"pack")
+
+    class FlashRegion:
+        name = "IROM1"
+        start = 0x00400000
+        length = 0x00100000
+        is_flash = True
+        is_writable = True
+        sector_size = 0
+        blocksize = 0
+
+        class flm:
+            flash_start = 0
+            flash_size = 0x00100000
+
+            @staticmethod
+            def iter_sector_size_ranges():
+                sector_range = type("Range", (), {
+                    "start": 0,
+                    "end": 0x000FFFFF,
+                })()
+                yield sector_range, 0x1000
+
+    class Device:
+        part_number = "CST92F41KxVxxx"
+        memory_map = [FlashRegion()]
+
+    class Pack:
+        devices = [Device()]
+
+    monkeypatch.setattr(
+        "pyocd.target.pack.cmsis_pack.CmsisPack", lambda _path: Pack()
+    )
+
+    assert _pack_memory_regions("CST92F41KxVxxx", pack_path) == [
+        MemoryRegion("IROM1", 0x00400000, 0x00100000, True, True, 0x1000),
+    ]
+
+
 def test_memory_provider_prefers_exact_installed_pack_over_dynamic_registry(
     tmp_path, monkeypatch,
 ):
