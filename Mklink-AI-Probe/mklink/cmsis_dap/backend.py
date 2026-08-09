@@ -6,6 +6,7 @@ import hashlib
 import io
 import re
 import threading
+from copy import copy
 from pathlib import Path
 from types import MethodType
 from typing import Any, Callable, Iterator, Mapping, Optional, Tuple
@@ -21,6 +22,72 @@ _LOCKED_ERROR_PATTERN = re.compile(
     r"|\bmass\s+erase\s+disabled\s+due\s+protection\b",
     re.IGNORECASE,
 )
+
+
+def _pack_flm_address_offset(
+    region_start: int,
+    region_length: int,
+    flm_start: int,
+    flm_size: int,
+) -> int:
+    values = (region_start, region_length, flm_start, flm_size)
+    if any(not isinstance(value, int) or isinstance(value, bool) for value in values):
+        return 0
+    if region_start < 0 or region_length <= 0 or flm_start < 0 or flm_size <= 0:
+        return 0
+
+    region_end = region_start + region_length
+    flm_end = flm_start + flm_size
+    if flm_start < region_end and region_start < flm_end:
+        return 0
+    if flm_end > region_length or region_end > 0x1_0000_0000:
+        return 0
+    return region_start
+
+
+def _relocate_pack_flm_regions(target: Any) -> None:
+    for region in getattr(target, "memory_map", ()):
+        if not bool(getattr(region, "is_flash", False)):
+            continue
+        algorithm = getattr(region, "flm", None)
+        offset = _pack_flm_address_offset(
+            getattr(region, "start", None),
+            getattr(region, "length", None),
+            getattr(algorithm, "flash_start", None),
+            getattr(algorithm, "flash_size", None),
+        )
+        if offset == 0:
+            continue
+
+        relocated = copy(algorithm)
+        relocated.flash_start = int(algorithm.flash_start) + offset
+        flash_info = getattr(algorithm, "flash_info", None)
+        if getattr(flash_info, "start", None) == algorithm.flash_start:
+            relocated.flash_info = copy(flash_info)
+            relocated.flash_info.start = relocated.flash_start
+        region.flm = relocated
+
+
+class _PackFlmDelegate:
+    def __init__(self, next_delegate: Any = None) -> None:
+        self._next_delegate = next_delegate
+
+    def will_init_target(self, target: Any, init_sequence: Any) -> None:
+        callback = getattr(self._next_delegate, "will_init_target", None)
+        if callable(callback):
+            callback(target, init_sequence)
+        init_sequence.insert_before(
+            "create_flash",
+            (
+                "mklink_pack_flm_relocation",
+                lambda: _relocate_pack_flm_regions(target),
+            ),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        if self._next_delegate is None:
+            raise AttributeError(name)
+        return getattr(self._next_delegate, name)
 
 
 class _CustomFlmDelegate:
@@ -531,13 +598,18 @@ class PyOcdBackend:
                 if resolved_pack is not None:
                     options["pack"] = resolved_pack
                 session = factory(resolved_probe, options)
+                delegate = getattr(session, "delegate", None)
+                if resolved_pack is not None:
+                    delegate = _PackFlmDelegate(delegate)
                 if resolved_flms:
-                    session.delegate = _CustomFlmDelegate(
+                    delegate = _CustomFlmDelegate(
                         tuple(resolved_flms),
-                        getattr(session, "delegate", None),
+                        delegate,
                         ram_region,
                         tuple(resolved_regions),
                     )
+                if delegate is not getattr(session, "delegate", None):
+                    session.delegate = delegate
                 session.open()
                 session.target.reset_and_halt()
                 self._session = session

@@ -10,7 +10,10 @@ from pathlib import Path
 import pytest
 
 from mklink.cmsis_dap.backend import HpmRomBackend, PyOcdBackend, RoutingFlashBackend
-from mklink.cmsis_dap.backend import _install_custom_flm_regions
+from mklink.cmsis_dap.backend import (
+    _install_custom_flm_regions,
+    _relocate_pack_flm_regions,
+)
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import ImageInspection, ImageSegment, MemoryRegion
 
@@ -603,6 +606,87 @@ def test_custom_flm_regions_do_not_mutate_a_shared_pack_memory_map(
     assert len(shared.regions) == 2
     assert len(targets[0].memory_map.regions) == 3
     assert len(targets[1].memory_map.regions) == 3
+
+
+def test_pack_flm_relocation_clones_relative_algorithm() -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap
+
+    flash_info = type("FlashInfo", (), {"start": 0})()
+    algorithm = type("Algorithm", (), {
+        "flash_start": 0,
+        "flash_size": 0x100000,
+        "flash_info": flash_info,
+    })()
+    memory_map = MemoryMap(FlashRegion(
+        name="IROM1",
+        start=0x00400000,
+        length=0x100000,
+        flm=algorithm,
+    ))
+    target = type("Target", (), {"memory_map": memory_map})()
+
+    _relocate_pack_flm_regions(target)
+
+    relocated = memory_map.get_region_for_address(0x00400000).flm
+    assert relocated is not algorithm
+    assert relocated.flash_start == 0x00400000
+    assert relocated.flash_info is not flash_info
+    assert relocated.flash_info.start == 0x00400000
+    assert algorithm.flash_start == 0
+    assert algorithm.flash_info.start == 0
+
+
+def test_pack_flm_relocation_rejects_out_of_bounds_relative_algorithm() -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap
+
+    algorithm = type("Algorithm", (), {
+        "flash_start": 0x80000,
+        "flash_size": 0x100000,
+    })()
+    memory_map = MemoryMap(FlashRegion(
+        name="IROM1",
+        start=0x00400000,
+        length=0x100000,
+        flm=algorithm,
+    ))
+    target = type("Target", (), {"memory_map": memory_map})()
+
+    _relocate_pack_flm_regions(target)
+
+    assert memory_map.get_region_for_address(0x00400000).flm is algorithm
+    assert algorithm.flash_start == 0x80000
+
+
+def test_pack_connect_relocates_flm_before_create_flash(tmp_path: Path) -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap
+
+    pack = tmp_path / "Vendor.Device.pack"
+    pack.write_bytes(b"pack")
+    algorithm = type("Algorithm", (), {
+        "flash_start": 0,
+        "flash_size": 0x100000,
+    })()
+    target = FakeTarget(MemoryMap(FlashRegion(
+        name="IROM1",
+        start=0x00400000,
+        length=0x100000,
+        flm=algorithm,
+    )))
+    session = FakeSession(target)
+    backend = PyOcdBackend(session_factory=lambda probe, options: session)
+
+    backend.connect(object(), "CST92F41KxVxxx", 1_000_000, pack=str(pack))
+    inserted = []
+    sequence = type("Sequence", (), {
+        "insert_before": lambda self, task, item: inserted.append((task, item)),
+    })()
+    session.delegate.will_init_target(target, sequence)
+
+    assert inserted[0][0] == "create_flash"
+    assert inserted[0][1][0] == "mklink_pack_flm_relocation"
+    inserted[0][1][1]()
+    assert target.memory_map.get_region_for_address(0x00400000).flm.flash_start == 0x00400000
+    backend.disconnect()
 
 
 def test_custom_flm_replaces_overlapping_generic_placeholder_region(

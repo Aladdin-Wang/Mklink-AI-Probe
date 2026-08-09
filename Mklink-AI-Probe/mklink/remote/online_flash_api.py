@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from mklink.cmsis_dap.backend import _pack_flm_address_offset
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import JobRequest, JobState, MemoryRegion, TargetRecord
 from mklink.cmsis_dap.probes import filter_mklink_probes
@@ -1453,10 +1454,16 @@ def _memory_map_regions(memory_map: object) -> List[MemoryRegion]:
                 flm = getattr(region, "flm", None)
                 ranges = getattr(flm, "iter_sector_size_ranges", None)
                 if callable(ranges):
+                    flm_offset = _pack_flm_address_offset(
+                        start,
+                        length,
+                        getattr(flm, "flash_start", None),
+                        getattr(flm, "flash_size", None),
+                    )
                     flm_regions = []
                     for index, (sector_range, range_sector_size) in enumerate(ranges()):
-                        range_start = max(start, int(sector_range.start))
-                        range_end = min(start + length, int(sector_range.end) + 1)
+                        range_start = max(start, int(sector_range.start) + flm_offset)
+                        range_end = min(start + length, int(sector_range.end) + 1 + flm_offset)
                         if range_start < range_end and isinstance(range_sector_size, int) and range_sector_size > 0:
                             name = str(getattr(region, "name", "flash"))
                             flm_regions.append(MemoryRegion(
