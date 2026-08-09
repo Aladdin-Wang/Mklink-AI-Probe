@@ -817,6 +817,34 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('automatically reloads a rebuilt browser firmware file from its retained handle', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    let currentFile = new File(['old'], 'firmware.hex', { lastModified: 100 })
+    const handle = {
+      kind: 'file' as const,
+      name: currentFile.name,
+      getFile: vi.fn(async () => currentFile),
+    }
+    vi.stubGlobal('showOpenFilePicker', vi.fn(async () => [handle]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(1))
+    currentFile = new File(['rebuilt-firmware'], 'firmware.hex', { lastModified: 200 })
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(2), { timeout: 3000 })
+    const inspectCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))
+    const firstFile = (inspectCalls[0][1]?.body as FormData).get('file') as File
+    const rebuiltFile = (inspectCalls[1][1]?.body as FormData).get('file') as File
+    expect(firstFile.size).toBe(3)
+    expect(rebuiltFile.size).toBe(16)
+    expect(wrapper.text()).toContain('已自动加载重新编译的 firmware.hex')
+    wrapper.unmount()
+  })
+
   it('waits for an explicit BIN base and inspects automatically after it is entered', async () => {
     const fetchMock = viewFetch()
     vi.stubGlobal('fetch', fetchMock)
@@ -1478,6 +1506,22 @@ describe('online flash component quality', () => {
     expect(input.classes()).toContain('visually-hidden')
     await trigger.trigger('keydown', { key: 'Enter' })
     expect(click).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the fallback browser input so selecting the same path emits again', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+    } })
+    const input = wrapper.get('[data-testid="firmware-input"]')
+    const file = new File(['firmware'], 'demo.bin')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+
+    await input.trigger('change')
+    await input.trigger('change')
+
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(wrapper.emitted('file')).toEqual([[file], [file]])
   })
 
   it('accepts firmware dropped into the online workspace', async () => {

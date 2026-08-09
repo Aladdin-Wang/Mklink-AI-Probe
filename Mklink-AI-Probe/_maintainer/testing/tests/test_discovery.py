@@ -3,13 +3,22 @@ from types import SimpleNamespace
 from mklink import discovery
 
 
-def port(device, *, hwid="", vid=None, pid=None, manufacturer=""):
+def port(
+    device,
+    *,
+    hwid="",
+    vid=None,
+    pid=None,
+    manufacturer="",
+    serial_number=None,
+):
     return SimpleNamespace(
         device=device,
         hwid=hwid,
         vid=vid,
         pid=pid,
         manufacturer=manufacturer,
+        serial_number=serial_number,
     )
 
 
@@ -30,6 +39,42 @@ def test_discovery_probes_usb_before_virtual_and_skips_bluetooth(monkeypatch):
 
     assert discovery.find_mklink_cdc_port() == "COM227"
     assert probed == ["COM228", "COM227"]
+
+
+def test_discovery_probes_composite_interfaces_with_same_serial(monkeypatch):
+    ports = [
+        port(
+            "COM221",
+            hwid="USB VID:PID=0D28:0202",
+            vid=0x0D28,
+            pid=0x0202,
+            serial_number="probe-1",
+        ),
+        port(
+            "COM220",
+            hwid="USB VID:PID=0D28:0202",
+            vid=0x0D28,
+            pid=0x0202,
+            serial_number="probe-1",
+        ),
+        port(
+            "COM219",
+            hwid="USB VID:PID=0D28:0202",
+            vid=0x0D28,
+            pid=0x0202,
+            serial_number="probe-1",
+        ),
+    ]
+    probed = []
+    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
+    monkeypatch.setattr(
+        discovery,
+        "_probe_port",
+        lambda device: probed.append(device) or device == "COM220",
+    )
+
+    assert discovery.find_mklink_cdc_port(serial_number="probe-1") == "COM220"
+    assert probed == ["COM221", "COM220"]
 
 
 def test_microkeen_disk_reads_volume_labels_without_console_process(monkeypatch):

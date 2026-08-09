@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-03T20:54:44+08:00",
+  "updated_at": "2026-08-09T23:49:00+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Qualified feature commit ca031f6 is merged into master by f985dba. v0.1.6 adds the native-only main-GUI Site Agent page, one shared sidecar/device/resource manager, DPAPI credential storage, tray lifecycle, and a seven-file Release contract including the standalone portable ZIP and manifest.",
-    "remote_head": "origin/master contains merge commit f985dba and qualified feature commit ca031f6. GitHub authentication is active for su5176/Mklink-AI-Probe and v0.1.6 does not yet exist as a tag or Release.",
-    "working_tree": "The v0.1.6 code merge is pushed to origin/master. Full automated, production-build, and fresh GEC1900 Windows hardware gates are green. The qualified main GUI remains running on the field machine with its unified local backend, LAN Site Agent, and recognized STM32F40x target."
+    "branch": "fix/hpm-multi-interface-port",
+    "head": "The v0.1.6 master baseline remains 6360843. This branch adds composite-USB CDC protocol-based port resolution plus browser firmware-handle tracking so rebuilt online-flash images replace stale browser snapshots.",
+    "remote_head": "origin/master and su5176/master both remain at 6360843. The qualified fix/hpm-multi-interface-port branch is pushed to origin without merging. v0.1.6 still has no tag or GitHub Release.",
+    "working_tree": "The HPM6E00 port-discovery and browser firmware-refresh fixes, regression coverage, and qualification evidence are committed and pushed on fix/hpm-multi-interface-port. Only local runtime and test caches remain untracked and preserved. The source FastAPI and Vite GUI remain running for maintainer interaction; the target is disconnected after successful qualification."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v016_merged_pending_release_key",
-    "current_task": "Integrate Site Agent into the main Tauri GUI and unified Python sidecar while retaining the standalone portable Windows client, then merge and publish v0.1.6 to the su5176 GitHub Releases page.",
-    "release": "All active product, plugin, main-Tauri, standalone-Tauri, core-package, portable-package, and release-history surfaces use 0.1.6. GitHub merge and publication are authorized by the maintainer request, and the fresh GEC1900 hardware gate is complete. A signed NSIS build still awaits the established Tauri updater private key or an explicit narrower portable-only publication decision. Gitee/latest.json synchronization is not authorized by the current GitHub-only request."
+    "status": "hpm6e00_web_firmware_refresh_verified_pending_user_ui_review",
+    "current_task": "Resolve HPM6E00 online-flash port selection and stale browser firmware snapshots, then qualify rebuilt-image refresh and the corrected ROM-API path on real hardware.",
+    "release": "Both fixes are committed, hardware-qualified, and pushed to the origin fix branch but are not merged, tagged, or published. Visible system-browser auto-refresh confirmation remains with the maintainer because the Windows automation service was unavailable. The v0.1.6 updater signing-key release decision remains unchanged and outside this task."
   },
   "milestones": [
     {
@@ -27,7 +27,7 @@
     {
       "name": "Flash, symbols, and RTT correctness",
       "status": "complete",
-      "notes": "Builtin pyelftools is authoritative by default; aggregate symbols and bounded pasted C layouts work; symbol reload is a shared device transaction; HPM low-address writable ELF sections can supply _SEGGER_RTT; successful automatic connections backfill the actual serial port; online/offline flash workflows retain files and rebuilt-image changes correctly."
+      "notes": "Builtin pyelftools is authoritative by default; aggregate symbols and bounded pasted C layouts work; symbol reload is a shared device transaction; HPM low-address writable ELF sections can supply _SEGGER_RTT; successful automatic connections backfill the actual serial port; Tauri paths and Chromium file handles detect rebuilt online-flash images, while legacy browser inputs permit same-path manual reload."
     },
     {
       "name": "HPM5301 ROM API and SuperWatch",
@@ -150,6 +150,10 @@
     {
       "area": "Fork-only v0.1.5 publication",
       "result": "This publication evidence belongs to the Aladdin-Wang fork and does not describe the su5176 target repository. In that fork, GitHub and Gitee master, annotated v0.1.5 tag, and updates branch were synchronized; both Releases contain the installer, updater signature, Skill archive, SHA256SUMS.txt, and release-manifest.json. The published installer is 65,895,556 bytes with SHA-256 8B85845A9858762808B4B5FEE0DC581D11D46AC92CC55C3F3C6DD45C41893321; the Skill archive is 3,035,282 bytes with SHA-256 8492E85059915690E63BADD5DF7D9B96BA02231070E71E4E6CDB17795DCF8A1F. Anonymous Gitee downloads matched both values, and the fork's GitHub/Gitee latest.json resolve version 0.1.5 and source commit 76a66b6bad79b289398f80edbbe604e5b2f2fce5."
+    },
+    {
+      "area": "HPM6E00 composite-CDC discovery fix and online-flash HIL",
+      "result": "On fix/hpm-multi-interface-port, a real composite USB probe confirmed that shared CDC serial numbers made the old resolver choose by enumeration order; same-serial candidates now undergo an MKLink protocol handshake. The source Web GUI then exposed a second defect: browser uploads retained an old 36,932-byte File snapshot, and selecting the same path again did not fire change. Chromium/Edge selection now retains a read-only file handle, polls size plus lastModified every second, and uploads a fresh File when the build changes; the legacy input is cleared after each selection so same-path manual reload always emits. Regression coverage verified a retained handle causes a second inspection with rebuilt bytes. The maintainer's SEGGER Embedded Studio demo.bin was 35,052 bytes at 0x80000400 with SHA-256 bf9d5c79c10bc729bce2cf2dbb197e42ad0e7ff8d5c28ce8f896289ac2cd7388. A real HPM6E00 online-flash job completed connect, ROM-API program, verify, reset, and disconnect at 10 MHz with that exact size and digest. A read-only automatic reconnect selected the protocol-valid CDC interface, returned IDCODE 0x1000563d, and the first 16 Flash bytes exactly matched the BIN before disconnect. GUI passed 49 files and 497 tests; vue-tsc and Vite 8.1.5 production build passed. Python raw full reached 1,239 passed and 1 skipped with the same 12 Windows symlink-privilege failures and 3 missing-STCP-DLL packaging errors; the comparable gate passed 1,239 with 1 skipped and 15 explicit deselections. The source Vite server serves the tracked-picker implementation. Windows browser automation was unavailable, so the maintainer still needs to confirm the visible auto-refresh interaction. The qualified changes are committed and pushed to the origin fix branch; no merge, tag, or release was performed."
     }
   ],
   "decisions": [
@@ -182,11 +186,13 @@
     "Windows serial advisory locks always lock byte zero and clear their PID marker before unlock, so repeated open/close cycles do not raise and released resources are not reported as live. Modbus Dashboard opens through ModbusClient.open and returns HTTP 409 when the requested serial port is busy or unavailable.",
     "RTT View and RTOS Trace share one valid RTT address. SystemView uses SystemView.start plus the SEGGER recorder handshake and matching stop sequence on both ARM/SWD and HPM RISC-V/JTAG. START supplies INIT/SYSDESC/SYSTIME, delayed TaskList recovers startup metadata, ram_base=0 and id_shift=0 are valid, and late attach hydrates task, ISR, clock, drop, and recording metadata from backend status.",
     "SystemView uses complete bounded intervals for exact Runtime/Context analysis, retains inactive contexts, keeps 60 seconds of exact history and a 300,000-event browser ring, and offers 10/30/60-second views. JSONL recording is independent of display/acquisition, and offline replay is incremental and bounded with pause, speed, progress, and restart.",
-    "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged."
+    "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged.",
+    "Composite MKLink USB CDC interfaces can share one serial number. When a probe serial identifier maps to multiple ports, discovery must perform the MKLink protocol handshake on each candidate and never choose by COM-number or enumeration order.",
+    "Browser online flash uses the File System Access API when available to retain a read-only firmware handle for the current page session and poll rebuilt-file metadata. Unsupported browsers use a fresh normal file selection, and every fallback input clears its value so choosing the same path reloads the file. Browser clients never persist or expose the local absolute path."
   ],
   "hardware": {
     "probe": "Fresh v0.1.6 GEC1900 qualification used a real MKLink CDC probe and detected the MICROKEEN removable drive. Concrete port and device identifiers remain intentionally omitted.",
-    "target": "Fresh v0.1.6 GEC1900 qualification recognized an STM32F40x through the main GUI, unified Site Agent, and engineer CLI. Validation was read-only; no target state or firmware was changed. Existing STM32F103RC and HPM5301 EVK Lite evidence remains recorded.",
+    "target": "Fresh v0.1.6 GEC1900 qualification recognized an STM32F40x through the main GUI, unified Site Agent, and engineer CLI. The HPM6E00 EVK hello_world image was rebuilt and successfully programmed, verified, reset, and read back through the HPM ROM API during the current fix-branch HIL. Existing STM32F103RC and HPM5301 EVK Lite evidence remains recorded.",
     "serial_fixture": "A paired ELTIMA virtual serial-port fixture is available; concrete COM numbers are intentionally omitted.",
     "permission": "Firmware build/flash and read-only target validation are permitted when required by the active task."
   },
@@ -197,9 +203,11 @@
     "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
     "Full npm audit reports one high-severity development-only transitive finding in brace-expansion; the runtime dependency audit is clean.",
     "Serial Assistant's closed loop used a paired virtual serial driver and therefore does not qualify USB-UART electrical behavior, cable faults, or adapter-specific driver latency; the host software and Windows serial API path are qualified.",
+    "Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection; repeated selection of the same path is supported.",
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "Confirm in the open system browser that overwriting the selected demo.bin triggers the visible automatic reload log and updated size/hash, then review the pushed fix/hpm-multi-interface-port branch; merge only while the recorded hardware and automated evidence remains valid.",
     "Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.",
     "After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",

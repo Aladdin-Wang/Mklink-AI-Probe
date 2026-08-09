@@ -92,7 +92,16 @@ def find_mklink_cdc_port(serial_number: object = None) -> str | None:
             == requested_serial
         ]
         if matching:
-            return matching[0].device
+            # Composite USB devices expose several CDC interfaces with the
+            # same serial number.  Only one is the MKLink command bridge;
+            # identify it by the protocol handshake instead of enumeration
+            # order (which can change when COM numbers are reassigned).
+            if len(matching) == 1:
+                return matching[0].device
+            for port_info in matching:
+                if _probe_port(port_info.device):
+                    return port_info.device
+            return None
 
     # 优先：USB 描述符匹配（精确匹配，避免 "Microsoft" 误命中）
     for port_info in ports:
