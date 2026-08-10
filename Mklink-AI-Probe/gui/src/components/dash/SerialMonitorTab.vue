@@ -72,11 +72,19 @@
         <span>RX {{ stats.rx_count }} / {{ stats.rx_bytes }} B</span>
         <span>TX {{ stats.tx_count }} / {{ stats.tx_bytes }} B</span>
         <span>{{ stats.bytes_per_sec }} B/s</span>
+        <span>buffer {{ activeTelemetry?.bufferedSamples ?? 0 }}</span>
+        <span>drops {{ activeTelemetry?.transportDroppedBatches ?? 0 }}/{{ activeTelemetry?.backendDroppedBatches ?? 0 }}</span>
         <span :class="{ 'status-error': currentPortStatus.startsWith('error:') }">
           {{ tr('端口', 'Port') }} {{ portName || '--' }} · {{ localizedPortStatus }}
         </span>
       </div>
       <span v-if="runtimeError" class="runtime-error" role="alert">{{ runtimeError }}</span>
+      <button
+        v-if="viewMode === 'log'" data-testid="serial-save-log" type="button"
+        class="icon-action" :disabled="retainedCount === 0"
+        :title="tr('保存日志', 'Save log')" :aria-label="tr('保存日志', 'Save log')"
+        @click="saveLog"
+      ><Download :size="15" /></button>
       <button
         type="button" class="icon-action clear-action"
         :title="viewMode === 'terminal' ? tr('清除终端', 'Clear terminal') : tr('清除日志', 'Clear log')"
@@ -85,19 +93,8 @@
       ><Trash2 :size="15" /></button>
     </div>
 
-    <div v-show="viewMode === 'log'" ref="logEl" class="serial-log">
-      <div v-if="!events.length" class="empty-output">{{ tr('暂无串口数据', 'No serial data') }}</div>
-      <div
-        v-for="(event, index) in events" :key="index"
-        class="serial-line" :class="event.direction === 'TX' ? 'tx' : 'rx'"
-      >
-        <span class="timestamp">{{ event.timestamp }}</span>
-        <span class="direction" :class="event.direction">{{ event.direction }}</span>
-        <span class="hex">{{ event.raw_hex }}</span>
-        <span v-if="event.ascii" class="ascii">{{ visibleAscii(event.ascii) }}</span>
-      </div>
-    </div>
-    <div v-show="viewMode === 'terminal'" class="serial-terminal-shell">
+    <VirtualLogPanel v-if="viewMode === 'log'" ref="logPanel" class="serial-log" />
+    <div v-else class="serial-terminal-shell">
       <RttTerminalPanel
         ref="terminalPanel" :input-enabled="transmitEnabled"
         :aria-label="tr('串口终端', 'Serial terminal')" @input="queueTerminalInput"
@@ -112,22 +109,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { RefreshCw, ScrollText, SquareTerminal, Trash2 } from '@lucide/vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Download, RefreshCw, ScrollText, SquareTerminal, Trash2 } from '@lucide/vue'
+import { useBinaryStream } from '../../composables/useBinaryStream'
 import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useToast } from '../../composables/useToast'
 import { tr } from '../../composables/useLanguage'
 import type { DesktopSettings } from '../../lib/desktopSettings'
 import { toHexPayload } from '../../lib/rttTransmit'
+import { downloadTextFile, timestampedLogName } from '../../lib/downloadTextFile'
 import {
   loadSerialAssistantSettings,
   saveSerialAssistantSettings,
   type SerialAssistantSettings,
 } from '../../lib/serialAssistantSettings'
-import type { PortInfo, SerialEvent } from '../../types/mklink'
+import type { PortInfo } from '../../types/mklink'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
 import SetupHint from './SetupHint.vue'
+import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 
 interface SerialStatus {
@@ -140,6 +140,12 @@ interface SerialStatus {
 const baudrates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 const toast = useToast()
 const { listPorts: fetchPorts } = useMklinkApi()
+const logBinary = useBinaryStream('serial', {
+  capacity: 5000, channelCount: 1, decoderMode: 'serial-log',
+})
+const terminalBinary = useBinaryStream('serial', {
+  capacity: 64 * 1024, channelCount: 1, decoderMode: 'serial-terminal',
+})
 const ports = ref<PortInfo[]>([])
 const portName = ref('')
 const baudrate = ref(115200)
@@ -151,24 +157,21 @@ const starting = ref(false)
 const stopping = ref(false)
 const refreshingPorts = ref(false)
 const portsLoaded = ref(false)
-const events = ref<SerialEvent[]>([])
 const stats = ref({ rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 })
 const portStatuses = ref<Record<string, string>>({})
 const runtimeError = ref('')
 const viewMode = ref<'log' | 'terminal'>('terminal')
-const logEl = ref<HTMLElement | null>(null)
+const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const terminalPanel = ref<InstanceType<typeof RttTerminalPanel> | null>(null)
 const serialSettings = ref<SerialAssistantSettings>(loadSerialAssistantSettings(localStorage))
-const maxEvents = 5000
 const terminalEncoder = new TextEncoder()
-let terminalDecoder = new TextDecoder()
-let eventSource: EventSource | null = null
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let terminalInput = ''
 let terminalInputTimer: ReturnType<typeof setTimeout> | null = null
 let terminalSendChain = Promise.resolve()
 let reportedPortError = ''
+let attachedMode: 'log' | 'terminal' | null = null
 
 const currentPortStatus = computed(() => portStatuses.value[portName.value] || (running.value ? 'opening' : 'closed'))
 const localizedPortStatus = computed(() => {
@@ -180,6 +183,10 @@ const localizedPortStatus = computed(() => {
   return status
 })
 const transmitEnabled = computed(() => running.value && currentPortStatus.value === 'open')
+const activeTelemetry = computed(() => (
+  viewMode.value === 'log' ? logBinary.telemetry.value : terminalBinary.telemetry.value
+))
+const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const transmitSettings = computed<DesktopSettings>(() => ({
   version: 1,
   symbolPath: '',
@@ -251,8 +258,7 @@ function applyStatus(status: SerialStatus): void {
   } else if (!portError) {
     reportedPortError = ''
   }
-  if (running.value) connectSSE()
-  else closeSSE()
+  syncBinaryStream()
 }
 
 async function refreshStatus(): Promise<void> {
@@ -285,14 +291,15 @@ async function doStart(): Promise<void> {
       }),
     })
     if (result?.status !== 'already_running') {
-      events.value = []
-      terminalDecoder = new TextDecoder()
+      logBinary.reset()
+      terminalBinary.reset()
+      logPanel.value?.clear()
       terminalPanel.value?.clear()
       stats.value = { rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 }
     }
     running.value = true
     portStatuses.value = { [portName.value]: 'opening' }
-    connectSSE()
+    syncBinaryStream()
     await refreshStatus()
     toast.success(tr('串口助手已启动', 'Serial Assistant started'))
   } catch (caught) {
@@ -311,7 +318,7 @@ async function doStop(): Promise<void> {
     await requestJson('/api/dash/serial/stop', { method: 'POST' })
     running.value = false
     portStatuses.value = {}
-    closeSSE()
+    detachBinaryStreams()
     toast.info(tr('串口助手已停止', 'Serial Assistant stopped'))
   } catch (caught) {
     runtimeError.value = caught instanceof Error ? caught.message : String(caught)
@@ -321,49 +328,43 @@ async function doStop(): Promise<void> {
   }
 }
 
-function connectSSE(): void {
-  if (!running.value || eventSource) return
-  const source = new EventSource(`${API_BASE}/api/dash/serial/stream`)
-  eventSource = source
-  source.onmessage = event => {
-    try {
-      const data = JSON.parse(event.data)
-      if (data.event === 'terminal') {
-        if (data.direction === 'RX' && typeof data.data_base64 === 'string') {
-          const binary = atob(data.data_base64)
-          const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
-          const text = terminalDecoder.decode(bytes, { stream: true })
-          if (text) terminalPanel.value?.write(text)
-        }
-      } else if (data.event === 'data') {
-        const shouldFollow = !logEl.value
-          || logEl.value.scrollHeight - logEl.value.scrollTop - logEl.value.clientHeight < 32
-        events.value.push(data)
-        if (events.value.length > maxEvents) events.value = events.value.slice(-maxEvents)
-        if (shouldFollow) void nextTick(() => {
-          if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
-        })
-      } else if (data.event === 'status') {
-        applyStatus(data)
-      } else if (data.event === 'stopped') {
-        running.value = false
-        portStatuses.value = {}
-        closeSSE()
-      }
-    } catch { /* ignore malformed stream events */ }
+function syncBinaryStream(): void {
+  if (!running.value) {
+    detachBinaryStreams()
+    return
   }
-  source.onerror = () => {
-    if (eventSource === source) {
-      source.close()
-      eventSource = null
-    }
-  }
+  if (attachedMode === viewMode.value) return
+  if (attachedMode === 'log') logBinary.stop()
+  else if (attachedMode === 'terminal') terminalBinary.stop()
+  if (viewMode.value === 'log') logBinary.start()
+  else terminalBinary.start()
+  attachedMode = viewMode.value
 }
 
-function closeSSE(): void {
-  eventSource?.close()
-  eventSource = null
+function detachBinaryStreams(): void {
+  logBinary.stop()
+  terminalBinary.stop()
+  attachedMode = null
 }
+
+watch(() => terminalBinary.serialTerminal.value, chunk => {
+  if (viewMode.value === 'terminal' && chunk?.text) terminalPanel.value?.write(chunk.text)
+})
+
+watch(() => logBinary.serialLines.value, batch => {
+  if (viewMode.value !== 'log' || !batch) return
+  logPanel.value?.append(batch.lines.map(line => ({
+    time: line.timestampNs,
+    level: line.direction === 'RX' ? 'data' : 'warning',
+    label: line.direction,
+    text: `${line.rawHex}${line.ascii ? `  ${visibleAscii(line.ascii)}` : ''}`,
+  } satisfies VirtualLogInput)))
+})
+
+watch([() => logBinary.error.value, () => terminalBinary.error.value], ([logError, terminalError]) => {
+  const activeError = viewMode.value === 'log' ? logError : terminalError
+  if (activeError) runtimeError.value = activeError
+})
 
 async function sendSerial(payload: Uint8Array): Promise<void> {
   if (!transmitEnabled.value) throw new Error(tr('串口尚未打开', 'Serial port is not open'))
@@ -383,7 +384,9 @@ function persistTransmitSettings(next: DesktopSettings): void {
 }
 
 function setViewMode(mode: 'log' | 'terminal'): void {
+  if (viewMode.value === mode) return
   viewMode.value = mode
+  syncBinaryStream()
   if (mode === 'terminal') void nextTick(() => terminalPanel.value?.activate())
 }
 
@@ -406,7 +409,12 @@ function flushTerminalInput(): void {
 
 function clearVisibleOutput(): void {
   if (viewMode.value === 'terminal') terminalPanel.value?.clear()
-  else events.value = []
+  else logPanel.value?.clear()
+}
+
+function saveLog(): void {
+  const text = logPanel.value?.exportText() || ''
+  if (text) downloadTextFile(timestampedLogName('serial'), text)
 }
 
 function visibleAscii(value: string): string {
@@ -421,7 +429,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true
-  closeSSE()
+  detachBinaryStreams()
   if (statusTimer !== null) clearTimeout(statusTimer)
   if (terminalInputTimer !== null) clearTimeout(terminalInputTimer)
   terminalInput = ''
@@ -447,17 +455,7 @@ onUnmounted(() => {
 .clear-action { width: 26px; height: 26px; margin-left: auto; }
 .icon-action:hover { border-color: var(--accent); color: var(--accent); }
 .spinning { animation: spin 0.8s linear infinite; }
-.serial-log { flex: 1 1 auto; min-height: 260px; margin-top: 8px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: #10151d; padding: 8px; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; }
-.serial-line { display: grid; grid-template-columns: 92px 26px minmax(160px, auto) minmax(120px, 1fr); gap: 8px; align-items: baseline; }
-.serial-line.rx { color: var(--success); }
-.serial-line.tx { color: var(--warn); }
-.timestamp { color: var(--dim); }
-.direction { font-weight: 700; }
-.direction.RX { color: var(--success); }
-.direction.TX { color: var(--warn); }
-.hex { color: var(--info); overflow-wrap: anywhere; }
-.ascii { color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
-.empty-output { display: grid; min-height: 100%; place-items: center; color: #697586; }
+.serial-log { flex: 1 1 auto; min-height: 260px; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
 .serial-terminal-shell { display: flex; flex: 1 1 auto; min-height: 260px; overflow: hidden; }
 .serial-terminal-shell :deep(.rtt-terminal-panel) { width: 100%; }
 .serial-assistant :deep(.rtt-transmit-wrapper) { margin-top: 8px; }
@@ -467,7 +465,5 @@ onUnmounted(() => {
   .serial-config-row label:first-child select { width: 100%; max-width: none; }
   .serial-toolbar { align-items: flex-start; flex-wrap: wrap; }
   .serial-metrics { order: 3; flex-basis: 100%; }
-  .serial-line { grid-template-columns: 78px 24px minmax(100px, 1fr); }
-  .serial-line .ascii { grid-column: 3; }
 }
 </style>

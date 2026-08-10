@@ -32,6 +32,8 @@ from typing import Any, Generator
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
     RTT_TERMINAL_UTF8,
+    SERIAL_RX_BYTES,
+    SERIAL_TX_BYTES,
     SUPERWATCH_METADATA_JSON,
     SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
     WAVEFORM_SAMPLE_MAJOR_FLOAT32,
@@ -240,6 +242,7 @@ class RttStreamManager:
         self._error: str | None = None
         self._start_failure_callback = None
         self._stream_hub = stream_hub
+        self._terminal_stream_hub = stream_hub
         self._raw_batch_lines = max(1, int(raw_batch_lines))
         self._waveform_batch_samples = max(1, int(waveform_batch_samples))
         self._line_assembler = _RttLineAssembler()
@@ -273,9 +276,16 @@ class RttStreamManager:
     def set_stream_hub(self, stream_hub) -> None:
         self._stream_hub = stream_hub
 
+    def set_terminal_stream_hub(self, stream_hub) -> None:
+        self._terminal_stream_hub = stream_hub
+
     def detach_stream_hub(self, stream_hub) -> None:
         if self._stream_hub is stream_hub:
             self._stream_hub = None
+
+    def detach_terminal_stream_hub(self, stream_hub) -> None:
+        if self._terminal_stream_hub is stream_hub:
+            self._terminal_stream_hub = None
 
     def _clear_active_session(self, generation=None) -> None:
         with self._write_lock:
@@ -362,8 +372,8 @@ class RttStreamManager:
             return
         text = "".join(self._pending_terminal)
         self._pending_terminal = []
-        if self._stream_hub is not None:
-            self._stream_hub.publish(
+        if self._terminal_stream_hub is not None:
+            self._terminal_stream_hub.publish(
                 text.encode("utf-8"), item_count=1,
                 flags=RTT_TERMINAL_UTF8, stream_type=StreamType.RTT_RAW,
             )
@@ -2072,7 +2082,7 @@ class SuperWatchStreamManager:
 class SerialStreamManager:
     """Manages serial port monitoring with SSE output."""
 
-    def __init__(self):
+    def __init__(self, stream_hub=None):
         self._bridge = AsyncBridge()
         self._monitor = None
         self._running = False
@@ -2084,6 +2094,14 @@ class SerialStreamManager:
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._start_time = 0.0
+        self._stream_hub = stream_hub
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
+
+    def detach_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is stream_hub:
+            self._stream_hub = None
 
     @property
     def running(self) -> bool:
@@ -2106,6 +2124,12 @@ class SerialStreamManager:
         self._start_time = time.time()
 
         def _event_callback(event):
+            if event.direction == "RX":
+                self._rx_count += 1
+            else:
+                self._tx_count += 1
+            if self._bridge.client_count == 0:
+                return
             ts = time.strftime("%H:%M:%S", time.localtime(event.timestamp))
             ms = int((event.timestamp % 1) * 1000)
             raw_hex = event.raw.hex().upper()
@@ -2124,11 +2148,6 @@ class SerialStreamManager:
                             fields[k] = {"value": v.get("value", ""), "unit": v.get("unit", "")}
                         else:
                             fields[k] = {"value": str(v), "unit": ""}
-
-            if event.direction == "RX":
-                self._rx_count += 1
-            else:
-                self._tx_count += 1
 
             self._bridge.put({
                 "event": "data",
@@ -2151,6 +2170,15 @@ class SerialStreamManager:
                 self._rx_bytes += len(data)
             else:
                 self._tx_bytes += len(data)
+            if self._stream_hub is not None:
+                self._stream_hub.publish(
+                    data,
+                    item_count=len(data),
+                    flags=(SERIAL_RX_BYTES if direction == "RX" else SERIAL_TX_BYTES),
+                    stream_type=StreamType.SERIAL,
+                )
+            if self._bridge.client_count == 0:
+                return
             self._bridge.put({
                 "event": "terminal",
                 "timestamp": timestamp,
@@ -2203,6 +2231,7 @@ class SerialStreamManager:
                 "tx_bytes": self._tx_bytes,
                 "bytes_per_sec": round((self._rx_bytes + self._tx_bytes) / elapsed, 1),
             },
+            "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
         }
 
     async def sse_generator(self):

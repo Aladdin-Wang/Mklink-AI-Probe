@@ -699,11 +699,16 @@ def create_app(
     set_vofa_stream_hub = getattr(vofa_manager, "set_stream_hub", None)
     if callable(set_vofa_stream_hub):
         set_vofa_stream_hub(stream_registry["vofa"])
-    for stream_name in ("rtt", "superwatch"):
+    for stream_name in ("rtt", "superwatch", "serial"):
         manager = dashboard_managers[stream_name]
         setter = getattr(manager, "set_stream_hub", None)
         if callable(setter):
             setter(stream_registry[stream_name])
+    rtt_terminal_setter = getattr(
+        dashboard_managers["rtt"], "set_terminal_stream_hub", None,
+    )
+    if callable(rtt_terminal_setter):
+        rtt_terminal_setter(stream_registry["rtt-terminal"])
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
@@ -789,7 +794,7 @@ def create_app(
     app.add_event_handler("shutdown", shutdown_online_flash)
 
     async def shutdown_stream_producers() -> None:
-        for stream_name in ("vofa", "rtt", "superwatch"):
+        for stream_name in ("vofa", "rtt", "superwatch", "serial"):
             manager = dashboard_managers[stream_name]
             hub = stream_registry[stream_name]
             if getattr(manager, "_stream_hub", None) is not hub:
@@ -799,6 +804,12 @@ def create_app(
             detach = getattr(manager, "detach_stream_hub", None)
             if callable(detach):
                 detach(hub)
+        rtt_terminal_hub = stream_registry["rtt-terminal"]
+        detach_terminal = getattr(
+            dashboard_managers["rtt"], "detach_terminal_stream_hub", None,
+        )
+        if callable(detach_terminal):
+            detach_terminal(rtt_terminal_hub)
 
     app.add_event_handler("shutdown", shutdown_stream_producers)
 

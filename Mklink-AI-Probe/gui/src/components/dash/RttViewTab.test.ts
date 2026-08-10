@@ -30,6 +30,18 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
     requestVisibleRange: vi.fn(),
   },
+  terminalBinary: {
+    rttLines: null as any,
+    rttTerminal: null as any,
+    waveformBatch: null as any,
+    envelope: null as any,
+    telemetry: null as any,
+    state: null as any,
+    error: null as any,
+    start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
+    requestVisibleRange: vi.fn(),
+  },
+  downloadTextFile: vi.fn(),
   dash: {
     state: null as any, error: null as any,
     start: vi.fn(), stop: vi.fn(), pause: vi.fn(), resume: vi.fn(),
@@ -49,6 +61,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../composables/useBinaryStream', () => ({ useBinaryStream: mocks.useBinaryStream }))
+vi.mock('../../lib/downloadTextFile', () => ({
+  downloadTextFile: mocks.downloadTextFile,
+  timestampedLogName: (prefix: string) => `${prefix}-test.log`,
+}))
 vi.mock('../../composables/useDashboard', () => ({ useDashboard: () => mocks.dash }))
 vi.mock('../../composables/useEventSource', () => ({
   useEventSource: () => { throw new Error('RTT high-rate SSE must not be constructed') },
@@ -83,9 +99,19 @@ describe('RttViewTab binary migration', () => {
     mocks.binary.telemetry = shallowRef(null)
     mocks.binary.state = shallowRef({ phase: 'stopped' })
     mocks.binary.error = shallowRef(null)
+    mocks.terminalBinary.rttLines = shallowRef(null)
+    mocks.terminalBinary.rttTerminal = shallowRef(null)
+    mocks.terminalBinary.waveformBatch = shallowRef(null)
+    mocks.terminalBinary.envelope = shallowRef(null)
+    mocks.terminalBinary.telemetry = shallowRef(null)
+    mocks.terminalBinary.state = shallowRef({ phase: 'stopped' })
+    mocks.terminalBinary.error = shallowRef(null)
     mocks.dash.state = ref('idle')
     mocks.dash.error = ref(null)
-    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    mocks.useBinaryStream.mockImplementation(name => (
+      name === 'rtt-terminal' ? mocks.terminalBinary : mocks.binary
+    ))
+    mocks.downloadTextFile.mockReset()
     mocks.checkConflict.mockResolvedValue([])
     mocks.scheduler.render = null
     mocks.dash.start.mockResolvedValue(true)
@@ -117,10 +143,13 @@ describe('RttViewTab binary migration', () => {
     }
   }
 
-  it('uses RTT binary transport and a bounded virtual log without EventSource', () => {
+  it('constructs separate RTT transports and mounts only the terminal view by default', () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt', expect.any(Object))
-    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
+    expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt-terminal', expect.any(Object))
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="rtt-save-log"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -140,26 +169,34 @@ describe('RttViewTab binary migration', () => {
   })
 
   it('switches between log and terminal views without restarting RTT', async () => {
+    mocks.status = { running: true, numeric_channels: [], down_buffers: [] }
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
 
     expect(wrapper.get('[data-testid="rtt-terminal-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('.rtt-view-log').attributes('style')).toContain('display: none')
-    expect(wrapper.get('.rtt-terminal-shell').attributes('style') ?? '').not.toContain('display: none')
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(true)
+    expect(mocks.terminalBinary.start).toHaveBeenCalled()
+    expect(mocks.binary.start).not.toHaveBeenCalled()
 
-    mocks.binary.rttTerminal.value = {
+    mocks.terminalBinary.rttTerminal.value = {
       type: 'rtt-terminal', sequence: 1n, text: '\x1b[31merror\x1b[0m\r',
     }
     await nextTick()
 
-    await wrapper.get('[data-testid="rtt-terminal-mode"]').trigger('click')
-    expect(wrapper.get('[data-testid="rtt-terminal-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('.rtt-view-log').attributes('style')).toContain('display: none')
-    expect(wrapper.get('.rtt-terminal-shell').attributes('style') ?? '').not.toContain('display: none')
-    expect(wrapper.find('[data-testid="rtt-chart-toggle"]').exists()).toBe(false)
-    expect(mocks.binary.stop).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
+    expect(wrapper.get('[data-testid="rtt-log-mode"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="rtt-chart-toggle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="rtt-save-log"]').exists()).toBe(true)
+    expect(mocks.terminalBinary.stop).toHaveBeenCalled()
+    expect(mocks.binary.start).toHaveBeenCalled()
+    expect(mocks.dash.start).not.toHaveBeenCalled()
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
 
     await wrapper.get('[data-testid="rtt-clear-logs"]').trigger('click')
-    expect(wrapper.get('[data-testid="rtt-clear-logs"]').attributes('aria-label')).toBe('清除终端')
+    expect(wrapper.get('[data-testid="rtt-clear-logs"]').attributes('aria-label')).toBe('清除日志')
     wrapper.unmount()
   })
 
@@ -219,6 +256,7 @@ describe('RttViewTab binary migration', () => {
   it('keeps the text data panel visible before RTT text arrives and after clear', async () => {
     vi.useFakeTimers()
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
 
     expect(wrapper.get('.rtt-view-log').classes()).not.toContain('is-empty')
 
@@ -236,6 +274,27 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('saves retained RTT rows only in log mode', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    expect(wrapper.find('[data-testid="rtt-save-log"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
+    mocks.binary.rttLines.value = {
+      type: 'rtt-lines', sequence: 1n,
+      lines: [{ timestampNs: 1_000_000n, level: 'raw', text: 'ready' }],
+    }
+    await nextTick()
+    vi.advanceTimersByTime(100)
+    await nextTick()
+
+    await wrapper.get('[data-testid="rtt-save-log"]').trigger('click')
+
+    expect(mocks.downloadTextFile).toHaveBeenCalledWith(
+      'rtt-test.log', expect.stringContaining('\traw\tready'),
+    )
+    wrapper.unmount()
+  })
+
   it('starts and stops the binary lifecycle with dashboard controls', async () => {
     mocks.status = {
       running: true,
@@ -247,14 +306,15 @@ describe('RttViewTab binary migration', () => {
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
     expect(mocks.binary.reset).toHaveBeenCalled()
+    expect(mocks.terminalBinary.reset).toHaveBeenCalled()
     expect(mocks.dash.start).toHaveBeenCalledWith({
       addr: '0x20000000', mode: 0, search_size: 1024, encoding: 'utf-8',
     })
-    expect(mocks.binary.start).toHaveBeenCalled()
+    expect(mocks.terminalBinary.start).toHaveBeenCalled()
     mocks.dash.state.value = 'running'
     await nextTick()
     await wrapper.get('.btn-danger').trigger('click')
-    expect(mocks.binary.stop).toHaveBeenCalled()
+    expect(mocks.terminalBinary.stop).toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -813,6 +873,7 @@ describe('RttViewTab binary migration', () => {
   it('bounds an accelerated RTT record to Worker to VirtualLog pipeline at 5000 lines', async () => {
     vi.useFakeTimers()
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
     const lineCount = 6000
     const encoder = new TextEncoder()
     const encoded = Array.from({ length: lineCount }, (_, index) => encoder.encode(`line-${index + 1}`))
