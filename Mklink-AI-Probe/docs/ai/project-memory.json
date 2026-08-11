@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T22:07:15+08:00",
+  "updated_at": "2026-08-11T22:30:45+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "PR #2 已合并设备连接自动搜索修复、真实 HPM 验证和精简交接。",
-    "remote_head": "origin/master 为 f10bafd，与本地 master 同步。",
-    "working_tree": "仅保留当前主工作树；旧在线烧录 worktree 和已覆盖分支均已删除。"
+    "head": "v0.1.6 标签固定于 2f65f92c98；master 仅追加发布后交接。",
+    "remote_head": "GitHub master、v0.1.6 标签和正式 Release 已同步。",
+    "working_tree": "仅保留当前主工作树；发布资产位于工作区 release 目录且不进入 Git。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "v016_release_building",
-    "current_task": "从最终 master 构建、验证并正式发布 v0.1.6。",
-    "release": "PR #2 已合并；标签、Release、Gitee 和 updates/latest.json 尚未创建。"
+    "status": "v016_released",
+    "current_task": "v0.1.6 已完成构建、安装验证和正式发布。",
+    "release": "GitHub: https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6；Gitee: https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6。"
   },
   "milestones": [
     {
@@ -50,8 +50,8 @@
       "result": "HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。"
     },
     {
-      "area": "本地候选分发",
-      "result": "标准 NSIS、updater 签名、x64 STCP 和 Skill 已重建并覆盖安装；健康接口、探针枚举、内置 sidecar、零 Python 子进程、正常退出、端口释放和 Skill 结构均通过。"
+      "area": "v0.1.6 正式分发",
+      "result": "七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。"
     }
   ],
   "decisions": [
@@ -72,12 +72,13 @@
     "V4 脱机首次触发的瞬时空失败仍需冷启动复现。",
     "部分客户芯片修复缺少物理目标板编程证据。",
     "先楫定制店铺尚无权威链接，菜单项保持禁用。",
-    "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。"
+    "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。",
+    "发布器默认仓库参数仍含旧备用名；下次发布前应修正或继续显式传入两端 Aladdin-Wang 仓库。"
   ],
   "next_actions": [
-    "从最终 master 重建七项正式发布文件并完成安装验证。",
-    "发布 GitHub/Gitee Release 和 updates/latest.json。",
-    "发布后记录最终交接并确认仓库与远端状态。"
+    "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
+    "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
+    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
   ],
   "continuation_protocol": [
     "开始前用 Git、进程和硬件状态校正项目记忆。",
