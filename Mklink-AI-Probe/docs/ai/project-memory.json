@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T21:32:05+08:00",
+  "updated_at": "2026-08-11T21:55:46+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "master@944c01a 已合并设备连接自动搜索修复；功能提交为 a83c0d6。",
+    "head": "master 已包含设备连接自动搜索修复与验证记录；v0.1.6 本地分发由源码提交 17ee6da 重建。",
     "remote_head": "origin/master 仍为 d4d25e2；本地 master 尚未推送。",
-    "working_tree": "设备连接自动搜索修复及验证记录均已提交；既有其他工作树未改动。"
+    "working_tree": "旧在线烧录 worktree 的有效行为已确认由 master 覆盖，废弃 fallback 未迁移；该 worktree 和分支均已删除。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、高吞吐数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、仍有效约束、最新证据、限制和下一动作；完成历史从 Git 查询。"
   },
   "current_session": {
-    "status": "device_connect_auto_search_merged",
-    "current_task": "设备连接失败后的自动搜索回退已完成真机验证并合并到 master。",
-    "release": "修复已合并到本地 master；本次未生成安装包，未推送或发布。"
+    "status": "v016_master_repacked_installed_skill_synced",
+    "current_task": "从当前 master 重建并覆盖安装 v0.1.6，同时同步本地 Skill。",
+    "release": "标准 NSIS、updater 签名和 Skill 候选位于 workspace release/20260811-214835-v0.1.6-17ee6da19c；未更新远端发布清单、标签或远端分支。"
   },
   "milestones": [
     {
@@ -55,7 +55,7 @@
     },
     {
       "area": "v0.1.6 本地分发",
-      "result": "标准 NSIS、updater 签名和 x64 STCP 运行库由当前 master 重建；覆盖安装后动态健康接口、探针枚举、内置 sidecar、零 Python 子进程、正常退出和端口释放均通过，本地 Skill 同步到同一源码提交。"
+      "result": "标准 NSIS、updater 签名和 x64 STCP 运行库由 master 源码提交 17ee6da 重建。候选安装包 SHA-256 为 789819E2267683EA8A5180A7BC8F66DAB89DB1F3CF34A39241BED3E556C2CEA8；覆盖安装后注册版本为 0.1.6，动态健康接口返回 ok，在线烧录探针枚举成功，安装目录使用内置 sidecar 且进程树无 Python，正常关闭后主进程、sidecar 和端口均释放。本地 Skill 归档包含 599 个受管文件，SHA-256 为 5DFC916FDE6E3AC83B8A4A34F91CC83098C6207707EE323F9C7098BE29CF8B83，已原子同步到相同源码提交并通过结构与生产 Web 资源校验。"
     }
   ],
   "decisions": [
