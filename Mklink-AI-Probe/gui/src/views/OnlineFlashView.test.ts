@@ -690,6 +690,7 @@ describe('online flash task workspace behavior', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.doUnmock('@tauri-apps/plugin-dialog')
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -814,6 +815,47 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
     expect(wrapper.find('[data-testid="inspect-image"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('已自动检查')
+    wrapper.unmount()
+  })
+
+  it('reinspects a desktop firmware path when the same HEX file is selected again', async () => {
+    const fallback = viewFetch()
+    const firmwarePath = 'C:\\firmware\\firmware.hex'
+    const open = vi.fn(async () => firmwarePath)
+    vi.stubGlobal('isTauri', true)
+    vi.doMock('@tauri-apps/plugin-dialog', () => ({ open }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images/inspect-path')) {
+        return new Response(JSON.stringify({
+          image_id: `image-${open.mock.calls.length}`,
+          file_name: 'firmware.hex', format: 'hex', size: 32,
+          sha256: 'abc123', start: 0x08000000, end: 0x08000020,
+          segments: [{ start: 0x08000000, end: 0x08000020 }], base_address: null,
+          sector_operations_available: true,
+          sectors: [{ address: 0x08000000, size: 0x1000 }],
+        }), { status: 200 })
+      }
+      if (url.includes('/images/source-status?')) {
+        return new Response(JSON.stringify({
+          available: true, file_name: 'firmware.hex', size: 32, mtime_ns: 100,
+        }), { status: 200 })
+      }
+      return fallback(input, options)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect-path'))).toHaveLength(1))
+    expect(wrapper.text()).toContain('已自动检查')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect-path'))).toHaveLength(2))
+    expect(wrapper.text()).toContain('已自动检查')
+    expect(open).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

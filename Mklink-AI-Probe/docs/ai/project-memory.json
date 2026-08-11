@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-10T01:00:00+08:00",
+  "updated_at": "2026-08-11T10:02:12+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "b073f1e combines the HPM6E00 composite-CDC/browser firmware refresh fix and the CST92 relative-FLM sector geometry fix.",
+    "branch": "fix/online-flash-same-path-reinspect",
+    "head": "The fix branch is based on master at 9e036db and contains the uncommitted desktop same-path firmware reinspection fix and regression coverage.",
     "remote_head": "origin/master contains b073f1e. No v0.1.6 tag, GitHub Release, updater manifest, or Gitee sync was changed.",
-    "working_tree": "The tested integration was fast-forwarded to master and pushed. Release artifacts are kept outside Git; local Skill v0.1.6 and Web GUI are installed."
+    "working_tree": "The isolated fix worktree contains only the online-flash source, regression test, and project-memory changes plus generated untracked test caches. No commit, merge, push, installer, Skill, or installed application was changed."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v016_master_installed_and_web_serving",
-    "current_task": "Keep the merged v0.1.6 master, local installation, Skill, and same-source Web GUI available for maintainer validation.",
+    "status": "online_flash_same_path_reinspect_pending_tauri_validation",
+    "current_task": "Validate and hand off the narrow desktop fix that reinspects firmware whenever the same local BIN or HEX path is selected again.",
     "release": "The maintainer explicitly authorized merging the CST fix without physical CST erase/program HIL for this integration. Signed local NSIS, Skill, and Web assets were prepared; official tagging, publishing, updater manifest changes, and Gitee sync remain out of scope."
   },
   "milestones": [
@@ -164,6 +164,10 @@
      {
        "area": "v0.1.6 local Skill and same-source Web GUI",
        "result": "The v0.1.6 Skill archive was built from b073f1e with fresh gui/dist, validated by _validate_skill_archive, and installed into the user Skill root. web-entry install was re-registered. The installed Skill GUI is serving from http://127.0.0.1:8766 with /api/health status ok, root HTTP 200, and a hashed production asset HTTP 200. Skill SHA-256 is AEA573BC36095B4544E3A46F6597A2461CEEC08C26BBAC4D30754AAC7A2F2F97."
+     },
+     {
+       "area": "Desktop online-flash same-path reinspection",
+       "result": "The installed v0.1.6 symptom was isolated to desktop path selection: selecting an identical path assigns the same Vue ref value, so the watcher does not run, while the selection handler still clears the previous inspection. Browser File-object reload and retained-handle polling were already covered by the earlier fix. The desktop and browser selection handlers now explicitly schedule inspection after resetting state. The new desktop regression reproduced one request before the fix and two requests after it. The supplied STM32F103RC Intel HEX was accepted by the installed backend with a valid image range and reliable sector geometry. The focused online-flash file passed 67 tests; full GUI passed 49 files and 498 tests; vue-tsc and Vite 8.1.5 production build passed. Raw Python reached 1,243 passed and 1 skipped with only the known 12 Windows symlink-privilege failures and 3 missing-STCP-DLL packaging errors; the comparable gate passed 1,243 with 1 skipped and 15 exact deselections. The installed Tauri application still contains the old bundle, so visible repeated selection must be revalidated after a new installer or development build is authorized."
      }
   ],
   "decisions": [
@@ -214,11 +218,13 @@
     "The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.",
     "Full npm audit reports one high-severity development-only transitive finding in brace-expansion; the runtime dependency audit is clean.",
     "Serial Assistant's closed loop used a paired virtual serial driver and therefore does not qualify USB-UART electrical behavior, cable faults, or adapter-specific driver latency; the host software and Windows serial API path are qualified.",
-    "Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection; repeated selection of the same path is supported.",
+    "Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection. Browser same-path selection is supported; the desktop same-path reinspection fix remains uninstalled and requires a real Tauri validation before merge or release.",
     "The CST92F41 relative-FLM fix has real Pack, customer-image, pyOCD finalisation, and Web interaction evidence, but no physical CST92 target was available for erase/program/verify HIL. This merge uses the maintainer's explicit hardware-gate waiver; future physical CST release evidence remains pending.",
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "Build or run the fix branch in Tauri, select the same STM32F103RC HEX at least twice, and confirm that inspection metadata, preview rows, sector selection, and Start Flash availability recover after every selection without programming the target.",
+    "After the Tauri closed loop, commit and push the fix branch only with explicit maintainer authorization; merge, installer replacement, Skill update, tagging, and publication remain separate actions.",
     "Keep the local v0.1.6 Web GUI available for maintainer UI validation; stop it only when the validation session is complete.",
     "Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.",
     "After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",

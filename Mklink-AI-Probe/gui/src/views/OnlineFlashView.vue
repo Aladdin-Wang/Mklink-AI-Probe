@@ -405,6 +405,7 @@ function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null
   resetInspection()
   persist()
   promptForBinAddress(file?.name ?? '')
+  scheduleAutoInspection()
 }
 
 function setFirmwarePath(path: string): void {
@@ -421,6 +422,7 @@ function setFirmwarePath(path: string): void {
   persist()
   void pollFirmwareSource(true)
   promptForBinAddress(path)
+  scheduleAutoInspection()
 }
 
 function promptForBinAddress(source: string): void {

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-10T01:00:00+08:00`
-- 分支：`master`
-- HEAD：`b073f1e combines the HPM6E00 composite-CDC/browser firmware refresh fix and the CST92 relative-FLM sector geometry fix.`
+- 更新时间：`2026-08-11T10:02:12+08:00`
+- 分支：`fix/online-flash-same-path-reinspect`
+- HEAD：`The fix branch is based on master at 9e036db and contains the uncommitted desktop same-path firmware reinspection fix and regression coverage.`
 - 远端 HEAD：`origin/master contains b073f1e. No v0.1.6 tag, GitHub Release, updater manifest, or Gitee sync was changed.`
-- 工作树：The tested integration was fast-forwarded to master and pushed. Release artifacts are kept outside Git; local Skill v0.1.6 and Web GUI are installed.
-- 当前任务：Keep the merged v0.1.6 master, local installation, Skill, and same-source Web GUI available for maintainer validation.
-- 状态：`v016_master_installed_and_web_serving`
+- 工作树：The isolated fix worktree contains only the online-flash source, regression test, and project-memory changes plus generated untracked test caches. No commit, merge, push, installer, Skill, or installed application was changed.
+- 当前任务：Validate and hand off the narrow desktop fix that reinspects firmware whenever the same local BIN or HEX path is selected again.
+- 状态：`online_flash_same_path_reinspect_pending_tauri_validation`
 
 ## 里程碑
 
@@ -50,6 +50,7 @@
 - **CST92F41 relative Pack FLM geometry**：The installed Chipsea CST92Fxx Pack declares a 1 MiB PDSC flash region at 0x00400000 while its FLM declares the same 1 MiB device and 4 KiB sectors from 0x0. The old static intersection and pyOCD FlmFlashRegionBuilder therefore both produced no usable sector geometry. A bounded compatibility rule now rebases only non-overlapping FLM ranges that fit wholly inside the owning PDSC region, and the runtime copies the FLM before changing its start so shared Pack metadata is not mutated. The customer Intel HEX digest 86c75c18600af4cd71f68a65ea72c41d0a8c3c0699c67bdf2299658fdecd5eba spans 0x00404000-0x0043CEEC. Static inspection and a real pyOCD FLM finalisation produced 4 KiB geometry; the Web GUI showed FLM verified, 57 selected sectors from 0x00404000 through 0x0043C000, and an enabled Start Flash button with no console errors. Online-flash focused coverage passed 195 tests; full GUI passed 49 files and 494 tests; vue-tsc and Vite 8.1.5 production build passed. Python raw full reached 1,242 passed and 1 skipped with the same 12 Windows symlink-privilege failures and 3 missing-STCP-DLL package errors; the comparable gate passed 1,242 with 1 skipped and 15 explicit deselections. No CST target erase, program, reset, or hardware connection was performed.
 - **v0.1.6 combined master final gate and local distribution**：Integration commit b073f1e was fast-forwarded to master and pushed to origin/master. The combined Python suite passed 1,243 with 1 skipped; the comparable gate passed 1,243 with 1 skipped and 15 explicit deselections; GUI passed 49 files and 497 tests; vue-tsc and Vite 8.1.5 production build passed; focused HPM/CST online-flash regression tests passed 150. The signed standard NSIS installer built with the repository Tauri builder, installed over the local app with exit code 0, registered DisplayVersion 0.1.6, and passed installed /api/health and /api/online-flash/probes checks. The installed process tree contained Tauri and bundled sidecar processes but no Python; the app was terminated with the Computer Use helper unavailable, and port 8765 plus Mklink processes were released. Installer SHA-256 is 0508D9B7924B31DCC53C87E437FE883C6C5FF27D6CFB3C572B1C55860D987904; signature SHA-256 is AF6441E0FC126F249A1B2EEB3681E6D95E3F36D9D63BB4ED6B88CA5EEEFA3200.
 - **v0.1.6 local Skill and same-source Web GUI**：The v0.1.6 Skill archive was built from b073f1e with fresh gui/dist, validated by _validate_skill_archive, and installed into the user Skill root. web-entry install was re-registered. The installed Skill GUI is serving from http://127.0.0.1:8766 with /api/health status ok, root HTTP 200, and a hashed production asset HTTP 200. Skill SHA-256 is AEA573BC36095B4544E3A46F6597A2461CEEC08C26BBAC4D30754AAC7A2F2F97.
+- **Desktop online-flash same-path reinspection**：The installed v0.1.6 symptom was isolated to desktop path selection: selecting an identical path assigns the same Vue ref value, so the watcher does not run, while the selection handler still clears the previous inspection. Browser File-object reload and retained-handle polling were already covered by the earlier fix. The desktop and browser selection handlers now explicitly schedule inspection after resetting state. The new desktop regression reproduced one request before the fix and two requests after it. The supplied STM32F103RC Intel HEX was accepted by the installed backend with a valid image range and reliable sector geometry. The focused online-flash file passed 67 tests; full GUI passed 49 files and 498 tests; vue-tsc and Vite 8.1.5 production build passed. Raw Python reached 1,243 passed and 1 skipped with only the known 12 Windows symlink-privilege failures and 3 missing-STCP-DLL packaging errors; the comparable gate passed 1,243 with 1 skipped and 15 exact deselections. The installed Tauri application still contains the old bundle, so visible repeated selection must be revalidated after a new installer or development build is authorized.
 
 ## 架构决策
 
@@ -96,13 +97,15 @@
 
 ## 下一动作
 
-1. Keep the local v0.1.6 Web GUI available for maintainer UI validation; stop it only when the validation session is complete.
-2. Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.
-3. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
-4. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
-5. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
-6. Qualify USB Web entry on current macOS and Linux systems.
-7. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
+1. Build or run the fix branch in Tauri, select the same STM32F103RC HEX at least twice, and confirm that inspection metadata, preview rows, sector selection, and Start Flash availability recover after every selection without programming the target.
+2. After the Tauri closed loop, commit and push the fix branch only with explicit maintainer authorization; merge, installer replacement, Skill update, tagging, and publication remain separate actions.
+3. Keep the local v0.1.6 Web GUI available for maintainer UI validation; stop it only when the validation session is complete.
+4. Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.
+5. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
+6. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
+7. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
+8. Qualify USB Web entry on current macOS and Linux systems.
+9. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
 
 ## 已知限制
 
@@ -112,7 +115,7 @@
 - The first real V4 offline trigger once returned a transient empty failure and an immediate retry succeeded. Reproduce cold starts and add device-output diagnostics if it recurs.
 - Full npm audit reports one high-severity development-only transitive finding in brace-expansion; the runtime dependency audit is clean.
 - Serial Assistant's closed loop used a paired virtual serial driver and therefore does not qualify USB-UART electrical behavior, cable faults, or adapter-specific driver latency; the host software and Windows serial API path are qualified.
-- Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection; repeated selection of the same path is supported.
+- Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection. Browser same-path selection is supported; the desktop same-path reinspection fix remains uninstalled and requires a real Tauri validation before merge or release.
 - The CST92F41 relative-FLM fix has real Pack, customer-image, pyOCD finalisation, and Web interaction evidence, but no physical CST92 target was available for erase/program/verify HIL. This merge uses the maintainer's explicit hardware-gate waiver; future physical CST release evidence remains pending.
 - USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage.
 
