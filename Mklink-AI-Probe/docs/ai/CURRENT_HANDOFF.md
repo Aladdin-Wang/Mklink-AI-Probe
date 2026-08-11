@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-11T18:54:10+08:00`
-- 分支：`fix/desktop-startup-splash`
-- HEAD：`master@0fe6b6a 已包含 v0.1.6 的桌面多实例、探针隔离、GUI/COM 修复和本地分发记录；当前分支已完成并验证桌面启动动画、版本记录精简和 MCU 复位入口。`
-- 远端 HEAD：`origin/master@0fe6b6a 与本地主分支基线一致。当前修复分支尚未提交或推送。`
-- 工作树：启动页、下载器图片、v0.1.6 更新记录、MCU 复位入口、仪表盘响应式布局和交接记录已通过门禁，等待提交合并；构建缓存与 .mklink 运行数据不进入 Git。
-- 当前任务：提交并合并桌面启动动画、精简版本记录和 MCU 复位入口；复位前必须退出占用 CMD/目标调试资源的 Dashboard 会话。
-- 状态：`desktop_startup_reset_ready_to_merge`
+- 更新时间：`2026-08-11T19:03:30+08:00`
+- 分支：`master`
+- HEAD：`master@c9a40be 已合并桌面启动动画、版本记录精简、MCU 复位入口和复位资源互斥修复。`
+- 远端 HEAD：`origin/master@c9a40be 已接收功能合并；本交接提交仅同步最终验证与清理状态。`
+- 工作树：最终交接提交后保持干净；本地真机日志、构建缓存和 .mklink 运行数据不进入 Git。已合并旧分支已清理，保留有未提交工作的 worktree 和未合并分支。
+- 当前任务：桌面启动动画、精简版本记录、MCU 复位入口和复位前 Dashboard 退出已完成真机验证、合并与 GitHub 推送。
+- 状态：`desktop_startup_reset_complete`
 
 ## 里程碑
 
@@ -54,10 +54,9 @@
 
 ## 下一动作
 
-1. 提交当前修复分支，合并到 master 并推送 GitHub；只清理确认已合并且工作树干净的旧分支。
-2. 复现 V4 脱机首次空失败并增加设备输出诊断。
-3. 使用更大目标 RTT 缓冲完成 SystemView 可持续事件率验证。
-4. 在 macOS/Linux 验证 USB Web Entry，并在第二台干净 Windows 机器验证安装与更新。
+1. 复现 V4 脱机首次空失败并增加设备输出诊断。
+2. 使用更大目标 RTT 缓冲完成 SystemView 可持续事件率验证。
+3. 在 macOS/Linux 验证 USB Web Entry，并在第二台干净 Windows 机器验证安装与更新。
 
 ## 已知限制
 
