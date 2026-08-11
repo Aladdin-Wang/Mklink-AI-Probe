@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RTT_TERMINAL_UTF8, StreamType } from '../lib/stream/protocol'
+import {
+  RTT_TERMINAL_UTF8,
+  SERIAL_RX_BYTES,
+  SERIAL_TX_BYTES,
+  StreamType,
+} from '../lib/stream/protocol'
 import {
   StreamDecoder,
   type WorkerOutput,
@@ -105,6 +110,75 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('incrementally decodes serial RX in terminal mode without TX echo or log output', () => {
+    const { decoder, messages } = setup()
+    const encoded = new TextEncoder().encode('温度')
+    decoder.handle({
+      type: 'configure', capacity: 8, channelCount: 1, decoderMode: 'serial-terminal',
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        1n, 2, encoded.slice(0, 2), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        2n, encoded.length - 2, encoded.slice(2), StreamType.SERIAL, 20n, SERIAL_RX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 2,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        3n, 2, new TextEncoder().encode('TX'), StreamType.SERIAL, 30n, SERIAL_TX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 3,
+    })
+
+    expect(messages.filter(message => message.type === 'serial-terminal'))
+      .toEqual([{ type: 'serial-terminal', sequence: 2n, text: '温度' }])
+    expect(messages.some(message => message.type === 'serial-lines')).toBe(false)
+    expect(messages.at(-1)).toMatchObject({
+      type: 'telemetry', bufferedSamples: 8, acceptedFrames: 3,
+    })
+  })
+
+  it('assembles bounded directional serial rows in log mode', () => {
+    const { decoder, messages } = setup()
+    const encoder = new TextEncoder()
+    decoder.handle({
+      type: 'configure', capacity: 1, channelCount: 1, decoderMode: 'serial-log',
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        1n, 2, encoder.encode('OK'), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 1,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        2n, 2, encoder.encode('\nX'), StreamType.SERIAL, 20n, SERIAL_RX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 2,
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(
+        3n, 2, Uint8Array.of(0xab, 0xcd), StreamType.SERIAL, 30n, SERIAL_TX_BYTES,
+      ), connectionGeneration: 1, frameTicket: 3,
+    })
+
+    const batches = messages.filter(message => message.type === 'serial-lines')
+    expect(batches).toEqual([
+      {
+        type: 'serial-lines', sequence: 2n,
+        lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
+      },
+      {
+        type: 'serial-lines', sequence: 3n,
+        lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��' }],
+      },
+    ])
+    expect(messages.some(message => message.type === 'serial-terminal')).toBe(false)
+    expect(messages.at(-1)).toMatchObject({
+      type: 'telemetry', bufferedSamples: 1, acceptedFrames: 3,
+    })
+  })
+
   it('decodes RTT raw records with UTF-8 line metadata and preserves batch order', () => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })

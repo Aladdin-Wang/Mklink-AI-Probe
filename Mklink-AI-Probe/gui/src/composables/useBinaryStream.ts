@@ -2,9 +2,10 @@ import { computed, onUnmounted, readonly, ref, shallowRef } from 'vue'
 import { StreamClient } from '../lib/stream/streamClient'
 import type { StreamClientOptions, StreamClientState } from '../lib/stream/streamClient'
 import type { StreamTelemetry, WorkerOutput } from '../workers/streamDecoder.worker'
+import type { DecoderMode } from '../workers/streamDecoder.worker'
 import { API_BASE } from '../lib/runtimeEndpoint'
 
-export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'superwatch'
+export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'rtt-terminal' | 'serial' | 'superwatch'
 
 export interface BinaryStreamClient {
   start(): void
@@ -18,6 +19,7 @@ export interface BinaryStreamClient {
 export interface UseBinaryStreamOptions {
   readonly capacity: number
   readonly channelCount: number
+  readonly decoderMode?: DecoderMode
   readonly token?: string
   readonly autoStart?: boolean
   readonly createClient?: (options: StreamClientOptions) => BinaryStreamClient
@@ -29,6 +31,8 @@ type WaveformBatch = Extract<WorkerOutput, { type: 'waveform-batch' }>
 type RttLines = Extract<WorkerOutput, { type: 'rtt-lines' }>
 type RttTerminal = Extract<WorkerOutput, { type: 'rtt-terminal' }>
 type SuperWatchMetadata = Extract<WorkerOutput, { type: 'superwatch-metadata' }>
+type SerialLines = Extract<WorkerOutput, { type: 'serial-lines' }>
+type SerialTerminal = Extract<WorkerOutput, { type: 'serial-terminal' }>
 
 function streamUrl(stream: BinaryStreamName): string {
   if (API_BASE) {
@@ -56,6 +60,8 @@ export function useBinaryStream(
   const rttLines = shallowRef<RttLines | null>(null)
   const rttTerminal = shallowRef<RttTerminal | null>(null)
   const superwatchMetadata = shallowRef<SuperWatchMetadata | null>(null)
+  const serialLines = shallowRef<SerialLines | null>(null)
+  const serialTerminal = shallowRef<SerialTerminal | null>(null)
   const error = ref<string | null>(null)
 
   function onState(next: StreamClientState): void {
@@ -89,6 +95,12 @@ export function useBinaryStream(
       case 'superwatch-metadata':
         superwatchMetadata.value = message
         break
+      case 'serial-lines':
+        serialLines.value = message
+        break
+      case 'serial-terminal':
+        serialTerminal.value = message
+        break
       case 'error':
         error.value = message.message
         break
@@ -101,6 +113,7 @@ export function useBinaryStream(
     token: options.token,
     capacity: options.capacity,
     channelCount: options.channelCount,
+    decoderMode: options.decoderMode,
     onState,
     onWorkerMessage,
   })
@@ -122,6 +135,8 @@ export function useBinaryStream(
     rttLines.value = null
     rttTerminal.value = null
     superwatchMetadata.value = null
+    serialLines.value = null
+    serialTerminal.value = null
     error.value = null
     client.reset()
   }
@@ -134,6 +149,8 @@ export function useBinaryStream(
     rttLines.value = null
     rttTerminal.value = null
     superwatchMetadata.value = null
+    serialLines.value = null
+    serialTerminal.value = null
     client.configure(options.capacity, nextChannelCount)
   }
 
@@ -161,6 +178,8 @@ export function useBinaryStream(
     rttLines: readonly(rttLines),
     rttTerminal: readonly(rttTerminal),
     superwatchMetadata: readonly(superwatchMetadata),
+    serialLines: readonly(serialLines),
+    serialTerminal: readonly(serialTerminal),
     error: readonly(error),
     start,
     stop,

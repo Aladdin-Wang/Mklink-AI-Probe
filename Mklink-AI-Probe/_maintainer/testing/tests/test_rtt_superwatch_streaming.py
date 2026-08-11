@@ -694,6 +694,23 @@ def test_rtt_terminal_chunks_publish_without_waiting_for_newline():
     asyncio.run(scenario())
 
 
+def test_rtt_log_and_terminal_batches_use_independent_hubs():
+    log_hub = _RecordingHub()
+    terminal_hub = _RecordingHub()
+    manager = RttStreamManager(stream_hub=log_hub, raw_batch_lines=1)
+    manager.set_terminal_stream_hub(terminal_hub)
+
+    manager.feed_rtt_bytes(b"ready\n")
+    manager.flush_pending()
+
+    assert len(log_hub.batches) == 1
+    assert log_hub.batches[0].flags == RTT_RAW_UTF8_LINES
+    assert decode_rtt_lines(log_hub.batches[0].payload, 1)[0].text == "ready"
+    assert len(terminal_hub.batches) == 1
+    assert terminal_hub.batches[0].flags == RTT_TERMINAL_UTF8
+    assert terminal_hub.batches[0].payload == b"ready\n"
+
+
 def test_rtt_terminal_decoder_preserves_gbk_characters_across_chunks():
     async def scenario():
         hub = StreamHub(max_batches_per_client=4)

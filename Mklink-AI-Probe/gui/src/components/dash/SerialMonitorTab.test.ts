@@ -1,13 +1,18 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { shallowRef } from 'vue'
 import SerialMonitorTab from './SerialMonitorTab.vue'
 
 const mocks = vi.hoisted(() => ({
   listPorts: vi.fn(),
   toastError: vi.fn(),
+  useBinaryStream: vi.fn(),
+  downloadTextFile: vi.fn(),
   terminalWrites: [] as string[],
   terminalClears: 0,
   terminalInput: null as null | ((data: string) => void),
+  logBinary: null as any,
+  terminalBinary: null as any,
 }))
 
 vi.mock('../../composables/useMklinkApi', () => ({
@@ -16,6 +21,15 @@ vi.mock('../../composables/useMklinkApi', () => ({
 
 vi.mock('../../composables/useToast', () => ({
   useToast: () => ({ success: vi.fn(), error: mocks.toastError, info: vi.fn() }),
+}))
+
+vi.mock('../../composables/useBinaryStream', () => ({
+  useBinaryStream: mocks.useBinaryStream,
+}))
+
+vi.mock('../../lib/downloadTextFile', () => ({
+  downloadTextFile: mocks.downloadTextFile,
+  timestampedLogName: (prefix: string) => `${prefix}-test.log`,
 }))
 
 vi.mock('@xterm/xterm', () => ({
@@ -41,25 +55,6 @@ vi.mock('@xterm/xterm', () => ({
 
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit() {} } }))
 
-class FakeEventSource {
-  static instances: FakeEventSource[] = []
-  static CLOSED = 2
-  onmessage: ((event: MessageEvent) => void) | null = null
-  onerror: (() => void) | null = null
-  readyState = 1
-  url: string
-
-  constructor(url: string) {
-    this.url = url
-    FakeEventSource.instances.push(this)
-  }
-
-  close() { this.readyState = FakeEventSource.CLOSED }
-  emit(data: unknown) {
-    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent)
-  }
-}
-
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>()
   get length(): number { return this.values.size }
@@ -68,6 +63,17 @@ class MemoryStorage implements Storage {
   key(index: number): string | null { return [...this.values.keys()][index] ?? null }
   removeItem(key: string): void { this.values.delete(key) }
   setItem(key: string, value: string): void { this.values.set(key, value) }
+}
+
+function binaryClient(kind: 'log' | 'terminal') {
+  return {
+    serialLines: shallowRef(kind === 'log' ? null : undefined),
+    serialTerminal: shallowRef(kind === 'terminal' ? null : undefined),
+    telemetry: shallowRef(null),
+    error: shallowRef(null),
+    start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
+    requestVisibleRange: vi.fn(),
+  }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -89,15 +95,19 @@ function runningStatus() {
 describe('SerialMonitorTab', () => {
   beforeEach(() => {
     vi.stubGlobal('localStorage', new MemoryStorage())
-    FakeEventSource.instances.length = 0
+    mocks.logBinary = binaryClient('log')
+    mocks.terminalBinary = binaryClient('terminal')
+    mocks.useBinaryStream.mockReset().mockImplementation((_name, options) => (
+      options.decoderMode === 'serial-log' ? mocks.logBinary : mocks.terminalBinary
+    ))
     mocks.listPorts.mockReset().mockResolvedValue([
       { device: 'TEST_UART', description: 'USB UART', is_mklink: false },
     ])
     mocks.toastError.mockReset()
+    mocks.downloadTextFile.mockReset()
     mocks.terminalWrites.length = 0
     mocks.terminalClears = 0
     mocks.terminalInput = null
-    vi.stubGlobal('EventSource', FakeEventSource)
   })
 
   afterEach(() => {
@@ -105,7 +115,7 @@ describe('SerialMonitorTab', () => {
     vi.restoreAllMocks()
   })
 
-  it('runs without an MKLink connection and does not stop the backend when unmounted', async () => {
+  it('isolates terminal and log streams without stopping the backend on unmount', async () => {
     let status = { ...runningStatus(), running: false, ports: {}, config: [] }
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -122,34 +132,50 @@ describe('SerialMonitorTab', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('USB UART'))
 
     expect(wrapper.text()).not.toContain('请先连接设备')
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="serial-save-log"]').exists()).toBe(false)
     await wrapper.get('.btn-primary').trigger('click')
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    await vi.waitFor(() => expect(mocks.terminalBinary.start).toHaveBeenCalledTimes(1))
+    expect(mocks.logBinary.start).not.toHaveBeenCalled()
 
-    const stream = FakeEventSource.instances[0]
-    stream.emit({
-      event: 'terminal', direction: 'RX',
-      data_base64: btoa('\u001b[31mprompt> '),
-    })
+    mocks.terminalBinary.serialTerminal.value = {
+      type: 'serial-terminal', sequence: 1n, text: '\u001b[31mprompt> ',
+    }
+    await wrapper.vm.$nextTick()
     expect(mocks.terminalWrites.join('')).toContain('\u001b[31mprompt> ')
-    const writesAfterRx = mocks.terminalWrites.length
-    stream.emit({ event: 'terminal', direction: 'TX', data_base64: btoa('local echo') })
-    expect(mocks.terminalWrites).toHaveLength(writesAfterRx)
 
     mocks.terminalInput?.('help\r')
     await vi.waitFor(() => {
       const send = fetchMock.mock.calls.find(call => String(call[0]).endsWith('/api/dash/serial/send'))
-      expect(send).toBeTruthy()
       expect(JSON.parse(String(send?.[1]?.body))).toEqual({
         port: 'TEST_UART', data: '68656c700d', hex: true,
       })
     })
 
+    await wrapper.get('[data-testid="serial-log-mode"]').trigger('click')
+    expect(mocks.terminalBinary.stop).toHaveBeenCalled()
+    expect(mocks.logBinary.start).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="serial-save-log"]').exists()).toBe(true)
+
+    mocks.logBinary.serialLines.value = {
+      type: 'serial-lines', sequence: 2n,
+      lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
+    }
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="serial-save-log"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="serial-save-log"]').trigger('click')
+    expect(mocks.downloadTextFile).toHaveBeenCalledWith(
+      'serial-test.log', expect.stringContaining('\tRX\t4F4B0A  OK\\n'),
+    )
+
     wrapper.unmount()
     expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/api/dash/serial/stop'))).toBe(false)
-    expect(stream.readyState).toBe(FakeEventSource.CLOSED)
+    expect(mocks.logBinary.stop).toHaveBeenCalled()
+    expect(mocks.terminalBinary.stop).toHaveBeenCalled()
   })
 
-  it('reconnects to an existing serial session and clears only the visible mode', async () => {
+  it('reconnects to an existing session and clears only the mounted mode', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/api/dash/serial/status')) return jsonResponse(runningStatus())
@@ -157,22 +183,22 @@ describe('SerialMonitorTab', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(SerialMonitorTab)
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
-    expect(wrapper.get('[data-testid="serial-terminal-mode"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="serial-log-mode"]').attributes('aria-pressed')).toBe('false')
-    const stream = FakeEventSource.instances[0]
-    stream.emit({
-      event: 'data', timestamp: '12:00:00.000', direction: 'RX',
-      raw_hex: '4F4B0A', ascii: 'OK\n',
-    })
-    await wrapper.vm.$nextTick()
-    expect(wrapper.text()).toContain('4F4B0A')
+    await vi.waitFor(() => expect(mocks.terminalBinary.start).toHaveBeenCalledTimes(1))
 
-    await wrapper.get('[data-testid="serial-terminal-mode"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
     await wrapper.get('.clear-action').trigger('click')
     expect(mocks.terminalClears).toBeGreaterThan(0)
+
     await wrapper.get('[data-testid="serial-log-mode"]').trigger('click')
-    expect(wrapper.text()).toContain('4F4B0A')
+    mocks.logBinary.serialLines.value = {
+      type: 'serial-lines', sequence: 1n,
+      lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
+    }
+    await vi.waitFor(() => expect(
+      (wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount,
+    ).toBe(1))
+    await wrapper.get('.clear-action').trigger('click')
+    expect((wrapper.findComponent({ name: 'VirtualLogPanel' }).vm as any).retainedCount).toBe(0)
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('TEST_UART')
 
     wrapper.unmount()

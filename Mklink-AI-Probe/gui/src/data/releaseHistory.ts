@@ -10,15 +10,19 @@ export interface ReleaseHistoryEntry {
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.1.6',
-    date: '2026-08-03',
-    summary: '主 GUI 内置现场 Agent，并统一远程与本地后端',
-    summaryEn: 'Embedded Site Agent in the main GUI with one unified backend',
+    date: '2026-08-11',
+    summary: '完善现场 Agent、在线烧录与高吞吐终端',
+    summaryEn: 'Improved Site Agent, online flashing, and high-rate terminals',
     changes: [
       '主 GUI 新增 Site Agent 页面，统一管理直连与 LAN STCP 配置、运行状态和工程师连接入口。',
       '本地 GUI 与远程 Agent 共用同一个 sidecar、探针设备实例和资源管理器。',
       '访问令牌与 STCP 凭据使用 Windows DPAPI 加密保存，明文不进入命令行或前端状态。',
       '启用现场服务后关闭主窗口会转入托盘，显式退出才停止统一后端。',
       '正式 Release 同时提供主安装包、Skill 包和独立 Site Agent portable ZIP。',
+      '在线烧录在同一路径重复加载或固件重新编译后重新读取并解析最新内容，修复 HEX 不重新解析和手动加载仍使用旧文件的问题。',
+      '修复 HPM 复合 USB 探针的端口匹配与可烧录状态，并支持 CST92F41KxVxxx 相对扇区几何解析。',
+      '串口助手与 RTT 终端改用隔离的数据解码和渲染通道，终端模式不再挂载或同步隐藏日志 DOM，避免高数据流运行后卡死。',
+      '串口与 RTT 日志模式支持将保留的数据保存到本地文件，终端模式保持轻量实时刷新。',
     ],
     changesEn: [
       'Add a Site Agent page for direct and LAN STCP configuration, runtime status, and engineer connection guidance.',
@@ -26,6 +30,10 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Protect Site Agent and STCP credentials with Windows DPAPI without exposing plaintext to command lines or frontend status.',
       'Keep the unified backend in the tray while Site Agent is enabled and stop it only on explicit exit.',
       'Publish the standalone Site Agent portable ZIP alongside the installer and Skill archive.',
+      'Reload and reparse rebuilt firmware even when the same path is selected, fixing stale manual loads and repeated HEX loads that were not reparsed.',
+      'Fix port matching and flash readiness for composite HPM USB probes, and support relative sector geometry for CST92F41KxVxxx devices.',
+      'Isolate Serial Assistant and RTT terminal decoding and rendering, and avoid mounting or synchronizing hidden log DOM in terminal mode to prevent high-rate stream freezes.',
+      'Allow retained Serial and RTT log data to be saved to local files while keeping terminal mode lightweight and responsive.',
     ],
   },
   {
