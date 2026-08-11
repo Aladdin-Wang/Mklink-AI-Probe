@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-11T21:30:58+08:00`
-- 分支：`fix/device-connect-auto-search`
-- HEAD：`修复分支基于 master@d4d25e2，设备连接自动搜索修复已完成自动化、生产构建和真实 Chrome/HPM5301 闭环。`
-- 远端 HEAD：`origin/master 仍为 d4d25e2；本次修复尚未提交、合并或推送。`
-- 工作树：仅包含设备连接自动搜索源码、回归测试、生成 Web 资源和本交接记录；既有其他工作树未改动。
-- 当前任务：修复无有效端口或历史端口失效时，连接设备不会自动搜索且重复点击持续报错的问题。
-- 状态：`device_connect_auto_search_verified_unmerged`
+- 更新时间：`2026-08-11T21:32:05+08:00`
+- 分支：`master`
+- HEAD：`master@944c01a 已合并设备连接自动搜索修复；功能提交为 a83c0d6。`
+- 远端 HEAD：`origin/master 仍为 d4d25e2；本地 master 尚未推送。`
+- 工作树：设备连接自动搜索修复及验证记录均已提交；既有其他工作树未改动。
+- 当前任务：设备连接失败后的自动搜索回退已完成真机验证并合并到 master。
+- 状态：`device_connect_auto_search_merged`
 
 ## 里程碑
 

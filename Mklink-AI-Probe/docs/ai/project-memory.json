@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T21:30:58+08:00",
+  "updated_at": "2026-08-11T21:32:05+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/device-connect-auto-search",
-    "head": "修复分支基于 master@d4d25e2，设备连接自动搜索修复已完成自动化、生产构建和真实 Chrome/HPM5301 闭环。",
-    "remote_head": "origin/master 仍为 d4d25e2；本次修复尚未提交、合并或推送。",
-    "working_tree": "仅包含设备连接自动搜索源码、回归测试、生成 Web 资源和本交接记录；既有其他工作树未改动。"
+    "branch": "master",
+    "head": "master@944c01a 已合并设备连接自动搜索修复；功能提交为 a83c0d6。",
+    "remote_head": "origin/master 仍为 d4d25e2；本地 master 尚未推送。",
+    "working_tree": "设备连接自动搜索修复及验证记录均已提交；既有其他工作树未改动。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、高吞吐数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、仍有效约束、最新证据、限制和下一动作；完成历史从 Git 查询。"
   },
   "current_session": {
-    "status": "device_connect_auto_search_verified_unmerged",
-    "current_task": "修复无有效端口或历史端口失效时，连接设备不会自动搜索且重复点击持续报错的问题。",
-    "release": "修复已在独立分支完成最终验证；未生成安装包，尚未提交、合并、推送或发布。"
+    "status": "device_connect_auto_search_merged",
+    "current_task": "设备连接失败后的自动搜索回退已完成真机验证并合并到 master。",
+    "release": "修复已合并到本地 master；本次未生成安装包，未推送或发布。"
   },
   "milestones": [
     {
