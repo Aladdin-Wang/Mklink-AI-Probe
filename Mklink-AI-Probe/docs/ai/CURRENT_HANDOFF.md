@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-11T16:02:00+08:00`
-- 分支：`fix/desktop-dynamic-sidecar-port`
-- HEAD：`The uncommitted fix branch contains qualified per-instance desktop backend ports, per-CMD-port bridge locks, concurrent automatic probe arbitration, and backend-port status display.`
-- 远端 HEAD：`No commit, merge, push, tag, GitHub Release, updater manifest, or Gitee state was changed during this work.`
-- 工作树：The fix branch contains the qualified tracked changes plus pre-existing local build, cache, and hardware artifacts that remain outside Git.
-- 当前任务：Keep two v0.1.6 desktop candidates open for maintainer verification after qualifying independent dynamic backends and simultaneous automatic connection to two physical probes.
-- 状态：`desktop_multi_instance_probe_isolation_qualified`
+- 更新时间：`2026-08-11T16:22:16+08:00`
+- 分支：`master`
+- HEAD：`Local master merged the qualified desktop-backend and probe-isolation branch through 43ec353; 1b7f57a records the matching v0.1.6 Web assets used by the local Skill distribution.`
+- 远端 HEAD：`origin/master remains 9e036db44a3d. Local master is 11 commits ahead; no push, tag, GitHub Release, updater manifest, or Gitee state changed.`
+- 工作树：Tracked source is clean after removing explicit build/cache outputs. Local .mklink runtime data is preserved and hidden through .git/info/exclude so Git integrations do not enumerate it as active work.
+- 当前任务：The qualified desktop multi-instance and probe-isolation fixes are merged into local master, installed as v0.1.6, and synchronized to the local Skill and Web GUI.
+- 状态：`desktop_multi_instance_local_distribution_complete`
 
 ## 里程碑
 
@@ -54,6 +54,7 @@
 - **v0.1.6 merged-master installer, Skill, and Web GUI distribution**：The qualified merged-master runtime at 60465dd was packaged as the standard NSIS installer; e4adc05 then recorded the identical generated Web assets and supplied the matching Skill archive. Full GUI passed 50 files and 504 tests; raw full Python passed 1,251 with 1 skipped and only the known 12 Windows symlink-privilege failures, while the exact reduced gate passed 1,251 with 1 skipped; vue-tsc, the Vite production build, and the Tauri builder check passed. The installer was overwritten locally with exit code 0 and registered DisplayVersion 0.1.6. Installer SHA-256 is 478D778ECECBEF44536219697AC60C457D3446AC0FBC630FF49D22424CF59783; updater signature SHA-256 is AAF198A440BBC90AFCD55D3445D37EE3A86EDF87770432BE8BC5C0333853B911; Skill archive SHA-256 is 1042934EE3B9158D5499E743327EA5948261AE2326189DDE92B349DC3B52673D. The archive was installed into the user Skill root with source_commit e4adc05e791812862f842fedd973b148527805bc, version/plugin 0.1.6, and quick_validate.py passed. web-entry install was re-registered from that installed Skill; because the desktop API occupied 8765, the same-source Web GUI was started on 8766 and passed /api/health status ok, root HTTP 200, and hashed production asset HTTP 200. The temporary Web service was stopped, the debug-port desktop instance was closed, and a normal installed launch passed health and probe enumeration; the final runtime owns only 8765, has no 8766/9223 listener, and has no Python process. No GitHub push, tag, Release, updater manifest, or Gitee sync was performed.
 - **GUI simplification, resource arbitration, and Windows low-COM lock gate**：On fix/ui-resource-serial-com1, the Web/Tauri header and configuration status no longer expose detected MCU-family labels, Dashboard no longer offers the Debug Control tab, and the Taobao entry is an ordered menu containing the existing official store plus a disabled pending Xianji custom-store entry. A real 390x844 browser viewport confirmed the horizontally scrollable navigation, non-wrapping labels, and fully visible fixed-position store menu. A real STM32F103RC source Web session connected with builtin AXF parsing, started RTOS Trace, rendered named tasks and live events, then read 64 bytes through Memory; the read synchronously stopped Trace and left both mklink_bridge and target_debug leases empty. No flash, erase, reset, halt, resume, or write was performed. Windows low-number serial qualification created an ordinary serial_-prefixed lock path and completed serial send/log against an available single-digit virtual port. Raw full Python reached 1,253 passed and 1 skipped with only the 12 known WinError 1314 directory-symlink privilege failures; the exact reduced gate passed 1,253 with 1 skipped and 12 deselected. Full GUI passed 52 files and 507 tests; vue-tsc, Vite 8.1.5 production build, Tauri Builder prerequisite check, and git diff check passed.
 - **Desktop dynamic backend and dual-probe automatic connection**：On fix/desktop-dynamic-sidecar-port, an existing Web Entry retained its loopback port while two packaged Tauri candidates selected the next two ports with distinct instance identities and independent bundled sidecars. Simultaneous restore-last requests against one V3 and one V4 probe selected two different protocol-valid CMD interfaces and both remained connected; a reproduced probe-scan race was fixed by holding a cross-process automatic-discovery lock through the final per-port claim. A target UART that emitted a generic >>> prompt was then reproduced and rejected by requiring a unique no-op print response in both discovery and the final bridge connection; real V3 and V4 CMD interfaces passed the strengthened handshake. The status-bar component renders the owning backend port and follows runtime endpoint changes. Focused backend coverage passed 120 tests. Raw full Python reached 1,263 passed and 1 skipped with only the 12 known WinError 1314 directory-symlink fixture failures; the exact reduced gate passed 1,263 with 1 skipped and 12 deselected. Full GUI passed 52 files and 508 tests, vue-tsc and Vite 8.1.5 production build passed, Tauri Rust passed 12 tests, git diff check passed, and the bundled sidecar plus local NSIS candidate rebuilt successfully. No flash, erase, reset, halt, resume, memory write, installation, publication, or probe-firmware change was performed.
+- **Desktop isolation merge and refreshed v0.1.6 local distribution**：The qualified fix tip 32db23c was merged into local master through 43ec353, and 1b7f57a recorded the production Web assets. The standard updater-signed NSIS was rebuilt with 5,065 audited Pack targets and 8,137 DAPLinkUtility FLM targets, then silently overwrote the local v0.1.6 installation with exit code 0. With Web Entry retaining the preferred port, two installed desktop instances selected the next two distinct ports and the second remained healthy after the first exited. A separate installed launch passed ownership-aware health, enumerated two attached probes, used only bundled sidecar processes with zero Python descendants, released its selected port on normal close, and left Web Entry healthy. Installer SHA-256 is 403E80A75EDF6F38A2D7968A4CF34598B692AAA42327B0937AA8830D1354FE21 and updater signature SHA-256 is 8CF2CFE6314CDEB8A1FC6188F31B80D5AC80D47EA57940E9019307D9D4EE26CC. The matching Skill archive SHA-256 is 28427FCCDE408E21E597B6FACECD2CB3E7851377EAFB8935D76453903BD85AB0; it was atomically installed with source_commit 1b7f57aab43a6b63adc491f010bb47c9c88d11d0 and passed skill-creator quick_validate.py. Web Entry was re-registered from that Skill and left running on loopback; health, root, hashed asset, two-probe enumeration, and repository-to-Skill Web-asset hash equality passed. Nineteen explicit build/cache outputs were removed, while local .mklink data was preserved and locally excluded from Git enumeration. No push, tag, GitHub Release, updater manifest, or Gitee state changed.
 
 ## 架构决策
 
@@ -103,13 +104,11 @@
 
 ## 下一动作
 
-1. Have the maintainer visually verify the two open desktop candidates show different backend ports and remain bound to the intended V3 and V4 probes, then commit the fix branch only when explicitly authorized.
-2. Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.
-3. After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.
-4. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
-5. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
-6. Qualify USB Web entry on current macOS and Linux systems.
-7. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
+1. Obtain explicit maintainer authorization before pushing local master, creating the annotated v0.1.6 tag, publishing a GitHub Release, changing updates/latest.json, or synchronizing Gitee.
+2. Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.
+3. Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.
+4. Qualify USB Web entry on current macOS and Linux systems.
+5. Qualify standard NSIS and older-client updater behavior on a clean Windows 10/11 machine.
 
 ## 已知限制
 
