@@ -25,7 +25,6 @@
     <span :class="['badge', deviceStatus.connected ? 'badge-ok' : 'badge-err']">
       {{ deviceStatus.connected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
     </span>
-    <span v-if="deviceStatus.mcu" class="badge badge-accent">{{ deviceStatus.mcu }}</span>
     <span v-if="deviceStatus.idcode" class="badge badge-info">{{ deviceStatus.idcode }}</span>
     <span v-if="wsConnected" class="badge badge-warn">WS</span>
   </div>

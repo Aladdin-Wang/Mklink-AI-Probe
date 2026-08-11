@@ -749,6 +749,37 @@ def test_native_api_preempts_and_stops_dashboard_before_target_access():
     assert state["resource_manager"].get_status() == {}
 
 
+def test_memory_read_preempts_rtos_trace_and_releases_both_probe_resources():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    managers["systemview"].running = True
+    device = MagicMock()
+    device.connected = True
+    device.read_memory.return_value = b"\x12\x34\x56\x78"
+    state["device"] = device
+    state["resource_manager"].acquire_many(
+        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        "user:dashboard:systemview",
+    )
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post(
+            "/api/device/read-memory",
+            json={"address": "0x20000000", "size": 4},
+        )
+
+    assert response.status_code == 200
+    managers["systemview"].stop.assert_called_once_with()
+    device.read_memory.assert_called_once_with(0x20000000, 4)
+    assert response.json()["data_hex"] == "12345678"
+    assert state["resource_manager"].get_status() == {}
+
+
 def test_rtt_encoding_routes_validate_and_update_the_shared_manager():
     managers = {
         name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())

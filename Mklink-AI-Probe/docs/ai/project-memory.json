@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T10:48:00+08:00",
+  "updated_at": "2026-08-11T13:00:00+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "Local master contains the qualified Serial/RTT Worker stream fix and desktop same-path firmware reinspection fix for the completed v0.1.6 local distribution.",
+    "branch": "fix/ui-resource-serial-com1",
+    "head": "The fix branch contains the qualified GUI simplification, store menu, resource-arbitration regression coverage, and Windows COM1-COM9 serial-lock repair and is ready for a local v0.1.6 distribution rebuild.",
     "remote_head": "origin/master remains 9e036db. No push, tag, GitHub Release, updater manifest, or Gitee sync was changed.",
-    "working_tree": "The master worktree contains the authorized merge plus pre-existing local build, cache, and hardware artifacts that remain outside Git."
+    "working_tree": "The fix branch contains the qualified tracked changes plus pre-existing local build, cache, and hardware artifacts that remain outside Git."
   },
   "mission": {
     "product": "MKLink/MicroLink tooling for local and authenticated VPN/LAN remote firmware flash, embedded debug, symbols, memory, RTT/SystemView/VOFA/SuperWatch streaming, Serial, Modbus, MCP, Web, Tauri desktop, and standalone Site Agent workflows.",
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "v016_master_local_distribution_complete",
-    "current_task": "Completed the merged-master v0.1.6 installer qualification, overwrite installation, matching Skill update, and same-source Web GUI verification.",
-    "release": "The maintainer explicitly authorized the local master merge, standard NSIS rebuild and overwrite installation, and local Skill update. Push, tag, GitHub Release, updater manifest changes, and Gitee sync remain out of scope."
+    "status": "ui_resource_serial_fix_qualified",
+    "current_task": "Qualified the GUI simplification, dual-store menu, Dashboard resource arbitration, and Windows COM1-COM9 serial-lock repair; commit the fix branch and rebuild the local v0.1.6 installer, Skill, and Web GUI from that stable commit.",
+    "release": "The maintainer authorized a standard NSIS rebuild, overwrite installation, matching local Skill update, and same-version Web GUI. The current fix branch must not be merged or pushed implicitly; tag, GitHub Release, updater manifest changes, and Gitee sync remain out of scope."
   },
   "milestones": [
     {
@@ -37,7 +37,7 @@
     {
       "name": "Global GUI localization and navigation",
       "status": "complete",
-      "notes": "One persistent Chinese/English switch controls the Web/Tauri shell and embedded waveform workspace. The shell brand is MKLink. Technical English names remain unchanged. Dashboard order is RTT View, SuperWatch, HardFault, Memory, Debug Control, Serial Assistant, Modbus, RTOS Trace, and Symbols last. The content card starts directly with a compact tab row; the redundant Dashboard heading is removed and the resource-owner status shares that row. A persistent header action provides quick Device connect/disconnect, and each Dashboard surface now explains only its current missing prerequisite with an inline action. RTT View keeps address/source on one row and grouped acquisition, encoding, metrics, and secondary actions on the next; data-format examples open on demand instead of consuming a permanent third row."
+      "notes": "One persistent Chinese/English switch controls the Web/Tauri shell and embedded waveform workspace. The shell brand is MKLink. Technical English names remain unchanged. Dashboard order is RTT View, SuperWatch, HardFault, Memory, Serial Assistant, Modbus, RTOS Trace, and Symbols last; the user-facing Debug Control tab and detected MCU-family labels are removed while the CLI/API debug surface remains available. The content card starts directly with a compact tab row; the redundant Dashboard heading is removed and the resource-owner status shares that row. A persistent header action provides quick Device connect/disconnect, and each Dashboard surface now explains only its current missing prerequisite with an inline action. RTT View keeps address/source on one row and grouped acquisition, encoding, metrics, and secondary actions on the next; data-format examples open on demand instead of consuming a permanent third row."
     },
     {
       "name": "Lazy large-array symbol browsing",
@@ -62,7 +62,7 @@
     {
       "name": "Offline flash UX and conservative device labeling",
       "status": "complete",
-      "notes": "Offline Flash requests include only algorithms referenced by firmware rows, so unused missing FLMs do not block deployment. Selected unavailable FLMs are highlighted and can be replaced with a local upload; common backend failures are translated into actionable guidance with expandable technical details. RTT View and Serial Assistant default to Terminal mode. Header links expose only 在线文档 and 淘宝店 labels. The STM32F10x profile no longer claims Medium Density from a family-level IDCODE match."
+      "notes": "Offline Flash requests include only algorithms referenced by firmware rows, so unused missing FLMs do not block deployment. Selected unavailable FLMs are highlighted and can be replaced with a local upload; common backend failures are translated into actionable guidance with expandable technical details. RTT View and Serial Assistant default to Terminal mode. Header links expose 在线文档 and a responsive 淘宝店铺 menu whose first entry is the existing official store and whose disabled second entry reserves the pending Xianji custom-store link. The STM32F10x profile no longer claims Medium Density from a family-level IDCODE match."
     },
     {
       "name": "Remote Site Agent and in-process STCP integration",
@@ -168,7 +168,11 @@
     {
       "area": "v0.1.6 merged-master installer, Skill, and Web GUI distribution",
       "result": "The qualified merged-master runtime at 60465dd was packaged as the standard NSIS installer; e4adc05 then recorded the identical generated Web assets and supplied the matching Skill archive. Full GUI passed 50 files and 504 tests; raw full Python passed 1,251 with 1 skipped and only the known 12 Windows symlink-privilege failures, while the exact reduced gate passed 1,251 with 1 skipped; vue-tsc, the Vite production build, and the Tauri builder check passed. The installer was overwritten locally with exit code 0 and registered DisplayVersion 0.1.6. Installer SHA-256 is 478D778ECECBEF44536219697AC60C457D3446AC0FBC630FF49D22424CF59783; updater signature SHA-256 is AAF198A440BBC90AFCD55D3445D37EE3A86EDF87770432BE8BC5C0333853B911; Skill archive SHA-256 is 1042934EE3B9158D5499E743327EA5948261AE2326189DDE92B349DC3B52673D. The archive was installed into the user Skill root with source_commit e4adc05e791812862f842fedd973b148527805bc, version/plugin 0.1.6, and quick_validate.py passed. web-entry install was re-registered from that installed Skill; because the desktop API occupied 8765, the same-source Web GUI was started on 8766 and passed /api/health status ok, root HTTP 200, and hashed production asset HTTP 200. The temporary Web service was stopped, the debug-port desktop instance was closed, and a normal installed launch passed health and probe enumeration; the final runtime owns only 8765, has no 8766/9223 listener, and has no Python process. No GitHub push, tag, Release, updater manifest, or Gitee sync was performed."
-     }
+    },
+    {
+      "area": "GUI simplification, resource arbitration, and Windows low-COM lock gate",
+      "result": "On fix/ui-resource-serial-com1, the Web/Tauri header and configuration status no longer expose detected MCU-family labels, Dashboard no longer offers the Debug Control tab, and the Taobao entry is an ordered menu containing the existing official store plus a disabled pending Xianji custom-store entry. A real 390x844 browser viewport confirmed the horizontally scrollable navigation, non-wrapping labels, and fully visible fixed-position store menu. A real STM32F103RC source Web session connected with builtin AXF parsing, started RTOS Trace, rendered named tasks and live events, then read 64 bytes through Memory; the read synchronously stopped Trace and left both mklink_bridge and target_debug leases empty. No flash, erase, reset, halt, resume, or write was performed. Windows low-number serial qualification created an ordinary serial_-prefixed lock path and completed serial send/log against an available single-digit virtual port. Raw full Python reached 1,253 passed and 1 skipped with only the 12 known WinError 1314 directory-symlink privilege failures; the exact reduced gate passed 1,253 with 1 skipped and 12 deselected. Full GUI passed 52 files and 507 tests; vue-tsc, Vite 8.1.5 production build, Tauri Builder prerequisite check, and git diff check passed."
+    }
   ],
   "decisions": [
     "The main Windows Tauri GUI exposes Site Agent configuration only in the native runtime. Its remote listener runs inside the existing Python sidecar and shares the current GUI Device and ResourceManager; Web-only GUI builds do not expose native credential controls. The standalone portable Site Agent remains a separately runnable EXE/ZIP for field-only deployments.",
@@ -203,7 +207,9 @@
     "MCP stdio reserves stdout for JSON-RPC. Ordinary Python output is redirected to stderr only for the MCP entry; CLI, Web, and desktop logging remain unchanged.",
     "Composite MKLink USB CDC interfaces can share one serial number. When a probe serial identifier maps to multiple ports, discovery must perform the MKLink protocol handshake on each candidate and never choose by COM-number or enumeration order.",
     "Browser online flash uses the File System Access API when available to retain a read-only firmware handle for the current page session and poll rebuilt-file metadata. Unsupported browsers use a fresh normal file selection, and every fallback input clears its value so choosing the same path reloads the file. Browser clients never persist or expose the local absolute path.",
-    "When a Pack PDSC flash region and its embedded FLM address range do not overlap, the FLM may be treated as region-relative only if its complete range fits within the PDSC region. Static sector inspection and pyOCD runtime finalisation must use this same bounded mapping. Runtime relocation copies the FLM object and never disables the sector-geometry safety gate."
+    "When a Pack PDSC flash region and its embedded FLM address range do not overlap, the FLM may be treated as region-relative only if its complete range fits within the PDSC region. Static sector inspection and pyOCD runtime finalisation must use this same bounded mapping. Runtime relocation copies the FLM object and never disables the sector-geometry safety gate.",
+    "Detected MCU-family names are backend facts but are not user-facing status labels. Target selectors remain available where the exact part is required. Dashboard omits destructive Debug Control UI while preserving CLI/API debugging. Windows serial lock files always use a non-reserved serial_ prefix and the serial helper shares the local resource path implementation; failure to create the advisory lock must return a normal unavailable result rather than crash or silently bypass mutual exclusion.",
+    "The header store entry is one responsive details menu. The official store keeps its established URL; the Xianji custom-store entry remains visibly disabled until the maintainer supplies an authoritative URL."
   ],
   "hardware": {
     "probe": "Fresh v0.1.6 GEC1900 qualification used a real MKLink CDC probe and detected the MICROKEEN removable drive. Concrete port and device identifiers remain intentionally omitted.",
@@ -220,6 +226,7 @@
     "Serial Assistant's closed loop used a paired virtual serial driver and therefore does not qualify USB-UART electrical behavior, cable faults, or adapter-specific driver latency; the host software and Windows serial API path are qualified.",
     "Automatic rebuilt-firmware detection in browser mode requires the Chromium File System Access API and a handle selected during the current page session. Unsupported browsers and reloaded pages require one manual file selection. Browser and installed-desktop same-path selection are both supported and were confirmed with the supplied STM32F103RC HEX.",
     "The CST92F41 relative-FLM fix has real Pack, customer-image, pyOCD finalisation, and Web interaction evidence, but no physical CST92 target was available for erase/program/verify HIL. This merge uses the maintainer's explicit hardware-gate waiver; future physical CST release evidence remains pending.",
+    "The Xianji custom-store URL has not been supplied, so its menu entry is intentionally disabled and no guessed link is shipped.",
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [

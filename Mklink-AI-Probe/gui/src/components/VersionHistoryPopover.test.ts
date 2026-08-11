@@ -19,6 +19,8 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完善现场 Agent、在线烧录与高吞吐终端')
     expect(panel.text()).toContain('固件重新编译后重新读取并解析最新内容')
     expect(panel.text()).toContain('串口助手与 RTT 终端改用隔离的数据解码和渲染通道')
+    expect(panel.text()).toContain('COM1 至 COM9')
+    expect(panel.text()).toContain('自动停止冲突的 RTT、SuperWatch 或 RTOS Trace 会话')
     expect(panel.text()).toContain('修复符号解析并完善调试资源协同')
     expect(panel.text()).toContain('匿名 struct/union 成员展开')
     expect(panel.text()).toContain('AI Skill 主动版本提醒')
