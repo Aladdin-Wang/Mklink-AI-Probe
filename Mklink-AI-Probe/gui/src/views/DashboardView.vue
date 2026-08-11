@@ -39,6 +39,18 @@
             <Usb v-else :size="14" aria-hidden="true" />
             <span>{{ connecting ? tr('连接中', 'Connecting') : disconnecting ? tr('断开中', 'Disconnecting') : deviceStatus.connected ? tr('断开', 'Disconnect') : tr('连接设备', 'Connect Device') }}</span>
           </button>
+          <button
+            type="button"
+            class="device-quick-action mcu-reset-action"
+            :disabled="!deviceStatus.connected || connecting || disconnecting || resetting"
+            :title="tr('复位 MCU', 'Reset MCU')"
+            :aria-label="tr('复位 MCU', 'Reset MCU')"
+            data-testid="mcu-reset-action"
+            @click="quickReset"
+          >
+            <LoaderCircle v-if="resetting" class="spinning" :size="14" aria-hidden="true" />
+            <RotateCcw v-else :size="14" aria-hidden="true" />
+          </button>
           <div v-if="connectionError" class="device-quick-error" role="alert">
             <span>{{ connectionError }}</span>
             <button type="button" @click="goConnect">{{ tr('打开配置', 'Open Config') }}</button>
@@ -61,11 +73,12 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { LoaderCircle, Unplug, Usb } from '@lucide/vue'
+import { LoaderCircle, RotateCcw, Unplug, Usb } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useResourceStatus } from '../composables/useResourceStatus'
 import { useDashboardSetup } from '../composables/useDashboardSetup'
+import { useToast } from '../composables/useToast'
 import RttViewTab from '../components/dash/RttViewTab.vue'
 import HardFaultTab from '../components/dash/HardFaultTab.vue'
 import SymbolsTab from '../components/dash/SymbolsTab.vue'
@@ -78,7 +91,8 @@ import { tr } from '../composables/useLanguage'
 
 const route = useRoute()
 const router = useRouter()
-const { deviceStatus } = useMklinkApi()
+const { deviceStatus, resetDevice } = useMklinkApi()
+const toast = useToast()
 const {
   connecting,
   disconnecting,
@@ -90,6 +104,7 @@ const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
 const routeTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
 const tab = ref(typeof routeTab === 'string' && dashboardTabs.has(routeTab) ? routeTab : 'rtt')
+const resetting = ref(false)
 
 const bridgeOwner = computed(() => getBridgeOwner())
 const bridgeOwnerLabel = computed(() => {
@@ -110,6 +125,22 @@ setInterval(refreshResource, 3000)
 
 function goConnect() {
   router.push({ name: 'config' })
+}
+
+async function quickReset() {
+  if (!deviceStatus.value.connected || resetting.value) return
+  resetting.value = true
+  try {
+    await resetDevice()
+    toast.success(tr('MCU 已复位', 'MCU reset'))
+  } catch (cause) {
+    toast.error(tr('MCU 复位失败：', 'Failed to reset MCU: ') + (
+      cause instanceof Error ? cause.message : String(cause)
+    ))
+  } finally {
+    resetting.value = false
+    await refreshResource()
+  }
 }
 
 </script>
@@ -166,7 +197,8 @@ function goConnect() {
   min-width: 0;
 }
 .dashboard-nav-row .tabs-bar {
-  flex: 1;
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
   margin-bottom: 0;
   border-bottom: 0;
@@ -197,6 +229,8 @@ function goConnect() {
 }
 .device-quick-action.connected { border-color: var(--border); background: transparent; color: var(--muted); }
 .device-quick-action:disabled { cursor: wait; opacity: 0.65; }
+.mcu-reset-action { width: 30px; justify-content: center; padding: 4px; }
+.mcu-reset-action:disabled { cursor: not-allowed; }
 .device-quick-error {
   position: absolute;
   z-index: 20;

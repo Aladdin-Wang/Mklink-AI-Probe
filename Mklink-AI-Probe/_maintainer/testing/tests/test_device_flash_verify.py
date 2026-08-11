@@ -494,4 +494,4 @@ def test_device_reset_sends_target_reset_command_only():
 
     device.reset()
 
-    assert bridge.calls == [("cmd.reset_chip()", 10.0)]
+    assert bridge.calls == [("cmd.set_reset()", 10.0)]

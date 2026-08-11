@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, shallowMount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import DashboardView from './DashboardView.vue'
@@ -21,6 +21,12 @@ const apiMock = vi.hoisted(() => ({
   },
   connectDevice: vi.fn(),
   disconnectDevice: vi.fn(),
+  resetDevice: vi.fn(),
+}))
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -36,7 +42,7 @@ vi.mock('../composables/useMklinkApi', () => ({
     uploadFileSource: vi.fn(),
     parseAxf: vi.fn(),
     flashDevice: vi.fn(),
-    resetDevice: vi.fn(),
+    resetDevice: apiMock.resetDevice,
     eraseDevice: vi.fn(),
     haltDevice: vi.fn(),
     resumeDevice: vi.fn(),
@@ -44,11 +50,7 @@ vi.mock('../composables/useMklinkApi', () => ({
 }))
 
 vi.mock('../composables/useToast', () => ({
-  useToast: () => ({
-    success: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-  }),
+  useToast: () => toastMock,
 }))
 
 vi.mock('../composables/useResourceStatus', () => ({
@@ -100,6 +102,71 @@ describe('DashboardView layout classes', () => {
 
     await wrapper.get('[data-testid="device-quick-action"]').trigger('click')
     expect(apiMock.connectDevice).toHaveBeenCalledWith(expect.objectContaining({ restore_last: true }))
+  })
+
+  it('resets the connected MCU from the dashboard header', async () => {
+    apiMock.resetDevice.mockResolvedValueOnce({ status: 'ok' })
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    const reset = wrapper.get('[data-testid="mcu-reset-action"]')
+    expect(reset.attributes('disabled')).toBeUndefined()
+    await reset.trigger('click')
+    await flushPromises()
+    expect(apiMock.resetDevice).toHaveBeenCalledOnce()
+    expect(toastMock.success).toHaveBeenCalledWith('MCU 已复位')
+    wrapper.unmount()
+
+    apiMock.deviceStatus.value.connected = false
+    const disconnected = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+    expect(disconnected.get('[data-testid="mcu-reset-action"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('reports MCU reset failures', async () => {
+    apiMock.resetDevice.mockRejectedValueOnce(new Error('reset failed'))
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="mcu-reset-action"]').trigger('click')
+    await flushPromises()
+    expect(toastMock.error).toHaveBeenCalledWith('MCU 复位失败：reset failed')
   })
 
   it('places SuperWatch immediately after RTT View', () => {
