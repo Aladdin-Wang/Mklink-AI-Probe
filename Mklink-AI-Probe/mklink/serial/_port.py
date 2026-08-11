@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import threading
 from typing import Optional
 
@@ -11,6 +10,7 @@ import serial
 import serial.tools.list_ports
 
 from mklink._types import KNOWN_MKLINK_VID_PIDS
+from mklink.local_resources import serial_lock_path
 
 
 # ---------------------------------------------------------------------------
@@ -22,9 +22,7 @@ class _PortLock:
     _guard = threading.Lock()
 
     def __init__(self, port: str):
-        safe_port = re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
-        lock_dir = os.path.join(os.environ.get("TEMP", "/tmp"), "mklink_serial_locks")
-        self._path = os.path.join(lock_dir, f"{safe_port}.lock")
+        self._path = serial_lock_path(port)
         self._fd: Optional[object] = None
         self._locked = False
 
@@ -32,8 +30,12 @@ class _PortLock:
         if self._locked:
             return True
         with self._guard:
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            self._fd = open(self._path, "a+")
+            try:
+                os.makedirs(os.path.dirname(self._path), exist_ok=True)
+                self._fd = open(self._path, "a+")
+            except OSError:
+                self._fd = None
+                return False
             try:
                 if os.name == "nt":
                     import msvcrt

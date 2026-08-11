@@ -189,12 +189,14 @@ class Device:
         self,
         *,
         port: str | None = None,
+        preferred_port: str | None = None,
         axf: str | None = None,
         mcu: str | None = None,
         project_root: str = ".",
         elf_backend: str | None = None,
     ):
         self._port = port
+        self._preferred_port = preferred_port
         self._axf = axf
         self._mcu_hint = mcu
         self._project_root = project_root
@@ -226,19 +228,72 @@ class Device:
     # ------------------------------------------------------------------
     def _connect(self) -> None:
         from mklink.bridge import MKLinkSerialBridge
-        from mklink.discovery import find_mklink_cdc_port
-        from mklink.cli import _resolve_port
+        from mklink.discovery import find_mklink_cdc_port, list_available_ports
+        from mklink.project_config import load_config, save_config
+        from mklink.serial._port import _PortLock
 
-        port = self._port
-        if port is None:
-            port = _resolve_port(None, self._project_root)
-            self._port = port
+        automatic = self._port is None
+        config = load_config(self._project_root) or {}
+        saved_port = str(config.get("com_port") or "").strip() or None
+        candidate = self._port or self._preferred_port or saved_port
+        attempted: set[str] = set()
+        discovery_lock = None
 
-        self._bridge = MKLinkSerialBridge(port)
-        if not self._bridge.connect():
+        try:
+            while True:
+                if candidate is None:
+                    if discovery_lock is None:
+                        discovery_lock = _PortLock("mklink_auto_connect")
+                        deadline = time.monotonic() + 60.0
+                        while not discovery_lock.acquire():
+                            if time.monotonic() >= deadline:
+                                break
+                            time.sleep(0.05)
+                        else:
+                            deadline = None
+                        if deadline is not None:
+                            break
+
+                    candidate = find_mklink_cdc_port(exclude_ports=set(attempted))
+                    if candidate is None:
+                        break
+
+                attempted.add(candidate.strip().casefold())
+                bridge = MKLinkSerialBridge(candidate)
+                if bridge.connect():
+                    self._bridge = bridge
+                    self._port = candidate
+                    break
+                bridge.close()
+
+                if not automatic:
+                    break
+                candidate = None
+        finally:
+            if discovery_lock is not None:
+                discovery_lock.release()
+
+        if self._bridge is None:
+            ports = ", ".join(sorted(attempted)) or "none"
             raise DeviceNotConnectedError(
-                f"Failed to connect to MKLink on {port}"
+                f"Failed to connect to an available MKLink port (tried: {ports})"
             )
+
+        if automatic and self._port != saved_port:
+            visible_ports = {
+                str(info.get("device") or "").strip().casefold()
+                for info in list_available_ports()
+            }
+            saved_port_is_present = (
+                saved_port is not None and saved_port.casefold() in visible_ports
+            )
+            if not saved_port_is_present:
+                updated = dict(config)
+                updated["com_port"] = self._port
+                try:
+                    save_config(self._project_root, updated)
+                except Exception:
+                    pass
         self._connected = True
 
         from mklink.flash import MKLinkFlash
@@ -1685,6 +1740,7 @@ class Device:
 def connect(
     *,
     port: str | None = None,
+    preferred_port: str | None = None,
     axf: str | None = None,
     mcu: str | None = None,
     project_root: str = ".",
@@ -1698,7 +1754,8 @@ def connect(
             dev.flash("build/out.hex")
 
     Args:
-        port: COM port. Auto-detected if not specified.
+        port: Explicit COM port. Auto-detected if not specified.
+        preferred_port: Soft preference used before automatic discovery.
         axf: Path to AXF/ELF file for symbol resolution.
         mcu: MCU profile hint (e.g. "stm32f4").
         project_root: Project root for .mklink/ config lookup.
@@ -1706,6 +1763,7 @@ def connect(
     """
     dev = Device(
         port=port,
+        preferred_port=preferred_port,
         axf=axf,
         mcu=mcu,
         project_root=project_root,

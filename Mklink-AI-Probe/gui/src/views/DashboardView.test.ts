@@ -145,7 +145,6 @@ describe('DashboardView layout classes', () => {
       'SuperWatch',
       'HardFault',
       'Memory',
-      '调试控制',
       '串口助手',
       'Modbus',
       'RTOS Trace',
@@ -176,12 +175,32 @@ describe('DashboardView layout classes', () => {
       'SuperWatch',
       'HardFault',
       'Memory',
-      'Debug Control',
       'Serial Assistant',
       'Modbus',
       'RTOS Trace',
       'Symbols',
     ])
+    wrapper.unmount()
+  })
+
+  it('does not expose the MCU family label or Debug Control', () => {
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).not.toContain('STM32F103RC')
+    expect(wrapper.findAll('.tab-btn').map(button => button.text())).not.toContain('调试控制')
     wrapper.unmount()
   })
 

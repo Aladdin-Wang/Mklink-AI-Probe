@@ -23,6 +23,9 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '修复 HPM 复合 USB 探针的端口匹配与可烧录状态，并支持 CST92F41KxVxxx 相对扇区几何解析。',
       '串口助手与 RTT 终端改用隔离的数据解码和渲染通道，终端模式不再挂载或同步隐藏日志 DOM，避免高数据流运行后卡死。',
       '串口与 RTT 日志模式支持将保留的数据保存到本地文件，终端模式保持轻量实时刷新。',
+      '精简顶部状态与仪表盘：隐藏自动识别的芯片族标签，移除调试控制页签，并将淘宝店铺改为官方智沐与先楫定制双项菜单。',
+      '加固 Dashboard、Memory、在线烧录与脱机烧录的探针资源仲裁，切换操作时自动停止冲突的 RTT、SuperWatch 或 RTOS Trace 会话。',
+      '修复 Windows COM1 至 COM9 被锁文件名误解析为保留设备的问题，串口命令改用带 serial_ 前缀的普通锁文件。',
     ],
     changesEn: [
       'Add a Site Agent page for direct and LAN STCP configuration, runtime status, and engineer connection guidance.',
@@ -34,6 +37,9 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Fix port matching and flash readiness for composite HPM USB probes, and support relative sector geometry for CST92F41KxVxxx devices.',
       'Isolate Serial Assistant and RTT terminal decoding and rendering, and avoid mounting or synchronizing hidden log DOM in terminal mode to prevent high-rate stream freezes.',
       'Allow retained Serial and RTT log data to be saved to local files while keeping terminal mode lightweight and responsive.',
+      'Simplify the header and Dashboard by hiding detected MCU-family labels, removing Debug Control, and adding Official Zhi Mu and Xianji Custom entries to the store menu.',
+      'Strengthen probe-resource arbitration across Dashboard, Memory, online flashing, and offline flashing by stopping conflicting RTT, SuperWatch, or RTOS Trace sessions before switching operations.',
+      'Fix Windows COM1 through COM9 serial commands by using ordinary serial_-prefixed lock files instead of names parsed as reserved devices.',
     ],
   },
   {

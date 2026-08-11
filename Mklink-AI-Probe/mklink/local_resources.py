@@ -26,7 +26,7 @@ def _safe_port_name(port: str) -> str:
 
 def serial_lock_path(port: str) -> str:
     lock_dir = os.path.join(_temp_dir(), "mklink_serial_locks")
-    return os.path.join(lock_dir, f"{_safe_port_name(port)}.lock")
+    return os.path.join(lock_dir, f"serial_{_safe_port_name(port)}.lock")
 
 
 def serial_lock_paths(port: str | None = None) -> list[str]:

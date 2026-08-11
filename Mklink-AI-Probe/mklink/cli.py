@@ -3655,6 +3655,7 @@ def _cli_serve(args):
         app = create_app(
             auth_token=args.token,
             project_root=args.project_root,
+            desktop_instance_id=args.desktop_instance_id,
         )
         print(f"[MKLink] Starting FastAPI server on {args.host}:{args.port}")
         print(f"[MKLink] Backend: fastapi | Auth: {'enabled' if args.token else 'disabled'}")
@@ -3663,6 +3664,9 @@ def _cli_serve(args):
             app, host=args.host, port=args.port,
             device_port=args.device_port, axf=args.axf,
             project_root=args.project_root,
+            desktop_port_end=args.desktop_port_end,
+            desktop_runtime_info=args.desktop_runtime_info,
+            desktop_instance_id=args.desktop_instance_id,
         )
     else:
         from mklink.remote.server import serve
@@ -4364,6 +4368,9 @@ def main():
     serve_parser = subparsers.add_parser("serve", help="启动远程调试服务器（REST API + WebSocket JSON-RPC）")
     serve_parser.add_argument("--host", default="127.0.0.1", help="绑定地址（默认 127.0.0.1）")
     serve_parser.add_argument("--port", type=int, default=8765, help="绑定端口（默认 8765）")
+    serve_parser.add_argument("--desktop-port-end", type=int, default=None, help=argparse.SUPPRESS)
+    serve_parser.add_argument("--desktop-runtime-info", default=None, help=argparse.SUPPRESS)
+    serve_parser.add_argument("--desktop-instance-id", default=None, help=argparse.SUPPRESS)
     serve_parser.add_argument("--token", default=None, help="客户端认证 Token")
     serve_parser.add_argument("--device-port", default=None, help="MKLink COM 端口（默认自动检测）")
     serve_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
