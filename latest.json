@@ -1,0 +1,20 @@
+{
+  "version": "0.1.6",
+  "notes": "\u5b8c\u5584\u5728\u7ebf\u4e0e\u8131\u673a\u70e7\u5f55\u3001\u4e32\u53e3\u4e0e RTT \u9ad8\u901f\u7ec8\u7aef\u3001\u591a\u5b9e\u4f8b\u72ec\u7acb\u540e\u7aef\u3001\u8d44\u6e90\u4e92\u65a5\u548c Site Agent\uff1b\u4fee\u590d\u91cd\u590d\u56fa\u4ef6\u52a0\u8f7d\u3001\u8bbe\u5907\u81ea\u52a8\u641c\u7d22\u56de\u9000\u3001\u4e32\u53e3\u9501\u517c\u5bb9\u6027\u4e0e\u590d\u5408\u63a2\u9488\u8bc6\u522b\u3002",
+  "pub_date": "2026-08-11T14:27:47Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWkJ5dmZ4MnVLVVlNVUJ6VVRrY2tvdjdDNzlZdWNXeHlOUElWZlNpNE1za3Fiem5xSFI0M0tCRmUzNDUyYitZbmx1VXl0SFhqR1lVOTBiOGpiM01QUktGL1RnODRVa1FNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NDU3NDQzCWZpbGU6TWtsaW5rIEFJIFByb2JlXzAuMS42X3g2NC1zZXR1cC5leGUKSXB0RVJLMy83M0RPcm1uU2duc3kycEoydXYxZDZhR01xL0tpakN4TFUyVHlaenU4eTUzanFnRHR0VVJ0ZDRvZmNSMHhjOWRmM3RkNTJRUVViOE9lQUE9PQo=",
+      "url": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/v0.1.6/Mklink-AI-Probe-v0.1.6-x64-Setup.exe",
+      "sha256": "ff991e2c7a3a4ceba4ac91a14c5e8f2f2254f8a5f603b4de373c79e1c62804fe",
+      "size": 71986865
+    }
+  },
+  "skill": {
+    "version": "0.1.6",
+    "url": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/v0.1.6/Mklink-AI-Probe-v0.1.6-Skill.zip",
+    "sha256": "2e1bb829d031053a9af7357dc871cd533969a9e248051fc159c72d0f28fb82c0",
+    "size": 5676675,
+    "source_commit": "2f65f92c9879688ec57a5fe07d41f8e3d0a41226"
+  }
+}
