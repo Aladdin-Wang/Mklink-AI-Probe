@@ -4,51 +4,47 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-11T21:55:46+08:00`
-- 分支：`master`
-- HEAD：`master 已包含设备连接自动搜索修复与验证记录；v0.1.6 本地分发由源码提交 17ee6da 重建。`
-- 远端 HEAD：`origin/master 仍为 d4d25e2；本地 master 尚未推送。`
-- 工作树：旧在线烧录 worktree 的有效行为已确认由 master 覆盖，废弃 fallback 未迁移；该 worktree 和分支均已删除。
-- 当前任务：从当前 master 重建并覆盖安装 v0.1.6，同时同步本地 Skill。
-- 状态：`v016_master_repacked_installed_skill_synced`
+- 更新时间：`2026-08-11T22:04:08+08:00`
+- 分支：`release/v0.1.6-auto-search`
+- HEAD：`分支包含设备连接自动搜索修复、真实 HPM 验证和 v0.1.6 本地分发记录。`
+- 远端 HEAD：`origin/master 为 d4d25e2；本分支准备通过 PR 合入，不直接推送远端 master。`
+- 工作树：仅保留当前主工作树；旧在线烧录 worktree 和已覆盖分支均已删除。
+- 当前任务：通过 GitHub PR 合入设备自动搜索修复，并正式发布 v0.1.6。
+- 状态：`v016_release_pr_preparing`
 
 ## 里程碑
 
-- **产品与分发** — `complete`。Python、Skill、Web GUI 和 Tauri 均为 v0.1.6；标准 NSIS 内置 sidecar，可在无 Python 环境运行。
-- **烧录与兼容性** — `complete`。在线/脱机烧录、HPM ROM API、CMSIS-Pack/FLM、同路径固件刷新、复合探针和相对扇区解析已集成。
-- **调试与数据流** — `complete`。Memory、Symbols、HardFault、RTT、SuperWatch、SystemView、VOFA、串口和 Modbus 共用资源仲裁与轻量流通道。
-- **多实例与远程** — `complete`。每个桌面实例使用独立动态后端和探针连接；Site Agent 支持认证直连与 LAN STCP。
+- **产品与分发** — `complete`。Python、Skill、Web GUI 和 Tauri 版本统一为 v0.1.6，标准 NSIS 使用内置 sidecar。
+- **烧录与兼容性** — `complete`。在线/脱机烧录、HPM ROM API、Pack/FLM、固件刷新、复合探针和扇区解析已集成。
+- **调试与数据流** — `complete`。Memory、RTT、SystemView、VOFA、串口和 Modbus 共用资源仲裁与轻量流通道。
+- **多实例与远程** — `complete`。每个桌面实例使用独立后端和探针连接；Site Agent 支持认证直连与 LAN STCP。
 
 ## 验证证据
 
-- **设备连接自动搜索**：配置页 22 项聚焦测试覆盖无端口、历史端口和手选端口失败后的自动搜索回退；GUI 全量 518 项和生产构建通过，底层连接相关 12 项通过。Python 全量 1262 项通过、1 项跳过，剩余 12 个符号链接权限失败及 3 个缺失 STCP 测试库错误均为既有环境门禁。真实 Chrome、独立 Web 后端、下载器和 HPM5301 已完成闭环：初始自动搜索可连接，手选非下载器串口失败后回到自动搜索，再次点击可重新发现并连接。
-- **最新桌面与复位闭环**：启动动画已在真实 Tauri 窗口验证；复位前会停止冲突 Dashboard，真实 HPM 目标确认发送 cmd.set_reset() 后重新运行。完整 GUI、Python、Rust 和生产构建门禁已通过，环境性符号链接权限用例单独记录。
-- **烧录与高吞吐数据流**：HPM 在线烧录可自动运行；重复固件加载、浏览器文件刷新和客户 HEX 扇区解析已验证。串口/RTT 终端长时高吞吐与下载器 V2/V3/V4 数据完整性已完成真机验证。
-- **v0.1.6 本地分发**：标准 NSIS、updater 签名和 x64 STCP 运行库由 master 源码提交 17ee6da 重建。候选安装包 SHA-256 为 789819E2267683EA8A5180A7BC8F66DAB89DB1F3CF34A39241BED3E556C2CEA8；覆盖安装后注册版本为 0.1.6，动态健康接口返回 ok，在线烧录探针枚举成功，安装目录使用内置 sidecar 且进程树无 Python，正常关闭后主进程、sidecar 和端口均释放。本地 Skill 归档包含 599 个受管文件，SHA-256 为 5DFC916FDE6E3AC83B8A4A34F91CC83098C6207707EE323F9C7098BE29CF8B83，已原子同步到相同源码提交并通过结构与生产 Web 资源校验。
+- **v0.1.6 运行时**：GUI 518 项、配置页 22 项和连接后端 12 项通过；Python 可比门禁 1262 项通过、1 项跳过。真实 Chrome、独立 Web 后端、下载器和 HPM5301 完成自动搜索、错误端口回退和再次连接闭环。
+- **烧录与数据流**：HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。
+- **本地候选分发**：标准 NSIS、updater 签名、x64 STCP 和 Skill 已重建并覆盖安装；健康接口、探针枚举、内置 sidecar、零 Python 子进程、正常退出、端口释放和 Skill 结构均通过。
 
 ## 架构决策
 
-- 配置页恢复的历史端口是软偏好，可在同一次连接中回退自动发现；当前会话明确手选的端口首次保持严格约束，避免多下载器误连。任何连接失败都会让当前实例切回自动搜索，但不清除可能由其他实例共享的历史偏好。
-- 运行时修改必须在 fix/feature 分支完成全量测试、生产构建、项目记忆和受影响真机闭环后再合并。
-- v0.1.6 在 Python、插件、Tauri、Web GUI 和 Skill 中保持一致；默认只生成标准 NSIS。
-- Dashboard 与一次性调试/烧录操作共用资源租约；MCU 复位前必须停止 RTT、SuperWatch、VOFA 和 SystemView。
-- HPM 目标只使用专用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
-- 浏览器和桌面端必须重新读取同路径固件；FLM 相对重定位仅在完整算法范围可装入目标区域时允许。
-- 串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志，日志模式可保存当前保留内容。
-- 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；Site Agent 复用同一实例的 Device 与 ResourceManager。
-- CURRENT_HANDOFF.md 只由 project-memory.json 生成，不保存会话流水和过期构建哈希。
+- 历史端口是软偏好，可回退自动发现；当前会话手选端口首次保持严格约束，失败后切回自动搜索。
+- 运行时修改在 fix/feature 分支完成全量测试、生产构建、项目记忆和真机闭环后合并。
+- HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
+- Dashboard 与烧录/调试操作共用资源租约；复位前停止 RTT、SuperWatch、VOFA 和 SystemView。
+- 串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志。
+- 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 
 ## 真机环境
 
-- **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录具体序列号和端口。
-- **target**：可用 ARM 与 HPM 真机；部分客户芯片仅完成 Pack/HEX 软件验证。
-- **permission**：破坏性烧录和外部发布仍需对应任务明确授权；本次仅执行连接与断开验证。
+- **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。
+- **target**：ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。
+- **permission**：维护者已明确授权本次 v0.1.6 GitHub/Gitee 正式发布；破坏性烧录仍需单独授权。
 
 ## 下一动作
 
-1. 复现 V4 脱机首次空失败并增加设备输出诊断。
-2. 使用更大目标 RTT 缓冲完成 SystemView 可持续事件率验证。
-3. 完成 USB Web Entry 跨平台和干净 Windows 安装验证。
+1. 完成并合并 v0.1.6 GitHub PR。
+2. 从最终 master 重建七项正式发布文件并完成安装验证。
+3. 发布 GitHub/Gitee Release 和 updates/latest.json，随后记录最终交接。
 
 ## 已知限制
 
@@ -56,10 +52,10 @@
 - V4 脱机首次触发的瞬时空失败仍需冷启动复现。
 - 部分客户芯片修复缺少物理目标板编程证据。
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
-- USB Web Entry 尚需 macOS/Linux 验证，安装与更新仍需第二台干净 Windows 机器验证。
+- USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
 
 ## 延续协议
 
-- 开始工作前用 live Git、进程和硬件状态校正项目记忆。
-- 保持修改范围最小，不提交本地硬件路径、日志、安装包或凭据。
-- 结束前执行 render、validate、git diff 检查，并按授权决定提交、推送或发布。
+- 开始前用 Git、进程和硬件状态校正项目记忆。
+- 不提交安装包、日志、硬件标识、凭据或构建缓存。
+- 结束前执行 render、validate、diff 检查并保持工作树干净。
