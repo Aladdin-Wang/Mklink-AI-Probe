@@ -43,6 +43,56 @@ _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
 
 
+def _bind_desktop_server_socket(host: str, port: int, port_end: int):
+    """Bind one loopback port and keep it reserved for Uvicorn."""
+    import socket
+
+    if host != "127.0.0.1":
+        raise ValueError("desktop automatic ports require host 127.0.0.1")
+    if not (1 <= port <= port_end <= 65535):
+        raise ValueError("invalid desktop port range")
+
+    last_error: OSError | None = None
+    for candidate in range(port, port_end + 1):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if os.name == "nt":
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            listener.bind((host, candidate))
+            listener.listen(2048)
+            return listener, candidate
+        except OSError as exc:
+            last_error = exc
+            listener.close()
+    raise OSError(
+        f"no available desktop backend port in {port}..{port_end}"
+    ) from last_error
+
+
+def _write_desktop_runtime_info(
+    path: str,
+    *,
+    port: int,
+    instance_id: str,
+) -> None:
+    destination = Path(path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        f".{destination.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    )
+    try:
+        temporary.write_text(
+            json.dumps({"port": port, "instanceId": instance_id}),
+            encoding="utf-8",
+        )
+        os.replace(temporary, destination)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _project_root_drives(
     *, system: str | None = None, exists: Any = os.path.exists,
 ) -> list[str]:
@@ -573,12 +623,14 @@ def create_app(
     *,
     auth_token: str | None = None,
     project_root: str = ".",
+    desktop_instance_id: str | None = None,
 ):
     """Create the FastAPI application.
 
     Args:
         auth_token: Required token for client authentication.
         project_root: Project root for .mklink/ config lookup.
+        desktop_instance_id: Owning Tauri instance identifier, when packaged.
     """
     if not _check_fastapi():
         raise ImportError(
@@ -620,6 +672,7 @@ def create_app(
         "last_device_connection": None,
         "auth_token": auth_token,
         "project_root": project_root,
+        "desktop_instance_id": desktop_instance_id,
         "resource_manager": ResourceManager(),
     }
     _state["resource_manager"].on_preempt(
@@ -1241,9 +1294,11 @@ def create_app(
         elf_backend: str | None = Body(default=None),
         restore_last: bool = Body(default=False),
     ):
+        preferred_port = None
         if restore_last:
             previous = _state.get("last_device_connection") or {}
-            port = port if port is not None else previous.get("port")
+            if port is None:
+                preferred_port = previous.get("port")
             axf = axf if axf is not None else previous.get("axf")
             mcu = mcu if mcu is not None else previous.get("mcu")
             elf_backend = (
@@ -1282,6 +1337,7 @@ def create_app(
         def _connect():
             return mklink.connect(
                 port=port,
+                preferred_port=preferred_port,
                 axf=axf,
                 mcu=mcu,
                 project_root=_state["project_root"],
@@ -2531,11 +2587,14 @@ def create_app(
         dev = _state["device"]
         from mklink.elf_backend import elf_status
 
-        return {
+        payload = {
             "status": "ok",
             "device_connected": dev.connected if dev else False,
             **elf_status(project_root=_state["project_root"]),
         }
+        if _state["desktop_instance_id"]:
+            payload["desktop_instance_id"] = _state["desktop_instance_id"]
+        return payload
 
     @app.get("/api/site-agent/status")
     async def site_agent_status():
@@ -2716,6 +2775,9 @@ def run_server(
     axf: str | None = None,
     project_root: str = ".",
     auto_connect: bool = False,
+    desktop_port_end: int | None = None,
+    desktop_runtime_info: str | None = None,
+    desktop_instance_id: str | None = None,
 ):
     """Start the FastAPI server.
 
@@ -2728,6 +2790,9 @@ def run_server(
         axf: AXF/ELF file for symbol resolution.
         project_root: Project root for .mklink/ config lookup.
         auto_connect: Automatically connect to device on startup.
+        desktop_port_end: Last packaged-desktop fallback port.
+        desktop_runtime_info: Atomic runtime endpoint handshake file.
+        desktop_instance_id: Owning Tauri instance identifier.
     """
     import uvicorn
 
@@ -2769,4 +2834,22 @@ def run_server(
         except Exception as e:
             logger.warning("Auto-connect failed: %s", e)
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    if desktop_port_end is None:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+        return
+
+    if not desktop_runtime_info or not desktop_instance_id:
+        raise ValueError("desktop runtime info and instance id are required")
+    listener, selected_port = _bind_desktop_server_socket(
+        host, port, desktop_port_end,
+    )
+    try:
+        _write_desktop_runtime_info(
+            desktop_runtime_info,
+            port=selected_port,
+            instance_id=desktop_instance_id,
+        )
+        config = uvicorn.Config(app, log_level="info")
+        uvicorn.Server(config).run(sockets=[listener])
+    finally:
+        listener.close()

@@ -349,7 +349,8 @@ def test_quick_connect_restores_last_successful_device_inputs():
 
     assert response.status_code == 200
     connect.assert_called_once_with(
-        port="PROBE_PORT",
+        port=None,
+        preferred_port="PROBE_PORT",
         axf="firmware.axf",
         mcu="stm32f103rc",
         project_root=state["project_root"],

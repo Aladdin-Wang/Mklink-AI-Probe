@@ -7,11 +7,8 @@ MKLink Serial Bridge — 核心串口通信类。
 
 from __future__ import annotations
 
-import atexit
 import codecs
-import os
 import re
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -25,7 +22,10 @@ from mklink._types import (
     SYNC_RETRIES,
     DeviceContext,
     DeviceState,
+    MKLINK_IDENTITY_COMMAND,
+    MKLINK_IDENTITY_TOKEN,
 )
+from mklink.serial._port import _PortLock
 
 # 流模式停止命令 — RTT 和 VOFA 互斥，恢复时盲发两个是安全的
 _STREAM_STOP_COMMANDS = [
@@ -53,119 +53,13 @@ def quote_probe_string(value: str) -> str:
     return f"'{escaped}'"
 
 
-# ---------------------------------------------------------------------------
-# 进程级串口互斥锁（文件锁）
-# ---------------------------------------------------------------------------
-class SerialLock:
-    """基于文件的进程级互斥锁，防止多个 CLI 进程同时操作串口。
-
-    锁文件位于 %TEMP%/mklink_serial_lock，内容为持有者 PID。
-    支持 stale lock 检测：若持有进程已退出则自动释放旧锁。
-    """
-
-    _LOCK_PATH = os.path.join(os.environ.get("TEMP", "/tmp"), "mklink_serial_lock")
-
-    def __init__(self) -> None:
-        self._fd = None
-        self._locked = False
-
-    def acquire(self, timeout: float = 0.0) -> bool:
-        """尝试获取锁。timeout=0 为非阻塞。返回是否成功。"""
-        try:
-            # 检测 stale lock：如果锁文件存在且持有者进程已退出，清除旧锁
-            if os.path.exists(self._LOCK_PATH):
-                try:
-                    with open(self._LOCK_PATH, "r") as f:
-                        old_pid = f.read().strip()
-                    if old_pid.isdigit():
-                        old_pid_int = int(old_pid)
-                        # Windows 上检查进程是否存在
-                        try:
-                            import ctypes
-                            kernel32 = ctypes.windll.kernel32
-                            handle = kernel32.OpenProcess(0x100000, False, old_pid_int)
-                            if handle == 0:
-                                # 进程不存在，清除 stale lock
-                                os.remove(self._LOCK_PATH)
-                            else:
-                                kernel32.CloseHandle(handle)
-                        except Exception:
-                            pass
-                except (OSError, ValueError):
-                    pass
-
-            self._fd = open(self._LOCK_PATH, "w")
-            self._fd.write(str(os.getpid()))
-            self._fd.flush()
-
-            if sys.platform == "win32":
-                import msvcrt
-                try:
-                    msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
-                except OSError:
-                    self._fd.close()
-                    self._fd = None
-                    return False
-            else:
-                import fcntl
-                try:
-                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except OSError:
-                    self._fd.close()
-                    self._fd = None
-                    return False
-
-            self._locked = True
-            return True
-        except OSError:
-            if self._fd:
-                self._fd.close()
-                self._fd = None
-            return False
-
-    def release(self) -> None:
-        if not self._locked or self._fd is None:
-            return
-        try:
-            if sys.platform == "win32":
-                import msvcrt
-                msvcrt.locking(self._fd.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
-        finally:
-            self._fd.close()
-            self._fd = None
-            self._locked = False
-            try:
-                os.remove(self._LOCK_PATH)
-            except OSError:
-                pass
-
-    @property
-    def locked(self) -> bool:
-        return self._locked
-
-
-# 模块级锁实例，所有 bridge 共享
-_serial_lock = SerialLock()
-
-
-def _cleanup_lock() -> None:
-    _serial_lock.release()
-
-
-atexit.register(_cleanup_lock)
-
-
 class MKLinkSerialBridge:
     """通过虚拟串口与 MKLink 烧录器通信的桥接类。"""
 
     def __init__(self, port: str, baudrate: int = DEFAULT_BAUDRATE):
         self._port = port
         self._baudrate = baudrate
+        self._port_lock = _PortLock(port)
         self._serial: serial.Serial | None = None  # 延迟到 connect() 中打开
         self._ctx = DeviceContext()
         self._reader_thread: threading.Thread | None = None
@@ -186,18 +80,28 @@ class MKLinkSerialBridge:
     # ------------------------------------------------------------------
     # 连接管理
     # ------------------------------------------------------------------
+    def _verify_identity(self) -> bool:
+        try:
+            response = self.send_command(MKLINK_IDENTITY_COMMAND, timeout=2.0)
+        except (ConnectionError, TimeoutError, serial.SerialException):
+            return False
+        return any(
+            line.strip() == MKLINK_IDENTITY_TOKEN
+            for line in response.splitlines()
+        )
+
     def connect(self) -> bool:
         """打开串口并同步设备状态（等待 >>> 提示符）。"""
         # 进程级互斥：获取文件锁
-        if not _serial_lock.acquire():
-            print(f"[FAIL] 串口正被其他进程使用（锁文件: {SerialLock._LOCK_PATH}）")
+        if not self._port_lock.acquire():
+            print(f"[FAIL] 串口 {self._port} 正被其他进程使用")
             print("       请等待其他操作完成，或关闭占用串口的进程后重试。")
             return False
 
         try:
             self._serial = serial.Serial(self._port, self._baudrate, timeout=0.01)
         except serial.SerialException as e:
-            _serial_lock.release()
+            self._port_lock.release()
             msg = str(e).lower()
             if "access" in msg or "denied" in msg or "already open" in msg or "in use" in msg:
                 print(f"[FAIL] 端口 {self._port} 被占用: {e}")
@@ -227,7 +131,10 @@ class MKLinkSerialBridge:
 
             if self._prompt_event.wait(timeout=2.0):
                 self._ctx.state = DeviceState.READY
-                return True
+                if self._verify_identity():
+                    return True
+                self.close()
+                return False
 
             # 重试前清空缓冲区
             self._serial.reset_input_buffer()
@@ -246,7 +153,7 @@ class MKLinkSerialBridge:
                 self._ctx.state = DeviceState.ERROR
                 if self._serial and self._serial.is_open:
                     self._serial.close()
-                _serial_lock.release()
+                self._port_lock.release()
                 return False
 
         try:
@@ -274,8 +181,9 @@ class MKLinkSerialBridge:
             self._serial.write(b"\n")
             if self._prompt_event.wait(timeout=3.0):
                 self._ctx.state = DeviceState.READY
-                print("[OK] 流模式恢复成功")
-                return True
+                if self._verify_identity():
+                    print("[OK] 流模式恢复成功")
+                    return True
         except Exception:
             pass
 
@@ -286,7 +194,7 @@ class MKLinkSerialBridge:
             self._reader_thread.join(timeout=1.0)
         if self._serial and self._serial.is_open:
             self._serial.close()
-        _serial_lock.release()
+        self._port_lock.release()
         return False
 
     def close(self):
@@ -298,7 +206,7 @@ class MKLinkSerialBridge:
         if self._serial and self._serial.is_open:
             self._serial.close()
         # 释放进程级文件锁
-        _serial_lock.release()
+        self._port_lock.release()
         # 重置上下文
         self._ctx = DeviceContext()
         self._ctx.state = DeviceState.DISCONNECTED

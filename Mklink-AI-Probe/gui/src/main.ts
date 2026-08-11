@@ -1,5 +1,17 @@
 import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router'
+import { initializeRuntimeEndpoint } from './lib/runtimeEndpoint'
 
-createApp(App).use(router).mount('#app')
+async function startApp() {
+  try {
+    await initializeRuntimeEndpoint()
+  } catch (error) {
+    console.error('[main] backend endpoint initialization failed:', error)
+  }
+  const [{ default: App }, { default: router }] = await Promise.all([
+    import('./App.vue'),
+    import('./router'),
+  ])
+  createApp(App).use(router).mount('#app')
+}
+
+void startApp()

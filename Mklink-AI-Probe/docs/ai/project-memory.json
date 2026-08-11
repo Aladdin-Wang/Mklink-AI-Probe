@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T13:00:00+08:00",
+  "updated_at": "2026-08-11T16:02:00+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/ui-resource-serial-com1",
-    "head": "The fix branch contains the qualified GUI simplification, store menu, resource-arbitration regression coverage, and Windows COM1-COM9 serial-lock repair and is ready for a local v0.1.6 distribution rebuild.",
-    "remote_head": "origin/master remains 9e036db. No push, tag, GitHub Release, updater manifest, or Gitee sync was changed.",
+    "branch": "fix/desktop-dynamic-sidecar-port",
+    "head": "The uncommitted fix branch contains qualified per-instance desktop backend ports, per-CMD-port bridge locks, concurrent automatic probe arbitration, and backend-port status display.",
+    "remote_head": "No commit, merge, push, tag, GitHub Release, updater manifest, or Gitee state was changed during this work.",
     "working_tree": "The fix branch contains the qualified tracked changes plus pre-existing local build, cache, and hardware artifacts that remain outside Git."
   },
   "mission": {
@@ -14,15 +14,20 @@
     "maintenance": "Keep this file limited to the current baseline, durable decisions, latest qualification evidence, unresolved limits, and next actions. Git history is the record for completed chronology."
   },
   "current_session": {
-    "status": "ui_resource_serial_fix_qualified",
-    "current_task": "Qualified the GUI simplification, dual-store menu, Dashboard resource arbitration, and Windows COM1-COM9 serial-lock repair; commit the fix branch and rebuild the local v0.1.6 installer, Skill, and Web GUI from that stable commit.",
-    "release": "The maintainer authorized a standard NSIS rebuild, overwrite installation, matching local Skill update, and same-version Web GUI. The current fix branch must not be merged or pushed implicitly; tag, GitHub Release, updater manifest changes, and Gitee sync remain out of scope."
+    "status": "desktop_multi_instance_probe_isolation_qualified",
+    "current_task": "Keep two v0.1.6 desktop candidates open for maintainer verification after qualifying independent dynamic backends and simultaneous automatic connection to two physical probes.",
+    "release": "A local NSIS candidate was generated only to refresh the bundled sidecar for HIL. It was not installed or published; the current fix branch must not be committed, merged, pushed, tagged, released, or synchronized implicitly."
   },
   "milestones": [
     {
       "name": "Product and distribution baseline",
       "status": "complete",
       "notes": "Online/offline flash, debug control, symbols and types, bounded binary streaming, Serial, Modbus, MCP, Web, Tauri v2, bundled Python sidecar, USB Web entry, browser file uploads, updater flow, and resource arbitration are implemented."
+    },
+    {
+      "name": "Desktop multi-instance isolation",
+      "status": "complete",
+      "notes": "Every Tauri process owns a uniquely identified bundled sidecar and a dynamically selected loopback API port. Automatic probe connection treats restored and project ports as soft preferences, serializes cross-process discovery through the final CMD-port claim, and falls back to another protocol-valid probe when the preference is occupied. CMD identity requires a unique no-op command response rather than a generic prompt that target UART output can mimic. Explicit user-selected ports remain strict, each connected probe keeps an independent per-port lock, and the status bar displays the owning backend port."
     },
     {
       "name": "Flash, symbols, and RTT correctness",
@@ -172,6 +177,10 @@
     {
       "area": "GUI simplification, resource arbitration, and Windows low-COM lock gate",
       "result": "On fix/ui-resource-serial-com1, the Web/Tauri header and configuration status no longer expose detected MCU-family labels, Dashboard no longer offers the Debug Control tab, and the Taobao entry is an ordered menu containing the existing official store plus a disabled pending Xianji custom-store entry. A real 390x844 browser viewport confirmed the horizontally scrollable navigation, non-wrapping labels, and fully visible fixed-position store menu. A real STM32F103RC source Web session connected with builtin AXF parsing, started RTOS Trace, rendered named tasks and live events, then read 64 bytes through Memory; the read synchronously stopped Trace and left both mklink_bridge and target_debug leases empty. No flash, erase, reset, halt, resume, or write was performed. Windows low-number serial qualification created an ordinary serial_-prefixed lock path and completed serial send/log against an available single-digit virtual port. Raw full Python reached 1,253 passed and 1 skipped with only the 12 known WinError 1314 directory-symlink privilege failures; the exact reduced gate passed 1,253 with 1 skipped and 12 deselected. Full GUI passed 52 files and 507 tests; vue-tsc, Vite 8.1.5 production build, Tauri Builder prerequisite check, and git diff check passed."
+    },
+    {
+      "area": "Desktop dynamic backend and dual-probe automatic connection",
+      "result": "On fix/desktop-dynamic-sidecar-port, an existing Web Entry retained its loopback port while two packaged Tauri candidates selected the next two ports with distinct instance identities and independent bundled sidecars. Simultaneous restore-last requests against one V3 and one V4 probe selected two different protocol-valid CMD interfaces and both remained connected; a reproduced probe-scan race was fixed by holding a cross-process automatic-discovery lock through the final per-port claim. A target UART that emitted a generic >>> prompt was then reproduced and rejected by requiring a unique no-op print response in both discovery and the final bridge connection; real V3 and V4 CMD interfaces passed the strengthened handshake. The status-bar component renders the owning backend port and follows runtime endpoint changes. Focused backend coverage passed 120 tests. Raw full Python reached 1,263 passed and 1 skipped with only the 12 known WinError 1314 directory-symlink fixture failures; the exact reduced gate passed 1,263 with 1 skipped and 12 deselected. Full GUI passed 52 files and 508 tests, vue-tsc and Vite 8.1.5 production build passed, Tauri Rust passed 12 tests, git diff check passed, and the bundled sidecar plus local NSIS candidate rebuilt successfully. No flash, erase, reset, halt, resume, memory write, installation, publication, or probe-firmware change was performed."
     }
   ],
   "decisions": [
@@ -209,7 +218,8 @@
     "Browser online flash uses the File System Access API when available to retain a read-only firmware handle for the current page session and poll rebuilt-file metadata. Unsupported browsers use a fresh normal file selection, and every fallback input clears its value so choosing the same path reloads the file. Browser clients never persist or expose the local absolute path.",
     "When a Pack PDSC flash region and its embedded FLM address range do not overlap, the FLM may be treated as region-relative only if its complete range fits within the PDSC region. Static sector inspection and pyOCD runtime finalisation must use this same bounded mapping. Runtime relocation copies the FLM object and never disables the sector-geometry safety gate.",
     "Detected MCU-family names are backend facts but are not user-facing status labels. Target selectors remain available where the exact part is required. Dashboard omits destructive Debug Control UI while preserving CLI/API debugging. Windows serial lock files always use a non-reserved serial_ prefix and the serial helper shares the local resource path implementation; failure to create the advisory lock must return a normal unavailable result rather than crash or silently bypass mutual exclusion.",
-    "The header store entry is one responsive details menu. The official store keeps its established URL; the Xianji custom-store entry remains visibly disabled until the maintainer supplies an authoritative URL."
+    "The header store entry is one responsive details menu. The official store keeps its established URL; the Xianji custom-store entry remains visibly disabled until the maintainer supplies an authoritative URL.",
+    "Packaged Tauri instances never reuse another desktop or Web Entry backend. Each owns a distinct sidecar identity and dynamic loopback port. Automatic Device connection may fall back from a restored or project-configured preference only after cross-process discovery arbitration and protocol validation; explicit user-selected ports never fall back. The shared project configuration is not rewritten when its saved port is merely occupied by another live instance. MKLink CMD identity requires the unique no-op probe command to produce its token as an independent output line; a generic >>> prompt or command echo is insufficient because target UART streams can contain both."
   ],
   "hardware": {
     "probe": "Fresh v0.1.6 GEC1900 qualification used a real MKLink CDC probe and detected the MICROKEEN removable drive. Concrete port and device identifiers remain intentionally omitted.",
@@ -230,6 +240,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
+    "Have the maintainer visually verify the two open desktop candidates show different backend ports and remain bound to the intended V3 and V4 probes, then commit the fix branch only when explicitly authorized.",
     "Provide the established Tauri updater signing key for a full NSIS release, or explicitly authorize a GitHub Release limited to the portable/Skill integrity assets without the signed updater installer.",
     "After the signing decision is satisfied, rebuild artifacts from clean master, create the annotated v0.1.6 tag, and publish/verify the su5176 GitHub Release without changing Gitee or updates/latest.json unless separately authorized.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",

@@ -21,7 +21,8 @@ vi.mock('../composables/useMklinkWs', () => ({
 vi.mock('../composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
     backendState: ref('alive'),
-    isTauri: false,
+    backendPort: ref(8766),
+    isTauri: true,
     restart: vi.fn(),
   }),
 }))
@@ -32,6 +33,7 @@ describe('StatusBar', () => {
 
     expect(wrapper.text()).toContain('已连接')
     expect(wrapper.text()).toContain('0x1ba01477')
+    expect(wrapper.text()).toContain('后端正常 · 8766')
     expect(wrapper.text()).not.toContain('STM32F10x')
     wrapper.unmount()
   })
