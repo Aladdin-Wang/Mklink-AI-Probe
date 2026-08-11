@@ -967,7 +967,7 @@ class Device:
 
     def reset(self) -> None:
         self._require_connected()
-        self._bridge.send_command("cmd.reset_chip()", timeout=10.0)
+        self._bridge.send_command("cmd.set_reset()", timeout=10.0)
 
     def _get_mcu_profile(self) -> dict | None:
         from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode, match_mcu_by_device

@@ -1463,9 +1463,25 @@ def create_app(
     async def reset_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "reset"):
-            _state["device"].reset()
-        return {"status": "ok"}
+        from mklink.remote.dashboards import stop_bridge_dashboards
+
+        async with _dashboard_start_lock(_state):
+            try:
+                stopped = await run_in_threadpool(
+                    stop_bridge_dashboards,
+                    resource_manager=_state["resource_manager"],
+                )
+            except Exception as error:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "DASHBOARD_STOP_FAILED",
+                        "message": str(error),
+                    },
+                ) from error
+            async with async_target_debug_lease(_state, "reset"):
+                await run_in_threadpool(_state["device"].reset)
+        return {"status": "ok", "stopped": stopped}
 
     @app.post("/api/device/erase")
     async def erase_device():
