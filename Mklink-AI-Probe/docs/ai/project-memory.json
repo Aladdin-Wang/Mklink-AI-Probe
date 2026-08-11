@@ -1,120 +1,89 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T19:03:30+08:00",
+  "updated_at": "2026-08-11T20:03:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "master@c9a40be 已合并桌面启动动画、版本记录精简、MCU 复位入口和复位资源互斥修复。",
-    "remote_head": "origin/master@c9a40be 已接收功能合并；本交接提交仅同步最终验证与清理状态。",
-    "working_tree": "最终交接提交后保持干净；本地真机日志、构建缓存和 .mklink 运行数据不进入 Git。已合并旧分支已清理，保留有未提交工作的 worktree 和未合并分支。"
+    "head": "master 已包含 v0.1.6 的启动动画、安全 MCU 复位、独立桌面后端和既有烧录调试修复。",
+    "remote_head": "origin/master 与当前运行时代码基线一致；本次仅追加精简交接记录。",
+    "working_tree": "交接提交后保持干净；安装包、日志、硬件数据和构建缓存均在 Git 外。"
   },
   "mission": {
-    "product": "维护 MKLink/MicroLink 的烧录、调试、串口、RTT/SystemView/VOFA/SuperWatch、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
-    "maintenance": "交接只保留当前基线、仍有效的架构约束、最新验证、已知限制和下一动作；完成历史由 Git 保存。"
+    "product": "维护 MKLink/MicroLink 的烧录、调试、高吞吐数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
+    "maintenance": "交接只保留当前基线、仍有效约束、最新证据、限制和下一动作；完成历史从 Git 查询。"
   },
   "current_session": {
-    "status": "desktop_startup_reset_complete",
-    "current_task": "桌面启动动画、精简版本记录、MCU 复位入口和复位前 Dashboard 退出已完成真机验证、合并与 GitHub 推送。",
-    "release": "功能已推送 GitHub master；未签名或发布正式 Release，标签、updates/latest.json 和 Gitee 均未修改。"
+    "status": "v016_local_distribution_refreshed",
+    "current_task": "从当前 master 重新生成 v0.1.6 标准 NSIS，覆盖本地安装并同步本地 Skill。",
+    "release": "仅更新本地安装与候选归档；未创建标签、GitHub Release，未修改 updates/latest.json 或同步 Gitee。"
   },
   "milestones": [
     {
-      "name": "产品与分发基线",
+      "name": "产品与分发",
       "status": "complete",
-      "notes": "v0.1.6 已统一 Python、Skill、Tauri 主程序和 Web GUI；标准 NSIS 使用内置 sidecar，可在没有 Python 的安装环境运行。"
+      "notes": "Python、Skill、Web GUI 和 Tauri 均为 v0.1.6；标准 NSIS 内置 sidecar，可在无 Python 环境运行。"
     },
     {
-      "name": "烧录与文件刷新",
+      "name": "烧录与兼容性",
       "status": "complete",
-      "notes": "在线/脱机烧录、HPM ROM API、CMSIS-Pack/FLM、自定义算法和浏览器/桌面文件加载已实现；同路径重载、重编译自动刷新、HPM 复合端口和 CST92F41 相对扇区已修复。"
+      "notes": "在线/脱机烧录、HPM ROM API、CMSIS-Pack/FLM、同路径固件刷新、复合探针和相对扇区解析已集成。"
     },
     {
-      "name": "调试与高吞吐数据流",
+      "name": "调试与数据流",
       "status": "complete",
-      "notes": "符号、内存、HardFault、RTT、SuperWatch、SystemView、VOFA、串口和 Modbus 已集成；串口/RTT 终端使用独立轻量通道，日志模式可保存本地文件。"
+      "notes": "Memory、Symbols、HardFault、RTT、SuperWatch、SystemView、VOFA、串口和 Modbus 共用资源仲裁与轻量流通道。"
     },
     {
-      "name": "资源互斥与多下载器",
+      "name": "多实例与远程",
       "status": "complete",
-      "notes": "Dashboard、Memory 和烧录操作共享资源管理；每个桌面实例拥有独立 sidecar、动态后端端口和 CMD 端口锁，自动发现可并发连接不同下载器。"
-    },
-    {
-      "name": "远程 Site Agent",
-      "status": "complete",
-      "notes": "主 GUI 与独立便携 Agent 支持认证的直连和 LAN STCP；本地 GUI、远程 Agent 和托盘服务共用后端与探针资源，凭据由 Windows DPAPI 保护。"
-    },
-    {
-      "name": "桌面启动体验",
-      "status": "complete",
-      "notes": "静态启动页在 Vue 和后端端点初始化之前显示下载器主图，并按端点发现、工作区加载和应用挂载更新进度；实际 Tauri 窗口已完成桌面和窄屏检查。"
+      "notes": "每个桌面实例使用独立动态后端和探针连接；Site Agent 支持认证直连与 LAN STCP。"
     }
   ],
   "verification": [
     {
+      "area": "最新桌面与复位闭环",
+      "result": "启动动画已在真实 Tauri 窗口验证；复位前会停止冲突 Dashboard，真实 HPM 目标确认发送 cmd.set_reset() 后重新运行。完整 GUI、Python、Rust 和生产构建门禁已通过，环境性符号链接权限用例单独记录。"
+    },
+    {
+      "area": "烧录与高吞吐数据流",
+      "result": "HPM 在线烧录可自动运行；重复固件加载、浏览器文件刷新和客户 HEX 扇区解析已验证。串口/RTT 终端长时高吞吐与下载器 V2/V3/V4 数据完整性已完成真机验证。"
+    },
+    {
       "area": "v0.1.6 本地分发",
-      "result": "master 合并提交 43ec353，Web 资源提交 1b7f57a。本地安装版、Skill 和 Web GUI 已更新并通过健康检查；安装包 SHA-256 为 403E80A75EDF6F38A2D7968A4CF34598B692AAA42327B0937AA8830D1354FE21，Skill 包 SHA-256 为 28427FCCDE408E21E597B6FACECD2CB3E7851377EAFB8935D76453903BD85AB0。"
-    },
-    {
-      "area": "桌面多实例与双下载器",
-      "result": "一个 Web Entry 占用首选端口时，两个安装版桌面实例选择不同后端端口；关闭一个不影响另一个。V3 与 V4 真机同时自动连接到不同 CMD 接口，非 CMD 串口的伪提示被唯一命令握手拒绝。"
-    },
-    {
-      "area": "桌面隔离最终自动门禁",
-      "result": "Python 聚焦测试 120 项通过；完整 Python 为 1263 passed、1 skipped，仅有 12 个已知 Windows 符号链接权限失败；GUI 为 52 个文件、508 项测试通过；vue-tsc、Vite 生产构建、Tauri Rust 12 项测试和 git diff 检查通过。"
-    },
-    {
-      "area": "GUI、资源互斥与低编号串口",
-      "result": "STM32F103 真机验证 RTOS Trace 与 Memory 自动互斥；Windows 单位数虚拟串口验证 serial_ 前缀锁。GUI 为 52 个文件、507 项测试通过，完整 Python 为 1253 passed、1 skipped。"
-    },
-    {
-      "area": "固件加载与芯片兼容",
-      "result": "HPM6E00 最新 BIN 已通过 ROM API 编程、校验和回读；桌面同路径 HEX 重载由用户确认；CST92F41 客户 HEX 已通过 Pack、FLM 最终化和 Web 扇区解析，未对 CST 目标执行烧录。"
-    },
-    {
-      "area": "串口与 RTT 数据流",
-      "result": "HPM6E00 串口终端完成 10 分钟约 7.22 MB 数据流，后端批次零丢弃且浏览器保持响应；日志模式保留 5000 条并弹出本地保存窗口。下载器 V2/V3/V4 的 UART/RTT/VOFA DMA 与并发队列修复已完成真机验证。"
-    },
-    {
-      "area": "桌面启动、复位入口与 HPM5301 在线烧录",
-      "result": "下载器主图、阶段进度和深色启动背景已在实际 Tauri 窗口验证；仪表盘连接与复位操作在默认窗口保持可见。HPM5301 EVK Lite 的 35164 字节 BIN 完成 connect、program、verify、reset、disconnect，count 连续采样由 252 增长至 535，确认烧录后自动运行。源码后端真机复位先停止 SuperWatch，再发送 cmd.set_reset()；count 由 13185 回到 50 且会话保持停止。GUI 53 个文件、512 项测试和 Rust 12 项测试通过；完整 Python 为 1262 passed、1 skipped，另有 12 个既有 Windows 符号链接权限失败和 3 个缺少 mklink-stcp.dll 的打包错误；前端与 Tauri release 构建通过，NSIS 生成后因未提供维护者签名私钥未执行签名。"
+      "result": "标准 NSIS、updater 签名和 x64 STCP 运行库由当前 master 重建；覆盖安装后动态健康接口、探针枚举、内置 sidecar、零 Python 子进程、正常退出和端口释放均通过，本地 Skill 同步到同一源码提交。"
     }
   ],
   "decisions": [
-    "AGENTS.md 与仓库维护 Skill 是开发和发布流程的权威来源。运行时修改必须使用 fix/feature 分支，通过完整 Python、GUI、生产构建、git diff、项目记忆和受影响真机闭环后才能合并。",
-    "不得推断发布授权。推送、标签、GitHub Release、updates/latest.json、Gitee 同步和正式签名发布分别需要维护者明确授权。",
-    "产品版本 0.1.6 在 Python、插件、主 Tauri、独立 Tauri、便携包和 GUI 版本历史中保持一致。",
-    "每个 Tauri 实例拥有唯一 sidecar 标识和动态 loopback 端口；只终止自己创建且仍持有的进程。Web Entry 同样只停止自己拥有的服务。",
-    "自动恢复的探针端口是软偏好，可在跨进程发现锁内选择另一合法 CMD；用户显式选择的端口是严格约束。CMD 身份必须通过唯一命令输出行验证，通用提示符或回显不够。",
-    "Dashboard 会话和一次性调试/烧录操作使用串行资源租约。用户操作可在同步停止 Dashboard 所有者后接管，但不能抢占另一用户操作；MCU 复位必须先停止 RTT、SuperWatch、VOFA 和 SystemView，HPM 在线烧录还必须关闭共享 Device。",
-    "HPM 目标只使用专用 ROM API，不使用 FLM。ELF/DWARF 默认使用内置 pyelftools，外部 GNU 工具仅为显式兼容后端。",
-    "浏览器固件文件在支持时保留 File System Access 只读句柄并轮询重编译元数据；普通文件输入每次选择后清空。桌面端选择同一路径也必须显式重新解析。",
-    "PDSC Flash 区域与 FLM 地址不重叠时，仅当完整 FLM 范围能装入所属区域，才允许按区域相对地址重定位；运行时必须复制 FLM 元数据。",
-    "串口和 RTT 的日志/终端订阅使用独立 Worker 与有界缓冲。终端模式不构造或同步隐藏日志 DOM；日志模式最多保留 5000 条并只保存当前保留内容。",
-    "Site Agent 在主 Tauri 中复用现有 sidecar、Device 和 ResourceManager。非 loopback 监听必须显式 allow-lan 并配置令牌；敏感凭据不得进入命令行或前端状态。",
-    "CURRENT_HANDOFF.md 只由 project-memory.json 生成。交接保持精简，不追加会话流水；具体历史、旧哈希和已完成计划从 Git 查询。"
+    "运行时修改必须在 fix/feature 分支完成全量测试、生产构建、项目记忆和受影响真机闭环后再合并。",
+    "v0.1.6 在 Python、插件、Tauri、Web GUI 和 Skill 中保持一致；默认只生成标准 NSIS。",
+    "Dashboard 与一次性调试/烧录操作共用资源租约；MCU 复位前必须停止 RTT、SuperWatch、VOFA 和 SystemView。",
+    "HPM 目标只使用专用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
+    "浏览器和桌面端必须重新读取同路径固件；FLM 相对重定位仅在完整算法范围可装入目标区域时允许。",
+    "串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志，日志模式可保存当前保留内容。",
+    "每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；Site Agent 复用同一实例的 Device 与 ResourceManager。",
+    "CURRENT_HANDOFF.md 只由 project-memory.json 生成，不保存会话流水和过期构建哈希。"
   ],
   "hardware": {
-    "probe": "维护机可同时连接 V3、V4 下载器；具体序列号和 COM 号不写入交接。",
-    "target": "可用 STM32F103、HPM6E00/HPM5301 和其他既有测试板。CST92F41 仅有客户 Pack/HEX 软件验证，暂无目标板。",
-    "permission": "本次 HPM5301 在线烧录、校验、复位和只读 count 采样已由任务授权完成；后续破坏性操作仍需对应任务明确需要。"
+    "probe": "维护机可使用 V2/V3/V4 下载器；交接不记录具体序列号和端口。",
+    "target": "可用 ARM 与 HPM 真机；部分客户芯片仅完成 Pack/HEX 软件验证。",
+    "permission": "破坏性烧录和外部发布仍需对应任务明确授权。"
   },
   "known_limits": [
-    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲；主机无法恢复目标端已经丢失的事件。",
-    "V4 脱机首次触发曾出现一次瞬时空失败，重试成功；仍需冷启动复现和设备输出诊断。",
-    "CST92F41 修复没有物理目标板擦除/编程/校验证据。",
-    "先楫定制店铺尚未提供权威链接，因此菜单项保持禁用。",
-    "USB Web Entry 尚需 macOS/Linux 验证；NSIS 与旧客户端更新仍需第二台干净 Windows 机器验证。",
-    "npm audit 有一个仅开发依赖的高危传递项 brace-expansion；运行时依赖审计正常。"
+    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲。",
+    "V4 脱机首次触发的瞬时空失败仍需冷启动复现。",
+    "部分客户芯片修复缺少物理目标板编程证据。",
+    "先楫定制店铺尚无权威链接，菜单项保持禁用。",
+    "USB Web Entry 尚需 macOS/Linux 验证，安装与更新仍需第二台干净 Windows 机器验证。"
   ],
   "next_actions": [
     "复现 V4 脱机首次空失败并增加设备输出诊断。",
     "使用更大目标 RTT 缓冲完成 SystemView 可持续事件率验证。",
-    "在 macOS/Linux 验证 USB Web Entry，并在第二台干净 Windows 机器验证安装与更新。"
+    "完成 USB Web Entry 跨平台和干净 Windows 安装验证。"
   ],
   "continuation_protocol": [
-    "开始工作前验证项目记忆，并用 live Git、进程和硬件状态纠正任何过期内容。",
-    "保持修改范围最小，保留用户文件和本地硬件数据；只清理明确生成的缓存和构建产物。",
-    "结束前更新 project-memory.json，执行 render、validate、git diff 检查，并按维护者授权决定提交、合并或推送。"
+    "开始工作前用 live Git、进程和硬件状态校正项目记忆。",
+    "保持修改范围最小，不提交本地硬件路径、日志、安装包或凭据。",
+    "结束前执行 render、validate、git diff 检查，并按授权决定提交、推送或发布。"
   ]
 }
