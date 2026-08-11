@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T20:03:00+08:00",
+  "updated_at": "2026-08-11T21:30:58+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "master 已包含 v0.1.6 的启动动画、安全 MCU 复位、独立桌面后端和既有烧录调试修复。",
-    "remote_head": "origin/master 与当前运行时代码基线一致；本次仅追加精简交接记录。",
-    "working_tree": "交接提交后保持干净；安装包、日志、硬件数据和构建缓存均在 Git 外。"
+    "branch": "fix/device-connect-auto-search",
+    "head": "修复分支基于 master@d4d25e2，设备连接自动搜索修复已完成自动化、生产构建和真实 Chrome/HPM5301 闭环。",
+    "remote_head": "origin/master 仍为 d4d25e2；本次修复尚未提交、合并或推送。",
+    "working_tree": "仅包含设备连接自动搜索源码、回归测试、生成 Web 资源和本交接记录；既有其他工作树未改动。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、高吞吐数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、仍有效约束、最新证据、限制和下一动作；完成历史从 Git 查询。"
   },
   "current_session": {
-    "status": "v016_local_distribution_refreshed",
-    "current_task": "从当前 master 重新生成 v0.1.6 标准 NSIS，覆盖本地安装并同步本地 Skill。",
-    "release": "仅更新本地安装与候选归档；未创建标签、GitHub Release，未修改 updates/latest.json 或同步 Gitee。"
+    "status": "device_connect_auto_search_verified_unmerged",
+    "current_task": "修复无有效端口或历史端口失效时，连接设备不会自动搜索且重复点击持续报错的问题。",
+    "release": "修复已在独立分支完成最终验证；未生成安装包，尚未提交、合并、推送或发布。"
   },
   "milestones": [
     {
@@ -42,6 +42,10 @@
   ],
   "verification": [
     {
+      "area": "设备连接自动搜索",
+      "result": "配置页 22 项聚焦测试覆盖无端口、历史端口和手选端口失败后的自动搜索回退；GUI 全量 518 项和生产构建通过，底层连接相关 12 项通过。Python 全量 1262 项通过、1 项跳过，剩余 12 个符号链接权限失败及 3 个缺失 STCP 测试库错误均为既有环境门禁。真实 Chrome、独立 Web 后端、下载器和 HPM5301 已完成闭环：初始自动搜索可连接，手选非下载器串口失败后回到自动搜索，再次点击可重新发现并连接。"
+    },
+    {
       "area": "最新桌面与复位闭环",
       "result": "启动动画已在真实 Tauri 窗口验证；复位前会停止冲突 Dashboard，真实 HPM 目标确认发送 cmd.set_reset() 后重新运行。完整 GUI、Python、Rust 和生产构建门禁已通过，环境性符号链接权限用例单独记录。"
     },
@@ -55,6 +59,7 @@
     }
   ],
   "decisions": [
+    "配置页恢复的历史端口是软偏好，可在同一次连接中回退自动发现；当前会话明确手选的端口首次保持严格约束，避免多下载器误连。任何连接失败都会让当前实例切回自动搜索，但不清除可能由其他实例共享的历史偏好。",
     "运行时修改必须在 fix/feature 分支完成全量测试、生产构建、项目记忆和受影响真机闭环后再合并。",
     "v0.1.6 在 Python、插件、Tauri、Web GUI 和 Skill 中保持一致；默认只生成标准 NSIS。",
     "Dashboard 与一次性调试/烧录操作共用资源租约；MCU 复位前必须停止 RTT、SuperWatch、VOFA 和 SystemView。",
@@ -67,7 +72,7 @@
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4 下载器；交接不记录具体序列号和端口。",
     "target": "可用 ARM 与 HPM 真机；部分客户芯片仅完成 Pack/HEX 软件验证。",
-    "permission": "破坏性烧录和外部发布仍需对应任务明确授权。"
+    "permission": "破坏性烧录和外部发布仍需对应任务明确授权；本次仅执行连接与断开验证。"
   },
   "known_limits": [
     "高事件率 SystemView 仍可能溢出目标 RTT 缓冲。",
