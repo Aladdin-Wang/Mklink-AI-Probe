@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T22:04:08+08:00",
+  "updated_at": "2026-08-11T22:07:15+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "release/v0.1.6-auto-search",
-    "head": "分支包含设备连接自动搜索修复、真实 HPM 验证和 v0.1.6 本地分发记录。",
-    "remote_head": "origin/master 为 d4d25e2；本分支准备通过 PR 合入，不直接推送远端 master。",
+    "branch": "master",
+    "head": "PR #2 已合并设备连接自动搜索修复、真实 HPM 验证和精简交接。",
+    "remote_head": "origin/master 为 f10bafd，与本地 master 同步。",
     "working_tree": "仅保留当前主工作树；旧在线烧录 worktree 和已覆盖分支均已删除。"
   },
   "mission": {
@@ -14,9 +14,9 @@
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "v016_release_pr_preparing",
-    "current_task": "通过 GitHub PR 合入设备自动搜索修复，并正式发布 v0.1.6。",
-    "release": "维护者已授权 v0.1.6 正式发布；标签、Release、Gitee 和 updates/latest.json 尚未创建。"
+    "status": "v016_release_building",
+    "current_task": "从最终 master 构建、验证并正式发布 v0.1.6。",
+    "release": "PR #2 已合并；标签、Release、Gitee 和 updates/latest.json 尚未创建。"
   },
   "milestones": [
     {
@@ -75,9 +75,9 @@
     "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。"
   ],
   "next_actions": [
-    "完成并合并 v0.1.6 GitHub PR。",
     "从最终 master 重建七项正式发布文件并完成安装验证。",
-    "发布 GitHub/Gitee Release 和 updates/latest.json，随后记录最终交接。"
+    "发布 GitHub/Gitee Release 和 updates/latest.json。",
+    "发布后记录最终交接并确认仓库与远端状态。"
   ],
   "continuation_protocol": [
     "开始前用 Git、进程和硬件状态校正项目记忆。",

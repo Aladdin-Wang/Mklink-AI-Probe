@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-11T22:04:08+08:00`
-- 分支：`release/v0.1.6-auto-search`
-- HEAD：`分支包含设备连接自动搜索修复、真实 HPM 验证和 v0.1.6 本地分发记录。`
-- 远端 HEAD：`origin/master 为 d4d25e2；本分支准备通过 PR 合入，不直接推送远端 master。`
+- 更新时间：`2026-08-11T22:07:15+08:00`
+- 分支：`master`
+- HEAD：`PR #2 已合并设备连接自动搜索修复、真实 HPM 验证和精简交接。`
+- 远端 HEAD：`origin/master 为 f10bafd，与本地 master 同步。`
 - 工作树：仅保留当前主工作树；旧在线烧录 worktree 和已覆盖分支均已删除。
-- 当前任务：通过 GitHub PR 合入设备自动搜索修复，并正式发布 v0.1.6。
-- 状态：`v016_release_pr_preparing`
+- 当前任务：从最终 master 构建、验证并正式发布 v0.1.6。
+- 状态：`v016_release_building`
 
 ## 里程碑
 
@@ -42,9 +42,9 @@
 
 ## 下一动作
 
-1. 完成并合并 v0.1.6 GitHub PR。
-2. 从最终 master 重建七项正式发布文件并完成安装验证。
-3. 发布 GitHub/Gitee Release 和 updates/latest.json，随后记录最终交接。
+1. 从最终 master 重建七项正式发布文件并完成安装验证。
+2. 发布 GitHub/Gitee Release 和 updates/latest.json。
+3. 发布后记录最终交接并确认仓库与远端状态。
 
 ## 已知限制
 
