@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T16:22:16+08:00",
+  "updated_at": "2026-08-11T16:26:40+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
     "head": "Local master merged the qualified desktop-backend and probe-isolation branch through 43ec353; 1b7f57a records the matching v0.1.6 Web assets used by the local Skill distribution.",
-    "remote_head": "origin/master remains 9e036db44a3d. Local master is 11 commits ahead; no push, tag, GitHub Release, updater manifest, or Gitee state changed.",
+    "remote_head": "The Aladdin-Wang origin/master was fast-forwarded from 9e036db44a3d through the refreshed v0.1.6 local-distribution record and matches local master. No force push, tag, GitHub Release, updater manifest, or Gitee state changed.",
     "working_tree": "Tracked source is clean after removing explicit build/cache outputs. Local .mklink runtime data is preserved and hidden through .git/info/exclude so Git integrations do not enumerate it as active work."
   },
   "mission": {
@@ -16,7 +16,7 @@
   "current_session": {
     "status": "desktop_multi_instance_local_distribution_complete",
     "current_task": "The qualified desktop multi-instance and probe-isolation fixes are merged into local master, installed as v0.1.6, and synchronized to the local Skill and Web GUI.",
-    "release": "The standard signed-updater NSIS and matching Skill archive were rebuilt and installed locally. Official publication remains out of scope: no push, tag, GitHub Release, updates/latest.json change, or Gitee synchronization was performed."
+    "release": "The standard signed-updater NSIS and matching Skill archive were rebuilt and installed locally. Local master was explicitly pushed to the Aladdin-Wang GitHub fork. No tag, GitHub Release, updates/latest.json change, or Gitee synchronization was performed."
   },
   "milestones": [
     {
@@ -184,7 +184,7 @@
     },
     {
       "area": "Desktop isolation merge and refreshed v0.1.6 local distribution",
-      "result": "The qualified fix tip 32db23c was merged into local master through 43ec353, and 1b7f57a recorded the production Web assets. The standard updater-signed NSIS was rebuilt with 5,065 audited Pack targets and 8,137 DAPLinkUtility FLM targets, then silently overwrote the local v0.1.6 installation with exit code 0. With Web Entry retaining the preferred port, two installed desktop instances selected the next two distinct ports and the second remained healthy after the first exited. A separate installed launch passed ownership-aware health, enumerated two attached probes, used only bundled sidecar processes with zero Python descendants, released its selected port on normal close, and left Web Entry healthy. Installer SHA-256 is 403E80A75EDF6F38A2D7968A4CF34598B692AAA42327B0937AA8830D1354FE21 and updater signature SHA-256 is 8CF2CFE6314CDEB8A1FC6188F31B80D5AC80D47EA57940E9019307D9D4EE26CC. The matching Skill archive SHA-256 is 28427FCCDE408E21E597B6FACECD2CB3E7851377EAFB8935D76453903BD85AB0; it was atomically installed with source_commit 1b7f57aab43a6b63adc491f010bb47c9c88d11d0 and passed skill-creator quick_validate.py. Web Entry was re-registered from that Skill and left running on loopback; health, root, hashed asset, two-probe enumeration, and repository-to-Skill Web-asset hash equality passed. Nineteen explicit build/cache outputs were removed, while local .mklink data was preserved and locally excluded from Git enumeration. No push, tag, GitHub Release, updater manifest, or Gitee state changed."
+      "result": "The qualified fix tip 32db23c was merged into local master through 43ec353, and 1b7f57a recorded the production Web assets. The standard updater-signed NSIS was rebuilt with 5,065 audited Pack targets and 8,137 DAPLinkUtility FLM targets, then silently overwrote the local v0.1.6 installation with exit code 0. With Web Entry retaining the preferred port, two installed desktop instances selected the next two distinct ports and the second remained healthy after the first exited. A separate installed launch passed ownership-aware health, enumerated two attached probes, used only bundled sidecar processes with zero Python descendants, released its selected port on normal close, and left Web Entry healthy. Installer SHA-256 is 403E80A75EDF6F38A2D7968A4CF34598B692AAA42327B0937AA8830D1354FE21 and updater signature SHA-256 is 8CF2CFE6314CDEB8A1FC6188F31B80D5AC80D47EA57940E9019307D9D4EE26CC. The matching Skill archive SHA-256 is 28427FCCDE408E21E597B6FACECD2CB3E7851377EAFB8935D76453903BD85AB0; it was atomically installed with source_commit 1b7f57aab43a6b63adc491f010bb47c9c88d11d0 and passed skill-creator quick_validate.py. Web Entry was re-registered from that Skill and left running on loopback; health, root, hashed asset, two-probe enumeration, and repository-to-Skill Web-asset hash equality passed. Nineteen explicit build/cache outputs were removed, while local .mklink data was preserved and locally excluded from Git enumeration. Local master was then fast-forward pushed to the Aladdin-Wang GitHub fork without force. No tag, GitHub Release, updater manifest, or Gitee state changed."
     }
   ],
   "decisions": [
@@ -244,7 +244,7 @@
     "USB Web entry still needs macOS/Linux qualification. Standard NSIS and updater behavior still need a second clean Windows machine. Non-builtin flash algorithm paths have automated coverage but limited physical-target coverage."
   ],
   "next_actions": [
-    "Obtain explicit maintainer authorization before pushing local master, creating the annotated v0.1.6 tag, publishing a GitHub Release, changing updates/latest.json, or synchronizing Gitee.",
+    "Obtain explicit maintainer authorization before creating the annotated v0.1.6 tag, publishing a GitHub Release, changing updates/latest.json, or synchronizing Gitee.",
     "Reproduce the first-trigger V4 offline empty failure across cold starts and add device-output diagnostics if it recurs.",
     "Run loss-sensitive SystemView tests with a larger target RTT buffer and document the sustainable event rate.",
     "Qualify USB Web entry on current macOS and Linux systems.",
