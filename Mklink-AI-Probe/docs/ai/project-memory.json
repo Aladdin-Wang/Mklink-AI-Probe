@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-12T10:45:00+08:00",
+  "updated_at": "2026-08-12T10:54:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "feature/quick-web-entry",
-    "head": "分支基于 7fb00d1；快速启动入口、浏览器后端端口显示和浏览器会话自动退出待提交。",
+    "branch": "master",
+    "head": "03f311b 已合并快速启动入口、浏览器后端端口显示和浏览器会话自动退出。",
     "remote_head": "GitHub master、v0.1.6 标签和正式 Release 已同步。",
-    "working_tree": "当前功能分支保留快速启动入口与浏览器会话生命周期的未提交改动；无额外 worktree。"
+    "working_tree": "主分支已包含已验证修复；无额外 worktree。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "browser_session_verified",
-    "current_task": "浏览器 Web GUI 关闭后主动释放后端端口、下载器 CMD 串口和调试资源，安装版生命周期保持独立。",
+    "status": "browser_session_merged",
+    "current_task": "浏览器 Web GUI 关闭后释放后端端口、下载器 CMD 串口和调试资源的修复已合并到主分支；无需重打 v0.1.6 安装包。",
     "release": "GitHub: https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6；Gitee: https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6。"
   },
   "milestones": [
@@ -83,8 +83,7 @@
   "next_actions": [
     "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
     "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
-    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。",
-    "审查并提交 feature/quick-web-entry；合并、安装包和发布需维护者另行授权。"
+    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
   ],
   "continuation_protocol": [
     "开始前用 Git、进程和硬件状态校正项目记忆。",
