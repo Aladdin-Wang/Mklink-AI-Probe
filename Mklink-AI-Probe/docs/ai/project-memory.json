@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-12T11:10:00+08:00",
+  "updated_at": "2026-08-12T11:50:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
+    "branch": "fix/github-first-update-check",
     "head": "master 已包含 3ab020f 的快速启动入口、浏览器后端端口显示和浏览器会话自动退出，以及后续分发交接。",
     "remote_head": "Aladdin-Wang GitHub、Gitee 与 su5176 上游 PR #10 均跟随当前维护 master，PR 可合并。",
-    "working_tree": "主分支已包含已验证修复；无额外 worktree。"
+    "working_tree": "GitHub 优先更新检查与发布器默认仓库修复正在 fix/github-first-update-check 分支验证。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "browser_session_distributed",
-    "current_task": "浏览器 Web GUI 生命周期修复已合并并同步 GitHub/Gitee/upstream PR；用户级 Skill、完整 GUI/MCP 依赖和快速启动网页已更新。",
+    "status": "github_first_update_check_verified",
+    "current_task": "保留 24 小时更新缓存，将 Skill 与运行时/MCP 更新检查调整为 GitHub 优先、Gitee 回退，并修正发布器默认 GitHub 仓库。",
     "release": "GitHub: https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6；Gitee: https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6。"
   },
   "milestones": [
@@ -60,6 +60,10 @@
     {
       "area": "源码与本地 Skill 同步",
       "result": "Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 已同步；用户级 Skill、完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。"
+    },
+    {
+      "area": "GitHub 优先更新检查",
+      "result": "Skill 更新器与运行时/MCP 检查保持 24 小时缓存，默认先读取官方 GitHub updates/latest.json，失败才回退 Gitee；回归测试覆盖优先级、回退和发布器官方仓库默认值。聚焦测试 25 项通过，GUI 521 项通过、生产构建通过；真实强制检查从 GitHub 返回 v0.1.6。Python 全量为 1279 通过、1 跳过，12 项仅因 Windows 账户缺少目录符号链接特权失败。"
     }
   ],
   "decisions": [
@@ -69,7 +73,8 @@
     "Dashboard 与烧录/调试操作共用资源租约；复位前停止 RTT、SuperWatch、VOFA 和 SystemView。",
     "串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志。",
     "每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。",
-    "由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。"
+    "由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。",
+    "Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。"
   ],
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。",
@@ -82,12 +87,12 @@
     "部分客户芯片修复缺少物理目标板编程证据。",
     "先楫定制店铺尚无权威链接，菜单项保持禁用。",
     "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。",
-    "发布器默认仓库参数仍含旧备用名；下次发布前应修正或继续显式传入两端 Aladdin-Wang 仓库。"
+    "当前 Windows 测试账户不能创建目录符号链接，因此完整 Python 套件中的 12 个上传路径重定向安全测试无法在本机建立前置条件。"
   ],
   "next_actions": [
+    "复核 GitHub 优先更新检查修复并按授权合并；正式发布仍需维护者单独授权。",
     "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
-    "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
-    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
+    "需要扩大分发证据时，在具备符号链接权限的干净 Windows 环境复测安装更新和 USB Web Entry。"
   ],
   "continuation_protocol": [
     "开始前用 Git、进程和硬件状态校正项目记忆。",

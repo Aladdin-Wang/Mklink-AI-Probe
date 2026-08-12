@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-12T11:10:00+08:00`
-- 分支：`master`
+- 更新时间：`2026-08-12T11:50:00+08:00`
+- 分支：`fix/github-first-update-check`
 - HEAD：`master 已包含 3ab020f 的快速启动入口、浏览器后端端口显示和浏览器会话自动退出，以及后续分发交接。`
 - 远端 HEAD：`Aladdin-Wang GitHub、Gitee 与 su5176 上游 PR #10 均跟随当前维护 master，PR 可合并。`
-- 工作树：主分支已包含已验证修复；无额外 worktree。
-- 当前任务：浏览器 Web GUI 生命周期修复已合并并同步 GitHub/Gitee/upstream PR；用户级 Skill、完整 GUI/MCP 依赖和快速启动网页已更新。
-- 状态：`browser_session_distributed`
+- 工作树：GitHub 优先更新检查与发布器默认仓库修复正在 fix/github-first-update-check 分支验证。
+- 当前任务：保留 24 小时更新缓存，将 Skill 与运行时/MCP 更新检查调整为 GitHub 优先、Gitee 回退，并修正发布器默认 GitHub 仓库。
+- 状态：`github_first_update_check_verified`
 
 ## 里程碑
 
@@ -26,6 +26,7 @@
 - **v0.1.6 正式分发**：七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。
 - **浏览器后端生命周期**：真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。
 - **源码与本地 Skill 同步**：Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 已同步；用户级 Skill、完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。
+- **GitHub 优先更新检查**：Skill 更新器与运行时/MCP 检查保持 24 小时缓存，默认先读取官方 GitHub updates/latest.json，失败才回退 Gitee；回归测试覆盖优先级、回退和发布器官方仓库默认值。聚焦测试 25 项通过，GUI 521 项通过、生产构建通过；真实强制检查从 GitHub 返回 v0.1.6。Python 全量为 1279 通过、1 跳过，12 项仅因 Windows 账户缺少目录符号链接特权失败。
 
 ## 架构决策
 
@@ -36,6 +37,7 @@
 - 串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志。
 - 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 - 由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。
+- Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。
 
 ## 真机环境
 
@@ -45,9 +47,9 @@
 
 ## 下一动作
 
-1. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
-2. 下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。
-3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
+1. 复核 GitHub 优先更新检查修复并按授权合并；正式发布仍需维护者单独授权。
+2. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
+3. 需要扩大分发证据时，在具备符号链接权限的干净 Windows 环境复测安装更新和 USB Web Entry。
 
 ## 已知限制
 
@@ -56,7 +58,7 @@
 - 部分客户芯片修复缺少物理目标板编程证据。
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
 - USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
-- 发布器默认仓库参数仍含旧备用名；下次发布前应修正或继续显式传入两端 Aladdin-Wang 仓库。
+- 当前 Windows 测试账户不能创建目录符号链接，因此完整 Python 套件中的 12 个上传路径重定向安全测试无法在本机建立前置条件。
 
 ## 延续协议
 
