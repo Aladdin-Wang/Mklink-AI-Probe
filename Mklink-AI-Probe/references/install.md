@@ -20,6 +20,28 @@ pip install pymodbus>=3.0
 
 安装完成后，`python -m mklink` 命令即可正常使用。
 
+### 推荐给用户的安装请求
+
+统一使用以下话术，避免不同 AI 漏装 Web GUI 或 MCP 依赖，也不再要求 AI 每次
+安装后直接打开 Web GUI：
+
+> 请从这个仓库安装或更新 MKLink AI Probe。读取仓库中的
+> `Mklink-AI-Probe/SKILL.md` 和安装说明，将完整 Skill 安装到用户级 Skill 目录，
+> 并安装 Web GUI 与 MCP 所需的全部依赖。安装后运行自检，再安装快速启动入口。
+> 快速启动网页应优先保存到卷标为 `MICROKEEN` 的下载器 U 盘；没有检测到下载器
+> 时保存到用户桌面。请报告自检结果和网页保存位置，不需要立即打开 Web GUI。
+
+AI 完成文件安装后必须执行：
+
+```powershell
+python -m pip install -e ".[gui,mcp]"
+python -c "import serial, pymodbus, elftools, pycparser, websockets, fastapi, starlette, uvicorn, pyocd, intelhex, multipart, fastmcp, pydantic; print('MKLink dependencies OK')"
+python -m mklink web-entry install --quick-launch
+```
+
+最后一条命令会再次执行确定性依赖与 Web assets 检查。失败时应修复报告中的缺失
+项并重试，不能只手工复制网页后宣称完成。
+
 
 ## 作为 Claude Code 插件使用（MCP 能力层）
 

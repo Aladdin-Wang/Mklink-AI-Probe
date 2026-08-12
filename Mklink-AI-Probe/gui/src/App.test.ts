@@ -14,6 +14,9 @@ const installAndRelaunch = vi.fn()
 const retryUpdate = vi.fn()
 const updateState = ref<'idle' | 'checking' | 'downloading' | 'ready' | 'installing' | 'error'>('idle')
 const nativeRuntime = ref(true)
+const { startBrowserSessionLease } = vi.hoisted(() => ({
+  startBrowserSessionLease: vi.fn(() => vi.fn()),
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -45,6 +48,8 @@ vi.mock('./composables/useAppUpdater', () => ({
     retry: retryUpdate,
   }),
 }))
+
+vi.mock('./lib/browserSessionLease', () => ({ startBrowserSessionLease }))
 
 function mountApp() {
   return shallowMount(App, {
@@ -81,6 +86,15 @@ describe('App version footer', () => {
     const wrapper = mountApp()
 
     expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).not.toContain('现场 Agent')
+    wrapper.unmount()
+  })
+
+  it('leases the backend only for browser GUI windows', () => {
+    startBrowserSessionLease.mockClear()
+    nativeRuntime.value = false
+    const wrapper = mountApp()
+
+    expect(startBrowserSessionLease).toHaveBeenCalledWith(true)
     wrapper.unmount()
   })
 

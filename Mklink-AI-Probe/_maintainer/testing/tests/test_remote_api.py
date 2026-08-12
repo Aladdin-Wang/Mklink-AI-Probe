@@ -13,7 +13,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from mklink.dwarf_parser import DwarfArray, DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
-from mklink.remote.api import _project_root_drives, create_app
+from mklink.remote.api import BrowserSessionLease, _project_root_drives, create_app
 from mklink.symbol_catalog import SymbolCatalog
 from route_utils import find_route
 
@@ -27,6 +27,82 @@ def _request(client, path, responses, key):
         responses[key] = client.get(path)
     except BaseException as exc:  # Preserve failures raised in request threads.
         responses[key] = exc
+
+
+def test_browser_session_lease_waits_for_the_last_tab_and_never_arms_empty():
+    now = [0.0]
+    lease = BrowserSessionLease(
+        10, close_grace=2, startup_grace=60, clock=lambda: now[0],
+    )
+
+    assert lease.should_exit() is False
+    now[0] = 59
+    assert lease.should_exit() is False
+    now[0] = 0
+    assert lease.renew("first") == 1
+    assert lease.renew("second") == 2
+    assert lease.release("first") == 1
+    now[0] = 20
+    assert lease.should_exit() is False
+    now[0] = 22
+    assert lease.should_exit() is True
+
+
+def test_browser_session_endpoints_are_enabled_only_for_browser_owned_server():
+    default_app = create_app(auth_token=None, project_root=".")
+    browser_app = create_app(
+        auth_token=None, project_root=".", browser_session_timeout=15,
+    )
+
+    with TestClient(default_app) as default_client:
+        assert default_client.post(
+            "/api/browser-session/heartbeat", json={"client_id": "tab"},
+        ).json() == {"enabled": False}
+    with TestClient(browser_app) as browser_client:
+        assert browser_client.post(
+            "/api/browser-session/heartbeat", json={"client_id": "tab"},
+        ).json() == {"enabled": True, "clients": 1}
+        assert browser_client.post(
+            "/api/browser-session/release", json={"client_id": "tab"},
+        ).json() == {"enabled": True, "clients": 0}
+
+
+def test_browser_session_websockets_keep_backend_until_the_last_tab_closes():
+    app = create_app(
+        auth_token=None, project_root=".", browser_session_timeout=15,
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/ws/browser-session?client_id=first",
+        ) as first, client.websocket_connect(
+            "/ws/browser-session?client_id=second",
+        ) as second:
+            assert app.state.browser_sessions.release("first") == 1
+            first.close()
+            assert app.state.browser_sessions.should_exit() is False
+            second.close()
+
+
+def test_app_shutdown_closes_the_shared_device_and_clears_resource_leases():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    app = create_app(auth_token=None, project_root=".")
+    state = app.state.mklink_state
+    device = SimpleNamespace(close=lambda: None)
+    state["device"] = device
+    state["dispatcher"] = object()
+    state["resource_manager"].acquire(
+        ResourceGroup.TARGET_DEBUG, "test:shutdown",
+    )
+
+    with patch.object(device, "close") as close, TestClient(app):
+        pass
+
+    close.assert_called_once_with()
+    assert state["device"] is None
+    assert state["dispatcher"] is None
+    assert state["resource_manager"].get_status() == {}
 
 
 def test_project_browser_exposes_native_roots_on_each_desktop_platform():

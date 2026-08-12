@@ -89,6 +89,7 @@ import { useMklinkApi } from './composables/useMklinkApi'
 import { useBackendHealth } from './composables/useBackendHealth'
 import { useAppUpdater } from './composables/useAppUpdater'
 import { language, toggleLanguage, tr } from './composables/useLanguage'
+import { startBrowserSessionLease } from './lib/browserSessionLease'
 
 const router = useRouter()
 const route = useRoute()
@@ -106,6 +107,7 @@ const {
 const initialBackendReady = ref(false)
 const updateDismissed = ref(false)
 let statusPollingStarted = false
+let stopBrowserSessionLease: () => void = () => undefined
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
 
@@ -133,12 +135,14 @@ watch(backendState, state => {
 }, { immediate: true })
 
 onMounted(() => {
+  stopBrowserSessionLease = startBrowserSessionLease(!isTauri)
   startHealthPolling(5000)
   void checkForUpdates()
 })
 onUnmounted(() => {
   if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()
+  stopBrowserSessionLease()
 })
 </script>
 
