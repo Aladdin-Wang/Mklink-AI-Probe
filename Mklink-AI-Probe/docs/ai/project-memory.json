@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-12T10:54:00+08:00",
+  "updated_at": "2026-08-12T11:10:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "03f311b 已合并快速启动入口、浏览器后端端口显示和浏览器会话自动退出。",
-    "remote_head": "GitHub master、v0.1.6 标签和正式 Release 已同步。",
+    "head": "3ab020f 已合并快速启动入口、浏览器后端端口显示和浏览器会话自动退出。",
+    "remote_head": "Aladdin-Wang GitHub 与 Gitee master 已同步到 3ab020f；su5176 上游 PR #10 同步到同一提交且可合并。",
     "working_tree": "主分支已包含已验证修复；无额外 worktree。"
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "browser_session_merged",
-    "current_task": "浏览器 Web GUI 关闭后释放后端端口、下载器 CMD 串口和调试资源的修复已合并到主分支；无需重打 v0.1.6 安装包。",
+    "status": "browser_session_distributed",
+    "current_task": "浏览器 Web GUI 生命周期修复已合并并同步 GitHub/Gitee/upstream PR；用户级 Skill、完整 GUI/MCP 依赖和快速启动网页已更新。",
     "release": "GitHub: https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6；Gitee: https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6。"
   },
   "milestones": [
@@ -56,6 +56,10 @@
     {
       "area": "浏览器后端生命周期",
       "result": "真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。"
+    },
+    {
+      "area": "源码与本地 Skill 同步",
+      "result": "Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 head 均为 3ab020f；用户级 Skill 安装标记为 v0.1.6/3ab020f，完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。"
     }
   ],
   "decisions": [

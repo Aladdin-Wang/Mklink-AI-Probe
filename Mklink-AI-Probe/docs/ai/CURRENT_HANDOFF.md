@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-12T10:54:00+08:00`
+- 更新时间：`2026-08-12T11:10:00+08:00`
 - 分支：`master`
-- HEAD：`03f311b 已合并快速启动入口、浏览器后端端口显示和浏览器会话自动退出。`
-- 远端 HEAD：`GitHub master、v0.1.6 标签和正式 Release 已同步。`
+- HEAD：`3ab020f 已合并快速启动入口、浏览器后端端口显示和浏览器会话自动退出。`
+- 远端 HEAD：`Aladdin-Wang GitHub 与 Gitee master 已同步到 3ab020f；su5176 上游 PR #10 同步到同一提交且可合并。`
 - 工作树：主分支已包含已验证修复；无额外 worktree。
-- 当前任务：浏览器 Web GUI 关闭后释放后端端口、下载器 CMD 串口和调试资源的修复已合并到主分支；无需重打 v0.1.6 安装包。
-- 状态：`browser_session_merged`
+- 当前任务：浏览器 Web GUI 生命周期修复已合并并同步 GitHub/Gitee/upstream PR；用户级 Skill、完整 GUI/MCP 依赖和快速启动网页已更新。
+- 状态：`browser_session_distributed`
 
 ## 里程碑
 
@@ -25,6 +25,7 @@
 - **烧录与数据流**：HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。
 - **v0.1.6 正式分发**：七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。
 - **浏览器后端生命周期**：真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。
+- **源码与本地 Skill 同步**：Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 head 均为 3ab020f；用户级 Skill 安装标记为 v0.1.6/3ab020f，完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。
 
 ## 架构决策
 
