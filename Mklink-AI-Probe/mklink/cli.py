@@ -3576,7 +3576,13 @@ def _cli_gui(args):
 
     # 2. 创建 FastAPI app（挂载了 Vue 静态文件）
     from mklink.remote.api import create_app, run_server
-    app = create_app(project_root=project_root)
+    browser_session_timeout = args.browser_session_timeout
+    if browser_session_timeout is None and not args.no_browser:
+        browser_session_timeout = 15
+    app = create_app(
+        project_root=project_root,
+        browser_session_timeout=browser_session_timeout,
+    )
 
     # 3. 打开浏览器
     url = f"http://{args.host}:{args.port}"
@@ -3607,6 +3613,7 @@ def _cli_web_entry(args):
     from mklink.web_entry import (
         WebEntryError,
         handle_protocol_uri,
+        install_quick_launcher,
         install_protocol,
         start_web_entry,
         stop_web_entry,
@@ -3617,7 +3624,7 @@ def _cli_web_entry(args):
 
     try:
         if args.web_entry_command == "install":
-            result = install_protocol()
+            result = install_quick_launcher() if args.quick_launch else install_protocol()
             if args.html:
                 result["html"] = str(write_launcher_html(Path(args.html)).resolve())
         elif args.web_entry_command == "uninstall":
@@ -4386,6 +4393,10 @@ def main():
     gui_parser.add_argument("--device-port", default=None, help="MKLink COM 端口（默认自动检测）")
     gui_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
     gui_parser.add_argument("--project-root", default=".", help="项目根目录")
+    gui_parser.add_argument(
+        "--browser-session-timeout", type=float, default=None,
+        help=argparse.SUPPRESS,
+    )
 
     # web-entry 子命令（U 盘单 HTML 跨平台启动入口）
     web_entry_parser = subparsers.add_parser(
@@ -4399,6 +4410,10 @@ def main():
     web_entry_install.add_argument(
         "--html", default=None,
         help="同时生成通用 HTML 到指定路径（可直接指定 U 盘路径）",
+    )
+    web_entry_install.add_argument(
+        "--quick-launch", action="store_true",
+        help="检查完整依赖并自动将统一启动页写入 MICROKEEN U 盘或桌面",
     )
     web_entry_sub.add_parser("uninstall", help="卸载 URL 协议处理器")
     web_entry_html = web_entry_sub.add_parser("html", help="生成单文件通用启动 HTML")

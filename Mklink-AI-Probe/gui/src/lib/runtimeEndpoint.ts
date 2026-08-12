@@ -18,7 +18,16 @@ export function resolveRuntimeBase(configuredBase: string, tauri = isTauriRuntim
 export const IS_TAURI = isTauriRuntime()
 export let API_BASE = resolveRuntimeBase(import.meta.env.VITE_MKLINK_API || '', IS_TAURI)
 export let WS_BASE = resolveRuntimeBase(import.meta.env.VITE_MKLINK_WS || '', IS_TAURI)
-const backendPort = ref<number | null>(null)
+
+export function browserRuntimePort(location: Pick<Location, 'port' | 'protocol'> = window.location): number | null {
+  const explicit = Number.parseInt(location.port, 10)
+  if (Number.isInteger(explicit) && explicit >= 1 && explicit <= 65535) return explicit
+  if (location.protocol === 'http:') return 80
+  if (location.protocol === 'https:') return 443
+  return null
+}
+
+const backendPort = ref<number | null>(IS_TAURI ? null : browserRuntimePort())
 export const runtimeBackendPort = readonly(backendPort)
 
 export type BackendEndpoint = {

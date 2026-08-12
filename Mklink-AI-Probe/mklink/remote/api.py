@@ -32,6 +32,7 @@ from pathlib import Path
 import secrets
 import sys
 import threading
+import time
 from typing import Any
 import weakref
 
@@ -41,6 +42,69 @@ logger = logging.getLogger(__name__)
 
 _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
+
+
+class BrowserSessionLease:
+    """Track browser tabs and request shutdown after the last tab disappears."""
+
+    def __init__(
+        self,
+        timeout: float,
+        *,
+        close_grace: float = 2.0,
+        startup_grace: float = 60.0,
+        clock=time.monotonic,
+    ) -> None:
+        if timeout <= 0:
+            raise ValueError("browser session timeout must be positive")
+        self.timeout = float(timeout)
+        self.close_grace = max(0.0, float(close_grace))
+        self.startup_grace = max(0.0, float(startup_grace))
+        self._clock = clock
+        self._started_at = clock()
+        self._clients: dict[str, float] = {}
+        self._registered = False
+        self._empty_since: float | None = None
+        self._lock = threading.Lock()
+
+    def renew(self, client_id: str) -> int:
+        now = self._clock()
+        with self._lock:
+            self._clients[client_id] = now + self.timeout
+            self._registered = True
+            self._empty_since = None
+            return len(self._clients)
+
+    def release(self, client_id: str) -> int:
+        now = self._clock()
+        with self._lock:
+            self._clients.pop(client_id, None)
+            self._discard_expired(now)
+            if self._registered and not self._clients and self._empty_since is None:
+                self._empty_since = now
+            return len(self._clients)
+
+    def should_exit(self) -> bool:
+        now = self._clock()
+        with self._lock:
+            self._discard_expired(now)
+            if not self._registered:
+                return now - self._started_at >= self.startup_grace
+            if self._clients:
+                return False
+            if self._empty_since is None:
+                self._empty_since = now
+                return False
+            return now - self._empty_since >= self.close_grace
+
+    def _discard_expired(self, now: float) -> None:
+        expired = [
+            client_id
+            for client_id, deadline in self._clients.items()
+            if deadline <= now
+        ]
+        for client_id in expired:
+            self._clients.pop(client_id, None)
 
 
 def _bind_desktop_server_socket(host: str, port: int, port_end: int):
@@ -624,6 +688,7 @@ def create_app(
     auth_token: str | None = None,
     project_root: str = ".",
     desktop_instance_id: str | None = None,
+    browser_session_timeout: float | None = None,
 ):
     """Create the FastAPI application.
 
@@ -631,6 +696,7 @@ def create_app(
         auth_token: Required token for client authentication.
         project_root: Project root for .mklink/ config lookup.
         desktop_instance_id: Owning Tauri instance identifier, when packaged.
+        browser_session_timeout: Browser-tab lease timeout for Web-entry servers.
     """
     if not _check_fastapi():
         raise ImportError(
@@ -682,6 +748,42 @@ def create_app(
     # run_server(auto_connect=True)) can populate it without rebuilding the
     # closure. Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
+
+    browser_sessions = (
+        BrowserSessionLease(browser_session_timeout)
+        if browser_session_timeout is not None
+        else None
+    )
+    app.state.browser_sessions = browser_sessions
+    app.state.request_browser_session_exit = None
+
+    async def monitor_browser_sessions() -> None:
+        interval = min(1.0, max(0.1, browser_sessions.timeout / 4.0))
+        while True:
+            await asyncio.sleep(interval)
+            request_exit = app.state.request_browser_session_exit
+            if callable(request_exit) and browser_sessions.should_exit():
+                request_exit()
+                return
+
+    async def startup_browser_sessions() -> None:
+        if browser_sessions is not None:
+            app.state.browser_session_task = asyncio.create_task(
+                monitor_browser_sessions()
+            )
+
+    async def shutdown_browser_sessions() -> None:
+        task = getattr(app.state, "browser_session_task", None)
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    app.add_event_handler("startup", startup_browser_sessions)
+    app.add_event_handler("shutdown", shutdown_browser_sessions)
 
     from mklink.remote.embedded_agent import (
         EmbeddedAgentSettings,
@@ -847,7 +949,7 @@ def create_app(
     app.add_event_handler("shutdown", shutdown_online_flash)
 
     async def shutdown_stream_producers() -> None:
-        for stream_name in ("vofa", "rtt", "superwatch", "serial"):
+        for stream_name in ("vofa", "rtt", "superwatch", "serial", "systemview"):
             manager = dashboard_managers[stream_name]
             hub = stream_registry[stream_name]
             if getattr(manager, "_stream_hub", None) is not hub:
@@ -865,6 +967,36 @@ def create_app(
             detach_terminal(rtt_terminal_hub)
 
     app.add_event_handler("shutdown", shutdown_stream_producers)
+
+    async def shutdown_device_and_resources() -> None:
+        modbus_manager = dashboard_managers["modbus"]
+        if getattr(modbus_manager, "running", False):
+            try:
+                await run_in_threadpool(modbus_manager.stop)
+            except Exception:
+                logger.exception("Failed to stop Modbus during shutdown")
+        owners = {
+            info["owner"]
+            for info in _state["resource_manager"].get_status().values()
+        }
+        for owner in owners:
+            try:
+                await run_in_threadpool(release_resource_owner, _state, owner)
+            except Exception:
+                logger.exception("Failed to release resource owner %s", owner)
+        _state["resource_manager"].release_all()
+
+        device = _state.get("device")
+        if device is not None:
+            try:
+                await run_in_threadpool(device.close)
+            except Exception:
+                logger.exception("Failed to close MKLink device during shutdown")
+            finally:
+                _state["device"] = None
+                _state["dispatcher"] = None
+
+    app.add_event_handler("shutdown", shutdown_device_and_resources)
 
     @app.exception_handler(ResourceError)
     async def resource_error_handler(_request, error):
@@ -2673,6 +2805,48 @@ def create_app(
         _state["resource_manager"].release_all()
         return {"status": "released", "results": results}
 
+    def _browser_session_client(client_id: str) -> str:
+        client_id = client_id.strip()
+        if not client_id or len(client_id) > 128:
+            raise HTTPException(status_code=400, detail="invalid browser client id")
+        return client_id
+
+    @app.post("/api/browser-session/heartbeat")
+    async def browser_session_heartbeat(client_id: str = Body(..., embed=True)):
+        if browser_sessions is None:
+            return {"enabled": False}
+        clients = browser_sessions.renew(_browser_session_client(client_id))
+        return {"enabled": True, "clients": clients}
+
+    @app.post("/api/browser-session/release")
+    async def browser_session_release(client_id: str = Body(..., embed=True)):
+        if browser_sessions is None:
+            return {"enabled": False}
+        clients = browser_sessions.release(_browser_session_client(client_id))
+        return {"enabled": True, "clients": clients}
+
+    @app.websocket("/ws/browser-session")
+    async def browser_session_socket(websocket: WebSocket, client_id: str = Query(...)):
+        await websocket.accept()
+        if browser_sessions is None:
+            await websocket.close(code=1008, reason="browser session lease disabled")
+            return
+        client_id = _browser_session_client(client_id)
+        browser_sessions.renew(client_id)
+        renew_interval = min(3.0, max(0.1, browser_sessions.timeout / 3.0))
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(
+                        websocket.receive_text(), timeout=renew_interval,
+                    )
+                except asyncio.TimeoutError:
+                    browser_sessions.renew(client_id)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            browser_sessions.release(client_id)
+
     @app.post("/api/session/acquire")
     async def session_acquire(
         session_id: str = Body(...),
@@ -2851,7 +3025,16 @@ def run_server(
             logger.warning("Auto-connect failed: %s", e)
 
     if desktop_port_end is None:
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        browser_sessions = getattr(app.state, "browser_sessions", None)
+        if browser_sessions is None:
+            uvicorn.run(app, host=host, port=port, log_level="info")
+            return
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        server = uvicorn.Server(config)
+        app.state.request_browser_session_exit = lambda: setattr(
+            server, "should_exit", True
+        )
+        server.run()
         return
 
     if not desktop_runtime_info or not desktop_instance_id:

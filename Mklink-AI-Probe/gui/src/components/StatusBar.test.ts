@@ -22,7 +22,7 @@ vi.mock('../composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
     backendState: ref('alive'),
     backendPort: ref(8766),
-    isTauri: true,
+    isTauri: false,
     restart: vi.fn(),
   }),
 }))

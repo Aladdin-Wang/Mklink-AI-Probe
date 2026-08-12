@@ -8,7 +8,7 @@
     <span class="status-item" v-else-if="backendState === 'alive'">
       <span class="status-dot dot-ok"></span>
       <span class="status-label">
-        {{ tr('后端正常', 'Backend online') }}<template v-if="isTauri && backendPort"> · {{ backendPort }}</template>
+        {{ tr('后端正常', 'Backend online') }}<template v-if="backendPort"> · {{ backendPort }}</template>
       </span>
     </span>
     <span class="status-item" v-else>

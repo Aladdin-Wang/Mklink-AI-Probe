@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-11T22:30:45+08:00",
+  "updated_at": "2026-08-12T10:45:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "v0.1.6 标签固定于 2f65f92c98；master 仅追加发布后交接。",
+    "branch": "feature/quick-web-entry",
+    "head": "分支基于 7fb00d1；快速启动入口、浏览器后端端口显示和浏览器会话自动退出待提交。",
     "remote_head": "GitHub master、v0.1.6 标签和正式 Release 已同步。",
-    "working_tree": "仅保留当前主工作树；发布资产位于工作区 release 目录且不进入 Git。"
+    "working_tree": "当前功能分支保留快速启动入口与浏览器会话生命周期的未提交改动；无额外 worktree。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "v016_released",
-    "current_task": "v0.1.6 已完成构建、安装验证和正式发布。",
+    "status": "browser_session_verified",
+    "current_task": "浏览器 Web GUI 关闭后主动释放后端端口、下载器 CMD 串口和调试资源，安装版生命周期保持独立。",
     "release": "GitHub: https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6；Gitee: https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/tag/v0.1.6。"
   },
   "milestones": [
@@ -52,6 +52,10 @@
     {
       "area": "v0.1.6 正式分发",
       "result": "七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。"
+    },
+    {
+      "area": "浏览器后端生命周期",
+      "result": "真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。"
     }
   ],
   "decisions": [
@@ -60,7 +64,8 @@
     "HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
     "Dashboard 与烧录/调试操作共用资源租约；复位前停止 RTT、SuperWatch、VOFA 和 SystemView。",
     "串口和 RTT 终端使用独立 Worker 与有界缓冲；终端模式不维护隐藏日志。",
-    "每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。"
+    "每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。",
+    "由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。"
   ],
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。",
@@ -78,7 +83,8 @@
   "next_actions": [
     "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
     "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
-    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
+    "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。",
+    "审查并提交 feature/quick-web-entry；合并、安装包和发布需维护者另行授权。"
   ],
   "continuation_protocol": [
     "开始前用 Git、进程和硬件状态校正项目记忆。",

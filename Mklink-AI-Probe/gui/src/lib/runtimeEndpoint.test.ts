@@ -3,6 +3,7 @@ import {
   API_BASE,
   WS_BASE,
   applyBackendEndpoint,
+  browserRuntimePort,
   isTauriRuntime,
   resolveRuntimeBase,
   runtimeBackendPort,
@@ -12,6 +13,8 @@ describe('runtime endpoint selection', () => {
   it('uses the current origin for a browser-hosted Web GUI', () => {
     expect(isTauriRuntime({})).toBe(false)
     expect(resolveRuntimeBase('http://127.0.0.1:8765/', false)).toBe('')
+    expect(browserRuntimePort({ protocol: 'http:', port: '8765' })).toBe(8765)
+    expect(browserRuntimePort({ protocol: 'https:', port: '' })).toBe(443)
   })
 
   it('uses the configured sidecar endpoint inside Tauri', () => {

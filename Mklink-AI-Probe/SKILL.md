@@ -62,6 +62,21 @@ description: |
 - 本机制从包含 `scripts/skill_update.py` 的版本开始生效；更旧的本地 Skill 需要
   首次手动重装或由维护者协助升级一次。
 
+## 首次安装与快速启动入口
+
+- 用户要求安装完整 Skill 时，必须读取 [references/install.md](references/install.md)，
+  安装项目本体以及 `.[gui,mcp]`，不能只复制 `SKILL.md` 或只安装基础依赖。
+- 安装后运行安装参考中的自检，再执行：
+  `python -m mklink web-entry install --quick-launch`。
+- 该命令严格检查核心、Web GUI、MCP 依赖和已构建 Web assets；缺少任何一项都
+  必须先修复，不能把仅生成文件当作安装成功。
+- 快速启动页优先写入卷标为 `MICROKEEN` 的下载器 U 盘；未检测到下载器时写入
+  当前用户桌面。AI 报告生成位置即可，不需要在安装会话里替用户打开 Web GUI。
+- 用户以后双击 `MKLink Web GUI.html`：页面短暂倒计时后调用用户级启动器，启动器
+  等待本地服务健康后自动打开真正的 Web GUI。超时提示用户让 AI 安装或更新完整
+  Skill 并检查 Web GUI/MCP 依赖。详细行为见
+  [references/web-entry.md](references/web-entry.md)。
+
 ## Agent 核心约束
 
 - **MCP 优先（固件下载除外）**：Claude Code 环境下，内存/变量/RTT/HardFault/Modbus/串口等原子操作优先用 MCP tool；固件下载必须遵守下一条 IDE → pyOCD → 脱机 API 路由，CLI 仅作兜底或 MCP 未覆盖时使用
@@ -107,7 +122,7 @@ description: |
 |------|------|
 | `serve` | 远程调试服务器（REST API + WebSocket JSON-RPC） |
 | `gui` | 启动 GUI（FastAPI 后端 + Vue 前端） |
-| `web-entry` | 安装跨平台 URL Handler、生成单文件 U 盘 HTML、启动/停止其自有 Web 服务 |
+| `web-entry` | 安装跨平台 URL Handler、自动生成 U 盘/桌面快速启动页、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `remote` | 工程师侧直连 VPN/局域网站点：注册/选择、状态、能力、重连、原子上传与高风险操作 |
 | `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
