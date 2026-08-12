@@ -113,7 +113,7 @@ class TestDeviceConnectInitializesTarget:
         new_bridge = MagicMock()
         new_bridge.connect.return_value = True
         with patch("mklink.bridge.MKLinkSerialBridge", return_value=new_bridge), \
-             patch("mklink.cli._resolve_port", return_value="COM6"), \
+             patch("mklink.project_config.load_config", return_value={"com_port": "COM6"}), \
              patch("mklink.device.initialize_target") as mock_init:
             dev._port = None
             dev._connect()
