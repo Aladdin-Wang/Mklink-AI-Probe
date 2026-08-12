@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-12T11:50:00+08:00`
-- 分支：`fix/github-first-update-check`
-- HEAD：`master 已包含 3ab020f 的快速启动入口、浏览器后端端口显示和浏览器会话自动退出，以及后续分发交接。`
-- 远端 HEAD：`Aladdin-Wang GitHub、Gitee 与 su5176 上游 PR #10 均跟随当前维护 master，PR 可合并。`
-- 工作树：GitHub 优先更新检查与发布器默认仓库修复正在 fix/github-first-update-check 分支验证。
-- 当前任务：保留 24 小时更新缓存，将 Skill 与运行时/MCP 更新检查调整为 GitHub 优先、Gitee 回退，并修正发布器默认 GitHub 仓库。
-- 状态：`github_first_update_check_verified`
+- 更新时间：`2026-08-12T11:53:00+08:00`
+- 分支：`master`
+- HEAD：`master 已包含 06bbd7a 的 GitHub 优先更新检查、Gitee 回退和发布器官方仓库默认值修复。`
+- 远端 HEAD：`Aladdin-Wang GitHub master 已包含 06bbd7a；本次未发布新标签、Release 或 updates/latest.json。`
+- 工作树：GitHub 优先更新检查修复已快进合并并推送，正在完成最终交接。
+- 当前任务：GitHub 优先、Gitee 回退的 24 小时更新检查与发布器默认仓库修复已合并并推送官方 GitHub master。
+- 状态：`github_first_update_check_pushed`
 
 ## 里程碑
 
@@ -47,7 +47,7 @@
 
 ## 下一动作
 
-1. 复核 GitHub 优先更新检查修复并按授权合并；正式发布仍需维护者单独授权。
+1. 下个正式版本从当前 master 构建并发布后，公共 Skill ZIP 与 updates/latest.json 才会向其他用户分发 GitHub 优先逻辑。
 2. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
 3. 需要扩大分发证据时，在具备符号链接权限的干净 Windows 环境复测安装更新和 USB Web Entry。
 
