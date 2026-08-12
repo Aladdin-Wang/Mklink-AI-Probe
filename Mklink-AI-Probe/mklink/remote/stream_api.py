@@ -25,6 +25,8 @@ STREAM_TYPES: Mapping[str, StreamType] = {
     "systemview": StreamType.SYSTEMVIEW,
     "vofa": StreamType.WAVEFORM,
     "rtt": StreamType.RTT_RAW,
+    "rtt-terminal": StreamType.RTT_RAW,
+    "serial": StreamType.SERIAL,
     "superwatch": StreamType.SUPERWATCH,
 }
 

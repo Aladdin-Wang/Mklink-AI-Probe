@@ -690,6 +690,7 @@ describe('online flash task workspace behavior', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.doUnmock('@tauri-apps/plugin-dialog')
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -814,6 +815,75 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/images/inspect'))).toBe(true))
     expect(wrapper.find('[data-testid="inspect-image"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('已自动检查')
+    wrapper.unmount()
+  })
+
+  it('reinspects a desktop firmware path when the same HEX file is selected again', async () => {
+    const fallback = viewFetch()
+    const firmwarePath = 'C:\\firmware\\firmware.hex'
+    const open = vi.fn(async () => firmwarePath)
+    vi.stubGlobal('isTauri', true)
+    vi.doMock('@tauri-apps/plugin-dialog', () => ({ open }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/images/inspect-path')) {
+        return new Response(JSON.stringify({
+          image_id: `image-${open.mock.calls.length}`,
+          file_name: 'firmware.hex', format: 'hex', size: 32,
+          sha256: 'abc123', start: 0x08000000, end: 0x08000020,
+          segments: [{ start: 0x08000000, end: 0x08000020 }], base_address: null,
+          sector_operations_available: true,
+          sectors: [{ address: 0x08000000, size: 0x1000 }],
+        }), { status: 200 })
+      }
+      if (url.includes('/images/source-status?')) {
+        return new Response(JSON.stringify({
+          available: true, file_name: 'firmware.hex', size: 32, mtime_ns: 100,
+        }), { status: 200 })
+      }
+      return fallback(input, options)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect-path'))).toHaveLength(1))
+    expect(wrapper.text()).toContain('已自动检查')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect-path'))).toHaveLength(2))
+    expect(wrapper.text()).toContain('已自动检查')
+    expect(open).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('automatically reloads a rebuilt browser firmware file from its retained handle', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    let currentFile = new File(['old'], 'firmware.hex', { lastModified: 100 })
+    const handle = {
+      kind: 'file' as const,
+      name: currentFile.name,
+      getFile: vi.fn(async () => currentFile),
+    }
+    vi.stubGlobal('showOpenFilePicker', vi.fn(async () => [handle]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(1))
+    currentFile = new File(['rebuilt-firmware'], 'firmware.hex', { lastModified: 200 })
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(2), { timeout: 3000 })
+    const inspectCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))
+    const firstFile = (inspectCalls[0][1]?.body as FormData).get('file') as File
+    const rebuiltFile = (inspectCalls[1][1]?.body as FormData).get('file') as File
+    expect(firstFile.size).toBe(3)
+    expect(rebuiltFile.size).toBe(16)
+    expect(wrapper.text()).toContain('已自动加载重新编译的 firmware.hex')
     wrapper.unmount()
   })
 
@@ -1478,6 +1548,22 @@ describe('online flash component quality', () => {
     expect(input.classes()).toContain('visually-hidden')
     await trigger.trigger('keydown', { key: 'Enter' })
     expect(click).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the fallback browser input so selecting the same path emits again', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+    } })
+    const input = wrapper.get('[data-testid="firmware-input"]')
+    const file = new File(['firmware'], 'demo.bin')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+
+    await input.trigger('change')
+    await input.trigger('change')
+
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(wrapper.emitted('file')).toEqual([[file], [file]])
   })
 
   it('accepts firmware dropped into the online workspace', async () => {

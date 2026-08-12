@@ -2,13 +2,14 @@ mod site_agent_config;
 mod site_agent_network;
 mod site_agent_secret;
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 #[cfg(target_os = "windows")]
 use windows::core::PCWSTR;
@@ -38,7 +39,9 @@ impl Drop for JobHandle {
 
 struct Sidecar {
     child: Mutex<Option<Child>>,
-    port: u16,
+    port: Mutex<Option<u16>>,
+    instance_id: String,
+    runtime_info_path: PathBuf,
     project_root: String,
     site_agent_root: Mutex<Option<PathBuf>>,
     #[cfg(target_os = "windows")]
@@ -48,6 +51,16 @@ struct Sidecar {
 const MAX_RESTARTS: u32 = 5;
 const HEALTH_CHECK_INTERVAL_SECS: u64 = 5;
 const MAX_CONSECUTIVE_FAILS: u32 = 3;
+const DEFAULT_SIDECAR_PORT: u16 = 8765;
+const LAST_SIDECAR_PORT: u16 = 8799;
+const SIDECAR_START_TIMEOUT_SECS: u64 = 20;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackendEndpoint {
+    port: u16,
+    instance_id: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SidecarLaunch {
@@ -318,6 +331,8 @@ fn assign_to_job(job: &JobHandle, child: &Child) -> Result<(), String> {
 fn spawn_sidecar(
     launch: &SidecarLaunch,
     port: u16,
+    instance_id: &str,
+    runtime_info_path: &Path,
     project_root: &str,
     site_agent_root: Option<&Path>,
 ) -> Result<Child, String> {
@@ -342,6 +357,12 @@ fn spawn_sidecar(
             "127.0.0.1",
             "--port",
             &port.to_string(),
+            "--desktop-port-end",
+            &LAST_SIDECAR_PORT.to_string(),
+            "--desktop-runtime-info",
+            &runtime_info_path.to_string_lossy(),
+            "--desktop-instance-id",
+            instance_id,
             "--project-root",
             project_root,
         ])
@@ -394,7 +415,14 @@ fn spawn_registered_sidecar(
         .lock()
         .map_err(|error| error.to_string())?
         .clone();
-    let child = spawn_sidecar(launch, port, project_root, site_agent_root.as_deref())?;
+    let child = spawn_sidecar(
+        launch,
+        port,
+        &state.instance_id,
+        &state.runtime_info_path,
+        project_root,
+        site_agent_root.as_deref(),
+    )?;
     retain_child_if_registered(
         child,
         |child| assign_to_job(job, child),
@@ -407,6 +435,8 @@ fn spawn_registered_sidecar(
 
 fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
     let child = state.child.lock().map_err(|e| e.to_string())?.take();
+    *state.port.lock().map_err(|e| e.to_string())? = None;
+    let _ = std::fs::remove_file(&state.runtime_info_path);
 
     // A PyInstaller onefile executable can leave the actual Python worker in
     // the app-owned Job after its tracked launcher exits. Closing the Job is
@@ -425,8 +455,8 @@ fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
     Ok(())
 }
 
-/// Minimal HTTP health check using raw TCP — no external deps needed.
-fn check_health(port: u16) -> bool {
+/// Minimal owned-backend health check using raw TCP — no external deps needed.
+fn check_health(port: u16, instance_id: &str) -> bool {
     use std::io::{Read, Write};
     let addr = format!("127.0.0.1:{}", port);
     let mut stream = match std::net::TcpStream::connect_timeout(
@@ -446,13 +476,115 @@ fn check_health(port: u16) -> bool {
     if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }
-    let mut buf = [0u8; 256];
-    match stream.read(&mut buf) {
-        Ok(n) if n > 0 => {
-            let resp = String::from_utf8_lossy(&buf[..n]);
-            resp.contains("200")
+    let mut response = Vec::new();
+    if stream.take(8192).read_to_end(&mut response).is_err() {
+        return false;
+    }
+    let response = String::from_utf8_lossy(&response);
+    health_response_matches(&response, instance_id)
+}
+
+fn health_response_matches(response: &str, instance_id: &str) -> bool {
+    let Some((headers, body)) = response.split_once("\r\n\r\n") else {
+        return false;
+    };
+    if !headers
+        .lines()
+        .next()
+        .is_some_and(|line| line.contains(" 200 "))
+    {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(body).is_ok_and(|payload| {
+        payload.get("status").and_then(|value| value.as_str()) == Some("ok")
+            && payload
+                .get("desktop_instance_id")
+                .and_then(|value| value.as_str())
+                == Some(instance_id)
+    })
+}
+
+fn current_endpoint(state: &Sidecar) -> Result<Option<BackendEndpoint>, String> {
+    Ok(state
+        .port
+        .lock()
+        .map_err(|error| error.to_string())?
+        .map(|port| BackendEndpoint {
+            port,
+            instance_id: state.instance_id.clone(),
+        }))
+}
+
+fn wait_for_runtime_endpoint(state: &Sidecar) -> Result<BackendEndpoint, String> {
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(SIDECAR_START_TIMEOUT_SECS);
+    while std::time::Instant::now() < deadline {
+        if let Ok(raw) = std::fs::read_to_string(&state.runtime_info_path) {
+            if let Ok(endpoint) = serde_json::from_str::<BackendEndpoint>(&raw) {
+                if endpoint.instance_id == state.instance_id
+                    && (DEFAULT_SIDECAR_PORT..=LAST_SIDECAR_PORT).contains(&endpoint.port)
+                {
+                    *state.port.lock().map_err(|error| error.to_string())? = Some(endpoint.port);
+                    return Ok(endpoint);
+                }
+            }
         }
-        _ => false,
+        let exited = {
+            let mut guard = state.child.lock().map_err(|error| error.to_string())?;
+            match guard.as_mut() {
+                Some(child) => child
+                    .try_wait()
+                    .map_err(|error| error.to_string())?
+                    .is_some(),
+                None => true,
+            }
+        };
+        if exited {
+            return Err("The sidecar exited before publishing its API endpoint".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Err("Timed out waiting for the sidecar API endpoint".into())
+}
+
+fn start_owned_sidecar(
+    state: &Sidecar,
+    project_root: Option<String>,
+    preferred_port: Option<u16>,
+) -> Result<BackendEndpoint, String> {
+    let process_alive = {
+        let mut guard = state.child.lock().map_err(|error| error.to_string())?;
+        match guard.as_mut() {
+            Some(child) => child
+                .try_wait()
+                .map(|status| status.is_none())
+                .unwrap_or(false),
+            None => false,
+        }
+    };
+    if process_alive {
+        if let Some(endpoint) = current_endpoint(state)? {
+            return Ok(endpoint);
+        }
+        return wait_for_runtime_endpoint(state);
+    }
+
+    terminate_sidecar_tree(state)?;
+    let port = preferred_port.unwrap_or(DEFAULT_SIDECAR_PORT);
+    if !(DEFAULT_SIDECAR_PORT..=LAST_SIDECAR_PORT).contains(&port) {
+        return Err("The preferred sidecar port is outside the desktop range".into());
+    }
+    let project_root = project_root.unwrap_or_else(|| state.project_root.clone());
+    let launch = resolve_sidecar_launch()?;
+    let child = spawn_registered_sidecar(state, &launch, port, &project_root)?;
+    *state.child.lock().map_err(|error| error.to_string())? = Some(child);
+
+    match wait_for_runtime_endpoint(state) {
+        Ok(endpoint) => Ok(endpoint),
+        Err(error) => {
+            let _ = terminate_sidecar_tree(state);
+            Err(error)
+        }
     }
 }
 
@@ -476,31 +608,8 @@ fn sidecar_status(state: State<Sidecar>) -> Result<bool, String> {
 fn start_sidecar(
     state: State<Sidecar>,
     project_root: Option<String>,
-    port: Option<u16>,
-) -> Result<u16, String> {
-    let port = port.unwrap_or(state.port);
-    let mut guard = state.child.lock().map_err(|e| e.to_string())?;
-    if guard.is_some()
-        && guard
-            .as_mut()
-            .unwrap()
-            .try_wait()
-            .map(|s| s.is_none())
-            .unwrap_or(false)
-    {
-        return Ok(port);
-    }
-    if check_health(port) {
-        return Ok(port);
-    }
-
-    let project_root = project_root.unwrap_or_else(|| state.project_root.clone());
-
-    let launch = resolve_sidecar_launch()?;
-    let child = spawn_registered_sidecar(state.inner(), &launch, port, &project_root)?;
-
-    *guard = Some(child);
-    Ok(port)
+) -> Result<BackendEndpoint, String> {
+    start_owned_sidecar(state.inner(), project_root, None)
 }
 
 #[tauri::command]
@@ -509,15 +618,15 @@ fn stop_sidecar(state: State<Sidecar>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn restart_sidecar(state: State<Sidecar>) -> Result<u16, String> {
+fn restart_sidecar(state: State<Sidecar>) -> Result<BackendEndpoint, String> {
+    let preferred_port = state.port.lock().map_err(|e| e.to_string())?.to_owned();
     terminate_sidecar_tree(state.inner())?;
-    for _ in 0..20 {
-        if !check_health(state.port) {
-            return start_sidecar(state, None, None);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    Err("The previous sidecar did not release its API port".into())
+    start_owned_sidecar(state.inner(), None, preferred_port)
+}
+
+#[tauri::command]
+fn backend_endpoint(state: State<Sidecar>) -> Result<Option<BackendEndpoint>, String> {
+    current_endpoint(state.inner())
 }
 
 #[tauri::command]
@@ -532,7 +641,10 @@ fn backend_alive(state: State<Sidecar>) -> Result<bool, String> {
     if !running {
         return Ok(false);
     }
-    Ok(check_health(state.port))
+    let Some(endpoint) = current_endpoint(state.inner())? else {
+        return Ok(false);
+    };
+    Ok(check_health(endpoint.port, &endpoint.instance_id))
 }
 
 fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
@@ -572,31 +684,11 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
             // Longer backoff: 3s base + 2s per restart attempt
             let backoff = 3 + 2 * (restart_count - 1);
             std::thread::sleep(std::time::Duration::from_secs(backoff as u64));
-
-            // Check if port is already in use — no point restarting if so
-            if check_health(state.port) {
-                eprintln!(
-                    "[tauri] port {} already in use, skipping restart",
-                    state.port
-                );
-                restart_count = restart_count.saturating_sub(1); // don't count this
-                continue;
-            }
-
-            let launch = match resolve_sidecar_launch() {
-                Ok(launch) => launch,
-                Err(error) => {
-                    eprintln!("[tauri] cannot resolve sidecar: {}", error);
-                    continue;
-                }
-            };
-
-            match spawn_registered_sidecar(state.inner(), &launch, state.port, &state.project_root)
-            {
-                Ok(child) => {
-                    let mut guard = state.child.lock().unwrap();
-                    *guard = Some(child);
-                    eprintln!("[tauri] sidecar restarted");
+            let preferred_port = state.port.lock().ok().and_then(|port| *port);
+            match start_owned_sidecar(state.inner(), None, preferred_port) {
+                Ok(endpoint) => {
+                    let _ = handle.emit("backend-endpoint-changed", &endpoint);
+                    eprintln!("[tauri] sidecar restarted on port {}", endpoint.port);
                     consecutive_fails = 0;
                 }
                 Err(e) => eprintln!("[tauri] restart failed: {}", e),
@@ -604,8 +696,11 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
             continue;
         }
 
-        // Process alive — check HTTP health
-        if check_health(state.port) {
+        let endpoint = current_endpoint(state.inner()).ok().flatten();
+        if endpoint
+            .as_ref()
+            .is_some_and(|endpoint| check_health(endpoint.port, &endpoint.instance_id))
+        {
             consecutive_fails = 0;
         } else {
             consecutive_fails += 1;
@@ -615,13 +710,7 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
             );
             if consecutive_fails >= MAX_CONSECUTIVE_FAILS {
                 eprintln!("[tauri] backend unresponsive, killing...");
-                {
-                    let mut guard = state.child.lock().unwrap();
-                    if let Some(mut child) = guard.take() {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                    }
-                }
+                let _ = terminate_sidecar_tree(state.inner());
                 consecutive_fails = 0;
             }
         }
@@ -631,6 +720,12 @@ fn run_monitor(handle: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let shutdown = std::sync::Arc::new(AtomicBool::new(false));
+    let instance_id = format!("{:032x}", rand::random::<u128>());
+    let runtime_info_path = std::env::temp_dir().join(format!(
+        "mklink-ai-probe-runtime-{}-{}.json",
+        std::process::id(),
+        instance_id
+    ));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -639,7 +734,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Sidecar {
             child: Mutex::new(None),
-            port: 8765,
+            port: Mutex::new(None),
+            instance_id,
+            runtime_info_path,
             project_root: default_project_root(),
             site_agent_root: Mutex::new(None),
             #[cfg(target_os = "windows")]
@@ -650,6 +747,7 @@ pub fn run() {
             start_sidecar,
             stop_sidecar,
             restart_sidecar,
+            backend_endpoint,
             backend_alive,
             site_agent_config_get,
             site_agent_config_save,
@@ -737,14 +835,13 @@ pub fn run() {
             }
 
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(1));
                 let state: State<Sidecar> = handle.state();
-                match start_sidecar(state, None, Some(8765)) {
-                    Ok(port) => {
-                        eprintln!("[tauri] sidecar started on port {}", port);
+                match start_owned_sidecar(state.inner(), None, None) {
+                    Ok(endpoint) => {
+                        eprintln!("[tauri] sidecar started on port {}", endpoint.port);
                         // Wait for Python to fully initialize before monitoring
                         for _ in 0..20 {
-                            if check_health(port) {
+                            if check_health(endpoint.port, &endpoint.instance_id) {
                                 eprintln!("[tauri] backend healthy");
                                 break;
                             }
@@ -799,6 +896,28 @@ mod tests {
     }
 
     #[test]
+    fn health_check_requires_the_owning_desktop_instance() {
+        let response = concat!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n",
+            r#"{"status":"ok","desktop_instance_id":"instance-a"}"#,
+        );
+        assert!(health_response_matches(response, "instance-a"));
+        assert!(!health_response_matches(response, "instance-b"));
+        assert!(!health_response_matches(
+            "HTTP/1.1 200 OK\r\n\r\n{\"status\":\"ok\"}",
+            "instance-a"
+        ));
+    }
+
+    #[test]
+    fn runtime_endpoint_uses_the_frontend_field_names() {
+        let endpoint: BackendEndpoint =
+            serde_json::from_str(r#"{"port":8766,"instanceId":"instance-b"}"#).unwrap();
+        assert_eq!(endpoint.port, 8766);
+        assert_eq!(endpoint.instance_id, "instance-b");
+    }
+
+    #[test]
     fn failed_child_registration_runs_cleanup() {
         let mut cleaned = false;
         let result = retain_child_if_registered(
@@ -842,7 +961,9 @@ mod tests {
 
         let state = Sidecar {
             child: Mutex::new(Some(tracked)),
-            port: 8765,
+            port: Mutex::new(Some(DEFAULT_SIDECAR_PORT)),
+            instance_id: "test-instance".into(),
+            runtime_info_path: std::env::temp_dir().join("mklink-test-runtime-info.json"),
             project_root: default_project_root(),
             site_agent_root: Mutex::new(None),
             job: Mutex::new(Some(job)),
@@ -851,6 +972,7 @@ mod tests {
         terminate_sidecar_tree(&state).expect("terminate sidecar tree");
         assert!(state.child.lock().unwrap().is_none());
         assert!(state.job.lock().unwrap().is_none());
+        assert!(state.port.lock().unwrap().is_none());
 
         for _ in 0..40 {
             if worker.try_wait().expect("poll worker").is_some() {

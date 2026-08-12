@@ -1,4 +1,4 @@
-import type { WorkerInput, WorkerOutput } from '../../workers/streamDecoder.worker'
+import type { DecoderMode, WorkerInput, WorkerOutput } from '../../workers/streamDecoder.worker'
 
 export type StreamClientPhase = 'stopped' | 'connecting' | 'connected' | 'reconnecting' | 'error'
 
@@ -13,6 +13,7 @@ export interface StreamClientOptions {
   readonly token?: string
   readonly capacity: number
   readonly channelCount: number
+  readonly decoderMode?: DecoderMode
   readonly reconnectBaseMs?: number
   readonly reconnectMaxMs?: number
   readonly createWebSocket?: (url: string) => WebSocket
@@ -96,6 +97,7 @@ export class StreamClient {
       type: 'configure',
       capacity: options.capacity,
       channelCount: options.channelCount,
+      decoderMode: options.decoderMode,
     } satisfies WorkerInput)
   }
 
@@ -134,6 +136,7 @@ export class StreamClient {
     requirePositiveInteger('channelCount', channelCount)
     this.worker.postMessage({
       type: 'configure', capacity, channelCount,
+      decoderMode: this.options.decoderMode,
     } satisfies WorkerInput)
   }
 

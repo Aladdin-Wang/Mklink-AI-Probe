@@ -33,13 +33,120 @@ def test_launcher_html_is_one_offline_file_with_cross_platform_protocol_links(tm
     assert "mklink-ai-probe://web/start" in html
     assert "mklink-ai-probe://web/stop" in html
     assert "data:image/png;base64,AA==" in html
-    assert "launchTimeoutSeconds = 25" in html
+    assert "autoLaunchDelaySeconds = 3" in html
+    assert "launchTimeoutSeconds = 50" in html
+    assert "scheduleAutomaticLaunch" in html
+    assert "window.location.href = startUri" in html
     assert "启动超时" in html
-    assert "更新 Skill 或改变安装位置后" in html
-    assert "重新注册一次快速启动器" in html
+    assert "让 AI 从官方仓库安装或更新完整 MKLink AI Probe Skill" in html
+    assert "Web GUI 与 MCP 依赖" in html
     assert "http://" not in html
     assert "https://" not in html
     assert list(tmp_path.iterdir()) == [output]
+
+
+def test_launcher_html_is_byte_identical_for_every_user(tmp_path):
+    first = tmp_path / "first.html"
+    second = tmp_path / "second.html"
+
+    web_entry.write_launcher_html(first, icon_data_uri="data:image/png;base64,AA==")
+    web_entry.write_launcher_html(second, icon_data_uri="data:image/png;base64,AA==")
+
+    assert first.read_bytes() == second.read_bytes()
+    assert b"\r\n" not in first.read_bytes()
+
+
+def test_quick_launcher_prefers_microkeen_and_falls_back_to_desktop(tmp_path):
+    disk = tmp_path / "MICROKEEN"
+    desktop = tmp_path / "Desktop"
+    disk.mkdir()
+
+    on_probe = web_entry.write_quick_launchers(
+        find_probe_disks=lambda: [disk],
+        desktop=desktop,
+        icon_data_uri="",
+    )
+    assert on_probe == [(disk / web_entry.QUICK_LAUNCH_FILE_NAME).resolve()]
+    assert on_probe[0].is_file()
+
+    without_probe = web_entry.write_quick_launchers(
+        find_probe_disks=lambda: [],
+        desktop=desktop,
+        icon_data_uri="",
+    )
+    assert without_probe == [(desktop / web_entry.QUICK_LAUNCH_FILE_NAME).resolve()]
+    assert without_probe[0].is_file()
+
+
+def test_web_entry_requirements_cover_gui_mcp_and_assets(tmp_path):
+    available = {
+        "serial", "pymodbus", "elftools", "pycparser", "websockets",
+        "fastapi", "starlette", "uvicorn", "pyocd", "intelhex", "multipart",
+        "fastmcp", "pydantic",
+    }
+    (tmp_path / "gui" / "dist").mkdir(parents=True)
+    (tmp_path / "gui" / "dist" / "index.html").write_text("ok", encoding="utf-8")
+
+    ready = web_entry.check_web_entry_requirements(
+        root=tmp_path,
+        module_available=lambda name: name in available,
+    )
+    assert ready == {"ready": True, "missing": []}
+
+    missing = web_entry.check_web_entry_requirements(
+        root=tmp_path,
+        module_available=lambda name: name not in {"fastmcp", "pyocd"},
+    )
+    assert missing["ready"] is False
+    assert "mcp:fastmcp" in missing["missing"]
+    assert "gui:pyocd" in missing["missing"]
+
+    (tmp_path / "gui" / "dist" / "index.html").unlink()
+    no_assets = web_entry.check_web_entry_requirements(
+        root=tmp_path,
+        module_available=lambda _name: True,
+    )
+    assert "gui:built-web-assets" in no_assets["missing"]
+
+
+def test_quick_install_rejects_missing_dependencies_before_registration(tmp_path, monkeypatch):
+    registered = []
+    monkeypatch.setattr(
+        web_entry,
+        "check_web_entry_requirements",
+        lambda: {"ready": False, "missing": ["gui:pyocd", "mcp:fastmcp"]},
+    )
+    monkeypatch.setattr(
+        web_entry,
+        "install_protocol",
+        lambda: registered.append(True) or {"status": "installed"},
+    )
+
+    with pytest.raises(web_entry.WebEntryError, match=r"\[gui,mcp\]"):
+        web_entry.install_quick_launcher(desktop=tmp_path)
+
+    assert registered == []
+
+
+def test_quick_install_registers_protocol_and_reports_launcher(tmp_path, monkeypatch):
+    launcher = tmp_path / web_entry.QUICK_LAUNCH_FILE_NAME
+    monkeypatch.setattr(
+        web_entry,
+        "check_web_entry_requirements",
+        lambda: {"ready": True, "missing": []},
+    )
+    monkeypatch.setattr(
+        web_entry,
+        "install_protocol",
+        lambda: {"status": "installed", "scheme": web_entry.SCHEME},
+    )
+    monkeypatch.setattr(web_entry, "write_quick_launchers", lambda **_kwargs: [launcher])
+
+    result = web_entry.install_quick_launcher(desktop=tmp_path)
+
+    assert result["status"] == "installed"
+    assert result["requirements"] == {"ready": True, "missing": []}
+    assert result["html"] == [str(launcher.resolve())]
 
 
 @pytest.mark.parametrize(
@@ -125,6 +232,7 @@ def test_gui_server_command_reuses_the_existing_cli_without_touching_mcp_or_serv
 
     assert command[:4] == [str(executable), "-m", "mklink", "gui"]
     assert "--no-browser" in command
+    assert command[command.index("--browser-session-timeout") + 1] == "15"
     assert "--port" in command and "8771" in command
     assert command[command.index("--project-root") + 1] == str(tmp_path / "runtime workspace")
     assert "serve" not in command
@@ -283,6 +391,44 @@ def test_stop_never_terminates_a_reused_or_missing_service(tmp_path):
 
     assert result["status"] == "not_owned"
     assert terminated == []
+
+
+def test_status_reports_an_exited_owned_backend_as_stopped(tmp_path):
+    (tmp_path / "state.json").write_text(json.dumps({
+        "pid": 4321,
+        "port": 8765,
+        "owned": True,
+        "process_identity": "exited-process",
+    }), encoding="utf-8")
+
+    result = web_entry.web_entry_status(
+        data_dir=tmp_path,
+        process_identity=lambda _pid: None,
+    )
+
+    assert result == {
+        "status": "stopped", "port": 8765, "pid": 4321, "owned": False,
+    }
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_status_clears_an_owned_process_that_no_longer_serves_web(tmp_path, monkeypatch):
+    (tmp_path / "state.json").write_text(json.dumps({
+        "pid": 4321,
+        "port": 8765,
+        "owned": True,
+        "process_identity": "same-process",
+    }), encoding="utf-8")
+    monkeypatch.setattr(web_entry, "probe_server", lambda _port: None)
+
+    result = web_entry.web_entry_status(
+        data_dir=tmp_path,
+        process_identity=lambda _pid: "same-process",
+    )
+
+    assert result["status"] == "stopped"
+    assert result["owned"] is False
+    assert not (tmp_path / "state.json").exists()
 
 
 def test_protocol_handler_dispatches_start_open_and_stop(monkeypatch, tmp_path):

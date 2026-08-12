@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 afterEach(() => {
   vi.doUnmock('@tauri-apps/plugin-dialog')
   vi.doUnmock('@tauri-apps/api/core')
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.resetModules()
 })
 
@@ -62,5 +64,33 @@ describe('file picker', () => {
 
     await expect(picker.pickSymbolFile()).resolves.toBe(selected)
     expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('returns a tracked browser firmware handle when the File System Access API is available', async () => {
+    vi.doMock('@tauri-apps/api/core', () => ({ isTauri: () => false }))
+    const selected = new File(['firmware'], 'demo.bin', { lastModified: 123 })
+    const handle = {
+      kind: 'file' as const,
+      name: selected.name,
+      getFile: vi.fn().mockResolvedValue(selected),
+    }
+    const showOpenFilePicker = vi.fn().mockResolvedValue([handle])
+    vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
+    const picker = await import('./filePicker')
+
+    await expect(picker.pickTrackedFirmwareFiles()).resolves.toEqual([{
+      kind: 'tracked-browser-firmware',
+      file: selected,
+      handle,
+    }])
+    expect(picker.supportsTrackedFirmwarePicker()).toBe(true)
+    expect(showOpenFilePicker).toHaveBeenCalledWith({
+      multiple: false,
+      excludeAcceptAllOption: true,
+      types: [{
+        description: 'BIN / HEX',
+        accept: { 'application/octet-stream': ['.bin', '.hex'] },
+      }],
+    })
   })
 })

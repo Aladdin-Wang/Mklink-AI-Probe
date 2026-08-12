@@ -12,7 +12,12 @@ import time
 import serial
 from serial.tools import list_ports
 
-from mklink._types import DEFAULT_BAUDRATE, KNOWN_MKLINK_VID_PIDS
+from mklink._types import (
+    DEFAULT_BAUDRATE,
+    KNOWN_MKLINK_VID_PIDS,
+    MKLINK_IDENTITY_COMMAND,
+    MKLINK_IDENTITY_TOKEN,
+)
 
 # MICROKEEN 磁盘名称
 _MICROKEEN_DISK_NAME = "MICROKEEN"
@@ -26,6 +31,13 @@ def _normalize_flm_name(flm_name: str) -> str:
     if flm_name and not flm_name.upper().endswith(".FLM"):
         flm_name = flm_name + ".FLM"
     return flm_name
+
+
+def _is_mklink_identity_response(response: bytes) -> bool:
+    token = MKLINK_IDENTITY_TOKEN.encode("ascii")
+    return b">>>" in response and any(
+        line.strip() == token for line in response.splitlines()
+    )
 
 
 def _probe_port(port_device: str) -> bool:
@@ -47,12 +59,13 @@ def _probe_port(port_device: str) -> bool:
             ser.close()
             return True
 
-        # Step 2: 主动探测，发送回车
+        # Step 2: 主动探测，执行唯一的无副作用命令。只看到通用的
+        # ">>>" 不足以识别 CMD 口，目标板 UART 也可能输出相同文本。
         ser.reset_input_buffer()
-        ser.write(b"\n")
+        ser.write((MKLINK_IDENTITY_COMMAND + "\n").encode("ascii"))
         time.sleep(0.5)
         resp = ser.read(1024)
-        if b">>>" in resp:
+        if _is_mklink_identity_response(resp):
             ser.close()
             return True
 
@@ -75,7 +88,11 @@ def _probe_port(port_device: str) -> bool:
         return False
 
 
-def find_mklink_cdc_port(serial_number: object = None) -> str | None:
+def find_mklink_cdc_port(
+    serial_number: object = None,
+    *,
+    exclude_ports: set[str] | None = None,
+) -> str | None:
     """自动扫描并识别 MicroLink 的 USB CDC 虚拟串口。
 
     优先使用 USB 设备描述符匹配，然后对每个端口执行2步确认探测：
@@ -83,7 +100,12 @@ def find_mklink_cdc_port(serial_number: object = None) -> str | None:
       Step 2 — 发送回车后检测 ">>>" 提示符
     逐端口顺序探测，不并发。
     """
-    ports = list(list_ports.comports())
+    excluded = {str(port).strip().casefold() for port in (exclude_ports or set())}
+    ports = [
+        port_info
+        for port_info in list_ports.comports()
+        if str(port_info.device).strip().casefold() not in excluded
+    ]
     requested_serial = str(serial_number or "").strip().casefold()
     if requested_serial:
         matching = [
@@ -92,7 +114,16 @@ def find_mklink_cdc_port(serial_number: object = None) -> str | None:
             == requested_serial
         ]
         if matching:
-            return matching[0].device
+            # Composite USB devices expose several CDC interfaces with the
+            # same serial number.  Only one is the MKLink command bridge;
+            # identify it by the protocol handshake instead of enumeration
+            # order (which can change when COM numbers are reassigned).
+            if len(matching) == 1:
+                return matching[0].device
+            for port_info in matching:
+                if _probe_port(port_info.device):
+                    return port_info.device
+            return None
 
     # 优先：USB 描述符匹配（精确匹配，避免 "Microsoft" 误命中）
     for port_info in ports:

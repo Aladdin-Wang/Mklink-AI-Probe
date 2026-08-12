@@ -9,7 +9,13 @@ import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
 import { HexPreviewModel, type FormattedHexRow } from '../lib/hexPreview'
 import { OnlineFlashApiError, useOnlineFlashApi } from '../composables/useOnlineFlashApi'
 import { tr } from '../composables/useLanguage'
-import { listenForFirmwarePathDrops, pickFirmwareFiles } from '../lib/filePicker'
+import {
+  isTrackedBrowserFirmwareFile,
+  listenForFirmwarePathDrops,
+  pickTrackedFirmwareFiles,
+  type BrowserFirmwareFileHandle,
+  type PickedFirmwareSource,
+} from '../lib/filePicker'
 import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
@@ -92,6 +98,7 @@ let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollingEnabled = false
 let sourceFingerprint = ''
+let firmwareHandle: BrowserFirmwareFileHandle | null = null
 let stopNativeDropListener: (() => void) | null = null
 let disposed = false
 let storageWarningReported = false
@@ -390,13 +397,15 @@ function resetInspection(): void {
   inspectBusy.value = false
   inspection.value = null; selectedSectorAddresses.value = []; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
 }
-function setFirmware(file: File | null): void {
+function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null = null): void {
   firmware.value = file
+  firmwareHandle = handle
   firmwarePath.value = ''
-  sourceFingerprint = ''
+  sourceFingerprint = file && handle ? `${file.size}:${file.lastModified}` : ''
   resetInspection()
   persist()
   promptForBinAddress(file?.name ?? '')
+  scheduleAutoInspection()
 }
 
 function setFirmwarePath(path: string): void {
@@ -406,12 +415,14 @@ function setFirmwarePath(path: string): void {
     return
   }
   firmware.value = null
+  firmwareHandle = null
   firmwarePath.value = path
   sourceFingerprint = ''
   resetInspection()
   persist()
   void pollFirmwareSource(true)
   promptForBinAddress(path)
+  scheduleAutoInspection()
 }
 
 function promptForBinAddress(source: string): void {
@@ -435,14 +446,15 @@ function cancelBinAddress(): void {
   setBase('')
 }
 
-function acceptFirmwareSources(sources: Array<string | File>): void {
+function acceptFirmwareSources(sources: PickedFirmwareSource[]): void {
   const source = sources[0]
   if (typeof source === 'string') setFirmwarePath(source)
+  else if (isTrackedBrowserFirmwareFile(source)) setFirmware(source.file, source.handle)
   else if (source instanceof File) setFirmware(source)
 }
 
 async function browseFirmware(): Promise<void> {
-  acceptFirmwareSources(await pickFirmwareFiles(false))
+  acceptFirmwareSources(await pickTrackedFirmwareFiles(false))
 }
 
 async function startNativeDropListener(): Promise<void> {
@@ -461,17 +473,23 @@ function stopNativeDrops(): void {
 
 async function pollFirmwareSource(initial = false): Promise<void> {
   const path = firmwarePath.value
-  if (!path || disposed) return
+  const handle = firmwareHandle
+  if ((!path && !handle) || disposed) return
   try {
-    const status = await api.getImageSourceStatus(path)
-    if (path !== firmwarePath.value || disposed) return
-    const fingerprint = `${status.size}:${status.mtime_ns}`
+    const nextFile = handle ? await handle.getFile() : null
+    const status = path ? await api.getImageSourceStatus(path) : null
+    if (path !== firmwarePath.value || handle !== firmwareHandle || disposed) return
+    const fingerprint = status
+      ? `${status.size}:${status.mtime_ns}`
+      : `${nextFile!.size}:${nextFile!.lastModified}`
     if (!sourceFingerprint) {
       sourceFingerprint = fingerprint
     } else if (fingerprint !== sourceFingerprint) {
       sourceFingerprint = fingerprint
+      if (nextFile) firmware.value = nextFile
       resetInspection()
-      appendLog(tr(`[FILE] 已自动加载重新编译的 ${status.file_name}`, `[FILE] Automatically loaded rebuilt ${status.file_name}`))
+      const fileName = status?.file_name ?? nextFile!.name
+      appendLog(tr(`[FILE] 已自动加载重新编译的 ${fileName}`, `[FILE] Automatically loaded rebuilt ${fileName}`))
       scheduleAutoInspection()
     }
   } catch (error) {
@@ -627,7 +645,10 @@ function toggleSector(address: number): void {
     : [...selectedSectorAddresses.value, address].sort((left, right) => left - right)
 }
 
-onMounted(() => { void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(desiredPart.value)]) })
+onMounted(() => {
+  startSourcePolling()
+  void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(desiredPart.value)])
+})
 onActivated(() => {
   disposed = false
   startSourcePolling()

@@ -92,11 +92,13 @@ cd gui && npx tauri dev
 
 ### 生成跨平台 U 盘 Web 入口
 
-电脑首次安装完整 Mklink skill/runtime 后注册一次用户级协议（只复制
-`SKILL.md` 不足以运行 Web 服务）：
+电脑首次安装完整 Mklink skill/runtime 后检查完整依赖、注册用户级协议，并自动
+把统一启动页写入 `MICROKEEN` 下载器 U 盘或用户桌面（只复制 `SKILL.md` 不足以
+运行 Web 服务）：
 
 ```bash
-python -m mklink web-entry install
+python -m pip install -e ".[gui,mcp]"
+python -m mklink web-entry install --quick-launch
 ```
 
 生成一份可放入任意 U 盘、三个桌面系统通用的单文件 HTML：
@@ -105,7 +107,8 @@ python -m mklink web-entry install
 python -m mklink web-entry html --output "/path/to/usb/启动 Mklink Web.html"
 ```
 
-HTML 只调用 `mklink-ai-probe://web/start`，不会从 U 盘执行程序。入口复用现有
+HTML 短暂倒计时后调用 `mklink-ai-probe://web/start`，不会从 U 盘执行程序；
+服务健康后会自动打开 Web GUI。入口复用现有
 Mklink Web 服务且不取得所有权；停止按钮只结束由入口自身启动的服务。详见
 [跨平台 U 盘 Web 启动入口](references/web-entry.md)。
 

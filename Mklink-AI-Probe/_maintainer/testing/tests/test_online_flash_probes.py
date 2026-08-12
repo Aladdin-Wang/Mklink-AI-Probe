@@ -349,7 +349,8 @@ def test_quick_connect_restores_last_successful_device_inputs():
 
     assert response.status_code == 200
     connect.assert_called_once_with(
-        port="PROBE_PORT",
+        port=None,
+        preferred_port="PROBE_PORT",
         axf="firmware.axf",
         mcu="stm32f103rc",
         project_root=state["project_root"],
@@ -724,6 +725,59 @@ def test_native_api_target_operation_releases_lease_on_success_and_failure():
     assert state["resource_manager"].get_status() == {}
 
 
+def test_reset_stops_bridge_dashboard_before_sending_command():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    events = []
+    managers["rtt"].running = True
+
+    def stop_rtt():
+        events.append("stop-rtt")
+        managers["rtt"].running = False
+
+    managers["rtt"].stop.side_effect = stop_rtt
+    device = MagicMock()
+    device.connected = True
+    device.reset.side_effect = lambda: events.append("reset")
+    state["device"] = device
+    state["resource_manager"].acquire_many(
+        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        "user:dashboard:rtt",
+    )
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post("/api/device/reset")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "stopped": ["rtt"]}
+    assert events == ["stop-rtt", "reset"]
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_reset_does_not_send_command_when_dashboard_cannot_stop():
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    managers["systemview"].running = True
+    device = MagicMock()
+    device.connected = True
+    state["device"] = device
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post("/api/device/reset")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "DASHBOARD_STOP_FAILED"
+    device.reset.assert_not_called()
+
+
 def test_native_api_preempts_and_stops_dashboard_before_target_access():
     from mklink.remote.resource_manager import ResourceGroup
 
@@ -746,6 +800,37 @@ def test_native_api_preempts_and_stops_dashboard_before_target_access():
     assert response.status_code == 200
     managers["rtt"].stop.assert_called_once_with()
     device.halt.assert_called_once_with()
+    assert state["resource_manager"].get_status() == {}
+
+
+def test_memory_read_preempts_rtos_trace_and_releases_both_probe_resources():
+    from mklink.remote.resource_manager import ResourceGroup
+
+    managers = {
+        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
+        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
+    }
+    client, state = _dashboard_client(managers)
+    managers["systemview"].running = True
+    device = MagicMock()
+    device.connected = True
+    device.read_memory.return_value = b"\x12\x34\x56\x78"
+    state["device"] = device
+    state["resource_manager"].acquire_many(
+        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        "user:dashboard:systemview",
+    )
+
+    with patch("mklink.remote.dashboards.get_managers", return_value=managers):
+        response = client.post(
+            "/api/device/read-memory",
+            json={"address": "0x20000000", "size": 4},
+        )
+
+    assert response.status_code == 200
+    managers["systemview"].stop.assert_called_once_with()
+    device.read_memory.assert_called_once_with(0x20000000, 4)
+    assert response.json()["data_hex"] == "12345678"
     assert state["resource_manager"].get_status() == {}
 
 

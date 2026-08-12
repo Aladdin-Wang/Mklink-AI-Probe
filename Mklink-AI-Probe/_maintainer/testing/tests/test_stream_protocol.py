@@ -34,6 +34,20 @@ def test_frame_is_immutable():
         frame.sequence = 10
 
 
+def test_serial_frame_roundtrip_preserves_exact_bytes_and_direction():
+    frame = Frame(
+        StreamType.SERIAL,
+        0x01,
+        int(StreamType.SERIAL),
+        3,
+        123,
+        4,
+        b"\x00\x7f\x80\xff",
+    )
+
+    assert decode_frame(encode_frame(frame)) == frame
+
+
 @pytest.mark.parametrize(
     ("offset", "replacement", "match"),
     [

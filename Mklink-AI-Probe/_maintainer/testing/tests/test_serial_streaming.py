@@ -6,25 +6,54 @@ import threading
 
 from fastapi.testclient import TestClient
 
-from mklink.local_resources import local_resource_status
+from mklink.local_resources import local_resource_status, serial_lock_path
 from mklink.remote.api import create_app
 from mklink.remote.dashboards import SerialStreamManager
+from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, StreamType
 from mklink.serial import _monitor as monitor_module
 from mklink.serial._monitor import SerialEvent, SerialMonitor
 from mklink.serial._port import _PortLock
+
+
+class _RecordingHub:
+    def __init__(self):
+        self.batches = []
+
+    def publish(self, payload, *, item_count, flags=0, stream_type=None):
+        self.batches.append((bytes(payload), item_count, flags, stream_type))
+        return len(self.batches)
+
+    def stats(self):
+        return type("Stats", (), {})()
 
 
 def test_serial_port_lock_releases_owner_and_can_be_reacquired(monkeypatch, tmp_path):
     monkeypatch.setenv("TEMP", str(tmp_path))
 
     for _ in range(2):
-        lock = _PortLock("TEST_PORT")
+        lock = _PortLock("COM6")
+        assert lock._path.endswith("serial_COM6.lock")
+        assert lock._path == serial_lock_path("com6")
         assert lock.acquire() is True
         lock.release()
 
-        status = local_resource_status("TEST_PORT")["serial_locks"][0]
+        status = local_resource_status("COM6")["serial_locks"][0]
         assert status["owner_pid"] == 0
         assert status["owner_alive"] is False
+
+
+def test_serial_port_lock_file_open_error_is_reported_as_unavailable(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    lock = _PortLock("COM6")
+
+    def fail_open(*_args, **_kwargs):
+        raise OSError("lock path unavailable")
+
+    monkeypatch.setattr("builtins.open", fail_open)
+    assert lock.acquire() is False
 
 
 def test_modbus_start_reports_busy_serial_port(monkeypatch, tmp_path):
@@ -144,6 +173,50 @@ def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypat
     }
     manager.stop()
     manager._bridge.remove_client(queue)
+
+
+def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):
+    class FakeMonitor:
+        def __init__(self, **kwargs):
+            self.event_callback = kwargs["event_callback"]
+            self.chunk_callback = kwargs["chunk_callback"]
+            self.port_status = {"TEST": "open"}
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(monitor_module, "SerialMonitor", FakeMonitor)
+    monkeypatch.setattr(
+        "mklink.remote.dashboards.base64.b64encode",
+        lambda _data: (_ for _ in ()).throw(AssertionError("legacy Base64 formatting ran")),
+    )
+    hub = _RecordingHub()
+    manager = SerialStreamManager(stream_hub=hub)
+    manager.start([{"port": "TEST", "baudrate": 115200}])
+    monitor = manager._monitor
+
+    rx = b"\x00\x7f\x80\xff"
+    tx = b"AT\r\n"
+    monitor.chunk_callback("TEST", "RX", rx, 1.0)
+    monitor.event_callback(SerialEvent(1.0, "TEST", "RX", rx))
+    monitor.chunk_callback("TEST", "TX", tx, 2.0)
+    monitor.event_callback(SerialEvent(2.0, "TEST", "TX", tx))
+
+    assert hub.batches == [
+        (rx, len(rx), SERIAL_RX_BYTES, StreamType.SERIAL),
+        (tx, len(tx), SERIAL_TX_BYTES, StreamType.SERIAL),
+    ]
+    assert manager.get_status()["stats"] == {
+        "rx_count": 1,
+        "tx_count": 1,
+        "rx_bytes": len(rx),
+        "tx_bytes": len(tx),
+        "bytes_per_sec": float(len(rx) + len(tx)),
+    }
+    manager.stop()
 
 
 def test_serial_sse_reconnect_starts_with_current_status():

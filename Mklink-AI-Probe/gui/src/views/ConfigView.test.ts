@@ -94,6 +94,7 @@ describe('ConfigView', () => {
       axf: { loaded: false },
     })
     mocks.api.listPorts.mockResolvedValue([
+      { device: 'TEST_PORT_A', description: 'MKLink A', manufacturer: 'MicroLink', vid: 1, pid: 2 },
       { device: 'TEST_PORT_B', description: 'MKLink', manufacturer: 'MicroLink', vid: 1, pid: 2 },
     ])
     mocks.api.discoverPort.mockResolvedValue({ port: 'TEST_PORT_B' })
@@ -173,17 +174,117 @@ describe('ConfigView', () => {
       .toContain('C:\\old\\firmware.axf')
   })
 
-  it('connects locally with the configured port and saved AXF path without an MCU hint', async () => {
+  it('uses the restored port as a soft preference when connecting', async () => {
     const wrapper = await mountView()
 
     await wrapper.get('[data-testid="connect-local"]').trigger('click')
     await flushPromises()
 
     expect(mocks.api.connectDevice).toHaveBeenCalledWith({
-      port: 'TEST_PORT_A',
+      restore_last: true,
       axf: 'C:\\saved\\app.axf',
     })
     expect(mocks.api.connectDevice.mock.calls[0][0]).not.toHaveProperty('mcu')
+  })
+
+  it('shows Auto Search and discovers on connect when no port has been saved', async () => {
+    mocks.api.getConfig.mockResolvedValue({})
+    const wrapper = await mountView()
+
+    const portSelect = wrapper.get<HTMLSelectElement>('[data-testid="local-port"]')
+    expect(portSelect.element.value).toBe('')
+    expect(portSelect.text()).toContain('自动搜索')
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.connectDevice).toHaveBeenCalledWith({
+      restore_last: true,
+      axf: 'C:\\saved\\app.axf',
+    })
+  })
+
+  it('falls back to Auto Search after a restored connection fails', async () => {
+    mocks.api.connectDevice
+      .mockRejectedValueOnce(new Error('saved port unavailable'))
+      .mockResolvedValueOnce({ port: 'TEST_PORT_B' })
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('')
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.connectDevice).toHaveBeenNthCalledWith(2, {
+      restore_last: true,
+      axf: 'C:\\saved\\app.axf',
+    })
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value)
+      .toBe('TEST_PORT_B')
+  })
+
+  it('shows Auto Search when the restored port is no longer available', async () => {
+    mocks.api.listPorts.mockResolvedValue([
+      { device: 'TEST_PORT_B', description: 'MKLink', manufacturer: 'MicroLink', vid: 1, pid: 2 },
+    ])
+    const wrapper = await mountView()
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('')
+    expect(wrapper.get('[data-testid="local-port"]').text()).toContain('自动搜索')
+  })
+
+  it('keeps a port selected in the current session as a strict connection target', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="local-port"]').setValue('TEST_PORT_B')
+    await flushPromises()
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.connectDevice).toHaveBeenCalledWith({
+      port: 'TEST_PORT_B',
+      axf: 'C:\\saved\\app.axf',
+    })
+  })
+
+  it('switches a failed strict connection to Auto Search for the next attempt', async () => {
+    mocks.api.connectDevice
+      .mockRejectedValueOnce(new Error('selected port unavailable'))
+      .mockResolvedValueOnce({ port: 'TEST_PORT_A' })
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="local-port"]').setValue('TEST_PORT_B')
+    await flushPromises()
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.connectDevice).toHaveBeenNthCalledWith(1, {
+      port: 'TEST_PORT_B',
+      axf: 'C:\\saved\\app.axf',
+    })
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('')
+
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.connectDevice).toHaveBeenNthCalledWith(2, {
+      restore_last: true,
+      axf: 'C:\\saved\\app.axf',
+    })
+  })
+
+  it('persists Auto Search by clearing the configured port', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="local-port"]').setValue('')
+    await flushPromises()
+
+    expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      com_port: '',
+    }))
   })
 
   it('fills the detected serial port after an automatic connection succeeds', async () => {
@@ -363,7 +464,7 @@ describe('ConfigView', () => {
 
     await wrapper.get('[data-testid="connect-local"]').trigger('click')
     expect(mocks.api.connectDevice).toHaveBeenCalledWith({
-      port: 'TEST_PORT_A',
+      restore_last: true,
       axf: undefined,
     })
 

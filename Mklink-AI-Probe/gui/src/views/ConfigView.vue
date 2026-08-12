@@ -39,6 +39,7 @@ const activeSection = ref<ConfigSection>('local')
 const config = ref<ProjectConfig>({})
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
+const localPortExplicit = ref(false)
 const settings = ref<DesktopSettings>(loadDesktopSettings(window.localStorage))
 
 const portsLoading = ref(false)
@@ -79,6 +80,7 @@ async function autoDiscover() {
     const result = await discoverPort()
     if (result.port) {
       localPort.value = result.port
+      localPortExplicit.value = false
       await saveLocalConfig()
     }
   } catch (error: any) {
@@ -92,6 +94,7 @@ async function loadConfig() {
   try {
     config.value = await getConfig()
     localPort.value = config.value.com_port || ''
+    localPortExplicit.value = false
   } catch (error: any) {
     toast.error(tr('读取配置失败: ', 'Failed to load configuration: ') + error.message)
   }
@@ -111,7 +114,7 @@ async function saveLocalConfig() {
   try {
     config.value = await updateConfig({
       ...config.value,
-      com_port: localPort.value || undefined,
+      com_port: localPort.value.trim(),
       swd_clock: rawClock || undefined,
     })
     localSaveState.value = 'saved'
@@ -123,11 +126,19 @@ async function saveLocalConfig() {
   }
 }
 
+async function selectLocalPort() {
+  localPortExplicit.value = Boolean(localPort.value.trim())
+  await saveLocalConfig()
+}
+
 async function connectLocal() {
   connecting.value = true
   try {
+    const selectedPort = localPort.value.trim()
     const result = await connectDevice({
-      port: localPort.value || config.value.com_port || undefined,
+      ...(localPortExplicit.value && selectedPort
+        ? { port: selectedPort }
+        : { restore_last: true }),
       axf: isSymbolFilePath(settings.value.symbolPath)
         ? settings.value.symbolPath.trim()
         : undefined,
@@ -135,9 +146,13 @@ async function connectLocal() {
     const connectedPort = result.port || deviceStatus.value.port
     if (connectedPort) {
       localPort.value = connectedPort
+      localPortExplicit.value = false
       config.value = { ...config.value, com_port: connectedPort }
     }
   } catch (error: any) {
+    localPort.value = ''
+    localPortExplicit.value = false
+    config.value = { ...config.value, com_port: '' }
     toast.error(tr('连接失败: ', 'Connection failed: ') + error.message)
   } finally {
     connecting.value = false
@@ -269,6 +284,10 @@ async function recheckFirmware(openModal = true) {
 
 onMounted(async () => {
   await Promise.all([refreshPorts(), loadConfig(), recheckFirmware(false)])
+  const restoredPort = localPort.value.trim()
+  if (restoredPort && !portOptions.value.some(option => option.value === restoredPort)) {
+    localPort.value = ''
+  }
 })
 </script>
 
@@ -292,8 +311,8 @@ onMounted(async () => {
 
         <div class="form-row">
           <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
-          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" @change="saveLocalConfig">
-            <option value="">{{ tr('自动检测', 'Auto-detect') }}</option>
+          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" @change="selectLocalPort">
+            <option value="">{{ tr('自动搜索', 'Auto Search') }}</option>
             <option v-for="port in portOptions" :key="port.value" :value="port.value">
               {{ port.label }}
             </option>

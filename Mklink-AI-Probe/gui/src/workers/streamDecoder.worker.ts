@@ -1,5 +1,6 @@
 import {
-  decodeFrame, RTT_RAW_UTF8_LINES, RTT_TERMINAL_UTF8, StreamType, SUPERWATCH_METADATA_JSON,
+  decodeFrame, RTT_RAW_UTF8_LINES, RTT_TERMINAL_UTF8, SERIAL_RX_BYTES, SERIAL_TX_BYTES,
+  StreamType, SUPERWATCH_METADATA_JSON,
   SUPERWATCH_SAMPLE_MAJOR_FLOAT32, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
 } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
@@ -9,8 +10,10 @@ import {
   SystemViewIntervalRing,
 } from '../lib/stream/systemViewRing'
 
+export type DecoderMode = 'default' | 'serial-log' | 'serial-terminal'
+
 export type WorkerInput =
-  | { type: 'configure'; capacity: number; channelCount: number }
+  | { type: 'configure'; capacity: number; channelCount: number; decoderMode?: DecoderMode }
   | {
       type: 'frame'
       buffer: ArrayBuffer
@@ -97,6 +100,17 @@ export type WorkerOutput =
       contexts: SystemViewContextSummary[]
     }
   | { type: 'rtt-terminal'; sequence: bigint; text: string }
+  | {
+      type: 'serial-lines'
+      sequence: bigint
+      lines: Array<{
+        timestampNs: bigint
+        direction: 'RX' | 'TX'
+        rawHex: string
+        ascii: string
+      }>
+    }
+  | { type: 'serial-terminal'; sequence: bigint; text: string }
 
 export interface SystemViewContextSummary {
   id: number
@@ -218,6 +232,12 @@ export class StreamDecoder {
   private superwatchMetadataVersion = 0
   private superwatchMetadataSignature: string | null = null
   private activeConnectionGeneration: number | null = null
+  private decoderMode: DecoderMode = 'default'
+  private configuredCapacity = 0
+  private serialDecoder = new TextDecoder('utf-8')
+  private serialLineBytes: number[] = []
+  private serialLineTimestampNs = 0n
+  private serialBufferedItems = 0
 
   constructor(post: PostOutput) {
     this.post = post
@@ -226,7 +246,7 @@ export class StreamDecoder {
   handle(message: WorkerInput): void {
     switch (message.type) {
       case 'configure':
-        this.configure(message.capacity, message.channelCount)
+        this.configure(message.capacity, message.channelCount, message.decoderMode ?? 'default')
         break
       case 'frame':
         this.receiveFrame(
@@ -244,9 +264,14 @@ export class StreamDecoder {
     }
   }
 
-  private configure(capacity: number, channelCount: number): void {
+  private configure(capacity: number, channelCount: number, decoderMode: DecoderMode): void {
     try {
+      if (!['default', 'serial-log', 'serial-terminal'].includes(decoderMode)) {
+        throw new RangeError('unsupported decoder mode')
+      }
       this.ring = new TypedRingBuffer(capacity, channelCount)
+      this.configuredCapacity = capacity
+      this.decoderMode = decoderMode
       this.timeIndexScratch = new Int32Array(capacity)
       this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
       this.systemViewIntervals = new SystemViewIntervalRing(capacity)
@@ -311,6 +336,8 @@ export class StreamDecoder {
         this.acceptRttRawFrame(decoded)
       } else if (decoded.streamType === StreamType.SUPERWATCH) {
         this.acceptSuperWatchFrame(decoded)
+      } else if (decoded.streamType === StreamType.SERIAL) {
+        this.acceptSerialFrame(decoded)
       } else {
         throw new RangeError('unsupported stream frame type')
       }
@@ -373,6 +400,80 @@ export class StreamDecoder {
     if (offset !== bytes.byteLength) throw new RangeError('RTT line payload has trailing bytes')
     this.commitSequence(decoded.sequence)
     this.post({ type: 'rtt-lines', sequence: decoded.sequence, lines })
+  }
+
+  private acceptSerialFrame(decoded: StreamFrame): void {
+    this.requireNextSequence(decoded.sequence, 'Serial')
+    if (decoded.flags !== SERIAL_RX_BYTES && decoded.flags !== SERIAL_TX_BYTES) {
+      throw new RangeError('Serial payload has unsupported flags')
+    }
+    if (decoded.itemCount !== decoded.payload.byteLength || decoded.itemCount <= 0) {
+      throw new RangeError('Serial item count must match its non-empty byte payload')
+    }
+    const direction = decoded.flags === SERIAL_RX_BYTES ? 'RX' : 'TX'
+    const bytes = new Uint8Array(decoded.payload)
+    this.commitSequence(decoded.sequence)
+
+    if (this.decoderMode === 'serial-terminal') {
+      this.serialBufferedItems = Math.min(
+        this.configuredCapacity,
+        this.serialBufferedItems + bytes.byteLength,
+      )
+      if (direction === 'RX') {
+        const text = this.serialDecoder.decode(bytes, { stream: true })
+        if (text) this.post({ type: 'serial-terminal', sequence: decoded.sequence, text })
+      }
+      return
+    }
+    if (this.decoderMode !== 'serial-log') {
+      throw new RangeError('Serial frames require a serial decoder mode')
+    }
+
+    const lines: Array<{
+      timestampNs: bigint
+      direction: 'RX' | 'TX'
+      rawHex: string
+      ascii: string
+    }> = []
+    if (direction === 'TX') {
+      lines.push(this.serialLine(decoded.timestampNs, direction, bytes))
+    } else {
+      for (const byte of bytes) {
+        if (this.serialLineBytes.length === 0) this.serialLineTimestampNs = decoded.timestampNs
+        this.serialLineBytes.push(byte)
+        if (byte === 0x0a || this.serialLineBytes.length >= 4096) {
+          lines.push(this.serialLine(
+            this.serialLineTimestampNs,
+            direction,
+            Uint8Array.from(this.serialLineBytes),
+          ))
+          this.serialLineBytes = []
+          this.serialLineTimestampNs = 0n
+        }
+      }
+    }
+    if (lines.length) {
+      this.serialBufferedItems = Math.min(
+        this.configuredCapacity,
+        this.serialBufferedItems + lines.length,
+      )
+      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines })
+    }
+  }
+
+  private serialLine(
+    timestampNs: bigint,
+    direction: 'RX' | 'TX',
+    bytes: Uint8Array,
+  ): { timestampNs: bigint; direction: 'RX' | 'TX'; rawHex: string; ascii: string } {
+    let rawHex = ''
+    for (const byte of bytes) rawHex += byte.toString(16).padStart(2, '0').toUpperCase()
+    return {
+      timestampNs,
+      direction,
+      rawHex,
+      ascii: new TextDecoder('utf-8').decode(bytes),
+    }
   }
 
   private acceptSuperWatchFrame(decoded: StreamFrame): void {
@@ -979,6 +1080,10 @@ export class StreamDecoder {
     this.lastNumericSpacingMs = null
     this.superwatchMetadataVersion = 0
     this.superwatchMetadataSignature = null
+    this.serialDecoder = new TextDecoder('utf-8')
+    this.serialLineBytes = []
+    this.serialLineTimestampNs = 0n
+    this.serialBufferedItems = 0
     this.clearTelemetry()
   }
 
@@ -1000,7 +1105,11 @@ export class StreamDecoder {
       acceptedFrames: this.acceptedFrames,
       acceptedConnectionGeneration,
       acceptedFrameTicket,
-      bufferedSamples: this.systemViewMode ? (this.systemViewEvents?.length ?? 0) : (this.ring?.length ?? 0),
+      bufferedSamples: this.decoderMode.startsWith('serial-')
+        ? this.serialBufferedItems
+        : this.systemViewMode
+          ? (this.systemViewEvents?.length ?? 0)
+          : (this.ring?.length ?? 0),
       transportDroppedBatches: this.transportDroppedBatches,
       backendDroppedBatches: this.backendDroppedBatches,
       backendDroppedItems: this.backendDroppedItems,

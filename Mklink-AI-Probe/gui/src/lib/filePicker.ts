@@ -6,6 +6,31 @@ const FIRMWARE_FILTER = { name: 'BIN / HEX', extensions: ['bin', 'hex'] }
 
 export type PickedFile = string | File | null
 
+export interface BrowserFirmwareFileHandle {
+  readonly kind: 'file'
+  readonly name: string
+  getFile(): Promise<File>
+}
+
+export interface TrackedBrowserFirmwareFile {
+  readonly kind: 'tracked-browser-firmware'
+  readonly file: File
+  readonly handle: BrowserFirmwareFileHandle
+}
+
+export type PickedFirmwareSource = string | File | TrackedBrowserFirmwareFile
+
+interface FirmwarePickerWindow extends Window {
+  showOpenFilePicker?: (options: {
+    multiple: boolean
+    excludeAcceptAllOption: boolean
+    types: Array<{
+      description: string
+      accept: Record<string, string[]>
+    }>
+  }) => Promise<BrowserFirmwareFileHandle[]>
+}
+
 function pickBrowserFile(filter: { name: string, extensions: string[] }): Promise<File | null> {
   return new Promise(resolve => {
     const input = document.createElement('input')
@@ -53,6 +78,49 @@ export async function pickFirmwareFiles(multiple = false): Promise<Array<string 
   } catch {
     return []
   }
+}
+
+export function supportsTrackedFirmwarePicker(): boolean {
+  return !isTauri() && typeof (window as FirmwarePickerWindow).showOpenFilePicker === 'function'
+}
+
+export async function pickTrackedFirmwareFiles(multiple = false): Promise<PickedFirmwareSource[]> {
+  if (isTauri()) return pickFirmwareFiles(multiple)
+
+  const picker = (window as FirmwarePickerWindow).showOpenFilePicker
+  if (typeof picker !== 'function') {
+    const selected = await pickBrowserFile(FIRMWARE_FILTER)
+    return selected ? [selected] : []
+  }
+
+  try {
+    const handles = await picker({
+      multiple,
+      excludeAcceptAllOption: true,
+      types: [{
+        description: FIRMWARE_FILTER.name,
+        accept: { 'application/octet-stream': ['.bin', '.hex'] },
+      }],
+    })
+    return Promise.all(handles.map(async handle => ({
+      kind: 'tracked-browser-firmware' as const,
+      file: await handle.getFile(),
+      handle,
+    })))
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return []
+    const selected = await pickBrowserFile(FIRMWARE_FILTER)
+    return selected ? [selected] : []
+  }
+}
+
+export function isTrackedBrowserFirmwareFile(
+  source: PickedFirmwareSource,
+): source is TrackedBrowserFirmwareFile {
+  return typeof source === 'object'
+    && source !== null
+    && !(source instanceof File)
+    && source.kind === 'tracked-browser-firmware'
 }
 
 export async function listenForFirmwarePathDrops(
