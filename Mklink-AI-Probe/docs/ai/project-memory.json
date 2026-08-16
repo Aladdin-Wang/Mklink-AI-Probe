@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-12T12:02:58+08:00",
+  "updated_at": "2026-08-16T11:57:41+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "PR #10 头 4d7d617 已通过 GitHub merge commit 2f8e902 合入 master；合并后测试隔离与项目记忆收口已包含在 master。",
-    "remote_head": "origin/master 包含 GitHub PR #10 merge commit 2f8e902 和合并后门禁收口；PR 状态为 MERGED。su5176 仓库当前没有 v0.1.6 标签或 Release。",
-    "working_tree": "PR #10 已完成自动门禁复核；隔离验证 worktree 已移除，主工作树既有未跟踪 __pycache__ 保持未改动。"
+    "head": "本地 master 已从 origin/master 8f6a094 选择性合入 FLM 查找修复 8da2d2d；立芯 GUI 与 HIL 锁提交均未合入。",
+    "remote_head": "origin/master 仍为 8f6a094；本次只授权本地合并，未授权推送或发布。",
+    "working_tree": "FLM 修复只改动 mcu_detect.py 与 mcu_profiles.json；验证产生的构建和临时文件不纳入 Git，切换分支前已有未跟踪生成目录保持不变。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "pr10_merged_verified",
-    "current_task": "PR #10 已合并到 su5176/master；自动连接单测隔离、项目记忆校正和合并后验证均已完成。",
+    "status": "flm_discovery_fix_merged_local_master",
+    "current_task": "device 级 PDSC algorithm 查找修复已选择性合入本地 master；立芯 GUI 与 HIL 锁提交仍留在原分支。",
     "release": "PR #10 保留已发布 v0.1.6 的代码基线且不移动标签。Aladdin-Wang fork 的 v0.1.6 发布记录属于贡献者仓库；su5176 目标仓库当前没有 v0.1.6 标签或 Release，本次未授权发布。"
   },
   "milestones": [
@@ -41,6 +41,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "FLM 查找修复选择性合并",
+      "result": "从 origin/master 8f6a094 创建 fix/pdsc-device-algorithm，仅摘取原提交 68d4e4f 为 8da2d2d；差异只有 mklink/mcu_detect.py 与 mklink/mcu_profiles.json，无 GUI 或 HIL 锁文件。真实 D:\\Keil_v5\\ARM\\PACK 中 Keil.STM32F4xx_DFP.pdsc 对 STM32F411CEUx/RETx 均命中 device 级 CMSIS/Flash/STM32F4xx_512.FLM。Python 全量先得 1282 passed、1 skipped，环境性失败随后逐项联网复跑通过；GUI 54 文件/521 项、Vite 生产构建、Tauri cargo check 均通过。Site Agent 打包补入与当前 stcp_bridge 源码哈希一致的本地 DLL 后 3 项通过，DLL 与测试产物均不提交。"
+    },
     {
       "area": "v0.1.6 运行时",
       "result": "GUI 518 项、配置页 22 项和连接后端 12 项通过；Python 可比门禁 1262 项通过、1 项跳过。真实 Chrome、独立 Web 后端、下载器和 HPM5301 完成自动搜索、错误端口回退和再次连接闭环。"

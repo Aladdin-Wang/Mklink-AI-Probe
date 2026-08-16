@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-12T12:02:58+08:00`
+- 更新时间：`2026-08-16T11:57:41+08:00`
 - 分支：`master`
-- HEAD：`PR #10 头 4d7d617 已通过 GitHub merge commit 2f8e902 合入 master；合并后测试隔离与项目记忆收口已包含在 master。`
-- 远端 HEAD：`origin/master 包含 GitHub PR #10 merge commit 2f8e902 和合并后门禁收口；PR 状态为 MERGED。su5176 仓库当前没有 v0.1.6 标签或 Release。`
-- 工作树：PR #10 已完成自动门禁复核；隔离验证 worktree 已移除，主工作树既有未跟踪 __pycache__ 保持未改动。
-- 当前任务：PR #10 已合并到 su5176/master；自动连接单测隔离、项目记忆校正和合并后验证均已完成。
-- 状态：`pr10_merged_verified`
+- HEAD：`本地 master 已从 origin/master 8f6a094 选择性合入 FLM 查找修复 8da2d2d；立芯 GUI 与 HIL 锁提交均未合入。`
+- 远端 HEAD：`origin/master 仍为 8f6a094；本次只授权本地合并，未授权推送或发布。`
+- 工作树：FLM 修复只改动 mcu_detect.py 与 mcu_profiles.json；验证产生的构建和临时文件不纳入 Git，切换分支前已有未跟踪生成目录保持不变。
+- 当前任务：device 级 PDSC algorithm 查找修复已选择性合入本地 master；立芯 GUI 与 HIL 锁提交仍留在原分支。
+- 状态：`flm_discovery_fix_merged_local_master`
 
 ## 里程碑
 
@@ -21,6 +21,7 @@
 
 ## 验证证据
 
+- **FLM 查找修复选择性合并**：从 origin/master 8f6a094 创建 fix/pdsc-device-algorithm，仅摘取原提交 68d4e4f 为 8da2d2d；差异只有 mklink/mcu_detect.py 与 mklink/mcu_profiles.json，无 GUI 或 HIL 锁文件。真实 D:\Keil_v5\ARM\PACK 中 Keil.STM32F4xx_DFP.pdsc 对 STM32F411CEUx/RETx 均命中 device 级 CMSIS/Flash/STM32F4xx_512.FLM。Python 全量先得 1282 passed、1 skipped，环境性失败随后逐项联网复跑通过；GUI 54 文件/521 项、Vite 生产构建、Tauri cargo check 均通过。Site Agent 打包补入与当前 stcp_bridge 源码哈希一致的本地 DLL 后 3 项通过，DLL 与测试产物均不提交。
 - **v0.1.6 运行时**：GUI 518 项、配置页 22 项和连接后端 12 项通过；Python 可比门禁 1262 项通过、1 项跳过。真实 Chrome、独立 Web 后端、下载器和 HPM5301 完成自动搜索、错误端口回退和再次连接闭环。
 - **烧录与数据流**：HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。
 - **v0.1.6 正式分发**：七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。
