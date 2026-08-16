@@ -17,6 +17,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import re
 import struct
 import tempfile
@@ -332,6 +333,19 @@ class Device:
         self._bridge = None
         self._flash = None
         self._connected = False
+        # HIL-Infra lockd 协议互操作锁（connect 时获取）：断连即释放
+        renew_stop = getattr(self, "_hil_renew_stop", None)
+        if renew_stop is not None:
+            renew_stop.set()
+            thread = getattr(self, "_hil_renew_thread", None)
+            if thread is not None:
+                thread.join(timeout=2)
+            self._hil_renew_stop = None
+            self._hil_renew_thread = None
+        hil_lock = getattr(self, "_hil_lock", None)
+        if hil_lock is not None:
+            hil_lock.release()
+            self._hil_lock = None
 
     @property
     def connected(self) -> bool:
@@ -1770,6 +1784,31 @@ def connect(
         elf_backend=elf_backend,
     )
     dev._connect()
+    # HIL-Infra lockd 协议互操作：connect 成功即持有 transport_usb-serial_<COM>，
+    # close() 释放；与 hil_core.lockd 编排器在同一锁名上互斥（T5 原生对齐）。
+    from mklink.hil_lock import HilFileLock, transport_lock_name
+    hil_lock = HilFileLock(
+        transport_lock_name("usb-serial", dev.port),
+        owner_id=f"mklink-{os.getpid()}",
+    )
+    try:
+        hil_lock.acquire()
+    except Exception:
+        dev.close()
+        raise
+    dev._hil_lock = hil_lock
+    # 长会话自动续租：按 lease/3 心跳防止超时会话的锁被回收；close 停止
+    renew_stop = threading.Event()
+
+    def _hil_renew_loop():
+        while not renew_stop.wait(hil_lock.lease_s / 3):
+            if not hil_lock.renew():
+                return  # 所有权丢失（被回收）——停止续租，断连时如实释放
+
+    dev._hil_renew_stop = renew_stop
+    dev._hil_renew_thread = threading.Thread(target=_hil_renew_loop,
+                                             daemon=True, name="hil-lock-renew")
+    dev._hil_renew_thread.start()
     return dev
 
 
