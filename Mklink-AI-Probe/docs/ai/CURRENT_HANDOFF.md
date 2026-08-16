@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-16T13:21:40+08:00`
+- 更新时间：`2026-08-16T13:25:09+08:00`
 - 分支：`fix/zombie-lock-power-reboot`
-- HEAD：`本地 master 73beca7 已包含 FLM 查找修复与 HIL-Infra 互操作锁；当前专用修复分支实现僵尸锁修复、受保护 VCC 控制、探针 reboot 及 GUI/MCP/REST 接口，尚待真机 HIL 门禁。`
+- HEAD：`修复分支 9ec1b9f 已实现僵尸锁修复、受保护 VCC 控制、探针 reboot 及 GUI/MCP/REST 接口；维护者已明确豁免本次真机门禁，准备本地合并。`
 - 远端 HEAD：`origin/master 仍为 8f6a094；本次只授权本地合并，未授权推送或发布。`
-- 工作树：功能源码、回归测试、Skill 与项目记忆待提交；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。
-- 当前任务：僵尸串口锁、VCC 1800/3300/5000 与 MKLink reboot 已完成自动门禁和真实浏览器验证；因项目无已确认 bench.yaml，1.8V/3.3V/reboot 真机 emit 尚未执行，5V 明确不进入当前真机验收。
-- 状态：`awaiting_probe_control_hil_confirmation`
+- 工作树：运行时与测试已提交，当前仅更新豁免交接；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。
+- 当前任务：僵尸串口锁、VCC 1800/3300/5000 与 MKLink reboot 已完成自动门禁和真实浏览器验证；维护者于 2026-08-16 明确同意免除本次真机门禁，下一步合入本地 master 并选择性同步立芯 GUI 分支。
+- 状态：`probe_controls_ready_for_local_merge`
 
 ## 里程碑
 
@@ -21,7 +21,7 @@
 
 ## 验证证据
 
-- **僵尸锁与探针电源/重启控制**：Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，因此真机 HIL 尚待维护者确认接线。
+- **僵尸锁与探针电源/重启控制**：Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，维护者于 2026-08-16 明确豁免本次真机门禁，不得把该豁免表述为真机验证通过。
 - **FLM 查找修复选择性合并**：从 origin/master 8f6a094 创建 fix/pdsc-device-algorithm，仅摘取原提交 68d4e4f 为 8da2d2d；差异只有 mklink/mcu_detect.py 与 mklink/mcu_profiles.json，无 GUI 或 HIL 锁文件。真实 D:\Keil_v5\ARM\PACK 中 Keil.STM32F4xx_DFP.pdsc 对 STM32F411CEUx/RETx 均命中 device 级 CMSIS/Flash/STM32F4xx_512.FLM。Python 全量先得 1282 passed、1 skipped，环境性失败随后逐项联网复跑通过；GUI 54 文件/521 项、Vite 生产构建、Tauri cargo check 均通过。Site Agent 打包补入与当前 stcp_bridge 源码哈希一致的本地 DLL 后 3 项通过，DLL 与测试产物均不提交。
 - **v0.1.6 运行时**：GUI 518 项、配置页 22 项和连接后端 12 项通过；Python 可比门禁 1262 项通过、1 项跳过。真实 Chrome、独立 Web 后端、下载器和 HPM5301 完成自动搜索、错误端口回退和再次连接闭环。
 - **烧录与数据流**：HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。
@@ -46,19 +46,18 @@
 
 - **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。
 - **target**：ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。
-- **permission**：维护者已授权本次 bug/特性开发和本地分支合并；项目暂无已确认 bench.yaml，VCC/reboot 真机 emit 仍需接线与 emit_policy 确认；5V 不得在当前 3.3V 风险系统上执行。发布、推送、Gitee 同步和破坏性烧录仍需单独授权。
+- **permission**：维护者已授权本次 bug/特性开发和本地分支合并，并于 2026-08-16 明确豁免 VCC/reboot 真机门禁；该豁免不授权任何 5V 实机输出。发布、推送、Gitee 同步和破坏性烧录仍需单独授权。
 
 ## 下一动作
 
-1. 维护者确认台架 bench.yaml、目标额定电压、VCC 测量通道和 emit_policy 后，只对 1.8V/3.3V 与 reboot 跑真机闭环，禁止当前台架 5V。
-2. 真机门禁通过或取得明确豁免后合入本地 master，再选择性同步同一改进到 feature/eternal-chip-gui，不反向合入立芯 GUI 品牌代码。
-3. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
-4. 下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。
-5. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
+1. 基于维护者明确真机豁免合入本地 master，再选择性同步同一改进到 feature/eternal-chip-gui，不反向合入立芯 GUI 品牌代码。
+2. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
+3. 下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。
+4. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
 ## 已知限制
 
-- VCC 与探针 reboot 尚无本次提交对应的真机 HIL 证据；真实浏览器仅验证了受保护的请求路径。
+- VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
 - V4 脱机首次触发的瞬时空失败仍需冷启动复现。
 - 部分客户芯片修复缺少物理目标板编程证据。
