@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-16T13:25:09+08:00",
+  "updated_at": "2026-08-16T14:01:28+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/zombie-lock-power-reboot",
-    "head": "修复分支 9ec1b9f 已实现僵尸锁修复、受保护 VCC 控制、探针 reboot 及 GUI/MCP/REST 接口；维护者已明确豁免本次真机门禁，准备本地合并。",
+    "branch": "master",
+    "head": "本地 master 已包含 FLM 修复 8da2d2d、HIL 锁与续租、探针控制修复 9ec1b9f 和真机门禁豁免记录 948d99f；feature/eternal-chip-gui 已独立快进到 1ceda86。",
     "remote_head": "origin/master 仍为 8f6a094；本次只授权本地合并，未授权推送或发布。",
-    "working_tree": "运行时与测试已提交，当前仅更新豁免交接；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。"
+    "working_tree": "本次功能与交接均已提交，tracked 工作树干净；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "probe_controls_ready_for_local_merge",
-    "current_task": "僵尸串口锁、VCC 1800/3300/5000 与 MKLink reboot 已完成自动门禁和真实浏览器验证；维护者于 2026-08-16 明确同意免除本次真机门禁，下一步合入本地 master 并选择性同步立芯 GUI 分支。",
+    "status": "probe_controls_merged_locally",
+    "current_task": "已将 FLM 查找修复、僵尸串口锁修复、安全 VCC 1800/3300/5000 和 MKLink reboot 合入本地 master，并将同一探针控制改进选择性同步到独立立芯恒方 GUI 分支；两分支均保留 HIL 锁。",
     "release": "PR #10 保留已发布 v0.1.6 的代码基线且不移动标签。Aladdin-Wang fork 的 v0.1.6 发布记录属于贡献者仓库；su5176 目标仓库当前没有 v0.1.6 标签或 Release，本次未授权发布。"
   },
   "milestones": [
@@ -44,6 +44,10 @@
     {
       "area": "僵尸锁与探针电源/重启控制",
       "result": "Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，维护者于 2026-08-16 明确豁免本次真机门禁，不得把该豁免表述为真机验证通过。"
+    },
+    {
+      "area": "双分支本地合并与隔离",
+      "result": "master 本地快进到 948d99f，feature/eternal-chip-gui 本地快进到 1ceda86。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。未推送远端。"
     },
     {
       "area": "FLM 查找修复选择性合并",
@@ -100,7 +104,6 @@
     "发布器默认仓库参数仍含旧备用名；下次发布前应修正或继续显式传入两端 Aladdin-Wang 仓库。"
   ],
   "next_actions": [
-    "基于维护者明确真机豁免合入本地 master，再选择性同步同一改进到 feature/eternal-chip-gui，不反向合入立芯 GUI 品牌代码。",
     "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
     "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
     "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
