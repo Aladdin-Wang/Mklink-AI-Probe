@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-16T14:01:28+08:00",
+  "updated_at": "2026-08-16T14:11:23+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "本地 master 已包含 FLM 修复 8da2d2d、HIL 锁与续租、探针控制修复 9ec1b9f 和真机门禁豁免记录 948d99f；feature/eternal-chip-gui 已独立快进到 1ceda86。",
-    "remote_head": "origin/master 仍为 8f6a094；本次只授权本地合并，未授权推送或发布。",
+    "head": "master 已包含 FLM 修复 8da2d2d、HIL 锁与续租、探针控制修复 9ec1b9f 和真机门禁豁免记录；feature/eternal-chip-gui 保持独立品牌界面并包含同一探针控制改进。",
+    "remote_head": "用户已授权将 master 与 feature/eternal-chip-gui 原子推送到 GitHub origin；两条远端分支与本地验收头同步，未创建标签或 Release。",
     "working_tree": "本次功能与交接均已提交，tracked 工作树干净；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。"
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "probe_controls_merged_locally",
-    "current_task": "已将 FLM 查找修复、僵尸串口锁修复、安全 VCC 1800/3300/5000 和 MKLink reboot 合入本地 master，并将同一探针控制改进选择性同步到独立立芯恒方 GUI 分支；两分支均保留 HIL 锁。",
+    "status": "probe_controls_pushed",
+    "current_task": "FLM 查找修复、僵尸串口锁修复、安全 VCC 1800/3300/5000、MKLink reboot 与 HIL 锁已在 master 和独立立芯恒方 GUI 分支完成验证、合并并推送到 GitHub origin。",
     "release": "PR #10 保留已发布 v0.1.6 的代码基线且不移动标签。Aladdin-Wang fork 的 v0.1.6 发布记录属于贡献者仓库；su5176 目标仓库当前没有 v0.1.6 标签或 Release，本次未授权发布。"
   },
   "milestones": [
@@ -47,7 +47,7 @@
     },
     {
       "area": "双分支本地合并与隔离",
-      "result": "master 本地快进到 948d99f，feature/eternal-chip-gui 本地快进到 1ceda86。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。未推送远端。"
+      "result": "master 与 feature/eternal-chip-gui 均完成本地快进。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。用户随后明确授权，两条分支通过 Git 原子推送同步到 GitHub origin。"
     },
     {
       "area": "FLM 查找修复选择性合并",
@@ -92,7 +92,7 @@
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。",
     "target": "ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。",
-    "permission": "维护者已授权本次 bug/特性开发和本地分支合并，并于 2026-08-16 明确豁免 VCC/reboot 真机门禁；该豁免不授权任何 5V 实机输出。发布、推送、Gitee 同步和破坏性烧录仍需单独授权。"
+    "permission": "维护者已授权本次 bug/特性开发、本地分支合并及 master/feature/eternal-chip-gui 的 GitHub origin 推送，并于 2026-08-16 明确豁免 VCC/reboot 真机门禁；该豁免不授权任何 5V 实机输出。标签、Release、Gitee 同步和破坏性烧录仍需单独授权。"
   },
   "known_limits": [
     "VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。",
