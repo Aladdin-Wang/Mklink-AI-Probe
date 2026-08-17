@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-12T11:53:00+08:00`
+- 更新时间：`2026-08-17T11:05:00+08:00`
 - 分支：`master`
-- HEAD：`master 已包含 06bbd7a 的 GitHub 优先更新检查、Gitee 回退和发布器官方仓库默认值修复。`
-- 远端 HEAD：`Aladdin-Wang GitHub master 已包含 06bbd7a；本次未发布新标签、Release 或 updates/latest.json。`
-- 工作树：GitHub 优先更新检查修复已快进合并并推送，正在完成最终交接。
-- 当前任务：GitHub 优先、Gitee 回退的 24 小时更新检查与发布器默认仓库修复已合并并推送官方 GitHub master。
-- 状态：`github_first_update_check_pushed`
+- HEAD：`同步分支已合并 su5176/master 的 bd87c25，并保留 Aladdin-Wang 独有的 06bbd7a GitHub 优先更新源修复；FLM、HIL 锁、探针控制与更新检查均完成自动化验证。`
+- 远端 HEAD：`origin/master 当前仍为 1baf670；本次验证通过后将把同步合并推送到 Aladdin-Wang GitHub master，不创建标签、Release 或更新 Gitee。`
+- 工作树：同步分支正在完成项目记忆、合并提交和最终推送；生产构建产生的跟踪哈希文件将在提交前恢复。
+- 当前任务：将 su5176/master 的 14 个独有提交同步到 Aladdin-Wang/master，同时保留本仓库 2 个 GitHub 更新源提交；同步分支已完成自动化门禁，待合并和推送。
+- 状态：`upstream_sync_verified`
 
 ## 里程碑
 
@@ -21,15 +21,21 @@
 
 ## 验证证据
 
+- **su5176 master 同步门禁**：origin/master 与 su5176/master 的真实分叉为本仓库独有 2 个、上游独有 14 个提交；合并预检仅 docs/ai 自动生成交接文件冲突，运行时代码无文本冲突。新增功能与更新源聚焦回归 121 项通过；Python 3.14 完整套件为 1290 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败，桌面双实例运行时 JSON 的一次瞬时 PermissionError 随后连续 3 次通过。GUI 54 文件/525 项、Vite 生产构建和 Tauri cargo check 通过。未执行 VCC 或 probe reboot 真机操作，沿用上游 2026-08-16 已记录的真机门禁豁免且不宣称 HIL 通过。
+- **僵尸锁与探针电源/重启控制**：Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，维护者于 2026-08-16 明确豁免本次真机门禁，不得把该豁免表述为真机验证通过。
+- **双分支本地合并与隔离**：master 与 feature/eternal-chip-gui 均完成本地快进。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。用户随后明确授权，两条分支通过 Git 原子推送同步到 GitHub origin。
+- **FLM 查找修复选择性合并**：从 origin/master 8f6a094 创建 fix/pdsc-device-algorithm，仅摘取原提交 68d4e4f 为 8da2d2d；差异只有 mklink/mcu_detect.py 与 mklink/mcu_profiles.json，无 GUI 或 HIL 锁文件。真实 D:\Keil_v5\ARM\PACK 中 Keil.STM32F4xx_DFP.pdsc 对 STM32F411CEUx/RETx 均命中 device 级 CMSIS/Flash/STM32F4xx_512.FLM。Python 全量先得 1282 passed、1 skipped，环境性失败随后逐项联网复跑通过；GUI 54 文件/521 项、Vite 生产构建、Tauri cargo check 均通过。Site Agent 打包补入与当前 stcp_bridge 源码哈希一致的本地 DLL 后 3 项通过，DLL 与测试产物均不提交。
 - **v0.1.6 运行时**：GUI 518 项、配置页 22 项和连接后端 12 项通过；Python 可比门禁 1262 项通过、1 项跳过。真实 Chrome、独立 Web 后端、下载器和 HPM5301 完成自动搜索、错误端口回退和再次连接闭环。
 - **烧录与数据流**：HPM 在线烧录自动运行、重复固件加载、浏览器文件刷新和客户 HEX 解析已验证；串口/RTT 高吞吐与下载器 V2/V3/V4 数据完整性完成真机验证。
 - **v0.1.6 正式分发**：七项资产哈希复算通过；正式 NSIS 已覆盖安装，健康与探针接口、内置 sidecar、零 Python 子进程、正常退出和动态端口释放通过。本地 Skill 指向 2f65f92c98；GitHub/Gitee Release、标签和 updates/latest.json 已核对一致。
 - **浏览器后端生命周期**：真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。
-- **源码与本地 Skill 同步**：Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 已同步；用户级 Skill、完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。
-- **GitHub 优先更新检查**：Skill 更新器与运行时/MCP 检查保持 24 小时缓存，默认先读取官方 GitHub updates/latest.json，失败才回退 Gitee；回归测试覆盖优先级、回退和发布器官方仓库默认值。聚焦测试 25 项通过，GUI 521 项通过、生产构建通过；真实强制检查从 GitHub 返回 v0.1.6。Python 全量为 1279 通过、1 跳过，12 项仅因 Windows 账户缺少目录符号链接特权失败。
+- **源码与本地 Skill 同步**：Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 已同步；用户级 Skill、完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。su5176 PR #10 于 2026-08-12 合并为 2f8e902。
+- **PR #10 合并门禁复核**：GitHub 合并前状态 CLEAN、MERGEABLE，头 4d7d617 相对基线 6360843 前进 35 个提交且未落后；仓库未配置远端状态检查。本机隔离复核通过 GUI 54 文件/521 项、Vite 生产构建、Tauri Rust 12 项与 cargo check。首次 Python 全量得到 1284 passed、1 skipped；3 项仅因隔离 worktree 缺少未入库 mklink-stcp.dll 报错，在补入与 PR 完全相同 stcp_bridge 源码树生成且 SHA-256 一致的 DLL 后定向 3 项全通过。旧 Device 连接测试仍 mock 已移除的 _resolve_port，已改为 mock 当前 load_config 入口以消除本地项目配置依赖；修正后的最终 Python 全量为 1288 passed、1 skipped。PR 中既有真实 Chrome 双标签、下载器重连和 HPM/串口/RTT 真机闭环继续作为实机证据。
 
 ## 架构决策
 
+- Windows 串口锁 owner 只有在进程退出码为 STILL_ACTIVE 时才判定存活；访问拒绝或查询失败保持保守，不自动删除可能属于活动进程的锁。
+- VCC 只接受 1800/3300/5000 mV；5000 mV 每次都需显式 confirm_5v=True，GUI 另有危险确认；reset 复位目标 MCU，reboot_probe 重启探针并断开会话。
 - 历史端口是软偏好，可回退自动发现；当前会话手选端口首次保持严格约束，失败后切回自动搜索。
 - 运行时修改在 fix/feature 分支完成全量测试、生产构建、项目记忆和真机闭环后合并。
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
@@ -43,22 +49,24 @@
 
 - **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。
 - **target**：ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。
-- **permission**：维护者已明确授权本次 v0.1.6 GitHub/Gitee 正式发布；破坏性烧录仍需单独授权。
+- **permission**：维护者已授权把 su5176/master 同步并推送到 Aladdin-Wang GitHub master。上游于 2026-08-16 记录的 VCC/reboot 真机门禁豁免继续作为限制，不授权任何 5V 实机输出；标签、Release、Gitee 同步和破坏性烧录仍需单独授权。
 
 ## 下一动作
 
-1. 下个正式版本从当前 master 构建并发布后，公共 Skill ZIP 与 updates/latest.json 才会向其他用户分发 GitHub 优先逻辑。
-2. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
-3. 需要扩大分发证据时，在具备符号链接权限的干净 Windows 环境复测安装更新和 USB Web Entry。
+1. 监控同步后的 HIL 锁、VCC/reboot 与 PDSC device 级 FLM 用户反馈，运行时修复从新的 fix/feature 分支开始。
+2. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
+3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
 ## 已知限制
 
+- VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。
+- 当前 Windows 测试账户不能创建目录符号链接，完整 Python 套件中的 12 个上传路径重定向安全测试无法建立前置条件。
+- Python 3.14 完整门禁中桌面双实例运行时 JSON 曾出现一次瞬时 PermissionError；同一测试随后连续 3 次通过，需继续观察 Windows 文件替换时序。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
 - V4 脱机首次触发的瞬时空失败仍需冷启动复现。
 - 部分客户芯片修复缺少物理目标板编程证据。
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
 - USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
-- 当前 Windows 测试账户不能创建目录符号链接，因此完整 Python 套件中的 12 个上传路径重定向安全测试无法在本机建立前置条件。
 
 ## 延续协议
 

@@ -17,6 +17,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import re
 import struct
 import tempfile
@@ -59,6 +60,7 @@ _RT_NAME_MAX_DEFAULT = 8
 _SRAM_START = 0x20000000
 _SRAM_END = 0x40000000
 _FLASH_VERIFY_CHUNK = 1024
+_SUPPORTED_POWER_VOLTAGES_MV = frozenset({1800, 3300, 5000})
 
 
 def _aligned_object_list_offset(name_max: int) -> int:
@@ -332,6 +334,19 @@ class Device:
         self._bridge = None
         self._flash = None
         self._connected = False
+        # HIL-Infra lockd 协议互操作锁（connect 时获取）：断连即释放
+        renew_stop = getattr(self, "_hil_renew_stop", None)
+        if renew_stop is not None:
+            renew_stop.set()
+            thread = getattr(self, "_hil_renew_thread", None)
+            if thread is not None:
+                thread.join(timeout=2)
+            self._hil_renew_stop = None
+            self._hil_renew_thread = None
+        hil_lock = getattr(self, "_hil_lock", None)
+        if hil_lock is not None:
+            hil_lock.release()
+            self._hil_lock = None
 
     @property
     def connected(self) -> bool:
@@ -966,8 +981,49 @@ class Device:
         return self._flash.erase_sector(f"0x{addr:08X}")
 
     def reset(self) -> None:
+        """Reset the target MCU while keeping the probe session connected."""
         self._require_connected()
         self._bridge.send_command("cmd.set_reset()", timeout=10.0)
+
+    def _stop_active_probe_streams(self) -> None:
+        if self._rtt_session and self._rtt_session._running:
+            self.rtt_stop()
+        if self._systemview_session and self._systemview_session._running:
+            self.systemview_stop()
+
+    def set_power_on(self, voltage_mv: int, *, confirm_5v: bool = False) -> None:
+        """Enable probe VCC output at one supported voltage.
+
+        ``5000`` mV can permanently damage a 3.3 V target.  Callers must make
+        that risk explicit for every 5 V request with ``confirm_5v=True``.
+        """
+        self._require_connected()
+        if isinstance(voltage_mv, bool) or not isinstance(voltage_mv, int):
+            raise ValueError("voltage_mv must be one of 1800, 3300, or 5000")
+        if voltage_mv not in _SUPPORTED_POWER_VOLTAGES_MV:
+            raise ValueError("voltage_mv must be one of 1800, 3300, or 5000")
+        if voltage_mv == 5000 and confirm_5v is not True:
+            raise ValueError(
+                "5 V may damage a 3.3 V target; pass confirm_5v=True only "
+                "after verifying the connected hardware is 5 V tolerant"
+            )
+        self._stop_active_probe_streams()
+        self._bridge.send_command(f"cmd.set_power_on({voltage_mv})", timeout=10.0)
+
+    def reboot(self) -> None:
+        """Reboot the MKLink probe, then release serial and HIL locks.
+
+        Unlike :meth:`reset`, this restarts the probe itself.  A successful
+        call intentionally leaves this ``Device`` disconnected; reconnect
+        after the probe enumerates again.
+        """
+        self._require_connected()
+        self._stop_active_probe_streams()
+        bridge = self._bridge
+        try:
+            bridge.send_command_nowait("reboot()")
+        finally:
+            self.close()
 
     def _get_mcu_profile(self) -> dict | None:
         from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode, match_mcu_by_device
@@ -1770,6 +1826,31 @@ def connect(
         elf_backend=elf_backend,
     )
     dev._connect()
+    # HIL-Infra lockd 协议互操作：connect 成功即持有 transport_usb-serial_<COM>，
+    # close() 释放；与 hil_core.lockd 编排器在同一锁名上互斥（T5 原生对齐）。
+    from mklink.hil_lock import HilFileLock, transport_lock_name
+    hil_lock = HilFileLock(
+        transport_lock_name("usb-serial", dev.port),
+        owner_id=f"mklink-{os.getpid()}",
+    )
+    try:
+        hil_lock.acquire()
+    except Exception:
+        dev.close()
+        raise
+    dev._hil_lock = hil_lock
+    # 长会话自动续租：按 lease/3 心跳防止超时会话的锁被回收；close 停止
+    renew_stop = threading.Event()
+
+    def _hil_renew_loop():
+        while not renew_stop.wait(hil_lock.lease_s / 3):
+            if not hil_lock.renew():
+                return  # 所有权丢失（被回收）——停止续租，断连时如实释放
+
+    dev._hil_renew_stop = renew_stop
+    dev._hil_renew_thread = threading.Thread(target=_hil_renew_loop,
+                                             daemon=True, name="hil-lock-renew")
+    dev._hil_renew_thread.start()
     return dev
 
 
