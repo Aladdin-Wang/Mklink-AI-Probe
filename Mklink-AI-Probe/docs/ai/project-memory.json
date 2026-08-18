@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-17T11:07:10+08:00",
+  "updated_at": "2026-08-18T17:40:03+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "master 已通过合并提交 113d045 同时包含 su5176/master 的 bd87c25 和 Aladdin-Wang 原 HEAD 1baf670；GitHub 优先更新源修复、FLM、HIL 锁与探针控制均保留。",
-    "remote_head": "Aladdin-Wang GitHub origin/master 已推送到 113d045，现已包含 su5176/master 全部提交且不再落后；未创建标签、Release，未修改 updates/latest.json 或 Gitee。",
-    "working_tree": "同步代码、验证证据和交接已提交；生产构建哈希产物已恢复，收尾文档提交后工作树保持干净。"
+    "branch": "feature/superwatch-array-snapshot",
+    "head": "功能分支已合并 Aladdin-Wang/master 284c879；核心提交 9021ecc 新增 SuperWatch 一维标量数组最新快照曲线，目标 master 的更新源修复与同步记录均保留。",
+    "remote_head": "功能分支已推送到 a2160823797-wq 分叉，并向 Aladdin-Wang/Mklink-AI-Probe 提交 Draft PR #3；未创建标签、Release，未修改 updates/latest.json 或 Gitee。",
+    "working_tree": "数组快照实现、验证、目标 master 同步和 Draft PR 已完成；交接提交后工作树保持干净。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "upstream_sync_pushed",
-    "current_task": "su5176/master 的 14 个独有提交已同步到 Aladdin-Wang/master，并保留本仓库 2 个 GitHub 更新源提交；合并提交 113d045 已推送。",
-    "release": "Aladdin-Wang GitHub/Gitee v0.1.6 标签与 Release 保持不变；本次只同步源码 master，不发布、不签名、不修改 updates/latest.json，也不更新 Gitee。"
+    "status": "superwatch_array_snapshot_pr_open",
+    "current_task": "SuperWatch 数组快照曲线已作为 Draft PR #3 提交到 Aladdin-Wang/Mklink-AI-Probe，等待评审。",
+    "release": "本次只向 Aladdin-Wang/Mklink-AI-Probe 提交通用功能 Draft PR；不发布、不签名、不创建标签或 Release，也不更新自动升级清单或 Gitee。"
   },
   "milestones": [
     {
@@ -41,6 +41,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "SuperWatch 数组快照曲线",
+      "result": "同步 Aladdin-Wang/master 后，聚焦 Python 116 项、GUI 全量 55 文件/527 项和 Vite 生产构建通过。Python 全量为 1304 passed、1 skipped，3 项仅因当前源码树没有预置 native/stcp_bridge/build/mklink-stcp.dll 而在 Site Agent 干净打包准备阶段报错；文件变更检测测试首次受 Windows 时序影响未抛错，单独复跑通过。既有真实网页闭环连接下载器并加载包含 uart_comm_rx_buf 的 AXF，uint8_t[128] 快照序号持续递增，页面绘制 0..127 索引曲线；实测约 720-735 Hz，普通时间通道保持 0 pts、前端历史预计 0 MB，证明数组未展开写入时间历史缓冲。验收后已停止 SuperWatch、断开设备并释放本地服务与硬件资源。"
+    },
     {
       "area": "su5176 master 同步门禁",
       "result": "origin/master 与 su5176/master 的真实分叉为本仓库独有 2 个、上游独有 14 个提交；合并预检仅 docs/ai 自动生成交接文件冲突，运行时代码无文本冲突。新增功能与更新源聚焦回归 121 项通过；Python 3.14 完整套件为 1290 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败，桌面双实例运行时 JSON 的一次瞬时 PermissionError 随后连续 3 次通过。GUI 54 文件/525 项、Vite 生产构建和 Tauri cargo check 通过。未执行 VCC 或 probe reboot 真机操作，沿用上游 2026-08-16 已记录的真机门禁豁免且不宣称 HIL 通过。"
@@ -83,6 +87,7 @@
     }
   ],
   "decisions": [
+    "SuperWatch 数组快照 MVP 只支持 1..4096 个元素的一维标量数组；同一时间选择一个数组，后端随既有采样循环更新最新值，前端约 20 Hz 拉取并按索引绘制，不保存数组时间历史。",
     "Windows 串口锁 owner 只有在进程退出码为 STILL_ACTIVE 时才判定存活；访问拒绝或查询失败保持保守，不自动删除可能属于活动进程的锁。",
     "VCC 只接受 1800/3300/5000 mV；5000 mV 每次都需显式 confirm_5v=True，GUI 另有危险确认；reset 复位目标 MCU，reboot_probe 重启探针并断开会话。",
     "历史端口是软偏好，可回退自动发现；当前会话手选端口首次保持严格约束，失败后切回自动搜索。",
@@ -101,6 +106,7 @@
     "permission": "维护者已授权把 su5176/master 同步并推送到 Aladdin-Wang GitHub master。上游于 2026-08-16 记录的 VCC/reboot 真机门禁豁免继续作为限制，不授权任何 5V 实机输出；标签、Release、Gitee 同步和破坏性烧录仍需单独授权。"
   },
   "known_limits": [
+    "当前源码树未包含有效的 native/stcp_bridge/build/mklink-stcp.dll，导致与本功能无关的 3 个 Site Agent 干净打包测试无法建立前置条件；其余 Python 全量测试通过。",
     "VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。",
     "当前 Windows 测试账户不能创建目录符号链接，完整 Python 套件中的 12 个上传路径重定向安全测试无法建立前置条件。",
     "Python 3.14 完整门禁中桌面双实例运行时 JSON 曾出现一次瞬时 PermissionError；同一测试随后连续 3 次通过，需继续观察 Windows 文件替换时序。",
@@ -111,6 +117,7 @@
     "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。"
   ],
   "next_actions": [
+    "跟进 Aladdin-Wang/Mklink-AI-Probe Draft PR #3 的评审反馈；合并后再由维护者决定版本与发布。",
     "监控同步后的 HIL 锁、VCC/reboot 与 PDSC device 级 FLM 用户反馈，运行时修复从新的 fix/feature 分支开始。",
     "下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。",
     "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
