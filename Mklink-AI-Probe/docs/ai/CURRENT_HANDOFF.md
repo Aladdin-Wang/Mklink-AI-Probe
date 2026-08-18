@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-18T16:18:00+08:00`
+- 更新时间：`2026-08-18T17:10:00+08:00`
 - 分支：`feature/superwatch-array-snapshot`
-- HEAD：`功能分支基于 su5176/master；新增 SuperWatch 一维标量数组最新快照曲线，正在准备从 Aladdin-Wang 分叉向上游提交 Draft PR。`
-- 远端 HEAD：`su5176 GitHub master 保持当前基线；本次不创建标签或 Release，不修改 updates/latest.json。`
-- 工作树：数组快照后端、REST、Vue 曲线、测试与生产构建产物已完成并进入上游 PR 提交流程。
-- 当前任务：SuperWatch 支持从一维标量数组父节点选择最新快照曲线；横轴为数组索引，采集复用现有读取块且不进入时间历史缓冲。
-- 状态：`superwatch_array_snapshot_pr_preparing`
+- HEAD：`功能分支基于 su5176/master；核心提交 9021ecc 新增 SuperWatch 一维标量数组最新快照曲线。`
+- 远端 HEAD：`功能分支已推送到 a2160823797-wq 分叉，并向 su5176/Mklink-AI-Probe 提交 Draft PR #12；上游 master 未修改。`
+- 工作树：数组快照实现、测试、生产构建和上游 PR 已完成；当前只追加 PR 交接文档。
+- 当前任务：SuperWatch 数组快照曲线已作为 Draft PR #12 提交到 su5176/Mklink-AI-Probe，等待上游评审。
+- 状态：`superwatch_array_snapshot_pr_open`
 
 ## 里程碑
 
@@ -53,7 +53,7 @@
 
 ## 下一动作
 
-1. 提交并维护面向 su5176/Mklink-AI-Probe 的数组快照 Draft PR；上游合并后再由维护者决定版本与发布。
+1. 跟进 su5176/Mklink-AI-Probe Draft PR #12 的评审反馈；上游合并后再由维护者决定版本与发布。
 2. 监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。
 3. 下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。
 4. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。

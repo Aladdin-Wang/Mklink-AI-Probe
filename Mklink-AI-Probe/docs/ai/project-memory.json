@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-18T16:18:00+08:00",
+  "updated_at": "2026-08-18T17:10:00+08:00",
   "repository": {
     "url": "https://github.com/su5176/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "feature/superwatch-array-snapshot",
-    "head": "功能分支基于 su5176/master；新增 SuperWatch 一维标量数组最新快照曲线，正在准备从 Aladdin-Wang 分叉向上游提交 Draft PR。",
-    "remote_head": "su5176 GitHub master 保持当前基线；本次不创建标签或 Release，不修改 updates/latest.json。",
-    "working_tree": "数组快照后端、REST、Vue 曲线、测试与生产构建产物已完成并进入上游 PR 提交流程。"
+    "head": "功能分支基于 su5176/master；核心提交 9021ecc 新增 SuperWatch 一维标量数组最新快照曲线。",
+    "remote_head": "功能分支已推送到 a2160823797-wq 分叉，并向 su5176/Mklink-AI-Probe 提交 Draft PR #12；上游 master 未修改。",
+    "working_tree": "数组快照实现、测试、生产构建和上游 PR 已完成；当前只追加 PR 交接文档。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "superwatch_array_snapshot_pr_preparing",
-    "current_task": "SuperWatch 支持从一维标量数组父节点选择最新快照曲线；横轴为数组索引，采集复用现有读取块且不进入时间历史缓冲。",
+    "status": "superwatch_array_snapshot_pr_open",
+    "current_task": "SuperWatch 数组快照曲线已作为 Draft PR #12 提交到 su5176/Mklink-AI-Probe，等待上游评审。",
     "release": "本次改为向 su5176/Mklink-AI-Probe 提交通用功能 Draft PR；不发布、不签名、不创建标签或 Release，也不更新自动升级清单。"
   },
   "milestones": [
@@ -110,7 +110,7 @@
     "发布器默认仓库参数仍含旧备用名；下次发布前应修正或继续显式传入两端 Aladdin-Wang 仓库。"
   ],
   "next_actions": [
-    "提交并维护面向 su5176/Mklink-AI-Probe 的数组快照 Draft PR；上游合并后再由维护者决定版本与发布。",
+    "跟进 su5176/Mklink-AI-Probe Draft PR #12 的评审反馈；上游合并后再由维护者决定版本与发布。",
     "监控 v0.1.6 用户反馈，运行时修复从新的 fix/feature 分支开始。",
     "下次正式发布前修正发布器的默认 GitHub/Gitee 仓库参数。",
     "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
