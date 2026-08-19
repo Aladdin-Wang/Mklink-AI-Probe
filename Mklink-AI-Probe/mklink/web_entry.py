@@ -792,7 +792,12 @@ def web_entry_status(
 
 
 def protocol_python_executable() -> Path:
-    executable = Path(sys.executable).resolve()
+    executable = Path(sys.executable)
+    if sys.prefix == sys.base_prefix:
+        executable = executable.resolve()
+    else:
+        # Resolving a venv interpreter symlink would escape the environment.
+        executable = executable.absolute()
     if os.name == "nt" and executable.name.lower() == "python.exe":
         pythonw = executable.with_name("pythonw.exe")
         if pythonw.is_file():

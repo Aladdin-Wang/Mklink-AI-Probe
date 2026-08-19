@@ -9,6 +9,32 @@ import pytest
 from mklink import web_entry
 
 
+def test_protocol_python_executable_keeps_venv_interpreter(tmp_path, monkeypatch):
+    executable = tmp_path / ".venv" / "bin" / "python"
+    monkeypatch.setattr(web_entry.sys, "executable", str(executable))
+    monkeypatch.setattr(web_entry.sys, "prefix", str(executable.parent.parent))
+    monkeypatch.setattr(web_entry.sys, "base_prefix", str(tmp_path / "base"))
+
+    def reject_resolve(_path, *_args, **_kwargs):
+        raise AssertionError("venv interpreter must not be resolved")
+
+    monkeypatch.setattr(Path, "resolve", reject_resolve)
+
+    assert web_entry.protocol_python_executable() == executable.absolute()
+
+
+def test_protocol_python_executable_resolves_base_interpreter(tmp_path, monkeypatch):
+    executable = tmp_path / "bin" / "python"
+    resolved = tmp_path / "real" / "python"
+    monkeypatch.setattr(web_entry.sys, "executable", str(executable))
+    monkeypatch.setattr(web_entry.sys, "prefix", str(tmp_path / "base"))
+    monkeypatch.setattr(web_entry.sys, "base_prefix", str(tmp_path / "base"))
+
+    monkeypatch.setattr(Path, "resolve", lambda _path, *_args, **_kwargs: resolved)
+
+    assert web_entry.protocol_python_executable() == resolved
+
+
 def test_protocol_uri_accepts_only_the_web_entry_actions():
     assert web_entry.parse_protocol_uri("mklink-ai-probe://web/start") == "start"
     assert web_entry.parse_protocol_uri("mklink-ai-probe://web/open") == "open"
