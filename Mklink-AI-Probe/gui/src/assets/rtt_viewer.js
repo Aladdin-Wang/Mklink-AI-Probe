@@ -1088,16 +1088,23 @@ function saveRawLog() {
   var snapshot = rawLogSnapshot();
   if (!snapshot.length) return false;
   var content = snapshot.join('\n') + '\n';
-  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
   var now = new Date();
   function pad(value, width) { return String(value).padStart(width, '0'); }
   var suffix = pad(now.getFullYear(), 4) + pad(now.getMonth() + 1, 2) +
     pad(now.getDate(), 2) + '-' + pad(now.getHours(), 2) +
     pad(now.getMinutes(), 2) + pad(now.getSeconds(), 2);
+  var filename = 'superwatch-raw-' + suffix + '.txt';
   var link = document.createElement('a');
+  var nativeSave = window.__MKLINK_SAVE_FILE__;
+  if (typeof nativeSave === 'function') {
+    var nativeResult = nativeSave(filename, content);
+    if (nativeResult && typeof nativeResult.catch === 'function') nativeResult.catch(function () {});
+    return true;
+  }
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
   link.href = url;
-  link.download = 'superwatch-raw-' + suffix + '.txt';
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

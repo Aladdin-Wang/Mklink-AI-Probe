@@ -16,6 +16,7 @@ import i18nUrl from '../../assets/rtt_i18n.js?url'
 import viewerUrl from '../../assets/rtt_viewer.js?url'
 import { language } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
+import { saveTextFile } from '../../lib/downloadTextFile'
 
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
@@ -224,6 +225,9 @@ onMounted(() => {
   if (!container.value) return
   const el = container.value
 
+  const saveViewerFile = (filename: string, text: string) => saveTextFile(filename, text)
+  ;(window as any).__MKLINK_SAVE_FILE__ = saveViewerFile
+
   // 1. Inject HTML template
   el.innerHTML = buildTemplate(props.mode)
 
@@ -265,6 +269,7 @@ onUnmounted(() => {
   } catch { /* ignore */ }
   // Clear DOM
   if (container.value) container.value.innerHTML = ''
+  if ((window as any).__MKLINK_SAVE_FILE__) delete (window as any).__MKLINK_SAVE_FILE__
 })
 
 function buildTemplate(mode: string): string {

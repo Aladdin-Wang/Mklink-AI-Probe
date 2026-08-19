@@ -262,6 +262,15 @@ fn site_agent_bind_addresses() -> Vec<String> {
     site_agent_network::local_bind_addresses()
 }
 
+#[tauri::command]
+fn write_file(path: String, contents: Vec<u8>) -> Result<(), String> {
+    let target = PathBuf::from(path);
+    if target.as_os_str().is_empty() {
+        return Err("file path is empty".into());
+    }
+    std::fs::write(&target, contents).map_err(|error| error.to_string())
+}
+
 #[cfg(target_os = "windows")]
 fn which_exists(name: &str) -> bool {
     use std::os::windows::process::CommandExt;
@@ -755,6 +764,7 @@ pub fn run() {
             site_agent_generate_token_and_copy,
             site_agent_stcp_credentials_configure,
             site_agent_bind_addresses,
+            write_file,
         ])
         .setup(move |app| {
             let site_agent_root = app.path().app_local_data_dir()?.join("site-agent");
