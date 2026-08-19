@@ -19,7 +19,6 @@ from mklink._types import (
     DEFAULT_BAUDRATE,
     FLM_LOAD_TIMEOUT,
     PROMPT,
-    SYNC_RETRIES,
     DeviceContext,
     DeviceState,
     MKLINK_IDENTITY_COMMAND,
@@ -34,6 +33,8 @@ _STREAM_STOP_COMMANDS = [
     b"cmd.dump_memory(0x20000054, 4, 0)\n",
 ]
 _STREAM_READ_POLL_INTERVAL = 0.01
+_SYNC_TIMEOUTS = (0.3, 0.7)
+_RECOVERY_PROMPT_TIMEOUT = 1.0
 
 
 def quote_probe_string(value: str) -> str:
@@ -122,14 +123,15 @@ class MKLinkSerialBridge:
         )
         self._reader_thread.start()
 
-        # 发送空行同步，重试 SYNC_RETRIES 次
-        for attempt in range(1, SYNC_RETRIES + 1):
+        # 正常 CMD 口会立即返回提示符。分两级短等待兼顾 USB 调度抖动，
+        # 无响应时尽快进入流模式恢复，避免固定阻塞 2 秒三次。
+        for sync_timeout in _SYNC_TIMEOUTS:
             self._prompt_event.clear()
             with self._buffer_lock:
                 self._response_buffer.clear()
             self._serial.write(b"\n")
 
-            if self._prompt_event.wait(timeout=2.0):
+            if self._prompt_event.wait(timeout=sync_timeout):
                 self._ctx.state = DeviceState.READY
                 if self._verify_identity():
                     return True
@@ -179,7 +181,7 @@ class MKLinkSerialBridge:
             self._reader_thread.start()
 
             self._serial.write(b"\n")
-            if self._prompt_event.wait(timeout=3.0):
+            if self._prompt_event.wait(timeout=_RECOVERY_PROMPT_TIMEOUT):
                 self._ctx.state = DeviceState.READY
                 if self._verify_identity():
                     print("[OK] 流模式恢复成功")
