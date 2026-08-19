@@ -1553,6 +1553,32 @@ def create_app(
         except Exception as e:
             return {"status": "skipped", "error": str(e)}
 
+    @app.post("/api/probe/firmware-upgrade")
+    async def probe_firmware_upgrade(confirm: bool = Body(default=False)):
+        """Upgrade the connected probe through its UF2 bootloader drive."""
+        if confirm is not True:
+            raise HTTPException(status_code=400, detail="firmware upgrade requires confirm=true")
+        from mklink import firmware_check as _fc
+
+        device = None
+        try:
+            async with _exclusive_probe_control("firmware-upgrade") as (device, stopped):
+                root = _fc._resolve_firmware_root()
+                result = await run_in_threadpool(
+                    _fc.upgrade_probe_firmware,
+                    device,
+                    root,
+                    confirm=True,
+                )
+                result["stopped"] = stopped
+                return result
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        finally:
+            if device is not None and not device.connected:
+                _state["device"] = None
+                _state["dispatcher"] = None
+
     # ===================================================================
     # REST API — Device Operations (convenience wrappers)
     # ===================================================================

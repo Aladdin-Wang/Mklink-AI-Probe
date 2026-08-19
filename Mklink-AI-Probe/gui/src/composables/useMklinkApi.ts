@@ -12,6 +12,7 @@ import type {
   FlashRequest,
   ProjectHistory,
   ProbeFirmwareCheck,
+  ProbeFirmwareUpgrade,
   RttFindResponse,
   RttWriteResponse,
   FileSourceKind,
@@ -114,6 +115,13 @@ export function useMklinkApi() {
 
   async function probeFirmwareCheck(): Promise<ProbeFirmwareCheck> {
     return api<ProbeFirmwareCheck>('/api/probe/firmware-check')
+  }
+
+  async function upgradeProbeFirmware(confirm = false): Promise<ProbeFirmwareUpgrade> {
+    return api<ProbeFirmwareUpgrade>('/api/probe/firmware-upgrade', {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    })
   }
 
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
@@ -288,6 +296,7 @@ export function useMklinkApi() {
     updateRttConfig,
     getMicrokeenInfo,
     probeFirmwareCheck,
+    upgradeProbeFirmware,
     connectDevice,
     disconnectDevice,
     refreshStatus,

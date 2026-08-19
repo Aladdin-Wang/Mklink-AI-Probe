@@ -30,6 +30,7 @@ const {
   disconnectDevice,
   parseAxf,
   probeFirmwareCheck,
+  upgradeProbeFirmware,
 } = useMklinkApi()
 const { wsConnected, connect: wsConnect, disconnect: wsDisconnect } = useMklinkWs()
 const toast = useToast()
@@ -58,6 +59,8 @@ const launching = ref(false)
 
 const firmwareCheck = ref<ProbeFirmwareCheck | null>(null)
 const showFirmwareModal = ref(false)
+const firmwareUpgrading = ref(false)
+const firmwareUpgradeStatus = ref('')
 
 async function refreshPorts() {
   portsLoading.value = true
@@ -282,6 +285,38 @@ async function recheckFirmware(openModal = true) {
   }
 }
 
+async function upgradeFirmware() {
+  if (firmwareUpgrading.value || !deviceStatus.value.connected) return
+  if (!window.confirm(tr(
+    '将让探针进入 Bootloader 并重启连接，随后自动复制 UF2 固件。继续吗？',
+    'The probe will enter Bootloader and restart its connection before copying the UF2 firmware. Continue?',
+  ))) return
+  firmwareUpgrading.value = true
+  firmwareUpgradeStatus.value = tr('正在升级探针固件...', 'Upgrading probe firmware...')
+  try {
+    const result = await upgradeProbeFirmware(true)
+    if (result.status === 'updated') {
+      firmwareUpgradeStatus.value = tr(
+        `升级完成：${result.verified_version || result.latest_version || ''}`,
+        `Update complete: ${result.verified_version || result.latest_version || ''}`,
+      )
+      toast.success(firmwareUpgradeStatus.value)
+    } else if (result.status === 'up_to_date') {
+      firmwareUpgradeStatus.value = tr('当前已是最新固件', 'The probe firmware is already up to date')
+      toast.success(firmwareUpgradeStatus.value)
+    } else {
+      firmwareUpgradeStatus.value = result.message || tr('未完成自动升级，请按提示手动升级', 'Automatic update did not complete; follow the manual update instructions')
+      toast.error(firmwareUpgradeStatus.value)
+    }
+    await recheckFirmware(false)
+  } catch (error: any) {
+    firmwareUpgradeStatus.value = error?.message || tr('固件升级失败', 'Firmware update failed')
+    toast.error(firmwareUpgradeStatus.value)
+  } finally {
+    firmwareUpgrading.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([refreshPorts(), loadConfig(), recheckFirmware(false)])
   const restoredPort = localPort.value.trim()
@@ -439,6 +474,17 @@ onMounted(async () => {
         <div class="panel-actions">
           <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">{{ tr('启动服务', 'Start Service') }}</button>
         </div>
+        <div class="firmware-upgrade-panel" data-testid="firmware-upgrade-panel">
+          <div class="firmware-upgrade-heading">
+            <strong>{{ tr('探针固件升级', 'Probe Firmware Update') }}</strong>
+            <span v-if="firmwareCheck?.current_version">{{ firmwareCheck.current_version }}</span>
+          </div>
+          <p>{{ tr('读取 MICROKEEN U 盘版本，检查 GitHub/Gitee 最新固件并自动完成 UF2 升级。', 'Read the MICROKEEN drive version, check GitHub/Gitee, and complete the UF2 update automatically.') }}</p>
+          <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading || !deviceStatus.connected" @click="upgradeFirmware">
+            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
+          </button>
+          <span v-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
+        </div>
       </section>
     </main>
 
@@ -478,6 +524,36 @@ onMounted(async () => {
 .remote-panel,
 .serve-panel {
   min-height: 270px;
+}
+
+.firmware-upgrade-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.firmware-upgrade-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.firmware-upgrade-heading span,
+.firmware-upgrade-panel p,
+.firmware-upgrade-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.firmware-upgrade-panel p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.firmware-upgrade-status {
+  overflow-wrap: anywhere;
 }
 
 .panel-header {

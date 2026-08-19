@@ -408,6 +408,24 @@ export interface ProbeFirmwareCheck {
   instructions: string
 }
 
+export type ProbeFirmwareUpgradeStatus =
+  | 'up_to_date'
+  | 'updated'
+  | 'copied_unverified'
+  | 'manual_required'
+  | 'no_probe_disk'
+  | 'no_firmware'
+
+export interface ProbeFirmwareUpgrade {
+  status: ProbeFirmwareUpgradeStatus
+  current_version?: string
+  latest_version?: string
+  verified_version?: string | null
+  firmware?: string
+  message?: string
+  stopped?: string[]
+}
+
 export type FileSourceKind = 'symbol' | 'map'
 
 export interface UploadedFileSource {

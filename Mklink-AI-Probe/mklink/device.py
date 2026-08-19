@@ -1025,6 +1025,22 @@ class Device:
         finally:
             self.close()
 
+    def enter_bootloader(self) -> None:
+        """Ask the probe to enumerate its UF2 bootloader drive.
+
+        The command intentionally has no trailing prompt: entering UF2 mode
+        tears down the CDC connection.  Close the bridge immediately so the
+        caller can observe the drive re-enumeration without holding the serial
+        resource lock.
+        """
+        self._require_connected()
+        self._stop_active_probe_streams()
+        bridge = self._bridge
+        try:
+            bridge.send_command_nowait("cmd.enter_bootloader()")
+        finally:
+            self.close()
+
     def _get_mcu_profile(self) -> dict | None:
         from mklink.profiles import load_mcu_profiles, match_mcu_by_idcode, match_mcu_by_device
         profiles = load_mcu_profiles()

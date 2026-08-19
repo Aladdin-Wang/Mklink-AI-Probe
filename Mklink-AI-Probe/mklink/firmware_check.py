@@ -5,10 +5,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
+import shutil
+import tempfile
+import time
 from typing import Literal
 import os
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 # 固件文件名格式：MicroLink_V3.3.1.uf2 / MicroLink_V4.3.1.uf2
 _FIRMWARE_FILE_RE = re.compile(
@@ -26,6 +32,14 @@ DEFAULT_VERSION_TIMEOUT = 5.0
 
 # Status of CheckResult
 CheckStatus = Literal["ok", "upgrade_required", "no_firmware_dir", "skipped"]
+UpgradeStatus = Literal[
+    "up_to_date",
+    "updated",
+    "copied_unverified",
+    "manual_required",
+    "no_probe_disk",
+    "no_firmware",
+]
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,7 @@ class FirmwareInfo:
     version: Version
     model: str  # "V3" | "V4"
     path: Path
+    download_url: str | None = None
 
     @property
     def version_str(self) -> str:
@@ -109,6 +124,191 @@ def list_firmwares(root: Path) -> list[FirmwareInfo]:
             result.append(info)
     result.sort(key=lambda f: f.version)
     return result
+
+
+def read_microkeen_version(root: str | Path) -> Version | None:
+    """Read the active probe version from a MICROKEEN ``readme.txt``.
+
+    The probe keeps a descending changelog in this file; the first semantic
+    version is the build currently installed on the drive.
+    """
+    path = Path(root) / "readme.txt"
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except (OSError, UnicodeError):
+        return None
+    match = re.search(r"(?<![A-Za-z0-9])V(\d+)\.(\d+)\.(\d+)", text)
+    if not match:
+        return None
+    return Version(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def _probe_disk():
+    from mklink.discovery import find_microkeen_disk
+
+    return find_microkeen_disk()
+
+
+def _find_bootloader_disk() -> str | None:
+    """Find a UF2 bootloader volume, whose label is not MICROKEEN."""
+    configured = os.environ.get("MKLINK_BOOTLOADER_DISK", "").strip()
+    candidates = [configured] if configured else []
+    if os.name == "nt":
+        import string
+
+        candidates.extend(f"{letter}:\\" for letter in string.ascii_uppercase)
+    else:
+        candidates.extend(("/media", "/run/media", "/Volumes"))
+    seen: set[str] = set()
+    for raw in candidates:
+        if not raw:
+            continue
+        root = str(raw).rstrip("\\/") + ("\\" if os.name == "nt" else "/")
+        key = root.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        path = Path(root)
+        if path.is_dir() and _looks_like_bootloader(path):
+            return root
+    return None
+
+
+def _remote_firmware(model: str, *, timeout: float = 8.0) -> FirmwareInfo | None:
+    """Find the newest same-model UF2 from GitHub, then Gitee."""
+    endpoints = (
+        "https://api.github.com/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
+        "https://gitee.com/api/v5/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
+    )
+    for endpoint in endpoints:
+        try:
+            request = Request(endpoint, headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe"})
+            with urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            assets = payload.get("assets") or []
+            candidates: list[FirmwareInfo] = []
+            for asset in assets:
+                name = str(asset.get("name") or "")
+                info = parse_firmware_filename(name)
+                if info is None or info.model != model:
+                    continue
+                info.download_url = str(
+                    asset.get("browser_download_url")
+                    or asset.get("download_url")
+                    or ""
+                ) or None
+                if info.download_url:
+                    candidates.append(info)
+            if candidates:
+                return max(candidates, key=lambda item: item.version)
+        except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool]:
+    """Return a local UF2 path and whether the caller owns a temporary file."""
+    if info.download_url:
+        handle, raw_path = tempfile.mkstemp(prefix="mklink-firmware-", suffix=".uf2")
+        os.close(handle)
+        destination = Path(raw_path)
+        try:
+            request = Request(info.download_url, headers={"User-Agent": "mklink-ai-probe"})
+            with urlopen(request, timeout=30) as response, destination.open("wb") as output:
+                shutil.copyfileobj(response, output, length=1024 * 1024)
+            return destination, True
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+    return info.path, False
+
+
+def _looks_like_bootloader(root: str | Path) -> bool:
+    path = Path(root)
+    return any((path / marker).is_file() for marker in ("INFO_UF2.TXT", "INDEX.HTM", "CURRENT.UF2"))
+
+
+def _wait_for_bootloader_drive(previous: str | None, timeout: float) -> str | None:
+    deadline = time.monotonic() + timeout
+    disappeared = False
+    while time.monotonic() < deadline:
+        current = _find_bootloader_disk()
+        if current is None or (previous and current.rstrip("\\/").casefold() != previous.rstrip("\\/").casefold() and not Path(current).exists()):
+            disappeared = True
+        elif current and Path(current).is_dir() and (disappeared or _looks_like_bootloader(current)):
+            if _looks_like_bootloader(current):
+                return current
+        time.sleep(0.15)
+    return None
+
+
+def upgrade_probe_firmware(
+    device: object,
+    firmware_root: Path,
+    *,
+    confirm: bool = False,
+    bootloader_timeout: float = 10.0,
+    verify_timeout: float = 20.0,
+) -> dict:
+    """Upgrade a connected probe through its UF2 bootloader drive."""
+    if confirm is not True:
+        raise ValueError("firmware upgrade requires confirm=True")
+    disk = _probe_disk()
+    if not disk:
+        return {"status": "no_probe_disk", "message": "未找到 MICROKEEN U 盘"}
+    current = read_microkeen_version(disk)
+    if current is None:
+        return {"status": "manual_required", "message": "无法从 U 盘 readme.txt 读取当前固件版本", "disk": disk}
+    try:
+        available_local = list_firmwares(firmware_root)
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        available_local = []
+    local = find_recommended_uf2(available_local, current)
+    remote = _remote_firmware(f"V{current.major}")
+    candidate = remote or local
+    if candidate is None:
+        return {"status": "no_firmware", "message": f"未找到 {current.major} 系列固件", "current_version": str(current)}
+    if candidate.version <= current:
+        return {"status": "up_to_date", "current_version": str(current), "latest_version": candidate.version_str, "firmware": candidate.name}
+    source, temporary = _materialize_firmware(candidate)
+    try:
+        enter = getattr(device, "enter_bootloader", None)
+        if not callable(enter):
+            return {"status": "manual_required", "message": "当前后端不支持自动进入 Bootloader", "current_version": str(current), "latest_version": candidate.version_str}
+        enter()
+        boot_disk = _wait_for_bootloader_drive(disk, bootloader_timeout)
+        if not boot_disk:
+            return {"status": "manual_required", "message": "未检测到 Bootloader U 盘，请按住升级键手动升级", "current_version": str(current), "latest_version": candidate.version_str}
+        target = Path(boot_disk) / candidate.name
+        shutil.copyfile(source, target)
+        deadline = time.monotonic() + verify_timeout
+        verified = None
+        while time.monotonic() < deadline:
+            active = _probe_disk()
+            if active:
+                version = read_microkeen_version(active)
+                if version is not None:
+                    verified = version
+                    if version >= candidate.version:
+                        return {
+                            "status": "updated",
+                            "current_version": str(current),
+                            "latest_version": candidate.version_str,
+                            "verified_version": str(version),
+                            "firmware": candidate.name,
+                        }
+            time.sleep(0.25)
+        return {
+            "status": "copied_unverified",
+            "current_version": str(current),
+            "latest_version": candidate.version_str,
+            "verified_version": str(verified) if verified else None,
+            "firmware": candidate.name,
+            "message": "固件已复制到 U 盘，但尚未读到新的 readme.txt 版本",
+        }
+    finally:
+        if temporary:
+            source.unlink(missing_ok=True)
 
 
 def find_min_version(firmwares: list[FirmwareInfo]) -> Version | None:
@@ -331,35 +531,39 @@ def check_probe_firmware(
     min_version = find_min_version(firmwares)
     assert min_version is not None  # firmwares non-empty implies min is not None
 
-    # Step 2: read device version (may fail silently)
+    # Step 2: prefer the version stamped in the mounted probe drive.  This is
+    # available even when an older firmware cannot answer cmd.get_version().
     current: Version | None = None
-    if port is None:
-        return CheckResult(
-            status="skipped",
-            current_version=None,
-            min_required_version=min_version,
-            recommended_uf2=None,
-            all_uf2s=firmwares,
-            firmware_dir=Path(firmware_root),
-            instructions="",
-        )
-
-    try:
-        current = read_device_version(port)
-    except TimeoutError:
-        # E4: probe is too old to respond — treat as unknown version
-        current = None
-    except Exception:
-        # E8: other serial errors (ConnectionError, SerialException) — skip
-        return CheckResult(
-            status="skipped",
-            current_version=None,
-            min_required_version=min_version,
-            recommended_uf2=None,
-            all_uf2s=firmwares,
-            firmware_dir=Path(firmware_root),
-            instructions="",
-        )
+    disk = _probe_disk()
+    if disk:
+        current = read_microkeen_version(disk)
+    if current is None:
+        if port is None:
+            return CheckResult(
+                status="skipped",
+                current_version=None,
+                min_required_version=min_version,
+                recommended_uf2=None,
+                all_uf2s=firmwares,
+                firmware_dir=Path(firmware_root),
+                instructions="",
+            )
+        try:
+            current = read_device_version(port)
+        except TimeoutError:
+            # E4: probe is too old to respond — treat as unknown version
+            current = None
+        except Exception:
+            # E8: other serial errors (ConnectionError, SerialException) — skip
+            return CheckResult(
+                status="skipped",
+                current_version=None,
+                min_required_version=min_version,
+                recommended_uf2=None,
+                all_uf2s=firmwares,
+                firmware_dir=Path(firmware_root),
+                instructions="",
+            )
 
     # Step 3: decide
     recommended = find_recommended_uf2(firmwares, current)
