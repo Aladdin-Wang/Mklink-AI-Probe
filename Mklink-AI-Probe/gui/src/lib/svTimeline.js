@@ -44,6 +44,7 @@ export class SvTimeline {
     this.nameColW = 132;
     this.rulerH = 42;
     this.laneH = 28;
+    this.maxLanes = 20;
     this.padR = 6;
     this.hidden = new Set();
     this.hover = null;
@@ -286,7 +287,9 @@ export class SvTimeline {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
-    const cssH = this.rulerH + this.lanes.length * this.laneH + 4;
+    // Reserve the renderer's maximum lane count so newly discovered tasks do
+    // not repeatedly change the page height during a live trace.
+    const cssH = this.rulerH + this.maxLanes * this.laneH + 4;
     if (!this._renderPaused) {
       const width = cssW * dpr;
       const height = cssH * dpr;

@@ -1338,16 +1338,7 @@ async function onStop() {
 .sv-legend :deep(.sv-lg) { display: inline-flex; align-items: center; gap: 4px; background: #f7f8fa; color: #374151; border: 1px solid #d9dde3; border-radius: 4px; padding: 2px 7px; font-size: 11px; cursor: pointer; user-select: none; }
 .sv-legend :deep(.sv-lg i) { width: 3px; height: 11px; border-radius: 1px; display: inline-block; }
 .sv-legend :deep(.sv-lg-off) { opacity: .4; text-decoration: line-through; }
-.sv-canvas-wrap {
-  position: relative;
-  height: 320px;
-  min-height: 320px;
-  background: #f7f8fa;
-  border: 1px solid #cfd4dc;
-  border-radius: 4px;
-  overflow: auto;
-  scrollbar-gutter: stable both-edges;
-}
+.sv-canvas-wrap { position: relative; background: #f7f8fa; border: 1px solid #cfd4dc; border-radius: 4px; overflow: visible; }
 .sv-canvas-wrap :deep(canvas) { display: block; width: 100%; cursor: grab; user-select: none; }
 .sv-tip { position: fixed; display: none; background: #1c2128; border: 1px solid #444c56; border-radius: 6px; padding: 6px 10px; font-size: 11px; color: #f0f6fc; pointer-events: none; z-index: 99; font-family: var(--font-mono, monospace); white-space: nowrap; }
 
