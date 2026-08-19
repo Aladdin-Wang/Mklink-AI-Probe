@@ -1050,6 +1050,14 @@ describe('VOFA viewer hot path source guard', () => {
       '    width: 104px;\n    overflow: hidden;',
     )
     expect(viewerCss).toContain('flex-wrap: nowrap')
+    expect(viewerCss).toContain(
+      '.waveform-viewer.superwatch-desktop #control-toolbar > *,\n' +
+      '  .waveform-viewer.superwatch-desktop #trigger-toolbar > * {\n' +
+      '    flex: 0 0 auto;\n' +
+      '    white-space: nowrap;',
+    )
+    expect(viewerCss).toContain('#interval-group > * { flex: 0 0 auto; }')
+    expect(viewerCss).toContain('#trigger-enable-btn,\n#trigger-force-btn {\n  flex: 0 0 auto;')
     expect(viewerCss).toContain('flex: 1 1 140px')
     expect(viewerCss).toContain('text-overflow: ellipsis')
   })

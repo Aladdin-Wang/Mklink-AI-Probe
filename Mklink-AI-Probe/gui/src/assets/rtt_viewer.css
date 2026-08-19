@@ -392,6 +392,11 @@ header h1 {
     overflow-y: hidden;
     scrollbar-width: none;
   }
+  .waveform-viewer.superwatch-desktop #control-toolbar > *,
+  .waveform-viewer.superwatch-desktop #trigger-toolbar > * {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
   .waveform-viewer.superwatch-desktop #control-toolbar::-webkit-scrollbar,
   .waveform-viewer.superwatch-desktop #trigger-toolbar::-webkit-scrollbar {
     display: none;
@@ -1020,6 +1025,7 @@ tr.watch-child-row td[data-col="value"] {
   white-space: nowrap;
 }
 .ctrl-btn {
+  flex: 0 0 auto;
   height: 26px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -1029,6 +1035,7 @@ tr.watch-child-row td[data-col="value"] {
   font-family: var(--font-body);
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1069,6 +1076,13 @@ tr.watch-child-row td[data-col="value"] {
 }
 #interval-input:focus,
 #buffer-input:focus { border-color: var(--accent); }
+#interval-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+#interval-group > * { flex: 0 0 auto; }
 .interval-unit,
 .buffer-unit { color: var(--dim); font-size: 11px; }
 .buffer-memory-estimate {
@@ -1173,6 +1187,11 @@ tr.watch-child-row td[data-col="value"] {
   height: 18px;
   background: var(--border);
   flex-shrink: 0;
+}
+#trigger-enable-btn,
+#trigger-force-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 #trigger-enable-btn {
   height: 26px;
