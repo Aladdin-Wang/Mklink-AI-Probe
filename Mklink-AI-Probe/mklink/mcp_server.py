@@ -381,15 +381,28 @@ def _register_flash_tools(mcp: Any) -> None:
         return {"reset": True}
 
     @mcp.tool()
-    def set_power_on(voltage_mv: int, confirm_5v: bool = False) -> dict:
+    def set_power_on(
+        voltage_mv: int,
+        confirm_5v: bool = False,
+        confirm_user: bool = False,
+    ) -> dict:
         """Enable MKLink VCC output at exactly 1.8 V, 3.3 V, or 5 V.
 
         Args:
             voltage_mv: One of 1800, 3300, or 5000 millivolts.
+            confirm_user: Must be True for every request, and only after the
+                user explicitly approves this exact voltage for this call.
+                Never reuse an earlier confirmation or infer consent.
             confirm_5v: Must be True for every 5000 mV request, and only after
                 the user has verified that the connected target is 5 V
                 tolerant.  Applying 5 V to a 3.3 V target can destroy it.
         """
+        if confirm_user is not True:
+            raise ValueError(
+                "VCC output requires explicit user confirmation for this "
+                "voltage; ask the user, then pass confirm_user=True only "
+                "after they approve this request"
+            )
         dev = _connected_device()
         dev.set_power_on(voltage_mv, confirm_5v=confirm_5v)
         return {"power_on": True, "voltage_mv": voltage_mv}

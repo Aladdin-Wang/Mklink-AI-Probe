@@ -21,8 +21,6 @@ const mocks = vi.hoisted(() => {
       updateConfig: vi.fn(),
       connectDevice: vi.fn(),
       disconnectDevice: vi.fn(),
-      setPowerOn: vi.fn(),
-      rebootProbe: vi.fn(),
       parseAxf: vi.fn(),
       uploadFileSource: vi.fn(),
       probeFirmwareCheck: vi.fn(),
@@ -36,7 +34,6 @@ const mocks = vi.hoisted(() => {
     pickSymbolFile: vi.fn(),
     pickMapFile: vi.fn(),
     refreshSymbolCatalog: vi.fn(),
-    confirm: vi.fn(),
   }
 })
 
@@ -105,8 +102,6 @@ describe('ConfigView', () => {
     mocks.api.updateConfig.mockResolvedValue({})
     mocks.api.connectDevice.mockResolvedValue({})
     mocks.api.disconnectDevice.mockResolvedValue(undefined)
-    mocks.api.setPowerOn.mockResolvedValue({ status: 'ok' })
-    mocks.api.rebootProbe.mockResolvedValue({ status: 'rebooted', connected: false })
     mocks.api.parseAxf.mockResolvedValue({
       loaded: true,
       axf_path: 'C:\\saved\\app.axf',
@@ -127,8 +122,6 @@ describe('ConfigView', () => {
     mocks.pickSymbolFile.mockResolvedValue(null)
     mocks.pickMapFile.mockResolvedValue(null)
     vi.spyOn(window, 'open').mockImplementation(() => null)
-    mocks.confirm.mockReturnValue(true)
-    vi.stubGlobal('confirm', mocks.confirm)
   })
 
   it('renders one four-section workspace with Local Device selected by default', async () => {
@@ -144,6 +137,10 @@ describe('ConfigView', () => {
     expect(text).not.toContain('MCU 类型')
     expect(text).not.toContain('MCU 提示')
     expect(text).not.toContain('高级配置 (RTT)')
+    expect(text).not.toContain('探针电源与重启')
+    expect(text).not.toContain('VCC')
+    expect(text).not.toContain('重启 MKLink')
+    expect(wrapper.find('[data-testid="probe-controls"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="device-status"]').exists()).toBe(false)
   })
 
@@ -321,40 +318,6 @@ describe('ConfigView', () => {
     expect(wrapper.find('[data-testid="save-local"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('自动保存')
     expect(wrapper.get('[data-testid="disconnect-local"]').attributes('disabled')).toBeDefined()
-  })
-
-  it('sets supported probe voltages and requires a second action for 5V', async () => {
-    mocks.deviceStatus.connected = true
-    const wrapper = await mountView()
-
-    await wrapper.get('[data-testid="probe-power-3300"]').trigger('click')
-    await flushPromises()
-
-    expect(mocks.api.setPowerOn).toHaveBeenCalledWith(3300, false)
-
-    mocks.api.setPowerOn.mockClear()
-    mocks.confirm.mockReturnValueOnce(false)
-    await wrapper.get('[data-testid="probe-power-5000"]').trigger('click')
-    await flushPromises()
-    expect(mocks.api.setPowerOn).not.toHaveBeenCalled()
-
-    mocks.confirm.mockReturnValueOnce(true)
-    await wrapper.get('[data-testid="probe-power-5000"]').trigger('click')
-    await flushPromises()
-    expect(mocks.api.setPowerOn).toHaveBeenCalledWith(5000, true)
-    expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('5.0V'))
-  })
-
-  it('confirms probe reboot and reports that the connection is dropped', async () => {
-    mocks.deviceStatus.connected = true
-    const wrapper = await mountView()
-
-    await wrapper.get('[data-testid="reboot-probe"]').trigger('click')
-    await flushPromises()
-
-    expect(mocks.confirm).toHaveBeenCalledOnce()
-    expect(mocks.api.rebootProbe).toHaveBeenCalledOnce()
-    expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('MKLink 已重启'))
   })
 
   it('rejects local SWD clock settings above 10 MHz', async () => {
