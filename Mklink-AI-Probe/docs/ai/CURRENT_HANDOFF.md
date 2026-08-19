@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-19T17:51:43+08:00`
+- 更新时间：`2026-08-19T22:10:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 基于 284c879 开发 0.1.7 修复；四个源码问题已分别提交为 218b95c、6d12ed4、b6a9ff3、6031380。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 6031380；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：四个问题的源码提交均已推送；剩余 Web 生产构建产物和本项目记忆作为独立收口提交，完成后工作树应清洁。
-- 当前任务：0.1.7 已完成四组修复：CMD 快速握手；上位机探针控制收敛与 AI VCC 确认；SuperWatch 窄窗按钮布局；Linux/macOS venv 的 web-entry 协议处理器解释器路径保留。
-- 状态：`zero_one_seven_bugfixes_committed`
+- HEAD：`fix/fast-probe-handshake 基于 284c879 开发 0.1.7 修复；六个源码问题已分别提交，SystemView 滚轮跟进修复为 af63af4。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 af63af4；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：六个问题的源码提交和 Web 生产构建产物均已推送；项目记忆作为独立收口提交，完成后工作树应清洁。
+- 当前任务：0.1.7 已完成六组修复：前四项基础缺陷、SystemView 时间轴稳定布局、探针 UF2 自动升级。
+- 状态：`zero_one_seven_six_fixes_committed`
 
 ## 里程碑
 
@@ -35,6 +35,8 @@
 - **浏览器后端生命周期**：真实 Chrome 双标签验证：关闭一个标签时后端继续运行；关闭最后标签后约 3 秒正常退出，8765 可立即重绑定。关闭前下载器保持连接，随后新后端能重新连接同一下载器，确认 CMD 串口和 Device 已释放。GUI 521 项、生产构建和 Tauri cargo check 通过；Python 1274 项通过、1 项跳过，12 项仅因 Windows 缺少符号链接权限失败。
 - **源码与本地 Skill 同步**：Aladdin-Wang GitHub/Gitee master 与 su5176 PR #10 已同步；用户级 Skill、完整 GUI/MCP 依赖导入和 Skill 校验通过，快速启动网页已写入当前 MICROKEEN 卷。su5176 PR #10 于 2026-08-12 合并为 2f8e902。
 - **PR #10 合并门禁复核**：GitHub 合并前状态 CLEAN、MERGEABLE，头 4d7d617 相对基线 6360843 前进 35 个提交且未落后；仓库未配置远端状态检查。本机隔离复核通过 GUI 54 文件/521 项、Vite 生产构建、Tauri Rust 12 项与 cargo check。首次 Python 全量得到 1284 passed、1 skipped；3 项仅因隔离 worktree 缺少未入库 mklink-stcp.dll 报错，在补入与 PR 完全相同 stcp_bridge 源码树生成且 SHA-256 一致的 DLL 后定向 3 项全通过。旧 Device 连接测试仍 mock 已移除的 _resolve_port，已改为 mock 当前 load_config 入口以消除本地项目配置依赖；修正后的最终 Python 全量为 1288 passed、1 skipped。PR 中既有真实 Chrome 双标签、下载器重连和 HPM/串口/RTT 真机闭环继续作为实机证据。
+- **SystemView 界面抖动**：时间轴 canvas 原先按泳道数量动态改写高度，任务数量变化会反复撑开外层页面。渲染器现固定预留最多 20 条泳道的高度，任务发现不再改变页面高度；容器保持 overflow:visible，普通鼠标滚轮仍滚动页面。SystemView/Dashboard/时间轴定向 37 项通过；最终 GUI 55 文件/526 项、Vite 生产构建和 Tauri cargo check 通过。
+- **探针主动固件升级**：新增 /api/probe/firmware-upgrade 和配置页启动服务下的检查并升级固件按钮。版本优先读取 MICROKEEN readme.txt，GitHub Releases 不可用时回退 Gitee，再回退本地 MK-Firmware；发送 cmd.enter_bootloader() 后按 INFO_UF2.TXT/INDEX.HTM/CURRENT.UF2 扫描 Bootloader 盘，复制 UF2 并等待重新枚举和 readme 复核；无法进入时返回手动升级提示。固件升级单元 4 项、Remote API/离线下载 61 项、配置 GUI 22 项通过。真实 V3 下载器 COM739 闭环：当前 V3.3.7 进入 UF2 盘、复制本地 MicroLink_V3.3.7.uf2、重新枚举后 readme 仍为 V3.3.7；未提交固件二进制。最终 Python 为 1305 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败；GUI 55 文件/526 项、Vite 生产构建和 Tauri cargo check 通过。
 
 ## 架构决策
 
@@ -52,6 +54,8 @@
 - 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 - 由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。
 - Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。
+- SystemView 时间轴固定预留渲染器最多 20 条泳道的高度，避免高事件率下的页面重排抖动；容器保持 overflow:visible，不能截获普通页面滚轮。
+- 探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。
 
 ## 真机环境
 
@@ -61,7 +65,7 @@
 
 ## 下一动作
 
-1. 维护者审阅 origin/fix/fast-probe-handshake 的四个独立问题提交；合并前仍需补做 Dashboard 已连接态真实浏览器闭环或取得明确门禁豁免。
+1. 维护者审阅 origin/fix/fast-probe-handshake 的六个独立问题提交；合并前仍需补做 Dashboard 已连接态真实浏览器闭环或取得明确门禁豁免。
 2. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
 3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
@@ -76,6 +80,7 @@
 - 部分客户芯片修复缺少物理目标板编程证据。
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
 - USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
+- 当前 GitHub/Gitee Release 尚未提供 V3.3.7/V4.3.6 UF2 远端资产；自动升级会优先尝试远端，缺失时回退安装包 MK-Firmware。本机已完成 V3.3.7 同版本 UF2 真机重刷闭环。
 
 ## 延续协议
 
