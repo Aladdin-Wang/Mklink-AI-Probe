@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download } from '@lucide/vue'
+import { Download, Save, X } from '@lucide/vue'
 import { useOnlineFlashApi } from '../../composables/useOnlineFlashApi'
 import { tr } from '../../composables/useLanguage'
 import { downloadBlobFile } from '../../lib/downloadTextFile'
@@ -16,40 +16,98 @@ const props = defineProps<{
 }>()
 
 const address = ref('0x08000000')
-const size = ref(512 * 1024)
+const endAddress = ref('0x08080000')
 const busy = ref(false)
 const error = ref('')
+const readDialogOpen = ref(false)
+const progress = ref(0)
+const progressText = ref('')
+const data = ref<Uint8Array | null>(null)
 const api = useOnlineFlashApi()
 
+const parsedAddress = computed(() => {
+  if (!/^0x[0-9a-f]+$/i.test(address.value.trim())) return null
+  const value = Number.parseInt(address.value.trim().slice(2), 16)
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff ? value : null
+})
+const parsedEndAddress = computed(() => {
+  if (!/^0x[0-9a-f]+$/i.test(endAddress.value.trim())) return null
+  const value = Number.parseInt(endAddress.value.trim().slice(2), 16)
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff ? value : null
+})
+const readSize = computed(() => parsedAddress.value !== null && parsedEndAddress.value !== null
+  ? parsedEndAddress.value - parsedAddress.value : 0)
 const canRead = computed(() => (
   !props.hpm && !!props.probeId && !!props.targetPart
-  && Number.isInteger(size.value) && size.value > 0
-  && /^0x[0-9a-f]+$/i.test(address.value.trim())
+  && readSize.value > 0
+  && readSize.value <= 64 * 1024 * 1024
   && !busy.value && !props.disabled
 ))
 
+function openReadDialog(): void {
+  error.value = ''
+  readDialogOpen.value = true
+}
+
+function closeReadDialog(): void {
+  if (!busy.value) readDialogOpen.value = false
+}
+
 async function readMemory(): Promise<void> {
-  if (!canRead.value) return
+  if (!canRead.value || parsedAddress.value === null || parsedEndAddress.value === null) return
   error.value = ''
   busy.value = true
-  const parsedAddress = Number.parseInt(address.value.trim().slice(2), 16)
+  progress.value = 0
+  progressText.value = ''
+  data.value = null
+  const start = parsedAddress.value
+  const total = readSize.value
+  const result = new Uint8Array(total)
   try {
-    const blob = await api.readMemory({
-      address: `0x${parsedAddress.toString(16)}`,
-      size: size.value,
-      probe_id: props.probeId,
-      target_part: props.targetPart,
-      frequency: props.frequency,
-      connect_mode: props.connectMode,
-      reset_mode: props.resetMode,
-    })
-    const filename = `read-0x${parsedAddress.toString(16).padStart(8, '0').toUpperCase()}-${size.value}.bin`
-    downloadBlobFile(filename, blob)
+    for (let offset = 0; offset < total; offset += 1024) {
+      const chunkSize = Math.min(1024, total - offset)
+      const blob = await api.readMemory({
+        address: `0x${(start + offset).toString(16)}`,
+        size: chunkSize,
+        probe_id: props.probeId,
+        target_part: props.targetPart,
+        frequency: props.frequency,
+        connect_mode: props.connectMode,
+        reset_mode: props.resetMode,
+      })
+      const chunk = new Uint8Array(await blob.arrayBuffer())
+      if (chunk.length !== chunkSize) throw new Error(tr('读取数据长度不匹配', 'Read returned an unexpected length'))
+      result.set(chunk, offset)
+      progress.value = (offset + chunkSize) / total
+      progressText.value = `${offset + chunkSize} / ${total} bytes`
+    }
+    data.value = result
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught)
   } finally {
     busy.value = false
   }
+}
+
+async function saveMemory(): Promise<void> {
+  if (!data.value || parsedAddress.value === null) return
+  const filename = `read-0x${parsedAddress.value.toString(16).padStart(8, '0').toUpperCase()}-${data.value.length}.bin`
+  const blob = new Blob([data.value.buffer.slice(data.value.byteOffset, data.value.byteOffset + data.value.byteLength) as ArrayBuffer], { type: 'application/octet-stream' })
+  try {
+    const picker = (window as Window & { showSaveFilePicker?: (options?: unknown) => Promise<{ createWritable: () => Promise<{ write: (value: Blob) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker
+    if (picker) {
+      const handle = await picker({ suggestedName: filename, types: [{ description: 'Binary file', accept: { 'application/octet-stream': ['.bin'] } }] })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return
+    }
+  } catch (caught) {
+    if (caught instanceof DOMException && caught.name === 'AbortError') return
+    error.value = caught instanceof Error ? caught.message : String(caught)
+    return
+  }
+  downloadBlobFile(filename, blob)
 }
 </script>
 
@@ -58,12 +116,25 @@ async function readMemory(): Promise<void> {
     <header><h3>{{ tr('读取目标数据', 'Read Target Data') }}</h3><span v-if="hpm" class="badge">HPM</span></header>
     <p v-if="hpm" class="memory-read-note">{{ tr('HPM ROM API 当前不支持读取。', 'The HPM ROM API does not support reads yet.') }}</p>
     <template v-else>
-      <label><span>{{ tr('起始地址', 'Start Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
-      <label><span>{{ tr('读取大小（字节）', 'Size (bytes)') }}</span><input v-model.number="size" data-testid="memory-read-size" type="number" min="1" max="67108864" step="1"></label>
-      <p class="memory-read-note">{{ tr('超过 512 KiB 时会自动分块读取。', 'Reads larger than 512 KiB are split into chunks automatically.') }}</p>
-      <button class="btn" type="button" data-testid="memory-read-submit" :disabled="!canRead" @click="readMemory"><Download :size="14" aria-hidden="true" />{{ busy ? tr('读取中...', 'Reading...') : tr('读取并保存 BIN', 'Read and Save BIN') }}</button>
+      <button class="btn" type="button" data-testid="memory-read-submit" :disabled="!canRead" @click="openReadDialog"><Download :size="14" aria-hidden="true" />{{ tr('读取数据', 'Read Data') }}</button>
+      <div v-if="busy || data" class="memory-read-progress" data-testid="memory-read-progress">
+        <div class="memory-read-progress-row"><span>{{ busy ? tr('读取进度', 'Read progress') : tr('读取完成', 'Read complete') }}</span><span>{{ Math.round(progress * 100) }}%</span></div>
+        <progress :value="progress" max="1"></progress>
+        <span class="memory-read-note">{{ progressText || `${data?.length || 0} bytes` }}</span>
+        <button v-if="data && !busy" class="btn" type="button" data-testid="memory-read-save" @click="saveMemory"><Save :size="14" aria-hidden="true" />{{ tr('保存文件', 'Save File') }}</button>
+      </div>
       <p v-if="error" class="memory-read-error" role="alert">{{ error }}</p>
     </template>
+
+    <div v-if="readDialogOpen" class="memory-read-dialog-backdrop" role="presentation" @click.self="closeReadDialog">
+      <section class="memory-read-dialog" role="dialog" aria-modal="true" aria-labelledby="memory-read-dialog-title">
+        <header><h4 id="memory-read-dialog-title">{{ tr('填写读取地址', 'Enter Read Range') }}</h4><button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="15" aria-hidden="true" /></button></header>
+        <label><span>{{ tr('基地址', 'Base Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
+        <label><span>{{ tr('结束地址（不含）', 'End Address (exclusive)') }}</span><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000"></label>
+        <p class="memory-read-note">{{ readSize > 0 ? tr(`将读取 ${readSize} 字节，每次 1024 字节。`, `Reads ${readSize} bytes in 1024-byte chunks.`) : tr('结束地址必须大于基地址。', 'End address must be greater than the base address.') }}</p>
+        <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Download :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -74,6 +145,15 @@ async function readMemory(): Promise<void> {
 .memory-read-panel label { display: grid; gap: 4px; color: var(--of-muted); }
 .memory-read-panel input { min-width: 0; width: 100%; height: 30px; box-sizing: border-box; border: 1px solid var(--of-border); border-radius: 5px; background: var(--of-input); color: var(--of-text); padding: 0 8px; font-family: var(--of-mono); }
 .memory-read-panel .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.memory-read-progress { display: grid; gap: 5px; }
+.memory-read-progress-row { display: flex; justify-content: space-between; color: var(--of-text); font-variant-numeric: tabular-nums; }
+.memory-read-progress progress { width: 100%; height: 8px; accent-color: var(--of-accent); }
 .memory-read-note { margin: 0; color: var(--of-muted); line-height: 1.4; }
 .memory-read-error { margin: 0; color: var(--of-danger); overflow-wrap: anywhere; }
+.memory-read-dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 42%); }
+.memory-read-dialog { width: min(420px, 100%); display: grid; gap: 10px; padding: 16px; border: 1px solid var(--of-border); border-radius: 7px; background: var(--of-surface); box-shadow: 0 16px 48px rgb(0 0 0 / 30%); }
+.memory-read-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.memory-read-dialog h4 { margin: 0; color: var(--of-text); font-size: 14px; }
+.memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--of-border); border-radius: 4px; background: transparent; color: var(--of-muted); }
+.memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 </style>

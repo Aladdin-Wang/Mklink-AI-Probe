@@ -14,7 +14,7 @@ describe('MemoryReadPanel', () => {
     expect(wrapper.find('[data-testid="memory-read-submit"]').exists()).toBe(false)
   })
 
-  it('reads a range and downloads the returned BIN', async () => {
+  it('prompts for a range, reads it in chunks, then saves the returned BIN', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3, 4]), {
       status: 200,
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -36,12 +36,18 @@ describe('MemoryReadPanel', () => {
       },
     })
     await wrapper.get('[data-testid="memory-read-submit"]').trigger('click')
+    await wrapper.get('[data-testid="memory-read-address"]').setValue('0x1000')
+    await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x1004')
+    await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
     await flushPromises()
 
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/online-flash/memory/read'),
       expect.objectContaining({ method: 'POST' }),
     )
+    expect(click).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="memory-read-progress"]').text()).toContain('100%')
+    await wrapper.get('[data-testid="memory-read-save"]').trigger('click')
     expect(click).toHaveBeenCalledOnce()
     wrapper.unmount()
     vi.unstubAllGlobals()
