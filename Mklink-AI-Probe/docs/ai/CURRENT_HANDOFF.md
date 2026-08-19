@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-17T11:07:10+08:00`
-- 分支：`master`
-- HEAD：`master 已通过合并提交 113d045 同时包含 su5176/master 的 bd87c25 和 Aladdin-Wang 原 HEAD 1baf670；GitHub 优先更新源修复、FLM、HIL 锁与探针控制均保留。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/master 已推送到 113d045，现已包含 su5176/master 全部提交且不再落后；未创建标签、Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：同步代码、验证证据和交接已提交；生产构建哈希产物已恢复，收尾文档提交后工作树保持干净。
-- 当前任务：su5176/master 的 14 个独有提交已同步到 Aladdin-Wang/master，并保留本仓库 2 个 GitHub 更新源提交；合并提交 113d045 已推送。
-- 状态：`upstream_sync_pushed`
+- 更新时间：`2026-08-19T17:51:43+08:00`
+- 分支：`fix/fast-probe-handshake`
+- HEAD：`fix/fast-probe-handshake 基于 284c879 开发 0.1.7 修复；四个源码问题已分别提交为 218b95c、6d12ed4、b6a9ff3、6031380。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 6031380；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：四个问题的源码提交均已推送；剩余 Web 生产构建产物和本项目记忆作为独立收口提交，完成后工作树应清洁。
+- 当前任务：0.1.7 已完成四组修复：CMD 快速握手；上位机探针控制收敛与 AI VCC 确认；SuperWatch 窄窗按钮布局；Linux/macOS venv 的 web-entry 协议处理器解释器路径保留。
+- 状态：`zero_one_seven_bugfixes_committed`
 
 ## 里程碑
 
@@ -21,6 +21,10 @@
 
 ## 验证证据
 
+- **POSIX venv Web 快速启动**：protocol_python_executable 在 sys.prefix != sys.base_prefix 时使用 absolute() 保留 venv 的 bin/python 入口，不再由 resolve() 展开到基础解释器；非 venv 继续 resolve()，Windows pythonw.exe 选择逻辑不变。两个跨平台回归用例分别禁止 venv 分支调用 resolve()、确认基础解释器仍调用 resolve()，旧实现会被前者稳定拦截且不依赖 Windows 符号链接权限。test_web_entry.py 35 项通过；最终 GUI 54 文件/524 项、Vite 生产构建和 Tauri cargo check 通过；最终 Python 为 1295 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。用户提供的 Linux 实机证据包括协议 start/stop、8765 健康接口、Edge 无头渲染和重新安装 quick-launch 全部通过；本机未重复运行 Linux 桌面协议处理器。
+- **SuperWatch 窄窗按钮布局**：根因是桌面 SuperWatch 工具栏虽然保持单行并允许横向滚动，但按钮、触发控件和间隔组仍可被 flex 收缩。现让桌面两条工具栏的直接子项保持自身宽度，控制按钮与触发按钮强制 nowrap，间隔组使用不可收缩的单行布局。Browser 在真实 8766 Web GUI 验证 650x720 与 390x844：开始、暂停、停止、应用、触发均约 49x26 px，文字单行且 flex-shrink=0；650 px 下控制栏 clientWidth/scrollWidth 为 563/802，触发栏为 563/729，滚动发生在工具栏内部，页面无整体横向溢出；390 px 下工具栏正常换行，控制台无错误或警告。聚焦 WaveformViewer 83 项和 Dashboard 20 项通过；最终 GUI 54 文件/524 项、Vite 生产构建和 Tauri cargo check 通过；最终 Python 为 1293 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。
+- **上位机探针控制收敛与 AI VCC 确认**：Config 已删除完整的探针电源与重启区及 VCC 控件；Dashboard 顶部并排显示带图标和文字的重启 MCU、重启 MKLink，两个动作在断连、连接切换和彼此执行期间互斥，MKLink 重启继续要求确认并提示重新枚举。Device/REST 电源能力保持不变；MCP set_power_on 对 1800/3300/5000 mV 均要求本次具体电压的 confirm_user=True，5000 mV 仍额外要求 confirm_5v=True。聚焦 Python 10 项、GUI 42 项通过；最终 GUI 54 文件/524 项、Vite 生产构建和 Tauri cargo check 通过；最终 Python 为 1293 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。Browser 在真实 8766 Web 后端完成桌面和 390x844 移动视口验证：Config 无 probe-controls/VCC，Dashboard 两个文字按钮无重叠或横向溢出，页面无框架覆盖层和控制台告警。真实连接请求返回 Failed to connect to an available MKLink port，因此本轮未完成已连接态浏览器闭环，未执行 MCU reset、probe reboot 或任何 VCC 输出；确认取消/执行路径由组件测试覆盖。
+- **CMD 口残留命令与快速连接**：COM225 真机将未完成的 print('__mklink_probe 残片预置到探针 REPL 后，旧实现稳定拼成无效命令并在 3.305 秒后识别失败；修复后连续 5 次身份识别全部成功且为 63-64 ms，自动发现连续 3 次均选中正确 CMD 口且约 63 ms，CLI 完整连接和 IDCODE 读取为 466 ms。独立 Web 后端真实闭环完成残留命令、自动发现、连接、状态和断开：发现 62 ms、连接 192 ms。聚焦回归 9 项、GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 和补入未跟踪本地 mklink-stcp.dll 后的 Site Agent 5 项通过；补齐该 DLL 后的最终 Python 全量为 1293 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。真实只读 dump 流在 CDC 关闭后立即恢复提示符，未形成持续无提示符状态；0.3/0.7/1.0 秒恢复时序由自动化回归覆盖，不宣称该分支已完成真实慢恢复 HIL。
 - **su5176 master 同步门禁**：origin/master 与 su5176/master 的真实分叉为本仓库独有 2 个、上游独有 14 个提交；合并预检仅 docs/ai 自动生成交接文件冲突，运行时代码无文本冲突。新增功能与更新源聚焦回归 121 项通过；Python 3.14 完整套件为 1290 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败，桌面双实例运行时 JSON 的一次瞬时 PermissionError 随后连续 3 次通过。GUI 54 文件/525 项、Vite 生产构建和 Tauri cargo check 通过。未执行 VCC 或 probe reboot 真机操作，沿用上游 2026-08-16 已记录的真机门禁豁免且不宣称 HIL 通过。
 - **僵尸锁与探针电源/重启控制**：Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，维护者于 2026-08-16 明确豁免本次真机门禁，不得把该豁免表述为真机验证通过。
 - **双分支本地合并与隔离**：master 与 feature/eternal-chip-gui 均完成本地快进。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。用户随后明确授权，两条分支通过 Git 原子推送同步到 GitHub origin。
@@ -34,8 +38,12 @@
 
 ## 架构决策
 
+- 每个独立问题完成验证后形成独立 Git 提交并推送 GitHub，生成资产和项目记忆可作为单独的收口提交，便于按问题回退源码。
+- web-entry 协议处理器在标准 venv 中保留 sys.executable 的绝对但未解引用路径；非 venv 继续规范化真实解释器路径。gui_server_command 直接复用当前 sys.executable，不做额外 resolve。
+- SuperWatch 在宽度大于 640 px 时继续采用单行工具栏和工具栏内横向滚动，但所有直接子控件禁止 flex 收缩；控制、触发和间隔按钮文字保持 nowrap。640 px 及以下继续使用原有多行响应式布局。
+- CMD 口发现先发送空行结束探针 REPL 残留输入，再发送唯一身份命令；读取在提示符出现时立即返回。bridge.connect 正常同步采用 0.3/0.7 秒分级等待，流恢复后的提示符上限为 1.0 秒。
 - Windows 串口锁 owner 只有在进程退出码为 STILL_ACTIVE 时才判定存活；访问拒绝或查询失败保持保守，不自动删除可能属于活动进程的锁。
-- VCC 只接受 1800/3300/5000 mV；5000 mV 每次都需显式 confirm_5v=True，GUI 另有危险确认；reset 复位目标 MCU，reboot_probe 重启探针并断开会话。
+- 上位机 GUI 不提供 VCC 控件；重启 MCU 与重启 MKLink 在 Dashboard 并排显示且有明确文字。Device/REST 仍支持 1800/3300/5000 mV；AI 的 MCP set_power_on 任意电压每次都需显式 confirm_user=True，5000 mV 还需 confirm_5v=True。reset 复位目标 MCU，reboot_probe 重启探针并断开会话。
 - 历史端口是软偏好，可回退自动发现；当前会话手选端口首次保持严格约束，失败后切回自动搜索。
 - 运行时修改在 fix/feature 分支完成全量测试、生产构建、项目记忆和真机闭环后合并。
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
@@ -49,17 +57,18 @@
 
 - **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。
 - **target**：ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。
-- **permission**：维护者已授权把 su5176/master 同步并推送到 Aladdin-Wang GitHub master。上游于 2026-08-16 记录的 VCC/reboot 真机门禁豁免继续作为限制，不授权任何 5V 实机输出；标签、Release、Gitee 同步和破坏性烧录仍需单独授权。
+- **permission**：维护者已授权把 su5176/master 同步并推送到 Aladdin-Wang GitHub master，并要求后续每个问题独立提交并推送 GitHub。上游于 2026-08-16 记录的 VCC/reboot 真机门禁豁免继续作为限制，不授权任何 5V 实机输出；标签、Release、Gitee 同步和破坏性烧录仍需单独授权。
 
 ## 下一动作
 
-1. 监控同步后的 HIL 锁、VCC/reboot 与 PDSC device 级 FLM 用户反馈，运行时修复从新的 fix/feature 分支开始。
+1. 维护者审阅 origin/fix/fast-probe-handshake 的四个独立问题提交；合并前仍需补做 Dashboard 已连接态真实浏览器闭环或取得明确门禁豁免。
 2. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
 3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
 ## 已知限制
 
-- VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。
+- COM225 的真实只读 dump 流在 CDC 关闭后立即恢复提示符，未能保持持续无提示符状态；快速流恢复的超时时序已有自动化覆盖，但仍需在可稳定保持 RTT/VOFA 流的 V2/V3/V4 场景补充慢恢复 HIL。
+- 本次真实 Browser 使用实际 8766 Web 后端时探针连接失败，未完成 Dashboard 已连接态或确认框的浏览器 HIL；组件测试覆盖两个复位动作、取消/确认与断连禁用，且未执行 MCU reset、probe reboot 或 VCC 输出。历史 VCC/reboot 真机门禁豁免仍只作为限制，不得表述为真机通过。
 - 当前 Windows 测试账户不能创建目录符号链接，完整 Python 套件中的 12 个上传路径重定向安全测试无法建立前置条件。
 - Python 3.14 完整门禁中桌面双实例运行时 JSON 曾出现一次瞬时 PermissionError；同一测试随后连续 3 次通过，需继续观察 Windows 文件替换时序。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
@@ -71,5 +80,6 @@
 ## 延续协议
 
 - 开始前用 Git、进程和硬件状态校正项目记忆。
+- 每修复并验证一个问题后，独立提交并推送 GitHub，提交范围必须能按问题回退。
 - 不提交安装包、日志、硬件标识、凭据或构建缓存。
 - 结束前执行 render、validate、diff 检查并保持工作树干净。
