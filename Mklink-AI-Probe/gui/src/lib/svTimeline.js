@@ -44,7 +44,10 @@ export class SvTimeline {
     this.nameColW = 132;
     this.rulerH = 42;
     this.laneH = 28;
-    this.maxLanes = 20;
+    // Keep a compact, stable viewport for small traces. The capacity only
+    // grows when new tasks appear, so live discovery does not make the page
+    // jump up and down while avoiding a large empty 20-lane canvas.
+    this.laneCapacity = 2;
     this.padR = 6;
     this.hidden = new Set();
     this.hover = null;
@@ -287,9 +290,8 @@ export class SvTimeline {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
-    // Reserve the renderer's maximum lane count so newly discovered tasks do
-    // not repeatedly change the page height during a live trace.
-    const cssH = this.rulerH + this.maxLanes * this.laneH + 4;
+    if (this.lanes.length > this.laneCapacity) this.laneCapacity = this.lanes.length;
+    const cssH = this.rulerH + Math.max(1, this.laneCapacity) * this.laneH + 4;
     if (!this._renderPaused) {
       const width = cssW * dpr;
       const height = cssH * dpr;

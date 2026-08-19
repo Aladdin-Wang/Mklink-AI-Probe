@@ -351,3 +351,31 @@ describe('SvTimeline continuous filtering', () => {
     timeline.destroy()
   })
 })
+
+describe('SvTimeline lane layout', () => {
+  it('starts compact and grows only when more task lanes appear', () => {
+    const canvas = document.createElement('canvas')
+    Object.defineProperty(canvas, 'clientWidth', { configurable: true, value: 320 })
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      canvas,
+      ctx: { setTransform: vi.fn() },
+      hidden: new Set(),
+      laneCapacity: 2,
+      tasks: [{ tid: 1 }, { tid: 2 }],
+      rulerH: 42,
+      laneH: 28,
+      padR: 6,
+      renderPaused: false,
+    })
+
+    timeline._layout()
+    expect(timeline.H).toBe(102)
+    timeline.tasks = [{ tid: 1 }, { tid: 2 }, { tid: 3 }]
+    timeline._layout()
+    expect(timeline.H).toBe(130)
+    timeline.tasks = [{ tid: 1 }]
+    timeline._layout()
+    expect(timeline.H).toBe(130)
+  })
+})
