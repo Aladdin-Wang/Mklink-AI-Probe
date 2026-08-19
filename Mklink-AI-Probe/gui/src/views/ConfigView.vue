@@ -416,6 +416,18 @@ onMounted(async () => {
           </button>
         </div>
 
+        <div class="firmware-upgrade-panel" data-testid="firmware-upgrade-panel">
+          <div class="firmware-upgrade-heading">
+            <strong>{{ tr('探针固件升级', 'Probe Firmware Update') }}</strong>
+            <span v-if="firmwareCheck?.current_version">{{ firmwareCheck.current_version }}</span>
+          </div>
+          <p>{{ tr('读取 MICROKEEN U 盘版本，检查 GitHub/Gitee 最新固件并自动完成 UF2 升级。', 'Read the MICROKEEN drive version, check GitHub/Gitee, and complete the UF2 update automatically.') }}</p>
+          <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading || !deviceStatus.connected" @click="upgradeFirmware">
+            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
+          </button>
+          <span v-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
+        </div>
+
       </section>
 
       <FileSourcesPanel
@@ -473,17 +485,6 @@ onMounted(async () => {
         </div>
         <div class="panel-actions">
           <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">{{ tr('启动服务', 'Start Service') }}</button>
-        </div>
-        <div class="firmware-upgrade-panel" data-testid="firmware-upgrade-panel">
-          <div class="firmware-upgrade-heading">
-            <strong>{{ tr('探针固件升级', 'Probe Firmware Update') }}</strong>
-            <span v-if="firmwareCheck?.current_version">{{ firmwareCheck.current_version }}</span>
-          </div>
-          <p>{{ tr('读取 MICROKEEN U 盘版本，检查 GitHub/Gitee 最新固件并自动完成 UF2 升级。', 'Read the MICROKEEN drive version, check GitHub/Gitee, and complete the UF2 update automatically.') }}</p>
-          <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading || !deviceStatus.connected" @click="upgradeFirmware">
-            {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
-          </button>
-          <span v-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
         </div>
       </section>
     </main>
