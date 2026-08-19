@@ -23,6 +23,10 @@ from .models import (
 from ..remote.resource_manager import ResourceError, ResourceGroup
 
 
+READ_MEMORY_CHUNK_SIZE = 512 * 1024
+MAX_READ_MEMORY_SIZE = 64 * 1024 * 1024
+
+
 _ACTION_STATES = {
     "connect": JobState.CONNECTING,
     "erase": JobState.ERASING,
@@ -128,6 +132,85 @@ class OnlineFlashJobManager:
                     f"failed to submit online flash job: {exc}"
                 ) from exc
             return job_id
+
+    def read_memory(
+        self,
+        request: JobRequest,
+        address: int,
+        size: int,
+        *,
+        chunk_size: int = READ_MEMORY_CHUNK_SIZE,
+    ) -> bytes:
+        """Read target memory through a short-lived, resource-protected session."""
+        from mklink.hpm_config import is_hpm_target
+
+        if is_hpm_target(request.target_part):
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "HPM ROM API does not support online memory reads",
+            )
+        if type(address) is not int or address < 0:
+            raise ValueError("address must be a non-negative integer")
+        if type(size) is not int or size <= 0 or size > MAX_READ_MEMORY_SIZE:
+            raise ValueError(
+                f"size must be between 1 and {MAX_READ_MEMORY_SIZE} bytes"
+            )
+        if type(chunk_size) is not int or chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+        chunk_size = min(chunk_size, READ_MEMORY_CHUNK_SIZE)
+        owner = f"user:online-read:{uuid.uuid4()}"
+        backend = None
+        acquired = False
+        try:
+            acquired = True
+            self._resource_manager.acquire(
+                ResourceGroup.TARGET_DEBUG,
+                owner,
+                preempt=request.preempt_ai,
+                preempt_user_dashboard=True,
+            )
+            if self._prepare_connect is not None:
+                self._prepare_connect(request)
+            backend = self._backend_factory()
+            backend.connect(
+                probe=request.probe_id,
+                target=request.target_part,
+                frequency=request.frequency,
+                pack=request.pack_path,
+                custom_flm_paths=request.custom_flm_paths,
+                custom_flm_digests=request.custom_flm_digests,
+                custom_flm_regions=request.custom_flm_regions,
+                custom_flm_ram_start=request.custom_flm_ram_start,
+                custom_flm_ram_size=request.custom_flm_ram_size,
+                connect_mode=request.connect_mode,
+                reset_mode=request.reset_mode,
+            )
+            regions = tuple(backend.memory_regions())
+            end = address + size
+            if end < address or not any(
+                address >= region.start and end <= region.end
+                for region in regions
+                if region.is_flash or region.is_ram
+            ):
+                raise FlashError(
+                    FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                    "requested memory range is outside the target memory map",
+                )
+            output = bytearray()
+            for offset in range(0, size, chunk_size):
+                output.extend(backend.read_memory(address + offset, min(chunk_size, size - offset)))
+            return bytes(output)
+        finally:
+            if backend is not None:
+                try:
+                    backend.disconnect()
+                except Exception:
+                    pass
+            if acquired:
+                try:
+                    self._resource_manager.release(owner)
+                except Exception:
+                    pass
 
     def get(self, job_id: str) -> JobSnapshot:
         with self._condition:

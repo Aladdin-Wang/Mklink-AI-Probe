@@ -100,6 +100,33 @@ def assert_error(code: FlashErrorCode, call) -> FlashError:
     return raised.value
 
 
+def test_hpm_rom_backend_rejects_online_memory_reads() -> None:
+    backend = HpmRomBackend()
+    error = assert_error(
+        FlashErrorCode.TARGET_NOT_SUPPORTED,
+        lambda: backend.read_memory(0x08000000, 4),
+    )
+    assert "does not support online memory reads" in error.message
+
+
+def test_pyocd_backend_reads_exact_bytes_from_target() -> None:
+    class Target(FakeTarget):
+        def __init__(self):
+            super().__init__((FakeRegion(0x08000000, 0x100),))
+
+        def read_memory_block8(self, address, size):
+            return bytes((address + offset) & 0xFF for offset in range(size))
+
+    session = FakeSession(Target())
+    backend = PyOcdBackend(
+        session_factory=lambda _probe, _options: session,
+        probe_provider=lambda: [FakeProbe("probe")],
+    )
+    backend.connect(probe="probe", target="STM32F103C8", frequency=1_000_000)
+    assert backend.read_memory(0x08000010, 4) == bytes([0x10, 0x11, 0x12, 0x13])
+    backend.disconnect()
+
+
 def test_hpm_rom_backend_programs_without_flm_and_verifies_by_readback(
     tmp_path: Path,
 ) -> None:

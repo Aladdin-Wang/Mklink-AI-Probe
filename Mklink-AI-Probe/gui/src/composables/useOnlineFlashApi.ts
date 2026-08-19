@@ -18,6 +18,7 @@ import type {
   ProbeRecord,
   TargetRecord,
   TargetSearchOptions,
+  ReadMemoryRequest,
 } from '../types/onlineFlash'
 import { tr } from './useLanguage'
 import { API_BASE } from '../lib/runtimeEndpoint'
@@ -111,6 +112,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new OnlineFlashApiError(response.status, response.statusText, payload)
   }
   return response.json() as Promise<T>
+}
+
+async function binaryRequest(path: string, options: RequestInit = {}): Promise<Blob> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${API_BASE}${ONLINE_FLASH_BASE}${path}`, { ...options, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new OnlineFlashApiError(response.status, response.statusText, payload)
+  }
+  return response.blob()
 }
 
 async function packOperationRequest(
@@ -292,6 +304,13 @@ export function useOnlineFlashApi() {
     return request(`/images/${encoded(imageId)}/preview?${params.toString()}`, { signal })
   }
 
+  function readMemory(payload: ReadMemoryRequest): Promise<Blob> {
+    return binaryRequest('/memory/read', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   function createJob(job: JobRequest): Promise<JobCreateResult> {
     return request('/jobs', { method: 'POST', body: JSON.stringify(job) })
   }
@@ -395,6 +414,7 @@ export function useOnlineFlashApi() {
     inspectImagePath,
     getImageSourceStatus,
     previewImage,
+    readMemory,
     createJob,
     getActiveJob,
     getJob,

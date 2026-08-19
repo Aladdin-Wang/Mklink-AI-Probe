@@ -88,6 +88,17 @@ export interface JobRequest {
   hpm_flash_cfg?: [string, string, string, string] | null
 }
 
+export interface ReadMemoryRequest {
+  address: string
+  size: number
+  probe_id: string
+  target_part: string
+  preempt_ai?: boolean
+  frequency?: number
+  connect_mode?: string
+  reset_mode?: string
+}
+
 export type JobState =
   | 'queued'
   | 'connecting'

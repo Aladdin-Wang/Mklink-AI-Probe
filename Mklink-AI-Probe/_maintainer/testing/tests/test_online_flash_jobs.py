@@ -39,6 +39,17 @@ class FakeBackend:
         self.calls.append(("disconnect", None))
 
 
+class ReadBackend(FakeBackend):
+    def memory_regions(self):
+        from mklink.cmsis_dap.models import MemoryRegion
+
+        return (MemoryRegion("flash", 0x08000000, 0x200000, True),)
+
+    def read_memory(self, address, size):
+        self.calls.append(("read", address, size))
+        return bytes((address + index) & 0xFF for index in range(size))
+
+
 def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     backend = BlockingBackend()
     resources = ResourceManager()
@@ -64,6 +75,38 @@ def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     assert manager.wait(job_id, timeout=2).state is JobState.SUCCEEDED
     assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
     assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is None
+    manager.shutdown()
+
+
+def test_read_memory_uses_resource_lock_and_splits_into_512k_chunks():
+    backend = ReadBackend()
+    resources = ResourceManager()
+    manager = OnlineFlashJobManager(lambda: backend, resources)
+    request = JobRequest(
+        actions=("connect", "disconnect"),
+        probe_id="probe",
+        target_part="STM32F103C8",
+        frequency=1_000_000,
+    )
+
+    data = manager.read_memory(request, 0x08000000, 512 * 1024 + 16)
+
+    assert len(data) == 512 * 1024 + 16
+    assert [call[0] for call in backend.calls] == ["connect", "read", "read", "disconnect"]
+    assert backend.calls[1][2] == 512 * 1024
+    assert backend.calls[2][2] == 16
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+    manager.shutdown()
+
+
+def test_read_memory_rejects_hpm_before_opening_backend():
+    backend = ReadBackend()
+    manager = OnlineFlashJobManager(lambda: backend, ResourceManager())
+    request = JobRequest(actions=("connect", "disconnect"), target_part="HPM5300")
+
+    with pytest.raises(FlashError, match="does not support online memory reads"):
+        manager.read_memory(request, 0x80000000, 4)
+    assert backend.calls == []
     manager.shutdown()
 
 

@@ -3,6 +3,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FlashMapPanel from '../components/online-flash/FlashMapPanel.vue'
+import MemoryReadPanel from '../components/online-flash/MemoryReadPanel.vue'
 import FirmwareWorkspace from '../components/online-flash/FirmwareWorkspace.vue'
 import ProbeSettingsPanel from '../components/online-flash/ProbeSettingsPanel.vue'
 import TargetPackPanel from '../components/online-flash/TargetPackPanel.vue'
@@ -679,6 +680,7 @@ onBeforeUnmount(() => {
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
       <TargetPackPanel :targets="targets" :selected-part="selectedTarget?.part_number || ''" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
+      <MemoryReadPanel :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :disabled="active || packBusy || inspectBusy" />
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" />

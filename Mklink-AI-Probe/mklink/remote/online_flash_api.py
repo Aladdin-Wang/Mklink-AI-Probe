@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -157,6 +157,17 @@ class JobBody(BaseModel):
     sector_addresses: List[int] = Field(default_factory=list)
     board: Optional[str] = None
     hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
+
+
+class ReadMemoryBody(BaseModel):
+    address: Union[str, int]
+    size: int = Field(..., ge=1, le=64 * 1024 * 1024)
+    probe_id: Optional[str] = None
+    target_part: str
+    preempt_ai: bool = True
+    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
+    connect_mode: str = "halt"
+    reset_mode: str = "default"
 
 
 def _redact_paths(value: str) -> str:
@@ -1043,6 +1054,52 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     ) -> object:
         result = await _blocking(services.catalog.search, q, vendor=vendor, installed=installed, limit=limit)
         return _json_primitive(result, hide_paths=True)
+
+    @router.post("/memory/read")
+    async def read_memory(body: ReadMemoryBody) -> Response:
+        """Read a target range and return it as a downloadable BIN file.
+
+        HPM targets intentionally fail here because their ROM API currently
+        exposes programming but no equivalent read operation.
+        """
+        from mklink.hpm_config import is_hpm_target
+
+        target = await _blocking(_resolved_target, services.catalog, body.target_part)
+        if is_hpm_target(target.part_number):
+            _raise_http(FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "HPM ROM API does not support online memory reads",
+            ))
+        if not body.probe_id:
+            raise HTTPException(status_code=422, detail="probe_id is required")
+        address = await _blocking(_parse_base_address, body.address)
+        if address is None:
+            raise HTTPException(status_code=422, detail="address is required")
+        request = JobRequest(
+            actions=("connect", "disconnect"),
+            preempt_ai=body.preempt_ai,
+            probe_id=body.probe_id,
+            target_part=target.part_number,
+            pack_path=target.pack_path,
+            frequency=body.frequency,
+            connect_mode=body.connect_mode,
+            reset_mode=body.reset_mode,
+        )
+        data = await _blocking(
+            services.job_manager.read_memory,
+            request,
+            address,
+            body.size,
+        )
+        filename = "read-0x{:08X}-{}.bin".format(address, body.size)
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(data)),
+            },
+        )
 
     @router.get("/packs/status")
     async def pack_status() -> object:

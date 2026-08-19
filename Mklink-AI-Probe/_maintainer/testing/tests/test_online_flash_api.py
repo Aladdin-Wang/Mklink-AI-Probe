@@ -202,6 +202,11 @@ class Jobs:
         self.started.append(request)
         return "job-1"
 
+    def read_memory(self, request, address, size):
+        self.read_request = request
+        self.read_range = (address, size)
+        return bytes((address + index) & 0xFF for index in range(size))
+
     def get(self, job_id):
         if job_id != "job-1":
             raise KeyError(job_id)
@@ -263,6 +268,42 @@ def test_probe_target_and_pack_status_routes_use_injected_services(app, services
     assert services.catalog.calls[-1] == ("device", "Vendor", True, 7)
     status = request(app, "GET", "/api/online-flash/packs/status")
     assert status.json()["index_available"] is True
+
+
+def test_read_memory_route_returns_bin_for_non_hpm_target(app, services):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/memory/read",
+        json={
+            "address": "0x1000",
+            "size": 4,
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+    assert response.status_code == 200
+    assert response.content == bytes([0x00, 0x01, 0x02, 0x03])
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert "read-0x00001000-4.bin" in response.headers["content-disposition"]
+    assert services.job_manager.read_range == (0x1000, 4)
+
+
+def test_read_memory_route_rejects_hpm_target(app, services):
+    services.catalog.search = lambda *args, **kwargs: []
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/memory/read",
+        json={
+            "address": "0x80000000",
+            "size": 4,
+            "probe_id": "mk",
+            "target_part": "HPM5300",
+        },
+    )
+    assert response.status_code == 422
+    assert "does not support online memory reads" in response.json()["detail"]["message"]
 
 
 def test_hpm_image_and_job_use_rom_api_without_pack_or_sector_geometry(app, services):

@@ -374,6 +374,13 @@ class HpmRomBackend:
             except Exception as error:
                 raise FlashError(FlashErrorCode.VERIFY_FAIL, str(error)) from error
 
+    def read_memory(self, address: int, size: int) -> bytes:
+        del address, size
+        raise FlashError(
+            FlashErrorCode.TARGET_NOT_SUPPORTED,
+            "HPM ROM API does not support online memory reads",
+        )
+
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
         del reset_mode
         try:
@@ -908,6 +915,33 @@ class PyOcdBackend:
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "target memory map is unavailable",
                 ) from None
+
+    def read_memory(self, address: int, size: int) -> bytes:
+        """Read an exact target-memory range while the pyOCD session is open."""
+        if type(address) is not int or address < 0:
+            raise ValueError("address must be a non-negative integer")
+        if type(size) is not int or size <= 0:
+            raise ValueError("size must be a positive integer")
+        with self._lock:
+            session = self._require_session()
+            try:
+                data = self._read_target_bytes(session.target, address, size)
+            except Exception as exc:
+                if self._is_locked_error(exc):
+                    raise FlashError(
+                        FlashErrorCode.TARGET_LOCKED,
+                        "target memory is protected",
+                    ) from None
+                raise FlashError(
+                    FlashErrorCode.CONNECT_FAIL,
+                    f"target memory read failed: {exc}",
+                ) from None
+            if len(data) != size:
+                raise FlashError(
+                    FlashErrorCode.CONNECT_FAIL,
+                    f"target returned {len(data)} bytes for a {size}-byte read",
+                )
+            return data
 
     @staticmethod
     def _iter_image_chunks(
