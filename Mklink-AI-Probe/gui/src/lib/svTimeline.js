@@ -65,8 +65,6 @@ export class SvTimeline {
     this._explicitContexts = [];
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
-    this.followEase = 0.22;
-    this._followRaf = 0;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
     this._renderPaused = (data && data.renderPaused) === true;
     this.emptyText = (data && data.emptyText) || '窗口内无任务';
@@ -120,12 +118,16 @@ export class SvTimeline {
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
     const shouldFollow = this.follow && this.windowSize > 0 && this.intervals.length;
-    if (shouldFollow && (viewInvalid || !hadIntervalsBefore)) {
-      this._snapFollowRange();
-    } else if (shouldFollow) {
-      const span = this.windowSize;
-      if (Math.abs((this.viewEnd - this.viewStart) - span) > 0.001) {
-        this.viewStart = this.viewEnd - span;
+    if (shouldFollow) {
+      const target = this._targetFollowRange();
+      if (
+        viewInvalid
+        || !hadIntervalsBefore
+        || Math.abs(this.viewStart - target.start) > 0.001
+        || Math.abs(this.viewEnd - target.end) > 0.001
+      ) {
+        this.viewStart = target.start;
+        this.viewEnd = target.end;
       }
     } else {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;
@@ -141,10 +143,9 @@ export class SvTimeline {
       }
       }
     }
-    this._layout();
-    const drew = shouldFollow ? this._drawLive() : (this._draw(), true);
+    const resized = this._layout();
+    const drew = shouldFollow ? this._drawLive(undefined, resized) : (this._draw(), true);
     if (drew) this._updateStatus();
-    if (shouldFollow && !viewInvalid && hadIntervalsBefore) this._scheduleFollow();
   }
 
   // Live workers already filter the requested visible range. This entrypoint
@@ -220,7 +221,11 @@ export class SvTimeline {
     if (!this.windowSize || this.windowSize <= 0) {
       return { start: this.tMin, end: this.tMax };
     }
-    const end = this.tMax;
+    // Keep the ruler and task lanes fixed while a live time page fills. Moving
+    // the range to every new event makes all ticks and intervals drift at the
+    // stream update rate, which appears as timeline shaking.
+    const page = Math.max(1, Math.ceil(this.tMax / this.windowSize));
+    const end = page * this.windowSize;
     return { start: end - this.windowSize, end };
   }
 
@@ -234,47 +239,19 @@ export class SvTimeline {
     }
   }
 
-  _drawLive(timestamp = performance.now()) {
+  _drawLive(timestamp = performance.now(), force = false) {
     if (this._renderPaused) return false;
     const lastRender = Number.isFinite(this._lastLiveRender)
       ? this._lastLiveRender
       : Number.NEGATIVE_INFINITY;
-    if (timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
+    if (!force && timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
     this._lastLiveRender = timestamp;
     this._draw();
     return true;
   }
 
-  _scheduleFollow() {
-    if (this._renderPaused || !this.follow || this.windowSize <= 0 || this._followRaf) return;
-    const step = (timestamp) => {
-      this._followRaf = 0;
-      if (this._renderPaused || !this.follow || this.windowSize <= 0) return;
-      const now = Number.isFinite(timestamp) ? timestamp : performance.now();
-      const target = this._targetFollowRange();
-      const currentEnd = Number.isFinite(this.viewEnd) ? this.viewEnd : target.end;
-      const delta = target.end - currentEnd;
-      if (Math.abs(delta) < 0.5) {
-        this.viewEnd = target.end;
-        this.viewStart = target.start;
-      } else {
-        this.viewEnd = currentEnd + delta * this.followEase;
-        this.viewStart = this.viewEnd - this.windowSize;
-      }
-      if (this._drawLive(now)) this._updateStatus();
-      if (Math.abs(target.end - this.viewEnd) >= 0.5) {
-        this._followRaf = requestAnimationFrame(step);
-      }
-    };
-    this._followRaf = requestAnimationFrame(step);
-  }
-
   pauseRendering() {
     this._renderPaused = true;
-    if (this._followRaf) {
-      cancelAnimationFrame(this._followRaf);
-      this._followRaf = 0;
-    }
   }
 
   resumeRendering() {
@@ -283,7 +260,6 @@ export class SvTimeline {
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
     this._layout();
     if (this._drawLive()) this._updateStatus();
-    this._scheduleFollow();
   }
 
   _layout() {
@@ -292,11 +268,12 @@ export class SvTimeline {
     const cssW = this.canvas.clientWidth || 800;
     if (this.lanes.length > this.laneCapacity) this.laneCapacity = this.lanes.length;
     const cssH = this.rulerH + Math.max(1, this.laneCapacity) * this.laneH + 4;
+    let resized = false;
     if (!this._renderPaused) {
-      const width = cssW * dpr;
-      const height = cssH * dpr;
-      if (this.canvas.width !== width) this.canvas.width = width;
-      if (this.canvas.height !== height) this.canvas.height = height;
+      const width = Math.max(1, Math.round(cssW * dpr));
+      const height = Math.max(1, Math.round(cssH * dpr));
+      if (this.canvas.width !== width) { this.canvas.width = width; resized = true; }
+      if (this.canvas.height !== height) { this.canvas.height = height; resized = true; }
       this.canvas.style.height = cssH + 'px';
     }
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -304,6 +281,7 @@ export class SvTimeline {
     this.plotX0 = this.nameColW;
     this.plotX1 = this.W - this.padR;
     this.plotW = this.plotX1 - this.plotX0;
+    return resized;
   }
 
   _resize = () => {
@@ -766,10 +744,6 @@ export class SvTimeline {
   }
 
   destroy() {
-    if (this._followRaf) {
-      cancelAnimationFrame(this._followRaf);
-      this._followRaf = 0;
-    }
     window.removeEventListener('resize', this._resize);
     if (this._listenersBound) {
       this.canvas.removeEventListener('wheel', this._onWheel);

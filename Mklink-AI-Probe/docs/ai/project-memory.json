@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-20T15:34:34+08:00",
+  "updated_at": "2026-08-20T16:44:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/fast-probe-handshake",
-    "head": "fix/fast-probe-handshake 已包含在线下载清空数据修复；当前把目标读取按钮统一为向上的 Upload 图标。",
-    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 c5b264b；本次读取图标修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
-    "working_tree": "读取图标源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。"
+    "head": "fix/fast-probe-handshake 已包含在线下载读取图标修正；RTOS Trace Timeline 固定时间页和 DPR 取整修复待独立提交。",
+    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 c5b264b；本次 Timeline 修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
+    "working_tree": "Timeline 源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "online_flash_read_icon_fixed",
-    "current_task": "校正在线下载读取图标方向，并复测 RTT、SuperWatch 与 RTOS Trace 的停止命令和 TimeLine 稳定性。",
+    "status": "rtos_timeline_stability_fixed",
+    "current_task": "RTOS Trace Timeline 已固定时间页并修复 fractional DPR 重绘抖动；RTT、SuperWatch 的后续真机复测仍待继续。",
     "release": "托盘修复标准 NSIS 候选已覆盖安装验证；本分支不打标签、不发布、不修改 updates/latest.json，也不更新 Gitee。"
   },
   "milestones": [
@@ -128,6 +128,10 @@
     {
       "area": "在线下载读取图标",
       "result": "目标芯片读取到上位机的方向统一使用 Lucide Upload 向上箭头，覆盖在线下载主工具栏、独立读取面板和地址弹窗开始读取三个入口；保存文件图标保持不变。DOM 回归断言锁定三个读取按钮的 lucide-upload；聚焦 2 文件/75 项、GUI 全量 55 文件/535 项与 Vite 生产构建通过。"
+    },
+    {
+      "area": "RTOS Trace Timeline 抖动",
+      "result": "根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，canvas 尺寸先 Math.round 后比较，重建时强制立即绘制。GUI 全量 55 文件/537 项、Vite 生产构建通过；真实 Chrome 600x844 连续 10 次采样前 9 次画布区域完全一致，桌面视口连续 8 次完全一致，仅跨越 10 秒页边界时更新；停止后 Sync=Ready，页面无横向溢出和控制台错误。"
     }
   ],
   "decisions": [
@@ -147,7 +151,7 @@
     ,
     "Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。"
     ,
-    "SystemView 时间轴固定预留渲染器最多 20 条泳道的高度，避免高事件率下的页面重排抖动；容器保持 overflow:visible，不能截获普通页面滚轮。",
+    "SystemView Timeline 使用固定整页时间窗口，只有跨越窗口边界才移动标尺；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，避免 fractional DPR 触发反复清空；容器保持 overflow:visible，不能截获普通页面滚轮。",
     "探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。"
     ,
     "在线目标读取使用基地址到结束地址（结束地址不含）的 1024 字节前端分块请求；读取结果保留在窗口中，保存文件动作才打开系统保存选择器。HPM ROM 读取继续明确禁用。",
@@ -174,7 +178,7 @@
     "Chrome 插件 26.814.41407 已恢复控制；由 agent 新建的 localhost 标签仍可能被 Chrome 以 ERR_BLOCKED_BY_CLIENT 阻止，维护者手动打开页面后可以正常 claim。文件选择器自动化会使浏览器控制内核超时，真实文件加载交互需要维护者手动选取文件后继续验证。"
   ],
   "next_actions": [
-    "用真实 Chrome 和 V3 探针依次复测 RTT 停止、SuperWatch 启停及 RTOS Trace TimeLine，重点捕获 RTTView.stop 残缺命令和时间轴畸变/抖动。",
+    "用真实 Chrome 和 V3 探针继续复测 RTT 停止与 SuperWatch 启停，重点捕获 RTTView.stop 残缺命令；RTOS Trace Timeline 抖动修复已完成。",
     "维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览，并目视确认读取按钮向上箭头。",
     "下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。",
     "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T15:30:31+08:00`
+- 更新时间：`2026-08-20T16:44:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已包含托盘图标修复；当前补充清空窗口同时清除用户加载的 HEX/BIN 及其预览。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 36fda44；本次清空窗口修复待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：清空窗口源码、回归测试与项目记忆待提交；标准 NSIS 构建产物和 gui/dist 变化不进入本提交。
-- 当前任务：让在线下载的清空窗口同时清除芯片读取数据和用户加载的 HEX/BIN，并校正读取图标方向。
-- 状态：`online_flash_clear_data_fixed`
+- HEAD：`fix/fast-probe-handshake 已包含在线下载读取图标修正；RTOS Trace Timeline 固定时间页和 DPR 取整修复待独立提交。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 c5b264b；本次 Timeline 修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：Timeline 源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。
+- 当前任务：RTOS Trace Timeline 已固定时间页并修复 fractional DPR 重绘抖动；RTT、SuperWatch 的后续真机复测仍待继续。
+- 状态：`rtos_timeline_stability_fixed`
 
 ## 里程碑
 
@@ -42,6 +42,8 @@
 - **0.1.7 在线读取界面与版本收口**：在线读取弹窗继续使用基地址到结束地址（结束地址不含）和目标扇区分块，读取结果自动加载到主 HEX 窗口；读取数据、保存文件、清空窗口位于选择 BIN/HEX 同一行，读取进度复用烧录总进度，分块状态复用底部任务日志，HPM ROM 读取继续禁用。新增主页面接线、保存/清空回归覆盖后，GUI 全量 55 文件/533 项、Vite 生产构建和 Tauri cargo check 通过；在线读取 Python 测试 352 项通过；Site Agent/版本元数据回归 10 项通过。Python 全量为 1311 passed、1 skipped，剩余 12 项因当前 Windows 账户无目录符号链接权限失败。源码、Tauri、Site Agent 元数据和右下角 release history 已统一为 v0.1.7。基于 6e19148 重新生成标准 NSIS 候选，SHA-256 为 9A09F563742AAD0F4B8F5244265185F770B8DBFBD93022F9B4CC1E7AB8235B52；覆盖安装后文件版本为 0.1.7，health 正常、探针列表返回 1 项、进程树无 Python，正常关闭后桌面进程、sidecar 和 8765 均释放。U 盘 MKLink Web GUI.html SHA-256 为 55FB43FFAD956299C8329DA4B237908C1583F868B57928A9B20269FAF5BDC078；协议处理器固定到用户级 0.1.7-6e19148 Web Runtime，资源包含 0.1.7/6e19148，Chrome 已打开且 Web health 正常。Chrome 控制扩展仍受当前运行环境限制，页面打开使用本机 Chrome 可执行文件完成。候选未发布为官方 Release。
 - **Windows 托盘图标**：根因是 TrayIconBuilder 只创建菜单和事件，没有显式设置图标；Tauri 不会自动继承窗口图标，Windows 因此显示空白托盘项。现从 app.default_window_icon() 获取 bundle 已生成的图标并显式传给 TrayIconBuilder，未增加图像解码依赖。cargo fmt、Rust 12 项、cargo check、GUI 55 文件/534 项和标准 NSIS 构建通过；Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。候选 SHA-256 A794BAFBBDC668E4F177C7DE01CF15489D06E4429E95A5C7783915E9DEAD692E 已覆盖安装，8765 health 正常，进程树无 Python；维护者截图确认 Windows 托盘显示 MKLink 芯片图标。
 - **在线下载清空数据**：清空窗口现在同时清除芯片读取结果、用户加载的 HEX/BIN、桌面文件句柄与路径、BIN 地址弹窗状态、文件指纹、解析结果和 HEX 预览，同时保留目标器件与连接参数；按钮在任一数据来源存在时可用。新增用户加载 HEX 后清空的回归用例；聚焦测试 71 项、GUI 全量 55 文件/535 项、Vite 生产构建通过，Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。Chrome 插件 26.814.41407 已恢复控制，真实 8766 Web GUI 完成探针连接、IDCODE 读取和主动断开；自动文件选择会使控制内核超时，因此加载 HEX 后的清空交互仍待维护者手动选择文件后补验。
+- **在线下载读取图标**：目标芯片读取到上位机的方向统一使用 Lucide Upload 向上箭头，覆盖在线下载主工具栏、独立读取面板和地址弹窗开始读取三个入口；保存文件图标保持不变。DOM 回归断言锁定三个读取按钮的 lucide-upload；聚焦 2 文件/75 项、GUI 全量 55 文件/535 项与 Vite 生产构建通过。
+- **RTOS Trace Timeline 抖动**：根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，canvas 尺寸先 Math.round 后比较，重建时强制立即绘制。GUI 全量 55 文件/537 项、Vite 生产构建通过；真实 Chrome 600x844 连续 10 次采样前 9 次画布区域完全一致，桌面视口连续 8 次完全一致，仅跨越 10 秒页边界时更新；停止后 Sync=Ready，页面无横向溢出和控制台错误。
 
 ## 架构决策
 
@@ -59,7 +61,7 @@
 - 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 - 由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。
 - Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。
-- SystemView 时间轴固定预留渲染器最多 20 条泳道的高度，避免高事件率下的页面重排抖动；容器保持 overflow:visible，不能截获普通页面滚轮。
+- SystemView Timeline 使用固定整页时间窗口，只有跨越窗口边界才移动标尺；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，避免 fractional DPR 触发反复清空；容器保持 overflow:visible，不能截获普通页面滚轮。
 - 探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。
 - 在线目标读取使用基地址到结束地址（结束地址不含）的 1024 字节前端分块请求；读取结果保留在窗口中，保存文件动作才打开系统保存选择器。HPM ROM 读取继续明确禁用。
 - 固件升级入口与本地设备连接设置放在同一配置页，保证 Web GUI 与安装包的功能入口一致。
@@ -73,9 +75,10 @@
 
 ## 下一动作
 
-1. 维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览；随后验证读取按钮向上箭头。
-2. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
-3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
+1. 用真实 Chrome 和 V3 探针继续复测 RTT 停止与 SuperWatch 启停，重点捕获 RTTView.stop 残缺命令；RTOS Trace Timeline 抖动修复已完成。
+2. 维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览，并目视确认读取按钮向上箭头。
+3. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
+4. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
 ## 已知限制
 
