@@ -79,6 +79,13 @@ const selectedSectorAddresses = ref<number[]>([])
 const inspectBusy = ref(false)
 const inspectError = ref('')
 const rows = ref<FormattedHexRow[]>([])
+const memoryReadRef = ref<InstanceType<typeof MemoryReadPanel> | null>(null)
+const memoryReadData = ref<Uint8Array | null>(null)
+const memoryReadAddress = ref<number | undefined>(undefined)
+const memoryReadProgress = ref(0)
+const memoryReadText = ref('')
+const memoryReadState = ref<'waiting' | 'reading' | 'done' | 'failed'>('waiting')
+const memoryReadBusy = computed(() => memoryReadState.value === 'reading')
 const paddingTop = ref(0)
 const paddingBottom = ref(0)
 const actions = ref<JobAction[]>([...CANONICAL_ACTIONS])
@@ -165,6 +172,11 @@ function defaultBinAddress(partNumber: string): string {
   return isHpmPart(partNumber) ? '0x80000400' : ''
 }
 const hpmMode = computed(() => isHpmPart(selectedTarget.value?.part_number ?? ''))
+const memoryReadDisabled = computed(() => hpmMode.value || !probeId.value || !selectedTarget.value?.installed || active.value || packBusy.value || inspectBusy.value || targetMemoryMapBusy.value)
+const progressValue = computed(() => active.value ? totalProgress.value : memoryReadData.value || memoryReadBusy.value ? memoryReadProgress.value : totalProgress.value)
+const showingReadProgress = computed(() => !active.value && (!!memoryReadData.value || memoryReadBusy.value))
+const progressLabel = computed(() => showingReadProgress.value ? tr('读取进度', 'Read progress') : tr('烧录总进度', 'Total Progress'))
+const progressState = computed(() => showingReadProgress.value ? (memoryReadState.value === 'done' ? tr('读取完成', 'Read complete') : memoryReadState.value === 'failed' ? tr('读取失败', 'Read failed') : memoryReadBusy.value ? tr('正在读取...', 'Reading...') : '') : undefined)
 
 function message(error: unknown): string {
   if (error instanceof OnlineFlashApiError) {
@@ -265,6 +277,7 @@ async function selectTarget(target: TargetRecord): Promise<void> {
     ? (defaultHpmBoard(target.part_number) || hpmBoard.value)
     : ''
   resetInspection()
+  clearMemoryWindow()
   if (targetChanged) baseAddress.value = defaultBinAddress(target.part_number)
   selectedTarget.value = null
   if (isHpmPart(target.part_number) && !target.installed) {
@@ -426,6 +439,7 @@ function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null
   firmwarePath.value = ''
   sourceFingerprint = file && handle ? `${file.size}:${file.lastModified}` : ''
   resetInspection()
+  clearMemoryWindow()
   persist()
   promptForBinAddress(file?.name ?? '')
   scheduleAutoInspection()
@@ -442,6 +456,7 @@ function setFirmwarePath(path: string): void {
   firmwarePath.value = path
   sourceFingerprint = ''
   resetInspection()
+  clearMemoryWindow()
   persist()
   void pollFirmwareSource(true)
   promptForBinAddress(path)
@@ -599,6 +614,26 @@ async function loadVisible(scrollTop: number, height: number): Promise<void> {
 }
 
 function appendLog(line: string): void { logs.value.push(line); if (logs.value.length > 5000) logs.value.splice(0, logs.value.length - 5000) }
+function onMemoryReadProgress(value: number, text: string, state: 'waiting' | 'reading' | 'done' | 'failed'): void {
+  memoryReadProgress.value = value
+  memoryReadText.value = text
+  memoryReadState.value = state
+}
+function onMemoryReadLog(line: string): void { appendLog(line) }
+function onMemoryReadData(payload: { address: number; data: Uint8Array }): void {
+  memoryReadAddress.value = payload.address
+  memoryReadData.value = payload.data
+}
+function clearMemoryWindow(): void {
+  memoryReadRef.value?.clearMemory()
+  memoryReadData.value = null
+  memoryReadAddress.value = undefined
+  memoryReadProgress.value = 0
+  memoryReadText.value = ''
+  memoryReadState.value = 'waiting'
+}
+function openMemoryReadDialog(): void { memoryReadRef.value?.openReadDialog() }
+function saveMemoryFile(): void { void memoryReadRef.value?.saveMemory() }
 function subscribe(after = lastSequence.value): void {
   subscription?.close(); streamDisconnected.value = false
   subscription = api.subscribeJob(jobId.value, after, receiveEvent, error => {
@@ -704,10 +739,11 @@ onBeforeUnmount(() => {
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
-      <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" />
-      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
+      <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
+      <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-memory="clearMemoryWindow" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><MemoryReadPanel :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="active || packBusy || inspectBusy" /><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">

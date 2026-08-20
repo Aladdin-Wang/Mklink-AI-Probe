@@ -14,7 +14,7 @@
 
 ## 里程碑
 
-- **产品与分发** — `complete`。Python、Skill、Web GUI 和 Tauri 版本统一为 v0.1.6，标准 NSIS 使用内置 sidecar。
+- **产品与分发** — `complete`。Python、Skill、Web GUI 和 Tauri 版本统一为 v0.1.7，标准 NSIS 使用内置 sidecar。
 - **烧录与兼容性** — `complete`。在线/脱机烧录、HPM ROM API、Pack/FLM、固件刷新、复合探针和扇区解析已集成。
 - **调试与数据流** — `complete`。Memory、RTT、SystemView、VOFA、串口和 Modbus 共用资源仲裁与轻量流通道。
 - **多实例与远程** — `complete`。每个桌面实例使用独立后端和探针连接；Site Agent 支持认证直连与 LAN STCP。
@@ -39,6 +39,7 @@
 - **探针主动固件升级**：新增 /api/probe/firmware-upgrade；固件升级入口现位于配置页本地设备区，启动服务页不再承载该功能。版本优先读取 MICROKEEN readme.txt，GitHub Releases 不可用时回退 Gitee，再回退本地 MK-Firmware。此前 V3.3.7 真机 UF2 闭环仍有效；配置 GUI 定向 52 项通过。
 - **在线目标读取与安装包验收**：在线烧录右侧新增读取面板：弹窗填写基地址和结束地址（结束地址不含），按 1024 字节请求读取并在窗口中累计显示进度，读取完成后由保存文件按钮调用系统保存选择器或浏览器下载回退；HPM ROM 读取继续禁用。GUI 定向 104 项、在线闪存 Python 128 项通过。Edge 浏览器真实页面验证弹窗、2048 字节读取、100% 进度、保存按钮、配置页固件入口和 RTOS Trace 宽窄视口均无控制台错误。标准 NSIS 已生成并覆盖安装；安装后 health 返回 ok、online-flash/probes 正常、进程树无 Python 子进程、关闭后 8765 释放。
 - **三客户端生命周期与隔离联调**：AI CLI 使用 V3 探针完成发现、连接、IDCODE、0x20000000 处 16 字节只读 RAM、主动断开；资源状态显示桥接 owner 已退出、串口锁 owner 不存活。并行第二连接明确返回串口正在被其他进程使用，未抢占。Web REST 8769 和安装包 sidecar 8765 均用同一 V3 探针完成 `/api/device/connect`（STM32F10x、IDCODE 0x1ba01477）及 `/api/device/disconnect`，未执行写入；独立 Web 后端启用浏览器会话租约后，WebSocket 客户端关闭并释放最后租约，8767 自动退出；另一路 Web 8769 释放租约时安装包 8765 仍返回 health=ok。反向测试中关闭安装包窗口对应进程后，Web 8768 在检查时仍健康，8765 最终释放；安装包覆盖安装候选为 `MKLink-AI-Probe-0.1.7-b6b0171-setup.exe`，SHA-256 `0B60C53119A02652B58767590CE649781C1C79FE55608B320A7C001420616ED6`，健康接口正常、进程树无 Python。聚焦生命周期/桌面/协议 Python 测试 75 项通过，GUI browser-session/Config 测试 25 项通过。Chrome 控制插件初始化因运行时拒绝 node:process，未宣称插件自动化通过；浏览器页关闭路径以真实 WebSocket 会话协议验证。
+- **0.1.7 在线读取界面与版本收口**：在线读取弹窗继续使用基地址到结束地址（结束地址不含）和目标扇区分块，读取结果自动加载到主 HEX 窗口；读取数据、保存文件、清空窗口位于选择 BIN/HEX 同一行，读取进度复用烧录总进度，分块状态复用底部任务日志，HPM ROM 读取继续禁用。新增主页面接线、保存/清空回归覆盖后，GUI 全量 55 文件/533 项、Vite 生产构建和 Tauri cargo check 通过；在线读取 Python 测试 352 项通过；Site Agent/版本元数据回归 10 项通过。Python 全量为 1311 passed、1 skipped，剩余 12 项因当前 Windows 账户无目录符号链接权限失败。源码、Tauri、Site Agent 元数据和右下角 release history 已统一为 v0.1.7；未生成或发布正式安装包。
 
 ## 架构决策
 

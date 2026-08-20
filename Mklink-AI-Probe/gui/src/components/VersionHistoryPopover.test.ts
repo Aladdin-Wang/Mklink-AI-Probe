@@ -5,32 +5,33 @@ import VersionHistoryPopover from './VersionHistoryPopover.vue'
 describe('VersionHistoryPopover', () => {
   it('shows the current release notes and stable release history', async () => {
     const wrapper = mount(VersionHistoryPopover, {
-      props: { version: '0.1.6', buildCommit: 'local' },
+      props: { version: '0.1.7', buildCommit: 'local' },
       attachTo: document.body,
     })
 
-    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.6 · local')
+    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.7 · local')
     expect(wrapper.find('[data-testid="version-history-panel"]').exists()).toBe(false)
 
     await wrapper.trigger('mouseenter')
 
     const panel = wrapper.get('[data-testid="version-history-panel"]')
     expect(panel.text()).toContain('版本更新')
-    expect(panel.text()).toContain('完善烧录、终端、多实例与现场 Agent 体验')
+    expect(panel.text()).toContain('优化在线读取与固件升级体验')
+    expect(panel.text()).toContain('在线读取复用烧录进度和任务日志')
     expect(panel.text()).toContain('重新读取同路径的最新固件')
     expect(panel.text()).toContain('串口助手与 RTT 终端改用轻量数据通道')
     expect(panel.text()).toContain('串口锁文件命名兼容性')
     expect(panel.text()).toContain('每个实例使用独立后端和下载器连接')
     expect(panel.text()).toContain('新增启动画面')
-    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(6)
+    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(2)
     expect(panel.text()).toContain('修复符号解析并完善调试资源协同')
     expect(panel.text()).toContain('匿名 struct/union 成员展开')
     expect(panel.text()).toContain('AI Skill 主动版本提醒')
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(7)
-    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.6')
+    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(8)
+    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.7')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
     wrapper.unmount()
   })

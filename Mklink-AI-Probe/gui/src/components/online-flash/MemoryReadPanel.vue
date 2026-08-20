@@ -16,6 +16,14 @@ const props = defineProps<{
   memoryRegions?: TargetMemoryRegion[]
   memoryMapBusy?: boolean
   disabled?: boolean
+  embedded?: boolean
+}>()
+
+const emit = defineEmits<{
+  progress: [value: number, text: string, state: 'waiting' | 'reading' | 'done' | 'failed']
+  log: [line: string]
+  data: [payload: { address: number; data: Uint8Array }]
+  clear: []
 }>()
 
 const address = ref('0x08000000')
@@ -28,6 +36,7 @@ const progressText = ref('')
 const data = ref<Uint8Array | null>(null)
 type ProgressState = 'waiting' | 'reading' | 'done' | 'failed'
 const progressEntries = ref<Array<{ address: number; size: number; state: ProgressState }>>([])
+const loggedEntries = new Set<string>()
 const api = useOnlineFlashApi()
 
 const parsedAddress = computed(() => {
@@ -79,6 +88,16 @@ function closeReadDialog(): void {
   if (!busy.value) readDialogOpen.value = false
 }
 
+function clearMemory(notify = true): void {
+  data.value = null
+  progress.value = 0
+  progressText.value = ''
+  progressEntries.value = []
+  error.value = ''
+  loggedEntries.clear()
+  if (notify) emit('clear')
+}
+
 async function readMemory(): Promise<void> {
   if (!canRead.value || parsedAddress.value === null || parsedEndAddress.value === null) return
   error.value = ''
@@ -87,8 +106,11 @@ async function readMemory(): Promise<void> {
   progressText.value = ''
   data.value = null
   progressEntries.value = []
+  loggedEntries.clear()
+  emit('progress', 0, '', 'reading')
   const start = parsedAddress.value
-  const total = readSize.value
+  const end = parsedEndAddress.value
+  const total = end - start
   for (let offset = 0; offset < total;) {
     const size = chunkSizeAt(start + offset, total - offset)
     progressEntries.value.push({ address: start + offset, size, state: offset === 0 ? 'reading' : 'waiting' })
@@ -109,9 +131,15 @@ async function readMemory(): Promise<void> {
       for (const entry of progressEntries.value) {
         completed += entry.size
         entry.state = received >= completed ? 'done' : received > completed - entry.size ? 'reading' : 'waiting'
+        const key = `${entry.address}-${entry.size}`
+        if (entry.state === 'done' && !loggedEntries.has(key)) {
+          loggedEntries.add(key)
+          emit('log', `[READ] ${tr('读取完成', 'Read complete')} 0x${entry.address.toString(16).toUpperCase().padStart(8, '0')} · ${entry.size} Bytes`)
+        }
       }
       progress.value = Math.min(received / total, 1)
       progressText.value = `${Math.min(received, total)} / ${total} bytes`
+      emit('progress', progress.value, progressText.value, 'reading')
     })
     const result = new Uint8Array(await blob.arrayBuffer())
     if (result.length !== total) throw new Error(tr('读取数据长度不匹配', 'Read returned an unexpected length'))
@@ -119,10 +147,15 @@ async function readMemory(): Promise<void> {
     progress.value = 1
     progressText.value = `${total} / ${total} bytes`
     data.value = result
+    emit('data', { address: start, data: result })
+    emit('progress', 1, progressText.value, 'done')
+    emit('log', `[READ] ${tr('读取完成', 'Read complete')} 0x${start.toString(16).toUpperCase().padStart(8, '0')} - 0x${end.toString(16).toUpperCase().padStart(8, '0')} · ${total} Bytes`)
   } catch (caught) {
     const activeEntry = progressEntries.value.find(entry => entry.state === 'reading')
     if (activeEntry) activeEntry.state = 'failed'
     error.value = caught instanceof Error ? caught.message : String(caught)
+    emit('progress', progress.value, error.value, 'failed')
+    emit('log', `[READ] ${tr('读取失败', 'Read failed')}：${error.value}`)
   } finally {
     busy.value = false
   }
@@ -148,10 +181,12 @@ async function saveMemory(): Promise<void> {
   }
   downloadBlobFile(filename, blob)
 }
+
+defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory })
 </script>
 
 <template>
-  <section class="memory-read-panel" data-testid="memory-read-panel">
+  <section v-if="!embedded" class="memory-read-panel" data-testid="memory-read-panel">
     <header><h3>{{ tr('读取目标数据', 'Read Target Data') }}</h3><span v-if="hpm" class="badge">HPM</span></header>
     <p v-if="hpm" class="memory-read-note">{{ tr('HPM ROM API 当前不支持读取。', 'The HPM ROM API does not support reads yet.') }}</p>
     <template v-else>

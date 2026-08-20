@@ -1483,6 +1483,9 @@ describe('online flash component quality', () => {
     expect(onlineFlashViewSource).toMatch(/height:calc\(100dvh/)
     expect(onlineFlashViewSource).toMatch(/min-height:0/)
     expect(firmwareWorkspaceSource).toMatch(/\.hex-scroll\{min-height:0;height:auto;flex:1/)
+    expect(onlineFlashViewSource).toContain('@progress="onMemoryReadProgress"')
+    expect(onlineFlashViewSource).toContain('@log="onMemoryReadLog"')
+    expect(onlineFlashViewSource).toContain(':total-progress="progressValue"')
   })
 
   function mockLogGeometry(viewport: ReturnType<typeof mount>['element'], values: { top: number; height: number; total: number }) {
@@ -1611,6 +1614,21 @@ describe('online flash component quality', () => {
     })
 
     expect(wrapper.emitted('dropFiles')?.[0]).toEqual([[file]])
+  })
+
+  it('shows read data in the HEX window and emits save and clear actions', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+      memoryData: new Uint8Array([0x41, 0x42, 0x43]), memoryAddress: 0x1000,
+    } })
+
+    expect(wrapper.get('.metadata').text()).toContain('0x00001003')
+    expect(wrapper.get('.hex-row').text()).toContain('414243')
+    await wrapper.get('[data-testid="memory-read-save"]').trigger('click')
+    await wrapper.get('[data-testid="memory-read-clear"]').trigger('click')
+    expect(wrapper.emitted('save')).toHaveLength(1)
+    expect(wrapper.emitted('clearMemory')).toHaveLength(1)
   })
 
   it('wraps the action bar controls for narrow layouts', () => {

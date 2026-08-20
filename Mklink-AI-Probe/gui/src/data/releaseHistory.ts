@@ -9,6 +9,20 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.1.7',
+    date: '2026-08-20',
+    summary: '优化在线读取与固件升级体验',
+    summaryEn: 'Improved online reads and firmware upgrades',
+    changes: [
+      '在线读取复用烧录进度和任务日志，完成后自动显示并支持保存、清空。',
+      '新增独立固件升级入口，优化多客户端连接生命周期。',
+    ],
+    changesEn: [
+      'Reuse flash progress and job logs for online reads, with automatic preview, save, and clear actions.',
+      'Add a dedicated firmware upgrade entry and improve multi-client connection lifecycles.',
+    ],
+  },
+  {
     version: '0.1.6',
     date: '2026-08-11',
     summary: '完善烧录、终端、多实例与现场 Agent 体验',

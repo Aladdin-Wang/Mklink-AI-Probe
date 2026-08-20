@@ -16,13 +16,13 @@
   "current_session": {
     "status": "zero_one_seven_lifecycle_qualified",
     "current_task": "0.1.7 在线读取、独立固件升级侧栏和 RTOS Trace 修复已提交；完成 AI、Web GUI 与安装包的连接断开和生命周期隔离验证。",
-    "release": "仍为 0.1.6；本分支不改版本号、不签名、不打标签、不发布、不修改 updates/latest.json，也不更新 Gitee。"
+    "release": "源码版本已统一为 0.1.7；本分支不签名、不打标签、不发布、不修改 updates/latest.json，也不更新 Gitee。"
   },
   "milestones": [
     {
       "name": "产品与分发",
       "status": "complete",
-      "notes": "Python、Skill、Web GUI 和 Tauri 版本统一为 v0.1.6，标准 NSIS 使用内置 sidecar。"
+      "notes": "Python、Skill、Web GUI 和 Tauri 版本统一为 v0.1.7，标准 NSIS 使用内置 sidecar。"
     },
     {
       "name": "烧录与兼容性",
@@ -112,6 +112,10 @@
     {
       "area": "三客户端生命周期与隔离联调",
       "result": "AI CLI 使用 V3 探针完成发现、连接、IDCODE、0x20000000 处 16 字节只读 RAM、主动断开；资源状态显示桥接 owner 已退出、串口锁 owner 不存活。并行第二连接明确返回串口正在被其他进程使用，未抢占。Web REST 8769 和安装包 sidecar 8765 均用同一 V3 探针完成 `/api/device/connect`（STM32F10x、IDCODE 0x1ba01477）及 `/api/device/disconnect`，未执行写入；独立 Web 后端启用浏览器会话租约后，WebSocket 客户端关闭并释放最后租约，8767 自动退出；另一路 Web 8769 释放租约时安装包 8765 仍返回 health=ok。反向测试中关闭安装包窗口对应进程后，Web 8768 在检查时仍健康，8765 最终释放；安装包覆盖安装候选为 `MKLink-AI-Probe-0.1.7-b6b0171-setup.exe`，SHA-256 `0B60C53119A02652B58767590CE649781C1C79FE55608B320A7C001420616ED6`，健康接口正常、进程树无 Python。聚焦生命周期/桌面/协议 Python 测试 75 项通过，GUI browser-session/Config 测试 25 项通过。Chrome 控制插件初始化因运行时拒绝 node:process，未宣称插件自动化通过；浏览器页关闭路径以真实 WebSocket 会话协议验证。"
+    },
+    {
+      "area": "0.1.7 在线读取界面与版本收口",
+      "result": "在线读取弹窗继续使用基地址到结束地址（结束地址不含）和目标扇区分块，读取结果自动加载到主 HEX 窗口；读取数据、保存文件、清空窗口位于选择 BIN/HEX 同一行，读取进度复用烧录总进度，分块状态复用底部任务日志，HPM ROM 读取继续禁用。新增主页面接线、保存/清空回归覆盖后，GUI 全量 55 文件/533 项、Vite 生产构建和 Tauri cargo check 通过；在线读取 Python 测试 352 项通过；Site Agent/版本元数据回归 10 项通过。Python 全量为 1311 passed、1 skipped，剩余 12 项因当前 Windows 账户无目录符号链接权限失败。源码、Tauri、Site Agent 元数据和右下角 release history 已统一为 v0.1.7；未生成或发布正式安装包。"
     }
   ],
   "decisions": [
