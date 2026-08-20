@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-20T23:39:48+08:00",
+  "updated_at": "2026-08-20T23:43:53+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/systemview-live-zoom",
-    "head": "f3785e8 包含 v0.1.7 修复、先楫淘宝入口和简短版本说明；等待交接精简提交及合并。",
-    "remote_head": "origin/fix/systemview-live-zoom 已推送至 f3785e8；origin/master 与本地 master 一致，尚未合并。",
+    "branch": "master",
+    "head": "master 已快进包含通过最终门禁的 v0.1.7 修复、先楫淘宝入口、简短版本说明和交接预算。",
+    "remote_head": "origin/master 已同步测试分支；未创建 v0.1.7 标签或 Release。",
     "working_tree": "运行时代码已提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。"
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.7_merge_ready",
-    "current_task": "v0.1.7 修复和最终门禁完成，远程固件资产可用；精简交接后合并并推送 master。",
+    "status": "v0.1.7_merged_unreleased",
+    "current_task": "v0.1.7 修复已合并，远程固件资产可用；等待维护者另行授权正式发布。",
     "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
@@ -81,7 +81,6 @@
     "高事件率 SystemView 仍可能溢出目标 RTT 缓冲。"
   ],
   "next_actions": [
-    "提交精简交接，快进合并到 master 并推送 GitHub。",
     "仅在维护者明确授权后创建 v0.1.7 标签、Release、签名资产并更新 latest.json/Gitee。",
     "后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。"
   ],

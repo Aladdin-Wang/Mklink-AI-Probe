@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T23:39:48+08:00`
-- 分支：`fix/systemview-live-zoom`
-- HEAD：`f3785e8 包含 v0.1.7 修复、先楫淘宝入口和简短版本说明；等待交接精简提交及合并。`
-- 远端 HEAD：`origin/fix/systemview-live-zoom 已推送至 f3785e8；origin/master 与本地 master 一致，尚未合并。`
+- 更新时间：`2026-08-20T23:43:53+08:00`
+- 分支：`master`
+- HEAD：`master 已快进包含通过最终门禁的 v0.1.7 修复、先楫淘宝入口、简短版本说明和交接预算。`
+- 远端 HEAD：`origin/master 已同步测试分支；未创建 v0.1.7 标签或 Release。`
 - 工作树：运行时代码已提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。
-- 当前任务：v0.1.7 修复和最终门禁完成，远程固件资产可用；精简交接后合并并推送 master。
-- 状态：`v0.1.7_merge_ready`
+- 当前任务：v0.1.7 修复已合并，远程固件资产可用；等待维护者另行授权正式发布。
+- 状态：`v0.1.7_merged_unreleased`
 
 ## 里程碑
 
@@ -44,9 +44,8 @@
 
 ## 下一动作
 
-1. 提交精简交接，快进合并到 master 并推送 GitHub。
-2. 仅在维护者明确授权后创建 v0.1.7 标签、Release、签名资产并更新 latest.json/Gitee。
-3. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
+1. 仅在维护者明确授权后创建 v0.1.7 标签、Release、签名资产并更新 latest.json/Gitee。
+2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
 
