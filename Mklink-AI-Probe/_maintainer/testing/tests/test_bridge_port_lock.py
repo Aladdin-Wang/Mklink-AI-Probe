@@ -85,4 +85,13 @@ def test_connect_uses_staged_fast_timeouts_before_stream_recovery(monkeypatch):
     assert bridge.connect()
     assert bridge._prompt_event.timeouts == [0.3, 0.7, 1.0]
     assert serial_port.writes[:2] == [b"\n", b"\n"]
+    # A probe left in SystemView stream mode must receive its binary STOP
+    # frame before the textual fallback commands can restore the REPL.
+    assert serial_port.writes[2:4] == [
+        b"\x02",
+        b"SystemView.stop()\n",
+    ]
+    # Once SystemView returns a prompt, unrelated fallback commands must not
+    # be concatenated into the target's command parser.
+    assert b"RTTView.stop()\n" not in serial_port.writes
     assert serial_port.writes[-1] == b"\n"
