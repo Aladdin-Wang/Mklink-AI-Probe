@@ -113,6 +113,38 @@ describe('DashboardView layout classes', () => {
     expect(apiMock.connectDevice).toHaveBeenCalledWith(expect.objectContaining({ restore_last: true }))
   })
 
+  it('dismisses the current connection error and shows a later failure again', async () => {
+    apiMock.deviceStatus.value.connected = false
+    apiMock.connectDevice
+      .mockRejectedValueOnce(new Error('first failure'))
+      .mockRejectedValueOnce(new Error('second failure'))
+    const wrapper = shallowMount(DashboardView, {
+      global: {
+        stubs: {
+          RttViewTab: dashStub,
+          HardFaultTab: dashStub,
+          SymbolsTab: dashStub,
+          MemoryTab: dashStub,
+          SuperWatchTab: dashStub,
+          SerialMonitorTab: dashStub,
+          ModbusTab: dashStub,
+          SystemViewTab: dashStub,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="device-quick-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.device-quick-error').text()).toContain('first failure')
+
+    await wrapper.get('[data-testid="dismiss-connection-error"]').trigger('click')
+    expect(wrapper.find('.device-quick-error').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="device-quick-action"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.device-quick-error').text()).toContain('second failure')
+  })
+
   it('resets the connected MCU from the dashboard header', async () => {
     apiMock.resetDevice.mockResolvedValueOnce({ status: 'ok' })
     const wrapper = shallowMount(DashboardView, {

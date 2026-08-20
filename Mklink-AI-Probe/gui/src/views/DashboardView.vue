@@ -64,8 +64,16 @@
             <span>{{ rebootingProbe ? tr('重启中...', 'Rebooting...') : tr('重启 MKLink', 'Reboot MKLink') }}</span>
           </button>
           <div v-if="connectionError" class="device-quick-error" role="alert">
+            <button
+              class="device-quick-error-close"
+              type="button"
+              :title="tr('关闭错误提示', 'Dismiss error')"
+              :aria-label="tr('关闭错误提示', 'Dismiss error')"
+              data-testid="dismiss-connection-error"
+              @click="clearConnectionError"
+            ><X :size="14" aria-hidden="true" /></button>
             <span>{{ connectionError }}</span>
-            <button type="button" @click="goConnect">{{ tr('打开配置', 'Open Config') }}</button>
+            <button class="device-quick-error-config" type="button" @click="goConnect">{{ tr('打开配置', 'Open Config') }}</button>
           </div>
         </div>
       </div>
@@ -85,7 +93,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { LoaderCircle, RefreshCw, RotateCcw, Unplug, Usb } from '@lucide/vue'
+import { LoaderCircle, RefreshCw, RotateCcw, Unplug, Usb, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useResourceStatus } from '../composables/useResourceStatus'
@@ -111,6 +119,7 @@ const {
   connectionError,
   quickConnect,
   quickDisconnect,
+  clearConnectionError,
 } = useDashboardSetup()
 const { refresh: refreshResource, getBridgeOwner } = useResourceStatus()
 const dashboardTabs = new Set(['rtt', 'superwatch', 'memory', 'symbols', 'hardfault', 'serial', 'modbus', 'systemview'])
@@ -137,6 +146,7 @@ refreshResource()
 setInterval(refreshResource, 3000)
 
 function goConnect() {
+  clearConnectionError()
   router.push({ name: 'config' })
 }
 
@@ -281,8 +291,11 @@ async function quickRebootProbe() {
   background: var(--surface);
   color: var(--danger);
   font-size: 12px;
+  padding-right: 30px;
 }
-.device-quick-error button { justify-self: end; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.device-quick-error button { border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.device-quick-error-close { position: absolute; top: 5px; right: 5px; display: inline-flex; padding: 3px; color: var(--muted) !important; }
+.device-quick-error-config { justify-self: end; }
 .spinning { animation: device-spin 0.8s linear infinite; }
 @keyframes device-spin { to { transform: rotate(360deg); } }
 .status-dot {
