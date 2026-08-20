@@ -17,6 +17,13 @@ export interface TargetRecord {
   source: string
 }
 
+export interface TargetMemoryRegion {
+  name: string
+  start: number
+  length: number
+  sector_size: number
+}
+
 export interface PackStatus {
   last_error: string | null
   index_available: boolean
@@ -97,6 +104,7 @@ export interface ReadMemoryRequest {
   frequency?: number
   connect_mode?: string
   reset_mode?: string
+  chunk_sizes?: number[]
 }
 
 export type JobState =

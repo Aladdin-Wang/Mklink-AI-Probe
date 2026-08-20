@@ -207,6 +207,15 @@ class Jobs:
         self.read_range = (address, size)
         return bytes((address + index) & 0xFF for index in range(size))
 
+    def iter_memory(self, request, address, chunk_sizes):
+        self.read_request = request
+        self.read_range = (address, sum(chunk_sizes))
+        self.read_chunks = tuple(chunk_sizes)
+        offset = 0
+        for size in chunk_sizes:
+            yield bytes((address + offset + index) & 0xFF for index in range(size))
+            offset += size
+
     def get(self, job_id):
         if job_id != "job-1":
             raise KeyError(job_id)
@@ -270,6 +279,27 @@ def test_probe_target_and_pack_status_routes_use_injected_services(app, services
     assert status.json()["index_available"] is True
 
 
+def test_target_memory_map_route_returns_flash_sector_geometry(app):
+    response = request(app, "GET", "/api/online-flash/targets/DEVICE_A/memory-map")
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "name": "flash",
+        "start": 0x1000,
+        "length": 0x1000,
+        "sector_size": 0x100,
+    }]
+
+
+def test_target_memory_map_route_omits_hpm_without_read_geometry(app, services):
+    services.catalog.search = lambda *args, **kwargs: []
+
+    response = request(app, "GET", "/api/online-flash/targets/HPM5300/memory-map")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_read_memory_route_returns_bin_for_non_hpm_target(app, services):
     response = request(
         app,
@@ -287,6 +317,45 @@ def test_read_memory_route_returns_bin_for_non_hpm_target(app, services):
     assert response.headers["content-type"] == "application/octet-stream"
     assert "read-0x00001000-4.bin" in response.headers["content-disposition"]
     assert services.job_manager.read_range == (0x1000, 4)
+
+
+def test_read_memory_stream_keeps_sector_chunks_in_one_response(app, services):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/memory/read-stream",
+        json={
+            "address": "0x1000",
+            "size": 8,
+            "chunk_sizes": [4, 4],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.content == bytes(range(8))
+    assert response.headers["content-length"] == "8"
+    assert services.job_manager.read_range == (0x1000, 8)
+    assert services.job_manager.read_chunks == (4, 4)
+
+
+def test_read_memory_stream_rejects_inconsistent_chunk_plan(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/memory/read-stream",
+        json={
+            "address": "0x1000",
+            "size": 8,
+            "chunk_sizes": [4, 2],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "add up to size" in response.json()["detail"]
 
 
 def test_read_memory_route_rejects_hpm_target(app, services):

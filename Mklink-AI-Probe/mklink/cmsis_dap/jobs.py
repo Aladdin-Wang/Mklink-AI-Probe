@@ -8,7 +8,7 @@ import uuid
 from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass, field
-from typing import Callable, Deque, Dict, List, Optional
+from typing import Callable, Deque, Dict, Iterator, List, Optional, Sequence
 
 from .errors import FlashError, FlashErrorCode
 from .daemon_executor import DaemonSingleExecutor
@@ -142,6 +142,26 @@ class OnlineFlashJobManager:
         chunk_size: int = READ_MEMORY_CHUNK_SIZE,
     ) -> bytes:
         """Read target memory through a short-lived, resource-protected session."""
+        if type(size) is not int or size <= 0 or size > MAX_READ_MEMORY_SIZE:
+            raise ValueError(
+                f"size must be between 1 and {MAX_READ_MEMORY_SIZE} bytes"
+            )
+        if type(chunk_size) is not int or chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+        chunk_size = min(chunk_size, READ_MEMORY_CHUNK_SIZE)
+        chunk_sizes = tuple(
+            min(chunk_size, size - offset)
+            for offset in range(0, size, chunk_size)
+        )
+        return b"".join(self.iter_memory(request, address, chunk_sizes))
+
+    def iter_memory(
+        self,
+        request: JobRequest,
+        address: int,
+        chunk_sizes: Sequence[int],
+    ) -> Iterator[bytes]:
+        """Yield target-memory chunks from one resource-protected connection."""
         from mklink.hpm_config import is_hpm_target
 
         if is_hpm_target(request.target_part):
@@ -151,13 +171,14 @@ class OnlineFlashJobManager:
             )
         if type(address) is not int or address < 0:
             raise ValueError("address must be a non-negative integer")
-        if type(size) is not int or size <= 0 or size > MAX_READ_MEMORY_SIZE:
+        sizes = tuple(chunk_sizes)
+        if not sizes or any(type(value) is not int or value <= 0 for value in sizes):
+            raise ValueError("chunk_sizes must contain positive integers")
+        size = sum(sizes)
+        if size > MAX_READ_MEMORY_SIZE:
             raise ValueError(
                 f"size must be between 1 and {MAX_READ_MEMORY_SIZE} bytes"
             )
-        if type(chunk_size) is not int or chunk_size <= 0:
-            raise ValueError("chunk_size must be a positive integer")
-        chunk_size = min(chunk_size, READ_MEMORY_CHUNK_SIZE)
         owner = f"user:online-read:{uuid.uuid4()}"
         backend = None
         acquired = False
@@ -196,10 +217,10 @@ class OnlineFlashJobManager:
                     FlashErrorCode.IMAGE_OUT_OF_RANGE,
                     "requested memory range is outside the target memory map",
                 )
-            output = bytearray()
-            for offset in range(0, size, chunk_size):
-                output.extend(backend.read_memory(address + offset, min(chunk_size, size - offset)))
-            return bytes(output)
+            offset = 0
+            for chunk_size in sizes:
+                yield backend.read_memory(address + offset, chunk_size)
+                offset += chunk_size
         finally:
             if backend is not None:
                 try:

@@ -168,6 +168,7 @@ class ReadMemoryBody(BaseModel):
     frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
+    chunk_sizes: List[int] = Field(default_factory=list, max_length=65536)
 
 
 def _redact_paths(value: str) -> str:
@@ -1055,6 +1056,26 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         result = await _blocking(services.catalog.search, q, vendor=vendor, installed=installed, limit=limit)
         return _json_primitive(result, hide_paths=True)
 
+    @router.get("/targets/{part_number}/memory-map")
+    async def target_memory_map(part_number: str) -> object:
+        target = await _blocking(_resolved_target, services.catalog, part_number)
+        regions, _fingerprint, _paths = await _blocking(
+            _target_flash_configuration, services, target.part_number
+        )
+        return [
+            {
+                "name": region.name,
+                "start": region.start,
+                "length": region.length,
+                "sector_size": region.sector_size,
+            }
+            for region in regions
+            if region.is_flash
+            and region.length > 0
+            and region.sector_size is not None
+            and region.sector_size > 0
+        ]
+
     @router.post("/memory/read")
     async def read_memory(body: ReadMemoryBody) -> Response:
         """Read a target range and return it as a downloadable BIN file.
@@ -1098,6 +1119,52 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "Content-Length": str(len(data)),
+            },
+        )
+
+    @router.post("/memory/read-stream")
+    async def read_memory_stream(body: ReadMemoryBody) -> StreamingResponse:
+        """Stream sector chunks while keeping a single target connection open."""
+        from mklink.hpm_config import is_hpm_target
+
+        target = await _blocking(_resolved_target, services.catalog, body.target_part)
+        if is_hpm_target(target.part_number):
+            _raise_http(FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "HPM ROM API does not support online memory reads",
+            ))
+        if not body.probe_id:
+            raise HTTPException(status_code=422, detail="probe_id is required")
+        address = await _blocking(_parse_base_address, body.address)
+        if address is None:
+            raise HTTPException(status_code=422, detail="address is required")
+        chunk_sizes = tuple(body.chunk_sizes)
+        if (
+            not chunk_sizes
+            or any(type(value) is not int or value <= 0 for value in chunk_sizes)
+            or sum(chunk_sizes) != body.size
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="chunk_sizes must contain positive sizes that add up to size",
+            )
+        request = JobRequest(
+            actions=("connect", "disconnect"),
+            preempt_ai=body.preempt_ai,
+            probe_id=body.probe_id,
+            target_part=target.part_number,
+            pack_path=target.pack_path,
+            frequency=body.frequency,
+            connect_mode=body.connect_mode,
+            reset_mode=body.reset_mode,
+        )
+        filename = "read-0x{:08X}-{}.bin".format(address, body.size)
+        return StreamingResponse(
+            services.job_manager.iter_memory(request, address, chunk_sizes),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(body.size),
             },
         )
 

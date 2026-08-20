@@ -17,6 +17,7 @@ import type {
   PreviewPage,
   ProbeRecord,
   TargetRecord,
+  TargetMemoryRegion,
   TargetSearchOptions,
   ReadMemoryRequest,
 } from '../types/onlineFlash'
@@ -125,6 +126,35 @@ async function binaryRequest(path: string, options: RequestInit = {}): Promise<B
   return response.blob()
 }
 
+async function binaryStreamRequest(
+  path: string,
+  options: RequestInit,
+  onProgress: (received: number) => void,
+): Promise<Blob> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${API_BASE}${ONLINE_FLASH_BASE}${path}`, { ...options, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new OnlineFlashApiError(response.status, response.statusText, payload)
+  }
+  if (!response.body) return response.blob()
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.byteLength
+    onProgress(received)
+  }
+  return new Blob(
+    chunks.map(chunk => chunk.slice().buffer as ArrayBuffer),
+    { type: response.headers.get('Content-Type') || 'application/octet-stream' },
+  )
+}
+
 async function packOperationRequest(
   path: string,
   options: RequestInit,
@@ -210,6 +240,10 @@ export function useOnlineFlashApi() {
     if (options.installed !== undefined) params.set('installed', String(options.installed))
     if (options.limit !== undefined) params.set('limit', String(options.limit))
     return request(`/targets?${params.toString()}`, { signal })
+  }
+
+  function getTargetMemoryMap(partNumber: string): Promise<TargetMemoryRegion[]> {
+    return request(`/targets/${encoded(partNumber)}/memory-map`)
   }
 
   function getPackStatus(): Promise<PackStatus> {
@@ -311,6 +345,13 @@ export function useOnlineFlashApi() {
     })
   }
 
+  function readMemoryStream(payload: ReadMemoryRequest, onProgress: (received: number) => void): Promise<Blob> {
+    return binaryStreamRequest('/memory/read-stream', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, onProgress)
+  }
+
   function createJob(job: JobRequest): Promise<JobCreateResult> {
     return request('/jobs', { method: 'POST', body: JSON.stringify(job) })
   }
@@ -401,6 +442,7 @@ export function useOnlineFlashApi() {
   return {
     listProbes,
     searchTargets,
+    getTargetMemoryMap,
     getPackStatus,
     updatePackIndex,
     installPack,
@@ -415,6 +457,7 @@ export function useOnlineFlashApi() {
     getImageSourceStatus,
     previewImage,
     readMemory,
+    readMemoryStream,
     createJob,
     getActiveJob,
     getJob,

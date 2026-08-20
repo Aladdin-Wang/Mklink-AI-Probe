@@ -99,6 +99,43 @@ def test_read_memory_uses_resource_lock_and_splits_into_512k_chunks():
     manager.shutdown()
 
 
+def test_iter_memory_keeps_one_connection_for_sector_chunks():
+    backend = ReadBackend()
+    manager = OnlineFlashJobManager(lambda: backend, ResourceManager())
+    request = JobRequest(
+        actions=("connect", "disconnect"),
+        probe_id="probe",
+        target_part="STM32F103RE",
+    )
+
+    chunks = list(manager.iter_memory(request, 0x08000000, (2048, 2048, 2048)))
+
+    assert [len(chunk) for chunk in chunks] == [2048, 2048, 2048]
+    assert [call[0] for call in backend.calls] == [
+        "connect", "read", "read", "read", "disconnect",
+    ]
+    manager.shutdown()
+
+
+def test_iter_memory_releases_connection_when_stream_is_closed_early():
+    backend = ReadBackend()
+    resources = ResourceManager()
+    manager = OnlineFlashJobManager(lambda: backend, resources)
+    request = JobRequest(
+        actions=("connect", "disconnect"),
+        probe_id="probe",
+        target_part="STM32F103RE",
+    )
+    stream = manager.iter_memory(request, 0x08000000, (2048, 2048))
+
+    assert len(next(stream)) == 2048
+    stream.close()
+
+    assert [call[0] for call in backend.calls] == ["connect", "read", "disconnect"]
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+    manager.shutdown()
+
+
 def test_read_memory_rejects_hpm_before_opening_backend():
     backend = ReadBackend()
     manager = OnlineFlashJobManager(lambda: backend, ResourceManager())

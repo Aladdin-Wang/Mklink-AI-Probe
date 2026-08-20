@@ -216,6 +216,21 @@ describe('useOnlineFlashApi', () => {
     expect(new Headers(options?.headers).get('Content-Type')).toBe('application/json')
   })
 
+  it('loads target flash sector geometry independently of firmware inspection', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([{
+      name: 'flash', start: 0x08000000, length: 0x80000, sector_size: 0x800,
+    }]), { status: 200 }))
+    const api = await onlineFlashApi()
+
+    const regions = await api.getTargetMemoryMap('STM32F103 RC')
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/online-flash/targets/STM32F103%20RC/memory-map',
+      expect.any(Object),
+    )
+    expect(regions[0]?.sector_size).toBe(0x800)
+  })
+
   it('uses multipart FormData without forcing a JSON content type', async () => {
     vi.mocked(fetch).mockImplementation(async () => new Response('{}', { status: 200 }))
     const api = await onlineFlashApi()
@@ -549,6 +564,9 @@ function viewFetch(targets = [installedTarget]) {
     const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
     if (url.endsWith('/probes')) return json([probeFixture])
     if (url.includes('/targets?')) return json(targets)
+    if (url.includes('/targets/') && url.endsWith('/memory-map')) return json([{
+      name: 'flash', start: 0x08000000, length: 0x80000, sector_size: 0x800,
+    }])
     if (url.endsWith('/packs/status')) return json({ last_error: null, index_available: true, target_count: targets.length })
     if (url.includes('/algorithms?')) return json(algorithms)
     if (url.endsWith('/algorithms') && options?.method === 'POST') {
@@ -639,6 +657,21 @@ describe('online flash task workspace behavior', () => {
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value)
       .toBe('attach')
+    wrapper.unmount()
+  })
+
+  it('loads the selected target memory map before a firmware file is chosen', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => (
+      String(url).endsWith('/targets/DEVICE_A/memory-map')
+    ))).toBe(true))
+    expect(wrapper.find('[data-testid="firmware-input"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

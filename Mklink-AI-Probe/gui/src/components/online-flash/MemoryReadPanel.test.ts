@@ -68,17 +68,20 @@ describe('MemoryReadPanel', () => {
       props: {
         probeId: 'probe', targetPart: 'STM32F103C8', hpm: false,
         frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
-        sectors: [{ address: 0x1000, size: 0x800 }, { address: 0x1800, size: 0x800 }],
+        memoryRegions: [{ name: 'flash', start: 0x1000, length: 0x1000, sector_size: 0x800 }],
       },
     })
     await wrapper.get('[data-testid="memory-read-submit"]').trigger('click')
     await wrapper.get('[data-testid="memory-read-address"]').setValue('0x1000')
     await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x2000')
+    expect(wrapper.text()).toContain('按目标 Flash 扇区分块（2048 字节）')
     await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
     await flushPromises()
 
-    const sizes = fetch.mock.calls.map((call: [string, RequestInit]) => Number((JSON.parse(String(call[1].body)) as { size: number }).size))
-    expect(sizes).toEqual([0x800, 0x800])
+    expect(fetch).toHaveBeenCalledOnce()
+    const payload = JSON.parse(String(fetch.mock.calls[0]?.[1].body)) as { size: number; chunk_sizes: number[] }
+    expect(payload.size).toBe(0x1000)
+    expect(payload.chunk_sizes).toEqual([0x800, 0x800])
     expect(wrapper.get('[data-testid="memory-read-log"]').text()).toContain('2048 Bytes')
     wrapper.unmount()
     vi.unstubAllGlobals()

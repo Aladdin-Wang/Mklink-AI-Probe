@@ -17,7 +17,7 @@ import {
   type BrowserFirmwareFileHandle,
   type PickedFirmwareSource,
 } from '../lib/filePicker'
-import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetRecord } from '../types/onlineFlash'
+import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetMemoryRegion, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const PROBE_DISCOVERY_ATTEMPTS = 6
@@ -56,6 +56,8 @@ const hpmBoards = [
 const hpmBoard = ref(saved.hpmBoard ?? '')
 const targets = ref<TargetRecord[]>([])
 const selectedTarget = ref<TargetRecord | null>(null)
+const targetMemoryRegions = ref<TargetMemoryRegion[]>([])
+const targetMemoryMapBusy = ref(false)
 const desiredPart = ref(saved.targetPart ?? '')
 const packStatus = ref<PackStatus | null>(null)
 const packBusy = ref(false)
@@ -93,6 +95,7 @@ let inspectionGeneration = 0
 let viewportGeneration = 0
 let targetSearchGeneration = 0
 let targetSearchController: AbortController | null = null
+let targetMemoryMapToken = 0
 let packOperationToken = 0
 let customFlmToken = 0
 let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
@@ -316,8 +319,27 @@ async function loadCustomFlms(partNumber = selectedTarget.value?.part_number || 
   }
 }
 
+async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
+  const token = ++targetMemoryMapToken
+  targetMemoryRegions.value = []
+  if (!partNumber || isHpmPart(partNumber)) {
+    targetMemoryMapBusy.value = false
+    return
+  }
+  targetMemoryMapBusy.value = true
+  try {
+    const regions = await api.getTargetMemoryMap(partNumber)
+    if (token === targetMemoryMapToken && !disposed) targetMemoryRegions.value = regions
+  } catch {
+    if (token === targetMemoryMapToken) targetMemoryRegions.value = []
+  } finally {
+    if (token === targetMemoryMapToken) targetMemoryMapBusy.value = false
+  }
+}
+
 watch(() => selectedTarget.value?.part_number || '', partNumber => {
   void loadCustomFlms(partNumber)
+  void loadTargetMemoryMap(partNumber)
 })
 
 async function addCustomFlm(file: File): Promise<void> {
@@ -327,7 +349,7 @@ async function addCustomFlm(file: File): Promise<void> {
   customFlmError.value = ''
   try {
     await api.addCustomFlm(file, partNumber)
-    await loadCustomFlms(partNumber)
+    await Promise.all([loadCustomFlms(partNumber), loadTargetMemoryMap(partNumber)])
     resetInspection()
     scheduleAutoInspection()
   } catch (error) {
@@ -345,7 +367,7 @@ async function removeCustomFlm(algorithmId: string): Promise<void> {
   customFlmError.value = ''
   try {
     await api.removeCustomFlm(algorithmId, partNumber)
-    await loadCustomFlms(partNumber)
+    await Promise.all([loadCustomFlms(partNumber), loadTargetMemoryMap(partNumber)])
     resetInspection()
     scheduleAutoInspection()
   } catch (error) {
@@ -685,7 +707,7 @@ onBeforeUnmount(() => {
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" />
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="totalProgress" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><MemoryReadPanel :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :sectors="inspection?.sectors || []" :disabled="active || packBusy || inspectBusy" /><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><MemoryReadPanel :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="active || packBusy || inspectBusy" /><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">
