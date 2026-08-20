@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T21:40:00+08:00`
-- 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已推送 389a78d（首次连接瞬态重试）、67437b3（读取结果可直接烧录）和 1c4809f（桌面保存对话框权限）。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 1c4809f；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：运行时修复已提交；生产构建生成的 gui/dist、sidecar、Tauri target 和 release 安装包均为本地产物，不进入源码提交。
-- 当前任务：首次连接瞬态重试、在线读取结果烧录和桌面 RTT/SuperWatch 保存权限已修复并完成构建验收。
-- 状态：`fast_connect_and_read_flash_verified`
+- 更新时间：`2026-08-20T22:05:00+08:00`
+- 分支：`fix/systemview-live-zoom`
+- HEAD：`fix/systemview-live-zoom 已快进至 28d75d7，包含 389a78d（首次连接瞬态重试）、67437b3（读取结果可直接烧录）、1c4809f（桌面保存对话框权限）及完整验证记录。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/systemview-live-zoom 已推送至 28d75d7；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：运行时修复已提交；工作区保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist 与 Cargo 换行变化，sidecar、Tauri target 和 release 安装包均为本地产物，不进入源码提交。
+- 当前任务：首次连接瞬态重试、在线读取结果烧录和桌面 RTT/SuperWatch 保存权限已修复；真机 REST 与覆盖安装门禁完成，桌面原生保存对话框仍受本机 Computer Use 服务限制未形成落盘闭环。
+- 状态：`fast_connect_read_flash_installer_verified`
 
 ## 里程碑
 
@@ -48,8 +48,8 @@
 - **SystemView 流模式重连无数据**：连接握手恢复阶段现在先发送 SystemView 的二进制停止帧 0x02 和 SystemView.stop()，验证回到 REPL 后才结束；仅在无提示符时发送 RTT/VOFA/dump 兜底命令，避免命令拼接污染。新增桥接恢复回归断言，聚焦 Python 10 项通过。真实 8766 + V3 闭环先停止 SystemView，再断开/重连成功；重新启动后状态为 streaming，Chrome 事件列表持续增长（80,864 事件、6 个任务）。
 - **RTOS Trace 放大后持续刷新**：手动缩放/平移不再冻结 setPrefilteredIntervals；Timeline 保留 viewStart/viewEnd，渲染调度器按当前视口向 worker 请求数据并持续重绘，只有实际拖动才退出跟随，单击不冻结。新增视口保持与点击/拖动回归测试；GUI 全量 55 文件/541 项、生产构建通过。真实 Chrome 放大后事件计数约 3,192,204 增长到 3,197,946，canvas 尺寸保持稳定。
 - **RTOS Trace 连续滚动与短区间可见**：固定整页窗口会在填满后整页跳转，且绘图器把宽度小于 0.4 像素的高频运行区间全部跳过，导致宽窗口看似无数据。Timeline 现以最新事件为右边界连续滚动，窗口跨度同时适用于下拉选择和 Ctrl/Cmd+滚轮放大；短区间按 0.8 像素最小宽度绘制。稳定任务顺序、泳道容量只增不减、DPR backing 尺寸取整与 30 FPS 上限保持不变。聚焦 40 项、GUI 全量 55 文件/542 项和 Vite 生产构建通过；Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。真实 Chrome + V3 先停止再重启 SystemView，0.5 秒窗口中标尺右端与任务条持续向最新时间推进，事件计数持续增长，6 条泳道高度不变且短区间可见。
-- **首次连接与读取结果烧录**：Device._connect 对刚枚举但 REPL 尚未稳定的候选端口增加一次 150 ms 后台重试，只有两次失败后才加入自动发现排除集合；显式端口也复用该重试。test_target_init.py 11 项通过，修复提交 389a78d 已推送。在线读取完成后把字节流包装为带基地址的临时 BIN 并送入既有 images/inspect，保留读取 HEX 窗口同时生成 image_id/inspection，开始烧录按钮在检查完成后可用；在线视图定向 72 项、GUI 全量 55 文件/543 项通过，修复提交 67437b3 已推送。
-- **v0.1.7 安装包与桌面保存**：标准 NSIS 通过 tauri-gui-builder --bundle 重新生成并覆盖安装到用户级 0.1.7；安装后 8765 /api/health 返回 ok、/api/online-flash/probes 返回 1 个探针，Tauri/sidecar 进程树无 Python 子进程。发现 RTT/SuperWatch 共用 Tauri dialog.save，但 capability 仅有 dialog:allow-open；补充 dialog:allow-save 后以 1c4809f 独立提交推送并重新构建。RTTView/WaveformViewer 保存相关回归 116 项通过。候选安装包位于工作区 release/MKLink-AI-Probe-0.1.7-1c4809f-setup.exe，SHA-256 为 AA7185006A8351B14AF5580B9004D2AE10336D0743A240ECF72EC5C87C3C94A4。
+- **首次连接与读取结果烧录**：Device._connect 对刚枚举但 REPL 尚未稳定的候选端口增加一次 150 ms 后台重试，只有两次失败后才加入自动发现排除集合；显式端口也复用该重试。test_target_init.py 11 项通过，修复提交 389a78d 已推送。在线读取完成后把字节流包装为带基地址的临时 BIN 并送入既有 images/inspect，保留读取 HEX 窗口同时生成 image_id/inspection，开始烧录按钮在检查完成后可用；在线视图定向 72 项、GUI 全量 55 文件/543 项通过，修复提交 67437b3 已推送。当前 8766 Web 后端与 V3/STM32F103RC 真机在每次主动断开后连续 3 次首次连接均成功，耗时 337/173/181 ms；在线读取一个 2048 字节目标扇区耗时 768 ms，随后 images/inspect 返回有效 image_id、BIN 地址范围、1 个扇区且 sector_operations_available=true，证明读取结果已满足开始烧录前置条件，未执行写入。
+- **v0.1.7 安装包与桌面保存**：标准 NSIS 通过 tauri-gui-builder --bundle 从 28d75d7 重新生成，并在仅保留 Windows 系统 PATH 的环境中静默覆盖安装到用户级 0.1.7；安装后 8765 /api/health 返回 ok、/api/online-flash/probes 返回 1 个探针，Tauri/内置 sidecar 进程树无 Python 子进程。发现 RTT/SuperWatch 共用 Tauri dialog.save，但 capability 仅有 dialog:allow-open；补充 dialog:allow-save 后以 1c4809f 独立提交推送并重新构建。RTT、SuperWatch、SystemView、串口与流解码专项 201 项通过，GUI 全量 55 文件/543 项、Python 1316 passed/1 skipped（另 12 项仅 WinError 1314）、Vite 生产构建通过。候选安装包位于工作区 release/MKLink-AI-Probe-0.1.7-28d75d7-setup.exe，SHA-256 为 BB974F762E3847A0F824C7FB01462925E2A26F4064C281BFB270849662A70BE7。Computer Use 可信运行时补全后仍缺少宿主 native pipe，未能自动操作原生保存对话框，因此真实桌面文件落盘不能宣称通过。
 
 ## 架构决策
 
@@ -82,7 +82,7 @@
 
 ## 下一动作
 
-1. 修复浏览器控制运行时的 browser-service 版本引用后，再用真实 Chrome 复测 Web 版 RTT/SuperWatch 保存和在线读取后烧录。
+1. 重启 Codex/ChatGPT 让 26.818.21641 的 browser-service、可信模块目录、Computer Use native pipe 和 localhost 管理策略重新初始化后，再用真实 Chrome/安装包复测 RTT、SuperWatch 原生保存落盘和在线读取后开始烧录按钮。
 2. 维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览，并目视确认读取按钮向上箭头。
 3. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
 4. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
@@ -99,7 +99,7 @@
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
 - USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
 - 当前 GitHub/Gitee Release 尚未提供 V3.3.7/V4.3.6 UF2 远端资产；自动升级会优先尝试远端，缺失时回退安装包 MK-Firmware。本机已完成 V3.3.7 同版本 UF2 真机重刷闭环。
-- 当前 Chrome 扩展本机诊断为已安装、启用且原生消息清单正确，但 browser-client 初始化仍引用不存在的旧版 browser-service.mjs；本轮未宣称 Chrome 自动化 HIL，通过 8766 服务启动和本地 API/构建门禁替代。
+- Chrome 控制的旧 browser-service 版本引用已通过把 26.814.41407 缓存路径兼容到当前 26.818.21641 修复，browser-client 可识别 Chrome 和维护者打开的 8766 标签页；但宿主无法验证 admin-enforced localhost 策略，主动导航和接管 127.0.0.1 均被安全层拒绝，本轮不能宣称 Chrome UI HIL。Computer Use 的旧 cua_node 依赖已补全，但当前会话对应的 native pipe 不存在，安装包原生保存对话框仍无法自动化。
 
 ## 延续协议
 

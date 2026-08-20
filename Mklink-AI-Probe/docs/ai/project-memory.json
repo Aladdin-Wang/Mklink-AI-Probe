@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-20T21:40:00+08:00",
+  "updated_at": "2026-08-20T22:05:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/fast-probe-handshake",
-    "head": "fix/fast-probe-handshake 已推送 389a78d（首次连接瞬态重试）、67437b3（读取结果可直接烧录）和 1c4809f（桌面保存对话框权限）。",
-    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 1c4809f；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
-    "working_tree": "运行时修复已提交；生产构建生成的 gui/dist、sidecar、Tauri target 和 release 安装包均为本地产物，不进入源码提交。"
+    "branch": "fix/systemview-live-zoom",
+    "head": "fix/systemview-live-zoom 已快进至 28d75d7，包含 389a78d（首次连接瞬态重试）、67437b3（读取结果可直接烧录）、1c4809f（桌面保存对话框权限）及完整验证记录。",
+    "remote_head": "Aladdin-Wang GitHub origin/fix/systemview-live-zoom 已推送至 28d75d7；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
+    "working_tree": "运行时修复已提交；工作区保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist 与 Cargo 换行变化，sidecar、Tauri target 和 release 安装包均为本地产物，不进入源码提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前基线、最新证据、有效约束、限制和下一动作；历史从 Git 查询。"
   },
   "current_session": {
-    "status": "fast_connect_and_read_flash_verified",
-    "current_task": "首次连接瞬态重试、在线读取结果烧录和桌面 RTT/SuperWatch 保存权限已修复并完成构建验收。",
+    "status": "fast_connect_read_flash_installer_verified",
+    "current_task": "首次连接瞬态重试、在线读取结果烧录和桌面 RTT/SuperWatch 保存权限已修复；真机 REST 与覆盖安装门禁完成，桌面原生保存对话框仍受本机 Computer Use 服务限制未形成落盘闭环。",
     "release": "v0.1.7 标准 NSIS 候选已覆盖安装验证；本分支不打标签、不发布、不修改 updates/latest.json，也不更新 Gitee。"
   },
   "milestones": [
@@ -151,11 +151,11 @@
     },
     {
       "area": "首次连接与读取结果烧录",
-      "result": "Device._connect 对刚枚举但 REPL 尚未稳定的候选端口增加一次 150 ms 后台重试，只有两次失败后才加入自动发现排除集合；显式端口也复用该重试。test_target_init.py 11 项通过，修复提交 389a78d 已推送。在线读取完成后把字节流包装为带基地址的临时 BIN 并送入既有 images/inspect，保留读取 HEX 窗口同时生成 image_id/inspection，开始烧录按钮在检查完成后可用；在线视图定向 72 项、GUI 全量 55 文件/543 项通过，修复提交 67437b3 已推送。"
+      "result": "Device._connect 对刚枚举但 REPL 尚未稳定的候选端口增加一次 150 ms 后台重试，只有两次失败后才加入自动发现排除集合；显式端口也复用该重试。test_target_init.py 11 项通过，修复提交 389a78d 已推送。在线读取完成后把字节流包装为带基地址的临时 BIN 并送入既有 images/inspect，保留读取 HEX 窗口同时生成 image_id/inspection，开始烧录按钮在检查完成后可用；在线视图定向 72 项、GUI 全量 55 文件/543 项通过，修复提交 67437b3 已推送。当前 8766 Web 后端与 V3/STM32F103RC 真机在每次主动断开后连续 3 次首次连接均成功，耗时 337/173/181 ms；在线读取一个 2048 字节目标扇区耗时 768 ms，随后 images/inspect 返回有效 image_id、BIN 地址范围、1 个扇区且 sector_operations_available=true，证明读取结果已满足开始烧录前置条件，未执行写入。"
     },
     {
       "area": "v0.1.7 安装包与桌面保存",
-      "result": "标准 NSIS 通过 tauri-gui-builder --bundle 重新生成并覆盖安装到用户级 0.1.7；安装后 8765 /api/health 返回 ok、/api/online-flash/probes 返回 1 个探针，Tauri/sidecar 进程树无 Python 子进程。发现 RTT/SuperWatch 共用 Tauri dialog.save，但 capability 仅有 dialog:allow-open；补充 dialog:allow-save 后以 1c4809f 独立提交推送并重新构建。RTTView/WaveformViewer 保存相关回归 116 项通过。候选安装包位于工作区 release/MKLink-AI-Probe-0.1.7-1c4809f-setup.exe，SHA-256 为 AA7185006A8351B14AF5580B9004D2AE10336D0743A240ECF72EC5C87C3C94A4。"
+      "result": "标准 NSIS 通过 tauri-gui-builder --bundle 从 28d75d7 重新生成，并在仅保留 Windows 系统 PATH 的环境中静默覆盖安装到用户级 0.1.7；安装后 8765 /api/health 返回 ok、/api/online-flash/probes 返回 1 个探针，Tauri/内置 sidecar 进程树无 Python 子进程。发现 RTT/SuperWatch 共用 Tauri dialog.save，但 capability 仅有 dialog:allow-open；补充 dialog:allow-save 后以 1c4809f 独立提交推送并重新构建。RTT、SuperWatch、SystemView、串口与流解码专项 201 项通过，GUI 全量 55 文件/543 项、Python 1316 passed/1 skipped（另 12 项仅 WinError 1314）、Vite 生产构建通过。候选安装包位于工作区 release/MKLink-AI-Probe-0.1.7-28d75d7-setup.exe，SHA-256 为 BB974F762E3847A0F824C7FB01462925E2A26F4064C281BFB270849662A70BE7。Computer Use 可信运行时补全后仍缺少宿主 native pipe，未能自动操作原生保存对话框，因此真实桌面文件落盘不能宣称通过。"
     }
   ],
   "decisions": [
@@ -200,10 +200,10 @@
     "USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。"
     ,
     "当前 GitHub/Gitee Release 尚未提供 V3.3.7/V4.3.6 UF2 远端资产；自动升级会优先尝试远端，缺失时回退安装包 MK-Firmware。本机已完成 V3.3.7 同版本 UF2 真机重刷闭环。",
-    "当前 Chrome 扩展本机诊断为已安装、启用且原生消息清单正确，但 browser-client 初始化仍引用不存在的旧版 browser-service.mjs；本轮未宣称 Chrome 自动化 HIL，通过 8766 服务启动和本地 API/构建门禁替代。"
+    "Chrome 控制的旧 browser-service 版本引用已通过把 26.814.41407 缓存路径兼容到当前 26.818.21641 修复，browser-client 可识别 Chrome 和维护者打开的 8766 标签页；但宿主无法验证 admin-enforced localhost 策略，主动导航和接管 127.0.0.1 均被安全层拒绝，本轮不能宣称 Chrome UI HIL。Computer Use 的旧 cua_node 依赖已补全，但当前会话对应的 native pipe 不存在，安装包原生保存对话框仍无法自动化。"
   ],
   "next_actions": [
-    "修复浏览器控制运行时的 browser-service 版本引用后，再用真实 Chrome 复测 Web 版 RTT/SuperWatch 保存和在线读取后烧录。",
+    "重启 Codex/ChatGPT 让 26.818.21641 的 browser-service、可信模块目录、Computer Use native pipe 和 localhost 管理策略重新初始化后，再用真实 Chrome/安装包复测 RTT、SuperWatch 原生保存落盘和在线读取后开始烧录按钮。",
     "维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览，并目视确认读取按钮向上箭头。",
     "下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。",
     "需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。"
