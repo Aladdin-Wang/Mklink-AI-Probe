@@ -109,6 +109,7 @@ let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollingEnabled = false
 let sourceFingerprint = ''
+let capturedReadSource = false
 let firmwareHandle: BrowserFirmwareFileHandle | null = null
 let stopNativeDropListener: (() => void) | null = null
 let disposed = false
@@ -434,6 +435,7 @@ function resetInspection(): void {
   inspection.value = null; selectedSectorAddresses.value = []; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
 }
 function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null = null): void {
+  capturedReadSource = false
   firmware.value = file
   firmwareHandle = handle
   firmwarePath.value = ''
@@ -446,6 +448,7 @@ function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null
 }
 
 function setFirmwarePath(path: string): void {
+  capturedReadSource = false
   const suffix = path.split('.').pop()?.toLowerCase()
   if (suffix !== 'bin' && suffix !== 'hex') {
     inspectError.value = tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')
@@ -584,7 +587,13 @@ async function inspectImage(): Promise<void> {
   try {
     const result = firmwarePath.value
       ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
-      : await api.inspectImage(firmware.value!, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
+      : await api.inspectImage(
+          firmware.value!,
+          selectedTarget.value.part_number,
+          isBin.value ? parsedBase.value : null,
+          controller.signal,
+          capturedReadSource,
+        )
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error(tr('服务端返回的镜像地址范围无效', 'The server returned an invalid image address range'))
     inspection.value = result
@@ -633,6 +642,7 @@ function onMemoryReadData(payload: { address: number; data: Uint8Array }): void 
   firmwareHandle = null
   firmwarePath.value = ''
   sourceFingerprint = ''
+  capturedReadSource = true
   baseAddress.value = `0x${payload.address.toString(16).toUpperCase()}`
   binAddressOpen.value = false
   resetInspection()
@@ -646,6 +656,7 @@ function clearMemoryWindow(): void {
   memoryReadProgress.value = 0
   memoryReadText.value = ''
   memoryReadState.value = 'waiting'
+  capturedReadSource = false
 }
 function clearDataWindow(): void {
   firmware.value = null

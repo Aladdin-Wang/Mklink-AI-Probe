@@ -1235,6 +1235,61 @@ def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, serv
     assert not services.image_inspector.seen_path.exists()
 
 
+def test_captured_image_can_use_same_pack_flm_range_for_programming(
+    app, services, monkeypatch
+):
+    algorithm = FlashAlgorithm(
+        algorithm_id="pack-algorithm",
+        target_part="DEVICE_A",
+        file_name="device.flm",
+        flash_start=0x1000,
+        flash_size=0x2000,
+        ram_start=0x20000000,
+        ram_size=0x1000,
+        default=True,
+        source_kind="installed-pack",
+        source_name="Vendor.Pack@1.0",
+        source_token="catalog:installed:test",
+        pack_path="safe.pack",
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [algorithm],
+    )
+
+    inspected = request(
+        app,
+        "POST",
+        "/api/online-flash/images/inspect",
+        data={
+            "part_number": "DEVICE_A",
+            "base_address": "0x1000",
+            "captured_from_target": "true",
+        },
+        files={"file": ("captured.bin", b"abcd")},
+    )
+
+    assert inspected.status_code == 200, inspected.text
+    assert services.image_inspector.seen_regions[0].length == 0x2000
+    assert services.image_flash_overrides["image-1"][1] == ((0x1000, 0x2000),)
+
+    started = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "erase", "program", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "image_id": "image-1",
+            "sector_addresses": [0x1000],
+        },
+    )
+
+    assert started.status_code == 200, started.text
+    assert services.job_manager.started[0].pack_flm_regions == ((0x1000, 0x2000),)
+
+
 def test_local_firmware_path_status_and_inspection_track_recompiled_files(app, services):
     source = services.paths.root / "build" / "fw.bin"
     source.parent.mkdir(parents=True)

@@ -64,6 +64,7 @@ class OnlineFlashServices:
     custom_flms: object = None
     configuration_lock: object = field(default_factory=threading.RLock)
     image_targets: Dict[str, object] = field(default_factory=dict)
+    image_flash_overrides: Dict[str, object] = field(default_factory=dict)
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
@@ -686,6 +687,60 @@ def _target_flash_configuration(
     )
 
 
+def _captured_image_flash_regions(
+    services: OnlineFlashServices,
+    target: TargetRecord,
+    base_regions: Sequence[MemoryRegion],
+) -> tuple[tuple[MemoryRegion, ...], tuple[tuple[int, int], ...]]:
+    """Extend a captured image only to a same-Pack FLM's explicit range."""
+    from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
+
+    if not target.pack_path:
+        return tuple(base_regions), ()
+    pack_path = os.path.normcase(os.path.abspath(target.pack_path))
+    algorithms = [
+        algorithm
+        for algorithm in discover_flash_algorithms(target.part_number, paths=services.paths)
+        if bool(getattr(algorithm, "default", False))
+        and getattr(algorithm, "source_kind", "") in {"installed-pack", "builtin-pack"}
+        and getattr(algorithm, "pack_path", None)
+        and os.path.normcase(os.path.abspath(str(algorithm.pack_path))) == pack_path
+    ]
+    expanded = []
+    overrides = []
+    for region in base_regions:
+        if (
+            not region.is_flash
+            or not region.writable
+            or not isinstance(region.sector_size, int)
+            or isinstance(region.sector_size, bool)
+            or region.sector_size <= 0
+        ):
+            expanded.append(region)
+            continue
+        candidates = [
+            algorithm
+            for algorithm in algorithms
+            if int(getattr(algorithm, "flash_start", -1)) == region.start
+            and int(getattr(algorithm, "flash_size", 0)) > region.length
+        ]
+        if not candidates:
+            expanded.append(region)
+            continue
+        algorithm = min(candidates, key=lambda item: int(item.flash_size))
+        size = int(algorithm.flash_size)
+        expanded.append(MemoryRegion(
+            region.name,
+            region.start,
+            size,
+            True,
+            True,
+            region.sector_size,
+        ))
+        overrides.append((region.start, size))
+    return tuple(expanded), tuple(overrides)
+
+
 def _selected_probe(provider: Callable[[], Sequence[object]], probe_id: str) -> object:
     records = filter_mklink_probes(provider())
     for record in records:
@@ -868,6 +923,7 @@ def _start_job_with_configuration(
         custom_flm_paths = ()
         custom_flm_digests = ()
         custom_flm_regions = ()
+        pack_flm_regions = ()
         custom_flm_ram_start = None
         custom_flm_ram_size = None
         inspection = None
@@ -886,6 +942,9 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "image inspection does not match the selected target",
                 )
+            flash_override = services.image_flash_overrides.get(body.image_id)
+            if flash_override is not None:
+                regions, pack_flm_regions = flash_override
         if not hpm_target:
             from mklink.cmsis_dap.algorithm_catalog import (
                 FlashAlgorithmError,
@@ -984,6 +1043,7 @@ def _start_job_with_configuration(
             custom_flm_paths=custom_flm_paths,
             custom_flm_digests=custom_flm_digests,
             custom_flm_regions=custom_flm_regions,
+            pack_flm_regions=pack_flm_regions,
             custom_flm_ram_start=custom_flm_ram_start,
             custom_flm_ram_size=custom_flm_ram_size,
             frequency=body.frequency,
@@ -1005,6 +1065,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         source: Path,
         part_number: str,
         base_address: Optional[Union[str, int]],
+        captured_from_target: bool = False,
     ) -> object:
         from mklink.hpm_config import is_hpm_target
 
@@ -1017,6 +1078,14 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         regions, fingerprint, _paths = await _blocking(
             _target_flash_configuration, services, target.part_number
         )
+        pack_flm_regions = ()
+        if captured_from_target and not is_hpm_target(target.part_number):
+            regions, pack_flm_regions = await _blocking(
+                _captured_image_flash_regions,
+                services,
+                target,
+                regions,
+            )
         parsed_base = await _blocking(_parse_base_address, base_address)
         inspection = await _blocking(
             services.image_inspector.inspect,
@@ -1037,6 +1106,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         services.image_targets[inspection.image_id] = (
             target.part_number.casefold(), fingerprint
         )
+        if pack_flm_regions:
+            services.image_flash_overrides[inspection.image_id] = (
+                tuple(regions), pack_flm_regions
+            )
         payload = _json_primitive(inspection, hide_paths=True)
         payload["sector_operations_available"] = coverage.sector_operations_available
         payload["sectors"] = _json_primitive(coverage.sectors)
@@ -1356,13 +1429,19 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         file: UploadFile = File(...),
         part_number: str = Form(...),
         base_address: Optional[str] = Form(None),
+        captured_from_target: bool = Form(False),
     ) -> object:
         temporary = None  # type: Optional[Path]
         try:
             temporary, _digest, _size = await _blocking(
                 _stream_upload, file, services.paths, (".hex", ".bin"), services.upload_limit
             )
-            return await inspect_source(temporary, part_number, base_address)
+            return await inspect_source(
+                temporary,
+                part_number,
+                base_address,
+                captured_from_target,
+            )
         finally:
             await run_in_threadpool(_unlink, temporary)
             await file.close()

@@ -696,6 +696,8 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
 
     await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/images/inspect'))).toBe(true))
+    const inspectRequest = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/images/inspect'))
+    expect((inspectRequest?.[1]?.body as FormData).get('captured_from_target')).toBe('true')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     expect(wrapper.text()).toContain('read-0x80000000-32.bin')
     wrapper.unmount()

@@ -11,6 +11,7 @@ import pytest
 
 from mklink.cmsis_dap.backend import HpmRomBackend, PyOcdBackend, RoutingFlashBackend
 from mklink.cmsis_dap.backend import (
+    _expand_pack_flm_regions,
     _install_custom_flm_regions,
     _relocate_pack_flm_regions,
 )
@@ -682,6 +683,53 @@ def test_pack_flm_relocation_rejects_out_of_bounds_relative_algorithm() -> None:
 
     assert memory_map.get_region_for_address(0x00400000).flm is algorithm
     assert algorithm.flash_start == 0x80000
+
+
+def test_pack_flm_expansion_requires_an_algorithm_covering_the_requested_range() -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap
+
+    algorithm = type("Algorithm", (), {
+        "flash_start": 0x08000000,
+        "flash_size": 0x80000,
+    })()
+    original = FlashRegion(
+        name="IROM1",
+        start=0x08000000,
+        length=0x40000,
+        flm=algorithm,
+    )
+    target = type("Target", (), {"memory_map": MemoryMap(original)})()
+
+    _expand_pack_flm_regions(target, ((0x08000000, 0x80000),))
+
+    expanded = target.memory_map.get_region_for_address(0x0807FFFF)
+    assert expanded is not None
+    assert expanded.length == 0x80000
+    assert expanded.flm is algorithm
+    assert original.length == 0x40000
+
+    with pytest.raises(FlashError) as raised:
+        _expand_pack_flm_regions(target, ((0x08000000, 0x100000),))
+    assert raised.value.code is FlashErrorCode.TARGET_NOT_SUPPORTED
+
+
+def test_pack_flm_expansion_accepts_an_existing_runtime_flash_range() -> None:
+    from pyocd.core.memory_map import FlashRegion, MemoryMap
+
+    region = FlashRegion(
+        name="flash",
+        start=0x08000000,
+        length=0x80000,
+        algo={"pc_program_page": 0x20000100},
+        blocksize=0x800,
+    )
+    target = type("Target", (), {"memory_map": MemoryMap(region)})()
+
+    _expand_pack_flm_regions(target, ((0x08000000, 0x80000),))
+
+    accepted = target.memory_map.get_region_for_address(0x0807FFFF)
+    assert accepted is not None
+    assert accepted.length == 0x80000
 
 
 def test_pack_connect_relocates_flm_before_create_flash(tmp_path: Path) -> None:

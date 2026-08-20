@@ -68,9 +68,62 @@ def _relocate_pack_flm_regions(target: Any) -> None:
         region.flm = relocated
 
 
+def _expand_pack_flm_regions(
+    target: Any,
+    requested_regions: Tuple[Tuple[int, int], ...],
+) -> None:
+    if not requested_regions:
+        return
+    target.memory_map = target.memory_map.clone()
+    for start, size in requested_regions:
+        same_start = [
+            region
+            for region in target.memory_map
+            if bool(getattr(region, "is_flash", False)) and int(region.start) == start
+        ]
+        if len(same_start) == 1 and size <= int(same_start[0].length):
+            continue
+        matches = []
+        for region in same_start:
+            algorithm = getattr(region, "flm", None)
+            algorithm_start = getattr(algorithm, "flash_start", None)
+            algorithm_size = getattr(algorithm, "flash_size", None)
+            if (
+                isinstance(algorithm_start, int)
+                and not isinstance(algorithm_start, bool)
+                and isinstance(algorithm_size, int)
+                and not isinstance(algorithm_size, bool)
+                and algorithm_start <= start
+                and start + size <= algorithm_start + algorithm_size
+            ):
+                matches.append(region)
+        if len(matches) != 1:
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "requested Flash range is not backed by one Pack algorithm",
+            )
+        region = matches[0]
+        expanded = region.clone_with_changes(length=size)
+        target.memory_map.remove_region(region)
+        target.memory_map.add_region(expanded)
+
+
+def _prepare_pack_flm_regions(
+    target: Any,
+    requested_regions: Tuple[Tuple[int, int], ...],
+) -> None:
+    _relocate_pack_flm_regions(target)
+    _expand_pack_flm_regions(target, requested_regions)
+
+
 class _PackFlmDelegate:
-    def __init__(self, next_delegate: Any = None) -> None:
+    def __init__(
+        self,
+        next_delegate: Any = None,
+        expanded_regions: Tuple[Tuple[int, int], ...] = (),
+    ) -> None:
         self._next_delegate = next_delegate
+        self._expanded_regions = expanded_regions
 
     def will_init_target(self, target: Any, init_sequence: Any) -> None:
         callback = getattr(self._next_delegate, "will_init_target", None)
@@ -80,7 +133,7 @@ class _PackFlmDelegate:
             "create_flash",
             (
                 "mklink_pack_flm_relocation",
-                lambda: _relocate_pack_flm_regions(target),
+                lambda: _prepare_pack_flm_regions(target, self._expanded_regions),
             ),
         )
 
@@ -248,6 +301,7 @@ class HpmRomBackend:
         custom_flm_paths: Tuple[str, ...] = (),
         custom_flm_digests: Tuple[str, ...] = (),
         custom_flm_regions: Tuple[Tuple[int, int], ...] = (),
+        pack_flm_regions: Tuple[Tuple[int, int], ...] = (),
         custom_flm_ram_start: Optional[int] = None,
         custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
@@ -260,6 +314,7 @@ class HpmRomBackend:
             custom_flm_paths,
             custom_flm_digests,
             custom_flm_regions,
+            pack_flm_regions,
             custom_flm_ram_start,
             custom_flm_ram_size,
             connect_mode,
@@ -474,6 +529,7 @@ class PyOcdBackend:
         custom_flm_paths: Tuple[str, ...] = (),
         custom_flm_digests: Tuple[str, ...] = (),
         custom_flm_regions: Tuple[Tuple[int, int], ...] = (),
+        pack_flm_regions: Tuple[Tuple[int, int], ...] = (),
         custom_flm_ram_start: Optional[int] = None,
         custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
@@ -528,6 +584,28 @@ class PyOcdBackend:
                         "custom FLM region metadata is invalid",
                     )
                 resolved_regions.append((start, size))
+            resolved_pack_regions = []
+            for raw_region in pack_flm_regions:
+                if not isinstance(raw_region, tuple) or len(raw_region) != 2:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "Pack FLM region metadata is invalid",
+                    )
+                start, size = raw_region
+                if (
+                    not isinstance(start, int)
+                    or isinstance(start, bool)
+                    or start < 0
+                    or not isinstance(size, int)
+                    or isinstance(size, bool)
+                    or size <= 0
+                    or start + size > 0x1_0000_0000
+                ):
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "Pack FLM region metadata is invalid",
+                    )
+                resolved_pack_regions.append((start, size))
             resolved_flms = []
             for value, expected_digest in zip(custom_flm_paths, custom_flm_digests):
                 flm_path = Path(value).expanduser()
@@ -607,7 +685,7 @@ class PyOcdBackend:
                 session = factory(resolved_probe, options)
                 delegate = getattr(session, "delegate", None)
                 if resolved_pack is not None:
-                    delegate = _PackFlmDelegate(delegate)
+                    delegate = _PackFlmDelegate(delegate, tuple(resolved_pack_regions))
                 if resolved_flms:
                     delegate = _CustomFlmDelegate(
                         tuple(resolved_flms),

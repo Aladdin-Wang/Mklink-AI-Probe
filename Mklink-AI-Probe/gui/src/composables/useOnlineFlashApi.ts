@@ -297,6 +297,7 @@ export function useOnlineFlashApi() {
     partNumber: string,
     baseAddress?: number | string | null,
     signal?: AbortSignal,
+    capturedFromTarget = false,
   ): Promise<ImageInspection> {
     const body = new FormData()
     body.append('file', file)
@@ -304,6 +305,7 @@ export function useOnlineFlashApi() {
     if (baseAddress !== undefined && baseAddress !== null) {
       body.append('base_address', String(baseAddress))
     }
+    if (capturedFromTarget) body.append('captured_from_target', 'true')
     return request('/images/inspect', { method: 'POST', body, signal })
   }
 
