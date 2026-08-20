@@ -126,7 +126,7 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._contextColor('Task', 0)).toBe('#task')
   })
 
-  it('zooms with an ordinary wheel event over the plot and then pans by dragging', () => {
+  it('zooms with a modified wheel event over the plot and then pans by dragging', () => {
     const timeline = Object.create(SvTimeline.prototype)
     const canvas = document.createElement('canvas')
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 240, height: 80, right: 240, bottom: 80, x: 0, y: 0, toJSON: () => ({}) })
@@ -140,10 +140,11 @@ describe('SvTimeline continuous filtering', () => {
     })
 
     timeline._bind()
-    const wheel = new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true })
+    const wheel = new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, bubbles: true, cancelable: true })
     Object.defineProperties(wheel, {
       clientX: { value: 140 },
       clientY: { value: 20 },
+      ctrlKey: { value: true },
     })
     canvas.dispatchEvent(wheel)
 
@@ -166,8 +167,34 @@ describe('SvTimeline continuous filtering', () => {
     timeline.plotX0 = 40
     timeline.plotX1 = 240
 
-    expect(timeline._shouldZoomWheel(20)).toBe(false)
-    expect(timeline._shouldZoomWheel(140)).toBe(true)
+    expect(timeline._shouldZoomWheel(20, { ctrlKey: true })).toBe(false)
+    expect(timeline._shouldZoomWheel(140, { ctrlKey: false })).toBe(false)
+    expect(timeline._shouldZoomWheel(140, { ctrlKey: true })).toBe(true)
+  })
+
+  it('leaves an ordinary wheel event available for page scrolling', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    const canvas = document.createElement('canvas')
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 240, height: 80, right: 240, bottom: 80, x: 0, y: 0, toJSON: () => ({}) })
+    Object.assign(timeline, {
+      roots: { canvas }, canvas, W: 240, H: 80,
+      plotX0: 40, plotX1: 240, plotW: 200,
+      tMin: 0, tMax: 1_000, viewStart: 0, viewEnd: 1_000,
+      dragging: false, follow: true,
+      _resize: vi.fn(), _draw: vi.fn(), _updateStatus: vi.fn(),
+      _hitTest: vi.fn(() => null), _showTip: vi.fn(), _hideTip: vi.fn(),
+    })
+
+    timeline._bind()
+    const wheel = new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true })
+    Object.defineProperties(wheel, { clientX: { value: 140 }, clientY: { value: 20 } })
+    canvas.dispatchEvent(wheel)
+
+    expect(wheel.defaultPrevented).toBe(false)
+    expect(timeline.follow).toBe(true)
+    expect(timeline.viewStart).toBe(0)
+    expect(timeline.viewEnd).toBe(1_000)
+    timeline.destroy()
   })
 
   it('keeps the inspected live frame stable until follow mode resumes', () => {

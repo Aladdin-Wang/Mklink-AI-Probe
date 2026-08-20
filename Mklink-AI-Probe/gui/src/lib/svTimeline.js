@@ -603,7 +603,7 @@ export class SvTimeline {
     this._onWheel = (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
-      if (!this._shouldZoomWheel(mx) || e.deltaY === 0) return;
+      if (!this._shouldZoomWheel(mx, e) || e.deltaY === 0) return;
       e.preventDefault();
       this.setFollowMode(false);
       const t = this._x2t(mx);
@@ -693,8 +693,12 @@ export class SvTimeline {
     this._listenersBound = true;
   }
 
-  _shouldZoomWheel(mx) {
-    return Number.isFinite(mx) && mx >= this.plotX0 && mx <= this.plotX1;
+  _shouldZoomWheel(mx, event = null) {
+    // Plain wheel input belongs to page scrolling. Require an explicit
+    // modifier before taking over the wheel for timeline zooming; otherwise
+    // merely reaching the Timeline while scrolling freezes live follow mode.
+    const modified = event ? Boolean(event.ctrlKey || event.metaKey) : false;
+    return modified && Number.isFinite(mx) && mx >= this.plotX0 && mx <= this.plotX1;
   }
 
   _escapeHtml(value) {
