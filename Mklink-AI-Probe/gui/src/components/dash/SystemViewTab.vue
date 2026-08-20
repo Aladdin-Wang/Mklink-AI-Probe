@@ -523,9 +523,10 @@ onMounted(() => {
       return
     }
     const end = latestBinaryTime ?? Number.MAX_SAFE_INTEGER
+    const followSpanUs = tlInstance?.getFollowSpan?.() || windowUs.value
     const windowTicks = meta.cpuFreq
-      ? windowUs.value * meta.cpuFreq / 1_000_000
-      : windowUs.value
+      ? followSpanUs * meta.cpuFreq / 1_000_000
+      : followSpanUs
     const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
     binaryStream.requestVisibleRange(++visibleRequestId, start, end, tlCanvas.value?.clientWidth || 800)
   })

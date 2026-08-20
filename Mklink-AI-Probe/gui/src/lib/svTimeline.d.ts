@@ -27,6 +27,7 @@ export class SvTimeline {
   setTickOrigin(tickOrigin: bigint): void
   setFollowMode(enabled: boolean): void
   getViewRange(): { start: number; end: number } | null
+  getFollowSpan(): number
   setLabels(labels: { emptyText?: string }): void
   pauseRendering(): void
   resumeRendering(): void

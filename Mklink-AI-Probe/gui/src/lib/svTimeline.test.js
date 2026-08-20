@@ -126,6 +126,31 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._contextColor('Task', 0)).toBe('#task')
   })
 
+  it('draws subpixel task intervals instead of leaving a busy timeline blank', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    const fillRect = vi.fn()
+    const task = { tid: 1, name: 'main', type: 'Task', color: '#123456' }
+    Object.assign(timeline, {
+      _renderPaused: false,
+      ctx: {
+        clearRect: vi.fn(), fillRect, strokeRect: vi.fn(), fillText: vi.fn(),
+        setLineDash: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+        stroke: vi.fn(), closePath: vi.fn(),
+      },
+      W: 240, H: 80, plotX0: 40, plotX1: 240, plotW: 200,
+      rulerH: 42, laneH: 28, viewStart: 0, viewEnd: 1_000,
+      hidden: new Set(), hover: null, markerTime: null, unit: 'us',
+      intervals: [{ tid: 1, name: 'main', start: 500, end: 500.1 }],
+      tasks: [task], lanes: [task], taskOf: new Map([[1, task]]),
+      _drawLaneBackgrounds: vi.fn(), _drawRuler: vi.fn(), _drawMarker: vi.fn(),
+      _fmtIntervalLabel: vi.fn(() => '0.1 us'), _labelWidth: vi.fn(() => 40),
+    })
+
+    timeline._draw()
+
+    expect(fillRect).toHaveBeenCalledWith(140, 45, 0.8, 22)
+  })
+
   it('zooms with a modified wheel event over the plot and then pans by dragging', () => {
     const timeline = Object.create(SvTimeline.prototype)
     const canvas = document.createElement('canvas')
@@ -149,7 +174,8 @@ describe('SvTimeline continuous filtering', () => {
     canvas.dispatchEvent(wheel)
 
     expect(wheel.defaultPrevented).toBe(true)
-    expect(timeline.follow).toBe(false)
+    expect(timeline.follow).toBe(true)
+    expect(timeline.followSpan).toBe(800)
     expect(timeline.viewEnd - timeline.viewStart).toBeCloseTo(800)
     const zoomedStart = timeline.viewStart
 
@@ -311,7 +337,7 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._draw).not.toHaveBeenCalled()
   })
 
-  it('keeps a live time page stable until the next window boundary', () => {
+  it('keeps the live window aligned to the newest event', () => {
     const timeline = Object.create(SvTimeline.prototype)
     Object.assign(timeline, {
       follow: true,
@@ -320,14 +346,14 @@ describe('SvTimeline continuous filtering', () => {
       tMax: 131,
     })
 
-    expect(timeline._targetFollowRange()).toEqual({ start: 100, end: 200 })
+    expect(timeline._targetFollowRange()).toEqual({ start: 31, end: 131 })
     timeline.tMax = 199.999
-    expect(timeline._targetFollowRange()).toEqual({ start: 100, end: 200 })
+    expect(timeline._targetFollowRange()).toEqual({ start: 99.999, end: 199.999 })
     timeline.tMax = 200.001
-    expect(timeline._targetFollowRange()).toEqual({ start: 200, end: 300 })
+    expect(timeline._targetFollowRange()).toEqual({ start: 100.001, end: 200.001 })
   })
 
-  it('does not move the live ruler while data remains in the current time page', () => {
+  it('moves the live ruler continuously as new data arrives', () => {
     const timeline = Object.create(SvTimeline.prototype)
     Object.assign(timeline, {
       PALETTE: ['#1'],
@@ -345,16 +371,16 @@ describe('SvTimeline continuous filtering', () => {
     })
 
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 30 }])
-    expect([timeline.viewStart, timeline.viewEnd]).toEqual([0, 100])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-70, 30])
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 90 }])
-    expect([timeline.viewStart, timeline.viewEnd]).toEqual([0, 100])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-10, 90])
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 101 }])
-    expect([timeline.viewStart, timeline.viewEnd]).toEqual([100, 200])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([1, 101])
 
     expect(timeline._drawLive).toHaveBeenCalledTimes(3)
   })
 
-  it('keeps drawing current-page updates and advances only at the page boundary', () => {
+  it('draws each live update in a continuously advancing window', () => {
     const timeline = Object.create(SvTimeline.prototype)
     Object.assign(timeline, {
       PALETTE: ['#1'],
@@ -371,9 +397,9 @@ describe('SvTimeline continuous filtering', () => {
     })
 
     timeline.setData([{ tid: 1, name: 'main', start: 40, end: 60 }])
-    expect([timeline.viewStart, timeline.viewEnd]).toEqual([0, 100])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-40, 60])
     timeline.setData([{ tid: 1, name: 'main', start: 101, end: 120 }])
-    expect([timeline.viewStart, timeline.viewEnd]).toEqual([100, 200])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([20, 120])
     expect(timeline._drawLive).toHaveBeenCalledTimes(2)
   })
 

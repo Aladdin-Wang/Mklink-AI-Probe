@@ -65,6 +65,7 @@ export class SvTimeline {
     this._explicitContexts = [];
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
+    this.followSpan = null;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
     this._renderPaused = (data && data.renderPaused) === true;
     this.emptyText = (data && data.emptyText) || '窗口内无任务';
@@ -124,10 +125,8 @@ export class SvTimeline {
       if (
         viewInvalid
         || !hadIntervalsBefore
-        // Keep the current page fixed while new intervals fill it. Move only
-        // when data crosses a page boundary or the stream has reset behind it.
-        || this.tMax > this.viewEnd + 0.001
-        || this.tMax < this.viewStart - 0.001
+        || Math.abs(this.viewStart - target.start) > 0.001
+        || Math.abs(this.viewEnd - target.end) > 0.001
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;
@@ -165,6 +164,10 @@ export class SvTimeline {
     if (!Number.isFinite(this.viewStart) || !Number.isFinite(this.viewEnd)
       || this.viewEnd <= this.viewStart) return null;
     return { start: this.viewStart, end: this.viewEnd };
+  }
+
+  getFollowSpan() {
+    return this.followSpan > 0 ? this.followSpan : this.windowSize;
   }
 
   _mergeTasks(run, names, types = new Map()) {
@@ -214,6 +217,7 @@ export class SvTimeline {
 
   setWindowSize(windowSize) {
     this.windowSize = Math.max(0, Number(windowSize) || 0);
+    this.followSpan = null;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
@@ -224,19 +228,16 @@ export class SvTimeline {
 
   setFollowMode(enabled) {
     this.follow = !!enabled;
+    if (!this.follow) this.followSpan = null;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
   _targetFollowRange() {
-    if (!this.windowSize || this.windowSize <= 0) {
+    const span = this.followSpan > 0 ? this.followSpan : this.windowSize;
+    if (!span || span <= 0) {
       return { start: this.tMin, end: this.tMax };
     }
-    // Keep the ruler and task lanes fixed while a live time page fills. Moving
-    // the range to every new event makes all ticks and intervals drift at the
-    // stream update rate, which appears as timeline shaking.
-    const page = Math.max(1, Math.ceil(this.tMax / this.windowSize));
-    const end = page * this.windowSize;
-    return { start: end - this.windowSize, end };
+    return { start: this.tMax - span, end: this.tMax };
   }
 
   _snapFollowRange() {
@@ -465,7 +466,6 @@ export class SvTimeline {
       if (it.end < this.viewStart || it.start > this.viewEnd) continue;
       const x0 = Math.max(this._t2x(it.start), this.plotX0);
       const x1 = Math.min(this._t2x(it.end), this.plotX1);
-      if (x1 - x0 < 0.4) continue; // 太细跳过
       const y = this.rulerH + laneIdx * this.laneH + 3;
       const w = Math.max(x1 - x0, 0.8);
       const h = this.laneH - 6;
@@ -613,13 +613,13 @@ export class SvTimeline {
       const mx = e.clientX - rect.left;
       if (!this._shouldZoomWheel(mx, e) || e.deltaY === 0) return;
       e.preventDefault();
-      this.setFollowMode(false);
       const t = this._x2t(mx);
       const factor = e.deltaY < 0 ? 0.8 : 1.25; // 缩放因子
       const fullSpan = Math.max(this.tMax - this.tMin, Number.EPSILON);
       const currentSpan = Math.max(this.viewEnd - this.viewStart, Number.EPSILON);
       const minSpan = Math.max(fullSpan * 1e-5, this.unit === 'us' ? 0.001 : 1);
       const nextSpan = Math.min(fullSpan, Math.max(minSpan, currentSpan * factor));
+      this.followSpan = nextSpan;
       const anchor = Math.min(1, Math.max(0, (mx - this.plotX0) / this.plotW));
       let ns = t - nextSpan * anchor;
       let ne = ns + nextSpan;
@@ -627,6 +627,9 @@ export class SvTimeline {
       if (ne > this.tMax) { ns -= ne - this.tMax; ne = this.tMax; }
       this.viewStart = Math.max(this.tMin, ns);
       this.viewEnd = Math.min(this.tMax, ne);
+      // Zoom keeps the live cursor at the newest data while preserving the
+      // zoom level. Dragging is still the explicit way to inspect history.
+      this.setFollowMode(true);
       this._draw(); this._updateStatus();
     };
 
@@ -754,6 +757,7 @@ export class SvTimeline {
   reset() {
     this.markerPinned = false;
     this.markerTime = null;
+    this.followSpan = null;
     if (this.windowSize > 0) {
       this.setFollowMode(true);
       return;

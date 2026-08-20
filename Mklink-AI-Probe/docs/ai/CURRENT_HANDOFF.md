@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T16:54:00+08:00`
+- 更新时间：`2026-08-20T19:01:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整、当前页平滑刷新、普通滚轮不冻结跟随、SystemView 流模式重连和放大窗口持续刷新修正。`
+- HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 连续滚动、短区间可见、稳定泳道布局、普通滚轮不冻结跟随、SystemView 流模式重连和放大窗口持续刷新修正。`
 - 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 271dfc4；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：Timeline 放大窗口持续刷新源码已提交；项目记忆待提交；生产构建生成的 gui/dist 变化不进入源码提交。
-- 当前任务：RTOS Trace Timeline 与普通滚轮跟随已修复；放大/平移后保持固定视口并持续刷新窗口内数据；连接握手先恢复 SystemView 流模式再尝试其他流模式，避免重连后无数据。
-- 状态：`systemview_reconnect_recovery_fixed`
+- 工作树：Timeline 连续滚动与短区间可见修复已完成源码、自动化和 V3 真机 Chrome 验证；生产构建生成的 gui/dist 变化不进入源码提交。
+- 当前任务：RTOS Trace Timeline 改为连续滚动跟随最新时间；短于 0.4 像素的真实运行区间仍以最小宽度绘制；放大后保持实时跟随，拖动后才固定历史视口。
+- 状态：`systemview_continuous_follow_verified`
 
 ## 里程碑
 
@@ -47,6 +47,7 @@
 - **RTOS Trace 普通滚轮冻结**：根因是 canvas wheel handler 把普通页面滚轮当作时间轴缩放，并调用 setFollowMode(false)，随后实时数据被保护逻辑冻结。现在普通滚轮不 preventDefault，只有 Ctrl/Cmd+滚轮才缩放；拖拽仍可进入手动查看模式。新增普通滚轮不冻结跟随回归用例；GUI 全量 55 文件/539 项和最新生产构建通过。最新 8766 页面页脚为 047367261341。重启后 V3 COM738/COM739 仍处于流模式且握手超时，尚未完成本次修复后的新一轮真机采集。
 - **SystemView 流模式重连无数据**：连接握手恢复阶段现在先发送 SystemView 的二进制停止帧 0x02 和 SystemView.stop()，验证回到 REPL 后才结束；仅在无提示符时发送 RTT/VOFA/dump 兜底命令，避免命令拼接污染。新增桥接恢复回归断言，聚焦 Python 10 项通过。真实 8766 + V3 闭环先停止 SystemView，再断开/重连成功；重新启动后状态为 streaming，Chrome 事件列表持续增长（80,864 事件、6 个任务）。
 - **RTOS Trace 放大后持续刷新**：手动缩放/平移不再冻结 setPrefilteredIntervals；Timeline 保留 viewStart/viewEnd，渲染调度器按当前视口向 worker 请求数据并持续重绘，只有实际拖动才退出跟随，单击不冻结。新增视口保持与点击/拖动回归测试；GUI 全量 55 文件/541 项、生产构建通过。真实 Chrome 放大后事件计数约 3,192,204 增长到 3,197,946，canvas 尺寸保持稳定。
+- **RTOS Trace 连续滚动与短区间可见**：固定整页窗口会在填满后整页跳转，且绘图器把宽度小于 0.4 像素的高频运行区间全部跳过，导致宽窗口看似无数据。Timeline 现以最新事件为右边界连续滚动，窗口跨度同时适用于下拉选择和 Ctrl/Cmd+滚轮放大；短区间按 0.8 像素最小宽度绘制。稳定任务顺序、泳道容量只增不减、DPR backing 尺寸取整与 30 FPS 上限保持不变。聚焦 40 项、GUI 全量 55 文件/542 项和 Vite 生产构建通过；Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。真实 Chrome + V3 先停止再重启 SystemView，0.5 秒窗口中标尺右端与任务条持续向最新时间推进，事件计数持续增长，6 条泳道高度不变且短区间可见。
 
 ## 架构决策
 
@@ -64,7 +65,7 @@
 - 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 - 由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。
 - Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。
-- SystemView Timeline 使用固定整页时间窗口，只有跨越窗口边界才移动标尺；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，避免 fractional DPR 触发反复清空；普通滚轮交给页面滚动，Ctrl/Cmd+滚轮才缩放，拖拽用于手动查看。
+- SystemView Timeline 使用以最新事件为右边界的连续滚动窗口并限制到 30 FPS；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，泳道容量只增不减，避免横向跟随时引入纵向抖动；普通滚轮交给页面滚动，Ctrl/Cmd+滚轮缩放后继续实时跟随，拖拽才进入手动查看。
 - 连接握手遇到未知流模式时，先以 SystemView 0x02 + SystemView.stop() 序列恢复 REPL 并验证身份；验证失败才发送其他流模式停止命令，禁止把 fallback 命令紧跟在 SystemView 停止字符串后盲发。
 - 探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。
 - 在线目标读取使用基地址到结束地址（结束地址不含）的 1024 字节前端分块请求；读取结果保留在窗口中，保存文件动作才打开系统保存选择器。HPM ROM 读取继续明确禁用。
