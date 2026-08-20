@@ -7,7 +7,7 @@
 - 更新时间：`2026-08-20T16:54:00+08:00`
 - 分支：`fix/fast-probe-handshake`
 - HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 cd7dd95；本次平滑刷新修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 9996e68；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
 - 工作树：Timeline 平滑刷新源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。
 - 当前任务：RTOS Trace Timeline 已固定时间页、修复 fractional DPR 重绘抖动，并在当前页内持续平滑刷新；RTT、SuperWatch 的后续真机复测仍待继续。
 - 状态：`rtos_timeline_stability_fixed`

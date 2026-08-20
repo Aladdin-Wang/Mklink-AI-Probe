@@ -6,7 +6,7 @@
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/fast-probe-handshake",
     "head": "fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。",
-    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 cd7dd95；本次平滑刷新修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
+    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 9996e68；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
     "working_tree": "Timeline 平滑刷新源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。"
   },
   "mission": {
