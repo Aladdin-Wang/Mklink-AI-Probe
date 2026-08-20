@@ -1686,4 +1686,9 @@ describe('online flash component quality', () => {
     expect(actionBarSource).toContain('flex-wrap:wrap')
     expect(actionBarSource).toContain('max-width:100%')
   })
+
+  it('keeps the BIN base-address label and input on one stable line', () => {
+    expect(firmwareWorkspaceSource).toMatch(/\.base-field\{[^}]*flex:0 0 auto[^}]*white-space:nowrap/s)
+    expect(firmwareWorkspaceSource).toMatch(/\.base-field input\{[^}]*flex:0 0 92px[^}]*min-width:92px/s)
+  })
 })
