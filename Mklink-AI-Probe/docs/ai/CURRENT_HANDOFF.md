@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T16:44:00+08:00`
+- 更新时间：`2026-08-20T16:54:00+08:00`
 - 分支：`fix/fast-probe-handshake`
 - HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。`
 - 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 cd7dd95；本次平滑刷新修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
