@@ -53,4 +53,34 @@ describe('MemoryReadPanel', () => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
+
+  it('uses the target sector size for each read request', async () => {
+    const fetch = vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+      const size = Number((JSON.parse(String(options.body)) as { size: number }).size)
+      return new Response(new Uint8Array(size), {
+        status: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      })
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    const wrapper = mount(MemoryReadPanel, {
+      props: {
+        probeId: 'probe', targetPart: 'STM32F103C8', hpm: false,
+        frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
+        sectors: [{ address: 0x1000, size: 0x800 }, { address: 0x1800, size: 0x800 }],
+      },
+    })
+    await wrapper.get('[data-testid="memory-read-submit"]').trigger('click')
+    await wrapper.get('[data-testid="memory-read-address"]').setValue('0x1000')
+    await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x2000')
+    await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
+    await flushPromises()
+
+    const sizes = fetch.mock.calls.map((call: [string, RequestInit]) => Number((JSON.parse(String(call[1].body)) as { size: number }).size))
+    expect(sizes).toEqual([0x800, 0x800])
+    expect(wrapper.get('[data-testid="memory-read-log"]').text()).toContain('2048 Bytes')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
 })
