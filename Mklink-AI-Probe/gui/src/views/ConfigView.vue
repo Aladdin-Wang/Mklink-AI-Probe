@@ -456,7 +456,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section v-else class="card serve-panel">
+      <section v-else-if="activeSection === 'serve'" class="card serve-panel">
         <header class="panel-header"><h2>{{ tr('启动服务', 'Start Service') }}</h2></header>
         <div class="alert alert-info">{{ tr('在本地启动 MKLink 远程服务，供其他客户端连接。', 'Start the MKLink remote service locally for other clients.') }}</div>
         <div class="form-row">
@@ -474,11 +474,14 @@ onMounted(async () => {
         <div class="panel-actions">
           <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">{{ tr('启动服务', 'Start Service') }}</button>
         </div>
-        <div class="firmware-upgrade-panel" data-testid="firmware-upgrade-panel">
-          <div class="firmware-upgrade-heading">
-            <strong>{{ tr('固件升级', 'Firmware Update') }}</strong>
-            <span v-if="firmwareCheck?.current_version">{{ firmwareCheck.current_version }}</span>
-          </div>
+      </section>
+
+      <section v-else class="card firmware-panel" data-testid="firmware-upgrade-panel">
+        <header class="panel-header">
+          <h2>{{ tr('固件升级', 'Firmware Update') }}</h2>
+          <span v-if="firmwareCheck?.current_version" class="firmware-version">{{ firmwareCheck.current_version }}</span>
+        </header>
+        <div class="firmware-upgrade-content">
           <p>{{ tr('读取 MICROKEEN U 盘版本，检查 GitHub/Gitee 最新固件并自动完成 UF2 升级。', 'Read the MICROKEEN drive version, check GitHub/Gitee, and complete the UF2 update automatically.') }}</p>
           <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading || !deviceStatus.connected" @click="upgradeFirmware">
             {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
@@ -522,32 +525,24 @@ onMounted(async () => {
 
 .local-panel,
 .remote-panel,
-.serve-panel {
+.serve-panel,
+.firmware-panel {
   min-height: 270px;
 }
 
-.firmware-upgrade-panel {
+.firmware-upgrade-content {
   display: grid;
   gap: 8px;
-  margin-top: 22px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
 }
 
-.firmware-upgrade-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.firmware-upgrade-heading span,
-.firmware-upgrade-panel p,
+.firmware-version,
+.firmware-upgrade-content p,
 .firmware-upgrade-status {
   color: var(--muted);
   font-size: 12px;
 }
 
-.firmware-upgrade-panel p {
+.firmware-upgrade-content p {
   margin: 0;
   line-height: 1.5;
 }
