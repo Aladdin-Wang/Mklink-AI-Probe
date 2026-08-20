@@ -239,6 +239,7 @@ class Device:
         saved_port = str(config.get("com_port") or "").strip() or None
         candidate = self._port or self._preferred_port or saved_port
         attempted: set[str] = set()
+        candidate_attempts: dict[str, int] = {}
         discovery_lock = None
 
         try:
@@ -260,13 +261,26 @@ class Device:
                     if candidate is None:
                         break
 
-                attempted.add(candidate.strip().casefold())
+                candidate_key = candidate.strip().casefold()
+                attempt = candidate_attempts.get(candidate_key, 0)
                 bridge = MKLinkSerialBridge(candidate)
                 if bridge.connect():
                     self._bridge = bridge
                     self._port = candidate
                     break
                 bridge.close()
+
+                # USB CDC ports can be visible a short moment before the
+                # firmware REPL is ready. Retry the same candidate once so a
+                # transient enumeration race does not require a second user
+                # click. Only exhausted candidates are excluded from the next
+                # discovery pass.
+                if attempt == 0:
+                    candidate_attempts[candidate_key] = 1
+                    time.sleep(0.15)
+                    continue
+
+                attempted.add(candidate_key)
 
                 if not automatic:
                     break
