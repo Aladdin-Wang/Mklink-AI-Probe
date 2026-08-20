@@ -117,6 +117,7 @@ export class SvTimeline {
     } else { this.tMin = 0; this.tMax = 1; }
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
+    const preserveManualView = !this.follow && !viewInvalid;
     const shouldFollow = this.follow && this.windowSize > 0 && this.intervals.length;
     if (shouldFollow) {
       const target = this._targetFollowRange();
@@ -131,7 +132,7 @@ export class SvTimeline {
         this.viewStart = target.start;
         this.viewEnd = target.end;
       }
-    } else {
+    } else if (!preserveManualView) {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;
       if (viewInvalid || viewOutsideData || (!hadIntervalsBefore && this.intervals.length)) {
       this.viewStart = this.tMin;
@@ -153,10 +154,17 @@ export class SvTimeline {
   // Live workers already filter the requested visible range. This entrypoint
   // deliberately avoids slicing/sorting the retained 50k interval history.
   setPrefilteredIntervals(intervals) {
-    // User interaction leaves follow mode so the inspected frame stays stable
-    // while acquisition and the Runtime/Context tables continue updating.
-    if (!this.follow && this._hadIntervals) return;
+    // User interaction leaves follow mode so the inspected frame stays stable,
+    // but the intervals inside that frame must continue to repaint as new
+    // samples arrive. The caller requests the current view range from the
+    // worker, so accepting every frame does not pull the view back to "now".
     this._acceptData(intervals || []);
+  }
+
+  getViewRange() {
+    if (!Number.isFinite(this.viewStart) || !Number.isFinite(this.viewEnd)
+      || this.viewEnd <= this.viewStart) return null;
+    return { start: this.viewStart, end: this.viewEnd };
   }
 
   _mergeTasks(run, names, types = new Map()) {
@@ -628,7 +636,6 @@ export class SvTimeline {
       const mx = e.clientX - rect.left;
       if (mx < this.plotX0 || mx > this.plotX1) return;
       e.preventDefault();
-      this.setFollowMode(false);
       this.dragging = true;
       this.dragMoved = false;
       this.dragX0 = e.clientX;
@@ -641,7 +648,12 @@ export class SvTimeline {
       const mx = e.clientX - rect.left, my = e.clientY - rect.top;
       if (this.dragging) {
         const dx = e.clientX - this.dragX0;
-        if (Math.abs(dx) >= 3) this.dragMoved = true;
+        if (Math.abs(dx) >= 3) {
+          this.dragMoved = true;
+          // A click only pins the marker; leave live follow enabled. Enter
+          // manual inspection mode once the pointer has actually moved.
+          this.setFollowMode(false);
+        }
         const dt = -dx / this.plotW * (this.dragView0[1] - this.dragView0[0]);
         let ns = this.dragView0[0] + dt, ne = this.dragView0[1] + dt;
         if (ns < this.tMin) { ne += this.tMin - ns; ns = this.tMin; }

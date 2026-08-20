@@ -509,6 +509,19 @@ onMounted(() => {
       tlInstance?.setData(tlGetIntervals())
       return
     }
+    const manualView = tlInstance && !tlInstance.follow ? tlInstance.getViewRange?.() : null
+    const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
+    if (manualView) {
+      // Keep a zoomed/panned frame stable while continuing to acquire and
+      // repaint intervals that fall inside that frame.
+      binaryStream.requestVisibleRange(
+        ++visibleRequestId,
+        Math.max(0, Math.floor(manualView.start / tickScale)),
+        Math.max(0, Math.ceil(manualView.end / tickScale)),
+        tlCanvas.value?.clientWidth || 800,
+      )
+      return
+    }
     const end = latestBinaryTime ?? Number.MAX_SAFE_INTEGER
     const windowTicks = meta.cpuFreq
       ? windowUs.value * meta.cpuFreq / 1_000_000

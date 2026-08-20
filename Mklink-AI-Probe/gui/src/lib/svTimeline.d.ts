@@ -16,6 +16,7 @@ export interface SvTimelineData {
   emptyText?: string
 }
 export class SvTimeline {
+  follow: boolean
   viewStart: number | null
   viewEnd: number | null
   constructor(roots: SvTimelineRoots, data: SvTimelineData)
@@ -25,6 +26,7 @@ export class SvTimeline {
   setWindowSize(windowSize: number): void
   setTickOrigin(tickOrigin: bigint): void
   setFollowMode(enabled: boolean): void
+  getViewRange(): { start: number; end: number } | null
   setLabels(labels: { emptyText?: string }): void
   pauseRendering(): void
   resumeRendering(): void

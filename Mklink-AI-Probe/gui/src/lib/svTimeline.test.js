@@ -197,19 +197,73 @@ describe('SvTimeline continuous filtering', () => {
     timeline.destroy()
   })
 
+  it('keeps live follow for a click and disables it only after dragging', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    const canvas = document.createElement('canvas')
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 240, height: 80, right: 240, bottom: 80, x: 0, y: 0, toJSON: () => ({}) })
+    Object.assign(timeline, {
+      roots: { canvas }, canvas, W: 240, H: 80,
+      plotX0: 40, plotX1: 240, plotW: 200,
+      tMin: 0, tMax: 1_000, viewStart: 0, viewEnd: 1_000,
+      dragging: false, follow: true,
+      _resize: vi.fn(), _draw: vi.fn(), _updateStatus: vi.fn(),
+      _hitTest: vi.fn(() => null), _showTip: vi.fn(), _hideTip: vi.fn(),
+      setFollowMode: vi.fn(function (enabled) { this.follow = enabled }),
+    })
+
+    timeline._bind()
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 140, clientY: 30, button: 0, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 140, clientY: 30 }))
+    expect(timeline.follow).toBe(true)
+    expect(timeline.setFollowMode).not.toHaveBeenCalled()
+
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 140, clientY: 30, button: 0, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 30 }))
+    expect(timeline.follow).toBe(false)
+    expect(timeline.setFollowMode).toHaveBeenCalledWith(false)
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 120, clientY: 30 }))
+    timeline.destroy()
+  })
+
   it('keeps the inspected live frame stable until follow mode resumes', () => {
     const timeline = Object.create(SvTimeline.prototype)
     timeline.follow = false
     timeline._hadIntervals = true
+    timeline.viewStart = 100
+    timeline.viewEnd = 200
     timeline.intervals = [{ tid: 1, name: 'main', start: 100, end: 200 }]
     timeline._acceptData = vi.fn()
 
     timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
-    expect(timeline._acceptData).not.toHaveBeenCalled()
+    expect(timeline._acceptData).toHaveBeenCalledOnce()
 
     timeline.follow = true
     timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
-    expect(timeline._acceptData).toHaveBeenCalledOnce()
+    expect(timeline._acceptData).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves a manual view range while accepting new intervals', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      follow: false,
+      viewStart: 100,
+      viewEnd: 200,
+      _hadIntervals: true,
+      _filterContinuous: intervals => intervals,
+      _layout: vi.fn(() => false),
+      _draw: vi.fn(),
+      _updateStatus: vi.fn(),
+      hidden: new Set(),
+      PALETTE: ['#1'],
+      _taskOrder: [],
+      _taskMeta: new Map(),
+      _explicitContexts: [],
+    })
+
+    timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 150, end: 180 }])
+
+    expect(timeline.getViewRange()).toEqual({ start: 100, end: 200 })
+    expect(timeline._draw).toHaveBeenCalled()
   })
 
   it('positions an interval tooltip without throwing at the viewport edge', () => {
