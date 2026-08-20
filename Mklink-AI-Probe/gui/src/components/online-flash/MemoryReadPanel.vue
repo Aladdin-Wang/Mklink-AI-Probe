@@ -208,16 +208,17 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
       <p v-if="error" class="memory-read-error" role="alert">{{ error }}</p>
     </template>
 
-    <div v-if="readDialogOpen" class="memory-read-dialog-backdrop" role="presentation" @click.self="closeReadDialog">
-      <section class="memory-read-dialog" role="dialog" aria-modal="true" aria-labelledby="memory-read-dialog-title">
-        <header><h4 id="memory-read-dialog-title">{{ tr('填写读取地址', 'Enter Read Range') }}</h4><button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="15" aria-hidden="true" /></button></header>
-        <label><span>{{ tr('基地址', 'Base Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
-        <label><span>{{ tr('结束地址（不含）', 'End Address (exclusive)') }}</span><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000"></label>
-        <p class="memory-read-note">{{ readSize > 0 ? tr(`将读取 ${readSize} 字节。`, `Reads ${readSize} bytes.`) : tr('结束地址必须大于基地址。', 'End address must be greater than the base address.') }} {{ readSize > 0 ? chunkDescription : '' }}</p>
-        <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Download :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
-      </section>
-    </div>
   </section>
+
+  <div v-if="readDialogOpen" class="memory-read-dialog-backdrop" role="presentation" @click.self="closeReadDialog">
+    <section class="memory-read-dialog" role="dialog" aria-modal="true" aria-labelledby="memory-read-dialog-title">
+      <header><h4 id="memory-read-dialog-title">{{ tr('填写读取地址', 'Enter Read Range') }}</h4><button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="15" aria-hidden="true" /></button></header>
+      <label><span>{{ tr('基地址', 'Base Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
+      <label><span>{{ tr('结束地址（不含）', 'End Address (exclusive)') }}</span><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000"></label>
+      <p class="memory-read-note">{{ readSize > 0 ? tr(`将读取 ${readSize} 字节。`, `Reads ${readSize} bytes.`) : tr('结束地址必须大于基地址。', 'End address must be greater than the base address.') }} {{ readSize > 0 ? chunkDescription : '' }}</p>
+      <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Download :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
+    </section>
+  </div>
 </template>
 
 <style scoped>
@@ -244,6 +245,9 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
 .memory-read-dialog { width: min(420px, 100%); display: grid; gap: 10px; padding: 16px; border: 1px solid var(--of-border); border-radius: 7px; background: var(--of-surface); box-shadow: 0 16px 48px rgb(0 0 0 / 30%); }
 .memory-read-dialog header { display: flex; align-items: center; justify-content: space-between; }
 .memory-read-dialog h4 { margin: 0; color: var(--of-text); font-size: 14px; }
+.memory-read-dialog label { display: grid; gap: 4px; color: var(--of-muted); }
+.memory-read-dialog input { min-width: 0; width: 100%; height: 30px; box-sizing: border-box; border: 1px solid var(--of-border); border-radius: 5px; background: var(--of-input); color: var(--of-text); padding: 0 8px; font-family: var(--of-mono); }
+.memory-read-dialog .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--of-border); border-radius: 4px; background: transparent; color: var(--of-muted); }
 .memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 </style>

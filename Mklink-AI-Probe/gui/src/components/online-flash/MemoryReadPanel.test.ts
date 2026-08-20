@@ -3,6 +3,22 @@ import { describe, expect, it, vi } from 'vitest'
 import MemoryReadPanel from './MemoryReadPanel.vue'
 
 describe('MemoryReadPanel', () => {
+  it('renders the exposed read dialog while embedded in the online workspace', async () => {
+    const wrapper = mount(MemoryReadPanel, {
+      props: {
+        probeId: 'probe', targetPart: 'STM32F103C8', hpm: false, embedded: true,
+        frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
+      },
+    })
+
+    expect(wrapper.find('[data-testid="memory-read-panel"]').exists()).toBe(false)
+    ;(wrapper.vm as unknown as { openReadDialog: () => void }).openReadDialog()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[role="dialog"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="memory-read-address"]').exists()).toBe(true)
+  })
+
   it('explains that HPM reads are unavailable', () => {
     const wrapper = mount(MemoryReadPanel, {
       props: {
