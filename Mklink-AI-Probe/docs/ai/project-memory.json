@@ -111,7 +111,7 @@
     },
     {
       "area": "三客户端生命周期与隔离联调",
-      "result": "AI CLI 使用 V3 探针完成发现、连接、IDCODE、0x20000000 处 16 字节只读 RAM、主动断开；资源状态显示桥接 owner 已退出、串口锁 owner 不存活。并行第二连接明确返回串口正在被其他进程使用，未抢占。独立 Web 后端启用浏览器会话租约后，WebSocket 客户端关闭并释放最后租约，8767 自动退出；另一路 Web 8769 释放租约时安装包 8765 仍返回 health=ok。反向测试中关闭安装包窗口对应进程后，Web 8768 在检查时仍健康，8765 最终释放；安装包覆盖安装候选为 `MKLink-AI-Probe-0.1.7-b6b0171-setup.exe`，SHA-256 `0B60C53119A02652B58767590CE649781C1C79FE55608B320A7C001420616ED6`，健康接口正常、进程树无 Python。聚焦生命周期/桌面/协议 Python 测试 75 项通过，GUI browser-session/Config 测试 25 项通过。Chrome 控制插件初始化因运行时拒绝 node:process，未宣称插件自动化通过；浏览器页关闭路径以真实 WebSocket 会话协议验证。"
+      "result": "AI CLI 使用 V3 探针完成发现、连接、IDCODE、0x20000000 处 16 字节只读 RAM、主动断开；资源状态显示桥接 owner 已退出、串口锁 owner 不存活。并行第二连接明确返回串口正在被其他进程使用，未抢占。Web REST 8769 和安装包 sidecar 8765 均用同一 V3 探针完成 `/api/device/connect`（STM32F10x、IDCODE 0x1ba01477）及 `/api/device/disconnect`，未执行写入；独立 Web 后端启用浏览器会话租约后，WebSocket 客户端关闭并释放最后租约，8767 自动退出；另一路 Web 8769 释放租约时安装包 8765 仍返回 health=ok。反向测试中关闭安装包窗口对应进程后，Web 8768 在检查时仍健康，8765 最终释放；安装包覆盖安装候选为 `MKLink-AI-Probe-0.1.7-b6b0171-setup.exe`，SHA-256 `0B60C53119A02652B58767590CE649781C1C79FE55608B320A7C001420616ED6`，健康接口正常、进程树无 Python。聚焦生命周期/桌面/协议 Python 测试 75 项通过，GUI browser-session/Config 测试 25 项通过。Chrome 控制插件初始化因运行时拒绝 node:process，未宣称插件自动化通过；浏览器页关闭路径以真实 WebSocket 会话协议验证。"
     }
   ],
   "decisions": [
