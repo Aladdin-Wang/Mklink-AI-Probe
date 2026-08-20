@@ -756,6 +756,7 @@ def create_app(
     )
     app.state.browser_sessions = browser_sessions
     app.state.request_browser_session_exit = None
+    app.state.request_desktop_exit = None
 
     async def monitor_browser_sessions() -> None:
         interval = min(1.0, max(0.1, browser_sessions.timeout / 4.0))
@@ -2810,6 +2811,19 @@ def create_app(
             payload["desktop_instance_id"] = _state["desktop_instance_id"]
         return payload
 
+    @app.post("/api/desktop/shutdown")
+    async def desktop_shutdown(instance_id: str = Body(..., embed=True)):
+        expected = _state["desktop_instance_id"]
+        if not expected:
+            raise HTTPException(status_code=404, detail="Desktop shutdown is unavailable")
+        if instance_id != expected:
+            raise HTTPException(status_code=403, detail="Desktop instance does not match")
+        request_exit = app.state.request_desktop_exit
+        if not callable(request_exit):
+            raise HTTPException(status_code=503, detail="Desktop shutdown is not ready")
+        request_exit()
+        return {"status": "shutting_down"}
+
     @app.get("/api/site-agent/status")
     async def site_agent_status():
         return site_agent.status()
@@ -3115,6 +3129,8 @@ def run_server(
             instance_id=desktop_instance_id,
         )
         config = uvicorn.Config(app, log_level="info")
-        uvicorn.Server(config).run(sockets=[listener])
+        server = uvicorn.Server(config)
+        app.state.request_desktop_exit = lambda: setattr(server, "should_exit", True)
+        server.run(sockets=[listener])
     finally:
         listener.close()

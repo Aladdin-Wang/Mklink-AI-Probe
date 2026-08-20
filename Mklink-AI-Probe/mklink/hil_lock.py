@@ -49,6 +49,25 @@ def _sanitize(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)
 
 
+def _local_holder_is_dead(holder: dict) -> bool:
+    """Return true only when a same-host lock owner is confirmed dead."""
+    if holder.get("hostname") != socket.gethostname():
+        return False
+    try:
+        pid = int(holder.get("pid", 0))
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+
+    # Reuse the conservative platform-specific check used by local serial
+    # cleanup. Inspection failures count as alive, so an active lock is never
+    # reclaimed merely because its process cannot be queried.
+    from mklink.local_resources import _pid_exists
+
+    return not _pid_exists(pid)
+
+
 class HilFileLock:
     """一次性获取/释放的租约文件锁；支持 with 语法与幂等 release。"""
 
@@ -96,7 +115,8 @@ class HilFileLock:
                     except OSError:
                         pass
                     continue
-                if float(holder.get("expires_at", 0) or 0) < time.time():
+                expired = float(holder.get("expires_at", 0) or 0) < time.time()
+                if expired or _local_holder_is_dead(holder):
                     try:
                         self.path.unlink()
                         continue

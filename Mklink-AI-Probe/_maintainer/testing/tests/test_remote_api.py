@@ -105,6 +105,35 @@ def test_app_shutdown_closes_the_shared_device_and_clears_resource_leases():
     assert state["resource_manager"].get_status() == {}
 
 
+def test_desktop_shutdown_requires_the_owning_instance_and_requests_exit():
+    app = create_app(
+        auth_token=None, project_root=".", desktop_instance_id="instance-a",
+    )
+    requested = []
+    app.state.request_desktop_exit = lambda: requested.append(True)
+
+    with TestClient(app) as client:
+        rejected = client.post(
+            "/api/desktop/shutdown", json={"instance_id": "instance-b"},
+        )
+        accepted = client.post(
+            "/api/desktop/shutdown", json={"instance_id": "instance-a"},
+        )
+
+    assert rejected.status_code == 403
+    assert accepted.json() == {"status": "shutting_down"}
+    assert requested == [True]
+
+
+def test_desktop_shutdown_is_hidden_from_non_desktop_servers():
+    app = create_app(auth_token=None, project_root=".")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/desktop/shutdown", json={"instance_id": "instance-a"},
+        )
+    assert response.status_code == 404
+
+
 def test_project_browser_exposes_native_roots_on_each_desktop_platform():
     assert _project_root_drives(system="Linux") == ["/"]
     assert _project_root_drives(system="Darwin") == ["/"]

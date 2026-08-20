@@ -54,6 +54,7 @@ const MAX_CONSECUTIVE_FAILS: u32 = 3;
 const DEFAULT_SIDECAR_PORT: u16 = 8765;
 const LAST_SIDECAR_PORT: u16 = 8799;
 const SIDECAR_START_TIMEOUT_SECS: u64 = 20;
+const SIDECAR_SHUTDOWN_TIMEOUT_SECS: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -442,8 +443,61 @@ fn spawn_registered_sidecar(
     )
 }
 
+fn request_sidecar_shutdown(port: u16, instance_id: &str) -> bool {
+    use std::io::{Read, Write};
+
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = match std::net::TcpStream::connect_timeout(
+        &addr.parse().unwrap(),
+        std::time::Duration::from_millis(500),
+    ) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+    let timeout = std::time::Duration::from_secs(SIDECAR_SHUTDOWN_TIMEOUT_SECS);
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+
+    let body = serde_json::json!({ "instance_id": instance_id }).to_string();
+    let request = format!(
+        "POST /api/desktop/shutdown HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        port,
+        body.len(),
+        body,
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut response = Vec::new();
+    if stream.take(8192).read_to_end(&mut response).is_err() {
+        return false;
+    }
+    String::from_utf8_lossy(&response)
+        .lines()
+        .next()
+        .is_some_and(|line| line.contains(" 200 "))
+}
+
+fn wait_for_child_exit(child: &mut Child) -> bool {
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(SIDECAR_SHUTDOWN_TIMEOUT_SECS);
+    while std::time::Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(_) => return false,
+        }
+    }
+    child.try_wait().is_ok_and(|status| status.is_some())
+}
+
 fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
-    let child = state.child.lock().map_err(|e| e.to_string())?.take();
+    let port = *state.port.lock().map_err(|e| e.to_string())?;
+    let mut child = state.child.lock().map_err(|e| e.to_string())?.take();
+    let graceful_exit = port.is_some_and(|port| {
+        request_sidecar_shutdown(port, &state.instance_id)
+            && child.as_mut().is_none_or(wait_for_child_exit)
+    });
     *state.port.lock().map_err(|e| e.to_string())? = None;
     let _ = std::fs::remove_file(&state.runtime_info_path);
 
@@ -458,7 +512,9 @@ fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
     }
 
     if let Some(mut child) = child {
-        let _ = child.kill();
+        if !graceful_exit {
+            let _ = child.kill();
+        }
         let _ = child.wait();
     }
     Ok(())
