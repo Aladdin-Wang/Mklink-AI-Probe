@@ -6,11 +6,11 @@
 
 - 更新时间：`2026-08-20T16:54:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 9996e68；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：Timeline 平滑刷新源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。
-- 当前任务：RTOS Trace Timeline 已固定时间页、修复 fractional DPR 重绘抖动，并在当前页内持续平滑刷新；RTT、SuperWatch 的后续真机复测仍待继续。
-- 状态：`rtos_timeline_stability_fixed`
+- HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整、当前页平滑刷新、普通滚轮不冻结跟随、SystemView 流模式重连和放大窗口持续刷新修正。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 271dfc4；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：Timeline 放大窗口持续刷新源码已提交；项目记忆待提交；生产构建生成的 gui/dist 变化不进入源码提交。
+- 当前任务：RTOS Trace Timeline 与普通滚轮跟随已修复；放大/平移后保持固定视口并持续刷新窗口内数据；连接握手先恢复 SystemView 流模式再尝试其他流模式，避免重连后无数据。
+- 状态：`systemview_reconnect_recovery_fixed`
 
 ## 里程碑
 
@@ -44,6 +44,9 @@
 - **在线下载清空数据**：清空窗口现在同时清除芯片读取结果、用户加载的 HEX/BIN、桌面文件句柄与路径、BIN 地址弹窗状态、文件指纹、解析结果和 HEX 预览，同时保留目标器件与连接参数；按钮在任一数据来源存在时可用。新增用户加载 HEX 后清空的回归用例；聚焦测试 71 项、GUI 全量 55 文件/535 项、Vite 生产构建通过，Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。Chrome 插件 26.814.41407 已恢复控制，真实 8766 Web GUI 完成探针连接、IDCODE 读取和主动断开；自动文件选择会使控制内核超时，因此加载 HEX 后的清空交互仍待维护者手动选择文件后补验。
 - **在线下载读取图标**：目标芯片读取到上位机的方向统一使用 Lucide Upload 向上箭头，覆盖在线下载主工具栏、独立读取面板和地址弹窗开始读取三个入口；保存文件图标保持不变。DOM 回归断言锁定三个读取按钮的 lucide-upload；聚焦 2 文件/75 项、GUI 全量 55 文件/535 项与 Vite 生产构建通过。
 - **RTOS Trace Timeline 抖动**：根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，当前页内只重绘数据，最新事件越过页边界才移动标尺；canvas 尺寸先 Math.round 后比较，重建时强制立即绘制，泳道容量只增不减。GUI 全量 55 文件/538 项、Vite 生产构建通过；真实 Chrome 600x844 连续采样无空白闪烁，桌面 V3 真机事件计数持续从 1,309,917 增长到 1,315,492，6 个任务时 canvas CSS 高度始终 242px，画布内容更新但尺寸不变；停止后 READY，页面无横向溢出和控制台错误。
+- **RTOS Trace 普通滚轮冻结**：根因是 canvas wheel handler 把普通页面滚轮当作时间轴缩放，并调用 setFollowMode(false)，随后实时数据被保护逻辑冻结。现在普通滚轮不 preventDefault，只有 Ctrl/Cmd+滚轮才缩放；拖拽仍可进入手动查看模式。新增普通滚轮不冻结跟随回归用例；GUI 全量 55 文件/539 项和最新生产构建通过。最新 8766 页面页脚为 047367261341。重启后 V3 COM738/COM739 仍处于流模式且握手超时，尚未完成本次修复后的新一轮真机采集。
+- **SystemView 流模式重连无数据**：连接握手恢复阶段现在先发送 SystemView 的二进制停止帧 0x02 和 SystemView.stop()，验证回到 REPL 后才结束；仅在无提示符时发送 RTT/VOFA/dump 兜底命令，避免命令拼接污染。新增桥接恢复回归断言，聚焦 Python 10 项通过。真实 8766 + V3 闭环先停止 SystemView，再断开/重连成功；重新启动后状态为 streaming，Chrome 事件列表持续增长（80,864 事件、6 个任务）。
+- **RTOS Trace 放大后持续刷新**：手动缩放/平移不再冻结 setPrefilteredIntervals；Timeline 保留 viewStart/viewEnd，渲染调度器按当前视口向 worker 请求数据并持续重绘，只有实际拖动才退出跟随，单击不冻结。新增视口保持与点击/拖动回归测试；GUI 全量 55 文件/541 项、生产构建通过。真实 Chrome 放大后事件计数约 3,192,204 增长到 3,197,946，canvas 尺寸保持稳定。
 
 ## 架构决策
 
@@ -61,7 +64,8 @@
 - 每个 Tauri 实例拥有独立 sidecar、动态端口和探针锁；正式发布默认只生成标准 NSIS。
 - 由命令主动打开的浏览器 GUI 使用标签页会话租约；最后标签消失后正常关闭后端并释放资源，显式 --no-browser 和 Tauri sidecar 保持常驻。
 - Skill 更新器和运行时/MCP 更新检查保持 24 小时缓存，优先官方 GitHub 更新清单，只有 GitHub 不可用时回退 Gitee。
-- SystemView Timeline 使用固定整页时间窗口，只有跨越窗口边界才移动标尺；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，避免 fractional DPR 触发反复清空；容器保持 overflow:visible，不能截获普通页面滚轮。
+- SystemView Timeline 使用固定整页时间窗口，只有跨越窗口边界才移动标尺；canvas backing 尺寸使用取整后的 CSS 尺寸乘 DPR，避免 fractional DPR 触发反复清空；普通滚轮交给页面滚动，Ctrl/Cmd+滚轮才缩放，拖拽用于手动查看。
+- 连接握手遇到未知流模式时，先以 SystemView 0x02 + SystemView.stop() 序列恢复 REPL 并验证身份；验证失败才发送其他流模式停止命令，禁止把 fallback 命令紧跟在 SystemView 停止字符串后盲发。
 - 探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。
 - 在线目标读取使用基地址到结束地址（结束地址不含）的 1024 字节前端分块请求；读取结果保留在窗口中，保存文件动作才打开系统保存选择器。HPM ROM 读取继续明确禁用。
 - 固件升级入口与本地设备连接设置放在同一配置页，保证 Web GUI 与安装包的功能入口一致。
@@ -75,7 +79,7 @@
 
 ## 下一动作
 
-1. 用真实 Chrome 和 V3 探针继续复测 RTT 停止与 SuperWatch 启停，重点捕获 RTTView.stop 残缺命令；RTOS Trace Timeline 抖动修复已完成。
+1. 继续用真实 Chrome 复测 RTT 停止与 SuperWatch 启停，重点确认高频流退出不会再出现 RTTView.stop 残缺命令。
 2. 维护者在真实 Chrome 中手动选择测试 HEX 后，补测清空窗口移除文件名、元数据和 HEX 预览，并目视确认读取按钮向上箭头。
 3. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
 4. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
