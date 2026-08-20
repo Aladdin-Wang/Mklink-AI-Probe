@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-20T16:44:00+08:00",
+  "updated_at": "2026-08-20T16:54:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/fast-probe-handshake",
-    "head": "fix/fast-probe-handshake 已包含在线下载读取图标修正；RTOS Trace Timeline 固定时间页和 DPR 取整修复待独立提交。",
-    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 c5b264b；本次 Timeline 修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
-    "working_tree": "Timeline 源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。"
+    "head": "fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。",
+    "remote_head": "Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 cd7dd95；本次平滑刷新修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。",
+    "working_tree": "Timeline 平滑刷新源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、数据流、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "rtos_timeline_stability_fixed",
-    "current_task": "RTOS Trace Timeline 已固定时间页并修复 fractional DPR 重绘抖动；RTT、SuperWatch 的后续真机复测仍待继续。",
+    "current_task": "RTOS Trace Timeline 已固定时间页、修复 fractional DPR 重绘抖动，并在当前页内持续平滑刷新；RTT、SuperWatch 的后续真机复测仍待继续。",
     "release": "托盘修复标准 NSIS 候选已覆盖安装验证；本分支不打标签、不发布、不修改 updates/latest.json，也不更新 Gitee。"
   },
   "milestones": [
@@ -131,7 +131,7 @@
     },
     {
       "area": "RTOS Trace Timeline 抖动",
-      "result": "根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，canvas 尺寸先 Math.round 后比较，重建时强制立即绘制。GUI 全量 55 文件/537 项、Vite 生产构建通过；真实 Chrome 600x844 连续 10 次采样前 9 次画布区域完全一致，桌面视口连续 8 次完全一致，仅跨越 10 秒页边界时更新；停止后 Sync=Ready，页面无横向溢出和控制台错误。"
+      "result": "根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，当前页内只重绘数据，最新事件越过页边界才移动标尺；canvas 尺寸先 Math.round 后比较，重建时强制立即绘制，泳道容量只增不减。GUI 全量 55 文件/538 项、Vite 生产构建通过；真实 Chrome 600x844 连续采样无空白闪烁，桌面 V3 真机事件计数持续从 1,309,917 增长到 1,315,492，6 个任务时 canvas CSS 高度始终 242px，画布内容更新但尺寸不变；停止后 READY，页面无横向溢出和控制台错误。"
     }
   ],
   "decisions": [

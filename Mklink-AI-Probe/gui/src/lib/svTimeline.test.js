@@ -273,6 +273,29 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._drawLive).toHaveBeenCalledTimes(3)
   })
 
+  it('keeps drawing current-page updates and advances only at the page boundary', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      PALETTE: ['#1'],
+      hidden: new Set(),
+      follow: true,
+      windowSize: 100,
+      viewStart: 0,
+      viewEnd: 100,
+      _hadIntervals: true,
+      _filterContinuous: intervals => intervals,
+      _layout: vi.fn(() => false),
+      _drawLive: vi.fn(() => true),
+      _updateStatus: vi.fn(),
+    })
+
+    timeline.setData([{ tid: 1, name: 'main', start: 40, end: 60 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([0, 100])
+    timeline.setData([{ tid: 1, name: 'main', start: 101, end: 120 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([100, 200])
+    expect(timeline._drawLive).toHaveBeenCalledTimes(2)
+  })
+
   it('pauses live rendering and resumes without changing follow mode', () => {
     const timeline = Object.create(SvTimeline.prototype)
     Object.assign(timeline, {

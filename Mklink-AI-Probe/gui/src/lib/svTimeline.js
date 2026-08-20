@@ -123,8 +123,10 @@ export class SvTimeline {
       if (
         viewInvalid
         || !hadIntervalsBefore
-        || Math.abs(this.viewStart - target.start) > 0.001
-        || Math.abs(this.viewEnd - target.end) > 0.001
+        // Keep the current page fixed while new intervals fill it. Move only
+        // when data crosses a page boundary or the stream has reset behind it.
+        || this.tMax > this.viewEnd + 0.001
+        || this.tMax < this.viewStart - 0.001
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;

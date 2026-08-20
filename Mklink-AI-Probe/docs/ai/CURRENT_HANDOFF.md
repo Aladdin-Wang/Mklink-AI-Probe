@@ -6,10 +6,10 @@
 
 - 更新时间：`2026-08-20T16:44:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已包含在线下载读取图标修正；RTOS Trace Timeline 固定时间页和 DPR 取整修复待独立提交。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 c5b264b；本次 Timeline 修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：Timeline 源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。
-- 当前任务：RTOS Trace Timeline 已固定时间页并修复 fractional DPR 重绘抖动；RTT、SuperWatch 的后续真机复测仍待继续。
+- HEAD：`fix/fast-probe-handshake 已包含 RTOS Trace Timeline 固定页、DPR 取整和当前页平滑刷新修正。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 cd7dd95；本次平滑刷新修正待独立提交推送，origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：Timeline 平滑刷新源码、回归测试与项目记忆待提交；生产构建生成的 gui/dist 变化不进入本提交。
+- 当前任务：RTOS Trace Timeline 已固定时间页、修复 fractional DPR 重绘抖动，并在当前页内持续平滑刷新；RTT、SuperWatch 的后续真机复测仍待继续。
 - 状态：`rtos_timeline_stability_fixed`
 
 ## 里程碑
@@ -43,7 +43,7 @@
 - **Windows 托盘图标**：根因是 TrayIconBuilder 只创建菜单和事件，没有显式设置图标；Tauri 不会自动继承窗口图标，Windows 因此显示空白托盘项。现从 app.default_window_icon() 获取 bundle 已生成的图标并显式传给 TrayIconBuilder，未增加图像解码依赖。cargo fmt、Rust 12 项、cargo check、GUI 55 文件/534 项和标准 NSIS 构建通过；Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。候选 SHA-256 A794BAFBBDC668E4F177C7DE01CF15489D06E4429E95A5C7783915E9DEAD692E 已覆盖安装，8765 health 正常，进程树无 Python；维护者截图确认 Windows 托盘显示 MKLink 芯片图标。
 - **在线下载清空数据**：清空窗口现在同时清除芯片读取结果、用户加载的 HEX/BIN、桌面文件句柄与路径、BIN 地址弹窗状态、文件指纹、解析结果和 HEX 预览，同时保留目标器件与连接参数；按钮在任一数据来源存在时可用。新增用户加载 HEX 后清空的回归用例；聚焦测试 71 项、GUI 全量 55 文件/535 项、Vite 生产构建通过，Python 为 1316 passed、1 skipped，12 项仅因当前 Windows 账户无目录符号链接权限失败。Chrome 插件 26.814.41407 已恢复控制，真实 8766 Web GUI 完成探针连接、IDCODE 读取和主动断开；自动文件选择会使控制内核超时，因此加载 HEX 后的清空交互仍待维护者手动选择文件后补验。
 - **在线下载读取图标**：目标芯片读取到上位机的方向统一使用 Lucide Upload 向上箭头，覆盖在线下载主工具栏、独立读取面板和地址弹窗开始读取三个入口；保存文件图标保持不变。DOM 回归断言锁定三个读取按钮的 lucide-upload；聚焦 2 文件/75 项、GUI 全量 55 文件/535 项与 Vite 生产构建通过。
-- **RTOS Trace Timeline 抖动**：根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，canvas 尺寸先 Math.round 后比较，重建时强制立即绘制。GUI 全量 55 文件/537 项、Vite 生产构建通过；真实 Chrome 600x844 连续 10 次采样前 9 次画布区域完全一致，桌面视口连续 8 次完全一致，仅跨越 10 秒页边界时更新；停止后 Sync=Ready，页面无横向溢出和控制台错误。
+- **RTOS Trace Timeline 抖动**：根因是实时窗口每个事件都追赶最新时间并使用缓动，以及 Chrome fractional devicePixelRatio（1.0000000298）直接参与 canvas 尺寸比较，导致每批数据反复清空画布。Timeline 现按固定整页时间段更新，当前页内只重绘数据，最新事件越过页边界才移动标尺；canvas 尺寸先 Math.round 后比较，重建时强制立即绘制，泳道容量只增不减。GUI 全量 55 文件/538 项、Vite 生产构建通过；真实 Chrome 600x844 连续采样无空白闪烁，桌面 V3 真机事件计数持续从 1,309,917 增长到 1,315,492，6 个任务时 canvas CSS 高度始终 242px，画布内容更新但尺寸不变；停止后 READY，页面无横向溢出和控制台错误。
 
 ## 架构决策
 
