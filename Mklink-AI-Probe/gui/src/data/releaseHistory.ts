@@ -11,15 +11,19 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.1.7',
     date: '2026-08-20',
-    summary: '优化在线读取与固件升级体验',
-    summaryEn: 'Improved online reads and firmware upgrades',
+    summary: '修复连接、在线读取与实时调试体验',
+    summaryEn: 'Fixed connections, online reads, and live debugging',
     changes: [
-      '在线读取复用烧录进度和任务日志，完成后自动显示并支持保存、清空。',
-      '新增独立固件升级入口，优化多客户端连接生命周期。',
+      '加快首次连接并修复异常命令残留，多客户端连接与退出互不影响。',
+      '支持按地址读取 Flash、保存或清空数据，并可直接回烧和校验。',
+      '修复 RTT、SuperWatch 文件保存和 RTOS Trace 时间轴刷新。',
+      '新增固件升级入口，修复托盘图标、错误提示和窄窗口布局。',
     ],
     changesEn: [
-      'Reuse flash progress and job logs for online reads, with automatic preview, save, and clear actions.',
-      'Add a dedicated firmware upgrade entry and improve multi-client connection lifecycles.',
+      'Speed up first connections, recover malformed command input, and isolate client lifecycles.',
+      'Read Flash by address, save or clear captures, and program them back with verification.',
+      'Fix RTT and SuperWatch exports plus live RTOS Trace timeline updates.',
+      'Add firmware upgrades and fix the tray icon, dismissible errors, and narrow layouts.',
     ],
   },
   {
