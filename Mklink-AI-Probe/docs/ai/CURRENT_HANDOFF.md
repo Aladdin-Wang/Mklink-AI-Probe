@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-19T23:35:00+08:00`
+- 更新时间：`2026-08-20T11:30:00+08:00`
 - 分支：`fix/fast-probe-handshake`
-- HEAD：`fix/fast-probe-handshake 已推送 2778982、150b23f、17120ff，分别修复在线读取、固件入口和 SystemView 布局。`
-- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 17120ff；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
-- 工作树：三个问题均独立提交并推送；安装包与浏览器截图保存在工作区 release 目录，不进入 Git。
-- 当前任务：0.1.7 追加在线目标读取弹窗/分块进度/保存、配置页固件入口和 RTOS Trace 紧凑布局。
-- 状态：`zero_one_seven_ui_followups_committed`
+- HEAD：`fix/fast-probe-handshake 已推送 b6b0171、512624b、785a05a 等 0.1.7 修复；本轮完成三客户端生命周期隔离联调。`
+- 远端 HEAD：`Aladdin-Wang GitHub origin/fix/fast-probe-handshake 已推送至 b6b0171；origin/master 保持 284c879，未合并、未创建标签或 Release，未修改 updates/latest.json 或 Gitee。`
+- 工作树：源码工作树 CLEAN；标准 NSIS 候选与哈希保存在工作区 release 目录，不进入 Git。
+- 当前任务：0.1.7 在线读取、独立固件升级侧栏和 RTOS Trace 修复已提交；完成 AI、Web GUI 与安装包的连接断开和生命周期隔离验证。
+- 状态：`zero_one_seven_lifecycle_qualified`
 
 ## 里程碑
 
@@ -38,6 +38,7 @@
 - **SystemView 界面抖动**：时间轴 canvas 原先固定预留 20 条泳道导致单任务时出现巨大空白。渲染器现从 2 条泳道起步，只在发现更多任务时增长容量并保持不回缩；容器保持 overflow:visible，普通鼠标滚轮仍滚动页面。SystemView/Dashboard/时间轴定向 51 项通过；Edge 浏览器 1440px 与 600px 视口实测 canvas 均为 102px 高且无控制台错误。
 - **探针主动固件升级**：新增 /api/probe/firmware-upgrade；固件升级入口现位于配置页本地设备区，启动服务页不再承载该功能。版本优先读取 MICROKEEN readme.txt，GitHub Releases 不可用时回退 Gitee，再回退本地 MK-Firmware。此前 V3.3.7 真机 UF2 闭环仍有效；配置 GUI 定向 52 项通过。
 - **在线目标读取与安装包验收**：在线烧录右侧新增读取面板：弹窗填写基地址和结束地址（结束地址不含），按 1024 字节请求读取并在窗口中累计显示进度，读取完成后由保存文件按钮调用系统保存选择器或浏览器下载回退；HPM ROM 读取继续禁用。GUI 定向 104 项、在线闪存 Python 128 项通过。Edge 浏览器真实页面验证弹窗、2048 字节读取、100% 进度、保存按钮、配置页固件入口和 RTOS Trace 宽窄视口均无控制台错误。标准 NSIS 已生成并覆盖安装；安装后 health 返回 ok、online-flash/probes 正常、进程树无 Python 子进程、关闭后 8765 释放。
+- **三客户端生命周期与隔离联调**：AI CLI 使用 V3 探针完成发现、连接、IDCODE、0x20000000 处 16 字节只读 RAM、主动断开；资源状态显示桥接 owner 已退出、串口锁 owner 不存活。并行第二连接明确返回串口正在被其他进程使用，未抢占。独立 Web 后端启用浏览器会话租约后，WebSocket 客户端关闭并释放最后租约，8767 自动退出；另一路 Web 8769 释放租约时安装包 8765 仍返回 health=ok。反向测试中关闭安装包窗口对应进程后，Web 8768 在检查时仍健康，8765 最终释放；安装包覆盖安装候选为 `MKLink-AI-Probe-0.1.7-b6b0171-setup.exe`，SHA-256 `0B60C53119A02652B58767590CE649781C1C79FE55608B320A7C001420616ED6`，健康接口正常、进程树无 Python。聚焦生命周期/桌面/协议 Python 测试 75 项通过，GUI browser-session/Config 测试 25 项通过。Chrome 控制插件初始化因运行时拒绝 node:process，未宣称插件自动化通过；浏览器页关闭路径以真实 WebSocket 会话协议验证。
 
 ## 架构决策
 
@@ -59,6 +60,7 @@
 - 探针升级只允许显式 confirm=true；版本从 MICROKEEN readme.txt 读取，Bootloader 阶段不依赖卷标而扫描 UF2 标志文件，升级失败返回手动操作提示。
 - 在线目标读取使用基地址到结束地址（结束地址不含）的 1024 字节前端分块请求；读取结果保留在窗口中，保存文件动作才打开系统保存选择器。HPM ROM 读取继续明确禁用。
 - 固件升级入口与本地设备连接设置放在同一配置页，保证 Web GUI 与安装包的功能入口一致。
+- AI CLI、浏览器 Web 后端和 Tauri 安装包各自持有连接/资源生命周期；浏览器最后一个会话租约释放才停止其自有 Web 后端，关闭 Tauri 只终止其 sidecar，不触碰其他端口。
 
 ## 真机环境
 
@@ -68,7 +70,7 @@
 
 ## 下一动作
 
-1. 维护者审阅 origin/fix/fast-probe-handshake 的六个独立问题提交；合并前仍需补做 Dashboard 已连接态真实浏览器闭环或取得明确门禁豁免。
+1. 维护者审阅 origin/fix/fast-probe-handshake 的独立问题提交；Dashboard 已连接态仍缺少可用 Chrome 插件的自动化证据，当前保留协议级 WebSocket 与组件测试证据。
 2. 下个正式版本发布时，公共 Skill ZIP 与 updates/latest.json 才会向既有安装分发本次同步代码。
 3. 需要扩大分发证据时，在干净 Windows 环境复测安装更新和 USB Web Entry。
 
@@ -84,6 +86,7 @@
 - 先楫定制店铺尚无权威链接，菜单项保持禁用。
 - USB Web Entry 和安装更新仍需更多平台与干净 Windows 验证。
 - 当前 GitHub/Gitee Release 尚未提供 V3.3.7/V4.3.6 UF2 远端资产；自动升级会优先尝试远端，缺失时回退安装包 MK-Firmware。本机已完成 V3.3.7 同版本 UF2 真机重刷闭环。
+- Chrome 控制插件本轮初始化仍因 node:process 运行时限制失败；不能把 WebSocket 协议级生命周期验证表述为 Chrome 插件自动化。
 
 ## 延续协议
 
