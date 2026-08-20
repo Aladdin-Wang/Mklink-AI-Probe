@@ -73,6 +73,16 @@ describe('RTT API contracts', () => {
     }))
   })
 
+  it('sends firmware upgrade confirmation as a scalar boolean body', async () => {
+    const api = useMklinkApi()
+    await api.upgradeProbeFirmware(true)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/probe/firmware-upgrade', expect.objectContaining({
+      method: 'POST',
+      body: 'true',
+    }))
+  })
+
   it('refreshes connection state after rebooting the probe', async () => {
     const api = useMklinkApi()
     await api.rebootProbe()

@@ -120,7 +120,9 @@ export function useMklinkApi() {
   async function upgradeProbeFirmware(confirm = false): Promise<ProbeFirmwareUpgrade> {
     return api<ProbeFirmwareUpgrade>('/api/probe/firmware-upgrade', {
       method: 'POST',
-      body: JSON.stringify({ confirm }),
+      // The FastAPI endpoint declares a scalar bool body, so the wire format
+      // must be JSON true/false rather than an object wrapper.
+      body: JSON.stringify(confirm),
     })
   }
 
