@@ -194,6 +194,7 @@ window.__rttTestProbe = {
     count: rawLogStoredCount, total: rawLogLineCount, lines: rawLogSnapshot()
   }; },
   saveRawLog: saveRawLog,
+  exportCSV: exportCSV,
   syncStatus: syncDashboardStatus,
   collectionState: function() { return {
     state: collectionState, paused: paused, renderPaused: renderPaused
@@ -2226,6 +2227,34 @@ describe('VOFA viewer hot path source guard', () => {
     } finally {
       click.mockRestore()
       vi.unstubAllGlobals()
+      runtime.cleanup()
+    }
+  })
+
+  it('routes SuperWatch CSV and raw-log exports through the desktop save bridge', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    const nativeSave = vi.fn().mockResolvedValue(true)
+    ;(window as any).__MKLINK_SAVE_FILE__ = nativeSave
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'gain' }])
+      runtime.probe.setRawLogOpen(true)
+      runtime.viewer.acceptBinaryBatch({
+        sequence: 1n, timestampNs: 1_000_000_000n,
+        itemCount: 2, channelCount: 1, layout: 'sample-major-float32',
+        values: Float32Array.of(1, 1.25).buffer,
+        times: Float64Array.of(1_000, 2_000).buffer,
+      })
+
+      runtime.probe.saveRawLog()
+      runtime.probe.exportCSV()
+      await Promise.resolve()
+
+      expect(nativeSave).toHaveBeenCalledTimes(2)
+      expect(nativeSave.mock.calls[0][0]).toMatch(/^superwatch-raw-\d{8}-\d{6}\.txt$/)
+      expect(nativeSave.mock.calls[0][1]).toContain('gain=1.25')
+      expect(nativeSave.mock.calls[1][0]).toBe('jscope_export.csv')
+      expect(nativeSave.mock.calls[1][1]).toContain('timestamp,gain')
+    } finally {
       runtime.cleanup()
     }
   })

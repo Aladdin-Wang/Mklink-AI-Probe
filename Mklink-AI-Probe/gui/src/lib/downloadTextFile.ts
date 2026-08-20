@@ -33,9 +33,10 @@ export async function saveBlobFile(filename: string, blob: Blob): Promise<boolea
     return true
   }
   const { save } = await import('@tauri-apps/plugin-dialog')
+  const extension = filename.match(/\.([A-Za-z0-9]+)$/)?.[1]?.toLowerCase() || 'txt'
   const path = await save({
     defaultPath: filename,
-    filters: [{ name: 'Log / Binary', extensions: ['log', 'txt', 'bin'] }],
+    filters: [{ name: 'MKLink Data', extensions: [extension] }],
   })
   if (!path) return false
   const { invoke } = await import('@tauri-apps/api/core')
