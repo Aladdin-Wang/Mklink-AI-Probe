@@ -851,6 +851,28 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('clears a user-selected HEX file and its preview from the shared data window', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+
+    await chooseFirmware(wrapper, 'firmware.hex')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('已自动检查'))
+
+    const clear = wrapper.get('[data-testid="memory-read-clear"]')
+    expect(clear.attributes('disabled')).toBeUndefined()
+    await clear.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('firmware.hex')
+    expect(wrapper.text()).not.toContain('已自动检查')
+    expect(wrapper.find('.metadata').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="memory-read-clear"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
   it('reinspects a desktop firmware path when the same HEX file is selected again', async () => {
     const fallback = viewFetch()
     const firmwarePath = 'C:\\firmware\\firmware.hex'
@@ -1628,7 +1650,7 @@ describe('online flash component quality', () => {
     await wrapper.get('[data-testid="memory-read-save"]').trigger('click')
     await wrapper.get('[data-testid="memory-read-clear"]').trigger('click')
     expect(wrapper.emitted('save')).toHaveLength(1)
-    expect(wrapper.emitted('clearMemory')).toHaveLength(1)
+    expect(wrapper.emitted('clearData')).toHaveLength(1)
   })
 
   it('wraps the action bar controls for narrow layouts', () => {

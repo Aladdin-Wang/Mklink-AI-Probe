@@ -8,7 +8,7 @@ import { tr } from '../../composables/useLanguage'
 import { supportsTrackedFirmwarePicker } from '../../lib/filePicker'
 
 const props = defineProps<{ file: File | null; sourcePath?: string; nativeDropActive?: boolean; baseAddress: string; baseError: string; inspection: ImageInspection | null; rows: FormattedHexRow[]; paddingTop: number; paddingBottom: number; loading: boolean; error: string; memoryData?: Uint8Array | null; memoryAddress?: number; readDisabled?: boolean; readBusy?: boolean }>()
-const emit = defineEmits<{ file: [file: File | null]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number]; read: []; save: []; clearMemory: [] }>()
+const emit = defineEmits<{ file: [file: File | null]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number]; read: []; save: []; clearData: [] }>()
 const sourceName = computed(() => props.file?.name || props.sourcePath?.split(/[\\/]/).pop() || '')
 const isBin = computed(() => sourceName.value.toLowerCase().endsWith('.bin'))
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -72,7 +72,7 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
     <div class="file-actions">
       <button data-testid="memory-read-submit" class="file-action" type="button" :disabled="readDisabled || readBusy" @click="emit('read')"><Download :size="14" aria-hidden="true" />{{ readBusy ? tr('读取中…', 'Reading…') : tr('读取数据', 'Read Data') }}</button>
       <button data-testid="memory-read-save" class="file-action" type="button" :disabled="!memoryData || readBusy" @click="emit('save')"><Save :size="14" aria-hidden="true" />{{ tr('保存文件', 'Save File') }}</button>
-      <button data-testid="memory-read-clear" class="file-action" type="button" :disabled="!memoryData || readBusy" :title="tr('清空数据窗口', 'Clear data window')" @click="emit('clearMemory')"><Trash2 :size="14" aria-hidden="true" />{{ tr('清空窗口', 'Clear Window') }}</button>
+      <button data-testid="memory-read-clear" class="file-action" type="button" :disabled="(!memoryData && !file && !sourcePath) || readBusy" :title="tr('清空当前数据', 'Clear current data')" @click="emit('clearData')"><Trash2 :size="14" aria-hidden="true" />{{ tr('清空窗口', 'Clear Window') }}</button>
     </div>
   </div>
   <p v-if="baseError" data-testid="base-error" class="error">{{ baseError }}</p><p v-if="error" class="error">{{ error }}</p>
