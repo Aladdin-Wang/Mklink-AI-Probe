@@ -17,6 +17,7 @@ describe('MemoryReadPanel', () => {
 
     expect(wrapper.get('[role="dialog"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="memory-read-address"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="memory-read-confirm"] .lucide-upload').exists()).toBe(true)
   })
 
   it('explains that HPM reads are unavailable', () => {
@@ -51,6 +52,7 @@ describe('MemoryReadPanel', () => {
         frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
       },
     })
+    expect(wrapper.get('[data-testid="memory-read-submit"] .lucide-upload').exists()).toBe(true)
     await wrapper.get('[data-testid="memory-read-submit"]').trigger('click')
     await wrapper.get('[data-testid="memory-read-address"]').setValue('0x1000')
     await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x1004')

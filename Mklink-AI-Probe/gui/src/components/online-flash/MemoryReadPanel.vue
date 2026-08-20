@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, Save, X } from '@lucide/vue'
+import { Save, Upload, X } from '@lucide/vue'
 import { useOnlineFlashApi } from '../../composables/useOnlineFlashApi'
 import { tr } from '../../composables/useLanguage'
 import { downloadBlobFile } from '../../lib/downloadTextFile'
@@ -191,7 +191,7 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
     <p v-if="hpm" class="memory-read-note">{{ tr('HPM ROM API 当前不支持读取。', 'The HPM ROM API does not support reads yet.') }}</p>
     <template v-else>
       <div class="memory-read-actions">
-        <button class="btn" type="button" data-testid="memory-read-submit" :disabled="!canRead" @click="openReadDialog"><Download :size="14" aria-hidden="true" />{{ tr('读取数据', 'Read Data') }}</button>
+        <button class="btn" type="button" data-testid="memory-read-submit" :disabled="!canRead" @click="openReadDialog"><Upload :size="14" aria-hidden="true" />{{ tr('读取数据', 'Read Data') }}</button>
         <button class="btn" type="button" data-testid="memory-read-save" :disabled="!data || busy" @click="saveMemory"><Save :size="14" aria-hidden="true" />{{ tr('保存文件', 'Save File') }}</button>
       </div>
       <div v-if="busy || data" class="memory-read-progress" data-testid="memory-read-progress">
@@ -216,7 +216,7 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
       <label><span>{{ tr('基地址', 'Base Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
       <label><span>{{ tr('结束地址（不含）', 'End Address (exclusive)') }}</span><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000"></label>
       <p class="memory-read-note">{{ readSize > 0 ? tr(`将读取 ${readSize} 字节。`, `Reads ${readSize} bytes.`) : tr('结束地址必须大于基地址。', 'End address must be greater than the base address.') }} {{ readSize > 0 ? chunkDescription : '' }}</p>
-      <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Download :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
+      <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Upload :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
     </section>
   </div>
 </template>

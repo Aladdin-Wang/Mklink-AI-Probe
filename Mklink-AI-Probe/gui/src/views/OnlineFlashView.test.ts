@@ -1645,6 +1645,7 @@ describe('online flash component quality', () => {
       memoryData: new Uint8Array([0x41, 0x42, 0x43]), memoryAddress: 0x1000,
     } })
 
+    expect(wrapper.get('[data-testid="memory-read-submit"] .lucide-upload').exists()).toBe(true)
     expect(wrapper.get('.metadata').text()).toContain('0x00001003')
     expect(wrapper.get('.hex-row').text()).toContain('414243')
     await wrapper.get('[data-testid="memory-read-save"]').trigger('click')

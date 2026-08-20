@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { isTauri } from '@tauri-apps/api/core'
-import { Download, Save, Trash2 } from '@lucide/vue'
+import { Save, Trash2, Upload } from '@lucide/vue'
 import { HEX_ROW_BYTES, formatHexRow, type FormattedHexRow } from '../../lib/hexPreview'
 import type { ImageInspection } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
@@ -70,7 +70,7 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
     <span v-if="loading" class="inspection-status">{{ tr('自动检查中…', 'Inspecting…') }}</span>
     <span v-else-if="inspection" class="inspection-status inspection-ok">{{ tr('已自动检查', 'Inspected') }}</span>
     <div class="file-actions">
-      <button data-testid="memory-read-submit" class="file-action" type="button" :disabled="readDisabled || readBusy" @click="emit('read')"><Download :size="14" aria-hidden="true" />{{ readBusy ? tr('读取中…', 'Reading…') : tr('读取数据', 'Read Data') }}</button>
+      <button data-testid="memory-read-submit" class="file-action" type="button" :disabled="readDisabled || readBusy" @click="emit('read')"><Upload :size="14" aria-hidden="true" />{{ readBusy ? tr('读取中…', 'Reading…') : tr('读取数据', 'Read Data') }}</button>
       <button data-testid="memory-read-save" class="file-action" type="button" :disabled="!memoryData || readBusy" @click="emit('save')"><Save :size="14" aria-hidden="true" />{{ tr('保存文件', 'Save File') }}</button>
       <button data-testid="memory-read-clear" class="file-action" type="button" :disabled="(!memoryData && !file && !sourcePath) || readBusy" :title="tr('清空当前数据', 'Clear current data')" @click="emit('clearData')"><Trash2 :size="14" aria-hidden="true" />{{ tr('清空窗口', 'Clear Window') }}</button>
     </div>
