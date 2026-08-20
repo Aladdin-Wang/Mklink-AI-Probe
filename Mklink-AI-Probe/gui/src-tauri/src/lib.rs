@@ -839,7 +839,21 @@ pub fn run() {
             let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&show_item, &exit_item])?;
             let tray_shutdown = shutdown.clone();
+            // TrayIconBuilder does not inherit the window icon automatically.
+            // Reuse the generated bundle icon so Windows never creates an
+            // empty tray item when the app starts from the installer.
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
+                .map(tauri::image::Image::to_owned)
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Tauri default window icon is missing",
+                    )
+                })?;
             TrayIconBuilder::new()
+                .icon(tray_icon)
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
