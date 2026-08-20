@@ -593,6 +593,10 @@ function viewFetch(targets = [installedTarget]) {
       sector_operations_available: true,
       sectors: [{ address: 0x80000000, size: 0x1000 }],
     })
+    if (url.endsWith('/memory/read-stream')) return new Response(new Uint8Array(32).fill(0x41), {
+      status: 200,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    })
     if (url.includes('/preview?')) return json({
       address: 0x80000000, length: 32, data_base64: btoa('\x41'.repeat(32)), present: Array(32).fill(true),
     })
@@ -672,6 +676,28 @@ describe('online flash task workspace behavior', () => {
       String(url).endsWith('/targets/DEVICE_A/memory-map')
     ))).toBe(true))
     expect(wrapper.find('[data-testid="firmware-input"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('makes the flashing job available after reading target memory', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/targets/DEVICE_A/memory-map'))).toBe(true))
+
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="memory-read-submit"]').attributes('disabled')).toBeUndefined())
+    const readButton = wrapper.get('[data-testid="memory-read-submit"]')
+    await readButton.trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="memory-read-address"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="memory-read-address"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x80000020')
+    await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/images/inspect'))).toBe(true))
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    expect(wrapper.text()).toContain('read-0x80000000-32.bin')
     wrapper.unmount()
   })
 

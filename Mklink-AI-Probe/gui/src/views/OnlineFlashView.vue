@@ -623,6 +623,21 @@ function onMemoryReadLog(line: string): void { appendLog(line) }
 function onMemoryReadData(payload: { address: number; data: Uint8Array }): void {
   memoryReadAddress.value = payload.address
   memoryReadData.value = payload.data
+  // Treat a completed target read as a temporary BIN source as well as a
+  // preview. This lets the existing inspection/job pipeline produce an
+  // image_id so the user can program the captured bytes without reloading a
+  // file manually.
+  const bytes = payload.data.slice()
+  const fileName = `read-0x${payload.address.toString(16).padStart(8, '0').toUpperCase()}-${bytes.length}.bin`
+  firmware.value = new File([bytes], fileName, { type: 'application/octet-stream' })
+  firmwareHandle = null
+  firmwarePath.value = ''
+  sourceFingerprint = ''
+  baseAddress.value = `0x${payload.address.toString(16).toUpperCase()}`
+  binAddressOpen.value = false
+  resetInspection()
+  persist()
+  void inspectImage()
 }
 function clearMemoryWindow(): void {
   memoryReadRef.value?.clearMemory()
