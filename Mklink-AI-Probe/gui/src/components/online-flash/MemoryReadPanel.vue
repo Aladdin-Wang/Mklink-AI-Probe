@@ -80,7 +80,11 @@ async function readMemory(): Promise<void> {
   try {
     for (let offset = 0; offset < total;) {
       const chunkSize = chunkSizeAt(start + offset, total - offset)
-      const entry = { address: start + offset, size: chunkSize, state: 'reading' as const }
+      const entry: { address: number; size: number; state: 'reading' | 'done' | 'failed' } = {
+        address: start + offset,
+        size: chunkSize,
+        state: 'reading',
+      }
       progressEntries.value.push(entry)
       try {
         const blob = await api.readMemory({
