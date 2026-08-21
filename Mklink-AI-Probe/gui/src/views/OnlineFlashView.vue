@@ -85,6 +85,7 @@ const memoryReadAddress = ref<number | undefined>(undefined)
 const memoryReadProgress = ref(0)
 const memoryReadText = ref('')
 const memoryReadState = ref<'waiting' | 'reading' | 'done' | 'failed'>('waiting')
+const progressOwner = ref<'flash' | 'read'>('flash')
 const memoryReadBusy = computed(() => memoryReadState.value === 'reading')
 const paddingTop = ref(0)
 const paddingBottom = ref(0)
@@ -174,10 +175,21 @@ function defaultBinAddress(partNumber: string): string {
 }
 const hpmMode = computed(() => isHpmPart(selectedTarget.value?.part_number ?? ''))
 const memoryReadDisabled = computed(() => hpmMode.value || !probeId.value || !selectedTarget.value?.installed || active.value || packBusy.value || inspectBusy.value || targetMemoryMapBusy.value)
-const progressValue = computed(() => active.value ? totalProgress.value : memoryReadData.value || memoryReadBusy.value ? memoryReadProgress.value : totalProgress.value)
-const showingReadProgress = computed(() => !active.value && (!!memoryReadData.value || memoryReadBusy.value))
+const showingReadProgress = computed(() => progressOwner.value === 'read')
+const progressValue = computed(() => showingReadProgress.value ? memoryReadProgress.value : totalProgress.value)
 const progressLabel = computed(() => showingReadProgress.value ? tr('读取进度', 'Read progress') : tr('烧录总进度', 'Total Progress'))
-const progressState = computed(() => showingReadProgress.value ? (memoryReadState.value === 'done' ? tr('读取完成', 'Read complete') : memoryReadState.value === 'failed' ? tr('读取失败', 'Read failed') : memoryReadBusy.value ? tr('正在读取...', 'Reading...') : '') : undefined)
+const progressState = computed(() => {
+  if (showingReadProgress.value) {
+    return memoryReadState.value === 'done'
+      ? tr('读取完成', 'Read complete')
+      : memoryReadState.value === 'failed'
+        ? tr('读取失败', 'Read failed')
+        : memoryReadBusy.value ? tr('正在读取...', 'Reading...') : ''
+  }
+  if (jobState.value === 'succeeded') return tr('烧录完成', 'Flash complete')
+  if (jobState.value === 'failed') return tr('烧录失败', 'Flash failed')
+  return undefined
+})
 
 function message(error: unknown): string {
   if (error instanceof OnlineFlashApiError) {
@@ -624,6 +636,7 @@ async function loadVisible(scrollTop: number, height: number): Promise<void> {
 
 function appendLog(line: string): void { logs.value.push(line); if (logs.value.length > 5000) logs.value.splice(0, logs.value.length - 5000) }
 function onMemoryReadProgress(value: number, text: string, state: 'waiting' | 'reading' | 'done' | 'failed'): void {
+  if (state !== 'waiting') progressOwner.value = 'read'
   memoryReadProgress.value = value
   memoryReadText.value = text
   memoryReadState.value = state
@@ -705,6 +718,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
       : []
   )
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
+  progressOwner.value = 'flash'
   creatingJob.value = true
   try {
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0

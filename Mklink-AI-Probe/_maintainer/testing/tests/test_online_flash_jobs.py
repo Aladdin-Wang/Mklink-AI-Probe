@@ -26,7 +26,8 @@ class FakeBackend:
     def erase_sectors(self, addresses):
         self.calls.append(("erase_sectors", tuple(addresses)))
 
-    def program(self, image):
+    def program(self, image, progress_callback=None):
+        del progress_callback
         self.calls.append(("program", image))
 
     def verify(self, image):
@@ -227,7 +228,8 @@ class BlockingBackend(FakeBackend):
         self.program_started = threading.Event()
         self.allow_program = threading.Event()
 
-    def program(self, image):
+    def program(self, image, progress_callback=None):
+        del progress_callback
         self.calls.append(("program", image))
         self.program_started.set()
         assert self.allow_program.wait(2)
@@ -274,8 +276,8 @@ class FailingBackend(FakeBackend):
         super().erase_chip()
         self._fail("erase")
 
-    def program(self, image):
-        super().program(image)
+    def program(self, image, progress_callback=None):
+        super().program(image, progress_callback=progress_callback)
         self._fail("program")
 
     def verify(self, image):
@@ -433,6 +435,40 @@ def test_full_job_releases_resource_and_records_snapshot():
     assert snapshot.current_action == "disconnect"
     assert snapshot.elapsed_seconds >= 0
     assert "target_debug" not in resources.get_status()
+
+
+def test_program_progress_reports_real_bytes_and_updates_total_progress():
+    class ProgressiveBackend(FakeBackend):
+        def program(self, inspected, progress_callback=None):
+            self.calls.append(("program", inspected))
+            assert progress_callback is not None
+            progress_callback(0.25)
+            progress_callback(0.5)
+            progress_callback(1.0)
+
+    backend = ProgressiveBackend()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        ResourceManager(),
+        image_provider=lambda _image_id: inspected,
+    )
+
+    job_id = manager.start(JobRequest(
+        actions=("connect", "program", "disconnect"),
+        image_id=inspected.image_id,
+    ))
+    result = manager.wait(job_id, timeout=2)
+    events = manager.events(job_id)
+    manager.shutdown()
+
+    messages = [event.message for event in events if event.message.startswith("[PROGRAM]")]
+    assert "[PROGRAM] 256 / 1024 Bytes (25%)" in messages
+    assert "[PROGRAM] 512 / 1024 Bytes (50%)" in messages
+    assert "[PROGRAM] 1024 / 1024 Bytes (100%)" in messages
+    assert any(event.progress == pytest.approx(0.5) for event in events)
+    assert result.state is JobState.SUCCEEDED
+    assert result.total_progress == 1.0
 
 
 @pytest.mark.parametrize(

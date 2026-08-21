@@ -1054,6 +1054,34 @@ def test_program_bin_passes_base_and_hex_does_not(tmp_path: Path) -> None:
     backend.disconnect()
 
 
+def test_program_forwards_pyocd_progress_callback(tmp_path: Path) -> None:
+    reported = []
+
+    class Programmer:
+        def __init__(self, _session, *, progress):
+            progress(0.5)
+
+        def program(self, _path, **_kwargs):
+            pass
+
+    binary = tmp_path / "firmware.bin"
+    binary.write_bytes(b"bin")
+    backend, _session = connected_backend(programmer_factory=Programmer)
+
+    backend.program(
+        ImageInspection(
+            "bin",
+            file_path=str(binary),
+            format="bin",
+            base_address=0x80000000,
+        ),
+        progress_callback=reported.append,
+    )
+
+    assert reported == [0.5]
+    backend.disconnect()
+
+
 def test_program_disables_memory_scans_for_custom_flm_regions(tmp_path: Path) -> None:
     calls = []
 

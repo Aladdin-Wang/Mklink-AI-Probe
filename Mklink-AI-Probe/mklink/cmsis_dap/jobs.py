@@ -413,7 +413,29 @@ class OnlineFlashJobManager:
                                 with self._condition:
                                     if job.cancel_requested:
                                         break
-                                backend.program(job.image)
+                                last_reported_percent = -1
+
+                                def report_program_progress(value: float) -> None:
+                                    nonlocal last_reported_percent
+                                    try:
+                                        fraction = float(value)
+                                    except (TypeError, ValueError):
+                                        return
+                                    if fraction > 1:
+                                        fraction /= 100.0
+                                    fraction = min(1.0, max(0.0, fraction))
+                                    percent = int(fraction * 100)
+                                    if percent <= last_reported_percent and fraction < 1:
+                                        return
+                                    last_reported_percent = percent
+                                    self._program_progress(job, fraction)
+
+                                report_program_progress(0)
+                                backend.program(
+                                    job.image,
+                                    progress_callback=report_program_progress,
+                                )
+                                report_program_progress(1)
                             elif action == "verify":
                                 self._refresh_image(job)
                                 with self._condition:
@@ -568,6 +590,29 @@ class OnlineFlashJobManager:
         job.updated_at = time.monotonic()
         self._emit_locked(job, "progress", progress=job.total_progress)
         self._emit_locked(job, "log", message=f"{action} complete")
+
+    def _program_progress(self, job: _Job, fraction: float) -> None:
+        with self._condition:
+            if job.current_action != "program" or job.image is None:
+                return
+            if fraction < job.stage_progress:
+                return
+            job.stage_progress = fraction
+            job.total_progress = max(
+                job.total_progress,
+                (job.completed_actions + fraction) / len(job.request.actions),
+            )
+            job.updated_at = time.monotonic()
+            completed = min(job.image.size, round(job.image.size * fraction))
+            self._emit_locked(
+                job,
+                "progress",
+                message=(
+                    f"[PROGRAM] {completed} / {job.image.size} Bytes "
+                    f"({round(fraction * 100)}%)"
+                ),
+                progress=job.total_progress,
+            )
 
     def _fail_locked(self, job: _Job, error: FlashError) -> None:
         job.error_code = error.code.value

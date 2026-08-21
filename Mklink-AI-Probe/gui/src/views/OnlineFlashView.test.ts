@@ -703,6 +703,46 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it('keeps flash progress and logs visible after programming captured memory', async () => {
+    const fetchMock = viewFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="memory-read-submit"]').attributes('disabled')).toBeUndefined())
+
+    await wrapper.get('[data-testid="memory-read-submit"]').trigger('click')
+    await wrapper.get('[data-testid="memory-read-address"]').setValue('0x80000000')
+    await wrapper.get('[data-testid="memory-read-end-address"]').setValue('0x80000020')
+    await wrapper.get('[data-testid="memory-read-confirm"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    expect(wrapper.get('.progress-title').text()).toBe('读取进度')
+    expect(wrapper.get('[data-testid="job-state"]').text()).toBe('读取完成')
+
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    expect(wrapper.get('.progress-title').text()).toBe('烧录总进度')
+    expect(wrapper.get('[data-testid="job-state"]').text()).not.toBe('读取完成')
+
+    FakeEventSource.instances[0].emit('progress', {
+      job_id: 'job-1', sequence: 3, timestamp: 2, event: 'progress',
+      message: '[PROGRAM] 16 / 32 Bytes (50%)', state: 'programming', progress: 0.5,
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="total-progress"]').attributes('value')).toBe('0.5')
+    expect(wrapper.get('[data-testid="log-viewport"]').text()).toContain('[PROGRAM] 16 / 32 Bytes (50%)')
+
+    FakeEventSource.instances[0].emit('state', {
+      job_id: 'job-1', sequence: 4, timestamp: 3, event: 'state',
+      message: '', state: 'succeeded', progress: 1,
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.progress-title').text()).toBe('烧录总进度')
+    expect(wrapper.get('[data-testid="job-state"]').text()).toBe('烧录完成')
+    expect(wrapper.get('[data-testid="total-progress-label"]').text()).toBe('100%')
+    wrapper.unmount()
+  })
+
   it('distinguishes builtin, local Pack, and optional online target sources', async () => {
     vi.stubGlobal('fetch', viewFetch([
       { ...installedTarget, part_number: 'BUILTIN', source: 'bundle' },
@@ -1257,7 +1297,7 @@ describe('online flash task workspace behavior', () => {
     })
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('FAILED')
+    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('烧录失败')
     expect(wrapper.text()).toContain('Failed to connect to MKLink on COM48')
     expect(source.closed).toBe(true)
     wrapper.unmount()
@@ -1374,12 +1414,12 @@ describe('online flash task workspace behavior', () => {
     FakeEventSource.instances[0].emit('state', {
       job_id: 'job-1', sequence: 9, timestamp: 2, event: 'state', message: '', state: 'succeeded', progress: 1,
     })
-    await vi.waitFor(() => expect(wrapper.get('[data-testid="job-state"]').text()).toContain('SUCCEEDED'))
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="job-state"]').text()).toContain('烧录完成'))
     resolveStop(new Response(JSON.stringify({ state: 'stopped', job_id: 'job-1' }), { status: 200 }))
     for (let index = 0; index < 10; index += 1) await Promise.resolve()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('SUCCEEDED')
+    expect(wrapper.get('[data-testid="job-state"]').text()).toContain('烧录完成')
     expect(wrapper.find('.waiting').exists()).toBe(false)
     wrapper.unmount()
   })

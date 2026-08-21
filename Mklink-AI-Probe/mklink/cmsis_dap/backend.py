@@ -377,20 +377,31 @@ class HpmRomBackend:
         del addresses
         self._require_device()
 
-    def program(self, image: ImageInspection) -> None:
+    def program(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             device = self._require_device()
             path, base = self._validated_bin(image)
             try:
+                flash_options = {
+                    "target_part": self._target,
+                    "base_address": base,
+                    "board": self._board,
+                    "hpm_flash_cfg": self._flash_cfg,
+                    "swd_clock": self._frequency,
+                    "verify": False,
+                    "reset_after": False,
+                }
+                if progress_callback is not None:
+                    flash_options["progress_callback"] = (
+                        lambda percent: progress_callback(float(percent) / 100.0)
+                    )
                 result = device.flash(
                     str(path),
-                    target_part=self._target,
-                    base_address=base,
-                    board=self._board,
-                    hpm_flash_cfg=self._flash_cfg,
-                    swd_clock=self._frequency,
-                    verify=False,
-                    reset_after=False,
+                    **flash_options,
                 )
                 if not isinstance(result, Mapping) or result.get("success") is not True:
                     raise FlashError(FlashErrorCode.PROGRAM_FAIL, "HPM ROM programming failed")
@@ -746,7 +757,11 @@ class PyOcdBackend:
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.ERASE_FAIL) from None
 
-    def program(self, image: ImageInspection) -> None:
+    def program(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             session = self._require_session()
             try:
@@ -767,14 +782,12 @@ class PyOcdBackend:
                     else image.start
                 )
                 region = self._flash_region_for_address(session.target, image_start)
+                programmer_options: dict[str, Any] = {}
+                if progress_callback is not None:
+                    programmer_options["progress"] = progress_callback
                 if str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
-                    programmer = factory(
-                        session,
-                        smart_flash=False,
-                        keep_unwritten=False,
-                    )
-                else:
-                    programmer = factory(session)
+                    programmer_options.update(smart_flash=False, keep_unwritten=False)
+                programmer = factory(session, **programmer_options)
                 kwargs = {}
                 if image.format.lower() == "bin":
                     kwargs["base_address"] = image.base_address
