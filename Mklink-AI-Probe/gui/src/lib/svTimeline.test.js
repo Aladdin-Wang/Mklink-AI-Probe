@@ -321,6 +321,8 @@ describe('SvTimeline continuous filtering', () => {
 
     timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 900, end: 950 }])
     expect([timeline.tMin, timeline.tMax]).toEqual([900, 950])
+    timeline.setPrefilteredIntervals([])
+    expect(timeline._hadIntervals).toBe(true)
     timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 950, end: 1_000 }])
 
     expect([timeline.tMin, timeline.tMax]).toEqual([900, 1_000])

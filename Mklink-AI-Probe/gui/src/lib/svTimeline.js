@@ -104,7 +104,9 @@ export class SvTimeline {
     const hadIntervalsBefore = this._hadIntervals;
     const previousTMin = this.tMin;
     const previousTMax = this.tMax;
-    this._hadIntervals = intervals.length > 0;
+    this._hadIntervals = options.preserveDataRange
+      ? hadIntervalsBefore || intervals.length > 0
+      : intervals.length > 0;
     this.intervals = intervals;
     const run = new Map(), names = new Map(), types = new Map();
     let tMin = Infinity, tMax = -Infinity;
@@ -132,8 +134,13 @@ export class SvTimeline {
     // accumulated data bounds so follow advances from the previous frame
     // instead of rebuilding the time axis from the newest slice's first item.
     if (options.preserveDataRange) {
-      if (Number.isFinite(previousTMin)) this.tMin = Math.min(previousTMin, this.tMin);
-      if (Number.isFinite(previousTMax)) this.tMax = Math.max(previousTMax, this.tMax);
+      if (this.intervals.length === 0 && Number.isFinite(previousTMin) && Number.isFinite(previousTMax)) {
+        this.tMin = previousTMin;
+        this.tMax = previousTMax;
+      } else {
+        if (Number.isFinite(previousTMin)) this.tMin = Math.min(previousTMin, this.tMin);
+        if (Number.isFinite(previousTMax)) this.tMax = Math.max(previousTMax, this.tMax);
+      }
     }
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
