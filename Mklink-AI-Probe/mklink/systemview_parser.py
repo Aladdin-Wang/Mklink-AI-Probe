@@ -421,6 +421,11 @@ class SystemViewParser:
             # SEGGER 的 STOP_EXEC 不带 task id——用跟踪到的当前任务补全，便于上层画甘特
             if self._current_task is not None:
                 ev["task_id"] = self._current_task
+        elif kind == "overflow":
+            # The target dropped one or more records, so the cached task context
+            # is no longer authoritative.  Do not let a later task-stop event
+            # inherit the task that was running before the loss boundary.
+            self._current_task = None
 
         # 给任务/ISR 事件补 name
         if "task_id" in ev:

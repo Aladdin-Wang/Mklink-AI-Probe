@@ -292,6 +292,30 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     wrapper.unmount()
   })
 
+  it('shows target overflow separately from runtime stream drops', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    mocks.status.data.value = [{
+      _streamSeq: 1,
+      target_overflow_events: 1,
+      target_drop_count: 3,
+      target_dropped_packets_since_baseline: 3,
+      dropped_bytes: 0,
+      dropped_packets: 0,
+    }] as never[]
+    await nextTick()
+
+    const health = wrapper.get('.sv-health-grid')
+    expect(health.text()).toContain('Target Overflow1')
+    expect(health.text()).toContain('Runtime Drop0')
+    const overflowCard = health.findAll('.sv-health-card')
+      .find(card => card.text().includes('Target Overflow'))
+    expect(overflowCard?.classes()).toContain('warn')
+    wrapper.unmount()
+  })
+
   it('does not connect when a running-trace start resolves after unmount', async () => {
     const started = deferred<void>()
     mocks.dash.getStatus.mockResolvedValue({ running: true })

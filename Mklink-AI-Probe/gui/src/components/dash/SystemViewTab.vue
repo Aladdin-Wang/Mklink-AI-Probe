@@ -122,6 +122,10 @@
           <span>Runtime Drop</span>
           <b :title="meta.sessionDropped ? `session dropped: ${meta.sessionDropped}` : 'runtime dropped'">{{ meta.dropped.toLocaleString() }}</b>
         </div>
+        <div v-if="meta.targetOverflowEvents > 0 || meta.targetDroppedPackets > 0" class="sv-health-card warn">
+          <span>Target Overflow</span>
+          <b :title="`target dropped packets: ${meta.targetDroppedPackets.toLocaleString()}`">{{ meta.targetOverflowEvents.toLocaleString() }}</b>
+        </div>
         <div class="sv-health-card" :class="{ warn: !meta.cpuFreq }">
           <span>CPU Clock</span>
           <b :title="meta.cpuFreqSource || 'cpu_freq'">{{ meta.cpuFreq ? fmtCpuFreq(meta.cpuFreq) : 'Unknown' }}</b>
@@ -372,6 +376,9 @@ const meta = reactive({
   synced: false,
   dropped: 0,
   sessionDropped: 0,
+  targetOverflowEvents: 0,
+  targetDroppedPackets: 0,
+  targetDropCount: null as number | null,
   cpuFreq: 0,
   cpuFreqSource: '',
   taskNames: {} as Record<number, string>,
@@ -790,6 +797,7 @@ async function reconnectRunningTrace(generation: number) {
     const status = await dash.getStatus()
     if (!operationIsActive(generation)) return
     if (status?.running) {
+      applyTargetOverflowStatus(status)
       if (status.synced !== undefined) meta.synced = !!status.synced
       if (status.cpu_freq !== undefined) meta.cpuFreq = Number(status.cpu_freq) || 0
       if (status.cpu_freq_source !== undefined) meta.cpuFreqSource = status.cpu_freq_source || ''
@@ -817,6 +825,7 @@ watch(statusData, (nw) => {
   const fresh = takeNewStreamPoints(nw as any[], lastStreamSeq)
   for (const dp of fresh.points as any[]) {
     const evt = dp.event || dp._event
+    applyTargetOverflowStatus(dp)
     if (dp.synced !== undefined) meta.synced = !!dp.synced
     if (dp.dropped_bytes !== undefined) meta.sessionDropped = dp.dropped_bytes + (dp.dropped_packets || 0)
     if (dp.runtime_dropped_bytes !== undefined || dp.dropped_bytes !== undefined) {
@@ -962,6 +971,22 @@ const currentSummaryPath = computed(() => meta.recordingSummaryPath || latestLog
 
 // ---- 辅助 ----
 function clamp(v: number) { return Math.max(0, Math.min(100, v)) }
+
+function applyTargetOverflowStatus(status: Record<string, unknown>): void {
+  const events = Number(status.target_overflow_events)
+  const droppedPackets = Number(status.target_dropped_packets_since_baseline)
+  const dropCount = Number(status.target_drop_count)
+  if (Number.isFinite(events) && events >= 0) {
+    meta.targetOverflowEvents = Math.max(meta.targetOverflowEvents, Math.trunc(events))
+  }
+  if (Number.isFinite(droppedPackets) && droppedPackets >= 0) {
+    meta.targetDroppedPackets = Math.max(meta.targetDroppedPackets, Math.trunc(droppedPackets))
+  }
+  if (Number.isFinite(dropCount) && dropCount >= 0) {
+    meta.targetDropCount = Math.trunc(dropCount)
+  }
+}
+
 function hexId(id: number) { return '0x' + (id >>> 0).toString(16).toUpperCase() }
 function fmtCpuFreq(freq: number) {
   return freq >= 1_000_000 ? (freq / 1_000_000).toFixed(0) + 'MHz' : freq.toLocaleString() + 'Hz'
@@ -1007,6 +1032,9 @@ function clearAll() {
   meta.synced = false
   meta.dropped = 0
   meta.sessionDropped = 0
+  meta.targetOverflowEvents = 0
+  meta.targetDroppedPackets = 0
+  meta.targetDropCount = null
   meta.cpuFreq = 0
   meta.cpuFreqSource = ''
   meta.taskNames = {}
@@ -1199,6 +1227,7 @@ function restartReplay() {
 }
 
 function applyImportedMeta(record: Record<string, unknown>) {
+  applyTargetOverflowStatus(record)
   const cpuFreq = Number(record.cpu_freq)
   if (Number.isFinite(cpuFreq) && cpuFreq > 0) meta.cpuFreq = cpuFreq
   if (typeof record.cpu_freq_source === 'string') meta.cpuFreqSource = record.cpu_freq_source

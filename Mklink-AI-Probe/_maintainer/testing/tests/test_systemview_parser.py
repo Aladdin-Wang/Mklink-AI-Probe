@@ -1,4 +1,11 @@
-from mklink.systemview_parser import EVTID_STACK_INFO, EVTID_TASK_INFO, SystemViewParser
+from mklink.systemview_parser import (
+    EVTID_OVERFLOW,
+    EVTID_STACK_INFO,
+    EVTID_TASK_INFO,
+    EVTID_TASK_START_EXEC,
+    EVTID_TASK_STOP_EXEC,
+    SystemViewParser,
+)
 
 
 def _encode_u32(value: int) -> bytes:
@@ -157,3 +164,26 @@ def test_overflow_recovery_does_not_swallow_stack_info_as_a_phantom_module_event
     assert events[0]["task_id"] == 0x123 << 2
     assert events[0]["stack_size"] == 1024
     assert parser.dropped_bytes == 2
+
+
+def test_overflow_clears_cached_task_for_following_stop_event():
+    stream = b"".join(
+        (
+            bytes((EVTID_TASK_START_EXEC,)),
+            _encode_u32(7),
+            _encode_u32(1),
+            bytes((EVTID_OVERFLOW,)),
+            _encode_u32(3),
+            _encode_u32(2),
+            bytes((EVTID_TASK_STOP_EXEC,)),
+            _encode_u32(1),
+        )
+    )
+
+    events = SystemViewParser().feed(stream)
+
+    assert [event["kind"] for event in events] == [
+        "task_start_exec", "overflow", "task_stop_exec",
+    ]
+    assert events[1]["drop_count"] == 3
+    assert "task_id" not in events[2]

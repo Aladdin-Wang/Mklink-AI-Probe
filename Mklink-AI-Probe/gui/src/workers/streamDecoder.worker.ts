@@ -786,7 +786,15 @@ export class StreamDecoder {
       this.suspendedContexts = []
       this.updateSystemViewContext(CONTEXT_SCHEDULER, 0)
       this.openSystemViewContext(CONTEXT_SCHEDULER, 0, ticks, event)
-    } else if (event.kind === 'overflow' || event.kind === 'trace_stop') {
+    } else if (event.kind === 'overflow') {
+      // An Overflow means records between the previous event and this marker
+      // are missing. Do not turn the open context into a complete interval:
+      // doing so renders a long, fabricated task run (HPM can lose seconds of
+      // task-switch records while the probe reports one marker). The marker
+      // remains in the event ring, and the next explicit context event starts
+      // a new trustworthy interval.
+      this.abandonSystemViewContext()
+    } else if (event.kind === 'trace_stop') {
       this.closeCurrentSystemViewInterval(ticks)
       this.abandonSystemViewContext()
     } else if (event.kind === 'idle') {
