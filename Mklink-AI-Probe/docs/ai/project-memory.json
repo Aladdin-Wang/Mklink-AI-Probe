@@ -5,8 +5,8 @@
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/systemview-timeline-smooth-refresh",
-    "head": "SystemView 后端保持约 30 FPS 交付；前端时间轴使用可调 60 FPS 连续渲染和平滑跟随。",
-    "remote_head": "origin/fix/systemview-timeline-smooth-refresh 将同步本轮可调帧率和连续 Timeline 修复；尚未合并 master。",
+    "head": "SystemView 后端保持约 30 FPS 交付；前端时间轴使用可调 60 FPS 连续渲染和平滑跟随，已移除旧的立即跳转条件。",
+    "remote_head": "origin/fix/systemview-timeline-smooth-refresh 将同步本轮 Timeline 立即跳转遗漏修复；尚未合并 master。",
     "working_tree": "仅保留 SystemView 前后端节奏源码、回归测试和项目记忆；生产 gui/dist、固件和本地测试前置均不纳入提交。"
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "systemview_configurable_smooth_refresh_verified",
-    "current_task": "将渲染帧率改为实例可配置；RTOS Trace 使用 60 FPS 连续重绘并对最新窗口插值跟随，保持缩放和稳定泳道。",
+    "status": "systemview_follow_jump_fixed",
+    "current_task": "修复 Timeline 遗留的立即窗口跳转；新数据只更新跟随目标，由 60 FPS 连续帧推进显示范围。",
     "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "最终自动化门禁",
-      "result": "GUI 56 文件/558 项和 Vite 生产构建通过；本轮时间轴、调度器和环形缓冲聚焦测试 48 项通过。Python 基线门禁已在前一提交记录，未改动后端运行代码。"
+      "result": "本轮 Timeline、调度器和环形缓冲聚焦测试 33 项通过；此前 GUI 56 文件/558 项和 Vite 生产构建通过，Python 基线门禁未受影响。"
     },
     {
       "area": "安装包真机读写",
@@ -50,7 +50,7 @@
     },
     {
       "area": "实时调试",
-      "result": "Chrome 5173 使用当前 worktree 真实 HPM FreeRTOS 页面复测；Events 持续增长，Timeline 右边界跟随最新事件，连续截图均发生画面变化，事件表折叠后泳道高度稳定。后端批次平均约 37.8 ms 的证据保留自前一提交。"
+      "result": "Chrome 5173 复测发现上一版仍有立即跳转；修复后页面源码已确认删除旧条件，真实截图中显示范围由帧循环推进，事件表折叠后泳道高度稳定。需维护者继续观察主观流畅度。"
     },
     {
       "area": "远程固件",
@@ -69,7 +69,7 @@
     "每个独立问题完成验证后单独提交并推送，方便按问题回退。",
     "HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
     "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。",
-    "SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms，前端 RenderScheduler 帧率可配置，RTOS Trace 默认 60 FPS continuous，时间轴用 100 ms ease 插值，泳道容量只增不减；拖拽才退出跟随。",
+    "SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms，前端 RenderScheduler 帧率可配置，RTOS Trace 默认 60 FPS continuous，时间轴用 100 ms ease 插值；新数据只更新跟随目标，不能直接覆盖显示范围，泳道容量只增不减；拖拽才退出跟随。",
     "固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。",
     "自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。",
     "GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。"

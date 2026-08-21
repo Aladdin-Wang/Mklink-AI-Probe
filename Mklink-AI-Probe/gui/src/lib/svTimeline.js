@@ -128,8 +128,6 @@ export class SvTimeline {
       if (
         viewInvalid
         || !hadIntervalsBefore
-        || Math.abs(this.viewStart - target.start) > 0.001
-        || Math.abs(this.viewEnd - target.end) > 0.001
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;

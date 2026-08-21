@@ -373,8 +373,14 @@ describe('SvTimeline continuous filtering', () => {
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 30 }])
     expect([timeline.viewStart, timeline.viewEnd]).toEqual([-70, 30])
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 90 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-70, 30])
+    expect(timeline._followTarget).toEqual({ start: -10, end: 90 })
+    timeline.renderFrame((timeline._followTransitionAt || 0) + 100)
     expect([timeline.viewStart, timeline.viewEnd]).toEqual([-10, 90])
     timeline.setData([{ tid: 1, name: 'main', start: 10, end: 101 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-10, 90])
+    expect(timeline._followTarget).toEqual({ start: 1, end: 101 })
+    timeline.renderFrame((timeline._followTransitionAt || 0) + 100)
     expect([timeline.viewStart, timeline.viewEnd]).toEqual([1, 101])
 
     expect(timeline._drawLive).toHaveBeenCalledTimes(3)
@@ -393,12 +399,19 @@ describe('SvTimeline continuous filtering', () => {
       _filterContinuous: intervals => intervals,
       _layout: vi.fn(() => false),
       _drawLive: vi.fn(() => true),
+      _draw: vi.fn(),
       _updateStatus: vi.fn(),
     })
 
     timeline.setData([{ tid: 1, name: 'main', start: 40, end: 60 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([0, 100])
+    expect(timeline._followTarget).toEqual({ start: -40, end: 60 })
+    timeline.renderFrame((timeline._followTransitionAt || 0) + 100)
     expect([timeline.viewStart, timeline.viewEnd]).toEqual([-40, 60])
     timeline.setData([{ tid: 1, name: 'main', start: 101, end: 120 }])
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([-40, 60])
+    expect(timeline._followTarget).toEqual({ start: 20, end: 120 })
+    timeline.renderFrame((timeline._followTransitionAt || 0) + 100)
     expect([timeline.viewStart, timeline.viewEnd]).toEqual([20, 120])
     expect(timeline._drawLive).toHaveBeenCalledTimes(2)
   })
