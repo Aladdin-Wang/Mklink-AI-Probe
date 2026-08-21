@@ -462,6 +462,8 @@ let renderScheduler: RenderScheduler | null = null
 const timelineFrameRate = new AdaptiveFrameRateController()
 let timelineVisibleItemCount = 0
 let visibleRequestId = 0
+let visibleRequestInFlight = false
+let visibleRequestPending = false
 let latestBinaryTime: number | null = null
 let binaryTickOrigin = 0n
 let lastTableUpdate = Number.NEGATIVE_INFINITY
@@ -485,6 +487,20 @@ function tlGetContexts() {
     .map(context => ({ tid: context.id, name: context.name, type: context.type || 'Task' }))
 }
 function tlReset() { tlInstance?.reset() }
+
+function requestTimelineVisibleRange(
+  start: number,
+  end: number,
+  pixelWidth: number,
+): void {
+  // HPM traces can make Worker range extraction slower than one frame. Keep
+  // only the newest request so the Worker queue cannot grow into bursty UI.
+  visibleRequestPending = true
+  if (visibleRequestInFlight) return
+  visibleRequestInFlight = true
+  visibleRequestPending = false
+  binaryStream.requestVisibleRange(++visibleRequestId, start, end, pixelWidth)
+}
 
 onMounted(() => {
   mounted = true
@@ -529,8 +545,7 @@ onMounted(() => {
     if (manualView) {
       // Keep a zoomed/panned frame stable while continuing to acquire and
       // repaint intervals that fall inside that frame.
-      binaryStream.requestVisibleRange(
-        ++visibleRequestId,
+      requestTimelineVisibleRange(
         Math.max(0, Math.floor(manualView.start / tickScale)),
         Math.max(0, Math.ceil(manualView.end / tickScale)),
         tlCanvas.value?.clientWidth || 800,
@@ -543,7 +558,7 @@ onMounted(() => {
       ? followSpanUs * meta.cpuFreq / 1_000_000
       : followSpanUs
     const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
-    binaryStream.requestVisibleRange(++visibleRequestId, start, end, tlCanvas.value?.clientWidth || 800)
+    requestTimelineVisibleRange(start, end, tlCanvas.value?.clientWidth || 800)
   }, undefined, undefined, { frameRate: 60, continuous: true })
   renderScheduler.start()
   reconnectRunningTrace(generation)
@@ -556,6 +571,8 @@ onUnmounted(() => {
   cancelPendingConnect()
   disconnectStatus()
   binaryStream.stop()
+  visibleRequestInFlight = false
+  visibleRequestPending = false
   renderScheduler?.dispose()
   renderScheduler = null
   tlInstance?.destroy()
@@ -831,10 +848,14 @@ watch(binaryStream.telemetry, telemetry => {
 
 watch(binaryStream.systemViewVisible, visible => {
   if (!visible || renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
+  visibleRequestInFlight = false
   latestBinaryTime = visible.latestTime
+  // candidateIntervalCount is the Worker scan cost, not the amount painted.
+  // HPM traces contain many 1 ms ISR intervals; using the scan count here
+  // incorrectly forces the live canvas to 20/30 FPS even when painting is
+  // cheap. The controller also observes measured paint cost below.
   timelineVisibleItemCount = Math.max(
     visible.intervalCount,
-    visible.candidateIntervalCount,
     visible.eventCount,
   )
   binaryTickOrigin = visible.tickOrigin
@@ -888,6 +909,7 @@ watch(binaryStream.systemViewVisible, visible => {
   tlInstance?.setTickOrigin(binaryTickOrigin)
   tlInstance?.setContexts?.(tlGetContexts(), { render: false })
   tlInstance?.setPrefilteredIntervals(tlGetIntervals())
+  if (visibleRequestPending) renderScheduler?.invalidate('data')
 
   const now = performance.now()
   if (now - lastTableUpdate >= TABLE_UPDATE_INTERVAL_MS) {
@@ -952,6 +974,9 @@ function evtColor(k: string) {
 }
 function clearAll() {
   binaryStream.reset()
+  visibleRequestId++
+  visibleRequestInFlight = false
+  visibleRequestPending = false
   eventList.value = []
   analysisEvents = []
   analysisBufferCount.value = 0
@@ -1292,6 +1317,8 @@ async function onStart() {
 function onPauseRender() {
   renderPaused.value = true
   visibleRequestId++
+  visibleRequestInFlight = false
+  visibleRequestPending = false
   renderScheduler?.stop()
   tlInstance?.pauseRendering()
 }
