@@ -4,11 +4,11 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T23:52:00+08:00`
+- 更新时间：`2026-08-21T23:59:00+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
 - HEAD：`SystemView Runtime 统计按保留环形历史累计，Timeline 视口更新保留连续数据边界；Overflow 丢包边界不再伪造长任务区间。`
 - 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 Runtime/Timeline 累计修复；尚未合并 master。`
-- 工作树：保留本地生产 gui/dist 构建产物；本轮 Runtime/Timeline 源码、测试和记忆待提交。
+- 工作树：Runtime/Timeline 源码、测试和记忆已提交；保留本地生产 gui/dist 构建产物未纳入提交。
 - 当前任务：修复 SystemView Runtime 随可见窗口重算，以及 Timeline 随视口响应重置时间边界的问题。
 - 状态：`systemview_cumulative_runtime_verified`
 
@@ -25,7 +25,7 @@
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。
 - **Overflow 处理**：确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。
-- **Runtime/Timeline 累计修复**：Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax 和任务元数据。GUI 56 文件/570 项测试、Vite 生产构建通过；Chrome + COM55 + HPM 真机 Runtime Idle 调度从 14,094 增长到 62,533、MTimer 从 14,092 增长到 62,507，Timeline 泳道高度保持 326px 且时间轴持续推进。
+- **Runtime/Timeline 累计修复**：Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax、任务元数据和已有数据状态，空视口响应也不会触发下一帧首次定位。GUI 56 文件/570 项测试、Vite 生产构建通过；Chrome + COM55 + HPM 真机 Runtime Idle 调度从 14,094 增长到 62,533、MTimer 从 14,092 增长到 62,507，Timeline 泳道高度保持 326px 且时间轴持续推进。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 

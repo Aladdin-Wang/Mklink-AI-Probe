@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-21T23:52:00+08:00",
+  "updated_at": "2026-08-21T23:59:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/systemview-timeline-smooth-refresh",
     "head": "SystemView Runtime 统计按保留环形历史累计，Timeline 视口更新保留连续数据边界；Overflow 丢包边界不再伪造长任务区间。",
     "remote_head": "origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 Runtime/Timeline 累计修复；尚未合并 master。",
-    "working_tree": "保留本地生产 gui/dist 构建产物；本轮 Runtime/Timeline 源码、测试和记忆待提交。"
+    "working_tree": "Runtime/Timeline 源码、测试和记忆已提交；保留本地生产 gui/dist 构建产物未纳入提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
@@ -58,7 +58,7 @@
     },
     {
       "area": "Runtime/Timeline 累计修复",
-      "result": "Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax 和任务元数据。GUI 56 文件/570 项测试、Vite 生产构建通过；Chrome + COM55 + HPM 真机 Runtime Idle 调度从 14,094 增长到 62,533、MTimer 从 14,092 增长到 62,507，Timeline 泳道高度保持 326px 且时间轴持续推进。"
+      "result": "Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax、任务元数据和已有数据状态，空视口响应也不会触发下一帧首次定位。GUI 56 文件/570 项测试、Vite 生产构建通过；Chrome + COM55 + HPM 真机 Runtime Idle 调度从 14,094 增长到 62,533、MTimer 从 14,092 增长到 62,507，Timeline 泳道高度保持 326px 且时间轴持续推进。"
     },
     {
       "area": "远程固件",
