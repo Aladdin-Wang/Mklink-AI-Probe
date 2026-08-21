@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-21T18:08:00+08:00",
+  "updated_at": "2026-08-21T20:30:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/systemview-timeline-smooth-refresh",
     "head": "SystemView Timeline 使用单一连续绘制循环和平滑跟随；高事件率下不再把 Worker 候选扫描量误当绘制密度，并合并未完成的可见范围请求。",
     "remote_head": "origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 HPM 高事件率修复；尚未合并 master。",
-    "working_tree": "保留本地生产 gui/dist 构建产物；源码仅新增 SystemView 请求节奏修复、回归测试和项目记忆。"
+    "working_tree": "保留本地生产 gui/dist 构建产物；SystemView 流客户端修复已提交并推送。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "systemview_hpm_backlog_fix_automated_verified",
-    "current_task": "修复 HPM 高事件率下可见范围请求积压和错误降帧；聚焦测试与生产构建通过，待 Chrome/HPM 真机复测。",
+    "status": "systemview_hpm_range_interleave_verified",
+    "current_task": "修复 HPM 高事件率下 Worker 帧队列阻塞可视范围请求；代码、自动化和 Chrome/HPM 真机已验证。",
     "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
@@ -50,7 +50,7 @@
     },
     {
       "area": "实时调试",
-      "result": "新增修复：candidateIntervalCount 仅用于 Worker 扫描，不再参与降帧；可见范围请求在 Worker 忙时只保留最新一次，避免 HPM 高事件率下请求积压后成批刷新。SystemViewTab、调度器、Timeline 聚焦测试 52 项和生产构建通过；本轮尚未重新连接 HPM 做 Chrome 真机验收。"
+      "result": "新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。"
     },
     {
       "area": "远程固件",
@@ -84,10 +84,10 @@
     "安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。",
     "Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。",
     "V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。",
-    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲；本轮修复尚待 HPM FreeRTOS 真机复测。"
+    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲；本轮已确认前端 Worker 队列不再阻塞 Timeline 可视查询。"
   ],
   "next_actions": [
-    "用 Chrome 连接 HPM FreeRTOS 和 STM32F103 对比复测连续 20 秒；确认 HPM 不再成段刷新后提交并推送本轮独立修复。",
+    "继续观察 HPM FreeRTOS 长时间运行下的 RTT 溢出计数；必要时再优化后端批量策略。",
     "后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。"
   ],
   "continuation_protocol": [

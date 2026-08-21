@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T18:08:00+08:00`
+- 更新时间：`2026-08-21T20:30:00+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
 - HEAD：`SystemView Timeline 使用单一连续绘制循环和平滑跟随；高事件率下不再把 Worker 候选扫描量误当绘制密度，并合并未完成的可见范围请求。`
 - 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 HPM 高事件率修复；尚未合并 master。`
-- 工作树：保留本地生产 gui/dist 构建产物；源码仅新增 SystemView 请求节奏修复、回归测试和项目记忆。
-- 当前任务：修复 HPM 高事件率下可见范围请求积压和错误降帧；聚焦测试与生产构建通过，待 Chrome/HPM 真机复测。
-- 状态：`systemview_hpm_backlog_fix_automated_verified`
+- 工作树：保留本地生产 gui/dist 构建产物；SystemView 流客户端修复已提交并推送。
+- 当前任务：修复 HPM 高事件率下 Worker 帧队列阻塞可视范围请求；代码、自动化和 Chrome/HPM 真机已验证。
+- 状态：`systemview_hpm_range_interleave_verified`
 
 ## 里程碑
 
@@ -23,7 +23,7 @@
 - **最终自动化门禁**：Timeline/调度器/页面聚焦测试 51 项通过；GUI 56 文件/563 项和 Vite 生产构建通过。Python 1328 项通过、1 项跳过；仅 12 项因当前 Windows 账户无目录 symlink 权限失败，junction 分支通过。
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
-- **实时调试**：新增修复：candidateIntervalCount 仅用于 Worker 扫描，不再参与降帧；可见范围请求在 Worker 忙时只保留最新一次，避免 HPM 高事件率下请求积压后成批刷新。SystemViewTab、调度器、Timeline 聚焦测试 52 项和生产构建通过；本轮尚未重新连接 HPM 做 Chrome 真机验收。
+- **实时调试**：新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
@@ -46,7 +46,7 @@
 
 ## 下一动作
 
-1. 用 Chrome 连接 HPM FreeRTOS 和 STM32F103 对比复测连续 20 秒；确认 HPM 不再成段刷新后提交并推送本轮独立修复。
+1. 继续观察 HPM FreeRTOS 长时间运行下的 RTT 溢出计数；必要时再优化后端批量策略。
 2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
@@ -55,7 +55,7 @@
 - 安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。
 - Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。
 - V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。
-- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；本轮修复尚待 HPM FreeRTOS 真机复测。
+- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；本轮已确认前端 Worker 队列不再阻塞 Timeline 可视查询。
 
 ## 延续协议
 
