@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Save, Upload, X } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import { ArrowDownToLine, Save, Upload, X } from '@lucide/vue'
 import { useOnlineFlashApi } from '../../composables/useOnlineFlashApi'
 import { tr } from '../../composables/useLanguage'
 import { downloadBlobFile } from '../../lib/downloadTextFile'
@@ -26,8 +26,12 @@ const emit = defineEmits<{
   clear: []
 }>()
 
-const address = ref('0x08000000')
-const endAddress = ref('0x08080000')
+const GENERIC_FLASH_START = '0x08000000'
+const GENERIC_FLASH_END = '0x08080000'
+const address = ref(GENERIC_FLASH_START)
+const endAddress = ref(GENERIC_FLASH_END)
+const rangeTarget = ref('')
+const rangeDirty = ref(false)
 const busy = ref(false)
 const error = ref('')
 const readDialogOpen = ref(false)
@@ -38,6 +42,37 @@ type ProgressState = 'waiting' | 'reading' | 'done' | 'failed'
 const progressEntries = ref<Array<{ address: number; size: number; state: ProgressState }>>([])
 const loggedEntries = new Set<string>()
 const api = useOnlineFlashApi()
+
+const flashRange = computed(() => {
+  const regions = (props.memoryRegions || []).filter(region => (
+    Number.isInteger(region.start) && Number.isInteger(region.length) && region.length > 0
+  ))
+  if (!regions.length) return null
+  const start = Math.min(...regions.map(region => region.start))
+  const end = Math.max(...regions.map(region => region.start + region.length))
+  return end > start ? { start, end } : null
+})
+
+function formatAddress(value: number): string {
+  return `0x${value.toString(16).toUpperCase().padStart(8, '0')}`
+}
+
+function applyRangeDefaults(): void {
+  const target = props.targetPart.trim()
+  const range = flashRange.value
+  if (!target || !range || (rangeDirty.value && rangeTarget.value === target)) return
+  address.value = formatAddress(range.start)
+  endAddress.value = formatAddress(range.end)
+  rangeTarget.value = target
+  rangeDirty.value = false
+}
+
+watch(() => props.targetPart, target => {
+  rangeTarget.value = target.trim()
+  rangeDirty.value = false
+  applyRangeDefaults()
+}, { immediate: true })
+watch(flashRange, applyRangeDefaults, { immediate: true })
 
 const parsedAddress = computed(() => {
   if (!/^0x[0-9a-f]+$/i.test(address.value.trim())) return null
@@ -212,10 +247,21 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
 
   <div v-if="readDialogOpen" class="memory-read-dialog-backdrop" role="presentation" @click.self="closeReadDialog">
     <section class="memory-read-dialog" role="dialog" aria-modal="true" aria-labelledby="memory-read-dialog-title">
-      <header><h4 id="memory-read-dialog-title">{{ tr('填写读取地址', 'Enter Read Range') }}</h4><button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="15" aria-hidden="true" /></button></header>
-      <label><span>{{ tr('基地址', 'Base Address') }}</span><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000"></label>
-      <label><span>{{ tr('结束地址（不含）', 'End Address (exclusive)') }}</span><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000"></label>
-      <p class="memory-read-note">{{ readSize > 0 ? tr(`将读取 ${readSize} 字节。`, `Reads ${readSize} bytes.`) : tr('结束地址必须大于基地址。', 'End address must be greater than the base address.') }} {{ readSize > 0 ? chunkDescription : '' }}</p>
+      <header class="memory-read-dialog-header">
+        <div class="memory-read-dialog-heading">
+          <span class="memory-read-dialog-icon" aria-hidden="true"><ArrowDownToLine :size="17" /></span>
+          <div><h4 id="memory-read-dialog-title">{{ tr('读取目标 Flash', 'Read Target Flash') }}</h4><p>{{ tr('填写要读取的地址范围', 'Choose the address range to read') }}</p></div>
+        </div>
+        <button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="16" aria-hidden="true" /></button>
+      </header>
+      <div class="memory-read-range-fields">
+        <label><span>{{ tr('基地址', 'Base Address') }}</span><div class="memory-read-input-wrap"><input v-model.trim="address" data-testid="memory-read-address" inputmode="text" spellcheck="false" placeholder="0x08000000" @input="rangeDirty = true"><small>起始（含）</small></div></label>
+        <span class="memory-read-range-arrow" aria-hidden="true">→</span>
+        <label><span>{{ tr('结束地址', 'End Address') }}</span><div class="memory-read-input-wrap"><input v-model.trim="endAddress" data-testid="memory-read-end-address" inputmode="text" spellcheck="false" placeholder="0x08080000" @input="rangeDirty = true"><small>结束（不含）</small></div></label>
+      </div>
+      <div v-if="readSize > 0" class="memory-read-summary"><span>{{ tr('读取范围', 'Read range') }}</span><strong>0x{{ parsedAddress?.toString(16).toUpperCase().padStart(8, '0') }} – 0x{{ parsedEndAddress?.toString(16).toUpperCase().padStart(8, '0') }}</strong><em>{{ readSize.toLocaleString() }} bytes</em></div>
+      <p v-else class="memory-read-validation">{{ tr('结束地址必须大于基地址，并使用 0x 十六进制格式。', 'The end address must be greater than the base address and use 0x hexadecimal format.') }}</p>
+      <p class="memory-read-note">{{ readSize > 0 ? chunkDescription : '' }}</p>
       <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Upload :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
     </section>
   </div>
@@ -242,12 +288,27 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
 .memory-read-log-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--of-text); }
 .memory-read-error { margin: 0; color: var(--of-danger); overflow-wrap: anywhere; }
 .memory-read-dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 42%); }
-.memory-read-dialog { width: min(420px, 100%); display: grid; gap: 10px; padding: 16px; border: 1px solid var(--of-border); border-radius: 7px; background: var(--of-surface); box-shadow: 0 16px 48px rgb(0 0 0 / 30%); }
-.memory-read-dialog header { display: flex; align-items: center; justify-content: space-between; }
-.memory-read-dialog h4 { margin: 0; color: var(--of-text); font-size: 14px; }
-.memory-read-dialog label { display: grid; gap: 4px; color: var(--of-muted); }
-.memory-read-dialog input { min-width: 0; width: 100%; height: 30px; box-sizing: border-box; border: 1px solid var(--of-border); border-radius: 5px; background: var(--of-input); color: var(--of-text); padding: 0 8px; font-family: var(--of-mono); }
+.memory-read-dialog { width: min(520px, 100%); display: grid; gap: 16px; padding: 22px; border: 1px solid color-mix(in srgb, var(--of-accent) 24%, var(--of-border)); border-radius: 10px; background: linear-gradient(145deg, color-mix(in srgb, var(--of-surface) 96%, var(--of-accent)), var(--of-surface)); box-shadow: 0 24px 70px rgb(0 0 0 / 42%); }
+.memory-read-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--of-border); }
+.memory-read-dialog-heading { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.memory-read-dialog-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--of-accent) 48%, var(--of-border)); border-radius: 8px; background: color-mix(in srgb, var(--of-accent) 16%, var(--of-input)); color: var(--of-accent); }
+.memory-read-dialog h4 { margin: 0; color: var(--of-text); font-size: 16px; letter-spacing: 0; }
+.memory-read-dialog-heading p { margin: 3px 0 0; color: var(--of-muted); font-size: 11px; }
+.memory-read-dialog label { display: grid; gap: 7px; min-width: 0; color: var(--of-muted); font-size: 12px; font-weight: 600; }
+.memory-read-input-wrap { position: relative; min-width: 0; }
+.memory-read-dialog input { min-width: 0; width: 100%; height: 42px; box-sizing: border-box; border: 1px solid var(--of-border); border-radius: 6px; background: color-mix(in srgb, var(--of-input) 88%, #000); color: var(--of-text); padding: 0 10px; font-family: var(--of-mono); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+.memory-read-dialog input:focus { outline: 2px solid color-mix(in srgb, var(--of-accent) 65%, transparent); outline-offset: 1px; border-color: var(--of-accent); }
+.memory-read-input-wrap small { display: block; margin-top: 4px; color: var(--of-muted); font-size: 10px; font-weight: 400; }
+.memory-read-range-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 10px; }
+.memory-read-range-arrow { padding-bottom: 26px; color: var(--of-accent); font: 600 18px/1 var(--of-mono); }
+.memory-read-summary { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--of-accent) 30%, var(--of-border)); border-radius: 6px; background: color-mix(in srgb, var(--of-accent) 9%, var(--of-input)); color: var(--of-muted); font-size: 11px; }
+.memory-read-summary strong { min-width: 0; overflow: hidden; color: var(--of-text); font: 600 11px/1.4 var(--of-mono); text-overflow: ellipsis; white-space: nowrap; }
+.memory-read-summary em { color: var(--of-accent); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.memory-read-validation { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--of-danger) 34%, var(--of-border)); border-radius: 6px; background: var(--of-danger-bg); color: var(--of-danger); font-size: 11px; }
 .memory-read-dialog .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--of-border); border-radius: 4px; background: transparent; color: var(--of-muted); }
-.memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; padding: 0; border: 1px solid var(--of-border); border-radius: 6px; background: color-mix(in srgb, var(--of-input) 70%, transparent); color: var(--of-muted); cursor: pointer; }
+.memory-read-dialog .icon-button:hover { border-color: var(--of-accent); color: var(--of-text); }
+.memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--of-border); }
+.memory-read-dialog-actions .btn { min-width: 96px; min-height: 36px; }
+@media (max-width: 540px) { .memory-read-dialog { padding: 16px; } .memory-read-range-fields { grid-template-columns: 1fr; gap: 8px; } .memory-read-range-arrow { display: none; } .memory-read-summary { grid-template-columns: 1fr; gap: 3px; } .memory-read-summary em { justify-self: start; } }
 </style>

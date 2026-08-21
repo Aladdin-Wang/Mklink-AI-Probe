@@ -3,6 +3,30 @@ import { describe, expect, it, vi } from 'vitest'
 import MemoryReadPanel from './MemoryReadPanel.vue'
 
 describe('MemoryReadPanel', () => {
+  it('fills the selected target Flash range and preserves manual edits', async () => {
+    const wrapper = mount(MemoryReadPanel, {
+      props: {
+        probeId: 'probe', targetPart: 'STM32F103RE', hpm: false, embedded: true,
+        frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
+        memoryRegions: [{ name: 'flash', start: 0x08000000, length: 0x80000, sector_size: 0x800 }],
+      },
+    })
+
+    ;(wrapper.vm as unknown as { openReadDialog: () => void }).openReadDialog()
+    await wrapper.vm.$nextTick()
+    expect((wrapper.get('[data-testid="memory-read-address"]').element as HTMLInputElement).value).toBe('0x08000000')
+    expect((wrapper.get('[data-testid="memory-read-end-address"]').element as HTMLInputElement).value).toBe('0x08080000')
+
+    await wrapper.get('[data-testid="memory-read-address"]').setValue('0x08001000')
+    await wrapper.setProps({
+      memoryRegions: [{ name: 'flash', start: 0x08000000, length: 0x100000, sector_size: 0x800 }],
+    })
+    await wrapper.vm.$nextTick()
+    expect((wrapper.get('[data-testid="memory-read-address"]').element as HTMLInputElement).value).toBe('0x08001000')
+    expect((wrapper.get('[data-testid="memory-read-end-address"]').element as HTMLInputElement).value).toBe('0x08080000')
+    wrapper.unmount()
+  })
+
   it('renders the exposed read dialog while embedded in the online workspace', async () => {
     const wrapper = mount(MemoryReadPanel, {
       props: {
