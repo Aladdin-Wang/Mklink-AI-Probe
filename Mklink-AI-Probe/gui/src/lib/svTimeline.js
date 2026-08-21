@@ -102,6 +102,8 @@ export class SvTimeline {
   _acceptData(intervals, options = {}) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
+    const previousTMin = this.tMin;
+    const previousTMax = this.tMax;
     this._hadIntervals = intervals.length > 0;
     this.intervals = intervals;
     const run = new Map(), names = new Map(), types = new Map();
@@ -126,6 +128,13 @@ export class SvTimeline {
       this.tMin = tMin;
       this.tMax = tMax;
     } else { this.tMin = 0; this.tMax = 1; }
+    // Visible-range responses are a moving slice of one trace. Preserve the
+    // accumulated data bounds so follow advances from the previous frame
+    // instead of rebuilding the time axis from the newest slice's first item.
+    if (options.preserveDataRange) {
+      if (Number.isFinite(previousTMin)) this.tMin = Math.min(previousTMin, this.tMin);
+      if (Number.isFinite(previousTMax)) this.tMax = Math.max(previousTMax, this.tMax);
+    }
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
     const preserveManualView = !this.follow && !viewInvalid;
@@ -185,7 +194,7 @@ export class SvTimeline {
     // worker, so accepting every frame does not pull the view back to "now".
     // The continuous render scheduler owns the live paint cadence. Painting
     // here as well doubles the frame load whenever a worker response arrives.
-    this._acceptData(intervals || [], { render: false });
+    this._acceptData(intervals || [], { render: false, preserveDataRange: true });
   }
 
   getViewRange() {

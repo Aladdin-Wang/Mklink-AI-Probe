@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T23:18:00+08:00`
+- 更新时间：`2026-08-21T23:52:00+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
-- HEAD：`SystemView Timeline 使用单一连续绘制循环和平滑跟随；Overflow 丢包边界不再伪造长任务区间，并在 GUI 单独显示目标端丢包。`
-- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 Overflow 修复；尚未合并 master。`
-- 工作树：保留本地生产 gui/dist 构建产物；本轮 Overflow 源码和测试尚未提交。
-- 当前任务：区分目标 RTT Overflow 与前端丢包；解析器清除 Overflow 前缓存上下文，GUI 显示目标端 Overflow 指标。
-- 状态：`systemview_overflow_root_cause_verified`
+- HEAD：`SystemView Runtime 统计按保留环形历史累计，Timeline 视口更新保留连续数据边界；Overflow 丢包边界不再伪造长任务区间。`
+- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 Runtime/Timeline 累计修复；尚未合并 master。`
+- 工作树：保留本地生产 gui/dist 构建产物；本轮 Runtime/Timeline 源码、测试和记忆待提交。
+- 当前任务：修复 SystemView Runtime 随可见窗口重算，以及 Timeline 随视口响应重置时间边界的问题。
+- 状态：`systemview_cumulative_runtime_verified`
 
 ## 里程碑
 
@@ -25,16 +25,16 @@
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。
 - **Overflow 处理**：确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。
+- **Runtime/Timeline 累计修复**：Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax 和任务元数据。GUI 56 文件/570 项测试、Vite 生产构建通过；Chrome + COM55 + HPM 真机 Runtime Idle 调度从 14,094 增长到 62,533、MTimer 从 14,092 增长到 62,507，Timeline 泳道高度保持 326px 且时间轴持续推进。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
-- **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
 
 ## 架构决策
 
 - 每个独立问题完成验证后单独提交并推送，方便按问题回退。
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。
-- SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms。前端只由一个 continuous 调度器绘制，按实际输出区间/事件数和实测绘制成本在 60/30/20 FPS 间自适应；Worker 可见范围请求只允许一个在途请求并合并后续最新范围，避免 HPM 高事件率积压。
+- SystemView Timeline 以最新事件为右边界连续滚动；Runtime/Context 统计基于 Worker 保留的完整 interval ring，只有环形缓存淘汰历史时才减少；visible-range 仅负责绘制候选，不得重置累计时间边界和任务泳道元数据。后端按约 30 FPS 交付且底层流读取最多等待 10 ms。前端只由一个 continuous 调度器绘制，按实际输出区间/事件数和实测绘制成本在 60/30/20 FPS 间自适应；Worker 可见范围请求只允许一个在途请求并合并后续最新范围，避免 HPM 高事件率积压。
 - 固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。
 - 自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。
 - GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。
@@ -56,7 +56,7 @@
 - 安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。
 - Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。
 - V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。
-- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；需要在探针固件中提高单次 RTT 搬运量、批量 drain 并确认 USB TX 队列吞吐，不能由前端补回已经丢失的事件。Chrome 新构建页面验证通过；独立 8775 服务因旧测试会话占用 COM55，未能在同一时刻重复启动硬件流。
+- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；需要在探针固件中提高单次 RTT 搬运量、批量 drain 并确认 USB TX 队列吞吐，不能由前端补回已经丢失的事件。Runtime/Timeline 累计修复已在 Chrome + COM55 + HPM 真机验证；目标 Overflow 仍属于吞吐限制。
 
 ## 延续协议
 

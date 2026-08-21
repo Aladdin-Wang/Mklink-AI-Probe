@@ -911,6 +911,33 @@ describe('StreamDecoder worker controller', () => {
       ]))
   })
 
+  it('keeps context statistics cumulative when the visible range moves', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 32, channelCount: 1 })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 4, systemViewRecords(
+        { kind: 4, taskId: 1, ticks: 10n, timeUs: 10 },
+        { kind: 5, taskId: 1, ticks: 20n, timeUs: 20 },
+        { kind: 4, taskId: 1, ticks: 30n, timeUs: 30 },
+        { kind: 5, taskId: 1, ticks: 40n, timeUs: 40 },
+      ), StreamType.SYSTEMVIEW),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+
+    decoder.handle({ type: 'visible-range', requestId: 1, start: 0, end: 25, pixelWidth: 200 })
+    const first = messages.at(-1)
+    decoder.handle({ type: 'visible-range', requestId: 2, start: 25, end: 50, pixelWidth: 200 })
+    const second = messages.at(-1)
+    if (first?.type !== 'systemview-visible' || second?.type !== 'systemview-visible') {
+      throw new Error('expected SystemView visible data')
+    }
+
+    const firstTask = first.contexts.find(context => context.type === 1 && context.id === 1)
+    const secondTask = second.contexts.find(context => context.type === 1 && context.id === 1)
+    expect(firstTask).toMatchObject({ count: 2, totalTicks: 20 })
+    expect(secondTask).toMatchObject({ count: 2, totalTicks: 20 })
+  })
+
   it('breaks interval pairing across a dropped batch and reset clears pending context', () => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })

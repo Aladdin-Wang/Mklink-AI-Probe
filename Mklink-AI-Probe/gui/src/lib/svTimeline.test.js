@@ -268,7 +268,7 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._acceptData).toHaveBeenCalledOnce()
     expect(timeline._acceptData).toHaveBeenLastCalledWith(
       [{ tid: 2, name: 'Idle', start: 300, end: 400 }],
-      { render: false },
+      { render: false, preserveDataRange: true },
     )
 
     timeline.follow = true
@@ -298,6 +298,33 @@ describe('SvTimeline continuous filtering', () => {
 
     expect(timeline.getViewRange()).toEqual({ start: 100, end: 200 })
     expect(timeline._draw).not.toHaveBeenCalled()
+  })
+
+  it('keeps accumulated data bounds when the live viewport advances', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      PALETTE: ['#1'],
+      hidden: new Set(),
+      follow: true,
+      windowSize: 100,
+      viewStart: null,
+      viewEnd: null,
+      _hadIntervals: false,
+      _explicitContexts: [],
+      _filterContinuous: intervals => intervals,
+      _layout: vi.fn(() => false),
+      _draw: vi.fn(),
+      _updateStatus: vi.fn(),
+      _taskOrder: [],
+      _taskMeta: new Map(),
+    })
+
+    timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 900, end: 950 }])
+    expect([timeline.tMin, timeline.tMax]).toEqual([900, 950])
+    timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 950, end: 1_000 }])
+
+    expect([timeline.tMin, timeline.tMax]).toEqual([900, 1_000])
+    expect(timeline._targetFollowRange()).toEqual({ start: 900, end: 1_000 })
   })
 
   it('positions an interval tooltip without throwing at the viewport edge', () => {
