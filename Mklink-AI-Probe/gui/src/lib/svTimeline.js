@@ -150,7 +150,10 @@ export class SvTimeline {
         this.viewStart = current.start;
         this.viewEnd = current.end;
         this._followTarget = target;
-        this._followTransitionAt = now;
+        // Keep an active transition alive. Resetting its clock for every
+        // incoming batch means a 25-30 FPS stream continually restarts the
+        // easing curve and never reaches a steady, smooth frame cadence.
+        if (this._followTransitionAt == null) this._followTransitionAt = now;
       }
     } else if (!preserveManualView) {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;

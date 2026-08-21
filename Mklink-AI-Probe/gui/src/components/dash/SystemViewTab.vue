@@ -846,6 +846,16 @@ watch(binaryStream.telemetry, telemetry => {
   renderScheduler?.invalidate('data')
 })
 
+// The first live frame can arrive after the scheduler's initial range request.
+// Before the decoder sees a SystemView record it answers that request with the
+// generic render-envelope shape. Release the request gate so the next frame
+// can ask again once SystemView mode is active.
+watch(binaryStream.envelope, envelope => {
+  if (!envelope || offlineMode.value || !visibleRequestInFlight) return
+  visibleRequestInFlight = false
+  renderScheduler?.invalidate('data')
+})
+
 watch(binaryStream.error, error => {
   if (error) runtimeError.value = `SystemView stream: ${error}`
 })
