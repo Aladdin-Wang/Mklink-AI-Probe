@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-20T23:43:53+08:00",
+  "updated_at": "2026-08-21T11:04:15+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "master 已快进包含通过最终门禁的 v0.1.7 修复、先楫淘宝入口、简短版本说明和交接预算。",
-    "remote_head": "origin/master 已同步测试分支；未创建 v0.1.7 标签或 Release。",
+    "branch": "fix/flash-read-dialog-defaults",
+    "head": "0b7461d 已修复读取弹窗默认地址与向上图标，并让读取数据回烧时显示真实烧录进度和日志。",
+    "remote_head": "origin/fix/flash-read-dialog-defaults 已同步 0b7461d；尚未合并 master。",
     "working_tree": "运行时代码已提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。"
   },
   "mission": {
@@ -14,15 +14,15 @@
     "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.7_merged_unreleased",
-    "current_task": "v0.1.7 修复已合并，远程固件资产可用；等待维护者另行授权正式发布。",
+    "status": "flash_read_progress_verified",
+    "current_task": "读取地址弹窗和读取数据直接回烧进度修复已完成自动化与 Chrome/V3 真机闭环，等待审查合并。",
     "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
     {
       "name": "v0.1.7 运行时",
       "status": "complete",
-      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成。"
+      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成；读取数据回烧现可显示真实字节进度并在完成后保持烧录状态。"
     },
     {
       "name": "桌面与 Web 一致性",
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "最终自动化门禁",
-      "result": "GUI 55 文件/547 项、Vite 生产构建、Rust 12 项与 cargo check 通过。Python 为 1319 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。"
+      "result": "GUI 55 文件/549 项和 Vite 生产构建通过。Python 为 1323 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。"
     },
     {
       "area": "安装包真机读写",
@@ -46,7 +46,7 @@
     },
     {
       "area": "桌面保存与界面修复",
-      "result": "维护者在覆盖安装版确认 SuperWatch CSV 与原始日志均可保存。组件回归覆盖连接错误关闭、在线读取后烧录、基地址窄窗布局、清空用户文件和读取向上箭头。"
+      "result": "Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。"
     },
     {
       "area": "实时调试",
@@ -81,7 +81,7 @@
     "高事件率 SystemView 仍可能溢出目标 RTT 缓冲。"
   ],
   "next_actions": [
-    "仅在维护者明确授权后创建 v0.1.7 标签、Release、签名资产并更新 latest.json/Gitee。",
+    "审查并合并 fix/flash-read-dialog-defaults；不要在未授权时创建 v0.1.7 标签或 Release。",
     "后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。"
   ],
   "continuation_protocol": [

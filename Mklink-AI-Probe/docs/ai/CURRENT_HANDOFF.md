@@ -4,25 +4,25 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-20T23:43:53+08:00`
-- 分支：`master`
-- HEAD：`master 已快进包含通过最终门禁的 v0.1.7 修复、先楫淘宝入口、简短版本说明和交接预算。`
-- 远端 HEAD：`origin/master 已同步测试分支；未创建 v0.1.7 标签或 Release。`
+- 更新时间：`2026-08-21T11:04:15+08:00`
+- 分支：`fix/flash-read-dialog-defaults`
+- HEAD：`0b7461d 已修复读取弹窗默认地址与向上图标，并让读取数据回烧时显示真实烧录进度和日志。`
+- 远端 HEAD：`origin/fix/flash-read-dialog-defaults 已同步 0b7461d；尚未合并 master。`
 - 工作树：运行时代码已提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。
-- 当前任务：v0.1.7 修复已合并，远程固件资产可用；等待维护者另行授权正式发布。
-- 状态：`v0.1.7_merged_unreleased`
+- 当前任务：读取地址弹窗和读取数据直接回烧进度修复已完成自动化与 Chrome/V3 真机闭环，等待审查合并。
+- 状态：`flash_read_progress_verified`
 
 ## 里程碑
 
-- **v0.1.7 运行时** — `complete`。首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成。
+- **v0.1.7 运行时** — `complete`。首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成；读取数据回烧现可显示真实字节进度并在完成后保持烧录状态。
 - **桌面与 Web 一致性** — `complete`。共享 Vue 前端和 FastAPI 能力；Tauri 使用内置 sidecar，客户端生命周期与端口互不干扰。
 - **固件分发** — `complete`。V3.3.7/V4.3.6 作为 v0.1.6 Release 资产托管，不提交 UF2 到 Git。
 
 ## 验证证据
 
-- **最终自动化门禁**：GUI 55 文件/547 项、Vite 生产构建、Rust 12 项与 cargo check 通过。Python 为 1319 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。
+- **最终自动化门禁**：GUI 55 文件/549 项和 Vite 生产构建通过。Python 为 1323 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
-- **桌面保存与界面修复**：维护者在覆盖安装版确认 SuperWatch CSV 与原始日志均可保存。组件回归覆盖连接错误关闭、在线读取后烧录、基地址窄窗布局、清空用户文件和读取向上箭头。
+- **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：真实 V3 数据流验证 RTOS Trace 持续滚动、缩放后实时刷新、泳道高度稳定；RTT 停止恢复与 CMD 残留命令清理均完成真机闭环。
 - **远程固件**：GitHub latest Release 可发现 V3.3.7/V4.3.6，远程下载大小与 SHA-256 均匹配本地。覆盖安装版连接真实 V3 后正确返回 current/latest V3.3.7 的 up_to_date，并主动断开。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
@@ -44,7 +44,7 @@
 
 ## 下一动作
 
-1. 仅在维护者明确授权后创建 v0.1.7 标签、Release、签名资产并更新 latest.json/Gitee。
+1. 审查并合并 fix/flash-read-dialog-defaults；不要在未授权时创建 v0.1.7 标签或 Release。
 2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
