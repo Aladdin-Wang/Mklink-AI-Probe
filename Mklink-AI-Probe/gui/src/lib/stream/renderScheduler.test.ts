@@ -86,6 +86,45 @@ describe('RenderScheduler', () => {
     expect(render).toHaveBeenCalledTimes(2)
   })
 
+  it('accepts a faster frame rate for dense live timelines', () => {
+    const clock = new FakeAnimationClock()
+    const render = vi.fn()
+    const scheduler = new RenderScheduler(render, clock.dependencies(), () => {}, { frameRate: 60 })
+    scheduler.start()
+    scheduler.invalidate('data')
+    clock.step(1)
+    scheduler.invalidate('data')
+    clock.step(16)
+    expect(render).toHaveBeenCalledTimes(1)
+    clock.step(1)
+    expect(render).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects invalid frame rates', () => {
+    const clock = new FakeAnimationClock()
+    expect(() => new RenderScheduler(() => {}, clock.dependencies(), () => {}, { frameRate: 0 }))
+      .toThrow('frameRate must be a positive finite number')
+  })
+
+  it('keeps a continuous scheduler alive and emits empty frames', () => {
+    const clock = new FakeAnimationClock()
+    const renders: ReadonlySet<RenderInvalidation>[] = []
+    const scheduler = new RenderScheduler(
+      reasons => renders.push(reasons),
+      clock.dependencies(),
+      () => {},
+      { frameRate: 60, continuous: true },
+    )
+    scheduler.start()
+    expect(clock.pendingFrames).toBe(1)
+    clock.step(17)
+    expect(renders).toHaveLength(1)
+    expect(renders[0].size).toBe(0)
+    expect(clock.pendingFrames).toBe(1)
+    scheduler.stop()
+    expect(clock.pendingFrames).toBe(0)
+  })
+
   it('pauses rendering while hidden and renders once after visibility returns', () => {
     const clock = new FakeAnimationClock()
     const render = vi.fn()

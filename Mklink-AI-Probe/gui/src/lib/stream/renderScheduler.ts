@@ -9,7 +9,11 @@ export interface RenderSchedulerDependencies {
   readonly removeVisibilityListener: (listener: () => void) => void
 }
 
-const FRAME_INTERVAL_MS = 1000 / 30
+export interface RenderSchedulerOptions {
+  readonly frameRate?: number
+  /** Keep an animation frame alive even when no invalidation is pending. */
+  readonly continuous?: boolean
+}
 
 function browserDependencies(): RenderSchedulerDependencies {
   return {
@@ -22,11 +26,13 @@ function browserDependencies(): RenderSchedulerDependencies {
   }
 }
 
-/** Coalesces all plot invalidations into at most one 30 FPS render loop. */
+/** Coalesces plot invalidations into a configurable render loop. */
 export class RenderScheduler {
   private readonly render: (reasons: ReadonlySet<RenderInvalidation>) => void
   private readonly dependencies: RenderSchedulerDependencies
   private readonly collectionTelemetry: (collectedItems: number) => void
+  private readonly frameIntervalMs: number
+  private readonly continuous: boolean
   private readonly dirty = new Set<RenderInvalidation>()
   private readonly visibilityListener = () => this.visibilityChanged()
   private frameId: number | null = null
@@ -39,10 +45,17 @@ export class RenderScheduler {
     render: (reasons: ReadonlySet<RenderInvalidation>) => void,
     dependencies: RenderSchedulerDependencies = browserDependencies(),
     collectionTelemetry: (collectedItems: number) => void = () => {},
+    options: RenderSchedulerOptions = {},
   ) {
     this.render = render
     this.dependencies = dependencies
     this.collectionTelemetry = collectionTelemetry
+    const frameRate = options.frameRate ?? 30
+    if (!Number.isFinite(frameRate) || frameRate <= 0) {
+      throw new RangeError('frameRate must be a positive finite number')
+    }
+    this.frameIntervalMs = 1000 / frameRate
+    this.continuous = options.continuous === true
     dependencies.addVisibilityListener(this.visibilityListener)
   }
 
@@ -88,7 +101,7 @@ export class RenderScheduler {
       !this.running
       || this.disposed
       || this.frameId !== null
-      || this.dirty.size === 0
+      || (!this.continuous && this.dirty.size === 0)
       || this.dependencies.isDocumentHidden()
     ) return
     const generation = this.generation
@@ -100,7 +113,7 @@ export class RenderScheduler {
     this.frameId = null
     if (this.dependencies.isDocumentHidden()) return
     const now = this.dependencies.now()
-    if (now - this.lastRender >= FRAME_INTERVAL_MS) {
+    if (now - this.lastRender >= this.frameIntervalMs) {
       const reasons = new Set(this.dirty)
       this.dirty.clear()
       this.lastRender = now

@@ -403,6 +403,30 @@ describe('SvTimeline continuous filtering', () => {
     expect(timeline._drawLive).toHaveBeenCalledTimes(2)
   })
 
+  it('interpolates the live view on animation frames', () => {
+    const timeline = Object.create(SvTimeline.prototype)
+    Object.assign(timeline, {
+      follow: true,
+      windowSize: 100,
+      viewStart: 0,
+      viewEnd: 100,
+      _followTarget: { start: 20, end: 120 },
+      _followTransitionAt: 0,
+      _renderPaused: false,
+      _draw: vi.fn(),
+    })
+
+    timeline.renderFrame(50)
+    expect(timeline.viewStart).toBeGreaterThan(0)
+    expect(timeline.viewStart).toBeLessThan(20)
+    expect(timeline.viewEnd).toBeGreaterThan(100)
+    expect(timeline._draw).toHaveBeenCalledOnce()
+
+    timeline.renderFrame(100)
+    expect([timeline.viewStart, timeline.viewEnd]).toEqual([20, 120])
+    expect(timeline._followTarget).toBeNull()
+  })
+
   it('pauses live rendering and resumes without changing follow mode', () => {
     const timeline = Object.create(SvTimeline.prototype)
     Object.assign(timeline, {

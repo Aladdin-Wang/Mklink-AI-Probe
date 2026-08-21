@@ -504,9 +504,14 @@ onMounted(() => {
       },
     )
   }
-  renderScheduler = new RenderScheduler(() => {
+  renderScheduler = new RenderScheduler((reasons) => {
+    // The timeline itself interpolates toward the newest follow range. Keep
+    // this repaint loop independent from worker delivery so the ruler moves
+    // every frame instead of jumping once per data batch.
+    tlInstance?.renderFrame()
+    if (!reasons.has('data') && !reasons.has('zoom') && !reasons.has('resize')) return
     if (offlineMode.value) {
-      tlInstance?.setData(tlGetIntervals())
+      if (reasons.has('data')) tlInstance?.setData(tlGetIntervals())
       return
     }
     const manualView = tlInstance && !tlInstance.follow ? tlInstance.getViewRange?.() : null
@@ -529,7 +534,7 @@ onMounted(() => {
       : followSpanUs
     const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
     binaryStream.requestVisibleRange(++visibleRequestId, start, end, tlCanvas.value?.clientWidth || 800)
-  })
+  }, undefined, undefined, { frameRate: 60, continuous: true })
   renderScheduler.start()
   reconnectRunningTrace(generation)
 })
@@ -866,7 +871,7 @@ watch(binaryStream.systemViewVisible, visible => {
   intervals.value = nextIntervals
   lastT = visible.latestTime * tickScale
   tlInstance?.setTickOrigin(binaryTickOrigin)
-  tlInstance?.setContexts?.(tlGetContexts())
+  tlInstance?.setContexts?.(tlGetContexts(), { render: false })
   tlInstance?.setPrefilteredIntervals(tlGetIntervals())
 
   const now = performance.now()

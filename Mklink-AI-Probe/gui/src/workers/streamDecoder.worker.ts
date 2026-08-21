@@ -1022,7 +1022,8 @@ export class StreamDecoder {
       values.push(safeTickDifference(clippedEnd, clippedStart))
       durations.set(key, values)
     }
-    for (let logical = 0; logical < intervalRing.length; logical++) {
+    const first = intervalRing.firstOverlappingIndex(rangeStart)
+    for (let logical = first; logical < intervalRing.length; logical++) {
       const start = intervalRing.startTickAt(logical)
       if (start > rangeEnd) break
       const end = intervalRing.endTickAt(logical)

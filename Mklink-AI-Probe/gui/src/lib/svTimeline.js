@@ -29,7 +29,8 @@ export function exactTickFromOffset(origin, offset) {
   return (origin + BigInt(Math.round(offset))).toString();
 }
 
-const FOLLOW_FRAME_INTERVAL_MS = 1000 / 30;
+const FOLLOW_FRAME_INTERVAL_MS = 1000 / 60;
+const FOLLOW_INTERPOLATION_MS = 100;
 
 export class SvTimeline {
   constructor(roots, data) {
@@ -66,6 +67,8 @@ export class SvTimeline {
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followSpan = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
     this._renderPaused = (data && data.renderPaused) === true;
     this.emptyText = (data && data.emptyText) || '窗口内无任务';
@@ -81,9 +84,9 @@ export class SvTimeline {
     this._acceptData(this._filterContinuous(intervals || []));
   }
 
-  setContexts(contexts) {
+  setContexts(contexts, options = {}) {
     this._explicitContexts = Array.isArray(contexts) ? contexts : [];
-    this._acceptData(this.intervals || []);
+    this._acceptData(this.intervals || [], options);
   }
 
   setLabels(labels) {
@@ -92,7 +95,7 @@ export class SvTimeline {
     this._updateStatus();
   }
 
-  _acceptData(intervals) {
+  _acceptData(intervals, options = {}) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
     this._hadIntervals = intervals.length > 0;
@@ -130,6 +133,19 @@ export class SvTimeline {
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;
+        this._followTarget = null;
+        this._followTransitionAt = null;
+      } else if (
+        Math.abs((this._followTarget?.start ?? this.viewStart) - target.start) > 0.001
+        || Math.abs((this._followTarget?.end ?? this.viewEnd) - target.end) > 0.001
+      ) {
+        // Capture the displayed frame and ease toward the newest range.
+        const now = performance.now();
+        const current = this._interpolatedFollowRange(now);
+        this.viewStart = current.start;
+        this.viewEnd = current.end;
+        this._followTarget = target;
+        this._followTransitionAt = now;
       }
     } else if (!preserveManualView) {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;
@@ -146,7 +162,9 @@ export class SvTimeline {
       }
     }
     const resized = this._layout();
-    const drew = shouldFollow ? this._drawLive(undefined, resized) : (this._draw(), true);
+    const drew = options.render === false
+      ? false
+      : shouldFollow ? this._drawLive(undefined, resized) : (this._draw(), true);
     if (drew) this._updateStatus();
   }
 
@@ -218,6 +236,8 @@ export class SvTimeline {
   setWindowSize(windowSize) {
     this.windowSize = Math.max(0, Number(windowSize) || 0);
     this.followSpan = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
@@ -228,7 +248,11 @@ export class SvTimeline {
 
   setFollowMode(enabled) {
     this.follow = !!enabled;
-    if (!this.follow) this.followSpan = null;
+    if (!this.follow) {
+      this.followSpan = null;
+      this._followTarget = null;
+      this._followTransitionAt = null;
+    }
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
@@ -244,6 +268,8 @@ export class SvTimeline {
     const target = this._targetFollowRange();
     this.viewStart = target.start;
     this.viewEnd = target.end;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.W && this.H) {
       this._draw();
       this._updateStatus();
@@ -257,6 +283,39 @@ export class SvTimeline {
       : Number.NEGATIVE_INFINITY;
     if (!force && timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
     this._lastLiveRender = timestamp;
+    this._draw();
+    return true;
+  }
+
+  _interpolatedFollowRange(timestamp) {
+    if (!this._followTarget || this._followTransitionAt == null
+      || !Number.isFinite(this.viewStart) || !Number.isFinite(this.viewEnd)) {
+      return { start: this.viewStart, end: this.viewEnd };
+    }
+    const progress = Math.min(1, Math.max(0,
+      (timestamp - this._followTransitionAt) / FOLLOW_INTERPOLATION_MS));
+    const ease = 1 - Math.pow(1 - progress, 3);
+    return {
+      start: this.viewStart + (this._followTarget.start - this.viewStart) * ease,
+      end: this.viewEnd + (this._followTarget.end - this.viewEnd) * ease,
+    };
+  }
+
+  /** Paint one live frame and advance the follow viewport toward its target. */
+  renderFrame(timestamp = performance.now()) {
+    if (this._renderPaused) return false;
+    if (this._followTarget) {
+      const next = this._interpolatedFollowRange(timestamp);
+      this.viewStart = next.start;
+      this.viewEnd = next.end;
+      if (this._followTransitionAt != null
+        && timestamp - this._followTransitionAt >= FOLLOW_INTERPOLATION_MS) {
+        this.viewStart = this._followTarget.start;
+        this.viewEnd = this._followTarget.end;
+        this._followTarget = null;
+        this._followTransitionAt = null;
+      }
+    }
     this._draw();
     return true;
   }
@@ -758,6 +817,8 @@ export class SvTimeline {
     this.markerPinned = false;
     this.markerTime = null;
     this.followSpan = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.windowSize > 0) {
       this.setFollowMode(true);
       return;
