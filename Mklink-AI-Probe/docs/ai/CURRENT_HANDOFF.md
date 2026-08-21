@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T11:34:34+08:00`
-- 分支：`fix/flash-read-dialog-defaults`
-- HEAD：`当前分支已完成固件自动升级失败后的最新版本提示、人工保存和 GitHub 到 Gitee 下载回退。`
-- 远端 HEAD：`origin/fix/flash-read-dialog-defaults 将同步本次固件人工下载兜底提交；尚未合并 master。`
-- 工作树：本问题运行时代码、测试和记忆纳入同一提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。
-- 当前任务：固件自动升级失败后会显示最新版本并提供另存 UF2；下载优先 GitHub，文件失败后惰性查询并切换 Gitee。
-- 状态：`firmware_manual_download_verified`
+- 更新时间：`2026-08-21T11:58:12+08:00`
+- 分支：`master`
+- HEAD：`master 已快进包含读取回烧进度、读取弹窗和固件人工下载兜底等已验证修复。`
+- 远端 HEAD：`origin/master 同步本次 v0.1.7 修复基线后，新的 Timeline 修复分支从该基线创建。`
+- 工作树：master 集成工作区仅更新项目记忆；维护者原工作区的固件、gui/dist、Cargo 和本地构建产物保持不动。
+- 当前任务：已审计并合并所有有效修复；下一问题在新分支复现 HPM FreeRTOS SystemView Timeline 卡顿。
+- 状态：`v017_fixes_merged`
 
 ## 里程碑
 
@@ -42,11 +42,11 @@
 
 - **probe**：维护机可使用 V2/V3/V4；交接不记录端口或完整设备标识。
 - **target**：STM32F103RC 测试工程可用于破坏性烧录闭环；HPM 与其他 ARM 板按任务选择。
-- **permission**：维护者授权推送当前修复分支、上传 V3.3.7/V4.3.6 固件资产并合并推送 master；未授权发布 v0.1.7、签名、打标签、更新 latest.json 或同步 Gitee。
+- **permission**：维护者已授权并要求合并已验证修复到 master，并从该基线创建新的 Timeline 修复分支；未授权发布 v0.1.7、签名、打标签、更新 latest.json 或同步 Gitee。
 
 ## 下一动作
 
-1. 审查并合并 fix/flash-read-dialog-defaults；维护者后续将同版本 UF2 同步到 Gitee Release 后复测真实回退，不在本任务中越权发布。
+1. 从更新后的 master 创建 fix/systemview-timeline-smooth-refresh，使用 HPM FreeRTOS SystemView 工程复现并修复 Timeline 卡顿。
 2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
