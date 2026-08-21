@@ -31,6 +31,9 @@ export function exactTickFromOffset(origin, offset) {
 
 const FOLLOW_FRAME_INTERVAL_MS = 1000 / 60;
 const FOLLOW_INTERPOLATION_MS = 100;
+const MIN_INTERVAL_LABEL_WIDTH = 34;
+const MIN_INTERVAL_STROKE_WIDTH = 2;
+const LABEL_WIDTH_CACHE_LIMIT = 512;
 
 export class SvTimeline {
   constructor(roots, data) {
@@ -70,6 +73,7 @@ export class SvTimeline {
     this._followTarget = null;
     this._followTransitionAt = null;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._labelWidthCache = new Map();
     this._renderPaused = (data && data.renderPaused) === true;
     this.emptyText = (data && data.emptyText) || '窗口内无任务';
     this.setData((data && data.intervals) || []);
@@ -101,10 +105,13 @@ export class SvTimeline {
     this._hadIntervals = intervals.length > 0;
     this.intervals = intervals;
     const run = new Map(), names = new Map(), types = new Map();
+    let tMin = Infinity, tMax = -Infinity;
     for (const it of this.intervals) {
       run.set(it.tid, (run.get(it.tid) || 0) + (it.end - it.start));
       names.set(it.tid, it.name);
       if (it.type) types.set(it.tid, it.type);
+      if (it.start < tMin) tMin = it.start;
+      if (it.end > tMax) tMax = it.end;
     }
     for (const context of (this._explicitContexts || [])) {
       if (!context || !Number.isFinite(context.tid)) continue;
@@ -116,8 +123,8 @@ export class SvTimeline {
     this.taskOf = new Map(this.tasks.map(t => [t.tid, t]));
     // 时间范围
     if (this.intervals.length) {
-      this.tMin = Math.min(...this.intervals.map(i => i.start));
-      this.tMax = Math.max(...this.intervals.map(i => i.end));
+      this.tMin = tMin;
+      this.tMax = tMax;
     } else { this.tMin = 0; this.tMax = 1; }
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
@@ -173,7 +180,9 @@ export class SvTimeline {
     // but the intervals inside that frame must continue to repaint as new
     // samples arrive. The caller requests the current view range from the
     // worker, so accepting every frame does not pull the view back to "now".
-    this._acceptData(intervals || []);
+    // The continuous render scheduler owns the live paint cadence. Painting
+    // here as well doubles the frame load whenever a worker response arrives.
+    this._acceptData(intervals || [], { render: false });
   }
 
   getViewRange() {
@@ -332,6 +341,7 @@ export class SvTimeline {
 
   _layout() {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
+    this.laneIndexByTid = new Map(this.lanes.map((task, index) => [task.tid, index]));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
     if (this.lanes.length > this.laneCapacity) this.laneCapacity = this.lanes.length;
@@ -491,10 +501,18 @@ export class SvTimeline {
   }
 
   _labelWidth(text) {
+    if (!this._labelWidthCache) this._labelWidthCache = new Map();
+    const cached = this._labelWidthCache.get(text);
+    if (cached !== undefined) return cached;
+    let width;
     if (this.ctx && typeof this.ctx.measureText === 'function') {
-      return this.ctx.measureText(text).width;
+      width = this.ctx.measureText(text).width;
+    } else {
+      width = String(text).length * 7;
     }
-    return String(text).length * 7;
+    if (this._labelWidthCache.size >= LABEL_WIDTH_CACHE_LIMIT) this._labelWidthCache.clear();
+    this._labelWidthCache.set(text, width);
+    return width;
   }
 
   _draw() {
@@ -518,8 +536,10 @@ export class SvTimeline {
     for (const it of this.intervals) {
       const task = this.taskOf.get(it.tid);
       if (!task || this.hidden.has(it.tid)) continue;
-      const laneIdx = this.lanes.indexOf(task);
-      if (laneIdx < 0) continue;
+      const laneIdx = this.laneIndexByTid
+        ? this.laneIndexByTid.get(it.tid)
+        : this.lanes.indexOf(task);
+      if (laneIdx === undefined || laneIdx < 0) continue;
       if (it.end < this.viewStart || it.start > this.viewEnd) continue;
       const x0 = Math.max(this._t2x(it.start), this.plotX0);
       const x1 = Math.min(this._t2x(it.end), this.plotX1);
@@ -529,24 +549,30 @@ export class SvTimeline {
       ctx.fillStyle = task.type === 'Scheduler' ? '#eef0f3'
         : task.type === 'Idle' ? '#f7f8fa' : task.color;
       ctx.fillRect(x0, y, w, h);
-      ctx.strokeStyle = task.type === 'Scheduler' || task.type === 'Idle'
-        ? '#969da6' : 'rgba(31, 41, 55, 0.32)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(w - 1, 0.8), Math.max(h - 1, 1));
-      const durationLabel = this._fmtIntervalLabel(it);
-      ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
-      const labelWidth = this._labelWidth(durationLabel);
-      if (w >= labelWidth + 10) {
-        ctx.fillStyle = task.type === 'Scheduler' || task.type === 'Idle' ? '#4b535d' : '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(durationLabel, x0 + w / 2, y + h / 2 + 0.5);
+      if (w >= MIN_INTERVAL_STROKE_WIDTH) {
+        ctx.strokeStyle = task.type === 'Scheduler' || task.type === 'Idle'
+          ? '#969da6' : 'rgba(31, 41, 55, 0.32)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(w - 1, 0.8), Math.max(h - 1, 1));
+      }
+      if (w >= MIN_INTERVAL_LABEL_WIDTH) {
+        const durationLabel = this._fmtIntervalLabel(it);
+        ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
+        const labelWidth = this._labelWidth(durationLabel);
+        if (w >= labelWidth + 10) {
+          ctx.fillStyle = task.type === 'Scheduler' || task.type === 'Idle' ? '#4b535d' : '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(durationLabel, x0 + w / 2, y + h / 2 + 0.5);
+        }
       }
     }
     if (this.hover) {
       const task = this.taskOf.get(this.hover.tid);
-      const laneIdx = this.lanes.indexOf(task);
-      if (laneIdx >= 0) {
+      const laneIdx = this.laneIndexByTid
+        ? this.laneIndexByTid.get(task?.tid)
+        : this.lanes.indexOf(task);
+      if (laneIdx !== undefined && laneIdx >= 0) {
         const x0 = Math.max(this._t2x(this.hover.start), this.plotX0);
         const x1 = Math.min(this._t2x(this.hover.end), this.plotX1);
         const y = this.rulerH + laneIdx * this.laneH + 2;

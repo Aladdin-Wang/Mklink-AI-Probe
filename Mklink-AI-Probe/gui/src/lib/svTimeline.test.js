@@ -129,11 +129,12 @@ describe('SvTimeline continuous filtering', () => {
   it('draws subpixel task intervals instead of leaving a busy timeline blank', () => {
     const timeline = Object.create(SvTimeline.prototype)
     const fillRect = vi.fn()
+    const strokeRect = vi.fn()
     const task = { tid: 1, name: 'main', type: 'Task', color: '#123456' }
     Object.assign(timeline, {
       _renderPaused: false,
       ctx: {
-        clearRect: vi.fn(), fillRect, strokeRect: vi.fn(), fillText: vi.fn(),
+        clearRect: vi.fn(), fillRect, strokeRect, fillText: vi.fn(),
         setLineDash: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
         stroke: vi.fn(), closePath: vi.fn(),
       },
@@ -149,6 +150,9 @@ describe('SvTimeline continuous filtering', () => {
     timeline._draw()
 
     expect(fillRect).toHaveBeenCalledWith(140, 45, 0.8, 22)
+    expect(strokeRect).not.toHaveBeenCalled()
+    expect(timeline._fmtIntervalLabel).not.toHaveBeenCalled()
+    expect(timeline._labelWidth).not.toHaveBeenCalled()
   })
 
   it('zooms with a modified wheel event over the plot and then pans by dragging', () => {
@@ -262,6 +266,10 @@ describe('SvTimeline continuous filtering', () => {
 
     timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
     expect(timeline._acceptData).toHaveBeenCalledOnce()
+    expect(timeline._acceptData).toHaveBeenLastCalledWith(
+      [{ tid: 2, name: 'Idle', start: 300, end: 400 }],
+      { render: false },
+    )
 
     timeline.follow = true
     timeline.setPrefilteredIntervals([{ tid: 2, name: 'Idle', start: 300, end: 400 }])
@@ -289,7 +297,7 @@ describe('SvTimeline continuous filtering', () => {
     timeline.setPrefilteredIntervals([{ tid: 1, name: 'main', start: 150, end: 180 }])
 
     expect(timeline.getViewRange()).toEqual({ start: 100, end: 200 })
-    expect(timeline._draw).toHaveBeenCalled()
+    expect(timeline._draw).not.toHaveBeenCalled()
   })
 
   it('positions an interval tooltip without throwing at the viewport edge', () => {

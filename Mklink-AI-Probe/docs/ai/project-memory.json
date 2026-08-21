@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-21T12:37:19+08:00",
+  "updated_at": "2026-08-21T15:16:46+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/systemview-timeline-smooth-refresh",
-    "head": "SystemView 后端保持约 30 FPS 交付；前端时间轴使用可调 60 FPS 连续渲染和平滑跟随，已移除旧的立即跳转条件。",
-    "remote_head": "origin/fix/systemview-timeline-smooth-refresh 将同步本轮 Timeline 立即跳转遗漏修复；尚未合并 master。",
+    "head": "SystemView Timeline 使用单一连续绘制循环和平滑跟随；渲染器按可见数据密度与实测绘制成本在 60/30/20 FPS 间自适应。",
+    "remote_head": "origin/fix/systemview-timeline-smooth-refresh 同步本轮 Timeline 自适应流畅刷新修复；尚未合并 master。",
     "working_tree": "仅保留 SystemView 前后端节奏源码、回归测试和项目记忆；生产 gui/dist、固件和本地测试前置均不纳入提交。"
   },
   "mission": {
@@ -14,8 +14,8 @@
     "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "systemview_follow_jump_fixed",
-    "current_task": "修复 Timeline 遗留的立即窗口跳转；新数据只更新跟随目标，由 60 FPS 连续帧推进显示范围。",
+    "status": "systemview_timeline_adaptive_refresh_verified",
+    "current_task": "SystemView Timeline 流畅刷新已完成源码、自动化和 Chrome 真机闭环，等待维护者复测及合并。",
     "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "最终自动化门禁",
-      "result": "本轮 Timeline、调度器和环形缓冲聚焦测试 33 项通过；此前 GUI 56 文件/558 项和 Vite 生产构建通过，Python 基线门禁未受影响。"
+      "result": "Timeline/调度器/页面聚焦测试 51 项通过；GUI 56 文件/563 项和 Vite 生产构建通过。Python 1328 项通过、1 项跳过；仅 12 项因当前 Windows 账户无目录 symlink 权限失败，junction 分支通过。"
     },
     {
       "area": "安装包真机读写",
@@ -50,7 +50,7 @@
     },
     {
       "area": "实时调试",
-      "result": "Chrome 5173 复测发现上一版仍有立即跳转；修复后页面源码已确认删除旧条件，真实截图中显示范围由帧循环推进，事件表折叠后泳道高度稳定。需维护者继续观察主观流畅度。"
+      "result": "Chrome 连接真实 HPM FreeRTOS SystemView：优化前同区域截图响应均值约 166 ms，单绘制循环后约 111 ms；高密度 10 秒窗口自动选择 30 FPS，Canvas 单帧约 0.7 ms，边界修复后实测约 29.5 FPS。最终无诊断代码重连后事件持续增长，连续 12 帧画面均变化，控制台无警告或错误。"
     },
     {
       "area": "远程固件",
@@ -69,7 +69,7 @@
     "每个独立问题完成验证后单独提交并推送，方便按问题回退。",
     "HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
     "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。",
-    "SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms，前端 RenderScheduler 帧率可配置，RTOS Trace 默认 60 FPS continuous，时间轴用 100 ms ease 插值；新数据只更新跟随目标，不能直接覆盖显示范围，泳道容量只增不减；拖拽才退出跟随。",
+    "SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms。前端只由一个 continuous 调度器绘制，按可见事件密度和实测绘制成本在 60/30/20 FPS 间自适应，升档延迟 2 秒避免振荡；新数据只更新跟随目标，不能同步重绘或直接覆盖显示范围。",
     "固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。",
     "自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。",
     "GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。"

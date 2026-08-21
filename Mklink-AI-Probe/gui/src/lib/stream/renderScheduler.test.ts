@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RenderScheduler, type RenderInvalidation } from './renderScheduler'
+import {
+  AdaptiveFrameRateController,
+  RenderScheduler,
+  type RenderInvalidation,
+} from './renderScheduler'
 
 class FakeAnimationClock {
   now = 0
@@ -100,10 +104,47 @@ describe('RenderScheduler', () => {
     expect(render).toHaveBeenCalledTimes(2)
   })
 
+  it('renders on the second 60 Hz frame when its timestamp is just before 33.333 ms', () => {
+    const clock = new FakeAnimationClock()
+    const render = vi.fn()
+    const scheduler = new RenderScheduler(
+      render,
+      clock.dependencies(),
+      () => {},
+      { frameRate: 30, continuous: true },
+    )
+    scheduler.start()
+
+    clock.step(16.6)
+    clock.step(16.6)
+    clock.step(16.6)
+
+    expect(render).toHaveBeenCalledTimes(2)
+  })
+
   it('rejects invalid frame rates', () => {
     const clock = new FakeAnimationClock()
     expect(() => new RenderScheduler(() => {}, clock.dependencies(), () => {}, { frameRate: 0 }))
       .toThrow('frameRate must be a positive finite number')
+  })
+
+  it('changes the active frame rate without rebuilding the scheduler', () => {
+    const clock = new FakeAnimationClock()
+    const render = vi.fn()
+    const scheduler = new RenderScheduler(
+      render,
+      clock.dependencies(),
+      () => {},
+      { frameRate: 60, continuous: true },
+    )
+    scheduler.start()
+    clock.step(1)
+    scheduler.setFrameRate(30)
+    clock.step(17)
+    expect(render).toHaveBeenCalledTimes(1)
+    clock.step(16)
+    expect(render).toHaveBeenCalledTimes(2)
+    expect(() => scheduler.setFrameRate(0)).toThrow('frameRate must be a positive finite number')
   })
 
   it('keeps a continuous scheduler alive and emits empty frames', () => {
@@ -171,5 +212,31 @@ describe('RenderScheduler', () => {
     scheduler.start()
     clock.step(100)
     expect(render).not.toHaveBeenCalled()
+  })
+})
+
+describe('AdaptiveFrameRateController', () => {
+  it('keeps 60 FPS for sparse visible data', () => {
+    const controller = new AdaptiveFrameRateController()
+    expect(controller.observe({ now: 0, renderCostMs: 1, visibleItems: 200, pixelWidth: 1_000 }))
+      .toBe(60)
+  })
+
+  it('drops dense subpixel data to 30 FPS and restores 60 FPS after a stable sparse view', () => {
+    const controller = new AdaptiveFrameRateController()
+    expect(controller.observe({ now: 0, renderCostMs: 1, visibleItems: 1_200, pixelWidth: 1_000 }))
+      .toBe(30)
+    expect(controller.observe({ now: 1_000, renderCostMs: 1, visibleItems: 300, pixelWidth: 1_000 }))
+      .toBe(30)
+    expect(controller.observe({ now: 3_001, renderCostMs: 1, visibleItems: 300, pixelWidth: 1_000 }))
+      .toBe(60)
+  })
+
+  it('drops to 20 FPS when painting remains too expensive', () => {
+    const controller = new AdaptiveFrameRateController()
+    expect(controller.observe({ now: 0, renderCostMs: 6, visibleItems: 200, pixelWidth: 1_000 }))
+      .toBe(30)
+    expect(controller.observe({ now: 20, renderCostMs: 40, visibleItems: 200, pixelWidth: 1_000 }))
+      .toBe(20)
   })
 })

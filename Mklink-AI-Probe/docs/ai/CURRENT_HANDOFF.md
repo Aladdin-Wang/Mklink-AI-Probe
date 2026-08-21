@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T12:37:19+08:00`
+- 更新时间：`2026-08-21T15:16:46+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
-- HEAD：`SystemView 后端保持约 30 FPS 交付；前端时间轴使用可调 60 FPS 连续渲染和平滑跟随，已移除旧的立即跳转条件。`
-- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 将同步本轮 Timeline 立即跳转遗漏修复；尚未合并 master。`
+- HEAD：`SystemView Timeline 使用单一连续绘制循环和平滑跟随；渲染器按可见数据密度与实测绘制成本在 60/30/20 FPS 间自适应。`
+- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 同步本轮 Timeline 自适应流畅刷新修复；尚未合并 master。`
 - 工作树：仅保留 SystemView 前后端节奏源码、回归测试和项目记忆；生产 gui/dist、固件和本地测试前置均不纳入提交。
-- 当前任务：修复 Timeline 遗留的立即窗口跳转；新数据只更新跟随目标，由 60 FPS 连续帧推进显示范围。
-- 状态：`systemview_follow_jump_fixed`
+- 当前任务：SystemView Timeline 流畅刷新已完成源码、自动化和 Chrome 真机闭环，等待维护者复测及合并。
+- 状态：`systemview_timeline_adaptive_refresh_verified`
 
 ## 里程碑
 
@@ -20,10 +20,10 @@
 
 ## 验证证据
 
-- **最终自动化门禁**：本轮 Timeline、调度器和环形缓冲聚焦测试 33 项通过；此前 GUI 56 文件/558 项和 Vite 生产构建通过，Python 基线门禁未受影响。
+- **最终自动化门禁**：Timeline/调度器/页面聚焦测试 51 项通过；GUI 56 文件/563 项和 Vite 生产构建通过。Python 1328 项通过、1 项跳过；仅 12 项因当前 Windows 账户无目录 symlink 权限失败，junction 分支通过。
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
-- **实时调试**：Chrome 5173 复测发现上一版仍有立即跳转；修复后页面源码已确认删除旧条件，真实截图中显示范围由帧循环推进，事件表折叠后泳道高度稳定。需维护者继续观察主观流畅度。
+- **实时调试**：Chrome 连接真实 HPM FreeRTOS SystemView：优化前同区域截图响应均值约 166 ms，单绘制循环后约 111 ms；高密度 10 秒窗口自动选择 30 FPS，Canvas 单帧约 0.7 ms，边界修复后实测约 29.5 FPS。最终无诊断代码重连后事件持续增长，连续 12 帧画面均变化，控制台无警告或错误。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
@@ -33,7 +33,7 @@
 - 每个独立问题完成验证后单独提交并推送，方便按问题回退。
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。
-- SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms，前端 RenderScheduler 帧率可配置，RTOS Trace 默认 60 FPS continuous，时间轴用 100 ms ease 插值；新数据只更新跟随目标，不能直接覆盖显示范围，泳道容量只增不减；拖拽才退出跟随。
+- SystemView Timeline 以最新事件为右边界连续滚动；后端按约 30 FPS 交付且底层流读取最多等待 10 ms。前端只由一个 continuous 调度器绘制，按可见事件密度和实测绘制成本在 60/30/20 FPS 间自适应，升档延迟 2 秒避免振荡；新数据只更新跟随目标，不能同步重绘或直接覆盖显示范围。
 - 固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。
 - 自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。
 - GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。

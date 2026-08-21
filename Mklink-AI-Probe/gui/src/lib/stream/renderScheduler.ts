@@ -15,6 +15,82 @@ export interface RenderSchedulerOptions {
   readonly continuous?: boolean
 }
 
+export interface AdaptiveFrameRateSample {
+  readonly now: number
+  readonly renderCostMs: number
+  readonly visibleItems: number
+  readonly pixelWidth: number
+}
+
+// Browser rAF timestamps can land a few tenths of a millisecond before the
+// nominal 30 FPS boundary (for example 33.2 ms instead of 33.333 ms). Without
+// a small tolerance the scheduler waits for a third 60 Hz frame and produces
+// a visible 33/50 ms cadence.
+const FRAME_BOUNDARY_TOLERANCE_MS = 0.5
+const FRAME_RATE_UPSHIFT_DELAY_MS = 2_000
+
+/**
+ * Chooses a live plot rate from visible data density and measured paint cost.
+ * Dense subpixel data gains no detail at 60 FPS, while sparse/zoomed views do.
+ * Downshifts are immediate; upshifts wait so the rate does not oscillate.
+ */
+export class AdaptiveFrameRateController {
+  private currentRate = 60
+  private renderCostEwma: number | null = null
+  private pendingUpshift: number | null = null
+  private pendingUpshiftAt = 0
+
+  observe(sample: AdaptiveFrameRateSample): number {
+    const cost = Number.isFinite(sample.renderCostMs) ? Math.max(0, sample.renderCostMs) : 0
+    this.renderCostEwma = this.renderCostEwma === null
+      ? cost
+      : this.renderCostEwma * 0.85 + cost * 0.15
+    const pixelWidth = Number.isFinite(sample.pixelWidth) && sample.pixelWidth > 0
+      ? sample.pixelWidth
+      : 1
+    const visibleItems = Number.isFinite(sample.visibleItems)
+      ? Math.max(0, sample.visibleItems)
+      : 0
+    const density = visibleItems / pixelWidth
+    const desired = this.desiredRate(density, this.renderCostEwma)
+
+    if (desired < this.currentRate) {
+      this.currentRate = desired
+      this.pendingUpshift = null
+      return this.currentRate
+    }
+    if (desired === this.currentRate) {
+      this.pendingUpshift = null
+      return this.currentRate
+    }
+    if (this.pendingUpshift !== desired) {
+      this.pendingUpshift = desired
+      this.pendingUpshiftAt = sample.now
+      return this.currentRate
+    }
+    if (sample.now - this.pendingUpshiftAt >= FRAME_RATE_UPSHIFT_DELAY_MS) {
+      this.currentRate = desired
+      this.pendingUpshift = null
+    }
+    return this.currentRate
+  }
+
+  private desiredRate(density: number, renderCostMs: number): number {
+    if (this.currentRate === 60) {
+      if (renderCostMs >= 10) return 20
+      if (density >= 1 || renderCostMs >= 5) return 30
+      return 60
+    }
+    if (this.currentRate === 30) {
+      if (renderCostMs >= 10) return 20
+      if (density <= 0.65 && renderCostMs <= 4) return 60
+      return 30
+    }
+    if (renderCostMs <= 7) return 30
+    return 20
+  }
+}
+
 function browserDependencies(): RenderSchedulerDependencies {
   return {
     now: () => performance.now(),
@@ -31,7 +107,7 @@ export class RenderScheduler {
   private readonly render: (reasons: ReadonlySet<RenderInvalidation>) => void
   private readonly dependencies: RenderSchedulerDependencies
   private readonly collectionTelemetry: (collectedItems: number) => void
-  private readonly frameIntervalMs: number
+  private frameIntervalMs: number
   private readonly continuous: boolean
   private readonly dirty = new Set<RenderInvalidation>()
   private readonly visibilityListener = () => this.visibilityChanged()
@@ -90,6 +166,13 @@ export class RenderScheduler {
     this.scheduleIfNeeded()
   }
 
+  setFrameRate(frameRate: number): void {
+    if (!Number.isFinite(frameRate) || frameRate <= 0) {
+      throw new RangeError('frameRate must be a positive finite number')
+    }
+    this.frameIntervalMs = 1000 / frameRate
+  }
+
   /** Acquisition accounting is immediate and remains active while hidden. */
   recordCollection(collectedItems: number): void {
     if (this.disposed) return
@@ -113,7 +196,7 @@ export class RenderScheduler {
     this.frameId = null
     if (this.dependencies.isDocumentHidden()) return
     const now = this.dependencies.now()
-    if (now - this.lastRender >= this.frameIntervalMs) {
+    if (now - this.lastRender >= this.frameIntervalMs - FRAME_BOUNDARY_TOLERANCE_MS) {
       const reasons = new Set(this.dirty)
       this.dirty.clear()
       this.lastRender = now

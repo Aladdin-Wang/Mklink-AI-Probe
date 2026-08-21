@@ -293,7 +293,7 @@ import {
   type DesktopSettings,
 } from '../../lib/desktopSettings'
 import { SvTimeline } from '../../lib/svTimeline'
-import { RenderScheduler } from '../../lib/stream/renderScheduler'
+import { AdaptiveFrameRateController, RenderScheduler } from '../../lib/stream/renderScheduler'
 import { appendManyToLast } from '../../lib/boundedBuffer'
 import { takeNewStreamPoints } from '../../lib/streamCursor'
 import { ingestSystemViewIntervals, type SystemViewIntervalState } from '../../lib/systemViewIntervals'
@@ -459,6 +459,8 @@ const tlTip = ref<HTMLDivElement | null>(null)
 const tlLegend = ref<HTMLDivElement | null>(null)
 let tlInstance: SvTimeline | null = null
 let renderScheduler: RenderScheduler | null = null
+const timelineFrameRate = new AdaptiveFrameRateController()
+let timelineVisibleItemCount = 0
 let visibleRequestId = 0
 let latestBinaryTime: number | null = null
 let binaryTickOrigin = 0n
@@ -508,7 +510,15 @@ onMounted(() => {
     // The timeline itself interpolates toward the newest follow range. Keep
     // this repaint loop independent from worker delivery so the ruler moves
     // every frame instead of jumping once per data batch.
-    tlInstance?.renderFrame()
+    const renderStarted = performance.now()
+    tlInstance?.renderFrame(renderStarted)
+    const nextFrameRate = timelineFrameRate.observe({
+      now: renderStarted,
+      renderCostMs: performance.now() - renderStarted,
+      visibleItems: timelineVisibleItemCount,
+      pixelWidth: tlCanvas.value?.clientWidth || 800,
+    })
+    renderScheduler?.setFrameRate(nextFrameRate)
     if (!reasons.has('data') && !reasons.has('zoom') && !reasons.has('resize')) return
     if (offlineMode.value) {
       if (reasons.has('data')) tlInstance?.setData(tlGetIntervals())
@@ -822,6 +832,11 @@ watch(binaryStream.telemetry, telemetry => {
 watch(binaryStream.systemViewVisible, visible => {
   if (!visible || renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
   latestBinaryTime = visible.latestTime
+  timelineVisibleItemCount = Math.max(
+    visible.intervalCount,
+    visible.candidateIntervalCount,
+    visible.eventCount,
+  )
   binaryTickOrigin = visible.tickOrigin
   const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
   const taskIds = new Uint32Array(visible.taskIds)

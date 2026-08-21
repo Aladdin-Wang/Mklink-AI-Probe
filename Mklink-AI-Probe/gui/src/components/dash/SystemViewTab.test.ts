@@ -37,7 +37,7 @@ const mocks = vi.hoisted(() => ({
   checkConflict: vi.fn(),
   scheduler: {
     start: vi.fn(), stop: vi.fn(), invalidate: vi.fn(),
-    recordCollection: vi.fn(), dispose: vi.fn(),
+    recordCollection: vi.fn(), setFrameRate: vi.fn(), dispose: vi.fn(),
   },
   timeline: {
     construct: vi.fn(),
@@ -71,11 +71,15 @@ vi.mock('../../lib/svTimeline', () => ({
   },
 }))
 vi.mock('../../lib/stream/renderScheduler', () => ({
+  AdaptiveFrameRateController: class {
+    observe() { return 60 }
+  },
   RenderScheduler: class {
     start = mocks.scheduler.start
     stop = mocks.scheduler.stop
     invalidate = mocks.scheduler.invalidate
     recordCollection = mocks.scheduler.recordCollection
+    setFrameRate = mocks.scheduler.setFrameRate
     dispose = mocks.scheduler.dispose
   },
 }))
