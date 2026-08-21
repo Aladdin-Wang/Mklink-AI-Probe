@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => {
       parseAxf: vi.fn(),
       uploadFileSource: vi.fn(),
       probeFirmwareCheck: vi.fn(),
+      upgradeProbeFirmware: vi.fn(),
+      downloadProbeFirmware: vi.fn(),
     },
     wsConnect: vi.fn(),
     wsDisconnect: vi.fn(),
@@ -34,6 +36,7 @@ const mocks = vi.hoisted(() => {
     pickSymbolFile: vi.fn(),
     pickMapFile: vi.fn(),
     refreshSymbolCatalog: vi.fn(),
+    saveBlobFile: vi.fn(),
   }
 })
 
@@ -62,6 +65,10 @@ vi.mock('../lib/desktopSettings', async importOriginal => ({
 vi.mock('../lib/filePicker', () => ({
   pickSymbolFile: mocks.pickSymbolFile,
   pickMapFile: mocks.pickMapFile,
+}))
+
+vi.mock('../lib/downloadTextFile', () => ({
+  saveBlobFile: mocks.saveBlobFile,
 }))
 
 vi.mock('../composables/useSymbolCatalog', () => ({
@@ -110,6 +117,14 @@ describe('ConfigView', () => {
     mocks.api.uploadFileSource.mockResolvedValue({ path: '' })
     mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
+    mocks.api.upgradeProbeFirmware.mockResolvedValue({ status: 'up_to_date' })
+    mocks.api.downloadProbeFirmware.mockResolvedValue({
+      blob: new Blob(['uf2']),
+      filename: 'MicroLink_V3.3.7.uf2',
+      version: 'V3.3.7',
+      source: 'github',
+    })
+    mocks.saveBlobFile.mockResolvedValue(true)
     mocks.loadDesktopSettings.mockReturnValue({
       version: 1,
       symbolPath: 'C:\\saved\\app.axf',
@@ -122,6 +137,7 @@ describe('ConfigView', () => {
     mocks.pickSymbolFile.mockResolvedValue(null)
     mocks.pickMapFile.mockResolvedValue(null)
     vi.spyOn(window, 'open').mockImplementation(() => null)
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
   })
 
   it('renders one five-section workspace with Local Device selected by default', async () => {
@@ -522,5 +538,40 @@ describe('ConfigView', () => {
     const wrapper = await mountView()
 
     expect(wrapper.get('[data-testid="firmware-warning"]').text()).toContain('探针固件需要升级')
+  })
+
+  it('shows the latest version and saves firmware after automatic update fails', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'running' })
+    mocks.api.upgradeProbeFirmware.mockResolvedValueOnce({
+      status: 'manual_required',
+      current_version: 'V3.3.6',
+      latest_version: 'V3.3.7',
+      firmware: 'MicroLink_V3.3.7.uf2',
+      model: 'V3',
+      download_available: true,
+      message: '未检测到 Bootloader U 盘',
+    })
+    const blob = new Blob(['release-uf2'], { type: 'application/octet-stream' })
+    mocks.api.downloadProbeFirmware.mockResolvedValueOnce({
+      blob,
+      filename: 'MicroLink_V3.3.7.uf2',
+      version: 'V3.3.7',
+      source: 'gitee',
+    })
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-testid="config-section-firmware"]').trigger('click')
+    await wrapper.get('[data-testid="upgrade-firmware"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="manual-firmware-download"]').text()).toContain('最新固件：V3.3.7')
+    expect(wrapper.get('[data-testid="firmware-upgrade-status"]').text()).toContain('未检测到 Bootloader U 盘')
+
+    await wrapper.get('[data-testid="download-firmware"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V3')
+    expect(mocks.saveBlobFile).toHaveBeenCalledWith('MicroLink_V3.3.7.uf2', blob)
+    expect(wrapper.get('[data-testid="firmware-download-status"]').text()).toContain('Gitee')
   })
 })

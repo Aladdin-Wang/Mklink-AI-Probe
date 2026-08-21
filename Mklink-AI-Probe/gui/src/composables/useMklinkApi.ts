@@ -12,6 +12,7 @@ import type {
   FlashRequest,
   ProjectHistory,
   ProbeFirmwareCheck,
+  ProbeFirmwareDownload,
   ProbeFirmwareUpgrade,
   RttFindResponse,
   RttWriteResponse,
@@ -124,6 +125,20 @@ export function useMklinkApi() {
       // must be JSON true/false rather than an object wrapper.
       body: JSON.stringify(confirm),
     })
+  }
+
+  async function downloadProbeFirmware(model: 'V3' | 'V4'): Promise<ProbeFirmwareDownload> {
+    const res = await fetch(`${API_BASE}/api/probe/firmware-download?model=${encodeURIComponent(model)}`)
+    if (!res.ok) {
+      const error = await res.json().catch(() => null)
+      throw new Error(typeof error?.detail === 'string' ? error.detail : res.statusText)
+    }
+    return {
+      blob: await res.blob(),
+      filename: res.headers.get('X-MKLink-Firmware-Name') || `MicroLink_${model}.uf2`,
+      version: res.headers.get('X-MKLink-Firmware-Version') || '',
+      source: (res.headers.get('X-MKLink-Firmware-Source') || 'github') as ProbeFirmwareDownload['source'],
+    }
   }
 
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
@@ -299,6 +314,7 @@ export function useMklinkApi() {
     getMicrokeenInfo,
     probeFirmwareCheck,
     upgradeProbeFirmware,
+    downloadProbeFirmware,
     connectDevice,
     disconnectDevice,
     refreshStatus,

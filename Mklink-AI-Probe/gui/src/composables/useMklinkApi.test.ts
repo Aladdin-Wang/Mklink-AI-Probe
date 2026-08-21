@@ -83,6 +83,27 @@ describe('RTT API contracts', () => {
     }))
   })
 
+  it('downloads the selected probe firmware as a named binary', async () => {
+    const blob = new Blob(['uf2'], { type: 'application/octet-stream' })
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({
+        'X-MKLink-Firmware-Name': 'MicroLink_V3.3.7.uf2',
+        'X-MKLink-Firmware-Version': 'V3.3.7',
+        'X-MKLink-Firmware-Source': 'gitee',
+      }),
+      blob: async () => blob,
+    })
+
+    await expect(useMklinkApi().downloadProbeFirmware('V3')).resolves.toEqual({
+      blob,
+      filename: 'MicroLink_V3.3.7.uf2',
+      version: 'V3.3.7',
+      source: 'gitee',
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/probe/firmware-download?model=V3')
+  })
+
   it('refreshes connection state after rebooting the probe', async () => {
     const api = useMklinkApi()
     await api.rebootProbe()

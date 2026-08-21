@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref, onMounted } from 'vue'
-import { RefreshCw, Search, TriangleAlert, Unplug, Usb } from '@lucide/vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { Download, RefreshCw, Search, TriangleAlert, Unplug, Usb } from '@lucide/vue'
 import { useMklinkApi } from '../composables/useMklinkApi'
 import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
@@ -14,7 +14,8 @@ import {
   type DesktopSettings,
 } from '../lib/desktopSettings'
 import { pickMapFile, pickSymbolFile, type PickedFile } from '../lib/filePicker'
-import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProjectConfig } from '../types/mklink'
+import { saveBlobFile } from '../lib/downloadTextFile'
+import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
 import FirmwareUpdateModal from '../components/config/FirmwareUpdateModal.vue'
@@ -31,6 +32,7 @@ const {
   parseAxf,
   probeFirmwareCheck,
   upgradeProbeFirmware,
+  downloadProbeFirmware,
 } = useMklinkApi()
 const { wsConnected, connect: wsConnect, disconnect: wsDisconnect } = useMklinkWs()
 const toast = useToast()
@@ -61,6 +63,16 @@ const firmwareCheck = ref<ProbeFirmwareCheck | null>(null)
 const showFirmwareModal = ref(false)
 const firmwareUpgrading = ref(false)
 const firmwareUpgradeStatus = ref('')
+const firmwareUpgradeResult = ref<ProbeFirmwareUpgrade | null>(null)
+const firmwareDownloading = ref(false)
+const firmwareDownloadStatus = ref('')
+const manualFirmwareUpgrade = computed(() => {
+  const result = firmwareUpgradeResult.value
+  if (!result || result.status === 'updated' || result.status === 'up_to_date') return null
+  return result.download_available && result.latest_version && result.firmware && result.model
+    ? result
+    : null
+})
 
 async function refreshPorts() {
   portsLoading.value = true
@@ -292,9 +304,12 @@ async function upgradeFirmware() {
     'The probe will enter Bootloader and restart its connection before copying the UF2 firmware. Continue?',
   ))) return
   firmwareUpgrading.value = true
+  firmwareUpgradeResult.value = null
+  firmwareDownloadStatus.value = ''
   firmwareUpgradeStatus.value = tr('正在升级探针固件...', 'Upgrading probe firmware...')
   try {
     const result = await upgradeProbeFirmware(true)
+    firmwareUpgradeResult.value = result
     if (result.status === 'updated') {
       firmwareUpgradeStatus.value = tr(
         `升级完成：${result.verified_version || result.latest_version || ''}`,
@@ -314,6 +329,36 @@ async function upgradeFirmware() {
     toast.error(firmwareUpgradeStatus.value)
   } finally {
     firmwareUpgrading.value = false
+  }
+}
+
+async function downloadFirmware() {
+  const result = manualFirmwareUpgrade.value
+  if (!result?.model || firmwareDownloading.value) return
+  firmwareDownloading.value = true
+  firmwareDownloadStatus.value = tr('正在下载固件...', 'Downloading firmware...')
+  try {
+    const downloaded = await downloadProbeFirmware(result.model)
+    const saved = await saveBlobFile(downloaded.filename, downloaded.blob)
+    if (!saved) {
+      firmwareDownloadStatus.value = ''
+      return
+    }
+    const source = downloaded.source === 'gitee'
+      ? tr('Gitee', 'Gitee')
+      : downloaded.source === 'local'
+        ? tr('本地固件包', 'local firmware package')
+        : tr('GitHub', 'GitHub')
+    firmwareDownloadStatus.value = tr(
+      `已保存 ${downloaded.filename}（来源：${source}）`,
+      `Saved ${downloaded.filename} (source: ${source})`,
+    )
+    toast.success(firmwareDownloadStatus.value)
+  } catch (error: any) {
+    firmwareDownloadStatus.value = error?.message || tr('固件下载失败', 'Firmware download failed')
+    toast.error(firmwareDownloadStatus.value)
+  } finally {
+    firmwareDownloading.value = false
   }
 }
 
@@ -486,7 +531,17 @@ onMounted(async () => {
           <button class="btn" type="button" data-testid="upgrade-firmware" :disabled="firmwareUpgrading || !deviceStatus.connected" @click="upgradeFirmware">
             {{ firmwareUpgrading ? tr('升级中...', 'Updating...') : tr('检查并升级固件', 'Check and Update Firmware') }}
           </button>
-          <span v-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
+          <div v-if="manualFirmwareUpgrade" class="manual-firmware-download" data-testid="manual-firmware-download">
+            <strong>{{ tr('自动升级未完成', 'Automatic update did not complete') }}</strong>
+            <span>{{ tr('最新固件：', 'Latest firmware: ') }}{{ manualFirmwareUpgrade.latest_version }}</span>
+            <p class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</p>
+            <button class="btn icon-command" type="button" data-testid="download-firmware" :disabled="firmwareDownloading" @click="downloadFirmware">
+              <Download :size="14" aria-hidden="true" />
+              {{ firmwareDownloading ? tr('下载中...', 'Downloading...') : tr('下载固件', 'Download Firmware') }}
+            </button>
+            <span v-if="firmwareDownloadStatus" class="firmware-download-status" data-testid="firmware-download-status">{{ firmwareDownloadStatus }}</span>
+          </div>
+          <span v-else-if="firmwareUpgradeStatus" class="firmware-upgrade-status" data-testid="firmware-upgrade-status">{{ firmwareUpgradeStatus }}</span>
         </div>
       </section>
     </main>
@@ -548,6 +603,27 @@ onMounted(async () => {
 }
 
 .firmware-upgrade-status {
+  overflow-wrap: anywhere;
+}
+
+.manual-firmware-download {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px;
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  color: #7c4a03;
+}
+
+.manual-firmware-download p {
+  margin: 0;
+}
+
+.firmware-download-status {
+  color: var(--muted);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 

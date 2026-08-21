@@ -728,6 +728,12 @@ def create_app(
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-MKLink-Firmware-Name",
+            "X-MKLink-Firmware-Version",
+            "X-MKLink-Firmware-Source",
+        ],
     )
 
     # --- Shared state ---
@@ -1579,6 +1585,51 @@ def create_app(
             if device is not None and not device.connected:
                 _state["device"] = None
                 _state["dispatcher"] = None
+
+    @app.get("/api/probe/firmware-download")
+    async def probe_firmware_download(model: str = Query(...)):
+        """Download the newest V3/V4 UF2 with GitHub-to-Gitee fallback."""
+        from fastapi.responses import Response
+        from mklink import firmware_check as _fc
+
+        normalized_model = model.strip().upper()
+        if normalized_model not in {"V3", "V4"}:
+            raise HTTPException(status_code=400, detail="firmware model must be V3 or V4")
+        root = _fc._resolve_firmware_root()
+        candidate = await run_in_threadpool(
+            _fc.latest_firmware,
+            normalized_model,
+            root,
+        )
+        if candidate is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"未找到 {normalized_model} 系列固件",
+            )
+        temporary = False
+        path = None
+        try:
+            path, temporary, source = await run_in_threadpool(
+                _fc._materialize_firmware,
+                candidate,
+            )
+            content = await run_in_threadpool(path.read_bytes)
+        except OSError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        finally:
+            if temporary and path is not None:
+                path.unlink(missing_ok=True)
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{candidate.name}"',
+                "Cache-Control": "no-store",
+                "X-MKLink-Firmware-Name": candidate.name,
+                "X-MKLink-Firmware-Version": candidate.version_str,
+                "X-MKLink-Firmware-Source": source,
+            },
+        )
 
     # ===================================================================
     # REST API — Device Operations (convenience wrappers)

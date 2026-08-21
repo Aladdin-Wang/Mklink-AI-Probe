@@ -79,6 +79,7 @@ class FirmwareInfo:
     model: str  # "V3" | "V4"
     path: Path
     download_url: str | None = None
+    download_source: Literal["github", "gitee"] | None = None
 
     @property
     def version_str(self) -> str:
@@ -174,53 +175,104 @@ def _find_bootloader_disk() -> str | None:
     return None
 
 
+_REMOTE_RELEASES = {
+    "github": "https://api.github.com/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
+    "gitee": "https://gitee.com/api/v5/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
+}
+
+
+def _remote_firmware_from_source(
+    model: str,
+    source: Literal["github", "gitee"],
+    *,
+    timeout: float = 8.0,
+) -> FirmwareInfo | None:
+    """Find the newest same-model UF2 from one release provider."""
+    try:
+        request = Request(
+            _REMOTE_RELEASES[source],
+            headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe"},
+        )
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        candidates: list[FirmwareInfo] = []
+        for asset in payload.get("assets") or []:
+            info = parse_firmware_filename(str(asset.get("name") or ""))
+            if info is None or info.model != model:
+                continue
+            info.download_url = str(
+                asset.get("browser_download_url")
+                or asset.get("download_url")
+                or ""
+            ) or None
+            if info.download_url:
+                info.download_source = source
+                candidates.append(info)
+        return max(candidates, key=lambda item: item.version) if candidates else None
+    except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def _remote_firmware(model: str, *, timeout: float = 8.0) -> FirmwareInfo | None:
     """Find the newest same-model UF2 from GitHub, then Gitee."""
-    endpoints = (
-        "https://api.github.com/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
-        "https://gitee.com/api/v5/repos/Aladdin-Wang/Mklink-AI-Probe/releases/latest",
-    )
-    for endpoint in endpoints:
-        try:
-            request = Request(endpoint, headers={"Accept": "application/json", "User-Agent": "mklink-ai-probe"})
-            with urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            assets = payload.get("assets") or []
-            candidates: list[FirmwareInfo] = []
-            for asset in assets:
-                name = str(asset.get("name") or "")
-                info = parse_firmware_filename(name)
-                if info is None or info.model != model:
-                    continue
-                info.download_url = str(
-                    asset.get("browser_download_url")
-                    or asset.get("download_url")
-                    or ""
-                ) or None
-                if info.download_url:
-                    candidates.append(info)
-            if candidates:
-                return max(candidates, key=lambda item: item.version)
-        except (OSError, URLError, ValueError, TypeError, json.JSONDecodeError):
-            continue
+    for source in ("github", "gitee"):
+        candidate = _remote_firmware_from_source(model, source, timeout=timeout)
+        if candidate is not None:
+            return candidate
     return None
 
 
-def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool]:
-    """Return a local UF2 path and whether the caller owns a temporary file."""
+def _materialize_firmware(info: FirmwareInfo) -> tuple[Path, bool, str]:
+    """Return a local UF2 path, ownership flag, and actual download source."""
     if info.download_url:
         handle, raw_path = tempfile.mkstemp(prefix="mklink-firmware-", suffix=".uf2")
         os.close(handle)
         destination = Path(raw_path)
-        try:
-            request = Request(info.download_url, headers={"User-Agent": "mklink-ai-probe"})
-            with urlopen(request, timeout=30) as response, destination.open("wb") as output:
-                shutil.copyfileobj(response, output, length=1024 * 1024)
-            return destination, True
-        except Exception:
-            destination.unlink(missing_ok=True)
-            raise
-    return info.path, False
+        downloads: list[tuple[str, str]] = [
+            (info.download_source or "github", info.download_url)
+        ]
+        attempted_sources: list[str] = []
+        last_error: Exception | None = None
+        index = 0
+        while index < len(downloads):
+            source, url = downloads[index]
+            index += 1
+            if source not in attempted_sources:
+                attempted_sources.append(source)
+            try:
+                request = Request(url, headers={"User-Agent": "mklink-ai-probe"})
+                with urlopen(request, timeout=30) as response, destination.open("wb") as output:
+                    shutil.copyfileobj(response, output, length=1024 * 1024)
+                return destination, True, source
+            except Exception as error:
+                last_error = error
+                destination.unlink(missing_ok=True)
+                if source == "github":
+                    if "gitee" not in attempted_sources:
+                        attempted_sources.append("gitee")
+                    fallback = _remote_firmware_from_source(info.model, "gitee")
+                    if (
+                        fallback is not None
+                        and fallback.version == info.version
+                        and fallback.download_url
+                    ):
+                        downloads.append(("gitee", fallback.download_url))
+        destination.unlink(missing_ok=True)
+        attempted = "、".join(attempted_sources)
+        raise OSError(f"固件下载失败（已尝试 {attempted}）") from last_error
+    return info.path, False, "local"
+
+
+def latest_firmware(model: str, firmware_root: Path) -> FirmwareInfo | None:
+    """Resolve the latest distributable firmware for a validated probe model."""
+    remote = _remote_firmware(model)
+    if remote is not None:
+        return remote
+    try:
+        local = [item for item in list_firmwares(firmware_root) if item.model == model]
+    except (FileNotFoundError, NotADirectoryError, OSError):
+        local = []
+    return max(local, key=lambda item: item.version) if local else None
 
 
 def _looks_like_bootloader(root: str | Path) -> bool:
@@ -259,26 +311,42 @@ def upgrade_probe_firmware(
     current = read_microkeen_version(disk)
     if current is None:
         return {"status": "manual_required", "message": "无法从 U 盘 readme.txt 读取当前固件版本", "disk": disk}
-    try:
-        available_local = list_firmwares(firmware_root)
-    except (FileNotFoundError, NotADirectoryError, OSError):
-        available_local = []
-    local = find_recommended_uf2(available_local, current)
-    remote = _remote_firmware(f"V{current.major}")
-    candidate = remote or local
+    candidate = latest_firmware(f"V{current.major}", firmware_root)
     if candidate is None:
         return {"status": "no_firmware", "message": f"未找到 {current.major} 系列固件", "current_version": str(current)}
     if candidate.version <= current:
         return {"status": "up_to_date", "current_version": str(current), "latest_version": candidate.version_str, "firmware": candidate.name}
-    source, temporary = _materialize_firmware(candidate)
+    manual_details = {
+        "current_version": str(current),
+        "latest_version": candidate.version_str,
+        "firmware": candidate.name,
+        "model": candidate.model,
+        "download_available": True,
+    }
+    enter = getattr(device, "enter_bootloader", None)
+    if not callable(enter):
+        return {
+            "status": "manual_required",
+            "message": "当前后端不支持自动进入 Bootloader",
+            **manual_details,
+        }
     try:
-        enter = getattr(device, "enter_bootloader", None)
-        if not callable(enter):
-            return {"status": "manual_required", "message": "当前后端不支持自动进入 Bootloader", "current_version": str(current), "latest_version": candidate.version_str}
+        source, temporary, download_source = _materialize_firmware(candidate)
+    except OSError as error:
+        return {
+            "status": "manual_required",
+            "message": str(error),
+            **manual_details,
+        }
+    try:
         enter()
         boot_disk = _wait_for_bootloader_drive(disk, bootloader_timeout)
         if not boot_disk:
-            return {"status": "manual_required", "message": "未检测到 Bootloader U 盘，请按住升级键手动升级", "current_version": str(current), "latest_version": candidate.version_str}
+            return {
+                "status": "manual_required",
+                "message": "未检测到 Bootloader U 盘，请按住升级键手动升级",
+                **manual_details,
+            }
         target = Path(boot_disk) / candidate.name
         shutil.copyfile(source, target)
         deadline = time.monotonic() + verify_timeout
@@ -296,6 +364,7 @@ def upgrade_probe_firmware(
                             "latest_version": candidate.version_str,
                             "verified_version": str(version),
                             "firmware": candidate.name,
+                            "source": download_source,
                         }
             time.sleep(0.25)
         return {
@@ -305,6 +374,9 @@ def upgrade_probe_firmware(
             "verified_version": str(verified) if verified else None,
             "firmware": candidate.name,
             "message": "固件已复制到 U 盘，但尚未读到新的 readme.txt 版本",
+            "model": candidate.model,
+            "download_available": True,
+            "source": download_source,
         }
     finally:
         if temporary:

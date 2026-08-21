@@ -29,6 +29,33 @@ export function downloadBlobFile(filename: string, blob: Blob): void {
 
 export async function saveBlobFile(filename: string, blob: Blob): Promise<boolean> {
   if (!isTauri()) {
+    const picker = (window as Window & {
+      showSaveFilePicker?: (options?: unknown) => Promise<{
+        createWritable: () => Promise<{
+          write: (value: Blob) => Promise<void>
+          close: () => Promise<void>
+        }>
+      }>
+    }).showSaveFilePicker
+    if (picker) {
+      try {
+        const extension = filename.match(/\.([A-Za-z0-9]+)$/)?.[1]?.toLowerCase() || 'bin'
+        const handle = await picker({
+          suggestedName: filename,
+          types: [{
+            description: 'MKLink Data',
+            accept: { 'application/octet-stream': [`.${extension}`] },
+          }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(blob)
+        await writable.close()
+        return true
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return false
+        throw error
+      }
+    }
     downloadBlobFile(filename, blob)
     return true
   }

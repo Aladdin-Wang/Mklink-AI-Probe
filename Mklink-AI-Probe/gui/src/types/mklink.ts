@@ -422,8 +422,18 @@ export interface ProbeFirmwareUpgrade {
   latest_version?: string
   verified_version?: string | null
   firmware?: string
+  model?: 'V3' | 'V4'
+  download_available?: boolean
+  source?: 'github' | 'gitee' | 'local'
   message?: string
   stopped?: string[]
+}
+
+export interface ProbeFirmwareDownload {
+  blob: Blob
+  filename: string
+  version: string
+  source: 'github' | 'gitee' | 'local'
 }
 
 export type FileSourceKind = 'symbol' | 'map'

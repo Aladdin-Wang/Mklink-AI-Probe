@@ -4,27 +4,28 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T11:04:15+08:00`
+- 更新时间：`2026-08-21T11:34:34+08:00`
 - 分支：`fix/flash-read-dialog-defaults`
-- HEAD：`0b7461d 已修复读取弹窗默认地址与向上图标，并让读取数据回烧时显示真实烧录进度和日志。`
-- 远端 HEAD：`origin/fix/flash-read-dialog-defaults 已同步 0b7461d；尚未合并 master。`
-- 工作树：运行时代码已提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。
-- 当前任务：读取地址弹窗和读取数据直接回烧进度修复已完成自动化与 Chrome/V3 真机闭环，等待审查合并。
-- 状态：`flash_read_progress_verified`
+- HEAD：`当前分支已完成固件自动升级失败后的最新版本提示、人工保存和 GitHub 到 Gitee 下载回退。`
+- 远端 HEAD：`origin/fix/flash-read-dialog-defaults 将同步本次固件人工下载兜底提交；尚未合并 master。`
+- 工作树：本问题运行时代码、测试和记忆纳入同一提交；保留维护者的 V3.3.7/V4.3.6 固件替换、生产 gui/dist、Cargo 换行及本地构建产物，不纳入源码提交。
+- 当前任务：固件自动升级失败后会显示最新版本并提供另存 UF2；下载优先 GitHub，文件失败后惰性查询并切换 Gitee。
+- 状态：`firmware_manual_download_verified`
 
 ## 里程碑
 
 - **v0.1.7 运行时** — `complete`。首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成；读取数据回烧现可显示真实字节进度并在完成后保持烧录状态。
 - **桌面与 Web 一致性** — `complete`。共享 Vue 前端和 FastAPI 能力；Tauri 使用内置 sidecar，客户端生命周期与端口互不干扰。
-- **固件分发** — `complete`。V3.3.7/V4.3.6 作为 v0.1.6 Release 资产托管，不提交 UF2 到 Git。
+- **固件分发** — `complete`。V3.3.7/V4.3.6 作为 GitHub v0.1.6 Release 资产托管，不提交 UF2 到 Git；自动升级失败后可由 Web/Tauri 保存对应 UF2。
 
 ## 验证证据
 
-- **最终自动化门禁**：GUI 55 文件/549 项和 Vite 生产构建通过。Python 为 1323 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。
+- **最终自动化门禁**：GUI 55 文件/552 项和 Vite 生产构建通过。Python 为 1327 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：真实 V3 数据流验证 RTOS Trace 持续滚动、缩放后实时刷新、泳道高度稳定；RTT 停止恢复与 CMD 残留命令清理均完成真机闭环。
-- **远程固件**：GitHub latest Release 可发现 V3.3.7/V4.3.6，远程下载大小与 SHA-256 均匹配本地。覆盖安装版连接真实 V3 后正确返回 current/latest V3.3.7 的 up_to_date，并主动断开。
+- **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
+- **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
 
 ## 架构决策
@@ -33,7 +34,8 @@
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。
 - SystemView Timeline 以最新事件为右边界连续滚动，30 FPS 上限，泳道容量只增不减；拖拽才退出跟随。
-- 固件升级优先 GitHub、失败回退 Gitee 和本地 MK-Firmware；远程 UF2 使用 Release 资产，不进入 Git 历史。
+- 固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。
+- 自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。
 - GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。
 
 ## 真机环境
@@ -44,13 +46,14 @@
 
 ## 下一动作
 
-1. 审查并合并 fix/flash-read-dialog-defaults；不要在未授权时创建 v0.1.7 标签或 Release。
+1. 审查并合并 fix/flash-read-dialog-defaults；维护者后续将同版本 UF2 同步到 Gitee Release 后复测真实回退，不在本任务中越权发布。
 2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
 
 - 当前 Windows 账户不能创建目录符号链接，12 个上传路径重定向安全测试无法运行 symlink 分支；junction 分支通过。
-- Chrome 控制无法验证 localhost 管理策略，Computer Use native pipe 不存在；安装包原生保存由维护者手动验收。
+- 安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。
+- Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。
 - V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
 
