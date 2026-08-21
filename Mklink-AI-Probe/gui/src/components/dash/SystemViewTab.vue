@@ -846,8 +846,13 @@ watch(binaryStream.telemetry, telemetry => {
   renderScheduler?.invalidate('data')
 })
 
+watch(binaryStream.error, error => {
+  if (error) runtimeError.value = `SystemView stream: ${error}`
+})
+
 watch(binaryStream.systemViewVisible, visible => {
-  if (!visible || renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
+  if (!visible) return
+  if (renderPaused.value || offlineMode.value || visible.requestId !== visibleRequestId) return
   visibleRequestInFlight = false
   latestBinaryTime = visible.latestTime
   // candidateIntervalCount is the Worker scan cost, not the amount painted.
