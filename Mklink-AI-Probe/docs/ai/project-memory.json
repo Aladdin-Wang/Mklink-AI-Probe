@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-21T23:08:00+08:00",
+  "updated_at": "2026-08-21T23:18:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -54,7 +54,7 @@
     },
     {
       "area": "Overflow 处理",
-      "result": "确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 启动 HPM FreeRTOS SystemView 后，约 3.5 秒已有 10,255 events，约 140 秒增长到 58,273 events，目标端 Overflow 累计 15,386、parser dropped bytes 16,394；说明不是一次性前端抖动，而是目标 RTT/探针搬运吞吐持续不足。"
+      "result": "确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。"
     },
     {
       "area": "远程固件",

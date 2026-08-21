@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T23:08:00+08:00`
+- 更新时间：`2026-08-21T23:18:00+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
 - HEAD：`SystemView Timeline 使用单一连续绘制循环和平滑跟随；Overflow 丢包边界不再伪造长任务区间，并在 GUI 单独显示目标端丢包。`
 - 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 尚未同步本轮 Overflow 修复；尚未合并 master。`
@@ -24,7 +24,7 @@
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。
-- **Overflow 处理**：确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 启动 HPM FreeRTOS SystemView 后，约 3.5 秒已有 10,255 events，约 140 秒增长到 58,273 events，目标端 Overflow 累计 15,386、parser dropped bytes 16,394；说明不是一次性前端抖动，而是目标 RTT/探针搬运吞吐持续不足。
+- **Overflow 处理**：确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
