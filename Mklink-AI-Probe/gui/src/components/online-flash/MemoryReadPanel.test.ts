@@ -41,6 +41,7 @@ describe('MemoryReadPanel', () => {
 
     expect(wrapper.get('[role="dialog"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="memory-read-address"]').exists()).toBe(true)
+    expect(wrapper.get('.memory-read-dialog-icon .lucide-arrow-up-from-line').exists()).toBe(true)
     expect(wrapper.get('[data-testid="memory-read-confirm"] .lucide-upload').exists()).toBe(true)
   })
 

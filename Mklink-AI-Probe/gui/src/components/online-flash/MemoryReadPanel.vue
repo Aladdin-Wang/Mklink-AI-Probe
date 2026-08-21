@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDownToLine, Save, Upload, X } from '@lucide/vue'
+import { ArrowUpFromLine, Save, Upload, X } from '@lucide/vue'
 import { useOnlineFlashApi } from '../../composables/useOnlineFlashApi'
 import { tr } from '../../composables/useLanguage'
 import { downloadBlobFile } from '../../lib/downloadTextFile'
@@ -249,7 +249,7 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
     <section class="memory-read-dialog" role="dialog" aria-modal="true" aria-labelledby="memory-read-dialog-title">
       <header class="memory-read-dialog-header">
         <div class="memory-read-dialog-heading">
-          <span class="memory-read-dialog-icon" aria-hidden="true"><ArrowDownToLine :size="17" /></span>
+          <span class="memory-read-dialog-icon" aria-hidden="true"><ArrowUpFromLine :size="17" /></span>
           <div><h4 id="memory-read-dialog-title">{{ tr('读取目标 Flash', 'Read Target Flash') }}</h4><p>{{ tr('填写要读取的地址范围', 'Choose the address range to read') }}</p></div>
         </div>
         <button class="icon-button" type="button" :title="tr('关闭', 'Close')" @click="closeReadDialog"><X :size="16" aria-hidden="true" /></button>
