@@ -55,6 +55,7 @@ def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dic
 
 logger = logging.getLogger(__name__)
 _RTT_DELIVERY_INTERVAL = 1.0 / 50.0
+_SYSTEMVIEW_DELIVERY_INTERVAL = 1.0 / 30.0
 SUPPORTED_RTT_ENCODINGS = ("utf-8", "gb2312", "gbk", "gb18030", "big5")
 
 
@@ -775,7 +776,8 @@ class SystemViewStreamManager:
                         continue
                     try:
                         raw = device.systemview_read_bytes(
-                            duration=0.1, max_bytes=64 * 1024
+                            duration=_SYSTEMVIEW_DELIVERY_INTERVAL,
+                            max_bytes=64 * 1024,
                         )
                     except Exception as exc:
                         last_read_error = exc

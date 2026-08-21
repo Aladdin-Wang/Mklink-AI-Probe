@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-21T11:58:12+08:00`
-- 分支：`master`
-- HEAD：`master 已快进包含读取回烧进度、读取弹窗和固件人工下载兜底等已验证修复。`
-- 远端 HEAD：`origin/master 同步本次 v0.1.7 修复基线后，新的 Timeline 修复分支从该基线创建。`
-- 工作树：master 集成工作区仅更新项目记忆；维护者原工作区的固件、gui/dist、Cargo 和本地构建产物保持不动。
-- 当前任务：已审计并合并所有有效修复；下一问题在新分支复现 HPM FreeRTOS SystemView Timeline 卡顿。
-- 状态：`v017_fixes_merged`
+- 更新时间：`2026-08-21T12:37:19+08:00`
+- 分支：`fix/systemview-timeline-smooth-refresh`
+- HEAD：`方案 1 已将 SystemView 后端采集批次缩短到 30 FPS，并把流读取轮询上限缩短到 10 ms。`
+- 远端 HEAD：`origin/master 仍为本分支基线；本轮验证完成后推送独立修复分支，不直接合并 master。`
+- 工作树：仅保留 SystemView 采集节奏源码、回归测试和项目记忆；生产 gui/dist、固件和本地测试前置均不纳入提交。
+- 当前任务：修复 HPM FreeRTOS SystemView Timeline 因约 100 ms 大批量交付导致的大段跃迁，保持实时跟随、缩放和稳定泳道。
+- 状态：`systemview_smooth_refresh_verified`
 
 ## 里程碑
 
@@ -20,10 +20,10 @@
 
 ## 验证证据
 
-- **最终自动化门禁**：GUI 55 文件/552 项和 Vite 生产构建通过。Python 为 1327 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。
+- **最终自动化门禁**：GUI 55 文件/552 项和 Vite 生产构建通过；SystemView 聚焦测试 69 项通过。Python 全量 1324 项直接通过、1 项跳过；3 个缺少本地 STCP DLL 的打包前置用例补齐后通过，1 个心跳竞争用例复跑通过，另 12 项仅因 Windows 无目录符号链接权限无法建立前置条件。
 - **安装包真机读写**：标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
-- **实时调试**：真实 V3 数据流验证 RTOS Trace 持续滚动、缩放后实时刷新、泳道高度稳定；RTT 停止恢复与 CMD 残留命令清理均完成真机闭环。
+- **实时调试**：Chrome + 真实 V4 + HPM FreeRTOS 验证修复后批次平均 37.9 ms、P95 49 ms、最大 50.1 ms，4 秒内 99 次批次变化且 transport dropped_batches 为 0；页面 1.5 秒增加 5374 个事件，缩放后仍更新，4 条任务泳道稳定，停止后可再次启动。
 - **远程固件**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。
 - **固件人工下载界面**：Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。
 - **分发候选**：基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。
@@ -33,7 +33,7 @@
 - 每个独立问题完成验证后单独提交并推送，方便按问题回退。
 - HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。
-- SystemView Timeline 以最新事件为右边界连续滚动，30 FPS 上限，泳道容量只增不减；拖拽才退出跟随。
+- SystemView Timeline 以最新事件为右边界连续滚动，后端按 30 FPS 采集交付且底层流读取最多等待 10 ms，泳道容量只增不减；拖拽才退出跟随。
 - 固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。
 - 自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。
 - GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。
@@ -42,11 +42,11 @@
 
 - **probe**：维护机可使用 V2/V3/V4；交接不记录端口或完整设备标识。
 - **target**：STM32F103RC 测试工程可用于破坏性烧录闭环；HPM 与其他 ARM 板按任务选择。
-- **permission**：维护者已授权并要求合并已验证修复到 master，并从该基线创建新的 Timeline 修复分支；未授权发布 v0.1.7、签名、打标签、更新 latest.json 或同步 Gitee。
+- **permission**：维护者确认按方案 1 修复，并要求每个问题独立提交和推送；本轮不发布 v0.1.7、不签名、不打标签、不更新 latest.json、不同步 Gitee。
 
 ## 下一动作
 
-1. 从更新后的 master 创建 fix/systemview-timeline-smooth-refresh，使用 HPM FreeRTOS SystemView 工程复现并修复 Timeline 卡顿。
+1. 审查并按需合并 fix/systemview-timeline-smooth-refresh；合并前若 master 前进，需更新分支并重跑最终门禁。
 2. 后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。
 
 ## 已知限制
