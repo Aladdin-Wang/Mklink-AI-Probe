@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { browserSessionSocketUrl, startBrowserSessionLease } from './browserSessionLease'
 
 describe('browser session lease', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
   it('uses the serving backend and selects the matching WebSocket protocol', () => {
     expect(browserSessionSocketUrl(
       { protocol: 'http:', host: '127.0.0.1:8766' } as Location,
@@ -16,5 +19,25 @@ describe('browser session lease', () => {
   it('does nothing when browser ownership is disabled', () => {
     const stop = startBrowserSessionLease(false)
     expect(() => stop()).not.toThrow()
+  })
+
+  it('releases the device and browser lease when the page is closed', () => {
+    const sendBeacon = vi.fn(() => true)
+    vi.stubGlobal('navigator', { sendBeacon })
+    class FakeWebSocket {
+      addEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+
+    const stop = startBrowserSessionLease(true)
+    window.dispatchEvent(new Event('pagehide'))
+    stop()
+
+    expect(sendBeacon).toHaveBeenCalledTimes(2)
+    expect(sendBeacon.mock.calls.map(call => call[0])).toEqual([
+      '/api/device/disconnect',
+      '/api/browser-session/release',
+    ])
   })
 })
