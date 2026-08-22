@@ -37,7 +37,7 @@ _SYSTEMVIEW_STOP_COMMANDS = [
 _STREAM_FALLBACK_STOP_COMMANDS = [
     b"RTTView.stop()\n",
     b'vofa.send(0x20000000, "uint8_t", 0)\n',
-    b"cmd.dump_memory(0x20000054, 4, 0)\n",
+    b"cmd.dump_memory(0x20000054, 4, -1.0)\n",
 ]
 _STREAM_READ_POLL_INTERVAL = 0.01
 _SYNC_TIMEOUTS = (0.3, 0.7)

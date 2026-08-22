@@ -105,6 +105,8 @@ export interface ReadMemoryRequest {
   connect_mode?: string
   reset_mode?: string
   chunk_sizes?: number[]
+  board?: string | null
+  hpm_flash_cfg?: [string, string, string, string] | null
 }
 
 export type JobState =

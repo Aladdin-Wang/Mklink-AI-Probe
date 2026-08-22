@@ -170,6 +170,8 @@ class ReadMemoryBody(BaseModel):
     connect_mode: str = "halt"
     reset_mode: str = "default"
     chunk_sizes: List[int] = Field(default_factory=list, max_length=65536)
+    board: Optional[str] = None
+    hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
 
 
 def _redact_paths(value: str) -> str:
@@ -1152,18 +1154,8 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     @router.post("/memory/read")
     async def read_memory(body: ReadMemoryBody) -> Response:
         """Read a target range and return it as a downloadable BIN file.
-
-        HPM targets intentionally fail here because their ROM API currently
-        exposes programming but no equivalent read operation.
         """
-        from mklink.hpm_config import is_hpm_target
-
         target = await _blocking(_resolved_target, services.catalog, body.target_part)
-        if is_hpm_target(target.part_number):
-            _raise_http(FlashError(
-                FlashErrorCode.TARGET_NOT_SUPPORTED,
-                "HPM ROM API does not support online memory reads",
-            ))
         if not body.probe_id:
             raise HTTPException(status_code=422, detail="probe_id is required")
         address = await _blocking(_parse_base_address, body.address)
@@ -1178,6 +1170,8 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             frequency=body.frequency,
             connect_mode=body.connect_mode,
             reset_mode=body.reset_mode,
+            board=body.board,
+            hpm_flash_cfg=body.hpm_flash_cfg,
         )
         data = await _blocking(
             services.job_manager.read_memory,
@@ -1198,14 +1192,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     @router.post("/memory/read-stream")
     async def read_memory_stream(body: ReadMemoryBody) -> StreamingResponse:
         """Stream sector chunks while keeping a single target connection open."""
-        from mklink.hpm_config import is_hpm_target
-
         target = await _blocking(_resolved_target, services.catalog, body.target_part)
-        if is_hpm_target(target.part_number):
-            _raise_http(FlashError(
-                FlashErrorCode.TARGET_NOT_SUPPORTED,
-                "HPM ROM API does not support online memory reads",
-            ))
         if not body.probe_id:
             raise HTTPException(status_code=422, detail="probe_id is required")
         address = await _blocking(_parse_base_address, body.address)
@@ -1230,6 +1217,8 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             frequency=body.frequency,
             connect_mode=body.connect_mode,
             reset_mode=body.reset_mode,
+            board=body.board,
+            hpm_flash_cfg=body.hpm_flash_cfg,
         )
         filename = "read-0x{:08X}-{}.bin".format(address, body.size)
         return StreamingResponse(

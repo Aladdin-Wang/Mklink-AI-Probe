@@ -358,7 +358,7 @@ def test_read_memory_stream_rejects_inconsistent_chunk_plan(app):
     assert "add up to size" in response.json()["detail"]
 
 
-def test_read_memory_route_rejects_hpm_target(app, services):
+def test_read_memory_route_supports_hpm_target(app, services):
     services.catalog.search = lambda *args, **kwargs: []
     response = request(
         app,
@@ -371,8 +371,9 @@ def test_read_memory_route_rejects_hpm_target(app, services):
             "target_part": "HPM5300",
         },
     )
-    assert response.status_code == 422
-    assert "does not support online memory reads" in response.json()["detail"]["message"]
+    assert response.status_code == 200
+    assert response.content == bytes([0x00, 0x01, 0x02, 0x03])
+    assert services.job_manager.read_range == (0x80000000, 4)
 
 
 def test_hpm_image_and_job_use_rom_api_without_pack_or_sector_geometry(app, services):

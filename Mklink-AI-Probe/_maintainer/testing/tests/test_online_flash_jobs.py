@@ -137,14 +137,29 @@ def test_iter_memory_releases_connection_when_stream_is_closed_early():
     manager.shutdown()
 
 
-def test_read_memory_rejects_hpm_before_opening_backend():
-    backend = ReadBackend()
-    manager = OnlineFlashJobManager(lambda: backend, ResourceManager())
-    request = JobRequest(actions=("connect", "disconnect"), target_part="HPM5300")
+def test_read_memory_supports_hpm_and_holds_bridge_resource():
+    class HpmReadBackend(ReadBackend):
+        def memory_regions(self):
+            from mklink.cmsis_dap.models import MemoryRegion
 
-    with pytest.raises(FlashError, match="does not support online memory reads"):
-        manager.read_memory(request, 0x80000000, 4)
-    assert backend.calls == []
+            return (MemoryRegion("hpm-xpi", 0x80000000, 0x100000, True, True),)
+
+    backend = HpmReadBackend()
+    resources = ResourceManager()
+    manager = OnlineFlashJobManager(lambda: backend, resources)
+    request = JobRequest(
+        actions=("connect", "disconnect"),
+        target_part="HPM5300",
+        board="hpm5300evk",
+        probe_id="probe",
+    )
+
+    data = manager.read_memory(request, 0x80000000, 4)
+
+    assert data == bytes([0, 1, 2, 3])
+    assert backend.calls[0][0] == "connect"
+    assert backend.calls[0][1]["board"] == "hpm5300evk"
+    assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is None
     manager.shutdown()
 
 

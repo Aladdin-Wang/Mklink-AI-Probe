@@ -45,15 +45,33 @@ describe('MemoryReadPanel', () => {
     expect(wrapper.get('[data-testid="memory-read-confirm"] .lucide-upload').exists()).toBe(true)
   })
 
-  it('explains that HPM reads are unavailable', () => {
+  it('enables HPM reads through the binary dump path', async () => {
     const wrapper = mount(MemoryReadPanel, {
       props: {
-        probeId: 'probe', targetPart: 'HPM5300', hpm: true,
+        probeId: 'probe', targetPart: 'HPM5300', hpm: true, board: 'hpm5300evk',
+        frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
+        memoryRegions: [{ name: 'hpm-xpi', start: 0x80000000, length: 0x80000, sector_size: 0 }],
+      },
+    })
+    expect(wrapper.text()).toContain('dump_memory')
+    expect(wrapper.find('[data-testid="memory-read-submit"]').exists()).toBe(true)
+    ;(wrapper.vm as unknown as { openReadDialog: () => void }).openReadDialog()
+    await wrapper.vm.$nextTick()
+    expect((wrapper.get('[data-testid="memory-read-address"]').element as HTMLInputElement).value).toBe('0x80000000')
+  })
+
+  it('uses the HPM 512 KiB XPI range when no memory map is available', async () => {
+    const wrapper = mount(MemoryReadPanel, {
+      props: {
+        probeId: 'probe', targetPart: 'HPM5301', hpm: true, board: 'hpm5301evklite',
         frequency: 1_000_000, connectMode: 'halt', resetMode: 'default',
       },
     })
-    expect(wrapper.text()).toContain('HPM ROM API')
-    expect(wrapper.find('[data-testid="memory-read-submit"]').exists()).toBe(false)
+    ;(wrapper.vm as unknown as { openReadDialog: () => void }).openReadDialog()
+    await wrapper.vm.$nextTick()
+    expect((wrapper.get('[data-testid="memory-read-address"]').element as HTMLInputElement).value).toBe('0x80000000')
+    expect((wrapper.get('[data-testid="memory-read-end-address"]').element as HTMLInputElement).value).toBe('0x80080000')
+    wrapper.unmount()
   })
 
   it('prompts for a range, reads it in chunks, then saves the returned BIN', async () => {

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T14:00:00+08:00`
-- 分支：`fix/systemview-timeline-smooth-refresh`
-- HEAD：`SystemView Timeline 可见区间累计缓存修复已完成。`
-- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh`
-- 工作树：源码和记忆可提交；gui/dist 等本地构建产物已清理。
-- 当前任务：为在线下载选择 HPM Flash 读取 API；尚未修改运行时代码，等待维护者确认实施方案。
-- 状态：`hpm-online-read-api-selection`
+- 更新时间：`2026-08-22T14:50:00+08:00`
+- 分支：`fix/hpm-online-flash-read`
+- HEAD：`HPM 在线 Flash 读取已完成真机与 Web 闭环验证。`
+- 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh (待推送本分支)`
+- 工作树：源码、测试和记忆待提交；gui/dist 仅为本地构建产物。
+- 当前任务：HPM 使用 cmd.dump_memory 二进制分块读取，旧固件回退 cmd.read_flash；已完成自动化与真机 Web 闭环。
+- 状态：`hpm-online-read-implemented`
 
 ## 里程碑
 
@@ -20,9 +20,10 @@
 
 ## 验证证据
 
-- **自动化门禁**：最新分支 GUI 56 文件/574 项、Vite 生产构建和 Python 1331 项通过；12 项 symlink 用例仅受当前 Windows 权限限制。
+- **自动化门禁**：GUI 56 文件/575 项和 Vite 生产构建通过；Python 1334 项通过、1 项跳过，12 项 symlink 用例仅受当前 Windows 权限限制。
 - **真机闭环**：V3/STM32F103RC 完成 Flash 读取、擦除、编程、校验、复位和断开；Chrome Web GUI 验证 RTT/SuperWatch 保存与 SystemView 持续更新。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
+- **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 
 ## 架构决策
 
@@ -40,14 +41,13 @@
 
 ## 下一动作
 
-1. 维护者确认 HPM 在线读取采用 dump_memory 一次性二进制方案。
-2. 在独立 fix 分支实现 HPM 分块读取、CRC/错误处理、进度日志和 ARM 回归兼容。
-3. 使用真实 HPM 板完成 Web/Tauri/安装包读取与保存闭环，再提交并推送。
+1. 提交并推送 fix/hpm-online-flash-read；不合并 master、不创建正式 Release。
+2. 后续在安装包/Web GUI 复测 HPM 读取进度、保存 BIN 和读取后烧录闭环。
 
 ## 已知限制
 
 - 当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。
-- HPM 在线读取当前仍被后端显式拒绝，尚未实现 dump_memory 一次性读取适配。
+- HPM 旧固件若不支持 dump_memory，将按一次请求回退到较慢的 cmd.read_flash 文本读取；当前 V4.3.6 使用二进制路径。
 - 高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。
 
 ## 延续协议

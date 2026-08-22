@@ -101,13 +101,37 @@ def assert_error(code: FlashErrorCode, call) -> FlashError:
     return raised.value
 
 
-def test_hpm_rom_backend_rejects_online_memory_reads() -> None:
-    backend = HpmRomBackend()
-    error = assert_error(
-        FlashErrorCode.TARGET_NOT_SUPPORTED,
-        lambda: backend.read_memory(0x08000000, 4),
+def test_hpm_rom_backend_reads_via_dump_memory(monkeypatch) -> None:
+    class Device:
+        _bridge = object()
+
+        def close(self):
+            pass
+
+    device = Device()
+    backend = HpmRomBackend(device_factory=lambda **_kwargs: device)
+    backend.connect(
+        probe="probe",
+        target="HPM5300",
+        frequency=1_000_000,
+        board="hpm5300evk",
     )
-    assert "does not support online memory reads" in error.message
+    calls = []
+
+    def read_range(bridge, address, size, *, timeout):
+        calls.append((bridge, address, size, timeout))
+        return bytes((address + index) & 0xFF for index in range(size))
+
+    monkeypatch.setattr("mklink.dump_memory.read_dump_memory_range_once", read_range)
+    assert backend.read_memory(0x80000000, 0x8001) == bytes(
+        (0x80000000 + index) & 0xFF for index in range(0x8001)
+    )
+    assert [item[1:3] for item in calls] == [
+        (0x80000000, 0x8000),
+        (0x80008000, 1),
+    ]
+    assert backend.memory_regions()[0].start == 0x80000000
+    backend.disconnect()
 
 
 def test_pyocd_backend_reads_exact_bytes_from_target() -> None:

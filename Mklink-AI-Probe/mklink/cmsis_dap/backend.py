@@ -441,11 +441,60 @@ class HpmRomBackend:
                 raise FlashError(FlashErrorCode.VERIFY_FAIL, str(error)) from error
 
     def read_memory(self, address: int, size: int) -> bytes:
-        del address, size
-        raise FlashError(
-            FlashErrorCode.TARGET_NOT_SUPPORTED,
-            "HPM ROM API does not support online memory reads",
+        if type(address) is not int or address < 0:
+            raise ValueError("address must be a non-negative integer")
+        if type(size) is not int or size <= 0:
+            raise ValueError("size must be a positive integer")
+        self._require_device()
+        region = MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None)
+        if address < region.start or address + size > region.end:
+            raise FlashError(
+                FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                "requested HPM Flash range is outside the XPI memory map",
+            )
+        bridge = getattr(self._device, "_bridge", None)
+        if bridge is None:
+            raise FlashError(
+                FlashErrorCode.CONNECT_FAIL,
+                "HPM device bridge is unavailable",
+            )
+        from mklink.dump_memory import (
+            DumpMemoryUnsupported,
+            read_dump_memory_range_once,
         )
+
+        try:
+            # Keep individual requests below the legacy firmware boundary;
+            # the parser still accepts the current 512 KiB maximum.
+            parts = []
+            for offset in range(0, size, 32 * 1024):
+                part_size = min(32 * 1024, size - offset)
+                parts.append(
+                    read_dump_memory_range_once(
+                        bridge, address + offset, part_size, timeout=10.0,
+                    )
+                )
+            return b"".join(parts)
+        except DumpMemoryUnsupported:
+            # Older probe firmware may expose only the text API.  It is slower,
+            # but preserves compatibility for small or diagnostic reads.
+            from mklink.memory_access import parse_read_ram_response
+
+            raw = bridge.send_command(
+                f"cmd.read_flash(0x{address:08X}, {size})",
+                timeout=max(10.0, size / 1200.0),
+            )
+            data = parse_read_ram_response(raw)
+            if len(data) != size:
+                raise FlashError(
+                    FlashErrorCode.CONNECT_FAIL,
+                    f"HPM read_flash returned {len(data)} bytes for {size}",
+                )
+            return data
+
+    def memory_regions(self) -> Tuple[MemoryRegion, ...]:
+        self._require_device()
+        return (MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),)
 
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
         del reset_mode

@@ -164,11 +164,7 @@ class OnlineFlashJobManager:
         """Yield target-memory chunks from one resource-protected connection."""
         from mklink.hpm_config import is_hpm_target
 
-        if is_hpm_target(request.target_part):
-            raise FlashError(
-                FlashErrorCode.TARGET_NOT_SUPPORTED,
-                "HPM ROM API does not support online memory reads",
-            )
+        hpm_target = is_hpm_target(request.target_part)
         if type(address) is not int or address < 0:
             raise ValueError("address must be a non-negative integer")
         sizes = tuple(chunk_sizes)
@@ -184,8 +180,11 @@ class OnlineFlashJobManager:
         acquired = False
         try:
             acquired = True
-            self._resource_manager.acquire(
-                ResourceGroup.TARGET_DEBUG,
+            resources = [ResourceGroup.TARGET_DEBUG]
+            if hpm_target:
+                resources.append(ResourceGroup.MKLINK_BRIDGE)
+            self._resource_manager.acquire_many(
+                resources,
                 owner,
                 preempt=request.preempt_ai,
                 preempt_user_dashboard=True,
@@ -193,7 +192,7 @@ class OnlineFlashJobManager:
             if self._prepare_connect is not None:
                 self._prepare_connect(request)
             backend = self._backend_factory()
-            backend.connect(
+            connect_options = dict(
                 probe=request.probe_id,
                 target=request.target_part,
                 frequency=request.frequency,
@@ -207,6 +206,12 @@ class OnlineFlashJobManager:
                 connect_mode=request.connect_mode,
                 reset_mode=request.reset_mode,
             )
+            if hpm_target:
+                connect_options.update(
+                    board=request.board,
+                    hpm_flash_cfg=request.hpm_flash_cfg,
+                )
+            backend.connect(**connect_options)
             regions = tuple(backend.memory_regions())
             end = address + size
             if end < address or not any(

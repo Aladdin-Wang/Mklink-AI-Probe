@@ -10,6 +10,7 @@ const props = defineProps<{
   probeId: string
   targetPart: string
   hpm: boolean
+  board?: string
   frequency: number
   connectMode: string
   resetMode: string
@@ -28,6 +29,9 @@ const emit = defineEmits<{
 
 const GENERIC_FLASH_START = '0x08000000'
 const GENERIC_FLASH_END = '0x08080000'
+const HPM_FLASH_START = '0x80000000'
+const HPM_FLASH_END = '0x80080000'
+const HPM_READ_CHUNK_SIZE = 32 * 1024
 const address = ref(GENERIC_FLASH_START)
 const endAddress = ref(GENERIC_FLASH_END)
 const rangeTarget = ref('')
@@ -60,9 +64,13 @@ function formatAddress(value: number): string {
 function applyRangeDefaults(): void {
   const target = props.targetPart.trim()
   const range = flashRange.value
-  if (!target || !range || (rangeDirty.value && rangeTarget.value === target)) return
-  address.value = formatAddress(range.start)
-  endAddress.value = formatAddress(range.end)
+  const fallback = props.hpm
+    ? { start: Number.parseInt(HPM_FLASH_START.slice(2), 16), end: Number.parseInt(HPM_FLASH_END.slice(2), 16) }
+    : null
+  if (!target || (!range && !fallback) || (rangeDirty.value && rangeTarget.value === target)) return
+  const selected = range || fallback!
+  address.value = formatAddress(selected.start)
+  endAddress.value = formatAddress(selected.end)
   rangeTarget.value = target
   rangeDirty.value = false
 }
@@ -72,6 +80,10 @@ watch(() => props.targetPart, target => {
   rangeDirty.value = false
   applyRangeDefaults()
 }, { immediate: true })
+watch(() => props.hpm, () => {
+  rangeDirty.value = false
+  applyRangeDefaults()
+})
 watch(flashRange, applyRangeDefaults, { immediate: true })
 
 const parsedAddress = computed(() => {
@@ -87,7 +99,7 @@ const parsedEndAddress = computed(() => {
 const readSize = computed(() => parsedAddress.value !== null && parsedEndAddress.value !== null
   ? parsedEndAddress.value - parsedAddress.value : 0)
 const canRead = computed(() => (
-  !props.hpm && !!props.probeId && !!props.targetPart
+  !!props.probeId && !!props.targetPart
   && readSize.value > 0
   && readSize.value <= 64 * 1024 * 1024
   && !busy.value && !props.disabled && !props.memoryMapBusy
@@ -104,6 +116,7 @@ const chunkDescription = computed(() => sectorSizes.value.length
   : tr('未取得目标扇区信息，将按 1024 字节分块。', 'Target sector geometry is unavailable; uses 1024-byte chunks.'))
 
 function chunkSizeAt(address: number, remaining: number): number {
+  if (props.hpm) return Math.min(HPM_READ_CHUNK_SIZE, remaining)
   const region = (props.memoryRegions || []).find(item => (
     Number.isInteger(item.start) && Number.isInteger(item.length) && item.length > 0
     && Number.isInteger(item.sector_size) && item.sector_size > 0
@@ -161,6 +174,7 @@ async function readMemory(): Promise<void> {
       frequency: props.frequency,
       connect_mode: props.connectMode,
       reset_mode: props.resetMode,
+      board: props.board || null,
     }, received => {
       let completed = 0
       for (const entry of progressEntries.value) {
@@ -223,8 +237,7 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
 <template>
   <section v-if="!embedded" class="memory-read-panel" data-testid="memory-read-panel">
     <header><h3>{{ tr('读取目标数据', 'Read Target Data') }}</h3><span v-if="hpm" class="badge">HPM</span></header>
-    <p v-if="hpm" class="memory-read-note">{{ tr('HPM ROM API 当前不支持读取。', 'The HPM ROM API does not support reads yet.') }}</p>
-    <template v-else>
+    <p v-if="hpm" class="memory-read-note">{{ tr('HPM 使用 dump_memory 二进制读取，按 32 KiB 分块。', 'HPM uses binary dump_memory reads in 32 KiB chunks.') }}</p>
       <div class="memory-read-actions">
         <button class="btn" type="button" data-testid="memory-read-submit" :disabled="!canRead" @click="openReadDialog"><Upload :size="14" aria-hidden="true" />{{ tr('读取数据', 'Read Data') }}</button>
         <button class="btn" type="button" data-testid="memory-read-save" :disabled="!data || busy" @click="saveMemory"><Save :size="14" aria-hidden="true" />{{ tr('保存文件', 'Save File') }}</button>
@@ -241,8 +254,6 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
         </div>
       </div>
       <p v-if="error" class="memory-read-error" role="alert">{{ error }}</p>
-    </template>
-
   </section>
 
   <div v-if="readDialogOpen" class="memory-read-dialog-backdrop" role="presentation" @click.self="closeReadDialog">
@@ -261,7 +272,7 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
       </div>
       <div v-if="readSize > 0" class="memory-read-summary"><span>{{ tr('读取范围', 'Read range') }}</span><strong>0x{{ parsedAddress?.toString(16).toUpperCase().padStart(8, '0') }} – 0x{{ parsedEndAddress?.toString(16).toUpperCase().padStart(8, '0') }}</strong><em>{{ readSize.toLocaleString() }} bytes</em></div>
       <p v-else class="memory-read-validation">{{ tr('结束地址必须大于基地址，并使用 0x 十六进制格式。', 'The end address must be greater than the base address and use 0x hexadecimal format.') }}</p>
-      <p class="memory-read-note">{{ readSize > 0 ? chunkDescription : '' }}</p>
+      <p class="memory-read-note">{{ readSize > 0 ? (hpm ? tr('HPM 固件内部按 2048 字节帧传输。', 'HPM firmware transfers 2048-byte frames internally.') : chunkDescription) : '' }}</p>
       <div class="memory-read-dialog-actions"><button class="btn" type="button" @click="closeReadDialog">{{ tr('取消', 'Cancel') }}</button><button class="btn btn-primary" type="button" data-testid="memory-read-confirm" :disabled="!canRead" @click="readDialogOpen = false; void readMemory()"><Upload :size="14" aria-hidden="true" />{{ tr('开始读取', 'Start Read') }}</button></div>
     </section>
   </div>
