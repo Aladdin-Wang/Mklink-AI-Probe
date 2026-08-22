@@ -55,6 +55,8 @@ def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dic
 
 logger = logging.getLogger(__name__)
 _RTT_DELIVERY_INTERVAL = 1.0 / 50.0
+_SYSTEMVIEW_DELIVERY_INTERVAL = 1.0 / 30.0
+_RUNTIME_CPU_FREQ_SOURCES = {"SystemCoreClock", "hpm_core_clock"}
 SUPPORTED_RTT_ENCODINGS = ("utf-8", "gb2312", "gbk", "gb18030", "big5")
 
 
@@ -775,7 +777,8 @@ class SystemViewStreamManager:
                         continue
                     try:
                         raw = device.systemview_read_bytes(
-                            duration=0.1, max_bytes=64 * 1024
+                            duration=_SYSTEMVIEW_DELIVERY_INTERVAL,
+                            max_bytes=64 * 1024,
                         )
                     except Exception as exc:
                         last_read_error = exc
@@ -935,19 +938,39 @@ class SystemViewStreamManager:
 
     def _apply_cpu_freq_hint(self, device, start_result: dict | None = None) -> int:
         p = self._parser
-        if not p or p.cpu_freq:
-            if p and p.cpu_freq and not self._cpu_freq_source:
-                self._cpu_freq_source = "parser_default"
-            return p.cpu_freq if p else 0
+        if not p:
+            return 0
 
+        result = start_result or {}
         freq = 0
         source = ""
-        result = start_result or {}
         for key in ("cpu_freq", "cpu_freq_hint"):
             freq = _positive_int(result.get(key))
             if freq:
                 source = str(result.get("cpu_freq_source") or "systemview_start")
                 break
+
+        # A runtime symbol read is authoritative even when the parser was
+        # seeded from a project default such as a stale RT_SYSVIEW_CPU_FREQ.
+        # Explicit hints without a source retain the historical behavior too.
+        runtime_hint = bool(freq) and (
+            source in _RUNTIME_CPU_FREQ_SOURCES
+            or ("cpu_freq_hint" in result and not result.get("cpu_freq_source"))
+        )
+        if runtime_hint:
+            set_cpu_freq = getattr(p, "set_cpu_freq", None)
+            if callable(set_cpu_freq):
+                set_cpu_freq(freq, lock=True)
+            else:
+                p._cpu_freq = freq
+            self._cpu_freq_source = source
+            self._ensure_event_time_fields(self._history)
+            return freq
+
+        if p.cpu_freq:
+            if p and p.cpu_freq and not self._cpu_freq_source:
+                self._cpu_freq_source = "parser_default"
+            return p.cpu_freq
 
         if not freq:
             device_parser = getattr(device, "_systemview_parser", None)
@@ -969,7 +992,11 @@ class SystemViewStreamManager:
                 source = "mcu_profile_default"
 
         if freq:
-            p._cpu_freq = freq
+            set_cpu_freq = getattr(p, "set_cpu_freq", None)
+            if callable(set_cpu_freq):
+                set_cpu_freq(freq)
+            else:
+                p._cpu_freq = freq
             self._cpu_freq_source = source
             self._ensure_event_time_fields(self._history)
         return freq
@@ -1000,6 +1027,8 @@ class SystemViewStreamManager:
         return 0
 
     def _note_init_cpu_freq(self, events: list[dict]) -> None:
+        if self._cpu_freq_source in _RUNTIME_CPU_FREQ_SOURCES:
+            return
         for ev in events:
             if ev.get("kind") == "init" and _positive_int(ev.get("cpu_freq")):
                 self._cpu_freq_source = "INIT"

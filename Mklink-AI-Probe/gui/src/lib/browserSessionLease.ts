@@ -15,6 +15,16 @@ function createClientId(): string {
     ?? `mklink-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function releaseBrowserDevice(clientId: string): void {
+  const body = new Blob([JSON.stringify({ client_id: clientId })], {
+    type: 'application/json',
+  })
+  // Release the device before the browser session lease expires. The lease
+  // still owns process shutdown, while this beacon immediately frees COM.
+  navigator.sendBeacon?.('/api/device/disconnect', body)
+  navigator.sendBeacon?.('/api/browser-session/release', body)
+}
+
 export function startBrowserSessionLease(enabled = !IS_TAURI): () => void {
   if (!enabled) return () => undefined
 
@@ -40,10 +50,7 @@ export function startBrowserSessionLease(enabled = !IS_TAURI): () => void {
     if (retryTimer !== null) clearTimeout(retryTimer)
     socket?.close(1000, 'browser page closed')
     socket = null
-    navigator.sendBeacon?.(
-      '/api/browser-session/release',
-      new Blob([JSON.stringify({ client_id: clientId })], { type: 'application/json' }),
-    )
+    releaseBrowserDevice(clientId)
   }
 
   window.addEventListener('pagehide', stop)

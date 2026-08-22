@@ -21,13 +21,14 @@ export class SvTimeline {
   viewEnd: number | null
   constructor(roots: SvTimelineRoots, data: SvTimelineData)
   setData(intervals: SvTimelineData['intervals']): void
-  setContexts(contexts: Array<{ tid: number; name: string; type?: string }>): void
+  setContexts(contexts: Array<{ tid: number; name: string; type?: string }>, options?: { render?: boolean }): void
   setPrefilteredIntervals(intervals: SvTimelineData['intervals']): void
   setWindowSize(windowSize: number): void
   setTickOrigin(tickOrigin: bigint): void
   setFollowMode(enabled: boolean): void
   getViewRange(): { start: number; end: number } | null
   getFollowSpan(): number
+  renderFrame(timestamp?: number): boolean
   setLabels(labels: { emptyText?: string }): void
   pauseRendering(): void
   resumeRendering(): void

@@ -29,7 +29,11 @@ export function exactTickFromOffset(origin, offset) {
   return (origin + BigInt(Math.round(offset))).toString();
 }
 
-const FOLLOW_FRAME_INTERVAL_MS = 1000 / 30;
+const FOLLOW_FRAME_INTERVAL_MS = 1000 / 60;
+const FOLLOW_INTERPOLATION_MS = 100;
+const MIN_INTERVAL_LABEL_WIDTH = 34;
+const MIN_INTERVAL_STROKE_WIDTH = 2;
+const LABEL_WIDTH_CACHE_LIMIT = 512;
 
 export class SvTimeline {
   constructor(roots, data) {
@@ -66,7 +70,14 @@ export class SvTimeline {
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followSpan = null;
+    // The displayed range at the moment the current follow transition began.
+    // Keep this separate from viewStart/viewEnd, which are advanced every
+    // animation frame and therefore cannot be reused as interpolation input.
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
+    this._labelWidthCache = new Map();
     this._renderPaused = (data && data.renderPaused) === true;
     this.emptyText = (data && data.emptyText) || '窗口内无任务';
     this.setData((data && data.intervals) || []);
@@ -81,9 +92,9 @@ export class SvTimeline {
     this._acceptData(this._filterContinuous(intervals || []));
   }
 
-  setContexts(contexts) {
+  setContexts(contexts, options = {}) {
     this._explicitContexts = Array.isArray(contexts) ? contexts : [];
-    this._acceptData(this.intervals || []);
+    this._acceptData(this.intervals || [], options);
   }
 
   setLabels(labels) {
@@ -92,16 +103,23 @@ export class SvTimeline {
     this._updateStatus();
   }
 
-  _acceptData(intervals) {
+  _acceptData(intervals, options = {}) {
     // 按任务汇总，确定泳道顺序（总运行时间降序，最多 12 条）
     const hadIntervalsBefore = this._hadIntervals;
-    this._hadIntervals = intervals.length > 0;
+    const previousTMin = this.tMin;
+    const previousTMax = this.tMax;
+    this._hadIntervals = options.preserveDataRange
+      ? hadIntervalsBefore || intervals.length > 0
+      : intervals.length > 0;
     this.intervals = intervals;
     const run = new Map(), names = new Map(), types = new Map();
+    let tMin = Infinity, tMax = -Infinity;
     for (const it of this.intervals) {
       run.set(it.tid, (run.get(it.tid) || 0) + (it.end - it.start));
       names.set(it.tid, it.name);
       if (it.type) types.set(it.tid, it.type);
+      if (it.start < tMin) tMin = it.start;
+      if (it.end > tMax) tMax = it.end;
     }
     for (const context of (this._explicitContexts || [])) {
       if (!context || !Number.isFinite(context.tid)) continue;
@@ -113,9 +131,21 @@ export class SvTimeline {
     this.taskOf = new Map(this.tasks.map(t => [t.tid, t]));
     // 时间范围
     if (this.intervals.length) {
-      this.tMin = Math.min(...this.intervals.map(i => i.start));
-      this.tMax = Math.max(...this.intervals.map(i => i.end));
+      this.tMin = tMin;
+      this.tMax = tMax;
     } else { this.tMin = 0; this.tMax = 1; }
+    // Visible-range responses are a moving slice of one trace. Preserve the
+    // accumulated data bounds so follow advances from the previous frame
+    // instead of rebuilding the time axis from the newest slice's first item.
+    if (options.preserveDataRange) {
+      if (this.intervals.length === 0 && Number.isFinite(previousTMin) && Number.isFinite(previousTMax)) {
+        this.tMin = previousTMin;
+        this.tMax = previousTMax;
+      } else {
+        if (Number.isFinite(previousTMin)) this.tMin = Math.min(previousTMin, this.tMin);
+        if (Number.isFinite(previousTMax)) this.tMax = Math.max(previousTMax, this.tMax);
+      }
+    }
     if (this.tMax <= this.tMin) this.tMax = this.tMin + 1;
     const viewInvalid = this.viewStart == null || this.viewEnd == null || this.viewEnd <= this.viewStart;
     const preserveManualView = !this.follow && !viewInvalid;
@@ -125,11 +155,27 @@ export class SvTimeline {
       if (
         viewInvalid
         || !hadIntervalsBefore
-        || Math.abs(this.viewStart - target.start) > 0.001
-        || Math.abs(this.viewEnd - target.end) > 0.001
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;
+        this._followFrom = null;
+        this._followTarget = null;
+        this._followTransitionAt = null;
+      } else if (
+        Math.abs((this._followTarget?.start ?? this.viewStart) - target.start) > 0.001
+        || Math.abs((this._followTarget?.end ?? this.viewEnd) - target.end) > 0.001
+      ) {
+        // Capture the displayed frame and ease toward the newest range.
+        const now = performance.now();
+        const current = this._interpolatedFollowRange(now);
+        this.viewStart = current.start;
+        this.viewEnd = current.end;
+        this._followFrom = current;
+        this._followTarget = target;
+        // Each target starts a fresh, short transition from the range that is
+        // actually on screen. This prevents a completed transition's stale
+        // timestamp from making the next worker batch jump in one frame.
+        this._followTransitionAt = now;
       }
     } else if (!preserveManualView) {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;
@@ -146,7 +192,9 @@ export class SvTimeline {
       }
     }
     const resized = this._layout();
-    const drew = shouldFollow ? this._drawLive(undefined, resized) : (this._draw(), true);
+    const drew = options.render === false
+      ? false
+      : shouldFollow ? this._drawLive(undefined, resized) : (this._draw(), true);
     if (drew) this._updateStatus();
   }
 
@@ -157,7 +205,9 @@ export class SvTimeline {
     // but the intervals inside that frame must continue to repaint as new
     // samples arrive. The caller requests the current view range from the
     // worker, so accepting every frame does not pull the view back to "now".
-    this._acceptData(intervals || []);
+    // The continuous render scheduler owns the live paint cadence. Painting
+    // here as well doubles the frame load whenever a worker response arrives.
+    this._acceptData(intervals || [], { render: false, preserveDataRange: true });
   }
 
   getViewRange() {
@@ -218,6 +268,9 @@ export class SvTimeline {
   setWindowSize(windowSize) {
     this.windowSize = Math.max(0, Number(windowSize) || 0);
     this.followSpan = null;
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
@@ -228,7 +281,12 @@ export class SvTimeline {
 
   setFollowMode(enabled) {
     this.follow = !!enabled;
-    if (!this.follow) this.followSpan = null;
+    if (!this.follow) {
+      this.followSpan = null;
+      this._followFrom = null;
+      this._followTarget = null;
+      this._followTransitionAt = null;
+    }
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
   }
 
@@ -244,6 +302,9 @@ export class SvTimeline {
     const target = this._targetFollowRange();
     this.viewStart = target.start;
     this.viewEnd = target.end;
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.W && this.H) {
       this._draw();
       this._updateStatus();
@@ -257,6 +318,44 @@ export class SvTimeline {
       : Number.NEGATIVE_INFINITY;
     if (!force && timestamp - lastRender < FOLLOW_FRAME_INTERVAL_MS) return false;
     this._lastLiveRender = timestamp;
+    this._draw();
+    return true;
+  }
+
+  _interpolatedFollowRange(timestamp) {
+    if (!this._followTarget || this._followTransitionAt == null
+      || !Number.isFinite(this.viewStart) || !Number.isFinite(this.viewEnd)) {
+      return { start: this.viewStart, end: this.viewEnd };
+    }
+    const from = this._followFrom || {
+      start: this.viewStart,
+      end: this.viewEnd,
+    };
+    const progress = Math.min(1, Math.max(0,
+      (timestamp - this._followTransitionAt) / FOLLOW_INTERPOLATION_MS));
+    const ease = 1 - Math.pow(1 - progress, 3);
+    return {
+      start: from.start + (this._followTarget.start - from.start) * ease,
+      end: from.end + (this._followTarget.end - from.end) * ease,
+    };
+  }
+
+  /** Paint one live frame and advance the follow viewport toward its target. */
+  renderFrame(timestamp = performance.now()) {
+    if (this._renderPaused) return false;
+    if (this._followTarget) {
+      const next = this._interpolatedFollowRange(timestamp);
+      this.viewStart = next.start;
+      this.viewEnd = next.end;
+      if (this._followTransitionAt != null
+        && timestamp - this._followTransitionAt >= FOLLOW_INTERPOLATION_MS) {
+        this.viewStart = this._followTarget.start;
+        this.viewEnd = this._followTarget.end;
+        this._followTarget = null;
+        this._followFrom = null;
+        this._followTransitionAt = null;
+      }
+    }
     this._draw();
     return true;
   }
@@ -275,6 +374,7 @@ export class SvTimeline {
 
   _layout() {
     this.lanes = this.tasks.filter(t => !this.hidden.has(t.tid));
+    this.laneIndexByTid = new Map(this.lanes.map((task, index) => [task.tid, index]));
     const dpr = window.devicePixelRatio || 1;
     const cssW = this.canvas.clientWidth || 800;
     if (this.lanes.length > this.laneCapacity) this.laneCapacity = this.lanes.length;
@@ -434,10 +534,18 @@ export class SvTimeline {
   }
 
   _labelWidth(text) {
+    if (!this._labelWidthCache) this._labelWidthCache = new Map();
+    const cached = this._labelWidthCache.get(text);
+    if (cached !== undefined) return cached;
+    let width;
     if (this.ctx && typeof this.ctx.measureText === 'function') {
-      return this.ctx.measureText(text).width;
+      width = this.ctx.measureText(text).width;
+    } else {
+      width = String(text).length * 7;
     }
-    return String(text).length * 7;
+    if (this._labelWidthCache.size >= LABEL_WIDTH_CACHE_LIMIT) this._labelWidthCache.clear();
+    this._labelWidthCache.set(text, width);
+    return width;
   }
 
   _draw() {
@@ -461,8 +569,10 @@ export class SvTimeline {
     for (const it of this.intervals) {
       const task = this.taskOf.get(it.tid);
       if (!task || this.hidden.has(it.tid)) continue;
-      const laneIdx = this.lanes.indexOf(task);
-      if (laneIdx < 0) continue;
+      const laneIdx = this.laneIndexByTid
+        ? this.laneIndexByTid.get(it.tid)
+        : this.lanes.indexOf(task);
+      if (laneIdx === undefined || laneIdx < 0) continue;
       if (it.end < this.viewStart || it.start > this.viewEnd) continue;
       const x0 = Math.max(this._t2x(it.start), this.plotX0);
       const x1 = Math.min(this._t2x(it.end), this.plotX1);
@@ -472,24 +582,30 @@ export class SvTimeline {
       ctx.fillStyle = task.type === 'Scheduler' ? '#eef0f3'
         : task.type === 'Idle' ? '#f7f8fa' : task.color;
       ctx.fillRect(x0, y, w, h);
-      ctx.strokeStyle = task.type === 'Scheduler' || task.type === 'Idle'
-        ? '#969da6' : 'rgba(31, 41, 55, 0.32)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(w - 1, 0.8), Math.max(h - 1, 1));
-      const durationLabel = this._fmtIntervalLabel(it);
-      ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
-      const labelWidth = this._labelWidth(durationLabel);
-      if (w >= labelWidth + 10) {
-        ctx.fillStyle = task.type === 'Scheduler' || task.type === 'Idle' ? '#4b535d' : '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(durationLabel, x0 + w / 2, y + h / 2 + 0.5);
+      if (w >= MIN_INTERVAL_STROKE_WIDTH) {
+        ctx.strokeStyle = task.type === 'Scheduler' || task.type === 'Idle'
+          ? '#969da6' : 'rgba(31, 41, 55, 0.32)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 + 0.5, y + 0.5, Math.max(w - 1, 0.8), Math.max(h - 1, 1));
+      }
+      if (w >= MIN_INTERVAL_LABEL_WIDTH) {
+        const durationLabel = this._fmtIntervalLabel(it);
+        ctx.font = '10px ui-monospace,SFMono-Regular,Consolas,monospace';
+        const labelWidth = this._labelWidth(durationLabel);
+        if (w >= labelWidth + 10) {
+          ctx.fillStyle = task.type === 'Scheduler' || task.type === 'Idle' ? '#4b535d' : '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(durationLabel, x0 + w / 2, y + h / 2 + 0.5);
+        }
       }
     }
     if (this.hover) {
       const task = this.taskOf.get(this.hover.tid);
-      const laneIdx = this.lanes.indexOf(task);
-      if (laneIdx >= 0) {
+      const laneIdx = this.laneIndexByTid
+        ? this.laneIndexByTid.get(task?.tid)
+        : this.lanes.indexOf(task);
+      if (laneIdx !== undefined && laneIdx >= 0) {
         const x0 = Math.max(this._t2x(this.hover.start), this.plotX0);
         const x1 = Math.min(this._t2x(this.hover.end), this.plotX1);
         const y = this.rulerH + laneIdx * this.laneH + 2;
@@ -758,6 +874,9 @@ export class SvTimeline {
     this.markerPinned = false;
     this.markerTime = null;
     this.followSpan = null;
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     if (this.windowSize > 0) {
       this.setFollowMode(true);
       return;
@@ -778,6 +897,9 @@ export class SvTimeline {
       this._listenersBound = false;
     }
     this._hideTip();
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     // （其它监听挂在 window/canvas，组件卸载时随 DOM 释放；简单场景可接受）
   }
 }

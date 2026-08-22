@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 import uuid
@@ -23,7 +24,10 @@ from .models import (
 from ..remote.resource_manager import ResourceError, ResourceGroup
 
 
-READ_MEMORY_CHUNK_SIZE = 512 * 1024
+# Keep the generic host-side read request aligned with the common 4 KiB
+# Flash sector. Callers that have reliable FLM geometry may provide a smaller
+# or larger exact sector sequence explicitly.
+READ_MEMORY_CHUNK_SIZE = 4 * 1024
 MAX_READ_MEMORY_SIZE = 64 * 1024 * 1024
 
 
@@ -164,11 +168,7 @@ class OnlineFlashJobManager:
         """Yield target-memory chunks from one resource-protected connection."""
         from mklink.hpm_config import is_hpm_target
 
-        if is_hpm_target(request.target_part):
-            raise FlashError(
-                FlashErrorCode.TARGET_NOT_SUPPORTED,
-                "HPM ROM API does not support online memory reads",
-            )
+        hpm_target = is_hpm_target(request.target_part)
         if type(address) is not int or address < 0:
             raise ValueError("address must be a non-negative integer")
         sizes = tuple(chunk_sizes)
@@ -184,8 +184,11 @@ class OnlineFlashJobManager:
         acquired = False
         try:
             acquired = True
-            self._resource_manager.acquire(
-                ResourceGroup.TARGET_DEBUG,
+            resources = [ResourceGroup.TARGET_DEBUG]
+            if hpm_target:
+                resources.append(ResourceGroup.MKLINK_BRIDGE)
+            self._resource_manager.acquire_many(
+                resources,
                 owner,
                 preempt=request.preempt_ai,
                 preempt_user_dashboard=True,
@@ -193,7 +196,7 @@ class OnlineFlashJobManager:
             if self._prepare_connect is not None:
                 self._prepare_connect(request)
             backend = self._backend_factory()
-            backend.connect(
+            connect_options = dict(
                 probe=request.probe_id,
                 target=request.target_part,
                 frequency=request.frequency,
@@ -207,6 +210,12 @@ class OnlineFlashJobManager:
                 connect_mode=request.connect_mode,
                 reset_mode=request.reset_mode,
             )
+            if hpm_target:
+                connect_options.update(
+                    board=request.board,
+                    hpm_flash_cfg=request.hpm_flash_cfg,
+                )
+            backend.connect(**connect_options)
             regions = tuple(backend.memory_regions())
             end = address + size
             if end < address or not any(
@@ -324,6 +333,7 @@ class OnlineFlashJobManager:
         backend = None
         connection_may_be_open = False
         acquire_attempted = False
+        deferred_erase = False
         primary_error: Optional[FlashError] = None
         with self._condition:
             if job.state is not JobState.QUEUED or job.cancel_requested:
@@ -404,6 +414,17 @@ class OnlineFlashJobManager:
                                     )
                                 backend.connect(**connect_options)
                             elif action == "erase":
+                                deferred_erase = bool(
+                                    getattr(backend, "erase_deferred", False)
+                                    and "program" in job.request.actions
+                                )
+                                if deferred_erase:
+                                    with self._condition:
+                                        self._emit_locked(
+                                            job,
+                                            "log",
+                                            message="erase in progress (completed by HPM ROM during program)",
+                                        )
                                 if job.request.sector_addresses:
                                     backend.erase_sectors(job.request.sector_addresses)
                                 else:
@@ -416,6 +437,45 @@ class OnlineFlashJobManager:
                                 last_reported_percent = -1
 
                                 def report_program_progress(value: float) -> None:
+                                    nonlocal deferred_erase, last_reported_percent
+                                    try:
+                                        fraction = float(value)
+                                    except (TypeError, ValueError):
+                                        return
+                                    if fraction > 1:
+                                        fraction /= 100.0
+                                    fraction = min(1.0, max(0.0, fraction))
+                                    if deferred_erase and fraction <= 0:
+                                        return
+                                    percent = int(fraction * 100)
+                                    if percent <= last_reported_percent and fraction < 1:
+                                        return
+                                    last_reported_percent = percent
+                                    if deferred_erase and fraction > 0:
+                                        with self._condition:
+                                            self._complete_deferred_stage_locked(job, "erase")
+                                        deferred_erase = False
+                                    self._program_progress(job, fraction)
+
+                                if not deferred_erase:
+                                    report_program_progress(0)
+                                backend.program(
+                                    job.image,
+                                    progress_callback=report_program_progress,
+                                )
+                                if deferred_erase:
+                                    with self._condition:
+                                        self._complete_deferred_stage_locked(job, "erase")
+                                    deferred_erase = False
+                                report_program_progress(1)
+                            elif action == "verify":
+                                self._refresh_image(job)
+                                with self._condition:
+                                    if job.cancel_requested:
+                                        break
+                                last_reported_percent = -1
+
+                                def report_verify_progress(value: float) -> None:
                                     nonlocal last_reported_percent
                                     try:
                                         fraction = float(value)
@@ -428,20 +488,29 @@ class OnlineFlashJobManager:
                                     if percent <= last_reported_percent and fraction < 1:
                                         return
                                     last_reported_percent = percent
-                                    self._program_progress(job, fraction)
+                                    self._verify_progress(job, fraction)
 
-                                report_program_progress(0)
-                                backend.program(
-                                    job.image,
-                                    progress_callback=report_program_progress,
-                                )
-                                report_program_progress(1)
-                            elif action == "verify":
-                                self._refresh_image(job)
-                                with self._condition:
-                                    if job.cancel_requested:
-                                        break
-                                backend.verify(job.image)
+                                report_verify_progress(0)
+                                verify = backend.verify
+                                try:
+                                    verify_parameters = inspect.signature(verify).parameters
+                                    accepts_progress = (
+                                        "progress_callback" in verify_parameters
+                                        or any(
+                                            parameter.kind is inspect.Parameter.VAR_KEYWORD
+                                            for parameter in verify_parameters.values()
+                                        )
+                                    )
+                                except (TypeError, ValueError):
+                                    accepts_progress = False
+                                if accepts_progress:
+                                    verify(
+                                        job.image,
+                                        progress_callback=report_verify_progress,
+                                    )
+                                else:
+                                    verify(job.image)
+                                report_verify_progress(1)
                             elif action == "reset":
                                 backend.reset_run(job.request.reset_mode)
                         except FlashError:
@@ -449,7 +518,8 @@ class OnlineFlashJobManager:
                         except Exception as exc:
                             raise FlashError(_ACTION_ERRORS[action], str(exc)) from exc
                         with self._condition:
-                            self._stage_complete_locked(job, action)
+                            if not (action == "erase" and deferred_erase):
+                                self._stage_complete_locked(job, action)
             except ResourceError as exc:
                 primary_error = FlashError(
                     FlashErrorCode.PROBE_BUSY,
@@ -591,6 +661,17 @@ class OnlineFlashJobManager:
         self._emit_locked(job, "progress", progress=job.total_progress)
         self._emit_locked(job, "log", message=f"{action} complete")
 
+    def _complete_deferred_stage_locked(self, job: _Job, action: str) -> None:
+        """Complete a prior stage without overwriting the active stage."""
+        job.completed_actions += 1
+        job.total_progress = max(
+            job.total_progress,
+            job.completed_actions / len(job.request.actions),
+        )
+        job.updated_at = time.monotonic()
+        self._emit_locked(job, "progress", progress=job.total_progress)
+        self._emit_locked(job, "log", message=f"{action} complete")
+
     def _program_progress(self, job: _Job, fraction: float) -> None:
         with self._condition:
             if job.current_action != "program" or job.image is None:
@@ -609,6 +690,29 @@ class OnlineFlashJobManager:
                 "progress",
                 message=(
                     f"[PROGRAM] {completed} / {job.image.size} Bytes "
+                    f"({round(fraction * 100)}%)"
+                ),
+                progress=job.total_progress,
+            )
+
+    def _verify_progress(self, job: _Job, fraction: float) -> None:
+        with self._condition:
+            if job.current_action != "verify" or job.image is None:
+                return
+            if fraction < job.stage_progress:
+                return
+            job.stage_progress = fraction
+            job.total_progress = max(
+                job.total_progress,
+                (job.completed_actions + fraction) / len(job.request.actions),
+            )
+            job.updated_at = time.monotonic()
+            verified = min(job.image.size, round(job.image.size * fraction))
+            self._emit_locked(
+                job,
+                "progress",
+                message=(
+                    f"[VERIFY] {verified} / {job.image.size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,

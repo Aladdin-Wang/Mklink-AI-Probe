@@ -1,99 +1,86 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-21T11:58:12+08:00",
+  "updated_at": "2026-08-22T16:00:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "master 已快进包含读取回烧进度、读取弹窗和固件人工下载兜底等已验证修复。",
-    "remote_head": "origin/master 同步本次 v0.1.7 修复基线后，新的 Timeline 修复分支从该基线创建。",
-    "working_tree": "master 集成工作区仅更新项目记忆；维护者原工作区的固件、gui/dist、Cargo 和本地构建产物保持不动。"
+    "branch": "fix/hpm-online-flash-read",
+    "head": "HPM 在线 Flash 读取、4 KiB 分块和擦除/编程状态显示已完成。",
+    "remote_head": "origin/fix/hpm-online-flash-read",
+    "working_tree": "修复分支待合并 master；构建产物不纳入源码提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
-    "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
+    "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v017_fixes_merged",
-    "current_task": "已审计并合并所有有效修复；下一问题在新分支复现 HPM FreeRTOS SystemView Timeline 卡顿。",
-    "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
+    "status": "v017-ready-to-merge",
+    "current_task": "合并最新 HPM 在线烧录修复，生成安装包并更新本地 Skill 与 U 盘快速启动。",
+    "release": "准备本地覆盖安装；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
     {
       "name": "v0.1.7 运行时",
       "status": "complete",
-      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成；读取数据回烧现可显示真实字节进度并在完成后保持烧录状态。"
+      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复已完成。"
     },
     {
       "name": "桌面与 Web 一致性",
       "status": "complete",
-      "notes": "共享 Vue 前端和 FastAPI 能力；Tauri 使用内置 sidecar，客户端生命周期与端口互不干扰。"
+      "notes": "Web 与 Tauri 共享 Vue 前端和 FastAPI 能力，客户端连接与后端生命周期互不干扰。"
     },
     {
-      "name": "固件分发",
+      "name": "SystemView Timeline",
       "status": "complete",
-      "notes": "V3.3.7/V4.3.6 作为 GitHub v0.1.6 Release 资产托管，不提交 UF2 到 Git；自动升级失败后可由 Web/Tauri 保存对应 UF2。"
+      "notes": "连续跟随、首屏稳定刷新、缩放跟随和可见区间累计缓存已在最新修复分支实现。"
     }
   ],
   "verification": [
     {
-      "area": "最终自动化门禁",
-      "result": "GUI 55 文件/552 项和 Vite 生产构建通过。Python 为 1327 passed、1 skipped；另 12 项仅因当前 Windows 账户无目录符号链接权限（WinError 1314）无法建立测试前置条件。"
+      "area": "自动化门禁",
+      "result": "GUI 56 文件/575 项和 Vite 生产构建通过；Python 1334 项通过、1 项跳过，12 项 symlink 用例仅受当前 Windows 权限限制。"
     },
     {
-      "area": "安装包真机读写",
-      "result": "标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。"
+      "area": "真机闭环",
+      "result": "V3/STM32F103RC 完成 Flash 读取、擦除、编程、校验、复位和断开；Chrome Web GUI 验证 RTT/SuperWatch 保存与 SystemView 持续更新。"
     },
     {
-      "area": "桌面保存与界面修复",
-      "result": "Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。"
+      "area": "HPM API 源码审查",
+      "result": "cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。"
     },
     {
-      "area": "实时调试",
-      "result": "真实 V3 数据流验证 RTOS Trace 持续滚动、缩放后实时刷新、泳道高度稳定；RTT 停止恢复与 CMD 残留命令清理均完成真机闭环。"
+      "area": "HPM 真机读取",
+      "result": "V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。"
     },
     {
-      "area": "远程固件",
-      "result": "真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。"
-    },
-    {
-      "area": "固件人工下载界面",
-      "result": "Chrome 连接真实探针后安全释放；隔离测试实例实际显示自动升级未完成、最新 V4.3.6 和下载固件按钮，截图确认布局无重叠。Web 使用文件保存选择器，Tauri 复用原生保存框。"
-    },
-    {
-      "area": "分发候选",
-      "result": "基于 ddcb6c3 的标准 NSIS 已覆盖安装验证，SHA-256 为 F89C6AD3B63C7F16F349482C37EB52FAB0A6AB4CFCB9D0C34A6CEE881BAFBE99；本轮新增店铺链接和版本文案由最新 GUI 全量门禁覆盖，未发布正式资产。"
+      "area": "HPM 在线烧录",
+      "result": "HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。"
     }
   ],
   "decisions": [
-    "每个独立问题完成验证后单独提交并推送，方便按问题回退。",
-    "HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
-    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。",
-    "SystemView Timeline 以最新事件为右边界连续滚动，30 FPS 上限，泳道容量只增不减；拖拽才退出跟随。",
-    "固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。",
-    "自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。",
-    "GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。"
+    "每个独立问题单独提交并推送，便于回退。",
+    "HPM 目标使用设备端 ROM API，不加载 FLM；HPM Flash 映射基址为 0x80000000。",
+    "HPM 在线读取推荐采用 cmd.dump_memory 的一次性二进制帧模式；cmd.read_flash 保留为旧固件兼容回退或诊断路径。",
+    "dump_memory 必须由上位机封装为有限范围的一次性读取，按目标边界分块、校验 CRC/region error，并显式退出流模式。",
+    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。"
   ],
   "hardware": {
-    "probe": "维护机可使用 V2/V3/V4；交接不记录端口或完整设备标识。",
-    "target": "STM32F103RC 测试工程可用于破坏性烧录闭环；HPM 与其他 ARM 板按任务选择。",
-    "permission": "维护者已授权并要求合并已验证修复到 master，并从该基线创建新的 Timeline 修复分支；未授权发布 v0.1.7、签名、打标签、更新 latest.json 或同步 Gitee。"
+    "probe": "维护机可使用 V2/V3/V4；交接不记录端口或完整探针标识。",
+    "target": "STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。",
+    "permission": "维护者要求每个问题独立提交；本轮合并主分支并覆盖本地安装，不发布正式 v0.1.7。"
   },
   "known_limits": [
-    "当前 Windows 账户不能创建目录符号链接，12 个上传路径重定向安全测试无法运行 symlink 分支；junction 分支通过。",
-    "安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。",
-    "Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。",
-    "V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。",
-    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲。"
+    "当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。",
+    "HPM 旧固件若不支持 dump_memory，将按一次请求回退到较慢的 cmd.read_flash 文本读取；当前 V4.3.6 使用二进制路径。",
+    "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "从更新后的 master 创建 fix/systemview-timeline-smooth-refresh，使用 HPM FreeRTOS SystemView 工程复现并修复 Timeline 卡顿。",
-    "后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。"
+    "合并 fix/hpm-online-flash-read 到 master 并确认 master 包含已验证提交。",
+    "生成标准 NSIS 安装包，覆盖本地安装，更新本地 Skill 和 U 盘快速启动 HTML。"
   ],
   "continuation_protocol": [
-    "开始前用 Git、进程和硬件状态校正项目记忆。",
-    "项目记忆只保留当前事实；历史证据使用 Git 提交查询。",
-    "不提交固件、Pack、FLM、日志、硬件标识、凭据或构建缓存。",
-    "结束前执行全量门禁、render、validate 和 git diff --check。"
+    "开始前校正 Git、进程和硬件状态。",
+    "不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存。",
+    "结束前执行全量门禁、project-memory render/validate、git diff --check，并保持工作树干净。"
   ]
 }

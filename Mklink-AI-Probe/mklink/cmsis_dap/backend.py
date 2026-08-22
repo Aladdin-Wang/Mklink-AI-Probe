@@ -273,6 +273,12 @@ def _enable_custom_flm_verify(algorithm: Any) -> None:
 class HpmRomBackend:
     """Program HPMicro XPI Flash through the MKLink device-side ROM API."""
 
+    # The HPM ROM flash call performs erase and program as one operation. The
+    # job manager uses this marker to keep the erase stage pending until the
+    # programming stage starts.
+    erase_deferred = True
+    READ_CHUNK_SIZE = 4 * 1024
+
     def __init__(
         self,
         device_factory: Optional[Callable[..., Any]] = None,
@@ -410,13 +416,20 @@ class HpmRomBackend:
             except Exception as error:
                 raise FlashError(FlashErrorCode.PROGRAM_FAIL, str(error)) from error
 
-    def verify(self, image: ImageInspection) -> None:
+    def verify(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             device = self._require_device()
             path, base = self._validated_bin(image)
             try:
                 with path.open("rb") as stream:
                     offset = 0
+                    total = path.stat().st_size
+                    if progress_callback is not None:
+                        progress_callback(0.0)
                     while True:
                         expected = stream.read(self._verify_chunk_size)
                         if not expected:
@@ -433,6 +446,8 @@ class HpmRomBackend:
                                 {"address": base + offset + mismatch},
                             )
                         offset += len(expected)
+                        if progress_callback is not None:
+                            progress_callback(offset / total if total else 1.0)
             except FlashError:
                 raise
             except FileNotFoundError:
@@ -441,11 +456,60 @@ class HpmRomBackend:
                 raise FlashError(FlashErrorCode.VERIFY_FAIL, str(error)) from error
 
     def read_memory(self, address: int, size: int) -> bytes:
-        del address, size
-        raise FlashError(
-            FlashErrorCode.TARGET_NOT_SUPPORTED,
-            "HPM ROM API does not support online memory reads",
+        if type(address) is not int or address < 0:
+            raise ValueError("address must be a non-negative integer")
+        if type(size) is not int or size <= 0:
+            raise ValueError("size must be a positive integer")
+        self._require_device()
+        region = MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None)
+        if address < region.start or address + size > region.end:
+            raise FlashError(
+                FlashErrorCode.IMAGE_OUT_OF_RANGE,
+                "requested HPM Flash range is outside the XPI memory map",
+            )
+        bridge = getattr(self._device, "_bridge", None)
+        if bridge is None:
+            raise FlashError(
+                FlashErrorCode.CONNECT_FAIL,
+                "HPM device bridge is unavailable",
+            )
+        from mklink.dump_memory import (
+            DumpMemoryUnsupported,
+            read_dump_memory_range_once,
         )
+
+        try:
+            # HPM XPI Flash is organized in 4 KiB sectors. Keep host requests
+            # sector-sized while the dump protocol handles its 2 KiB frames.
+            parts = []
+            for offset in range(0, size, self.READ_CHUNK_SIZE):
+                part_size = min(self.READ_CHUNK_SIZE, size - offset)
+                parts.append(
+                    read_dump_memory_range_once(
+                        bridge, address + offset, part_size, timeout=10.0,
+                    )
+                )
+            return b"".join(parts)
+        except DumpMemoryUnsupported:
+            # Older probe firmware may expose only the text API.  It is slower,
+            # but preserves compatibility for small or diagnostic reads.
+            from mklink.memory_access import parse_read_ram_response
+
+            raw = bridge.send_command(
+                f"cmd.read_flash(0x{address:08X}, {size})",
+                timeout=max(10.0, size / 1200.0),
+            )
+            data = parse_read_ram_response(raw)
+            if len(data) != size:
+                raise FlashError(
+                    FlashErrorCode.CONNECT_FAIL,
+                    f"HPM read_flash returned {len(data)} bytes for {size}",
+                )
+            return data
+
+    def memory_regions(self) -> Tuple[MemoryRegion, ...]:
+        self._require_device()
+        return (MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),)
 
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
         del reset_mode
@@ -805,12 +869,23 @@ class PyOcdBackend:
                 self._close_after_failure()
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
 
-    def verify(self, image: ImageInspection) -> None:
+    def verify(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             session = self._require_session()
             try:
+                verified = 0
+                total = image.size if isinstance(image.size, int) and image.size > 0 else 0
+                if progress_callback is not None:
+                    progress_callback(0.0)
                 for address, expected in self._iter_image_chunks(image):
                     self._verify_expected_bytes(session.target, address, expected)
+                    verified += len(expected)
+                    if progress_callback is not None:
+                        progress_callback(verified / total if total else 1.0)
             except FlashError:
                 raise
             except FileNotFoundError:

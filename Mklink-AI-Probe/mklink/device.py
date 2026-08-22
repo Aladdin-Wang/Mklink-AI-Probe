@@ -1409,7 +1409,14 @@ class Device:
         # SystemCoreClock must be read before SystemView switches the bridge
         # into binary stream mode; command/variable reads are unavailable there.
         if cpu_freq_hint:
-            self._systemview_parser._cpu_freq = cpu_freq_hint
+            set_cpu_freq = getattr(self._systemview_parser, "set_cpu_freq", None)
+            if callable(set_cpu_freq):
+                set_cpu_freq(
+                    cpu_freq_hint,
+                    lock=cpu_freq_source in {"SystemCoreClock", "hpm_core_clock"},
+                )
+            else:
+                self._systemview_parser._cpu_freq = cpu_freq_hint
             result.setdefault("cpu_freq_hint", cpu_freq_hint)
             if cpu_freq_source:
                 result.setdefault("cpu_freq_source", cpu_freq_source)

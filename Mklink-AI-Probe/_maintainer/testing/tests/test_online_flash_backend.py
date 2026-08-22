@@ -101,13 +101,44 @@ def assert_error(code: FlashErrorCode, call) -> FlashError:
     return raised.value
 
 
-def test_hpm_rom_backend_rejects_online_memory_reads() -> None:
-    backend = HpmRomBackend()
-    error = assert_error(
-        FlashErrorCode.TARGET_NOT_SUPPORTED,
-        lambda: backend.read_memory(0x08000000, 4),
+def test_hpm_rom_backend_reads_via_dump_memory(monkeypatch) -> None:
+    class Device:
+        _bridge = object()
+
+        def close(self):
+            pass
+
+    device = Device()
+    backend = HpmRomBackend(device_factory=lambda **_kwargs: device)
+    backend.connect(
+        probe="probe",
+        target="HPM5300",
+        frequency=1_000_000,
+        board="hpm5300evk",
     )
-    assert "does not support online memory reads" in error.message
+    calls = []
+
+    def read_range(bridge, address, size, *, timeout):
+        calls.append((bridge, address, size, timeout))
+        return bytes((address + index) & 0xFF for index in range(size))
+
+    monkeypatch.setattr("mklink.dump_memory.read_dump_memory_range_once", read_range)
+    assert backend.read_memory(0x80000000, 0x8001) == bytes(
+        (0x80000000 + index) & 0xFF for index in range(0x8001)
+    )
+    assert [item[1:3] for item in calls] == [
+        (0x80000000, 0x1000),
+        (0x80001000, 0x1000),
+        (0x80002000, 0x1000),
+        (0x80003000, 0x1000),
+        (0x80004000, 0x1000),
+        (0x80005000, 0x1000),
+        (0x80006000, 0x1000),
+        (0x80007000, 0x1000),
+        (0x80008000, 1),
+    ]
+    assert backend.memory_regions()[0].start == 0x80000000
+    backend.disconnect()
 
 
 def test_pyocd_backend_reads_exact_bytes_from_target() -> None:
@@ -223,6 +254,42 @@ def test_hpm_rom_backend_rejects_hex_and_reports_verify_mismatch(tmp_path: Path)
         FlashErrorCode.FILE_FORMAT_ERROR,
         lambda: backend.program(ImageInspection("hex", file_path=str(firmware), format="hex")),
     )
+
+
+def test_hpm_rom_backend_verify_reports_progress(tmp_path: Path) -> None:
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"abcdefgh")
+    reported = []
+
+    class Device:
+        def read_memory(self, address, size):
+            return firmware.read_bytes()[address - 0x80000400 : address - 0x80000400 + size]
+
+        def close(self):
+            pass
+
+    backend = HpmRomBackend(
+        device_factory=lambda **_kwargs: Device(),
+        port_resolver=lambda _probe: "probe-port",
+        verify_chunk_size=4,
+    )
+    backend.connect("probe", "HPM5300", 1_000_000, board="hpm5300evk")
+    backend.verify(
+        ImageInspection(
+            "image",
+            file_path=str(firmware),
+            format="bin",
+            size=8,
+            start=0x80000400,
+            end=0x80000408,
+            segments=(ImageSegment(0x80000400, 0x80000408),),
+            base_address=0x80000400,
+        ),
+        progress_callback=reported.append,
+    )
+
+    assert reported == [0.0, 0.5, 1.0]
+    backend.disconnect()
 
 
 def test_routing_backend_selects_hpm_rom_only_for_hpm_targets() -> None:
