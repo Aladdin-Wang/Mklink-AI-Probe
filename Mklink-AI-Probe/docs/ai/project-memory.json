@@ -4,8 +4,8 @@
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/memory-read-dialog-dark-theme",
-    "head": "16fab8d docs: refresh current master handoff",
+    "branch": "master",
+    "head": "536e245 fix: restore dark theme for memory read dialog",
     "remote_head": "origin/master",
     "working_tree": "主分支已合并并推送；安装包和构建缓存不纳入源码提交。"
   },
@@ -14,7 +14,7 @@
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "memory-read-dialog-dark-theme",
+    "status": "memory-read-dialog-dark-theme-merged",
     "current_task": "读取目标 Flash 弹窗已恢复深色主题；弹窗颜色和操作按钮不再依赖外层变量或全局按钮样式。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },

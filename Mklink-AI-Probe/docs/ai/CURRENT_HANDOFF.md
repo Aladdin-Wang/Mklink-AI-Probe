@@ -5,12 +5,12 @@
 ## 当前断点
 
 - 更新时间：`2026-08-22T17:20:00+08:00`
-- 分支：`fix/memory-read-dialog-dark-theme`
-- HEAD：`16fab8d docs: refresh current master handoff`
+- 分支：`master`
+- HEAD：`536e245 fix: restore dark theme for memory read dialog`
 - 远端 HEAD：`origin/master`
 - 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
 - 当前任务：读取目标 Flash 弹窗已恢复深色主题；弹窗颜色和操作按钮不再依赖外层变量或全局按钮样式。
-- 状态：`memory-read-dialog-dark-theme`
+- 状态：`memory-read-dialog-dark-theme-merged`
 
 ## 里程碑
 
