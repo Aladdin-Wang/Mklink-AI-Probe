@@ -1,103 +1,79 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-22T12:30:00+08:00",
+  "updated_at": "2026-08-22T14:00:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/systemview-timeline-smooth-refresh",
-    "head": "SystemView Runtime/Timeline 累计修复、HPM CPU Clock 运行时频率优先级、首屏稳定刷新和连续跟随插值。",
-    "remote_head": "origin/fix/systemview-timeline-smooth-refresh 待同步连续跟随插值修复；尚未合并 master。",
-    "working_tree": "可见区间累计缓存源码、测试和记忆待提交；gui/dist 仅为本地验证产物，不纳入提交。"
+    "head": "SystemView Timeline 可见区间累计缓存修复已完成。",
+    "remote_head": "origin/fix/systemview-timeline-smooth-refresh",
+    "working_tree": "源码和记忆可提交；gui/dist 等本地构建产物已清理。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
-    "maintenance": "交接只记录当前基线、最新证据、有效决策、限制和下一动作；历史细节从 Git 查询。"
+    "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "systemview_visible_interval_cache_pending_hardware",
-    "current_task": "修复 Worker 像素 envelope 响应覆盖旧区间造成的 Timeline 大块跃迁；保持最新事件右边界跟随和稳定刷新。",
-    "release": "本轮不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
+    "status": "hpm-online-read-api-selection",
+    "current_task": "为在线下载选择 HPM Flash 读取 API；尚未修改运行时代码，等待维护者确认实施方案。",
+    "release": "不创建 v0.1.7 标签或 Release，不修改 updates/latest.json，不同步 Gitee。"
   },
   "milestones": [
     {
       "name": "v0.1.7 运行时",
       "status": "complete",
-      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复完成；读取数据回烧现可显示真实字节进度并在完成后保持烧录状态。"
+      "notes": "首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复已完成。"
     },
     {
       "name": "桌面与 Web 一致性",
       "status": "complete",
-      "notes": "共享 Vue 前端和 FastAPI 能力；Tauri 使用内置 sidecar，客户端生命周期与端口互不干扰。"
+      "notes": "Web 与 Tauri 共享 Vue 前端和 FastAPI 能力，客户端连接与后端生命周期互不干扰。"
     },
     {
-      "name": "固件分发",
+      "name": "SystemView Timeline",
       "status": "complete",
-      "notes": "V3.3.7/V4.3.6 作为 GitHub v0.1.6 Release 资产托管，不提交 UF2 到 Git；自动升级失败后可由 Web/Tauri 保存对应 UF2。"
+      "notes": "连续跟随、首屏稳定刷新、缩放跟随和可见区间累计缓存已在最新修复分支实现。"
     }
   ],
   "verification": [
     {
-      "area": "最终自动化门禁",
-      "result": "Timeline/调度器/页面聚焦测试 53 项通过；GUI 56 文件/572 项和 Vite 生产构建通过。Python 1331 项通过、1 项跳过；仅 12 项因当前 Windows 账户无目录 symlink 权限失败，junction 分支通过。"
+      "area": "自动化门禁",
+      "result": "最新分支 GUI 56 文件/574 项、Vite 生产构建和 Python 1331 项通过；12 项 symlink 用例仅受当前 Windows 权限限制。"
     },
     {
-      "area": "安装包真机读写",
-      "result": "标准 NSIS 覆盖安装后 health 与探针接口正常，进程树无 Python。V3/STM32F103RC 完成 512 KiB 读取、256 个 2 KiB 扇区解析、擦除、编程、全量 verify、复位和断开；读取 7.581 秒，作业 27.544 秒。"
+      "area": "真机闭环",
+      "result": "V3/STM32F103RC 完成 Flash 读取、擦除、编程、校验、复位和断开；Chrome Web GUI 验证 RTT/SuperWatch 保存与 SystemView 持续更新。"
     },
     {
-      "area": "桌面保存与界面修复",
-      "result": "Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。"
-    },
-    {
-      "area": "实时调试",
-      "result": "新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。"
-    },
-    {
-      "area": "Overflow 处理",
-      "result": "确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。"
-    },
-    {
-      "area": "Runtime/Timeline 累计修复",
-      "result": "Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax、任务元数据和已有数据状态，空视口响应也不会触发下一帧首次定位。首屏填充阶段固定 30 FPS，达到当前时间窗口后才恢复 60/30/20 自适应；新增独立 _followFrom 起点，每个 Worker 新目标都从当前实际显示帧重新启动 100 ms 插值，完成后清理起点和目标，避免过期时间戳让后续批次瞬移；可见区间 envelope 现在按 task/start tick 累计，保留最近 60 秒且上限 50,000 条，避免跟随窗口推进时旧区间整批消失。新增页面回归测试确认累计行为，SystemViewTab 定向测试 19 项通过、Vite 生产构建通过。COM55 探针在旧后端被关闭后仍处于流模式，当前分支后端恢复握手失败，因此最新缓存修复尚未完成 HPM 真机截图验收。"
-    },
-    {
-      "area": "HPM CPU Clock",
-      "result": "blink_led ELF/目标实际 hpm_core_clock=360000000；SystemView 设备层与真实 SystemViewStreamManager 连续读取均报告 360000000、来源 hpm_core_clock。运行时 SystemCoreClock/hpm_core_clock 现在覆盖工程 RT_SYSVIEW_CPU_FREQ 默认值，并锁定 parser 防止 INIT 816 MHz 覆盖；新增回归测试。SystemView 聚焦 72 项、全量 Python 1331 项通过（1 跳过，12 项因 Windows symlink 权限失败），GUI 56 文件/572 项和生产构建通过。"
-    },
-    {
-      "area": "远程固件与人工下载",
-      "result": "真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。Chrome 隔离测试显示自动升级未完成、最新 V4.3.6 和下载固件按钮，Web 文件保存选择器与 Tauri 原生保存框均已覆盖。"
+      "area": "HPM API 源码审查",
+      "result": "cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。"
     }
   ],
   "decisions": [
-    "每个独立问题完成验证后单独提交并推送，方便按问题回退。",
-    "HPM 目标只使用 ROM API；ELF/DWARF 默认使用内置 pyelftools。",
-    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期，关闭一个客户端不影响其他客户端。",
-    "SystemView Timeline 以最新事件为右边界连续滚动；Runtime/Context 统计基于 Worker 保留的完整 interval ring，只有环形缓存淘汰历史时才减少；visible-range 仅负责绘制候选，不得重置累计时间边界和任务泳道元数据。后端按约 30 FPS 交付且底层流读取最多等待 10 ms。前端只由一个 continuous 调度器绘制，首屏填充阶段固定 30 FPS，达到当前时间窗口后按实际输出区间/事件数和实测绘制成本在 60/30/20 FPS 间自适应；每批跟随目标从当前显示帧通过独立 _followFrom 起点连续插值，清空/重启会重置控制器。Worker 可见范围请求只允许一个在途请求并合并后续最新范围，避免 HPM 高事件率积压。SystemView CPU Clock 优先使用切流前读取的 SystemCoreClock/hpm_core_clock；该运行时值锁定 parser，INIT/工程默认仅作无运行时变量时的兜底。",
-    "固件升级优先 GitHub；GitHub 文件下载失败后才查询并切换 Gitee，同版本远程 UF2 使用 Release 资产且不进入 Git 历史。",
-    "自动升级未完成且已识别型号时必须返回最新版本、文件名和人工下载能力；下载端点只接受 V3/V4，不接收任意 URL。",
-    "GUI 不提供 VCC 控件；AI 设置任意电压都需本次明确确认，5V 还需额外确认。"
+    "每个独立问题单独提交并推送，便于回退。",
+    "HPM 目标使用设备端 ROM API，不加载 FLM；HPM Flash 映射基址为 0x80000000。",
+    "HPM 在线读取推荐采用 cmd.dump_memory 的一次性二进制帧模式；cmd.read_flash 保留为旧固件兼容回退或诊断路径。",
+    "dump_memory 必须由上位机封装为有限范围的一次性读取，按目标边界分块、校验 CRC/region error，并显式退出流模式。",
+    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。"
   ],
   "hardware": {
-    "probe": "维护机可使用 V2/V3/V4；交接不记录端口或完整设备标识。",
-    "target": "STM32F103RC 测试工程可用于破坏性烧录闭环；HPM 与其他 ARM 板按任务选择。",
-    "permission": "维护者确认按方案 1 修复，并要求每个问题独立提交和推送；本轮不发布 v0.1.7、不签名、不打标签、不更新 latest.json、不同步 Gitee。"
+    "probe": "维护机可使用 V2/V3/V4；交接不记录端口或完整探针标识。",
+    "target": "STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。",
+    "permission": "维护者要求每个问题独立提交；本轮不发布正式 v0.1.7。"
   },
   "known_limits": [
-    "当前 Windows 账户不能创建目录符号链接，12 个上传路径重定向安全测试无法运行 symlink 分支；junction 分支通过。",
-    "安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。",
-    "Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。",
-    "V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。",
-    "高事件率 SystemView 仍可能溢出目标 RTT 缓冲；需要在探针固件中提高单次 RTT 搬运量、批量 drain 并确认 USB TX 队列吞吐，不能由前端补回已经丢失的事件。COM55 当前仍停在流模式，需重启/重新枚举探针后才能完成最新 Timeline 缓存修复的 HPM 真机截图。"
+    "当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。",
+    "HPM 在线读取当前仍被后端显式拒绝，尚未实现 dump_memory 一次性读取适配。",
+    "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "由维护者在探针固件中扩大 RTT_MAX_BUFFER_SIZE、单次批量读取并验证 USB TX ring 后重新烧录，观察 HPM FreeRTOS Overflow 计数是否归零。",
-    "后续在干净 Windows 和 Linux/macOS 环境扩大安装更新与 USB Web Entry 验证。"
+    "维护者确认 HPM 在线读取采用 dump_memory 一次性二进制方案。",
+    "在独立 fix 分支实现 HPM 分块读取、CRC/错误处理、进度日志和 ARM 回归兼容。",
+    "使用真实 HPM 板完成 Web/Tauri/安装包读取与保存闭环，再提交并推送。"
   ],
   "continuation_protocol": [
-    "开始前用 Git、进程和硬件状态校正项目记忆。",
-    "项目记忆只保留当前事实；历史证据使用 Git 提交查询。",
-    "不提交固件、Pack、FLM、日志、硬件标识、凭据或构建缓存。",
-    "结束前执行全量门禁、render、validate 和 git diff --check。"
+    "开始前校正 Git、进程和硬件状态。",
+    "不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存。",
+    "结束前执行全量门禁、project-memory render/validate、git diff --check，并保持工作树干净。"
   ]
 }
