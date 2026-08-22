@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T17:20:00+08:00`
-- 分支：`master`
-- HEAD：`536e245 fix: restore dark theme for memory read dialog`
+- 更新时间：`2026-08-22T18:20:00+08:00`
+- 分支：`fix/superwatch-array-snapshot-range`
+- HEAD：`working tree feature changes`
 - 远端 HEAD：`origin/master`
-- 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
-- 当前任务：读取目标 Flash 弹窗已恢复深色主题；弹窗颜色和操作按钮不再依赖外层变量或全局按钮样式。
-- 状态：`memory-read-dialog-dark-theme-merged`
+- 工作树：数组快照范围功能待提交；gui/dist 构建产物已清理。
+- 当前任务：SuperWatch 支持一维标量数组的起始索引和读取数量配置，并保留逐元素监视。
+- 状态：`superwatch-array-snapshot-range-ready`
 
 ## 里程碑
 
@@ -20,14 +20,14 @@
 
 ## 验证证据
 
-- **自动化门禁**：GUI 56 文件/575 项和 Vite 生产构建通过；Python 1334 项通过、1 项跳过，12 项 symlink 用例仅受当前 Windows 权限限制。
+- **自动化门禁**：GUI 57 文件/577 项和 Vite 生产构建通过；Python 1343 项通过、1 项跳过，12 项 symlink 用例仅受当前 Windows 权限限制。
 - **真机闭环**：V3/STM32F103RC 完成 Flash 读取、擦除、编程、校验、复位和断开；Chrome Web GUI 验证 RTT/SuperWatch 保存与 SystemView 持续更新。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
 - **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
 - **Web-entry 与安装包端口冲突**：API-only 后端占用 8765 时，Web-entry 和安装包 sidecar 均自动选择 8766；安装包内置 sidecar 健康检查和 desktop shutdown 均通过。
-- **读取目标 Flash 弹窗主题**：MemoryReadPanel 弹窗使用稳定深色回退值；输入区、摘要区、关闭按钮和取消/开始读取按钮均显式定义颜色。GUI 575 项测试和生产构建通过；Python 1338 项通过、1 项跳过，12 项目录 symlink 用例受当前 Windows 权限限制。
+- **SuperWatch 数组快照范围**：支持一维标量数组按起始索引和数量读取，最大 4096 个元素；范围快照与逐元素监视独立运行。GUI 577 项、聚焦 Python 116 项通过；V3/STM32F103RC 真机验证范围 [100..107] 与 _rx_rb_buf[0] 同时采样 598 个完整帧，0 丢帧、0 CRC 错误，并完成停止、清除、断开。
 
 ## 架构决策
 
@@ -46,7 +46,7 @@
 
 ## 下一动作
 
-1. 后续修复从 master 创建独立分支，并为每个问题单独提交。
+1. 提交并推送 fix/superwatch-array-snapshot-range；确认后再合并 master。
 2. 维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。
 
 ## 已知限制

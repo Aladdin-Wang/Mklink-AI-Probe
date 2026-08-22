@@ -18,12 +18,14 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '支持按地址读取 Flash、保存或清空数据，并可直接回烧和校验。',
       '修复 RTT、SuperWatch 文件保存和 RTOS Trace 时间轴刷新。',
       '新增固件升级入口，修复托盘图标、错误提示和窄窗口布局。',
+      'SuperWatch 支持按起始索引和数量显示数组快照，同时保留单元素监视。',
     ],
     changesEn: [
       'Speed up first connections, recover malformed command input, and isolate client lifecycles.',
       'Read Flash by address, save or clear captures, and program them back with verification.',
       'Fix RTT and SuperWatch exports plus live RTOS Trace timeline updates.',
       'Add firmware upgrades and fix the tray icon, dismissible errors, and narrow layouts.',
+      'Show configurable array snapshot ranges in SuperWatch while retaining per-element watches.',
     ],
   },
   {
