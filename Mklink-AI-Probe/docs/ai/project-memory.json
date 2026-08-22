@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-22T16:00:00+08:00",
+  "updated_at": "2026-08-22T16:15:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/hpm-online-flash-read",
-    "head": "HPM 在线 Flash 读取、4 KiB 分块和擦除/编程状态显示已完成。",
-    "remote_head": "origin/fix/hpm-online-flash-read",
-    "working_tree": "修复分支待合并 master；构建产物不纳入源码提交。"
+    "branch": "master",
+    "head": "v0.1.7 HPM 在线读取与烧录修复已合并。",
+    "remote_head": "origin/master",
+    "working_tree": "主分支已合并并推送；安装包和构建缓存不纳入源码提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v017-ready-to-merge",
-    "current_task": "合并最新 HPM 在线烧录修复，生成安装包并更新本地 Skill 与 U 盘快速启动。",
-    "release": "准备本地覆盖安装；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
+    "status": "v017-merged-and-packaged",
+    "current_task": "主分支已推送；标准 NSIS 已覆盖本地安装，本地 Skill 与 U 盘快速启动已同步。",
+    "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
     {
@@ -55,6 +55,10 @@
     {
       "area": "HPM 在线烧录",
       "result": "HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。"
+    },
+    {
+      "area": "主分支安装包与启动入口",
+      "result": "master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。"
     }
   ],
   "decisions": [
@@ -75,8 +79,8 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "合并 fix/hpm-online-flash-read 到 master 并确认 master 包含已验证提交。",
-    "生成标准 NSIS 安装包，覆盖本地安装，更新本地 Skill 和 U 盘快速启动 HTML。"
+    "后续修复从 master 创建独立分支，并为每个问题单独提交。",
+    "维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",

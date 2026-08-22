@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T16:00:00+08:00`
-- 分支：`fix/hpm-online-flash-read`
-- HEAD：`HPM 在线 Flash 读取、4 KiB 分块和擦除/编程状态显示已完成。`
-- 远端 HEAD：`origin/fix/hpm-online-flash-read`
-- 工作树：修复分支待合并 master；构建产物不纳入源码提交。
-- 当前任务：合并最新 HPM 在线烧录修复，生成安装包并更新本地 Skill 与 U 盘快速启动。
-- 状态：`v017-ready-to-merge`
+- 更新时间：`2026-08-22T16:15:00+08:00`
+- 分支：`master`
+- HEAD：`v0.1.7 HPM 在线读取与烧录修复已合并。`
+- 远端 HEAD：`origin/master`
+- 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
+- 当前任务：主分支已推送；标准 NSIS 已覆盖本地安装，本地 Skill 与 U 盘快速启动已同步。
+- 状态：`v017-merged-and-packaged`
 
 ## 里程碑
 
@@ -25,6 +25,7 @@
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
+- **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
 
 ## 架构决策
 
@@ -42,8 +43,8 @@
 
 ## 下一动作
 
-1. 合并 fix/hpm-online-flash-read 到 master 并确认 master 包含已验证提交。
-2. 生成标准 NSIS 安装包，覆盖本地安装，更新本地 Skill 和 U 盘快速启动 HTML。
+1. 后续修复从 master 创建独立分支，并为每个问题单独提交。
+2. 维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。
 
 ## 已知限制
 
