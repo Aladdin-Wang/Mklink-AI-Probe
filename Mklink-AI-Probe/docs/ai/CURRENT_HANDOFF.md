@@ -5,8 +5,8 @@
 ## 当前断点
 
 - 更新时间：`2026-08-22T17:20:00+08:00`
-- 分支：`fix/web-entry-port-fallback`
-- HEAD：`bef19fd web-entry 端口冲突自动切换修复已验证。`
+- 分支：`master`
+- HEAD：`fd62325 web-entry 端口冲突修复已合并。`
 - 远端 HEAD：`origin/master`
 - 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
 - 当前任务：web-entry 端口冲突修复已推送；NSIS 已重建覆盖安装，AI Skill 与协议处理器已同步。

@@ -4,8 +4,8 @@
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/web-entry-port-fallback",
-    "head": "bef19fd web-entry 端口冲突自动切换修复已验证。",
+    "branch": "master",
+    "head": "fd62325 web-entry 端口冲突修复已合并。",
     "remote_head": "origin/master",
     "working_tree": "主分支已合并并推送；安装包和构建缓存不纳入源码提交。"
   },
