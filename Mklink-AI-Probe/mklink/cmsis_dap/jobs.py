@@ -387,9 +387,6 @@ class OnlineFlashJobManager:
                             if job.cancel_requested:
                                 break
                             if index > 0:
-                                if action == "program" and deferred_erase:
-                                    self._stage_complete_locked(job, "erase")
-                                    deferred_erase = False
                                 self._transition_locked(
                                     job, _ACTION_STATES[action], action
                                 )
@@ -440,7 +437,7 @@ class OnlineFlashJobManager:
                                 last_reported_percent = -1
 
                                 def report_program_progress(value: float) -> None:
-                                    nonlocal last_reported_percent
+                                    nonlocal deferred_erase, last_reported_percent
                                     try:
                                         fraction = float(value)
                                     except (TypeError, ValueError):
@@ -448,17 +445,28 @@ class OnlineFlashJobManager:
                                     if fraction > 1:
                                         fraction /= 100.0
                                     fraction = min(1.0, max(0.0, fraction))
+                                    if deferred_erase and fraction <= 0:
+                                        return
                                     percent = int(fraction * 100)
                                     if percent <= last_reported_percent and fraction < 1:
                                         return
                                     last_reported_percent = percent
+                                    if deferred_erase and fraction > 0:
+                                        with self._condition:
+                                            self._complete_deferred_stage_locked(job, "erase")
+                                        deferred_erase = False
                                     self._program_progress(job, fraction)
 
-                                report_program_progress(0)
+                                if not deferred_erase:
+                                    report_program_progress(0)
                                 backend.program(
                                     job.image,
                                     progress_callback=report_program_progress,
                                 )
+                                if deferred_erase:
+                                    with self._condition:
+                                        self._complete_deferred_stage_locked(job, "erase")
+                                    deferred_erase = False
                                 report_program_progress(1)
                             elif action == "verify":
                                 self._refresh_image(job)
@@ -649,6 +657,17 @@ class OnlineFlashJobManager:
         job.stage_progress = 1.0
         job.completed_actions += 1
         job.total_progress = job.completed_actions / len(job.request.actions)
+        job.updated_at = time.monotonic()
+        self._emit_locked(job, "progress", progress=job.total_progress)
+        self._emit_locked(job, "log", message=f"{action} complete")
+
+    def _complete_deferred_stage_locked(self, job: _Job, action: str) -> None:
+        """Complete a prior stage without overwriting the active stage."""
+        job.completed_actions += 1
+        job.total_progress = max(
+            job.total_progress,
+            job.completed_actions / len(job.request.actions),
+        )
         job.updated_at = time.monotonic()
         self._emit_locked(job, "progress", progress=job.total_progress)
         self._emit_locked(job, "log", message=f"{action} complete")

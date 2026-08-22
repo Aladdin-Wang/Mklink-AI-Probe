@@ -549,7 +549,8 @@ def test_hpm_erase_completion_is_deferred_until_program_starts():
 
     assert result.state is JobState.SUCCEEDED
     assert messages.index("erase in progress (completed by HPM ROM during program)") < messages.index("erase complete")
-    assert messages.index("erase complete") < messages.index("[PROGRAM] 0 / 1024 Bytes (0%)")
+    assert "[PROGRAM] 0 / 1024 Bytes (0%)" not in messages
+    assert messages.index("erase complete") < messages.index("[PROGRAM] 1024 / 1024 Bytes (100%)")
 @pytest.mark.parametrize(
     ("stage", "code"),
     [
