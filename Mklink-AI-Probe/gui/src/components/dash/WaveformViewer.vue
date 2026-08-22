@@ -22,6 +22,7 @@ const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
   deviceConnected: boolean
   hiddenChannels?: ReadonlySet<string>
+  arraySnapshotPath?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +44,8 @@ let previousTransportPhase = 'stopped'
 let statusPollTimer: ReturnType<typeof setTimeout> | null = null
 let statusPollGeneration = 0
 let latestVofaStatus: Record<string, unknown> | null = null
+let arraySnapshotTimer: ReturnType<typeof setTimeout> | null = null
+let arraySnapshotGeneration = 0
 let disposed = false
 function requestLatestVisibleRange(): void {
   if (visibleRequestInFlight !== null) {
@@ -92,6 +95,45 @@ function applyVofaChannels(channels: readonly Record<string, unknown>[]): void {
 function applyHiddenChannels(): void {
   const names = [...(props.hiddenChannels ?? [])].sort()
   ;(window as any).__waveformViewers?.[props.mode]?.setHiddenChannels?.(names)
+}
+
+function stopArraySnapshotPolling(): void {
+  arraySnapshotGeneration += 1
+  if (arraySnapshotTimer !== null) {
+    clearTimeout(arraySnapshotTimer)
+    arraySnapshotTimer = null
+  }
+}
+
+async function pollArraySnapshot(generation: number): Promise<void> {
+  if (disposed || props.mode !== 'SuperWatch' || !props.arraySnapshotPath || !props.deviceConnected) return
+  try {
+    const response = await fetch(`${API_BASE}/api/dash/superwatch/array-snapshot`)
+    const payload = await response.json().catch(() => ({}))
+    if (response.ok && payload?.snapshot?.name === props.arraySnapshotPath) {
+      ;(window as any).__waveformViewers?.SuperWatch?.setArraySnapshot?.(payload.snapshot)
+    } else {
+      ;(window as any).__waveformViewers?.SuperWatch?.setArraySnapshot?.(null)
+    }
+  } catch {
+    // The binary stream remains independent when the optional snapshot poll fails.
+  }
+  if (!disposed && generation === arraySnapshotGeneration && props.arraySnapshotPath) {
+    arraySnapshotTimer = setTimeout(() => {
+      arraySnapshotTimer = null
+      void pollArraySnapshot(generation)
+    }, 50)
+  }
+}
+
+function startArraySnapshotPolling(): void {
+  stopArraySnapshotPolling()
+  if (props.mode !== 'SuperWatch' || !props.arraySnapshotPath || !props.deviceConnected) {
+    ;(window as any).__waveformViewers?.SuperWatch?.setArraySnapshot?.(null)
+    return
+  }
+  const generation = arraySnapshotGeneration
+  void pollArraySnapshot(generation)
 }
 
 function onVofaChannels(event: Event): void {
@@ -240,6 +282,7 @@ onMounted(() => {
     window.addEventListener('mklink:vofa-stream-state', onVofaStreamState)
     vofaScheduler?.start()
     startVofaStatusPolling(true)
+    startArraySnapshotPolling()
   }
 })
 
@@ -249,6 +292,7 @@ watch(() => props.deviceConnected, (val) => {
 })
 
 watch(() => props.hiddenChannels, applyHiddenChannels)
+watch([() => props.arraySnapshotPath, () => props.deviceConnected], startArraySnapshotPolling)
 
 watch(language, value => {
   ;(window as any).setLang?.(value)
@@ -257,6 +301,7 @@ watch(language, value => {
 onUnmounted(() => {
   disposed = true
   stopVofaStatusPolling()
+  stopArraySnapshotPolling()
   binary.stop()
   vofaScheduler?.dispose()
   window.removeEventListener('mklink:vofa-channels', onVofaChannels)

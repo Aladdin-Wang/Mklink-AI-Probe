@@ -2616,6 +2616,78 @@ function setHiddenChannels(names) {
   drawMinimap();
 }
 
+function removeArraySnapshotField() {
+  if (!arraySnapshotName) return;
+  var name = arraySnapshotName;
+  if (FIELDS[name] && FIELDS[name].isArraySnapshot) {
+    if (FIELDS[name].ringBuf) FIELDS[name].ringBuf.clear();
+    delete FIELDS[name];
+    delete CHANNEL_METADATA[name];
+    markFieldOrderDirty();
+    _watchStructGen++;
+  }
+  arraySnapshotName = null;
+  if (splitChannelName === name) clearSplitChannel();
+}
+
+function setArraySnapshot(snapshot) {
+  if (!IS_SUPERWATCH_MODE) return false;
+  if (!snapshot || !snapshot.name || !Array.isArray(snapshot.values)) {
+    removeArraySnapshotField();
+    updateChartLegend();
+    drawChart();
+    drawMinimap();
+    updateWatchTable();
+    return true;
+  }
+  var name = String(snapshot.name);
+  var values = snapshot.values.map(Number).filter(Number.isFinite);
+  if (!values.length) return false;
+  if (arraySnapshotName && arraySnapshotName !== name) removeArraySnapshotField();
+  var field = FIELDS[name];
+  if (field && !field.isArraySnapshot) return false;
+  var sequence = Number(snapshot.sequence) || 0;
+  if (field && field.isArraySnapshot && field.arraySequence === sequence &&
+      field.arrayStartIndex === (Number(snapshot.start_index) || 0) &&
+      field.arrayValues && field.arrayValues.length === values.length) return false;
+  if (!field) {
+    field = FIELDS[name] = {
+      color: COLORS[colorIdx % COLORS.length],
+      ringBuf: new RingBuffer(2),
+      visible: !hiddenChannelNames[name],
+      unit: '',
+      type: String(snapshot.type_name || 'array') + '[]',
+      size: snapshot.element_size || '',
+      format: 'auto',
+      enumValues: null,
+      precision: 2,
+      thresholds: null,
+      isArraySnapshot: true,
+      arrayValues: values,
+      arrayStartIndex: Number(snapshot.start_index) || 0,
+      arraySequence: sequence,
+    };
+    colorIdx++;
+    markFieldOrderDirty();
+    _watchStructGen++;
+  } else {
+    field.arrayValues = values;
+    field.arrayStartIndex = Number(snapshot.start_index) || 0;
+    field.arraySequence = sequence;
+  }
+  field.type = String(snapshot.type_name || field.type || 'array') + '[]';
+  field.size = snapshot.element_size || field.size || '';
+  field.ringBuf.clear();
+  field.ringBuf.push(Number(snapshot.timestamp_us || Date.now() * 1000) / 1000000, values[values.length - 1]);
+  arraySnapshotName = name;
+  CHANNEL_METADATA[name] = { source: 'array-snapshot', type: field.type, size: field.size };
+  updateChartLegend();
+  drawChart();
+  drawMinimap();
+  updateWatchTable();
+  return true;
+}
+
 // Binary waveform bridge: Worker messages arrive as one transferable,
 // sample-major Float32 batch. Collection updates typed rings immediately;
 // WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
@@ -2627,6 +2699,7 @@ var binaryLastSequence = null;
 var binaryEnvelope = null;
 var binaryChannelIndex = {};
 var binaryLastUiPaint = -Infinity;
+var arraySnapshotName = null;
 var BINARY_RATE_WINDOW_NS = 500000000n;
 var binaryRateWindowStartNs = null;
 var binaryRateLastTimestampNs = null;
@@ -2726,6 +2799,7 @@ function configureBinaryChannels(channels) {
   // metadata paired with the new binary column order.
   for (var oldName in FIELDS) {
     if (!FIELDS.hasOwnProperty(oldName)) continue;
+    if (FIELDS[oldName].isArraySnapshot) continue;
     if (FIELDS[oldName].ringBuf) FIELDS[oldName].ringBuf.clear();
     delete FIELDS[oldName];
   }
@@ -2958,6 +3032,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.updateBinaryHealth = updateBinaryHealth;
   binaryViewer.updateAcquisitionStatus = syncDashboardStatus;
   binaryViewer.setHiddenChannels = setHiddenChannels;
+  binaryViewer.setArraySnapshot = setArraySnapshot;
   binaryViewer.renderBinaryFrame = renderBinaryFrame;
   binaryViewer.setDeviceConnected = setDeviceConnected;
   binaryViewer.dispose = disposeViewer;
@@ -2972,6 +3047,7 @@ function computeFullTimeRange() {
   var tMax = 0, tMin = Infinity;
   for (var k in FIELDS) {
     var pts = FIELDS[k].ringBuf;
+    if (FIELDS[k].isArraySnapshot) continue;
     if (pts.count === 0) continue;
     var oldest = pts.oldest();
     var latest = pts.latest();
@@ -3031,11 +3107,11 @@ function getVisibleTimeRange() {
 // ============================================================
 function getChannelYRange(name) {
   var m = FIELDS[name];
-  if (!m || m.ringBuf.count < 2) return null;
+  if (!m || (m.isArraySnapshot ? !m.arrayValues || m.arrayValues.length < 1 : m.ringBuf.count < 2)) return null;
   var ys = ensureChannelYState(name);
 
-  var baseMin = m.ringBuf._min;
-  var baseMax = m.ringBuf._max;
+  var baseMin = m.isArraySnapshot ? Math.min.apply(null, m.arrayValues) : m.ringBuf._min;
+  var baseMax = m.isArraySnapshot ? Math.max.apply(null, m.arrayValues) : m.ringBuf._max;
   if (!Number.isFinite(baseMin)) baseMin = 0;
   if (!Number.isFinite(baseMax)) baseMax = 1;
   var pad = (baseMax - baseMin) * 0.1 || 1;
@@ -3066,9 +3142,16 @@ function getAutoSharedYRange(excludedName) {
   for (var name in FIELDS) {
     var field = FIELDS[name];
     if (excludedName && name === excludedName) continue;
-    if (!field.visible || !field.ringBuf || field.ringBuf.count < 2) continue;
-    if (Number.isFinite(field.ringBuf._min)) yMin = Math.min(yMin, field.ringBuf._min);
-    if (Number.isFinite(field.ringBuf._max)) yMax = Math.max(yMax, field.ringBuf._max);
+    if (!field.visible) continue;
+    if (field.isArraySnapshot) {
+      if (!field.arrayValues || !field.arrayValues.length) continue;
+      yMin = Math.min(yMin, Math.min.apply(null, field.arrayValues));
+      yMax = Math.max(yMax, Math.max.apply(null, field.arrayValues));
+    } else {
+      if (!field.ringBuf || field.ringBuf.count < 2) continue;
+      if (Number.isFinite(field.ringBuf._min)) yMin = Math.min(yMin, field.ringBuf._min);
+      if (Number.isFinite(field.ringBuf._max)) yMax = Math.max(yMax, field.ringBuf._max);
+    }
   }
   if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) return null;
   var pad = (yMax - yMin) * 0.1 || 1;
@@ -3311,7 +3394,8 @@ if (xAxisHit && yAxisHit) {
     var offsets = {};
     var ranges = {};
     for (var name in FIELDS) {
-      if (!FIELDS[name].visible || FIELDS[name].ringBuf.count < 2) continue;
+      if (!FIELDS[name].visible ||
+          (FIELDS[name].isArraySnapshot ? !FIELDS[name].arrayValues || FIELDS[name].arrayValues.length < 2 : FIELDS[name].ringBuf.count < 2)) continue;
       var state = ensureChannelYState(name);
       var range = getChannelYRange(name);
       state.autoRange = false;
@@ -3429,6 +3513,7 @@ function drawChart() {
   // Count visible channels
   var visChNames = sortedFieldNames().filter(function(k) {
     if (!FIELDS[k].visible) return false;
+    if (FIELDS[k].isArraySnapshot) return !!FIELDS[k].arrayValues && FIELDS[k].arrayValues.length >= 2;
     var envelopeIndex = binaryChannelIndex[k];
     if (useBinaryEnvelope && envelopeIndex !== undefined) {
       return binaryEnvelope.offsets[envelopeIndex + 1] - binaryEnvelope.offsets[envelopeIndex] >= 2;
@@ -3576,7 +3661,8 @@ function drawChart() {
   for (var ni = 0; ni < names.length; ni++) {
     var name = names[ni];
     var meta = FIELDS[name];
-    if (!meta.visible || meta.ringBuf.count < 2) continue;
+    if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 2) ||
+        (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
 
     var curveTop = splitActive && name === splitChannelName ? splitTop : mainTop;
     var curveHeight = splitActive && name === splitChannelName ? splitHeight : mainHeight;
@@ -3590,6 +3676,18 @@ function drawChart() {
     ctx.beginPath();
     var started = false;
     var ring = meta.ringBuf;
+    if (meta.isArraySnapshot) {
+      var arrayValues = meta.arrayValues;
+      for (var arrayIndex = 0; arrayIndex < arrayValues.length; arrayIndex++) {
+        var arrayX = ml + (arrayIndex / Math.max(1, arrayValues.length - 1)) * pw;
+        var arrayY = tyForChannel(arrayValues[arrayIndex], name);
+        if (arrayIndex === 0) { ctx.moveTo(arrayX, arrayY); started = true; }
+        else ctx.lineTo(arrayX, arrayY);
+      }
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
     var envelopeChannel = binaryChannelIndex[name];
     if (useBinaryEnvelope && envelopeChannel !== undefined) {
       var envelopeStart = binaryEnvelope.offsets[envelopeChannel];
@@ -3854,7 +3952,8 @@ function drawChart() {
     // Default wheel: zoom all visible channels' Y together (percentage-based)
     var yZoomFactor = e.deltaY > 0 ? 0.8 : 1.25;
     for (var k in FIELDS) {
-      if (!FIELDS[k].visible || FIELDS[k].ringBuf.count < 2) continue;
+      if (!FIELDS[k].visible ||
+          (FIELDS[k].isArraySnapshot ? !FIELDS[k].arrayValues || FIELDS[k].arrayValues.length < 2 : FIELDS[k].ringBuf.count < 2)) continue;
       var ys = ensureChannelYState(k);
       ys.autoRange = false;
       ys.manualMin = null;
@@ -4250,15 +4349,26 @@ function drawMinimap() {
   minimapCtx.globalAlpha = 0.4;
   for (var ni = 0; ni < names.length; ni++) {
     var meta = FIELDS[names[ni]];
-    if (!meta.visible || meta.ringBuf.count < 2) continue;
+    if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 2) ||
+        (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
     minimapCtx.strokeStyle = meta.color;
     minimapCtx.lineWidth = 1;
     minimapCtx.beginPath();
     var ring = meta.ringBuf;
     var started = false;
-    var bufMin = Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min : 0;
-    var bufMax = Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1;
+    var bufMin = meta.isArraySnapshot ? Math.min.apply(null, meta.arrayValues) : (Number.isFinite(meta.ringBuf._min) ? meta.ringBuf._min : 0);
+    var bufMax = meta.isArraySnapshot ? Math.max.apply(null, meta.arrayValues) : (Number.isFinite(meta.ringBuf._max) ? meta.ringBuf._max : 1);
     var yRange = bufMax - bufMin || 1;
+    if (meta.isArraySnapshot) {
+      for (var arrayPoint = 0; arrayPoint < meta.arrayValues.length; arrayPoint++) {
+        var arrayPx = arrayPoint / Math.max(1, meta.arrayValues.length - 1) * W;
+        var arrayPy = H - ((meta.arrayValues[arrayPoint] - bufMin) / yRange) * (H - 4) - 2;
+        if (!started) { minimapCtx.moveTo(arrayPx, arrayPy); started = true; }
+        else minimapCtx.lineTo(arrayPx, arrayPy);
+      }
+      minimapCtx.stroke();
+      continue;
+    }
     var minimapChannel = binaryChannelIndex[names[ni]];
     if (useBinaryEnvelope && minimapChannel !== undefined) {
       var minimapStart = binaryEnvelope.offsets[minimapChannel];
