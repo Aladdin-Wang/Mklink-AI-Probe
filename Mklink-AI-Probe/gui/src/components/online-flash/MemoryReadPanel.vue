@@ -31,7 +31,9 @@ const GENERIC_FLASH_START = '0x08000000'
 const GENERIC_FLASH_END = '0x08080000'
 const HPM_FLASH_START = '0x80000000'
 const HPM_FLASH_END = '0x80080000'
-const HPM_READ_CHUNK_SIZE = 32 * 1024
+// HPM XPI Flash uses 4 KiB sectors. Keep each host request sector-sized;
+// the probe may still split the request into its internal 2 KiB frames.
+const HPM_READ_CHUNK_SIZE = 4 * 1024
 const address = ref(GENERIC_FLASH_START)
 const endAddress = ref(GENERIC_FLASH_END)
 const rangeTarget = ref('')
@@ -113,7 +115,7 @@ const chunkDescription = computed(() => sectorSizes.value.length
       `按目标 Flash 扇区分块（${sectorSizes.value.join(' / ')} 字节）。`,
       `Uses target Flash sector chunks (${sectorSizes.value.join(' / ')} bytes).`,
     )
-  : tr('未取得目标扇区信息，将按 1024 字节分块。', 'Target sector geometry is unavailable; uses 1024-byte chunks.'))
+  : tr('未取得目标扇区信息，将按 4096 字节分块。', 'Target sector geometry is unavailable; uses 4096-byte chunks.'))
 
 function chunkSizeAt(address: number, remaining: number): number {
   if (props.hpm) return Math.min(HPM_READ_CHUNK_SIZE, remaining)
@@ -122,7 +124,7 @@ function chunkSizeAt(address: number, remaining: number): number {
     && Number.isInteger(item.sector_size) && item.sector_size > 0
     && address >= item.start && address < item.start + item.length
   ))
-  if (!region) return Math.min(1024, remaining)
+  if (!region) return Math.min(4 * 1024, remaining)
   const available = region.start + region.length - address
   return Math.min(remaining, region.sector_size, available)
 }

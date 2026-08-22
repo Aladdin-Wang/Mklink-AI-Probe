@@ -273,6 +273,8 @@ def _enable_custom_flm_verify(algorithm: Any) -> None:
 class HpmRomBackend:
     """Program HPMicro XPI Flash through the MKLink device-side ROM API."""
 
+    READ_CHUNK_SIZE = 4 * 1024
+
     def __init__(
         self,
         device_factory: Optional[Callable[..., Any]] = None,
@@ -410,13 +412,20 @@ class HpmRomBackend:
             except Exception as error:
                 raise FlashError(FlashErrorCode.PROGRAM_FAIL, str(error)) from error
 
-    def verify(self, image: ImageInspection) -> None:
+    def verify(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             device = self._require_device()
             path, base = self._validated_bin(image)
             try:
                 with path.open("rb") as stream:
                     offset = 0
+                    total = path.stat().st_size
+                    if progress_callback is not None:
+                        progress_callback(0.0)
                     while True:
                         expected = stream.read(self._verify_chunk_size)
                         if not expected:
@@ -433,6 +442,8 @@ class HpmRomBackend:
                                 {"address": base + offset + mismatch},
                             )
                         offset += len(expected)
+                        if progress_callback is not None:
+                            progress_callback(offset / total if total else 1.0)
             except FlashError:
                 raise
             except FileNotFoundError:
@@ -464,11 +475,11 @@ class HpmRomBackend:
         )
 
         try:
-            # Keep individual requests below the legacy firmware boundary;
-            # the parser still accepts the current 512 KiB maximum.
+            # HPM XPI Flash is organized in 4 KiB sectors. Keep host requests
+            # sector-sized while the dump protocol handles its 2 KiB frames.
             parts = []
-            for offset in range(0, size, 32 * 1024):
-                part_size = min(32 * 1024, size - offset)
+            for offset in range(0, size, self.READ_CHUNK_SIZE):
+                part_size = min(self.READ_CHUNK_SIZE, size - offset)
                 parts.append(
                     read_dump_memory_range_once(
                         bridge, address + offset, part_size, timeout=10.0,
@@ -854,12 +865,23 @@ class PyOcdBackend:
                 self._close_after_failure()
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
 
-    def verify(self, image: ImageInspection) -> None:
+    def verify(
+        self,
+        image: ImageInspection,
+        progress_callback: Optional[Callable[[float], None]] = None,
+    ) -> None:
         with self._lock:
             session = self._require_session()
             try:
+                verified = 0
+                total = image.size if isinstance(image.size, int) and image.size > 0 else 0
+                if progress_callback is not None:
+                    progress_callback(0.0)
                 for address, expected in self._iter_image_chunks(image):
                     self._verify_expected_bytes(session.target, address, expected)
+                    verified += len(expected)
+                    if progress_callback is not None:
+                        progress_callback(verified / total if total else 1.0)
             except FlashError:
                 raise
             except FileNotFoundError:

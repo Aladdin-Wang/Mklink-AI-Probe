@@ -1084,6 +1084,35 @@ function clearRawLog() {
   rawLogCountEl.textContent = '0 lines';
 }
 
+function saveTextContent(filename, content, mimeType) {
+  var nativeSave = window.__MKLINK_SAVE_FILE__;
+  if (typeof nativeSave === 'function') {
+    var nativeResult;
+    try {
+      nativeResult = nativeSave(filename, content);
+    } catch (error) {
+      showControlError('Save failed: ' + (error && error.message ? error.message : String(error)));
+      return false;
+    }
+    if (nativeResult && typeof nativeResult.catch === 'function') {
+      nativeResult.catch(function(error) {
+        showControlError('Save failed: ' + (error && error.message ? error.message : String(error)));
+      });
+    }
+    return true;
+  }
+  var blob = new Blob([content], { type: mimeType });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 function saveRawLog() {
   var snapshot = rawLogSnapshot();
   if (!snapshot.length) return false;
@@ -1094,22 +1123,7 @@ function saveRawLog() {
     pad(now.getDate(), 2) + '-' + pad(now.getHours(), 2) +
     pad(now.getMinutes(), 2) + pad(now.getSeconds(), 2);
   var filename = 'superwatch-raw-' + suffix + '.txt';
-  var link = document.createElement('a');
-  var nativeSave = window.__MKLINK_SAVE_FILE__;
-  if (typeof nativeSave === 'function') {
-    var nativeResult = nativeSave(filename, content);
-    if (nativeResult && typeof nativeResult.catch === 'function') nativeResult.catch(function () {});
-    return true;
-  }
-  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  return true;
+  return saveTextContent(filename, content, 'text/plain;charset=utf-8;');
 }
 
 function setRawLogOpen(open) {
@@ -2459,15 +2473,11 @@ function exportCSV() {
   }
 
   var csvContent = rows.join('\n');
-  var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = csvCfg.filename || 'jscope_export.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  saveTextContent(
+    csvCfg.filename || 'jscope_export.csv',
+    csvContent,
+    'text/csv;charset=utf-8;'
+  );
 }
 
 function exportPNG() {

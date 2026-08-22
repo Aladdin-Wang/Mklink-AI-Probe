@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 import uuid
@@ -23,7 +24,10 @@ from .models import (
 from ..remote.resource_manager import ResourceError, ResourceGroup
 
 
-READ_MEMORY_CHUNK_SIZE = 512 * 1024
+# Keep the generic host-side read request aligned with the common 4 KiB
+# Flash sector. Callers that have reliable FLM geometry may provide a smaller
+# or larger exact sector sequence explicitly.
+READ_MEMORY_CHUNK_SIZE = 4 * 1024
 MAX_READ_MEMORY_SIZE = 64 * 1024 * 1024
 
 
@@ -446,7 +450,44 @@ class OnlineFlashJobManager:
                                 with self._condition:
                                     if job.cancel_requested:
                                         break
-                                backend.verify(job.image)
+                                last_reported_percent = -1
+
+                                def report_verify_progress(value: float) -> None:
+                                    nonlocal last_reported_percent
+                                    try:
+                                        fraction = float(value)
+                                    except (TypeError, ValueError):
+                                        return
+                                    if fraction > 1:
+                                        fraction /= 100.0
+                                    fraction = min(1.0, max(0.0, fraction))
+                                    percent = int(fraction * 100)
+                                    if percent <= last_reported_percent and fraction < 1:
+                                        return
+                                    last_reported_percent = percent
+                                    self._verify_progress(job, fraction)
+
+                                report_verify_progress(0)
+                                verify = backend.verify
+                                try:
+                                    verify_parameters = inspect.signature(verify).parameters
+                                    accepts_progress = (
+                                        "progress_callback" in verify_parameters
+                                        or any(
+                                            parameter.kind is inspect.Parameter.VAR_KEYWORD
+                                            for parameter in verify_parameters.values()
+                                        )
+                                    )
+                                except (TypeError, ValueError):
+                                    accepts_progress = False
+                                if accepts_progress:
+                                    verify(
+                                        job.image,
+                                        progress_callback=report_verify_progress,
+                                    )
+                                else:
+                                    verify(job.image)
+                                report_verify_progress(1)
                             elif action == "reset":
                                 backend.reset_run(job.request.reset_mode)
                         except FlashError:
@@ -614,6 +655,29 @@ class OnlineFlashJobManager:
                 "progress",
                 message=(
                     f"[PROGRAM] {completed} / {job.image.size} Bytes "
+                    f"({round(fraction * 100)}%)"
+                ),
+                progress=job.total_progress,
+            )
+
+    def _verify_progress(self, job: _Job, fraction: float) -> None:
+        with self._condition:
+            if job.current_action != "verify" or job.image is None:
+                return
+            if fraction < job.stage_progress:
+                return
+            job.stage_progress = fraction
+            job.total_progress = max(
+                job.total_progress,
+                (job.completed_actions + fraction) / len(job.request.actions),
+            )
+            job.updated_at = time.monotonic()
+            verified = min(job.image.size, round(job.image.size * fraction))
+            self._emit_locked(
+                job,
+                "progress",
+                message=(
+                    f"[VERIFY] {verified} / {job.image.size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,

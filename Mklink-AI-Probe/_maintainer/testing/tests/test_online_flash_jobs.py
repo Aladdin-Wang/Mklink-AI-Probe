@@ -79,7 +79,7 @@ def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     manager.shutdown()
 
 
-def test_read_memory_uses_resource_lock_and_splits_into_512k_chunks():
+def test_read_memory_uses_resource_lock_and_splits_into_4k_chunks():
     backend = ReadBackend()
     resources = ResourceManager()
     manager = OnlineFlashJobManager(lambda: backend, resources)
@@ -90,11 +90,11 @@ def test_read_memory_uses_resource_lock_and_splits_into_512k_chunks():
         frequency=1_000_000,
     )
 
-    data = manager.read_memory(request, 0x08000000, 512 * 1024 + 16)
+    data = manager.read_memory(request, 0x08000000, 4 * 1024 + 16)
 
-    assert len(data) == 512 * 1024 + 16
+    assert len(data) == 4 * 1024 + 16
     assert [call[0] for call in backend.calls] == ["connect", "read", "read", "disconnect"]
-    assert backend.calls[1][2] == 512 * 1024
+    assert backend.calls[1][2] == 4 * 1024
     assert backend.calls[2][2] == 16
     assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
     manager.shutdown()
@@ -482,6 +482,40 @@ def test_program_progress_reports_real_bytes_and_updates_total_progress():
     assert "[PROGRAM] 512 / 1024 Bytes (50%)" in messages
     assert "[PROGRAM] 1024 / 1024 Bytes (100%)" in messages
     assert any(event.progress == pytest.approx(0.5) for event in events)
+    assert result.state is JobState.SUCCEEDED
+    assert result.total_progress == 1.0
+
+
+def test_verify_progress_reports_real_bytes_and_updates_total_progress():
+    class ProgressiveBackend(FakeBackend):
+        def verify(self, inspected, progress_callback=None):
+            self.calls.append(("verify", inspected))
+            assert progress_callback is not None
+            progress_callback(0.25)
+            progress_callback(0.5)
+            progress_callback(1.0)
+
+    backend = ProgressiveBackend()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        ResourceManager(),
+        image_provider=lambda _image_id: inspected,
+    )
+
+    job_id = manager.start(JobRequest(
+        actions=("connect", "verify", "disconnect"),
+        image_id=inspected.image_id,
+    ))
+    result = manager.wait(job_id, timeout=2)
+    events = manager.events(job_id)
+    manager.shutdown()
+
+    messages = [event.message for event in events if event.message.startswith("[VERIFY]")]
+    assert "[VERIFY] 256 / 1024 Bytes (25%)" in messages
+    assert "[VERIFY] 512 / 1024 Bytes (50%)" in messages
+    assert "[VERIFY] 1024 / 1024 Bytes (100%)" in messages
+    assert any(event.progress == pytest.approx(2 / 3) for event in events)
     assert result.state is JobState.SUCCEEDED
     assert result.total_progress == 1.0
 
