@@ -70,6 +70,10 @@ export class SvTimeline {
     this.follow = (data && data.follow) !== false;
     this.windowSize = Number((data && data.windowSize) || 0);
     this.followSpan = null;
+    // The displayed range at the moment the current follow transition began.
+    // Keep this separate from viewStart/viewEnd, which are advanced every
+    // animation frame and therefore cannot be reused as interpolation input.
+    this._followFrom = null;
     this._followTarget = null;
     this._followTransitionAt = null;
     this._lastLiveRender = Number.NEGATIVE_INFINITY;
@@ -154,6 +158,7 @@ export class SvTimeline {
       ) {
         this.viewStart = target.start;
         this.viewEnd = target.end;
+        this._followFrom = null;
         this._followTarget = null;
         this._followTransitionAt = null;
       } else if (
@@ -165,11 +170,12 @@ export class SvTimeline {
         const current = this._interpolatedFollowRange(now);
         this.viewStart = current.start;
         this.viewEnd = current.end;
+        this._followFrom = current;
         this._followTarget = target;
-        // Keep an active transition alive. Resetting its clock for every
-        // incoming batch means a 25-30 FPS stream continually restarts the
-        // easing curve and never reaches a steady, smooth frame cadence.
-        if (this._followTransitionAt == null) this._followTransitionAt = now;
+        // Each target starts a fresh, short transition from the range that is
+        // actually on screen. This prevents a completed transition's stale
+        // timestamp from making the next worker batch jump in one frame.
+        this._followTransitionAt = now;
       }
     } else if (!preserveManualView) {
       const viewOutsideData = this.viewEnd < this.tMin || this.viewStart > this.tMax;
@@ -262,6 +268,7 @@ export class SvTimeline {
   setWindowSize(windowSize) {
     this.windowSize = Math.max(0, Number(windowSize) || 0);
     this.followSpan = null;
+    this._followFrom = null;
     this._followTarget = null;
     this._followTransitionAt = null;
     if (this.follow && this.windowSize > 0) this._snapFollowRange();
@@ -276,6 +283,7 @@ export class SvTimeline {
     this.follow = !!enabled;
     if (!this.follow) {
       this.followSpan = null;
+      this._followFrom = null;
       this._followTarget = null;
       this._followTransitionAt = null;
     }
@@ -294,6 +302,7 @@ export class SvTimeline {
     const target = this._targetFollowRange();
     this.viewStart = target.start;
     this.viewEnd = target.end;
+    this._followFrom = null;
     this._followTarget = null;
     this._followTransitionAt = null;
     if (this.W && this.H) {
@@ -318,12 +327,16 @@ export class SvTimeline {
       || !Number.isFinite(this.viewStart) || !Number.isFinite(this.viewEnd)) {
       return { start: this.viewStart, end: this.viewEnd };
     }
+    const from = this._followFrom || {
+      start: this.viewStart,
+      end: this.viewEnd,
+    };
     const progress = Math.min(1, Math.max(0,
       (timestamp - this._followTransitionAt) / FOLLOW_INTERPOLATION_MS));
     const ease = 1 - Math.pow(1 - progress, 3);
     return {
-      start: this.viewStart + (this._followTarget.start - this.viewStart) * ease,
-      end: this.viewEnd + (this._followTarget.end - this.viewEnd) * ease,
+      start: from.start + (this._followTarget.start - from.start) * ease,
+      end: from.end + (this._followTarget.end - from.end) * ease,
     };
   }
 
@@ -339,6 +352,7 @@ export class SvTimeline {
         this.viewStart = this._followTarget.start;
         this.viewEnd = this._followTarget.end;
         this._followTarget = null;
+        this._followFrom = null;
         this._followTransitionAt = null;
       }
     }
@@ -860,6 +874,7 @@ export class SvTimeline {
     this.markerPinned = false;
     this.markerTime = null;
     this.followSpan = null;
+    this._followFrom = null;
     this._followTarget = null;
     this._followTransitionAt = null;
     if (this.windowSize > 0) {
@@ -882,6 +897,9 @@ export class SvTimeline {
       this._listenersBound = false;
     }
     this._hideTip();
+    this._followFrom = null;
+    this._followTarget = null;
+    this._followTransitionAt = null;
     // （其它监听挂在 window/canvas，组件卸载时随 DOM 释放；简单场景可接受）
   }
 }
