@@ -239,4 +239,14 @@ describe('AdaptiveFrameRateController', () => {
     expect(controller.observe({ now: 20, renderCostMs: 40, visibleItems: 200, pixelWidth: 1_000 }))
       .toBe(20)
   })
+
+  it('resets adaptive history between trace sessions', () => {
+    const controller = new AdaptiveFrameRateController()
+    expect(controller.observe({ now: 0, renderCostMs: 6, visibleItems: 200, pixelWidth: 1_000 }))
+      .toBe(30)
+    controller.reset()
+    expect(controller.observe({ now: 1, renderCostMs: 1, visibleItems: 200, pixelWidth: 1_000 }))
+      .toBe(60)
+    expect(() => controller.reset(0)).toThrow('initialRate must be a positive finite number')
+  })
 })

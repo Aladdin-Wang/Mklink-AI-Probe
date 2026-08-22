@@ -467,6 +467,11 @@ const tlLegend = ref<HTMLDivElement | null>(null)
 let tlInstance: SvTimeline | null = null
 let renderScheduler: RenderScheduler | null = null
 const timelineFrameRate = new AdaptiveFrameRateController()
+// Keep the initial fill cadence stable. The viewport still follows the newest
+// event; only the intentional 60/30/20 FPS adaptation waits until one full
+// timeline window is available.
+const TIMELINE_STARTUP_FRAME_RATE = 30
+let timelineStartupLocked = true
 let timelineVisibleItemCount = 0
 let visibleRequestId = 0
 let visibleRequestInFlight = false
@@ -509,6 +514,38 @@ function requestTimelineVisibleRange(
   binaryStream.requestVisibleRange(++visibleRequestId, start, end, pixelWidth)
 }
 
+function resetTimelineRefreshPolicy(): void {
+  timelineStartupLocked = true
+  timelineFrameRate.reset()
+}
+
+function timelineWindowFilled(): boolean {
+  if (latestBinaryTime === null || !Number.isFinite(latestBinaryTime)) return false
+  const followSpan = tlInstance?.getFollowSpan?.() || windowUs.value
+  const tickScale = meta.cpuFreq ? 1_000_000 / meta.cpuFreq : 1
+  const windowTicks = meta.cpuFreq ? followSpan / tickScale : followSpan
+  return latestBinaryTime >= windowTicks
+}
+
+function observeTimelineFrameRate(
+  now: number,
+  renderCostMs: number,
+  pixelWidth: number,
+): number {
+  if (offlineMode.value) timelineStartupLocked = false
+  if (timelineStartupLocked && timelineWindowFilled()) {
+    timelineStartupLocked = false
+    timelineFrameRate.reset()
+  }
+  if (timelineStartupLocked) return TIMELINE_STARTUP_FRAME_RATE
+  return timelineFrameRate.observe({
+    now,
+    renderCostMs,
+    visibleItems: timelineVisibleItemCount,
+    pixelWidth,
+  })
+}
+
 onMounted(() => {
   mounted = true
   window.addEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
@@ -535,12 +572,11 @@ onMounted(() => {
     // every frame instead of jumping once per data batch.
     const renderStarted = performance.now()
     tlInstance?.renderFrame(renderStarted)
-    const nextFrameRate = timelineFrameRate.observe({
-      now: renderStarted,
-      renderCostMs: performance.now() - renderStarted,
-      visibleItems: timelineVisibleItemCount,
-      pixelWidth: tlCanvas.value?.clientWidth || 800,
-    })
+    const nextFrameRate = observeTimelineFrameRate(
+      renderStarted,
+      performance.now() - renderStarted,
+      tlCanvas.value?.clientWidth || 800,
+    )
     renderScheduler?.setFrameRate(nextFrameRate)
     if (!reasons.has('data') && !reasons.has('zoom') && !reasons.has('resize')) return
     if (offlineMode.value) {
@@ -566,7 +602,7 @@ onMounted(() => {
       : followSpanUs
     const start = latestBinaryTime === null ? 0 : Math.max(0, end - windowTicks)
     requestTimelineVisibleRange(start, end, tlCanvas.value?.clientWidth || 800)
-  }, undefined, undefined, { frameRate: 60, continuous: true })
+  }, undefined, undefined, { frameRate: TIMELINE_STARTUP_FRAME_RATE, continuous: true })
   renderScheduler.start()
   reconnectRunningTrace(generation)
 })
@@ -1027,6 +1063,7 @@ function clearAll() {
   totalEventCount.value = 0
   idleUs.value = 0; firstT = 0; lastT = 0; lastStreamSeq = 0
   latestBinaryTime = null
+  resetTimelineRefreshPolicy()
   binaryTickOrigin = 0n
   lastTableUpdate = Number.NEGATIVE_INFINITY
   meta.synced = false

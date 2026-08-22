@@ -40,6 +40,16 @@ export class AdaptiveFrameRateController {
   private pendingUpshift: number | null = null
   private pendingUpshiftAt = 0
 
+  reset(initialRate = 60): void {
+    if (!Number.isFinite(initialRate) || initialRate <= 0) {
+      throw new RangeError('initialRate must be a positive finite number')
+    }
+    this.currentRate = initialRate
+    this.renderCostEwma = null
+    this.pendingUpshift = null
+    this.pendingUpshiftAt = 0
+  }
+
   observe(sample: AdaptiveFrameRateSample): number {
     const cost = Number.isFinite(sample.renderCostMs) ? Math.max(0, sample.renderCostMs) : 0
     this.renderCostEwma = this.renderCostEwma === null

@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   scheduler: {
     start: vi.fn(), stop: vi.fn(), invalidate: vi.fn(),
     recordCollection: vi.fn(), setFrameRate: vi.fn(), dispose: vi.fn(),
+    options: null as unknown,
     render: null as ((reasons: ReadonlySet<string>) => void) | null,
   },
   timeline: {
@@ -74,10 +75,19 @@ vi.mock('../../lib/svTimeline', () => ({
 }))
 vi.mock('../../lib/stream/renderScheduler', () => ({
   AdaptiveFrameRateController: class {
+    reset() {}
     observe() { return 60 }
   },
   RenderScheduler: class {
-    constructor(render: (reasons: ReadonlySet<string>) => void) { mocks.scheduler.render = render }
+    constructor(
+      render: (reasons: ReadonlySet<string>) => void,
+      _dependencies: unknown,
+      _collectionTelemetry: unknown,
+      options: unknown,
+    ) {
+      mocks.scheduler.render = render
+      mocks.scheduler.options = options
+    }
     start = mocks.scheduler.start
     stop = mocks.scheduler.stop
     invalidate = mocks.scheduler.invalidate
@@ -190,6 +200,29 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     publishVisibleEvent(1_000_000, requestId)
     await nextTick()
     expect(mocks.scheduler.invalidate).toHaveBeenCalledWith('data')
+    wrapper.unmount()
+  })
+
+  it('keeps the startup Timeline cadence fixed until the live window is filled', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    expect(mocks.scheduler.options).toEqual({ frameRate: 30, continuous: true })
+    mocks.scheduler.render?.(new Set(['data']))
+    expect(mocks.scheduler.setFrameRate).toHaveBeenLastCalledWith(30)
+
+    const firstRequestId = mocks.binary.requestVisibleRange.mock.calls.at(-1)?.[0] as number
+    publishVisibleEvent(1_000_000, firstRequestId, 1)
+    await nextTick()
+    mocks.scheduler.render?.(new Set(['data']))
+    expect(mocks.scheduler.setFrameRate).toHaveBeenLastCalledWith(30)
+
+    const filledRequestId = mocks.binary.requestVisibleRange.mock.calls.at(-1)?.[0] as number
+    publishVisibleEvent(1_000_000, filledRequestId, 10_000_000)
+    await nextTick()
+    mocks.scheduler.render?.(new Set())
+    expect(mocks.scheduler.setFrameRate).toHaveBeenLastCalledWith(60)
     wrapper.unmount()
   })
 
@@ -460,7 +493,7 @@ describe('SystemViewTab asynchronous lifecycle', () => {
   })
 })
 
-function publishVisibleEvent(cpuFreq: number, requestId = 0) {
+function publishVisibleEvent(cpuFreq: number, requestId = 0, latestTime = 1) {
   mocks.status.data.value = cpuFreq > 0 ? [{ _streamSeq: 1, cpu_freq: cpuFreq }] as never[] : []
   mocks.binary.systemViewVisible.value = {
     type: 'systemview-visible',
@@ -468,7 +501,7 @@ function publishVisibleEvent(cpuFreq: number, requestId = 0) {
     intervalCount: 0,
     candidateIntervalCount: 0,
     eventCount: 1,
-    latestTime: 1,
+    latestTime,
     tickOrigin: 9007199254740992n,
     taskIds: new Uint32Array().buffer,
     starts: new Float64Array().buffer,
