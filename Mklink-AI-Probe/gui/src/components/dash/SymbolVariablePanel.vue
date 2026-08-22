@@ -134,6 +134,20 @@
           >
             <Activity :size="15" aria-hidden="true" />
           </button>
+          <button
+            v-if="snapshotPath === row.node.key"
+            class="visibility-button"
+            :class="{ hidden: hiddenChannels?.has(row.node.key) }"
+            type="button"
+            :data-testid="`visibility-${row.node.key}`"
+            :aria-label="hiddenChannels?.has(row.node.key) ? tr(`显示 ${row.node.key} 波形`, `Show ${row.node.key} waveform`) : tr(`隐藏 ${row.node.key} 波形`, `Hide ${row.node.key} waveform`)"
+            :aria-pressed="!hiddenChannels?.has(row.node.key)"
+            :title="hiddenChannels?.has(row.node.key) ? tr('显示波形', 'Show waveform') : tr('隐藏波形', 'Hide waveform')"
+            @click.stop="toggleVisibility(row.node.key)"
+          >
+            <EyeOff v-if="hiddenChannels?.has(row.node.key)" :size="15" aria-hidden="true" />
+            <Eye v-else :size="15" aria-hidden="true" />
+          </button>
         </div>
         <button
           v-else-if="row.node.kind === 'container' && row.node.container"

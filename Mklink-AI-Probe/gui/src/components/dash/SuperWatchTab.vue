@@ -12,18 +12,13 @@
       @snapshot-change="snapshotPath = $event"
     />
     <div class="workspace-resizer" :title="tr('调整变量目录宽度', 'Resize variable catalog')" @mousedown="startResize"></div>
-    <div class="waveform-pane" :class="{ 'has-array-snapshot': snapshotPath }">
+    <div class="waveform-pane">
       <WaveformViewer
         mode="SuperWatch"
         :device-connected="deviceConnected"
         :hidden-channels="hiddenChannels"
+        :array-snapshot-path="snapshotPath"
         @latest-values="latestValues = $event"
-      />
-      <ArraySnapshotViewer
-        v-if="snapshotPath"
-        :path="snapshotPath"
-        :device-connected="deviceConnected"
-        @close="snapshotPath = null"
       />
     </div>
   </div>
@@ -33,7 +28,6 @@
 import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import SymbolVariablePanel from './SymbolVariablePanel.vue'
 import WaveformViewer from './WaveformViewer.vue'
-import ArraySnapshotViewer from './ArraySnapshotViewer.vue'
 import { tr } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 
@@ -121,13 +115,10 @@ watch(() => props.deviceConnected, loadSnapshotSelection)
 }
 .workspace-resizer:hover { background: var(--accent); }
 .waveform-pane {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.waveform-pane.has-array-snapshot { grid-template-rows: minmax(260px, 1fr) minmax(190px, 38%); }
 
 @media (max-width: 760px) {
   .superwatch-workspace {
