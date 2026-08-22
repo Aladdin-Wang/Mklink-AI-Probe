@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T21:35:00+08:00`
-- 分支：`fix/superwatch-array-snapshot-range`
-- HEAD：`84f6359 fix: keep SuperWatch arrays expandable after stop`
+- 更新时间：`2026-08-22T22:05:00+08:00`
+- 分支：`master`
+- HEAD：`bca4c770 merge: SuperWatch array snapshot curve support`
 - 远端 HEAD：`origin/master`
-- 工作树：数组快照曲线和停止后 catalog 重试已提交；待更新交接记录。
-- 当前任务：保持 SuperWatch 数组在停止采集后仍可展开，并将数组快照作为普通曲线显示。
-- 状态：`superwatch-array-snapshot-stop-retry-verified`
+- 工作树：SuperWatch 数组快照修复已合并 master，待完成安装包与全功能真机复测。
+- 当前任务：完成 master 合并、安装包覆盖安装、本地 Skill 同步和全功能真机复测。
+- 状态：`master-array-snapshot-merged`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **自动化门禁**：GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处未结束。
+- **自动化门禁**：GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处因当前 Windows symlink 权限场景长时间无输出而中止。
 - **真机闭环**：V3/STM32F103RC 完成 Flash 读取、擦除、编程、校验、复位和断开；Chrome Web GUI 验证 RTT/SuperWatch 保存与 SystemView 持续更新。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
@@ -46,8 +46,8 @@
 
 ## 下一动作
 
-1. 推送 84f6359 并在维护者确认后合并 master。
-2. 维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。
+1. 推送合并后的 master，并完成安装包、Skill 和 Web GUI 同步。
+2. 完成在线/脱机下载、RTT、SuperWatch、HardFault、Memory、RTOS Trace 真机闭环；正式发布仍需维护者明确授权。
 
 ## 已知限制
 

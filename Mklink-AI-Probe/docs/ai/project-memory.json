@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-22T21:35:00+08:00",
+  "updated_at": "2026-08-22T22:05:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/superwatch-array-snapshot-range",
-    "head": "84f6359 fix: keep SuperWatch arrays expandable after stop",
+    "branch": "master",
+    "head": "bca4c770 merge: SuperWatch array snapshot curve support",
     "remote_head": "origin/master",
-    "working_tree": "数组快照曲线和停止后 catalog 重试已提交；待更新交接记录。"
+    "working_tree": "SuperWatch 数组快照修复已合并 master，待完成安装包与全功能真机复测。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "superwatch-array-snapshot-stop-retry-verified",
-    "current_task": "保持 SuperWatch 数组在停止采集后仍可展开，并将数组快照作为普通曲线显示。",
+    "status": "master-array-snapshot-merged",
+    "current_task": "完成 master 合并、安装包覆盖安装、本地 Skill 同步和全功能真机复测。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "自动化门禁",
-      "result": "GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处未结束。"
+      "result": "GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处因当前 Windows symlink 权限场景长时间无输出而中止。"
     },
     {
       "area": "真机闭环",
@@ -88,8 +88,8 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "推送 84f6359 并在维护者确认后合并 master。",
-    "维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。"
+    "推送合并后的 master，并完成安装包、Skill 和 Web GUI 同步。",
+    "完成在线/脱机下载、RTT、SuperWatch、HardFault、Memory、RTOS Trace 真机闭环；正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",
