@@ -273,6 +273,10 @@ def _enable_custom_flm_verify(algorithm: Any) -> None:
 class HpmRomBackend:
     """Program HPMicro XPI Flash through the MKLink device-side ROM API."""
 
+    # The HPM ROM flash call performs erase and program as one operation. The
+    # job manager uses this marker to keep the erase stage pending until the
+    # programming stage starts.
+    erase_deferred = True
     READ_CHUNK_SIZE = 4 * 1024
 
     def __init__(

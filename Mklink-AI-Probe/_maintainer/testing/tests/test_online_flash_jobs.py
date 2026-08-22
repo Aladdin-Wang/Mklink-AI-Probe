@@ -520,6 +520,36 @@ def test_verify_progress_reports_real_bytes_and_updates_total_progress():
     assert result.total_progress == 1.0
 
 
+def test_hpm_erase_completion_is_deferred_until_program_starts():
+    class DeferredEraseBackend(FakeBackend):
+        erase_deferred = True
+
+        def program(self, inspected, progress_callback=None):
+            self.calls.append(("program", inspected))
+            assert progress_callback is not None
+            progress_callback(0.0)
+            progress_callback(1.0)
+
+    backend = DeferredEraseBackend()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        ResourceManager(),
+        image_provider=lambda _image_id: inspected,
+    )
+
+    job_id = manager.start(JobRequest(
+        actions=("connect", "erase", "program", "disconnect"),
+        image_id=inspected.image_id,
+        target_part="HPM5301",
+    ))
+    result = manager.wait(job_id, timeout=2)
+    messages = [event.message for event in manager.events(job_id) if event.message]
+    manager.shutdown()
+
+    assert result.state is JobState.SUCCEEDED
+    assert messages.index("erase in progress (completed by HPM ROM during program)") < messages.index("erase complete")
+    assert messages.index("erase complete") < messages.index("[PROGRAM] 0 / 1024 Bytes (0%)")
 @pytest.mark.parametrize(
     ("stage", "code"),
     [

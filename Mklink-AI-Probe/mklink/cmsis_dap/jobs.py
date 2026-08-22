@@ -333,6 +333,7 @@ class OnlineFlashJobManager:
         backend = None
         connection_may_be_open = False
         acquire_attempted = False
+        deferred_erase = False
         primary_error: Optional[FlashError] = None
         with self._condition:
             if job.state is not JobState.QUEUED or job.cancel_requested:
@@ -386,6 +387,9 @@ class OnlineFlashJobManager:
                             if job.cancel_requested:
                                 break
                             if index > 0:
+                                if action == "program" and deferred_erase:
+                                    self._stage_complete_locked(job, "erase")
+                                    deferred_erase = False
                                 self._transition_locked(
                                     job, _ACTION_STATES[action], action
                                 )
@@ -413,6 +417,17 @@ class OnlineFlashJobManager:
                                     )
                                 backend.connect(**connect_options)
                             elif action == "erase":
+                                deferred_erase = bool(
+                                    getattr(backend, "erase_deferred", False)
+                                    and "program" in job.request.actions
+                                )
+                                if deferred_erase:
+                                    with self._condition:
+                                        self._emit_locked(
+                                            job,
+                                            "log",
+                                            message="erase in progress (completed by HPM ROM during program)",
+                                        )
                                 if job.request.sector_addresses:
                                     backend.erase_sectors(job.request.sector_addresses)
                                 else:
@@ -495,7 +510,8 @@ class OnlineFlashJobManager:
                         except Exception as exc:
                             raise FlashError(_ACTION_ERRORS[action], str(exc)) from exc
                         with self._condition:
-                            self._stage_complete_locked(job, action)
+                            if not (action == "erase" and deferred_erase):
+                                self._stage_complete_locked(job, action)
             except ResourceError as exc:
                 primary_error = FlashError(
                     FlashErrorCode.PROBE_BUSY,
