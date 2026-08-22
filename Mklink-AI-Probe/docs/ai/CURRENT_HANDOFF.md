@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T16:15:00+08:00`
-- 分支：`master`
-- HEAD：`v0.1.7 HPM 在线读取与烧录修复已合并。`
+- 更新时间：`2026-08-22T17:20:00+08:00`
+- 分支：`fix/web-entry-port-fallback`
+- HEAD：`bef19fd web-entry 端口冲突自动切换修复已验证。`
 - 远端 HEAD：`origin/master`
 - 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
-- 当前任务：主分支已推送；标准 NSIS 已覆盖本地安装，本地 Skill 与 U 盘快速启动已同步。
+- 当前任务：web-entry 端口冲突修复已推送；NSIS 已重建覆盖安装，AI Skill 与协议处理器已同步。
 - 状态：`v017-merged-and-packaged`
 
 ## 里程碑
@@ -26,10 +26,12 @@
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
 - **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
+- **Web-entry 与安装包端口冲突**：API-only 后端占用 8765 时，Web-entry 和安装包 sidecar 均自动选择 8766；安装包内置 sidecar 健康检查和 desktop shutdown 均通过。
 
 ## 架构决策
 
 - 每个独立问题单独提交并推送，便于回退。
+- Web-entry 遇到 API-only 端口必须跳过并继续扫描，不能误杀 AI 或其他 GUI 后端。
 - HPM 目标使用设备端 ROM API，不加载 FLM；HPM Flash 映射基址为 0x80000000。
 - HPM 在线读取推荐采用 cmd.dump_memory 的一次性二进制帧模式；cmd.read_flash 保留为旧固件兼容回退或诊断路径。
 - dump_memory 必须由上位机封装为有限范围的一次性读取，按目标边界分块、校验 CRC/region error，并显式退出流模式。

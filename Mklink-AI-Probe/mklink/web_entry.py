@@ -686,9 +686,9 @@ def start_web_entry(
             browser_open(web_entry_url(port))
             return {"status": "reused", "port": port, "owned": False}
         if detected == "api":
-            raise WebEntryError(
-                f"MKLink API is already running on port {port} without Web assets"
-            )
+            # An API-only service still occupies the port.  Keep it untouched
+            # and continue scanning so the Web GUI can start on the next port.
+            continue
         if selected_port is None and port_available(port):
             selected_port = port
     if selected_port is None:

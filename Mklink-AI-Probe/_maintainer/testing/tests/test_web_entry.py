@@ -313,15 +313,53 @@ def test_start_scans_the_port_range_before_starting_a_competing_backend(tmp_path
     assert opened == [web_entry.web_entry_url(8766)]
 
 
-def test_start_refuses_to_compete_with_a_running_mklink_api_without_web_assets(tmp_path):
-    with pytest.raises(web_entry.WebEntryError, match="already running"):
-        web_entry.start_web_entry(
-            data_dir=tmp_path,
-            probe=lambda port: "api" if port == 8765 else None,
-            port_available=lambda _port: False,
-            spawn=lambda *_args, **_kwargs: None,
-            browser_open=lambda _url: None,
-        )
+def test_start_skips_a_running_api_without_web_assets_and_uses_next_port(tmp_path):
+    opened = []
+    commands = []
+
+    def probe(port):
+        if port == 8765:
+            return "api"
+        return "web" if port == 8766 else None
+
+    result = web_entry.start_web_entry(
+        data_dir=tmp_path,
+        probe=probe,
+        port_available=lambda port: port == 8766,
+        spawn=lambda *args, **kwargs: commands.append((args, kwargs)),
+        browser_open=opened.append,
+    )
+
+    assert result == {"status": "reused", "port": 8766, "owned": False}
+    assert commands == []
+    assert opened == [web_entry.web_entry_url(8766)]
+
+
+def test_start_spawns_web_gui_after_api_only_port(tmp_path):
+    opened = []
+    commands = []
+
+    def probe(port):
+        return "api" if port == 8765 else "web" if len(commands) else None
+
+    def spawn(*args, **kwargs):
+        commands.append((args, kwargs))
+        return SimpleNamespace(pid=4321)
+
+    result = web_entry.start_web_entry(
+        data_dir=tmp_path,
+        probe=probe,
+        port_available=lambda port: port == 8766,
+        spawn=spawn,
+        browser_open=opened.append,
+        process_identity=lambda pid: f"process-{pid}",
+        sleep=lambda _seconds: None,
+        timeout=1,
+    )
+
+    assert result == {"status": "started", "port": 8766, "owned": True, "pid": 4321}
+    assert commands and "8766" in commands[0][0][0]
+    assert opened == [web_entry.web_entry_url(8766)]
 
 
 def test_start_spawns_one_owned_gui_and_stop_only_terminates_that_pid(tmp_path):
