@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-22T18:20:00+08:00",
+  "updated_at": "2026-08-22T21:35:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/superwatch-array-snapshot-range",
-    "head": "bb17eb9 feat: add configurable SuperWatch array snapshots",
+    "head": "84f6359 fix: keep SuperWatch arrays expandable after stop",
     "remote_head": "origin/master",
-    "working_tree": "数组快照范围功能已提交；工作树仅待更新交接提交。"
+    "working_tree": "数组快照曲线和停止后 catalog 重试已提交；待更新交接记录。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "superwatch-array-snapshot-range-ready",
-    "current_task": "SuperWatch 支持一维标量数组的起始索引和读取数量配置，并保留逐元素监视。",
+    "status": "superwatch-array-snapshot-stop-retry-verified",
+    "current_task": "保持 SuperWatch 数组在停止采集后仍可展开，并将数组快照作为普通曲线显示。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "自动化门禁",
-      "result": "GUI 57 文件/577 项和 Vite 生产构建通过；Python 1343 项通过、1 项跳过，12 项 symlink 用例仅受当前 Windows 权限限制。"
+      "result": "GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处未结束。"
     },
     {
       "area": "真机闭环",
@@ -66,7 +66,7 @@
     },
     {
       "area": "SuperWatch 数组快照范围",
-      "result": "支持一维标量数组按起始索引和数量读取，最大 4096 个元素；范围快照与逐元素监视独立运行。GUI 577 项、聚焦 Python 116 项通过；V3/STM32F103RC 真机验证范围 [100..107] 与 _rx_rb_buf[0] 同时采样 598 个完整帧，0 丢帧、0 CRC 错误，并完成停止、清除、断开。"
+      "result": "支持一维标量数组按起始索引和数量读取，最大 4096 个元素；数组快照已接入普通 FIELDS 曲线体系，图例、隐藏、分离/合并与普通变量共用。catalog generation 在停止/重绑竞态下会自动刷新并重试展开；完整 GUI 579 项、数组相关 Python 64 项和生产构建通过。STM32F103RC 测试固件包含 64 点正弦、谐波和三角波叠加数组，真机采样持续更新。"
     }
   ],
   "decisions": [
@@ -88,7 +88,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "提交并推送 fix/superwatch-array-snapshot-range；确认后再合并 master。",
+    "推送 84f6359 并在维护者确认后合并 master。",
     "维护真实硬件与安装包回归验证；正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
