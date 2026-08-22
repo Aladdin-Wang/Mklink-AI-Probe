@@ -5,9 +5,9 @@
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/superwatch-array-snapshot-range",
-    "head": "working tree feature changes",
+    "head": "bb17eb9 feat: add configurable SuperWatch array snapshots",
     "remote_head": "origin/master",
-    "working_tree": "数组快照范围功能待提交；gui/dist 构建产物已清理。"
+    "working_tree": "数组快照范围功能已提交；工作树仅待更新交接提交。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",

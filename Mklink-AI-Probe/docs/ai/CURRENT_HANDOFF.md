@@ -6,9 +6,9 @@
 
 - 更新时间：`2026-08-22T18:20:00+08:00`
 - 分支：`fix/superwatch-array-snapshot-range`
-- HEAD：`working tree feature changes`
+- HEAD：`bb17eb9 feat: add configurable SuperWatch array snapshots`
 - 远端 HEAD：`origin/master`
-- 工作树：数组快照范围功能待提交；gui/dist 构建产物已清理。
+- 工作树：数组快照范围功能已提交；工作树仅待更新交接提交。
 - 当前任务：SuperWatch 支持一维标量数组的起始索引和读取数量配置，并保留逐元素监视。
 - 状态：`superwatch-array-snapshot-range-ready`
 
