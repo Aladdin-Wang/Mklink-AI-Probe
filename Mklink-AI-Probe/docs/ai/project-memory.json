@@ -5,7 +5,7 @@
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "a7a8852 build: refresh web assets for array curves",
+    "head": "a577016 docs: record array curve qualification",
     "remote_head": "origin/master",
     "working_tree": "SuperWatch 数组快照修复已合并 master；安装包、Skill、U 盘 Web GUI 已同步，真机功能复测完成。"
   },

@@ -6,7 +6,7 @@
 
 - 更新时间：`2026-08-22T22:18:00+08:00`
 - 分支：`master`
-- HEAD：`a7a8852 build: refresh web assets for array curves`
+- HEAD：`a577016 docs: record array curve qualification`
 - 远端 HEAD：`origin/master`
 - 工作树：SuperWatch 数组快照修复已合并 master；安装包、Skill、U 盘 Web GUI 已同步，真机功能复测完成。
 - 当前任务：已完成 master 合并、安装包覆盖安装、本地 Skill 同步和全功能真机复测。
