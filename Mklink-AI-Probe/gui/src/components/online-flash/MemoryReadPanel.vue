@@ -301,27 +301,32 @@ defineExpose({ clearMemory: () => clearMemory(false), openReadDialog, saveMemory
 .memory-read-log-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--of-text); }
 .memory-read-error { margin: 0; color: var(--of-danger); overflow-wrap: anywhere; }
 .memory-read-dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 42%); }
-.memory-read-dialog { width: min(520px, 100%); display: grid; gap: 16px; padding: 22px; border: 1px solid color-mix(in srgb, var(--of-accent) 24%, var(--of-border)); border-radius: 10px; background: linear-gradient(145deg, color-mix(in srgb, var(--of-surface) 96%, var(--of-accent)), var(--of-surface)); box-shadow: 0 24px 70px rgb(0 0 0 / 42%); }
-.memory-read-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--of-border); }
+.memory-read-dialog { --memory-dialog-bg: var(--of-surface, #1d2229); --memory-dialog-input: var(--of-input, #252b33); --memory-dialog-border: var(--of-border, #34404d); --memory-dialog-text: var(--of-text, #e6e9ed); --memory-dialog-muted: var(--of-muted, #929ba7); --memory-dialog-accent: var(--of-accent, #58a6d6); width: min(520px, 100%); display: grid; gap: 16px; padding: 22px; border: 1px solid var(--memory-dialog-border); border-radius: 10px; background: var(--memory-dialog-bg); color: var(--memory-dialog-text); box-shadow: 0 24px 70px rgb(0 0 0 / 54%); }
+.memory-read-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--memory-dialog-border); }
 .memory-read-dialog-heading { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.memory-read-dialog-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--of-accent) 48%, var(--of-border)); border-radius: 8px; background: color-mix(in srgb, var(--of-accent) 16%, var(--of-input)); color: var(--of-accent); }
-.memory-read-dialog h4 { margin: 0; color: var(--of-text); font-size: 16px; letter-spacing: 0; }
-.memory-read-dialog-heading p { margin: 3px 0 0; color: var(--of-muted); font-size: 11px; }
-.memory-read-dialog label { display: grid; gap: 7px; min-width: 0; color: var(--of-muted); font-size: 12px; font-weight: 600; }
+.memory-read-dialog-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--memory-dialog-accent) 48%, var(--memory-dialog-border)); border-radius: 8px; background: color-mix(in srgb, var(--memory-dialog-accent) 16%, var(--memory-dialog-input)); color: var(--memory-dialog-accent); }
+.memory-read-dialog h4 { margin: 0; color: var(--memory-dialog-text); font-size: 16px; letter-spacing: 0; }
+.memory-read-dialog-heading p { margin: 3px 0 0; color: var(--memory-dialog-muted); font-size: 11px; }
+.memory-read-dialog label { display: grid; gap: 7px; min-width: 0; color: var(--memory-dialog-muted); font-size: 12px; font-weight: 600; }
 .memory-read-input-wrap { position: relative; min-width: 0; }
-.memory-read-dialog input { min-width: 0; width: 100%; height: 42px; box-sizing: border-box; border: 1px solid var(--of-border); border-radius: 6px; background: color-mix(in srgb, var(--of-input) 88%, #000); color: var(--of-text); padding: 0 10px; font-family: var(--of-mono); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
-.memory-read-dialog input:focus { outline: 2px solid color-mix(in srgb, var(--of-accent) 65%, transparent); outline-offset: 1px; border-color: var(--of-accent); }
-.memory-read-input-wrap small { display: block; margin-top: 4px; color: var(--of-muted); font-size: 10px; font-weight: 400; }
+.memory-read-dialog input { min-width: 0; width: 100%; height: 42px; box-sizing: border-box; border: 1px solid var(--memory-dialog-border); border-radius: 6px; background: var(--memory-dialog-input); color: var(--memory-dialog-text); padding: 0 10px; font-family: var(--of-mono, ui-monospace, Consolas, monospace); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+.memory-read-dialog input:focus { outline: 2px solid color-mix(in srgb, var(--memory-dialog-accent) 65%, transparent); outline-offset: 1px; border-color: var(--memory-dialog-accent); }
+.memory-read-input-wrap small { display: block; margin-top: 4px; color: var(--memory-dialog-muted); font-size: 10px; font-weight: 400; }
 .memory-read-range-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 10px; }
-.memory-read-range-arrow { padding-bottom: 26px; color: var(--of-accent); font: 600 18px/1 var(--of-mono); }
-.memory-read-summary { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--of-accent) 30%, var(--of-border)); border-radius: 6px; background: color-mix(in srgb, var(--of-accent) 9%, var(--of-input)); color: var(--of-muted); font-size: 11px; }
-.memory-read-summary strong { min-width: 0; overflow: hidden; color: var(--of-text); font: 600 11px/1.4 var(--of-mono); text-overflow: ellipsis; white-space: nowrap; }
-.memory-read-summary em { color: var(--of-accent); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.memory-read-validation { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--of-danger) 34%, var(--of-border)); border-radius: 6px; background: var(--of-danger-bg); color: var(--of-danger); font-size: 11px; }
+.memory-read-range-arrow { padding-bottom: 26px; color: var(--memory-dialog-accent); font: 600 18px/1 var(--of-mono, ui-monospace, Consolas, monospace); }
+.memory-read-summary { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--memory-dialog-accent) 30%, var(--memory-dialog-border)); border-radius: 6px; background: color-mix(in srgb, var(--memory-dialog-accent) 9%, var(--memory-dialog-input)); color: var(--memory-dialog-muted); font-size: 11px; }
+.memory-read-summary strong { min-width: 0; overflow: hidden; color: var(--memory-dialog-text); font: 600 11px/1.4 var(--of-mono, ui-monospace, Consolas, monospace); text-overflow: ellipsis; white-space: nowrap; }
+.memory-read-summary em { color: var(--memory-dialog-accent); font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.memory-read-validation { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--of-danger, #f07178) 34%, var(--memory-dialog-border)); border-radius: 6px; background: var(--of-danger-bg, #3b2428); color: var(--of-danger, #f07178); font-size: 11px; }
 .memory-read-dialog .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; padding: 0; border: 1px solid var(--of-border); border-radius: 6px; background: color-mix(in srgb, var(--of-input) 70%, transparent); color: var(--of-muted); cursor: pointer; }
-.memory-read-dialog .icon-button:hover { border-color: var(--of-accent); color: var(--of-text); }
-.memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--of-border); }
-.memory-read-dialog-actions .btn { min-width: 96px; min-height: 36px; }
+.memory-read-dialog .icon-button { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; padding: 0; border: 1px solid var(--memory-dialog-border); border-radius: 6px; background: color-mix(in srgb, var(--memory-dialog-input) 70%, transparent); color: var(--memory-dialog-muted); cursor: pointer; }
+.memory-read-dialog .icon-button:hover { border-color: var(--memory-dialog-accent); color: var(--memory-dialog-text); }
+.memory-read-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--memory-dialog-border); }
+.memory-read-dialog-actions .btn { min-width: 96px; min-height: 36px; border: 1px solid var(--memory-dialog-border); border-radius: 5px; cursor: pointer; }
+.memory-read-dialog-actions .btn:not(.btn-primary) { background: #eef1f4; color: #20262d; }
+.memory-read-dialog-actions .btn:not(.btn-primary):hover { background: #fff; }
+.memory-read-dialog-actions .btn.btn-primary { border-color: #e58a3a; background: #e58a3a; color: #fff; }
+.memory-read-dialog-actions .btn.btn-primary:hover:not(:disabled) { background: #f09a4d; border-color: #f09a4d; }
+.memory-read-dialog-actions .btn:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 540px) { .memory-read-dialog { padding: 16px; } .memory-read-range-fields { grid-template-columns: 1fr; gap: 8px; } .memory-read-range-arrow { display: none; } .memory-read-summary { grid-template-columns: 1fr; gap: 3px; } .memory-read-summary em { justify-self: start; } }
 </style>

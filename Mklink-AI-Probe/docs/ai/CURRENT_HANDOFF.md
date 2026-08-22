@@ -5,12 +5,12 @@
 ## 当前断点
 
 - 更新时间：`2026-08-22T17:20:00+08:00`
-- 分支：`master`
-- HEAD：`07907fa web-entry 端口冲突修复已合并。`
+- 分支：`fix/memory-read-dialog-dark-theme`
+- HEAD：`16fab8d docs: refresh current master handoff`
 - 远端 HEAD：`origin/master`
 - 工作树：主分支已合并并推送；安装包和构建缓存不纳入源码提交。
-- 当前任务：web-entry 端口冲突修复已推送；NSIS 已重建覆盖安装，AI Skill 与协议处理器已同步。
-- 状态：`v017-merged-and-packaged`
+- 当前任务：读取目标 Flash 弹窗已恢复深色主题；弹窗颜色和操作按钮不再依赖外层变量或全局按钮样式。
+- 状态：`memory-read-dialog-dark-theme`
 
 ## 里程碑
 
@@ -27,6 +27,7 @@
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
 - **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
 - **Web-entry 与安装包端口冲突**：API-only 后端占用 8765 时，Web-entry 和安装包 sidecar 均自动选择 8766；安装包内置 sidecar 健康检查和 desktop shutdown 均通过。
+- **读取目标 Flash 弹窗主题**：MemoryReadPanel 弹窗使用稳定深色回退值；输入区、摘要区、关闭按钮和取消/开始读取按钮均显式定义颜色。GUI 575 项测试和生产构建通过；Python 1338 项通过、1 项跳过，12 项目录 symlink 用例受当前 Windows 权限限制。
 
 ## 架构决策
 

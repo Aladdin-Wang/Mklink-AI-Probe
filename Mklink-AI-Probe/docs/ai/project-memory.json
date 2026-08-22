@@ -4,8 +4,8 @@
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "07907fa web-entry 端口冲突修复已合并。",
+    "branch": "fix/memory-read-dialog-dark-theme",
+    "head": "16fab8d docs: refresh current master handoff",
     "remote_head": "origin/master",
     "working_tree": "主分支已合并并推送；安装包和构建缓存不纳入源码提交。"
   },
@@ -14,8 +14,8 @@
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v017-merged-and-packaged",
-    "current_task": "web-entry 端口冲突修复已推送；NSIS 已重建覆盖安装，AI Skill 与协议处理器已同步。",
+    "status": "memory-read-dialog-dark-theme",
+    "current_task": "读取目标 Flash 弹窗已恢复深色主题；弹窗颜色和操作按钮不再依赖外层变量或全局按钮样式。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -63,6 +63,10 @@
     {
       "area": "Web-entry 与安装包端口冲突",
       "result": "API-only 后端占用 8765 时，Web-entry 和安装包 sidecar 均自动选择 8766；安装包内置 sidecar 健康检查和 desktop shutdown 均通过。"
+    },
+    {
+      "area": "读取目标 Flash 弹窗主题",
+      "result": "MemoryReadPanel 弹窗使用稳定深色回退值；输入区、摘要区、关闭按钮和取消/开始读取按钮均显式定义颜色。GUI 575 项测试和生产构建通过；Python 1338 项通过、1 项跳过，12 项目录 symlink 用例受当前 Windows 权限限制。"
     }
   ],
   "decisions": [
