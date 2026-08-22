@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-22T11:45:00+08:00`
+- 更新时间：`2026-08-22T12:30:00+08:00`
 - 分支：`fix/systemview-timeline-smooth-refresh`
 - HEAD：`SystemView Runtime/Timeline 累计修复、HPM CPU Clock 运行时频率优先级、首屏稳定刷新和连续跟随插值。`
 - 远端 HEAD：`origin/fix/systemview-timeline-smooth-refresh 待同步连续跟随插值修复；尚未合并 master。`
-- 工作树：连续跟随插值源码、测试和记忆待提交；当前工作树 gui/dist 为本地验证构建产物，不纳入提交。
-- 当前任务：修复 SystemView 跟随时间窗在 Worker 批次到达时沿用过期插值时钟造成的首屏大段跃迁；保持最新事件右边界跟随和稳定刷新。
-- 状态：`systemview_follow_interpolation_verified`
+- 工作树：可见区间累计缓存源码、测试和记忆待提交；gui/dist 仅为本地验证产物，不纳入提交。
+- 当前任务：修复 Worker 像素 envelope 响应覆盖旧区间造成的 Timeline 大块跃迁；保持最新事件右边界跟随和稳定刷新。
+- 状态：`systemview_visible_interval_cache_pending_hardware`
 
 ## 里程碑
 
@@ -25,7 +25,7 @@
 - **桌面保存与界面修复**：Chrome Web GUI 8766 连接真实 V3/STM32F103RC，按器件默认范围读取 256 KiB（128 个 2 KiB 分块），原样擦除、编程、校验、复位并断开成功；运行中显示 PROGRAMMING/44% 和真实 [PROGRAM] 字节日志，结束后保持烧录完成/100%。读取弹窗已确认使用向上图标。
 - **实时调试**：新增修复：SystemView 流按 Worker 确认串行投递帧，visible-range 请求可插入高事件率数据流，不再被数千个帧请求堵塞。GUI 56 文件/566 项和生产构建通过；Chrome/HPM 真机事件持续增长且 Timeline 不再空白。
 - **Overflow 处理**：确认 HPM 目标端 SEGGER SystemView 使用 10 KiB RTT 上行缓冲，而探针 systemView.c 每次最多搬运 1024 字节；高事件率下 Overflow 是目标缓冲溢出，不是 StreamHub 或浏览器丢包。解析器收到 Overflow 后清除缓存任务上下文，GUI 单独显示 Target Overflow；Python 解析器 6 项、Worker/SystemView 页面 84 项聚焦测试通过。Chrome 通过 COM55 重启最新构建后，使用已验证 RTT 地址 0x00087100，Events 从 12,925 持续增长到 243,745，Timeline 持续更新；Target Overflow 从 496 增长到 9,357。错误的自动搜索地址 0x20000ad0 会导致 Recorder 握手超时。
-- **Runtime/Timeline 累计修复**：Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax、任务元数据和已有数据状态，空视口响应也不会触发下一帧首次定位。首屏填充阶段固定 30 FPS，达到当前时间窗口后才恢复 60/30/20 自适应；新增独立 _followFrom 起点，每个 Worker 新目标都从当前实际显示帧重新启动 100 ms 插值，完成后清理起点和目标，避免过期时间戳让后续批次瞬移；清空/重启会重置控制器。Timeline/SystemViewTab/renderScheduler 定向测试 57 项通过、Vite 生产构建通过；Chrome 8776 + COM55 + HPM 重载最新构建后重新连接并启动 SystemView，1.2 秒内事件由 0 增至 1,479、任务数保持 4，数据流持续运行。
+- **Runtime/Timeline 累计修复**：Worker Context 汇总改为遍历整个保留 interval ring，不再按 visible range 裁剪；SvTimeline 对可见区间响应保留累计 tMin/tMax、任务元数据和已有数据状态，空视口响应也不会触发下一帧首次定位。首屏填充阶段固定 30 FPS，达到当前时间窗口后才恢复 60/30/20 自适应；新增独立 _followFrom 起点，每个 Worker 新目标都从当前实际显示帧重新启动 100 ms 插值，完成后清理起点和目标，避免过期时间戳让后续批次瞬移；可见区间 envelope 现在按 task/start tick 累计，保留最近 60 秒且上限 50,000 条，避免跟随窗口推进时旧区间整批消失。新增页面回归测试确认累计行为，SystemViewTab 定向测试 19 项通过、Vite 生产构建通过。COM55 探针在旧后端被关闭后仍处于流模式，当前分支后端恢复握手失败，因此最新缓存修复尚未完成 HPM 真机截图验收。
 - **HPM CPU Clock**：blink_led ELF/目标实际 hpm_core_clock=360000000；SystemView 设备层与真实 SystemViewStreamManager 连续读取均报告 360000000、来源 hpm_core_clock。运行时 SystemCoreClock/hpm_core_clock 现在覆盖工程 RT_SYSVIEW_CPU_FREQ 默认值，并锁定 parser 防止 INIT 816 MHz 覆盖；新增回归测试。SystemView 聚焦 72 项、全量 Python 1331 项通过（1 跳过，12 项因 Windows symlink 权限失败），GUI 56 文件/572 项和生产构建通过。
 - **远程固件与人工下载**：真实 8770 API 从 GitHub 下载 V3.3.7 共 771072 字节，SHA-256 与本地完全匹配；回归测试确认 GitHub 文件成功时不访问 Gitee，失败时才查询并下载同版本 Gitee 资产。Chrome 隔离测试显示自动升级未完成、最新 V4.3.6 和下载固件按钮，Web 文件保存选择器与 Tauri 原生保存框均已覆盖。
 
@@ -56,7 +56,7 @@
 - 安装包原生保存已由维护者手动验收；本轮 Web 文件选择器由自动化覆盖。
 - Gitee v0.1.6 Release 当前没有 V3.3.7/V4.3.6 UF2 资产；代码会尝试 Gitee 并明确报错，但真实 Gitee 下载要等维护者同步同版本资产。
 - V4.3.6 已完成远程发现、下载和哈希验证，但本轮未连接 V4 做 Bootloader 升级。
-- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；需要在探针固件中提高单次 RTT 搬运量、批量 drain 并确认 USB TX 队列吞吐，不能由前端补回已经丢失的事件。Runtime/Timeline 累计修复已在 Chrome + COM55 + HPM 真机验证；目标 Overflow 仍属于吞吐限制。
+- 高事件率 SystemView 仍可能溢出目标 RTT 缓冲；需要在探针固件中提高单次 RTT 搬运量、批量 drain 并确认 USB TX 队列吞吐，不能由前端补回已经丢失的事件。COM55 当前仍停在流模式，需重启/重新枚举探针后才能完成最新 Timeline 缓存修复的 HPM 真机截图。
 
 ## 延续协议
 

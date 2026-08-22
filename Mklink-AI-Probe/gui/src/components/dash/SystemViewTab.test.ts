@@ -203,6 +203,21 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     wrapper.unmount()
   })
 
+  it('keeps earlier envelope intervals while the follow viewport advances', async () => {
+    mocks.dash.getStatus.mockResolvedValue({ running: false })
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    publishVisibleIntervals(1_000_000, 0, 1_000_000, 100, 200)
+    await nextTick()
+    publishVisibleIntervals(1_000_000, 0, 2_000_000, 300, 400)
+    await nextTick()
+
+    const last = mocks.timeline.setPrefilteredIntervals.mock.calls.at(-1)?.[0] as Array<{ start: number }>
+    expect(last.map(interval => interval.start)).toEqual([100, 300])
+    wrapper.unmount()
+  })
+
   it('keeps the startup Timeline cadence fixed until the live window is filled', async () => {
     mocks.dash.getStatus.mockResolvedValue({ running: false })
     const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
@@ -515,6 +530,33 @@ function publishVisibleEvent(cpuFreq: number, requestId = 0, latestTime = 1) {
       t_ticks_exact: '9007199254740993',
       t_relative: 1,
     }],
+  } as never
+}
+
+function publishVisibleIntervals(
+  cpuFreq: number,
+  requestId: number,
+  latestTime: number,
+  start: number,
+  end: number,
+) {
+  mocks.status.data.value = [{ _streamSeq: requestId, cpu_freq: cpuFreq }] as never[]
+  mocks.binary.systemViewVisible.value = {
+    type: 'systemview-visible',
+    requestId,
+    intervalCount: 1,
+    candidateIntervalCount: 1,
+    eventCount: 0,
+    latestTime,
+    tickOrigin: 0n,
+    taskIds: new Uint32Array([1]).buffer,
+    contextTypes: new Uint8Array([1]).buffer,
+    starts: new Float64Array([start]).buffer,
+    ends: new Float64Array([end]).buffer,
+    startTicks: new BigUint64Array([BigInt(start)]).buffer,
+    endTicks: new BigUint64Array([BigInt(end)]).buffer,
+    events: [],
+    contexts: [],
   } as never
 }
 

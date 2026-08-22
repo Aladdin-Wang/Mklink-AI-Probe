@@ -367,6 +367,12 @@ let analysisEvents: any[] = []
 const analysisBufferCount = ref(0)
 const taskStats = reactive<Record<number, TaskStat>>({})
 const intervals = shallowRef<TaskInterval[]>([])
+// The worker returns a pixel envelope for the requested viewport. Its bucket
+// boundaries move as the follow window advances, so replacing the previous
+// response makes whole groups of intervals disappear and reappear. Keep a
+// bounded live cache keyed by interval start and update it incrementally;
+// rendering still filters this cache to the current viewport.
+const visibleIntervalCache = new Map<string, TaskInterval>()
 const exactRuntimeRows = shallowRef<any[]>([])
 let intervalState: SystemViewIntervalState = { currentTaskId: null, currentStart: null }
 const idleUs = ref(0)
@@ -512,6 +518,28 @@ function requestTimelineVisibleRange(
   visibleRequestInFlight = true
   visibleRequestPending = false
   binaryStream.requestVisibleRange(++visibleRequestId, start, end, pixelWidth)
+}
+
+function intervalCacheKey(interval: TaskInterval): string {
+  const start = interval.startTk ?? interval.start
+  return `${interval.taskId}:${String(start)}`
+}
+
+function mergeVisibleIntervals(next: TaskInterval[], latestTime: number): TaskInterval[] {
+  const retainAfter = latestTime - ANALYSIS_BUFFER_US
+  for (const interval of next) {
+    if (interval.end >= retainAfter) visibleIntervalCache.set(intervalCacheKey(interval), interval)
+  }
+  for (const [key, interval] of visibleIntervalCache) {
+    if (interval.end < retainAfter) visibleIntervalCache.delete(key)
+  }
+  if (visibleIntervalCache.size > MAX_INTERVALS) {
+    const oldest = [...visibleIntervalCache.entries()]
+      .sort((a, b) => a[1].end - b[1].end)
+      .slice(0, visibleIntervalCache.size - MAX_INTERVALS)
+    for (const [key] of oldest) visibleIntervalCache.delete(key)
+  }
+  return [...visibleIntervalCache.values()].sort((a, b) => a.start - b.start || a.end - b.end)
 }
 
 function resetTimelineRefreshPolicy(): void {
@@ -964,7 +992,7 @@ watch(binaryStream.systemViewVisible, visible => {
       pct: totalTicks > 0 ? contextSummary.totalTicks / totalTicks * 100 : 0,
     }
   }).sort((a, b) => b.totalUs - a.totalUs || a.name.localeCompare(b.name))
-  intervals.value = nextIntervals
+  intervals.value = mergeVisibleIntervals(nextIntervals, visible.latestTime * tickScale)
   lastT = visible.latestTime * tickScale
   tlInstance?.setTickOrigin(binaryTickOrigin)
   tlInstance?.setContexts?.(tlGetContexts(), { render: false })
@@ -1057,6 +1085,7 @@ function clearAll() {
   analysisEvents = []
   analysisBufferCount.value = 0
   intervals.value = []
+  visibleIntervalCache.clear()
   exactRuntimeRows.value = []
   Object.keys(taskStats).forEach(k => delete taskStats[Number(k)])
   intervalState = { currentTaskId: null, currentStart: null }
