@@ -1,4 +1,5 @@
 from mklink.systemview_parser import (
+    EVTID_INIT,
     EVTID_OVERFLOW,
     EVTID_STACK_INFO,
     EVTID_TASK_INFO,
@@ -65,6 +66,26 @@ def test_hpm_init_preserves_zero_ram_base_and_id_shift():
 
     assert parser._ram_base == 0
     assert parser._id_shift == 0
+
+
+def test_runtime_cpu_clock_override_survives_stale_init_packet():
+    parser = SystemViewParser()
+    parser.set_cpu_freq(360_000_000, lock=True)
+    payload = b"".join(
+        (
+            _encode_u32(816_000_000),
+            _encode_u32(816_000_000),
+            _encode_u32(0),
+            _encode_u32(2),
+        )
+    )
+    packet = bytes((EVTID_INIT, len(payload))) + payload + _encode_u32(1)
+
+    events = parser.feed(packet)
+
+    assert events[0]["kind"] == "init"
+    assert parser.cpu_freq == 360_000_000
+    assert events[0]["t_us"] == 1_000_000 / 360_000_000
 
 
 def test_stack_info_consumes_stack_end_before_timestamp_delta():
