@@ -34,10 +34,31 @@ describe('browser session lease', () => {
     window.dispatchEvent(new Event('pagehide'))
     stop()
 
-    expect(sendBeacon).toHaveBeenCalledTimes(2)
+    expect(sendBeacon).toHaveBeenCalledTimes(1)
     expect(sendBeacon.mock.calls.map(call => call[0])).toEqual([
-      '/api/device/disconnect',
       '/api/browser-session/release',
     ])
+  })
+
+  it('falls back to a keepalive request when sendBeacon cannot queue', async () => {
+    const sendBeacon = vi.fn(() => false)
+    const fetch = vi.fn(() => Promise.resolve(new Response()))
+    vi.stubGlobal('navigator', { sendBeacon })
+    vi.stubGlobal('fetch', fetch)
+    class FakeWebSocket {
+      addEventListener() {}
+      close() {}
+    }
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+
+    const stop = startBrowserSessionLease(true)
+    stop()
+    await Promise.resolve()
+
+    expect(sendBeacon).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/browser-session/release',
+      expect.objectContaining({ method: 'POST', keepalive: true }),
+    )
   })
 })

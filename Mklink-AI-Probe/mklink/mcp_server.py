@@ -32,6 +32,7 @@ Tools are registered with ``@mcp.tool()`` and grouped by capability
 from __future__ import annotations
 
 from contextlib import contextmanager
+import atexit
 import logging
 import sys
 import threading
@@ -125,6 +126,12 @@ def _reset_device() -> None:
                 log.exception("error closing device during reset")
         _holder["device"] = None
         _holder["kwargs"] = {}
+
+
+# MCP hosts normally terminate the stdio child after the conversation ends.
+# Keep the explicit `disconnect` tool for normal sessions, but also close the
+# cached Device when the host exits without sending that final tool call.
+atexit.register(_reset_device)
 
 
 # --------------------------------------------------------------------------
@@ -1354,7 +1361,10 @@ def run() -> None:
     if mcp is None:
         mcp = build_server()
     with _isolate_stdio_protocol():
-        mcp.run(transport="stdio")
+        try:
+            mcp.run(transport="stdio")
+        finally:
+            _reset_device()
 
 
 __all__ = ["build_server", "run", "configure_device"]

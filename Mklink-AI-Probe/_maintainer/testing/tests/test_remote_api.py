@@ -67,6 +67,27 @@ def test_browser_session_endpoints_are_enabled_only_for_browser_owned_server():
         ).json() == {"enabled": True, "clients": 0}
 
 
+def test_last_browser_session_release_closes_the_shared_device():
+    app = create_app(
+        auth_token=None, project_root=".", browser_session_timeout=15,
+    )
+    device = SimpleNamespace(connected=True, close=lambda: None)
+    app.state.mklink_state["device"] = device
+    app.state.mklink_state["dispatcher"] = object()
+
+    with patch.object(device, "close") as close, TestClient(app) as client:
+        assert client.post(
+            "/api/browser-session/heartbeat", json={"client_id": "tab"},
+        ).json() == {"enabled": True, "clients": 1}
+        assert client.post(
+            "/api/browser-session/release", json={"client_id": "tab"},
+        ).json() == {"enabled": True, "clients": 0}
+
+    close.assert_called_once_with()
+    assert app.state.mklink_state["device"] is None
+    assert app.state.mklink_state["dispatcher"] is None
+
+
 def test_browser_session_websockets_keep_backend_until_the_last_tab_closes():
     app = create_app(
         auth_token=None, project_root=".", browser_session_timeout=15,

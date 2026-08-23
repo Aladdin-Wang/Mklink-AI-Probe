@@ -887,24 +887,21 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Keep the unified sidecar alive in the tray while Site Agent is enabled.
+            // Closing the main window is a real application exit. The sidecar
+            // owns the Device and its serial/HIL locks, so it must be stopped
+            // even when Site Agent is configured. Users can start the desktop
+            // app again when they need the agent; a hidden window must never
+            // leave a probe locked unexpectedly.
             let cleanup_handle = app.handle().clone();
             let cleanup_shutdown = shutdown.clone();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if let tauri::WindowEvent::CloseRequested { api: _, .. } = event {
                         let state: State<Sidecar> = cleanup_handle.state();
-                        let keep_running = configured_site_agent_root(state.inner())
-                            .ok()
-                            .and_then(|root| site_agent_config::load(&root).ok())
-                            .is_some_and(|config| config.enabled);
-                        if keep_running {
-                            api.prevent_close();
-                            if let Some(window) = cleanup_handle.get_webview_window("main") {
-                                let _ = window.hide();
-                            }
-                            return;
-                        }
+                        // The close request is allowed to continue after the
+                        // owned sidecar has been asked to shut down. This
+                        // keeps the serial release on the same synchronous
+                        // path as tray Exit and process shutdown.
                         eprintln!("[tauri] window closing, cleaning up sidecar...");
                         cleanup_shutdown.store(true, Ordering::Relaxed);
                         if terminate_sidecar_tree(state.inner()).is_ok() {

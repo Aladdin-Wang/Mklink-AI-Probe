@@ -19,10 +19,18 @@ function releaseBrowserDevice(clientId: string): void {
   const body = new Blob([JSON.stringify({ client_id: clientId })], {
     type: 'application/json',
   })
-  // Release the device before the browser session lease expires. The lease
-  // still owns process shutdown, while this beacon immediately frees COM.
-  navigator.sendBeacon?.('/api/device/disconnect', body)
-  navigator.sendBeacon?.('/api/browser-session/release', body)
+  // The backend releases the shared Device when the last browser session is
+  // released. Keep this as one request so disconnect and session accounting
+  // cannot race two concurrent Device.close() calls during pagehide.
+  if (navigator.sendBeacon?.('/api/browser-session/release', body)) return
+  // sendBeacon can be unavailable (or return false when its queue is full).
+  // keepalive gives Chromium/WebView2 a second reliable page-close path.
+  void fetch('/api/browser-session/release', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => undefined)
 }
 
 export function startBrowserSessionLease(enabled = !IS_TAURI): () => void {

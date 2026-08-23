@@ -763,6 +763,10 @@ def create_app(
     app.state.browser_sessions = browser_sessions
     app.state.request_browser_session_exit = None
     app.state.request_desktop_exit = None
+    # A pagehide beacon and a normal disconnect request can arrive together.
+    # Serialize the shared-device teardown so only one coroutine can stop
+    # dashboards and close the physical probe at a time.
+    device_disconnect_lock = asyncio.Lock()
 
     async def monitor_browser_sessions() -> None:
         interval = min(1.0, max(0.1, browser_sessions.timeout / 4.0))
@@ -1502,27 +1506,32 @@ def create_app(
             "elf_backend": device.axf_status.get("elf_backend"),
         }
 
+    async def _disconnect_shared_device() -> dict[str, object]:
+        """Stop bridge dashboards and release the GUI-owned Device."""
+        async with device_disconnect_lock:
+            from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+
+            stopped = []
+            for name in BRIDGE_DASHBOARD_TYPES:
+                manager = dashboard_managers.get(name)
+                if manager is not None and _dashboard_worker_alive(manager):
+                    await run_in_threadpool(manager.stop)
+                    if _dashboard_worker_alive(manager):
+                        raise DashboardStopPending(name)
+                    stopped.append(name)
+                _state["resource_manager"].release(f"user:dashboard:{name}")
+
+            device = _state["device"]
+            if device:
+                remember_device_connection(_state, device)
+                await run_in_threadpool(device.close)
+                _state["device"] = None
+                _state["dispatcher"] = None
+            return {"status": "disconnected", "stopped": stopped}
+
     @app.post("/api/device/disconnect")
     async def disconnect_device():
-        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
-
-        stopped = []
-        for name in BRIDGE_DASHBOARD_TYPES:
-            manager = dashboard_managers.get(name)
-            if manager is not None and _dashboard_worker_alive(manager):
-                await run_in_threadpool(manager.stop)
-                if _dashboard_worker_alive(manager):
-                    raise DashboardStopPending(name)
-                stopped.append(name)
-            _state["resource_manager"].release(f"user:dashboard:{name}")
-
-        device = _state["device"]
-        if device:
-            remember_device_connection(_state, device)
-            await run_in_threadpool(device.close)
-            _state["device"] = None
-            _state["dispatcher"] = None
-        return {"status": "disconnected", "stopped": stopped}
+        return await _disconnect_shared_device()
 
     @app.get("/api/device/status")
     async def device_status():
@@ -2996,6 +3005,12 @@ def create_app(
         if browser_sessions is None:
             return {"enabled": False}
         clients = browser_sessions.release(_browser_session_client(client_id))
+        # pagehide sends this request before the tab disappears. Release the
+        # physical probe immediately instead of waiting for the backend's
+        # close-grace timer; unexpected websocket loss still keeps the grace
+        # period for transient browser reconnects.
+        if clients == 0:
+            await _disconnect_shared_device()
         return {"enabled": True, "clients": clients}
 
     @app.websocket("/ws/browser-session")
