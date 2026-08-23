@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-23T10:00:00+08:00",
+  "updated_at": "2026-08-23T13:45:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "1181ca3 docs-update-handoff-after-serial-fix",
+    "head": "1e97790 fix-sync-skill-plugin-version",
     "remote_head": "origin/master",
-    "working_tree": "桌面/Web/MCP 串口生命周期修复已合并并推送 master；已合并修复分支已清理，正在从 master 重建安装包并同步本地 Skill。"
+    "working_tree": "桌面/Web/MCP 串口生命周期和 Skill 版本一致性修复已合并并推送 master；已合并修复分支已清理，主分支安装包与本地 Skill 已更新。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "master-desktop-lifecycle-fix",
-    "current_task": "串口锁释放修复已合并 master；从 master 重新生成 0.1.7 NSIS 候选包并替换本地 Skill。",
+    "status": "master-lifecycle-package-skill-synced",
+    "current_task": "已完成 master 合并、修复分支清理、0.1.7 NSIS 候选包重建和本地 Skill 同步。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -66,7 +66,7 @@
     },
     {
       "area": "串口生命周期回归",
-      "result": "Python 40 项和 GUI 57 文件/580 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。NSIS 构建改用 zlib 压缩后成功生成 0.1.7 x64 安装包；候选包位于 release/20260823。"
+      "result": "Python 40 项、GUI 57 文件/580 项和 Skill 更新器 11 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。最终 master 生成 0.1.7 x64 NSIS 候选包到工作区外层 release；本地 Skill 的包/插件版本均为 0.1.7，来源提交和 GUI/MCP 依赖验证通过。"
     }
   ],
   "decisions": [

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-23T10:00:00+08:00`
+- 更新时间：`2026-08-23T13:45:00+08:00`
 - 分支：`master`
-- HEAD：`1181ca3 docs-update-handoff-after-serial-fix`
+- HEAD：`1e97790 fix-sync-skill-plugin-version`
 - 远端 HEAD：`origin/master`
-- 工作树：桌面/Web/MCP 串口生命周期修复已合并并推送 master；已合并修复分支已清理，正在从 master 重建安装包并同步本地 Skill。
-- 当前任务：串口锁释放修复已合并 master；从 master 重新生成 0.1.7 NSIS 候选包并替换本地 Skill。
-- 状态：`master-desktop-lifecycle-fix`
+- 工作树：桌面/Web/MCP 串口生命周期和 Skill 版本一致性修复已合并并推送 master；已合并修复分支已清理，主分支安装包与本地 Skill 已更新。
+- 当前任务：已完成 master 合并、修复分支清理、0.1.7 NSIS 候选包重建和本地 Skill 同步。
+- 状态：`master-lifecycle-package-skill-synced`
 
 ## 里程碑
 
@@ -27,7 +27,7 @@
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
 - **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
 - **SuperWatch 数组快照范围**：支持一维标量数组按起始索引和数量读取，最大 4096 个元素；数组快照已接入普通 FIELDS 曲线体系，图例、隐藏、分离/合并与普通变量共用。catalog generation 在停止/重绑竞态下会自动刷新并重试展开；完整 GUI 579 项、数组相关 Python 64 项和生产构建通过。STM32F103RC 测试固件包含 64 点正弦、谐波和三角波叠加数组，真机采样持续更新。
-- **串口生命周期回归**：Python 40 项和 GUI 57 文件/580 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。NSIS 构建改用 zlib 压缩后成功生成 0.1.7 x64 安装包；候选包位于 release/20260823。
+- **串口生命周期回归**：Python 40 项、GUI 57 文件/580 项和 Skill 更新器 11 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。最终 master 生成 0.1.7 x64 NSIS 候选包到工作区外层 release；本地 Skill 的包/插件版本均为 0.1.7，来源提交和 GUI/MCP 依赖验证通过。
 
 ## 架构决策
 
