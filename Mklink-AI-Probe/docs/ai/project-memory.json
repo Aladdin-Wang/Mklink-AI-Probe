@@ -4,18 +4,18 @@
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/desktop-close-releases-serial",
-    "head": "2410575 fix-serial-resources-on-client-shutdown",
+    "branch": "master",
+    "head": "1181ca3 docs-update-handoff-after-serial-fix",
     "remote_head": "origin/master",
-    "working_tree": "桌面/Web/MCP 关闭时释放 sidecar、后端 Device 和串口锁的修复已完成；0.1.7 NSIS 候选包已构建，历史 MKLink 临时数据已清理。"
+    "working_tree": "桌面/Web/MCP 串口生命周期修复已合并并推送 master；已合并修复分支已清理，正在从 master 重建安装包并同步本地 Skill。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "desktop-lifecycle-fix-built",
-    "current_task": "串口锁释放修复已通过回归测试并生成 0.1.7 NSIS 候选包；待提交分支并由维护者决定合并。",
+    "status": "master-desktop-lifecycle-fix",
+    "current_task": "串口锁释放修复已合并 master；从 master 重新生成 0.1.7 NSIS 候选包并替换本地 Skill。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -89,7 +89,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "将 fix/desktop-close-releases-serial 提交并推送后，由维护者决定是否合并 master。"
+    "正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",

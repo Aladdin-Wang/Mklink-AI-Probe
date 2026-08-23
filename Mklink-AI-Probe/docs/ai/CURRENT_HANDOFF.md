@@ -5,12 +5,12 @@
 ## 当前断点
 
 - 更新时间：`2026-08-23T10:00:00+08:00`
-- 分支：`fix/desktop-close-releases-serial`
-- HEAD：`2410575 fix-serial-resources-on-client-shutdown`
+- 分支：`master`
+- HEAD：`1181ca3 docs-update-handoff-after-serial-fix`
 - 远端 HEAD：`origin/master`
-- 工作树：桌面/Web/MCP 关闭时释放 sidecar、后端 Device 和串口锁的修复已完成；0.1.7 NSIS 候选包已构建，历史 MKLink 临时数据已清理。
-- 当前任务：串口锁释放修复已通过回归测试并生成 0.1.7 NSIS 候选包；待提交分支并由维护者决定合并。
-- 状态：`desktop-lifecycle-fix-built`
+- 工作树：桌面/Web/MCP 串口生命周期修复已合并并推送 master；已合并修复分支已清理，正在从 master 重建安装包并同步本地 Skill。
+- 当前任务：串口锁释放修复已合并 master；从 master 重新生成 0.1.7 NSIS 候选包并替换本地 Skill。
+- 状态：`master-desktop-lifecycle-fix`
 
 ## 里程碑
 
@@ -47,7 +47,7 @@
 
 ## 下一动作
 
-1. 将 fix/desktop-close-releases-serial 提交并推送后，由维护者决定是否合并 master。
+1. 正式发布仍需维护者明确授权。
 
 ## 已知限制
 
