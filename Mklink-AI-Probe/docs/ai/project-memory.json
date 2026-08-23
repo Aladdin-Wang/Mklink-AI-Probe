@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-23T13:45:00+08:00",
+  "updated_at": "2026-08-23T14:30:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "1e97790 fix-sync-skill-plugin-version",
+    "branch": "fix/waveform-header-style-leak",
+    "head": "ea48580 docs-record-master-package-and-skill-sync",
     "remote_head": "origin/master",
-    "working_tree": "桌面/Web/MCP 串口生命周期和 Skill 版本一致性修复已合并并推送 master；已合并修复分支已清理，主分支安装包与本地 Skill 已更新。"
+    "working_tree": "正在修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏；源码、生产资源和回归覆盖已完成。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "master-lifecycle-package-skill-synced",
-    "current_task": "已完成 master 合并、修复分支清理、0.1.7 NSIS 候选包重建和本地 Skill 同步。",
+    "status": "waveform-header-style-leak-qualified",
+    "current_task": "限制波形页 header 样式作用域，防止读取 Flash 弹窗和任务日志标题栏变白；按日期目录重建 NSIS 候选包。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "自动化门禁",
-      "result": "GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处因当前 Windows symlink 权限场景长时间无输出而中止。"
+      "result": "GUI 57 文件/582 项和 Vite 生产构建通过；Python 全量 1346 项通过、1 项跳过，12 项仅因当前 Windows 账户无目录 symlink 权限（WinError 1314）失败。真实 Chrome 按 SuperWatch→在线烧录→读取数据顺序验证，弹窗和任务日志标题栏保持透明/深色且无裸 header 规则。"
     },
     {
       "area": "真机闭环",
@@ -89,7 +89,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "正式发布仍需维护者明确授权。"
+    "从已验证修复提交生成 release/日期目录下的 0.1.7 NSIS 候选包并覆盖安装验证；正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",

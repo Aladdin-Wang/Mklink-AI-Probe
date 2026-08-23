@@ -1,6 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import MemoryReadPanel from './MemoryReadPanel.vue'
+
+const componentSource = fs.readFileSync(
+  path.resolve(process.cwd(), 'src/components/online-flash/MemoryReadPanel.vue'), 'utf8',
+).replaceAll('\r\n', '\n')
 
 describe('MemoryReadPanel', () => {
   it('fills the selected target Flash range and preserves manual edits', async () => {
@@ -43,6 +49,12 @@ describe('MemoryReadPanel', () => {
     expect(wrapper.get('[data-testid="memory-read-address"]').exists()).toBe(true)
     expect(wrapper.get('.memory-read-dialog-icon .lucide-arrow-up-from-line').exists()).toBe(true)
     expect(wrapper.get('[data-testid="memory-read-confirm"] .lucide-upload').exists()).toBe(true)
+  })
+
+  it('isolates the dialog header from global header theme rules', () => {
+    expect(componentSource).toContain('.memory-read-dialog > .memory-read-dialog-header {')
+    expect(componentSource).toContain('background: transparent; color: var(--memory-dialog-text);')
+    expect(componentSource).toContain('padding: 0 0 14px;')
   })
 
   it('enables HPM reads through the binary dump path', async () => {

@@ -1065,6 +1065,12 @@ describe('VOFA viewer hot path source guard', () => {
     expect(viewerCss).not.toMatch(/(^|\n)\s*footer\s*\{/)
   })
 
+  it('keeps waveform header styles scoped to the viewer', () => {
+    expect(viewerCss).not.toMatch(/(^|\n)\s*header(?:\s+h1)?\s*\{/)
+    expect(viewerCss).toContain('.waveform-viewer header {')
+    expect(viewerCss).toContain('.waveform-viewer header h1 {')
+  })
+
   it('keeps desktop SuperWatch live status and controls in stable rows', () => {
     expect(componentSource).toContain('<div class="header-status">')
     expect(viewerCss).toContain('.waveform-viewer.superwatch-desktop header')

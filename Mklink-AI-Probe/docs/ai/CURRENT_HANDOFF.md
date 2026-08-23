@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-23T13:45:00+08:00`
-- 分支：`master`
-- HEAD：`1e97790 fix-sync-skill-plugin-version`
+- 更新时间：`2026-08-23T14:30:00+08:00`
+- 分支：`fix/waveform-header-style-leak`
+- HEAD：`ea48580 docs-record-master-package-and-skill-sync`
 - 远端 HEAD：`origin/master`
-- 工作树：桌面/Web/MCP 串口生命周期和 Skill 版本一致性修复已合并并推送 master；已合并修复分支已清理，主分支安装包与本地 Skill 已更新。
-- 当前任务：已完成 master 合并、修复分支清理、0.1.7 NSIS 候选包重建和本地 Skill 同步。
-- 状态：`master-lifecycle-package-skill-synced`
+- 工作树：正在修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏；源码、生产资源和回归覆盖已完成。
+- 当前任务：限制波形页 header 样式作用域，防止读取 Flash 弹窗和任务日志标题栏变白；按日期目录重建 NSIS 候选包。
+- 状态：`waveform-header-style-leak-qualified`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **自动化门禁**：GUI 57 文件/579 项和 Vite 生产构建通过；数组采样相关 Python 回归 64 项通过；Python 全量测试在当前 Windows symlink 权限用例处因当前 Windows symlink 权限场景长时间无输出而中止。
+- **自动化门禁**：GUI 57 文件/582 项和 Vite 生产构建通过；Python 全量 1346 项通过、1 项跳过，12 项仅因当前 Windows 账户无目录 symlink 权限（WinError 1314）失败。真实 Chrome 按 SuperWatch→在线烧录→读取数据顺序验证，弹窗和任务日志标题栏保持透明/深色且无裸 header 规则。
 - **真机闭环**：安装包 sidecar 真机闭环：在线烧录完成擦除/编程/校验/复位；脱机 U 盘下载返回 completed；Memory 读取返回 16 字节；HardFault 返回 null；SuperWatch 数组快照 64 点、序号持续递增。为闭环验证 RTT/SystemView，STM32F103RC 测试固件已启用持续 RTT 心跳和 SystemView 任务，按新 AXF 的 _SEGGER_RTT 地址读取：RTT 解析 33 行，SystemView 5 秒收到 18,758 个事件并识别 14 个任务。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
@@ -47,7 +47,7 @@
 
 ## 下一动作
 
-1. 正式发布仍需维护者明确授权。
+1. 从已验证修复提交生成 release/日期目录下的 0.1.7 NSIS 候选包并覆盖安装验证；正式发布仍需维护者明确授权。
 
 ## 已知限制
 
