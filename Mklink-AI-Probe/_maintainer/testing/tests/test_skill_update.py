@@ -45,6 +45,15 @@ def test_version_comparison_handles_stable_and_prerelease(updater):
         updater.version_key("latest")
 
 
+def test_repository_plugin_version_matches_package(updater):
+    root = SCRIPT_PATH.parents[1]
+    plugin = json.loads(
+        (root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+
+    assert plugin["version"] == updater.current_version(root)
+
+
 def test_manifest_sources_prefer_github_and_fall_back_to_gitee(
     updater, monkeypatch,
 ):
