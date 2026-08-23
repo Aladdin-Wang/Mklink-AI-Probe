@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-23T14:30:00+08:00",
+  "updated_at": "2026-08-23T14:42:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "fix/waveform-header-style-leak",
-    "head": "ea48580 docs-record-master-package-and-skill-sync",
+    "branch": "master",
+    "head": "338ff90 fix: scope waveform header styles",
     "remote_head": "origin/master",
-    "working_tree": "正在修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏；源码、生产资源和回归覆盖已完成。"
+    "working_tree": "波形页 header 样式泄漏修复已快进合并 master；0.1.7 NSIS 候选包已按日期目录归档、覆盖安装并通过桌面闭环。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "waveform-header-style-leak-qualified",
-    "current_task": "限制波形页 header 样式作用域，防止读取 Flash 弹窗和任务日志标题栏变白；按日期目录重建 NSIS 候选包。",
+    "status": "master-waveform-style-fix-packaged",
+    "current_task": "已修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏，并完成 Web、安装包与关闭释放验证。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -58,7 +58,7 @@
     },
     {
       "area": "主分支安装包与启动入口",
-      "result": "master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。"
+      "result": "提交 338ff90 的 0.1.7 NSIS 候选包归档于 release/2026-08-23_1435_338ff90；SHA-256 复核通过并覆盖安装。安装后 WebView 构建指纹为 338ff90b8920，健康与探针枚举正常、无外部 Python 子进程，正常关闭后 MKLink 进程和 8765–8799 端口全部释放。"
     },
     {
       "area": "SuperWatch 数组快照范围",
@@ -89,7 +89,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "从已验证修复提交生成 release/日期目录下的 0.1.7 NSIS 候选包并覆盖安装验证；正式发布仍需维护者明确授权。"
+    "正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",

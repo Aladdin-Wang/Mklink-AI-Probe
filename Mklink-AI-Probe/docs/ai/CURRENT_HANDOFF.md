@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-23T14:30:00+08:00`
-- 分支：`fix/waveform-header-style-leak`
-- HEAD：`ea48580 docs-record-master-package-and-skill-sync`
+- 更新时间：`2026-08-23T14:42:00+08:00`
+- 分支：`master`
+- HEAD：`338ff90 fix: scope waveform header styles`
 - 远端 HEAD：`origin/master`
-- 工作树：正在修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏；源码、生产资源和回归覆盖已完成。
-- 当前任务：限制波形页 header 样式作用域，防止读取 Flash 弹窗和任务日志标题栏变白；按日期目录重建 NSIS 候选包。
-- 状态：`waveform-header-style-leak-qualified`
+- 工作树：波形页 header 样式泄漏修复已快进合并 master；0.1.7 NSIS 候选包已按日期目录归档、覆盖安装并通过桌面闭环。
+- 当前任务：已修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏，并完成 Web、安装包与关闭释放验证。
+- 状态：`master-waveform-style-fix-packaged`
 
 ## 里程碑
 
@@ -25,7 +25,7 @@
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
-- **主分支安装包与启动入口**：master 合并提交 8fd428a 已推送 GitHub；NSIS 安装包覆盖安装并由独立 sidecar 健康检查通过；U 盘 G: 的 MKLink Web GUI.html 已更新并打开。
+- **主分支安装包与启动入口**：提交 338ff90 的 0.1.7 NSIS 候选包归档于 release/2026-08-23_1435_338ff90；SHA-256 复核通过并覆盖安装。安装后 WebView 构建指纹为 338ff90b8920，健康与探针枚举正常、无外部 Python 子进程，正常关闭后 MKLink 进程和 8765–8799 端口全部释放。
 - **SuperWatch 数组快照范围**：支持一维标量数组按起始索引和数量读取，最大 4096 个元素；数组快照已接入普通 FIELDS 曲线体系，图例、隐藏、分离/合并与普通变量共用。catalog generation 在停止/重绑竞态下会自动刷新并重试展开；完整 GUI 579 项、数组相关 Python 64 项和生产构建通过。STM32F103RC 测试固件包含 64 点正弦、谐波和三角波叠加数组，真机采样持续更新。
 - **串口生命周期回归**：Python 40 项、GUI 57 文件/580 项和 Skill 更新器 11 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。最终 master 生成 0.1.7 x64 NSIS 候选包到工作区外层 release；本地 Skill 的包/插件版本均为 0.1.7，来源提交和 GUI/MCP 依赖验证通过。
 
@@ -47,7 +47,7 @@
 
 ## 下一动作
 
-1. 从已验证修复提交生成 release/日期目录下的 0.1.7 NSIS 候选包并覆盖安装验证；正式发布仍需维护者明确授权。
+1. 正式发布仍需维护者明确授权。
 
 ## 已知限制
 
