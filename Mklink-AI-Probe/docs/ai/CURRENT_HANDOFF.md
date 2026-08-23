@@ -6,7 +6,7 @@
 
 - 更新时间：`2026-08-23T10:00:00+08:00`
 - 分支：`fix/desktop-close-releases-serial`
-- HEAD：`f68c642 docs: record RTT and SystemView hardware verification`
+- HEAD：`2410575 fix-serial-resources-on-client-shutdown`
 - 远端 HEAD：`origin/master`
 - 工作树：桌面/Web/MCP 关闭时释放 sidecar、后端 Device 和串口锁的修复已完成；0.1.7 NSIS 候选包已构建，历史 MKLink 临时数据已清理。
 - 当前任务：串口锁释放修复已通过回归测试并生成 0.1.7 NSIS 候选包；待提交分支并由维护者决定合并。

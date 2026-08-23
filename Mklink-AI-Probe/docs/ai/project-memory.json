@@ -5,7 +5,7 @@
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/desktop-close-releases-serial",
-    "head": "f68c642 docs: record RTT and SystemView hardware verification",
+    "head": "2410575 fix-serial-resources-on-client-shutdown",
     "remote_head": "origin/master",
     "working_tree": "桌面/Web/MCP 关闭时释放 sidecar、后端 Device 和串口锁的修复已完成；0.1.7 NSIS 候选包已构建，历史 MKLink 临时数据已清理。"
   },
