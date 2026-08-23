@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-16T14:11:23+08:00`
+- 更新时间：`2026-08-23T21:17:00+08:00`
 - 分支：`master`
-- HEAD：`master 已包含 FLM 修复 8da2d2d、HIL 锁与续租、探针控制修复 9ec1b9f 和真机门禁豁免记录；feature/eternal-chip-gui 保持独立品牌界面并包含同一探针控制改进。`
+- HEAD：`feature/hil-plugin-v02 基于 master fbaac61，新增独立 hil-plugin-json-v1 one-shot 入口；合并后 master 将成为 HIL-Infra 首个 v0.2 自动化准入插件实现。`
 - 远端 HEAD：`用户已授权将 master 与 feature/eternal-chip-gui 原子推送到 GitHub origin；两条远端分支与本地验收头同步，未创建标签或 Release。`
-- 工作树：本次功能与交接均已提交，tracked 工作树干净；Vite 哈希产物已恢复，既有未跟踪生成目录保持不变且不纳入 Git。
-- 当前任务：FLM 查找修复、僵尸串口锁修复、安全 VCC 1800/3300/5000、MKLink reboot 与 HIL 锁已在 master 和独立立芯恒方 GUI 分支完成验证、合并并推送到 GitHub origin。
-- 状态：`probe_controls_pushed`
+- 工作树：功能在隔离 worktree 实现和验证；只提交 mklink/hil_plugin.py、对应测试与项目记忆，DLL、pytest/GUI/Rust 构建缓存和 Vite 哈希产物均不纳入 Git。
+- 当前任务：为 HIL-Infra v0.2 增加最小无人值守插件面：lifecycle + observe/debug.read；有人值守既有 MCP/CLI 能力不变，所有 flash/reset/write/control 在协议入口先于设备访问拒绝。
+- 状态：`hil_plugin_v02_qualified_local`
 
 ## 里程碑
 
@@ -21,6 +21,7 @@
 
 ## 验证证据
 
+- **HIL-Infra v0.2 插件准入**：真实 MicroKeenV4 上完成 identify/capabilities/health/safe_state、双向 transport 锁互操作和无残留 lease；HIL plugin-review PR-01~11 为 11 OK、0 WARN、0 FAIL，runtime conformance 0 error/0 warning/0 waiver。插件单测 5 passed；补入与 master 本机原生源码制品 SHA-256 758E428F...77C07 的未跟踪 mklink-stcp.dll 并把 pytest basetemp 移到源码树外后，Python 全量 1305 passed、1 skipped；GUI 首轮 2 个套件级 mock 抖动，目标文件 67/67 通过后全量复跑 54 文件/525 项通过；Vite 生产构建及 cargo check 通过。未执行烧录、复位、供电、DUT 写入或激励。
 - **僵尸锁与探针电源/重启控制**：Windows PID 判定现同时检查 OpenProcess 与 GetExitCodeProcess；真实已退出子进程仍保留句柄时正确返回死亡，serial_MKLINK_AUTO_CONNECT.lock 回归可自动删除。Device/MCP/REST/GUI 新增 1800/3300/5000 mV 与 probe reboot；5V 在 Device、REST、MCP、GUI 四层要求逐次显式确认，reboot 后释放串口与 HIL 锁，活动 RTT/SystemView 在参数校验通过后先安全停止。最终 Python 1300 passed、1 skipped；GUI 54 文件/525 项、Vite 生产构建、Tauri cargo check 通过。真实 Playwright 验证 3.3V 请求 confirm_5v=false、取消 5V 不发请求、确认 5V 才发送 confirm_5v=true、reboot 需确认。浏览器使用模拟后端，未对硬件输出电压；项目无已确认 bench.yaml，维护者于 2026-08-16 明确豁免本次真机门禁，不得把该豁免表述为真机验证通过。
 - **双分支本地合并与隔离**：master 与 feature/eternal-chip-gui 均完成本地快进。立芯分支运行时 c9fc938 通过 Python 全量覆盖（首轮 1297 passed、1 skipped，PyPI 恢复后受影响文件 7/7 通过）、GUI 56 文件/529 项、生产构建、cargo check 和真实 Chromium + mock 验收。两分支 mklink 核心、Skill 与探针控制回归测试无差异；HIL 锁提交分别位于两条祖先链，立芯品牌提交 7ba8f57 不是 master 祖先。用户随后明确授权，两条分支通过 Git 原子推送同步到 GitHub origin。
 - **FLM 查找修复选择性合并**：从 origin/master 8f6a094 创建 fix/pdsc-device-algorithm，仅摘取原提交 68d4e4f 为 8da2d2d；差异只有 mklink/mcu_detect.py 与 mklink/mcu_profiles.json，无 GUI 或 HIL 锁文件。真实 D:\Keil_v5\ARM\PACK 中 Keil.STM32F4xx_DFP.pdsc 对 STM32F411CEUx/RETx 均命中 device 级 CMSIS/Flash/STM32F4xx_512.FLM。Python 全量先得 1282 passed、1 skipped，环境性失败随后逐项联网复跑通过；GUI 54 文件/521 项、Vite 生产构建、Tauri cargo check 均通过。Site Agent 打包补入与当前 stcp_bridge 源码哈希一致的本地 DLL 后 3 项通过，DLL 与测试产物均不提交。
@@ -33,6 +34,8 @@
 
 ## 架构决策
 
+- HIL v0.2 自动化最小面只开放 lifecycle 与 observe/debug.read；CAPABILITIES 可报告物理全能力，但 automation_verbs 只有 debug.read，未开放动作在解析 transport 前 fail-closed。
+- safe_state 对 one-shot probe 只证明真实设备身份仍可枚举、互操作 transport 锁可获取并已释放、无持续输出；不声称 DUT 已复位、断电或恢复业务状态。
 - Windows 串口锁 owner 只有在进程退出码为 STILL_ACTIVE 时才判定存活；访问拒绝或查询失败保持保守，不自动删除可能属于活动进程的锁。
 - VCC 只接受 1800/3300/5000 mV；5000 mV 每次都需显式 confirm_5v=True，GUI 另有危险确认；reset 复位目标 MCU，reboot_probe 重启探针并断开会话。
 - 历史端口是软偏好，可回退自动发现；当前会话手选端口首次保持严格约束，失败后切回自动搜索。
@@ -47,7 +50,7 @@
 
 - **probe**：维护机可使用 V2/V3/V4 下载器；交接不记录端口或完整设备标识。
 - **target**：ARM 与 HPM 真机可用；部分客户芯片仅完成 Pack/HEX 软件验证。
-- **permission**：维护者已授权本次 bug/特性开发、本地分支合并及 master/feature/eternal-chip-gui 的 GitHub origin 推送，并于 2026-08-16 明确豁免 VCC/reboot 真机门禁；该豁免不授权任何 5V 实机输出。标签、Release、Gitee 同步和破坏性烧录仍需单独授权。
+- **permission**：维护者已授权本次 HIL v0.2 插件实现、只读真机识别/健康/debug.read/safe_state、隔离分支提交与本地合并；不授权烧录、擦除、复位、供电、DUT 写入或激励。本次不创建标签、Release，不推送 GitHub/Gitee。历史 VCC/reboot 豁免仍不授权任何 5V 实机输出。
 
 ## 下一动作
 
@@ -57,6 +60,7 @@
 
 ## 已知限制
 
+- 无人值守面首期没有开放 program/console/bus 写入，也没有为 RTT/UART 只读动作准入；扩大 allowed verbs 必须重新走 HIL plugin-review 和真机安全评审。
 - VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
 - V4 脱机首次触发的瞬时空失败仍需冷启动复现。
