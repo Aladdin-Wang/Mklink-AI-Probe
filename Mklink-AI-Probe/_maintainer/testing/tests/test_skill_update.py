@@ -192,6 +192,39 @@ def test_copy_installed_skill_removes_untracked_stale_web_assets(
     assert outside.read_text(encoding="utf-8") == "keep"
 
 
+def test_copy_installed_skill_removes_legacy_maintainer_context(
+    updater, monkeypatch, tmp_path,
+):
+    root = make_root(tmp_path / "installed", "0.1.2")
+    legacy_files = [
+        root / "_maintainer" / "testing" / "test_private.py",
+        root / "docs" / "ai" / "project-memory.json",
+        root / "skills" / "maintaining-mklink-ai-probe" / "SKILL.md",
+        root / "AGENTS.md",
+        root / "CLAUDE.md",
+        root / "GEMINI.md",
+    ]
+    for path in legacy_files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("maintainer only", encoding="utf-8")
+    user_file = root / "user-note.txt"
+    user_file.write_text("keep", encoding="utf-8")
+    source = make_root(tmp_path / "source", "0.1.3", skill_text="new skill")
+    archive = make_archive(tmp_path / "skill.zip", source)
+    cache = tmp_path / "cache" / "skill-update-check.json"
+    monkeypatch.setattr(updater, "default_cache_file", lambda: cache)
+
+    updater.install_skill_archive(
+        root=root,
+        archive_path=archive,
+        expected_version="0.1.3",
+        source_commit="a" * 40,
+    )
+
+    assert not any(path.exists() for path in legacy_files)
+    assert user_file.read_text(encoding="utf-8") == "keep"
+
+
 def test_git_checkout_is_never_overwritten(updater, tmp_path):
     root = make_root(tmp_path / "checkout", "0.1.2")
     (root / ".git").mkdir()
