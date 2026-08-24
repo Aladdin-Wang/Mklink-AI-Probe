@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-23T14:42:00+08:00",
+  "updated_at": "2026-08-24T10:46:35+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "338ff90 fix: scope waveform header styles",
+    "branch": "fix/separate-maintainer-skills",
+    "head": "95388db fix: separate maintainer context from public skill",
     "remote_head": "origin/master",
-    "working_tree": "波形页 header 样式泄漏修复已快进合并 master；0.1.7 NSIS 候选包已按日期目录归档、覆盖安装并通过桌面闭环。"
+    "working_tree": "PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离并提交到专用分支。维护 Skill 仅显式调用，发布脚本按公开运行时白名单生成 Skill 包，升级器会清理旧安装残留的维护上下文。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "master-waveform-style-fix-packaged",
-    "current_task": "已修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏，并完成 Web、安装包与关闭释放验证。",
+    "status": "skill-maintainer-context-separated-and-qualified",
+    "current_task": "普通 MKLink 用户的 Skill token/context 隔离已实现并验证；下一步安装本地公开 Skill 包并量化替换前后上下文。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -37,8 +37,8 @@
   ],
   "verification": [
     {
-      "area": "自动化门禁",
-      "result": "GUI 57 文件/582 项和 Vite 生产构建通过；Python 全量 1346 项通过、1 项跳过，12 项仅因当前 Windows 账户无目录 symlink 权限（WinError 1314）失败。真实 Chrome 按 SuperWatch→在线烧录→读取数据顺序验证，弹窗和任务日志标题栏保持透明/深色且无裸 header 规则。"
+      "area": "Skill 上下文隔离",
+      "result": "维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。基于当前提交生成的白名单归档为 3,146,144 字节，相比 v0.1.6 已发布的 5,676,675 字节减少 44.6%。"
     },
     {
       "area": "真机闭环",
@@ -75,8 +75,10 @@
     "HPM 目标使用设备端 ROM API，不加载 FLM；HPM Flash 映射基址为 0x80000000。",
     "HPM 在线读取推荐采用 cmd.dump_memory 的一次性二进制帧模式；cmd.read_flash 保留为旧固件兼容回退或诊断路径。",
     "dump_memory 必须由上位机封装为有限范围的一次性读取，按目标边界分块、校验 CRC/region error，并显式退出流模式。",
-    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。"
-    ,"NSIS 候选构建临时使用 zlib，避免 LZMA mmap 在系统盘空间紧张时失败。"
+    "AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。",
+    "NSIS 候选构建临时使用 zlib，避免 LZMA mmap 在系统盘空间紧张时失败。",
+    "普通用户只获得 mklink-ai-probe 运行时 Skill；维护与桌面构建 Skill 保留在源码仓库且只允许显式调用。",
+    "正式 Skill 发布包必须由 prepare_release.py 从来源提交按公开白名单生成；外部预制包也必须通过同一白名单校验。"
   ],
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4；交接不记录端口或完整探针标识。",
@@ -89,6 +91,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
+    "已获维护者授权推送 fix/separate-maintainer-skills；合并后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。",
     "正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [

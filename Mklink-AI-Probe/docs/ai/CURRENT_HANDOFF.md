@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-23T14:42:00+08:00`
-- 分支：`master`
-- HEAD：`338ff90 fix: scope waveform header styles`
+- 更新时间：`2026-08-24T10:46:35+08:00`
+- 分支：`fix/separate-maintainer-skills`
+- HEAD：`95388db fix: separate maintainer context from public skill`
 - 远端 HEAD：`origin/master`
-- 工作树：波形页 header 样式泄漏修复已快进合并 master；0.1.7 NSIS 候选包已按日期目录归档、覆盖安装并通过桌面闭环。
-- 当前任务：已修复 RTT/SuperWatch 波形样式跨路由污染在线烧录标题栏，并完成 Web、安装包与关闭释放验证。
-- 状态：`master-waveform-style-fix-packaged`
+- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离并提交到专用分支。维护 Skill 仅显式调用，发布脚本按公开运行时白名单生成 Skill 包，升级器会清理旧安装残留的维护上下文。
+- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现并验证；下一步安装本地公开 Skill 包并量化替换前后上下文。
+- 状态：`skill-maintainer-context-separated-and-qualified`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **自动化门禁**：GUI 57 文件/582 项和 Vite 生产构建通过；Python 全量 1346 项通过、1 项跳过，12 项仅因当前 Windows 账户无目录 symlink 权限（WinError 1314）失败。真实 Chrome 按 SuperWatch→在线烧录→读取数据顺序验证，弹窗和任务日志标题栏保持透明/深色且无裸 header 规则。
+- **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。基于当前提交生成的白名单归档为 3,146,144 字节，相比 v0.1.6 已发布的 5,676,675 字节减少 44.6%。
 - **真机闭环**：安装包 sidecar 真机闭环：在线烧录完成擦除/编程/校验/复位；脱机 U 盘下载返回 completed；Memory 读取返回 16 字节；HardFault 返回 null；SuperWatch 数组快照 64 点、序号持续递增。为闭环验证 RTT/SystemView，STM32F103RC 测试固件已启用持续 RTT 心跳和 SystemView 任务，按新 AXF 的 _SEGGER_RTT 地址读取：RTT 解析 33 行，SystemView 5 秒收到 18,758 个事件并识别 14 个任务。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
@@ -38,6 +38,8 @@
 - dump_memory 必须由上位机封装为有限范围的一次性读取，按目标边界分块、校验 CRC/region error，并显式退出流模式。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。
 - NSIS 候选构建临时使用 zlib，避免 LZMA mmap 在系统盘空间紧张时失败。
+- 普通用户只获得 mklink-ai-probe 运行时 Skill；维护与桌面构建 Skill 保留在源码仓库且只允许显式调用。
+- 正式 Skill 发布包必须由 prepare_release.py 从来源提交按公开白名单生成；外部预制包也必须通过同一白名单校验。
 
 ## 真机环境
 
@@ -47,7 +49,8 @@
 
 ## 下一动作
 
-1. 正式发布仍需维护者明确授权。
+1. 已获维护者授权推送 fix/separate-maintainer-skills；合并后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
+2. 正式发布仍需维护者明确授权。
 
 ## 已知限制
 
