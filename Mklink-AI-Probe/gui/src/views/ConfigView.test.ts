@@ -548,6 +548,7 @@ describe('ConfigView', () => {
       latest_version: 'V3.3.7',
       firmware: 'MicroLink_V3.3.7.uf2',
       model: 'V3',
+      family: 'microlink',
       download_available: true,
       message: '未检测到 Bootloader U 盘',
     })
@@ -557,6 +558,7 @@ describe('ConfigView', () => {
       filename: 'MicroLink_V3.3.7.uf2',
       version: 'V3.3.7',
       source: 'gitee',
+      family: 'microlink',
     })
     const wrapper = await mountView()
 
@@ -570,7 +572,7 @@ describe('ConfigView', () => {
     await wrapper.get('[data-testid="download-firmware"]').trigger('click')
     await flushPromises()
 
-    expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V3')
+    expect(mocks.api.downloadProbeFirmware).toHaveBeenCalledWith('V3', 'microlink')
     expect(mocks.saveBlobFile).toHaveBeenCalledWith('MicroLink_V3.3.7.uf2', blob)
     expect(wrapper.get('[data-testid="firmware-download-status"]').text()).toContain('Gitee')
   })

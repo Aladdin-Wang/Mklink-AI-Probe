@@ -91,6 +91,7 @@ describe('RTT API contracts', () => {
         'X-MKLink-Firmware-Name': 'MicroLink_V3.3.7.uf2',
         'X-MKLink-Firmware-Version': 'V3.3.7',
         'X-MKLink-Firmware-Source': 'gitee',
+        'X-MKLink-Firmware-Family': 'microlink',
       }),
       blob: async () => blob,
     })
@@ -100,8 +101,17 @@ describe('RTT API contracts', () => {
       filename: 'MicroLink_V3.3.7.uf2',
       version: 'V3.3.7',
       source: 'gitee',
+      family: 'microlink',
     })
-    expect(fetchMock).toHaveBeenCalledWith('/api/probe/firmware-download?model=V3')
+    expect(fetchMock).toHaveBeenCalledWith('/api/probe/firmware-download?model=V3&family=microlink')
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers(),
+      blob: async () => blob,
+    })
+    await useMklinkApi().downloadProbeFirmware('V4', 'hpmlink')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/probe/firmware-download?model=V4&family=hpmlink')
   })
 
   it('refreshes connection state after rebooting the probe', async () => {

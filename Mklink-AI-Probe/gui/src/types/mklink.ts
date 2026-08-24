@@ -391,6 +391,7 @@ export interface FirmwareInfo {
   name: string
   version: string
   model: 'V3' | 'V4'
+  family: 'microlink' | 'hpmlink'
   path: string
 }
 
@@ -425,6 +426,7 @@ export interface ProbeFirmwareUpgrade {
   verified_version?: string | null
   firmware?: string
   model?: 'V3' | 'V4'
+  family?: 'microlink' | 'hpmlink'
   download_available?: boolean
   source?: 'github' | 'gitee' | 'local'
   message?: string
@@ -436,6 +438,7 @@ export interface ProbeFirmwareDownload {
   filename: string
   version: string
   source: 'github' | 'gitee' | 'local'
+  family: 'microlink' | 'hpmlink'
 }
 
 export type FileSourceKind = 'symbol' | 'map'

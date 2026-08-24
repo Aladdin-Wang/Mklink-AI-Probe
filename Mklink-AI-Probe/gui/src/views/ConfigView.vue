@@ -338,7 +338,10 @@ async function downloadFirmware() {
   firmwareDownloading.value = true
   firmwareDownloadStatus.value = tr('正在下载固件...', 'Downloading firmware...')
   try {
-    const downloaded = await downloadProbeFirmware(result.model)
+    const downloaded = await downloadProbeFirmware(
+      result.model,
+      result.family || 'microlink',
+    )
     const saved = await saveBlobFile(downloaded.filename, downloaded.blob)
     if (!saved) {
       firmwareDownloadStatus.value = ''

@@ -1596,19 +1596,34 @@ def create_app(
                 _state["dispatcher"] = None
 
     @app.get("/api/probe/firmware-download")
-    async def probe_firmware_download(model: str = Query(...)):
-        """Download the newest V3/V4 UF2 with GitHub-to-Gitee fallback."""
+    async def probe_firmware_download(
+        model: str = Query(...),
+        family: str = Query(default="microlink"),
+    ):
+        """Download the newest model/family UF2 with provider fallback."""
         from fastapi.responses import Response
         from mklink import firmware_check as _fc
 
         normalized_model = model.strip().upper()
         if normalized_model not in {"V3", "V4"}:
             raise HTTPException(status_code=400, detail="firmware model must be V3 or V4")
+        normalized_family = family.strip().lower()
+        if normalized_family not in {"microlink", "hpmlink"}:
+            raise HTTPException(
+                status_code=400,
+                detail="firmware family must be microlink or hpmlink",
+            )
+        if normalized_family == "hpmlink" and normalized_model != "V4":
+            raise HTTPException(
+                status_code=400,
+                detail="HPMLink firmware is only available for V4",
+            )
         root = _fc._resolve_firmware_root()
         candidate = await run_in_threadpool(
             _fc.latest_firmware,
             normalized_model,
             root,
+            family=normalized_family,
         )
         if candidate is None:
             raise HTTPException(
@@ -1637,6 +1652,7 @@ def create_app(
                 "X-MKLink-Firmware-Name": candidate.name,
                 "X-MKLink-Firmware-Version": candidate.version_str,
                 "X-MKLink-Firmware-Source": source,
+                "X-MKLink-Firmware-Family": candidate.family,
             },
         )
 
