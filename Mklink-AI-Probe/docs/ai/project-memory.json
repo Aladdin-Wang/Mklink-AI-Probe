@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-24T14:24:24+08:00",
+  "updated_at": "2026-08-24T14:26:41+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "feature/hil-v02-upstream-sync",
-    "head": "db3e16c feat: sync guarded HIL v0.2 read adapter",
+    "branch": "master",
+    "head": "59fd92b docs: qualify guarded HIL v0.2 sync",
     "remote_head": "origin/master",
-    "working_tree": "已从 su5176/master 选择性同步 HIL 元数据 guard 与 v0.2 只读插件；保留本地死亡进程锁回收，并补齐连接前设备身份与参数校验。"
+    "working_tree": "su5176/master 的 HIL 元数据 guard 与 v0.2 只读插件已选择性同步到 master；本地死亡进程锁回收和连接前安全校验保持有效。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "hil-v02-upstream-sync-qualified",
-    "current_task": "HIL v0.2 只读插件与跨客户端锁 guard 已选择性同步，通过自动化门禁和 HPM5301 真机只读闭环，等待合并 master。",
+    "status": "hil-v02-upstream-sync-merged",
+    "current_task": "HIL v0.2 只读插件与跨客户端锁 guard 已选择性同步并合并 master，通过自动化门禁和 HPM5301 真机只读闭环。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -92,7 +92,6 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "合并 feature/hil-v02-upstream-sync 到 master 并推送 GitHub。",
     "正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。",
     "正式发布仍需维护者明确授权。"
   ],

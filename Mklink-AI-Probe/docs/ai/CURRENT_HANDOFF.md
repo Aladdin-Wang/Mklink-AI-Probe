@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T14:24:24+08:00`
-- 分支：`feature/hil-v02-upstream-sync`
-- HEAD：`db3e16c feat: sync guarded HIL v0.2 read adapter`
+- 更新时间：`2026-08-24T14:26:41+08:00`
+- 分支：`master`
+- HEAD：`59fd92b docs: qualify guarded HIL v0.2 sync`
 - 远端 HEAD：`origin/master`
-- 工作树：已从 su5176/master 选择性同步 HIL 元数据 guard 与 v0.2 只读插件；保留本地死亡进程锁回收，并补齐连接前设备身份与参数校验。
-- 当前任务：HIL v0.2 只读插件与跨客户端锁 guard 已选择性同步，通过自动化门禁和 HPM5301 真机只读闭环，等待合并 master。
-- 状态：`hil-v02-upstream-sync-qualified`
+- 工作树：su5176/master 的 HIL 元数据 guard 与 v0.2 只读插件已选择性同步到 master；本地死亡进程锁回收和连接前安全校验保持有效。
+- 当前任务：HIL v0.2 只读插件与跨客户端锁 guard 已选择性同步并合并 master，通过自动化门禁和 HPM5301 真机只读闭环。
+- 状态：`hil-v02-upstream-sync-merged`
 
 ## 里程碑
 
@@ -50,9 +50,8 @@
 
 ## 下一动作
 
-1. 合并 feature/hil-v02-upstream-sync 到 master 并推送 GitHub。
-2. 正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
-3. 正式发布仍需维护者明确授权。
+1. 正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
+2. 正式发布仍需维护者明确授权。
 
 ## 已知限制
 
