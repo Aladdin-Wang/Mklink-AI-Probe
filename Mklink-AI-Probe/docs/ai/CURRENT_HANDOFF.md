@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T11:48:25+08:00`
-- 分支：`feature/hpmlink-v4-firmware-upgrade`
-- HEAD：`c9b8397 feat: add HPMLink V4 firmware upgrades`
+- 更新时间：`2026-08-24T13:51:56+08:00`
+- 分支：`master`
+- HEAD：`5a7575d docs: record HPMLink V4 upgrade qualification`
 - 远端 HEAD：`origin/master`
-- 工作树：HPMLink V4 固件升级已实现并提交：V4 下载器 U 盘存在 STARTUP_ANIMATION.zhrgb 时选择 HPMLink 固件，否则保持 MicroLink 路径；V2/V3 不变。HPM 下载器已真机升级到 V4.3.7。
-- 当前任务：HPMLink V4 固件族判型、自动升级、手动下载 API/GUI 和 V4.3.7 固件资产已实现并通过自动化与真机闭环。
-- 状态：`hpmlink-v4-firmware-upgrade-qualified`
+- 工作树：Skill 上下文隔离与 HPMLink V4 固件升级两个分支均已纳入 master；HPM 下载器已真机升级并回读 V4.3.7。
+- 当前任务：Skill 上下文隔离与 HPMLink V4 固件升级均已合并到 master；HPMLink 功能已通过自动化与真机闭环。
+- 状态：`hpmlink-v4-firmware-upgrade-merged`
 
 ## 里程碑
 
@@ -46,11 +46,11 @@
 
 - **probe**：维护机可使用 V2/V3/V4；HPMLink V4 下载器已升级并回读 V4.3.7。交接不记录端口或完整探针标识。
 - **target**：STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。
-- **permission**：维护者已授权提交 HPMLink V4.3.7 固件、执行已连接下载器真机升级并推送 GitHub；不发布正式 Release。
+- **permission**：维护者已授权合并 Skill 上下文隔离与 HPMLink V4.3.7 固件升级并推送 GitHub；不发布正式 Release。
 
 ## 下一动作
 
-1. 审阅并合并 feature/hpmlink-v4-firmware-upgrade；正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
+1. 正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
 2. 正式发布仍需维护者明确授权。
 
 ## 已知限制

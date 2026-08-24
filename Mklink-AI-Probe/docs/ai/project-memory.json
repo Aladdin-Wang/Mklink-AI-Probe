@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-24T11:48:25+08:00",
+  "updated_at": "2026-08-24T13:51:56+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "feature/hpmlink-v4-firmware-upgrade",
-    "head": "c9b8397 feat: add HPMLink V4 firmware upgrades",
+    "branch": "master",
+    "head": "5a7575d docs: record HPMLink V4 upgrade qualification",
     "remote_head": "origin/master",
-    "working_tree": "HPMLink V4 固件升级已实现并提交：V4 下载器 U 盘存在 STARTUP_ANIMATION.zhrgb 时选择 HPMLink 固件，否则保持 MicroLink 路径；V2/V3 不变。HPM 下载器已真机升级到 V4.3.7。"
+    "working_tree": "Skill 上下文隔离与 HPMLink V4 固件升级两个分支均已纳入 master；HPM 下载器已真机升级并回读 V4.3.7。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "hpmlink-v4-firmware-upgrade-qualified",
-    "current_task": "HPMLink V4 固件族判型、自动升级、手动下载 API/GUI 和 V4.3.7 固件资产已实现并通过自动化与真机闭环。",
+    "status": "hpmlink-v4-firmware-upgrade-merged",
+    "current_task": "Skill 上下文隔离与 HPMLink V4 固件升级均已合并到 master；HPMLink 功能已通过自动化与真机闭环。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -84,7 +84,7 @@
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4；HPMLink V4 下载器已升级并回读 V4.3.7。交接不记录端口或完整探针标识。",
     "target": "STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。",
-    "permission": "维护者已授权提交 HPMLink V4.3.7 固件、执行已连接下载器真机升级并推送 GitHub；不发布正式 Release。"
+    "permission": "维护者已授权合并 Skill 上下文隔离与 HPMLink V4.3.7 固件升级并推送 GitHub；不发布正式 Release。"
   },
   "known_limits": [
     "当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。",
@@ -92,7 +92,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "审阅并合并 feature/hpmlink-v4-firmware-upgrade；正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。",
+    "正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。",
     "正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [
