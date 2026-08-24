@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -52,6 +53,34 @@ def test_repository_plugin_version_matches_package(updater):
     )
 
     assert plugin["version"] == updater.current_version(root)
+
+
+def test_release_gui_versions_match_package(updater):
+    root = SCRIPT_PATH.parents[1]
+    package_version = updater.current_version(root)
+    main_cargo = tomllib.loads(
+        (root / "gui" / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+    )
+    site_agent_cargo = tomllib.loads(
+        (root / "site-agent-gui" / "src-tauri" / "Cargo.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    main_tauri = json.loads(
+        (root / "gui" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
+    )
+    site_agent_tauri = json.loads(
+        (root / "site-agent-gui" / "src-tauri" / "tauri.conf.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert {
+        main_cargo["package"]["version"],
+        site_agent_cargo["package"]["version"],
+        main_tauri["version"],
+        site_agent_tauri["version"],
+    } == {package_version}
 
 
 def test_manifest_sources_prefer_github_and_fall_back_to_gitee(
