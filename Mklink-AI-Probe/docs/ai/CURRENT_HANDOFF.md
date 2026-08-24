@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T11:08:56+08:00`
-- 分支：`fix/separate-maintainer-skills`
-- HEAD：`95388db fix: separate maintainer context from public skill`
+- 更新时间：`2026-08-24T11:24:45+08:00`
+- 分支：`master`
+- HEAD：`97908ff docs: record local skill context measurement`
 - 远端 HEAD：`origin/master`
-- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离，专用分支已推送 GitHub。本地 Codex Skill 已从提交 794ebe7 生成的公开白名单包替换并通过格式及真机版本查询。
-- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现、推送并安装到本地；替换前后上下文已用 o200k_base 量化。
-- 状态：`skill-maintainer-context-separated-installed-and-measured`
+- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 的隔离分支已 fast-forward 合并 master 并推送 GitHub。本地 Codex Skill 已从提交 794ebe7 生成的公开白名单包替换并通过格式及真机版本查询。
+- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现、合并 master、推送并安装到本地；替换前后上下文已用 o200k_base 量化。
+- 状态：`skill-maintainer-context-separated-merged-and-measured`
 
 ## 里程碑
 
@@ -45,11 +45,11 @@
 
 - **probe**：维护机可使用 V2/V3/V4；交接不记录端口或完整探针标识。
 - **target**：STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。
-- **permission**：维护者要求每个问题独立提交；本轮合并主分支并覆盖本地安装，不发布正式 v0.1.7。
+- **permission**：维护者已授权将上下文隔离分支合并并推送 master；本地 Skill 已覆盖，不发布正式 v0.1.7。
 
 ## 下一动作
 
-1. 审阅并合并 GitHub 分支 fix/separate-maintainer-skills；随后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
+1. 随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
 2. 正式发布仍需维护者明确授权。
 
 ## 已知限制
