@@ -4,10 +4,10 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-23T21:17:00+08:00`
+- 更新时间：`2026-08-24T11:20:46+08:00`
 - 分支：`master`
-- HEAD：`feature/hil-plugin-v02 基于 master fbaac61，新增独立 hil-plugin-json-v1 one-shot 入口；合并后 master 将成为 HIL-Infra 首个 v0.2 自动化准入插件实现。`
-- 远端 HEAD：`用户已授权将 master 与 feature/eternal-chip-gui 原子推送到 GitHub origin；两条远端分支与本地验收头同步，未创建标签或 Release。`
+- HEAD：`master 9cba616 包含 HIL v0.2 只读插件适配与 hil-lock 元数据 guard 修复；该状态已整体合并进 feature/eternal-chip-gui（合并提交 afb4781，分支门禁复跑通过）。`
+- 远端 HEAD：`用户于 2026-08-24 授权推送：feature/eternal-chip-gui（含 master 同步合并 b7522c7）与 master 均已同步到 GitHub origin；未创建标签或 Release。`
 - 工作树：功能在隔离 worktree 实现和验证；只提交 mklink/hil_plugin.py、对应测试与项目记忆，DLL、pytest/GUI/Rust 构建缓存和 Vite 哈希产物均不纳入 Git。
 - 当前任务：为 HIL-Infra v0.2 增加最小无人值守插件面：lifecycle + observe/debug.read；有人值守既有 MCP/CLI 能力不变，所有 flash/reset/write/control 在协议入口先于设备访问拒绝。
 - 状态：`hil_plugin_v02_qualified_local`
@@ -60,6 +60,7 @@
 
 ## 已知限制
 
+- test_pack_manager.py 的 cancel/parent-death 进程竞态测试在本机存在时序抖动：子进程 write_text 写 PID 文件非原子，父进程见文件即读可能得到空内容（隔离复跑 6 次中 4 过 2 败）；与功能无关，待独立修复分支收敛。
 - 无人值守面首期没有开放 program/console/bus 写入，也没有为 RTT/UART 只读动作准入；扩大 allowed verbs 必须重新走 HIL plugin-review 和真机安全评审。
 - VCC 与探针 reboot 无本次提交对应的真机 HIL 证据；维护者已明确豁免，真实浏览器仅验证了受保护的请求路径。
 - 高事件率 SystemView 仍可能溢出目标 RTT 缓冲。
