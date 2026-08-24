@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-24T10:46:35+08:00",
+  "updated_at": "2026-08-24T11:08:56+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/separate-maintainer-skills",
     "head": "95388db fix: separate maintainer context from public skill",
     "remote_head": "origin/master",
-    "working_tree": "PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离并提交到专用分支。维护 Skill 仅显式调用，发布脚本按公开运行时白名单生成 Skill 包，升级器会清理旧安装残留的维护上下文。"
+    "working_tree": "PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离，专用分支已推送 GitHub。本地 Codex Skill 已从提交 794ebe7 生成的公开白名单包替换并通过格式及真机版本查询。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "skill-maintainer-context-separated-and-qualified",
-    "current_task": "普通 MKLink 用户的 Skill token/context 隔离已实现并验证；下一步安装本地公开 Skill 包并量化替换前后上下文。",
+    "status": "skill-maintainer-context-separated-installed-and-measured",
+    "current_task": "普通 MKLink 用户的 Skill token/context 隔离已实现、推送并安装到本地；替换前后上下文已用 o200k_base 量化。",
     "release": "仅准备本地候选安装包；不创建正式 v0.1.7 标签或 Release，不修改 updates/latest.json。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "Skill 上下文隔离",
-      "result": "维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。基于当前提交生成的白名单归档为 3,146,144 字节，相比 v0.1.6 已发布的 5,676,675 字节减少 44.6%。"
+      "result": "维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。白名单归档约 3.15 MB，相比 v0.1.6 发布包减少 44.6%。本地替换后可发现 Skill 从 3 个降为 1 个：发现元数据从 476 降至 359 o200k tokens（-24.6%），全部可加载 Skill 正文从 7,711 降至 5,385（-30.2%），额外维护 Skill 2,286 tokens 和维护说明语料 6,640 tokens 均完全移除；用户运行 Skill 正文仍保留 5,385 tokens。"
     },
     {
       "area": "真机闭环",
@@ -91,7 +91,7 @@
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "已获维护者授权推送 fix/separate-maintainer-skills；合并后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。",
+    "审阅并合并 GitHub 分支 fix/separate-maintainer-skills；随后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。",
     "正式发布仍需维护者明确授权。"
   ],
   "continuation_protocol": [

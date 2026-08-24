@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T10:46:35+08:00`
+- 更新时间：`2026-08-24T11:08:56+08:00`
 - 分支：`fix/separate-maintainer-skills`
 - HEAD：`95388db fix: separate maintainer context from public skill`
 - 远端 HEAD：`origin/master`
-- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离并提交到专用分支。维护 Skill 仅显式调用，发布脚本按公开运行时白名单生成 Skill 包，升级器会清理旧安装残留的维护上下文。
-- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现并验证；下一步安装本地公开 Skill 包并量化替换前后上下文。
-- 状态：`skill-maintainer-context-separated-and-qualified`
+- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 已完成分离，专用分支已推送 GitHub。本地 Codex Skill 已从提交 794ebe7 生成的公开白名单包替换并通过格式及真机版本查询。
+- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现、推送并安装到本地；替换前后上下文已用 o200k_base 量化。
+- 状态：`skill-maintainer-context-separated-installed-and-measured`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。基于当前提交生成的白名单归档为 3,146,144 字节，相比 v0.1.6 已发布的 5,676,675 字节减少 44.6%。
+- **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。白名单归档约 3.15 MB，相比 v0.1.6 发布包减少 44.6%。本地替换后可发现 Skill 从 3 个降为 1 个：发现元数据从 476 降至 359 o200k tokens（-24.6%），全部可加载 Skill 正文从 7,711 降至 5,385（-30.2%），额外维护 Skill 2,286 tokens 和维护说明语料 6,640 tokens 均完全移除；用户运行 Skill 正文仍保留 5,385 tokens。
 - **真机闭环**：安装包 sidecar 真机闭环：在线烧录完成擦除/编程/校验/复位；脱机 U 盘下载返回 completed；Memory 读取返回 16 字节；HardFault 返回 null；SuperWatch 数组快照 64 点、序号持续递增。为闭环验证 RTT/SystemView，STM32F103RC 测试固件已启用持续 RTT 心跳和 SystemView 任务，按新 AXF 的 _SEGGER_RTT 地址读取：RTT 解析 33 行，SystemView 5 秒收到 18,758 个事件并识别 14 个任务。
 - **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
@@ -49,7 +49,7 @@
 
 ## 下一动作
 
-1. 已获维护者授权推送 fix/separate-maintainer-skills；合并后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
+1. 审阅并合并 GitHub 分支 fix/separate-maintainer-skills；随后随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
 2. 正式发布仍需维护者明确授权。
 
 ## 已知限制
