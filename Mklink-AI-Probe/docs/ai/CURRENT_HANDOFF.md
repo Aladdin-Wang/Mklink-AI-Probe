@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T16:06:02+08:00`
+- 更新时间：`2026-08-24T16:45:00+08:00`
 - 分支：`master`
-- HEAD：`5f501a5 docs: qualify v0.1.7 STM32F103RE candidate`
-- 远端 HEAD：`origin/master`
-- 工作树：v0.1.7 最终候选已通过；正在删除被当前报告取代的旧 PR/Task 流水账并准备正式发布提交。
-- 当前任务：清理过期验证流水账，从最终 release commit 重新生成签名 NSIS、公开 Skill 和 Site Agent，并发布 GitHub/Gitee。
-- 状态：`v0.1.7-release-authorized`
+- HEAD：`v0.1.7 -> b0173dfcfba506d397ca373e3ce645ff19bca629`
+- 远端 HEAD：`GitHub/Gitee master、v0.1.7 和 updates 已同步`
+- 工作树：正式发布完成；仅保留最终发布证据和本地正式资产。
+- 当前任务：v0.1.7 已正式发布；后续变更进入下一版本或独立修复。
+- 状态：`v0.1.7-released`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **v0.1.7 STM32F103RE 最终候选**：工程目录虽保留 STM32F103RC 历史名，物理芯片、Keil 和在线烧录均按 STM32F103RE 验证。Keil 0 错误 0 警告；Python 1371 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项、生产构建和 NSIS 打包通过。真机完成原生/在线/脱机烧录、AXF 符号、RAM 读写、RTT 双向、64 点 SuperWatch、VOFA、SystemView、受控 HardFault 与恢复、固件检查、探针重启和资源释放。安装态 sidecar 无 Python 子进程，加载 4184 个符号并从 RAM 读回构建标识 20260824，关闭后进程与端口释放。候选安装包 75042164 字节，SHA-256 e7c4e05eafc671a9418fda921ab1ad1ef8d15f76807fbbc45559cc1235ef0809。
+- **v0.1.7 正式发布**：标签目标 b0173dfcfba506d397ca373e3ce645ff19bca629。工程目录虽保留 STM32F103RC 历史名，物理芯片、Keil 和在线烧录均按 STM32F103RE 验证。Keil 0 错误 0 警告；Python 1372 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项、生产构建和 NSIS 打包通过。真机完成原生/在线/脱机烧录、AXF 符号、RAM 读写、RTT 双向、64 点 SuperWatch、VOFA、SystemView、受控 HardFault 与恢复、固件检查、探针重启和资源释放。受限 PATH 安装态健康，内置 sidecar 无 Python 子进程，发现 1 个串口和 MKLink U 盘，正常关闭后进程与 8765 端口释放。正式安装包 75042077 字节，SHA-256 1fad66d1c7fee1c8802da946a377aa34d03b7a5b946fc614c3384de16539a71e；GitHub/Gitee 各 7 个资产，master、标签、updates 和更新 JSON 均一致。
 - **HIL v0.2 上游同步**：选择性移植 su5176/master 的 fbaac61 与 9cba616，不导入上游项目记忆；acquire/release/renew 统一进入元数据 guard，同时保留同机死亡进程锁回收。无人值守协议只开放 observe/debug.read，memory/register/variable 在连接前验证目标参数和 VID/PID/序列号/locator。HIL/探针控制聚焦 27 项通过；Python 全量 1371 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。真机完成 identify/capabilities/health/safe_state/plugin-version、HPM5301 只读 4 字节、身份不匹配拒绝和锁释放闭环。
 - **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。白名单归档约 3.15 MB，相比 v0.1.6 发布包减少 44.6%。本地替换后可发现 Skill 从 3 个降为 1 个：发现元数据从 476 降至 359 o200k tokens（-24.6%），全部可加载 Skill 正文从 7,711 降至 5,385（-30.2%），额外维护 Skill 2,286 tokens 和维护说明语料 6,640 tokens 均完全移除；用户运行 Skill 正文仍保留 5,385 tokens。
 - **HPMLink V4 固件升级**：HPMLink_V4.3.7.uf2 为 1,520,128 字节、2,969 个合法 UF2 块；V4.3.6 HPM 下载器的 MICROKEEN 盘检测到 STARTUP_ANIMATION.zhrgb 后只选择 HPMLink_V4.3.7.uf2，自动进入 Bootloader、复制、重新枚举并回读 V4.3.7，返回 updated。升级后 FastAPI 实际连接/升级/断开路径返回 up_to_date 且固件仍为 HPMLink。Python 固件升级 14 项、GUI 相关 34 项、GUI 全量 582 项及生产构建通过；Python 全量 1357 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败。
@@ -45,14 +45,14 @@
 
 ## 下一动作
 
-1. 完成 v0.1.7 GitHub/Gitee 正式发布并匿名复核更新清单与下载资产。
+1. 后续功能或修复按新版本开发，不移动已发布的 v0.1.7 标签。
 2. 如要补齐串口、Modbus 或 VCC 真机项，先提供已确认的串口/RS-485 接线或明确 VCC 电压。
 
 ## 已知限制
 
 - 当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。
 - 串口 TX/RX 与 Modbus RTU 缺少已确认的物理回环/从站，不能把自动化测试替代为真机 PASS。
-- v0.1.7 候选安装包没有 Windows Authenticode 签名；桌面辅助控制通道不可用，桌面共享前端已通过浏览器交互、安装态通过进程和 API 独立验证。
+- v0.1.7 安装包没有 Windows Authenticode 签名；桌面辅助控制通道不可用，桌面共享前端已通过浏览器交互、安装态通过进程和 API 独立验证。
 - HPM 旧固件若不支持 dump_memory，将按一次请求回退到较慢的 cmd.read_flash 文本读取；当前 V4.3.6 使用二进制路径。
 - 高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。
 

@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-24T16:06:02+08:00",
+  "updated_at": "2026-08-24T16:45:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "5f501a5 docs: qualify v0.1.7 STM32F103RE candidate",
-    "remote_head": "origin/master",
-    "working_tree": "v0.1.7 最终候选已通过；正在删除被当前报告取代的旧 PR/Task 流水账并准备正式发布提交。"
+    "head": "v0.1.7 -> b0173dfcfba506d397ca373e3ce645ff19bca629",
+    "remote_head": "GitHub/Gitee master、v0.1.7 和 updates 已同步",
+    "working_tree": "正式发布完成；仅保留最终发布证据和本地正式资产。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "只保留当前基线、有效证据、限制和下一动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.7-release-authorized",
-    "current_task": "清理过期验证流水账，从最终 release commit 重新生成签名 NSIS、公开 Skill 和 Site Agent，并发布 GitHub/Gitee。",
-    "release": "维护者已明确授权创建 v0.1.7 标签、GitHub/Gitee Release 和 updates/latest.json；发布前仍须通过仓库发布器的全部预检。"
+    "status": "v0.1.7-released",
+    "current_task": "v0.1.7 已正式发布；后续变更进入下一版本或独立修复。",
+    "release": "GitHub/Gitee 已创建 v0.1.7 注释标签和正式 Release，各含 7 个相同资产；双端 updates/latest.json 已最后发布并逐字节一致。"
   },
   "milestones": [
     {
@@ -37,8 +37,8 @@
   ],
   "verification": [
     {
-      "area": "v0.1.7 STM32F103RE 最终候选",
-      "result": "工程目录虽保留 STM32F103RC 历史名，物理芯片、Keil 和在线烧录均按 STM32F103RE 验证。Keil 0 错误 0 警告；Python 1371 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项、生产构建和 NSIS 打包通过。真机完成原生/在线/脱机烧录、AXF 符号、RAM 读写、RTT 双向、64 点 SuperWatch、VOFA、SystemView、受控 HardFault 与恢复、固件检查、探针重启和资源释放。安装态 sidecar 无 Python 子进程，加载 4184 个符号并从 RAM 读回构建标识 20260824，关闭后进程与端口释放。候选安装包 75042164 字节，SHA-256 e7c4e05eafc671a9418fda921ab1ad1ef8d15f76807fbbc45559cc1235ef0809。"
+      "area": "v0.1.7 正式发布",
+      "result": "标签目标 b0173dfcfba506d397ca373e3ce645ff19bca629。工程目录虽保留 STM32F103RC 历史名，物理芯片、Keil 和在线烧录均按 STM32F103RE 验证。Keil 0 错误 0 警告；Python 1372 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项、生产构建和 NSIS 打包通过。真机完成原生/在线/脱机烧录、AXF 符号、RAM 读写、RTT 双向、64 点 SuperWatch、VOFA、SystemView、受控 HardFault 与恢复、固件检查、探针重启和资源释放。受限 PATH 安装态健康，内置 sidecar 无 Python 子进程，发现 1 个串口和 MKLink U 盘，正常关闭后进程与 8765 端口释放。正式安装包 75042077 字节，SHA-256 1fad66d1c7fee1c8802da946a377aa34d03b7a5b946fc614c3384de16539a71e；GitHub/Gitee 各 7 个资产，master、标签、updates 和更新 JSON 均一致。"
     },
     {
       "area": "HIL v0.2 上游同步",
@@ -72,12 +72,12 @@
   "known_limits": [
     "当前 Windows 账户不能创建目录 symlink，相关安全测试需在有权限环境复测。",
     "串口 TX/RX 与 Modbus RTU 缺少已确认的物理回环/从站，不能把自动化测试替代为真机 PASS。",
-    "v0.1.7 候选安装包没有 Windows Authenticode 签名；桌面辅助控制通道不可用，桌面共享前端已通过浏览器交互、安装态通过进程和 API 独立验证。",
+    "v0.1.7 安装包没有 Windows Authenticode 签名；桌面辅助控制通道不可用，桌面共享前端已通过浏览器交互、安装态通过进程和 API 独立验证。",
     "HPM 旧固件若不支持 dump_memory，将按一次请求回退到较慢的 cmd.read_flash 文本读取；当前 V4.3.6 使用二进制路径。",
     "高事件率 SystemView 仍可能造成目标 RTT 缓冲 Overflow；前端不能恢复目标已丢失事件。"
   ],
   "next_actions": [
-    "完成 v0.1.7 GitHub/Gitee 正式发布并匿名复核更新清单与下载资产。",
+    "后续功能或修复按新版本开发，不移动已发布的 v0.1.7 标签。",
     "如要补齐串口、Modbus 或 VCC 真机项，先提供已确认的串口/RS-485 接线或明确 VCC 电压。"
   ],
   "continuation_protocol": [
