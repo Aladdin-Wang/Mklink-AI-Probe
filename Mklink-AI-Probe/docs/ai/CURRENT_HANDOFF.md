@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T15:53:21+08:00`
+- 更新时间：`2026-08-24T16:06:02+08:00`
 - 分支：`master`
-- HEAD：`0b1cf51 docs: record HIL v0.2 sync merge`
+- HEAD：`5f501a5 docs: qualify v0.1.7 STM32F103RE candidate`
 - 远端 HEAD：`origin/master`
-- 工作树：master 基线已完成 v0.1.7 最终候选自动化、STM32F103RE 真机、浏览器界面和 NSIS 安装态验证；仅新增待提交的候选验证报告与项目记忆。
-- 当前任务：以实际 STM32F103RE 为目标完成 v0.1.7 最终候选的自动化、Keil、全功能真机、源码 GUI、NSIS 安装态与资源生命周期验证。
-- 状态：`v0.1.7-final-candidate-qualified`
+- 工作树：v0.1.7 最终候选已通过；正在删除被当前报告取代的旧 PR/Task 流水账并准备正式发布提交。
+- 当前任务：清理过期验证流水账，从最终 release commit 重新生成签名 NSIS、公开 Skill 和 Site Agent，并发布 GitHub/Gitee。
+- 状态：`v0.1.7-release-authorized`
 
 ## 里程碑
 
@@ -23,11 +23,7 @@
 - **v0.1.7 STM32F103RE 最终候选**：工程目录虽保留 STM32F103RC 历史名，物理芯片、Keil 和在线烧录均按 STM32F103RE 验证。Keil 0 错误 0 警告；Python 1371 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项、生产构建和 NSIS 打包通过。真机完成原生/在线/脱机烧录、AXF 符号、RAM 读写、RTT 双向、64 点 SuperWatch、VOFA、SystemView、受控 HardFault 与恢复、固件检查、探针重启和资源释放。安装态 sidecar 无 Python 子进程，加载 4184 个符号并从 RAM 读回构建标识 20260824，关闭后进程与端口释放。候选安装包 75042164 字节，SHA-256 e7c4e05eafc671a9418fda921ab1ad1ef8d15f76807fbbc45559cc1235ef0809。
 - **HIL v0.2 上游同步**：选择性移植 su5176/master 的 fbaac61 与 9cba616，不导入上游项目记忆；acquire/release/renew 统一进入元数据 guard，同时保留同机死亡进程锁回收。无人值守协议只开放 observe/debug.read，memory/register/variable 在连接前验证目标参数和 VID/PID/序列号/locator。HIL/探针控制聚焦 27 项通过；Python 全量 1371 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。真机完成 identify/capabilities/health/safe_state/plugin-version、HPM5301 只读 4 字节、身份不匹配拒绝和锁释放闭环。
 - **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。白名单归档约 3.15 MB，相比 v0.1.6 发布包减少 44.6%。本地替换后可发现 Skill 从 3 个降为 1 个：发现元数据从 476 降至 359 o200k tokens（-24.6%），全部可加载 Skill 正文从 7,711 降至 5,385（-30.2%），额外维护 Skill 2,286 tokens 和维护说明语料 6,640 tokens 均完全移除；用户运行 Skill 正文仍保留 5,385 tokens。
-- **真机闭环**：安装包 sidecar 真机闭环：在线烧录完成擦除/编程/校验/复位；脱机 U 盘下载返回 completed；Memory 读取返回 16 字节；HardFault 返回 null；SuperWatch 数组快照 64 点、序号持续递增。为闭环验证 RTT/SystemView，STM32F103RC 测试固件已启用持续 RTT 心跳和 SystemView 任务，按新 AXF 的 _SEGGER_RTT 地址读取：RTT 解析 33 行，SystemView 5 秒收到 18,758 个事件并识别 14 个任务。
 - **HPMLink V4 固件升级**：HPMLink_V4.3.7.uf2 为 1,520,128 字节、2,969 个合法 UF2 块；V4.3.6 HPM 下载器的 MICROKEEN 盘检测到 STARTUP_ANIMATION.zhrgb 后只选择 HPMLink_V4.3.7.uf2，自动进入 Bootloader、复制、重新枚举并回读 V4.3.7，返回 updated。升级后 FastAPI 实际连接/升级/断开路径返回 up_to_date 且固件仍为 HPMLink。Python 固件升级 14 项、GUI 相关 34 项、GUI 全量 582 项及生产构建通过；Python 全量 1357 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败。
-- **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
-- **SuperWatch 数组快照范围**：支持一维标量数组按起始索引和数量读取，最大 4096 个元素；数组快照已接入普通 FIELDS 曲线体系，图例、隐藏、分离/合并与普通变量共用。catalog generation 在停止/重绑竞态下会自动刷新并重试展开；完整 GUI 579 项、数组相关 Python 64 项和生产构建通过。STM32F103RC 测试固件包含 64 点正弦、谐波和三角波叠加数组，真机采样持续更新。
-- **串口生命周期回归**：Python 40 项、GUI 57 文件/580 项和 Skill 更新器 11 项通过；Web 最后一个浏览器会话、Tauri 关闭窗口、MCP stdio 退出均释放 Device/sidecar。最终 master 生成 0.1.7 x64 NSIS 候选包到工作区外层 release；本地 Skill 的包/插件版本均为 0.1.7，来源提交和 GUI/MCP 依赖验证通过。
 
 ## 架构决策
 
@@ -36,7 +32,6 @@
 - HPM 目标使用设备端 ROM API，不加载 FLM；HPM Flash 映射基址为 0x80000000。
 - HPM 在线读取优先采用有限范围的 cmd.dump_memory 一次性二进制帧，按目标边界分块、校验 CRC/region error 并显式退出；cmd.read_flash 只作旧固件回退或诊断。
 - AI CLI、Web GUI 和 Tauri 各自持有连接与后端生命周期。
-- NSIS 候选构建临时使用 zlib，避免 LZMA mmap 在系统盘空间紧张时失败。
 - 普通用户只获得 mklink-ai-probe 运行时 Skill；维护与桌面构建 Skill 保留在源码仓库且只允许显式调用。
 - 正式 Skill 发布包必须由 prepare_release.py 从来源提交按公开白名单生成；外部预制包也必须通过同一白名单校验。
 - 探针固件选择必须同时匹配硬件代际和产品族：仅 V4 且 MICROKEEN 根目录存在 STARTUP_ANIMATION.zhrgb 时使用 HPMLink；其他情况继续使用 MicroLink。
@@ -46,13 +41,12 @@
 
 - **probe**：维护机可使用 V2/V3/V4；HPMLink V4 下载器已升级并回读 V4.3.7。交接不记录端口或完整探针标识。
 - **target**：实际 STM32F103RE 可用于任意修改测试代码和破坏性烧录闭环；工程目录名 STM32F103RC 仅为历史命名。HPM5301 已完成 HIL 插件 4 字节只读闭环。
-- **permission**：维护者已授权修改、编译和烧录 STM32F103RE 测试工程并执行 v0.1.7 最终验证；未授权明确电压的 VCC 供电，也未授权正式 Release。
+- **permission**：维护者已授权 v0.1.7 正式签名、标签、GitHub/Gitee Release、双端 master 同步和 updates 分支发布；VCC 仍需逐次确认具体电压。
 
 ## 下一动作
 
-1. 如要补齐串口、Modbus 或 VCC 真机项，先提供已确认的串口/RS-485 接线或明确 VCC 电压。
-2. 正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
-3. 正式发布仍需维护者明确授权。
+1. 完成 v0.1.7 GitHub/Gitee 正式发布并匿名复核更新清单与下载资产。
+2. 如要补齐串口、Modbus 或 VCC 真机项，先提供已确认的串口/RS-485 接线或明确 VCC 电压。
 
 ## 已知限制
 
