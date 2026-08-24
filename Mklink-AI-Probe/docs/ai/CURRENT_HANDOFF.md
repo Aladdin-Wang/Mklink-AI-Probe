@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-24T11:24:45+08:00`
-- 分支：`master`
-- HEAD：`97908ff docs: record local skill context measurement`
+- 更新时间：`2026-08-24T11:48:25+08:00`
+- 分支：`feature/hpmlink-v4-firmware-upgrade`
+- HEAD：`c9b8397 feat: add HPMLink V4 firmware upgrades`
 - 远端 HEAD：`origin/master`
-- 工作树：PR #3 已关闭；维护者 Skill 与普通用户 Skill 的隔离分支已 fast-forward 合并 master 并推送 GitHub。本地 Codex Skill 已从提交 794ebe7 生成的公开白名单包替换并通过格式及真机版本查询。
-- 当前任务：普通 MKLink 用户的 Skill token/context 隔离已实现、合并 master、推送并安装到本地；替换前后上下文已用 o200k_base 量化。
-- 状态：`skill-maintainer-context-separated-merged-and-measured`
+- 工作树：HPMLink V4 固件升级已实现并提交：V4 下载器 U 盘存在 STARTUP_ANIMATION.zhrgb 时选择 HPMLink 固件，否则保持 MicroLink 路径；V2/V3 不变。HPM 下载器已真机升级到 V4.3.7。
+- 当前任务：HPMLink V4 固件族判型、自动升级、手动下载 API/GUI 和 V4.3.7 固件资产已实现并通过自动化与真机闭环。
+- 状态：`hpmlink-v4-firmware-upgrade-qualified`
 
 ## 里程碑
 
-- **v0.1.7 运行时** — `complete`。首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、固件升级、托盘和响应式界面修复已完成。
+- **v0.1.7 运行时** — `complete`。首次连接、在线读取回烧、RTT/SuperWatch 保存、RTOS Trace、MicroLink/HPMLink 固件升级、托盘和响应式界面修复已完成。
 - **桌面与 Web 一致性** — `complete`。Web 与 Tauri 共享 Vue 前端和 FastAPI 能力，客户端连接与后端生命周期互不干扰。
 - **SystemView Timeline** — `complete`。连续跟随、首屏稳定刷新、缩放跟随和可见区间累计缓存已在最新修复分支实现。
 
@@ -22,7 +22,7 @@
 
 - **Skill 上下文隔离**：维护与 Tauri 构建 Skill 在 OpenAI 配置中禁止隐式调用；跨模型公开 Skill 归档使用运行时内容白名单，拒绝维护内容混入。相关 Python 19 项通过；Python 全量 1351 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败；GUI 57 文件/582 项及 TypeScript/Vite 生产构建通过。白名单归档约 3.15 MB，相比 v0.1.6 发布包减少 44.6%。本地替换后可发现 Skill 从 3 个降为 1 个：发现元数据从 476 降至 359 o200k tokens（-24.6%），全部可加载 Skill 正文从 7,711 降至 5,385（-30.2%），额外维护 Skill 2,286 tokens 和维护说明语料 6,640 tokens 均完全移除；用户运行 Skill 正文仍保留 5,385 tokens。
 - **真机闭环**：安装包 sidecar 真机闭环：在线烧录完成擦除/编程/校验/复位；脱机 U 盘下载返回 completed；Memory 读取返回 16 字节；HardFault 返回 null；SuperWatch 数组快照 64 点、序号持续递增。为闭环验证 RTT/SystemView，STM32F103RC 测试固件已启用持续 RTT 心跳和 SystemView 任务，按新 AXF 的 _SEGGER_RTT 地址读取：RTT 解析 33 行，SystemView 5 秒收到 18,758 个事件并识别 14 个任务。
-- **HPM API 源码审查**：cmd.read_flash 与 cmd.dump_memory 最终都调用 riscv_debug_sysbus_read_mem；前者每 16 字节输出文本并延时 1 ms，后者以 512 字节读取、2048 字节分块和 CRC 二进制帧输出。
+- **HPMLink V4 固件升级**：HPMLink_V4.3.7.uf2 为 1,520,128 字节、2,969 个合法 UF2 块；V4.3.6 HPM 下载器的 MICROKEEN 盘检测到 STARTUP_ANIMATION.zhrgb 后只选择 HPMLink_V4.3.7.uf2，自动进入 Bootloader、复制、重新枚举并回读 V4.3.7，返回 updated。升级后 FastAPI 实际连接/升级/断开路径返回 up_to_date 且固件仍为 HPMLink。Python 固件升级 14 项、GUI 相关 34 项、GUI 全量 582 项及生产构建通过；Python 全量 1357 项通过、1 项跳过，12 项仅因 Windows 无目录 symlink 权限失败。
 - **HPM 真机读取**：V4.3.6/HPM5301 连续读取 32 KiB、64 KiB、512 KiB 成功；直连后端和 FastAPI Web API 返回长度、SHA-256、首尾数据一致。目标空白区域返回 FF 属于实际 Flash 内容。
 - **HPM 在线烧录**：HPM ROM 擦除状态延迟到首个有效编程进度后收尾；校验显示分块进度；Python 在线烧录回归测试 139 项通过。
 - **主分支安装包与启动入口**：提交 338ff90 的 0.1.7 NSIS 候选包归档于 release/2026-08-23_1435_338ff90；SHA-256 复核通过并覆盖安装。安装后 WebView 构建指纹为 338ff90b8920，健康与探针枚举正常、无外部 Python 子进程，正常关闭后 MKLink 进程和 8765–8799 端口全部释放。
@@ -40,16 +40,17 @@
 - NSIS 候选构建临时使用 zlib，避免 LZMA mmap 在系统盘空间紧张时失败。
 - 普通用户只获得 mklink-ai-probe 运行时 Skill；维护与桌面构建 Skill 保留在源码仓库且只允许显式调用。
 - 正式 Skill 发布包必须由 prepare_release.py 从来源提交按公开白名单生成；外部预制包也必须通过同一白名单校验。
+- 探针固件选择必须同时匹配硬件代际和产品族：仅 V4 且 MICROKEEN 根目录存在 STARTUP_ANIMATION.zhrgb 时使用 HPMLink；其他情况继续使用 MicroLink。
 
 ## 真机环境
 
-- **probe**：维护机可使用 V2/V3/V4；交接不记录端口或完整探针标识。
+- **probe**：维护机可使用 V2/V3/V4；HPMLink V4 下载器已升级并回读 V4.3.7。交接不记录端口或完整探针标识。
 - **target**：STM32F103RC 可用于破坏性烧录闭环；HPM 工程用于后续真实读取验证。
-- **permission**：维护者已授权将上下文隔离分支合并并推送 master；本地 Skill 已覆盖，不发布正式 v0.1.7。
+- **permission**：维护者已授权提交 HPMLink V4.3.7 固件、执行已连接下载器真机升级并推送 GitHub；不发布正式 Release。
 
 ## 下一动作
 
-1. 随下一次 Skill 发布让现有用户升级并清理旧维护上下文。
+1. 审阅并合并 feature/hpmlink-v4-firmware-upgrade；正式发布时把 HPMLink_V4.3.7.uf2 作为可下载固件资产。
 2. 正式发布仍需维护者明确授权。
 
 ## 已知限制
