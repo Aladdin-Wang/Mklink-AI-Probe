@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
 import time
 
 import pytest
 
-from mklink.hil_lock import HilFileLock, HilLockHeld
+from mklink.hil_lock import HilFileLock, HilLockHeld, _exclusive_guard
 
 
 def _write_holder(lock: HilFileLock, *, hostname: str, pid: int) -> None:
@@ -53,3 +54,24 @@ def test_acquire_keeps_unexpired_lock_when_owner_may_still_be_valid(
 
     with pytest.raises(HilLockHeld):
         lock.acquire()
+
+
+def test_exclusive_guard_serializes_metadata_updates(tmp_path):
+    guard_path = tmp_path / "transport.guard"
+    attempted = threading.Event()
+    entered = threading.Event()
+
+    def contender():
+        attempted.set()
+        with _exclusive_guard(guard_path):
+            entered.set()
+
+    with _exclusive_guard(guard_path):
+        thread = threading.Thread(target=contender)
+        thread.start()
+        assert attempted.wait(1)
+        assert not entered.wait(0.1)
+
+    assert entered.wait(1)
+    thread.join(timeout=1)
+    assert not thread.is_alive()
