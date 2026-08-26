@@ -4,11 +4,11 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-26T14:12:00+08:00`
+- 更新时间：`2026-08-26T15:02:00+08:00`
 - 分支：`master`
-- HEAD：`v0.1.8 release squash（当前提交）`
-- 远端 HEAD：`origin/master 尚未包含本次 v0.1.8 正式合并；发布器将验证后推送`
-- 工作树：应用变更已 squash 合并；HPMLink V4.3.8 仅作为独立固件发布输入，未纳入 Git
+- HEAD：`e635d3a release: prepare Mklink AI Probe 0.1.8（发布源提交）`
+- 远端 HEAD：`master 与 origin/master 已同步；v0.1.8 标签、GitHub/Gitee Release、updates 和 firmware 指针均已发布`
+- 工作树：发布后仅保留未纳入 Git 的 HPMLink V4.3.8 独立固件输入
 - 当前任务：用户已验收 v0.1.8 候选并授权合并 master、正式发布应用 0.1.8 与 HPMLink V4.3.8；发布前清理历史候选和维护者上下文。
 - 状态：`v0.1.8-release`
 
@@ -47,9 +47,8 @@
 
 ## 下一动作
 
-1. 提交开发分支最终 gui/dist 和项目记忆，然后 squash 合并到 master。
-2. 在干净 master 上重建 NSIS、Site Agent 和严格七项发布资产，清理旧候选与构建垃圾。
-3. 发布应用 0.1.8 和独立 HPMLink V4.3.8，验证 GitHub/Gitee Release、updates/latest.json、firmware/latest.json 与公开哈希。
+1. 保持 master 与 origin/master 同步，后续功能从新的 feature/fix 分支开始。
+2. 用户端使用正式 0.1.8 安装包和 Skill；固件更新通过 firmware/latest.json 自动发现。
 
 ## 已知限制
 

@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-26T14:12:00+08:00",
+  "updated_at": "2026-08-26T15:02:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "v0.1.8 release squash（当前提交）",
-    "remote_head": "origin/master 尚未包含本次 v0.1.8 正式合并；发布器将验证后推送",
-    "working_tree": "应用变更已 squash 合并；HPMLink V4.3.8 仅作为独立固件发布输入，未纳入 Git"
+    "head": "e635d3a release: prepare Mklink AI Probe 0.1.8（发布源提交）",
+    "remote_head": "master 与 origin/master 已同步；v0.1.8 标签、GitHub/Gitee Release、updates 和 firmware 指针均已发布",
+    "working_tree": "发布后仅保留未纳入 Git 的 HPMLink V4.3.8 独立固件输入"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
@@ -16,7 +16,7 @@
   "current_session": {
     "status": "v0.1.8-release",
     "current_task": "用户已验收 v0.1.8 候选并授权合并 master、正式发布应用 0.1.8 与 HPMLink V4.3.8；发布前清理历史候选和维护者上下文。",
-    "release": "标准 NSIS 和 updater signature 已在开发分支重建；待 squash 合并 master、生成完整七项资产并发布 GitHub/Gitee 与独立固件清单。"
+    "release": "应用 0.1.8 与 HPMLink V4.3.8 已正式发布；标签源提交为 e635d3a，后续文档修正不移动标签。"
   },
   "milestones": [
     {
@@ -95,9 +95,8 @@
     "正式发布仍需在 master 生成完整七项资产，并由发布器验证 GitHub/Gitee 资产、更新清单和哈希。"
   ],
   "next_actions": [
-    "提交开发分支最终 gui/dist 和项目记忆，然后 squash 合并到 master。",
-    "在干净 master 上重建 NSIS、Site Agent 和严格七项发布资产，清理旧候选与构建垃圾。",
-    "发布应用 0.1.8 和独立 HPMLink V4.3.8，验证 GitHub/Gitee Release、updates/latest.json、firmware/latest.json 与公开哈希。"
+    "保持 master 与 origin/master 同步，后续功能从新的 feature/fix 分支开始。",
+    "用户端使用正式 0.1.8 安装包和 Skill；固件更新通过 firmware/latest.json 自动发现。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",
