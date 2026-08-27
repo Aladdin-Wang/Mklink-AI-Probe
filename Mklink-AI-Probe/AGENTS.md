@@ -56,7 +56,22 @@ If repository memory is stale, verify reality and correct the memory.
   Gitee synchronization are maintainer-only operations described in the skill's
   `references/releasing.md`.
 
-## Finish
+## Build Storage (maintainer requirement)
+
+- All build/test scratch data belongs in the main checkout's ignored `.build/`
+  directory, currently `E:\software\HPM5300\Mklink-AI-Probe\.build`.
+  Worktrees share this location. Never use C: or the Windows system drive.
+- Run build/test commands through `scripts/build_workspace.ps1`; see
+  `docs/ai/build-storage.md`. Do not create ad hoc build or pytest directories
+  in skills, source directories, `%TEMP%`, or other drives.
+- Preserve reusable compiler/dependency caches. Remove per-run temporary files
+  after verification; leave logs in `.build/reports/`. Never commit or upload
+  `.build/`, caches, installers, temporary environments, or hardware logs.
+- Preserve the checked-in `gui/dist` runtime assets and official release
+  assets. For inaccessible paths or directory links, stop automatic deletion,
+  report exact paths, and let the maintainer clean them manually.
+
+## Final Verification
 
 For every runtime or user-facing feature and bug fix, run the full Python and
 GUI suites plus the production build on its branch before merge. Complete a

@@ -77,14 +77,20 @@ skills installed on one developer's computer.
 
 ## Project Invariants
 
+- Build/test storage must use the main checkout's ignored `.build/` directory
+  through `scripts/build_workspace.ps1`; follow `docs/ai/build-storage.md`.
+  Never put build scratch data on C: or the Windows system drive. Reuse compiler
+  caches, clean per-run scratch, and never commit/upload build data. Report
+  inaccessible or linked cleanup paths for manual handling.
+
 - Default ELF/DWARF handling is bundled `pyelftools`. Invoke local
   `readelf`/`addr2line` only when the user explicitly selects the external
   backend.
 - HPM targets use the dedicated ROM API and never load FLM.
 - Generate only standard NSIS by default. MSI and WebView2-offline bundles need
   explicit user authorization.
-- Put installer artifacts in the workspace-level `release/<build-time>/`
-  directory and keep them out of Git.
+- Put new candidate installer artifacts in the main checkout's `.build/artifacts/`
+  directory and keep them out of Git. Preserve existing official `release/` assets.
 - Prefer real Edge/Playwright/WebView2, computer use, and real hardware for
   behavior that depends on them; use focused automated tests for fast feedback.
 - Never commit firmware, Packs, FLM files, logs, screenshots, full probe IDs,
