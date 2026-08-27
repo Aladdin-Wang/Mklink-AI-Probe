@@ -357,10 +357,15 @@ def test_tauri_bundle_integrates_mklink_usb_port_naming():
     assert nsis["installMode"] == "perMachine"
     assert nsis["installerHooks"] == "installer-hooks.nsh"
     assert "NSIS_HOOK_PREINSTALL" in hook
-    assert "$LOCALAPPDATA\\Mklink AI Probe\\uninstall.exe" in hook
-    assert 'HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Mklink AI Probe"' in hook
-    assert 'HKLM "Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Mklink AI Probe"' in hook
-    assert 'ReadRegStr $0 ${ROOT} "${KEY}" "UninstallString"' in hook
+    # Never start a second uninstaller around Tauri's native /UPDATE path.
+    preinstall = hook.split("!macro NSIS_HOOK_PREINSTALL", 1)[1].split("!macroend", 1)[0]
+    assert "Exec" not in preinstall
+    assert "UninstallString" not in hook
+    assert "MKLINK_REMOVE_OLD_INSTALL" not in hook
+    assert 'ReadRegStr $MklinkLegacyInstallDir HKCU "${MANUPRODUCTKEY}" ""' in preinstall
+    assert 'MKLINK_RETARGET_LEGACY_SHORTCUT "$DESKTOP\\${PRODUCTNAME}.lnk"' in hook
+    assert 'MKLINK_RETARGET_LEGACY_SHORTCUT "$SMPROGRAMS\\${PRODUCTNAME}.lnk"' in hook
+    assert 'IsShortcutTarget "${SHORTCUT}" "$MklinkLegacyInstallDir\\${MAINBINARYNAME}.exe"' in hook
     assert "NSIS_HOOK_POSTINSTALL" in hook
     assert "Initializing MKLink USB serial port naming" in hook
     assert "the helper still runs successfully" in hook
