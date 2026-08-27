@@ -15,10 +15,16 @@
         @click="refreshPorts"
       ><RefreshCw :size="15" :class="{ spinning: refreshingPorts }" /></button>
       <label>
-        <span>{{ tr('波特率', 'Baud Rate') }}</span>
-        <select v-model="baudrate" :disabled="running || starting || stopping">
-          <option v-for="rate in baudrates" :key="rate" :value="rate">{{ rate }}</option>
-        </select>
+        <span>{{ tr('波特率（可输入）', 'Baud Rate (editable)') }}</span>
+        <input
+          v-model="baudrate" data-testid="serial-baudrate" type="number"
+          list="serial-baudrates" min="1" step="1" inputmode="numeric"
+          :aria-invalid="validBaudrate === null"
+          :disabled="running || starting || stopping"
+        />
+        <datalist id="serial-baudrates">
+          <option v-for="rate in baudrates" :key="rate" :value="rate" />
+        </datalist>
       </label>
       <label>
         <span>{{ tr('数据位', 'Data Bits') }}</span>
@@ -41,7 +47,8 @@
         </select>
       </label>
       <button
-        v-if="!running" type="button" class="btn btn-primary" :disabled="starting || !portName"
+        v-if="!running" type="button" class="btn btn-primary"
+        :disabled="starting || !portName || validBaudrate === null"
         @click="doStart"
       >{{ starting ? tr('启动中', 'Starting') : tr('打开串口', 'Open Port') }}</button>
       <button v-else type="button" class="btn btn-danger" :disabled="stopping" @click="doStop">
@@ -174,6 +181,12 @@ let reportedPortError = ''
 let attachedMode: 'log' | 'terminal' | null = null
 
 const currentPortStatus = computed(() => portStatuses.value[portName.value] || (running.value ? 'opening' : 'closed'))
+const validBaudrate = computed(() => {
+  const value = String(baudrate.value).trim()
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+})
 const localizedPortStatus = computed(() => {
   const status = currentPortStatus.value
   if (status === 'open') return tr('已打开', 'Open')
@@ -273,7 +286,7 @@ async function pollStatus(): Promise<void> {
 }
 
 async function doStart(): Promise<void> {
-  if (!portName.value || starting.value) return
+  if (!portName.value || validBaudrate.value === null || starting.value) return
   starting.value = true
   runtimeError.value = ''
   try {
@@ -283,7 +296,7 @@ async function doStart(): Promise<void> {
       body: JSON.stringify({
         ports: [{
           port: portName.value,
-          baudrate: baudrate.value,
+          baudrate: validBaudrate.value,
           databits: databits.value,
           stopbits: stopbits.value,
           parity: parity.value,
@@ -440,7 +453,8 @@ onUnmounted(() => {
 .serial-assistant { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
 .serial-config-row { display: flex; flex-wrap: wrap; align-items: end; gap: 7px; }
 .serial-config-row label { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
-.serial-config-row select { height: 30px; min-width: 64px; max-width: 220px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; }
+.serial-config-row select, .serial-config-row input { height: 30px; min-width: 64px; max-width: 220px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; }
+.serial-config-row input { width: 90px; }
 .serial-config-row label:first-child select { width: 180px; }
 .serial-toolbar { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 8px; }
 .view-mode-switch { display: inline-flex; flex: 0 0 auto; overflow: hidden; border: 1px solid var(--border); border-radius: 4px; }

@@ -175,6 +175,39 @@ describe('SerialMonitorTab', () => {
     expect(mocks.terminalBinary.stop).toHaveBeenCalled()
   })
 
+  it('accepts a custom positive integer baud rate', async () => {
+    let status = { ...runningStatus(), running: false, ports: {}, config: [] }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/dash/serial/status')) return jsonResponse(status)
+      if (url.endsWith('/api/dash/serial/start')) {
+        status = runningStatus()
+        return jsonResponse({ status: 'started' })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(SerialMonitorTab)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('USB UART'))
+
+    const baudrateInput = wrapper.get('[data-testid="serial-baudrate"]')
+    await baudrateInput.setValue('')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeDefined()
+    await baudrateInput.setValue('0')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeDefined()
+    await baudrateInput.setValue('1.5')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeDefined()
+    await baudrateInput.setValue('250000')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeUndefined()
+    await wrapper.get('.btn-primary').trigger('click')
+
+    await vi.waitFor(() => {
+      const start = fetchMock.mock.calls.find(call => String(call[0]).endsWith('/api/dash/serial/start'))
+      expect(JSON.parse(String(start?.[1]?.body)).ports[0].baudrate).toBe(250000)
+    })
+    wrapper.unmount()
+  })
+
   it('reconnects to an existing session and clears only the mounted mode', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
