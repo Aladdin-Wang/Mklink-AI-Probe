@@ -83,11 +83,11 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function runningStatus() {
+function runningStatus(baudrate = 230400) {
   return {
     running: true,
     ports: { TEST_UART: 'open' },
-    config: [{ port: 'TEST_UART', baudrate: 230400, databits: 8, stopbits: 1, parity: 'N' }],
+    config: [{ port: 'TEST_UART', baudrate, databits: 8, stopbits: 1, parity: 'N' }],
     stats: { rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 },
   }
 }
@@ -175,16 +175,60 @@ describe('SerialMonitorTab', () => {
     expect(mocks.terminalBinary.stop).toHaveBeenCalled()
   })
 
+  it('accepts a custom positive integer baud rate', async () => {
+    let status = { ...runningStatus(), running: false, ports: {}, config: [] }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/dash/serial/status')) return jsonResponse(status)
+      if (url.endsWith('/api/dash/serial/start')) {
+        status = runningStatus(JSON.parse(String(init?.body)).ports[0].baudrate)
+        return jsonResponse({ status: 'started' })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(SerialMonitorTab)
+    await vi.waitFor(() => expect(wrapper.text()).toContain('USB UART'))
+
+    const baudrateInput = wrapper.get('[data-testid="serial-baudrate"]')
+    expect((baudrateInput.element as HTMLInputElement).value).toBe('115200')
+    expect(wrapper.findAll('#serial-baudrates option').map(option => option.attributes('value')))
+      .toContain('115200')
+    for (const invalid of ['', '0', '-1', '1.5', '9007199254740992']) {
+      await baudrateInput.setValue(invalid)
+      expect(baudrateInput.attributes('aria-invalid')).toBe('true')
+      expect(wrapper.get('.btn-primary').attributes('disabled')).toBeDefined()
+      await wrapper.get('.btn-primary').trigger('click')
+      expect(fetchMock.mock.calls.some(call => String(call[0]).endsWith('/api/dash/serial/start')))
+        .toBe(false)
+    }
+    await baudrateInput.setValue('250000')
+    expect(baudrateInput.attributes('aria-invalid')).toBe('false')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeUndefined()
+    await wrapper.get('.btn-primary').trigger('click')
+
+    await vi.waitFor(() => {
+      const start = fetchMock.mock.calls.find(call => String(call[0]).endsWith('/api/dash/serial/start'))
+      expect(JSON.parse(String(start?.[1]?.body)).ports[0].baudrate).toBe(250000)
+    })
+    await vi.waitFor(() => expect(baudrateInput.attributes('disabled')).toBeDefined())
+    expect((baudrateInput.element as HTMLInputElement).value).toBe('250000')
+    wrapper.unmount()
+  })
+
   it('reconnects to an existing session and clears only the mounted mode', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/api/dash/serial/status')) return jsonResponse(runningStatus())
+      if (url.endsWith('/api/dash/serial/status')) return jsonResponse(runningStatus(250000))
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(SerialMonitorTab)
     await vi.waitFor(() => expect(mocks.terminalBinary.start).toHaveBeenCalledTimes(1))
 
+    const baudrateInput = wrapper.get('[data-testid="serial-baudrate"]')
+    expect((baudrateInput.element as HTMLInputElement).value).toBe('250000')
+    expect(baudrateInput.attributes('disabled')).toBeDefined()
     expect(wrapper.findComponent({ name: 'VirtualLogPanel' }).exists()).toBe(false)
     await wrapper.get('.clear-action').trigger('click')
     expect(mocks.terminalClears).toBeGreaterThan(0)
