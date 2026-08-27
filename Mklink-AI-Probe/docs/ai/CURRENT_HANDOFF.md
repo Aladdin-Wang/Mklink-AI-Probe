@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-27T11:48:06+08:00`
+- 更新时间：`2026-08-27T11:58:04+08:00`
 - 分支：`fix/serial-custom-baudrate-v018`
-- HEAD：`基于 origin/master a42f9ed 实现串口助手自定义正整数波特率，待提交 PR。`
-- 远端 HEAD：`origin/master 为 a42f9ed；v0.1.8 标签、GitHub/Gitee Release、updates 和 firmware 指针均已发布。`
-- 工作树：串口助手源码、回归测试、生产构建产物和验证记录待提交；本机测试缓存与 STCP DLL 不纳入 Git。
-- 当前任务：将串口助手固定波特率下拉框改为可输入控件，保留常用值提示，并校验任意正整数自定义波特率。
-- 状态：`serial_custom_baudrate_pr_ready`
+- HEAD：`串口助手自定义正整数波特率已提交到 PR #4，当前状态 OPEN/MERGEABLE。`
+- 远端 HEAD：`origin/master 为 a42f9ed；fork 分支 fix/serial-custom-baudrate-v018 已用于 Aladdin-Wang/Mklink-AI-Probe PR #4。`
+- 工作树：串口助手源码、回归测试、生产构建产物和验证记录已提交；本机测试缓存与 STCP DLL 不纳入 Git。
+- 当前任务：串口助手自定义波特率已实现、验证并提交为 Aladdin-Wang/Mklink-AI-Probe PR #4。
+- 状态：`serial_custom_baudrate_pr_open`
 
 ## 里程碑
 
@@ -50,7 +50,7 @@
 
 ## 下一动作
 
-1. 审阅并合并 fix/serial-custom-baudrate-v018 PR；合并前若 master 前进，重新同步并执行 GUI 全量、生产构建和真实串口闭环。
+1. 审阅并合并 PR #4；合并前若 master 前进，重新同步并执行 GUI 全量、生产构建和真实串口闭环。
 2. 保持 master 与 origin/master 同步，后续功能从新的 feature/fix 分支开始。
 3. 用户端使用正式 0.1.8 安装包和 Skill；固件更新通过 firmware/latest.json 自动发现。
 

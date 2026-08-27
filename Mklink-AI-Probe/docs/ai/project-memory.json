@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-27T11:48:06+08:00",
+  "updated_at": "2026-08-27T11:58:04+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "fix/serial-custom-baudrate-v018",
-    "head": "基于 origin/master a42f9ed 实现串口助手自定义正整数波特率，待提交 PR。",
-    "remote_head": "origin/master 为 a42f9ed；v0.1.8 标签、GitHub/Gitee Release、updates 和 firmware 指针均已发布。",
-    "working_tree": "串口助手源码、回归测试、生产构建产物和验证记录待提交；本机测试缓存与 STCP DLL 不纳入 Git。"
+    "head": "串口助手自定义正整数波特率已提交到 PR #4，当前状态 OPEN/MERGEABLE。",
+    "remote_head": "origin/master 为 a42f9ed；fork 分支 fix/serial-custom-baudrate-v018 已用于 Aladdin-Wang/Mklink-AI-Probe PR #4。",
+    "working_tree": "串口助手源码、回归测试、生产构建产物和验证记录已提交；本机测试缓存与 STCP DLL 不纳入 Git。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前有效基线、验证证据、限制和后续动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "serial_custom_baudrate_pr_ready",
-    "current_task": "将串口助手固定波特率下拉框改为可输入控件，保留常用值提示，并校验任意正整数自定义波特率。",
+    "status": "serial_custom_baudrate_pr_open",
+    "current_task": "串口助手自定义波特率已实现、验证并提交为 Aladdin-Wang/Mklink-AI-Probe PR #4。",
     "release": "本次只准备功能 PR，不签名、不发布、不修改发布指针或 Gitee。"
   },
   "milestones": [
@@ -106,7 +106,7 @@
     "正式安装包尚未完成 Windows Authenticode/驱动签名发布流程；当前签名仅为 Tauri updater 签名。"
   ],
   "next_actions": [
-    "审阅并合并 fix/serial-custom-baudrate-v018 PR；合并前若 master 前进，重新同步并执行 GUI 全量、生产构建和真实串口闭环。",
+    "审阅并合并 PR #4；合并前若 master 前进，重新同步并执行 GUI 全量、生产构建和真实串口闭环。",
     "保持 master 与 origin/master 同步，后续功能从新的 feature/fix 分支开始。",
     "用户端使用正式 0.1.8 安装包和 Skill；固件更新通过 firmware/latest.json 自动发现。"
   ],
