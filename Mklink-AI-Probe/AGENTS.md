@@ -23,23 +23,29 @@ for another contributor to continue the work.
 Do not modify code or repeat completed work until the current state is clear.
 If repository memory is stale, verify reality and correct the memory.
 
-## Branch Workflow
+## Prerelease Branch Workflow
 
-- Before editing a runtime or user-facing feature or bug fix, start from a clean,
-  current `master` and create a dedicated `feature/<topic>` or `fix/<topic>`
-  branch. A separate worktree is optional; the branch is mandatory.
-- Do not develop or commit feature and bug-fix work directly on `master`.
-  Documentation-only maintenance and release handoff work are exempt unless the
-  maintainer requests a branch.
-- Complete the required automated tests, production build, project-memory
-  update, and affected real-hardware closed loop on the feature or fix branch
-  before merging it into `master`.
-- If `master` changes after final verification, update the branch with the
-  current `master` and rerun the final gate. Any implementation or conflict
-  resolution after verification invalidates the old evidence.
-- Merge only after the branch passes its final gate. After merging, verify that
-  `master` contains the tested branch tip, project memory validates, and the
-  worktree is clean. Push only when authorized.
+- Maintain features, fixes, tests, and documentation continuously on the active
+  prerelease branch recorded in project memory (currently
+  `codex/v0.1.9-development`). Do not create a branch or worktree per issue, and
+  do not restart each fix from `master`. A new release branch requires an
+  explicit maintainer request.
+- Before editing, reconcile the working tree and fetch the corresponding
+  GitHub branch. Preserve unrelated changes; resolve divergence without force
+  pushing or rewriting shared history. Never develop directly on `master`.
+- Finish one issue at a time: run the affected regression checks and applicable
+  build/real-surface verification, update project memory, and run
+  `git diff --check`. Commit each completed fix separately and promptly push it
+  to the matching branch on GitHub `origin`; do not accumulate unrelated fixes
+  locally. The maintainer gives standing authorization for these prerelease
+  commits and pushes. Verify the remote tip after pushing and report failures.
+- Record unavailable checks and existing environment failures honestly. A
+  prerelease push is not evidence that the complete release gate passed.
+- Merging into `master` still requires explicit maintainer authorization and
+  the full final gate below. If `master` advances or code changes after final
+  verification, incorporate the changes and rerun that gate before merging.
+  After merging, verify that `master` contains the tested prerelease tip,
+  project memory validates, and the working tree is clean.
 
 ## Authority
 
@@ -82,5 +88,7 @@ obtain an explicit maintainer waiver instead of silently reducing the gate.
 
 Run the required verification and `git diff --check`. Update
 `docs/ai/project-memory.json`, then run `python scripts/ai_memory.py render` and
-`python scripts/ai_memory.py validate`. Commit and push when authorized, and
-leave the worktree clean.
+`python scripts/ai_memory.py validate`. Commit and promptly push each completed
+fix under the prerelease workflow above, and leave the worktree clean. This
+standing push authorization does not cover merging `master`, tags, signing,
+release publication, update-channel pointers, or Gitee synchronization.

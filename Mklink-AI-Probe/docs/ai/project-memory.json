@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-27T21:56:15.552622+08:00",
+  "updated_at": "2026-08-28T08:34:22+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.1.9-development",
-    "head": "2978f02 fix(installer): preserve files and shortcuts during automatic updates（本交接更新前的已推送功能基线）",
-    "remote_head": "origin/codex/v0.1.9-development 已包含功能基线 2978f02；master 保持 a42f9ed，未合并或发布；交接随本提交保存，最终文档提交号以 Git 为准。",
-    "working_tree": "版本/集中构建存储、串口自定义波特率、HPMLink V4.3.8 升级包和自动升级安装钩子修复均已提交，交接随本提交保存。旧 fix-independent-firmware-channel 工作树已安全移除，Cargo 缓存仍在主工作区 .build/cache/cargo；本机测试记录与保留目录均被 Git 忽略。"
+    "head": "68dde8a（本次维护流程更新前的已推送基线；最终提交号以 Git 为准）",
+    "remote_head": "更新前已 fetch 并确认 origin/codex/v0.1.9-development 与本地 68dde8a 一致；维护流程修改随本提交保存并按新规则推送。master 未改动。",
+    "working_tree": "持续维护 codex/v0.1.9-development，不再为每个问题创建分支或工作树。每个完成的问题验证、更新交接后单独提交并立即推送 GitHub；.build 仍忽略，缓存复用。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前有效基线、验证证据、限制和后续动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.9-development-pushed-release-gates-pending",
-    "current_task": "已按维护者授权推送 0.1.9 开发分支，移植 PR #4 的自定义串口波特率并署名后关闭 PR；同时修复自动升级期间自定义卸载器与安装器竞争、快捷方式消失的问题。并未合并 master、签名、发布安装包或修改更新通道。",
+    "status": "prerelease-continuous-maintenance-web-mime-fix-pending",
+    "current_task": "维护者已要求改用预发布分支持续维护，并长期授权每修复一个问题即提交推送。AGENTS.md 与维护 Skill 已同步；Web GUI 18% 问题已在真实浏览器复现（错误 MIME + 原端口旧缓存），接下来在现有 0.1.9 分支修复，不新建修复分支。",
     "release": "0.1.9 尚未发布，不继承历史签名或发布授权；正式应用 0.1.8 和 HPMLink V4.3.8 发布保持不变，v0.1.8 标签源提交仍为 e635d3a。"
   },
   "milestones": [
@@ -85,7 +85,7 @@
     }
   ],
   "decisions": [
-    "维护者授权将 codex/v0.1.9-development 推送 GitHub并在功能移植后关闭 PR #4；只删除旧开发分支/工作树，保留正式 0.1.8 Release、标签和资产。不授权签名、发布、Gitee 同步或修改更新指针。",
+    "2026-08-28 维护者指定在当前预发布分支持续维护（现为 codex/v0.1.9-development），不再创建单问题分支/工作树。每个完成的修复在相关验证和记忆更新后单独提交并及时推送 GitHub origin，已长期授权，不必重复询问推送；合并 master、签名、发布、标签、更新指针和 Gitee 仍需另行授权，完整发布门禁保持不变。",
     "USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。",
     "Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。",
     "HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。",
@@ -99,7 +99,7 @@
   "hardware": {
     "probe": "维护机可使用 V2/V3/V4；交接不记录端口号或完整探针标识。",
     "target": "实际 STM32F103RE 可用于固件编译、下载和调试闭环；工程目录中的 STM32F103RC 为历史命名。",
-    "permission": "本轮仅枚举端口，只有蓝牙串口，无 USB 串口条件；浏览器使用模拟串口接口，没有烧录、串口收发或 VCC 操作。安装流程用隔离夹具，既有正式安装保持 0.1.8。"
+    "permission": "此前安装/串口验证使用隔离夹具和模拟接口；本轮 Web MIME 复现只启动隔离本地服务并查看浏览器，没有连接设备、烧录、串口收发或 VCC 操作。正式安装未改动。"
   },
   "known_limits": [
     "端口名称修改依赖管理员权限和 Windows 设备节点；更换另一只下载器后会产生新的设备实例，需要再次执行手动修改。",
@@ -116,7 +116,7 @@
     "在具备目录符号链接权限且依赖安装可完成的环境补齐 Python 全量门禁；不要静默跳过失败项。",
     "接入可用 USB 串口后完成自定义波特率打开/关闭及必要收发真机验收；驱动不支持的速率应保留实际错误。",
     "用户可按本机 .build/reports/manual-cleanup.txt 清理本轮 3 个保留目录；不跟随链接删除外部目标。",
-    "后续构建/测试继续使用 scripts/build_workspace.ps1，共用 .build/cache，禁止 C 盘临时构建及上传 .build；正式 0.1.8 仍是用户发布版。"
+    "优先在当前预发布分支修复 Web MIME 与坏缓存恢复，验证原端口无需清缓存即可加载配置页/仪表盘和浏览器会话；每个修复完成即提交推送。所有构建测试继续经 build_workspace.ps1 使用 E 盘 .build，不发布正式版本。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、进程和硬件状态。",

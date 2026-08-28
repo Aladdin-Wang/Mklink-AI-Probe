@@ -28,27 +28,33 @@ skills installed on one developer's computer.
    repository.
 5. Reconcile recorded state with Git and the running system. Correct stale
    memory instead of repeating completed work.
-6. Check `git worktree list`. Reuse the current isolated worktree when one
-   already exists; create another only when isolation is useful and authorized.
+6. Check `git worktree list`. Reuse the active prerelease checkout; do not
+   create an issue-specific branch or worktree.
 
-## Develop On A Branch
+## Maintain The Prerelease Branch
 
-1. Before editing a runtime or user-facing feature or bug fix, start from a
-   clean, current `master` and create a dedicated `feature/<topic>` or
-   `fix/<topic>` branch. A separate worktree remains optional; the branch does
-   not.
-2. Never develop or commit feature and bug-fix work directly on `master`.
-   Documentation-only maintenance and release handoffs are exempt unless the
-   maintainer requests a branch.
-3. Keep the implementation, regression coverage, final verification, real-
-   hardware evidence, and project-memory update on the feature or fix branch.
-4. Before merging, incorporate the current `master` into the branch when it has
-   advanced, then rerun the full final gate. Treat any code change or conflict
-   resolution after verification as invalidating the earlier evidence.
-5. Merge into `master` only after the branch passes its required automated and
-   real-surface gates. After merging, verify that `master` contains the tested
-   branch tip, project memory validates, and the worktree is clean. Push only
-   when authorized.
+1. Continue all feature, fix, test, and documentation work on the active
+   prerelease branch recorded in project memory (currently
+   `codex/v0.1.9-development`). Do not create a separate branch or worktree for
+   each issue or restart fixes from `master`. Create a new release branch only
+   when the maintainer explicitly requests it; never develop on `master`.
+2. Reconcile local changes and fetch the corresponding GitHub branch before
+   editing. Preserve unrelated work and handle divergence without force pushes
+   or rewriting shared history.
+3. Complete one issue, run affected regressions and applicable build/real-
+   surface checks, update project memory, and run `git diff --check`. Commit
+   each completed fix separately and promptly push to the matching branch on
+   GitHub `origin`. This is standing maintainer authorization: routine completed
+   prerelease fixes do not need another commit/push confirmation. Verify the
+   remote tip and report any push failure rather than accumulating local fixes.
+4. Document unavailable checks and existing environment failures. A prerelease
+   push does not imply full release qualification, nor authorize merging
+   `master`, tags, signing, releases, update pointers, or Gitee synchronization.
+5. Merge into `master` only with explicit maintainer authorization and after
+   the full automated and real-surface gates pass. Incorporate any newer
+   `master` before final verification. Later code changes or conflict resolution
+   invalidate the earlier gate. After merging, verify that `master` contains
+   the tested prerelease tip, project memory validates, and the worktree is clean.
 
 ## Turn Requests Into Results
 
@@ -68,7 +74,7 @@ skills installed on one developer's computer.
 5. Find the root cause. Keep the change within the owning module and avoid
    speculative abstractions or unrelated cleanup.
 6. Use a short written plan for multi-step, risky, or cross-module work. Small
-   fixes can proceed without a long plan, but still require a fix branch. Update
+   fixes can proceed without a long plan on the same prerelease branch. Update
    the plan when evidence changes it.
 7. Add regression coverage when it is useful and economical. Do not require a
    separate RED commit, a test-first ceremony, or broad tests for a narrow edit.
@@ -111,8 +117,10 @@ skills installed on one developer's computer.
 4. Update `docs/ai/project-memory.json` with current facts, decisions, evidence,
    limits, and next actions. Run `python scripts/ai_memory.py render` and
    `python scripts/ai_memory.py validate`.
-5. Commit and push only when authorized. Finish with a clean worktree unless
-   the user explicitly leaves work in progress.
+5. Commit each completed fix separately and promptly push it to the active
+   GitHub prerelease branch under the standing authorization above; verify the
+   remote tip. Finish with a clean worktree unless the user explicitly leaves
+   work in progress. Release and master-merge authorization remain separate.
 
 ## Official Releases
 
