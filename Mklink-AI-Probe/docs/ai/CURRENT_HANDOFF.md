@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-28T08:40:07+08:00`
+- 更新时间：`2026-08-28T08:59:17+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`10cc40a（本次 Web MIME 修复前已推送的维护流程基线；修复提交号以 Git 为准）`
-- 远端 HEAD：`origin/codex/v0.1.9-development 已核对包含维护流程提交 10cc40a；Web MIME 修复与交接随本提交保存并按授权推送。master 未改动。`
-- 工作树：继续在 codex/v0.1.9-development 修复，没有创建新分支/工作树。Web MIME、缓存资源路径、回归测试和 gui/dist 随本提交保存；本机 .build 报告/缓存不入库。
-- 当前任务：已修复 Web GUI 因 Windows 错误 MIME 和旧浏览器缓存卡在 18% 的问题；同端口保留坏缓存后刷新恢复配置页/仪表盘/SuperWatch，浏览器会话建立并释放。按持续预发布流程单独提交并推送，不合并 master 或发布。
-- 状态：`web-mime-cache-recovery-verified-prerelease`
+- HEAD：`7037cc3（维护规则精简前已推送基线；本提交号以 Git 为准）`
+- 远端 HEAD：`已 fetch 核对 origin/codex/v0.1.9-development 与 7037cc3 一致；维护规则精简随本提交推送，master 未改动。`
+- 工作树：继续在现有预发布分支，逐问题提交推送。仅维护文档变更，不涉及设备、应用或正式发布。
+- 当前任务：按维护者确认精简上下文：AGENTS.md 作为唯一维护规则；维护 Skill 改为显式可选参考索引；已授权日常修复不重复审批，按受影响表面验收。下一步精简用户 Skill 并剥离安装/GUI 参考中的维护构建指令。
+- 状态：`maintenance-policy-simplified-user-skill-split-in-progress`
 
 ## 里程碑
 
@@ -34,7 +34,7 @@
 
 ## 架构决策
 
-- 2026-08-28 维护者指定在当前预发布分支持续维护（现为 codex/v0.1.9-development），不再创建单问题分支/工作树。每个完成的修复在相关验证和记忆更新后单独提交并及时推送 GitHub origin，已长期授权，不必重复询问推送；合并 master、签名、发布、标签、更新指针和 Gitee 仍需另行授权，完整发布门禁保持不变。
+- 维护者要求当前预发布分支持续维护，每个修复验证后单独提交并及时推送 origin，不新建单问题分支。AGENTS.md 是唯一维护规则，维护 Skill 按需显式使用；已要求修复的范围内不重复审批，重大范围/兼容性/破坏性变更仍询问。master 合并、签名、标签、发布、更新指针、Gitee 仍需授权。
 - USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。
 - Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
@@ -57,7 +57,7 @@
 2. 在具备目录符号链接权限且依赖安装可完成的环境补齐 Python 全量门禁；不要静默跳过失败项。
 3. 接入可用 USB 串口后完成自定义波特率打开/关闭及必要收发真机验收；驱动不支持的速率应保留实际错误。
 4. 用户可按本机 .build/reports/manual-cleanup.txt 清理本轮 3 个保留目录；不跟随链接删除外部目标。
-5. 按维护者指定继续在当前预发布分支逐项维护；每个修复完成相关验证后单独提交并及时推送 GitHub，不新建修复分支。Web MIME/坏缓存恢复已完成；所有构建测试仍经 build_workspace.ps1 使用 E 盘 .build。
+5. 继续用户 Skill 精简与角色隔离：短描述、操作路由、关键安全边界；移出安装和 GUI 参考中的维护构建流程，检查发布包和已安装 Skill 的上下文边界。
 
 ## 已知限制
 
