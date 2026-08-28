@@ -78,6 +78,9 @@ RT-Thread 4.x 兼容处理（详见"踩过的坑"），只用 `rt_scheduler_seth
 
 ## PC 端使用
 
+`<REPORT_DIR>` 是[已选工作根目录](work-files.md)下的 `reports/` 绝对路径，
+执行前先创建；不要将示例报告写到偶然的当前目录。
+
 ```bash
 # 实时解码打印（控制台）
 python -m mklink systemview --port COM5 --project-root . --duration 10
@@ -86,7 +89,7 @@ python -m mklink systemview --port COM5 --project-root . --duration 10
 python -m mklink systemview-analyze --duration 6
 
 # 采集 + 自包含 HTML 可视化报告（浏览器打开，可分享/存档）
-python -m mklink systemview-report --duration 6 --out report.html
+python -m mklink systemview-report --duration 6 --out "<REPORT_DIR>/report.html"
 
 # 可视化时间轴：GUI Dashboard → "RTOS Trace" Tab
 python -m mklink gui

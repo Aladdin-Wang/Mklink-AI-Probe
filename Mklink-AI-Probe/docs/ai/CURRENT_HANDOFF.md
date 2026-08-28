@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-28T09:13:47+08:00`
+- 更新时间：`2026-08-28T14:43:30+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`bfebafe（用户 Skill 精简前已推送基线；本提交号以 Git 为准）`
-- 远端 HEAD：`维护规则精简 bfebafe 已核对 GitHub 同步；用户 Skill 隔离随本提交推送，未改 master 或发布指针。`
+- HEAD：`32399a4（用户中间文件约束前已推送基线；本提交号以 Git 为准）`
+- 远端 HEAD：`已 fetch 核对 32399a4；本次用户 Skill 存储约束随本提交推送，未改 master 或发布指针。`
 - 工作树：现有 0.1.9 预发布分支逐问题提交推送；本轮仅文档、Skill 元数据和边界测试，无设备操作或正式发布。
-- 当前任务：已分离维护者与使用者：AGENTS 单一维护规则，维护 Skill 为显式参考索引；用户 Skill 从 12640 缩至 3183 字符，只按任务读参考。用户安装/GUI/README 不再含 MKLink 构建测试发布步骤。
-- 状态：`maintenance-and-user-skill-simplified`
+- 当前任务：用户 Skill 增加统一工作目录约束：默认目标项目 .mklink，Windows 不默认写系统盘；work/logs/reports/cache 分类、有限采集和安全清理。修正 Keil TEMP 与串口/SystemView 相对输出示例。仅指令和文档变更，不声称已改运行时默认目录。
+- 状态：`user-skill-work-files-policy-added`
 
 ## 里程碑
 
@@ -30,7 +30,7 @@
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
 - **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
-- **Skill 上下文与用户归档（2026-08-28）**：相关 Python 111 项通过；源用户 Skill、维护 Skill 和已安装用户 Skill 格式校验通过。待提交 Git 树实际生成 209 文件 ZIP，核对 18 份用户文档与相对链接，排除维护内容；临时 ZIP 已随测试清理。主 Skill 12640→3183 字符，元数据区 835→191 字符（不是 token 数）。本机重复 PDF/Presentations 与旧 browser-use 已可恢复停用，MKLink 只同步文档，运行时仍 0.1.8。未做模型触发率评测或发布验收。
+- **用户 Skill 工作目录约束（2026-08-28）**：相关 Python 113 项通过；源码用户 Skill、维护 Skill、已安装用户 Skill 格式校验通过。待提交树生成 210 文件 ZIP，19 份用户文档及相对链接检查通过，不含维护文件。主入口 3557 字符、元数据区仍 191 字符；仅增加按需存储约束，同步 5 份本机文档，运行时未升级。未修改工具默认日志实现，不宣称所有进程输出已迁移。
 
 ## 架构决策
 
@@ -39,7 +39,7 @@
 - Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
 - Web 静态 JS/MJS/CSS MIME 不依赖系统注册表。通过 Vite assets/mime-v1 更换整个资源图的缓存 URL，避免只改 HTML 遗漏延迟加载；保留 HTML no-store 和哈希资源 immutable。缓存代号只在响应语义需作废旧缓存时变更，必须重建并提交 gui/dist。
-- 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。
+- 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。 用户中间文件固定在选定工作根目录，默认目标项目 .mklink；工作脚本、日志、报告和缓存分类，保留可复用缓存与唯一证据；不能通过篡改 project-root 重定向固定日志。
 - 默认不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存；本轮维护者明确例外授权将本地 HPMLink_V4.3.8.uf2 升级包及 V4.3.7 替换提交到开发分支，434bf79 已完成；不代表固件通道发布。
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自定义波特率采用数字输入＋常用候选，不新增后端接口；接受正安全整数，非法值不得启动串口；实际支持速率仍由驱动/设备决定。
