@@ -170,7 +170,7 @@ PikaScript 端的 `cmd.read_ram` 显示屏对部分地址会**不显示数据行
 - 非重复数据 CLI **不自动分块**，超 230B 直接 `FAIL`。
 - **重复字节**用紧凑语法 `ADDR:BYTE*N`（如 `flush-memory "0x20008000:0xAA*16300"`），CLI 自动转 `bytes([0xVV])*N` 短表达式，绕开 ②③，单次可写数 KB。
 - **PowerShell**：始终用单引号包裹整个 item（`'0x...:0xAA*N'`），否则逗号会被预处理改写参数。
-- 完整边界表与 host 端分块策略见 **[references/flush-memory.md](references/flush-memory.md)**。
+- 完整边界表与 host 端分块策略见 **[flush-memory.md](flush-memory.md)**。
 
 ### 读取 Flash
 

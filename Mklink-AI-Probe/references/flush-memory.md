@@ -9,7 +9,7 @@ description: |
 
 > 适用命令：`python -m mklink flush-memory`
 > 适用对象：MKLink 固件 PikaPython REPL 中的 `cmd.flush_memory` API
-> 返回索引：[SKILL.md](../../SKILL.md) · [commands-memory.md](commands-memory.md)
+> 返回索引：[SKILL.md](../SKILL.md) · [commands-memory.md](commands-memory.md)
 
 ## 1. 接口定位
 
@@ -101,8 +101,6 @@ python -m mklink flush-memory "0x20008000:0xAA*1024" "0x20009000:0x11,0x22"
 
 ## 3. 实测使用边界（三类边界务必区分）
 
-> 复测报告：`docs/Mklink/2026-06-26-gd32f303-dump-flush-boundary-retest-report.md`
-> （2026-06-26，GD32F303CE / COM96 / 烧录器固件 V4.3.3）
 
 flush_memory 同时受**三类独立边界**约束，排查时务必先分清撞的是哪一类：
 

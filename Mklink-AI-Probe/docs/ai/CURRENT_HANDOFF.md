@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-28T08:59:17+08:00`
+- 更新时间：`2026-08-28T09:13:47+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`7037cc3（维护规则精简前已推送基线；本提交号以 Git 为准）`
-- 远端 HEAD：`已 fetch 核对 origin/codex/v0.1.9-development 与 7037cc3 一致；维护规则精简随本提交推送，master 未改动。`
-- 工作树：继续在现有预发布分支，逐问题提交推送。仅维护文档变更，不涉及设备、应用或正式发布。
-- 当前任务：按维护者确认精简上下文：AGENTS.md 作为唯一维护规则；维护 Skill 改为显式可选参考索引；已授权日常修复不重复审批，按受影响表面验收。下一步精简用户 Skill 并剥离安装/GUI 参考中的维护构建指令。
-- 状态：`maintenance-policy-simplified-user-skill-split-in-progress`
+- HEAD：`bfebafe（用户 Skill 精简前已推送基线；本提交号以 Git 为准）`
+- 远端 HEAD：`维护规则精简 bfebafe 已核对 GitHub 同步；用户 Skill 隔离随本提交推送，未改 master 或发布指针。`
+- 工作树：现有 0.1.9 预发布分支逐问题提交推送；本轮仅文档、Skill 元数据和边界测试，无设备操作或正式发布。
+- 当前任务：已分离维护者与使用者：AGENTS 单一维护规则，维护 Skill 为显式参考索引；用户 Skill 从 12640 缩至 3183 字符，只按任务读参考。用户安装/GUI/README 不再含 MKLink 构建测试发布步骤。
+- 状态：`maintenance-and-user-skill-simplified`
 
 ## 里程碑
 
@@ -19,7 +19,7 @@
 - **自动升级安装修复** — `complete`。2978f02 撤掉自定义安装前卸载，交由 Tauri 原生覆盖升级；新文件写入后仅修正匹配旧用户级路径的已有快捷方式。保留用户主动删除/修改的快捷方式及旧目录。隔离 NSIS 夹具已复现历史缺陷并验证修复；实际签名包升级验收仍待完成。
 - **Web GUI 18% 启动修复** — `complete`。静态路由固定 JS/MJS/CSS MIME；Vite assets/mime-v1 覆盖入口、延迟预加载、CSS、Worker 和波形脚本，重新生成 gui/dist。普通刷新可避开旧错误响应缓存。详见 docs/ai/web-gui-startup.md。
 - **HPM 真机闭环** — `complete`。HPM ROM API 烧录跳过 FLM；修复烧录后通用 reset 会停住 RISC-V 的问题。SDK FreeRTOS 工程完成 RAM/符号/RTT/故障注入与 ROM 重烧恢复验证。
-- **普通用户发布内容隔离** — `complete`。公开 Skill 由明确运行时白名单构建，不包含 _maintainer、docs/ai、测试、桌面源码、固件或维护 Skill；更新器还会删除旧安装遗留的维护目录和构建垃圾。
+- **维护流程与用户 Skill 隔离** — `complete`。bfebafe 合并维护规则；用户入口去重、缩描述与正文，速查/端口命名移至按需参考，开发说明留在 docs/ai/development.md。用户包运行时白名单和更新器旧维护文件清理保持。安装不引导编译产品，修改目标 MCU 工程仍属使用任务。
 
 ## 验证证据
 
@@ -28,9 +28,9 @@
 - **NSIS 升级流程**：使用 Tauri 实际生成模板与当前钩子、隔离注册身份/目录/测试可执行文件：历史钩子＋延迟卸载夹具复现新程序和图标丢失；修复后的 0.1.7/0.1.8 同目录升级、跨目录快捷方式迁移、已删除/另有目标快捷方式共 5 场景通过，配置及 /R 重启标记保留。这不是正式产品签名包或 UAC/真机验收。
 - **存储与清理**：此前约 4.74 GiB 已清理、6.27 GiB Cargo 缓存集中保留；本轮移除无独有源码的旧工作树约 116 MiB。用户手动清理的四目录确认均不存在。本轮测试仅写 .build，含目录链接和一个占用文件的 3 个 runs 留待手动清理，路径在本机 reports/manual-cleanup.txt；未绕过权限或执行策略。
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
-- **0.1.8 历史 HPM 固件升级**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。
-- **0.1.8 历史 HPM SDK 真机**：hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
+- **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
+- **Skill 上下文与用户归档（2026-08-28）**：相关 Python 111 项通过；源用户 Skill、维护 Skill 和已安装用户 Skill 格式校验通过。待提交 Git 树实际生成 209 文件 ZIP，核对 18 份用户文档与相对链接，排除维护内容；临时 ZIP 已随测试清理。主 Skill 12640→3183 字符，元数据区 835→191 字符（不是 token 数）。本机重复 PDF/Presentations 与旧 browser-use 已可恢复停用，MKLink 只同步文档，运行时仍 0.1.8。未做模型触发率评测或发布验收。
 
 ## 架构决策
 
@@ -39,7 +39,7 @@
 - Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
 - Web 静态 JS/MJS/CSS MIME 不依赖系统注册表。通过 Vite assets/mime-v1 更换整个资源图的缓存 URL，避免只改 HTML 遗漏延迟加载；保留 HTML no-store 和哈希资源 immutable。缓存代号只在响应语义需作废旧缓存时变更，必须重建并提交 gui/dist。
-- 普通用户 Skill 只发布运行时白名单；维护者项目记忆、测试、维护 Skill、固件和构建产物不进入归档，更新时删除旧版遗留内容。
+- 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。
 - 默认不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存；本轮维护者明确例外授权将本地 HPMLink_V4.3.8.uf2 升级包及 V4.3.7 替换提交到开发分支，434bf79 已完成；不代表固件通道发布。
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自定义波特率采用数字输入＋常用候选，不新增后端接口；接受正安全整数，非法值不得启动串口；实际支持速率仍由驱动/设备决定。
@@ -49,7 +49,7 @@
 
 - **probe**：维护机可使用 V2/V3/V4；交接不记录端口号或完整探针标识。
 - **target**：实际 STM32F103RE 可用于固件编译、下载和调试闭环；工程目录中的 STM32F103RC 为历史命名。
-- **permission**：本轮真实浏览器只验证生产静态资源、本地 API 和浏览器会话；可见 USB/虚拟串口但没有连接设备、采集、烧录、收发或 VCC 操作，也没有修改注册表或既有正式安装。
+- **permission**：本轮仅文档、Skill 和测试；没有连接设备、采集、烧录、串口收发、供电或注册表操作，也未改变正式应用安装。
 
 ## 下一动作
 
@@ -57,7 +57,7 @@
 2. 在具备目录符号链接权限且依赖安装可完成的环境补齐 Python 全量门禁；不要静默跳过失败项。
 3. 接入可用 USB 串口后完成自定义波特率打开/关闭及必要收发真机验收；驱动不支持的速率应保留实际错误。
 4. 用户可按本机 .build/reports/manual-cleanup.txt 清理本轮 3 个保留目录；不跟随链接删除外部目标。
-5. 继续用户 Skill 精简与角色隔离：短描述、操作路由、关键安全边界；移出安装和 GUI 参考中的维护构建流程，检查发布包和已安装 Skill 的上下文边界。
+5. 新会话检查精简后的 Skill 发现/触发体验；本机去重配置与恢复记录不入仓库。维护者继续在 0.1.9 分支逐问题验证提交推送，正式发布前仍需完整门禁和授权。
 
 ## 已知限制
 

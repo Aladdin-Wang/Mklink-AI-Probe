@@ -332,6 +332,11 @@ def test_desktop_installer_uses_its_per_machine_default(updater, monkeypatch, tm
 
 def test_skill_instructions_require_proactive_check_and_user_approval():
     text = (SCRIPT_PATH.parents[1] / "SKILL.md").read_text(encoding="utf-8")
+    install = (SCRIPT_PATH.parents[1] / "references" / "install.md").read_text(
+        encoding="utf-8"
+    )
     assert "skill_update.py check --json" in text
-    assert "install --yes --json" in text
     assert "只有用户明确同意后" in text
+    assert "(references/install.md)" in text
+    assert "install --yes --json" in install
+    assert install.index("只有用户明确同意后") < install.index("install --yes --json")

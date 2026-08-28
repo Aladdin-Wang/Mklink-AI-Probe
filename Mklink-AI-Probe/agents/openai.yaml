@@ -1,7 +1,7 @@
 interface:
-  display_name: "Mklink AI Probe"
-  short_description: "Flash, RTT/VOFA, memory dump/write, serial, and Modbus debugging."
-  default_prompt: "Use $mklink-ai-probe first for target symbols, variables, memory, registers, HardFault, RTT/VOFA, and firmware workflows. Default AXF/ELF parsing to bundled pyelftools; use pyOCD for read-only fallback only after MKLink reports a concrete read failure."
+  display_name: "MKLink AI Probe"
+  short_description: "Use MKLink for flashing, debugging, serial, and GUI tasks."
+  default_prompt: "Use $mklink-ai-probe for this device task; read only the relevant operation reference."
 
 policy:
   allow_implicit_invocation: true
