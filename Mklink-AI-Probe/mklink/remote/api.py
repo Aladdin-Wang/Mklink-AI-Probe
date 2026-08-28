@@ -3158,6 +3158,20 @@ def create_app(
     if _gui_dist.is_dir():
         import mimetypes
 
+        # Windows registry MIME overrides must not stop ES modules or CSS loading.
+        _gui_mime_types = {
+            ".js": "application/javascript",
+            ".mjs": "application/javascript",
+            ".css": "text/css",
+        }
+
+        def _gui_media_type(path: _Path) -> str:
+            return (
+                _gui_mime_types.get(path.suffix.lower())
+                or mimetypes.guess_type(str(path))[0]
+                or "application/octet-stream"
+            )
+
         _app_shell_headers = {
             "Cache-Control": "no-store, max-age=0",
             "Pragma": "no-cache",
@@ -3181,10 +3195,9 @@ def create_app(
         async def serve_assets(file_path: str):
             f = _gui_dist / "assets" / file_path
             if f.is_file():
-                ct, _ = mimetypes.guess_type(str(f))
                 return FileResponse(
                     f,
-                    media_type=ct or "application/octet-stream",
+                    media_type=_gui_media_type(f),
                     headers=_asset_headers,
                 )
             from fastapi.responses import JSONResponse
@@ -3194,10 +3207,9 @@ def create_app(
         async def serve_spa(full_path: str):
             candidate = _gui_dist / full_path
             if full_path and candidate.is_file():
-                ct, _ = mimetypes.guess_type(str(candidate))
                 return FileResponse(
                     candidate,
-                    media_type=ct or "application/octet-stream",
+                    media_type=_gui_media_type(candidate),
                     headers=_static_headers,
                 )
             return FileResponse(

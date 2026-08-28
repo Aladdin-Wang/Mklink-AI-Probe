@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from mklink.dwarf_parser import DwarfArray, DwarfInfo, DwarfMember, DwarfStruct, DwarfVariable
@@ -962,3 +963,59 @@ def test_web_app_shell_is_not_cached_but_hashed_assets_are_immutable():
     assert fallback.headers["cache-control"] == "no-store, max-age=0"
     assert asset.status_code == 200
     assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.parametrize("prefix", ["assets/mime-v1", "public"])
+@pytest.mark.parametrize("suffix, expected", [
+    (".js", "application/javascript"),
+    (".mjs", "application/javascript"),
+    (".JS", "application/javascript"),
+    (".css", "text/css"),
+])
+def test_web_assets_ignore_unsafe_system_mime(tmp_path, monkeypatch, prefix, suffix, expected):
+    import mimetypes
+    import mklink.remote.api as api
+
+    dist = tmp_path / "gui" / "dist"
+    asset = dist / prefix / ("test" + suffix)
+    asset.parent.mkdir(parents=True)
+    asset.write_text("/* test asset */", encoding="utf-8")
+    monkeypatch.setattr(api, "__file__", str(tmp_path / "mklink" / "remote" / "api.py"))
+    original_guess = mimetypes.guess_type
+
+    def unsafe_guess(path, strict=True):
+        if Path(path).suffix.lower() in {".js", ".mjs", ".css"}:
+            return "text/plain", None
+        return original_guess(path, strict=strict)
+
+    monkeypatch.setattr(mimetypes, "guess_type", unsafe_guess)
+    with TestClient(create_app(auth_token=None, project_root=str(tmp_path))) as client:
+        response = client.get(f"/{prefix}/test{suffix}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].split(";")[0] == expected
+    assert response.text == "/* test asset */"
+
+
+def test_built_web_asset_graph_uses_fresh_cache_namespace():
+    import mklink.remote.api as api
+
+    dist = Path(api.__file__).resolve().parents[2] / "gui" / "dist"
+    # Include Vite's lazy preload tables and worker URLs, not only index.html.
+    paths = set(re.findall(r'(?:src|href)="(/assets/[^\"]+)"',
+                           (dist / "index.html").read_text(encoding="utf-8")))
+    for script in (dist / "assets").rglob("*.js"):
+        paths.update("/" + path.lstrip("/") for path in re.findall(
+            r'''["'`](/?assets/[^"'`\s]+)["'`]''', script.read_text(encoding="utf-8"),
+        ))
+
+    assert paths
+    assert any(path.endswith(".css") for path in paths)
+    with TestClient(create_app(auth_token=None, project_root=".")) as client:
+        for path in sorted(paths):
+            assert path.startswith("/assets/mime-v1/"), path
+            # Files must also exist at that path for Tauri's bundled asset server.
+            assert (dist / path.lstrip("/")).is_file(), path
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert response.headers["cache-control"] == "public, max-age=31536000, immutable"

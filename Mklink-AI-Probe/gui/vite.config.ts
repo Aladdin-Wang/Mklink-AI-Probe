@@ -26,6 +26,12 @@ if (!buildCommit) {
 export default defineConfig({
   cacheDir: process.env.MKLINK_VITE_CACHE_DIR || 'node_modules/.vite',
   plugins: [vue()],
+  build: {
+    // Retire cached incorrect MIME headers, including unchanged lazy chunks/CSS.
+    // Let Vite rewrite the entire graph; HTML-only URL rewriting misses preloads.
+    // Bump this epoch only when asset response semantics change, not each build.
+    assetsDir: 'assets/mime-v1',
+  },
   define: {
     __APP_VERSION__: JSON.stringify(tauriConfig.version || '0.0.0'),
     __APP_BUILD_COMMIT__: JSON.stringify(buildCommit),
