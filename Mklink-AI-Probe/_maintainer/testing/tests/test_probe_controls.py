@@ -2,13 +2,14 @@ import ctypes
 import os
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
 
 from mklink._types import DeviceState
 from mklink.bridge import MKLinkSerialBridge
-from mklink.device import Device
+from mklink.device import Device, DeviceError
 import mklink.local_resources as local_resources
 import mklink.mcp_server as mcp_server
 
@@ -270,3 +271,166 @@ def test_mcp_exposes_guarded_power_and_probe_reboot(monkeypatch):
         ("reboot",),
         ("reset-holder",),
     ]
+
+
+def test_device_batch_read_coalesces_only_touching_ranges():
+    device = _connected_device()
+    calls = []
+
+    def read(address, size):
+        calls.append((address, size))
+        return bytes((address + offset) & 0xFF for offset in range(size))
+
+    device.read_memory = read
+    result = device.read_memory_regions([
+        (0x20000004, 4),
+        (0x20000000, 4),
+        (0x20000100, 2),
+        (0x20000002, 2),
+    ])
+
+    assert calls == [(0x20000000, 8), (0x20000100, 2)]
+    assert result == [b"\x04\x05\x06\x07", b"\x00\x01\x02\x03", b"\x00\x01", b"\x02\x03"]
+
+
+def test_mcp_memory_limits_and_batch_surface_are_enforced_before_io(monkeypatch):
+    mcp = _Mcp()
+    calls = []
+    device = SimpleNamespace(
+        read_memory=lambda address, size: calls.append(("read", address, size)) or b"\x01" * size,
+        read_memory_regions=lambda pairs: calls.append(("batch", pairs)) or [b"\x02" * size for _, size in pairs],
+        write_memory=lambda address, data: calls.append(("write", address, data)),
+    )
+    monkeypatch.setattr(mcp_server, "_connected_device", lambda: device)
+    mcp_server._register_memory_tools(mcp)
+
+    with pytest.raises(ValueError, match="between 1 and 4096"):
+        mcp.tools["read_memory"](0x20000000, 4097)
+    with pytest.raises(ValueError, match="at most 16"):
+        mcp.tools["read_memory_regions"]([
+            {"address": 0x20000000 + index * 4, "size": 4}
+            for index in range(17)
+        ])
+    with pytest.raises(ValueError, match="total requested bytes"):
+        mcp.tools["read_memory_regions"]([
+            {"address": 0x20000000, "size": 4096},
+            {"address": 0x20001000, "size": 1},
+        ])
+    with pytest.raises(ValueError, match="between 1 and 4096"):
+        mcp.tools["write_memory"](0x20000000, "AA" * 4097)
+    assert calls == []
+
+    output = mcp.tools["read_memory_regions"]([
+        {"address": 0x20000000, "size": 4},
+        {"address": 0x20000004, "size": 4},
+    ])
+    assert calls == [("batch", [(0x20000000, 4), (0x20000004, 4)])]
+    assert output["region_count"] == 2
+    assert output["total_bytes"] == 8
+
+    calls.clear()
+    device.read_memory = lambda address, size: calls.append(("verify", address, size)) or b"\x00" * size
+    written = mcp.tools["write_memory"](0x20000100, "00000000")
+    assert calls == [
+        ("write", 0x20000100, b"\x00" * 4),
+        ("verify", 0x20000100, 4),
+    ]
+    assert written["verified"] is True
+
+    calls.clear()
+    with pytest.raises(DeviceError, match="write verification failed"):
+        mcp.tools["write_memory"](0x20000100, "AA")
+    assert calls == [
+        ("write", 0x20000100, b"\xAA"),
+        ("verify", 0x20000100, 1),
+    ]
+
+
+def test_mcp_reuses_matching_connection_and_reports_limits(monkeypatch):
+    mcp = _Mcp()
+    device = SimpleNamespace(
+        connected=True,
+        port="COM8",
+        idcode=0x6BA02477,
+        mcu_name="STM32H743",
+        _dwarf_info=object(),
+        axf_status={"elf_backend": "builtin"},
+    )
+    kwargs = {
+        "port": "COM8", "axf": "app.axf", "mcu": None,
+        "project_root": ".", "elf_backend": None,
+    }
+    monkeypatch.setitem(mcp_server._holder, "device", device)
+    monkeypatch.setitem(mcp_server._holder, "kwargs", kwargs)
+    mcp_server._register_connection_tools(mcp)
+
+    result = mcp.tools["connect"](port="COM8", axf="app.axf")
+
+    assert result["reused"] is True
+    assert result["limits"]["direct_read_max_bytes"] == 4096
+    assert result["limits"]["batch_read_max_regions"] == 16
+
+
+def test_mcp_capture_duration_and_flush_limits(monkeypatch):
+    rtt_mcp = _Mcp()
+    systemview_mcp = _Mcp()
+    flush_mcp = _Mcp()
+    calls = []
+    device = SimpleNamespace(
+        rtt_read=lambda duration: calls.append(("rtt", duration)) or "",
+        rtt_start=lambda *args, **kwargs: calls.append(("rtt-start", args, kwargs)) or {},
+        systemview_read=lambda duration: calls.append(("systemview", duration)) or {},
+        systemview_start=lambda *args, **kwargs: calls.append(("systemview-start", args, kwargs)) or {},
+        _bridge=SimpleNamespace(send_command=lambda *args, **kwargs: calls.append(("flush", args))),
+    )
+    monkeypatch.setattr(mcp_server, "_connected_device", lambda: device)
+    mcp_server._register_rtt_tools(rtt_mcp)
+    mcp_server._register_systemview_tools(systemview_mcp)
+    mcp_server._register_flush_tools(flush_mcp)
+
+    with pytest.raises(ValueError, match="at most 30 seconds"):
+        rtt_mcp.tools["rtt_read"](30.1)
+    with pytest.raises(ValueError, match="channel must be between 0 and 15"):
+        rtt_mcp.tools["rtt_start"](channel=16)
+    with pytest.raises(ValueError, match="search_size must be between"):
+        rtt_mcp.tools["rtt_start"](search_size=65537)
+    with pytest.raises(ValueError, match="channel must be between 0 and 15"):
+        systemview_mcp.tools["systemview_start"](channel=-1)
+    with pytest.raises(ValueError, match="at most 8 regions"):
+        flush_mcp.tools["flush_memory"]([
+            {"address": 0x20000000 + index, "data_hex": "00"}
+            for index in range(9)
+        ])
+    with pytest.raises(ValueError, match="must not exceed 16300"):
+        flush_mcp.tools["flush_memory"]([
+            {"address": 0x20000000, "data_hex": "00" * 16300},
+            {"address": 0x20004000, "data_hex": "01"},
+        ])
+    assert calls == []
+
+    assert rtt_mcp.tools["rtt_read"](0.1) == {"output": ""}
+    assert systemview_mcp.tools["systemview_read"](0.1) == {}
+    assert calls == [("rtt", 0.1), ("systemview", 0.1)]
+
+
+def test_mcp_rejects_parallel_probe_operations_without_queueing():
+    entered = threading.Event()
+    release = threading.Event()
+
+    @mcp_server._exclusive_hardware_tool
+    def operation(value):
+        if value == "hold":
+            entered.set()
+            assert release.wait(2)
+        return value
+
+    worker = threading.Thread(target=operation, args=("hold",))
+    worker.start()
+    assert entered.wait(1)
+    try:
+        with pytest.raises(RuntimeError, match="Do not issue parallel calls"):
+            operation("parallel")
+    finally:
+        release.set()
+        worker.join(timeout=2)
+    assert not worker.is_alive()

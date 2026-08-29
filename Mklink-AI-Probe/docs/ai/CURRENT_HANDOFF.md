@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-29T14:23:00+08:00`
+- 更新时间：`2026-08-29T14:50:05+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`2a5548a（SuperWatch 连续时间轴修复提交前基线；最终提交号以 Git 为准）`
-- 远端 HEAD：`已 fetch 核对 origin/codex/v0.1.9-development 与本地基线一致；未改 master 或发布指针。`
-- 工作树：0.1.9 预发布分支逐问题提交推送；SuperWatch 使用下载器样本时间戳修复 Web GUI 波形断续，随后继续 MCP/AI 边界优化。
-- 当前任务：SuperWatch 采集复用单连接，dump_memory 模式保留下载器样本时间戳；WebSocket 二进制帧携带逐样本时间，Worker 按设备时间绘图并兼容旧帧，避免主机批处理抖动造成伪间断。
-- 状态：`superwatch-device-timestamps-verified`
+- HEAD：`4a6f103（本次 MCP/AI 安全边界提交前基线；最终提交号以 Git 为准）`
+- 远端 HEAD：`提交前 origin/codex/v0.1.9-development 与本地 4a6f103 一致；本次验证后立即推送，不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支持续维护；本次收敛 MCP/CLI/Skill 的单探针调用边界、批量读取性能和 RAM 写入回读验证。
+- 当前任务：V4 下载器的 AI/MCP/CLI 边界已实测：Pika 文本 dump 安全上限 15 region；MCP 限制大小/时长并拒绝同探针并行；连续变量批读合并；CLI/MCP RAM 写入回读验证。
+- 状态：`mcp-ai-boundaries-and-zero-write-verified`
 
 ## 里程碑
 
@@ -29,12 +29,11 @@
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
 - **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
-- **用户 Skill 工作目录约束（2026-08-28）**：相关 Python 113 项通过；源码用户 Skill、维护 Skill、已安装用户 Skill 格式校验通过。待提交树生成 210 文件 ZIP，19 份用户文档及相对链接检查通过，不含维护文件。主入口 3557 字符、元数据区仍 191 字符；仅增加按需存储约束，同步 5 份本机文档，运行时未升级。未修改工具默认日志实现，不宣称所有进程输出已迁移。
+- **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
 - **SuperWatch 连续时间轴（2026-08-29）**：相关 Python 69 项通过；前端 Worker 70 项通过；GUI 生产构建通过并更新 gui/dist。自动化覆盖单连接复用、读取耗时补偿、dump_memory 流生命周期、设备时间跨主机批处理抖动保留、乱序拒绝与旧协议兼容。此前已在 STM32H743 真机和 Web GUI 完成复现及人工复测；本次提交前未重复打开浏览器。
 
 ## 架构决策
 
-- 维护者要求当前预发布分支持续维护，每个修复验证后单独提交并及时推送 origin，不新建单问题分支。AGENTS.md 是唯一维护规则，维护 Skill 按需显式使用；已要求修复的范围内不重复审批，重大范围/兼容性/破坏性变更仍询问。master 合并、签名、标签、发布、更新指针、Gitee 仍需授权。
 - USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。
 - Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
@@ -44,25 +43,25 @@
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自动升级取消自定义强制卸载，成功写入后迁移匹配的旧快捷方式，不自动删除旧目录；测试限 E 盘隔离身份，不改动当前正式安装。详见 docs/ai/windows-upgrade.md。
 - SuperWatch 波形时间轴以下载器 dump_memory 帧内样本时间为准；后端二进制协议用新 flags 携带逐样本 Float64 毫秒时间，前端继续接受旧 sample-major Float32 帧，避免破坏旧后端兼容。
+- AI/PC 对单只下载器只允许串行控制并复用连接；超时后只查一次状态，不循环重试。MCP direct read/write 4096B，batch read 最多16项/4096B，capture 最长30秒，flush 最多8项/16300B。dump_memory 固件帧容量虽为16 region，但 Pika 文本入口16组加 period 正好33参数并在V4.3.8实测卡死，因此 Skill/CLI/MCP安全上限固定15且与堆大小无关；流停止至少排空50ms并释放连接。
 
 ## 真机环境
 
-- **probe**：维护机可使用 V2/V3/V4；交接不记录端口号或完整探针标识。
-- **target**：实际 STM32F103RE 可用于固件编译、下载和调试闭环；工程目录中的 STM32F103RC 为历史命名。
-- **permission**：本轮仅文档、Skill 和测试；没有连接设备、采集、烧录、串口收发、供电或注册表操作，也未改变正式应用安装。
+- **probe**：本轮使用 V4 下载器，固件响应 V4.3.8；交接不记录完整硬件标识。
+- **target**：STM32H743 测试工程；链接确认 0x24040100 位于未占用非缓存 RAM，写入前备份、测试后原值恢复。
+- **permission**：执行了有限 RAM 读写与 dump/普通读取性能测试；未烧录固件、未供电切换、未修改下载器固件源码。
 
 ## 下一动作
 
 1. 发布前另行授权实际签名候选包，完成 0.1.7/0.1.8→0.1.9 的下载、签名、UAC、安装、快捷方式、后端健康和退出闭环；不能用夹具测试代替。
 2. 在具备目录符号链接权限且依赖安装可完成的环境补齐 Python 全量门禁；不要静默跳过失败项。
 3. 接入可用 USB 串口后完成自定义波特率打开/关闭及必要收发真机验收；驱动不支持的速率应保留实际错误。
-4. 用户可按本机 .build/reports/manual-cleanup.txt 清理本轮 3 个保留目录；不跟随链接删除外部目标。
-5. 新会话检查精简后的 Skill 发现/触发体验；本机去重配置与恢复记录不入仓库。维护者继续在 0.1.9 分支逐问题验证提交推送，正式发布前仍需完整门禁和授权。
+4. 在后续真实 AI 使用中继续观察 15-region、30秒采集和单探针串行限制；若固件新增非 varargs dump 配置入口，再单独复测并调整上限。
 
 ## 已知限制
 
-- 端口名称修改依赖管理员权限和 Windows 设备节点；更换另一只下载器后会产生新的设备实例，需要再次执行手动修改。
-- 安装时未连接下载器只能完成命名初始化，不能提前修改未来尚不存在的设备实例。
+- V4.3.8 的 Pika 文本 API 在 dump_memory 的 33 参数边界会失去响应；在固件提供非 varargs 配置入口或提高并校验参数容量前，上位机最多提交 15 个 region。
+- 流停止后的 10ms 排空不足；主机默认至少 50ms，并关闭/重连后再发普通命令。固件内部16-region帧能力不代表文本入口可安全提交16组。
 - 当前 Windows 账户没有目录 symlink 权限，少量 Python 安全测试在该环境会失败；这不是本版本功能回归。
 - HPM SDK 示例的 SystemView 高频 ECall 事件会导致目标缓冲溢出，当前不能提供可信任务 CPU 占用。
 - 串口 TX/RX、RS485 和部分 VCC 场景没有稳定的自动化真机回环条件，不能用单元测试替代硬件验证。

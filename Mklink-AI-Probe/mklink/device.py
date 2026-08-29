@@ -1536,6 +1536,49 @@ class Device:
         raw = self._bridge.send_command(cmd, timeout=10.0)
         return parse_read_ram_response(raw)
 
+    def read_memory_regions(self, regions: list[tuple[int, int]]) -> list[bytes]:
+        """Read several regions while coalescing contiguous target ranges.
+
+        Results preserve input order. Only overlapping or exactly adjacent
+        ranges are merged, so peripheral gaps are never read implicitly.
+        This makes the common 16-scalar snapshot one REPL/SWD transaction when
+        the variables are laid out contiguously instead of sixteen round trips.
+        """
+        self._require_connected()
+        if not regions:
+            return []
+        normalized: list[tuple[int, int, int]] = []
+        for index, pair in enumerate(regions):
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                raise ValueError(f"regions[{index}] must be an (address, size) pair")
+            address, size = pair
+            if type(address) is not int or not 0 <= address <= 0xFFFFFFFF:
+                raise ValueError(f"regions[{index}] address is outside 32-bit range")
+            if type(size) is not int or size <= 0 or address + size > 0x100000000:
+                raise ValueError(f"regions[{index}] size is invalid")
+            normalized.append((address, address + size, index))
+
+        groups: list[dict[str, Any]] = []
+        for start, end, index in sorted(normalized):
+            if groups and start <= groups[-1]["end"]:
+                groups[-1]["end"] = max(groups[-1]["end"], end)
+                groups[-1]["members"].append((start, end, index))
+            else:
+                groups.append({"start": start, "end": end, "members": [(start, end, index)]})
+
+        results: list[bytes | None] = [None] * len(regions)
+        for group in groups:
+            start = group["start"]
+            payload = self.read_memory(start, group["end"] - start)
+            expected = group["end"] - start
+            if len(payload) != expected:
+                raise DeviceError(
+                    f"memory read returned {len(payload)} bytes, expected {expected}"
+                )
+            for member_start, member_end, index in group["members"]:
+                results[index] = payload[member_start - start:member_end - start]
+        return [value if value is not None else b"" for value in results]
+
     def write_memory(self, address: int, data: bytes) -> None:
         self._require_connected()
         if not data:

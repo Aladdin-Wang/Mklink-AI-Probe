@@ -9,6 +9,9 @@
 
 #### `python -m mklink read-ram --addr <地址> [--size <字节数>] [--port COM6] [--save <文件名>]`
 读取目标芯片 RAM 数据，输出十六进制 dump。RAM 读取不需要 FLM 算法。
+`--size` 限制为 **1..4096 字节**；更大范围改用 `dump-memory`，不要把大段文本
+hexdump 返回给 AI。MCP 同样限制 `read_memory` 为 4096B；同时读取多个变量时用
+`read_memory_regions`（最多 16 项、总计 4096B），连续或重叠区域会自动合并为一次读取。
 
 ```
 python -m mklink read-ram --addr 0x20000000 --size 256
@@ -33,7 +36,9 @@ python -m mklink read-reg --addr 0xE000ED28 --width 32
 ### 写入 RAM
 
 #### `python -m mklink write-ram --addr <地址> <字节1> <字节2> ... [--port COM6]`
-写入数据到 RAM 并自动回读验证。RAM 写入不需要 FLM 算法。
+写入数据到 RAM 并自动回读验证，单次最多 4096B。CLI 使用 `Device.write_memory` 的
+`flush_memory` 分块/重复字节折叠路径，不再直接依赖旧 `cmd.write_ram` 的命令回显。
+RAM 写入不需要 FLM 算法。
 
 ```
 python -m mklink write-ram --addr 0x20001000 0xDE 0xAD 0xBE 0xEF
@@ -51,7 +56,10 @@ cmd.write_ram(0x20001090, 0x22)
 # 两次共 ~95ms,无串行开销
 ```
 
-**参数数量限制**:实测 V4.3.1 固件在 N>16 个参数时 PikaScript 解析器异常(空响应 / NameError / 设备进入流模式)。`write_ram` 限制为 ≤16 字节单次写入。更大批量用 `flush-memory` 一次提交多地址,或 `dump_memory` 协议。
+直接调用旧固件 `cmd.write_ram` 时仍受 Pika 位置参数上限约束；CLI 已不走该入口。
+V4.3.8 在 STM32H743 上实测旧入口、bytes 字面量、重复字节折叠及 Device 路径均可完成
+`11 22 33 44 -> 00 00 00 00` 并回读。为防旧固件或偶发静默失败，自动化写入必须以回读
+一致作为成功条件，不能只看 `>>>` 或命令回显。
 
 **避免覆盖活跃内存区**:写入前先核对 `build/keil/List/rt-thread.map` 与 AXF 符号:
 - `0x20000000..0x200000DC`: `.mklink_res` (test fixture 控制块, magic 0x4D4B5245 "ERKM")
@@ -86,6 +94,11 @@ python -m mklink dump-memory 0x08000000:256 --frames 0 --duration 1 --save flash
 ```
 
 - `--save` 保存的是已解析出的 region payload，不是包含 magic/CRC 的原始协议帧。
+- **最多 15 个 region**。固件数据结构容量虽为 16，但 16 组 `(addr,size)` 加 period
+  正好占满 Pika 的 33 参数上限；V4.3.8 实测会使 REPL 失去响应。不得用 SDK 或串口
+  绕过。16 个常见连续变量应合并为一个区域；离散快照用 MCP `read_memory_regions`。
+- CLI 还限制 `--duration <= 300`、`--frames <= 100000`；AI 发起的单次采集进一步
+  限制为 **30 秒**，需要更长观察时分段并在每段后确认设备状态。
 - `total_size <= 2048` 走 OLD 帧；`total_size > 2048` 走 B1 分块帧，CLI 会等到 B1 最后一块后计为 1 个完整样本。
 - 单次 `cmd.dump_memory()` 总长度默认 **512 KiB**（固件 V4.3.3 实测整片 Flash 稳定，256 个 B1 块全 `flags=0x0000`）。**老固件**（pre-V4.3.3，BUG-5：>64 KiB 末块截尾 512B）请传 ≤32 KiB 的 `ADDR:SIZE` region 规避。
 - 如果没有解析到任何帧，CLI 会打印设备返回的可见文本，常见原因是固件未暴露 `cmd.dump_memory` 或设备仍处于异常流模式。
@@ -94,7 +107,8 @@ python -m mklink dump-memory 0x08000000:256 --frames 0 --duration 1 --save flash
 静默写 RAM,支持多地址多字节(内部调用 PikaScript `cmd.flush_memory()`)。与 `write-ram` 的关键区别:
 
 - **成功无 ACK** — 设备只回显命令 + `>>>`,不输出 hexdump 预览。
-- **适合与 `dump_memory` 并发** — 不会污染二进制数据流(`write_ram` 的 hexdump 预览会打断 DumpMemoryParser 的帧解析)。
+- **不得与流并发** — 虽然成功时没有 hexdump，仍必须先停止 dump/VOFA/RTT/SystemView、
+  释放连接，再在普通命令会话中写入。
 - **多字节 / 多地址** — 单次 PikaScript 调用提交多块写入,远比 `write-ram` 的循环高效。
 - **批写支持** — `--repeat N` + `--interval-ms MS` 实现周期写入(压力测试、抖动测试用)。
 
@@ -198,41 +212,17 @@ python -m mklink vofa <起始地址> <个数> --period <秒>
 - `<个数>`：连续读取的 float 数量（1~16）
 - `--period`：采样周期（秒），最小 1us（0.000001），设为 0 停止
 
-#### dump_memory / VOFA 流停止机制
+#### dump_memory 流停止与 AI 恢复边界
 
-`dump_memory(addr, size, period)` 和 `vofa.send(addr, type, period)` 的第 3 参数是**采样周期**(秒),**不是停止位**。`period=0` 不会停止流 — 它会立刻发一帧(或不延迟连续发)。
+当前 V4.3.8 中 `period>0` 持续采样，`period=0` 输出一个完整样本后回到 idle，
+`period=-1` 用于显式停止。主机停止后至少保留默认 **50 ms** 排空时间；V4 实测把
+等待缩到 10 ms 会残留二进制流并污染后续命令。不要快速 start/stop，也不要在同一
+下载器上并行发命令。
 
-正确的停止方式(V4.3.1 固件实测):
-
-```bash
-# 方式 1:RTTView.stop() — 通用流停止,推荐
-RTTView.stop()
-
-# 方式 2:vofa.send(0, 0) — VOFA 流专用,设置 period=0
-vofa.send(0x20000000, "uint8_t", 0)
-```
-
-| period 值 | 行为(实测) |
-|---|---|
-| 0 | 1 帧(单次 or 不延迟) — **不是停止** |
-| 1 | 1 帧(1 秒后才有下一帧) |
-| 0.001 | ~28 KB/秒(1ms 周期,接近物理上限) |
-| 0.5 | ~1 KB/秒(500ms 周期) |
-| 100 | 1 帧(100 秒后才有下一帧) |
-
-设备进入流模式后,普通 `cmd.read_ram` 会被 dump 帧污染(`wRamAddr`/`wCount` 文本混入响应)。恢复手段:
-
-```python
-# Python (mcp_bridge):
-import serial, time
-s = serial.Serial('COM5', 115200, exclusive=True)
-s.write(b'RTTView.stop()\n')
-time.sleep(0.3)
-s.read(8192)  # 清空缓冲
-s.write(b'vofa.send(0x20000000, "uint8_t", 0)\n')  # 双重保险
-time.sleep(0.3)
-s.read(8192)
-```
+结束 dump/VOFA/RTT/SystemView 后关闭当前连接；普通 `read_ram` 等命令重新连接后再发。
+若工具超时，只调用一次 `device_status`：仍连接则先 `disconnect`，REPL 可响应时可用
+`reboot_probe`；仍无提示符就停止自动重试并请用户拔插 USB。严禁 AI 循环发送 stop、
+原命令或 `reboot()`，这会把状态进一步搅乱。
 
 ```
 # 从 0x20000030 开始，连续读取 5 个 float，周期 10us

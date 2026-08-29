@@ -1435,6 +1435,19 @@ def _cli_read_ram(port: str | None, addr: str, size: int, save: str | None):
     """读取目标芯片 RAM 数据。"""
     from mklink.bridge import MKLinkSerialBridge
 
+    try:
+        address = int(addr, 0)
+    except (TypeError, ValueError):
+        print("[FAIL] --addr must be a 32-bit integer such as 0x20000000")
+        return
+    if not 0 <= address <= 0xFFFFFFFF or not 0 < size <= 4096:
+        print("[FAIL] read-ram requires a 32-bit address and --size 1..4096")
+        print("       use dump-memory for larger reads")
+        return
+    if address + size > 0x100000000:
+        print("[FAIL] address + size exceeds the 32-bit address space")
+        return
+
     port = _resolve_port(port)
     print(f"[*] 连接 {port} ...")
     bridge = MKLinkSerialBridge(port)
@@ -1620,37 +1633,47 @@ def _cli_read_reg(
 
 def _cli_write_ram(port: str | None, addr: str, data_bytes: list[str]):
     """写入数据到目标芯片 RAM 并回读验证。"""
-    from mklink.bridge import MKLinkSerialBridge
-
     if not data_bytes:
         print("[FAIL] 未指定写入数据，用法: python -m mklink write-ram --addr 0x20001000 0xDE 0xAD 0xBE 0xEF")
         return
 
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
+    try:
+        address = int(addr, 0)
+        payload = bytes(int(value, 0) for value in data_bytes)
+    except (ValueError, OverflowError):
+        print("[FAIL] 地址或数据格式无效；地址和每个字节应使用 0x 前缀，字节范围为 0x00..0xFF")
+        return
+    if not 0 <= address <= 0xFFFFFFFF or address + len(payload) > 0x100000000:
+        print("[FAIL] 写入范围超出 32 位地址空间")
+        return
+    if len(payload) > 4096:
+        print("[FAIL] write-ram 单次最多写入 4096 字节，请分块写入")
         return
 
-    try:
-        _init_target_bridge(bridge)
-        byte_args = ", ".join(data_bytes)
-        write_cmd = f'cmd.write_ram({addr}, {byte_args})'
-        print(f"[*] 写入: {write_cmd}")
-        resp = bridge.send_command(write_cmd, timeout=10.0)
-        print(resp.strip())
+    port = _resolve_port(port)
+    print(f"[*] 连接 {port} ...")
+    from mklink.device import connect
 
-        # 回读验证
-        n = len(data_bytes)
-        read_cmd = f'cmd.read_ram({addr}, {n})'
-        print(f"\n[*] 回读验证: {read_cmd}")
-        resp = bridge.send_command(read_cmd, timeout=10.0)
-        print(resp.strip())
+    device = None
+    try:
+        device = connect(port=port, project_root=".")
+        print(f"[*] 写入 0x{address:08X}，共 {len(payload)} 字节")
+        # 统一使用 Device 的 flush_memory 分块/折叠路径。旧固件的
+        # cmd.write_ram 逐参数路径曾出现静默不生效，不能只依赖命令回显。
+        device.write_memory(address, payload)
+        actual = device.read_memory(address, len(payload))
+        if actual != payload:
+            print(
+                f"[FAIL] 回读不一致：期望 {payload.hex(' ')}，"
+                f"实际 {actual.hex(' ') if actual else '<无可解析数据>'}"
+            )
+            return
+        print(f"[OK] 回读验证通过: {actual.hex(' ')}")
     except Exception as e:
         print(f"[FAIL] {e}")
     finally:
-        bridge.close()
+        if device is not None:
+            device.close()
 
 
 # ---------------------------------------------------------------------------
@@ -1786,7 +1809,7 @@ def _cli_flush_memory(
 
     与 write-ram 的关键区别：
       - 成功时设备不输出 hexdump 预览（仅 echo 命令 + >>>）
-      - 适合与 dump_memory 并发流式采样时使用，不会污染数据流
+      - 成功时不输出 hexdump；仍须在 dump_memory 停止并释放连接后再调用
       - 多地址一次提交，单笔 MCU-RTT 往返完成多块写入
 
     Args:
@@ -1983,7 +2006,7 @@ def _cli_dump_memory(
     from mklink.bridge import MKLinkSerialBridge
     from mklink.dump_memory import (
         DumpMemoryParser,
-        MAX_REGIONS,
+        MAX_SAFE_REPL_REGIONS,
         build_dump_mem_command,
     )
 
@@ -1991,11 +2014,11 @@ def _cli_dump_memory(
         print("[FAIL] no regions specified")
         print("      usage: python -m mklink dump-memory 0x20000000:16")
         return
-    if frames < 0:
-        print("[FAIL] --frames must be >= 0")
+    if frames < 0 or frames > 100000:
+        print("[FAIL] --frames must be between 0 and 100000")
         return
-    if duration < 0:
-        print("[FAIL] --duration must be >= 0")
+    if duration < 0 or duration > 300:
+        print("[FAIL] --duration must be between 0 and 300 seconds")
         return
     if frames == 0 and duration == 0:
         print("[FAIL] --frames 0 requires --duration > 0")
@@ -2003,8 +2026,11 @@ def _cli_dump_memory(
 
     try:
         region_pairs = [_parse_dump_region(raw) for raw in regions]
-        if len(region_pairs) > MAX_REGIONS:
-            raise ValueError(f"too many regions: {len(region_pairs)} > {MAX_REGIONS}")
+        if len(region_pairs) > MAX_SAFE_REPL_REGIONS:
+            raise ValueError(
+                f"too many regions for the safe Pika API boundary: "
+                f"{len(region_pairs)} > {MAX_SAFE_REPL_REGIONS}"
+            )
         cmd = build_dump_mem_command(region_pairs, period)
     except ValueError as exc:
         print(f"[FAIL] invalid dump-memory request: {exc}")
@@ -4007,7 +4033,7 @@ def main():
     dump_memory_parser.add_argument(
         "regions",
         nargs="+",
-        help="内存区域，格式 ADDR:SIZE；可重复，例如 0x20000000:16 0x20001000:4",
+        help="内存区域 ADDR:SIZE；最多 15 组，例如 0x20000000:16 0x20001000:4",
     )
     dump_memory_parser.add_argument(
         "--period",
@@ -4033,7 +4059,7 @@ def main():
     flush_memory_parser = subparsers.add_parser(
         "flush-memory",
         aliases=["flush-memroy"],  # 旧拼写向后兼容（但用法是新的）
-        help="静默写 RAM（cmd.flush_memory，多地址多字节；适合与 dump_memory 并发）",
+        help="静默写 RAM（cmd.flush_memory，多地址多字节；不得与流式采集并发）",
     )
     flush_memory_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     flush_memory_parser.add_argument(

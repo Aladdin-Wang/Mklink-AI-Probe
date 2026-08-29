@@ -9,6 +9,8 @@ from mklink.dump_memory import (
     DumpMemoryReadError,
     FLAG_SAMPLE_DROPPED,
     MAGIC,
+    MAX_SAFE_REPL_REGIONS,
+    build_dump_mem_command,
     read_dump_memory_range_once,
     read_dump_memory_once,
 )
@@ -54,6 +56,75 @@ class FakeBridge:
     def _exit_stream(self):
         self.calls.append(("exit",))
         return ""
+
+
+def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
+    pairs = [(0x20000000 + index * 4, 4) for index in range(MAX_SAFE_REPL_REGIONS)]
+    assert build_dump_mem_command(pairs, 0.001).startswith("cmd.dump_memory(")
+
+    with pytest.raises(ValueError, match="Pika varargs boundary is unsafe"):
+        build_dump_mem_command(pairs + [(0x20000100, 4)], 0.001)
+    with pytest.raises(ValueError, match="positive integer"):
+        build_dump_mem_command([(0x20000000, -1)], 0.001)
+    with pytest.raises(ValueError, match="32-bit address space"):
+        build_dump_mem_command([(0xFFFFFFFC, 8)], 0.001)
+    with pytest.raises(ValueError, match="positive finite"):
+        build_dump_mem_command([(0x20000000, 4)], float("inf"))
+
+
+def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch, capsys):
+    from mklink import cli
+
+    def unexpected_port(_port):
+        raise AssertionError("unsafe request reached port discovery")
+
+    monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
+    cli._cli_dump_memory(
+        None,
+        [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
+    )
+    cli._cli_read_ram(None, "0x20000000", 4097, None)
+
+    output = capsys.readouterr().out
+    assert "safe Pika API boundary" in output
+    assert "use dump-memory for larger reads" in output
+
+
+def test_cli_write_ram_uses_device_path_and_verifies_zero_payload(monkeypatch, capsys):
+    from types import SimpleNamespace
+    from mklink import cli, device
+
+    writes = []
+    fake = SimpleNamespace(
+        write_memory=lambda address, data: writes.append((address, data)),
+        read_memory=lambda address, size: b"\x00" * size,
+        close=lambda: writes.append(("close",)),
+    )
+    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
+    monkeypatch.setattr(device, "connect", lambda **kwargs: fake)
+
+    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4)
+
+    assert writes == [(0x24040100, b"\x00" * 4), ("close",)]
+    assert "[OK] 回读验证通过" in capsys.readouterr().out
+
+
+def test_cli_write_ram_rejects_invalid_or_oversize_data_before_port_access(monkeypatch, capsys):
+    from mklink import cli
+
+    monkeypatch.setattr(
+        cli,
+        "_resolve_port",
+        lambda _port: (_ for _ in ()).throw(AssertionError("port discovery reached")),
+    )
+    cli._cli_write_ram(None, "0x24040100", ["0x100"])
+    cli._cli_write_ram(None, "0xFFFFFFFE", ["0x00"] * 4)
+    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4097)
+
+    output = capsys.readouterr().out
+    assert "格式无效" in output
+    assert "超出 32 位地址空间" in output
+    assert "单次最多写入 4096 字节" in output
 
 
 def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkeypatch):

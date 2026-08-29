@@ -67,6 +67,14 @@ MIN_B1_FRAME_LEN = B1_HEADER_LEN + 3 + B1_TRAILER_LEN  # 1 region(3) + 4 = 42
 
 MAX_FRAME_LEN = 65535
 MAX_REGIONS = 16
+# V4 firmware advertises 16 regions, but the text API needs 33 positional
+# arguments at that point (16 address/size pairs plus period), exactly equal to
+# the current PIKA_ARG_NUM_MAX. Field testing on V4.3.8 showed this exact
+# parameter-count boundary can wedge the REPL; it is independent of free heap.
+# Keep one argument-pair of headroom until firmware exposes a non-varargs/binary
+# configuration entry point or raises and validates its VM argument capacity.
+MAX_SAFE_REPL_REGIONS = 15
+MAX_REPL_COMMAND_BYTES = 511  # PIKA_LINE_BUFF_SIZE is 512 including NUL.
 EXPECTED_BLOCK_SIZE = 2048  # firmware-fixed per spec
 
 # Maximum total bytes per dump_memory() call.
@@ -350,6 +358,29 @@ def build_dump_mem_command(
                     Pass smaller ADDR:SIZE regions to split large requests at the host level
                     (e.g. on older firmware that truncates >64 KiB dumps — BUG-5).
     """
+    import math
+
+    if not region_pairs:
+        raise ValueError("dump-memory requires at least one region")
+    if len(region_pairs) > MAX_SAFE_REPL_REGIONS:
+        raise ValueError(
+            f"dump-memory text API safely supports at most "
+            f"{MAX_SAFE_REPL_REGIONS} regions; firmware protocol capacity is "
+            f"{MAX_REGIONS}, but the 16-region Pika varargs boundary is unsafe"
+        )
+    if not math.isfinite(float(period)) or float(period) < -1:
+        raise ValueError("dump-memory period must be -1, 0, or a positive finite value")
+    for index, pair in enumerate(region_pairs):
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise ValueError(f"region_pairs[{index}] must be an (address, size) pair")
+        addr, size = pair
+        if type(addr) is not int or not 0 <= addr <= 0xFFFFFFFF:
+            raise ValueError(f"region_pairs[{index}] address is outside 32-bit range")
+        if type(size) is not int or size <= 0:
+            raise ValueError(f"region_pairs[{index}] size must be a positive integer")
+        if addr + size > 0x100000000:
+            raise ValueError(f"region_pairs[{index}] exceeds the 32-bit address space")
+
     total_size = sum(size for _, size in region_pairs)
     if total_size > MAX_TOTAL_DATA_SIZE:
         raise ValueError(
@@ -367,7 +398,13 @@ def build_dump_mem_command(
         if '.' not in s:
             s += ".0"
         parts.append(s)
-    return f"cmd.dump_memory({', '.join(parts)})"
+    command = f"cmd.dump_memory({', '.join(parts)})"
+    if len(command.encode("utf-8")) > MAX_REPL_COMMAND_BYTES:
+        raise ValueError(
+            f"dump-memory command is longer than the safe "
+            f"{MAX_REPL_COMMAND_BYTES}-byte Pika REPL line"
+        )
+    return command
 
 
 def read_dump_memory_once(
@@ -549,8 +586,11 @@ class DumpMemoryStreamSession:
     ):
         if not region_pairs:
             raise ValueError("dump-memory requires at least one region")
-        if len(region_pairs) > MAX_REGIONS:
-            raise ValueError(f"too many regions: {len(region_pairs)} > {MAX_REGIONS}")
+        if len(region_pairs) > MAX_SAFE_REPL_REGIONS:
+            raise ValueError(
+                f"too many regions for the safe text API: {len(region_pairs)} > "
+                f"{MAX_SAFE_REPL_REGIONS}"
+            )
         if period <= 0:
             raise ValueError("streaming period must be greater than zero")
         self.bridge = bridge
