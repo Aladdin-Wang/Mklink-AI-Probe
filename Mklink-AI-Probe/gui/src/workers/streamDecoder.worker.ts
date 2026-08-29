@@ -1,7 +1,8 @@
 import {
   decodeFrame, RTT_RAW_UTF8_LINES, RTT_TERMINAL_UTF8, SERIAL_RX_BYTES, SERIAL_TX_BYTES,
   StreamType, SUPERWATCH_METADATA_JSON,
-  SUPERWATCH_SAMPLE_MAJOR_FLOAT32, WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
+  SUPERWATCH_SAMPLE_MAJOR_FLOAT32, SUPERWATCH_TIMESTAMPED_FLOAT32,
+  WAVEFORM_SAMPLE_MAJOR_FLOAT32, type StreamFrame,
 } from '../lib/stream/protocol'
 import { TypedRingBuffer } from '../lib/stream/typedRingBuffer'
 import {
@@ -525,32 +526,50 @@ export class StreamDecoder {
       this.post({ type: 'superwatch-metadata', version, channels })
       return
     }
-    if (decoded.flags !== SUPERWATCH_SAMPLE_MAJOR_FLOAT32 || this.superwatchMetadataVersion <= 0) {
+    const timestamped = decoded.flags === SUPERWATCH_TIMESTAMPED_FLOAT32
+    if ((!timestamped && decoded.flags !== SUPERWATCH_SAMPLE_MAJOR_FLOAT32) || this.superwatchMetadataVersion <= 0) {
       throw new RangeError('SuperWatch samples require current metadata and sample-major Float32')
     }
     const ring = this.ring as TypedRingBuffer
-    const expectedBytes = decoded.itemCount * ring.channelCount * Float32Array.BYTES_PER_ELEMENT
+    const timeBytes = timestamped ? decoded.itemCount * Float64Array.BYTES_PER_ELEMENT : 0
+    const expectedBytes = timeBytes + decoded.itemCount * ring.channelCount * Float32Array.BYTES_PER_ELEMENT
     if (decoded.itemCount <= 0 || decoded.payload.byteLength !== expectedBytes) {
       throw new RangeError('SuperWatch payload does not match metadata channel alignment')
     }
-    const values = new Float32Array(decoded.payload)
+    const valueBuffer = timestamped ? decoded.payload.slice(timeBytes) : decoded.payload
+    const values = new Float32Array(valueBuffer)
     for (let index = 0; index < values.length; index++) {
       if (!Number.isFinite(values[index])) throw new RangeError('SuperWatch samples must be finite')
     }
     const timestampMs = Number(decoded.timestampNs) / 1_000_000
     if (!Number.isFinite(timestampMs)) throw new RangeError('SuperWatch timestamp is outside numeric range')
-    const timing = this.buildMonotonicTimes(timestampMs, decoded.itemCount)
+    let timing: { times: Float64Array; lastTimestamp: number | null; spacing: number | null }
+    if (timestamped) {
+      const times = new Float64Array(decoded.payload.slice(0, timeBytes))
+      let previous = this.lastNumericTimestampMs ?? -Infinity
+      for (const time of times) {
+        if (!Number.isFinite(time) || time < 0 || time <= previous) {
+          throw new RangeError('SuperWatch device sample times must increase strictly')
+        }
+        previous = time
+      }
+      timing = { times, lastTimestamp: previous, spacing: null }
+    } else {
+      // Compatibility with older backends that do not carry sample timestamps.
+      timing = this.buildMonotonicTimes(timestampMs, decoded.itemCount)
+    }
     ring.appendBatch(timing.times, values)
     this.lastNumericTimestampMs = timing.lastTimestamp
     this.lastNumericSpacingMs = timing.spacing
     this.commitSequence(decoded.sequence)
     const output: Extract<WorkerOutput, { type: 'waveform-batch' }> = {
       type: 'waveform-batch', sequence: decoded.sequence,
-      timestampNs: decoded.timestampNs, itemCount: decoded.itemCount,
+      timestampNs: timestamped ? BigInt(Math.round(timing.lastTimestamp! * 1_000_000)) : decoded.timestampNs,
+      itemCount: decoded.itemCount,
       channelCount: ring.channelCount, layout: 'sample-major-float32',
       bufferStartMs: ring.length ? ring.timeAt(0) : null,
       bufferEndMs: ring.length ? ring.timeAt(ring.length - 1) : null,
-      values: decoded.payload, times: timing.times.buffer as ArrayBuffer,
+      values: valueBuffer, times: timing.times.buffer as ArrayBuffer,
     }
     this.post(output, [output.values, output.times])
   }

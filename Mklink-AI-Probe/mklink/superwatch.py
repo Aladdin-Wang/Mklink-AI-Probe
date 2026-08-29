@@ -186,19 +186,104 @@ def poll_blocks(
     duration: float = 0.0,
     period: float = 0.001,
     read_func=read_memory,
-    clock=time.time,
+    clock=time.monotonic,
     sleep_func=time.sleep,
 ) -> list[dict]:
     points: list[dict] = []
     origin_us: int | None = None
-    start = clock()
-    while True:
-        result = sample_blocks(blocks, port=port, read_func=read_func, origin_us=origin_us)
-        origin_us = result.origin_us
-        points.extend(result.points)
-        if duration > 0 and clock() - start >= duration:
-            break
-        sleep_func(max(0.0, period))
+    if not blocks:
+        return points
+    bridge = None
+    try:
+        if read_func is read_memory:
+            bridge = _open_sampling_bridge(port)
+        start = clock()
+        while True:
+            cycle_start = clock()
+            result = sample_blocks(blocks, port=port, read_func=read_func,
+                                   origin_us=origin_us, bridge=bridge)
+            origin_us = result.origin_us
+            points.extend(result.points)
+            now = clock()
+            if duration > 0 and now - start >= duration:
+                break
+            delay = max(0.0, period - (now - cycle_start))
+            if duration > 0:
+                delay = min(delay, max(0.0, duration - (now - start)))
+            sleep_func(delay)
+    finally:
+        if bridge is not None:
+            bridge.close()
+    return points
+
+
+def _open_sampling_bridge(port):
+    from mklink.bridge import MKLinkSerialBridge
+    from mklink.cli import _resolve_port
+    from mklink.device import initialize_target
+    from mklink.flash import MKLinkFlash
+
+    bridge = MKLinkSerialBridge(_resolve_port(port))
+    try:
+        if not bridge.connect():
+            raise ConnectionError("MKLink connection failed")
+        initialize_target(bridge, MKLinkFlash(bridge))
+    except BaseException:
+        bridge.close()
+        raise
+    return bridge
+
+
+def poll_blocks_dumpmem(
+    blocks: list[ReadBlock], *, port: str | None = None,
+    duration: float = 0.0, period: float = 0.001,
+    clock=time.monotonic, sleep_func=time.sleep,
+) -> list[dict]:
+    """Collect device-timestamped samples through the shared binary session."""
+    import math
+    from mklink.dump_memory import DumpMemoryStreamSession, decode_frame_to_points, FLAG_REGION_ERROR, DumpMemoryReadError
+
+    if not blocks:
+        return []
+    if not math.isfinite(period) or period <= 0:
+        raise ValueError("SuperWatch dump period must be finite and greater than zero")
+    block_addresses = [
+        (block.address, block.size, [
+            (item.name, item.type_name, item.address - block.address,
+             item.size, item.scalar_kind, item.enum_values)
+            for item in block.items
+        ]) for block in blocks
+    ]
+    bridge = _open_sampling_bridge(port)
+    session = None
+    points = []
+    origin_us = None
+    try:
+        session = DumpMemoryStreamSession(bridge, [(b.address, b.size) for b in blocks], period)
+        session.start()
+        start = clock()
+        received = False
+        while duration <= 0 or clock() - start < duration:
+            frames = session.read_frames(max_bytes=1024 * 1024)
+            if frames:
+                received = True
+            for frame in frames:
+                if int(frame.get("flags", 0)) & FLAG_REGION_ERROR:
+                    raise DumpMemoryReadError("SuperWatch target memory read failed (region error)")
+                decoded, origin_us = decode_frame_to_points(frame, block_addresses, origin_us)
+                points.extend(decoded)
+            if not frames:
+                if not received and clock() - start > max(3.0, period * 2):
+                    raise TimeoutError("No SuperWatch dump-memory samples received")
+                sleep_func(0.0005)
+        if not received:
+            raise TimeoutError("No SuperWatch dump-memory samples received")
+    finally:
+        try:
+            if session is not None:
+                session.stop()
+        finally:
+            bridge.close()
     return points
 
 

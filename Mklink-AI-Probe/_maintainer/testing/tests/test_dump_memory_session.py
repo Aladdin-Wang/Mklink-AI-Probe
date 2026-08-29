@@ -56,6 +56,86 @@ class FakeBridge:
         return ""
 
 
+def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkeypatch):
+    from unittest.mock import Mock
+    from mklink import superwatch
+
+    bridge = Mock()
+    bridge.connect.return_value = True
+    now = [0.0]
+    def send(*args, **kwargs):
+        now[0] += 0.04
+        return "timestamp=100\n20000000 00 00 80 3f"
+    bridge.send_command.side_effect = send
+    factory = Mock(return_value=bridge)
+    init = Mock()
+    monkeypatch.setattr('mklink.bridge.MKLinkSerialBridge', factory)
+    monkeypatch.setattr('mklink.device.initialize_target', init)
+    sleeps = []
+    def sleep(delay):
+        sleeps.append(delay)
+        now[0] += delay
+    blocks = superwatch.build_read_blocks([superwatch.WatchItem('a', 0x20000000, 'float', 4)])
+    points = superwatch.poll_blocks(blocks, port='test', duration=.13, period=.05,
+                                   clock=lambda: now[0], sleep_func=sleep)
+    assert len(points) == 3
+    assert factory.call_count == init.call_count == 1
+    assert sleeps == pytest.approx([.01, .01])
+    bridge.close.assert_called_once()
+
+
+def test_superwatch_cli_dump_flag_selects_stream_collector(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from mklink import cli, superwatch
+    collector = Mock(return_value=[])
+    monkeypatch.setattr(superwatch, 'poll_blocks_dumpmem', collector, raising=False)
+    monkeypatch.setattr(superwatch, 'find_project_svd', lambda _: None)
+    monkeypatch.setattr(superwatch, 'resolve_watch_items', lambda *a, **k: [superwatch.WatchItem('a', 0x20000000, 'float', 4)])
+    poll = Mock(return_value=[])
+    monkeypatch.setattr(superwatch, 'poll_blocks', poll)
+    cli._cli_superwatch(SimpleNamespace(svd=None, project_root='.', source=None, variables=['a'],
+                                       visualize=False, period=.001, port='test', duration=1, dump_mem=True))
+    collector.assert_called_once()
+    poll.assert_not_called()
+
+
+def test_superwatch_dump_collector_decodes_device_time_and_releases_stream(monkeypatch):
+    from unittest.mock import Mock
+    from mklink import superwatch
+
+    bridge = FakeBridge([_old_frame(1000, struct.pack('<f', 1.0)) + _old_frame(1130, struct.pack('<f', 2.0))])
+    bridge.close = Mock()
+    monkeypatch.setattr(superwatch, '_open_sampling_bridge', lambda _: bridge)
+    now = iter([0, .1, .2, .3, .4])
+    blocks = superwatch.build_read_blocks([superwatch.WatchItem('a', 0x20000000, 'float', 4)])
+    points = superwatch.poll_blocks_dumpmem(blocks, duration=.35, clock=lambda: next(now), sleep_func=lambda _: None)
+    assert [p['a'] for p in points] == [1, 2]
+    assert [p['_t'] for p in points] == pytest.approx([0, .00013])
+    assert bridge.calls[0] == ('enter', DeviceState.DUMP_STREAM)
+    assert bridge.calls[-1] == ('exit',)
+    bridge.close.assert_called_once()
+
+
+def test_superwatch_poll_closes_on_read_error_and_keeps_custom_reader(monkeypatch):
+    from unittest.mock import Mock
+    from mklink import superwatch
+
+    bridge = Mock()
+    bridge.send_command.side_effect = RuntimeError('read failed')
+    factory = Mock(return_value=bridge)
+    monkeypatch.setattr(superwatch, '_open_sampling_bridge', factory)
+    blocks = superwatch.build_read_blocks([superwatch.WatchItem('a', 0x20000000, 'float', 4)])
+    with pytest.raises(RuntimeError, match='read failed'):
+        superwatch.poll_blocks(blocks, duration=.1)
+    bridge.close.assert_called_once()
+    factory.reset_mock()
+    reader = Mock(return_value=(struct.pack('<f', 3.0), 'timestamp=1000\n20000000 00 00 40 40'))
+    now = iter([0, 0, 1])
+    assert superwatch.poll_blocks(blocks, duration=.1, read_func=reader, clock=lambda: next(now))[0]['a'] == 3.0
+    factory.assert_not_called()
+
+
 def test_dump_session_reuses_parser_and_owns_exact_stream_lifecycle():
     bridge = FakeBridge([b"noise" + _old_frame(123, struct.pack("<f", 2.5))])
     session = DumpMemoryStreamSession(

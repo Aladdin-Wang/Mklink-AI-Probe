@@ -2467,6 +2467,7 @@ def _cli_superwatch(args):
         find_project_svd,
         load_svd_registers,
         poll_blocks,
+        poll_blocks_dumpmem,
         resolve_watch_items,
         run_superwatch_visualizer,
     )
@@ -2525,7 +2526,8 @@ def _cli_superwatch(args):
         return
 
     try:
-        points = poll_blocks(
+        collector = poll_blocks_dumpmem if getattr(args, "dump_mem", False) else poll_blocks
+        points = collector(
             build_read_blocks(items),
             port=args.port,
             duration=args.duration,

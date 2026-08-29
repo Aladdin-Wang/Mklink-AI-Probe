@@ -36,6 +36,7 @@ from mklink.remote.stream_protocol import (
     SERIAL_TX_BYTES,
     SUPERWATCH_METADATA_JSON,
     SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
+    SUPERWATCH_TIMESTAMPED_FLOAT32,
     WAVEFORM_SAMPLE_MAJOR_FLOAT32,
     RttLine,
     StreamType,
@@ -1400,6 +1401,7 @@ class SuperWatchStreamManager:
         self._batch_samples = max(1, int(batch_samples))
         self._clock = clock
         self._pending_samples: list[tuple[float, ...]] = []
+        self._pending_sample_times: list[float | None] = []
         # Empty layout version 1 is the immutable bootstrap replay for clients
         # that subscribe before a runtime is prepared.  Cache replacement is
         # one reference assignment, so readers never observe payload/snapshot
@@ -2109,10 +2111,19 @@ class SuperWatchStreamManager:
             return False
         if not all(math.isfinite(value) for value in row):
             return False
+        sample_times = [point.get("_t") for point in points if point.get("_t") is not None]
+        try:
+            sample_time = max(float(value) for value in sample_times) * 1000.0 if sample_times else None
+        except (TypeError, ValueError):
+            return False
+        if sample_time is not None and (not math.isfinite(sample_time) or sample_time < 0):
+            return False
         if time.monotonic() - self._last_metadata_publish_monotonic >= 1.0:
             self._publish_cached_metadata()
         self._record_sample_rate_locked()
         self._pending_samples.append(row)
+        # Keep device time; USB batching and host scheduling are not sample clocks.
+        self._pending_sample_times.append(sample_time)
         if len(self._pending_samples) >= self._batch_samples:
             self._flush_binary_batch_locked()
         return True
@@ -2140,12 +2151,18 @@ class SuperWatchStreamManager:
             return True
         pending = self._pending_samples
         self._pending_samples = []
+        times = self._pending_sample_times
+        self._pending_sample_times = []
         try:
             if self._stream_hub is None:
                 raise RuntimeError("SuperWatch binary stream hub is unavailable")
+            payload = encode_waveform_samples(pending)
+            flags = SUPERWATCH_SAMPLE_MAJOR_FLOAT32
+            if times and all(value is not None for value in times):
+                payload = struct.pack(f"<{len(times)}d", *times) + payload
+                flags = SUPERWATCH_TIMESTAMPED_FLOAT32
             self._stream_hub.publish(
-                encode_waveform_samples(pending), item_count=len(pending),
-                flags=SUPERWATCH_SAMPLE_MAJOR_FLOAT32,
+                payload, item_count=len(pending), flags=flags,
                 stream_type=StreamType.SUPERWATCH,
             )
         except Exception as exc:

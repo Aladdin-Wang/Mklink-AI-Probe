@@ -237,6 +237,33 @@ describe('StreamDecoder worker controller', () => {
     })
   })
 
+  it('uses exact device sample times despite host jitter and preserves real gaps', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
+    const metadata = new TextEncoder().encode(JSON.stringify({ version: 1, channels: [{ name: 'a' }] }))
+    const send = (sequence: bigint, flags: number, payload: Uint8Array, count: number, host: bigint) => decoder.handle({
+      type: 'frame', buffer: frame(sequence, count, payload, StreamType.SUPERWATCH, host, flags),
+      connectionGeneration: 1, frameTicket: Number(sequence),
+    })
+    send(1n, 2, metadata, 0, 1n)
+    const payload = (times: number[]) => {
+      const bytes = new Uint8Array(times.length * 12)
+      bytes.set(new Uint8Array(Float64Array.from(times).buffer))
+      bytes.set(floats(...times), times.length * 8)
+      return bytes
+    }
+    send(2n, 3, payload([0, 0.13]), 2, 20_000_000_000n)
+    send(3n, 3, payload([0.26, 25]), 2, 20_050_000_000n)
+    const batches = messages.filter(message => message.type === 'waveform-batch')
+    expect(batches).toHaveLength(2)
+    expect(batches.flatMap(batch => Array.from(new Float64Array(batch.times)))).toEqual([0, 0.13, 0.26, 25])
+    // Reject invalid time order without poisoning the next valid batch.
+    send(4n, 3, payload([25, 26]), 2, 21_000_000_000n)
+    expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_FRAME' })
+    send(4n, 3, payload([26, 27]), 2, 19_000_000_000n)
+    expect(messages.filter(message => message.type === 'waveform-batch')).toHaveLength(3)
+  })
+
   it('applies versioned SuperWatch metadata independently from sample batches', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })
