@@ -3141,8 +3141,14 @@ class VofaStreamManager:
         def _poll():
             try:
                 bridge = getattr(device, "_bridge", None)
-                if bridge is not None and 0 < len(self._read_groups) <= 16:
-                    from mklink.dump_memory import DumpMemoryStreamSession
+                from mklink.dump_memory import (
+                    DumpMemoryStreamSession,
+                    MAX_SAFE_REPL_REGIONS,
+                )
+                if (
+                    bridge is not None
+                    and 0 < len(self._read_groups) <= MAX_SAFE_REPL_REGIONS
+                ):
 
                     self._acquisition_mode = "dump-memory"
                     region_pairs = [

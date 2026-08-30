@@ -198,7 +198,7 @@ python -m mklink read-flash --addr 0x08005000 --size 4096 --save flash_dump.bin
 
 ### VOFA+ 实时变量观测
 
-MKLink 通过 SWD 直接读取目标芯片内存中的变量数据，实时封装为 VOFA+ 协议（JustFloat）经 USB CDC 虚拟串口发送至 PC。**不占用 MCU 串口资源，不侵入业务代码**，可替代 J-Link J-Scope。固件最多一次支持读取 **16 个变量**，最小采样周期 **1us**。
+MKLink 通过 SWD 直接读取目标芯片内存中的变量数据，实时封装为 VOFA+ 协议（JustFloat）经 USB CDC 虚拟串口发送至 PC。**不占用 MCU 串口资源，不侵入业务代码**，可替代 J-Link J-Scope。快速连续布局最多读取 **16 路 float**；精确离散布局最多读取 **15 个地址/类型对**。最小采样周期为 **1us**。
 
 #### 使用方式1：连续读取 float 变量（快速模式）
 
@@ -235,6 +235,12 @@ python -m mklink vofa 0x20000000 3 --period 0.001
 #### 使用方式2：多地址、多类型读取（精确模式）
 
 MKLink 固件支持的 `vofa.send` 命令形式之二，用于读取不同地址、不同类型的变量。每个变量指定地址和类型，固件将数据以 VOFA+ JustFloat 协议输出。
+
+精确模式最多 **15 个** `(地址, 类型)` 对。16 对再加采样周期会形成 33 个
+Pika 位置参数，触及已知会使 REPL 失去响应的边界。主机还会按 UTF-8 字节数校验
+完整 `vofa.send(...)` 命令，安全上限为 **511B**；超限请求会在发现端口前拒绝。
+快速模式只使用 `起始地址、通道数、周期` 3 个参数，因此保留独立的 **1~16 路**
+连续 float 上限，不能把这个通道上限套用到精确模式。
 
 ```
 python -m mklink vofa <地址1> <类型1> [<地址2> <类型2> ...] --period <秒>
@@ -328,7 +334,7 @@ python -m mklink vofa g_config.setpoint float --source path/to/firmware.axf --vi
 
 **VOFA 类型显示：**
 - 快速模式 `vofa <addr> <count>` 默认每个通道是 `float`，`Size` 为 `4B`。
-- 精确模式 `vofa <addr> <type> ...` 会在 Watch 表显示规范 C 类型和字节数。
+- 精确模式 `vofa <addr> <type> ...` 最多 15 路，会在 Watch 表显示规范 C 类型和字节数。
 - Watch 表中的 `Type` 是变量 C 类型；`Size` 是该类型字节数；`Unit` 是物理单位（如 `V`、`rpm`、`degC`），没有单位时显示 `-`。
 - 支持的类型别名见上文「MKLink 固件接受的变量类型字符串」表格。
 

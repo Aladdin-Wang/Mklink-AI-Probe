@@ -44,7 +44,7 @@
 | `flush-memory` | 静默写 RAM，**多地址多字节**；不得与 dump/RTT/SystemView 流并发。<br>**紧凑语法**: `ADDR:BYTE*N`（如 `"0x20008000:0xAA*16300"`）绕开 Windows cmdline 长度限制。<br>**边界**: 单项 ≤ 12KB(压线) / 多地址 ≤ 8 项 / varargs ≤ 20 字节，三类边界详见 [references/flush-memory.md](flush-memory.md) |
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
-| `vofa` | VOFA+ 实时变量观测（支持 `--visualize`） |
+| `vofa` | VOFA+ 实时变量观测（快速连续 float 最多 16 路；精确离散地址/类型最多 15 路；Pika 命令最多 511 UTF-8 字节；支持 `--visualize`） |
 | `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
 | `watch` | 按变量名读取快照（支持 `struct.field`） |

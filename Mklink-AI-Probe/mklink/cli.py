@@ -2581,6 +2581,35 @@ def _cli_vofa(
     """启动或停止 VOFA+ 实时变量观测。"""
     from mklink.bridge import MKLinkSerialBridge
     from mklink._types import DeviceState
+    from mklink.vofa_viewer import build_vofa_command
+
+    original_variables = list(variables)
+    resolved_variables = list(variables)
+    if source and resolved_variables:
+        from mklink.vofa_viewer import resolve_variable_names
+        resolved_variables = resolve_variable_names(
+            resolved_variables,
+            source,
+            backend=elf_backend,
+            project_root=project_root,
+        )
+
+    try:
+        if stop and not resolved_variables:
+            cmd, var_args, channel_count, _mode = build_vofa_command(
+                ["0x20000000", "uint8_t"], 0,
+            )
+        else:
+            if not resolved_variables:
+                print("[FAIL] 请指定观测变量，用法:")
+                print('  python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.00001')
+                return
+            cmd, var_args, channel_count, _mode = build_vofa_command(
+                resolved_variables, 0 if stop else period,
+            )
+    except ValueError as exc:
+        print(f"[FAIL] 无效 VOFA 请求: {exc}")
+        return
 
     port = _resolve_port(port)
     print(f"[*] 连接 {port} ...")
@@ -2591,35 +2620,11 @@ def _cli_vofa(
 
     try:
         if stop:
-            # 停止：用上次的变量列表发送 period=0，或直接发空命令
-            # 简单方案：发送一个 period=0 的 vofa.send
-            if variables:
-                var_args = ", ".join(variables)
-                cmd = f'vofa.send({var_args}, 0)'
-            else:
-                cmd = 'vofa.send(0x20000000, "uint8_t", 0)'
             print(f"[*] 停止 VOFA: {cmd}")
             resp = bridge.send_command(cmd, timeout=5.0)
             print(resp.strip())
             print("[OK] VOFA 已停止")
         else:
-            if not variables:
-                print("[FAIL] 请指定观测变量，用法:")
-                print('  python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.00001')
-                return
-
-            original_variables = list(variables)
-            if source:
-                from mklink.vofa_viewer import resolve_variable_names
-                variables = resolve_variable_names(
-                    variables,
-                    source,
-                    backend=elf_backend,
-                    project_root=project_root,
-                )
-
-            var_args = ", ".join(f'"{v}"' if not v.startswith("0x") and not v.replace(".", "").isdigit() else v for v in variables)
-            cmd = f'vofa.send({var_args}, {period})'
             print(f"[*] 启动 VOFA: {cmd}")
 
             # 切换到流模式
@@ -2632,7 +2637,7 @@ def _cli_vofa(
                 channel_names = [n.strip() for n in names.split(",")] if names else None
                 run_vofa_visualizer(
                     bridge,
-                    variables=variables,
+                    variables=resolved_variables,
                     var_args=var_args,
                     period=period,
                     duration=duration,
@@ -2648,9 +2653,8 @@ def _cli_vofa(
                 )
             else:
                 # --- 控制台模式 ---
-                from mklink.vofa_viewer import JustFloatParser, _infer_channel_count, _infer_channel_names
-                channel_count = _infer_channel_count(variables)
-                ch_names = _infer_channel_names(variables, channel_count)
+                from mklink.vofa_viewer import JustFloatParser, _infer_channel_names
+                ch_names = _infer_channel_names(resolved_variables, channel_count)
                 parser = JustFloatParser(channel_count, ch_names)
 
                 print(f"[OK] VOFA 已启动，采样周期 {period}s，通道数 {channel_count}")
