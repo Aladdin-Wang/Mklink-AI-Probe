@@ -29,6 +29,7 @@ from mklink.offline_download import (
 _UPLOAD_CHUNK = 1024 * 1024
 _MAX_UPLOAD_SIZE = 256 * 1024 * 1024
 _MAX_TOTAL_UPLOAD_SIZE = 512 * 1024 * 1024
+_ADDRESS_SPACE_SIZE = 1 << 32
 _TOKEN_SAFE = re.compile(r"^[A-Za-z0-9._:-]+$")
 
 
@@ -202,6 +203,187 @@ def discover_algorithms(paths: object, part_number: str, disk_root: Optional[Pat
         )
         unique.setdefault(key, candidate)
     return list(unique.values())
+
+
+def _merged_flash_ranges(regions: object) -> tuple[tuple[int, int], ...]:
+    ranges = []
+    for region in regions:
+        start = getattr(region, "start", None)
+        length = getattr(region, "length", None)
+        if (
+            not bool(getattr(region, "is_flash", False))
+            or not bool(getattr(region, "writable", False))
+            or not isinstance(start, int)
+            or isinstance(start, bool)
+            or not isinstance(length, int)
+            or isinstance(length, bool)
+            or start < 0
+            or length <= 0
+            or start >= _ADDRESS_SPACE_SIZE
+            or length > _ADDRESS_SPACE_SIZE - start
+        ):
+            continue
+        ranges.append((start, start + length))
+    ranges.sort()
+    merged = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _range_is_covered(start: int, end: int, ranges: object) -> bool:
+    return any(region_start <= start and end <= region_end for region_start, region_end in ranges)
+
+
+def _selected_algorithm_range(
+    algorithm: OfflineAlgorithm,
+    catalog_algorithms: object,
+    flash_ranges: tuple[tuple[int, int], ...],
+) -> tuple[int, int]:
+    records = list(catalog_algorithms)
+    matches = []
+    if algorithm.source_token and algorithm.source_kind != "upload":
+        matches = [
+            record for record in records
+            if str(getattr(record, "source_token", "")) == algorithm.source_token
+        ]
+    if not matches and algorithm.source_kind != "upload":
+        matches = [
+            record for record in records
+            if str(getattr(record, "file_name", "")).casefold()
+            == algorithm.file_name.casefold()
+            and int(getattr(record, "flash_start", -1)) == algorithm.flash_base
+        ]
+    valid_matches = []
+    for record in matches:
+        start = getattr(record, "flash_start", None)
+        size = getattr(record, "flash_size", None)
+        if (
+            isinstance(start, int)
+            and not isinstance(start, bool)
+            and isinstance(size, int)
+            and not isinstance(size, bool)
+            and 0 <= start < _ADDRESS_SPACE_SIZE
+            and 0 < size <= _ADDRESS_SPACE_SIZE - start
+        ):
+            valid_matches.append((start, start + size))
+    if valid_matches:
+        starts = {start for start, _end in valid_matches}
+        if starts != {algorithm.flash_base}:
+            raise OfflineDownloadError(
+                f"selected FLM base does not match its catalog metadata: {algorithm.file_name}"
+            )
+        # Duplicate Pack sources can describe the same FLM. The shortest matching
+        # range is the conservative common boundary.
+        return algorithm.flash_base, min(end for _start, end in valid_matches)
+
+    # Uploaded, profile, or already-present FLMs may not have catalog metadata.
+    # The target memory map is still authoritative for the region beginning at
+    # the configured FLM base, and keeps this fallback bounded.
+    containing = [
+        (max(start, algorithm.flash_base), end)
+        for start, end in flash_ranges
+        if start <= algorithm.flash_base < end
+    ]
+    if not containing:
+        raise OfflineDownloadError(
+            f"selected FLM base is outside writable target Flash: {algorithm.file_name}"
+        )
+    return min(containing, key=lambda item: item[1] - item[0])
+
+
+def _validate_local_bin_firmware_ranges(
+    config: OfflineDownloadConfig,
+    online_services: object,
+) -> None:
+    local_bins = [
+        firmware for firmware in config.firmwares
+        if firmware.format == "bin" and firmware.source_path
+    ]
+    if not local_bins:
+        return
+    # HPM offline images use the ROM API and have no selected CMSIS FLM. Keep
+    # that existing workflow outside this ARM/FLM-specific safety gate.
+    if config.is_hpm:
+        return
+    if not config.target_part:
+        raise OfflineDownloadError("local BIN firmware validation requires target_part")
+
+    from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
+    from mklink.remote.online_flash_api import _resolved_target, _target_flash_configuration
+
+    try:
+        target = _resolved_target(online_services.catalog, config.target_part)
+        regions, _fingerprint, _paths = _target_flash_configuration(
+            online_services,
+            target.part_number,
+        )
+        catalog_algorithms = tuple(
+            discover_flash_algorithms(target.part_number, paths=online_services.paths)
+        )
+    except Exception as error:
+        raise OfflineDownloadError(
+            f"target Flash metadata is unavailable for {config.target_part}: {error}"
+        ) from error
+
+    flash_ranges = _merged_flash_ranges(regions)
+    if not flash_ranges:
+        raise OfflineDownloadError(
+            f"target has no writable Flash range: {target.part_number}"
+        )
+    algorithms = {algorithm.id.casefold(): algorithm for algorithm in config.algorithms}
+    algorithm_ranges = {}
+    for firmware in local_bins:
+        source = Path(firmware.source_path or "").expanduser().resolve()
+        if source.suffix.casefold() != ".bin" or not source.is_file():
+            raise OfflineDownloadError(
+                f"local firmware source is unavailable: {firmware.file_name}"
+            )
+        size = source.stat().st_size
+        if size <= 0 or size > _MAX_UPLOAD_SIZE:
+            raise OfflineDownloadError(
+                f"local firmware source has an invalid size: {firmware.file_name}"
+            )
+        start = firmware.base_address
+        if start is None:
+            raise OfflineDownloadError("BIN firmware requires a base address")
+        if start >= _ADDRESS_SPACE_SIZE or size > _ADDRESS_SPACE_SIZE - start:
+            raise OfflineDownloadError(
+                f"local BIN address range overflows 32-bit address space: {firmware.file_name}"
+            )
+        end = start + size
+        if not _range_is_covered(start, end, flash_ranges):
+            raise OfflineDownloadError(
+                "local BIN range 0x{:08X}-0x{:08X} is outside writable Flash for {}: {}".format(
+                    start,
+                    end - 1,
+                    target.part_number,
+                    firmware.file_name,
+                )
+            )
+        selected = algorithms[firmware.algorithm_id.casefold()]
+        coverage = algorithm_ranges.get(selected.id.casefold())
+        if coverage is None:
+            coverage = _selected_algorithm_range(
+                selected,
+                catalog_algorithms,
+                flash_ranges,
+            )
+            algorithm_ranges[selected.id.casefold()] = coverage
+        if not _range_is_covered(start, end, (coverage,)):
+            raise OfflineDownloadError(
+                "local BIN range 0x{:08X}-0x{:08X} exceeds selected FLM coverage "
+                "0x{:08X}-0x{:08X}: {}".format(
+                    start,
+                    end - 1,
+                    coverage[0],
+                    coverage[1] - 1,
+                    selected.file_name,
+                )
+            )
 
 
 def _profile_source(token: str, disk_root: Path) -> Path:
@@ -460,6 +642,11 @@ def create_offline_download_router(
     async def preview(payload: dict = Body(...)) -> object:
         try:
             config = parse_offline_config(payload)
+            await asyncio.to_thread(
+                _validate_local_bin_firmware_ranges,
+                config,
+                online_services,
+            )
             return {
                 "model": config.model,
                 "script_name": config.script_name,
@@ -481,6 +668,11 @@ def create_offline_download_router(
             if not isinstance(payload, Mapping):
                 raise OfflineDownloadError("offline config must be an object")
             config = parse_offline_config(payload)
+            await asyncio.to_thread(
+                _validate_local_bin_firmware_ranges,
+                config,
+                online_services,
+            )
             disk = await asyncio.to_thread(find_microkeen_disk)
             if not disk:
                 raise OfflineDownloadError("MICROKEEN disk is unavailable")
