@@ -30,6 +30,10 @@ HTML、目标固件与工程配置是正式输出，不强行移入临时区。
 - 需要临时目录的子进程，仅为该进程设置 `TEMP/TMP/TMPDIR` 到本次 `work/` 下；
   需要 Python 辅助脚本时可用 `python -B` 避免散落字节码。不改系统级环境变量，
   也不重启或篡改已运行的 MCP/桌面服务来迁移路径。
+- 新启动的 CLI/MCP 需要解析 AXF/DWARF 时，可为该进程设置 `MKLINK_CACHE_DIR`
+  到工作根的 `cache/`；这是用户指定位置的显式覆盖。未设置时，传入
+  `--project-root`/`project_root` 会把解析缓存放入项目 `.mklink/cache/`，不会再默认
+  写入用户主目录。已经运行的服务不为迁移缓存而重启。
 - 需要在线烧录 Pack 缓存时，可在新服务启动前设置已有的 `MKLINK_PYOCD_HOME`
   到 `cache/pyocd`；先检查已有缓存，迁移需保留内容，不重复下载。
 - 当前 SystemView 自动日志固定在真实目标项目的 `.mklink/logs/systemview/`。
