@@ -434,3 +434,112 @@ def test_mcp_rejects_parallel_probe_operations_without_queueing():
         release.set()
         worker.join(timeout=2)
     assert not worker.is_alive()
+
+
+def test_mcp_timeout_quarantines_hardware_until_disconnect(monkeypatch):
+    class FakeBridge:
+        def __init__(self, *, timeout):
+            self.timeout = timeout
+            self.io_calls = []
+
+        def read(self, address, size):
+            self.io_calls.append((address, size))
+            if self.timeout:
+                raise TimeoutError("fake bridge command timed out")
+            return b"\x5a" * size
+
+    class FakeDevice:
+        def __init__(self, bridge):
+            self.bridge = bridge
+            self.connected = True
+            self.port = "FAKE_MCP"
+            self.idcode = 0x2BA01477
+            self.mcu_name = "FAKE_MCU"
+            self.state = DeviceState.READY
+            self._dwarf_info = None
+            self.axf_status = {"elf_backend": "builtin"}
+            self.closed = False
+
+        def read_memory(self, address, size):
+            return self.bridge.read(address, size)
+
+        def close(self):
+            self.closed = True
+            self.connected = False
+
+    first_bridge = FakeBridge(timeout=True)
+    first_device = FakeDevice(first_bridge)
+    monkeypatch.setitem(mcp_server._holder, "device", first_device)
+    monkeypatch.setitem(mcp_server._holder, "kwargs", {})
+    monkeypatch.setitem(mcp_server._holder, "quarantine", None)
+    mcp = _Mcp()
+    mcp_server._register_memory_tools(mcp)
+    mcp_server._register_connection_tools(mcp)
+
+    with pytest.raises(TimeoutError, match="fake bridge"):
+        mcp.tools["read_memory"](0x20000000, 4)
+    assert first_bridge.io_calls == [(0x20000000, 4)]
+
+    with pytest.raises(RuntimeError, match="quarantined"):
+        mcp.tools["read_memory"](0x20000004, 4)
+    assert first_bridge.io_calls == [(0x20000000, 4)]
+
+    status = mcp.tools["device_status"]()
+    assert status["quarantined"] is True
+    assert status["quarantine"] == {
+        "active": True,
+        "tool": "read_memory",
+        "reason": "fake bridge command timed out",
+    }
+    assert first_bridge.io_calls == [(0x20000000, 4)]
+
+    assert mcp.tools["disconnect"]() == {
+        "disconnected": True,
+        "was_connected": True,
+    }
+    assert first_device.closed is True
+    assert mcp.tools["device_status"]()["quarantined"] is False
+
+    recovered_bridge = FakeBridge(timeout=False)
+    recovered_device = FakeDevice(recovered_bridge)
+    import mklink
+    monkeypatch.setattr(mklink, "connect", lambda **_kwargs: recovered_device)
+
+    assert mcp.tools["connect"](port="FAKE_MCP")["connected"] is True
+    assert mcp.tools["read_memory"](0x20000008, 4)["hex"] == "5a5a5a5a"
+    assert recovered_bridge.io_calls == [(0x20000008, 4)]
+    mcp.tools["disconnect"]()
+
+
+def test_mcp_detect_profile_guards_only_idcode_hardware_path(monkeypatch):
+    calls = []
+
+    def detect(**kwargs):
+        calls.append(kwargs["read_idcode"])
+        if kwargs["read_idcode"]:
+            raise TimeoutError("fake IDCODE timeout")
+        return {"status": "file-only"}
+
+    monkeypatch.setattr("mklink.mcu_detect.detect_mcu_profile", detect)
+    monkeypatch.setitem(mcp_server._holder, "device", None)
+    monkeypatch.setitem(mcp_server._holder, "kwargs", {})
+    monkeypatch.setitem(mcp_server._holder, "quarantine", None)
+    mcp = _Mcp()
+    mcp_server._register_project_tools(mcp)
+
+    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+        "status": "file-only"
+    }
+    with pytest.raises(TimeoutError, match="IDCODE"):
+        mcp.tools["detect_mcu_profile"](read_idcode=True)
+    with pytest.raises(RuntimeError, match="quarantined"):
+        mcp.tools["detect_mcu_profile"](read_idcode=True)
+    assert calls == [False, True]
+
+    # File-only project inspection remains available because it performs no
+    # probe I/O, even while the hardware session awaits explicit recovery.
+    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+        "status": "file-only"
+    }
+    assert calls == [False, True, False]
+    mcp_server._reset_device()

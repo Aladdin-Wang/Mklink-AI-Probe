@@ -87,23 +87,53 @@ def _isolate_stdio_protocol() -> Iterator[None]:
 # --------------------------------------------------------------------------
 _lock = threading.Lock()
 _operation_lock = threading.RLock()
-_holder: dict[str, Any] = {"device": None, "kwargs": {}}
+_holder: dict[str, Any] = {"device": None, "kwargs": {}, "quarantine": None}
 
 
-def _exclusive_hardware_tool(function):
-    """Reject concurrent probe tools instead of interleaving stream states."""
-    @wraps(function)
-    def guarded(*args, **kwargs):
-        if not _operation_lock.acquire(blocking=False):
+@contextmanager
+def _hardware_operation(tool_name: str, *, recovery: bool = False) -> Iterator[None]:
+    """Serialize probe I/O and quarantine a session after an uncertain timeout."""
+    if not _operation_lock.acquire(blocking=False):
+        raise RuntimeError(
+            "Another MKLink hardware tool is active. Do not issue parallel "
+            "calls to one probe; wait for it to finish or stop the stream."
+        )
+    try:
+        with _lock:
+            quarantine = _holder.get("quarantine")
+        if quarantine is not None and not recovery:
+            failed_tool = quarantine.get("tool", "unknown")
             raise RuntimeError(
-                "Another MKLink hardware tool is active. Do not issue parallel "
-                "calls to one probe; wait for it to finish or stop the stream."
+                "MKLink hardware access is quarantined after "
+                f"{failed_tool} timed out. Do not retry hardware commands; "
+                "call device_status, then disconnect before reconnecting."
             )
         try:
-            return function(*args, **kwargs)
-        finally:
-            _operation_lock.release()
-    return guarded
+            yield
+        except TimeoutError as exc:
+            with _lock:
+                _holder["quarantine"] = {
+                    "active": True,
+                    "tool": tool_name,
+                    "reason": str(exc) or "hardware operation timed out",
+                }
+            raise
+    finally:
+        _operation_lock.release()
+
+
+def _exclusive_hardware_tool(function=None, *, recovery: bool = False):
+    """Reject concurrent or quarantined probe tools before they reach I/O."""
+    def decorate(callback):
+        @wraps(callback)
+        def guarded(*args, **kwargs):
+            with _hardware_operation(callback.__name__, recovery=recovery):
+                return callback(*args, **kwargs)
+        return guarded
+
+    if function is None:
+        return decorate
+    return decorate(function)
 
 
 def _bounded_duration(value: float, field: str = "duration") -> float:
@@ -140,7 +170,10 @@ def _capabilities() -> dict[str, Any]:
         "flush_memory_max_total_bytes": MCP_MAX_FLUSH_TOTAL_BYTES,
         "capture_max_seconds": MCP_MAX_CAPTURE_SECONDS,
         "rtt_search_max_bytes": MCP_MAX_SEARCH_BYTES,
-        "failure_recovery": "check device_status once; do not retry a timed-out command",
+        "failure_recovery": (
+            "a timed-out hardware tool quarantines the session; check "
+            "device_status, then disconnect before reconnecting"
+        ),
     }
 
 
@@ -191,6 +224,7 @@ def _reset_device() -> None:
                 log.exception("error closing device during reset")
         _holder["device"] = None
         _holder["kwargs"] = {}
+        _holder["quarantine"] = None
 
 
 # MCP hosts normally terminate the stdio child after the conversation ends.
@@ -347,7 +381,7 @@ def _register_connection_tools(mcp: Any) -> None:
         return out
 
     @mcp.tool()
-    @_exclusive_hardware_tool
+    @_exclusive_hardware_tool(recovery=True)
     def disconnect() -> dict:
         """Disconnect from the probe and release the serial lock.
 
@@ -366,17 +400,24 @@ def _register_connection_tools(mcp: Any) -> None:
         Use to check whether a session is alive before a long operation, or
         to recover context after a tool error. No side effects.
         """
+        with _lock:
+            quarantine = _holder.get("quarantine")
         dev = _holder["device"]
         if dev is None:
-            return {"connected": False, "hint": "no device; call connect() first"}
-        return {
-            "connected": dev.connected,
-            "port": dev.port,
-            "idcode": _idcode(dev),
-            "mcu": dev.mcu_name if dev.connected else None,
-            "state": str(dev.state),
-            "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
-        }
+            result = {"connected": False, "hint": "no device; call connect() first"}
+        else:
+            result = {
+                "connected": dev.connected,
+                "port": dev.port,
+                "idcode": _idcode(dev),
+                "mcu": dev.mcu_name if dev.connected else None,
+                "state": str(dev.state),
+                "axf_loaded": bool(getattr(dev, "_dwarf_info", None)),
+            }
+        result["quarantined"] = quarantine is not None
+        if quarantine is not None:
+            result["quarantine"] = dict(quarantine)
+        return result
 
 
 def _register_project_tools(mcp: Any) -> None:
@@ -399,15 +440,19 @@ def _register_project_tools(mcp: Any) -> None:
         """
         from mklink.mcu_detect import detect_mcu_profile as _detect
 
-        return _detect(
-            project_root=project_root,
-            device=device,
-            port=port,
-            flm=flm,
-            write_profile=write_profile,
-            copy_flm=copy_flm,
-            read_idcode=read_idcode,
-        )
+        arguments = {
+            "project_root": project_root,
+            "device": device,
+            "port": port,
+            "flm": flm,
+            "write_profile": write_profile,
+            "copy_flm": copy_flm,
+            "read_idcode": read_idcode,
+        }
+        if read_idcode:
+            with _hardware_operation("detect_mcu_profile"):
+                return _detect(**arguments)
+        return _detect(**arguments)
 
 
 def _register_flash_tools(mcp: Any) -> None:
