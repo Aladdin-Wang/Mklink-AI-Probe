@@ -15,6 +15,7 @@ import uuid
 from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from mklink.cmsis_dap.pyocd_runtime import import_pyocd_attr
 from mklink.offline_download import (
     OfflineAlgorithm,
     OfflineDownloadConfig,
@@ -125,7 +126,9 @@ def _default_ram_start(device: object) -> int:
 
 
 def _pack_device_algorithms(pack_path: Path, part_number: str) -> list[tuple[object, object, int]]:
-    from pyocd.target.pack.cmsis_pack import CmsisPack
+    CmsisPack = import_pyocd_attr(
+        "pyocd.target.pack.cmsis_pack", "CmsisPack"
+    )
 
     pack = CmsisPack(str(pack_path))
     devices = [

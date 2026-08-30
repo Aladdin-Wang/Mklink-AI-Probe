@@ -25,6 +25,7 @@ from mklink.cmsis_dap.backend import _pack_flm_address_offset
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.models import JobRequest, JobState, MemoryRegion, TargetRecord
 from mklink.cmsis_dap.probes import filter_mklink_probes
+from mklink.cmsis_dap.pyocd_runtime import import_pyocd_attr
 from mklink.remote.resource_manager import ResourceError
 
 
@@ -72,7 +73,9 @@ class OnlineFlashServices:
 
 
 def _production_probe_provider() -> Sequence[object]:
-    from pyocd.probe.aggregator import DebugProbeAggregator
+    DebugProbeAggregator = import_pyocd_attr(
+        "pyocd.probe.aggregator", "DebugProbeAggregator"
+    )
 
     return DebugProbeAggregator.get_all_connected_probes()
 
@@ -1682,7 +1685,7 @@ def default_target_memory_provider(
     except (ImportError, OSError, TypeError, ValueError):
         pass
     try:
-        from pyocd.target import TARGET
+        TARGET = import_pyocd_attr("pyocd.target", "TARGET")
 
         entries = TARGET.items() if hasattr(TARGET, "items") else ((name, TARGET[name]) for name in TARGET.get_all_target_names())
         matches = []
@@ -1753,7 +1756,9 @@ def _memory_map_regions(memory_map: object) -> List[MemoryRegion]:
 
 def _pack_memory_regions(part_number: str, pack_path: Path) -> List[MemoryRegion]:
     """Load a Pack target memory map; pyOCD derives sector geometry from its FLM."""
-    from pyocd.target.pack.cmsis_pack import CmsisPack
+    CmsisPack = import_pyocd_attr(
+        "pyocd.target.pack.cmsis_pack", "CmsisPack"
+    )
 
     pack = CmsisPack(str(pack_path))
     matches = [

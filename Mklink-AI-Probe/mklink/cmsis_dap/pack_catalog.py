@@ -7,6 +7,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .models import TargetRecord
 from .paths import PackPaths
+from .pyocd_runtime import import_pyocd_attr
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ def _production_builtin_provider() -> Iterable[TargetRecord]:
 
     from .builtin_pack_bundle import load_builtin_pack_records
     from .builtin_flm_bundle import load_builtin_flm_targets
-    from pyocd.target import TARGET
+    TARGET = import_pyocd_attr("pyocd.target", "TARGET")
 
     if hasattr(TARGET, "items"):
         entries = TARGET.items()
