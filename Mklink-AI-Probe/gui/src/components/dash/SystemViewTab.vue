@@ -290,7 +290,6 @@ import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
   DESKTOP_SETTINGS_CHANGED_EVENT,
-  isMapFilePath,
   isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
@@ -325,9 +324,7 @@ const binaryStream = useBinaryStream('systemview', { capacity: 300_000, channelC
 const renderPaused = ref(false)
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
-const hasAddressFileSource = computed(() => (
-  isSymbolFilePath(settings.value.symbolPath) || isMapFilePath(settings.value.mapPath)
-))
+const hasAddressFileSource = computed(() => isSymbolFilePath(settings.value.symbolPath))
 const rttAddress = ref(settings.value.rttAddress)
 const addressError = ref('')
 const addressSource = ref('')
@@ -450,7 +447,7 @@ async function searchRttAddress(): Promise<void> {
   addressError.value = ''
   const latest = loadDesktopSettings(desktopStorage)
   settings.value = latest
-  const source = latest.symbolPath.trim() || latest.mapPath.trim() || undefined
+  const source = latest.symbolPath.trim() || undefined
   try {
     const result = await findRtt(source)
     if (!result.addr || !isRttAddress(result.addr)) {

@@ -35,7 +35,6 @@ const mocks = vi.hoisted(() => {
     loadDesktopSettings: vi.fn(),
     saveDesktopSettings: vi.fn(),
     pickSymbolFile: vi.fn(),
-    pickMapFile: vi.fn(),
     refreshSymbolCatalog: vi.fn(),
     saveBlobFile: vi.fn(),
   }
@@ -69,7 +68,6 @@ vi.mock('../lib/desktopSettings', async importOriginal => ({
 
 vi.mock('../lib/filePicker', () => ({
   pickSymbolFile: mocks.pickSymbolFile,
-  pickMapFile: mocks.pickMapFile,
 }))
 
 vi.mock('../lib/downloadTextFile', () => ({
@@ -133,14 +131,12 @@ describe('ConfigView', () => {
     mocks.loadDesktopSettings.mockReturnValue({
       version: 1,
       symbolPath: 'C:\\saved\\app.axf',
-      mapPath: 'C:\\saved\\app.map',
       rttAddress: '',
       transmitMode: 'text',
       lineEnding: '',
       sendHistory: [],
     })
     mocks.pickSymbolFile.mockResolvedValue(null)
-    mocks.pickMapFile.mockResolvedValue(null)
     vi.spyOn(window, 'open').mockImplementation(() => null)
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
   })
@@ -367,14 +363,14 @@ describe('ConfigView', () => {
     expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('10 MHz'))
   })
 
-  it('restores and automatically saves independently editable AXF/ELF and MAP paths', async () => {
+  it('restores and automatically saves the AXF/ELF path without MAP controls', async () => {
     const wrapper = await mountView()
     await wrapper.get('[data-testid="config-section-files"]').trigger('click')
 
     expect(wrapper.get<HTMLInputElement>('[data-testid="symbol-path"]').element.value)
       .toBe('C:\\saved\\app.axf')
-    expect(wrapper.get<HTMLInputElement>('[data-testid="map-path"]').element.value)
-      .toBe('C:\\saved\\app.map')
+    expect(wrapper.find('[data-testid="map-path"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="browse-map"]').exists()).toBe(false)
 
     mocks.pickSymbolFile.mockResolvedValueOnce('D:\\build\\next.elf')
     await wrapper.get('[data-testid="browse-symbol"]').trigger('click')
@@ -382,14 +378,10 @@ describe('ConfigView', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="symbol-path"]').element.value)
       .toBe('D:\\build\\next.elf')
 
-    await wrapper.get('[data-testid="map-path"]').setValue('D:\\build\\next.map')
-    await wrapper.get('[data-testid="browse-map"]').trigger('click')
-
     expect(mocks.saveDesktopSettings).toHaveBeenCalledWith(
       window.localStorage,
       expect.objectContaining({
         symbolPath: 'D:\\build\\next.elf',
-        mapPath: 'D:\\build\\next.map',
       }),
     )
     expect(wrapper.find('[data-testid="save-files"]').exists()).toBe(false)
@@ -492,7 +484,6 @@ describe('ConfigView', () => {
     mocks.loadDesktopSettings.mockReturnValueOnce({
       version: 1,
       symbolPath: 'C:\\saved\\app.txt',
-      mapPath: 'C:\\saved\\app.axf',
       rttAddress: '',
       transmitMode: 'text',
       lineEnding: '',
@@ -509,7 +500,7 @@ describe('ConfigView', () => {
 
     await wrapper.get('[data-testid="config-section-files"]').trigger('click')
     expect(wrapper.get('[data-testid="symbol-path-validation"]').text()).toContain('.axf')
-    expect(wrapper.get('[data-testid="map-path-validation"]').text()).toContain('.map')
+    expect(wrapper.find('[data-testid="map-path-validation"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="parse-symbols"]').attributes('disabled')).toBeDefined()
   })
 

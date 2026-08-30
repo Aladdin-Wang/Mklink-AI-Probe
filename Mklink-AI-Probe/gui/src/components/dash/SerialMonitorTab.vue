@@ -203,7 +203,6 @@ const retainedCount = computed(() => logPanel.value?.retainedCount ?? 0)
 const transmitSettings = computed<DesktopSettings>(() => ({
   version: 1,
   symbolPath: '',
-  mapPath: '',
   rttAddress: '',
   rttEncoding: 'utf-8',
   transmitMode: serialSettings.value.transmitMode,

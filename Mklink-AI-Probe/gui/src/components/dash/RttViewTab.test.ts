@@ -133,7 +133,7 @@ describe('RttViewTab binary migration', () => {
     return {
       version: 1,
       symbolPath: '',
-      mapPath: '',
+      symbolDisplayPath: '',
       rttAddress: '',
       rttEncoding: 'utf-8',
       transmitMode: 'text',
@@ -434,10 +434,9 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('searches AXF/ELF before MAP and fills the editable RTT address', async () => {
+  it('searches the selected AXF/ELF and fills the editable RTT address', async () => {
     saveDesktopSettings(localStorage, desktopSettings({
       symbolPath: 'C:\\firmware\\app.elf',
-      mapPath: 'C:\\firmware\\app.map',
       rttAddress: '0x20000000',
     }))
     mocks.api.findRtt.mockResolvedValueOnce({
@@ -469,19 +468,11 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('falls back to MAP and then to the legacy project search when paths are empty', async () => {
+  it('falls back to project auto-detection when no AXF/ELF is selected', async () => {
     saveDesktopSettings(localStorage, desktopSettings({
       symbolPath: '   ',
-      mapPath: 'C:\\firmware\\app.map',
     }))
-    let wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
-    await wrapper.get('[data-testid="rtt-search"]').trigger('click')
-    await flushPromises()
-    expect(mocks.api.findRtt).toHaveBeenLastCalledWith('C:\\firmware\\app.map')
-    wrapper.unmount()
-
-    saveDesktopSettings(localStorage, desktopSettings())
-    wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('[data-testid="rtt-search"]').trigger('click')
     await flushPromises()
     expect(mocks.api.findRtt).toHaveBeenLastCalledWith(undefined)
@@ -495,14 +486,14 @@ describe('RttViewTab binary migration', () => {
 
     await wrapper.get('[data-testid="rtt-search"]').trigger('click')
     await wrapper.get('[data-testid="rtt-address"]').setValue('0x20003333')
-    resolveSearch({ found: true, addr: '0x20001111', source: 'map:old.map' })
+    resolveSearch({ found: true, addr: '0x20001111', source: 'binary:old.elf' })
     await flushPromises()
 
     expect((wrapper.get('[data-testid="rtt-address"]').element as HTMLInputElement).value)
       .toBe('0x20003333')
     expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}').rttAddress)
       .toBe('0x20003333')
-    expect(wrapper.text()).not.toContain('map:old.map')
+    expect(wrapper.text()).not.toContain('binary:old.elf')
     wrapper.unmount()
   })
 

@@ -1200,9 +1200,9 @@ def create_app(
     async def rtt_find(
         source_path: str | None = Body(default=None, embed=True),
     ):
-        """Auto-detect RTT control block address from MAP/ELF file.
+        """Auto-detect RTT control block address from ELF/MAP file.
 
-        Scans the project for MAP files and resolves _SEGGER_RTT address.
+        Scans the project for ELF/MAP files and resolves _SEGGER_RTT address.
         If found, updates rtt_config automatically.
         """
         from mklink.project_config import (
@@ -1222,47 +1222,81 @@ def create_app(
             }
 
         project_root = _state["project_root"]
+        root = Path(project_root)
         project_info = load_keil_project(project_root) or {}
-        map_path = project_info.get("map_path")
-        if not map_path:
-            # Try common locations
-            from pathlib import Path
-            root = Path(project_root)
-            candidates = list(root.glob("**/*.map")) + list(root.glob("**/*.MAP"))
-            if candidates:
-                map_path = str(candidates[0])
 
-        if map_path:
-            result = await asyncio.to_thread(diagnose_rtt_addr, map_path)
-            if result.addr:
-                # Update rtt_config with found address
-                cfg = load_rtt_config(project_root) or {}
-                cfg["rtt_addr"] = result.addr
-                save_rtt_config(project_root, cfg)
-                return {
-                    "found": True,
+        configured_binary = []
+        configured_maps = []
+        for key in ("axf_path", "out_path", "map_path"):
+            value = project_info.get(key)
+            if not value:
+                continue
+            candidate = Path(value).expanduser()
+            if not candidate.is_absolute():
+                candidate = root / candidate
+            if not candidate.is_file():
+                continue
+            target = configured_maps if key == "map_path" else configured_binary
+            if candidate not in target:
+                target.append(candidate)
+
+        last_response = None
+
+        async def diagnose_sources(source_files):
+            nonlocal last_response
+            for source_file in source_files:
+                source_path = str(source_file)
+                result = await asyncio.to_thread(diagnose_rtt_addr, source_path)
+                response = {
+                    "found": bool(result.addr),
                     "addr": result.addr,
                     "source": result.source,
-                    "source_path": map_path,
+                    "source_path": source_path,
                     "details": result.details,
                     "warnings": result.warnings,
-                    "map_path": map_path,
                 }
-            return {
-                "found": False,
-                "addr": None,
-                "source": result.source,
-                "source_path": map_path,
-                "details": result.details,
-                "warnings": result.warnings,
-                "map_path": map_path,
-            }
+                if source_file.suffix.lower() == ".map":
+                    response["map_path"] = source_path
+                last_response = response
+                if result.addr:
+                    cfg = load_rtt_config(project_root) or {}
+                    cfg["rtt_addr"] = result.addr
+                    save_rtt_config(project_root, cfg)
+                    return response
+            return None
+
+        response = await diagnose_sources(configured_binary)
+        if response is not None:
+            return response
+
+        discovered_binary = []
+        discovered_maps = []
+        known_files = set(configured_binary + configured_maps)
+        for candidate in root.rglob("*"):
+            if not candidate.is_file() or candidate in known_files:
+                continue
+            suffix = candidate.suffix.lower()
+            if suffix in {".axf", ".elf", ".out"}:
+                discovered_binary.append(candidate)
+            elif suffix == ".map":
+                discovered_maps.append(candidate)
+
+        for source_files in (
+            sorted(discovered_binary),
+            configured_maps,
+            sorted(discovered_maps),
+        ):
+            response = await diagnose_sources(source_files)
+            if response is not None:
+                return response
+        if last_response is not None:
+            return last_response
         return {
             "found": False,
             "addr": None,
             "source": "",
             "source_path": None,
-            "details": ["未找到 MAP 文件"],
+            "details": ["未找到 AXF/ELF/OUT/MAP 文件"],
             "warnings": [],
         }
 

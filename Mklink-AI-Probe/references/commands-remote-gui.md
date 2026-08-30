@@ -48,7 +48,9 @@ GUI 启动后在浏览器中提供三个主页面：
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
 - **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
 
-浏览器版“配置 > 文件来源”可直接选择本机 AXF/ELF/OUT 和 MAP 文件。浏览器
+浏览器版“配置 > 文件来源”可直接选择本机 AXF/ELF/OUT 文件。AXF/ELF/OUT
+已经包含 SuperWatch 符号、类型信息，也可用于 RTT/SystemView 地址搜索，用户不需要
+再手动加载 MAP 文件。浏览器
 不会暴露本机绝对路径，因此前端使用 multipart 将文件上传到本机 Mklink 服务的
 受控 `.mklink/uploads/file-sources` 目录，再把服务端路径用于连接和符号解析。
 单文件上限为 256 MiB；Tauri 桌面版继续使用原生文件对话框，不经过上传。

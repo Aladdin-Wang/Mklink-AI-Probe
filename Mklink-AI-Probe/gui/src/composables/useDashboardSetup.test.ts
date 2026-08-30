@@ -61,9 +61,7 @@ describe('useDashboardSetup', () => {
     saveDesktopSettings(storage, {
       version: 1,
       symbolPath: '',
-      mapPath: '',
       symbolDisplayPath: '',
-      mapDisplayPath: '',
       rttAddress: '',
       rttEncoding: 'utf-8',
       transmitMode: 'text',

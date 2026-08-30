@@ -374,9 +374,92 @@ def test_rtt_find_explicit_missing_file_returns_actionable_details(tmp_path):
     assert any("文件不存在" in detail for detail in body["details"])
 
 
-def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp_path):
+def test_rtt_find_without_source_prefers_project_axf_and_persists_address(tmp_path):
+    axf_path = tmp_path / "firmware.axf"
+    axf_path.write_bytes(b"axf")
     map_path = tmp_path / "firmware.map"
+    map_path.write_text("map", encoding="utf-8")
     result = SimpleNamespace(
+        addr="0x20001A40",
+        source="binary:firmware.axf",
+        details=["resolved _SEGGER_RTT"],
+        warnings=[],
+    )
+    with patch(
+        "mklink.project_config.load_keil_project",
+        return_value={"axf_path": str(axf_path)},
+    ), patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch(
+        "mklink.project_config.load_rtt_config", return_value={"mode": 0},
+    ), patch("mklink.project_config.save_rtt_config") as save_rtt_config:
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post("/api/rtt-find")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "found": True,
+        "addr": "0x20001A40",
+        "source": "binary:firmware.axf",
+        "source_path": str(axf_path),
+        "details": ["resolved _SEGGER_RTT"],
+        "warnings": [],
+    }
+    diagnose.assert_called_once_with(str(axf_path))
+    save_rtt_config.assert_called_once_with(
+        str(tmp_path), {"mode": 0, "rtt_addr": "0x20001A40"},
+    )
+
+
+def test_rtt_find_without_source_falls_back_to_existing_project_map(tmp_path):
+    missing_axf = tmp_path / "missing.axf"
+    map_path = tmp_path / "firmware.map"
+    map_path.write_text("map", encoding="utf-8")
+    result = SimpleNamespace(
+        addr=None,
+        source="map:firmware.map",
+        details=["未找到 _SEGGER_RTT 地址"],
+        warnings=[],
+    )
+    with patch(
+        "mklink.project_config.load_keil_project",
+        return_value={"axf_path": str(missing_axf), "map_path": str(map_path)},
+    ), patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch(
+        "mklink.project_config.save_rtt_config",
+    ) as save_rtt_config:
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post("/api/rtt-find")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "found": False,
+        "addr": None,
+        "source": "map:firmware.map",
+        "source_path": str(map_path),
+        "details": ["未找到 _SEGGER_RTT 地址"],
+        "warnings": [],
+        "map_path": str(map_path),
+    }
+    diagnose.assert_called_once_with(str(map_path))
+    save_rtt_config.assert_not_called()
+
+
+def test_rtt_find_without_source_tries_map_when_axf_has_no_rtt(tmp_path):
+    axf_path = tmp_path / "firmware.axf"
+    axf_path.write_bytes(b"axf")
+    map_path = tmp_path / "firmware.map"
+    map_path.write_text("map", encoding="utf-8")
+    missing_result = SimpleNamespace(
+        addr=None,
+        source="binary:firmware.axf",
+        details=["AXF 中未找到 _SEGGER_RTT"],
+        warnings=[],
+    )
+    found_result = SimpleNamespace(
         addr="0x20001A40",
         source="map:firmware.map",
         details=["resolved _SEGGER_RTT"],
@@ -384,12 +467,15 @@ def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp
     )
     with patch(
         "mklink.project_config.load_keil_project",
-        return_value={"map_path": str(map_path)},
+        return_value={"axf_path": str(axf_path)},
     ), patch(
-        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+        "mklink.rtt_addr.diagnose_rtt_addr",
+        side_effect=[missing_result, found_result],
     ) as diagnose, patch(
-        "mklink.project_config.load_rtt_config", return_value={"mode": 0},
-    ), patch("mklink.project_config.save_rtt_config") as save_rtt_config:
+        "mklink.project_config.load_rtt_config", return_value={},
+    ), patch(
+        "mklink.project_config.save_rtt_config",
+    ) as save_rtt_config:
         app = create_app(auth_token=None, project_root=str(tmp_path))
         with TestClient(app) as client:
             response = client.post("/api/rtt-find")
@@ -404,10 +490,45 @@ def test_rtt_find_without_source_preserves_project_discovery_and_persistence(tmp
         "warnings": [],
         "map_path": str(map_path),
     }
-    diagnose.assert_called_once_with(str(map_path))
+    assert [entry.args for entry in diagnose.call_args_list] == [
+        (str(axf_path),),
+        (str(map_path),),
+    ]
     save_rtt_config.assert_called_once_with(
-        str(tmp_path), {"mode": 0, "rtt_addr": "0x20001A40"},
+        str(tmp_path), {"rtt_addr": "0x20001A40"},
     )
+
+
+def test_rtt_find_without_source_scans_binaries_before_maps(tmp_path):
+    nested = tmp_path / "build" / "nested"
+    nested.mkdir(parents=True)
+    axf_path = nested / "firmware.AXF"
+    axf_path.write_bytes(b"axf")
+    (tmp_path / "firmware.map").write_text("map", encoding="utf-8")
+    result = SimpleNamespace(
+        addr="0x20001A40",
+        source="binary:firmware.AXF",
+        details=["resolved _SEGGER_RTT"],
+        warnings=[],
+    )
+    with patch(
+        "mklink.project_config.load_keil_project",
+        return_value={
+            "axf_path": str(tmp_path / "missing.axf"),
+            "map_path": str(tmp_path / "firmware.map"),
+        },
+    ), patch(
+        "mklink.rtt_addr.diagnose_rtt_addr", return_value=result,
+    ) as diagnose, patch(
+        "mklink.project_config.save_rtt_config",
+    ):
+        app = create_app(auth_token=None, project_root=str(tmp_path))
+        with TestClient(app) as client:
+            response = client.post("/api/rtt-find")
+
+    assert response.status_code == 200
+    assert response.json()["source_path"] == str(axf_path)
+    diagnose.assert_called_once_with(str(axf_path))
 
 
 def _connected_symbol_device(tmp_path):

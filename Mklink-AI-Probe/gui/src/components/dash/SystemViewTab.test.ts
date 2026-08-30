@@ -110,9 +110,7 @@ function desktopSettings(overrides: Partial<DesktopSettings> = {}): DesktopSetti
   return {
     version: 1,
     symbolPath: '',
-    mapPath: '',
     symbolDisplayPath: '',
-    mapDisplayPath: '',
     rttAddress: '0x0008E488',
     rttEncoding: 'utf-8',
     transmitMode: 'text',

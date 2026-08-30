@@ -150,7 +150,6 @@ import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
   DESKTOP_SETTINGS_CHANGED_EVENT,
-  isMapFilePath,
   isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
@@ -180,9 +179,7 @@ const {
 } = useDashboardSetup()
 const desktopStorage = localStorage
 const settings = ref<DesktopSettings>(loadDesktopSettings(desktopStorage))
-const hasAddressFileSource = computed(() => (
-  isMapFilePath(settings.value.mapPath) || isSymbolFilePath(settings.value.symbolPath)
-))
+const hasAddressFileSource = computed(() => isSymbolFilePath(settings.value.symbolPath))
 const rttAddress = ref(settings.value.rttAddress)
 const rttEncoding = ref<RttEncoding>(settings.value.rttEncoding)
 const addressError = ref('')
@@ -291,8 +288,7 @@ async function searchRttAddress(): Promise<void> {
   searching.value = true
   addressError.value = ''
   const symbolPath = settings.value.symbolPath.trim()
-  const mapPath = settings.value.mapPath.trim()
-  const source = symbolPath || mapPath || undefined
+  const source = symbolPath || undefined
   try {
     const result = await findRtt(source)
     if (disposed || generation !== searchGeneration) return

@@ -26,8 +26,9 @@ RT-Thread (SEGGER_SYSVIEW 钩子) ──事件包──▶ RTT 上行通道 1 ("
                    CLI 实时打印 / systemview-analyze / HTML 报告 / GUI 时间轴
 ```
 
-- **地址发现**：RTT View 与 RTOS Trace 各自都能从 AXF/ELF、MAP 或工程配置搜索
-  `_SEGGER_RTT`；两边共享最近一次搜索或手工输入的地址。
+- **地址发现**：RTT View 与 RTOS Trace 优先从已加载的 AXF/ELF 搜索
+  `_SEGGER_RTT`；未手动选择文件时由工程配置自动发现构建产物。两边共享最近一次
+  搜索或手工输入的地址，用户不需要额外加载 MAP 文件。
 - **数据获取**：PC 端调用 `SystemView.start(addr, search_size, channel=1)`，随后完成
   SEGGER UART Recorder 的 `SV` 握手并发送开始命令。停止时发送 Recorder 停止命令和
   `SystemView.stop()`，让探针恢复命令行。所以目标工程**必须先集成 RTT**。
@@ -140,7 +141,7 @@ MCP（Agent）等价：`systemview_start` / `capture_systemview` / `systemview_a
 
 | 现象 | 排查 |
 |---|---|
-| `未找到 RTT 控制块` | 在 RTOS Trace 中 Auto Search；确认 AXF/ELF 或 MAP 路径、`rtt-integrate` 和 `HEAP_END`；必要时重连探针 |
+| `未找到 RTT 控制块` | 在 RTOS Trace 中 Auto Search；确认 AXF/ELF 已加载或工程构建产物可被自动发现，并检查 `rtt-integrate` 和 `HEAP_END`；必要时重连探针 |
 | `Recorder 握手超时/失败` | 确认探针固件包含 `SystemView.*` 转发并已更新；停止旧会话后重试 |
 | 启动后一直无数据 | 检查 RTT 地址、通道 1、`USE_SYSTEMVIEW` 和目标是否正在运行；后端会在超时后报告错误，不会永久停在 starting |
 | 解码 0 事件 / `未同步` | 确认 `USE_SYSTEMVIEW` 已定义、固件已重烧；`rt_trace_init` 自动注册（看启动 `kprintf`）|

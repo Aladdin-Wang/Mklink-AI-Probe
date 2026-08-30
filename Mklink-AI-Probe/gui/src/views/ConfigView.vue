@@ -14,7 +14,7 @@ import {
   saveDesktopSettings,
   type DesktopSettings,
 } from '../lib/desktopSettings'
-import { pickMapFile, pickSymbolFile, type PickedFile } from '../lib/filePicker'
+import { pickSymbolFile, type PickedFile } from '../lib/filePicker'
 import { saveBlobFile } from '../lib/downloadTextFile'
 import { IS_TAURI } from '../lib/runtimeEndpoint'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
@@ -227,21 +227,9 @@ async function browseSymbolFile() {
   browsingFiles.value = true
   try {
     const source = await selectedFilePath('symbol', await pickSymbolFile())
-    if (source) updateFilePath('symbol', source.path, source.displayPath)
+    if (source) updateFilePath(source.path, source.displayPath)
   } catch (error: any) {
     toast.error(tr('加载 AXF / ELF 文件失败: ', 'Failed to load AXF / ELF file: ') + error.message)
-  } finally {
-    browsingFiles.value = false
-  }
-}
-
-async function browseMapFile() {
-  browsingFiles.value = true
-  try {
-    const source = await selectedFilePath('map', await pickMapFile())
-    if (source) updateFilePath('map', source.path, source.displayPath)
-  } catch (error: any) {
-    toast.error(tr('加载 MAP 文件失败: ', 'Failed to load MAP file: ') + error.message)
   } finally {
     browsingFiles.value = false
   }
@@ -255,14 +243,9 @@ function persistFilePaths() {
   }
 }
 
-function updateFilePath(kind: 'symbol' | 'map', value: string, displayPath = value) {
-  if (kind === 'symbol') {
-    settings.value.symbolPath = value
-    settings.value.symbolDisplayPath = displayPath === value ? '' : displayPath
-  } else {
-    settings.value.mapPath = value
-    settings.value.mapDisplayPath = displayPath === value ? '' : displayPath
-  }
+function updateFilePath(value: string, displayPath = value) {
+  settings.value.symbolPath = value
+  settings.value.symbolDisplayPath = displayPath === value ? '' : displayPath
   persistFilePaths()
 }
 
@@ -514,16 +497,12 @@ onMounted(async () => {
         v-else-if="activeSection === 'files'"
         :symbol-path="settings.symbolPath"
         :symbol-display-path="settings.symbolDisplayPath"
-        :map-path="settings.mapPath"
-        :map-display-path="settings.mapDisplayPath"
         :connected="deviceStatus.connected"
         :symbol-status="deviceStatus.axf"
         :browsing="browsingFiles"
         :parsing="parsingSymbols"
-        @update:symbol-path="updateFilePath('symbol', $event)"
-        @update:map-path="updateFilePath('map', $event)"
+        @update:symbol-path="updateFilePath($event)"
         @browse-symbol="browseSymbolFile"
-        @browse-map="browseMapFile"
         @parse="parseSymbols"
       />
 

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-30T15:31:00+08:00`
+- 更新时间：`2026-08-30T17:26:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`已撤销 7f10d64 的大范围 Arm 跨仓改造计划；最终提交号以 Git 为准。`
-- 远端 HEAD：`本次撤销和维护记忆校正完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
-- 工作树：0.1.9 预发布分支恢复小步维护：每次只复现、修复、验证并推送一个明确问题；不实施跨三个仓库的大范围改造计划。
-- 当前任务：使用 STM32F103 测试工程现有 Keil AXF 打开 WebGUI，由维护者手测下一个上位机问题；发现后按单问题闭环修复并及时推送。
-- 状态：`v0.1.9-webgui-bug-triage`
+- HEAD：`本次提交前为 c509ca5；Keil 压缩 AXF 符号兼容与 MAP GUI 精简的最终提交号以 Git 为准。`
+- 远端 HEAD：`本次单问题闭环完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支修复 Keil 压缩 RW AXF 的可写执行区识别，并从 GUI 取消用户手动加载 MAP 的入口；底层 CLI、工程配置和旧客户端 MAP 兼容保留。
+- 当前任务：使用 GD32E517 工程真实 rtthread.axf 复核 SuperWatch 的 board_info_data 搜索，验证 AXF 单文件配置和取消 MAP GUI 入口后 RTT/SystemView 自动发现无退化。
+- 状态：`v0.1.9-gd32-compressed-axf-symbol-fix`
 
 ## 里程碑
 
@@ -23,7 +23,6 @@
 
 ## 验证证据
 
-- **0.1.9 GUI / 受影响 Python**：GUI 全量 57 文件、584 项通过；生产构建通过。实际 Edge 加载 gui/dist 验证非法值禁用、250000 整数提交、连接后回显锁定及关闭后恢复控件；串口传输使用模拟接口，不是真机。最终相关 Python（Tauri 构建、固件、发布归档和项目记忆）68 项通过。
 - **Python 全量限制**：整套尝试未全绿；一次全量 1393 passed、15 failed、1 skipped。排除其中 600 秒 pip 安装超时项后复跑 1394 passed、13 failed、1 skipped、1 deselected；剩余包括 12 项 WinError 1314 符号链接权限和 1 项依赖线上版本的固件夹具。固件夹具随后隔离线上索引并在最终 68 项中通过。不能宣称全量门禁通过。
 - **NSIS 升级流程**：使用 Tauri 实际生成模板与当前钩子、隔离注册身份/目录/测试可执行文件：历史钩子＋延迟卸载夹具复现新程序和图标丢失；修复后的 0.1.7/0.1.8 同目录升级、跨目录快捷方式迁移、已删除/另有目标快捷方式共 5 场景通过，配置及 /R 重启标记保留。这不是正式产品签名包或 UAC/真机验收。
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
@@ -31,6 +30,7 @@
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
 - **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
 - **SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）**：同进程50k×16 A/B：旧对象热路径20109.41 samples/s、11280901 calls；预编译直接解码38641.74 samples/s、5862521 calls，吞吐+92.16%、调用约-48.03%。STM32H743当前AXF符号superwatch_ch00..15位于0x24040000..0x2404003C；曾因WebGUI仍使用旧上传AXF副本而读取0x20009150起的旧地址，切换到当前工程AXF后16路0..1相移三角波恢复。真实Chrome确认暂停和停止后横轴缩放均保留波形。V4第二版16路实测：1ms固件周期均值/中位数均1000us、主机997.08Hz；100us中位数100us、均值108.14us、9237.72Hz；10us尽快采样9535.17Hz。三档read/CRC/固件丢样标记/后端/WebSocket丢包均为0。GUI全量57文件/590项、受影响Python156项和生产构建通过。
+- **GD32E517 Keil 压缩 AXF 与 MAP GUI 精简（2026-08-30）**：真实 rtthread.axf（SHA-256 3753E0F3...1D9AF7F）的 board_info_data 为全局隐藏 OBJECT，地址0x200007A0、当前大小1592、DWARF类型board_info_t；旧逻辑把压缩加载大小误作RAM执行区而过滤该变量。按同段对象执行末端安全扩展可写区后，CLI精确搜索恢复。GUI只保留AXF/ELF/OUT入口；旧v1设置中的MAP字段会丢弃且保留其余设置，RTT/SystemView无手选文件时优先自动发现AXF并保留MAP后备。GUI全量57文件/590项、受影响Python111项和生产构建通过。真实Chrome连接COM228/IDCODE 0x0BE12477，内置pyelftools加载8591个固定可读变量；MAP控件计数为0，搜索返回board_info_data根节点及tBmsInfo成员，控制台无warn/error。
 
 ## 架构决策
 
@@ -39,22 +39,22 @@
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
 - Web 静态 JS/MJS/CSS MIME 不依赖系统注册表。通过 Vite assets/mime-v1 更换整个资源图的缓存 URL，避免只改 HTML 遗漏延迟加载；保留 HTML no-store 和哈希资源 immutable。缓存代号只在响应语义需作废旧缓存时变更，必须重建并提交 gui/dist。
 - 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。 用户中间文件固定在选定工作根目录，默认目标项目 .mklink；工作脚本、日志、报告和缓存分类，保留可复用缓存与唯一证据；不能通过篡改 project-root 重定向固定日志。
-- 默认不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存；本轮维护者明确例外授权将本地 HPMLink_V4.3.8.uf2 升级包及 V4.3.7 替换提交到开发分支，434bf79 已完成；不代表固件通道发布。
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自动升级取消自定义强制卸载，成功写入后迁移匹配的旧快捷方式，不自动删除旧目录；测试限 E 盘隔离身份，不改动当前正式安装。详见 docs/ai/windows-upgrade.md。
 - SuperWatch连续采样固定使用dump_memory，不以read_ram降级；变量块只合并连续或重叠地址，最多15 region。后端按预编译字段直接解码为typed批，512样本、64KiB和20ms最长等待共同触发发送；完整历史只存Worker，主线程正常模式每通道容量2，暂停/停止交互按可见区间请求包络。V4固件使用绝对截止点并扣除SWD读取、CRC、封包和USB入队耗时；超期立即重建截止点，低于50us解释为尽快采样。
 - AI/PC 对单只下载器只允许串行控制并复用连接；超时后只查一次状态，不循环重试。MCP direct read/write 4096B，batch read 最多16项/4096B，capture 最长30秒，flush 最多8项/16300B。dump_memory 固件帧容量虽为16 region，但 Pika 文本入口16组加 period 正好33参数并在V4.3.8实测卡死，因此 Skill/CLI/MCP安全上限固定15且与堆大小无关；流停止至少排空50ms并释放连接。
+- GUI 文件来源只要求 AXF/ELF/OUT；这些文件承担 SuperWatch 类型/符号和 RTT/SystemView 地址搜索。用户旧 MAP 设置按 v1 无损迁移后丢弃；工程解析、CLI、显式 API 和旧客户端上传仍保留 MAP 后备兼容。Keil 压缩 RW 段必须以受 section 边界约束的 OBJECT 执行地址补足范围，不能直接把压缩 sh_size 当作 RAM 执行跨度。
 
 ## 真机环境
 
 - **probe**：本轮使用V4下载器；维护者两次编译并下载含dump_memory截止点补偿的本地固件，随后完成同条件A/B真机验证。
-- **target**：STM32H743 测试工程 E:\stm32h743-hs_sd_v3_Small_backup；16路 float 测试符号位于非缓存段 0x24040000..0x2404003C。H743 可缓存 AXI SRAM 中 CPU 已写数据可能仍留在 D-Cache，SWD 直读会看到旧零，真机波形夹具必须使用非缓存区或显式维护缓存一致性。
-- **permission**：按维护者授权修改并构建V4下载器USB2VOFA固件；维护者手动下载。直接修改、编译并下载STM32H743测试工程，真机读取与WebGUI交互验证完成；未切换目标供电。
+- **target**：STM32H743 测试工程 E:\stm32h743-hs_sd_v3_Small_backup；16路 float 测试符号位于非缓存段 0x24040000..0x2404003C。H743 可缓存 AXI SRAM 中 CPU 已写数据可能仍留在 D-Cache，SWD 直读会看到旧零，真机波形夹具必须使用非缓存区或显式维护缓存一致性。本轮新增 GD32E517 工程 E:\PHDZ\PROJECT\64 red source\gd32e517_RACK_V1.0.4，探针读到 IDCODE 0x0BE12477。
+- **permission**：按维护者授权修改并构建V4下载器USB2VOFA固件；维护者手动下载。直接修改、编译并下载STM32H743测试工程，真机读取与WebGUI交互验证完成；未切换目标供电。本轮GD32只连接探针并读取符号目录，未写RAM、复位或烧录目标。
 
 ## 下一动作
 
-1. 以 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC\build\keil\Obj\rt-thread.axf 启动 WebGUI，等待维护者手测并给出可复现问题。
-2. 对下一个上位机问题完成复现、最小修复、自动化回归和真实浏览器闭环，然后单独提交并立即推送。
+1. 以 E:\PHDZ\PROJECT\64 red source\gd32e517_RACK_V1.0.4\build\rtthread.axf 保持 WebGUI 打开，等待维护者复测 board_info_data 搜索和 AXF 单文件流程。
+2. 维护者复测通过后继续接收下一个上位机问题，按复现、最小修复、自动化回归、真实浏览器闭环、单独提交和立即推送的节奏处理。
 3. HPM 系列功能梳理、跨固件仓库改造和官方手册重写均留待后续单独立项，不混入当前 0.1.9 基线修复。
 
 ## 已知限制
