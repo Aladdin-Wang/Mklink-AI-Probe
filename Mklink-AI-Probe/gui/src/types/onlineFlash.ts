@@ -40,6 +40,17 @@ export interface CustomFlmRecord {
   sector_sizes: Array<[number, number]>
 }
 
+export interface FlashAlgorithmRecord {
+  algorithm_id: string
+  target_part: string
+  file_name: string
+  flash_start: number
+  flash_size: number
+  default: boolean
+  source_kind: 'installed-pack' | 'builtin-pack' | 'daplink-builtin' | 'pyocd-builtin' | 'custom-flm' | 'hpm-rom-api' | string
+  source_name: string
+}
+
 export interface ImageSegment {
   start: number
   end: number

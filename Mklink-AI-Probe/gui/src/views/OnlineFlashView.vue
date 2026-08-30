@@ -17,7 +17,7 @@ import {
   type BrowserFirmwareFileHandle,
   type PickedFirmwareSource,
 } from '../lib/filePicker'
-import type { CustomFlmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetMemoryRegion, TargetRecord } from '../types/onlineFlash'
+import type { CustomFlmRecord, FlashAlgorithmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetMemoryRegion, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const PROBE_DISCOVERY_ATTEMPTS = 6
@@ -67,6 +67,7 @@ const packProgress = ref(0)
 const packPhase = ref('preparing')
 const packError = ref('')
 const customFlms = ref<CustomFlmRecord[]>([])
+const flashAlgorithms = ref<FlashAlgorithmRecord[]>([])
 const customFlmBusy = ref(false)
 const customFlmError = ref('')
 const firmware = ref<File | null>(null)
@@ -107,6 +108,7 @@ let targetSearchController: AbortController | null = null
 let targetMemoryMapToken = 0
 let packOperationToken = 0
 let customFlmToken = 0
+let flashAlgorithmToken = 0
 let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollingEnabled = false
@@ -363,6 +365,23 @@ async function loadCustomFlms(partNumber = selectedTarget.value?.part_number || 
   }
 }
 
+async function loadFlashAlgorithms(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
+  const token = ++flashAlgorithmToken
+  if (!partNumber) {
+    flashAlgorithms.value = []
+    return
+  }
+  try {
+    const records = await api.listTargetAlgorithms(partNumber)
+    if (token === flashAlgorithmToken && !disposed) flashAlgorithms.value = records
+  } catch (error) {
+    if (token === flashAlgorithmToken) {
+      flashAlgorithms.value = []
+      customFlmError.value = message(error)
+    }
+  }
+}
+
 async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
   const token = ++targetMemoryMapToken
   targetMemoryRegions.value = []
@@ -383,6 +402,7 @@ async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_numbe
 
 watch(() => selectedTarget.value?.part_number || '', partNumber => {
   void loadCustomFlms(partNumber)
+  void loadFlashAlgorithms(partNumber)
   void loadTargetMemoryMap(partNumber)
 })
 
@@ -393,7 +413,7 @@ async function addCustomFlm(file: File): Promise<void> {
   customFlmError.value = ''
   try {
     await api.addCustomFlm(file, partNumber)
-    await Promise.all([loadCustomFlms(partNumber), loadTargetMemoryMap(partNumber)])
+    await Promise.all([loadCustomFlms(partNumber), loadFlashAlgorithms(partNumber), loadTargetMemoryMap(partNumber)])
     resetInspection()
     scheduleAutoInspection()
   } catch (error) {
@@ -411,7 +431,7 @@ async function removeCustomFlm(algorithmId: string): Promise<void> {
   customFlmError.value = ''
   try {
     await api.removeCustomFlm(algorithmId, partNumber)
-    await Promise.all([loadCustomFlms(partNumber), loadTargetMemoryMap(partNumber)])
+    await Promise.all([loadCustomFlms(partNumber), loadFlashAlgorithms(partNumber), loadTargetMemoryMap(partNumber)])
     resetInspection()
     scheduleAutoInspection()
   } catch (error) {
@@ -804,7 +824,7 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
-      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
+      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">

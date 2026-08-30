@@ -450,6 +450,7 @@ def test_hpm_image_rejects_hex_without_pack_lookup(app, services):
 
 def test_hpm_algorithm_api_never_accepts_flm(app, services):
     listed = request(app, "GET", "/api/online-flash/algorithms?part_number=HPM5300")
+    available = request(app, "GET", "/api/online-flash/targets/HPM5300/algorithms")
     added = request(
         app,
         "POST",
@@ -459,9 +460,87 @@ def test_hpm_algorithm_api_never_accepts_flm(app, services):
     )
 
     assert listed.json() == []
+    assert available.json() == [{
+        "algorithm_id": "hpm-rom-api",
+        "target_part": "HPM5300",
+        "file_name": "HPM ROM API",
+        "flash_start": 0x80000000,
+        "flash_size": 0x10000000,
+        "default": True,
+        "source_kind": "hpm-rom-api",
+        "source_name": "HPM ROM API",
+    }]
     assert added.status_code == 422
     assert added.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
     assert services.custom_flms.records == []
+
+
+def test_target_algorithm_route_lists_pack_source_without_paths(app, services, monkeypatch):
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda part_number, paths: [FlashAlgorithm(
+            algorithm_id="pack-algorithm",
+            target_part=part_number,
+            file_name="Internal.FLM",
+            flash_start=0x08000000,
+            flash_size=0x80000,
+            ram_start=0x20000000,
+            ram_size=0x4000,
+            default=True,
+            source_kind="installed-pack",
+            source_name="Vendor.Pack@1.0",
+            source_token="secret-token",
+            pack_path="C:/secret/Vendor.Pack.1.0.pack",
+        )],
+    )
+
+    response = request(app, "GET", "/api/online-flash/targets/DEVICE_A/algorithms")
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "algorithm_id": "pack-algorithm",
+        "target_part": "DEVICE_A",
+        "file_name": "Internal.FLM",
+        "flash_start": 0x08000000,
+        "flash_size": 0x80000,
+        "default": True,
+        "source_kind": "installed-pack",
+        "source_name": "Vendor.Pack@1.0",
+    }]
+    assert "secret" not in response.text.casefold()
+
+
+def test_target_algorithm_route_describes_pyocd_builtin_regions(app, services, monkeypatch):
+    builtin = TargetRecord(
+        "DEVICE_A", "Vendor", installed=True, source="builtin",
+    )
+    monkeypatch.setattr(
+        services.catalog,
+        "search",
+        lambda query, **_kwargs: [builtin]
+        if query.casefold() in builtin.part_number.casefold() else [],
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [],
+    )
+    services.target_memory_provider = lambda _part: (
+        MemoryRegion("flash", 0x08000000, 0x80000, True, True, 0x800),
+    )
+
+    response = request(app, "GET", "/api/online-flash/targets/DEVICE_A/algorithms")
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "algorithm_id": "pyocd-builtin:device_a:08000000",
+        "target_part": "DEVICE_A",
+        "file_name": "DEVICE_A · flash",
+        "flash_start": 0x08000000,
+        "flash_size": 0x80000,
+        "default": True,
+        "source_kind": "pyocd-builtin",
+        "source_name": "pyOCD",
+    }]
 
 
 def test_custom_flm_routes_store_list_and_remove_without_exposing_paths(app, services):

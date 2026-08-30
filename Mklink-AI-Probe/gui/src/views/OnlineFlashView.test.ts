@@ -564,6 +564,21 @@ function viewFetch(targets = [installedTarget]) {
     const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
     if (url.endsWith('/probes')) return json([probeFixture])
     if (url.includes('/targets?')) return json(targets)
+    if (url.includes('/targets/') && url.endsWith('/algorithms')) {
+      const targetPart = decodeURIComponent(url.split('/targets/')[1].split('/algorithms')[0])
+      if (targetPart.startsWith('HPM')) return json([{
+        algorithm_id: 'hpm-rom-api', target_part: targetPart, file_name: 'HPM ROM API',
+        flash_start: 0x80000000, flash_size: 0x10000000, default: true,
+        source_kind: 'hpm-rom-api', source_name: 'HPM ROM API',
+      }])
+      return json([{
+        algorithm_id: 'pack-1', target_part: targetPart, file_name: 'internal.flm',
+        flash_start: 0x08000000, flash_size: 0x80000, default: true,
+        source_kind: 'installed-pack', source_name: 'Vendor.Device_DFP@1.0.0',
+      }, ...algorithms.map(record => ({
+        ...record, default: false, source_kind: 'custom-flm', source_name: '用户 FLM',
+      }))])
+    }
     if (url.includes('/targets/') && url.endsWith('/memory-map')) return json([{
       name: 'flash', start: 0x08000000, length: 0x80000, sector_size: 0x800,
     }])
@@ -700,6 +715,45 @@ describe('online flash task workspace behavior', () => {
     expect((inspectRequest?.[1]?.body as FormData).get('captured_from_target')).toBe('true')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     expect(wrapper.text()).toContain('read-0x80000000-32.bin')
+    wrapper.unmount()
+  })
+
+  it('supports keyboard navigation in target suggestions', async () => {
+    const first = { ...installedTarget, part_number: 'STM32F103x4' }
+    const second = { ...installedTarget, part_number: 'STM32F103x6' }
+    const wrapper = mount(TargetPackPanel, { props: {
+      targets: [first, second], query: 'STM32F103', selectedPart: '', selectedInstalled: false, status: null, busy: false,
+      cancelPending: false, progress: 0, phase: 'preparing', error: '',
+      algorithms: [], algorithmBusy: false, algorithmError: '',
+      canManageAlgorithms: false, algorithmNotRequired: false,
+    } })
+    const input = wrapper.get('[data-testid="target-search"]')
+
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    await input.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('select')?.[0]).toEqual([second])
+    expect((input.element as HTMLInputElement).value).toBe(second.part_number)
+    expect(input.attributes('aria-expanded')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('lists the selected target flash algorithms with their actual sources', () => {
+    const wrapper = mount(TargetPackPanel, { props: {
+      targets: [], query: '', selectedPart: 'STM32F103RC', selectedInstalled: true, status: null, busy: false,
+      cancelPending: false, progress: 0, phase: 'preparing', error: '', algorithms: [],
+      flashAlgorithms: [{
+        algorithm_id: 'pack-1', target_part: 'STM32F103RC', file_name: 'STM32F10x_128.FLM',
+        flash_start: 0x08000000, flash_size: 0x40000, default: true,
+        source_kind: 'installed-pack', source_name: 'Keil.STM32F1xx_DFP@2.4.1',
+      }],
+      algorithmBusy: false, algorithmError: '', canManageAlgorithms: true, algorithmNotRequired: false,
+    } })
+
+    expect(wrapper.get('[data-testid="flash-algorithm-pack-1"]').text()).toContain('STM32F10x_128.FLM')
+    expect(wrapper.get('[data-testid="flash-algorithm-pack-1"]').text()).toContain('Pack FLM')
+    expect(wrapper.get('[data-testid="flash-algorithm-pack-1"]').text()).toContain('0x08000000–0x08040000')
     wrapper.unmount()
   })
 
