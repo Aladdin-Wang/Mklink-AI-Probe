@@ -401,16 +401,71 @@ def test_mcp_capture_duration_and_flush_limits(monkeypatch):
             {"address": 0x20000000 + index, "data_hex": "00"}
             for index in range(9)
         ])
-    with pytest.raises(ValueError, match="must not exceed 16300"):
+    with pytest.raises(ValueError, match="must not exceed 12288"):
         flush_mcp.tools["flush_memory"]([
-            {"address": 0x20000000, "data_hex": "00" * 16300},
-            {"address": 0x20004000, "data_hex": "01"},
+            {"address": 0x20000000, "data_hex": "00" * 6144},
+            {"address": 0x20002000, "data_hex": "01" * 6145},
         ])
     assert calls == []
 
     assert rtt_mcp.tools["rtt_read"](0.1) == {"output": ""}
     assert systemview_mcp.tools["systemview_read"](0.1) == {}
     assert calls == [("rtt", 0.1), ("systemview", 0.1)]
+
+
+def test_mcp_flush_limits_each_item_and_total_before_device_lookup(monkeypatch):
+    mcp = _Mcp()
+    lookups = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_connected_device",
+        lambda: lookups.append("device") or pytest.fail("unexpected device lookup"),
+    )
+    monkeypatch.setitem(mcp_server._holder, "quarantine", None)
+    mcp_server._register_flush_tools(mcp)
+
+    with pytest.raises(ValueError, match="between 1 and 12288"):
+        mcp.tools["flush_memory"]([{
+            "address": 0x20000000,
+            "data_hex": "AA" * 12289,
+        }])
+    with pytest.raises(ValueError, match="must not exceed 12288"):
+        mcp.tools["flush_memory"]([
+            {"address": 0x20000000, "data_hex": "AA" * 8192},
+            {"address": 0x20002000, "data_hex": "55" * 4097},
+        ])
+
+    assert lookups == []
+    limits = mcp_server._capabilities()
+    assert limits["flush_memory_max_regions"] == 8
+    assert limits["flush_memory_max_item_bytes"] == 12288
+    assert limits["flush_memory_max_total_bytes"] == 12288
+
+
+def test_mcp_flush_accepts_exact_12_kib_boundary_with_fake_bridge(monkeypatch):
+    commands = []
+    device = SimpleNamespace(
+        _bridge=SimpleNamespace(
+            send_command=lambda command, timeout: commands.append(
+                (command, timeout)
+            ) or ""
+        )
+    )
+    monkeypatch.setattr(mcp_server, "_connected_device", lambda: device)
+    monkeypatch.setitem(mcp_server._holder, "quarantine", None)
+    mcp = _Mcp()
+    mcp_server._register_flush_tools(mcp)
+
+    result = mcp.tools["flush_memory"]([{
+        "address": 0x20000000,
+        "data_hex": "A5" * 12288,
+    }])
+
+    assert result["total_bytes"] == 12288
+    assert result["batches"] == 1
+    assert len(commands) == 1
+    assert "bytes([0xA5])*12288" in commands[0][0]
+    assert commands[0][1] == 10.0
 
 
 def test_mcp_rejects_parallel_probe_operations_without_queueing():

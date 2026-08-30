@@ -46,7 +46,8 @@ MCP_MAX_BATCH_REGIONS = 16
 MCP_MAX_BATCH_TOTAL_BYTES = 4096
 MCP_MAX_WRITE_BYTES = 4096
 MCP_MAX_FLUSH_WRITES = 8
-MCP_MAX_FLUSH_TOTAL_BYTES = 16300
+MCP_MAX_FLUSH_ITEM_BYTES = 12 * 1024
+MCP_MAX_FLUSH_TOTAL_BYTES = 12 * 1024
 MCP_MAX_CAPTURE_SECONDS = 30.0
 MCP_MAX_SEARCH_BYTES = 64 * 1024
 
@@ -167,6 +168,7 @@ def _capabilities() -> dict[str, Any]:
         "batch_read_max_total_bytes": MCP_MAX_BATCH_TOTAL_BYTES,
         "write_memory_max_bytes": MCP_MAX_WRITE_BYTES,
         "flush_memory_max_regions": MCP_MAX_FLUSH_WRITES,
+        "flush_memory_max_item_bytes": MCP_MAX_FLUSH_ITEM_BYTES,
         "flush_memory_max_total_bytes": MCP_MAX_FLUSH_TOTAL_BYTES,
         "capture_max_seconds": MCP_MAX_CAPTURE_SECONDS,
         "rtt_search_max_bytes": MCP_MAX_SEARCH_BYTES,
@@ -1261,13 +1263,14 @@ def _register_flush_tools(mcp: Any) -> None:
         **Value-add over the CLI: auto-chunks.** The CLI rejects any single
         command over 230 chars (PIKA_LINE_BUFF overflow → REPL deadlock);
         this tool splits automatically:
-          - all-same-byte payloads (zero-fill, 0xFF fill) → short expression,
-            up to the firmware single-address ceiling (validated ≥16300B on
-            V4.3.3; the CLI additionally hits a Windows cmdline-length wall
-            around 16 KiB when bytes are expanded — MCP is unaffected since
-            bytes travel as hex);
+          - all-same-byte payloads (zero-fill, 0xFF fill) → short expression;
           - non-repeat data → 30-byte chunks, ≤8 addresses/batch, ≤230 chars;
           - sends batch-by-batch, waiting for the device prompt between each.
+
+        Host safety limits are enforced before device lookup or I/O: at most
+        8 input regions, at most 12288 bytes in any one region, and at most
+        12288 bytes total per tool call. Split larger writes into sequential
+        calls and wait for each call to finish before sending the next.
 
         The command is silent, but it must not run concurrently with any
         dump/RTT/SystemView stream on the same probe. Stop and release the
@@ -1300,7 +1303,7 @@ def _register_flush_tools(mcp: Any) -> None:
             except ValueError as exc:
                 raise ValueError(f"writes[{i}].data_hex must be valid hex: {exc}") from exc
             _validate_memory_range(
-                address, len(data), max_size=MCP_MAX_FLUSH_TOTAL_BYTES
+                address, len(data), max_size=MCP_MAX_FLUSH_ITEM_BYTES
             )
             parsed.append((address, data))
         total = sum(len(data) for _, data in parsed)
