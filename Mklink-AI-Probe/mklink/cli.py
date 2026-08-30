@@ -2485,14 +2485,13 @@ def _cli_watch(args):
 
 
 def _cli_superwatch(args):
-    """Start SuperWatch read_ram-based variable/register visualization."""
+    """Start SuperWatch dump_memory variable/register visualization."""
     import json
 
     from mklink.superwatch import (
         build_read_blocks,
         find_project_svd,
         load_svd_registers,
-        poll_blocks,
         poll_blocks_dumpmem,
         resolve_watch_items,
         run_superwatch_visualizer,
@@ -2547,14 +2546,13 @@ def _cli_superwatch(args):
             duration=args.duration,
             dwarf_info=dwarf_info,
             svd_registers=svd_registers,
-            dump_mem=getattr(args, 'dump_mem', False),
+            dump_mem=True,
         )
         return
 
     try:
-        collector = poll_blocks_dumpmem if getattr(args, "dump_mem", False) else poll_blocks
-        points = collector(
-            build_read_blocks(items),
+        points = poll_blocks_dumpmem(
+            build_read_blocks(items, max_gap=0),
             port=args.port,
             duration=args.duration,
             period=args.period,
@@ -4153,7 +4151,7 @@ def main():
     _add_elf_backend_arg(watch_parser)
 
     # ---- Modbus RTU 子命令组 ----
-    superwatch_parser = subparsers.add_parser("superwatch", help="SuperWatch read_ram timestamped viewer")
+    superwatch_parser = subparsers.add_parser("superwatch", help="SuperWatch dump_memory binary-stream viewer")
     superwatch_parser.add_argument("variables", nargs="*", help="variables, struct.field paths, or registers")
     superwatch_parser.add_argument("--project-root", default=".", help="project root")
     superwatch_parser.add_argument("--port", help="COM port")
@@ -4168,7 +4166,7 @@ def main():
     superwatch_parser.add_argument("--max-points", type=int, default=500, help="maximum chart points")
     superwatch_parser.add_argument("--duration", type=float, default=30.0, help="run duration seconds; 0=forever")
     superwatch_parser.add_argument("--dump-mem", action="store_true",
-        help="use dump_mem binary streaming protocol for higher throughput")
+        help="compatibility flag; SuperWatch always uses dump_memory binary streaming")
     _add_elf_backend_arg(superwatch_parser)
 
     modbus_parser = subparsers.add_parser(

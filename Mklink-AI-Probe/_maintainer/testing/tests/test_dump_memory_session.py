@@ -155,7 +155,8 @@ def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkey
     bridge.close.assert_called_once()
 
 
-def test_superwatch_cli_dump_flag_selects_stream_collector(monkeypatch):
+@pytest.mark.parametrize("dump_mem", [False, True])
+def test_superwatch_cli_always_selects_stream_collector(monkeypatch, dump_mem):
     from types import SimpleNamespace
     from unittest.mock import Mock
     from mklink import cli, superwatch
@@ -166,7 +167,7 @@ def test_superwatch_cli_dump_flag_selects_stream_collector(monkeypatch):
     poll = Mock(return_value=[])
     monkeypatch.setattr(superwatch, 'poll_blocks', poll)
     cli._cli_superwatch(SimpleNamespace(svd=None, project_root='.', source=None, variables=['a'],
-                                       visualize=False, period=.001, port='test', duration=1, dump_mem=True))
+                                       visualize=False, period=.001, port='test', duration=1, dump_mem=dump_mem))
     collector.assert_called_once()
     poll.assert_not_called()
 

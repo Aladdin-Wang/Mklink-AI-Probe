@@ -196,6 +196,13 @@ var MAX_CHANNELS = 64; // Support 50+ channels (Task 7I)
 var RING_BUFFER_CAPACITY = MAX_POINTS; // Ring buffer capacity matches max points
 var INITIAL_RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
 var RING_BUFFER_BYTES_PER_POINT = 48;
+var SUPERWATCH_MAIN_RING_CAPACITY = 2;
+
+function waveformMainRingCapacity() {
+  return IS_SUPERWATCH_MODE && !binaryDetailEnabled
+    ? SUPERWATCH_MAIN_RING_CAPACITY
+    : RING_BUFFER_CAPACITY;
+}
 
 // API path configuration (adapted for FastAPI backend)
 var _dashType = CONFIG.mode.toLowerCase(); // 'superwatch' or 'vofa'
@@ -2018,7 +2025,7 @@ function applyChannelMetadata(channels, purge) {
     if (!FIELDS[name]) {
       FIELDS[name] = {
         color: COLORS[Object.keys(FIELDS).length % COLORS.length],
-        ringBuf: new RingBuffer(RING_BUFFER_CAPACITY),
+        ringBuf: new RingBuffer(waveformMainRingCapacity()),
         visible: meta.source !== 'struct',
         unit: "",
         type: meta.type || "number",
@@ -2139,13 +2146,18 @@ function captureSuperwatchTimelineSpanIfReady() {
   if (!IS_SUPERWATCH_MODE || superwatchDefaultTimelineSpan !== null ||
       !superwatchTimelineCapturePending) return false;
   var dataSpan = 0;
-  for (var name in FIELDS) {
-    if (!FIELDS.hasOwnProperty(name)) continue;
-    var ring = FIELDS[name].ringBuf;
-    if (!ring || ring.count < INITIAL_RING_BUFFER_CAPACITY) continue;
-    var oldest = ring.oldest();
-    var latest = ring.latest();
-    if (oldest && latest) dataSpan = Math.max(dataSpan, latest.t - oldest.t);
+  if (binaryBufferedSamples >= RING_BUFFER_CAPACITY &&
+      Number.isFinite(binaryBufferStart) && Number.isFinite(binaryBufferEnd)) {
+    dataSpan = binaryBufferEnd - binaryBufferStart;
+  } else {
+    for (var name in FIELDS) {
+      if (!FIELDS.hasOwnProperty(name)) continue;
+      var ring = FIELDS[name].ringBuf;
+      if (!ring || ring.count < INITIAL_RING_BUFFER_CAPACITY) continue;
+      var oldest = ring.oldest();
+      var latest = ring.latest();
+      if (oldest && latest) dataSpan = Math.max(dataSpan, latest.t - oldest.t);
+    }
   }
   if (!(dataSpan > 0)) return false;
   superwatchDefaultTimelineSpan = dataSpan / DEFAULT_TIMELINE_ZOOM;
@@ -2177,7 +2189,7 @@ function setBufferCapacity(newCapacity) {
   if (input) input.value = String(newCapacity);
   for (var name in FIELDS) {
     if (!FIELDS.hasOwnProperty(name)) continue;
-    FIELDS[name].ringBuf = resizeRingBuffer(FIELDS[name].ringBuf, newCapacity);
+    FIELDS[name].ringBuf = resizeRingBuffer(FIELDS[name].ringBuf, waveformMainRingCapacity());
   }
   if (IS_SUPERWATCH_MODE) {
     if (Number.isFinite(visibleSpanBeforeResize) && visibleSpanBeforeResize > 0) {
@@ -2203,6 +2215,14 @@ function resizeRingBuffer(oldBuf, newCapacity) {
   return next;
 }
 
+function resizeWaveformMainRings(newCapacity) {
+  for (var name in FIELDS) {
+    if (!FIELDS.hasOwnProperty(name) || !FIELDS[name].ringBuf ||
+        FIELDS[name].ringBuf.capacity === newCapacity) continue;
+    FIELDS[name].ringBuf = resizeRingBuffer(FIELDS[name].ringBuf, newCapacity);
+  }
+}
+
 function bufferedChannelCount() {
   if (IS_BINARY_WAVEFORM_MODE && Array.isArray(binaryChannelNames) && binaryChannelNames.length) {
     return binaryChannelNames.length;
@@ -2216,7 +2236,9 @@ function updateBufferMemoryEstimate() {
   var requestedCapacity = Math.floor(Number(bufferInput && bufferInput.value));
   if (!Number.isFinite(requestedCapacity) || requestedCapacity < 0) requestedCapacity = RING_BUFFER_CAPACITY;
   var channels = bufferedChannelCount();
-  var bytes = requestedCapacity * channels * RING_BUFFER_BYTES_PER_POINT;
+  var bytes = IS_SUPERWATCH_MODE
+    ? requestedCapacity * (8 + channels * 4)
+    : requestedCapacity * channels * RING_BUFFER_BYTES_PER_POINT;
   var mib = bytes / (1024 * 1024);
   var displayMib = mib < 10 ? mib.toFixed(1) : String(Math.round(mib));
   estimate.textContent = '~' + displayMib + ' MB';
@@ -2412,6 +2434,13 @@ function deserializeState(json) {
 // CSV/PNG export
 // ============================================================
 function exportCSV() {
+  if (IS_SUPERWATCH_MODE && binaryHistoryRequester) {
+    if (!binaryExportPending) {
+      binaryExportPending = true;
+      binaryHistoryRequester();
+    }
+    return;
+  }
   var names = sortedFieldNames();
   if (names.length === 0) return;
   var csvCfg = window._csvExportConfig || { includeTimestamp: true, delimiter: ',', filename: 'jscope_export.csv' };
@@ -2480,6 +2509,44 @@ function exportCSV() {
   );
 }
 
+function exportBinaryHistorySnapshot(snapshot) {
+  if (!IS_SUPERWATCH_MODE || !binaryExportPending || !snapshot) return false;
+  binaryExportPending = false;
+  var times = new Float64Array(snapshot.times);
+  var values = new Float32Array(snapshot.values);
+  if (snapshot.channelCount !== binaryChannelNames.length ||
+      values.length !== snapshot.itemCount * snapshot.channelCount ||
+      times.length !== snapshot.itemCount) return false;
+  var csvCfg = window._csvExportConfig || { includeTimestamp: true, delimiter: ',', filename: 'jscope_export.csv' };
+  var delim = csvCfg.delimiter || ',';
+  var names = sortedFieldNames();
+  var headers = [];
+  if (csvCfg.includeTimestamp !== false) headers.push('timestamp');
+  for (var nameIndex = 0; nameIndex < names.length; nameIndex++) {
+    var field = FIELDS[names[nameIndex]];
+    headers.push(names[nameIndex] + (field.unit ? ' (' + field.unit + ')' : ''));
+  }
+  var rows = new Array(snapshot.itemCount + 1);
+  rows[0] = headers.join(delim);
+  var originSeconds = binaryTimeOrigin !== null
+    ? binaryTimeOrigin
+    : (times.length ? times[0] / 1000 : 0);
+  for (var sample = 0; sample < snapshot.itemCount; sample++) {
+    var row = [];
+    if (csvCfg.includeTimestamp !== false) row.push((times[sample] / 1000 - originSeconds).toFixed(6));
+    for (var column = 0; column < names.length; column++) {
+      var channel = binaryChannelIndex[names[column]];
+      var value = channel === undefined ? NaN : values[sample * snapshot.channelCount + channel];
+      row.push(Number.isFinite(value) ? value.toFixed(
+        FIELDS[names[column]].precision !== undefined ? FIELDS[names[column]].precision : 4
+      ) : '');
+    }
+    rows[sample + 1] = row.join(delim);
+  }
+  saveTextContent(csvCfg.filename || 'jscope_export.csv', rows.join('\n'), 'text/csv;charset=utf-8;');
+  return true;
+}
+
 function exportPNG() {
   drawChart();
   var dataURL = canvas.toDataURL('image/png');
@@ -2541,7 +2608,7 @@ function processPoint(point) {
       if (colorIdx >= MAX_CHANNELS) continue; // Enforce channel limit
       FIELDS[k] = {
         color: COLORS[colorIdx % COLORS.length],
-        ringBuf: new RingBuffer(RING_BUFFER_CAPACITY),
+        ringBuf: new RingBuffer(waveformMainRingCapacity()),
         visible: true,
         unit: "",
         type: "number",
@@ -2688,15 +2755,25 @@ function setArraySnapshot(snapshot) {
   return true;
 }
 
-// Binary waveform bridge: Worker messages arrive as one transferable,
-// sample-major Float32 batch. Collection updates typed rings immediately;
-// WaveformViewer's shared RenderScheduler calls renderBinaryFrame at <=30 FPS.
+// Binary waveform bridge. SuperWatch history remains in the Worker; the main
+// thread receives summaries and bounded render envelopes. VOFA still accepts
+// transferable sample-major Float32 batches directly.
 var binaryChannelNames = [];
 var binaryChannelSignature = null;
 var binaryTimeOrigin = null;
 var binaryLastTimestamp = null;
 var binaryLastSequence = null;
+var binaryLastDetailSequence = null;
 var binaryEnvelope = null;
+var binaryBufferStart = null;
+var binaryBufferEnd = null;
+var binaryBufferedSamples = 0;
+var binaryHistoryRequester = null;
+var binaryDetailRequester = null;
+var binaryVisibleRangeRequester = null;
+var binaryVisibleRangeRequestCount = 0;
+var binaryDetailEnabled = false;
+var binaryExportPending = false;
 var binaryChannelIndex = {};
 var binaryLastUiPaint = -Infinity;
 var arraySnapshotName = null;
@@ -2848,7 +2925,11 @@ function configureBinaryChannels(channels) {
   binaryTimeOrigin = null;
   binaryLastTimestamp = null;
   binaryLastSequence = null;
+  binaryLastDetailSequence = null;
   binaryEnvelope = null;
+  binaryBufferStart = null;
+  binaryBufferEnd = null;
+  binaryBufferedSamples = 0;
   binaryLastUiPaint = -Infinity;
   resetBinarySampleRate();
   applyChannelMetadata(metadata, false);
@@ -2862,7 +2943,8 @@ function acceptBinaryBatch(batch, channels) {
   if (!IS_BINARY_WAVEFORM_MODE || !batch || batch.layout !== 'sample-major-float32') return false;
   if (channels) configureBinaryChannels(channels);
   if (!binaryChannelNames.length || batch.channelCount !== binaryChannelNames.length) return false;
-  if (binaryLastSequence !== null && batch.sequence <= binaryLastSequence) return false;
+  var previousSequence = IS_SUPERWATCH_MODE ? binaryLastDetailSequence : binaryLastSequence;
+  if (previousSequence !== null && batch.sequence <= previousSequence) return false;
   var values = new Float32Array(batch.values);
   if (values.length !== batch.itemCount * batch.channelCount) return false;
   if (!batch.times || batch.times.byteLength !== batch.itemCount * 8) return false;
@@ -2874,9 +2956,22 @@ function acceptBinaryBatch(batch, channels) {
   }
   if (!times.length) return false;
 
-  binaryLastSequence = batch.sequence;
+  // SuperWatch full batches are requested only while trigger detail is active.
+  // Temporarily restore full main-thread history for trigger evaluation.
+  if (IS_SUPERWATCH_MODE) {
+    binaryDetailEnabled = true;
+    resizeWaveformMainRings(RING_BUFFER_CAPACITY);
+  }
+
+  var summaryAlreadyAccepted = IS_SUPERWATCH_MODE && binaryLastSequence === batch.sequence;
+  if (IS_SUPERWATCH_MODE) {
+    binaryLastDetailSequence = batch.sequence;
+    if (binaryLastSequence === null || batch.sequence > binaryLastSequence) {
+      binaryLastSequence = batch.sequence;
+    }
+  } else binaryLastSequence = batch.sequence;
   binaryLastTimestamp = times[times.length - 1] / 1000;
-  updateBinarySampleRate(batch);
+  if (!summaryAlreadyAccepted) updateBinarySampleRate(batch);
   if (IS_SUPERWATCH_MODE && paused) return true;
 
   if (binaryTimeOrigin === null) binaryTimeOrigin = times[0] / 1000;
@@ -2902,6 +2997,92 @@ function acceptBinaryBatch(batch, channels) {
   if (IS_SUPERWATCH_MODE) appendBinaryRawSamples(times, values, batch.itemCount, batch.channelCount);
   else appendRawLogLine('[binary] seq=' + String(batch.sequence) + ' samples=' + batch.itemCount);
   return true;
+}
+
+function acceptBinarySummary(summary, channels) {
+  if (!IS_SUPERWATCH_MODE || !summary) return false;
+  if (channels) configureBinaryChannels(channels);
+  if (!binaryChannelNames.length || summary.channelCount !== binaryChannelNames.length) return false;
+  if (binaryLastSequence !== null && summary.sequence <= binaryLastSequence) return false;
+  var values = new Float32Array(summary.latestValues);
+  if (values.length !== summary.channelCount || !Number.isFinite(summary.latestTimeMs)) return false;
+  for (var channel = 0; channel < values.length; channel++) {
+    if (!Number.isFinite(values[channel])) return false;
+  }
+  if (!Number.isFinite(summary.bufferStartMs) || !Number.isFinite(summary.bufferEndMs) ||
+      summary.bufferEndMs < summary.bufferStartMs) return false;
+
+  if (!binaryDetailEnabled) resizeWaveformMainRings(SUPERWATCH_MAIN_RING_CAPACITY);
+
+  binaryLastSequence = summary.sequence;
+  binaryLastTimestamp = summary.latestTimeMs / 1000;
+  binaryBufferStart = summary.bufferStartMs / 1000;
+  binaryBufferEnd = summary.bufferEndMs / 1000;
+  binaryBufferedSamples = Math.max(0, Math.floor(Number(summary.bufferedItemCount) || 0));
+  if (binaryTimeOrigin === null) binaryTimeOrigin = binaryBufferStart;
+  updateBinarySampleRate({
+    timestampNs: summary.timestampNs,
+    itemCount: summary.collectedItemCount
+  });
+
+  var viewTime = summary.latestTimeMs / 1000 - binaryTimeOrigin;
+  for (var index = 0; index < summary.channelCount; index++) {
+    var field = FIELDS[binaryChannelNames[index]];
+    if (!field || !field.ringBuf) continue;
+    // The main thread retains only the latest row. Full history lives in the Worker.
+    field.ringBuf.clear();
+    field.ringBuf.push(viewTime, values[index]);
+  }
+  captureSuperwatchTimelineSpanIfReady();
+  return true;
+}
+
+function setBinaryHistoryRequester(requester) {
+  binaryHistoryRequester = typeof requester === 'function' ? requester : null;
+}
+
+function setBinaryDetailRequester(requester) {
+  binaryDetailRequester = typeof requester === 'function' ? requester : null;
+}
+
+function setBinaryVisibleRangeRequester(requester) {
+  binaryVisibleRangeRequester = typeof requester === 'function' ? requester : null;
+}
+
+function requestBinaryVisibleRangeAfterTimelineChange() {
+  if (IS_SUPERWATCH_MODE && collectionState !== 'running' && binaryVisibleRangeRequester) {
+    binaryVisibleRangeRequestCount++;
+    canvas.dataset.binaryVisibleRangeRequests = String(binaryVisibleRangeRequestCount);
+    binaryVisibleRangeRequester();
+  }
+}
+
+function requestBinaryDetail(enabled) {
+  binaryDetailEnabled = !!enabled;
+  if (IS_SUPERWATCH_MODE && binaryDetailRequester) binaryDetailRequester(binaryDetailEnabled);
+  if (IS_SUPERWATCH_MODE) {
+    resizeWaveformMainRings(binaryDetailEnabled ? RING_BUFFER_CAPACITY : SUPERWATCH_MAIN_RING_CAPACITY);
+  }
+}
+
+function getBinaryStorageDiagnostics() {
+  var mainRingCapacity = 0;
+  var mainRingMaxCount = 0;
+  for (var name in FIELDS) {
+    if (!FIELDS.hasOwnProperty(name) || !FIELDS[name].ringBuf) continue;
+    mainRingCapacity = Math.max(mainRingCapacity, Number(FIELDS[name].ringBuf.capacity) || 0);
+    mainRingMaxCount = Math.max(mainRingMaxCount, Number(FIELDS[name].ringBuf.count) || 0);
+  }
+  return {
+    historyOwner: IS_SUPERWATCH_MODE ? 'worker' : 'main-thread',
+    workerCapacity: IS_SUPERWATCH_MODE ? RING_BUFFER_CAPACITY : 0,
+    workerBufferedSamples: IS_SUPERWATCH_MODE ? binaryBufferedSamples : 0,
+    mainRingCapacity: mainRingCapacity,
+    mainRingMaxCount: mainRingMaxCount,
+    bufferStart: binaryBufferStart,
+    bufferEnd: binaryBufferEnd,
+    detailEnabled: binaryDetailEnabled
+  };
 }
 
 function getBinaryVisibleRange() {
@@ -2939,13 +3120,65 @@ function parseBinaryEnvelope(envelope) {
   return { times: times, timeIndices: timeIndices, values: values, offsets: offsets };
 }
 
-function renderBinaryEnvelope(envelope) {
+function getBinaryEnvelopeChannelRange(name) {
+  if (!IS_SUPERWATCH_MODE || !binaryEnvelope) return null;
+  var channel = binaryChannelIndex[name];
+  if (channel === undefined) return null;
+  var start = binaryEnvelope.offsets[channel];
+  var end = binaryEnvelope.offsets[channel + 1];
+  if (end <= start) return null;
+  var minimum = Infinity;
+  var maximum = -Infinity;
+  for (var point = start; point < end; point++) {
+    var value = binaryEnvelope.values[point];
+    if (value < minimum) minimum = value;
+    if (value > maximum) maximum = value;
+  }
+  return Number.isFinite(minimum) && Number.isFinite(maximum)
+    ? { min: minimum, max: maximum, count: end - start }
+    : null;
+}
+
+function nearestBinaryEnvelopeSample(name, viewTime) {
+  if (!IS_SUPERWATCH_MODE || !binaryEnvelope || binaryTimeOrigin === null) return null;
+  var channel = binaryChannelIndex[name];
+  if (channel === undefined) return null;
+  var targetMs = (binaryTimeOrigin + viewTime) * 1000;
+  var start = binaryEnvelope.offsets[channel];
+  var end = binaryEnvelope.offsets[channel + 1];
+  var best = null;
+  var bestDistance = Infinity;
+  for (var point = start; point < end; point++) {
+    var timeMs = binaryEnvelope.times[binaryEnvelope.timeIndices[point]];
+    var distance = Math.abs(timeMs - targetMs) / 1000;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = { value: binaryEnvelope.values[point], distance: distance };
+    }
+  }
+  return best;
+}
+
+function renderBinaryEnvelope(envelope, renderWhilePaused) {
   if (!IS_BINARY_WAVEFORM_MODE) return false;
-  if (IS_SUPERWATCH_MODE && paused) return true;
+  canvas.dataset.binaryEnvelopeRequestId = String(envelope && envelope.requestId !== undefined
+    ? envelope.requestId : '');
+  canvas.dataset.binaryEnvelopeInteractive = renderWhilePaused ? 'true' : 'false';
+  // Keep background updates from replacing the frozen pause/stop snapshot.
+  // An explicit viewport request may still paint its historical range.
+  if (IS_SUPERWATCH_MODE && paused && !renderWhilePaused) {
+    canvas.dataset.binaryEnvelopeState = 'frozen';
+    return true;
+  }
   var parsed = parseBinaryEnvelope(envelope);
-  if (!parsed) return false;
+  if (!parsed) {
+    canvas.dataset.binaryEnvelopeState = 'invalid';
+    return false;
+  }
+  canvas.dataset.binaryEnvelopeState = 'rendered';
+  canvas.dataset.binaryEnvelopePoints = String(envelope.pointCount);
   binaryEnvelope = parsed;
-  if (!paused) {
+  if (!paused || renderWhilePaused) {
     drawChart();
     drawMinimap();
     var now = performance.now();
@@ -2963,7 +3196,12 @@ function resetBinaryStream() {
   binaryTimeOrigin = null;
   binaryLastTimestamp = null;
   binaryLastSequence = null;
+  binaryLastDetailSequence = null;
   binaryEnvelope = null;
+  binaryBufferStart = null;
+  binaryBufferEnd = null;
+  binaryBufferedSamples = 0;
+  requestBinaryDetail(false);
   resetBinarySampleRate();
   clearFrozenView();
   for (var channel = 0; channel < binaryChannelNames.length; channel++) {
@@ -3026,8 +3264,14 @@ if (typeof window !== 'undefined') {
   var binaryViewer = window.__waveformViewers[CONFIG.mode] || {};
   binaryViewer.configureBinaryChannels = configureBinaryChannels;
   binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
+  binaryViewer.acceptBinarySummary = acceptBinarySummary;
   binaryViewer.getBinaryVisibleRange = getBinaryVisibleRange;
   binaryViewer.renderBinaryEnvelope = renderBinaryEnvelope;
+  binaryViewer.setBinaryHistoryRequester = setBinaryHistoryRequester;
+  binaryViewer.setBinaryDetailRequester = setBinaryDetailRequester;
+  binaryViewer.setBinaryVisibleRangeRequester = setBinaryVisibleRangeRequester;
+  binaryViewer.getStorageDiagnostics = getBinaryStorageDiagnostics;
+  binaryViewer.exportBinaryHistorySnapshot = exportBinaryHistorySnapshot;
   binaryViewer.resetBinaryStream = resetBinaryStream;
   binaryViewer.updateBinaryHealth = updateBinaryHealth;
   binaryViewer.updateAcquisitionStatus = syncDashboardStatus;
@@ -3044,6 +3288,13 @@ if (typeof window !== 'undefined') {
 // Get visible time range (with timeline zoom/offset)
 // ============================================================
 function computeFullTimeRange() {
+  if (IS_SUPERWATCH_MODE && binaryTimeOrigin !== null &&
+      Number.isFinite(binaryBufferStart) && Number.isFinite(binaryBufferEnd)) {
+    var retainedMin = binaryBufferStart - binaryTimeOrigin;
+    var retainedMax = binaryBufferEnd - binaryTimeOrigin;
+    if (retainedMax - retainedMin < 1) retainedMin = retainedMax - 1;
+    return { tMin: retainedMin, tMax: retainedMax };
+  }
   var tMax = 0, tMin = Infinity;
   for (var k in FIELDS) {
     var pts = FIELDS[k].ringBuf;
@@ -3107,11 +3358,15 @@ function getVisibleTimeRange() {
 // ============================================================
 function getChannelYRange(name) {
   var m = FIELDS[name];
-  if (!m || (m.isArraySnapshot ? !m.arrayValues || m.arrayValues.length < 1 : m.ringBuf.count < 2)) return null;
+  var envelopeRange = getBinaryEnvelopeChannelRange(name);
+  if (!m || (m.isArraySnapshot ? !m.arrayValues || m.arrayValues.length < 1 :
+      (!envelopeRange && m.ringBuf.count < 1))) return null;
   var ys = ensureChannelYState(name);
 
-  var baseMin = m.isArraySnapshot ? Math.min.apply(null, m.arrayValues) : m.ringBuf._min;
-  var baseMax = m.isArraySnapshot ? Math.max.apply(null, m.arrayValues) : m.ringBuf._max;
+  var baseMin = m.isArraySnapshot ? Math.min.apply(null, m.arrayValues) :
+    (envelopeRange ? envelopeRange.min : m.ringBuf._min);
+  var baseMax = m.isArraySnapshot ? Math.max.apply(null, m.arrayValues) :
+    (envelopeRange ? envelopeRange.max : m.ringBuf._max);
   if (!Number.isFinite(baseMin)) baseMin = 0;
   if (!Number.isFinite(baseMax)) baseMax = 1;
   var pad = (baseMax - baseMin) * 0.1 || 1;
@@ -3148,9 +3403,15 @@ function getAutoSharedYRange(excludedName) {
       yMin = Math.min(yMin, Math.min.apply(null, field.arrayValues));
       yMax = Math.max(yMax, Math.max.apply(null, field.arrayValues));
     } else {
-      if (!field.ringBuf || field.ringBuf.count < 2) continue;
-      if (Number.isFinite(field.ringBuf._min)) yMin = Math.min(yMin, field.ringBuf._min);
-      if (Number.isFinite(field.ringBuf._max)) yMax = Math.max(yMax, field.ringBuf._max);
+      var envelopeRange = getBinaryEnvelopeChannelRange(name);
+      if (envelopeRange) {
+        yMin = Math.min(yMin, envelopeRange.min);
+        yMax = Math.max(yMax, envelopeRange.max);
+      } else {
+        if (!field.ringBuf || field.ringBuf.count < 1) continue;
+        if (Number.isFinite(field.ringBuf._min)) yMin = Math.min(yMin, field.ringBuf._min);
+        if (Number.isFinite(field.ringBuf._max)) yMax = Math.max(yMax, field.ringBuf._max);
+      }
     }
   }
   if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) return null;
@@ -3321,6 +3582,7 @@ function zoomTimelineAt(clientX, deltaY) {
   captureSuperwatchTimelineLag();
   drawChart();
   drawMinimap();
+  requestBinaryVisibleRangeAfterTimelineChange();
 }
 
 function zoomVisibleY(deltaY, anchorRatio, panel) {
@@ -3432,6 +3694,7 @@ if (xAxisHit && yAxisHit) {
         );
         captureSuperwatchTimelineLag();
         drawMinimap();
+        requestBinaryVisibleRangeAfterTimelineChange();
       }
       drawChart();
     } else if (axisDrag.mode === 'x') {
@@ -3440,6 +3703,7 @@ if (xAxisHit && yAxisHit) {
       captureSuperwatchTimelineLag();
       drawChart();
       drawMinimap();
+      requestBinaryVisibleRangeAfterTimelineChange();
     } else if (axisDrag.mode === 'y-panel') {
       var sharedDy = (e.clientY - axisDrag.startY) / axisDrag.height;
       var sharedShift = sharedDy * axisDrag.range;
@@ -3459,6 +3723,7 @@ if (xAxisHit && yAxisHit) {
     resetTimelineView();
     drawChart();
     drawMinimap();
+    requestBinaryVisibleRangeAfterTimelineChange();
   }, { signal: viewerAbortController.signal });
   yAxisHit.addEventListener('dblclick', function(e) {
     if (!IS_SUPERWATCH_MODE) {
@@ -3507,8 +3772,10 @@ function drawChart() {
   var tr = getVisibleTimeRange();
   var tMin = tr.tMin, tMax = tr.tMax;
 
-  var useBinaryEnvelope = IS_BINARY_WAVEFORM_MODE && binaryEnvelope &&
-    !(IS_SUPERWATCH_MODE && paused);
+  // The accepted envelope is the frozen snapshot while paused/stopped. Keep
+  // drawing it during timeline interaction; background responses are filtered
+  // by renderBinaryEnvelope and cannot replace it.
+  var useBinaryEnvelope = IS_BINARY_WAVEFORM_MODE && binaryEnvelope;
 
   // Count visible channels
   var visChNames = sortedFieldNames().filter(function(k) {
@@ -3518,7 +3785,7 @@ function drawChart() {
     if (useBinaryEnvelope && envelopeIndex !== undefined) {
       return binaryEnvelope.offsets[envelopeIndex + 1] - binaryEnvelope.offsets[envelopeIndex] >= 2;
     }
-    return FIELDS[k].ringBuf.count >= 2;
+    return FIELDS[k].ringBuf.count >= 1;
   });
   var mr = 16, mt = 8, mb = 32, ml = IS_SUPERWATCH_MODE ? 64 : 16;
   var pw = W - ml - mr;
@@ -3661,7 +3928,8 @@ function drawChart() {
   for (var ni = 0; ni < names.length; ni++) {
     var name = names[ni];
     var meta = FIELDS[name];
-    if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 2) ||
+    var envelopeChannelRange = getBinaryEnvelopeChannelRange(name);
+    if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 1 && !envelopeChannelRange) ||
         (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
 
     var curveTop = splitActive && name === splitChannelName ? splitTop : mainTop;
@@ -3872,8 +4140,10 @@ function drawChart() {
     var lines = ['<span class="tooltip-row" style="color:var(--dim);font-size:11px">' + escapeHtml(formatTimeAxisValue(hoverT)) + '</span>'];
     for (var k in FIELDS) {
       var hoverRing = FIELDS[k].ringBuf;
-      if (!FIELDS[k].visible || hoverRing.count < 1) continue;
-      var hoverSample = hoverRing.nearestSample(hoverT);
+      if (!FIELDS[k].visible || (hoverRing.count < 1 && !binaryEnvelope)) continue;
+      var hoverSample = IS_SUPERWATCH_MODE
+        ? nearestBinaryEnvelopeSample(k, hoverT)
+        : hoverRing.nearestSample(hoverT);
       var bestY = hoverSample ? hoverSample.value : null;
       var bestDist = hoverSample ? hoverSample.distance : Infinity;
       if (bestY !== null && bestDist < (tMax - tMin) / pw * 15) {
@@ -4130,6 +4400,7 @@ function drawChart() {
         captureSuperwatchTimelineLag();
         drawChart();
         drawMinimap();
+        requestBinaryVisibleRangeAfterTimelineChange();
         return;
       }
       // Show ew-resize cursor when hovering near a measurement cursor line
@@ -4224,9 +4495,11 @@ function updateCursorReadout() {
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
     var meta = FIELDS[name];
-    if (!meta || !meta.visible || !meta.ringBuf || meta.ringBuf.count < 1) continue;
-    var av = sampleValueAt(meta.ringBuf, cursorState.a.t);
-    var bv = sampleValueAt(meta.ringBuf, cursorState.b.t);
+    if (!meta || !meta.visible || !meta.ringBuf || (meta.ringBuf.count < 1 && !binaryEnvelope)) continue;
+    var aSample = IS_SUPERWATCH_MODE ? nearestBinaryEnvelopeSample(name, cursorState.a.t) : null;
+    var bSample = IS_SUPERWATCH_MODE ? nearestBinaryEnvelopeSample(name, cursorState.b.t) : null;
+    var av = aSample ? aSample.value : sampleValueAt(meta.ringBuf, cursorState.a.t);
+    var bv = bSample ? bSample.value : sampleValueAt(meta.ringBuf, cursorState.b.t);
     if (av === null || bv === null) continue;
     if (deltaCount >= deltaLimit) {
       lines.push('+' + (names.length - i) + ' ch');
@@ -4248,9 +4521,11 @@ function updateCursorReadout() {
       for (var j = 0; j < names.length; j++) {
         var vn = names[j];
         var vm = FIELDS[vn];
-        if (!vm || !vm.visible || !vm.ringBuf || vm.ringBuf.count < 1) continue;
-        var va = sampleValueAt(vm.ringBuf, cursorState.a.t);
-        var vb = sampleValueAt(vm.ringBuf, cursorState.b.t);
+        if (!vm || !vm.visible || !vm.ringBuf || (vm.ringBuf.count < 1 && !binaryEnvelope)) continue;
+        var vaSample = IS_SUPERWATCH_MODE ? nearestBinaryEnvelopeSample(vn, cursorState.a.t) : null;
+        var vbSample = IS_SUPERWATCH_MODE ? nearestBinaryEnvelopeSample(vn, cursorState.b.t) : null;
+        var va = vaSample ? vaSample.value : sampleValueAt(vm.ringBuf, cursorState.a.t);
+        var vb = vbSample ? vbSample.value : sampleValueAt(vm.ringBuf, cursorState.b.t);
         if (va === null || vb === null) continue;
         if (vc >= deltaLimit) break;
         var prec = vm.precision || 2;
@@ -4344,8 +4619,7 @@ function drawMinimap() {
 
   // Draw data traces
   var names = sortedFieldNames();
-  var useBinaryEnvelope = IS_BINARY_WAVEFORM_MODE && binaryEnvelope &&
-    !(IS_SUPERWATCH_MODE && paused);
+  var useBinaryEnvelope = IS_BINARY_WAVEFORM_MODE && binaryEnvelope;
   minimapCtx.globalAlpha = 0.4;
   for (var ni = 0; ni < names.length; ni++) {
     var meta = FIELDS[names[ni]];
@@ -4429,6 +4703,7 @@ function drawMinimap() {
     captureSuperwatchTimelineLag();
     drawChart();
     drawMinimap();
+    requestBinaryVisibleRangeAfterTimelineChange();
   });
 
   addViewerGlobalListener(window, 'mouseup', function() { vpDragging = false; });
@@ -4447,6 +4722,7 @@ function drawMinimap() {
     captureSuperwatchTimelineLag();
     drawChart();
     drawMinimap();
+    requestBinaryVisibleRangeAfterTimelineChange();
   };
 })();
 
@@ -4682,6 +4958,7 @@ function updateTriggerSourceOptions() {
 }
 
 function armTrigger() {
+  requestBinaryDetail(true);
   triggerSettings.state = 'armed';
   preTriggerBuffer = [];
   postTriggerRemaining = 0;
@@ -4711,6 +4988,7 @@ function forceTrigger() {
 }
 
 function resetTrigger() {
+  requestBinaryDetail(false);
   triggerSettings.state = 'idle';
   preTriggerBuffer = [];
   postTriggerRemaining = 0;
@@ -4781,6 +5059,7 @@ function checkTrigger(point) {
     postTriggerRemaining--;
     if (postTriggerRemaining <= 0) {
       triggerSettings.state = 'done';
+      if (triggerSettings.mode === 'single') requestBinaryDetail(false);
       updateTriggerStateBadge();
       if (triggerSettings.mode === 'normal' || triggerSettings.mode === 'auto') {
         setTimeout(function() { armTrigger(); }, 100);

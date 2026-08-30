@@ -531,7 +531,14 @@ class MKLinkSerialBridge:
 
         while self._running:
             try:
-                data = self._serial.read(4096)
+                # ``Serial.read(4096)`` waits for all 4096 bytes or the 10 ms
+                # timeout. Read exactly what the driver already has; when it
+                # is empty, block for one byte and drain the remainder on the
+                # next iteration. This removes timeout-sized aggregation from
+                # low/medium-rate binary streams without busy polling.
+                waiting = self._serial.in_waiting
+                read_size = min(65536, waiting) if isinstance(waiting, int) and waiting > 0 else 1
+                data = self._serial.read(read_size)
             except serial.SerialException:
                 if self._running:
                     self._ctx.state = DeviceState.ERROR

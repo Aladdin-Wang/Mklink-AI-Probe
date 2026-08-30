@@ -289,6 +289,47 @@ describe('StreamDecoder worker controller', () => {
     expect(transfers[messages.indexOf(batch)]).toEqual([batch.values, batch.times])
   })
 
+  it('keeps full SuperWatch history in the Worker and emits only latest summaries normally', () => {
+    const { decoder, messages, transfers } = setup()
+    decoder.handle({
+      type: 'configure', capacity: 3, channelCount: 1, waveformSummaryOnly: true,
+    })
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      version: 1, channels: [{ name: 'a', type: 'float' }],
+    }))
+    const send = (sequence: bigint, values: number[]) => decoder.handle({
+      type: 'frame',
+      buffer: frame(sequence, values.length, floats(...values), StreamType.SUPERWATCH, sequence * 1_000_000n, 0x01),
+      connectionGeneration: 1,
+      frameTicket: Number(sequence),
+    })
+    decoder.handle({
+      type: 'frame', buffer: frame(1n, 0, metadata, StreamType.SUPERWATCH, 1n, 0x02),
+      connectionGeneration: 1, frameTicket: 1,
+    })
+    send(2n, [1, 2])
+    send(3n, [3, 4])
+
+    expect(messages.filter(message => message.type === 'waveform-batch')).toHaveLength(0)
+    const summaries = messages.filter(message => message.type === 'waveform-summary')
+    expect(summaries).toHaveLength(2)
+    const latest = summaries.at(-1)
+    if (latest?.type !== 'waveform-summary') throw new Error('expected waveform summary')
+    expect(latest).toMatchObject({ collectedItemCount: 2, bufferedItemCount: 3, channelCount: 1 })
+    expect(Array.from(new Float32Array(latest.latestValues))).toEqual([4])
+
+    decoder.handle({ type: 'history-snapshot', requestId: 7 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('expected history snapshot')
+    expect(snapshot).toMatchObject({ requestId: 7, itemCount: 3, channelCount: 1 })
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([2, 3, 4])
+    expect(transfers[messages.indexOf(snapshot)]).toEqual([snapshot.times, snapshot.values])
+
+    decoder.handle({ type: 'waveform-detail', enabled: true })
+    send(4n, [5])
+    expect(messages.filter(message => message.type === 'waveform-batch')).toHaveLength(1)
+  })
+
   it('rejects stale metadata, nonfinite samples, bad flags, and reset clears versions', () => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 1 })

@@ -375,7 +375,9 @@ python -m mklink watch g_config.setpoint --source path/to/firmware.axf --period 
 ```
 
 #### `python -m mklink superwatch <变量/字段/寄存器...> [--source <firmware.axf>] [--svd <device.svd>] [--visualize]`
-基于 MKLink `read_ram` 响应中的设备时间戳连续采样，适合同时观察 RAM 变量、`struct.field` 路径和寄存器。变量解析依赖 AXF/DWARF；寄存器可使用内置寄存器表，或通过 `--svd`/Keil Pack 自动发现 CMSIS-SVD 后支持外设寄存器名。未加 `--visualize` 时输出采样 JSON；加 `--visualize` 时启动 Web 看板，可搜索/添加 AXF 符号或寄存器。
+基于 MKLink `cmd.dump_memory` 二进制帧内的设备时间戳连续采样，适合同时观察 RAM 变量、`struct.field` 路径和寄存器。变量解析依赖 AXF/DWARF；寄存器可使用内置寄存器表，或通过 `--svd`/Keil Pack 自动发现 CMSIS-SVD 后支持外设寄存器名。未加 `--visualize` 时输出采样 JSON；加 `--visualize` 时启动 Web 看板，可搜索/添加 AXF 符号或寄存器。
+
+`read_ram`/`read_memory` 只用于单次 RAM 快照、变量详情和 AI 故障分析，不用于 SuperWatch 曲线采样，也不作为固件或连接不支持二进制流时的后备方案。此时 SuperWatch 会明确报错并停止。
 
 常用参数：
 - `--period 0.1`：采样周期，单位秒
@@ -391,16 +393,18 @@ python -m mklink superwatch g_config.setpoint,SCB.CFSR --source path/to/firmware
 python -m mklink superwatch TIM2.CNT,ADC1.DR --svd path/to/device.svd --visualize --duration 0
 ```
 
-**Dump Memory 高速模式 (`--dump-mem`)**
+**Dump Memory 连续采样协议**
 
-使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议替代逐个 `read_ram` 轮询。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验），延迟更低、吞吐更高。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。
+SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
 
 ```bash
-python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --dump-mem --visualize --period 0.01
+python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --visualize --period 0.01
 ```
 
 - `total_size <= 2048`: OLD 普通帧。
 - `total_size > 2048`: B1 分块帧，每块最大 2048B，包含 `block_index` / `block_count` / `block_crc32`。
+- SuperWatch 只合并相接或重叠的地址，不跨地址空洞多读；V4.3.8 真机测量显示跨 16B 空洞已降低采样率。
+- SuperWatch 最多提交 **15 个离散 region**。固件帧虽可容纳 16 个 region，但 V4.3.8 的 Pika 文本入口在 16 组地址/长度加 period 时会超过安全参数边界。
 - `build_dump_mem_command()` 默认允许单次最多 **512 KiB**（V4.3.3 实测整片 Flash 稳定）；老固件请传 ≤32 KiB region；更大范围仍应由 host 分块。
 - V4.3.1 官方 API 直测（2026-06-07）：`0x08000000/256`、`0x20010200/32`、`0x08020000/2049` 均 PASS，flags=`0x0000`，B1 为 2048B + 1B 两块。
 - 若 flags=`0x0004`，含义是 `Region error`，优先排查目标供电、Vref、SWD、NRST、MCU 运行/低功耗/复位状态；这不是 host parser CRC 失败。

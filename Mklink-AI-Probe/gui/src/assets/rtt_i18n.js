@@ -16,7 +16,7 @@ var I18N = {
     // Control toolbar
     start: '开始', pause: '暂停', resume: '恢复', stop: '停止',
     running: '运行中', buffer: '缓冲区', interval: '间隔', apply: '应用',
-    buffer_memory_tip: '前端历史缓存预计内存',
+    buffer_memory_tip: 'Worker 历史缓存预计内存',
     // Trigger toolbar
     trigger: '触发', idle: '空闲', armed: '待触发', triggered: '已触发', done: '完成',
     source: '源', edge: '边沿', level: '电平', mode: '模式', pretrig: '预触发',
@@ -119,7 +119,7 @@ var I18N = {
     y_axis_tip: 'Y axis: scroll to zoom; hold the left mouse button and drag; double-click for auto range',
     start: 'Start', pause: 'Pause', resume: 'Resume', stop: 'Stop',
     running: 'Running', buffer: 'Buffer', interval: 'Interval', apply: 'Apply',
-    buffer_memory_tip: 'Estimated frontend history memory',
+    buffer_memory_tip: 'Estimated Worker history memory',
     trigger: 'Trigger', idle: 'Idle', armed: 'Armed', triggered: 'Triggered', done: 'Done',
     source: 'Source', edge: 'Edge', level: 'Level', mode: 'Mode', pretrig: 'Pre-trig',
     rising: 'Rising', falling: 'Falling', both: 'Both',

@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-29T14:50:05+08:00`
+- 更新时间：`2026-08-30T11:40:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`4a6f103（本次 MCP/AI 安全边界提交前基线；最终提交号以 Git 为准）`
-- 远端 HEAD：`提交前 origin/codex/v0.1.9-development 与本地 4a6f103 一致；本次验证后立即推送，不改 master、标签或发布指针。`
-- 工作树：0.1.9 预发布分支持续维护；本次收敛 MCP/CLI/Skill 的单探针调用边界、批量读取性能和 RAM 写入回读验证。
-- 当前任务：V4 下载器的 AI/MCP/CLI 边界已实测：Pika 文本 dump 安全上限 15 region；MCP 限制大小/时长并拒绝同探针并行；连续变量批读合并；CLI/MCP RAM 写入回读验证。
-- 状态：`mcp-ai-boundaries-and-zero-write-verified`
+- HEAD：`8570892（本次 SuperWatch 上位机性能优化提交前基线；最终提交号以 Git 为准）`
+- 远端 HEAD：`提交前 origin/codex/v0.1.9-development 与本地 8570892 一致；本次验证后立即推送，不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支持续维护；本次完成 SuperWatch 上位机热路径、暂停/停止历史交互、STM32H743 16路真机闭环，以及 V4 下载器 dump_memory 周期补偿。
+- 当前任务：SuperWatch 主机端只保留一份 Worker 完整历史并使用预编译批量解码；暂停或停止后缩放从 Worker 按可见区间重建包络。V4 固件按绝对截止点扣除采集/封包耗时，超期立即重基准，低于50us按尽快采样。
+- 状态：`superwatch-host-and-v4-deadline-verified`
 
 ## 里程碑
 
@@ -30,7 +30,7 @@
 - **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
 - **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
-- **SuperWatch 连续时间轴（2026-08-29）**：相关 Python 69 项通过；前端 Worker 70 项通过；GUI 生产构建通过并更新 gui/dist。自动化覆盖单连接复用、读取耗时补偿、dump_memory 流生命周期、设备时间跨主机批处理抖动保留、乱序拒绝与旧协议兼容。此前已在 STM32H743 真机和 Web GUI 完成复现及人工复测；本次提交前未重复打开浏览器。
+- **SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）**：同进程50k×16 A/B：旧对象热路径20109.41 samples/s、11280901 calls；预编译直接解码38641.74 samples/s、5862521 calls，吞吐+92.16%、调用约-48.03%。STM32H743当前AXF符号superwatch_ch00..15位于0x24040000..0x2404003C；曾因WebGUI仍使用旧上传AXF副本而读取0x20009150起的旧地址，切换到当前工程AXF后16路0..1相移三角波恢复。真实Chrome确认暂停和停止后横轴缩放均保留波形。V4第二版16路实测：1ms固件周期均值/中位数均1000us、主机997.08Hz；100us中位数100us、均值108.14us、9237.72Hz；10us尽快采样9535.17Hz。三档read/CRC/固件丢样标记/后端/WebSocket丢包均为0。GUI全量57文件/590项、受影响Python156项和生产构建通过。
 
 ## 架构决策
 
@@ -42,14 +42,14 @@
 - 默认不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存；本轮维护者明确例外授权将本地 HPMLink_V4.3.8.uf2 升级包及 V4.3.7 替换提交到开发分支，434bf79 已完成；不代表固件通道发布。
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自动升级取消自定义强制卸载，成功写入后迁移匹配的旧快捷方式，不自动删除旧目录；测试限 E 盘隔离身份，不改动当前正式安装。详见 docs/ai/windows-upgrade.md。
-- SuperWatch 波形时间轴以下载器 dump_memory 帧内样本时间为准；后端二进制协议用新 flags 携带逐样本 Float64 毫秒时间，前端继续接受旧 sample-major Float32 帧，避免破坏旧后端兼容。
+- SuperWatch连续采样固定使用dump_memory，不以read_ram降级；变量块只合并连续或重叠地址，最多15 region。后端按预编译字段直接解码为typed批，512样本、64KiB和20ms最长等待共同触发发送；完整历史只存Worker，主线程正常模式每通道容量2，暂停/停止交互按可见区间请求包络。V4固件使用绝对截止点并扣除SWD读取、CRC、封包和USB入队耗时；超期立即重建截止点，低于50us解释为尽快采样。
 - AI/PC 对单只下载器只允许串行控制并复用连接；超时后只查一次状态，不循环重试。MCP direct read/write 4096B，batch read 最多16项/4096B，capture 最长30秒，flush 最多8项/16300B。dump_memory 固件帧容量虽为16 region，但 Pika 文本入口16组加 period 正好33参数并在V4.3.8实测卡死，因此 Skill/CLI/MCP安全上限固定15且与堆大小无关；流停止至少排空50ms并释放连接。
 
 ## 真机环境
 
-- **probe**：本轮使用 V4 下载器，固件响应 V4.3.8；交接不记录完整硬件标识。
-- **target**：STM32H743 测试工程；链接确认 0x24040100 位于未占用非缓存 RAM，写入前备份、测试后原值恢复。
-- **permission**：执行了有限 RAM 读写与 dump/普通读取性能测试；未烧录固件、未供电切换、未修改下载器固件源码。
+- **probe**：本轮使用V4下载器；维护者两次编译并下载含dump_memory截止点补偿的本地固件，随后完成同条件A/B真机验证。
+- **target**：STM32H743 测试工程 E:\stm32h743-hs_sd_v3_Small_backup；16路 float 测试符号位于非缓存段 0x24040000..0x2404003C。H743 可缓存 AXI SRAM 中 CPU 已写数据可能仍留在 D-Cache，SWD 直读会看到旧零，真机波形夹具必须使用非缓存区或显式维护缓存一致性。
+- **permission**：按维护者授权修改并构建V4下载器USB2VOFA固件；维护者手动下载。直接修改、编译并下载STM32H743测试工程，真机读取与WebGUI交互验证完成；未切换目标供电。
 
 ## 下一动作
 
@@ -67,7 +67,7 @@
 - 串口 TX/RX、RS485 和部分 VCC 场景没有稳定的自动化真机回环条件，不能用单元测试替代硬件验证。
 - 正式安装包尚未完成 Windows Authenticode/驱动签名发布流程；当前签名仅为 Tauri updater 签名。
 - 0.1.9 仅开发分支；签名安装包全链路升级、UAC 和 USB 自定义波特率真机仍待验收。跨 Windows 账号提权迁移需单独测试，已卸载到无法启动的旧用户需手动重装修复版本。
-- Python MCP 隔离依赖安装超时，12 项目录符号链接测试缺少权限；完整门禁未满足。本轮 .build/runs 中 3 个目录保留供手动清理，具体路径仅在本机 reports/manual-cleanup.txt，不强删。
+- V4 + STM32H743连续16×float的当前真机上限约9.54k samples/s；100us请求可达约9.24kHz且中位周期100us，但因单次SWD采集约95~98us及USB/中断抖动不能保证稳定10kHz，更不能满足16变量20kHz。需要更高采样率时必须减少变量/字节或继续降低固件热路径成本。
 
 ## 延续协议
 

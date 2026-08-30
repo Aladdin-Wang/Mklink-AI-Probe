@@ -49,6 +49,9 @@ owner-only secret file，不写入命令、URL、日志、项目配置或回答�
   经用户同意才换后端。
 - **目标数据**：内存、变量、寄存器、符号、RTT 和 HardFault 先用 MKLink MCP/CLI。
   仅在明确连接失败、固件不支持或可复现读取错误后，报告原因并用 pyOCD 只读兜底。
+- **RAM 与曲线边界**：`read_ram`/`read_memory` 只用于单次快照和故障分析；SuperWatch
+  连续曲线只用 `dump_memory` 二进制流，最多 15 个离散 region。固件或连接不支持时
+  停止并报告，不得回退为循环 `read_ram`。
 - **单探针边界**：先读 `ping.limits`，一次连接复用到任务结束，同一下载器不得并行调用。
   多变量快照优先 `read_memory_regions`；不要绕过工具的大小、区域数和 30 秒采集限制。
   命令超时后只查一次 `device_status`，不得原样重试；流结束先断开再做普通命令。
