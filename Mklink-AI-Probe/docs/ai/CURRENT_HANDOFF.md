@@ -4,11 +4,11 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-31T02:57:34+08:00`
+- 更新时间：`2026-08-31T03:24:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`0.1.9 ARM 真机回归基线已包含至 9027fbc；本交接与最终 WebGUI 资源提交随后追加，精确提交号以 git rev-parse HEAD 为准。`
+- HEAD：`0.1.9 ARM 真机回归和 pyOCD 冷启动竞态修复已包含至 b29b221；本交接与最终 WebGUI 资源提交随后追加，精确提交号以 git rev-parse HEAD 为准。`
 - 远端 HEAD：`每项修复独立提交并立即推送 origin/codex/v0.1.9-development；不改 master、标签或正式发布指针。`
-- 工作树：功能修复、浏览器/Tauri 真机闭环、AI 边界回归、最终 WebGUI 构建和测试运行目录安全清理均已完成；本交接提交推送后从最终 HEAD 强制同步用户 Skill。
+- 工作树：功能修复、浏览器/Tauri 真机闭环、AI 边界回归和 pyOCD 全新进程冷启动复测均已完成；本交接提交、最终 WebGUI 构建与测试运行目录清理后，从最终 HEAD 强制同步用户 Skill。
 - 当前任务：继续在 0.1.9 预发布分支小步修复 MKLink-AI-Probe 问题；每项复现、自动化回归、真机闭环后独立提交并立即推送。
 - 状态：`v0.1.9-arm-hil-baseline-complete`
 
@@ -17,7 +17,7 @@
 - **v0.1.9 开发与维护基线** — `complete`。预发布分支改为持续维护，不再为每个问题创建修复分支；构建、测试和缓存集中在 E:\software\HPM5300\Mklink-AI-Probe\.build，用户 Skill 与维护流程分离。
 - **安装、WebGUI 与符号加载修复** — `complete`。修复覆盖升级丢程序/桌面图标、WebGUI 18% MIME 缓存、AXF 压缩 RW 段遗漏全局对象、GUI 不再要求 MAP；board_info_data 已在真实 GD32 AXF 中恢复。
 - **SuperWatch 性能与历史交互** — `complete`。批量直接解码、动态批量阈值、Worker 单一完整历史和按事务成本合并地址已落地；暂停/停止后缩放不再丢波形，STM32H743 16 路与采样周期补偿完成真机验证。
-- **器件目录与 Pack 导入** — `complete`。搜索加入输入联想并列出 FLM 范围；修复缺顶层 url Pack 的 staging 索引、只读属性和事务恢复，导入/安装后自动刷新并保留精确已选器件。
+- **器件目录与 Pack 导入** — `complete`。搜索加入输入联想并列出 FLM 范围；修复缺顶层 url Pack 的 staging 索引、只读属性和事务恢复，导入/安装后自动刷新并保留精确已选器件。pyOCD 全部生产冷导入经进程级可重入锁串行化，消除首屏探针/芯片并发请求的 Python 3.14 模块锁死锁。
 - **串口 YMODEM 与快捷键** — `complete`。串口助手加入 YMODEM 文件传输与终端进度；真实 STM32F103 Bootloader 完成 115216 B 升级和应用重启。浏览器与当前 Tauri 0.1.9 均完成 Ctrl+A/C/V 真机字节级验证。
 - **RTT/SystemView 与 AI 安全边界** — `complete`。Skill、CLI、MCP、REST 统一限制通道、地址、region、批量、flush 和保留 stop 序列；非法调用安全失败后探针心跳、重连、RTT 回显和 SystemView 恢复均通过。
 
@@ -25,7 +25,7 @@
 
 - **Python 全量（2026-08-31）**：1661 passed、12 failed、1 skipped。12 项均为 _maintainer/testing/tests/test_remote_review_repairs.py 创建目录符号链接时触发 WinError 1314，属于当前 Windows 账户缺少 symlink 权限；其余功能测试通过，不能把整套门禁表述为全绿。
 - **GUI、Rust 与桌面构建**：GUI 全量 58 文件/622 项通过；cargo check --tests 通过；Tauri --no-bundle 生产构建通过并生成 .build/cache/cargo/release/mklink-ai-probe.exe。cargo test --lib 已完成编译，但测试进程在本机以 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND 退出；cargo fmt --check 仅命中既存 lib.rs/usb_port_naming.rs 格式差异。
-- **器件联想与烧录算法浏览器闭环**：真实 WebGUI 输入 STM32F103 展开完整候选并选中 STM32F103RE；器件下方列出 STM32F10x_512.FLM（0x08000000..0x08080000）和 STM32F10x_OPT.FLM（0x1FFFF800..0x1FFFF810），本地目录 12511 型号可用。此前真实 WHXY.CW32L012_DFP.1.0.2.pack 导入后索引 217 型号并自动刷新，原 Pack 与安装副本哈希不变。
+- **器件联想与烧录算法浏览器闭环**：真实 WebGUI 输入 STM32F103 展开完整候选并选中 STM32F103RE；器件下方列出 STM32F10x_512.FLM（0x08000000..0x08080000）和 STM32F10x_OPT.FLM（0x1FFFF800..0x1FFFF810），本地目录 12511 型号可用。真实 WHXY.CW32L012_DFP.1.0.2.pack 导入后索引 217 型号并自动刷新。修复前全新服务首次并发请求中 /probes 返回 502 且出现 _frozen_importlib._DeadlockError；修复后换全新 Python 进程与唯一页面 URL，首个 /probes、/targets、算法和内存映射请求全部 200，stderr 无 DeadlockError/Traceback。新增 6 项导入门禁及相关 487 项回归通过。
 - **浏览器串口/YMODEM/快捷键 HIL**：COM227@115200 先发送 boot，再传 rtthread.bin 115216/115216 B；块 114 一次重试后 100%，Bootloader 跳转应用并输出重启信息。浏览器 Ctrl+V 使 TX 精确增加剪贴板 22 B；Ctrl+A/C 复制完整终端历史且 TX 不变。
 - **Tauri 原生剪贴板 HIL**：运行 .build/cache/cargo/release/mklink-ai-probe.exe（页脚 0.1.9/9027fbc），COM227 真机打开。系统剪贴板 23 B 的 desktop_clipboard_probe 使 TX 32→55，证明 native read 与粘贴完整；Ctrl+A/C 后系统剪贴板变为终端内容，TX 保持 55，未误发 Ctrl+A/C 控制字节。
 - **RTT REST 真机 HIL**：STM32F103RE：16 项危险请求与 inactive channel 2 均安全拒绝；清理/重连后心跳继续。RTT channel 0 终端回显通过；SystemView channel 1 同步采集 17191 B、4174 事件并正常停止。证据位于测试工程 .build/reports/rtt-rest-hil-current.json。
@@ -38,7 +38,7 @@
 - 维护构建、测试、日志、临时脚本和可复用缓存统一放在仓库 .build，并经 scripts/build_workspace.ps1 运行；禁止向 C 盘或工程外散落中间文件，也不上传 .build。目标测试工程的分析材料只放该工程 .build。
 - 普通用户 Skill 只携带运行时白名单、安全边界和按需参考，不触发源码维护、构建或发布流程；用户中间文件默认放目标工程 .mklink。安装用户包时必须从 sanitized archive 同步，不能直接复制维护仓库。
 - GUI 工程文件只要求 AXF/ELF/OUT，MAP 仅在旧 API/CLI 后备兼容。Keil 压缩 RW 段按受 section 边界约束的 OBJECT 执行地址扩展，不能用压缩 sh_size 过滤 RAM 对象。
-- 器件联想用当前可见搜索词返回候选，已选器件用独立精确查询保持稳定；选择后必须展示实际 FLM 名称和地址范围。Pack 只规范化 staging PDSC，安装/导入成功后先刷新后端 catalog 再刷新 GUI。
+- 器件联想用当前可见搜索词返回候选，已选器件用独立精确查询保持稳定；选择后必须展示实际 FLM 名称和地址范围。Pack 只规范化 staging PDSC，安装/导入成功后先刷新后端 catalog 再刷新 GUI。生产代码禁止直接导入 pyOCD，所有惰性首次导入必须经过同一进程级 RLock，不能按模块分锁。
 - SuperWatch 连续采样固定走 dump_memory；地址块只合并连续/重叠区域，最多 15 region。后端按预编译字段直接解码，512 样本/64KiB/20ms 联合批量；完整历史只存 Worker，暂停/停止时按可见区间取包络。
 - 串口 YMODEM 复用串口助手会话和终端，不另开同一端口；传输前由用户/测试发送 boot，进度、重试、取消和结果写入现有终端。浏览器依赖可信 paste 事件，Tauri 使用 HWND 所有者的原生 Unicode 剪贴板命令。
 - 同一下载器只允许串行 AI 控制并复用连接；超时只查一次状态。MCP direct read/write≤4096B、batch≤16项/4096B、capture≤30秒、flush≤8项/16300B、dump_memory≤15 region，停止流后至少排空50ms。

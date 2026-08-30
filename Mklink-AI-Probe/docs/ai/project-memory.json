@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-31T02:57:34+08:00",
+  "updated_at": "2026-08-31T03:24:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.1.9-development",
-    "head": "0.1.9 ARM 真机回归基线已包含至 9027fbc；本交接与最终 WebGUI 资源提交随后追加，精确提交号以 git rev-parse HEAD 为准。",
+    "head": "0.1.9 ARM 真机回归和 pyOCD 冷启动竞态修复已包含至 b29b221；本交接与最终 WebGUI 资源提交随后追加，精确提交号以 git rev-parse HEAD 为准。",
     "remote_head": "每项修复独立提交并立即推送 origin/codex/v0.1.9-development；不改 master、标签或正式发布指针。",
-    "working_tree": "功能修复、浏览器/Tauri 真机闭环、AI 边界回归、最终 WebGUI 构建和测试运行目录安全清理均已完成；本交接提交推送后从最终 HEAD 强制同步用户 Skill。"
+    "working_tree": "功能修复、浏览器/Tauri 真机闭环、AI 边界回归和 pyOCD 全新进程冷启动复测均已完成；本交接提交、最终 WebGUI 构建与测试运行目录清理后，从最终 HEAD 强制同步用户 Skill。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
@@ -37,7 +37,7 @@
     {
       "name": "器件目录与 Pack 导入",
       "status": "complete",
-      "notes": "搜索加入输入联想并列出 FLM 范围；修复缺顶层 url Pack 的 staging 索引、只读属性和事务恢复，导入/安装后自动刷新并保留精确已选器件。"
+      "notes": "搜索加入输入联想并列出 FLM 范围；修复缺顶层 url Pack 的 staging 索引、只读属性和事务恢复，导入/安装后自动刷新并保留精确已选器件。pyOCD 全部生产冷导入经进程级可重入锁串行化，消除首屏探针/芯片并发请求的 Python 3.14 模块锁死锁。"
     },
     {
       "name": "串口 YMODEM 与快捷键",
@@ -61,7 +61,7 @@
     },
     {
       "area": "器件联想与烧录算法浏览器闭环",
-      "result": "真实 WebGUI 输入 STM32F103 展开完整候选并选中 STM32F103RE；器件下方列出 STM32F10x_512.FLM（0x08000000..0x08080000）和 STM32F10x_OPT.FLM（0x1FFFF800..0x1FFFF810），本地目录 12511 型号可用。此前真实 WHXY.CW32L012_DFP.1.0.2.pack 导入后索引 217 型号并自动刷新，原 Pack 与安装副本哈希不变。"
+      "result": "真实 WebGUI 输入 STM32F103 展开完整候选并选中 STM32F103RE；器件下方列出 STM32F10x_512.FLM（0x08000000..0x08080000）和 STM32F10x_OPT.FLM（0x1FFFF800..0x1FFFF810），本地目录 12511 型号可用。真实 WHXY.CW32L012_DFP.1.0.2.pack 导入后索引 217 型号并自动刷新。修复前全新服务首次并发请求中 /probes 返回 502 且出现 _frozen_importlib._DeadlockError；修复后换全新 Python 进程与唯一页面 URL，首个 /probes、/targets、算法和内存映射请求全部 200，stderr 无 DeadlockError/Traceback。新增 6 项导入门禁及相关 487 项回归通过。"
     },
     {
       "area": "浏览器串口/YMODEM/快捷键 HIL",
@@ -89,7 +89,7 @@
     "维护构建、测试、日志、临时脚本和可复用缓存统一放在仓库 .build，并经 scripts/build_workspace.ps1 运行；禁止向 C 盘或工程外散落中间文件，也不上传 .build。目标测试工程的分析材料只放该工程 .build。",
     "普通用户 Skill 只携带运行时白名单、安全边界和按需参考，不触发源码维护、构建或发布流程；用户中间文件默认放目标工程 .mklink。安装用户包时必须从 sanitized archive 同步，不能直接复制维护仓库。",
     "GUI 工程文件只要求 AXF/ELF/OUT，MAP 仅在旧 API/CLI 后备兼容。Keil 压缩 RW 段按受 section 边界约束的 OBJECT 执行地址扩展，不能用压缩 sh_size 过滤 RAM 对象。",
-    "器件联想用当前可见搜索词返回候选，已选器件用独立精确查询保持稳定；选择后必须展示实际 FLM 名称和地址范围。Pack 只规范化 staging PDSC，安装/导入成功后先刷新后端 catalog 再刷新 GUI。",
+    "器件联想用当前可见搜索词返回候选，已选器件用独立精确查询保持稳定；选择后必须展示实际 FLM 名称和地址范围。Pack 只规范化 staging PDSC，安装/导入成功后先刷新后端 catalog 再刷新 GUI。生产代码禁止直接导入 pyOCD，所有惰性首次导入必须经过同一进程级 RLock，不能按模块分锁。",
     "SuperWatch 连续采样固定走 dump_memory；地址块只合并连续/重叠区域，最多 15 region。后端按预编译字段直接解码，512 样本/64KiB/20ms 联合批量；完整历史只存 Worker，暂停/停止时按可见区间取包络。",
     "串口 YMODEM 复用串口助手会话和终端，不另开同一端口；传输前由用户/测试发送 boot，进度、重试、取消和结果写入现有终端。浏览器依赖可信 paste 事件，Tauri 使用 HWND 所有者的原生 Unicode 剪贴板命令。",
     "同一下载器只允许串行 AI 控制并复用连接；超时只查一次状态。MCP direct read/write≤4096B、batch≤16项/4096B、capture≤30秒、flush≤8项/16300B、dump_memory≤15 region，停止流后至少排空50ms。",
