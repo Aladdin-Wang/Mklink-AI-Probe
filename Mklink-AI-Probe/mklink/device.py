@@ -1946,24 +1946,13 @@ def discover_all() -> list[dict]:
     Returns a list of dicts, each with keys:
         port, description, manufacturer
     """
-    from mklink._types import KNOWN_MKLINK_VID_PIDS
-    from mklink.discovery import list_available_ports, _probe_port
-    ports = list_available_ports()
-    results: list[dict] = []
-    for p in ports:
-        mfr = (p.get("manufacturer") or "").lower()
-        desc = (p.get("description") or "").lower()
-        vid_pid = (p.get("vid"), p.get("pid"))
-        known_identity = (
-            any(kw in mfr for kw in ("microkeen", "microlink", "mklink"))
-            or any(kw in desc for kw in ("microkeen", "microlink", "mklink"))
-            or vid_pid in KNOWN_MKLINK_VID_PIDS
-        )
-        if not known_identity and not _probe_port(p["device"]):
-            continue
-        results.append({
-            "port": p["device"],
-            "description": p.get("description", ""),
-            "manufacturer": p.get("manufacturer", ""),
-        })
-    return results
+    from mklink.discovery import discover_mklink_command_ports
+
+    return [
+        {
+            "port": item.device,
+            "description": str(getattr(item, "description", "") or ""),
+            "manufacturer": str(getattr(item, "manufacturer", "") or ""),
+        }
+        for item in discover_mklink_command_ports()
+    ]
