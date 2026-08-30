@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 
 _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
+_YMODEM_UPLOAD_LIMIT = 32 * 1024 * 1024
+_YMODEM_FILENAME_LIMIT = 31
 
 
 class BrowserSessionLease:
@@ -2477,6 +2479,11 @@ def create_app(
         sm = managers["serial"]
         if not sm.running:
             raise HTTPException(status_code=400, detail="Serial monitor not running")
+        if sm.get_ymodem_status()["active"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Serial input is locked by an active YMODEM transfer",
+            )
         if hex:
             try:
                 data_bytes = bytes.fromhex(data.replace(" ", ""))
@@ -2487,7 +2494,73 @@ def create_app(
         success = sm.send(port, data_bytes)
         if success:
             return {"ok": True}
+        if sm.get_ymodem_status()["active"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Serial input is locked by an active YMODEM transfer",
+            )
         raise HTTPException(status_code=500, detail=f"Failed to send to {port}")
+
+    @app.post("/api/dash/serial/ymodem/start")
+    async def serial_ymodem_start(
+        port: str = Query(...),
+        file: UploadFile = File(...),
+    ):
+        """Upload one bounded file and transfer it over the already-open port."""
+        managers = get_managers()
+        sm = managers["serial"]
+        try:
+            if not sm.running:
+                raise HTTPException(status_code=400, detail="Serial monitor not running")
+            if sm.get_ymodem_status()["active"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="a YMODEM transfer is already active",
+                )
+            filename = str(file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+            if not filename:
+                raise HTTPException(status_code=400, detail="YMODEM filename is required")
+            if any(ord(character) < 0x20 or ord(character) == 0x7F for character in filename):
+                raise HTTPException(
+                    status_code=400,
+                    detail="YMODEM filename contains control characters",
+                )
+            content = await file.read(_YMODEM_UPLOAD_LIMIT + 1)
+        finally:
+            await file.close()
+        if not content:
+            raise HTTPException(status_code=400, detail="YMODEM file is empty")
+        if len(content) > _YMODEM_UPLOAD_LIMIT:
+            raise HTTPException(
+                status_code=413,
+                detail="YMODEM file exceeds the 32 MiB upload limit",
+            )
+        filename_size = len(filename.encode("utf-8"))
+        if filename_size > _YMODEM_FILENAME_LIMIT:
+            raise HTTPException(
+                status_code=400,
+                detail="YMODEM filename exceeds the safe 31-byte limit",
+            )
+        header_size = filename_size + 1 + len(str(len(content))) + 1
+        if header_size > 128:
+            raise HTTPException(
+                status_code=400,
+                detail="YMODEM filename is too long for the protocol header",
+            )
+        try:
+            return sm.start_ymodem(port, content, filename)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+
+    @app.get("/api/dash/serial/ymodem/status")
+    async def serial_ymodem_status():
+        return get_managers()["serial"].get_ymodem_status()
+
+    @app.post("/api/dash/serial/ymodem/cancel")
+    async def serial_ymodem_cancel():
+        return get_managers()["serial"].cancel_ymodem()
 
     @app.get("/api/dash/serial/status")
     async def serial_status():

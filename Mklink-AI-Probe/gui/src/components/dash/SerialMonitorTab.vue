@@ -3,7 +3,7 @@
     <div class="serial-config-row">
       <label>
         <span>{{ tr('端口', 'Port') }}</span>
-        <select v-model="portName" :disabled="running || starting || stopping">
+        <select v-model="portName" :disabled="running || starting || stopping || ymodemActive || ymodemStarting">
           <option v-for="port in ports" :key="port.device" :value="port.device">
             {{ port.device }}{{ port.description ? ` · ${port.description}` : '' }}
           </option>
@@ -11,7 +11,7 @@
       </label>
       <button
         type="button" class="icon-action" :title="tr('刷新串口', 'Refresh ports')"
-        :aria-label="tr('刷新串口', 'Refresh ports')" :disabled="running || refreshingPorts"
+        :aria-label="tr('刷新串口', 'Refresh ports')" :disabled="running || refreshingPorts || ymodemActive || ymodemStarting"
         @click="refreshPorts"
       ><RefreshCw :size="15" :class="{ spinning: refreshingPorts }" /></button>
       <label>
@@ -20,7 +20,7 @@
           v-model="baudrate" data-testid="serial-baudrate" type="number"
           list="serial-baudrates" min="1" step="1" inputmode="numeric"
           :aria-invalid="validBaudrate === null"
-          :disabled="running || starting || stopping"
+          :disabled="running || starting || stopping || ymodemActive || ymodemStarting"
         />
         <datalist id="serial-baudrates">
           <option v-for="rate in baudrates" :key="rate" :value="rate" />
@@ -28,19 +28,19 @@
       </label>
       <label>
         <span>{{ tr('数据位', 'Data Bits') }}</span>
-        <select v-model="databits" :disabled="running || starting || stopping">
+        <select v-model="databits" :disabled="running || starting || stopping || ymodemActive || ymodemStarting">
           <option :value="8">8</option><option :value="7">7</option>
         </select>
       </label>
       <label>
         <span>{{ tr('停止位', 'Stop Bits') }}</span>
-        <select v-model="stopbits" :disabled="running || starting || stopping">
+        <select v-model="stopbits" :disabled="running || starting || stopping || ymodemActive || ymodemStarting">
           <option :value="1">1</option><option :value="2">2</option>
         </select>
       </label>
       <label>
         <span>{{ tr('校验', 'Parity') }}</span>
-        <select v-model="parity" :disabled="running || starting || stopping">
+        <select v-model="parity" :disabled="running || starting || stopping || ymodemActive || ymodemStarting">
           <option value="N">{{ tr('无', 'None') }}</option>
           <option value="E">{{ tr('偶', 'Even') }}</option>
           <option value="O">{{ tr('奇', 'Odd') }}</option>
@@ -51,7 +51,7 @@
         :disabled="starting || !portName || validBaudrate === null"
         @click="doStart"
       >{{ starting ? tr('启动中', 'Starting') : tr('打开串口', 'Open Port') }}</button>
-      <button v-else type="button" class="btn btn-danger" :disabled="stopping" @click="doStop">
+      <button v-else type="button" class="btn btn-danger" :disabled="stopping || ymodemActive || ymodemStarting" @click="doStop">
         {{ stopping ? tr('停止中', 'Stopping') : tr('关闭串口', 'Close Port') }}
       </button>
     </div>
@@ -68,7 +68,7 @@
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
         <button
           data-testid="serial-log-mode" type="button" :class="{ active: viewMode === 'log' }"
-          :aria-pressed="viewMode === 'log'" @click="setViewMode('log')"
+          :aria-pressed="viewMode === 'log'" :disabled="ymodemActive" @click="setViewMode('log')"
         ><ScrollText :size="14" /><span>{{ tr('日志', 'Log') }}</span></button>
         <button
           data-testid="serial-terminal-mode" type="button" :class="{ active: viewMode === 'terminal' }"
@@ -98,6 +98,33 @@
         :aria-label="viewMode === 'terminal' ? tr('清除终端', 'Clear terminal') : tr('清除日志', 'Clear log')"
         @click="clearVisibleOutput"
       ><Trash2 :size="15" /></button>
+    </div>
+
+    <div class="ymodem-bar" data-testid="serial-ymodem">
+      <strong>YMODEM</strong>
+      <label class="ymodem-file-button" :class="{ disabled: ymodemActive || ymodemStarting }">
+        {{ tr('选择文件', 'Choose file') }}
+        <input
+          data-testid="serial-ymodem-file" type="file"
+          :disabled="ymodemActive || ymodemStarting" @change="chooseYmodemFile"
+        >
+      </label>
+      <span class="ymodem-file-name" :title="ymodemFile?.name || ''">
+        {{ ymodemFile ? `${ymodemFile.name} · ${ymodemFile.size} B` : tr('未选择文件', 'No file selected') }}
+      </span>
+      <button
+        v-if="!ymodemActive" data-testid="serial-ymodem-start" type="button" class="btn"
+        :disabled="ymodemStarting || !ymodemFile || !transmitEnabled" @click="startYmodem"
+      >{{ ymodemStarting ? tr('准备中…', 'Preparing…') : tr('发送文件', 'Send file') }}</button>
+      <button
+        v-else data-testid="serial-ymodem-cancel" type="button" class="btn btn-danger"
+        :disabled="ymodemCancelling" @click="cancelYmodem"
+      >{{ ymodemCancelling ? tr('取消中…', 'Cancelling…') : tr('取消', 'Cancel') }}</button>
+      <progress v-if="ymodemStatus.transfer_id" :value="ymodemStatus.percent" max="100" />
+      <span v-if="ymodemStatus.transfer_id" class="ymodem-progress">
+        {{ ymodemStatus.percent }}% · {{ ymodemStatus.sent_bytes }}/{{ ymodemStatus.total_bytes }} B
+      </span>
+      <small>{{ tr('先在终端发送 boot 命令，设备进入 Bootloader 后再发送文件。', 'Send boot in the terminal first, then send the file after the device enters its bootloader.') }}</small>
     </div>
 
     <VirtualLogPanel v-if="viewMode === 'log'" ref="logPanel" class="serial-log" />
@@ -142,7 +169,28 @@ interface SerialStatus {
   ports?: Record<string, string>
   config?: Array<Record<string, unknown>>
   stats?: typeof stats.value
+  ymodem?: YmodemStatus
 }
+
+interface YmodemStatus {
+  transfer_id: number
+  state: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
+  active: boolean
+  phase: string
+  port: string
+  filename: string
+  sent_bytes: number
+  total_bytes: number
+  percent: number
+  block: number
+  retries: number
+  error: string
+}
+
+const idleYmodemStatus = (): YmodemStatus => ({
+  transfer_id: 0, state: 'idle', active: false, phase: 'idle', port: '', filename: '',
+  sent_bytes: 0, total_bytes: 0, percent: 0, block: 0, retries: 0, error: '',
+})
 
 const baudrates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 const toast = useToast()
@@ -171,14 +219,21 @@ const viewMode = ref<'log' | 'terminal'>('terminal')
 const logPanel = ref<InstanceType<typeof VirtualLogPanel> | null>(null)
 const terminalPanel = ref<InstanceType<typeof RttTerminalPanel> | null>(null)
 const serialSettings = ref<SerialAssistantSettings>(loadSerialAssistantSettings(localStorage))
+const ymodemFile = ref<File | null>(null)
+const ymodemStatus = ref<YmodemStatus>(idleYmodemStatus())
+const ymodemStarting = ref(false)
+const ymodemCancelling = ref(false)
 const terminalEncoder = new TextEncoder()
 let statusTimer: ReturnType<typeof setTimeout> | null = null
+let ymodemTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let terminalInput = ''
 let terminalInputTimer: ReturnType<typeof setTimeout> | null = null
 let terminalSendChain = Promise.resolve()
 let reportedPortError = ''
 let attachedMode: 'log' | 'terminal' | null = null
+let lastYmodemTerminalKey = ''
+let reportedYmodemFinal = 0
 
 const currentPortStatus = computed(() => portStatuses.value[portName.value] || (running.value ? 'opening' : 'closed'))
 const validBaudrate = computed(() => {
@@ -195,7 +250,11 @@ const localizedPortStatus = computed(() => {
   if (status === 'error: port is busy or unavailable') return tr('端口被占用或不可用', 'Port is busy or unavailable')
   return status
 })
-const transmitEnabled = computed(() => running.value && currentPortStatus.value === 'open')
+const ymodemActive = computed(() => ymodemStatus.value.active)
+const transmitEnabled = computed(() => (
+  running.value && currentPortStatus.value === 'open'
+  && !ymodemActive.value && !ymodemStarting.value
+))
 const activeTelemetry = computed(() => (
   viewMode.value === 'log' ? logBinary.telemetry.value : terminalBinary.telemetry.value
 ))
@@ -251,6 +310,7 @@ function applyStatus(status: SerialStatus): void {
   running.value = status.running === true
   if (status.stats) stats.value = status.stats
   portStatuses.value = status.ports || {}
+  if (status.ymodem) applyYmodemStatus(status.ymodem)
   const config = status.config?.[0]
   if (running.value && config) {
     if (typeof config.port === 'string') portName.value = config.port
@@ -271,6 +331,138 @@ function applyStatus(status: SerialStatus): void {
     reportedPortError = ''
   }
   syncBinaryStream()
+}
+
+function ymodemLine(status: YmodemStatus): string {
+  if (status.phase === 'waiting') return tr('[YMODEM] 等待接收端发送 C…', '[YMODEM] Waiting for receiver C…')
+  if (status.phase === 'transferring') return tr(
+    `[YMODEM] 正在传输 ${status.percent}%（${status.sent_bytes}/${status.total_bytes} B）`,
+    `[YMODEM] Transferring ${status.percent}% (${status.sent_bytes}/${status.total_bytes} B)`,
+  )
+  if (status.phase === 'retrying') return tr(
+    `[YMODEM] 第 ${status.block} 块重试 ${status.retries}`,
+    `[YMODEM] Retrying block ${status.block}, attempt ${status.retries}`,
+  )
+  if (status.phase === 'finishing') return tr('[YMODEM] 正在完成协议收尾…', '[YMODEM] Finishing transfer…')
+  if (status.phase === 'cancelling') return tr('[YMODEM] 正在取消…', '[YMODEM] Cancelling…')
+  if (status.state === 'completed') return tr('[YMODEM] 传输完成，等待设备重启。', '[YMODEM] Transfer complete; waiting for device reboot.')
+  if (status.state === 'cancelled') return tr(`[YMODEM] 已取消：${status.error}`, `[YMODEM] Cancelled: ${status.error}`)
+  if (status.state === 'failed') return tr(`[YMODEM] 失败：${status.error}`, `[YMODEM] Failed: ${status.error}`)
+  return ''
+}
+
+function ymodemTerminalKey(status: YmodemStatus): string {
+  if (!status.transfer_id) return ''
+  if (status.phase === 'transferring') {
+    return `${status.transfer_id}:transferring:${Math.floor(status.percent / 10)}`
+  }
+  if (status.phase === 'retrying') {
+    return `${status.transfer_id}:retrying:${status.block}:${status.retries}`
+  }
+  return `${status.transfer_id}:${status.state}:${status.phase}`
+}
+
+function applyYmodemStatus(status: YmodemStatus): void {
+  ymodemStatus.value = { ...status }
+  const line = ymodemLine(status)
+  const terminalKey = line ? ymodemTerminalKey(status) : ''
+  if (terminalKey && terminalKey !== lastYmodemTerminalKey) {
+    lastYmodemTerminalKey = terminalKey
+    terminalPanel.value?.write(`\r\n${line}\r\n`)
+  }
+  if (!status.active && status.transfer_id && reportedYmodemFinal !== status.transfer_id) {
+    ymodemCancelling.value = false
+    reportedYmodemFinal = status.transfer_id
+    if (status.state === 'completed') toast.success(tr('YMODEM 文件传输完成', 'YMODEM file transfer completed'))
+    else if (status.state === 'failed') toast.error(tr('YMODEM 传输失败：', 'YMODEM transfer failed: ') + status.error)
+    else if (status.state === 'cancelled') toast.info(tr('YMODEM 传输已取消', 'YMODEM transfer cancelled'))
+  }
+}
+
+function chooseYmodemFile(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] || null
+  runtimeError.value = ''
+  if (!file) {
+    ymodemFile.value = null
+    return
+  }
+  const filenameBytes = terminalEncoder.encode(file.name).length
+  if (!file.size) {
+    runtimeError.value = tr('YMODEM 文件不能为空', 'YMODEM file cannot be empty')
+  } else if (file.size > 32 * 1024 * 1024) {
+    runtimeError.value = tr('YMODEM 文件不能超过 32 MiB', 'YMODEM file cannot exceed 32 MiB')
+  } else if (filenameBytes > 31) {
+    runtimeError.value = tr('YMODEM 文件名不能超过 31 个 UTF-8 字节', 'YMODEM filename cannot exceed 31 UTF-8 bytes')
+  }
+  if (runtimeError.value) {
+    ymodemFile.value = null
+    input.value = ''
+    toast.error(runtimeError.value)
+    return
+  }
+  ymodemFile.value = file
+}
+
+async function pollYmodemStatus(): Promise<void> {
+  if (ymodemTimer !== null) {
+    clearTimeout(ymodemTimer)
+    ymodemTimer = null
+  }
+  try {
+    applyYmodemStatus(await requestJson('/api/dash/serial/ymodem/status'))
+  } catch (caught) {
+    runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+  }
+  if (!disposed && (ymodemStatus.value.active || ymodemCancelling.value)) {
+    ymodemTimer = setTimeout(pollYmodemStatus, 150)
+  }
+}
+
+async function startYmodem(): Promise<void> {
+  const file = ymodemFile.value
+  if (!file || !transmitEnabled.value || ymodemStarting.value) return
+  ymodemStarting.value = true
+  runtimeError.value = ''
+  if (viewMode.value !== 'terminal') setViewMode('terminal')
+  await nextTick()
+  terminalPanel.value?.activate()
+  terminalPanel.value?.write(tr(
+    `\r\n[YMODEM] 准备发送 ${file.name}（${file.size} B）…\r\n`,
+    `\r\n[YMODEM] Preparing ${file.name} (${file.size} B)…\r\n`,
+  ))
+  const form = new FormData()
+  form.append('file', file, file.name)
+  try {
+    const status = await requestJson(
+      `/api/dash/serial/ymodem/start?port=${encodeURIComponent(portName.value)}`,
+      { method: 'POST', body: form },
+    )
+    applyYmodemStatus(status)
+    void pollYmodemStatus()
+  } catch (caught) {
+    runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+    terminalPanel.value?.write(tr(
+      `\r\n[YMODEM] 启动失败：${runtimeError.value}\r\n`,
+      `\r\n[YMODEM] Failed to start: ${runtimeError.value}\r\n`,
+    ))
+    toast.error(tr('YMODEM 启动失败：', 'Failed to start YMODEM: ') + runtimeError.value)
+  } finally {
+    ymodemStarting.value = false
+  }
+}
+
+async function cancelYmodem(): Promise<void> {
+  if (!ymodemActive.value || ymodemCancelling.value) return
+  ymodemCancelling.value = true
+  try {
+    applyYmodemStatus(await requestJson('/api/dash/serial/ymodem/cancel', { method: 'POST' }))
+    void pollYmodemStatus()
+  } catch (caught) {
+    ymodemCancelling.value = false
+    runtimeError.value = caught instanceof Error ? caught.message : String(caught)
+    toast.error(tr('取消 YMODEM 失败：', 'Failed to cancel YMODEM: ') + runtimeError.value)
+  }
 }
 
 async function refreshStatus(): Promise<void> {
@@ -443,6 +635,7 @@ onUnmounted(() => {
   disposed = true
   detachBinaryStreams()
   if (statusTimer !== null) clearTimeout(statusTimer)
+  if (ymodemTimer !== null) clearTimeout(ymodemTimer)
   if (terminalInputTimer !== null) clearTimeout(terminalInputTimer)
   terminalInput = ''
 })
@@ -456,6 +649,15 @@ onUnmounted(() => {
 .serial-config-row input { width: 90px; }
 .serial-config-row label:first-child select { width: 180px; }
 .serial-toolbar { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 8px; }
+.ymodem-bar { display: grid; grid-template-columns:auto auto minmax(120px,1fr) auto auto auto; align-items:center; gap:7px; margin-top:8px; padding:7px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:11px; }
+.ymodem-bar strong { color:var(--accent); letter-spacing:.04em; }
+.ymodem-file-button { position:relative; overflow:hidden; padding:5px 8px; border:1px solid var(--border); border-radius:4px; cursor:pointer; white-space:nowrap; }
+.ymodem-file-button input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.ymodem-file-button.disabled { opacity:.45; cursor:not-allowed; }
+.ymodem-file-name { min-width:0; overflow:hidden; color:var(--muted); text-overflow:ellipsis; white-space:nowrap; }
+.ymodem-bar progress { width:90px; }
+.ymodem-progress { color:var(--muted); font-family:var(--font-mono); white-space:nowrap; }
+.ymodem-bar small { grid-column:1 / -1; color:var(--muted); }
 .view-mode-switch { display: inline-flex; flex: 0 0 auto; overflow: hidden; border: 1px solid var(--border); border-radius: 4px; }
 .view-mode-switch button { display: inline-flex; height: 26px; align-items: center; gap: 5px; padding: 0 8px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }
 .view-mode-switch button + button { border-left: 1px solid var(--border); }
@@ -478,5 +680,7 @@ onUnmounted(() => {
   .serial-config-row label:first-child select { width: 100%; max-width: none; }
   .serial-toolbar { align-items: flex-start; flex-wrap: wrap; }
   .serial-metrics { order: 3; flex-basis: 100%; }
+  .ymodem-bar { grid-template-columns:auto auto minmax(80px,1fr) auto; }
+  .ymodem-bar progress,.ymodem-progress { grid-column:span 2; }
 }
 </style>

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import collections
+import io
+import queue
 import threading
 import time
 from dataclasses import dataclass, field
@@ -47,6 +49,8 @@ class SerialMonitor:
         self._serial_ports: dict[str, SerialPort] = {}
         self._port_statuses: dict[str, str] = {cfg["port"]: "closed" for cfg in ports}
         self._lock = threading.Lock()
+        self._protocol_lock = threading.Lock()
+        self._protocol_queues: dict[str, queue.Queue[bytes]] = {}
 
         self._auto_reply_engine: AutoReplyEngine | None = None
         if auto_reply_rules:
@@ -92,14 +96,17 @@ class SerialMonitor:
         self._running = False
 
     def send(self, port: str, data: bytes) -> bool:
-        with self._lock:
-            sp = self._serial_ports.get(port)
-            if sp is None or not sp.is_open:
+        with self._protocol_lock:
+            if port in self._protocol_queues:
                 return False
-            try:
-                sp.write(data)
-            except Exception:
-                return False
+            with self._lock:
+                sp = self._serial_ports.get(port)
+                if sp is None or not sp.is_open:
+                    return False
+                try:
+                    sp.write(data)
+                except Exception:
+                    return False
 
         timestamp = time.time()
         self._emit_chunk(port, "TX", data, timestamp)
@@ -111,6 +118,69 @@ class SerialMonitor:
         )
         self._emit_event(evt)
         return True
+
+    def send_ymodem(
+        self,
+        port: str,
+        data: bytes,
+        filename: str,
+        *,
+        cancel_event: threading.Event | None = None,
+        progress_callback=None,
+    ) -> None:
+        """Send one in-memory file while exclusively consuming *port* RX bytes.
+
+        The normal reader thread keeps ownership of the open serial port.
+        Protocol RX/TX bytes are hidden from ordinary terminal/log streams, and
+        framing plus auto-reply are paused so control bytes are consumed once.
+        """
+        from mklink.serial._ymodem import YModemCancelled, YModemSender
+
+        receive_queue: queue.Queue[bytes] = queue.Queue()
+        with self._protocol_lock:
+            if port in self._protocol_queues:
+                raise RuntimeError(f"serial port {port} already has an active transfer")
+            with self._lock:
+                serial_port = self._serial_ports.get(port)
+                if serial_port is None or not serial_port.is_open:
+                    raise RuntimeError(f"serial port {port} is not open")
+            self._protocol_queues[port] = receive_queue
+
+        cancellation = cancel_event or threading.Event()
+
+        def read_protocol(timeout: float) -> bytes:
+            deadline = time.monotonic() + timeout
+            while True:
+                if cancellation.is_set() or self._stop_event.is_set():
+                    raise YModemCancelled("YMODEM transfer cancelled")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return b""
+                try:
+                    return receive_queue.get(timeout=min(remaining, 0.1))
+                except queue.Empty:
+                    continue
+
+        def write_protocol(payload: bytes) -> None:
+            if cancellation.is_set() or self._stop_event.is_set():
+                raise YModemCancelled("YMODEM transfer cancelled")
+            with self._lock:
+                current = self._serial_ports.get(port)
+                if current is not serial_port or not current.is_open:
+                    raise RuntimeError(f"serial port {port} closed during YMODEM transfer")
+                current.write(payload)
+
+        try:
+            YModemSender(
+                read_protocol,
+                write_protocol,
+                cancel_event=cancellation,
+                progress_callback=progress_callback,
+            ).send(io.BytesIO(data), filename, len(data))
+        finally:
+            with self._protocol_lock:
+                if self._protocol_queues.get(port) is receive_queue:
+                    self._protocol_queues.pop(port, None)
 
     def send_all(self, data: bytes) -> None:
         for cfg in self._port_configs:
@@ -197,6 +267,7 @@ class SerialMonitor:
 
             parser = self._parsers.get(port_name)
             line_buffer = bytearray()
+            protocol_was_active = False
 
             try:
                 while not self._stop_event.is_set():
@@ -204,6 +275,18 @@ class SerialMonitor:
                     if not data:
                         self._stop_event.wait(0.01)
                         continue
+
+                    with self._protocol_lock:
+                        protocol_queue = self._protocol_queues.get(port_name)
+                    if protocol_queue is not None:
+                        if not protocol_was_active:
+                            line_buffer.clear()
+                        protocol_was_active = True
+                        protocol_queue.put(data)
+                        continue
+                    if protocol_was_active:
+                        line_buffer.clear()
+                        protocol_was_active = False
 
                     self._emit_chunk(port_name, "RX", data, time.time())
 

@@ -59,6 +59,7 @@ def _sum_counter_snapshots(base: dict[str, int], current: dict[str, int]) -> dic
 logger = logging.getLogger(__name__)
 _RTT_DELIVERY_INTERVAL = 1.0 / 50.0
 _SYSTEMVIEW_DELIVERY_INTERVAL = 1.0 / 30.0
+_YMODEM_STOP_TIMEOUT = 3.0
 _RUNTIME_CPU_FREQ_SOURCES = {"SystemCoreClock", "hpm_core_clock"}
 SUPPORTED_RTT_ENCODINGS = ("utf-8", "gb2312", "gbk", "gb18030", "big5")
 
@@ -2378,6 +2379,29 @@ class SerialStreamManager:
         self._tx_bytes = 0
         self._start_time = 0.0
         self._stream_hub = stream_hub
+        self._ymodem_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._ymodem_thread: threading.Thread | None = None
+        self._ymodem_cancel: threading.Event | None = None
+        self._ymodem_generation = 0
+        self._ymodem_status: dict[str, Any] = self._idle_ymodem_status()
+
+    @staticmethod
+    def _idle_ymodem_status() -> dict[str, Any]:
+        return {
+            "transfer_id": 0,
+            "state": "idle",
+            "active": False,
+            "phase": "idle",
+            "port": "",
+            "filename": "",
+            "sent_bytes": 0,
+            "total_bytes": 0,
+            "percent": 0,
+            "block": 0,
+            "retries": 0,
+            "error": "",
+        }
 
     def set_stream_hub(self, stream_hub) -> None:
         self._stream_hub = stream_hub
@@ -2392,8 +2416,21 @@ class SerialStreamManager:
 
     def start(self, ports: list[dict], profile: dict | None = None,
               auto_reply_rules: list[dict] | None = None) -> None:
+        with self._lifecycle_lock:
+            self._start_locked(ports, profile, auto_reply_rules)
+
+    def _start_locked(self, ports: list[dict], profile: dict | None = None,
+                      auto_reply_rules: list[dict] | None = None) -> None:
         if self._running:
             return
+        with self._ymodem_lock:
+            if self._ymodem_status["active"]:
+                raise RuntimeError("previous YMODEM transfer is still active")
+            if self._ymodem_thread is not None and self._ymodem_thread.is_alive():
+                raise RuntimeError("previous YMODEM worker thread is still active")
+            self._ymodem_status = self._idle_ymodem_status()
+            self._ymodem_thread = None
+            self._ymodem_cancel = None
 
         from mklink.serial._monitor import SerialMonitor
 
@@ -2482,21 +2519,193 @@ class SerialStreamManager:
         self._bridge.put({"event": "status", **self.get_status()})
 
     def stop(self) -> None:
-        if self._monitor:
-            self._monitor.stop()
+        with self._lifecycle_lock:
+            self._cancel_ymodem_locked(wait=False)
+            monitor = self._monitor
+            if monitor is not None:
+                monitor.stop()
+            with self._ymodem_lock:
+                transfer_thread = self._ymodem_thread
+            if (
+                transfer_thread is not None
+                and transfer_thread is not threading.current_thread()
+                and transfer_thread.is_alive()
+            ):
+                transfer_thread.join(timeout=_YMODEM_STOP_TIMEOUT)
+            if transfer_thread is not None and transfer_thread.is_alive():
+                raise TimeoutError(
+                    "YMODEM transfer did not stop within the shutdown timeout"
+                )
             self._monitor = None
-        self._running = False
-        self._bridge.put({"event": "stopped"})
-        self._bridge.stop()
+            self._running = False
+            self._bridge.put({"event": "stopped"})
+            self._bridge.stop()
 
     def send(self, port: str, data: bytes) -> bool:
-        if not self._monitor:
-            return False
-        return self._monitor.send(port, data)
+        with self._lifecycle_lock:
+            monitor = self._monitor
+            if monitor is None or not self._running:
+                return False
+            with self._ymodem_lock:
+                if self._ymodem_status["active"]:
+                    return False
+                return monitor.send(port, data)
 
     def send_all(self, data: bytes) -> None:
-        if self._monitor:
-            self._monitor.send_all(data)
+        with self._lifecycle_lock:
+            monitor = self._monitor
+            if monitor is None or not self._running:
+                return
+            with self._ymodem_lock:
+                if self._ymodem_status["active"]:
+                    return
+                monitor.send_all(data)
+
+    def start_ymodem(self, port: str, data: bytes, filename: str) -> dict[str, Any]:
+        """Start one asynchronous YMODEM transfer on the monitored port."""
+        with self._lifecycle_lock:
+            return self._start_ymodem_locked(port, data, filename)
+
+    def _start_ymodem_locked(
+        self,
+        port: str,
+        data: bytes,
+        filename: str,
+    ) -> dict[str, Any]:
+        monitor = self._monitor
+        if monitor is None or not self._running:
+            raise RuntimeError("serial monitor not running")
+        if not data:
+            raise ValueError("YMODEM file is empty")
+        if monitor.port_status.get(port) != "open":
+            raise RuntimeError(f"serial port {port} is not open")
+
+        with self._ymodem_lock:
+            if self._ymodem_status["active"]:
+                raise RuntimeError("a YMODEM transfer is already active")
+            self._ymodem_generation += 1
+            transfer_id = self._ymodem_generation
+            cancel_event = threading.Event()
+            self._ymodem_cancel = cancel_event
+            self._ymodem_status = {
+                "transfer_id": transfer_id,
+                "state": "running",
+                "active": True,
+                "phase": "waiting",
+                "port": port,
+                "filename": filename,
+                "sent_bytes": 0,
+                "total_bytes": len(data),
+                "percent": 0,
+                "block": 0,
+                "retries": 0,
+                "error": "",
+            }
+
+            def progress(snapshot) -> None:
+                with self._ymodem_lock:
+                    if (
+                        self._ymodem_status["transfer_id"] != transfer_id
+                        or not self._ymodem_status["active"]
+                        or cancel_event.is_set()
+                    ):
+                        return
+                    self._ymodem_status.update({
+                        "phase": snapshot.phase,
+                        "sent_bytes": snapshot.sent_bytes,
+                        "total_bytes": snapshot.total_bytes,
+                        "percent": snapshot.percent,
+                        "block": snapshot.block,
+                        "retries": snapshot.retries,
+                    })
+                    payload = dict(self._ymodem_status)
+                self._bridge.put({"event": "ymodem", **payload})
+
+            def transfer() -> None:
+                from mklink.serial._ymodem import YModemCancelled
+
+                try:
+                    monitor.send_ymodem(
+                        port,
+                        data,
+                        filename,
+                        cancel_event=cancel_event,
+                        progress_callback=progress,
+                    )
+                except YModemCancelled as error:
+                    state = "cancelled"
+                    failure = str(error)
+                except Exception as error:
+                    logger.warning("YMODEM transfer failed on %s: %s", port, error)
+                    state = "failed"
+                    failure = str(error)
+                else:
+                    state = "completed"
+                    failure = ""
+                with self._ymodem_lock:
+                    if self._ymodem_status["transfer_id"] != transfer_id:
+                        return
+                    self._ymodem_status.update({
+                        "state": state,
+                        "active": False,
+                        "phase": state,
+                        "error": failure,
+                    })
+                    if state == "completed":
+                        self._ymodem_status["sent_bytes"] = len(data)
+                        self._ymodem_status["percent"] = 100
+                    payload = dict(self._ymodem_status)
+                self._bridge.put({"event": "ymodem", **payload})
+
+            self._ymodem_thread = threading.Thread(
+                target=transfer,
+                daemon=True,
+                name=f"serial-ymodem-{port}",
+            )
+            thread = self._ymodem_thread
+            initial = dict(self._ymodem_status)
+        self._bridge.put({"event": "ymodem", **initial})
+        try:
+            thread.start()
+        except Exception as error:
+            with self._ymodem_lock:
+                if self._ymodem_status["transfer_id"] == transfer_id:
+                    self._ymodem_status.update({
+                        "state": "failed",
+                        "active": False,
+                        "phase": "failed",
+                        "error": str(error),
+                    })
+                    failed = dict(self._ymodem_status)
+                else:
+                    failed = None
+            if failed is not None:
+                self._bridge.put({"event": "ymodem", **failed})
+            raise RuntimeError(f"failed to start YMODEM worker: {error}") from error
+        return initial
+
+    def cancel_ymodem(self, *, wait: bool = False) -> dict[str, Any]:
+        with self._lifecycle_lock:
+            return self._cancel_ymodem_locked(wait=wait)
+
+    def _cancel_ymodem_locked(self, *, wait: bool = False) -> dict[str, Any]:
+        with self._ymodem_lock:
+            if not self._ymodem_status["active"]:
+                return dict(self._ymodem_status)
+            self._ymodem_status["phase"] = "cancelling"
+            cancel_event = self._ymodem_cancel
+            thread = self._ymodem_thread
+            payload = dict(self._ymodem_status)
+        if cancel_event is not None:
+            cancel_event.set()
+        self._bridge.put({"event": "ymodem", **payload})
+        if wait and thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=_YMODEM_STOP_TIMEOUT)
+        return self.get_ymodem_status()
+
+    def get_ymodem_status(self) -> dict[str, Any]:
+        with self._ymodem_lock:
+            return dict(self._ymodem_status)
 
     def get_status(self) -> dict:
         elapsed = max(time.time() - self._start_time, 1.0)
@@ -2515,6 +2724,7 @@ class SerialStreamManager:
                 "bytes_per_sec": round((self._rx_bytes + self._tx_bytes) / elapsed, 1),
             },
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
+            "ymodem": self.get_ymodem_status(),
         }
 
     async def sse_generator(self):
