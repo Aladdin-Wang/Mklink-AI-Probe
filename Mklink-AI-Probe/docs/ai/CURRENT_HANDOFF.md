@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-30T17:26:00+08:00`
+- 更新时间：`2026-08-30T22:08:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`本次提交前为 c509ca5；Keil 压缩 AXF 符号兼容与 MAP GUI 精简的最终提交号以 Git 为准。`
-- 远端 HEAD：`本次单问题闭环完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
-- 工作树：0.1.9 预发布分支修复 Keil 压缩 RW AXF 的可写执行区识别，并从 GUI 取消用户手动加载 MAP 的入口；底层 CLI、工程配置和旧客户端 MAP 兼容保留。
-- 当前任务：使用 GD32E517 工程真实 rtthread.axf 复核 SuperWatch 的 board_info_data 搜索，验证 AXF 单文件配置和取消 MAP GUI 入口后 RTT/SystemView 自动发现无退化。
-- 状态：`v0.1.9-gd32-compressed-axf-symbol-fix`
+- HEAD：`本次提交前为 7be8835；WHXY 本地 Pack 导入兼容、安装后目录自动刷新与交付 Web 资源的最终提交号以 Git 为准。`
+- 远端 HEAD：`本次 Pack 单问题闭环完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支修复缺少顶层 url 的本地 CMSIS-Pack 导入，避免只读源属性污染受管副本并自愈旧只读事务，同时统一安装、导入及索引更新后的后端目录、GUI 可见列表和已选器件状态刷新。
+- 当前任务：使用用户真实 WHXY.CW32L012_DFP.1.0.2.pack 复现并修复 PACK_INTEGRITY_ERROR，完成安装后器件目录、已安装状态和当前搜索结果的自动刷新闭环。
+- 状态：`v0.1.9-pack-import-refresh-fix`
 
 ## 里程碑
 
@@ -30,12 +30,11 @@
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
 - **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
 - **SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）**：同进程50k×16 A/B：旧对象热路径20109.41 samples/s、11280901 calls；预编译直接解码38641.74 samples/s、5862521 calls，吞吐+92.16%、调用约-48.03%。STM32H743当前AXF符号superwatch_ch00..15位于0x24040000..0x2404003C；曾因WebGUI仍使用旧上传AXF副本而读取0x20009150起的旧地址，切换到当前工程AXF后16路0..1相移三角波恢复。真实Chrome确认暂停和停止后横轴缩放均保留波形。V4第二版16路实测：1ms固件周期均值/中位数均1000us、主机997.08Hz；100us中位数100us、均值108.14us、9237.72Hz；10us尽快采样9535.17Hz。三档read/CRC/固件丢样标记/后端/WebSocket丢包均为0。GUI全量57文件/590项、受影响Python156项和生产构建通过。
-- **GD32E517 Keil 压缩 AXF 与 MAP GUI 精简（2026-08-30）**：真实 rtthread.axf（SHA-256 3753E0F3...1D9AF7F）的 board_info_data 为全局隐藏 OBJECT，地址0x200007A0、当前大小1592、DWARF类型board_info_t；旧逻辑把压缩加载大小误作RAM执行区而过滤该变量。按同段对象执行末端安全扩展可写区后，CLI精确搜索恢复。GUI只保留AXF/ELF/OUT入口；旧v1设置中的MAP字段会丢弃且保留其余设置，RTT/SystemView无手选文件时优先自动发现AXF并保留MAP后备。GUI全量57文件/590项、受影响Python111项和生产构建通过。真实Chrome连接COM228/IDCODE 0x0BE12477，内置pyelftools加载8591个固定可读变量；MAP控件计数为0，搜索返回board_info_data根节点及tBmsInfo成员，控制台无warn/error。
+- **0.1.9 AXF/MAP 与本地 Pack GUI 回归（2026-08-30）**：真实 rtthread.axf（SHA-256 3753E0F3...1D9AF7F）的 board_info_data 为全局隐藏 OBJECT，地址0x200007A0、当前大小1592、DWARF类型board_info_t；旧逻辑把压缩加载大小误作RAM执行区而过滤该变量。按同段对象执行末端安全扩展可写区后，CLI精确搜索恢复。GUI只保留AXF/ELF/OUT入口；旧v1设置中的MAP字段会丢弃且保留其余设置，RTT/SystemView无手选文件时优先自动发现AXF并保留MAP后备。GUI全量57文件/590项、受影响Python111项和生产构建通过。真实Chrome连接COM228/IDCODE 0x0BE12477，内置pyelftools加载8591个固定可读变量；MAP控件计数为0，搜索返回board_info_data根节点及tBmsInfo成员，控制台无warn/error。 真实只读 Pack（SHA-256 10D93031...FFB5）唯一 PDSC 的 vendor/name/release、CW32L012C8 和 FLM 均完整；根因是缺少 package 顶层 url 时 cmsis-pack-manager 0.6.0 静默生成空索引。仅对 staging PDSC 在 schema 顺序位置补同命名空间空 url，原 Pack 与安装副本哈希一致，受管副本可写；无设备 Pack 仍拒绝，旧版本遗留的只读安装副本及 committed journal 可自愈清理。legacy JSON 与 NDJSON 安装/导入后均刷新目录；GUI 可见查询和已选器件精确确认分离，安装确认不再被防抖查询中止或把 HTTP 错误误报为索引缺失。Pack/在线API受影响 Python 188 项、GUI 全量57文件/594项和生产构建通过；最终 Web 资源下以空搜索再次导入真实 Pack 后仍为索引可用/217型号、CW32L012C8 本地 Pack和已安装徽标，旧错误不存在，本轮浏览器控制台无新增warn/error。
 
 ## 架构决策
 
-- USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。
-- Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
+- USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。 Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
 - HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
 - Web 静态 JS/MJS/CSS MIME 不依赖系统注册表。通过 Vite assets/mime-v1 更换整个资源图的缓存 URL，避免只改 HTML 遗漏延迟加载；保留 HTML no-store 和哈希资源 immutable。缓存代号只在响应语义需作废旧缓存时变更，必须重建并提交 gui/dist。
 - 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。 用户中间文件固定在选定工作根目录，默认目标项目 .mklink；工作脚本、日志、报告和缓存分类，保留可复用缓存与唯一证据；不能通过篡改 project-root 重定向固定日志。
@@ -44,6 +43,7 @@
 - SuperWatch连续采样固定使用dump_memory，不以read_ram降级；变量块只合并连续或重叠地址，最多15 region。后端按预编译字段直接解码为typed批，512样本、64KiB和20ms最长等待共同触发发送；完整历史只存Worker，主线程正常模式每通道容量2，暂停/停止交互按可见区间请求包络。V4固件使用绝对截止点并扣除SWD读取、CRC、封包和USB入队耗时；超期立即重建截止点，低于50us解释为尽快采样。
 - AI/PC 对单只下载器只允许串行控制并复用连接；超时后只查一次状态，不循环重试。MCP direct read/write 4096B，batch read 最多16项/4096B，capture 最长30秒，flush 最多8项/16300B。dump_memory 固件帧容量虽为16 region，但 Pika 文本入口16组加 period 正好33参数并在V4.3.8实测卡死，因此 Skill/CLI/MCP安全上限固定15且与堆大小无关；流停止至少排空50ms并释放连接。
 - GUI 文件来源只要求 AXF/ELF/OUT；这些文件承担 SuperWatch 类型/符号和 RTT/SystemView 地址搜索。用户旧 MAP 设置按 v1 无损迁移后丢弃；工程解析、CLI、显式 API 和旧客户端上传仍保留 MAP 后备兼容。Keil 压缩 RW 段必须以受 section 边界约束的 OBJECT 执行地址补足范围，不能直接把压缩 sh_size 当作 RAM 执行跨度。
+- 本地 CMSIS-Pack 缺顶层 url 时只规范化交给索引器的 staging PDSC，补空 url 而不伪造下载地址、不改写用户或安装的 Pack；受管 Pack 复制不继承源只读属性，事务确认和恢复可清除已校验受管文件的旧只读位。Pack 安装、导入和联网索引更新成功后必须先刷新后端 catalog，再按 GUI 当前可见搜索词提交列表；已选器件用不受防抖/中止控制器影响的精确查询确认，使列表、选择和已安装徽标一致。
 
 ## 真机环境
 
@@ -53,8 +53,8 @@
 
 ## 下一动作
 
-1. 以 E:\PHDZ\PROJECT\64 red source\gd32e517_RACK_V1.0.4\build\rtthread.axf 保持 WebGUI 打开，等待维护者复测 board_info_data 搜索和 AXF 单文件流程。
-2. 维护者复测通过后继续接收下一个上位机问题，按复现、最小修复、自动化回归、真实浏览器闭环、单独提交和立即推送的节奏处理。
+1. 保持修复后的 WebGUI 打开在 CW32L012C8 已安装结果，等待维护者复测本地 Pack 导入和自动刷新。
+2. 维护者复测通过后继续接收下一个 0.1.9 上位机问题，按复现、最小修复、自动化回归、真实浏览器闭环、单独提交和立即推送的节奏处理。
 3. HPM 系列功能梳理、跨固件仓库改造和官方手册重写均留待后续单独立项，不混入当前 0.1.9 基线修复。
 
 ## 已知限制

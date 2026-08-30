@@ -3,11 +3,15 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CustomFlmRecord, PackStatus, TargetRecord } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
 
-const props = defineProps<{ targets: TargetRecord[]; selectedPart: string; status: PackStatus | null; busy: boolean; cancelPending: boolean; progress: number; phase: string; error: string; algorithms: CustomFlmRecord[]; algorithmBusy: boolean; algorithmError: string; canManageAlgorithms: boolean; algorithmNotRequired: boolean }>()
-const emit = defineEmits<{ search: [value: string]; select: [target: TargetRecord]; updateIndex: []; importPack: [file: File]; cancel: []; addAlgorithm: [file: File]; removeAlgorithm: [algorithmId: string] }>()
-const query = ref('')
+const props = defineProps<{ targets: TargetRecord[]; query: string; selectedPart: string; selectedInstalled: boolean; status: PackStatus | null; busy: boolean; cancelPending: boolean; progress: number; phase: string; error: string; algorithms: CustomFlmRecord[]; algorithmBusy: boolean; algorithmError: string; canManageAlgorithms: boolean; algorithmNotRequired: boolean }>()
+const emit = defineEmits<{ search: [value: string]; 'update:query': [value: string]; select: [target: TargetRecord]; updateIndex: []; importPack: [file: File]; cancel: []; addAlgorithm: [file: File]; removeAlgorithm: [algorithmId: string] }>()
+const query = ref(props.query)
 let timer: ReturnType<typeof setTimeout> | undefined
+watch(() => props.query, value => {
+  if (value !== query.value) query.value = value
+})
 watch(query, value => {
+  emit('update:query', value)
   clearTimeout(timer)
   timer = setTimeout(() => emit('search', value), 300)
 })
@@ -44,7 +48,7 @@ const phaseLabel = computed(() => ({
 
 <template>
   <section class="target-panel">
-    <div class="title-row"><h3>{{ tr('器件选择', 'Target Selection') }}</h3><span data-testid="pack-status" class="badge" :class="selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? 'ok' : ''">{{ selectedPart && targets.find(t => t.part_number === selectedPart)?.installed ? tr('已安装', 'Installed') : tr('未就绪', 'Not ready') }}</span></div>
+    <div class="title-row"><h3>{{ tr('器件选择', 'Target Selection') }}</h3><span data-testid="pack-status" class="badge" :class="selectedPart && selectedInstalled ? 'ok' : ''">{{ selectedPart && selectedInstalled ? tr('已安装', 'Installed') : tr('未就绪', 'Not ready') }}</span></div>
     <input v-model="query" data-testid="target-search" type="search" :placeholder="tr('搜索型号 / 厂商 / 系列', 'Search model / vendor / family')" :aria-label="tr('搜索器件', 'Search targets')">
     <div class="target-list">
       <button v-for="target in targets" :key="target.part_number" :data-testid="`target-${target.part_number}`" :disabled="busy || algorithmBusy" :class="{ active: selectedPart === target.part_number }" @click="selectTarget(target)">

@@ -43,6 +43,7 @@ from mklink.remote.online_flash_api import shutdown_online_flash_services
 class Catalog:
     def __init__(self):
         self.calls = []
+        self.refresh_count = 0
 
     def search(self, query, vendor=None, installed=None, limit=100):
         self.calls.append((query, vendor, installed, limit))
@@ -56,6 +57,7 @@ class Catalog:
         return {"index_available": True, "target_count": 2, "last_error": None}
 
     def refresh(self):
+        self.refresh_count += 1
         return self.status()
 
 
@@ -939,8 +941,10 @@ def test_probe_enumeration_failure_is_actionable_and_does_not_expose_raw_details
 
 
 def test_pack_operations_collect_events_cancel_remove_and_map_errors(app, services):
+    refresh_count = services.catalog.refresh_count
     installed = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "Other"})
     assert installed.json()["events"][0]["progress"] == 0.5
+    assert services.catalog.refresh_count == refresh_count + 1
     missing = request(app, "POST", "/api/online-flash/packs/install", json={"part_number": "missing"})
     assert missing.status_code == 404
     updated = request(app, "POST", "/api/online-flash/packs/index/update")
@@ -971,7 +975,8 @@ def test_hpm_pack_install_is_satisfied_without_network_download(app, services):
     }
 
 
-def test_pack_install_can_stream_progress_and_terminal_result(app):
+def test_pack_install_can_stream_progress_and_terminal_result(app, services):
+    refresh_count = services.catalog.refresh_count
     response = request(
         app,
         "POST",
@@ -997,6 +1002,28 @@ def test_pack_install_can_stream_progress_and_terminal_result(app):
         "type": "result",
         "result": {"status": "installed", "part_number": "Other"},
     }
+    assert services.catalog.refresh_count == refresh_count + 1
+
+
+def test_pack_import_can_stream_result_after_catalog_refresh(app, services):
+    refresh_count = services.catalog.refresh_count
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/packs/import",
+        files={"file": ("a.pack", b"pack")},
+        headers={"Accept": "application/x-ndjson"},
+    )
+
+    messages = [json.loads(line) for line in response.text.splitlines() if line]
+    assert response.status_code == 200
+    assert any(message.get("event", {}).get("phase") == "refreshing" for message in messages)
+    assert messages[-1] == {
+        "type": "result",
+        "result": {"status": "installed", "pack_id": "V.P", "version": "1"},
+    }
+    assert services.catalog.refresh_count == refresh_count + 1
+    assert not services.pack_manager.imported_path.exists()
 
 
 def test_pack_stream_bounds_bursty_progress_without_losing_result(app, services):
@@ -1216,10 +1243,12 @@ def test_successful_index_update_immediately_refreshes_pack_status(app, services
 
 
 def test_import_and_inspect_stream_uploads_then_delete_temporary_files(app, services):
+    refresh_count = services.catalog.refresh_count
     imported = request(
         app, "POST", "/api/online-flash/packs/import", files={"file": ("a.pack", b"pack")}
     )
     assert imported.status_code == 200
+    assert services.catalog.refresh_count == refresh_count + 1
     assert not services.pack_manager.imported_path.exists()
     inspected = request(
         app,

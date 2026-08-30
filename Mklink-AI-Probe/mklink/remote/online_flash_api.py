@@ -1278,6 +1278,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             body.part_number,
             lambda event: events.append(dict(event)),
         )
+        refresh = getattr(services.catalog, "refresh", None)
+        if callable(refresh):
+            await _blocking(refresh)
         return {
             "result": _json_primitive(result, hide_paths=True),
             "events": _json_primitive(events, hide_paths=True),
@@ -1310,6 +1313,9 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 temporary,
                 lambda event: events.append(dict(event)),
             )
+            refresh = getattr(services.catalog, "refresh", None)
+            if callable(refresh):
+                await _blocking(refresh)
             return {
                 "result": _json_primitive(result, hide_paths=True),
                 "events": _json_primitive(events, hide_paths=True),
