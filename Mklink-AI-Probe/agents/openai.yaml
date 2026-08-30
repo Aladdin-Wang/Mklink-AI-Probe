@@ -1,7 +1,7 @@
 interface:
   display_name: "MKLink AI Probe"
-  short_description: "Use MKLink for flashing, debugging, serial, and GUI tasks."
-  default_prompt: "Use $mklink-ai-probe for this device task; read only the relevant operation reference."
+  short_description: "Operate MKLink hardware, debug streams, serial, and GUI."
+  default_prompt: "Use $mklink-ai-probe for this MKLink device task and load only the relevant reference."
 
 policy:
   allow_implicit_invocation: true

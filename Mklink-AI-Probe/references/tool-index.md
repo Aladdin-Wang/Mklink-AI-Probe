@@ -11,7 +11,7 @@
 | 项目配置 | `detect_mcu_profile` | 新 MCU 发现、FLM 候选选择、profile 固化 |
 | 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
-| 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 多变量优先 regions（最多 16 项/总计 4096B，连续区域自动合并）；flush_memory 自动分块 |
+| 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 快照 regions 最多 16 项/总计 4096B；flush 单批最多 12 KiB/8 项，超额由调用方串行分批 |
 | 变量/寄存器 | `read_variable` · `write_variable` · `read_register` | 需先 connect(axf=) 或 load_symbols |
 | 调试 | `halt` · `resume` · `step` · `set_breakpoint` · `clear_breakpoint` · `clear_all_breakpoints` · `read_core_registers` | FPB 硬件断点 |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
@@ -41,7 +41,7 @@
 | `read-reg` | 读取内存映射寄存器 |
 | `write-ram` | 写入 RAM 并回读验证 |
 | `dump-memory` / `dump` | 公共高速内存 dump（最多 **15 个 region**；默认 1 个样本；单次总量上限 **512 KiB**） |
-| `flush-memory` | 静默写 RAM，**多地址多字节**；不得与 dump/RTT/SystemView 流并发。<br>**紧凑语法**: `ADDR:BYTE*N`（如 `"0x20008000:0xAA*16300"`）绕开 Windows cmdline 长度限制。<br>**边界**: 单项 ≤ 12KB(压线) / 多地址 ≤ 8 项 / varargs ≤ 20 字节，三类边界详见 [references/flush-memory.md](flush-memory.md) |
+| `flush-memory` | 静默写 RAM；不得与 dump/VOFA/RTT/SystemView 并发。**单批总计 ≤12 KiB、≤8 个地址项**，超额串行分批并等待提示符；详见 [references/flush-memory.md](flush-memory.md) |
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
 | `vofa` | VOFA+ 实时变量观测（快速连续 float 最多 16 路；精确离散地址/类型最多 15 路；Pika 命令最多 511 UTF-8 字节；支持 `--visualize`） |

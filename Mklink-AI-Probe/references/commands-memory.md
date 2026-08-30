@@ -179,10 +179,12 @@ PikaScript 端的 `cmd.read_ram` 显示屏对部分地址会**不显示数据行
 
 ##### 📌 边界与分块约束（三类边界务必区分）
 
-`flush-memory` 受**三类独立边界**约束：① 固件协议边界（单地址 ≥16300B、多地址 ≤8 项）；② PC CLI 安全阈值（命令串 ≤230B、≤8 项/批）；③ Windows 命令行长度限制（逐字节展开 ≈16KB 即撞墙）。
+`flush-memory` 单批最多 **12 KiB / 8 个地址项**。更大输入必须串行分批并等待提示符。
+固件极限、命令串和 Windows 命令行限制见[静默写边界](flush-memory.md)；推荐边界不得
+用直接 SDK/Pika 调用绕过。
 
 - 非重复数据 CLI **不自动分块**，超 230B 直接 `FAIL`。
-- **重复字节**用紧凑语法 `ADDR:BYTE*N`（如 `flush-memory "0x20008000:0xAA*16300"`），CLI 自动转 `bytes([0xVV])*N` 短表达式，绕开 ②③，单次可写数 KB。
+- **重复字节**用紧凑语法 `ADDR:BYTE*N`（如 `flush-memory "0x20008000:0xAA*12288"`），CLI 自动转 `bytes([0xVV])*N` 短表达式，绕开 ②③；AI/MCP 单次最多写 12 KiB。
 - **PowerShell**：始终用单引号包裹整个 item（`'0x...:0xAA*N'`），否则逗号会被预处理改写参数。
 - 完整边界表与 host 端分块策略见 **[flush-memory.md](flush-memory.md)**。
 
@@ -220,9 +222,9 @@ python -m mklink vofa <起始地址> <个数> --period <秒>
 下载器上并行发命令。
 
 结束 dump/VOFA/RTT/SystemView 后关闭当前连接；普通 `read_ram` 等命令重新连接后再发。
-若工具超时，只调用一次 `device_status`：仍连接则先 `disconnect`，REPL 可响应时可用
-`reboot_probe`；仍无提示符就停止自动重试并请用户拔插 USB。严禁 AI 循环发送 stop、
-原命令或 `reboot()`，这会把状态进一步搅乱。
+若 MCP tool 超时，只调用一次 `device_status`，随后结束旧会话并只执行一次
+`disconnect` → `connect`。任一步失败就停止并请用户拔插 USB；不得自动重试超时原
+调用，也不得循环发送 stop、`reboot_probe` 或 `reboot()`。
 
 ```
 # 从 0x20000030 开始，连续读取 5 个 float，周期 10us

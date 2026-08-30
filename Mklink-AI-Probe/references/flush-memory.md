@@ -2,7 +2,7 @@
 name: flush-memory-boundary
 description: |
   flush-memory / cmd.flush_memory 实测使用边界、推荐分块策略、校验建议。
-  触发：flush-memory 边界、12KB 分块、单地址字节上限、varargs 字节上限、CDC 异常、flush fail。
+  触发：flush-memory 边界、12 KiB 分块、单地址字节上限、varargs 字节上限、CDC 异常、flush fail。
 ---
 
 # flush-memory 边界约束
@@ -138,10 +138,10 @@ flush_memory 同时受**三类独立边界**约束，排查时务必先分清撞
 ## 4. 推荐实际使用边界
 
 ```text
-单次 flush_memory:
+单次 flush_memory 批次:
 - 老 varargs 接口数据字节 ≤ 20 bytes
 - 单地址/单块数据量 ≤ 12 KiB（12288B，MCP 硬限制）
-- 多地址数量 ≤ 8 个地址项
+- 地址项数量 ≤ 8
 - 多地址总数据量 ≤ 12 KiB（12288B，MCP 硬限制）
 
 不要把固件实验极限换算为更大的 AI 请求。超过上述任一数据边界时，主机必须在接触设备前拒绝；调用方应按 §5 分块。

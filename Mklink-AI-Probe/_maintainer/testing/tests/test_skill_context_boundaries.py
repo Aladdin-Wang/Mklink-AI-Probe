@@ -36,6 +36,8 @@ def test_end_user_skill_remains_implicitly_available():
     openai = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
 
     assert "allow_implicit_invocation: true" in openai
+    assert "$mklink-ai-probe" in openai
+    assert "maintain" not in openai.casefold()
 
 
 def test_user_entry_keeps_a_small_context_budget():
@@ -43,6 +45,37 @@ def test_user_entry_keeps_a_small_context_budget():
     _empty, header, body = (ROOT / "SKILL.md").read_text(encoding="utf-8").split("---", 2)
     assert len(header) <= 350
     assert len(body) <= 4500
+
+
+def test_user_skill_publishes_probe_safety_boundaries():
+    entry = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    memory = (ROOT / "references" / "commands-memory.md").read_text(encoding="utf-8")
+    flush = (ROOT / "references" / "flush-memory.md").read_text(encoding="utf-8")
+
+    assert "同一下载器、命令口或目标串口同一时刻只" in entry
+    assert "最多 **15 个**离散地址" in entry
+    assert "快速连续 float VOFA 最多 **16 路**" in entry
+    assert "**511 UTF-8 字节**" in entry
+    assert "单批总数据最多 **12 KiB**、最多 **8 个地址项**" in entry
+    assert "只调用一次 `device_status`" in entry
+    assert "`disconnect` → `connect`" in entry
+    assert "禁止自动重试" in entry
+
+    assert "精确模式最多 **15 个**" in memory
+    assert "安全上限为 **511B**" in memory
+    assert "**1~16 路**" in memory
+    assert "单批最多 **12 KiB / 8 个地址项**" in memory
+    assert "每批总数据量 ≤ 12 KiB" in flush
+    assert "地址项数量 ≤ 8" in flush
+
+
+def test_user_skill_keeps_generated_files_off_the_system_drive():
+    entry = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    work_files = (ROOT / "references" / "work-files.md").read_text(encoding="utf-8")
+
+    assert "用户指定的非系统盘" in entry
+    assert "目标项目 `.mklink/`" in entry
+    assert "不得默认落在 C 盘/系统盘" in work_files
 
 
 USER_DOCUMENTS = (ROOT / "SKILL.md", ROOT / "README.md", *sorted((ROOT / "references").glob("*.md")))
