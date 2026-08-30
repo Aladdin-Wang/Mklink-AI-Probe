@@ -497,6 +497,33 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('does not apply a search result after the selected AXF changes', async () => {
+    let resolveSearch!: (value: unknown) => void
+    mocks.api.findRtt.mockReturnValueOnce(new Promise(resolve => { resolveSearch = resolve }))
+    saveDesktopSettings(localStorage, desktopSettings({
+      symbolPath: 'C:\\firmware\\old.axf',
+      rttAddress: '0x20000000',
+    }))
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+
+    await wrapper.get('[data-testid="rtt-search"]').trigger('click')
+    saveDesktopSettings(localStorage, desktopSettings({
+      symbolPath: 'D:\\build\\next.axf',
+      rttAddress: '',
+    }))
+    resolveSearch({ found: true, addr: '0x20001111', source: 'binary:old.axf' })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="rtt-address"]').element as HTMLInputElement).value)
+      .toBe('')
+    expect(JSON.parse(localStorage.getItem('mklink.desktop.settings.v1') ?? '{}')).toMatchObject({
+      symbolPath: 'D:\\build\\next.axf',
+      rttAddress: '',
+    })
+    expect(wrapper.text()).not.toContain('binary:old.axf')
+    wrapper.unmount()
+  })
+
   it('blocks RTT start until an in-flight address search completes', async () => {
     let resolveSearch!: (value: unknown) => void
     mocks.api.findRtt.mockReturnValueOnce(new Promise(resolve => { resolveSearch = resolve }))

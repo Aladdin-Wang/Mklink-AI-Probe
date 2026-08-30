@@ -165,6 +165,53 @@ describe('SystemViewTab asynchronous lifecycle', () => {
     wrapper.unmount()
   })
 
+  it('does not let an in-flight search overwrite a newer manual address', async () => {
+    const pending = deferred<{ found: boolean, addr: string, source: string }>()
+    mocks.api.findRtt.mockReturnValueOnce(pending.promise)
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="systemview-rtt-search"]').trigger('click')
+    await wrapper.get('[data-testid="systemview-rtt-address"]').setValue('0x20003333')
+    pending.resolve({ found: true, addr: '0x20001111', source: 'binary:old.axf' })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="systemview-rtt-address"]').element as HTMLInputElement).value)
+      .toBe('0x20003333')
+    expect(JSON.parse(localStorage.getItem(DESKTOP_SETTINGS_STORAGE_KEY) ?? '{}').rttAddress)
+      .toBe('0x20003333')
+    expect(wrapper.text()).not.toContain('binary:old.axf')
+    wrapper.unmount()
+  })
+
+  it('does not apply a search result after the selected AXF changes', async () => {
+    const pending = deferred<{ found: boolean, addr: string, source: string }>()
+    mocks.api.findRtt.mockReturnValueOnce(pending.promise)
+    saveDesktopSettings(localStorage, desktopSettings({
+      symbolPath: 'C:\\firmware\\old.axf',
+      rttAddress: '0x20000000',
+    }))
+    const wrapper = mount(SystemViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="systemview-rtt-search"]').trigger('click')
+    saveDesktopSettings(localStorage, desktopSettings({
+      symbolPath: 'D:\\build\\next.axf',
+      rttAddress: '',
+    }))
+    pending.resolve({ found: true, addr: '0x20001111', source: 'binary:old.axf' })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="systemview-rtt-address"]').element as HTMLInputElement).value)
+      .toBe('')
+    expect(JSON.parse(localStorage.getItem(DESKTOP_SETTINGS_STORAGE_KEY) ?? '{}')).toMatchObject({
+      symbolPath: 'D:\\build\\next.axf',
+      rttAddress: '',
+    })
+    expect(wrapper.text()).not.toContain('binary:old.axf')
+    wrapper.unmount()
+  })
+
   it('starts with the shared RTT address and SystemView channel', async () => {
     mocks.dash.getStatus
       .mockResolvedValueOnce({ running: false })

@@ -87,6 +87,7 @@ const parserBackend = computed(() => {
           data-testid="symbol-path"
           :value="displayedSymbolPath"
           :placeholder="tr('.axf 或 .elf 文件路径', '.axf or .elf file path')"
+          :disabled="browsing || parsing"
           @input="emit('update:symbolPath', inputValue($event))"
         />
         <button
@@ -94,7 +95,7 @@ const parserBackend = computed(() => {
           type="button"
           :title="tr('浏览 AXF 或 ELF 文件', 'Browse for AXF or ELF file')"
           data-testid="browse-symbol"
-          :disabled="browsing"
+          :disabled="browsing || parsing"
           @click="emit('browse-symbol')"
         >
           <FolderOpen :size="15" aria-hidden="true" />

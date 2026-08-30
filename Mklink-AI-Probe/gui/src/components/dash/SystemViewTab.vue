@@ -290,12 +290,14 @@ import { useMklinkApi } from '../../composables/useMklinkApi'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import {
   DESKTOP_SETTINGS_CHANGED_EVENT,
+  isSameFileSourcePath,
   isSymbolFilePath,
   loadDesktopSettings,
   saveDesktopSettings,
   type DesktopSettings,
 } from '../../lib/desktopSettings'
 import { SvTimeline } from '../../lib/svTimeline'
+import { cancelRttAddressRefresh } from '../../lib/rttSymbolAddress'
 import { AdaptiveFrameRateController, RenderScheduler } from '../../lib/stream/renderScheduler'
 import { appendManyToLast } from '../../lib/boundedBuffer'
 import { takeNewStreamPoints } from '../../lib/streamCursor'
@@ -411,6 +413,7 @@ const recordingBusy = ref(false)
 let connectTimer: ReturnType<typeof setTimeout> | null = null
 let mounted = false
 let operationGeneration = 0
+let searchGeneration = 0
 const SYSTEMVIEW_CHANNEL = 1
 const RTT_SEARCH_SIZE = 1024
 
@@ -424,15 +427,31 @@ function isRttAddress(value: string): boolean {
 
 function syncRttAddressFromSettings(): void {
   const latest = loadDesktopSettings(desktopStorage)
+  const sourceChanged = !sameRttSearchSource(settings.value.symbolPath, latest.symbolPath)
+  const addressChanged = latest.rttAddress !== rttAddress.value
+  if (sourceChanged || addressChanged) {
+    searchGeneration++
+    searching.value = false
+  }
   settings.value = latest
-  if (latest.rttAddress !== rttAddress.value) {
+  if (addressChanged) {
     rttAddress.value = latest.rttAddress
     addressError.value = ''
     addressSource.value = ''
   }
 }
 
+function sameRttSearchSource(left: string | undefined, right: string | undefined): boolean {
+  const leftPath = left?.trim() || ''
+  const rightPath = right?.trim() || ''
+  if (!leftPath || !rightPath) return leftPath === rightPath
+  return isSameFileSourcePath(leftPath, rightPath)
+}
+
 function onAddressInput(): void {
+  cancelRttAddressRefresh(desktopStorage)
+  searchGeneration++
+  searching.value = false
   addressError.value = ''
   addressSource.value = ''
   const address = rttAddress.value.trim()
@@ -443,13 +462,23 @@ function onAddressInput(): void {
 
 async function searchRttAddress(): Promise<void> {
   if (searching.value || starting.value) return
+  cancelRttAddressRefresh(desktopStorage)
+  const generation = ++searchGeneration
   searching.value = true
   addressError.value = ''
-  const latest = loadDesktopSettings(desktopStorage)
-  settings.value = latest
-  const source = latest.symbolPath.trim() || undefined
+  const initialSettings = loadDesktopSettings(desktopStorage)
+  settings.value = initialSettings
+  const initialAddress = initialSettings.rttAddress
+  const symbolPath = initialSettings.symbolPath.trim()
+  const source = symbolPath || undefined
   try {
     const result = await findRtt(source)
+    if (!mounted || generation !== searchGeneration) return
+    const latest = loadDesktopSettings(desktopStorage)
+    if (
+      !sameRttSearchSource(symbolPath, latest.symbolPath)
+      || latest.rttAddress !== initialAddress
+    ) return
     if (!result.addr || !isRttAddress(result.addr)) {
       throw new Error(result.details?.join(tr('；', '; ')) || result.warnings?.join(tr('；', '; ')) || tr('未找到 RTT 地址', 'RTT address not found'))
     }
@@ -457,9 +486,11 @@ async function searchRttAddress(): Promise<void> {
     addressSource.value = result.source || (source ? tr('所选文件', 'Selected file') : tr('工程自动检测', 'Project auto-detection'))
     persistSettings({ ...latest, rttAddress: result.addr })
   } catch (caught) {
-    addressError.value = caught instanceof Error ? caught.message : String(caught)
+    if (mounted && generation === searchGeneration) {
+      addressError.value = caught instanceof Error ? caught.message : String(caught)
+    }
   } finally {
-    searching.value = false
+    if (mounted && generation === searchGeneration) searching.value = false
   }
 }
 
@@ -634,6 +665,7 @@ onMounted(() => {
 onUnmounted(() => {
   mounted = false
   operationGeneration++
+  searchGeneration++
   window.removeEventListener(DESKTOP_SETTINGS_CHANGED_EVENT, syncRttAddressFromSettings)
   abortImport()
   cancelPendingConnect()

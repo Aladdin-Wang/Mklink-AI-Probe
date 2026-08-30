@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { readonly, ref } from 'vue'
+import { nextTick, readonly, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
       connectDevice: vi.fn(),
       disconnectDevice: vi.fn(),
       parseAxf: vi.fn(),
+      findRtt: vi.fn(),
       uploadFileSource: vi.fn(),
       probeFirmwareCheck: vi.fn(),
       upgradeProbeFirmware: vi.fn(),
@@ -78,6 +79,12 @@ vi.mock('../composables/useSymbolCatalog', () => ({
   useSymbolCatalog: () => ({ ensureLoaded: mocks.refreshSymbolCatalog }),
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
 async function mountView() {
   const { default: ConfigView } = await import('./ConfigView.vue')
   const wrapper = mount(ConfigView, {
@@ -95,6 +102,7 @@ describe('ConfigView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.api.parseAxf.mockReset()
+    mocks.api.findRtt.mockReset()
     Object.assign(mocks.deviceStatus, {
       connected: false,
       state: 'disconnected',
@@ -116,6 +124,7 @@ describe('ConfigView', () => {
       axf_path: 'C:\\saved\\app.axf',
       variable_count: 3,
     })
+    mocks.api.findRtt.mockResolvedValue({ found: false, addr: null })
     mocks.api.uploadFileSource.mockResolvedValue({ path: '' })
     mocks.refreshSymbolCatalog.mockResolvedValue(undefined)
     mocks.api.probeFirmwareCheck.mockResolvedValue({ status: 'ok' })
@@ -136,6 +145,7 @@ describe('ConfigView', () => {
       lineEnding: '',
       sendHistory: [],
     })
+    mocks.saveDesktopSettings.mockImplementation((_storage: Storage, next: any) => ({ ...next }))
     mocks.pickSymbolFile.mockResolvedValue(null)
     vi.spyOn(window, 'open').mockImplementation(() => null)
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
@@ -364,6 +374,20 @@ describe('ConfigView', () => {
   })
 
   it('restores and automatically saves the AXF/ELF path without MAP controls', async () => {
+    const history = [{
+      text: 'help',
+      mode: 'text',
+      lineEnding: '\r',
+      timestamp: 123,
+    }]
+    mocks.loadDesktopSettings.mockReturnValue({
+      version: 1,
+      symbolPath: 'C:\\saved\\app.axf',
+      rttAddress: '0x20000010',
+      transmitMode: 'text',
+      lineEnding: '',
+      sendHistory: history,
+    })
     const wrapper = await mountView()
     await wrapper.get('[data-testid="config-section-files"]').trigger('click')
 
@@ -382,6 +406,8 @@ describe('ConfigView', () => {
       window.localStorage,
       expect.objectContaining({
         symbolPath: 'D:\\build\\next.elf',
+        rttAddress: '',
+        sendHistory: history,
       }),
     )
     expect(wrapper.find('[data-testid="save-files"]').exists()).toBe(false)
@@ -400,6 +426,70 @@ describe('ConfigView', () => {
     expect(mocks.api.parseAxf).toHaveBeenCalledWith('C:\\saved\\app.axf')
     expect(mocks.refreshSymbolCatalog).toHaveBeenCalledWith(true)
     expect(mocks.toastSuccess).toHaveBeenCalledWith(expect.stringContaining('3'))
+  })
+
+  it('disables symbol source controls and ignores a parse after the path changes', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
+    const pending = deferred<{
+      loaded: boolean
+      axf_path: string
+      variable_count: number
+    }>()
+    mocks.api.parseAxf.mockReturnValueOnce(pending.promise)
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="symbol-path"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="browse-symbol"]').attributes('disabled')).toBeDefined()
+
+    wrapper.findComponent({ name: 'FileSourcesPanel' }).vm.$emit(
+      'update:symbolPath',
+      'D:\\build\\next.axf',
+    )
+    await nextTick()
+    pending.resolve({
+      loaded: true,
+      axf_path: 'C:\\saved\\app.axf',
+      variable_count: 3,
+    })
+    await flushPromises()
+
+    expect(mocks.api.findRtt).not.toHaveBeenCalled()
+    expect(mocks.refreshSymbolCatalog).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.toastError).not.toHaveBeenCalledWith(expect.stringContaining('AXF'))
+    expect(wrapper.get<HTMLInputElement>('[data-testid="symbol-path"]').element.value)
+      .toBe('D:\\build\\next.axf')
+  })
+
+  it('replaces the persisted RTT address when automatic lookup succeeds', async () => {
+    Object.assign(mocks.deviceStatus, { connected: true, state: 'halted' })
+    mocks.loadDesktopSettings.mockReturnValue({
+      version: 1,
+      symbolPath: 'C:\\saved\\app.axf',
+      rttAddress: '0x20000010',
+      transmitMode: 'text',
+      lineEnding: '',
+      sendHistory: [],
+    })
+    mocks.api.findRtt.mockResolvedValueOnce({
+      found: true,
+      addr: '0x20001A40',
+      source: 'binary:app.axf',
+    })
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="config-section-files"]').trigger('click')
+
+    await wrapper.get('[data-testid="parse-symbols"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.findRtt).toHaveBeenCalledWith('C:\\saved\\app.axf')
+    expect(mocks.saveDesktopSettings).toHaveBeenLastCalledWith(
+      window.localStorage,
+      expect.objectContaining({ rttAddress: '0x20001A40' }),
+    )
   })
 
   it('shows the browser-selected AXF name while parsing the backend cache path', async () => {
