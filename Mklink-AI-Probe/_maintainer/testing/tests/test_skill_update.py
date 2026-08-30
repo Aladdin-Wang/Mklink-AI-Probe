@@ -46,6 +46,15 @@ def test_version_comparison_handles_stable_and_prerelease(updater):
         updater.version_key("latest")
 
 
+def test_skill_update_cache_uses_explicit_task_cache(updater, monkeypatch, tmp_path):
+    cache_root = tmp_path / "task-cache"
+    monkeypatch.setenv("MKLINK_CACHE_DIR", str(cache_root))
+
+    assert updater.default_cache_file() == (
+        cache_root / "mklink-ai-probe" / "skill-update-check.json"
+    )
+
+
 def test_repository_plugin_version_matches_package(updater):
     root = SCRIPT_PATH.parents[1]
     plugin = json.loads(
