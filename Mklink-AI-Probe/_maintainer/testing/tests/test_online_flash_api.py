@@ -281,6 +281,47 @@ def test_probe_target_and_pack_status_routes_use_injected_services(app, services
     assert status.json()["index_available"] is True
 
 
+@pytest.mark.parametrize("query", ["acme", "control family", "value series"])
+def test_target_search_route_matches_vendor_family_and_series(
+    app, services, tmp_path, query,
+):
+    paths = PackPaths(tmp_path / "catalog")
+    paths.index_dir.mkdir(parents=True)
+    paths.index_file.write_text(json.dumps({
+        "PART-A": {
+            "vendor": "Acme Semiconductor",
+            "family": "Control Family",
+            "sub_family": "Value Series",
+            "from_pack": {
+                "vendor": "Acme Semiconductor",
+                "pack": "Part_DFP",
+                "version": "1.0.0",
+            },
+        },
+    }), encoding="utf-8")
+    services.catalog = PackCatalog(paths, builtin_provider=lambda: [])
+
+    response = request(app, "GET", "/api/online-flash/targets", params={"q": query})
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "part_number": "PART-A",
+        "vendor": "Acme Semiconductor",
+        "pack_id": "Acme Semiconductor.Part_DFP",
+        "pack_version": "1.0.0",
+        "installed": False,
+        "source": "index",
+        "family": "Control Family",
+        "series": "Value Series",
+    }]
+
+
+def test_target_search_route_keeps_limit_validation(app):
+    response = request(app, "GET", "/api/online-flash/targets?limit=1001")
+
+    assert response.status_code == 422
+
+
 def test_target_memory_map_route_returns_flash_sector_geometry(app):
     response = request(app, "GET", "/api/online-flash/targets/DEVICE_A/memory-map")
 

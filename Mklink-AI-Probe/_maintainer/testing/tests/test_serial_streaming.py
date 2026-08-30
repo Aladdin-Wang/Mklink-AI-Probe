@@ -294,6 +294,85 @@ def test_serial_monitor_routes_protocol_rx_away_from_line_events(monkeypatch):
     assert not worker.is_alive()
 
 
+def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatch):
+    from collections import deque
+
+    responses = deque()
+    response_lock = threading.Lock()
+    writes = []
+    events = []
+    chunks = []
+    banner_seen = threading.Event()
+    monitor = None
+
+    class FakeSerialPort:
+        def __init__(self, **_kwargs):
+            self.is_open = False
+            self.initial_request_sent = False
+            self.eot_count = 0
+
+        def open(self):
+            self.is_open = True
+            return True
+
+        def close(self):
+            self.is_open = False
+
+        def read_available(self):
+            if (
+                not self.initial_request_sent
+                and monitor is not None
+                and "TEST" in monitor._protocol_queues
+            ):
+                self.initial_request_sent = True
+                return b"C"
+            with response_lock:
+                return responses.popleft() if responses else b""
+
+        def write(self, payload):
+            payload = bytes(payload)
+            writes.append(payload)
+            if payload == bytes((0x04,)):
+                self.eot_count += 1
+                response = b"\x15" if self.eot_count == 1 else b"\x06C"
+            elif payload[0] == 0x01 and not any(payload[3:-2]):
+                # The target's last ACK and reboot text arrive in one OS read.
+                response = b"\x06Cboot ready\r\n"
+            elif payload[0] == 0x01:
+                response = b"\x06C"
+            else:
+                response = b"\x06"
+            with response_lock:
+                responses.append(response)
+
+    monkeypatch.setattr(monitor_module, "SerialPort", FakeSerialPort)
+    monitor = SerialMonitor(
+        ports=[{"port": "TEST"}],
+        event_callback=events.append,
+        chunk_callback=lambda port, direction, data, _timestamp: (
+            chunks.append((port, direction, data)),
+            banner_seen.set() if data == b"boot ready\r\n" else None,
+        ),
+    )
+    monitor.start()
+    _wait_until(lambda: monitor.port_status["TEST"] == "open")
+
+    worker = threading.Thread(
+        target=monitor.send_ymodem,
+        args=("TEST", b"x", "app.bin"),
+    )
+    worker.start()
+    worker.join(2.0)
+    assert not worker.is_alive()
+    assert banner_seen.wait(1.0)
+    monitor.stop()
+
+    assert chunks == [("TEST", "RX", b"boot ready\r\n")]
+    assert [event.raw for event in events] == [b"boot ready\r\n"]
+    assert all(chunk[2] not in (b"\x06", b"C", b"\x06C") for chunk in chunks)
+    assert len(writes) == 5  # header, data, EOT x2, final empty header
+
+
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
     class FakeMonitor:
         def __init__(self, **kwargs):

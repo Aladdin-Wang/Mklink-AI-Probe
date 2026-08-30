@@ -45,9 +45,9 @@ class Receiver:
             return
         marker, block = data[0], data[1]
         assert marker in (SOH, STX)
-        if block == 0 and any(data[3:-2]):
+        if marker == SOH and block == 0 and any(data[3:-2]):
             self.responses.extend((ACK, CRC_REQUEST))
-        elif block == 0:
+        elif marker == SOH and block == 0:
             self.responses.append(ACK)
         elif self.reject_first_data and not self.rejected_data:
             self.rejected_data = True
@@ -108,6 +108,26 @@ def test_sender_retries_rejected_data_packet_without_advancing_source():
     assert len(data_packets) == 2
     assert data_packets[0] == data_packets[1]
     assert any(item.phase == "retrying" and item.retries == 1 for item in progress)
+
+
+def test_sender_wraps_data_block_sequence_from_255_to_zero():
+    receiver = Receiver()
+    block_count = 257
+    raw = bytes(range(256)) * (block_count * 4)
+    sender = YModemSender(receiver.read, receiver.write)
+
+    import io
+
+    sender.send(io.BytesIO(raw), "large.bin", len(raw))
+
+    data_packets = [packet for packet in receiver.writes if packet[:1] == bytes((STX,))]
+    assert len(data_packets) == block_count
+    assert [data_packets[index][1] for index in (253, 254, 255, 256)] == [
+        254, 255, 0, 1,
+    ]
+    for packet in data_packets[253:257]:
+        assert packet[2] == 0xFF - packet[1]
+        assert_packet_crc(packet)
 
 
 def test_sender_times_out_and_sends_cancel_sequence():

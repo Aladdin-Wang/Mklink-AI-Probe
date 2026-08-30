@@ -15,6 +15,8 @@ export interface TargetRecord {
   pack_version: string | null
   installed: boolean
   source: string
+  family: string
+  series: string
 }
 
 export interface TargetMemoryRegion {

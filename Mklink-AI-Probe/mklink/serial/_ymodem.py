@@ -156,6 +156,25 @@ class YModemSender:
             self._send_cancel()
             raise
 
+    def take_pending_rx(self) -> bytes:
+        """Return bytes received after the final consumed protocol control.
+
+        A receiver may put its last ACK and reboot banner in one serial read.
+        ``_wait_control`` consumes only through the ACK, leaving the banner in
+        ``_pending``.  The serial monitor calls this after a successful send so
+        those ordinary terminal bytes can return to its single reader thread.
+        """
+        # Some receivers append a redundant CRC request (or duplicate ACK)
+        # after accepting the empty batch header.  Those leading bytes still
+        # belong to YMODEM and must not appear as terminal text.
+        while self._pending and self._pending[0] in (
+            ACK, NAK, CAN, CRC_REQUEST,
+        ):
+            self._pending.pop(0)
+        pending = bytes(self._pending)
+        self._pending.clear()
+        return pending
+
     @staticmethod
     def _header_payload(name: str, size: int) -> bytes:
         if not isinstance(name, str) or not name or "\x00" in name:

@@ -51,6 +51,10 @@ class SerialMonitor:
         self._lock = threading.Lock()
         self._protocol_lock = threading.Lock()
         self._protocol_queues: dict[str, queue.Queue[bytes]] = {}
+        # Completed protocols hand unread terminal bytes back to the normal
+        # reader here.  Only the reader thread emits them, preserving parser,
+        # event and callback ordering without a second serial consumer.
+        self._protocol_handoffs: dict[str, bytearray] = {}
 
         self._auto_reply_engine: AutoReplyEngine | None = None
         if auto_reply_rules:
@@ -170,16 +174,35 @@ class SerialMonitor:
                     raise RuntimeError(f"serial port {port} closed during YMODEM transfer")
                 current.write(payload)
 
+        sender = YModemSender(
+            read_protocol,
+            write_protocol,
+            cancel_event=cancellation,
+            progress_callback=progress_callback,
+        )
+        completed = False
         try:
-            YModemSender(
-                read_protocol,
-                write_protocol,
-                cancel_event=cancellation,
-                progress_callback=progress_callback,
-            ).send(io.BytesIO(data), filename, len(data))
+            sender.send(io.BytesIO(data), filename, len(data))
+            completed = True
         finally:
             with self._protocol_lock:
                 if self._protocol_queues.get(port) is receive_queue:
+                    pending = bytearray()
+                    if completed:
+                        take_pending = getattr(sender, "take_pending_rx", None)
+                        if callable(take_pending):
+                            pending.extend(take_pending())
+                        # Reader queue writes also hold _protocol_lock, so once
+                        # this lock is acquired no late put can race the drain.
+                        while True:
+                            try:
+                                pending.extend(receive_queue.get_nowait())
+                            except queue.Empty:
+                                break
+                        if pending:
+                            self._protocol_handoffs.setdefault(
+                                port, bytearray(),
+                            ).extend(pending)
                     self._protocol_queues.pop(port, None)
 
     def send_all(self, data: bytes) -> None:
@@ -272,61 +295,41 @@ class SerialMonitor:
             try:
                 while not self._stop_event.is_set():
                     data = sp.read_available()
-                    if not data:
-                        self._stop_event.wait(0.01)
-                        continue
-
                     with self._protocol_lock:
                         protocol_queue = self._protocol_queues.get(port_name)
+                        if protocol_queue is not None:
+                            if data:
+                                # Keep the put inside the lock.  Transfer
+                                # teardown can now remove+drain atomically.
+                                protocol_queue.put(data)
+                            handoff = b""
+                        else:
+                            handoff = bytes(
+                                self._protocol_handoffs.pop(port_name, b""),
+                            )
                     if protocol_queue is not None:
                         if not protocol_was_active:
                             line_buffer.clear()
                         protocol_was_active = True
-                        protocol_queue.put(data)
+                        if not data:
+                            self._stop_event.wait(0.01)
                         continue
                     if protocol_was_active:
                         line_buffer.clear()
                         protocol_was_active = False
-
-                    self._emit_chunk(port_name, "RX", data, time.time())
-
-                    if parser:
-                        frames = parser.feed(data)
-                        for frame in frames:
-                            evt = SerialEvent(
-                                timestamp=time.time(),
-                                port=port_name,
-                                direction="RX",
-                                raw=frame.raw,
-                                parsed=frame,
-                            )
-                            self._emit_event(evt)
-                            self._handle_auto_reply(port_name, frame.raw)
-                    else:
-                        line_buffer.extend(data)
-                        while b"\n" in line_buffer:
-                            idx = line_buffer.index(b"\n")
-                            line = bytes(line_buffer[: idx + 1])
-                            del line_buffer[: idx + 1]
-                            evt = SerialEvent(
-                                timestamp=time.time(),
-                                port=port_name,
-                                direction="RX",
-                                raw=line,
-                            )
-                            self._emit_event(evt)
-                            self._handle_auto_reply(port_name, line)
-
-                        if len(line_buffer) > 4096:
-                            evt = SerialEvent(
-                                timestamp=time.time(),
-                                port=port_name,
-                                direction="RX",
-                                raw=bytes(line_buffer),
-                            )
-                            self._emit_event(evt)
-                            self._handle_auto_reply(port_name, bytes(line_buffer))
-                            line_buffer.clear()
+                    if handoff:
+                        # A protocol may start and finish between reader
+                        # iterations, so the handoff itself is also a boundary.
+                        line_buffer.clear()
+                        self._process_rx_data(
+                            port_name, handoff, parser, line_buffer,
+                        )
+                    if data:
+                        self._process_rx_data(
+                            port_name, data, parser, line_buffer,
+                        )
+                    elif not handoff:
+                        self._stop_event.wait(0.01)
 
             except Exception as e:
                 with self._lock:
@@ -338,6 +341,56 @@ class SerialMonitor:
 
             if not self._stop_event.is_set():
                 self._stop_event.wait(2.0)
+
+    def _process_rx_data(
+        self,
+        port_name: str,
+        data: bytes,
+        parser: FrameParser | None,
+        line_buffer: bytearray,
+    ) -> None:
+        """Publish one ordinary RX chunk from the sole reader thread."""
+        self._emit_chunk(port_name, "RX", data, time.time())
+
+        if parser:
+            frames = parser.feed(data)
+            for frame in frames:
+                evt = SerialEvent(
+                    timestamp=time.time(),
+                    port=port_name,
+                    direction="RX",
+                    raw=frame.raw,
+                    parsed=frame,
+                )
+                self._emit_event(evt)
+                self._handle_auto_reply(port_name, frame.raw)
+            return
+
+        line_buffer.extend(data)
+        while b"\n" in line_buffer:
+            idx = line_buffer.index(b"\n")
+            line = bytes(line_buffer[: idx + 1])
+            del line_buffer[: idx + 1]
+            evt = SerialEvent(
+                timestamp=time.time(),
+                port=port_name,
+                direction="RX",
+                raw=line,
+            )
+            self._emit_event(evt)
+            self._handle_auto_reply(port_name, line)
+
+        if len(line_buffer) > 4096:
+            raw = bytes(line_buffer)
+            evt = SerialEvent(
+                timestamp=time.time(),
+                port=port_name,
+                direction="RX",
+                raw=raw,
+            )
+            self._emit_event(evt)
+            self._handle_auto_reply(port_name, raw)
+            line_buffer.clear()
 
     def _handle_auto_reply(self, port_name: str, data: bytes) -> None:
         if not self._auto_reply_engine:
