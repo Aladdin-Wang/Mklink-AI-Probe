@@ -550,6 +550,31 @@ def test_preview_rejects_local_bin_beyond_selected_algorithm(tmp_path, monkeypat
     assert "exceeds selected FLM coverage" in response.json()["detail"]
 
 
+def test_preview_falls_back_to_target_flash_when_unrelated_pack_is_broken(tmp_path, monkeypatch):
+    source = tmp_path / "rtthread.bin"
+    source.write_bytes(b"\0" * 0x2000)
+    payload = _local_stm32_config(source)
+    payload["algorithms"][0].update({
+        "source_kind": "pack",
+        "source_token": "catalog:installed:selected",
+    })
+    app = create_app(auth_token=None, project_root=".")
+    _configure_offline_target_metadata(app, monkeypatch)
+
+    def fail_discovery(*_args, **_kwargs):
+        raise OSError("unrelated installed Pack is unreadable")
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        fail_discovery,
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/offline-download/preview", json=payload)
+
+    assert response.status_code == 200, response.text
+    assert 'load.bin("rtthread.bin", 0x08005000)' in response.json()["script"]
+
+
 def test_preview_requires_target_for_local_bin(tmp_path):
     source = tmp_path / "rtthread.bin"
     source.write_bytes(b"app")
@@ -561,7 +586,7 @@ def test_preview_requires_target_for_local_bin(tmp_path):
         response = client.post("/api/offline-download/preview", json=payload)
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "local BIN firmware validation requires target_part"
+    assert response.json()["detail"] == "BIN firmware validation requires target_part"
 
 
 def test_preview_keeps_local_hpm_bin_outside_cmsis_gate(tmp_path):
@@ -819,10 +844,21 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
     asyncio.run(exercise_disconnect())
 
 
-def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):
+def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path, monkeypatch):
     disk = tmp_path / "MICROKEEN"
     disk.mkdir()
+    payload = _config()
+    payload["target_part"] = "DEVICE_A"
     app = create_app(auth_token=None, project_root=".")
+    _configure_offline_target_metadata(
+        app,
+        monkeypatch,
+        target_part="DEVICE_A",
+        regions=(
+            MemoryRegion("internal", 0x08000000, 0x80000, True, True, 0x800),
+            MemoryRegion("external", 0x90000000, 0x100000, True, True, 0x1000),
+        ),
+    )
     files = [
         ("firmware_files", ("boot.bin", b"boot", "application/octet-stream")),
         ("firmware_files", ("rt-thread.hex", b":00000001FF", "application/octet-stream")),
@@ -833,7 +869,7 @@ def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):
     with patch("mklink.discovery.find_microkeen_disk", return_value=str(disk)), TestClient(app) as client:
         response = client.post(
             "/api/offline-download/deploy",
-            data={"config_json": json.dumps(_config())},
+            data={"config_json": json.dumps(payload)},
             files=files,
         )
 
@@ -841,6 +877,30 @@ def test_deploy_api_writes_uploaded_bundle_to_microkeen_disk(tmp_path):
     assert (disk / "python" / "factory-line-a.py").is_file()
     assert (disk / "boot.bin").read_bytes() == b"boot"
     assert (disk / "FLM" / "STM32F10x_1024.FLM").read_bytes() == b"internal"
+
+
+def test_deploy_rejects_uploaded_bin_outside_target_flash(tmp_path, monkeypatch):
+    disk = tmp_path / "MICROKEEN"
+    disk.mkdir()
+    payload = _local_stm32_config(tmp_path / "unused.bin", "0x20000000")
+    payload["firmwares"][0].pop("source_path")
+    payload["firmwares"][0]["upload_index"] = 0
+    app = create_app(auth_token=None, project_root=".")
+    _configure_offline_target_metadata(app, monkeypatch)
+
+    with patch("mklink.discovery.find_microkeen_disk", return_value=str(disk)), TestClient(app) as client:
+        response = client.post(
+            "/api/offline-download/deploy",
+            data={"config_json": json.dumps(payload)},
+            files=[(
+                "firmware_files",
+                ("rtthread.bin", b"\0" * 0x2000, "application/octet-stream"),
+            )],
+        )
+
+    assert response.status_code == 422
+    assert "outside writable Flash" in response.json()["detail"]
+    assert list(disk.iterdir()) == []
 
 
 def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):

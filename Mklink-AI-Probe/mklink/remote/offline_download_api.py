@@ -295,24 +295,36 @@ def _selected_algorithm_range(
     return min(containing, key=lambda item: item[1] - item[0])
 
 
-def _validate_local_bin_firmware_ranges(
+def _validate_bin_firmware_ranges(
     config: OfflineDownloadConfig,
     online_services: object,
+    firmware_sources: Optional[Mapping[str, Path]] = None,
 ) -> None:
-    local_bins = [
-        firmware for firmware in config.firmwares
-        if firmware.format == "bin" and firmware.source_path
+    resolved_sources = firmware_sources or {}
+    bin_sources = [
+        (
+            firmware,
+            resolved_sources.get(firmware.id)
+            or (Path(firmware.source_path) if firmware.source_path else None),
+            firmware.id not in resolved_sources,
+        )
+        for firmware in config.firmwares
+        if firmware.format == "bin"
     ]
-    if not local_bins:
+    bin_sources = [
+        (firmware, source, require_bin_suffix)
+        for firmware, source, require_bin_suffix in bin_sources
+        if source is not None
+    ]
+    if not bin_sources:
         return
     # HPM offline images use the ROM API and have no selected CMSIS FLM. Keep
     # that existing workflow outside this ARM/FLM-specific safety gate.
     if config.is_hpm:
         return
     if not config.target_part:
-        raise OfflineDownloadError("local BIN firmware validation requires target_part")
+        raise OfflineDownloadError("BIN firmware validation requires target_part")
 
-    from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
     from mklink.remote.online_flash_api import _resolved_target, _target_flash_configuration
 
     try:
@@ -320,9 +332,6 @@ def _validate_local_bin_firmware_ranges(
         regions, _fingerprint, _paths = _target_flash_configuration(
             online_services,
             target.part_number,
-        )
-        catalog_algorithms = tuple(
-            discover_flash_algorithms(target.part_number, paths=online_services.paths)
         )
     except Exception as error:
         raise OfflineDownloadError(
@@ -335,29 +344,51 @@ def _validate_local_bin_firmware_ranges(
             f"target has no writable Flash range: {target.part_number}"
         )
     algorithms = {algorithm.id.casefold(): algorithm for algorithm in config.algorithms}
+    used_algorithm_ids = {
+        firmware.algorithm_id.casefold() for firmware, _source, _suffix in bin_sources
+    }
+    catalog_algorithms = ()
+    if any(
+        algorithm.id.casefold() in used_algorithm_ids
+        and algorithm.source_kind in ("pack", "existing")
+        for algorithm in config.algorithms
+    ):
+        # Catalog metadata gives a tighter FLM size when available. A damaged
+        # unrelated Pack must not block a configuration whose target memory map
+        # and selected FLM base still provide a conservative safe boundary.
+        try:
+            from mklink.cmsis_dap.algorithm_catalog import discover_flash_algorithms
+
+            catalog_algorithms = tuple(
+                discover_flash_algorithms(target.part_number, paths=online_services.paths)
+            )
+        except Exception:
+            catalog_algorithms = ()
     algorithm_ranges = {}
-    for firmware in local_bins:
-        source = Path(firmware.source_path or "").expanduser().resolve()
-        if source.suffix.casefold() != ".bin" or not source.is_file():
+    for firmware, raw_source, require_bin_suffix in bin_sources:
+        source = Path(raw_source).expanduser().resolve()
+        if (
+            require_bin_suffix and source.suffix.casefold() != ".bin"
+        ) or not source.is_file():
             raise OfflineDownloadError(
-                f"local firmware source is unavailable: {firmware.file_name}"
+                f"BIN firmware source is unavailable: {firmware.file_name}"
             )
         size = source.stat().st_size
         if size <= 0 or size > _MAX_UPLOAD_SIZE:
             raise OfflineDownloadError(
-                f"local firmware source has an invalid size: {firmware.file_name}"
+                f"BIN firmware source has an invalid size: {firmware.file_name}"
             )
         start = firmware.base_address
         if start is None:
             raise OfflineDownloadError("BIN firmware requires a base address")
         if start >= _ADDRESS_SPACE_SIZE or size > _ADDRESS_SPACE_SIZE - start:
             raise OfflineDownloadError(
-                f"local BIN address range overflows 32-bit address space: {firmware.file_name}"
+                f"BIN address range overflows 32-bit address space: {firmware.file_name}"
             )
         end = start + size
         if not _range_is_covered(start, end, flash_ranges):
             raise OfflineDownloadError(
-                "local BIN range 0x{:08X}-0x{:08X} is outside writable Flash for {}: {}".format(
+                "BIN range 0x{:08X}-0x{:08X} is outside writable Flash for {}: {}".format(
                     start,
                     end - 1,
                     target.part_number,
@@ -375,7 +406,7 @@ def _validate_local_bin_firmware_ranges(
             algorithm_ranges[selected.id.casefold()] = coverage
         if not _range_is_covered(start, end, (coverage,)):
             raise OfflineDownloadError(
-                "local BIN range 0x{:08X}-0x{:08X} exceeds selected FLM coverage "
+                "BIN range 0x{:08X}-0x{:08X} exceeds selected FLM coverage "
                 "0x{:08X}-0x{:08X}: {}".format(
                     start,
                     end - 1,
@@ -643,7 +674,7 @@ def create_offline_download_router(
         try:
             config = parse_offline_config(payload)
             await asyncio.to_thread(
-                _validate_local_bin_firmware_ranges,
+                _validate_bin_firmware_ranges,
                 config,
                 online_services,
             )
@@ -668,11 +699,6 @@ def create_offline_download_router(
             if not isinstance(payload, Mapping):
                 raise OfflineDownloadError("offline config must be an object")
             config = parse_offline_config(payload)
-            await asyncio.to_thread(
-                _validate_local_bin_firmware_ranges,
-                config,
-                online_services,
-            )
             disk = await asyncio.to_thread(find_microkeen_disk)
             if not disk:
                 raise OfflineDownloadError("MICROKEEN disk is unavailable")
@@ -706,6 +732,12 @@ def create_offline_download_router(
                         raise OfflineDownloadError(
                             f"missing firmware source: {firmware.file_name}"
                         )
+                await asyncio.to_thread(
+                    _validate_bin_firmware_ranges,
+                    config,
+                    online_services,
+                    firmware_sources,
+                )
                 uploaded_flms = []
                 for index, upload in enumerate(flm_files):
                     uploaded_flms.append(
