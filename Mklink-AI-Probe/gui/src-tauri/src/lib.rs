@@ -1,3 +1,4 @@
+mod desktop_clipboard;
 mod site_agent_config;
 mod site_agent_network;
 mod site_agent_secret;
@@ -276,6 +277,16 @@ fn write_file(path: String, contents: Vec<u8>) -> Result<(), String> {
         return Err("file path is empty".into());
     }
     std::fs::write(&target, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn clipboard_read_text() -> Result<String, String> {
+    desktop_clipboard::read_text()
+}
+
+#[tauri::command]
+fn clipboard_write_text(text: String) -> Result<(), String> {
+    desktop_clipboard::write_text(&text)
 }
 
 fn powershell_single_quote(value: &str) -> String {
@@ -889,6 +900,8 @@ pub fn run() {
             site_agent_stcp_credentials_configure,
             site_agent_bind_addresses,
             write_file,
+            clipboard_read_text,
+            clipboard_write_text,
             rename_usb_ports,
         ])
         .setup(move |app| {
