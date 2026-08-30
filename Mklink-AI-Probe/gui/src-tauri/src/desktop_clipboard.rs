@@ -1,13 +1,35 @@
 #[cfg(target_os = "windows")]
 struct ClipboardGuard;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClipboardOwner(isize);
+
+impl ClipboardOwner {
+    pub fn from_raw(raw: isize) -> Result<Self, String> {
+        if raw == 0 {
+            Err("A valid window handle is required to own the Windows clipboard".into())
+        } else {
+            Ok(Self(raw))
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn as_hwnd(self) -> windows_sys::Win32::Foundation::HWND {
+        self.0 as windows_sys::Win32::Foundation::HWND
+    }
+}
+
 #[cfg(target_os = "windows")]
 impl ClipboardGuard {
-    fn open() -> Result<Self, String> {
+    fn open(owner: Option<ClipboardOwner>) -> Result<Self, String> {
         use windows_sys::Win32::System::DataExchange::OpenClipboard;
 
+        let hwnd = owner
+            .map(ClipboardOwner::as_hwnd)
+            .unwrap_or(std::ptr::null_mut());
+
         for attempt in 0..10 {
-            if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
+            if unsafe { OpenClipboard(hwnd) } != 0 {
                 return Ok(Self);
             }
             if attempt < 9 {
@@ -58,7 +80,9 @@ pub fn read_text() -> Result<String, String> {
     use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize};
 
     const CF_UNICODETEXT: u32 = 13;
-    let _clipboard = ClipboardGuard::open()?;
+    // Reading does not claim clipboard ownership, so a window handle is not
+    // required for this operation.
+    let _clipboard = ClipboardGuard::open(None)?;
     unsafe {
         if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 {
             return Ok(String::new());
@@ -87,7 +111,7 @@ pub fn read_text() -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn write_text(text: &str) -> Result<(), String> {
+pub fn write_text(owner: ClipboardOwner, text: &str) -> Result<(), String> {
     use std::ptr::copy_nonoverlapping;
     use windows_sys::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
     use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GMEM_MOVEABLE};
@@ -112,7 +136,11 @@ pub fn write_text(text: &str) -> Result<(), String> {
             copy_nonoverlapping(wide.as_ptr(), target, wide.len());
         }
 
-        let _clipboard = ClipboardGuard::open()?;
+        // EmptyClipboard assigns ownership to the HWND passed to
+        // OpenClipboard. Passing NULL here makes the owner NULL and causes
+        // SetClipboardData to fail, so writes must always use the invoking
+        // Tauri window's HWND.
+        let _clipboard = ClipboardGuard::open(Some(owner))?;
         if EmptyClipboard() == 0 {
             return Err("Unable to clear the Windows clipboard".into());
         }
@@ -131,6 +159,24 @@ pub fn read_text() -> Result<String, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn write_text(_text: &str) -> Result<(), String> {
+pub fn write_text(_owner: ClipboardOwner, _text: &str) -> Result<(), String> {
     Err("Desktop clipboard access is available only on Windows".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_owner_rejects_a_null_window_handle() {
+        assert!(ClipboardOwner::from_raw(0).is_err());
+    }
+
+    #[test]
+    fn clipboard_owner_preserves_a_nonzero_window_handle() {
+        assert_eq!(
+            ClipboardOwner::from_raw(0x1234).unwrap(),
+            ClipboardOwner(0x1234)
+        );
+    }
 }

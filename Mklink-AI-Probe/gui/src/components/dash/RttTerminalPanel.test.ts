@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   terminals: [] as Array<{
     handler?: (event: KeyboardEvent) => boolean
     onData?: (data: string) => void
+    dispatchKeyDown: (event: KeyboardEvent) => boolean
     paste: ReturnType<typeof vi.fn>
     selectAll: ReturnType<typeof vi.fn>
     selection: string
@@ -28,11 +29,21 @@ vi.mock('@xterm/xterm', () => ({
     constructor(options: Record<string, unknown>) {
       mocks.terminalOptions.push(options)
       this.options = { disableStdin: options.disableStdin }
-      this.instance = {
+      const instance: (typeof mocks.terminals)[number] = {
+        dispatchKeyDown: (event: KeyboardEvent) => {
+          const allowXtermDefault = instance.handler?.(event) !== false
+          // xterm 6 maps an unhandled Ctrl+V to C0.SYN and forwards it to
+          // onData before cancelling the browser's default paste action.
+          if (allowXtermDefault && event.ctrlKey && event.key.toLowerCase() === 'v') {
+            instance.onData?.('\x16')
+          }
+          return allowXtermDefault
+        },
         paste: vi.fn((text: string) => this.instance.onData?.(text)),
         selectAll: vi.fn(),
         selection: '',
       }
+      this.instance = instance
       mocks.terminals.push(this.instance)
     }
 
@@ -157,9 +168,13 @@ describe('RttTerminalPanel', () => {
     const wrapper = mount(RttTerminalPanel, { props: { inputEnabled: true } })
     const preventDefault = vi.fn()
 
-    const handled = mocks.terminals[0].handler?.({
+    const allowXtermDefault = mocks.terminals[0].dispatchKeyDown({
       type: 'keydown', key: 'v', ctrlKey: true, metaKey: false, altKey: false, preventDefault,
     } as unknown as KeyboardEvent)
+    expect(allowXtermDefault).toBe(false)
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(wrapper.emitted('input')).toBeUndefined()
+
     const paste = new Event('paste', { bubbles: true, cancelable: true })
     const stopPropagation = vi.spyOn(paste, 'stopPropagation')
     Object.defineProperty(paste, 'clipboardData', {
@@ -168,8 +183,6 @@ describe('RttTerminalPanel', () => {
     wrapper.get('.rtt-terminal-panel').element.dispatchEvent(paste)
     await flushPromises()
 
-    expect(handled).toBe(true)
-    expect(preventDefault).not.toHaveBeenCalled()
     expect(paste.defaultPrevented).toBe(true)
     expect(stopPropagation).toHaveBeenCalledOnce()
     expect(navigator.clipboard.readText).not.toHaveBeenCalled()

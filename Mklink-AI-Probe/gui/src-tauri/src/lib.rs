@@ -285,8 +285,19 @@ fn clipboard_read_text() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn clipboard_write_text(text: String) -> Result<(), String> {
-    desktop_clipboard::write_text(&text)
+fn clipboard_write_text(window: tauri::WebviewWindow, text: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let raw_owner = window
+        .hwnd()
+        .map_err(|error| format!("Unable to access the application window handle: {error}"))?
+        .0 as isize;
+    #[cfg(not(target_os = "windows"))]
+    let raw_owner = {
+        let _ = window;
+        1
+    };
+    let owner = desktop_clipboard::ClipboardOwner::from_raw(raw_owner)?;
+    desktop_clipboard::write_text(owner, &text)
 }
 
 fn powershell_single_quote(value: &str) -> String {
@@ -1069,6 +1080,12 @@ mod tests {
             desktop_workspace_root(Path::new(r"C:\Users\test\AppData\Local\Mklink AI Probe")),
             PathBuf::from(r"C:\Users\test\AppData\Local\Mklink AI Probe\workspace"),
         );
+    }
+
+    #[test]
+    fn clipboard_write_command_receives_the_invoking_webview_window() {
+        let command: fn(tauri::WebviewWindow, String) -> Result<(), String> = clipboard_write_text;
+        let _ = command;
     }
 
     #[test]

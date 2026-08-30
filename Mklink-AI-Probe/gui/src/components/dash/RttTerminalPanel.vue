@@ -123,7 +123,11 @@ function handleShortcut(event: KeyboardEvent): boolean {
     // Browser paste events provide clipboardData without the permission prompt
     // required by navigator.clipboard.readText(). The capture listener below
     // feeds that trusted event into xterm exactly once.
-    if (!isTauri()) return true
+    // Returning true lets xterm translate Ctrl+V into the terminal control
+    // byte SYN (0x16) and cancel the DOM key event. Leave the event itself
+    // untouched, but stop xterm's key handling so Chromium can dispatch its
+    // trusted paste event to the capture listener below.
+    if (!isTauri()) return false
     event.preventDefault()
     void readTauriClipboard()
       .then(text => {
