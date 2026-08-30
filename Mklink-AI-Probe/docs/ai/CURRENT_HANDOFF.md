@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-30T12:35:26+08:00`
+- 更新时间：`2026-08-30T15:31:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`dcc57a5（本次 Arm 改造计划提交前基线；计划提交号以 Git 为准）`
-- 远端 HEAD：`提交前 origin/codex/v0.1.9-development 与本地 dcc57a5 一致；本次只推送维护文档，不改 master、标签或发布指针。`
-- 工作树：0.1.9 预发布分支持续维护；已完成官方手册、V3/V4固件和上位机的跨仓只读审计，新增 Arm 主线改造计划与固件契约。
-- 当前任务：按 docs/ai/v0.1.9-arm-hardening-plan.md 先建立V3/V4固件—上位机能力契约，再处理P0安全恢复、官方手册、自动测试、F103/H743 HIL和真实安装升级；HPM后续单独专项。
-- 状态：`v0.1.9-arm-hardening-planned`
+- HEAD：`已撤销 7f10d64 的大范围 Arm 跨仓改造计划；最终提交号以 Git 为准。`
+- 远端 HEAD：`本次撤销和维护记忆校正完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支恢复小步维护：每次只复现、修复、验证并推送一个明确问题；不实施跨三个仓库的大范围改造计划。
+- 当前任务：使用 STM32F103 测试工程现有 Keil AXF 打开 WebGUI，由维护者手测下一个上位机问题；发现后按单问题闭环修复并及时推送。
+- 状态：`v0.1.9-webgui-bug-triage`
 
 ## 里程碑
 
@@ -18,8 +18,8 @@
 - **串口自定义波特率 / PR #4** — `complete`。5ebe1b7 移植 a2160823797-wq 的数字输入＋常用值候选实现，保留 Co-authored-by；补测负数、非安全整数、运行中自定义值回显。PR #4 在功能提交推送后关闭，未向 master 合并。
 - **自动升级安装修复** — `complete`。2978f02 撤掉自定义安装前卸载，交由 Tauri 原生覆盖升级；新文件写入后仅修正匹配旧用户级路径的已有快捷方式。保留用户主动删除/修改的快捷方式及旧目录。隔离 NSIS 夹具已复现历史缺陷并验证修复；实际签名包升级验收仍待完成。
 - **Web GUI 18% 启动修复** — `complete`。静态路由固定 JS/MJS/CSS MIME；Vite assets/mime-v1 覆盖入口、延迟预加载、CSS、Worker 和波形脚本，重新生成 gui/dist。普通刷新可避开旧错误响应缓存。详见 docs/ai/web-gui-startup.md。
+- **HPM 真机闭环** — `complete`。HPM ROM API 烧录跳过 FLM；修复烧录后通用 reset 会停住 RISC-V 的问题。SDK FreeRTOS 工程完成 RAM/符号/RTT/故障注入与 ROM 重烧恢复验证。
 - **维护流程与用户 Skill 隔离** — `complete`。bfebafe 合并维护规则；用户入口去重、缩描述与正文，速查/端口命名移至按需参考，开发说明留在 docs/ai/development.md。用户包运行时白名单和更新器旧维护文件清理保持。安装不引导编译产品，修改目标 MCU 工程仍属使用任务。
-- **0.1.9 Arm 跨仓改造计划** — `complete`。只读审计MicroBoot的28页官方手册、V3/V4固件和0.1.9上位机；建立docs/ai/probe-firmware-contract.md与v0.1.9-arm-hardening-plan.md。F103负责通用Arm功能和16路压力，H743负责D-Cache一致性；HPM延期专项。
 
 ## 验证证据
 
@@ -28,35 +28,34 @@
 - **NSIS 升级流程**：使用 Tauri 实际生成模板与当前钩子、隔离注册身份/目录/测试可执行文件：历史钩子＋延迟卸载夹具复现新程序和图标丢失；修复后的 0.1.7/0.1.8 同目录升级、跨目录快捷方式迁移、已删除/另有目标快捷方式共 5 场景通过，配置及 /R 重启标记保留。这不是正式产品签名包或 UAC/真机验收。
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
 - **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
+- **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
 - **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
 - **SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）**：同进程50k×16 A/B：旧对象热路径20109.41 samples/s、11280901 calls；预编译直接解码38641.74 samples/s、5862521 calls，吞吐+92.16%、调用约-48.03%。STM32H743当前AXF符号superwatch_ch00..15位于0x24040000..0x2404003C；曾因WebGUI仍使用旧上传AXF副本而读取0x20009150起的旧地址，切换到当前工程AXF后16路0..1相移三角波恢复。真实Chrome确认暂停和停止后横轴缩放均保留波形。V4第二版16路实测：1ms固件周期均值/中位数均1000us、主机997.08Hz；100us中位数100us、均值108.14us、9237.72Hz；10us尽快采样9535.17Hz。三档read/CRC/固件丢样标记/后端/WebSocket丢包均为0。GUI全量57文件/590项、受影响Python156项和生产构建通过。
-- **Arm 跨仓基线审计（2026-08-30）**：手册28页存在3个strict失效链接、1个失效图片、危险供电/Option Bytes顺序及API漂移；固件确认double固定读4B、缺SWD统一owner、Pika清理和RBL空路径等风险；上位机确认serve认证/CORS和正式安装升级为P0。当前收集1479个Python测试；F103正确Keil AXF含连续16路变量，工程根旧ELF已删除。此阶段仅形成计划，未把问题声明为已修复。
 
 ## 架构决策
 
+- USB 端口名称保持按设备实例写入 FriendlyName；不使用常驻 SYSTEM 轮询，不引入未签名 Extension INF。配置页保留手动修改和恢复按钮。
 - Windows 端口命名必须严格识别 VID_0D28/PID_0202、复合设备父子关系、ContainerId 和 MI；V4 才识别 MI_06。
+- HPM 目标使用设备端 ROM API，不加载 FLM；VCC 输出仍需每次获得明确电压确认。 HPM ROM API 负责 RISC-V reset/resume，Device.flash 的 HPM 分支不得再调用通用 SWD reset。
 - Web 静态 JS/MJS/CSS MIME 不依赖系统注册表。通过 Vite assets/mime-v1 更换整个资源图的缓存 URL，避免只改 HTML 遗漏延迟加载；保留 HTML no-store 和哈希资源 immutable。缓存代号只在响应语义需作废旧缓存时变更，必须重建并提交 gui/dist。
 - 普通用户 Skill 只发布运行时白名单；根入口保留操作路由和安全约束，描述不匹配源码维护，参考按需加载；不混入交接、测试、构建或发布指令。维护流程只适用于修改 MKLink 本体，不适用于用户安装、调试和目标 MCU 工程。 用户中间文件固定在选定工作根目录，默认目标项目 .mklink；工作脚本、日志、报告和缓存分类，保留可复用缓存与唯一证据；不能通过篡改 project-root 重定向固定日志。
+- 默认不提交固件、Pack、FLM、日志、截图、硬件标识或构建缓存；本轮维护者明确例外授权将本地 HPMLink_V4.3.8.uf2 升级包及 V4.3.7 替换提交到开发分支，434bf79 已完成；不代表固件通道发布。
 - 维护者指定所有构建/测试临时内容集中在主工作区 .build，通过 scripts/build_workspace.ps1 运行；禁止 C 盘/系统盘输出、禁止提交或上传构建数据，保留可复用缓存。权限或目录链接不确定时报告路径供用户手动处理。
 - 维护者确认自动升级取消自定义强制卸载，成功写入后迁移匹配的旧快捷方式，不自动删除旧目录；测试限 E 盘隔离身份，不改动当前正式安装。详见 docs/ai/windows-upgrade.md。
 - SuperWatch连续采样固定使用dump_memory，不以read_ram降级；变量块只合并连续或重叠地址，最多15 region。后端按预编译字段直接解码为typed批，512样本、64KiB和20ms最长等待共同触发发送；完整历史只存Worker，主线程正常模式每通道容量2，暂停/停止交互按可见区间请求包络。V4固件使用绝对截止点并扣除SWD读取、CRC、封包和USB入队耗时；超期立即重建截止点，低于50us解释为尽快采样。
 - AI/PC 对单只下载器只允许串行控制并复用连接；超时后只查一次状态，不循环重试。MCP direct read/write 4096B，batch read 最多16项/4096B，capture 最长30秒，flush 最多8项/16300B。dump_memory 固件帧容量虽为16 region，但 Pika 文本入口16组加 period 正好33参数并在V4.3.8实测卡死，因此 Skill/CLI/MCP安全上限固定15且与堆大小无关；流停止至少排空50ms并释放连接。
-- 本轮0.1.9优先Arm Cortex-M；HPM/RISC-V板型配置、性能和异常恢复后续单独测试与修改。共享HPM路径只做不退化检查，不扩大支持范围。
-- 维护者专用固件契约和Arm计划放在docs/ai并从用户Skill排除；固件修改可由本任务实施和验证，但V3/V4提交由维护者自行完成。
-- F103作为V3/V4通用Arm和16路吞吐夹具；H743保留D-Cache/AXI SRAM一致性专测。F103只使用build/keil/Obj/rt-thread.axf，不自动回退到其他ELF/AXF。
 
 ## 真机环境
 
-- **probe**：后续Arm回归同时覆盖V3和V4；固件可修改和构建，提交由维护者自行完成。V4当前基线16ba901，V3当前基线e4b5722。
-- **target**：STM32F103RC工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC 用于通用功能和16路吞吐，唯一符号源为 build\keil\Obj\rt-thread.axf；STM32H743工程继续用于D-Cache/AXI SRAM一致性。
-- **permission**：维护者授权直接修改、编译和下载STM32F103/H743测试工程且无需备份；固件问题可修复并验证，但V3/V4仓库由维护者提交。未授权自动改变目标供电。
+- **probe**：本轮使用V4下载器；维护者两次编译并下载含dump_memory截止点补偿的本地固件，随后完成同条件A/B真机验证。
+- **target**：STM32H743 测试工程 E:\stm32h743-hs_sd_v3_Small_backup；16路 float 测试符号位于非缓存段 0x24040000..0x2404003C。H743 可缓存 AXI SRAM 中 CPU 已写数据可能仍留在 D-Cache，SWD 直读会看到旧零，真机波形夹具必须使用非缓存区或显式维护缓存一致性。
+- **permission**：按维护者授权修改并构建V4下载器USB2VOFA固件；维护者手动下载。直接修改、编译并下载STM32H743测试工程，真机读取与WebGUI交互验证完成；未切换目标供电。
 
 ## 下一动作
 
-1. 建立机器可读probe-capabilities和跨仓契约测试，冻结dump-v1并为F103生成同源AXF/BIN/manifest。
-2. 先处理serve认证/CORS、真实安装升级、手册供电/Option Bytes、固件double/owner/cleanup/RBL空路径等P0。
-3. 按计划补齐固件native测试、Python/GUI契约测试、F103/H743 HIL和真实Chrome/Tauri闭环。
-4. Arm候选通过后再启动HPM/RISC-V板型配置、性能和异常恢复专项。
+1. 以 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC\build\keil\Obj\rt-thread.axf 启动 WebGUI，等待维护者手测并给出可复现问题。
+2. 对下一个上位机问题完成复现、最小修复、自动化回归和真实浏览器闭环，然后单独提交并立即推送。
+3. HPM 系列功能梳理、跨固件仓库改造和官方手册重写均留待后续单独立项，不混入当前 0.1.9 基线修复。
 
 ## 已知限制
 

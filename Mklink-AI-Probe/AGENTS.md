@@ -70,8 +70,6 @@ Paths below are relative to the source root containing this file and
 
 - Build storage/commands: `docs/ai/build-storage.md`.
 - Source development: `docs/ai/development.md`.
-- V3/V4 firmware behavior and host contract: `docs/ai/probe-firmware-contract.md`.
-- 0.1.9 Arm hardening and regression work: `docs/ai/v0.1.9-arm-hardening-plan.md`.
 - Desktop packaging: `skills/tauri-gui-builder/SKILL.md`.
 - Explicitly authorized publication:
   `skills/maintaining-mklink-ai-probe/references/releasing.md`.
