@@ -108,8 +108,9 @@ def test_cli_rejects_unsafe_vofa_before_port_discovery(
         raise AssertionError("unsafe VOFA request reached port discovery")
 
     monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
-    cli._cli_vofa(None, variables, 0.001, False)
+    exit_code = cli._cli_vofa(None, variables, 0.001, False)
 
+    assert exit_code == 2
     assert message in capsys.readouterr().out
 
 

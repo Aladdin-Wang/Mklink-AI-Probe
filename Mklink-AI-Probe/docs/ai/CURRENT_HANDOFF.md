@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-30T22:08:00+08:00`
+- 更新时间：`2026-08-31T00:36:00+08:00`
 - 分支：`codex/v0.1.9-development`
-- HEAD：`本次提交前为 7be8835；WHXY 本地 Pack 导入兼容、安装后目录自动刷新与交付 Web 资源的最终提交号以 Git 为准。`
-- 远端 HEAD：`本次 Pack 单问题闭环完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
-- 工作树：0.1.9 预发布分支修复缺少顶层 url 的本地 CMSIS-Pack 导入，避免只读源属性污染受管副本并自愈旧只读事务，同时统一安装、导入及索引更新后的后端目录、GUI 可见列表和已选器件状态刷新。
-- 当前任务：使用用户真实 WHXY.CW32L012_DFP.1.0.2.pack 复现并修复 PACK_INTEGRITY_ERROR，完成安装后器件目录、已安装状态和当前搜索结果的自动刷新闭环。
-- 状态：`v0.1.9-pack-import-refresh-fix`
+- HEAD：`本次提交前为 e09f7ed；dump-memory 与 VOFA 危险边界被宿主拒绝时改为非零进程退出码，最终提交号以 Git 为准。`
+- 远端 HEAD：`CLI 退出码单问题闭环后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。`
+- 工作树：0.1.9 预发布分支正在以 STM32F103RE 测试夹具执行 WebGUI、CLI、MCP、Skill、烧录和诊断回归；已先收敛会让 AI 把流式边界拒绝误判为成功的 CLI 退出码。
+- 当前任务：使用 STM32F103RE 测试工程完成 0.1.9 ARM 功能与 AI 边界真机回归，逐项修复 HIL 暴露的上位机问题并及时推送。
+- 状态：`v0.1.9-stm32f103-hil-regression`
 
 ## 里程碑
 
@@ -28,7 +28,7 @@
 - **Web MIME 与旧缓存恢复（2026-08-28）**：新增 9 项在修改前失败、修改后通过；相关 Python 69 项通过，GUI 全量 57 文件/584 项通过，生产构建通过。真实浏览器先缓存 33 个旧资源，同端口只修 MIME 仍卡 18%；切换完整修复后普通刷新恢复配置页、仪表盘和 SuperWatch，CSS/Worker/波形脚本正确，浏览器会话建立并在关闭后释放。未操作设备或修改注册表。此次未重跑完整 Python 发布门禁，也非 Tauri 安装包验收。
 - **0.1.8 历史 HPM 固件升级与 SDK 真机**：本地 HPMLink_V4.3.8.uf2（SHA-256 D295858F...A7E3FA8）从探针 V4.3.7 自动升级成功；升级后 readme.txt 含 HPM Firmware Build Date 与 V4.3.8，REST 结果为 updated/verified_version V4.3.8。 hpm5301evklite IDCODE 0x1000563D；demo.bin 以 hpm.program 在 0x80000400 烧录成功，运行计数持续增长，RTT 5 秒输出和 1600/800 rpm 动态响应正常，alarm_code=0。故意非法指令得到 trap_state=2、mcause=2、mtval=0xFFFFFFFF，随后 ROM API 重烧恢复。
 - **SystemView 限制**：systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。
-- **V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。
+- **V4 AI/MCP/CLI 边界与 RAM 写入（更新至 2026-08-31）**：STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。2026-08-31 又确认 dump-memory 超过15 region、VOFA精确布局超过15组仍在端口解析前拒绝；CLI main 对参数拒绝返回2、连接/运行失败返回1、dump中断返回130，相关77项通过，避免AI把 [FAIL] 文本误判为成功。Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被3条既存缺链告警阻断。
 - **SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）**：同进程50k×16 A/B：旧对象热路径20109.41 samples/s、11280901 calls；预编译直接解码38641.74 samples/s、5862521 calls，吞吐+92.16%、调用约-48.03%。STM32H743当前AXF符号superwatch_ch00..15位于0x24040000..0x2404003C；曾因WebGUI仍使用旧上传AXF副本而读取0x20009150起的旧地址，切换到当前工程AXF后16路0..1相移三角波恢复。真实Chrome确认暂停和停止后横轴缩放均保留波形。V4第二版16路实测：1ms固件周期均值/中位数均1000us、主机997.08Hz；100us中位数100us、均值108.14us、9237.72Hz；10us尽快采样9535.17Hz。三档read/CRC/固件丢样标记/后端/WebSocket丢包均为0。GUI全量57文件/590项、受影响Python156项和生产构建通过。
 - **0.1.9 AXF/MAP 与本地 Pack GUI 回归（2026-08-30）**：真实 rtthread.axf（SHA-256 3753E0F3...1D9AF7F）的 board_info_data 为全局隐藏 OBJECT，地址0x200007A0、当前大小1592、DWARF类型board_info_t；旧逻辑把压缩加载大小误作RAM执行区而过滤该变量。按同段对象执行末端安全扩展可写区后，CLI精确搜索恢复。GUI只保留AXF/ELF/OUT入口；旧v1设置中的MAP字段会丢弃且保留其余设置，RTT/SystemView无手选文件时优先自动发现AXF并保留MAP后备。GUI全量57文件/590项、受影响Python111项和生产构建通过。真实Chrome连接COM228/IDCODE 0x0BE12477，内置pyelftools加载8591个固定可读变量；MAP控件计数为0，搜索返回board_info_data根节点及tBmsInfo成员，控制台无warn/error。 真实只读 Pack（SHA-256 10D93031...FFB5）唯一 PDSC 的 vendor/name/release、CW32L012C8 和 FLM 均完整；根因是缺少 package 顶层 url 时 cmsis-pack-manager 0.6.0 静默生成空索引。仅对 staging PDSC 在 schema 顺序位置补同命名空间空 url，原 Pack 与安装副本哈希一致，受管副本可写；无设备 Pack 仍拒绝，旧版本遗留的只读安装副本及 committed journal 可自愈清理。legacy JSON 与 NDJSON 安装/导入后均刷新目录；GUI 可见查询和已选器件精确确认分离，安装确认不再被防抖查询中止或把 HTTP 错误误报为索引缺失。Pack/在线API受影响 Python 188 项、GUI 全量57文件/594项和生产构建通过；最终 Web 资源下以空搜索再次导入真实 Pack 后仍为索引可用/217型号、CW32L012C8 本地 Pack和已安装徽标，旧错误不存在，本轮浏览器控制台无新增warn/error。
 

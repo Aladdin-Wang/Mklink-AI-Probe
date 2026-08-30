@@ -1,5 +1,6 @@
 import binascii
 import struct
+import sys
 import threading
 
 import pytest
@@ -80,15 +81,51 @@ def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch,
         raise AssertionError("unsafe request reached port discovery")
 
     monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
-    cli._cli_dump_memory(
+    exit_code = cli._cli_dump_memory(
         None,
         [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
     )
     cli._cli_read_ram(None, "0x20000000", 4097, None)
 
     output = capsys.readouterr().out
+    assert exit_code == 2
     assert "safe Pika API boundary" in output
     assert "use dump-memory for larger reads" in output
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (
+            ["dump-memory"]
+            + [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
+            "safe Pika API boundary",
+        ),
+        (
+            ["vofa", "--period", "0.001"]
+            + [
+                value
+                for index in range(16)
+                for value in (f"0x{0x20000000 + index * 4:08X}", "float")
+            ],
+            "at most 15",
+        ),
+    ],
+)
+def test_cli_main_reports_unsafe_stream_request_as_failure(
+    monkeypatch, capsys, arguments, message,
+):
+    from mklink import cli
+
+    monkeypatch.setattr(sys, "argv", ["mklink", *arguments])
+    exit_code = cli.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 2
+    assert "[FAIL]" in output
+    assert message in output
+    assert "Connecting" not in output
+    assert "[*] 连接" not in output
 
 
 def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
@@ -116,10 +153,11 @@ def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
     monkeypatch.setattr(cli, "_init_target_bridge", lambda bridge: None)
     monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", make_bridge)
 
-    cli._cli_dump_memory(
+    exit_code = cli._cli_dump_memory(
         None, ["0x20000000:4"], period=0.001, frames=0, duration=0.001,
     )
 
+    assert exit_code == 1
     writes = [call[1] for call in created[0].calls if call[0] == "write"]
     assert writes == [
         b"cmd.dump_memory(0x20000000, 4, 0.001)\n",

@@ -1992,7 +1992,7 @@ def _cli_dump_memory(
     duration: float = 2.0,
     save: str | None = None,
     json_output: bool = False,
-):
+) -> int:
     """Public dump_memory CLI.
 
     The firmware emits binary MPMDMPMD frames. Collection is bounded by default
@@ -2014,16 +2014,16 @@ def _cli_dump_memory(
     if not regions:
         print("[FAIL] no regions specified")
         print("      usage: python -m mklink dump-memory 0x20000000:16")
-        return
+        return 2
     if frames < 0 or frames > 100000:
         print("[FAIL] --frames must be between 0 and 100000")
-        return
+        return 2
     if duration < 0 or duration > 300:
         print("[FAIL] --duration must be between 0 and 300 seconds")
-        return
+        return 2
     if frames == 0 and duration == 0:
         print("[FAIL] --frames 0 requires --duration > 0")
-        return
+        return 2
 
     try:
         region_pairs = [_parse_dump_region(raw) for raw in regions]
@@ -2035,14 +2035,14 @@ def _cli_dump_memory(
         cmd = build_dump_mem_command(region_pairs, period)
     except ValueError as exc:
         print(f"[FAIL] invalid dump-memory request: {exc}")
-        return
+        return 2
 
     port = _resolve_port(port)
     print(f"[*] Connecting {port} ...")
     bridge = MKLinkSerialBridge(port)
     if not bridge.connect():
         print("[FAIL] connect failed")
-        return
+        return 1
 
     _init_target_bridge(bridge)
 
@@ -2052,6 +2052,7 @@ def _cli_dump_memory(
     raw_seen = bytearray()
     sample_count = 0
     stream_started = False
+    exit_code = 0
 
     def _is_complete_sample(frame: dict) -> bool:
         if frame.get("format") != "B1":
@@ -2110,6 +2111,7 @@ def _cli_dump_memory(
                     f"crc_errors={parser.crc_errors} dropped_bytes={parser.dropped_bytes}"
                 )
         else:
+            exit_code = 1
             diag = raw_seen.decode("utf-8", errors="replace").strip()
             if diag:
                 print(f"[FAIL] no dump_memory frames parsed; device response: {diag[:300]}")
@@ -2117,8 +2119,10 @@ def _cli_dump_memory(
                 print("[FAIL] no dump_memory frames parsed")
     except KeyboardInterrupt:
         print("\n[*] interrupted")
+        exit_code = 130
     except Exception as exc:
         print(f"[FAIL] {exc}")
+        exit_code = 1
     finally:
         if stream_started:
             try:
@@ -2136,6 +2140,7 @@ def _cli_dump_memory(
             except Exception:
                 pass
         bridge.close()
+    return exit_code
 
 
 def _cli_resources(args):
@@ -2580,7 +2585,7 @@ def _cli_vofa(
     source: str | None = None,
     elf_backend: str | None = None,
     project_root: str | None = None,
-):
+) -> int:
     """启动或停止 VOFA+ 实时变量观测。"""
     from mklink.bridge import MKLinkSerialBridge
     from mklink._types import DeviceState
@@ -2606,21 +2611,22 @@ def _cli_vofa(
             if not resolved_variables:
                 print("[FAIL] 请指定观测变量，用法:")
                 print('  python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.00001')
-                return
+                return 2
             cmd, var_args, channel_count, _mode = build_vofa_command(
                 resolved_variables, 0 if stop else period,
             )
     except ValueError as exc:
         print(f"[FAIL] 无效 VOFA 请求: {exc}")
-        return
+        return 2
 
     port = _resolve_port(port)
     print(f"[*] 连接 {port} ...")
     bridge = MKLinkSerialBridge(port)
     if not bridge.connect():
         print("[FAIL] 连接失败")
-        return
+        return 1
 
+    exit_code = 0
     try:
         if stop:
             print(f"[*] 停止 VOFA: {cmd}")
@@ -2695,6 +2701,7 @@ def _cli_vofa(
                 print("[OK] VOFA 已停止")
     except Exception as e:
         print(f"[FAIL] {e}")
+        exit_code = 1
         # 异常时尝试停止 VOFA 流，防止设备锁死在流模式
         if bridge.state in (DeviceState.VOFA_STREAM, DeviceState.READY):
             try:
@@ -2704,6 +2711,7 @@ def _cli_vofa(
                 pass
     finally:
         bridge.close()
+    return exit_code
 
 
 def _enable_utf8_console():
@@ -4592,7 +4600,7 @@ def main():
     elif args.command == "write-ram":
         _cli_write_ram(args.port, args.addr, args.data)
     elif args.command in ("dump-memory", "dump"):
-        _cli_dump_memory(
+        return _cli_dump_memory(
             args.port,
             args.regions,
             period=args.period,
@@ -4616,7 +4624,7 @@ def main():
     elif args.command == "read-flash":
         _cli_read_flash(args.port, args.addr, args.size, args.save, _resolve_project_root(args))
     elif args.command == "vofa":
-        _cli_vofa(
+        return _cli_vofa(
             args.port, args.variables, args.period, args.stop,
             visualize=args.visualize,
             host=args.host,

@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-30T22:08:00+08:00",
+  "updated_at": "2026-08-31T00:36:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.1.9-development",
-    "head": "本次提交前为 7be8835；WHXY 本地 Pack 导入兼容、安装后目录自动刷新与交付 Web 资源的最终提交号以 Git 为准。",
-    "remote_head": "本次 Pack 单问题闭环完成后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。",
-    "working_tree": "0.1.9 预发布分支修复缺少顶层 url 的本地 CMSIS-Pack 导入，避免只读源属性污染受管副本并自愈旧只读事务，同时统一安装、导入及索引更新后的后端目录、GUI 可见列表和已选器件状态刷新。"
+    "head": "本次提交前为 e09f7ed；dump-memory 与 VOFA 危险边界被宿主拒绝时改为非零进程退出码，最终提交号以 Git 为准。",
+    "remote_head": "CLI 退出码单问题闭环后立即推送到 origin/codex/v0.1.9-development；不改 master、标签或发布指针。",
+    "working_tree": "0.1.9 预发布分支正在以 STM32F103RE 测试夹具执行 WebGUI、CLI、MCP、Skill、烧录和诊断回归；已先收敛会让 AI 把流式边界拒绝误判为成功的 CLI 退出码。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前有效基线、验证证据、限制和后续动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.9-pack-import-refresh-fix",
-    "current_task": "使用用户真实 WHXY.CW32L012_DFP.1.0.2.pack 复现并修复 PACK_INTEGRITY_ERROR，完成安装后器件目录、已安装状态和当前搜索结果的自动刷新闭环。",
+    "status": "v0.1.9-stm32f103-hil-regression",
+    "current_task": "使用 STM32F103RE 测试工程完成 0.1.9 ARM 功能与 AI 边界真机回归，逐项修复 HIL 暴露的上位机问题并及时推送。",
     "release": "0.1.9 尚未发布，不继承历史签名或发布授权；正式应用 0.1.8 和 HPMLink V4.3.8 发布保持不变，v0.1.8 标签源提交仍为 e635d3a。"
   },
   "milestones": [
@@ -72,8 +72,8 @@
       "result": "systemview-analyze 已使用 output/demo.elf 符号源，但 HPM 示例 2 秒产生 24296 事件并 target buffer overflow，任务区间为 0，未形成可信 CPU 统计；记录为示例固件/SDK trace 限制，不宣称完整通过。"
     },
     {
-      "area": "V4 AI/MCP/CLI 边界与 RAM 写入（2026-08-29）",
-      "result": "STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。受影响 Python 182 项通过；Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被 3 条既存缺链告警阻断。"
+      "area": "V4 AI/MCP/CLI 边界与 RAM 写入（更新至 2026-08-31）",
+      "result": "STM32H743 + HPMLink V4.3.8：15-region 流连续 20 轮释放连接通过，16-region/33 参数边界曾使 REPL 失去响应，10ms 停止排空会污染后续命令，默认 50ms 稳定。连续 16×4B 批读由 674.263ms 降至 41.805ms（16.13x），离散区域不跨空隙合并。旧 cmd.write_ram、flush bytes 字面量/折叠、Device 四条路径均完成非零到全零并恢复原值。2026-08-31 又确认 dump-memory 超过15 region、VOFA精确布局超过15组仍在端口解析前拒绝；CLI main 对参数拒绝返回2、连接/运行失败返回1、dump中断返回130，相关77项通过，避免AI把 [FAIL] 文本误判为成功。Skill quick_validate 通过；MicroBoot MkDocs 非 strict 构建通过，strict 仅被3条既存缺链告警阻断。"
     },
     {
       "area": "SuperWatch 上位机、历史交互与 V4 周期补偿（2026-08-30）",
