@@ -1,5 +1,6 @@
 import binascii
 import struct
+import threading
 
 import pytest
 
@@ -88,6 +89,42 @@ def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch,
     output = capsys.readouterr().out
     assert "safe Pika API boundary" in output
     assert "use dump-memory for larger reads" in output
+
+
+def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
+    from mklink import bridge as bridge_module, cli
+
+    class CliBridge(FakeBridge):
+        def __init__(self, port):
+            super().__init__([])
+            self.port = port
+
+        def connect(self):
+            return True
+
+        def close(self):
+            self.calls.append(("close",))
+
+    created = []
+
+    def make_bridge(port):
+        instance = CliBridge(port)
+        created.append(instance)
+        return instance
+
+    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
+    monkeypatch.setattr(cli, "_init_target_bridge", lambda bridge: None)
+    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", make_bridge)
+
+    cli._cli_dump_memory(
+        None, ["0x20000000:4"], period=0.001, frames=0, duration=0.001,
+    )
+
+    writes = [call[1] for call in created[0].calls if call[0] == "write"]
+    assert writes == [
+        b"cmd.dump_memory(0x20000000, 4, 0.001)\n",
+        b"cmd.dump_memory(0x20000000, 4, -1.0)\n",
+    ]
 
 
 def test_cli_write_ram_uses_device_path_and_verifies_zero_payload(monkeypatch, capsys):
@@ -189,6 +226,75 @@ def test_superwatch_dump_collector_decodes_device_time_and_releases_stream(monke
     bridge.close.assert_called_once()
 
 
+def test_standalone_superwatch_uses_explicit_dump_stop(monkeypatch):
+    from mklink import bridge as bridge_module, cli, rtt_viewer, superwatch
+
+    class Server:
+        def __init__(self, **kwargs):
+            self.collecting = threading.Event()
+            self.collecting.set()
+            self.events = []
+
+        def start(self):
+            return 12345
+
+        def push_event(self, event, payload):
+            self.events.append((event, payload))
+
+        def push_data_point(self, point):
+            return None
+
+        def stop(self):
+            return None
+
+    class Bridge:
+        def __init__(self, port):
+            self.port = port
+            self.commands = []
+
+        def connect(self):
+            return True
+
+        def send_command(self, command, timeout=0):
+            self.commands.append(command)
+            return ""
+
+        def _enter_stream(self, state):
+            return None
+
+        def drain_stream_bytes(self):
+            return b""
+
+        def _exit_stream(self):
+            return None
+
+        def close(self):
+            return None
+
+    created = []
+
+    def make_bridge(port):
+        instance = Bridge(port)
+        created.append(instance)
+        return instance
+
+    monkeypatch.setattr(rtt_viewer, "VisualizationServer", Server)
+    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", make_bridge)
+    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
+
+    superwatch.run_superwatch_visualizer(
+        items=[superwatch.WatchItem("value", 0x20000000, "float", 4)],
+        period=0.001,
+        no_browser=True,
+        duration=0.001,
+    )
+
+    assert created[0].commands == [
+        "cmd.dump_memory(0x20000000, 4, 0.001)",
+        "cmd.dump_memory(0x20000000, 4, -1.0)",
+    ]
+
+
 def test_superwatch_poll_closes_on_read_error_and_keeps_custom_reader(monkeypatch):
     from unittest.mock import Mock
     from mklink import superwatch
@@ -225,8 +331,9 @@ def test_dump_session_reuses_parser_and_owns_exact_stream_lifecycle():
         "write", b"cmd.dump_memory(0x20000000, 4, 0.0001)\n",
     )
     assert bridge.calls[-3] == (
-        "write", b"cmd.dump_memory(0x20000000, 4, 0)\n",
+        "write", b"cmd.dump_memory(0x20000000, 4, -1.0)\n",
     )
+    assert ("write", b"cmd.dump_memory(0x20000000, 4, 0)\n") not in bridge.calls
     assert bridge.calls[-2] == ("drain", None)
     assert bridge.calls[-1] == ("exit",)
     assert session.stats == {
@@ -271,8 +378,29 @@ def test_one_shot_dump_reads_payload_and_stops_stream_cleanly():
     assert bridge.calls[1] == (
         "write", b"cmd.dump_memory(0x20000020, 4, 0)\n",
     )
-    assert ("write", b"RTTView.stop()\n") in bridge.calls
+    assert ("write", b"cmd.dump_memory(0x20000020, 1, -1.0)\n") in bridge.calls
+    assert ("write", b"RTTView.stop()\n") not in bridge.calls
+    assert sum(
+        call == ("write", b"cmd.dump_memory(0x20000020, 4, 0)\n")
+        for call in bridge.calls
+    ) == 1
     assert bridge.calls[-1] == ("exit",)
+
+
+def test_one_shot_dump_error_uses_dump_stop_without_requesting_another_sample():
+    bridge = FakeBridge([])
+
+    with pytest.raises(TimeoutError, match="timed out"):
+        read_dump_memory_once(
+            bridge, 0x20000020, 4, timeout=0.001, poll_interval=0,
+        )
+
+    writes = [call[1] for call in bridge.calls if call[0] == "write"]
+    assert writes == [
+        b"cmd.dump_memory(0x20000020, 4, 0)\n",
+        b"cmd.dump_memory(0x20000020, 1, -1.0)\n",
+    ]
+    assert b"RTTView.stop()\n" not in writes
 
 
 def test_one_shot_dump_collects_all_b1_blocks():

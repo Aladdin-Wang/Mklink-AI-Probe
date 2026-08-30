@@ -2005,6 +2005,7 @@ def _cli_dump_memory(
     from mklink._types import DeviceState
     from mklink.bridge import MKLinkSerialBridge
     from mklink.dump_memory import (
+        DUMP_MEMORY_STOP_PERIOD,
         DumpMemoryParser,
         MAX_SAFE_REPL_REGIONS,
         build_dump_mem_command,
@@ -2122,7 +2123,9 @@ def _cli_dump_memory(
         if stream_started:
             try:
                 if period != 0:
-                    stop_cmd = build_dump_mem_command(region_pairs, 0)
+                    stop_cmd = build_dump_mem_command(
+                        region_pairs, DUMP_MEMORY_STOP_PERIOD,
+                    )
                     bridge._write_raw((stop_cmd + "\n").encode("utf-8"))
                     time.sleep(0.1)
                     try:

@@ -215,7 +215,8 @@ def test_running_manager_uses_probe_dump_stream_and_exposes_integrity_metrics():
     assert status["stream_integrity"]["parser_crc_errors"] == 0
     assert manager._history[-1]["ch0"] == pytest.approx(7.25)
     assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.0001)\n"
-    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
+    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, -1.0)\n"
+    assert b"cmd.dump_memory(0x20000000, 4, 0)\n" not in bridge.writes
 
 
 def test_sample_major_payload_preserves_10000_ids_and_channel_alignment():

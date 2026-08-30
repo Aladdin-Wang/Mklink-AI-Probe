@@ -75,6 +75,7 @@ MAX_REGIONS = 16
 # configuration entry point or raises and validates its VM argument capacity.
 MAX_SAFE_REPL_REGIONS = 15
 MAX_REPL_COMMAND_BYTES = 511  # PIKA_LINE_BUFF_SIZE is 512 including NUL.
+DUMP_MEMORY_STOP_PERIOD = -1.0
 EXPECTED_BLOCK_SIZE = 2048  # firmware-fixed per spec
 
 # Maximum total bytes per dump_memory() call.
@@ -422,6 +423,9 @@ def read_dump_memory_once(
 
     parser = DumpMemoryParser(region_sizes=[size])
     command = build_dump_mem_command([(address, size)], 0)
+    stop_command = build_dump_mem_command(
+        [(address, 1)], DUMP_MEMORY_STOP_PERIOD,
+    )
     deadline = time.monotonic() + max(0.001, float(timeout))
     bridge._enter_stream(DeviceState.DUMP_STREAM)
     try:
@@ -437,7 +441,10 @@ def read_dump_memory_once(
         raise TimeoutError("timed out waiting for one dump-memory sample")
     finally:
         try:
-            bridge._write_raw(b"RTTView.stop()\n")
+            # ``RTTView.stop`` does not stop dump_memory and period=0 would
+            # request another one-shot sample.  Use the firmware's explicit
+            # dump stop value even when the one-shot read failed.
+            bridge._write_raw((stop_command + "\n").encode("utf-8"))
             try:
                 bridge.drain_stream_bytes()
             except Exception:
@@ -473,7 +480,9 @@ def read_dump_memory_range_once(
 
     parser = DumpMemoryParser(region_sizes=[size])
     command = build_dump_mem_command([(address, size)], 0)
-    stop_command = build_dump_mem_command([(address, 1)], -1)
+    stop_command = build_dump_mem_command(
+        [(address, 1)], DUMP_MEMORY_STOP_PERIOD,
+    )
     deadline = time.monotonic() + max(0.001, float(timeout))
     blocks: dict[int, bytes] = {}
     expected_blocks: int | None = None
@@ -641,7 +650,9 @@ class DumpMemoryStreamSession:
         if not self.started:
             return
         try:
-            command = build_dump_mem_command(self.region_pairs, 0)
+            command = build_dump_mem_command(
+                self.region_pairs, DUMP_MEMORY_STOP_PERIOD,
+            )
             self.bridge._write_raw((command + "\n").encode("utf-8"))
             if self.stop_grace_s:
                 time.sleep(self.stop_grace_s)

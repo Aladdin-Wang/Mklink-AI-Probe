@@ -900,7 +900,12 @@ def run_superwatch_visualizer(
     def _dump_mem_poll_loop(bridge, server, runtime, origin_us_ref, stop_event, read_lock) -> None:
         nonlocal origin_us
         from mklink._types import DeviceState
-        from mklink.dump_memory import DumpMemoryParser, build_dump_mem_command, decode_frame_to_points
+        from mklink.dump_memory import (
+            DUMP_MEMORY_STOP_PERIOD,
+            DumpMemoryParser,
+            build_dump_mem_command,
+            decode_frame_to_points,
+        )
 
         # Build block-to-region mapping
         blocks = runtime.blocks
@@ -971,10 +976,13 @@ def run_superwatch_visualizer(
                     server.push_event("error", {"message": str(exc)})
                     break
         finally:
-            # Stop dump_mem streaming by sending period=0
+            # Use the firmware's explicit stop value.  period=0 requests one
+            # additional sample and can leave it queued for the next command.
             try:
                 bridge._exit_stream()
-                stop_cmd = build_dump_mem_command(region_pairs, 0)
+                stop_cmd = build_dump_mem_command(
+                    region_pairs, DUMP_MEMORY_STOP_PERIOD,
+                )
                 bridge.send_command(stop_cmd, timeout=3.0)
             except Exception:
                 pass

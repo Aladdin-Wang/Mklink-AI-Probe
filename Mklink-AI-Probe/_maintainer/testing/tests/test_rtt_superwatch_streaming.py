@@ -1261,7 +1261,8 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
     assert hub.stats().produced_items == 1
     assert bridge.writes[0] == b"cmd.dump_memory(0x20000000, 4, 0.001)\n"
     assert expected_restart in bridge.writes
-    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, 0)\n"
+    assert bridge.writes[-1] == b"cmd.dump_memory(0x20000000, 4, -1.0)\n"
+    assert b"cmd.dump_memory(0x20000000, 4, 0)\n" not in bridge.writes
 
 
 def test_superwatch_rejects_bridge_without_dump_stream_instead_of_read_ram_fallback():
