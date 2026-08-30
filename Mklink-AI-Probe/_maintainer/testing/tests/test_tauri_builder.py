@@ -446,7 +446,8 @@ def test_skill_defaults_axf_to_builtin_parser():
     text = (PROJECT_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert "默认使用内置 pyelftools" in text
-    assert "仅在用户明确指定" in text
+    assert "明确指定" in text
+    assert "elf_backend=external" in text
 
 
 def test_builtin_pack_builder_keeps_only_descriptor_algorithms_and_licenses(

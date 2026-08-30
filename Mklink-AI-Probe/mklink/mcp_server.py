@@ -39,6 +39,8 @@ import sys
 import threading
 from typing import Any, Iterator, TextIO
 
+from pydantic import StrictInt, StrictStr
+
 log = logging.getLogger("mklink.mcp")
 
 MCP_MAX_DIRECT_READ_BYTES = 4096
@@ -50,6 +52,8 @@ MCP_MAX_FLUSH_ITEM_BYTES = 12 * 1024
 MCP_MAX_FLUSH_TOTAL_BYTES = 12 * 1024
 MCP_MAX_CAPTURE_SECONDS = 30.0
 MCP_MAX_SEARCH_BYTES = 64 * 1024
+MCP_MAX_RTT_WRITE_BYTES = 256
+MCP_MAX_RTT_PATTERN_BYTES = 256
 
 
 class _McpProtocolStdout:
@@ -172,6 +176,8 @@ def _capabilities() -> dict[str, Any]:
         "flush_memory_max_total_bytes": MCP_MAX_FLUSH_TOTAL_BYTES,
         "capture_max_seconds": MCP_MAX_CAPTURE_SECONDS,
         "rtt_search_max_bytes": MCP_MAX_SEARCH_BYTES,
+        "rtt_write_max_utf8_bytes": MCP_MAX_RTT_WRITE_BYTES,
+        "rtt_pattern_max_utf8_bytes": MCP_MAX_RTT_PATTERN_BYTES,
         "failure_recovery": (
             "a timed-out hardware tool quarantines the session; check "
             "device_status, then disconnect before reconnecting"
@@ -825,8 +831,8 @@ def _register_rtt_tools(mcp: Any) -> None:
     @_exclusive_hardware_tool
     def rtt_start(
         addr: str | None = None,
-        channel: int = 0,
-        search_size: int = 1024,
+        channel: StrictInt = 0,
+        search_size: StrictInt = 1024,
         mode: str = "auto",
     ) -> dict:
         """Start an RTT session to capture target printf/log output.
@@ -834,7 +840,7 @@ def _register_rtt_tools(mcp: Any) -> None:
         Args:
             addr: RTT control-block address. Required when mode="static";
                 otherwise resolved from .mklink/rtt_config.json.
-            channel: RTT channel number (default 0).
+            channel: RTT channel number, 0..2 on V4 firmware (default 0).
             search_size: Probe scan window in bytes (default 1024). Only
                 used in dynamic mode.
             mode: RTT control-block storage strategy — **decision encoded
@@ -846,8 +852,10 @@ def _register_rtt_tools(mcp: Any) -> None:
                 - "static": CB is at a fixed address set via the
                   SEGGER_RTT_SECTION macro; pass addr explicitly.
         """
-        if type(channel) is not int or not 0 <= channel < 16:
-            raise ValueError("channel must be between 0 and 15")
+        if type(channel) is not int or not 0 <= channel < 3:
+            raise ValueError(
+                "channel must be between 0 and 2 for V4 probe firmware"
+            )
         if type(search_size) is not int or not 0 <= search_size <= MCP_MAX_SEARCH_BYTES:
             raise ValueError(
                 f"search_size must be between 0 and {MCP_MAX_SEARCH_BYTES} bytes"
@@ -881,8 +889,23 @@ def _register_rtt_tools(mcp: Any) -> None:
         """Write text to the target's RTT down channel (stdin equivalent).
 
         Args:
-            data: UTF-8 text to send.
+            data: UTF-8 text to send (1..256 encoded bytes). This is an
+                interactive command channel, not a file-transfer path.
         """
+        if type(data) is not str:
+            raise ValueError("data must be UTF-8 text")
+        try:
+            byte_length = len(data.encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise ValueError("data must be valid UTF-8 text") from exc
+        if not 1 <= byte_length <= MCP_MAX_RTT_WRITE_BYTES:
+            raise ValueError(
+                f"data must contain 1..{MCP_MAX_RTT_WRITE_BYTES} UTF-8 bytes"
+            )
+        if "RTTView.stop()" in data:
+            raise ValueError(
+                "data contains the probe-reserved RTTView.stop() sequence"
+            )
         dev = _connected_device()
         return {"sent": dev.rtt_write(data)}
 
@@ -897,7 +920,7 @@ def _register_rtt_tools(mcp: Any) -> None:
     @_exclusive_hardware_tool
     def capture_rtt(
         duration: float = 5.0,
-        pattern: str | None = None,
+        pattern: StrictStr | None = None,
     ) -> dict:
         """One-shot RTT capture: auto start → read → return (session stays up).
 
@@ -907,9 +930,22 @@ def _register_rtt_tools(mcp: Any) -> None:
         Args:
             duration: Seconds to capture (default 5.0).
             pattern: If given, return early once this substring appears in
-                the output (e.g. "System ready").
+                the output (e.g. "System ready"). It is matched literally
+                and must contain 1..256 UTF-8 bytes.
         """
         duration = _bounded_duration(duration)
+        if pattern is not None:
+            if type(pattern) is not str:
+                raise ValueError("pattern must be UTF-8 text or None")
+            try:
+                byte_length = len(pattern.encode("utf-8"))
+            except UnicodeEncodeError as exc:
+                raise ValueError("pattern must be valid UTF-8 text") from exc
+            if not 1 <= byte_length <= MCP_MAX_RTT_PATTERN_BYTES:
+                raise ValueError(
+                    "pattern must contain 1.."
+                    f"{MCP_MAX_RTT_PATTERN_BYTES} UTF-8 bytes"
+                )
         dev = _connected_device()
         out = dev.wait_for_rtt(
             pattern, timeout=duration, start_if_needed=True,
@@ -923,8 +959,8 @@ def _register_systemview_tools(mcp: Any) -> None:
     @_exclusive_hardware_tool
     def systemview_start(
         addr: str | None = None,
-        channel: int = 1,
-        search_size: int = 1024,
+        channel: StrictInt = 1,
+        search_size: StrictInt = 1024,
         mode: str = "auto",
     ) -> dict:
         """Start a SystemView RTOS-trace capture from RTT channel 1.
@@ -938,12 +974,14 @@ def _register_systemview_tools(mcp: Any) -> None:
         Args:
             addr: RTT control-block address (resolved from
                 .mklink/rtt_config.json when omitted, shared with RTT).
-            channel: SystemView up-channel (SEGGER default 1).
+            channel: SystemView up-channel, 0..2 on V4 firmware (default 1).
             search_size: Probe scan window in bytes (default 1024).
             mode: "auto"/"dynamic"/"static" — same semantics as rtt_start.
         """
-        if type(channel) is not int or not 0 <= channel < 16:
-            raise ValueError("channel must be between 0 and 15")
+        if type(channel) is not int or not 0 <= channel < 3:
+            raise ValueError(
+                "channel must be between 0 and 2 for V4 probe firmware"
+            )
         if type(search_size) is not int or not 0 <= search_size <= MCP_MAX_SEARCH_BYTES:
             raise ValueError(
                 f"search_size must be between 0 and {MCP_MAX_SEARCH_BYTES} bytes"

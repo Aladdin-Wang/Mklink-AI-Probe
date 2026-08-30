@@ -3309,7 +3309,15 @@ def stop_bridge_dashboards(
         if name == exclude:
             continue
         mgr = managers.get(name)
-        if mgr and mgr.running:
+        thread = getattr(mgr, "_thread", None) if mgr is not None else None
+        worker_alive = bool(
+            mgr is not None
+            and (
+                getattr(mgr, "running", False)
+                or (thread is not None and thread.is_alive())
+            )
+        )
+        if worker_alive:
             error = None
             try:
                 mgr.stop()

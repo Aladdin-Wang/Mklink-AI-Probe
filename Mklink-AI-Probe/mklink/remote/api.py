@@ -33,7 +33,7 @@ import secrets
 import sys
 import threading
 import time
-from typing import Any
+from typing import Annotated, Any
 import weakref
 
 from mklink.symbol_catalog import SymbolCatalogError
@@ -307,7 +307,7 @@ def _stop_dashboard_for_owner(owner: str) -> list[str]:
     managers = get_managers()
     manager = managers.get(manager_name)
     should_stop = (
-        getattr(manager, "running", False)
+        (manager is not None and _dashboard_worker_alive(manager))
         or owner in _OWNER_REQUIRES_STOP_EVEN_IF_NOT_RUNNING
     )
     if manager and should_stop:
@@ -662,6 +662,16 @@ def stop_dashboard_manager(state: dict[str, Any], dashboard: str, manager) -> No
     if error is not None:
         raise error
 
+
+async def stop_dashboard_manager_transaction(
+    state: dict[str, Any], dashboard: str, manager,
+) -> None:
+    """Serialize stop with start and keep blocking joins off the event loop."""
+    async with _dashboard_start_lock(state):
+        await asyncio.to_thread(
+            stop_dashboard_manager, state, dashboard, manager,
+        )
+
 # Eager-import FastAPI types so that typing.get_type_hints() can resolve
 # annotations in closures (e.g. the /ws handler).  The module can still be
 # imported without FastAPI — _check_fastapi() gates actual usage.
@@ -671,7 +681,7 @@ try:
         HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
-    from pydantic import BaseModel                    # noqa: F401
+    from pydantic import BaseModel, StrictInt         # noqa: F401
 except ImportError:
     pass
 
@@ -715,7 +725,7 @@ def create_app(
         Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware
-    from pydantic import BaseModel
+    from pydantic import BaseModel, StrictInt
 
     from mklink.remote.server import DeviceDispatcher, make_response, make_error
     from mklink.project_config import (
@@ -1566,26 +1576,27 @@ def create_app(
 
     async def _disconnect_shared_device() -> dict[str, object]:
         """Stop bridge dashboards and release the GUI-owned Device."""
-        async with device_disconnect_lock:
-            from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+        async with _dashboard_start_lock(_state):
+            async with device_disconnect_lock:
+                from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
 
-            stopped = []
-            for name in BRIDGE_DASHBOARD_TYPES:
-                manager = dashboard_managers.get(name)
-                if manager is not None and _dashboard_worker_alive(manager):
-                    await run_in_threadpool(manager.stop)
-                    if _dashboard_worker_alive(manager):
-                        raise DashboardStopPending(name)
-                    stopped.append(name)
-                _state["resource_manager"].release(f"user:dashboard:{name}")
+                stopped = []
+                for name in BRIDGE_DASHBOARD_TYPES:
+                    manager = dashboard_managers.get(name)
+                    if manager is not None and _dashboard_worker_alive(manager):
+                        await run_in_threadpool(manager.stop)
+                        if _dashboard_worker_alive(manager):
+                            raise DashboardStopPending(name)
+                        stopped.append(name)
+                    _state["resource_manager"].release(f"user:dashboard:{name}")
 
-            device = _state["device"]
-            if device:
-                remember_device_connection(_state, device)
-                await run_in_threadpool(device.close)
-                _state["device"] = None
-                _state["dispatcher"] = None
-            return {"status": "disconnected", "stopped": stopped}
+                device = _state["device"]
+                if device:
+                    remember_device_connection(_state, device)
+                    await run_in_threadpool(device.close)
+                    _state["device"] = None
+                    _state["dispatcher"] = None
+                return {"status": "disconnected", "stopped": stopped}
 
     @app.post("/api/device/disconnect")
     async def disconnect_device():
@@ -1985,9 +1996,9 @@ def create_app(
     @app.post("/api/dash/rtt/start")
     async def rtt_start(
         addr: str | None = Body(default=None),
-        channel: int = Body(default=0),
-        mode: int = Body(default=0),
-        search_size: int = Body(default=1024),
+        channel: Annotated[StrictInt, Body()] = 0,
+        mode: Annotated[StrictInt, Body()] = 0,
+        search_size: Annotated[StrictInt, Body()] = 1024,
         encoding: str = Body(default="utf-8"),
     ):
         from mklink.remote.dashboards import normalize_rtt_encoding
@@ -2006,6 +2017,23 @@ def create_app(
                 status_code=400,
                 detail="Device not connected",
             )
+        try:
+            from mklink.device import DeviceError, _resolve_rtt_stream_parameters
+
+            addr, channel, search_size, mode = _resolve_rtt_stream_parameters(
+                addr,
+                channel,
+                search_size,
+                mode,
+                _state["project_root"],
+            )
+            validate_request = getattr(
+                _state["device"], "validate_rtt_stream_request", None,
+            )
+            if callable(validate_request):
+                validate_request(addr, search_size=search_size, mode=mode)
+        except (ValueError, DeviceError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         rtt = managers["rtt"]
         status, stopped = await start_dashboard_manager(
@@ -2035,7 +2063,9 @@ def create_app(
     @app.post("/api/dash/rtt/stop")
     async def rtt_stop():
         managers = get_managers()
-        stop_dashboard_manager(_state, "rtt", managers["rtt"])
+        await stop_dashboard_manager_transaction(
+            _state, "rtt", managers["rtt"],
+        )
         return {"status": "stopped"}
 
     @app.post("/api/dash/rtt/write")
@@ -2107,9 +2137,9 @@ def create_app(
     @app.post("/api/dash/systemview/start")
     async def systemview_start(
         addr: str | None = Body(default=None),
-        channel: int = Body(default=1),
-        mode: int = Body(default=0),
-        search_size: int = Body(default=1024),
+        channel: Annotated[StrictInt, Body()] = 1,
+        mode: Annotated[StrictInt, Body()] = 0,
+        search_size: Annotated[StrictInt, Body()] = 1024,
     ):
         if mode not in (0, 1):
             raise HTTPException(
@@ -2118,6 +2148,23 @@ def create_app(
             )
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
+        try:
+            from mklink.device import DeviceError, _resolve_rtt_stream_parameters
+
+            addr, channel, search_size, mode = _resolve_rtt_stream_parameters(
+                addr,
+                channel,
+                search_size,
+                mode,
+                _state["project_root"],
+            )
+            validate_request = getattr(
+                _state["device"], "validate_rtt_stream_request", None,
+            )
+            if callable(validate_request):
+                validate_request(addr, search_size=search_size, mode=mode)
+        except (ValueError, DeviceError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         sv = managers["systemview"]
         status, stopped = await start_dashboard_manager(
@@ -2137,7 +2184,9 @@ def create_app(
     @app.post("/api/dash/systemview/stop")
     async def systemview_stop():
         managers = get_managers()
-        stop_dashboard_manager(_state, "systemview", managers["systemview"])
+        await stop_dashboard_manager_transaction(
+            _state, "systemview", managers["systemview"],
+        )
         return {"status": "stopped"}
 
     @app.post("/api/dash/systemview/pause")
@@ -2243,11 +2292,8 @@ def create_app(
     @app.post("/api/dash/superwatch/stop")
     async def superwatch_stop():
         managers = get_managers()
-        await run_in_threadpool(
-            stop_dashboard_manager,
-            _state,
-            "superwatch",
-            managers["superwatch"],
+        await stop_dashboard_manager_transaction(
+            _state, "superwatch", managers["superwatch"],
         )
         return {"status": "stopped"}
 
@@ -2751,7 +2797,9 @@ def create_app(
     @app.post("/api/dash/vofa/stop")
     async def vofa_stop():
         managers = get_managers()
-        stop_dashboard_manager(_state, "vofa", managers["vofa"])
+        await stop_dashboard_manager_transaction(
+            _state, "vofa", managers["vofa"],
+        )
         return {"status": "stopped"}
 
     @app.post("/api/dash/vofa/pause")

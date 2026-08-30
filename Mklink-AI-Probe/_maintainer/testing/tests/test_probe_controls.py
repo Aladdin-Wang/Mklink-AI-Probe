@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import contextmanager
 import ctypes
 import os
 import subprocess
@@ -234,6 +236,21 @@ class _Mcp:
         return register
 
 
+def test_mcp_ping_reports_rtt_write_utf8_limit(monkeypatch):
+    monkeypatch.setattr("importlib.metadata.version", lambda _name: "0.1.9")
+    monkeypatch.setattr("mklink.toolchain.status", lambda: {})
+    monkeypatch.setattr(
+        "mklink.update_check.check_for_update",
+        lambda: {"checked": False},
+    )
+    mcp = _Mcp()
+    mcp_server._register_health_tools(mcp)
+
+    limits = mcp.tools["ping"]()["limits"]
+    assert limits["rtt_write_max_utf8_bytes"] == 256
+    assert limits["rtt_pattern_max_utf8_bytes"] == 256
+
+
 def test_mcp_exposes_guarded_power_and_probe_reboot(monkeypatch):
     mcp = _Mcp()
     device = SimpleNamespace(
@@ -369,6 +386,7 @@ def test_mcp_reuses_matching_connection_and_reports_limits(monkeypatch):
     assert result["reused"] is True
     assert result["limits"]["direct_read_max_bytes"] == 4096
     assert result["limits"]["batch_read_max_regions"] == 16
+    assert result["limits"]["rtt_write_max_utf8_bytes"] == 256
 
 
 def test_mcp_capture_duration_and_flush_limits(monkeypatch):
@@ -390,11 +408,11 @@ def test_mcp_capture_duration_and_flush_limits(monkeypatch):
 
     with pytest.raises(ValueError, match="at most 30 seconds"):
         rtt_mcp.tools["rtt_read"](30.1)
-    with pytest.raises(ValueError, match="channel must be between 0 and 15"):
-        rtt_mcp.tools["rtt_start"](channel=16)
+    with pytest.raises(ValueError, match="channel must be between 0 and 2"):
+        rtt_mcp.tools["rtt_start"](channel=3)
     with pytest.raises(ValueError, match="search_size must be between"):
         rtt_mcp.tools["rtt_start"](search_size=65537)
-    with pytest.raises(ValueError, match="channel must be between 0 and 15"):
+    with pytest.raises(ValueError, match="channel must be between 0 and 2"):
         systemview_mcp.tools["systemview_start"](channel=-1)
     with pytest.raises(ValueError, match="at most 8 regions"):
         flush_mcp.tools["flush_memory"]([
@@ -411,6 +429,159 @@ def test_mcp_capture_duration_and_flush_limits(monkeypatch):
     assert rtt_mcp.tools["rtt_read"](0.1) == {"output": ""}
     assert systemview_mcp.tools["systemview_read"](0.1) == {}
     assert calls == [("rtt", 0.1), ("systemview", 0.1)]
+
+
+def test_mcp_rtt_write_enforces_utf8_byte_limit_before_device_lookup(monkeypatch):
+    mcp = _Mcp()
+    lookups = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_connected_device",
+        lambda: lookups.append("device") or pytest.fail("unexpected device lookup"),
+    )
+    mcp_server._register_rtt_tools(mcp)
+
+    for data in ("", "A" * 257, "测" * 86, "\ud800"):
+        with pytest.raises(ValueError, match="UTF-8"):
+            mcp.tools["rtt_write"](data)
+    with pytest.raises(ValueError, match="probe-reserved RTTView.stop"):
+        mcp.tools["rtt_write"]("RTTView.stop()")
+
+    assert lookups == []
+
+
+def test_mcp_rtt_write_accepts_exact_utf8_byte_boundary(monkeypatch):
+    writes = []
+    device = SimpleNamespace(
+        rtt_write=lambda data: writes.append(data) or True,
+    )
+    monkeypatch.setattr(mcp_server, "_connected_device", lambda: device)
+    mcp = _Mcp()
+    mcp_server._register_rtt_tools(mcp)
+    data = "测" * 85 + "A"
+
+    assert len(data.encode("utf-8")) == 256
+    assert mcp.tools["rtt_write"](data) == {"sent": True}
+    assert writes == [data]
+
+
+def test_device_wait_for_rtt_matches_regex_metacharacters_literally():
+    device = _connected_device()
+    starts = []
+
+    def start():
+        starts.append("start")
+        device._rtt_session = SimpleNamespace(_running=True)
+
+    device.rtt_start = start
+    device.rtt_read = lambda _duration: "prefix[suffix"
+
+    assert device.wait_for_rtt("[", timeout=0.01) == "prefix[suffix"
+    assert starts == ["start"]
+
+    device.rtt_read = lambda _duration: "prefix(a+)+$suffix"
+    assert device.wait_for_rtt(
+        "(a+)+$", timeout=0.01, start_if_needed=False,
+    ) == "prefix(a+)+$suffix"
+
+
+def test_device_wait_for_rtt_rejects_non_text_before_start_or_connection():
+    device = Device()
+    starts = []
+    device.rtt_start = lambda: starts.append("start")
+
+    with pytest.raises(ValueError, match="pattern must be text or None"):
+        device.wait_for_rtt(b"ready")
+
+    assert starts == []
+
+
+def test_mcp_capture_rtt_validates_literal_pattern_bytes_before_device_lookup(
+    monkeypatch,
+):
+    mcp = _Mcp()
+    lookups = []
+    monkeypatch.setattr(
+        mcp_server,
+        "_connected_device",
+        lambda: lookups.append("device") or pytest.fail("unexpected device lookup"),
+    )
+    monkeypatch.setitem(mcp_server._holder, "quarantine", None)
+    mcp_server._register_rtt_tools(mcp)
+
+    for pattern in ("", "A" * 257, "测" * 86, "\ud800", b"ready"):
+        with pytest.raises(ValueError, match="pattern.*UTF-8"):
+            mcp.tools["capture_rtt"](duration=0.01, pattern=pattern)
+
+    assert lookups == []
+
+
+def test_mcp_capture_rtt_accepts_exact_utf8_pattern_boundary(monkeypatch):
+    captures = []
+    pattern = "测" * 85 + "A"
+    assert len(pattern.encode("utf-8")) == 256
+    device = SimpleNamespace(
+        wait_for_rtt=lambda value, **kwargs: captures.append(
+            (value, kwargs),
+        ) or f"prefix:{value}:suffix",
+    )
+    monkeypatch.setattr(mcp_server, "_connected_device", lambda: device)
+    mcp = _Mcp()
+    mcp_server._register_rtt_tools(mcp)
+
+    result = mcp.tools["capture_rtt"](duration=0.01, pattern=pattern)
+
+    assert result["matched"] is True
+    assert captures == [(
+        pattern,
+        {"timeout": 0.01, "start_if_needed": True},
+    )]
+
+
+def test_real_fastmcp_rejects_loose_rtt_integers_before_hardware_lock(
+    monkeypatch,
+):
+    fastmcp = pytest.importorskip("fastmcp")
+    from fastmcp.exceptions import ToolError
+
+    hardware_entries = []
+    device_lookups = []
+
+    @contextmanager
+    def observe_hardware(tool_name, *, recovery=False):
+        hardware_entries.append((tool_name, recovery))
+        yield
+
+    monkeypatch.setattr(mcp_server, "_hardware_operation", observe_hardware)
+    monkeypatch.setattr(
+        mcp_server,
+        "_connected_device",
+        lambda: device_lookups.append("device") or pytest.fail(
+            "unexpected device lookup",
+        ),
+    )
+    server = mcp_server.build_server()
+
+    async def exercise():
+        async with fastmcp.Client(server) as client:
+            invalid_calls = (
+                ("rtt_start", {"channel": True}),
+                ("rtt_start", {"channel": "1"}),
+                ("rtt_start", {"search_size": True}),
+                ("rtt_start", {"search_size": "1024"}),
+                ("systemview_start", {"channel": False}),
+                ("systemview_start", {"channel": "1"}),
+                ("systemview_start", {"search_size": False}),
+                ("systemview_start", {"search_size": "1024"}),
+            )
+            for tool_name, arguments in invalid_calls:
+                with pytest.raises(ToolError, match="valid integer"):
+                    await client.call_tool(tool_name, arguments)
+
+    asyncio.run(exercise())
+
+    assert hardware_entries == []
+    assert device_lookups == []
 
 
 def test_mcp_flush_limits_each_item_and_total_before_device_lookup(monkeypatch):

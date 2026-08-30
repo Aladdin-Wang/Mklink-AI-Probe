@@ -32,6 +32,13 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   **511 UTF-8 字节**。不得用循环 `read_ram` 绕过流边界。
 - **flush**：单批总数据最多 **12 KiB**、最多 **8 个地址项**。超额时按批串行，
   每批等待提示符；不得与 dump、VOFA、RTT 或 SystemView 并发。
+- **RTT/SystemView**：地址只允许省略或传目标已知可写 RAM 内的 4 字节对齐地址，
+  不得拼接 Pika 表达式；V4 通道为 **0~2**，搜索窗口为 **0~65536 字节**且不得
+  越出已知目标 RAM。让工具拒绝越界参数，不得改用
+  原始命令绕过，也不得对失败的启动循环重试。MCP `rtt_write` 单次最多 **256
+  UTF-8 字节**，超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分
+  绕过；输入不得包含或跨调用拼接探针保留串 `RTTView.stop()`。`capture_rtt` 的
+  `pattern` 是 1~256 UTF-8 字节的字面子串，不是正则表达式。
 - **MCP Timeout**：超时后只调用一次 `device_status`，随后结束旧会话并只执行一次
   `disconnect` → `connect` 恢复。任一步失败就停止并请用户重新拔插；禁止自动重试
   超时原调用，也禁止循环发送 stop、`reboot_probe` 或 `reboot()`。
