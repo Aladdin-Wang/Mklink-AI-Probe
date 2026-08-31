@@ -34,6 +34,7 @@ class SerialMonitor:
         logger: FileLogger | None = None,
         event_callback: Callable[[SerialEvent], None] | None = None,
         chunk_callback: Callable[[str, str, bytes, float], None] | None = None,
+        protocol_callback: Callable[[str, str, bytes, float], None] | None = None,
     ):
         self._port_configs = ports
         self._profile = profile
@@ -41,6 +42,7 @@ class SerialMonitor:
         self._logger = logger
         self._event_callback = event_callback
         self._chunk_callback = chunk_callback
+        self._protocol_callback = protocol_callback
 
         self._events: collections.deque[SerialEvent] = collections.deque(maxlen=10000)
         self._stop_event = threading.Event()
@@ -135,8 +137,9 @@ class SerialMonitor:
         """Send one in-memory file while exclusively consuming *port* RX bytes.
 
         The normal reader thread keeps ownership of the open serial port.
-        Protocol RX/TX bytes are hidden from ordinary terminal/log streams, and
-        framing plus auto-reply are paused so control bytes are consumed once.
+        Protocol RX/TX bytes use a separate trace callback instead of ordinary
+        terminal/log streams. Framing and auto-reply remain paused so control
+        bytes are consumed exactly once.
         """
         from mklink.serial._ymodem import YModemCancelled, YModemSender
 
@@ -173,6 +176,7 @@ class SerialMonitor:
                 if current is not serial_port or not current.is_open:
                     raise RuntimeError(f"serial port {port} closed during YMODEM transfer")
                 current.write(payload)
+            self._emit_protocol_chunk(port, "TX", payload, time.time())
 
         sender = YModemSender(
             read_protocol,
@@ -263,6 +267,20 @@ class SerialMonitor:
         except Exception:
             pass
 
+    def _emit_protocol_chunk(
+        self,
+        port: str,
+        direction: str,
+        data: bytes,
+        timestamp: float,
+    ) -> None:
+        if not data or self._protocol_callback is None:
+            return
+        try:
+            self._protocol_callback(port, direction, data, timestamp)
+        except Exception:
+            pass
+
     def _reader_loop(self, cfg: dict) -> None:
         port_name = cfg["port"]
         baudrate = cfg.get("baudrate", 115200)
@@ -299,6 +317,9 @@ class SerialMonitor:
                         protocol_queue = self._protocol_queues.get(port_name)
                         if protocol_queue is not None:
                             if data:
+                                self._emit_protocol_chunk(
+                                    port_name, "RX", data, time.time(),
+                                )
                                 # Keep the put inside the lock.  Transfer
                                 # teardown can now remove+drain atomically.
                                 protocol_queue.put(data)

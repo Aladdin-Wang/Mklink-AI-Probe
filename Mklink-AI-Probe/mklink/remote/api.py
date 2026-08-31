@@ -2604,6 +2604,10 @@ def create_app(
     async def serial_ymodem_status():
         return get_managers()["serial"].get_ymodem_status()
 
+    @app.get("/api/dash/serial/ymodem/trace")
+    async def serial_ymodem_trace(after: int = 0, limit: int = 128):
+        return get_managers()["serial"].get_ymodem_trace(after, limit)
+
     @app.post("/api/dash/serial/ymodem/cancel")
     async def serial_ymodem_cancel():
         return get_managers()["serial"].cancel_ymodem()

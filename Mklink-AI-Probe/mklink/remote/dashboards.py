@@ -2385,6 +2385,10 @@ class SerialStreamManager:
         self._ymodem_cancel: threading.Event | None = None
         self._ymodem_generation = 0
         self._ymodem_status: dict[str, Any] = self._idle_ymodem_status()
+        self._ymodem_trace_lock = threading.Lock()
+        self._ymodem_trace: deque[dict[str, Any]] = deque(maxlen=512)
+        self._ymodem_trace_seq = 0
+        self._ymodem_trace_transfer_id = 0
 
     @staticmethod
     def _idle_ymodem_status() -> dict[str, Any]:
@@ -2507,12 +2511,37 @@ class SerialStreamManager:
                 "data_base64": base64.b64encode(data).decode("ascii"),
             })
 
+        def _protocol_callback(
+            port: str,
+            direction: str,
+            data: bytes,
+            timestamp: float,
+        ):
+            if direction == "RX":
+                self._rx_count += 1
+                self._rx_bytes += len(data)
+            else:
+                self._tx_count += 1
+                self._tx_bytes += len(data)
+            with self._ymodem_trace_lock:
+                self._ymodem_trace_seq += 1
+                self._ymodem_trace.append({
+                    "seq": self._ymodem_trace_seq,
+                    "transfer_id": self._ymodem_trace_transfer_id,
+                    "timestamp": timestamp,
+                    "port": port,
+                    "direction": direction,
+                    "size": len(data),
+                    "hex": data.hex(" ").upper(),
+                })
+
         self._monitor = SerialMonitor(
             ports=ports,
             profile=profile,
             auto_reply_rules=auto_reply_rules,
             event_callback=_event_callback,
             chunk_callback=_chunk_callback,
+            protocol_callback=_protocol_callback,
         )
         self._monitor.start()
         self._running = True
@@ -2585,6 +2614,10 @@ class SerialStreamManager:
                 raise RuntimeError("a YMODEM transfer is already active")
             self._ymodem_generation += 1
             transfer_id = self._ymodem_generation
+            with self._ymodem_trace_lock:
+                self._ymodem_trace.clear()
+                self._ymodem_trace_seq = 0
+                self._ymodem_trace_transfer_id = transfer_id
             cancel_event = threading.Event()
             self._ymodem_cancel = cancel_event
             self._ymodem_status = {
@@ -2706,6 +2739,23 @@ class SerialStreamManager:
     def get_ymodem_status(self) -> dict[str, Any]:
         with self._ymodem_lock:
             return dict(self._ymodem_status)
+
+    def get_ymodem_trace(self, after: int = 0, limit: int = 128) -> dict[str, Any]:
+        """Return a bounded page of raw protocol traffic after *after*."""
+        after = max(0, int(after))
+        limit = max(1, min(int(limit), 256))
+        with self._ymodem_trace_lock:
+            retained = list(self._ymodem_trace)
+            oldest = retained[0]["seq"] if retained else self._ymodem_trace_seq + 1
+            entries = [item.copy() for item in retained if item["seq"] > after][:limit]
+            next_seq = entries[-1]["seq"] if entries else after
+            dropped = max(0, oldest - after - 1)
+            return {
+                "transfer_id": self._ymodem_trace_transfer_id,
+                "entries": entries,
+                "next_seq": next_seq,
+                "dropped": dropped,
+            }
 
     def get_status(self) -> dict:
         elapsed = max(time.time() - self._start_time, 1.0)

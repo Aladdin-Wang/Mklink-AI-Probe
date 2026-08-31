@@ -109,22 +109,21 @@
           :disabled="ymodemActive || ymodemStarting" @change="chooseYmodemFile"
         >
       </label>
-      <span class="ymodem-file-name" :title="ymodemFile?.name || ''">
-        {{ ymodemFile ? `${ymodemFile.name} · ${ymodemFile.size} B` : tr('未选择文件', 'No file selected') }}
-      </span>
       <button
-        v-if="!ymodemActive" data-testid="serial-ymodem-start" type="button" class="btn"
+        v-if="!ymodemActive" data-testid="serial-ymodem-start" type="button" class="btn btn-primary ymodem-start-button"
         :disabled="ymodemStarting || !ymodemFile || !transmitEnabled" @click="startYmodem"
       >{{ ymodemStarting ? tr('准备中…', 'Preparing…') : tr('发送文件', 'Send file') }}</button>
       <button
         v-else data-testid="serial-ymodem-cancel" type="button" class="btn btn-danger"
         :disabled="ymodemCancelling" @click="cancelYmodem"
       >{{ ymodemCancelling ? tr('取消中…', 'Cancelling…') : tr('取消', 'Cancel') }}</button>
+      <span class="ymodem-file-name" :title="ymodemFile?.name || ''">
+        {{ ymodemFile ? `${ymodemFile.name} · ${ymodemFile.size} B` : tr('未选择文件', 'No file selected') }}
+      </span>
       <progress v-if="ymodemStatus.transfer_id" :value="ymodemStatus.percent" max="100" />
       <span v-if="ymodemStatus.transfer_id" class="ymodem-progress">
         {{ ymodemStatus.percent }}% · {{ ymodemStatus.sent_bytes }}/{{ ymodemStatus.total_bytes }} B
       </span>
-      <small>{{ tr('先在终端发送 boot 命令，设备进入 Bootloader 后再发送文件。', 'Send boot in the terminal first, then send the file after the device enters its bootloader.') }}</small>
     </div>
 
     <VirtualLogPanel v-if="viewMode === 'log'" ref="logPanel" class="serial-log" />
@@ -187,6 +186,23 @@ interface YmodemStatus {
   error: string
 }
 
+interface YmodemTraceEntry {
+  seq: number
+  transfer_id: number
+  timestamp: number
+  port: string
+  direction: 'TX' | 'RX'
+  size: number
+  hex: string
+}
+
+interface YmodemTracePage {
+  transfer_id: number
+  entries: YmodemTraceEntry[]
+  next_seq: number
+  dropped: number
+}
+
 const idleYmodemStatus = (): YmodemStatus => ({
   transfer_id: 0, state: 'idle', active: false, phase: 'idle', port: '', filename: '',
   sent_bytes: 0, total_bytes: 0, percent: 0, block: 0, retries: 0, error: '',
@@ -234,6 +250,8 @@ let reportedPortError = ''
 let attachedMode: 'log' | 'terminal' | null = null
 let lastYmodemTerminalKey = ''
 let reportedYmodemFinal = 0
+let ymodemTraceCursor = 0
+let ymodemTraceTransferId = 0
 
 const currentPortStatus = computed(() => portStatuses.value[portName.value] || (running.value ? 'opening' : 'closed'))
 const validBaudrate = computed(() => {
@@ -310,7 +328,12 @@ function applyStatus(status: SerialStatus): void {
   running.value = status.running === true
   if (status.stats) stats.value = status.stats
   portStatuses.value = status.ports || {}
-  if (status.ymodem) applyYmodemStatus(status.ymodem)
+  if (status.ymodem) {
+    applyYmodemStatus(status.ymodem)
+    if (status.ymodem.active && ymodemTimer === null && !disposed) {
+      ymodemTimer = setTimeout(pollYmodemStatus, 0)
+    }
+  }
   const config = status.config?.[0]
   if (running.value && config) {
     if (typeof config.port === 'string') portName.value = config.port
@@ -363,6 +386,10 @@ function ymodemTerminalKey(status: YmodemStatus): string {
 }
 
 function applyYmodemStatus(status: YmodemStatus): void {
+  if (status.transfer_id && status.transfer_id !== ymodemTraceTransferId) {
+    ymodemTraceTransferId = status.transfer_id
+    ymodemTraceCursor = 0
+  }
   ymodemStatus.value = { ...status }
   const line = ymodemLine(status)
   const terminalKey = line ? ymodemTerminalKey(status) : ''
@@ -377,6 +404,42 @@ function applyYmodemStatus(status: YmodemStatus): void {
     else if (status.state === 'failed') toast.error(tr('YMODEM 传输失败：', 'YMODEM transfer failed: ') + status.error)
     else if (status.state === 'cancelled') toast.info(tr('YMODEM 传输已取消', 'YMODEM transfer cancelled'))
   }
+}
+
+function formatTraceTime(timestamp: number): string {
+  const date = new Date(timestamp * 1000)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}.${String(date.getMilliseconds()).padStart(3, '0')}`
+}
+
+function ymodemTraceText(entry: YmodemTraceEntry): string {
+  const bytes = entry.hex.trim().split(/\s+/).filter(Boolean)
+  const color = entry.direction === 'TX' ? '\u001b[36m' : '\u001b[32m'
+  const lines: string[] = []
+  for (let offset = 0; offset < bytes.length; offset += 32) {
+    const chunk = bytes.slice(offset, offset + 32).join(' ')
+    const heading = `[${formatTraceTime(entry.timestamp)} YMODEM ${entry.direction} ${entry.size} B +0x${offset.toString(16).toUpperCase().padStart(4, '0')}]`
+    lines.push(`${color}${heading}\u001b[0m ${chunk}`)
+  }
+  return `\r\n${lines.join('\r\n')}\r\n`
+}
+
+function applyYmodemTrace(page: YmodemTracePage): void {
+  if (page.transfer_id && page.transfer_id !== ymodemTraceTransferId) {
+    ymodemTraceTransferId = page.transfer_id
+    ymodemTraceCursor = 0
+  }
+  if (page.dropped > 0) {
+    terminalPanel.value?.write(tr(
+      `\r\n[YMODEM TRACE] ${page.dropped} 条早期记录已被覆盖。\r\n`,
+      `\r\n[YMODEM TRACE] ${page.dropped} earlier records were overwritten.\r\n`,
+    ))
+  }
+  for (const entry of page.entries || []) {
+    if (entry.seq <= ymodemTraceCursor) continue
+    terminalPanel.value?.write(ymodemTraceText(entry))
+    ymodemTraceCursor = entry.seq
+  }
+  ymodemTraceCursor = Math.max(ymodemTraceCursor, page.next_seq || 0)
 }
 
 function chooseYmodemFile(event: Event): void {
@@ -409,12 +472,18 @@ async function pollYmodemStatus(): Promise<void> {
     clearTimeout(ymodemTimer)
     ymodemTimer = null
   }
+  let tracePending = false
   try {
     applyYmodemStatus(await requestJson('/api/dash/serial/ymodem/status'))
+    const tracePage = await requestJson(
+      `/api/dash/serial/ymodem/trace?after=${ymodemTraceCursor}&limit=128`,
+    ) as YmodemTracePage
+    applyYmodemTrace(tracePage)
+    tracePending = tracePage.entries.length >= 128
   } catch (caught) {
     runtimeError.value = caught instanceof Error ? caught.message : String(caught)
   }
-  if (!disposed && (ymodemStatus.value.active || ymodemCancelling.value)) {
+  if (!disposed && (ymodemStatus.value.active || ymodemCancelling.value || tracePending)) {
     ymodemTimer = setTimeout(pollYmodemStatus, 150)
   }
 }
@@ -424,6 +493,8 @@ async function startYmodem(): Promise<void> {
   if (!file || !transmitEnabled.value || ymodemStarting.value) return
   ymodemStarting.value = true
   runtimeError.value = ''
+  ymodemTraceCursor = 0
+  ymodemTraceTransferId = 0
   if (viewMode.value !== 'terminal') setViewMode('terminal')
   await nextTick()
   terminalPanel.value?.activate()
@@ -649,7 +720,7 @@ onUnmounted(() => {
 .serial-config-row input { width: 90px; }
 .serial-config-row label:first-child select { width: 180px; }
 .serial-toolbar { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 8px; }
-.ymodem-bar { display: grid; grid-template-columns:auto auto minmax(120px,1fr) auto auto auto; align-items:center; gap:7px; margin-top:8px; padding:7px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:11px; }
+.ymodem-bar { display: grid; grid-template-columns:auto auto auto minmax(120px,1fr) auto auto; align-items:center; gap:7px; margin-top:8px; padding:7px 8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); font-size:11px; }
 .ymodem-bar strong { color:var(--accent); letter-spacing:.04em; }
 .ymodem-file-button { position:relative; overflow:hidden; padding:5px 8px; border:1px solid var(--border); border-radius:4px; cursor:pointer; white-space:nowrap; }
 .ymodem-file-button input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
@@ -657,7 +728,6 @@ onUnmounted(() => {
 .ymodem-file-name { min-width:0; overflow:hidden; color:var(--muted); text-overflow:ellipsis; white-space:nowrap; }
 .ymodem-bar progress { width:90px; }
 .ymodem-progress { color:var(--muted); font-family:var(--font-mono); white-space:nowrap; }
-.ymodem-bar small { grid-column:1 / -1; color:var(--muted); }
 .view-mode-switch { display: inline-flex; flex: 0 0 auto; overflow: hidden; border: 1px solid var(--border); border-radius: 4px; }
 .view-mode-switch button { display: inline-flex; height: 26px; align-items: center; gap: 5px; padding: 0 8px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }
 .view-mode-switch button + button { border-left: 1px solid var(--border); }

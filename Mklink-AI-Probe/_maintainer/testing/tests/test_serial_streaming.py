@@ -431,8 +431,9 @@ class _YModemMonitor:
     mode = "complete"
     entered = threading.Event()
 
-    def __init__(self, **_kwargs):
+    def __init__(self, **kwargs):
         self.port_status = {"TEST": "open"}
+        self.protocol_callback = kwargs["protocol_callback"]
 
     def start(self):
         pass
@@ -456,6 +457,8 @@ class _YModemMonitor:
         progress_callback,
     ):
         type(self).entered.set()
+        self.protocol_callback("TEST", "RX", b"C", 100.0)
+        self.protocol_callback("TEST", "TX", b"PACKET", 100.1)
         progress_callback(SimpleNamespace(
             phase="transferring",
             sent_bytes=min(1024, len(data)),
@@ -519,6 +522,32 @@ def test_serial_stream_manager_tracks_ymodem_progress_and_completion(monkeypatch
     assert completed["sent_bytes"] == len(b"firmware payload")
     assert completed["percent"] == 100
     assert manager.send("TEST", b"next command") is True
+    manager.stop()
+
+
+def test_serial_stream_manager_pages_raw_ymodem_protocol_trace(monkeypatch):
+    manager = _ymodem_manager(monkeypatch, "complete")
+    manager.start_ymodem("TEST", b"firmware", "app.bin")
+    _wait_until(lambda: manager.get_ymodem_status()["state"] == "completed")
+
+    first = manager.get_ymodem_trace(after=0, limit=1)
+    assert first == {
+        "transfer_id": 1,
+        "entries": [{
+            "seq": 1,
+            "transfer_id": 1,
+            "timestamp": 100.0,
+            "port": "TEST",
+            "direction": "RX",
+            "size": 1,
+            "hex": "43",
+        }],
+        "next_seq": 1,
+        "dropped": 0,
+    }
+    second = manager.get_ymodem_trace(after=first["next_seq"])
+    assert [entry["direction"] for entry in second["entries"]] == ["TX"]
+    assert second["entries"][0]["hex"] == "50 41 43 4B 45 54"
     manager.stop()
 
 

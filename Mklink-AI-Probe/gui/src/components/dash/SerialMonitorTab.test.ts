@@ -305,6 +305,17 @@ describe('SerialMonitorTab', () => {
           state: 'completed', active: false, phase: 'completed', sent_bytes: 8, percent: 100,
         }))
       }
+      if (url.includes('/api/dash/serial/ymodem/trace?')) {
+        return jsonResponse({
+          transfer_id: 1,
+          entries: [
+            { seq: 1, transfer_id: 1, timestamp: 1, port: 'TEST_UART', direction: 'RX', size: 1, hex: '43' },
+            { seq: 2, transfer_id: 1, timestamp: 1.1, port: 'TEST_UART', direction: 'TX', size: 4, hex: '01 02 A0 FF' },
+          ],
+          next_seq: 2,
+          dropped: 0,
+        })
+      }
       if (url.endsWith('/api/dash/serial/send')) return jsonResponse({ ok: true })
       throw new Error(`Unexpected request: ${url} ${init?.method || 'GET'}`)
     })
@@ -338,6 +349,9 @@ describe('SerialMonitorTab', () => {
     expect(mocks.terminalWrites.join('')).not.toContain('[YMODEM] \u6b63\u5728\u4f20\u8f93 55%')
     expect(mocks.terminalWrites.join('')).toContain('[YMODEM] \u6b63\u5728\u4f20\u8f93 60%\uff086/8 B\uff09')
     expect(mocks.terminalWrites.join('')).toContain('[YMODEM] \u4f20\u8f93\u5b8c\u6210')
+    expect(mocks.terminalWrites.join('')).toContain('YMODEM RX 1 B +0x0000')
+    expect(mocks.terminalWrites.join('')).toContain('YMODEM TX 4 B +0x0000')
+    expect(mocks.terminalWrites.join('')).toContain('01 02 A0 FF')
     expect(mocks.toastSuccess).toHaveBeenCalledTimes(1)
     expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).props('inputEnabled')).toBe(true)
     wrapper.unmount()
@@ -358,12 +372,16 @@ describe('SerialMonitorTab', () => {
         return jsonResponse(current)
       }
       if (url.endsWith('/api/dash/serial/ymodem/status')) {
+        if (current.phase !== 'cancelling') return jsonResponse(current)
         current = ymodemStatus({
           state: 'cancelled', active: false, phase: 'cancelled',
           sent_bytes: 1024, total_bytes: 4096, percent: 25, block: 1,
           error: 'cancelled by user',
         })
         return jsonResponse(current)
+      }
+      if (url.includes('/api/dash/serial/ymodem/trace?')) {
+        return jsonResponse({ transfer_id: 1, entries: [], next_seq: 0, dropped: 0 })
       }
       throw new Error(`Unexpected request: ${url}`)
     })
