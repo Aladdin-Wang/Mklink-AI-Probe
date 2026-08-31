@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-31T16:37:02+08:00`
-- 分支：`codex/v0.1.9-development → master`
-- HEAD：`0.1.9 发布基线；精确提交、标签和 Release 状态以 Git 为准。`
-- 远端 HEAD：`0.1.9 已获维护者授权合并并正式发布。`
+- 更新时间：`2026-08-31T16:50:13+08:00`
+- 分支：`master`
+- HEAD：`v0.1.9 标签到 1b2f177；发布后的交接精简提交位于 master。`
+- 远端 HEAD：`GitHub origin/master 已同步；0.1.9 应用和固件公开索引已发布。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：合并 0.1.9 到 master，发布应用、普通用户 Skill、Site Agent，并独立发布新增 V3.3.8/V4.3.9 固件。
-- 状态：`v0.1.9-release-authorized`
+- 当前任务：0.1.9 应用、普通用户 Skill、Site Agent 与新增 V3.3.8/V4.3.9 固件已发布，等待下一项小步维护任务。
+- 状态：`v0.1.9-published`
 
 ## 里程碑
 
@@ -24,7 +24,7 @@
 - **STM32F103RE 真机 HIL**：烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
 - **自动化与构建**：GUI 626 项通过；Python 1675 passed、12 failed、1 skipped，12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建和 NSIS 成功。
-- **发布运行时**：release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；per-machine 安装仍需维护者通过 UAC 操作。
+- **发布运行时**：release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；GitHub/Gitee v0.1.9 均包含完整资产，应用与固件公开索引字节一致。
 
 ## 架构决策
 
@@ -43,9 +43,8 @@
 
 ## 下一动作
 
-1. 核对 v0.1.9 标签、GitHub/Gitee Release、updates/latest.json 和 firmware/latest.json 均已公开且哈希一致。
-2. 后续问题继续在下一预发布分支小步修复、验证并及时推送。
-3. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
+1. 后续问题在下一预发布分支持续小步修复、验证并及时推送。
+2. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
 
 ## 已知限制
 

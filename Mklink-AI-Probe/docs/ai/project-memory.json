@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-31T16:37:02+08:00",
+  "updated_at": "2026-08-31T16:50:13+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/v0.1.9-development → master",
-    "head": "0.1.9 发布基线；精确提交、标签和 Release 状态以 Git 为准。",
-    "remote_head": "0.1.9 已获维护者授权合并并正式发布。",
+    "branch": "master",
+    "head": "v0.1.9 标签到 1b2f177；发布后的交接精简提交位于 master。",
+    "remote_head": "GitHub origin/master 已同步；0.1.9 应用和固件公开索引已发布。",
     "working_tree": "发布前应保持干净；构建产物仅位于仓库外层 .build。"
   },
   "mission": {
@@ -14,9 +14,9 @@
     "maintenance": "交接只保留当前基线、关键验证、长期约束和未完成事项；历史过程从 Git 与验证报告查询。"
   },
   "current_session": {
-    "status": "v0.1.9-release-authorized",
-    "current_task": "合并 0.1.9 到 master，发布应用、普通用户 Skill、Site Agent，并独立发布新增 V3.3.8/V4.3.9 固件。",
-    "release": "STM32F103RE 发布前 HIL 和候选资产已完成；正式发布由维护者脚本校验、上传，并最后更新公开索引。"
+    "status": "v0.1.9-published",
+    "current_task": "0.1.9 应用、普通用户 Skill、Site Agent 与新增 V3.3.8/V4.3.9 固件已发布，等待下一项小步维护任务。",
+    "release": "GitHub/Gitee v0.1.9 资产、updates/latest.json 和 firmware/latest.json 已回读校验一致。"
   },
   "milestones": [
     {
@@ -55,7 +55,7 @@
     },
     {
       "area": "发布运行时",
-      "result": "release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；per-machine 安装仍需维护者通过 UAC 操作。"
+      "result": "release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；GitHub/Gitee v0.1.9 均包含完整资产，应用与固件公开索引字节一致。"
     }
   ],
   "decisions": [
@@ -78,8 +78,7 @@
     "V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。"
   ],
   "next_actions": [
-    "核对 v0.1.9 标签、GitHub/Gitee Release、updates/latest.json 和 firmware/latest.json 均已公开且哈希一致。",
-    "后续问题继续在下一预发布分支小步修复、验证并及时推送。",
+    "后续问题在下一预发布分支持续小步修复、验证并及时推送。",
     "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。"
   ],
   "continuation_protocol": [
