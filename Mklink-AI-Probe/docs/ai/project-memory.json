@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-31T03:24:00+08:00",
+  "updated_at": "2026-08-31T09:51:28+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.1.9-development",
-    "head": "0.1.9 ARM 真机回归和 pyOCD 冷启动竞态修复已包含至 b29b221；本交接与最终 WebGUI 资源提交随后追加，精确提交号以 git rev-parse HEAD 为准。",
+    "head": "v0.1.9 快速启动协议、更新记录、NSIS 候选包和内置 Web 资源已包含至 283671e；本交接提交随后追加，精确提交号以 git rev-parse HEAD 为准。",
     "remote_head": "每项修复独立提交并立即推送 origin/codex/v0.1.9-development；不改 master、标签或正式发布指针。",
-    "working_tree": "功能修复、浏览器/Tauri 真机闭环、AI 边界回归和 pyOCD 全新进程冷启动复测均已完成；本交接提交、最终 WebGUI 构建与测试运行目录清理后，从最终 HEAD 强制同步用户 Skill。"
+    "working_tree": "U 盘快速页、完整用户 Skill、标准 NSIS 和本机 0.1.8→0.1.9 覆盖安装均已闭环；交接提交推送后保持工作树与远端分支一致。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前有效基线、验证证据、限制和后续动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.9-arm-hil-baseline-complete",
-    "current_task": "继续在 0.1.9 预发布分支小步修复 MKLink-AI-Probe 问题；每项复现、自动化回归、真机闭环后独立提交并立即推送。",
-    "release": "0.1.9 尚未发布；正式应用 0.1.8、标签和签名发布状态不变。"
+    "status": "v0.1.9-installer-candidate-installed",
+    "current_task": "维护者复测已安装的 0.1.9 候选版本；后续问题继续在预发布分支按复现、最小修复、回归、真机闭环、独立提交和立即推送处理。",
+    "release": "0.1.9 标准 NSIS 候选包已生成并覆盖本机 0.1.8，尚未更新正式标签或发布指针。"
   },
   "milestones": [
     {
@@ -27,7 +27,7 @@
     {
       "name": "安装、WebGUI 与符号加载修复",
       "status": "complete",
-      "notes": "修复覆盖升级丢程序/桌面图标、WebGUI 18% MIME 缓存、AXF 压缩 RW 段遗漏全局对象、GUI 不再要求 MAP；board_info_data 已在真实 GD32 AXF 中恢复。"
+      "notes": "修复覆盖升级丢程序/桌面图标、WebGUI 18% MIME 缓存、AXF 压缩 RW 段遗漏全局对象和 GUI MAP 依赖；U 盘 HTML 继续使用跨平台 Skill Web handler，Windows 浏览器友好名称改为 MKLink Web GUI。"
     },
     {
       "name": "SuperWatch 性能与历史交互",
@@ -56,8 +56,8 @@
       "result": "1661 passed、12 failed、1 skipped。12 项均为 _maintainer/testing/tests/test_remote_review_repairs.py 创建目录符号链接时触发 WinError 1314，属于当前 Windows 账户缺少 symlink 权限；其余功能测试通过，不能把整套门禁表述为全绿。"
     },
     {
-      "area": "GUI、Rust 与桌面构建",
-      "result": "GUI 全量 58 文件/622 项通过；cargo check --tests 通过；Tauri --no-bundle 生产构建通过并生成 .build/cache/cargo/release/mklink-ai-probe.exe。cargo test --lib 已完成编译，但测试进程在本机以 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND 退出；cargo fmt --check 仅命中既存 lib.rs/usb_port_naming.rs 格式差异。"
+      "area": "GUI、标准 NSIS、Skill 与覆盖安装",
+      "result": "GUI 全量 58 文件/622 项通过；Web 入口与安装钩子 76 项、Skill 发布/更新/上下文 64 项通过。标准 NSIS 0.1.9 和 updater 签名生成成功，在仅含 Windows 系统目录的 PATH 下将本机 0.1.8 覆盖为 0.1.9，安装位置保持 D:\\Program Files，公共桌面和开始菜单快捷方式存在。已安装应用 /api/health=ok，探针枚举请求成功且发现 1 个设备；进程树只有 Tauri 与内置 sidecar，无 Python，正常关闭后 sidecar 和 8765 均释放。"
     },
     {
       "area": "器件联想与烧录算法浏览器闭环",
@@ -87,7 +87,7 @@
   "decisions": [
     "0.1.9 只在 codex/v0.1.9-development 持续维护；每个问题独立提交并立即推送，不再创建临时修复分支，不改 master、标签和正式发布指针。",
     "维护构建、测试、日志、临时脚本和可复用缓存统一放在仓库 .build，并经 scripts/build_workspace.ps1 运行；禁止向 C 盘或工程外散落中间文件，也不上传 .build。目标测试工程的分析材料只放该工程 .build。",
-    "普通用户 Skill 只携带运行时白名单、安全边界和按需参考，不触发源码维护、构建或发布流程；用户中间文件默认放目标工程 .mklink。安装用户包时必须从 sanitized archive 同步，不能直接复制维护仓库。",
+    "普通用户 Skill 只携带运行时白名单、安全边界和按需参考，不触发源码维护、构建或发布流程；U 盘 HTML 固定使用 mklink-ai-probe:// 调用各平台 Skill Web handler，不绑定 Windows Tauri。Windows 注册 MKLink Web GUI 友好名称，用户中间文件默认放目标工程 .mklink，Skill 必须从 sanitized archive 同步。",
     "GUI 工程文件只要求 AXF/ELF/OUT，MAP 仅在旧 API/CLI 后备兼容。Keil 压缩 RW 段按受 section 边界约束的 OBJECT 执行地址扩展，不能用压缩 sh_size 过滤 RAM 对象。",
     "器件联想用当前可见搜索词返回候选，已选器件用独立精确查询保持稳定；选择后必须展示实际 FLM 名称和地址范围。Pack 只规范化 staging PDSC，安装/导入成功后先刷新后端 catalog 再刷新 GUI。生产代码禁止直接导入 pyOCD，所有惰性首次导入必须经过同一进程级 RLock，不能按模块分锁。",
     "SuperWatch 连续采样固定走 dump_memory；地址块只合并连续/重叠区域，最多 15 region。后端按预编译字段直接解码，512 样本/64KiB/20ms 联合批量；完整历史只存 Worker，暂停/停止时按可见区间取包络。",
@@ -106,16 +106,14 @@
     "cargo test --lib 在本机编译成功但测试进程以 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND 退出；cargo check --tests 和 Tauri 生产构建通过，仍需在干净 Windows 构建机定位缺失入口。",
     "V4.3.8 Pika 文本 API 的 33 参数边界会失去响应；即使固件帧可容纳 16 region，Skill/CLI/MCP 仍固定最多 15 region，且与堆大小无关。",
     "V4 固件 py_rttview.c 仍未校验 RTT_wChannel；MaxNumUpBuffers 被截为3后用于计算 Down 表偏移；流式热路径重复读取 Down descriptor 后无零尺寸、offset<size、目标 RAM 范围校验，存在越界和 TOCTOU 风险。宿主已防护可判定输入，但不能替代固件修复。",
-    "正式 0.1.9 安装包尚未完成 Authenticode/驱动签名、UAC、跨账号升级和 0.1.7/0.1.8 实包升级验收；当前仅完成源码、隔离 NSIS 夹具和无 bundle Tauri 构建。",
+    "0.1.9 NSIS 候选包尚未做 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；本机 0.1.8→0.1.9 覆盖安装、快捷方式恢复、内置 sidecar 和协议友好名称已通过。",
     "Modbus/RS485 本轮按用户要求未做总线真机回归；VCC 输出也未测试，任何供电切换仍需明确电压授权。",
-    "V4 + STM32H743 连续 16×float 当前约 9.54k samples/s；100us 请求中位周期可达 100us，但不能保证稳定 10kHz，更不能满足 16 变量 20kHz。",
-    "G:\\mklink_hil_rtthread.bin 与 G:\\python\\mklink_hil_stm32f103.py 是探针测试临时文件；自动清理受工具策略限制，需维护者在确认无用后手动删除。"
+    "V4 + STM32H743 连续 16×float 当前约 9.54k samples/s；100us 请求中位周期可达 100us，但不能保证稳定 10kHz，更不能满足 16 变量 20kHz。"
   ],
   "next_actions": [
-    "保持最终修复后的源码 WebGUI 打开，供维护者继续复测器件联想、烧录算法、Pack 刷新、串口 YMODEM 和其他 0.1.9 功能。",
-    "继续接收下一个 0.1.9 上位机问题，按复现、最小修复、自动化回归、真实浏览器/真机闭环、独立提交和立即推送的节奏处理。",
-    "由维护者手动删除探针盘 G:\\mklink_hil_rtthread.bin 和 G:\\python\\mklink_hil_stm32f103.py；下载器固件修改仍由维护者自行提交。",
-    "后续单独修复 V4 RTT 固件通道/Down 表/descriptor 校验问题，并按同一 STM32F103RE 夹具复跑 REST 与 MCP HIL。",
+    "保持已安装的 0.1.9 桌面上位机可供维护者复测，并由维护者双击 H:\\MKLink Web GUI.html 目视确认浏览器提示名称。",
+    "继续接收下一个 0.1.9 上位机问题，按复现、最小修复、自动化回归、真实浏览器/真机闭环、独立提交和立即推送处理。",
+    "后续单独修复 V4 RTT 固件通道索引、Down 表偏移和 descriptor 一致性问题，并按 STM32F103RE 夹具复跑 REST 与 MCP HIL。",
     "HPM 系列功能梳理、跨固件仓库改造和官方手册重写留作后续小步任务，不混入当前 ARM 0.1.9 基线。"
   ],
   "continuation_protocol": [
