@@ -23,6 +23,8 @@ SERIAL_RX_BYTES = 0x01
 SERIAL_TX_BYTES = 0x02
 SUPERWATCH_SAMPLE_MAJOR_FLOAT32 = 0x01
 SUPERWATCH_METADATA_JSON = 0x02
+# Float64 sample times (milliseconds), then sample-major Float32 values.
+SUPERWATCH_TIMESTAMPED_FLOAT32 = 0x03
 
 RTT_LINE_RECORD = struct.Struct("<QBI")
 RTT_LEVELS = {"raw": 0, "data": 1, "warning": 2, "error": 3}
