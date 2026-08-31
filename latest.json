@@ -1,0 +1,20 @@
+{
+  "version": "0.1.9",
+  "notes": "\u6b63\u5f0f\u53d1\u5e03 0.1.9\uff1a\u4fee\u590d\u81ea\u52a8\u5347\u7ea7\u3001WebGUI \u542f\u52a8\u3001AXF \u7b26\u53f7\u4e0e Pack \u5bfc\u5165\u95ee\u9898\uff1b\u4f18\u5316 SuperWatch \u6027\u80fd\u548c\u5386\u53f2\u67e5\u770b\uff1b\u65b0\u589e\u82af\u7247\u8054\u60f3\u3001\u70e7\u5f55\u7b97\u6cd5\u5c55\u793a\u3001\u4e32\u53e3 YMODEM\u3001\u4e13\u4e1a Modbus \u5de5\u4f5c\u53f0\uff1b\u5b8c\u5584 AI Skill/MCP \u5b89\u5168\u8fb9\u754c\u3001\u5feb\u6377\u952e\u548c\u73b0\u573a Agent\u3002",
+  "pub_date": "2026-08-31T08:45:08Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWkJ5dmZ4MnVLVVRic1lPMUUvVSt5MG1Pcks2UHVJdEtGZDFCalZVdGc3NUhKYjFPb3BsR2pweWZBazJXZlZPYklXSEhWQzdPMnVlTUUyOUNaMVFPOVBkUmNRN2FScUFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MTY1Njg2CWZpbGU6TWtsaW5rIEFJIFByb2JlXzAuMS45X3g2NC1zZXR1cC5leGUKR20xU2JMRDF3M0FkeWNZT0xndXM0OEt4MGsxZUJaWFVZa2hpdWxFT0UxZnFDZVN2UWNuNkkxR2dVMGNOdkZsRWV5MGJvN2FOYkpOWStXdVoyN3hBRFE9PQo=",
+      "url": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/v0.1.9/Mklink-AI-Probe-v0.1.9-x64-Setup.exe",
+      "sha256": "a14e139a7d7c7362ecbd0392d3afe3adb5aa60406dffcf2e58e3f311d9285bce",
+      "size": 75290450
+    }
+  },
+  "skill": {
+    "version": "0.1.9",
+    "url": "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/releases/download/v0.1.9/Mklink-AI-Probe-v0.1.9-Skill.zip",
+    "sha256": "31c889a127af211a637d4bf7db0af069460fd79f62b077fae244f8306f82e3c8",
+    "size": 2489491,
+    "source_commit": "1b2f1771174f1763a8ce1581a7232d583c9e878c"
+  }
+}
