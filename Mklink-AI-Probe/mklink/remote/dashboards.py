@@ -2751,13 +2751,14 @@ class SerialStreamManager:
 # ---------------------------------------------------------------------------
 
 class ModbusStreamManager:
-    """Manages Modbus register polling with SSE output."""
+    """Own one serialized Modbus session and publish workbench events."""
 
     def __init__(self):
         self._bridge = AsyncBridge()
         self._thread: threading.Thread | None = None
         self._running = False
         self._client = None
+        self._worker = None
         self._slave: int = 1
         self._specs: list = []
         self._interval: float = 1.0
@@ -2765,13 +2766,30 @@ class ModbusStreamManager:
         self._history: list[dict] = []
         self._max_history = 500
         self._latest: dict = {}
+        self._connection: dict[str, Any] = {}
+        self._transaction_id = 0
+        self._event_lock = threading.Lock()
+        self._loop_thread: threading.Thread | None = None
+        self._loop_stop = threading.Event()
+        self._loop_status: dict[str, Any] = {
+            "running": False,
+            "completed": 0,
+            "requested": 0,
+            "errors": 0,
+        }
 
     @property
     def running(self) -> bool:
         return self._running
 
-    def start(self, client, slave: int, registers: list[dict] | None = None,
-              interval: float = 1.0) -> None:
+    def start(
+        self,
+        client,
+        slave: int,
+        registers: list[dict] | None = None,
+        interval: float = 1.0,
+        connection: dict[str, Any] | None = None,
+    ) -> None:
         """Start Modbus register polling.
 
         Args:
@@ -2783,13 +2801,26 @@ class ModbusStreamManager:
         if self._running:
             return
 
+        from mklink.modbus._session import ModbusWorker
+
+        self._bridge = AsyncBridge()
         self._client = client
+        self._worker = ModbusWorker(client, slave)
         self._slave = slave
         self._interval = interval
         self._stop_event.clear()
+        self._loop_stop.clear()
         self._latest = {}
+        self._history = []
+        self._connection = dict(connection or {})
+        self._loop_status = {
+            "running": False,
+            "completed": 0,
+            "requested": 0,
+            "errors": 0,
+        }
 
-        if registers:
+        if registers is not None:
             from mklink.modbus._format import RegisterSpec
             self._specs = [
                 RegisterSpec(
@@ -2803,7 +2834,11 @@ class ModbusStreamManager:
             self._specs = [RegisterSpec(addr=i, type="uint16", name=f"R{i}")
                            for i in range(10)]
 
+        self._worker.start()
         self._running = True
+
+        if not self._specs:
+            return
 
         def _poll():
             from mklink.modbus._format import registers_to_values
@@ -2818,8 +2853,8 @@ class ModbusStreamManager:
                             start_addr = group[0].addr
                             count = sum(s.reg_count for s in group)
                             n = min(count, 125)
-                            regs = self._client.read_holding_registers(
-                                start_addr, n, self._slave
+                            regs = self._worker.execute(
+                                3, start_addr, quantity=n
                             )
                             for spec in group:
                                 offset = spec.addr - start_addr
@@ -2853,34 +2888,170 @@ class ModbusStreamManager:
         self._thread.start()
 
     def stop(self) -> None:
+        self.stop_loop()
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=5)
+        if self._worker:
+            self._worker.stop()
         self._running = False
         if self._client:
             try:
                 self._client.close()
             except Exception:
                 pass
+        self._worker = None
+        self._client = None
+        self._bridge.put({"event": "stopped"})
+        self._bridge.stop()
+
+    def trace_packet(self, sending: bool, data: bytes) -> bytes:
+        """pymodbus trace callback; publish complete TX/RX RTU frames."""
+        from mklink.modbus._session import frame_crc_ok, rtu_frame_length
+
+        payload = bytes(data)
+        expected_length = rtu_frame_length(sending, payload)
+        # The pymodbus receive trace can report an accumulating partial
+        # buffer before it reports the complete RTU frame.  Do not turn that
+        # normal transport behavior into a false CRC error in the workbench.
+        if expected_length is not None and len(payload) < expected_length:
+            return data
+        complete = expected_length is not None and len(payload) == expected_length
+        event = {
+            "event": "frame",
+            "direction": "tx" if sending else "rx",
+            "timestamp": time.time(),
+            "size": len(payload),
+            "hex": payload.hex(" ").upper(),
+            "complete": complete,
+            "crc_ok": frame_crc_ok(payload) if complete else None,
+        }
+        self._record_event(event)
+        return data
+
+    def _record_event(self, event: dict[str, Any]) -> None:
+        with self._event_lock:
+            self._history.append(event)
+            if len(self._history) > self._max_history:
+                del self._history[: len(self._history) - self._max_history]
+        self._bridge.put(event)
+
+    def transaction(
+        self,
+        fc: int,
+        start: int,
+        *,
+        quantity: int | None = None,
+        values: list[int | bool] | None = None,
+    ) -> dict[str, Any]:
+        if not self._worker or not self._running:
+            raise RuntimeError("Modbus not connected")
+        started = time.perf_counter()
+        result_values = self._worker.execute(
+            fc, start, quantity=quantity, values=values
+        )
+        with self._event_lock:
+            self._transaction_id += 1
+            transaction_id = self._transaction_id
+        result = {
+            "event": "transaction",
+            "id": transaction_id,
+            "timestamp": time.time(),
+            "slave": self._slave,
+            "fc": fc,
+            "start": start,
+            "quantity": quantity if quantity is not None else len(result_values),
+            "values": result_values,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+            "ok": True,
+        }
+        self._latest = result
+        self._record_event(result)
+        return result
+
+    def start_loop(
+        self,
+        fc: int,
+        start: int,
+        *,
+        quantity: int | None = None,
+        values: list[int | bool] | None = None,
+        interval: float = 1.0,
+        count: int = 0,
+    ) -> dict[str, Any]:
+        if not self._running:
+            raise RuntimeError("Modbus not connected")
+        if self._loop_status.get("running"):
+            raise RuntimeError("A Modbus loop is already running")
+        if not 0.02 <= float(interval) <= 3600.0:
+            raise ValueError("Loop interval must be in the range 0.02..3600 seconds")
+        if isinstance(count, bool) or not 0 <= int(count) <= 100000:
+            raise ValueError("Loop count must be in the range 0..100000")
+
+        self._loop_stop.clear()
+        self._loop_status = {
+            "running": True,
+            "completed": 0,
+            "requested": int(count),
+            "errors": 0,
+            "interval": float(interval),
+            "fc": int(fc),
+            "start": int(start),
+        }
+
+        def run_loop() -> None:
+            next_due = time.monotonic()
+            try:
+                while not self._loop_stop.is_set():
+                    if count and self._loop_status["completed"] >= count:
+                        break
+                    try:
+                        self.transaction(
+                            fc, start, quantity=quantity, values=values
+                        )
+                    except Exception as error:
+                        self._loop_status["errors"] += 1
+                        self._record_event(
+                            {
+                                "event": "error",
+                                "scope": "loop",
+                                "timestamp": time.time(),
+                                "message": str(error),
+                            }
+                        )
+                    finally:
+                        self._loop_status["completed"] += 1
+                    next_due += float(interval)
+                    wait_time = max(0.0, next_due - time.monotonic())
+                    if self._loop_stop.wait(wait_time):
+                        break
+            finally:
+                self._loop_status["running"] = False
+                self._record_event(
+                    {"event": "loop", "status": "stopped", **self._loop_status}
+                )
+
+        self._loop_thread = threading.Thread(
+            target=run_loop, name="mklink-modbus-loop", daemon=True
+        )
+        self._loop_thread.start()
+        self._record_event({"event": "loop", "status": "started", **self._loop_status})
+        return dict(self._loop_status)
+
+    def stop_loop(self) -> dict[str, Any]:
+        self._loop_stop.set()
+        thread = self._loop_thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=3.0)
+        self._loop_status["running"] = False
+        self._loop_thread = None
+        return dict(self._loop_status)
 
     def write_register(self, addr: int, value: int) -> dict:
-        if not self._client:
-            raise RuntimeError("Modbus not connected")
-        self._client.write_register(addr, value, self._slave)
-        return {"addr": addr, "value": value, "ok": True}
+        return self.transaction(6, addr, values=[value])
 
     def read_debug(self, fc: int, start: int, quantity: int) -> list:
-        if not self._client:
-            raise RuntimeError("Modbus not connected")
-        if fc == 3:
-            return self._client.read_holding_registers(start, quantity, self._slave)
-        elif fc == 4:
-            return self._client.read_input_registers(start, quantity, self._slave)
-        elif fc == 1:
-            return self._client.read_coils(start, quantity, self._slave)
-        elif fc == 2:
-            return self._client.read_discrete_inputs(start, quantity, self._slave)
-        raise ValueError(f"Unsupported FC: {fc}")
+        return self.transaction(fc, start, quantity=quantity)["values"]
 
     def get_status(self) -> dict:
         return {
@@ -2890,6 +3061,8 @@ class ModbusStreamManager:
             "register_count": len(self._specs),
             "clients": self._bridge.client_count,
             "latest": self._latest,
+            "connection": self._connection,
+            "loop": dict(self._loop_status),
         }
 
     async def sse_generator(self):

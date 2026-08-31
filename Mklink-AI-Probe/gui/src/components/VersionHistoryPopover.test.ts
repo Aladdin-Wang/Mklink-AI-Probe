@@ -26,6 +26,7 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('新增启动画面')
     expect(panel.text()).toContain('完善在线烧录、实时采集、串口升级与 AI 安全边界')
     expect(panel.text()).toContain('YMODEM 文件传输')
+    expect(panel.text()).toContain('Modbus RTU 工作台')
     expect(panel.text()).toContain('U 盘快速启动入口以 MKLink Web 上位机名称启动')
     expect(panel.text()).toContain('串行化 pyOCD 首次加载')
     expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(5)

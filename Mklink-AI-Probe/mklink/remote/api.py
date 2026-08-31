@@ -2635,8 +2635,12 @@ def create_app(
         port: str = Body(...),
         slave: int = Body(default=1),
         baudrate: int = Body(default=9600),
+        bytesize: int = Body(default=8),
         parity: str = Body(default="N"),
         stopbits: int = Body(default=1),
+        timeout: float = Body(default=1.0),
+        retries: int = Body(default=0),
+        local_echo: bool = Body(default=False),
         registers: list[dict] | None = Body(default=None),
         interval: float = Body(default=1.0),
     ):
@@ -2663,9 +2667,38 @@ def create_app(
             )
 
         try:
+            port = str(port).strip()
+            parity = str(parity).strip().upper()
+            if not port:
+                raise ValueError("Serial port is required")
+            if isinstance(slave, bool) or not 1 <= int(slave) <= 247:
+                raise ValueError("Slave address must be in the range 1..247")
+            if isinstance(baudrate, bool) or not 300 <= int(baudrate) <= 4000000:
+                raise ValueError("Baud rate must be in the range 300..4000000")
+            if bytesize not in (7, 8):
+                raise ValueError("Data bits must be 7 or 8")
+            if parity not in ("N", "E", "O"):
+                raise ValueError("Parity must be N, E or O")
+            if stopbits not in (1, 2):
+                raise ValueError("Stop bits must be 1 or 2")
+            if not 0.05 <= float(timeout) <= 10.0:
+                raise ValueError("Timeout must be in the range 0.05..10 seconds")
+            if isinstance(retries, bool) or not 0 <= int(retries) <= 5:
+                raise ValueError("Retries must be in the range 0..5")
+            if not 0.02 <= float(interval) <= 3600.0:
+                raise ValueError("Polling interval must be in the range 0.02..3600 seconds")
             from mklink.modbus._client import ModbusClient
-            client = ModbusClient(port=port, baudrate=baudrate,
-                                  parity=parity, stopbits=stopbits)
+            client = ModbusClient(
+                port=port,
+                baudrate=int(baudrate),
+                bytesize=int(bytesize),
+                parity=parity,
+                stopbits=int(stopbits),
+                timeout=float(timeout),
+                retries=int(retries),
+                handle_local_echo=bool(local_echo),
+                trace_packet=mm.trace_packet,
+            )
             if not client.open():
                 raise HTTPException(
                     status_code=409,
@@ -2677,6 +2710,9 @@ def create_app(
         except HTTPException:
             release_resource_owner(_state, owner, stop_active=False)
             raise
+        except ValueError as e:
+            release_resource_owner(_state, owner, stop_active=False)
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             release_resource_owner(_state, owner, stop_active=False)
             raise HTTPException(status_code=500, detail=f"Modbus connect failed: {e}")
@@ -2684,7 +2720,23 @@ def create_app(
         loop = asyncio.get_event_loop()
         try:
             await loop.run_in_executor(
-                None, lambda: mm.start(client, slave, registers, interval)
+                None,
+                lambda: mm.start(
+                    client,
+                    int(slave),
+                    registers,
+                    float(interval),
+                    {
+                        "port": port,
+                        "baudrate": int(baudrate),
+                        "bytesize": int(bytesize),
+                        "parity": parity,
+                        "stopbits": int(stopbits),
+                        "timeout": float(timeout),
+                        "retries": int(retries),
+                        "local_echo": bool(local_echo),
+                    },
+                ),
             )
         except Exception:
             release_resource_owner(_state, owner, stop_active=True)
@@ -2732,6 +2784,65 @@ def create_app(
             return {"ok": True, "fc": fc, "start": start, "values": values}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/dash/modbus/transaction")
+    async def modbus_transaction(
+        fc: int = Body(...),
+        start: int = Body(...),
+        quantity: int | None = Body(default=None),
+        values: list[int | bool] | None = Body(default=None),
+    ):
+        mm = get_managers()["modbus"]
+        if not mm.running:
+            raise HTTPException(status_code=400, detail="Modbus not connected")
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                lambda: mm.transaction(
+                    fc, start, quantity=quantity, values=values
+                ),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=str(error))
+
+    @app.post("/api/dash/modbus/loop/start")
+    async def modbus_loop_start(
+        fc: int = Body(...),
+        start: int = Body(...),
+        quantity: int | None = Body(default=None),
+        values: list[int | bool] | None = Body(default=None),
+        interval: float = Body(default=1.0),
+        count: int = Body(default=0),
+    ):
+        mm = get_managers()["modbus"]
+        if not mm.running:
+            raise HTTPException(status_code=400, detail="Modbus not connected")
+        try:
+            # Validate before starting the background loop so callers get an
+            # immediate 400 response instead of a delayed SSE error.
+            from mklink.modbus._session import validate_transaction
+            validate_transaction(
+                fc, start, quantity=quantity, values=values
+            )
+            return mm.start_loop(
+                fc,
+                start,
+                quantity=quantity,
+                values=values,
+                interval=interval,
+                count=count,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error))
+
+    @app.post("/api/dash/modbus/loop/stop")
+    async def modbus_loop_stop():
+        return get_managers()["modbus"].stop_loop()
 
     @app.get("/api/dash/modbus/status")
     async def modbus_status():
