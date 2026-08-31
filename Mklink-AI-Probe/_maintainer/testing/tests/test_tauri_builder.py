@@ -371,6 +371,17 @@ def test_tauri_bundle_integrates_mklink_usb_port_naming():
     assert "the helper still runs successfully" in hook
     assert "--manage-usb-port-names apply" in hook
     assert "$INSTDIR\\mklink-ai-probe.exe" in hook
+    assert 'ReadRegStr $0 HKCU "Software\\Classes\\mklink-ai-probe\\shell\\open\\command" ""' in hook
+    assert '"FriendlyTypeName" "MKLink Web GUI"' in hook
+    assert '"ApplicationName" "MKLink Web GUI"' in hook
+    assert "MKLink AI Probe Web GUI Launcher" in hook
+    # The installer only adds friendly metadata and never reroutes the portable
+    # cross-platform Web launcher to the Windows-only desktop executable.
+    protocol_block = hook.split("Keep the portable HTML launcher cross-platform", 1)[1]
+    protocol_block = protocol_block.split("Apply naming immediately", 1)[0]
+    assert "shell\\open\\command\" \"\"" in protocol_block
+    assert "WriteRegStr" in protocol_block
+    assert "$INSTDIR\\${MAINBINARYNAME}.exe" not in protocol_block
 
 
 def test_stable_product_version_and_signed_updater_are_configured():

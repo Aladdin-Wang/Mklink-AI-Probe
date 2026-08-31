@@ -36,6 +36,18 @@ Var MklinkLegacyInstallDir
     !insertmacro SetContext
   ${EndIf}
 
+  ; Keep the portable HTML launcher cross-platform: Windows still uses the
+  ; Python Web handler, while macOS/Linux use their native Skill handlers. The
+  ; friendly metadata prevents Chromium from presenting the Windows handler as
+  ; merely "Python" without changing its actual command or requiring Tauri.
+  ReadRegStr $0 HKCU "Software\Classes\mklink-ai-probe\shell\open\command" ""
+  ${If} $0 != ""
+    WriteRegStr HKCU "Software\Classes\mklink-ai-probe" "FriendlyTypeName" "MKLink Web GUI"
+    WriteRegStr HKCU "Software\Classes\mklink-ai-probe" "ApplicationName" "MKLink Web GUI"
+    WriteRegStr HKCU "Software\Classes\mklink-ai-probe\Application" "ApplicationName" "MKLink Web GUI"
+    WriteRegStr HKCU "Software\Classes\mklink-ai-probe\Application" "ApplicationDescription" "MKLink AI Probe Web GUI Launcher"
+  ${EndIf}
+
   ; Apply naming immediately when a probe is already present. When no probe is
   ; connected, the helper still runs successfully and the next explicit rename
   ; action can handle the device after Windows creates its PnP registry entry.
