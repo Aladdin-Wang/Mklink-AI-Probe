@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-31T09:51:28+08:00",
+  "updated_at": "2026-08-31T09:53:28+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.1.9-development",
     "head": "v0.1.9 快速启动协议、更新记录、NSIS 候选包和内置 Web 资源已包含至 283671e；本交接提交随后追加，精确提交号以 git rev-parse HEAD 为准。",
     "remote_head": "每项修复独立提交并立即推送 origin/codex/v0.1.9-development；不改 master、标签或正式发布指针。",
-    "working_tree": "U 盘快速页、完整用户 Skill、标准 NSIS 和本机 0.1.8→0.1.9 覆盖安装均已闭环；交接提交推送后保持工作树与远端分支一致。"
+    "working_tree": "U 盘快速页、完整用户 Skill、标准 NSIS、本机 0.1.8→0.1.9 覆盖安装和维护者实际打开 WebGUI 均已闭环；交接提交推送后保持工作树与远端分支一致。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill 和远程 Site Agent。",
     "maintenance": "交接只保留当前有效基线、验证证据、限制和后续动作；历史细节从 Git 查询。"
   },
   "current_session": {
-    "status": "v0.1.9-installer-candidate-installed",
+    "status": "v0.1.9-installer-and-web-launcher-accepted",
     "current_task": "维护者复测已安装的 0.1.9 候选版本；后续问题继续在预发布分支按复现、最小修复、回归、真机闭环、独立提交和立即推送处理。",
     "release": "0.1.9 标准 NSIS 候选包已生成并覆盖本机 0.1.8，尚未更新正式标签或发布指针。"
   },
@@ -57,7 +57,7 @@
     },
     {
       "area": "GUI、标准 NSIS、Skill 与覆盖安装",
-      "result": "GUI 全量 58 文件/622 项通过；Web 入口与安装钩子 76 项、Skill 发布/更新/上下文 64 项通过。标准 NSIS 0.1.9 和 updater 签名生成成功，在仅含 Windows 系统目录的 PATH 下将本机 0.1.8 覆盖为 0.1.9，安装位置保持 D:\\Program Files，公共桌面和开始菜单快捷方式存在。已安装应用 /api/health=ok，探针枚举请求成功且发现 1 个设备；进程树只有 Tauri 与内置 sidecar，无 Python，正常关闭后 sidecar 和 8765 均释放。"
+      "result": "GUI 全量 58 文件/622 项通过；Web 入口与安装钩子 76 项、Skill 发布/更新/上下文 64 项通过。标准 NSIS 0.1.9 和 updater 签名生成成功，在仅含 Windows 系统目录的 PATH 下将本机 0.1.8 覆盖为 0.1.9，安装位置保持 D:\\Program Files，公共桌面和开始菜单快捷方式存在。已安装应用 /api/health=ok，探针枚举请求成功且发现 1 个设备；进程树只有 Tauri 与内置 sidecar，无 Python，正常关闭后 sidecar 和 8765 均释放。 U 盘 H:\\MKLink Web GUI.html 已由最终 Skill 重新生成，系统关联名为 MKLink Web GUI，维护者实际点击确认 WebGUI 可以打开。"
     },
     {
       "area": "器件联想与烧录算法浏览器闭环",
@@ -111,7 +111,7 @@
     "V4 + STM32H743 连续 16×float 当前约 9.54k samples/s；100us 请求中位周期可达 100us，但不能保证稳定 10kHz，更不能满足 16 变量 20kHz。"
   ],
   "next_actions": [
-    "保持已安装的 0.1.9 桌面上位机可供维护者复测，并由维护者双击 H:\\MKLink Web GUI.html 目视确认浏览器提示名称。",
+    "保持已安装的 0.1.9 桌面上位机可供维护者继续复测其他功能。",
     "继续接收下一个 0.1.9 上位机问题，按复现、最小修复、自动化回归、真实浏览器/真机闭环、独立提交和立即推送处理。",
     "后续单独修复 V4 RTT 固件通道索引、Down 表偏移和 descriptor 一致性问题，并按 STM32F103RE 夹具复跑 REST 与 MCP HIL。",
     "HPM 系列功能梳理、跨固件仓库改造和官方手册重写留作后续小步任务，不混入当前 ARM 0.1.9 基线。"

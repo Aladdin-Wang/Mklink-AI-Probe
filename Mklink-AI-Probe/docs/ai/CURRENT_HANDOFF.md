@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-08-31T09:51:28+08:00`
+- 更新时间：`2026-08-31T09:53:28+08:00`
 - 分支：`codex/v0.1.9-development`
 - HEAD：`v0.1.9 快速启动协议、更新记录、NSIS 候选包和内置 Web 资源已包含至 283671e；本交接提交随后追加，精确提交号以 git rev-parse HEAD 为准。`
 - 远端 HEAD：`每项修复独立提交并立即推送 origin/codex/v0.1.9-development；不改 master、标签或正式发布指针。`
-- 工作树：U 盘快速页、完整用户 Skill、标准 NSIS 和本机 0.1.8→0.1.9 覆盖安装均已闭环；交接提交推送后保持工作树与远端分支一致。
+- 工作树：U 盘快速页、完整用户 Skill、标准 NSIS、本机 0.1.8→0.1.9 覆盖安装和维护者实际打开 WebGUI 均已闭环；交接提交推送后保持工作树与远端分支一致。
 - 当前任务：维护者复测已安装的 0.1.9 候选版本；后续问题继续在预发布分支按复现、最小修复、回归、真机闭环、独立提交和立即推送处理。
-- 状态：`v0.1.9-installer-candidate-installed`
+- 状态：`v0.1.9-installer-and-web-launcher-accepted`
 
 ## 里程碑
 
@@ -24,7 +24,7 @@
 ## 验证证据
 
 - **Python 全量（2026-08-31）**：1661 passed、12 failed、1 skipped。12 项均为 _maintainer/testing/tests/test_remote_review_repairs.py 创建目录符号链接时触发 WinError 1314，属于当前 Windows 账户缺少 symlink 权限；其余功能测试通过，不能把整套门禁表述为全绿。
-- **GUI、标准 NSIS、Skill 与覆盖安装**：GUI 全量 58 文件/622 项通过；Web 入口与安装钩子 76 项、Skill 发布/更新/上下文 64 项通过。标准 NSIS 0.1.9 和 updater 签名生成成功，在仅含 Windows 系统目录的 PATH 下将本机 0.1.8 覆盖为 0.1.9，安装位置保持 D:\Program Files，公共桌面和开始菜单快捷方式存在。已安装应用 /api/health=ok，探针枚举请求成功且发现 1 个设备；进程树只有 Tauri 与内置 sidecar，无 Python，正常关闭后 sidecar 和 8765 均释放。
+- **GUI、标准 NSIS、Skill 与覆盖安装**：GUI 全量 58 文件/622 项通过；Web 入口与安装钩子 76 项、Skill 发布/更新/上下文 64 项通过。标准 NSIS 0.1.9 和 updater 签名生成成功，在仅含 Windows 系统目录的 PATH 下将本机 0.1.8 覆盖为 0.1.9，安装位置保持 D:\Program Files，公共桌面和开始菜单快捷方式存在。已安装应用 /api/health=ok，探针枚举请求成功且发现 1 个设备；进程树只有 Tauri 与内置 sidecar，无 Python，正常关闭后 sidecar 和 8765 均释放。 U 盘 H:\MKLink Web GUI.html 已由最终 Skill 重新生成，系统关联名为 MKLink Web GUI，维护者实际点击确认 WebGUI 可以打开。
 - **器件联想与烧录算法浏览器闭环**：真实 WebGUI 输入 STM32F103 展开完整候选并选中 STM32F103RE；器件下方列出 STM32F10x_512.FLM（0x08000000..0x08080000）和 STM32F10x_OPT.FLM（0x1FFFF800..0x1FFFF810），本地目录 12511 型号可用。真实 WHXY.CW32L012_DFP.1.0.2.pack 导入后索引 217 型号并自动刷新。修复前全新服务首次并发请求中 /probes 返回 502 且出现 _frozen_importlib._DeadlockError；修复后换全新 Python 进程与唯一页面 URL，首个 /probes、/targets、算法和内存映射请求全部 200，stderr 无 DeadlockError/Traceback。新增 6 项导入门禁及相关 487 项回归通过。
 - **浏览器串口/YMODEM/快捷键 HIL**：COM227@115200 先发送 boot，再传 rtthread.bin 115216/115216 B；块 114 一次重试后 100%，Bootloader 跳转应用并输出重启信息。浏览器 Ctrl+V 使 TX 精确增加剪贴板 22 B；Ctrl+A/C 复制完整终端历史且 TX 不变。
 - **Tauri 原生剪贴板 HIL**：运行 .build/cache/cargo/release/mklink-ai-probe.exe（页脚 0.1.9/9027fbc），COM227 真机打开。系统剪贴板 23 B 的 desktop_clipboard_probe 使 TX 32→55，证明 native read 与粘贴完整；Ctrl+A/C 后系统剪贴板变为终端内容，TX 保持 55，未误发 Ctrl+A/C 控制字节。
@@ -53,7 +53,7 @@
 
 ## 下一动作
 
-1. 保持已安装的 0.1.9 桌面上位机可供维护者复测，并由维护者双击 H:\MKLink Web GUI.html 目视确认浏览器提示名称。
+1. 保持已安装的 0.1.9 桌面上位机可供维护者继续复测其他功能。
 2. 继续接收下一个 0.1.9 上位机问题，按复现、最小修复、自动化回归、真实浏览器/真机闭环、独立提交和立即推送处理。
 3. 后续单独修复 V4 RTT 固件通道索引、Down 表偏移和 descriptor 一致性问题，并按 STM32F103RE 夹具复跑 REST 与 MCP HIL。
 4. HPM 系列功能梳理、跨固件仓库改造和官方手册重写留作后续小步任务，不混入当前 ARM 0.1.9 基线。
