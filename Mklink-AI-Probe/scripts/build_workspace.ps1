@@ -134,7 +134,14 @@ try {
             if (@(Get-ChildItem -LiteralPath $runDir -Recurse -Force -Attributes ReparsePoint).Count) {
                 Write-Warning "Temporary run contains test links; retained for safe inspection: $runDir"
             } else {
-                Remove-Item -LiteralPath $runDir -Recurse -Force
+                try {
+                    Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction Stop
+                } catch {
+                    Write-Warning (
+                        "Temporary run cleanup failed; retained for safe inspection: " +
+                        "$runDir ($($_.Exception.Message))"
+                    )
+                }
             }
         }
     } finally { $lock.Dispose() }

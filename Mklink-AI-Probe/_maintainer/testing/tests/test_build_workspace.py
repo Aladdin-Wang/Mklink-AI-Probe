@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,76 @@ def test_native_stderr_is_logged_without_overriding_process_exit_code(
     assert "fixture diagnostic" in completed.stdout + completed.stderr
     assert "fixture stdout" in log
     assert "fixture diagnostic" in log
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows file locking semantics")
+def test_locked_temporary_file_is_retained_without_overriding_success(tmp_path):
+    holder = tmp_path / "hold-open.py"
+    holder.write_text(
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        "root.mkdir(parents=True, exist_ok=True)\n"
+        "with (root / 'held.log').open('w', encoding='utf-8') as stream:\n"
+        "    stream.write('held')\n"
+        "    stream.flush()\n"
+        "    (root / 'ready').write_text('ready', encoding='utf-8')\n"
+        "    time.sleep(4)\n",
+        encoding="utf-8",
+    )
+    child = tmp_path / "launch-holder.py"
+    child.write_text(
+        "import os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        f"holder = Path({str(holder)!r})\n"
+        "root = Path(os.environ['TEMP']) / 'locked-fixture'\n"
+        "flags = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0))\n"
+        "subprocess.Popen([sys.executable, str(holder), str(root)], creationflags=flags)\n"
+        "deadline = time.monotonic() + 3\n"
+        "while not (root / 'ready').exists():\n"
+        "    if time.monotonic() >= deadline:\n"
+        "        raise SystemExit('holder did not become ready')\n"
+        "    time.sleep(0.02)\n",
+        encoding="utf-8",
+    )
+    build_root = tmp_path / "locked-build"
+    driver = tmp_path / "run-locked.ps1"
+    driver.write_text(
+        "$arguments = @(" + _powershell_literal(child) + ")\n"
+        "& "
+        + _powershell_literal(LAUNCHER)
+        + " -Action run -BuildRoot "
+        + _powershell_literal(build_root)
+        + " -Executable "
+        + _powershell_literal(sys.executable)
+        + " -ArgumentList $arguments\n"
+        "exit $LASTEXITCODE\n",
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(driver),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    try:
+        assert completed.returncode == 0
+        assert "Temporary run cleanup failed; retained for safe inspection" in (
+            completed.stdout + completed.stderr
+        )
+        assert len(list((build_root / "runs").glob("run-*"))) == 1
+    finally:
+        # Let the helper release its handle before pytest removes tmp_path.
+        time.sleep(4.2)
