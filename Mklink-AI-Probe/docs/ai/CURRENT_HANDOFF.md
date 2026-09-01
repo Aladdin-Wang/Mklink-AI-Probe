@@ -4,18 +4,18 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T18:35:00+08:00`
+- 更新时间：`2026-09-01T18:55:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：补充 RTT 高频显示与非规范 Pack 解析版本信息后，重新生成并覆盖安装 0.2.0 本地候选。
+- 当前任务：0.2.0 本地候选已补全版本信息、重新打包并完成覆盖安装验证，后续问题继续在预发布分支维护。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
 - **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。
-- **0.2.0 本地候选** — `in_progress`。标准 NSIS 与普通用户 Skill ZIP 均须包含常用型号算法，并在版本信息中记录 RTT 高频显示、非规范 Pack 解析和常用型号；首个候选已完成覆盖安装，补充版候选正在重建。
+- **0.2.0 本地候选** — `complete`。标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录 RTT/串口高频显示、非规范 Pack 解析和常用型号，补充版候选已完成覆盖安装与运行验证。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
 - **AI Skill/MCP 安全边界** — `complete`。普通用户 Skill 与维护流程分离；同一探针强制串行，限制读取、写入、批量、flush、dump_memory 和采集时长，超时后隔离会话。
@@ -23,6 +23,7 @@
 
 ## 验证证据
 
+- **0.2.0 本地候选**：源码提交 1104aa4 生成标准 NSIS 91455619B（SHA-256 F3E96731E3102175FD4FBF7F8843727A5071D99528D75FD03B6E8933D23B0FB2）和普通用户 Skill ZIP 19321101B（SHA-256 D357996671D3FD93C8C0ED86099727DC052BA547229039CC41EF0E22A7093C45）。覆盖安装后产品版本 0.2.0、健康状态 ok、内置 STM32F103xE 可检索、无 Python 子进程；安装程序嵌入的 App-8lFOvsxB.js 与最终 WebGUI 资产一致，三条 0.2.0 版本信息均存在。
 - **常用型号内置算法**：维护仓库本地资产包含 7059 个目标和 2224 个按内容去重的 FLM；每个目标均有主编程算法，所有 blob 均被引用并通过大小与 SHA-256 校验。桌面 sidecar 和普通用户 Skill ZIP 共用同一份资产，正式构建缺失、不完整或损坏时直接失败。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
@@ -30,7 +31,6 @@
 - **STM32F103RE 真机 HIL**：烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
 - **自动化与构建**：GUI 626 项通过；Python 1675 passed、12 failed、1 skipped，12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建和 NSIS 成功。
-- **发布运行时**：release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；GitHub/Gitee v0.1.9 均包含完整资产，应用与固件公开索引字节一致。
 
 ## 架构决策
 

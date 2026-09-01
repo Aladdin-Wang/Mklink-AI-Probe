@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T18:35:00+08:00",
+  "updated_at": "2026-09-01T18:55:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "补充 RTT 高频显示与非规范 Pack 解析版本信息后，重新生成并覆盖安装 0.2.0 本地候选。",
-    "release": "源码提交 0edb37c 的首个本地候选已被补充版版本信息取代，正在重新构建；正式发布、标签和更新索引尚未授权。"
+    "current_task": "0.2.0 本地候选已补全版本信息、重新打包并完成覆盖安装验证，后续问题继续在预发布分支维护。",
+    "release": "本地候选基于源码提交 1104aa4，标准 NSIS 与普通用户 Skill ZIP 已生成；正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
@@ -26,8 +26,8 @@
     },
     {
       "name": "0.2.0 本地候选",
-      "status": "in_progress",
-      "notes": "标准 NSIS 与普通用户 Skill ZIP 均须包含常用型号算法，并在版本信息中记录 RTT 高频显示、非规范 Pack 解析和常用型号；首个候选已完成覆盖安装，补充版候选正在重建。"
+      "status": "complete",
+      "notes": "标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录 RTT/串口高频显示、非规范 Pack 解析和常用型号，补充版候选已完成覆盖安装与运行验证。"
     },
     {
       "name": "RTT 与串口高频显示",
@@ -51,6 +51,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "0.2.0 本地候选",
+      "result": "源码提交 1104aa4 生成标准 NSIS 91455619B（SHA-256 F3E96731E3102175FD4FBF7F8843727A5071D99528D75FD03B6E8933D23B0FB2）和普通用户 Skill ZIP 19321101B（SHA-256 D357996671D3FD93C8C0ED86099727DC052BA547229039CC41EF0E22A7093C45）。覆盖安装后产品版本 0.2.0、健康状态 ok、内置 STM32F103xE 可检索、无 Python 子进程；安装程序嵌入的 App-8lFOvsxB.js 与最终 WebGUI 资产一致，三条 0.2.0 版本信息均存在。"
+    },
     {
       "area": "常用型号内置算法",
       "result": "维护仓库本地资产包含 7059 个目标和 2224 个按内容去重的 FLM；每个目标均有主编程算法，所有 blob 均被引用并通过大小与 SHA-256 校验。桌面 sidecar 和普通用户 Skill ZIP 共用同一份资产，正式构建缺失、不完整或损坏时直接失败。"
@@ -78,10 +82,6 @@
     {
       "area": "自动化与构建",
       "result": "GUI 626 项通过；Python 1675 passed、12 failed、1 skipped，12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建和 NSIS 成功。"
-    },
-    {
-      "area": "发布运行时",
-      "result": "release 程序在仅系统 PATH 下启动内置 sidecar，无 Python 回退，关闭后释放 8765；GitHub/Gitee v0.1.9 均包含完整资产，应用与固件公开索引字节一致。"
     }
   ],
   "decisions": [
