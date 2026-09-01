@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T16:17:43+08:00`
+- 更新时间：`2026-09-01T16:31:16+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：已完成不规范本地 CMSIS-Pack 宽松导入和 DAPLinkUtility 0.0.21 内置算法目录扩充；下一步继续下载器 USB2RTT 固件侧只读分析。
+- 当前任务：已完成 RTT/串口高频显示、非规范 Pack 导入、内置算法扩充及 V4.3.9 USB2RTT 固件侧只读分析；继续接收 0.2.0 后续问题。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -25,7 +25,7 @@
 
 - **DAPLinkUtility 0.0.21 内置算法**：固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
-- **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与约 5.2KB/s UART 压测：RTT/串口终端各连续 60 秒保持响应且浏览器无错误；RTT 日志+曲线 60 秒主机队列丢弃 0/0、DOM 14 行；串口日志 60 秒接收 939165B、队列丢弃 0/0、DOM 22 行。
+- **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。
 - **STM32F103RE 真机 HIL**：烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
@@ -52,13 +52,14 @@
 
 ## 下一动作
 
-1. 继续只读分析 MicroLink 固件 USB2RTT 路径，结合 1ms RTT 真机证据定位是否存在固件侧周期性停顿风险，未经确认不修改固件。
+1. 若 V4.3.9 现场再次出现 RTT 周期性停顿，先同步记录 SWD 失败、DapBusy、USB 环形队列水位和主机到达间隔，区分 200ms 固件退避与界面渲染背压。
 2. 后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。
 3. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
 
 ## 已知限制
 
 - DAPLinkUtility 0.0.21 使用保护壳，构建时只能在 Windows 隐藏启动固定哈希的授权源并读取其解密后的 Qt 资源；正式 0.2.0 打包必须显式设置 MKLINK_DAPLINKUTILITY_EXE。
+- V4.3.9 USB2RTT 健康链路未复现稳态停顿，但单次 SWD 读写失败会触发 200ms 退避，连续错误还会重新扫描 RTT 控制块；若现场再次出现应先采集错误/队列计数再决定是否改固件。
 - 当前 Windows 账户缺少目录 symlink 权限，Python 全量有 12 项 WinError 1314；这不是业务测试失败。
 - 0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。
 - Modbus 真机只验证安全读取；GD32E517 线圈 0–3 控制真实功率功能，未执行危险写入。
