@@ -11,13 +11,17 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.2.0',
     date: '2026-09-01',
-    summary: '增加了常用型号',
-    summaryEn: 'Added common MCU models',
+    summary: '修复 RTT 高频显示与 Pack 解析，并增加常用型号',
+    summaryEn: 'Fixed high-rate RTT display and Pack parsing, and added common MCU models',
     changes: [
-      '增加了常用型号',
+      '修复 RTT 与串口助手高频数据滚动偶发停顿，优化终端、日志和 RTT 曲线的持续刷新。',
+      '放宽非规范 CMSIS-Pack 的加载解析，提升国产 MCU Pack 导入兼容性。',
+      '增加了常用型号。',
     ],
     changesEn: [
-      'Added common MCU models.',
+      'Fix intermittent stalls while scrolling high-rate RTT and Serial Assistant data, including terminal, log, and RTT chart updates.',
+      'Relax nonstandard CMSIS-Pack parsing to improve compatibility with domestic MCU Packs.',
+      'Add common MCU models.',
     ],
   },
   {

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T18:10:00+08:00",
+  "updated_at": "2026-09-01T18:35:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "将常用型号算法保存为维护仓库本地资产，并生成包含同一资产的 0.2.0 桌面安装包与普通用户 Skill ZIP。",
-    "release": "0.2.0 版本号与版本说明已进入候选构建，正式发布、标签和更新索引尚未授权。"
+    "current_task": "补充 RTT 高频显示与非规范 Pack 解析版本信息后，重新生成并覆盖安装 0.2.0 本地候选。",
+    "release": "源码提交 0edb37c 的首个本地候选已被补充版版本信息取代，正在重新构建；正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
@@ -25,14 +25,14 @@
       "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。"
     },
     {
+      "name": "0.2.0 本地候选",
+      "status": "in_progress",
+      "notes": "标准 NSIS 与普通用户 Skill ZIP 均须包含常用型号算法，并在版本信息中记录 RTT 高频显示、非规范 Pack 解析和常用型号；首个候选已完成覆盖安装，补充版候选正在重建。"
+    },
+    {
       "name": "RTT 与串口高频显示",
       "status": "complete",
       "notes": "RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。"
-    },
-    {
-      "name": "0.1.9 桌面端与 WebGUI",
-      "status": "complete",
-      "notes": "修复覆盖升级、WebGUI 启动、AXF 全局符号、Pack 导入刷新；完成器件联想、烧录算法展示、串口 YMODEM、Modbus 工作台与快捷键。"
     },
     {
       "name": "SuperWatch 与流式性能",

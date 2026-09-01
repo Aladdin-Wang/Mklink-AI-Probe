@@ -4,19 +4,19 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T18:10:00+08:00`
+- 更新时间：`2026-09-01T18:35:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：将常用型号算法保存为维护仓库本地资产，并生成包含同一资产的 0.2.0 桌面安装包与普通用户 Skill ZIP。
+- 当前任务：补充 RTT 高频显示与非规范 Pack 解析版本信息后，重新生成并覆盖安装 0.2.0 本地候选。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
 - **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。
+- **0.2.0 本地候选** — `in_progress`。标准 NSIS 与普通用户 Skill ZIP 均须包含常用型号算法，并在版本信息中记录 RTT 高频显示、非规范 Pack 解析和常用型号；首个候选已完成覆盖安装，补充版候选正在重建。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
-- **0.1.9 桌面端与 WebGUI** — `complete`。修复覆盖升级、WebGUI 启动、AXF 全局符号、Pack 导入刷新；完成器件联想、烧录算法展示、串口 YMODEM、Modbus 工作台与快捷键。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
 - **AI Skill/MCP 安全边界** — `complete`。普通用户 Skill 与维护流程分离；同一探针强制串行，限制读取、写入、批量、flush、dump_memory 和采集时长，超时后隔离会话。
 - **0.1.9 发布候选** — `complete`。标准 NSIS、updater 签名、普通用户 Skill 和 Site Agent 便携包已生成；新增 MicroLink V3.3.8/V4.3.9 UF2 已通过发布预检。
