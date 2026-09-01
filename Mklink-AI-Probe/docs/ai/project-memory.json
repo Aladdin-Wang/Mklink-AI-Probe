@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T18:55:00+08:00",
+  "updated_at": "2026-09-01T19:20:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,19 +15,19 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "0.2.0 本地候选已补全版本信息、重新打包并完成覆盖安装验证，后续问题继续在预发布分支维护。",
-    "release": "本地候选基于源码提交 1104aa4，标准 NSIS 与普通用户 Skill ZIP 已生成；正式发布、标签和更新索引尚未授权。"
+    "current_task": "已修复桌面上位机运行期间下载器热插拔后旧串口会话未释放、必须重启应用才能重连的问题，并完成 0.2.0 覆盖安装验证。",
+    "release": "本地候选基于源码提交 e40ea4b，标准 NSIS 与普通用户 Skill ZIP 已重新生成；正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
       "name": "0.2.0 开发周期",
       "status": "in_progress",
-      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。"
+      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。"
     },
     {
       "name": "0.2.0 本地候选",
       "status": "complete",
-      "notes": "标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录 RTT/串口高频显示、非规范 Pack 解析和常用型号，补充版候选已完成覆盖安装与运行验证。"
+      "notes": "标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录下载器热插拔重连、RTT/串口高频显示、非规范 Pack 解析和常用型号，补充版候选已完成覆盖安装与运行验证。"
     },
     {
       "name": "RTT 与串口高频显示",
@@ -53,7 +53,7 @@
   "verification": [
     {
       "area": "0.2.0 本地候选",
-      "result": "源码提交 1104aa4 生成标准 NSIS 91455619B（SHA-256 F3E96731E3102175FD4FBF7F8843727A5071D99528D75FD03B6E8933D23B0FB2）和普通用户 Skill ZIP 19321101B（SHA-256 D357996671D3FD93C8C0ED86099727DC052BA547229039CC41EF0E22A7093C45）。覆盖安装后产品版本 0.2.0、健康状态 ok、内置 STM32F103xE 可检索、无 Python 子进程；安装程序嵌入的 App-8lFOvsxB.js 与最终 WebGUI 资产一致，三条 0.2.0 版本信息均存在。"
+      "result": "源码提交 e40ea4b 生成标准 NSIS 91455283B（SHA-256 9A57795CCB83BA56D26F9C96F7BCE9408AACA1B81B2D5342B3A2B66A7310BB02）和普通用户 Skill ZIP 19321424B（SHA-256 51060FCCF8D105EB6F5C7A24CE862D83ED140C11000C96D769316C60027B3458）。真实 COM228 连接进入与 USB 拔出相同的 transport error 状态且旧句柄、端口锁仍被持有时，连接接口会关闭旧会话、释放两项资源并建立新设备对象；覆盖安装后保持桌面进程运行并真实拔插 USB，旧会话进入 ERROR、COM228 重新枚举，单次连接即恢复 READY，无需重启上位机。产品版本 0.2.0、健康状态 ok、无 Python 子进程，嵌入 WebGUI 含热插拔修复版本信息。"
     },
     {
       "area": "常用型号内置算法",
@@ -92,7 +92,7 @@
     "构建、测试、日志、临时脚本和可复用缓存统一位于 E:\\software\\HPM5300\\Mklink-AI-Probe\\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。",
     "普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。",
     "SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。",
-    "串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；同一下载器不得并行调用，超时后先检查状态并重建会话。",
+    "串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；同一下载器不得并行调用，超时后先检查状态并重建会话；设备已因 USB 异常失效时，重连前必须关闭旧会话并释放串口句柄与端口锁。",
     "应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。"
   ],
   "hardware": {
