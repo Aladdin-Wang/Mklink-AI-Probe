@@ -100,9 +100,28 @@ try {
         Push-Location -LiteralPath $WorkingDirectory
         try {
             Write-Output "Build storage: $BuildRoot"
-            & $Executable @ArgumentList 2>&1 | Tee-Object -FilePath (Join-Path $reportsRoot ($runName + '.log'))
-            $exitCode = $LASTEXITCODE
-            if ($null -eq $exitCode) { $exitCode = 0 }
+            # Windows PowerShell converts native stderr records into
+            # NativeCommandError objects.  With the script-wide Stop policy,
+            # harmless diagnostics from Vite, Tauri, Cargo, and npm used to
+            # abort the launcher before their real process exit code could be
+            # observed.  Keep logging both streams, but let the native exit
+            # code remain the verdict for this narrowly scoped invocation.
+            $savedErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                & $Executable @ArgumentList 2>&1 | Tee-Object -FilePath (Join-Path $reportsRoot ($runName + '.log'))
+                $nativeExitCode = $LASTEXITCODE
+                $commandSucceeded = $?
+            } finally {
+                $ErrorActionPreference = $savedErrorActionPreference
+            }
+            if ($null -ne $nativeExitCode) {
+                $exitCode = $nativeExitCode
+            } elseif ($commandSucceeded) {
+                $exitCode = 0
+            } else {
+                $exitCode = 1
+            }
         } finally { Pop-Location }
     }
 } finally {
