@@ -5,17 +5,18 @@ import VersionHistoryPopover from './VersionHistoryPopover.vue'
 describe('VersionHistoryPopover', () => {
   it('shows the current release notes and stable release history', async () => {
     const wrapper = mount(VersionHistoryPopover, {
-      props: { version: '0.1.7', buildCommit: 'local' },
+      props: { version: '0.2.0', buildCommit: 'local' },
       attachTo: document.body,
     })
 
-    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.1.7 · local')
+    expect(wrapper.get('[data-testid="app-version"]').text()).toContain('v0.2.0 · local')
     expect(wrapper.find('[data-testid="version-history-panel"]').exists()).toBe(false)
 
     await wrapper.trigger('mouseenter')
 
     const panel = wrapper.get('[data-testid="version-history-panel"]')
     expect(panel.text()).toContain('版本更新')
+    expect(panel.text()).toContain('增加了常用型号')
     expect(panel.text()).toContain('修复连接、在线读取与实时调试体验')
     expect(panel.text()).toContain('支持按地址读取 Flash、保存或清空数据')
     expect(panel.text()).toContain('修复 RTT、SuperWatch 文件保存和 RTOS Trace 时间轴刷新')
@@ -29,7 +30,7 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('Modbus RTU 工作台')
     expect(panel.text()).toContain('U 盘快速启动入口以 MKLink Web 上位机名称启动')
     expect(panel.text()).toContain('串行化 pyOCD 首次加载')
-    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(5)
+    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(1)
     expect(panel.text()).toContain('普通曲线')
     expect(panel.text()).toContain('停止后展开')
     expect(panel.text()).toContain('修复符号解析并完善调试资源协同')
@@ -38,8 +39,8 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(10)
-    expect(wrapper.get('.release-entry.current').text()).toContain('v0.1.7')
+    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(11)
+    expect(wrapper.get('.release-entry.current').text()).toContain('v0.2.0')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
     wrapper.unmount()
   })

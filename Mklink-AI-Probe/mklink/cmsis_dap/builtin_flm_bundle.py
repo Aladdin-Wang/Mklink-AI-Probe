@@ -1,4 +1,4 @@
-"""Load integrity-checked FLM algorithms extracted into the packaged sidecar."""
+"""Load integrity-checked built-in FLM algorithms."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .models import TargetRecord
 
 
 class BuiltinFlmBundleError(ValueError):
-    """The packaged DAPLinkUtility FLM bundle is malformed or corrupted."""
+    """The built-in FLM bundle is malformed or corrupted."""
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -26,7 +26,11 @@ def _default_bundle_root() -> Path:
     override = os.environ.get("MKLINK_BUILTIN_FLM_ROOT", "").strip()
     if override:
         return Path(override)
-    return Path(__file__).resolve().parents[1] / "builtin_flm"
+    packaged = Path(__file__).resolve().parents[1] / "builtin_flm"
+    if (packaged / "manifest.json").is_file():
+        return packaged
+    local = Path(__file__).resolve().parents[2] / "_maintainer" / "local" / "builtin_flm"
+    return local if (local / "manifest.json").is_file() else packaged
 
 
 def _text(value: object, description: str) -> str:
@@ -180,7 +184,7 @@ def discover_builtin_flm_algorithms(part_number: str, root: Optional[Path] = Non
                 ram_size=ram_size,
                 default=index == 0,
                 source_kind="daplink-builtin",
-                source_name="DAPLinkUtility 内置算法",
+                source_name="常用型号内置算法",
                 source_token="catalog:daplink:{}:{}".format(_encode_target(target), algorithm_id),
                 builtin_blob_path=str(path),
                 builtin_blob_sha256=digest,

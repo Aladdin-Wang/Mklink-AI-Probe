@@ -9,6 +9,18 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.2.0',
+    date: '2026-09-01',
+    summary: '增加了常用型号',
+    summaryEn: 'Added common MCU models',
+    changes: [
+      '增加了常用型号',
+    ],
+    changesEn: [
+      'Added common MCU models.',
+    ],
+  },
+  {
     version: '0.1.9',
     date: '2026-08-31',
     summary: '完善在线烧录、实时采集、串口升级与 AI 安全边界',

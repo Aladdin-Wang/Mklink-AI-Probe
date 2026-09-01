@@ -20,7 +20,7 @@ def _bundle(root: Path) -> tuple[Path, bytes]:
     blob.write_bytes(payload)
     (root / "manifest.json").write_text(json.dumps({
         "schema": 1,
-        "source": {"product": "DAPLinkUtility", "sha256": "a" * 64},
+        "release_note": "增加了常用型号",
         "targets": [{
             "manufacturer": "Vendor",
             "series": "Family",

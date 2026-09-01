@@ -15,7 +15,6 @@ import sys
 import os
 import shutil
 import argparse
-import hashlib
 import platform
 import json
 from contextlib import contextmanager
@@ -23,9 +22,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 IS_WINDOWS = platform.system() == "Windows"
-RELEASE_DAPLINKUTILITY_SHA256 = (
-    "a452cf5aee6a5dd1e43d0b77ff1d8b57d7c1a0fa64aa8c7d8b98a7c9abc777b9"
-)
 
 
 def cargo_target_dir():
@@ -112,17 +108,17 @@ def build_builtin_pack_bundle(config_path, roots, output):
     return module.build_bundle(Path(config_path), [Path(root) for root in roots], Path(output))
 
 
-def build_daplinkutility_flm_bundle(executable, output):
-    """Load the pinned Qt resource extractor without making scripts a package."""
+def load_builtin_flm_assets():
+    """Load the local asset validator without making scripts a package."""
     import importlib.util
 
-    builder_path = Path(__file__).resolve().with_name("daplinkutility_resources.py")
-    spec = importlib.util.spec_from_file_location("mklink_daplinkutility_resources", builder_path)
+    validator_path = Path(__file__).resolve().with_name("builtin_flm_assets.py")
+    spec = importlib.util.spec_from_file_location("mklink_builtin_flm_assets", validator_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load DAPLinkUtility FLM builder")
+        raise RuntimeError("cannot load built-in algorithm asset validator")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.build_bundle(Path(executable), Path(output))
+    return module
 
 
 def builtin_pack_roots():
@@ -134,32 +130,24 @@ def builtin_pack_roots():
     return roots
 
 
-def daplinkutility_executable():
-    value = os.environ.get("MKLINK_DAPLINKUTILITY_EXE", "").strip()
-    if not value:
-        return None
-    executable = Path(value).resolve()
-    if not executable.is_file():
-        raise RuntimeError("DAPLinkUtility executable does not exist: {}".format(executable))
-    return executable
+def builtin_flm_root():
+    return load_builtin_flm_assets().default_bundle_root(SKILL_DIR)
 
 
-def require_release_daplinkutility_executable():
-    executable = daplinkutility_executable()
-    if executable is None:
+def validate_builtin_flm_bundle(root=None):
+    bundle_root = builtin_flm_root() if root is None else Path(root).resolve()
+    return load_builtin_flm_assets().validate_bundle(bundle_root)
+
+
+def require_release_builtin_flm_bundle():
+    root = builtin_flm_root()
+    try:
+        validate_builtin_flm_bundle(root)
+    except (FileNotFoundError, ValueError) as error:
         raise RuntimeError(
-            "0.2.0 release bundle requires MKLINK_DAPLINKUTILITY_EXE "
-            "pointing to the pinned DAPLinkUtility 0.0.21 executable"
-        )
-    digest = hashlib.sha256()
-    with executable.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    if digest.hexdigest() != RELEASE_DAPLINKUTILITY_SHA256:
-        raise RuntimeError(
-            "0.2.0 release bundle requires the pinned DAPLinkUtility 0.0.21 SHA-256"
-        )
-    return executable
+            "0.2.0 release bundle requires the complete local built-in algorithm assets"
+        ) from error
+    return root
 
 
 def build_sidecar(force=False):
@@ -202,23 +190,14 @@ def build_sidecar(force=False):
             ]
         else:
             print("[WARN] MKLINK_BUILTIN_PACK_ROOTS is not set; builtin Pack bundle omitted")
-        daplink_exe = daplinkutility_executable()
-        if daplink_exe is not None:
-            try:
-                import pefile  # noqa: F401
-            except ImportError:
-                run([sys.executable, "-m", "pip", "install", "pefile"])
-            flm_dir = Path(temporary) / "builtin_flm"
-            flm_manifest = build_daplinkutility_flm_bundle(daplink_exe, flm_dir)
-            source = flm_manifest.get("source", {})
+        flm_dir = builtin_flm_root()
+        if (flm_dir / "manifest.json").is_file():
+            flm_manifest = validate_builtin_flm_bundle(flm_dir)
             print(
-                "[OK] Built DAPLinkUtility {} FLM bundle: {} targets, {} blobs, "
-                "{} missing references, {} skipped targets".format(
-                    source.get("version", "unknown"),
+                "[OK] Collected built-in algorithm assets: {} targets, {} blobs; {}".format(
                     flm_manifest["target_count"],
                     flm_manifest["blob_count"],
-                    flm_manifest.get("missing_reference_count", 0),
-                    flm_manifest.get("skipped_target_count", 0),
+                    flm_manifest["release_note"],
                 )
             )
             builtin_args.extend([
@@ -226,7 +205,7 @@ def build_sidecar(force=False):
                 "{}{}mklink/builtin_flm".format(flm_dir, os.pathsep),
             ])
         else:
-            print("[WARN] MKLINK_DAPLINKUTILITY_EXE is not set; builtin FLM bundle omitted")
+            print("[WARN] Local built-in algorithm assets are unavailable; bundle omitted")
         run([
             sys.executable, "-m", "PyInstaller",
             "--noconfirm", "--clean", "--onefile", "--name", "mklink-sidecar",
@@ -384,7 +363,7 @@ def collect_signed_bundle_outputs(bundle_dir):
 
 def build_release_bundle():
     """Build a bundle from the current source with a temporary sidecar config."""
-    require_release_daplinkutility_executable()
+    require_release_builtin_flm_bundle()
     signing_key = load_updater_private_key()
     staged_stcp = None
     try:

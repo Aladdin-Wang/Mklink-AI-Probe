@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T16:35:30+08:00",
+  "updated_at": "2026-09-01T18:10:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,14 +15,14 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "已完成 RTT/串口高频显示、非规范 Pack 导入、内置算法扩充及 V4.3.9 USB2RTT 固件侧只读分析；继续接收 0.2.0 后续问题。",
-    "release": "尚未生成或验证任何 0.2.0 发布资产。"
+    "current_task": "将常用型号算法保存为维护仓库本地资产，并生成包含同一资产的 0.2.0 桌面安装包与普通用户 Skill ZIP。",
+    "release": "0.2.0 版本号与版本说明已进入候选构建，正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
       "name": "0.2.0 开发周期",
       "status": "in_progress",
-      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及 0.0.21 内置算法目录扩充。"
+      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。"
     },
     {
       "name": "RTT 与串口高频显示",
@@ -52,8 +52,8 @@
   ],
   "verification": [
     {
-      "area": "DAPLinkUtility 0.0.21 内置算法",
-      "result": "固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0；正式 0.2.0 bundle 缺少或错用算法源时构建直接失败。"
+      "area": "常用型号内置算法",
+      "result": "维护仓库本地资产包含 7059 个目标和 2224 个按内容去重的 FLM；每个目标均有主编程算法，所有 blob 均被引用并通过大小与 SHA-256 校验。桌面 sidecar 和普通用户 Skill ZIP 共用同一份资产，正式构建缺失、不完整或损坏时直接失败。"
     },
     {
       "area": "Linko/WHXY 本地 Pack 导入",
@@ -86,7 +86,7 @@
   ],
   "decisions": [
     "预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。",
-    "0.2.0 内置 MCU 目录从固定 SHA-256 的 DAPLinkUtility 0.0.21 只提取器件目录及被引用 FLM，按内容哈希去重并由运行时再次校验；不打包原程序，也不把缺主算法的目标标成可用。",
+    "0.2.0 常用型号算法以维护仓库内被 Git 忽略的本地目录作为唯一打包源；桌面 sidecar、WebGUI 和普通用户 Skill ZIP 共用该资产，按内容哈希去重并在构建与运行时校验。",
     "不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。",
     "高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。",
     "构建、测试、日志、临时脚本和可复用缓存统一位于 E:\\software\\HPM5300\\Mklink-AI-Probe\\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。",
@@ -101,7 +101,6 @@
     "permission": "测试工程允许修改与下载；其分析材料只放工程自身 .build。"
   },
   "known_limits": [
-    "DAPLinkUtility 0.0.21 使用保护壳，构建时只能在 Windows 隐藏启动固定哈希的授权源并读取其解密后的 Qt 资源；正式 0.2.0 打包必须显式设置 MKLINK_DAPLINKUTILITY_EXE。",
     "V4.3.9 USB2RTT 健康链路未复现稳态停顿，但单次 SWD 读写失败会触发 200ms 退避，连续错误还会重新扫描 RTT 控制块；若现场再次出现应先采集错误/队列计数再决定是否改固件。",
     "当前 Windows 账户缺少目录 symlink 权限，Python 全量有 12 项 WinError 1314；这不是业务测试失败。",
     "0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。",
