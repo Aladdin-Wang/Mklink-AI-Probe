@@ -1475,6 +1475,30 @@ def create_app(
         mcu: str | None = None
         elf_backend: str | None = None
 
+    async def _disconnect_shared_device() -> dict[str, object]:
+        """Stop bridge dashboards and release the GUI-owned Device."""
+        async with _dashboard_start_lock(_state):
+            async with device_disconnect_lock:
+                from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
+
+                stopped = []
+                for name in BRIDGE_DASHBOARD_TYPES:
+                    manager = dashboard_managers.get(name)
+                    if manager is not None and _dashboard_worker_alive(manager):
+                        await run_in_threadpool(manager.stop)
+                        if _dashboard_worker_alive(manager):
+                            raise DashboardStopPending(name)
+                        stopped.append(name)
+                    _state["resource_manager"].release(f"user:dashboard:{name}")
+
+                device = _state["device"]
+                if device:
+                    remember_device_connection(_state, device)
+                    await run_in_threadpool(device.close)
+                    _state["device"] = None
+                    _state["dispatcher"] = None
+                return {"status": "disconnected", "stopped": stopped}
+
     @app.post("/api/device/connect")
     async def connect_device(
         port: str | None = Body(default=None),
@@ -1495,6 +1519,15 @@ def create_app(
                 if elf_backend is not None
                 else previous.get("elf_backend")
             )
+        stale_device = _state.get("device")
+        if stale_device is not None and not stale_device.connected:
+            # A USB removal makes ``Device.connected`` false immediately, but
+            # the old bridge still owns its serial handle and advisory port
+            # lock until ``close()`` runs.  Reconnecting in the same desktop
+            # process would then reject its own COM port and only an app
+            # restart could release it.  Tear down dashboards and the stale
+            # session before opening the newly enumerated probe.
+            await _disconnect_shared_device()
         if _state["device"] and _state["device"].connected:
             dev = _state["device"]
             manager = get_managers()["superwatch"]
@@ -1573,30 +1606,6 @@ def create_app(
             "elf_backend": device.axf_status.get("elf_backend"),
             "target_initializing": True,
         }
-
-    async def _disconnect_shared_device() -> dict[str, object]:
-        """Stop bridge dashboards and release the GUI-owned Device."""
-        async with _dashboard_start_lock(_state):
-            async with device_disconnect_lock:
-                from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES
-
-                stopped = []
-                for name in BRIDGE_DASHBOARD_TYPES:
-                    manager = dashboard_managers.get(name)
-                    if manager is not None and _dashboard_worker_alive(manager):
-                        await run_in_threadpool(manager.stop)
-                        if _dashboard_worker_alive(manager):
-                            raise DashboardStopPending(name)
-                        stopped.append(name)
-                    _state["resource_manager"].release(f"user:dashboard:{name}")
-
-                device = _state["device"]
-                if device:
-                    remember_device_connection(_state, device)
-                    await run_in_threadpool(device.close)
-                    _state["device"] = None
-                    _state["dispatcher"] = None
-                return {"status": "disconnected", "stopped": stopped}
 
     @app.post("/api/device/disconnect")
     async def disconnect_device():

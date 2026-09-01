@@ -16,7 +16,8 @@ describe('VersionHistoryPopover', () => {
 
     const panel = wrapper.get('[data-testid="version-history-panel"]')
     expect(panel.text()).toContain('版本更新')
-    expect(panel.text()).toContain('修复 RTT 高频显示与 Pack 解析')
+    expect(panel.text()).toContain('修复热插拔重连、RTT 高频显示与 Pack 解析')
+    expect(panel.text()).toContain('下载器拔插后旧串口会话未释放')
     expect(panel.text()).toContain('高频数据滚动偶发停顿')
     expect(panel.text()).toContain('非规范 CMSIS-Pack')
     expect(panel.text()).toContain('增加了常用型号')
@@ -33,7 +34,7 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('Modbus RTU 工作台')
     expect(panel.text()).toContain('U 盘快速启动入口以 MKLink Web 上位机名称启动')
     expect(panel.text()).toContain('串行化 pyOCD 首次加载')
-    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(3)
+    expect(wrapper.get('.release-entry.current').findAll('li')).toHaveLength(4)
     expect(panel.text()).toContain('普通曲线')
     expect(panel.text()).toContain('停止后展开')
     expect(panel.text()).toContain('修复符号解析并完善调试资源协同')

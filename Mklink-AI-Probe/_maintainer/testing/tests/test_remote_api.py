@@ -1030,6 +1030,37 @@ def test_device_connect_forwards_explicit_elf_backend(tmp_path):
     assert connect.call_args.kwargs["elf_backend"] == "external"
 
 
+def test_device_connect_closes_stale_hotplug_session_before_reconnect(tmp_path):
+    stale_device = SimpleNamespace(
+        connected=False,
+        state=SimpleNamespace(name="ERROR"),
+        port="COM228",
+        close=lambda: None,
+    )
+    replacement, _axf = _connected_symbol_device(tmp_path)
+    replacement.port = "COM228"
+    app = create_app(auth_token=None, project_root=".")
+    state = app.state.mklink_state
+    state["device"] = stale_device
+    state["dispatcher"] = object()
+
+    with patch.object(stale_device, "close") as close, patch(
+        "mklink.connect", return_value=replacement,
+    ) as connect, TestClient(app) as client:
+        response = client.post("/api/device/connect", json={})
+        assert state["device"] is replacement
+        assert state["dispatcher"] is not None
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "connected"
+    assert response.json()["port"] == "COM228"
+    close.assert_called_once_with()
+    connect.assert_called_once()
+    assert connect.call_args.kwargs["port"] is None
+    assert connect.call_args.kwargs["preferred_port"] is None
+    assert connect.call_args.kwargs["initialize_target_now"] is False
+
+
 def test_device_parse_axf_forwards_explicit_elf_backend(tmp_path):
     from mklink.remote.dashboards import get_managers
 
