@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T15:51:42+08:00`
+- 更新时间：`2026-09-01T16:17:43+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：已完成不规范本地 CMSIS-Pack 宽松导入；继续扩充 STM32、GD32 与常用国产 MCU 的可交付器件目录。
+- 当前任务：已完成不规范本地 CMSIS-Pack 宽松导入和 DAPLinkUtility 0.0.21 内置算法目录扩充；下一步继续下载器 USB2RTT 固件侧只读分析。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示及不规范本地 CMSIS-Pack 宽松导入。
+- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及 0.0.21 内置算法目录扩充。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **0.1.9 桌面端与 WebGUI** — `complete`。修复覆盖升级、WebGUI 启动、AXF 全局符号、Pack 导入刷新；完成器件联想、烧录算法展示、串口 YMODEM、Modbus 工作台与快捷键。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
@@ -23,6 +23,7 @@
 
 ## 验证证据
 
+- **DAPLinkUtility 0.0.21 内置算法**：固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与约 5.2KB/s UART 压测：RTT/串口终端各连续 60 秒保持响应且浏览器无错误；RTT 日志+曲线 60 秒主机队列丢弃 0/0、DOM 14 行；串口日志 60 秒接收 939165B、队列丢弃 0/0、DOM 22 行。
 - **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。
@@ -34,6 +35,7 @@
 ## 架构决策
 
 - 预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。
+- 0.2.0 内置 MCU 目录从固定 SHA-256 的 DAPLinkUtility 0.0.21 只提取器件目录及被引用 FLM，按内容哈希去重并由运行时再次校验；不打包原程序，也不把缺主算法的目标标成可用。
 - 不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。
 - 高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
@@ -50,12 +52,13 @@
 
 ## 下一动作
 
-1. 利用本地 DAPLinkUtility_v0.0.21.exe 的器件目录和引用 FLM，在授权与哈希约束下扩充 STM32、GD32 与常用国产 MCU 的可交付目录。
+1. 继续只读分析 MicroLink 固件 USB2RTT 路径，结合 1ms RTT 真机证据定位是否存在固件侧周期性停顿风险，未经确认不修改固件。
 2. 后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。
 3. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
 
 ## 已知限制
 
+- DAPLinkUtility 0.0.21 使用保护壳，构建时只能在 Windows 隐藏启动固定哈希的授权源并读取其解密后的 Qt 资源；正式 0.2.0 打包必须显式设置 MKLINK_DAPLINKUTILITY_EXE。
 - 当前 Windows 账户缺少目录 symlink 权限，Python 全量有 12 项 WinError 1314；这不是业务测试失败。
 - 0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。
 - Modbus 真机只验证安全读取；GD32E517 线圈 0–3 控制真实功率功能，未执行危险写入。

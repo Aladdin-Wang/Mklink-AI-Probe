@@ -188,9 +188,15 @@ def build_sidecar(force=False):
                 run([sys.executable, "-m", "pip", "install", "pefile"])
             flm_dir = Path(temporary) / "builtin_flm"
             flm_manifest = build_daplinkutility_flm_bundle(daplink_exe, flm_dir)
+            source = flm_manifest.get("source", {})
             print(
-                "[OK] Built DAPLinkUtility FLM bundle: {} targets, {} blobs".format(
-                    flm_manifest["target_count"], flm_manifest["blob_count"]
+                "[OK] Built DAPLinkUtility {} FLM bundle: {} targets, {} blobs, "
+                "{} missing references, {} skipped targets".format(
+                    source.get("version", "unknown"),
+                    flm_manifest["target_count"],
+                    flm_manifest["blob_count"],
+                    flm_manifest.get("missing_reference_count", 0),
+                    flm_manifest.get("skipped_target_count", 0),
                 )
             )
             builtin_args.extend([

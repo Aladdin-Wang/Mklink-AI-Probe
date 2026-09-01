@@ -11,11 +11,23 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import struct
+import subprocess
+import time
 from typing import Callable, Mapping, Sequence
 import zlib
 
 
 SUPPORTED_SOURCE_SHA256 = "419e1a830fb66ccb5db5c748e6085dd1778e2289c0b211ea92a84ec214656c33"
+RELEASE_SOURCE_SHA256 = "a452cf5aee6a5dd1e43d0b77ff1d8b57d7c1a0fa64aa8c7d8b98a7c9abc777b9"
+SUPPORTED_SOURCES = {
+    SUPPORTED_SOURCE_SHA256: ("0.0.6", "static"),
+    RELEASE_SOURCE_SHA256: ("0.0.21", "runtime"),
+}
+_CATALOG_RESOURCE_PATHS = {
+    "resources/chips.json",
+    "resources/algorithms/chips.json",
+    "resources/algorithms/chips_cn.json",
+}
 _TREE_ENTRY_SIZE = 22
 _FLAG_COMPRESSED = 0x01
 _FLAG_DIRECTORY = 0x02
@@ -198,14 +210,16 @@ def build_bundle_from_resources(
     output: Path,
     *,
     source_sha256: str,
+    source_version: str = "0.0.6",
     metadata_parser: Callable[[bytes], Mapping[str, object] | None] = _flm_metadata,
 ) -> dict[str, object]:
     digest = str(source_sha256).casefold()
     if _SHA256.fullmatch(digest) is None:
         raise ValueError("source SHA-256 is invalid")
-    chips_paths = [path for path in resources if str(path).replace("\\", "/").casefold() in (
-        "resources/chips.json", "resources/algorithms/chips.json",
-    )]
+    chips_paths = [
+        path for path in resources
+        if str(path).replace("\\", "/").casefold() in _CATALOG_RESOURCE_PATHS
+    ]
     if len(chips_paths) != 1:
         raise ValueError("DAPLinkUtility chips.json resource is unavailable")
     try:
@@ -224,13 +238,16 @@ def build_bundle_from_resources(
     referenced: set[str] = set()
     written_blobs: dict[str, dict[str, object]] = {}
     parsed_metadata: dict[str, Mapping[str, object] | None] = {}
+    missing_references: set[str] = set()
+    skipped_targets = 0
     targets = []
 
     def algorithm_record(raw_name: object, start: int | None = None, size: int | None = None):
         requested = _safe_algorithm_name(raw_name)
         key = requested.casefold()
         if key not in available:
-            raise ValueError("referenced FLM resource is missing: {}".format(requested))
+            missing_references.add(requested)
+            return None
         stored_name, payload = available[key]
         referenced.add(key)
         payload_digest = _sha256_bytes(payload)
@@ -286,14 +303,22 @@ def build_bundle_from_resources(
                 if not isinstance(raw_regions, list) or not raw_regions:
                     raise ValueError("target algoprog must be a non-empty list")
                 regions = []
+                missing_program_algorithm = False
                 for raw_region in raw_regions:
                     if not isinstance(raw_region, Mapping):
                         raise ValueError("target algorithm region must be an object")
-                    regions.append(algorithm_record(
+                    algorithm = algorithm_record(
                         raw_region.get("algorithm", raw_region.get("algo")),
                         _address(raw_region.get("flashbase", raw_region.get("addr")), "flash start"),
                         _address(raw_region.get("flashsize", raw_region.get("size")), "flash size"),
-                    ))
+                    )
+                    if algorithm is None:
+                        missing_program_algorithm = True
+                    else:
+                        regions.append(algorithm)
+                if missing_program_algorithm or not regions:
+                    skipped_targets += 1
+                    continue
                 raw_option = str(raw_target.get("algooptb") or "").strip()
                 targets.append({
                     "manufacturer": manufacturer,
@@ -314,7 +339,7 @@ def build_bundle_from_resources(
         "schema": 1,
         "source": {
             "product": "DAPLinkUtility",
-            "version": "0.0.6",
+            "version": _text(source_version, "source version"),
             "sha256": digest,
         },
         "manufacturer_count": len({str(item["manufacturer"]) for item in targets}),
@@ -323,6 +348,9 @@ def build_bundle_from_resources(
         "region_count": sum(len(item["algorithms"]) for item in targets),
         "referenced_algorithm_count": len(referenced),
         "unreferenced_algorithm_count": len(available) - len(referenced),
+        "missing_reference_count": len(missing_references),
+        "missing_references": sorted(missing_references, key=str.casefold),
+        "skipped_target_count": skipped_targets,
         "blob_count": len(written_blobs),
         "blob_bytes": sum(int(item["size"]) for item in written_blobs.values()),
         "blobs": [written_blobs[key] for key in sorted(written_blobs)],
@@ -423,16 +451,231 @@ def _registration_arrays(executable: Path) -> tuple[bytes, bytes, bytes]:
         pe.close()
 
 
+def _runtime_arrays_from_regions(regions: Sequence[bytes]) -> tuple[bytes, bytes, bytes]:
+    """Locate decrypted Qt resource arrays in pinned process-memory regions."""
+
+    root_pattern = struct.pack(">IHII", 0, _FLAG_DIRECTORY, 1, 1)
+    resources_name = "resources".encode("utf-16-be")
+    for raw_region in regions:
+        region = bytes(raw_region)
+        root_offset = region.find(root_pattern)
+        while root_offset >= 0:
+            encoded_offset = region.find(resources_name, root_offset + len(root_pattern))
+            while encoded_offset >= 6:
+                names_offset = encoded_offset - 6
+                if struct.unpack_from(">H", region, names_offset)[0] != len("resources"):
+                    encoded_offset = region.find(resources_name, encoded_offset + 1)
+                    continue
+                cursor = names_offset
+                last_name_end = names_offset
+                names_seen = set()
+                for _ in range(10000):
+                    if cursor + 6 > len(region):
+                        break
+                    length = struct.unpack_from(">H", region, cursor)[0]
+                    end = cursor + 6 + length * 2
+                    if length > 1024 or end > len(region):
+                        break
+                    try:
+                        name = region[cursor + 6:end].decode("utf-16-be")
+                    except UnicodeDecodeError:
+                        break
+                    if name and (
+                        any(ord(character) < 0x20 for character in name)
+                        or "/" in name
+                        or "\\" in name
+                    ):
+                        break
+                    if name:
+                        names_seen.add(name.casefold())
+                        last_name_end = end
+                    cursor = end
+                if (
+                    "resources" not in names_seen
+                    or not names_seen.intersection({"chips.json", "chips_cn.json"})
+                    or not any(name.endswith(".flm") for name in names_seen)
+                ):
+                    encoded_offset = region.find(resources_name, encoded_offset + 1)
+                    continue
+                search_end = min(last_name_end + 256, len(region) - 4)
+                for data_offset in range(last_name_end, search_end + 1):
+                    size = struct.unpack_from(">I", region, data_offset)[0]
+                    if (
+                        size <= 0
+                        or data_offset + 4 + size > len(region)
+                        or region[data_offset + 4:data_offset + 5] not in (b"{", b"[")
+                    ):
+                        continue
+                    tree = region[root_offset:names_offset]
+                    names = region[names_offset:data_offset]
+                    data = region[data_offset:]
+                    try:
+                        files = QtResourceReader(tree, names, data).files()
+                    except ValueError:
+                        continue
+                    normalized = {
+                        path.replace("\\", "/").casefold() for path in files
+                    }
+                    if (
+                        normalized.intersection(_CATALOG_RESOURCE_PATHS)
+                        and any(
+                            path.startswith("resources/algorithms/")
+                            and path.endswith(".flm")
+                            for path in normalized
+                        )
+                    ):
+                        return tree, names, data
+                encoded_offset = region.find(resources_name, encoded_offset + 1)
+            root_offset = region.find(root_pattern, root_offset + 1)
+    raise ValueError("decrypted DAPLinkUtility Qt resources are unavailable")
+
+
+def _read_process_regions(pid: int) -> list[bytes]:
+    if os.name != "nt":
+        raise RuntimeError("runtime DAPLinkUtility extraction requires Windows")
+    from ctypes import (
+        POINTER, Structure, WinDLL, byref, c_int, c_size_t, c_ubyte, c_ushort,
+        c_ulong, c_void_p, sizeof,
+    )
+
+    class MemoryBasicInformation(Structure):
+        _fields_ = [
+            ("BaseAddress", c_void_p),
+            ("AllocationBase", c_void_p),
+            ("AllocationProtect", c_ulong),
+            ("PartitionId", c_ushort),
+            ("RegionSize", c_size_t),
+            ("State", c_ulong),
+            ("Protect", c_ulong),
+            ("Type", c_ulong),
+        ]
+
+    process_query_information = 0x0400
+    process_vm_read = 0x0010
+    mem_commit = 0x1000
+    page_guard = 0x100
+    page_noaccess = 0x01
+    kernel32 = WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [c_ulong, c_int, c_ulong]
+    kernel32.OpenProcess.restype = c_void_p
+    kernel32.VirtualQueryEx.argtypes = [
+        c_void_p,
+        c_void_p,
+        POINTER(MemoryBasicInformation),
+        c_size_t,
+    ]
+    kernel32.VirtualQueryEx.restype = c_size_t
+    kernel32.ReadProcessMemory.argtypes = [
+        c_void_p,
+        c_void_p,
+        c_void_p,
+        c_size_t,
+        POINTER(c_size_t),
+    ]
+    kernel32.ReadProcessMemory.restype = c_int
+    kernel32.CloseHandle.argtypes = [c_void_p]
+    kernel32.CloseHandle.restype = c_int
+    root_pattern = struct.pack(">IHII", 0, _FLAG_DIRECTORY, 1, 1)
+    resources_name = "resources".encode("utf-16-be")
+    handle = kernel32.OpenProcess(
+        process_query_information | process_vm_read, False, int(pid)
+    )
+    if not handle:
+        raise OSError("cannot open DAPLinkUtility process memory")
+    regions = []
+    address = 0
+    try:
+        while address < 0x1_0000_0000:
+            info = MemoryBasicInformation()
+            queried = kernel32.VirtualQueryEx(
+                handle, c_void_p(address), byref(info), sizeof(info)
+            )
+            if not queried:
+                address += 0x1000
+                continue
+            base = int(info.BaseAddress or 0)
+            size = int(info.RegionSize)
+            if (
+                info.State == mem_commit
+                and not info.Protect & (page_guard | page_noaccess)
+                and 0 < size <= 256 * 1024 * 1024
+            ):
+                buffer = (c_ubyte * size)()
+                read = c_size_t()
+                if kernel32.ReadProcessMemory(
+                    handle, c_void_p(base), buffer, size, byref(read)
+                ):
+                    payload = bytes(buffer)[:read.value]
+                    if (
+                        root_pattern in payload
+                        and resources_name in payload
+                    ):
+                        regions.append(payload)
+            next_address = base + max(size, 0x1000)
+            address = next_address if next_address > address else address + 0x1000
+    finally:
+        kernel32.CloseHandle(handle)
+    return regions
+
+
+def _runtime_registration_arrays(executable: Path) -> tuple[bytes, bytes, bytes]:
+    if os.name != "nt":
+        raise RuntimeError("runtime DAPLinkUtility extraction requires Windows")
+    startup = subprocess.STARTUPINFO()
+    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow = 0
+    process = subprocess.Popen(
+        [str(executable)],
+        cwd=str(executable.parent),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        startupinfo=startup,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    try:
+        deadline = time.monotonic() + 20.0
+        last_error = None
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise ValueError("DAPLinkUtility exited before resources were available")
+            try:
+                return _runtime_arrays_from_regions(_read_process_regions(process.pid))
+            except (OSError, ValueError) as error:
+                last_error = error
+                time.sleep(0.25)
+        raise ValueError("timed out reading decrypted DAPLinkUtility resources") from last_error
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+
 def build_bundle(executable: Path, output: Path) -> dict[str, object]:
     executable = Path(executable)
     if not executable.is_file():
         raise ValueError("DAPLinkUtility executable is unavailable")
     source_digest = _sha256_file(executable)
-    if source_digest != SUPPORTED_SOURCE_SHA256:
+    source = SUPPORTED_SOURCES.get(source_digest)
+    if source is None:
         raise ValueError("DAPLinkUtility executable SHA-256 is unsupported")
-    tree, names, data = _registration_arrays(executable)
+    source_version, extraction = source
+    tree, names, data = (
+        _registration_arrays(executable)
+        if extraction == "static"
+        else _runtime_registration_arrays(executable)
+    )
     resources = QtResourceReader(tree, names, data).files()
-    return build_bundle_from_resources(resources, output, source_sha256=source_digest)
+    return build_bundle_from_resources(
+        resources,
+        output,
+        source_sha256=source_digest,
+        source_version=source_version,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -449,7 +692,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         key: manifest[key]
         for key in (
             "manufacturer_count", "series_count", "target_count", "region_count",
-            "referenced_algorithm_count", "unreferenced_algorithm_count", "blob_count", "blob_bytes",
+            "referenced_algorithm_count", "unreferenced_algorithm_count", "blob_count",
+            "blob_bytes", "missing_reference_count", "missing_references",
+            "skipped_target_count",
         )
     }, ensure_ascii=False, sort_keys=True))
     return 0

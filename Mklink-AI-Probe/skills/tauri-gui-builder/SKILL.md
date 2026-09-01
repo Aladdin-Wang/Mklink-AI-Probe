@@ -30,6 +30,13 @@ Tauri/Rust executable
 
 Development builds may fall back to a Python backend. Release installers must contain `mklink-sidecar.exe`, and the Rust launcher must prefer that bundled sidecar.
 
+The 0.2.0 release sidecar must also contain the pinned DAPLinkUtility 0.0.21
+algorithm catalog. Set `MKLINK_DAPLINKUTILITY_EXE` to the authorized local
+`DAPLinkUtility_v0.0.21.exe` before invoking `--bundle`. Its SHA-256 must be
+`a452cf5aee6a5dd1e43d0b77ff1d8b57d7c1a0fa64aa8c7d8b98a7c9abc777b9`.
+The builder extracts only the catalog and its referenced FLM payloads; it does
+not package DAPLinkUtility itself.
+
 ## Commands
 
 Run from the project root:
@@ -77,6 +84,10 @@ Generate only the standard NSIS by default. MSI and WebView2-offline variants re
 5. Verify the process tree contains no `python.exe` or `pythonw.exe`.
 6. Close normally and verify Mklink processes and port `8765` are released.
 7. Recompute every published SHA-256 value.
+8. Confirm the sidecar build reports the pinned 0.0.21 catalog with 7,059
+   targets and 2,224 content-deduplicated FLM blobs. The only tolerated missing
+   references are the three recorded optional Option Byte algorithms; no target
+   with a missing main programming algorithm may be shipped.
 
 Do not use the removed `/api/dashboard/status` endpoint. Use the current `/api/dash/<name>/status` routes when a dashboard-specific check is needed.
 

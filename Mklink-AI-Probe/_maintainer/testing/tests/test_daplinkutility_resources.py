@@ -93,6 +93,19 @@ def test_qt_resource_reader_rejects_out_of_bounds_tree_entries(resources_module)
         resources_module.QtResourceReader(bytes(corrupted), names, data).files()
 
 
+def test_runtime_locator_recovers_padded_qt_resource_arrays(resources_module):
+    tree, names, data, chips, flm = _qt_fixture()
+    region = b"ignored-prefix" + tree + b"\x00" * 11 + names + b"\x00" * 13 + data
+
+    recovered = resources_module._runtime_arrays_from_regions([region])
+    resources = resources_module.QtResourceReader(*recovered).files()
+
+    assert resources == {
+        "resources/algorithms/DEVICE.FLM": flm,
+        "resources/chips.json": chips,
+    }
+
+
 def test_build_bundle_filters_references_and_deduplicates_by_sha256(
     resources_module, tmp_path
 ):
@@ -169,6 +182,79 @@ def test_build_bundle_rejects_unsafe_or_missing_algorithm_names(resources_module
         )
 
 
+def test_build_bundle_tolerates_missing_optional_algorithm(resources_module, tmp_path):
+    catalog = {
+        "Vendor": {"Family": {"PART": {
+            "rambase": "0x20000000",
+            "ramsize": "0x1000",
+            "algooptb": "MISSING-OPTION.FLM",
+            "algoprog": [{
+                "flashbase": "0x08000000",
+                "flashsize": "0x10000",
+                "algorithm": "MAIN.FLM",
+            }],
+        }}}
+    }
+
+    manifest = resources_module.build_bundle_from_resources(
+        {
+            "resources/algorithms/chips_cn.json": json.dumps(catalog).encode(),
+            "resources/algorithms/MAIN.FLM": b"main",
+        },
+        tmp_path / "bundle",
+        source_sha256="c" * 64,
+        source_version="0.0.21",
+    )
+
+    assert manifest["target_count"] == 1
+    assert manifest["targets"][0]["option_algorithm"] is None
+    assert manifest["missing_references"] == ["MISSING-OPTION.FLM"]
+    assert manifest["missing_reference_count"] == 1
+    assert manifest["skipped_target_count"] == 0
+    assert manifest["source"]["version"] == "0.0.21"
+
+
+def test_build_bundle_skips_target_with_missing_program_algorithm(
+    resources_module, tmp_path
+):
+    catalog = {
+        "Vendor": {"Family": {
+            "GOOD": {
+                "rambase": "0x20000000",
+                "ramsize": "0x1000",
+                "algoprog": [{
+                    "flashbase": "0x08000000",
+                    "flashsize": "0x10000",
+                    "algorithm": "MAIN.FLM",
+                }],
+            },
+            "BAD": {
+                "rambase": "0x20000000",
+                "ramsize": "0x1000",
+                "algoprog": [{
+                    "flashbase": "0x08000000",
+                    "flashsize": "0x10000",
+                    "algorithm": "MISSING-MAIN.FLM",
+                }],
+            },
+        }}
+    }
+
+    manifest = resources_module.build_bundle_from_resources(
+        {
+            "resources/chips.json": json.dumps(catalog).encode(),
+            "resources/algorithms/MAIN.FLM": b"main",
+        },
+        tmp_path / "bundle",
+        source_sha256="d" * 64,
+    )
+
+    assert manifest["target_count"] == 1
+    assert manifest["targets"][0]["part_number"] == "GOOD"
+    assert manifest["missing_references"] == ["MISSING-MAIN.FLM"]
+    assert manifest["skipped_target_count"] == 1
+
+
 def test_pinned_daplinkutility_executable_builds_expected_complete_bundle(
     resources_module, tmp_path
 ):
@@ -177,11 +263,38 @@ def test_pinned_daplinkutility_executable_builds_expected_complete_bundle(
         pytest.skip("MKLINK_DAPLINKUTILITY_EXE is not configured")
 
     manifest = resources_module.build_bundle(Path(source), tmp_path / "bundle")
+    digest = hashlib.sha256(Path(source).read_bytes()).hexdigest()
 
-    assert manifest["manufacturer_count"] == 45
-    assert manifest["series_count"] == 502
-    assert manifest["target_count"] == 8137
-    assert manifest["region_count"] == 12161
-    assert manifest["referenced_algorithm_count"] == 1468
-    assert manifest["blob_count"] == 1428
-    assert manifest["source"]["sha256"] == resources_module.SUPPORTED_SOURCE_SHA256
+    expected = {
+        resources_module.SUPPORTED_SOURCE_SHA256: {
+            "manufacturer_count": 45,
+            "series_count": 502,
+            "target_count": 8137,
+            "region_count": 12161,
+            "referenced_algorithm_count": 1468,
+            "blob_count": 1428,
+            "missing_reference_count": 0,
+            "missing_references": [],
+            "skipped_target_count": 0,
+        },
+        resources_module.RELEASE_SOURCE_SHA256: {
+            "manufacturer_count": 94,
+            "series_count": 660,
+            "target_count": 7059,
+            "region_count": 9236,
+            "referenced_algorithm_count": 2288,
+            "blob_count": 2224,
+            "missing_reference_count": 3,
+            "missing_references": [
+                "HVC5xxxx_OPT.FLM",
+                "S32K116_OPT.FLM",
+                "S32K118_OPT.FLM",
+            ],
+            "skipped_target_count": 0,
+        },
+    }
+    assert digest in resources_module.SUPPORTED_SOURCES
+    assert manifest["source"]["sha256"] == digest
+    assert manifest["source"]["version"] == resources_module.SUPPORTED_SOURCES[digest][0]
+    for key, value in expected.get(digest, {}).items():
+        assert manifest[key] == value
