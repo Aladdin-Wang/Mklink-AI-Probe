@@ -2845,12 +2845,12 @@ def _cli_modbus_read(args):
                 bits = client.read_coils(start, qty, slave)
                 print(f"[OK] FC01 读 {qty} 个线圈 (从站 {slave}, 地址 {start}):")
                 for i, b in enumerate(bits):
-                    print(f"  {start + i:>6}: {fmt_on_off(b, fmt)}")
+                    print(f"  {start + i:>6}: {_fmt_on_off(b, fmt)}")
             elif fc == 2:
                 bits = client.read_discrete_inputs(start, qty, slave)
                 print(f"[OK] FC02 读 {qty} 个离散输入 (从站 {slave}, 地址 {start}):")
                 for i, b in enumerate(bits):
-                    print(f"  {start + i:>6}: {fmt_on_off(b, fmt)}")
+                    print(f"  {start + i:>6}: {_fmt_on_off(b, fmt)}")
             elif fc == 3:
                 regs = client.read_holding_registers(start, qty, slave)
                 print(f"[OK] FC03 读 {qty} 个保持寄存器 (从站 {slave}, 地址 {start}):")

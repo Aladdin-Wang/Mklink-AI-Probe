@@ -867,7 +867,7 @@ def test_serial_sse_reconnect_starts_with_current_status():
         manager = SerialStreamManager()
         generator = manager.sse_generator()
         try:
-            return await anext(generator)
+            return await generator.__anext__()
         finally:
             await generator.aclose()
 

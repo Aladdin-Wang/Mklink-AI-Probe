@@ -890,6 +890,8 @@ def create_app(
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
+    from mklink.observe_bridge import install_stream_observation
+    install_stream_observation(app, stream_registry)
 
     from starlette.concurrency import run_in_threadpool
     from mklink.remote import online_flash_api
@@ -3522,7 +3524,11 @@ def run_server(
     import uvicorn
 
     if app is None:
-        app = create_app(auth_token=auth_token, project_root=project_root)
+        app = create_app(
+            auth_token=auth_token,
+            project_root=project_root,
+            desktop_instance_id=desktop_instance_id,
+        )
 
     if auto_connect:
         import mklink
@@ -3559,7 +3565,27 @@ def run_server(
         except Exception as e:
             logger.warning("Auto-connect failed: %s", e)
 
+    from mklink.observe_bridge import configure_stream_observation
+
+    mklink_state = getattr(app.state, "mklink_state", {})
+    observation_token = (
+        auth_token
+        if auth_token is not None
+        else mklink_state.get("auth_token")
+    )
+    observation_correlation = (
+        desktop_instance_id
+        or mklink_state.get("desktop_instance_id")
+    )
+
     if desktop_port_end is None:
+        configure_stream_observation(
+            app,
+            host=host,
+            port=port,
+            auth_token=observation_token,
+            private_correlation=observation_correlation,
+        )
         browser_sessions = getattr(app.state, "browser_sessions", None)
         if browser_sessions is None:
             uvicorn.run(app, host=host, port=port, log_level="info")
@@ -3578,6 +3604,13 @@ def run_server(
         host, port, desktop_port_end,
     )
     try:
+        configure_stream_observation(
+            app,
+            host=host,
+            port=selected_port,
+            auth_token=observation_token,
+            private_correlation=observation_correlation,
+        )
         _write_desktop_runtime_info(
             desktop_runtime_info,
             port=selected_port,

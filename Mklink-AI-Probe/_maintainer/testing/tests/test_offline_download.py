@@ -828,7 +828,7 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
             payload={"model": "V4", "script_name": "factory-line-a.py"},
         )
         iterator = response.body_iterator
-        await anext(iterator)
+        await iterator.__anext__()
         await iterator.aclose()
         await asyncio.sleep(0)
         assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None

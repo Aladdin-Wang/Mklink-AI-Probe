@@ -504,20 +504,38 @@ class MKLinkSerialBridge:
             self._armed_prompt_prefix = b""
             self._armed_prompt_seen = False
 
-    def _enter_stream(self, state: DeviceState) -> None:
+    def _try_enter_stream(self, state: DeviceState) -> bool:
         """切换到流模式，并保留启动提示符之后已经到达的流字节。"""
         with self._buffer_lock:
+            if self._ctx.state is not DeviceState.READY:
+                return False
             pending = []
-            if self._armed_stream_state is state and self._armed_prompt_seen:
-                pending = list(self._armed_stream_tail)
+            armed_state = getattr(self, "_armed_stream_state", None)
+            prompt_seen = getattr(self, "_armed_prompt_seen", False)
+            armed_tail = getattr(self, "_armed_stream_tail", None)
+            if armed_state is state and prompt_seen and armed_tail is not None:
+                pending = list(armed_tail)
             self._response_buffer.clear()
             self._response_buffer.extend(pending)
             self._armed_stream_state = None
-            self._armed_stream_tail.clear()
+            if armed_tail is None:
+                self._armed_stream_tail = []
+            else:
+                armed_tail.clear()
             self._armed_prompt_prefix = b""
             self._armed_prompt_seen = False
             self._ctx.state = state
         self._utf8_decoder.reset()  # 新流会话从干净状态开始
+
+        return True
+
+    def _enter_stream(self, state: DeviceState) -> None:
+        """Atomically enter a stream without overwriting an active stream."""
+        if self._try_enter_stream(state):
+            return
+        raise RuntimeError(
+            f"cannot enter {state.value}; bridge state is {self._ctx.state.value}"
+        )
 
     def _capture_armed_stream_tail(self, data: bytes) -> bytes:
         """Capture raw bytes after the prompt and return command-mode bytes.
