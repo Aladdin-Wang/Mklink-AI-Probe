@@ -4,17 +4,18 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T13:56:24+08:00`
+- 更新时间：`2026-09-01T15:13:10+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：基于已发布的 0.1.9 主线，在 0.2.0 预发布分支持续完成独立、可验证的小步变更。
+- 当前任务：已完成 RTT/串口高频滚动显示首个 0.2.0 变更；继续在预发布分支完成独立、可验证的小步开发。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；具体功能范围按后续问题小步确定。
+- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；首个变更完成 RTT/串口高频终端背压、虚拟日志显示模式和原始数据记录。
+- **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **0.1.9 桌面端与 WebGUI** — `complete`。修复覆盖升级、WebGUI 启动、AXF 全局符号、Pack 导入刷新；完成器件联想、烧录算法展示、串口 YMODEM、Modbus 工作台与快捷键。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
 - **AI Skill/MCP 安全边界** — `complete`。普通用户 Skill 与维护流程分离；同一探针强制串行，限制读取、写入、批量、flush、dump_memory 和采集时长，超时后隔离会话。
@@ -22,6 +23,8 @@
 
 ## 验证证据
 
+- **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与约 5.2KB/s UART 压测：RTT/串口终端各连续 60 秒保持响应且浏览器无错误；RTT 日志+曲线 60 秒主机队列丢弃 0/0、DOM 14 行；串口日志 60 秒接收 939165B、队列丢弃 0/0、DOM 22 行。
+- **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。
 - **STM32F103RE 真机 HIL**：烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
 - **自动化与构建**：GUI 626 项通过；Python 1675 passed、12 failed、1 skipped，12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建和 NSIS 成功。
@@ -30,6 +33,7 @@
 ## 架构决策
 
 - 预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。
+- 高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
 - 普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。
 - SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。
@@ -39,7 +43,7 @@
 ## 真机环境
 
 - **probe**：主要 ARM 回归夹具为 MKLink V4；发布前验证固件 V4.3.9，调试端口 COM228、UART COM227。
-- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；最终保留关闭压力任务的普通固件。
+- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；当前板上保留 1ms RTT 与约 5.2KB/s UART 联合压力固件，原 main.c 备份在工程 .mklink/work/rtt-scroll-repro-20260901。
 - **permission**：测试工程允许修改与下载；其分析材料只放工程自身 .build。
 
 ## 下一动作
