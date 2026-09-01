@@ -41,6 +41,11 @@ export default defineConfig({
     globals: true,
     // Memory gates use process.memoryUsage(); parallel files contaminate their baseline.
     fileParallelism: false,
+    // The Windows release gate runs several large mount-heavy files serially.
+    // Keep a bounded budget that tolerates host contention without weakening
+    // explicit waitFor/assertion timeouts inside individual tests.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
   clearScreen: false,
   server: {
