@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T15:13:10+08:00`
+- 更新时间：`2026-09-01T15:51:42+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：已完成 RTT/串口高频滚动显示首个 0.2.0 变更；继续在预发布分支完成独立、可验证的小步开发。
+- 当前任务：已完成不规范本地 CMSIS-Pack 宽松导入；继续扩充 STM32、GD32 与常用国产 MCU 的可交付器件目录。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；首个变更完成 RTT/串口高频终端背压、虚拟日志显示模式和原始数据记录。
+- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示及不规范本地 CMSIS-Pack 宽松导入。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **0.1.9 桌面端与 WebGUI** — `complete`。修复覆盖升级、WebGUI 启动、AXF 全局符号、Pack 导入刷新；完成器件联想、烧录算法展示、串口 YMODEM、Modbus 工作台与快捷键。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
@@ -23,6 +23,7 @@
 
 ## 验证证据
 
+- **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与约 5.2KB/s UART 压测：RTT/串口终端各连续 60 秒保持响应且浏览器无错误；RTT 日志+曲线 60 秒主机队列丢弃 0/0、DOM 14 行；串口日志 60 秒接收 939165B、队列丢弃 0/0、DOM 22 行。
 - **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。
 - **STM32F103RE 真机 HIL**：烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。
@@ -33,6 +34,7 @@
 ## 架构决策
 
 - 预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。
+- 不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。
 - 高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
 - 普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。
@@ -48,8 +50,9 @@
 
 ## 下一动作
 
-1. 后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。
-2. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
+1. 利用本地 DAPLinkUtility_v0.0.21.exe 的器件目录和引用 FLM，在授权与哈希约束下扩充 STM32、GD32 与常用国产 MCU 的可交付目录。
+2. 后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。
+3. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
 
 ## 已知限制
 

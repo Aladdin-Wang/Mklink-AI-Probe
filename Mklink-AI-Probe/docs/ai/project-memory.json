@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T15:13:10+08:00",
+  "updated_at": "2026-09-01T15:51:42+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,14 +15,14 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "已完成 RTT/串口高频滚动显示首个 0.2.0 变更；继续在预发布分支完成独立、可验证的小步开发。",
+    "current_task": "已完成不规范本地 CMSIS-Pack 宽松导入；继续扩充 STM32、GD32 与常用国产 MCU 的可交付器件目录。",
     "release": "尚未生成或验证任何 0.2.0 发布资产。"
   },
   "milestones": [
     {
       "name": "0.2.0 开发周期",
       "status": "in_progress",
-      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；首个变更完成 RTT/串口高频终端背压、虚拟日志显示模式和原始数据记录。"
+      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成 RTT/串口高频显示及不规范本地 CMSIS-Pack 宽松导入。"
     },
     {
       "name": "RTT 与串口高频显示",
@@ -52,6 +52,10 @@
   ],
   "verification": [
     {
+      "area": "Linko/WHXY 本地 Pack 导入",
+      "result": "真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。"
+    },
+    {
       "area": "RTT/串口滚动与 RTT 曲线",
       "result": "STM32F103RE 真机 1ms RTT 与约 5.2KB/s UART 压测：RTT/串口终端各连续 60 秒保持响应且浏览器无错误；RTT 日志+曲线 60 秒主机队列丢弃 0/0、DOM 14 行；串口日志 60 秒接收 939165B、队列丢弃 0/0、DOM 22 行。"
     },
@@ -78,6 +82,7 @@
   ],
   "decisions": [
     "预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。",
+    "不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。",
     "高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。",
     "构建、测试、日志、临时脚本和可复用缓存统一位于 E:\\software\\HPM5300\\Mklink-AI-Probe\\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。",
     "普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。",
@@ -97,6 +102,7 @@
     "V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。"
   ],
   "next_actions": [
+    "利用本地 DAPLinkUtility_v0.0.21.exe 的器件目录和引用 FLM，在授权与哈希约束下扩充 STM32、GD32 与常用国产 MCU 的可交付目录。",
     "后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。",
     "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。"
   ],
