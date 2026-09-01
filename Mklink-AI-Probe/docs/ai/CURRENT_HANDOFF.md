@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-01T16:31:16+08:00`
+- 更新时间：`2026-09-01T16:35:30+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
@@ -23,7 +23,7 @@
 
 ## 验证证据
 
-- **DAPLinkUtility 0.0.21 内置算法**：固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0。
+- **DAPLinkUtility 0.0.21 内置算法**：固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0；正式 0.2.0 bundle 缺少或错用算法源时构建直接失败。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。

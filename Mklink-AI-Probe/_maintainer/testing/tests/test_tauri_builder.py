@@ -105,6 +105,9 @@ def test_release_bundle_forces_sidecar_rebuild(builder, monkeypatch, tmp_path):
     monkeypatch.setattr(
         builder, "build_tauri", lambda bundle=False, signing_key=None: None
     )
+    monkeypatch.setattr(
+        builder, "require_release_daplinkutility_executable", lambda: tmp_path
+    )
 
     builder.build_release_bundle()
 
@@ -139,6 +142,9 @@ def test_release_bundle_cleans_sidecar_when_stcp_staging_fails(builder, monkeypa
     sidecar.write_bytes(b"sidecar")
     monkeypatch.setattr(builder, "load_updater_private_key", lambda: "test-key")
     monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
+    monkeypatch.setattr(
+        builder, "require_release_daplinkutility_executable", lambda: tmp_path
+    )
 
     def fail_staging():
         raise RuntimeError("STCP missing")
@@ -206,6 +212,9 @@ def test_release_bundle_removes_stale_bundle_outputs(builder, monkeypatch, tmp_p
     monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
     monkeypatch.setattr(builder, "load_updater_private_key", lambda: "private-key")
     monkeypatch.setattr(
+        builder, "require_release_daplinkutility_executable", lambda: tmp_path
+    )
+    monkeypatch.setattr(
         builder,
         "build_tauri",
         lambda bundle=False, signing_key=None: observed.append(
@@ -232,6 +241,9 @@ def test_release_bundle_aborts_when_stale_outputs_cannot_be_removed(
     built = []
     monkeypatch.setattr(builder, "build_sidecar", lambda force=False: True)
     monkeypatch.setattr(builder, "load_updater_private_key", lambda: "private-key")
+    monkeypatch.setattr(
+        builder, "require_release_daplinkutility_executable", lambda: tmp_path
+    )
     monkeypatch.setattr(builder.shutil, "rmtree", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         builder,
@@ -998,3 +1010,36 @@ def test_daplinkutility_executable_rejects_missing_source(builder, monkeypatch, 
 
     with pytest.raises(RuntimeError, match="does not exist"):
         builder.daplinkutility_executable()
+
+
+def test_release_bundle_requires_daplinkutility_source(builder, monkeypatch):
+    monkeypatch.delenv("MKLINK_DAPLINKUTILITY_EXE", raising=False)
+
+    with pytest.raises(RuntimeError, match="requires MKLINK_DAPLINKUTILITY_EXE"):
+        builder.require_release_daplinkutility_executable()
+
+
+def test_release_bundle_rejects_unpinned_daplinkutility_source(
+    builder, monkeypatch, tmp_path
+):
+    executable = tmp_path / "DAPLinkUtility.exe"
+    executable.write_bytes(b"wrong-version")
+    monkeypatch.setenv("MKLINK_DAPLINKUTILITY_EXE", str(executable))
+
+    with pytest.raises(RuntimeError, match="pinned DAPLinkUtility 0.0.21 SHA-256"):
+        builder.require_release_daplinkutility_executable()
+
+
+def test_release_bundle_accepts_pinned_daplinkutility_source(
+    builder, monkeypatch, tmp_path
+):
+    executable = tmp_path / "DAPLinkUtility.exe"
+    executable.write_bytes(b"pinned-version")
+    monkeypatch.setenv("MKLINK_DAPLINKUTILITY_EXE", str(executable))
+    monkeypatch.setattr(
+        builder,
+        "RELEASE_DAPLINKUTILITY_SHA256",
+        hashlib.sha256(executable.read_bytes()).hexdigest(),
+    )
+
+    assert builder.require_release_daplinkutility_executable() == executable

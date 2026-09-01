@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T16:31:16+08:00",
+  "updated_at": "2026-09-01T16:35:30+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -53,7 +53,7 @@
   "verification": [
     {
       "area": "DAPLinkUtility 0.0.21 内置算法",
-      "result": "固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0。"
+      "result": "固定 SHA-256 的本地源经隐藏运行时资源提取生成 94 厂商、660 系列、7059 目标、9236 区域和 2224 个去重 FLM；STM32 446、GD32 306，STM32F103xE/GD32F303RC/CW32L012x8/LKS32MC074x8 均由运行时加载器校验为 ELF。仅 3 个缺失引用且均为可选 Option Byte，主算法缺失和跳过目标均为 0；正式 0.2.0 bundle 缺少或错用算法源时构建直接失败。"
     },
     {
       "area": "Linko/WHXY 本地 Pack 导入",

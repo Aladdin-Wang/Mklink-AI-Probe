@@ -15,6 +15,7 @@ import sys
 import os
 import shutil
 import argparse
+import hashlib
 import platform
 import json
 from contextlib import contextmanager
@@ -22,6 +23,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 IS_WINDOWS = platform.system() == "Windows"
+RELEASE_DAPLINKUTILITY_SHA256 = (
+    "a452cf5aee6a5dd1e43d0b77ff1d8b57d7c1a0fa64aa8c7d8b98a7c9abc777b9"
+)
 
 
 def cargo_target_dir():
@@ -137,6 +141,24 @@ def daplinkutility_executable():
     executable = Path(value).resolve()
     if not executable.is_file():
         raise RuntimeError("DAPLinkUtility executable does not exist: {}".format(executable))
+    return executable
+
+
+def require_release_daplinkutility_executable():
+    executable = daplinkutility_executable()
+    if executable is None:
+        raise RuntimeError(
+            "0.2.0 release bundle requires MKLINK_DAPLINKUTILITY_EXE "
+            "pointing to the pinned DAPLinkUtility 0.0.21 executable"
+        )
+    digest = hashlib.sha256()
+    with executable.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != RELEASE_DAPLINKUTILITY_SHA256:
+        raise RuntimeError(
+            "0.2.0 release bundle requires the pinned DAPLinkUtility 0.0.21 SHA-256"
+        )
     return executable
 
 
@@ -362,6 +384,7 @@ def collect_signed_bundle_outputs(bundle_dir):
 
 def build_release_bundle():
     """Build a bundle from the current source with a temporary sidecar config."""
+    require_release_daplinkutility_executable()
     signing_key = load_updater_private_key()
     staged_stcp = None
     try:
