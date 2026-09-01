@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-31T16:50:13+08:00",
+  "updated_at": "2026-09-01T13:56:24+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "master",
-    "head": "v0.1.9 标签到 1b2f177；发布后的交接精简提交位于 master。",
-    "remote_head": "GitHub origin/master 已同步；0.1.9 应用和固件公开索引已发布。",
+    "branch": "codex/v0.2.0-development",
+    "head": "0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。",
+    "remote_head": "每次维护前校正 GitHub origin/codex/v0.2.0-development。",
     "working_tree": "发布前应保持干净；构建产物仅位于仓库外层 .build。"
   },
   "mission": {
@@ -14,11 +14,16 @@
     "maintenance": "交接只保留当前基线、关键验证、长期约束和未完成事项；历史过程从 Git 与验证报告查询。"
   },
   "current_session": {
-    "status": "v0.1.9-published",
-    "current_task": "0.1.9 应用、普通用户 Skill、Site Agent 与新增 V3.3.8/V4.3.9 固件已发布，等待下一项小步维护任务。",
-    "release": "GitHub/Gitee v0.1.9 资产、updates/latest.json 和 firmware/latest.json 已回读校验一致。"
+    "status": "v0.2.0-development",
+    "current_task": "基于已发布的 0.1.9 主线，在 0.2.0 预发布分支持续完成独立、可验证的小步变更。",
+    "release": "尚未生成或验证任何 0.2.0 发布资产。"
   },
   "milestones": [
+    {
+      "name": "0.2.0 开发周期",
+      "status": "in_progress",
+      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；具体功能范围按后续问题小步确定。"
+    },
     {
       "name": "0.1.9 桌面端与 WebGUI",
       "status": "complete",
@@ -78,7 +83,7 @@
     "V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。"
   ],
   "next_actions": [
-    "后续问题在下一预发布分支持续小步修复、验证并及时推送。",
+    "后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。",
     "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。"
   ],
   "continuation_protocol": [
