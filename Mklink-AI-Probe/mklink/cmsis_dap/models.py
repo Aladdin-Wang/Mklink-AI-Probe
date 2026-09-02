@@ -189,6 +189,7 @@ class JobRequest:
     frequency: int = 1_000_000
     connect_mode: str = "halt"
     reset_mode: str = "default"
+    reset_voltage_mv: Optional[int] = None
     base_address: Optional[int] = None
     sector_addresses: Tuple[int, ...] = ()
     board: Optional[str] = None
@@ -251,6 +252,7 @@ class JobSnapshot:
     frequency: int = 1_000_000
     connect_mode: str = "halt"
     reset_mode: str = "default"
+    reset_voltage_mv: Optional[int] = None
     file_path: Optional[str] = None
     image_format: Optional[str] = None
     image_start: Optional[int] = None

@@ -87,6 +87,53 @@ def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     manager.shutdown()
 
 
+def test_power_cycle_job_holds_command_bridge_and_forwards_restore_voltage():
+    backend = BlockingBackend()
+    resources = ResourceManager()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        resources,
+        image_provider=lambda _image_id: inspected,
+    )
+    request = JobRequest(
+        actions=("connect", "program", "reset", "disconnect"),
+        image_id=inspected.image_id,
+        probe_id="probe",
+        target_part="STM32F103RE",
+        reset_mode="power-cycle",
+        reset_voltage_mv=3300,
+    )
+
+    job_id = manager.start(request)
+    assert backend.program_started.wait(2)
+    assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None
+    assert backend.calls[0][1]["reset_voltage_mv"] == 3300
+    backend.allow_program.set()
+    assert manager.wait(job_id, timeout=2).state is JobState.SUCCEEDED
+    assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is None
+    manager.shutdown()
+
+
+def test_power_cycle_job_requires_one_supported_restore_voltage():
+    manager = OnlineFlashJobManager(lambda: FakeBackend(), ResourceManager())
+    with pytest.raises(ValueError, match="requires reset_voltage_mv"):
+        manager.start(JobRequest(
+            actions=("connect", "reset", "disconnect"),
+            probe_id="probe",
+            target_part="STM32F103RE",
+            reset_mode="power-cycle",
+        ))
+    with pytest.raises(ValueError, match="only valid for power-cycle"):
+        manager.start(JobRequest(
+            actions=("connect", "reset", "disconnect"),
+            probe_id="probe",
+            target_part="STM32F103RE",
+            reset_voltage_mv=3300,
+        ))
+    manager.shutdown()
+
+
 def test_security_actions_run_in_safe_order_and_forward_validated_configuration():
     backend = FakeBackend()
     inspected = image()

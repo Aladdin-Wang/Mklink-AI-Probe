@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,7 @@ from mklink.cmsis_dap.backend import HpmRomBackend, PyOcdBackend, RoutingFlashBa
 from mklink.cmsis_dap.backend import (
     _expand_pack_flm_regions,
     _install_custom_flm_regions,
+    _power_cycle_mklink_probe,
     _relocate_pack_flm_regions,
 )
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
@@ -306,6 +308,43 @@ def test_hpm_rom_backend_programs_without_flm_and_verifies_by_readback(
         ("reset",),
         ("close",),
     ]
+
+
+def test_hpm_power_cycle_reset_restores_selected_voltage(monkeypatch) -> None:
+    calls = []
+
+    class Device:
+        def set_power_off(self):
+            calls.append(("power-off",))
+
+        def set_power_on(self, voltage_mv, *, confirm_5v=False):
+            calls.append(("power-on", voltage_mv, confirm_5v))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("mklink.cmsis_dap.backend.time.sleep", lambda delay: calls.append(("wait", delay)))
+    backend = HpmRomBackend(
+        device_factory=lambda **_kwargs: Device(),
+        port_resolver=lambda _probe: "probe-port",
+    )
+    backend.connect(
+        "probe",
+        "HPM5300",
+        1_000_000,
+        board="hpm5300evk",
+        reset_mode="power-cycle",
+        reset_voltage_mv=5000,
+    )
+
+    backend.reset_run()
+
+    assert calls == [
+        ("power-off",),
+        ("wait", 0.25),
+        ("power-on", 5000, True),
+    ]
+    backend.disconnect()
 
 
 def test_hpm_rom_backend_rejects_hex_and_reports_verify_mismatch(tmp_path: Path) -> None:
@@ -1658,6 +1697,86 @@ def test_reset_uses_stored_and_overridden_public_reset_types() -> None:
     with pytest.raises(ValueError):
         backend.reset_run("mystery")
     backend.disconnect()
+
+
+def test_power_cycle_reset_uses_exact_probe_and_validated_restore_voltage() -> None:
+    calls = []
+    probe = FakeProbe("MKLINK-POWER")
+    backend = PyOcdBackend(
+        session_factory=lambda selected, _options: FakeSession(),
+        probe_provider=lambda: [probe],
+        power_cycle=lambda identifier, voltage: calls.append((identifier, voltage)),
+    )
+    backend.connect(
+        "MKLINK-POWER",
+        "STM32F103RE",
+        1_000_000,
+        reset_mode="power-cycle",
+        reset_voltage_mv=3300,
+    )
+
+    backend.reset_run()
+
+    assert calls == [("MKLINK-POWER", 3300)]
+    backend.disconnect()
+
+
+def test_power_cycle_reset_rejects_missing_or_invalid_restore_voltage() -> None:
+    backend = PyOcdBackend(
+        session_factory=lambda _probe, _options: FakeSession(),
+    )
+    backend.connect(object(), "STM32F103RE", 1_000_000, reset_mode="power-cycle")
+    error = assert_error(FlashErrorCode.RESET_FAIL, backend.reset_run)
+    assert "validated restore voltage" in error.message
+    backend.disconnect()
+
+    with pytest.raises(ValueError, match="1800, 3300, or 5000"):
+        backend.connect(
+            object(),
+            "STM32F103RE",
+            1_000_000,
+            reset_mode="power-cycle",
+            reset_voltage_mv=2500,
+        )
+
+
+def test_default_power_cycle_uses_matching_cdc_commands(monkeypatch) -> None:
+    calls = []
+
+    class Bridge:
+        def __init__(self, port):
+            calls.append(("bridge", port))
+
+        def connect(self):
+            calls.append(("connect",))
+            return True
+
+        def send_command(self, command, timeout):
+            calls.append(("command", command, timeout))
+
+        def close(self):
+            calls.append(("close",))
+
+    monkeypatch.setattr("mklink.bridge.MKLinkSerialBridge", Bridge)
+    monkeypatch.setattr(
+        "mklink.discovery.discover_mklink_command_ports",
+        lambda: [SimpleNamespace(device="COM42", serial_number="probe-42")],
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend.time.sleep",
+        lambda delay: calls.append(("wait", delay)),
+    )
+
+    _power_cycle_mklink_probe("PROBE-42", 1800)
+
+    assert calls == [
+        ("bridge", "COM42"),
+        ("connect",),
+        ("command", "cmd.set_power_off()", 10.0),
+        ("wait", 0.25),
+        ("command", "cmd.set_power_on(1800)", 10.0),
+        ("close",),
+    ]
 
 
 def test_memory_regions_converts_only_flash_and_ram() -> None:

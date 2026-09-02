@@ -381,10 +381,13 @@ def remember_device_connection(
 
 
 def prepare_online_flash_connect(state: dict[str, Any], request) -> None:
-    """Release the shared CDC Device before an HPM online-flash connection."""
+    """Release shared CDC ownership before jobs that require the command bridge."""
     from mklink.hpm_config import is_hpm_target
 
-    if not is_hpm_target(request.target_part):
+    if (
+        not is_hpm_target(request.target_part)
+        and request.reset_mode != "power-cycle"
+    ):
         return
 
     from mklink.remote.dashboards import stop_bridge_dashboards

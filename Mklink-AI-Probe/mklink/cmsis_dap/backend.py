@@ -6,6 +6,7 @@ import hashlib
 import io
 import re
 import threading
+import time
 from copy import copy
 from pathlib import Path
 from types import MethodType
@@ -23,6 +24,47 @@ _LOCKED_ERROR_PATTERN = re.compile(
     r"|\bmass\s+erase\s+disabled\s+due\s+protection\b",
     re.IGNORECASE,
 )
+_POWER_CYCLE_VOLTAGES_MV = frozenset({1800, 3300, 5000})
+_POWER_CYCLE_OFF_SECONDS = 0.25
+
+
+def _power_cycle_mklink_probe(probe_identifier: str, voltage_mv: int) -> None:
+    """Power-cycle exactly one MKLink target through its matching CDC interface."""
+
+    from mklink.bridge import MKLinkSerialBridge
+    from mklink.discovery import discover_mklink_command_ports
+
+    identifier = str(probe_identifier or "").strip().casefold()
+    if not identifier:
+        raise RuntimeError("the selected CMSIS-DAP probe has no stable USB identity")
+    matches = [
+        port
+        for port in discover_mklink_command_ports()
+        if str(getattr(port, "serial_number", "") or "").strip().casefold()
+        == identifier
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "could not map the selected CMSIS-DAP probe to exactly one MKLink command port"
+        )
+    bridge = MKLinkSerialBridge(str(matches[0].device))
+    if not bridge.connect():
+        raise RuntimeError("could not open the selected MKLink command port")
+    powered_off = False
+    try:
+        bridge.send_command("cmd.set_power_off()", timeout=10.0)
+        powered_off = True
+        time.sleep(_POWER_CYCLE_OFF_SECONDS)
+        bridge.send_command(f"cmd.set_power_on({voltage_mv})", timeout=10.0)
+    except Exception:
+        if powered_off:
+            try:
+                bridge.send_command(f"cmd.set_power_on({voltage_mv})", timeout=10.0)
+            except Exception:
+                pass
+        raise
+    finally:
+        bridge.close()
 
 
 def _pack_flm_address_offset(
@@ -379,6 +421,8 @@ class HpmRomBackend:
         self._frequency = 1_000_000
         self._board: Optional[str] = None
         self._flash_cfg: Optional[Tuple[str, str, str, str]] = None
+        self._reset_mode = "default"
+        self._reset_voltage_mv: Optional[int] = None
         self._lock = threading.RLock()
 
     def connect(
@@ -395,6 +439,7 @@ class HpmRomBackend:
         custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
         reset_mode: str = "default",
+        reset_voltage_mv: Optional[int] = None,
         board: Optional[str] = None,
         hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None,
     ) -> None:
@@ -407,7 +452,6 @@ class HpmRomBackend:
             custom_flm_ram_start,
             custom_flm_ram_size,
             connect_mode,
-            reset_mode,
         )
         from mklink.hpm_config import (
             is_hpm_target,
@@ -418,6 +462,10 @@ class HpmRomBackend:
             raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "target is not an HPM device")
         if not isinstance(frequency, int) or isinstance(frequency, bool) or not 1 <= frequency <= 10_000_000:
             raise ValueError("frequency must be between 1 and 10000000 Hz")
+        if reset_voltage_mv is not None and reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
+            raise ValueError("reset_voltage_mv must be 1800, 3300, or 5000")
+        if reset_mode != "power-cycle" and reset_voltage_mv is not None:
+            raise ValueError("reset_voltage_mv is only valid for power-cycle reset")
         resolved_board, resolved_cfg = normalize_hpm_configuration(
             target, board=board, flash_cfg=hpm_flash_cfg
         )
@@ -445,6 +493,8 @@ class HpmRomBackend:
                 self._frequency = frequency
                 self._board = resolved_board
                 self._flash_cfg = resolved_cfg
+                self._reset_mode = reset_mode
+                self._reset_voltage_mv = reset_voltage_mv
             except FlashError:
                 raise
             except Exception as error:
@@ -453,6 +503,7 @@ class HpmRomBackend:
     def disconnect(self) -> None:
         with self._lock:
             device, self._device = self._device, None
+            self._reset_voltage_mv = None
             if device is not None:
                 try:
                     device.close()
@@ -595,9 +646,32 @@ class HpmRomBackend:
         return (MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),)
 
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
-        del reset_mode
         try:
-            self._require_device().reset()
+            device = self._require_device()
+            mode = self._reset_mode if reset_mode is None else reset_mode
+            if mode == "power-cycle":
+                if self._reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
+                    raise ValueError(
+                        "power-cycle reset requires a validated restore voltage"
+                    )
+                device.set_power_off()
+                try:
+                    time.sleep(_POWER_CYCLE_OFF_SECONDS)
+                    device.set_power_on(
+                        self._reset_voltage_mv,
+                        confirm_5v=self._reset_voltage_mv == 5000,
+                    )
+                except Exception:
+                    try:
+                        device.set_power_on(
+                            self._reset_voltage_mv,
+                            confirm_5v=self._reset_voltage_mv == 5000,
+                        )
+                    except Exception:
+                        pass
+                    raise
+                return
+            device.reset()
         except FlashError:
             raise
         except Exception as error:
@@ -669,13 +743,17 @@ class PyOcdBackend:
         probe_provider: Optional[Callable[[], Any]] = None,
         programmer_factory: Optional[Callable[..., Any]] = None,
         eraser_factory: Optional[Callable[..., Any]] = None,
+        power_cycle: Optional[Callable[[str, int], None]] = None,
     ) -> None:
         self._session_factory = session_factory
         self._probe_provider = probe_provider
         self._programmer_factory = programmer_factory
         self._eraser_factory = eraser_factory
+        self._power_cycle = power_cycle or _power_cycle_mklink_probe
         self._session: Any = None
         self._reset_mode = "default"
+        self._reset_voltage_mv: Optional[int] = None
+        self._probe_identifier = ""
         self._lock = threading.RLock()
 
     def connect(
@@ -692,6 +770,7 @@ class PyOcdBackend:
         custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
         reset_mode: str = "default",
+        reset_voltage_mv: Optional[int] = None,
         security_family: Optional[str] = None,
         security_flm_path: Optional[str] = None,
         security_flm_digest: Optional[str] = None,
@@ -701,6 +780,12 @@ class PyOcdBackend:
             self.disconnect()
             if not isinstance(frequency, int) or isinstance(frequency, bool) or frequency <= 0:
                 raise ValueError("frequency must be a positive integer")
+            if reset_voltage_mv is not None and reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
+                raise ValueError("reset_voltage_mv must be 1800, 3300, or 5000")
+            if reset_mode != "power-cycle" and reset_voltage_mv is not None:
+                raise ValueError(
+                    "reset_voltage_mv is only valid for power-cycle reset"
+                )
             resolved_pack: Optional[str] = None
             if pack is not None:
                 pack_path = Path(pack).expanduser()
@@ -900,6 +985,10 @@ class PyOcdBackend:
                 session.target.reset_and_halt()
                 self._session = session
                 self._reset_mode = reset_mode
+                self._reset_voltage_mv = reset_voltage_mv
+                self._probe_identifier = str(
+                    getattr(resolved_probe, "unique_id", None) or probe or ""
+                ).strip()
             except FlashError:
                 if session is not None:
                     try:
@@ -1036,6 +1125,8 @@ class PyOcdBackend:
     def disconnect(self) -> None:
         with self._lock:
             session, self._session = self._session, None
+            self._probe_identifier = ""
+            self._reset_voltage_mv = None
             if session is not None:
                 try:
                     session.close()
@@ -1263,9 +1354,21 @@ class PyOcdBackend:
         with self._lock:
             session = self._require_session()
             mode = self._reset_mode if reset_mode is None else reset_mode
-            if mode not in {"default", "hardware", "software", "core", "system"}:
+            if mode not in {
+                "default", "hardware", "software", "core", "system", "power-cycle"
+            }:
                 raise ValueError(f"unknown reset mode: {mode}")
             try:
+                if mode == "power-cycle":
+                    if self._reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
+                        raise ValueError(
+                            "power-cycle reset requires a validated restore voltage"
+                        )
+                    self._power_cycle(
+                        self._probe_identifier,
+                        self._reset_voltage_mv,
+                    )
+                    return
                 if mode == "default":
                     session.target.reset()
                     return

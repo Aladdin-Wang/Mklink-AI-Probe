@@ -986,16 +986,43 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('整片擦除'))
     await wrapper.get('[data-testid="action-lock"]').setValue(true)
+    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringContaining('可逆读保护'))
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
 
-    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('整片擦除'))
-    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringContaining('可逆读保护'))
+    expect(window.confirm).toHaveBeenCalledTimes(2)
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
     expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual([
       'connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect',
     ])
+    wrapper.unmount()
+  })
+
+  it('offers power-cycle reset with 3.3V default and confirms the exact voltage per job', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await wrapper.get('[data-testid="reset-mode"]').setValue('power-cycle')
+
+    expect(wrapper.get('[data-testid="reset-voltage-setting"]').text()).toContain('默认 3.3V')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
+    await readyAndStart(wrapper)
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('3.3V 恢复输出'))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
+    const body = JSON.parse(String(call?.[1]?.body))
+    expect(body.reset_mode).toBe('power-cycle')
+    expect(body.reset_voltage_mv).toBe(3300)
+    wrapper.unmount()
+  })
+
+  it('warns immediately before selecting a 5V power-cycle restore voltage', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await wrapper.get('[data-testid="reset-mode"]').setValue('power-cycle')
+    await wrapper.get('[data-testid="reset-voltage-5000"]').setValue(true)
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('5V 可能永久损坏'))
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-5000"]').element.checked).toBe(true)
     wrapper.unmount()
   })
 

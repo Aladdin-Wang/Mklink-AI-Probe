@@ -1124,6 +1124,13 @@ class Device:
         self._stop_active_probe_streams()
         self._bridge.send_command(f"cmd.set_power_on({voltage_mv})", timeout=10.0)
 
+    def set_power_off(self) -> None:
+        """Disable probe VCC output without disconnecting the command interface."""
+
+        self._require_connected()
+        self._stop_active_probe_streams()
+        self._bridge.send_command("cmd.set_power_off()", timeout=10.0)
+
     def reboot(self) -> None:
         """Reboot the MKLink probe, then release serial and HIL locks.
 

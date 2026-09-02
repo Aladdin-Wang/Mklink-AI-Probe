@@ -157,6 +157,7 @@ class JobBody(BaseModel):
     frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
+    reset_voltage_mv: Optional[int] = None
     base_address: Optional[int] = None
     sector_addresses: List[int] = Field(default_factory=list)
     board: Optional[str] = None
@@ -932,6 +933,15 @@ def _start_job_with_configuration(
     with services.configuration_lock:
         from mklink.hpm_config import is_hpm_target, normalize_hpm_configuration
 
+        if body.reset_mode == "power-cycle":
+            if body.reset_voltage_mv not in {1800, 3300, 5000}:
+                raise ValueError(
+                    "power-cycle reset requires reset_voltage_mv to be 1800, 3300, or 5000"
+                )
+        elif body.reset_voltage_mv is not None:
+            raise ValueError(
+                "reset_voltage_mv is only valid for power-cycle reset"
+            )
         hpm_target = is_hpm_target(target.part_number)
         board = body.board
         hpm_flash_cfg = body.hpm_flash_cfg
@@ -1084,6 +1094,7 @@ def _start_job_with_configuration(
             frequency=body.frequency,
             connect_mode=body.connect_mode,
             reset_mode=body.reset_mode,
+            reset_voltage_mv=body.reset_voltage_mv,
             base_address=body.base_address,
             sector_addresses=tuple(body.sector_addresses),
             board=board,

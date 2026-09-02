@@ -211,6 +211,18 @@ def test_device_set_power_on_stops_active_streams_only_after_validation():
     assert device._bridge.commands == [("cmd.set_power_on(3300)", 10.0)]
 
 
+def test_device_set_power_off_stops_streams_and_disables_vcc():
+    device = _connected_device()
+    events = []
+    device._rtt_session = SimpleNamespace(_running=True)
+    device.rtt_stop = lambda: events.append("rtt-stop")
+
+    device.set_power_off()
+
+    assert events == ["rtt-stop"]
+    assert device._bridge.commands == [("cmd.set_power_off()", 10.0)]
+
+
 def test_device_reboot_sends_probe_command_then_disconnects_and_releases_hil_lock():
     device = _connected_device()
     bridge = device._bridge

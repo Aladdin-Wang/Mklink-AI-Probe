@@ -113,6 +113,7 @@ export interface JobRequest {
   frequency?: number
   connect_mode?: string
   reset_mode?: string
+  reset_voltage_mv?: 1800 | 3300 | 5000 | null
   base_address?: number | null
   sector_addresses?: number[]
   board?: string | null
@@ -160,6 +161,7 @@ export interface JobSnapshot {
   frequency: number
   connect_mode: string
   reset_mode: string
+  reset_voltage_mv?: 1800 | 3300 | 5000 | null
   file_path: null
   image_format: string | null
   image_start: number | null

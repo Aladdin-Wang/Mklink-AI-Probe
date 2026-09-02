@@ -19,6 +19,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '放宽非规范 CMSIS-Pack 的加载解析，提升国产 MCU Pack 导入兼容性。',
       '增加了常用型号。',
       '在线烧录为已验证的 STM32F103 增加可逆读保护加锁与解锁；解锁整片擦除和加锁操作均需单独二次确认，未验证器件保持置灰。',
+      '加锁与解锁改为勾选时立即确认；复位方式增加断电复位，可选择 1.8V、3.3V 或 5V 恢复 VCC 输出，默认 3.3V。',
     ],
     changesEn: [
       'Release stale serial sessions after probe hot-plug so reconnecting no longer requires restarting the desktop app.',
@@ -26,6 +27,7 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Relax nonstandard CMSIS-Pack parsing to improve compatibility with domestic MCU Packs.',
       'Add common MCU models.',
       'Add hardware-validated reversible read-protection locking and unlocking for STM32F103, with separate destructive confirmations and fail-closed controls for unvalidated devices.',
+      'Confirm locking and unlocking when selected, and add power-cycle reset with 1.8 V, 3.3 V, or 5 V VCC restore output (3.3 V default).',
     ],
   },
   {

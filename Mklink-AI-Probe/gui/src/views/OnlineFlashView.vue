@@ -33,13 +33,17 @@ const api = useOnlineFlashApi()
 
 defineOptions({ name: 'OnlineFlashView' })
 
-interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; hpmBoard?: string; firmwarePath?: string; baseAddress?: string; baseAddressTarget?: string }
+type ResetVoltageMv = 1800 | 3300 | 5000
+interface SavedSettings { targetPart?: string; frequency?: number; connectMode?: string; resetMode?: string; resetVoltageMv?: number; hpmBoard?: string; firmwarePath?: string; baseAddress?: string; baseAddressTarget?: string }
 function savedSettings(): SavedSettings {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as SavedSettings } catch { return {} }
 }
 const saved = savedSettings()
 function savedFrequency(value: number | undefined): number {
   return value !== undefined && ONLINE_FREQUENCIES.has(value) ? value : 1_000_000
+}
+function savedResetVoltage(value: number | undefined): ResetVoltageMv {
+  return value === 1800 || value === 5000 ? value : 3300
 }
 
 const probes = ref<ProbeRecord[]>([])
@@ -49,6 +53,7 @@ const probeError = ref('')
 const frequency = ref(savedFrequency(saved.frequency))
 const connectMode = ref(saved.connectMode ?? 'attach')
 const resetMode = ref(saved.resetMode ?? 'default')
+const resetVoltageMv = ref<ResetVoltageMv>(savedResetVoltage(saved.resetVoltageMv))
 const hpmBoards = [
   'hpm5300evk', 'hpm5301evklite', 'hpm5e00evk', 'hpm6e00evk',
   'hpm6p00evk', 'hpm6200evk', 'hpm6300evk', 'hpm6750evk2',
@@ -215,6 +220,7 @@ function persist(): void {
       frequency: frequency.value,
       connectMode: connectMode.value,
       resetMode: resetMode.value,
+      resetVoltageMv: resetVoltageMv.value,
       hpmBoard: hpmBoard.value,
       firmwarePath: firmwarePath.value || undefined,
       baseAddress: baseAddress.value || undefined,
@@ -227,7 +233,7 @@ function persist(): void {
     }
   }
 }
-watch([frequency, connectMode, resetMode, desiredPart, hpmBoard, baseAddress], persist)
+watch([frequency, connectMode, resetMode, resetVoltageMv, desiredPart, hpmBoard, baseAddress], persist)
 
 async function refreshProbes(retryWhenEmpty = false): Promise<void> {
   probeBusy.value = true; probeError.value = ''
@@ -776,19 +782,18 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
       : []
   )
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
-  if (orderedActions.includes('unlock') && !confirm(tr(
-    '解锁会关闭读保护并强制整片擦除，Bootloader、应用程序和全部 Flash 数据都会永久删除。确定继续？',
-    'Unlocking disables read protection and forces a full-chip erase. The bootloader, application, and all Flash data will be permanently deleted. Continue?',
-  ))) return
-  if (orderedActions.includes('lock') && !confirm(tr(
-    '加锁会在校验完成后启用可逆读保护，并在复位后限制 Flash 读取和调试访问。以后解锁仍会整片擦除。确定继续？',
-    'Locking enables reversible read protection after verification and restricts Flash reads and debug access after reset. A later unlock will still erase the entire chip. Continue?',
+  const usesReset = orderedActions.includes('reset')
+  const selectedResetMode = usesReset ? resetMode.value : 'default'
+  const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
+  if (selectedResetVoltage !== null && !confirm(tr(
+    `即将关闭下载器 VCC 输出，等待 250ms 后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
+    `The probe will disable VCC, wait 250 ms, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
   ))) return
   progressOwner.value = 'flash'
   creatingJob.value = true
   try {
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: resetMode.value, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
     if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
@@ -851,7 +856,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="online-flash-grid">
     <aside class="workspace-zone settings-zone" data-zone="settings">
-      <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" />
+      <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
       <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>

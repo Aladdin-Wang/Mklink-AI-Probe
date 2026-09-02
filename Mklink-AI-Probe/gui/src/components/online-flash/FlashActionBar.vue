@@ -12,8 +12,24 @@ function available(action: JobAction): boolean {
   if (action === 'lock') return props.lockEnabled === true
   return true
 }
-function toggle(action: JobAction, checked: boolean) {
+function confirmSecurityAction(action: JobAction): boolean {
+  if (action === 'unlock') return confirm(tr(
+    '解锁会关闭读保护并强制整片擦除，Bootloader、应用程序和全部 Flash 数据都会永久删除。确定勾选“解锁”？',
+    'Unlocking disables read protection and forces a full-chip erase. The bootloader, application, and all Flash data will be permanently deleted. Select Unlock?',
+  ))
+  if (action === 'lock') return confirm(tr(
+    '加锁会在校验完成后启用可逆读保护，并在复位后限制 Flash 读取和调试访问。以后解锁仍会整片擦除。确定勾选“加锁”？',
+    'Locking enables reversible read protection after verification and restricts Flash reads and debug access after reset. A later unlock will still erase the entire chip. Select Lock?',
+  ))
+  return true
+}
+function toggle(action: JobAction, input: HTMLInputElement) {
+  const checked = input.checked
   if (mandatory.has(action) || !available(action)) return
+  if (checked && !confirmSecurityAction(action)) {
+    input.checked = false
+    return
+  }
   const selected = new Set(props.actions)
   if (checked) {
     selected.add(action)
@@ -32,7 +48,7 @@ const totalPercent = computed(() => Math.round(Math.min(1, Math.max(0, props.tot
   <div class="action-bar">
     <div class="action-choices">
       <label v-for="choice in choices" :key="choice.value" :class="{ unavailable: !available(choice.value) }" :title="!available(choice.value) ? securityReason : undefined">
-        <input :data-testid="`action-${choice.value}`" type="checkbox" :checked="actions.includes(choice.value)" :disabled="active || mandatory.has(choice.value) || !available(choice.value)" @change="toggle(choice.value, ($event.target as HTMLInputElement).checked)">
+        <input :data-testid="`action-${choice.value}`" type="checkbox" :checked="actions.includes(choice.value)" :disabled="active || mandatory.has(choice.value) || !available(choice.value)" @change="toggle(choice.value, $event.target as HTMLInputElement)">
         {{ choice.label }}
       </label>
     </div>

@@ -356,7 +356,10 @@ class OnlineFlashJobManager:
                 from mklink.hpm_config import is_hpm_target
 
                 resources = [ResourceGroup.TARGET_DEBUG]
-                if is_hpm_target(job.request.target_part):
+                if (
+                    is_hpm_target(job.request.target_part)
+                    or job.request.reset_mode == "power-cycle"
+                ):
                     resources.append(ResourceGroup.MKLINK_BRIDGE)
                     self._resource_manager.acquire_many(
                         resources,
@@ -411,6 +414,10 @@ class OnlineFlashJobManager:
                                     connect_mode=job.request.connect_mode,
                                     reset_mode=job.request.reset_mode,
                                 )
+                                if job.request.reset_voltage_mv is not None:
+                                    connect_options["reset_voltage_mv"] = (
+                                        job.request.reset_voltage_mv
+                                    )
                                 if job.request.security_family is not None:
                                     connect_options.update(
                                         security_family=job.request.security_family,
@@ -823,6 +830,7 @@ class OnlineFlashJobManager:
             frequency=job.request.frequency,
             connect_mode=job.request.connect_mode,
             reset_mode=job.request.reset_mode,
+            reset_voltage_mv=job.request.reset_voltage_mv,
             file_path=inspected.file_path if inspected else None,
             image_format=inspected.format if inspected else None,
             image_start=inspected.start if inspected else None,
@@ -857,6 +865,15 @@ class OnlineFlashJobManager:
             raise ValueError("program and verify require an image")
         if request.sector_addresses and "erase" not in actions:
             raise ValueError("sector addresses require erase")
+        if request.reset_mode == "power-cycle":
+            if request.reset_voltage_mv not in {1800, 3300, 5000}:
+                raise ValueError(
+                    "power-cycle reset requires reset_voltage_mv to be 1800, 3300, or 5000"
+                )
+        elif request.reset_voltage_mv is not None:
+            raise ValueError(
+                "reset_voltage_mv is only valid for power-cycle reset"
+            )
         security_actions = {"unlock", "lock"}.intersection(actions)
         if security_actions and not all((
             request.security_family,

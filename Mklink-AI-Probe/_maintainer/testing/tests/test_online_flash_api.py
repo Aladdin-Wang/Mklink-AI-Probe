@@ -577,6 +577,47 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
     assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
 
 
+def test_power_cycle_job_forwards_validated_restore_voltage(app, services):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "reset_mode": "power-cycle",
+            "reset_voltage_mv": 1800,
+        },
+    )
+
+    assert response.status_code == 200
+    started = services.job_manager.started[-1]
+    assert started.reset_mode == "power-cycle"
+    assert started.reset_voltage_mv == 1800
+
+
+@pytest.mark.parametrize("voltage", [None, 0, 2500, 5001])
+def test_power_cycle_job_rejects_missing_or_unsupported_restore_voltage(
+    app, voltage
+):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "reset_mode": "power-cycle",
+            "reset_voltage_mv": voltage,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "VALIDATION_ERROR"
+
+
 def test_target_algorithm_route_describes_pyocd_builtin_regions(app, services, monkeypatch):
     builtin = TargetRecord(
         "DEVICE_A", "Vendor", installed=True, source="builtin",
