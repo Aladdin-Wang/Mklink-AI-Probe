@@ -578,6 +578,72 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
     assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
 
 
+def test_stm32g474_security_job_requires_power_cycle_reset(
+    app, services, monkeypatch, tmp_path
+):
+    option_flm = tmp_path / "STM32G4xx_DB_OPT.FLM"
+    option_flm.write_bytes(b"flm")
+    capability = type("Capability", (), {
+        "family": "stm32g474-rdp1",
+        "algorithm_path": option_flm,
+        "algorithm_sha256": "3" * 64,
+        "option_address": 0x1FFF7800,
+        "option_size": 84,
+    })()
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.require_security_capability",
+        lambda _part: capability,
+    )
+
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "unlock", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "reset_mode": "default",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
+    assert "断电复位" in response.json()["detail"]["message"]
+
+    wrong_connection = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "unlock", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "connect_mode": "halt",
+            "reset_mode": "power-cycle",
+            "reset_voltage_mv": 3300,
+        },
+    )
+    assert wrong_connection.status_code == 422
+    assert "复位下连接" in wrong_connection.json()["detail"]["message"]
+
+    accepted = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "unlock", "reset", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+            "connect_mode": "under-reset",
+            "reset_mode": "power-cycle",
+            "reset_voltage_mv": 3300,
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert services.job_manager.started[-1].connect_mode == "under-reset"
+
+
 def test_power_cycle_job_forwards_validated_restore_voltage(app, services):
     response = request(
         app,
@@ -883,6 +949,45 @@ def _use_daplink_target(services, algorithms, monkeypatch):
         "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
         lambda *_args, **_kwargs: list(algorithms),
     )
+
+
+@pytest.mark.parametrize(
+    ("route", "extra"),
+    (
+        ("/api/online-flash/memory/read", {}),
+        ("/api/online-flash/memory/read-stream", {"chunk_sizes": [0x800, 0x800]}),
+    ),
+)
+def test_daplink_exact_alias_memory_read_loads_covering_builtin_algorithm(
+    app, services, tmp_path, monkeypatch, route, extra,
+):
+    internal = _algorithm(
+        tmp_path, "stm32-main.flm", 0x08000000, 0x80000, default=True,
+    )
+    _use_daplink_target(services, (internal,), monkeypatch)
+
+    response = request(
+        app,
+        "POST",
+        route,
+        json={
+            "address": "0x08000000",
+            "size": 0x1000,
+            "probe_id": "mk",
+            "target_part": "STM32G474RET6",
+            **extra,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    request_record = services.job_manager.read_request
+    assert request_record.target_part == "STM32G474RET6"
+    assert request_record.pack_path is None
+    assert request_record.custom_flm_paths == (internal.builtin_blob_path,)
+    assert request_record.custom_flm_digests == (internal.builtin_blob_sha256,)
+    assert request_record.custom_flm_regions == ((0x08000000, 0x80000),)
+    assert request_record.custom_flm_ram_start == 0x20000000
+    assert request_record.custom_flm_ram_size == 0x20000
 
 
 def test_daplink_connect_only_loads_one_deterministic_default_algorithm(

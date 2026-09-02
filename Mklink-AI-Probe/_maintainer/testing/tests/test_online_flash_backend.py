@@ -291,6 +291,97 @@ def test_stm32f413_security_preserves_non_rdp_options_and_never_uses_level2() ->
     assert all(payload[1] != 0xCC for payload in programmed)
 
 
+def test_stm32g474_security_preserves_every_non_rdp_option_field() -> None:
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFF7800
+        length = 84
+        is_flash = True
+
+        def __init__(self, _target):
+            self.flash = object()
+
+    class Target(FakeTarget):
+        def __init__(self):
+            words = (
+                0xFFEFF8AA,
+                0x0000FFFF,
+                0x00008000,
+                0x008000FF,
+                0x008000FF,
+                0x00000100,
+                0x0000FFFF,
+                0x00008000,
+                0x008000FF,
+                0x008000FF,
+                0x00010000,
+            )
+            self.options = bytearray(
+                b"".join(word.to_bytes(4, "little") for word in words)
+            )
+            self.physical_rdp = bytearray((0xAA, 0x55))
+            self.writes = []
+            self.option_region = OptionRegion(self)
+            super().__init__((self.option_region,))
+
+        def read_memory_block8(self, address, size):
+            if address == 0xE0042000:
+                return (0x20036469).to_bytes(4, "little")[:size]
+            if address == 0x1FFF75E0:
+                return (512).to_bytes(2, "little")[:size]
+            if address == 0x40022010:
+                return (0).to_bytes(4, "little")[:size]
+            if address == 0x1FFF7800:
+                physical = bytes((self.physical_rdp[0], 0, 0, 0, self.physical_rdp[1], 0, 0, 0))
+                return physical[:size]
+            if address in PyOcdBackend._STM32G474_OPTION_REGISTERS:
+                index = PyOcdBackend._STM32G474_OPTION_REGISTERS.index(address)
+                start = index * 4
+                return bytes(self.options[start : start + size])
+            raise AssertionError(hex(address))
+
+        def write32(self, address, value):
+            self.writes.append((address, value))
+            if address in PyOcdBackend._STM32G474_OPTION_REGISTERS:
+                index = PyOcdBackend._STM32G474_OPTION_REGISTERS.index(address)
+                start = index * 4
+                self.options[start : start + 4] = int(value).to_bytes(4, "little")
+            elif address == 0x40022014 and value == (1 << 17):
+                self.physical_rdp[:] = (self.options[0], self.options[0] ^ 0xFF)
+
+        def flush(self):
+            pass
+
+    target = Target()
+    original = bytes(target.options)
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "stm32g474-rdp1"
+
+    assert "power-cycle reset is required" in backend.lock_security()
+    assert target.options[0] == 0xBB
+    assert target.options[1:] == original[1:]
+    assert "mass-erased" in backend.unlock_security()
+    assert target.options == original
+    optr_writes = [
+        value for address, value in target.writes
+        if address == PyOcdBackend._STM32G474_OPTION_REGISTERS[0]
+    ]
+    assert [value & 0xFF for value in optr_writes] == [0xBB, 0xAA]
+    assert all(value & 0xFF != 0xCC for value in optr_writes)
+
+
+def test_stm32g474_option_programming_rejects_irreversible_rdp2() -> None:
+    class Target:
+        def write32(self, _address, _value):
+            raise AssertionError("RDP2 payload must be rejected before any write")
+
+    desired = bytearray(44)
+    desired[0] = 0xCC
+    with pytest.raises(RuntimeError, match="reversible RDP"):
+        PyOcdBackend._program_stm32g474_option_registers(Target(), bytes(desired))
+
+
 def test_stm32f103_locked_options_are_reconstructed_from_shadow_registers() -> None:
     class Target:
         def read_memory_block8(self, address, size):
@@ -505,7 +596,7 @@ def test_routing_backend_selects_hpm_rom_only_for_hpm_targets() -> None:
     assert "board" not in calls[2][1]
 
 
-def test_connect_halts_target_and_disconnect_closes_session() -> None:
+def test_connect_relies_on_pyocd_connect_mode_and_disconnect_closes_session() -> None:
     session = FakeSession()
     backend = PyOcdBackend(session_factory=lambda probe, options: session)
 
@@ -513,7 +604,7 @@ def test_connect_halts_target_and_disconnect_closes_session() -> None:
     backend.disconnect()
 
     assert session.open_calls == 1
-    assert session.target.reset_and_halt_calls == 1
+    assert session.target.reset_and_halt_calls == 0
     assert session.close_calls == 1
 
 

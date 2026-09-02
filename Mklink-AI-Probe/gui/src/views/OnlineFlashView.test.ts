@@ -581,11 +581,12 @@ function viewFetch(targets = [installedTarget]) {
     }
     if (url.includes('/targets/') && url.endsWith('/security')) {
       const targetPart = decodeURIComponent(url.split('/targets/')[1].split('/security')[0])
-      const supported = targetPart.startsWith('STM32F103')
+      const supported = targetPart.startsWith('STM32F103') || targetPart.startsWith('STM32G474')
+      const family = targetPart.startsWith('STM32G474') ? 'stm32g474-rdp1' : supported ? 'stm32f103-rdp1' : ''
       return json({
         part_number: targetPart, supported,
         unlock_supported: supported, lock_supported: supported,
-        family: supported ? 'stm32f103-rdp1' : '',
+        family,
         reason: supported ? '' : '该器件尚未通过加锁/解锁真机验证',
         unlock_erases_flash: supported, reversible_lock: supported,
       })
@@ -997,6 +998,22 @@ describe('online flash task workspace behavior', () => {
     expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual([
       'connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect',
     ])
+    wrapper.unmount()
+  })
+
+  it('selects the safe G474 connection and reset modes when unlock is checked', async () => {
+    const target = { ...installedTarget, part_number: 'STM32G474RET6' }
+    vi.stubGlobal('fetch', viewFetch([target]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32G474RET6"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32G474RET6"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
     wrapper.unmount()
   })
 
@@ -1457,7 +1474,7 @@ describe('online flash task workspace behavior', () => {
     expect(exactSignal).toBeUndefined()
 
     await wrapper.get('[data-testid="target-search"]').setValue('OTHER')
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(150)
     await flushPromises()
     resolveExact(new Response(JSON.stringify([installed]), { status: 200 }))
     await flushPromises()
@@ -1514,7 +1531,7 @@ describe('online flash task workspace behavior', () => {
     const initialSearchCount = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/targets?')).length
 
     await wrapper.get('input[aria-label="搜索器件"]').setValue('HPM 53')
-    await vi.advanceTimersByTimeAsync(299)
+    await vi.advanceTimersByTimeAsync(149)
     expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('q=HPM+53'))).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(1)
 
@@ -1540,7 +1557,7 @@ describe('online flash task workspace behavior', () => {
     }))
     const wrapper = mount(await onlineFlashView())
     await wrapper.get('input[aria-label="搜索器件"]').setValue('new')
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(150)
     await vi.waitFor(() => expect(wrapper.text()).toContain('NEW-TARGET'))
     expect(initialSignal?.aborted).toBe(true)
     resolveInitial(new Response(JSON.stringify([{ ...installedTarget, part_number: 'OLD-TARGET' }]), { status: 200 }))

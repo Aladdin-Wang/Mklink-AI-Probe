@@ -164,7 +164,15 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
     && (!values.includes('unlock') || security.value.unlock_supported)
     && (!values.includes('lock') || (security.value.lock_supported && lockIndex > 0 && values[lockIndex - 1] === 'verify' && values[lockIndex + 1] === 'reset'))
 }
-function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
+function setActions(values: JobAction[]): void {
+  const next = canonicalActions(values)
+  if (security.value.family === 'stm32g474-rdp1' && (next.includes('unlock') || next.includes('lock'))) {
+    resetMode.value = 'power-cycle'
+    if (next.includes('unlock')) connectMode.value = 'under-reset'
+    persist()
+  }
+  actions.value = next
+}
 const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
 const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value)
 const hpmAlgorithmNotRequired = computed(() => (
@@ -263,7 +271,7 @@ async function searchTargets(query = '', commit = true): Promise<TargetRecord[]>
     packError.value = ''
   }
   try {
-    const records = await api.searchTargets(query, { limit: 100 }, controller?.signal)
+    const records = await api.searchTargets(query, { limit: 40 }, controller?.signal)
     if (commit && generation === targetSearchGeneration && !disposed) {
       targets.value = records
       const exact = records.find(target => target.part_number === desiredPart.value)

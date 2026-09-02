@@ -106,6 +106,34 @@ def test_cached_exact_order_code_is_promoted_by_unique_builtin_alias(
     assert result.pack_path is None
 
 
+def test_typeahead_resolves_aliases_only_for_the_returned_window(tmp_path, monkeypatch):
+    paths = PackPaths(root=tmp_path)
+    _write_index(paths, {
+        "PART-{:04d}".format(index): _index_target("Vendor", "Part_DFP", "1.0.0")
+        for index in range(200)
+    })
+    donor = TargetRecord(
+        "PART-xxxx", "Vendor", installed=True, source="daplink-builtin"
+    )
+    batches = []
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.builtin_flm_bundle.resolve_builtin_flm_parts",
+        lambda parts: batches.append(tuple(parts)) or {},
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.builtin_flm_bundle.resolve_builtin_flm_part",
+        lambda _part: None,
+    )
+
+    result = PackCatalog(paths, builtin_provider=lambda: [donor]).search(
+        "PART-", limit=7
+    )
+
+    assert len(result) == 7
+    assert len(batches) == 1
+    assert len(batches[0]) <= 7
+
+
 def test_exact_order_code_search_works_without_online_index(tmp_path, monkeypatch):
     paths = PackPaths(root=tmp_path)
     donor = TargetRecord(

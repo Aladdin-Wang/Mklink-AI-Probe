@@ -7,6 +7,7 @@ from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.security import (
     STM32F1_OPTION_FLM_SHA256,
     STM32F4_OPTION_FLM_SHA256,
+    STM32G4_OPTION_FLM_SHA256,
     require_security_capability,
     security_capability,
 )
@@ -84,3 +85,47 @@ def test_stm32f413_exact_order_code_uses_only_pinned_option_algorithm(monkeypatc
     assert capability.family == "stm32f413-rdp1"
     assert capability.option_address == 0x1FFFC000
     assert capability.option_size == 4
+
+
+def test_stm32g474_512k_order_codes_use_only_pinned_option_algorithm(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32G474xE",
+        file_name="STM32G4xx_DB_OPT.FLM",
+        path=tmp_path / "STM32G4xx_DB_OPT.FLM",
+        sha256=STM32G4_OPTION_FLM_SHA256,
+        ram_start=0x20000000,
+        ram_size=0x20000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == "STM32G474xE" else None,
+    )
+
+    capability = security_capability("STM32G474RETx")
+
+    assert capability.supported is True
+    assert capability.family == "stm32g474-rdp1"
+    assert capability.option_address == 0x1FFF7800
+    assert capability.option_size == 84
+    assert security_capability("STM32G474xE").supported is True
+    assert security_capability("STM32G474RCTx").supported is False
+
+
+def test_stm32g474_fails_closed_when_option_algorithm_hash_changes(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32G474xE",
+        file_name="STM32G4xx_DB_OPT.FLM",
+        path=tmp_path / "STM32G4xx_DB_OPT.FLM",
+        sha256="0" * 64,
+        ram_start=0x20000000,
+        ram_size=0x20000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda _part: algorithm,
+    )
+
+    capability = security_capability("STM32G474RETx")
+
+    assert capability.supported is False
+    assert "白名单" in capability.reason

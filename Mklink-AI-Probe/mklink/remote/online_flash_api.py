@@ -957,6 +957,74 @@ def _job_flash_algorithms(
     return []
 
 
+def _daplink_memory_configuration(
+    services: OnlineFlashServices,
+    target: TargetRecord,
+    address: int,
+    size: int,
+) -> Dict[str, object]:
+    """Attach the bundled algorithm that gives an exact alias its memory map."""
+
+    if target.source != "daplink-builtin":
+        return {}
+    end = address + size
+    if end > 0x1_0000_0000:
+        raise FlashError(
+            FlashErrorCode.IMAGE_OUT_OF_RANGE,
+            "memory read exceeds the 32-bit target address space",
+        )
+    from mklink.cmsis_dap.algorithm_catalog import (
+        FlashAlgorithmError,
+        discover_flash_algorithms,
+        resolve_firmware_algorithms,
+    )
+
+    try:
+        algorithms = discover_flash_algorithms(target.part_number, paths=services.paths)
+        selections = resolve_firmware_algorithms(
+            algorithms,
+            ((address, end),),
+        )
+    except FlashAlgorithmError as error:
+        raise FlashError(
+            FlashErrorCode.TARGET_NOT_SUPPORTED,
+            str(error),
+        ) from error
+    selected = [selection.algorithm for selection in selections]
+    records = []
+    for algorithm in selected:
+        path = algorithm.custom_path or algorithm.builtin_blob_path
+        digest = algorithm.custom_sha256 or algorithm.builtin_blob_sha256
+        if not path or not digest:
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "DAPLink builtin target algorithm asset is unavailable",
+            )
+        records.append((
+            str(path),
+            str(digest),
+            (int(algorithm.flash_start), int(algorithm.flash_size)),
+        ))
+    ram_regions = {
+        (int(algorithm.ram_start), int(algorithm.ram_size))
+        for algorithm in selected
+        if int(getattr(algorithm, "ram_size", 0)) > 0
+    }
+    if len(ram_regions) != 1:
+        raise FlashError(
+            FlashErrorCode.TARGET_NOT_SUPPORTED,
+            "DAPLink builtin target has ambiguous algorithm RAM configuration",
+        )
+    ram_start, ram_size = next(iter(ram_regions))
+    return {
+        "custom_flm_paths": tuple(record[0] for record in records),
+        "custom_flm_digests": tuple(record[1] for record in records),
+        "custom_flm_regions": tuple(record[2] for record in records),
+        "custom_flm_ram_start": ram_start,
+        "custom_flm_ram_size": ram_size,
+    }
+
+
 def _start_job_with_configuration(
     services: OnlineFlashServices,
     body: JobBody,
@@ -1003,6 +1071,22 @@ def _start_job_with_configuration(
             security_flm_path = str(security.algorithm_path)
             security_flm_digest = security.algorithm_sha256
             security_flm_region = (security.option_address, security.option_size)
+            if security.family == "stm32g474-rdp1" and (
+                body.reset_mode != "power-cycle" or "reset" not in body.actions
+            ):
+                raise FlashError(
+                    FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                    "STM32G474 加锁/解锁必须选择断电复位并在操作后执行复位",
+                )
+            if (
+                security.family == "stm32g474-rdp1"
+                and "unlock" in body.actions
+                and body.connect_mode != "under-reset"
+            ):
+                raise FlashError(
+                    FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                    "STM32G474 解锁必须使用复位下连接，避免目标程序与选项字节操作并发",
+                )
         inspection = None
         if any(action in body.actions for action in ("program", "verify")):
             if not body.image_id:
@@ -1306,6 +1390,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         address = await _blocking(_parse_base_address, body.address)
         if address is None:
             raise HTTPException(status_code=422, detail="address is required")
+        flash_configuration = await _blocking(
+            _daplink_memory_configuration,
+            services,
+            target,
+            address,
+            body.size,
+        )
         request = JobRequest(
             actions=("connect", "disconnect"),
             preempt_ai=body.preempt_ai,
@@ -1317,6 +1408,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             reset_mode=body.reset_mode,
             board=body.board,
             hpm_flash_cfg=body.hpm_flash_cfg,
+            **flash_configuration,
         )
         data = await _blocking(
             services.job_manager.read_memory,
@@ -1353,6 +1445,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 status_code=422,
                 detail="chunk_sizes must contain positive sizes that add up to size",
             )
+        flash_configuration = await _blocking(
+            _daplink_memory_configuration,
+            services,
+            target,
+            address,
+            body.size,
+        )
         request = JobRequest(
             actions=("connect", "disconnect"),
             preempt_ai=body.preempt_ai,
@@ -1364,6 +1463,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             reset_mode=body.reset_mode,
             board=body.board,
             hpm_flash_cfg=body.hpm_flash_cfg,
+            **flash_configuration,
         )
         filename = "read-0x{:08X}-{}.bin".format(address, body.size)
         return StreamingResponse(

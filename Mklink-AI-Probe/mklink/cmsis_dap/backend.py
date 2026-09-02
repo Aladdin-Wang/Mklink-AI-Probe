@@ -266,11 +266,14 @@ def _install_security_flm_region(
         STM32F1_OPTION_SIZE,
         STM32F4_OPTION_ADDRESS,
         STM32F4_OPTION_SIZE,
+        STM32G4_OPTION_ADDRESS,
+        STM32G4_OPTION_SIZE,
     )
 
     allowed_regions = {
         "stm32f103-rdp1": (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE),
         "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
+        "stm32g474-rdp1": (STM32G4_OPTION_ADDRESS, STM32G4_OPTION_SIZE),
     }
     expected_region = allowed_regions.get(family)
     if expected_region is None or region != expected_region:
@@ -911,6 +914,9 @@ class PyOcdBackend:
                     STM32F4_OPTION_ADDRESS,
                     STM32F4_OPTION_FLM_SHA256,
                     STM32F4_OPTION_SIZE,
+                    STM32G4_OPTION_ADDRESS,
+                    STM32G4_OPTION_FLM_SHA256,
+                    STM32G4_OPTION_SIZE,
                 )
 
                 security_whitelist = {
@@ -923,6 +929,11 @@ class PyOcdBackend:
                         STM32F4_OPTION_FLM_SHA256,
                         STM32F4_OPTION_ADDRESS,
                         STM32F4_OPTION_SIZE,
+                    ),
+                    "stm32g474-rdp1": (
+                        STM32G4_OPTION_FLM_SHA256,
+                        STM32G4_OPTION_ADDRESS,
+                        STM32G4_OPTION_SIZE,
                     ),
                 }
                 allowed = security_whitelist.get(security_family)
@@ -1016,7 +1027,6 @@ class PyOcdBackend:
                 if delegate is not getattr(session, "delegate", None):
                     session.delegate = delegate
                 session.open()
-                session.target.reset_and_halt()
                 self._session = session
                 self._reset_mode = reset_mode
                 self._reset_voltage_mv = reset_voltage_mv
@@ -1044,6 +1054,18 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32g474-rdp1":
+                    changed, _desired = self._write_stm32g474_rdp(0xAA)
+                    session = self._require_session()
+                    if not self._stm32g474_physical_rdp_matches(session.target, 0xAA):
+                        raise RuntimeError(
+                            "RDP unlock was not written to the physical option bytes"
+                        )
+                    return (
+                        "STM32G474 read protection disable was written; main Flash was mass-erased and a power-cycle reset is required"
+                        if changed
+                        else "STM32G474 read protection was already disabled"
+                    )
                 if self._security_family == "stm32f413-rdp1":
                     changed, desired = self._write_stm32f413_rdp(0xAA)
                     session = self._require_session()
@@ -1086,6 +1108,18 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32g474-rdp1":
+                    changed, _desired = self._write_stm32g474_rdp(0xBB)
+                    session = self._require_session()
+                    if not self._stm32g474_physical_rdp_matches(session.target, 0xBB):
+                        raise RuntimeError(
+                            "RDP lock was not written to the physical option bytes"
+                        )
+                    return (
+                        "STM32G474 reversible read protection was written; a power-cycle reset is required to activate it"
+                        if changed
+                        else "STM32G474 reversible read protection was already active"
+                    )
                 if self._security_family == "stm32f413-rdp1":
                     changed, desired = self._write_stm32f413_rdp(0xBB)
                     session = self._require_session()
@@ -1126,6 +1160,162 @@ class PyOcdBackend:
                 raise
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.LOCK_FAIL) from None
+
+    _STM32G474_OPTION_REGISTERS = (
+        0x40022020,  # OPTR
+        0x40022024,  # PCROP1SR
+        0x40022028,  # PCROP1ER
+        0x4002202C,  # WRP1AR
+        0x40022030,  # WRP1BR
+        0x40022070,  # SEC1R
+        0x40022044,  # PCROP2SR
+        0x40022048,  # PCROP2ER
+        0x4002204C,  # WRP2AR
+        0x40022050,  # WRP2BR
+        0x40022074,  # SEC2R
+    )
+    _STM32G474_OPTION_MASKS = (
+        0xFFFFFFFF,
+        0x0000FFFF,
+        0x8000FFFF,
+        0x00FF00FF,
+        0x00FF00FF,
+        0x000101FF,
+        0x0000FFFF,
+        0x0000FFFF,
+        0x00FF00FF,
+        0x00FF00FF,
+        0x000100FF,
+    )
+
+    @classmethod
+    def _stm32g474_option_snapshot(cls, target: Any) -> bytes:
+        return b"".join(
+            cls._read_target_bytes(target, address, 4)
+            for address in cls._STM32G474_OPTION_REGISTERS
+        )
+
+    def _write_stm32g474_rdp(self, value: int) -> Tuple[bool, bytes]:
+        if value not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid STM32G474 reversible RDP value")
+        session = self._require_session()
+        target = session.target
+        device_id = int.from_bytes(
+            self._read_target_bytes(target, 0xE0042000, 4), "little"
+        ) & 0xFFF
+        if device_id != 0x469:
+            raise RuntimeError("connected target identity does not match STM32G474")
+        flash_size_kib = int.from_bytes(
+            self._read_target_bytes(target, 0x1FFF75E0, 2), "little"
+        )
+        if flash_size_kib != 512:
+            raise RuntimeError("connected target Flash size does not match STM32G474xE")
+        address = 0x1FFF7800
+        current = bytearray(self._stm32g474_option_snapshot(target))
+        if len(current) != 44:
+            raise RuntimeError("STM32G474 option register snapshot has an unexpected length")
+        if current[0] == 0xCC:
+            raise RuntimeError("STM32G474 RDP level 2 is irreversible and unsupported")
+        if value == 0xAA and current[0] == 0xAA:
+            return False, bytes(current)
+        if value == 0xBB and current[0] not in {0xAA, 0xCC}:
+            return False, bytes(current)
+        desired = bytearray(current)
+        desired[0] = value
+        desired_bytes = bytes(desired)
+        region = self._flash_region_for_address(target, address)
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != address
+            or int(region.length) != 84
+        ):
+            raise RuntimeError("validated option-byte Flash region is unavailable")
+        if getattr(region, "flash", None) is None:
+            raise RuntimeError("option-byte Flash algorithm is unavailable")
+        self._program_stm32g474_option_registers(target, desired_bytes)
+        return True, desired_bytes
+
+    @classmethod
+    def _program_stm32g474_option_registers(
+        cls, target: Any, desired: bytes
+    ) -> None:
+        if len(desired) != 44:
+            raise RuntimeError("STM32G474 option payload has an unexpected length")
+        if desired[0] not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid STM32G474 reversible RDP value")
+        write32 = getattr(target, "write32", None)
+        if not callable(write32):
+            raise RuntimeError("target does not support validated 32-bit option writes")
+
+        # This is the host-driven equivalent of the pinned STM32G4 option FLM.
+        # It does not execute target RAM code, which remains unavailable while
+        # RDP1 is active on some STM32G4 applications. Only reversible AA/BB
+        # payloads reach this method, and every non-RDP field is preserved.
+        write32(0x40022008, 0x45670123)  # FLASH_KEY1
+        write32(0x40022008, 0xCDEF89AB)  # FLASH_KEY2
+        write32(0x4002200C, 0x08192A3B)  # FLASH_OPTKEY1
+        write32(0x4002200C, 0x4C5D6E7F)  # FLASH_OPTKEY2
+        write32(0x40022010, 0x000143FA)  # clear documented error flags
+        for address, mask, offset in zip(
+            cls._STM32G474_OPTION_REGISTERS,
+            cls._STM32G474_OPTION_MASKS,
+            range(0, len(desired), 4),
+        ):
+            value = int.from_bytes(desired[offset : offset + 4], "little") & mask
+            write32(address, value)
+        write32(0x40022014, 1 << 17)  # FLASH_CR.OPTSTRT
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
+
+        deadline = time.monotonic() + 60.0
+        last_read_error: Optional[Exception] = None
+        while time.monotonic() < deadline:
+            try:
+                flash_sr = int.from_bytes(
+                    cls._read_target_bytes(target, 0x40022010, 4), "little"
+                )
+                last_read_error = None
+                if not (flash_sr & (1 << 16)):
+                    break
+            except Exception as exc:
+                last_read_error = exc
+            time.sleep(0.05)
+        else:
+            if last_read_error is not None:
+                raise RuntimeError(
+                    "STM32G474 option operation status became inaccessible"
+                ) from last_read_error
+            raise RuntimeError("STM32G474 option operation did not finish")
+
+        # Relock both option and main Flash control without requesting option
+        # loading. The job's validated 3.3 V power cycle performs the load.
+        write32(0x40022014, 1 << 31)
+        write32(0x40022014, 1 << 30)
+        if callable(flush):
+            flush()
+
+    @classmethod
+    def _stm32g474_options_match(cls, actual: bytes, desired: bytes) -> bool:
+        if len(actual) != 44 or len(desired) != 44:
+            return False
+        for offset, mask in enumerate(cls._STM32G474_OPTION_MASKS):
+            start = offset * 4
+            actual_word = int.from_bytes(actual[start : start + 4], "little")
+            desired_word = int.from_bytes(desired[start : start + 4], "little")
+            if actual_word & mask != desired_word & mask:
+                return False
+        return True
+
+    @classmethod
+    def _stm32g474_physical_rdp_matches(cls, target: Any, value: int) -> bool:
+        physical = cls._read_target_bytes(target, 0x1FFF7800, 8)
+        return (
+            len(physical) == 8
+            and physical[0] == value
+            and physical[4] == (value ^ 0xFF)
+        )
 
     def _write_stm32f413_rdp(self, value: int) -> Tuple[bool, bytes]:
         if value not in {0xAA, 0xBB}:
