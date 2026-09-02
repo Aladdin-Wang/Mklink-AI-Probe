@@ -51,6 +51,10 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   `hpm_flash_cfg`。
 - **供电**：`set_power_on` 每次都先确认 1800/3300/5000 mV 并传
   `confirm_user=True`。5000 mV 还须确认供电路径和负载耐压，并传 `confirm_5v=True`。
+- **加锁/解锁**：先调用 `security_status`，只有返回 `supported:true` 的精确型号才可
+  继续；不支持的型号必须停止，禁止改通用型号绕过白名单。加锁必须提供刚校验通过
+  的完整固件；解锁会永久擦除该型号声明的 Flash/EEPROM/备份数据，必须分别确认
+  操作、数据丢失和本次恢复电压。只允许工具内置的可逆保护等级，绝不尝试 RDP2。
 
 ## 按需路由
 

@@ -14,6 +14,7 @@ from mklink.cmsis_dap.backend import HpmRomBackend, PyOcdBackend, RoutingFlashBa
 from mklink.cmsis_dap.backend import (
     _expand_pack_flm_regions,
     _install_custom_flm_regions,
+    _mask_custom_flm_interrupts,
     _power_cycle_mklink_probe,
     _relocate_pack_flm_regions,
 )
@@ -467,6 +468,94 @@ def test_stm32h743_option_programming_rejects_irreversible_rdp2() -> None:
         PyOcdBackend._program_stm32h743_option_registers(
             Target(), (0x0BC6CCF0, 0x0BC6CCF0)
         )
+
+
+def test_stm32l010_security_preserves_all_non_rdp_option_bytes() -> None:
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FF80000
+        length = 20
+        is_flash = True
+        flash = object()
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.options = bytearray.fromhex(
+                "aa0055ff70808f7f0000ffff0000ffff00000000"
+            )
+            self.option_region = OptionRegion()
+            super().__init__((self.option_region,))
+            self.control = 0x5
+            self.status = 0xC
+            self.writes = []
+            self.pe_keys = 0
+            self.opt_keys = 0
+
+        def read_memory_block8(self, address, size):
+            values = {
+                0x40015800: 0x10086457,
+                0x1FF8007C: 16,
+                0x4002201C: int.from_bytes(self.options[0:4], "little"),
+                0x40022004: self.control,
+                0x40022018: self.status,
+            }
+            if address == 0x1FF80000:
+                return bytes(self.options[:size])
+            if address in values:
+                return values[address].to_bytes(4, "little")[:size]
+            raise AssertionError(hex(address))
+
+        def write32(self, address, value):
+            self.writes.append((address, value))
+            if address == 0x4002200C:
+                self.pe_keys += 1
+                if self.pe_keys % 2 == 0:
+                    self.control &= ~1
+            elif address == 0x40022014:
+                self.opt_keys += 1
+                if self.opt_keys % 2 == 0:
+                    self.control &= ~(1 << 2)
+            elif address == 0x40022018:
+                self.status &= ~value
+            elif address == 0x1FF80000:
+                self.options[0:4] = value.to_bytes(4, "little")
+                self.status |= 1 << 1
+            elif address == 0x40022004:
+                self.control = value
+
+        def flush(self):
+            pass
+
+    target = Target()
+    original = bytes(target.options)
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "stm32l010x4-rdp1"
+
+    assert "power-cycle reset is required" in backend.lock_security()
+    assert target.options[0] == 0xBB
+    assert target.options[2] == 0x44
+    assert int.from_bytes(target.options[:4], "little") == 0x014400BB
+    assert target.options[4:] == original[4:]
+
+    # Model the required POR loading the physical RDP byte into FLASH_OPTR.
+    assert "erased" in backend.unlock_security()
+    assert int.from_bytes(target.options[:4], "little") == 0x015500AA
+    assert target.options[4:] == original[4:]
+    payloads = [value for address, value in target.writes if address == 0x1FF80000]
+    assert payloads == [0x014400BB, 0x015500AA]
+    assert all(value & 0xFF != 0xCC for value in payloads)
+    assert target.control & 0x5 == 0x5
+
+
+def test_stm32l010_option_comparison_ignores_only_reserved_bytes() -> None:
+    desired = bytes.fromhex("aa00550170808f7f0000ffff0000ffff00000000")
+    normalised = bytes.fromhex("aa01550170808f7f0000ffff0000ffff00000000")
+
+    assert PyOcdBackend._stm32l010_options_match(normalised, desired) is True
+    changed_user = bytearray(normalised)
+    changed_user[4] ^= 1
+    assert PyOcdBackend._stm32l010_options_match(bytes(changed_user), desired) is False
 
 
 def test_stm32f103_locked_options_are_reconstructed_from_shadow_registers() -> None:
@@ -933,6 +1022,49 @@ def test_unknown_target_with_builtin_flm_uses_generic_target_and_catalog_ram(
     backend.disconnect()
 
 
+def test_stm32l010_custom_flm_uses_l031_debug_topology(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    flm = tmp_path / "STM32L0xx_16.FLM"
+    flm.write_bytes(b"flm")
+    session = FakeSession()
+    observed = {}
+
+    class Sequence:
+        def insert_before(self, _task, item):
+            _name, callback = item
+            callback()
+
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.backend._install_custom_flm_regions",
+        lambda *_args: None,
+    )
+
+    def factory(_probe, options):
+        observed["options"] = options
+        original_open = session.open
+
+        def open_session():
+            session.delegate.will_init_target(session.target, Sequence())
+            original_open()
+
+        session.open = open_session
+        return session
+
+    backend = PyOcdBackend(session_factory=factory)
+    backend.connect(
+        object(),
+        "STM32L010F4P6",
+        1_000_000,
+        custom_flm_paths=(str(flm),),
+        custom_flm_digests=(hashlib.sha256(b"flm").hexdigest(),),
+    )
+
+    assert observed["options"]["target_override"] == "stm32l031x6"
+    assert backend._algorithm_reset_required is True
+    backend.disconnect()
+
+
 def test_connect_passes_exact_catalog_flash_region_to_delegate(
     tmp_path: Path, monkeypatch,
 ) -> None:
@@ -1293,6 +1425,49 @@ def test_custom_flm_replaces_overlapping_builtin_region_on_cloned_map(
     assert len(target.memory_map.regions) == 2
 
 
+def test_custom_flm_interrupt_mask_is_restored_after_algorithm_uninit() -> None:
+    events = []
+
+    class Flash:
+        def _call_function(self, value):
+            events.append(("call", target.primask, value))
+            return 7
+
+        def uninit(self):
+            events.append(("uninit", target.primask))
+
+    class Target:
+        def __init__(self):
+            self.primask = 0
+            self.memory_map = (
+                SimpleNamespace(name="mklink_custom_flm_0", flash=Flash()),
+            )
+
+        def read_core_register(self, name):
+            assert name == "primask"
+            return self.primask
+
+        def write_core_register(self, name, value):
+            assert name == "primask"
+            self.primask = value
+            events.append(("primask", value))
+
+    target = Target()
+    flash = target.memory_map[0].flash
+    _mask_custom_flm_interrupts(target)
+
+    assert flash._call_function(3) == 7
+    flash.uninit()
+
+    assert events == [
+        ("primask", 1),
+        ("call", 1, 3),
+        ("uninit", 1),
+        ("primask", 0),
+    ]
+    assert target.primask == 0
+
+
 def test_custom_flm_flash_calls_optional_verify_entry(tmp_path: Path, monkeypatch) -> None:
     from pyocd.core.memory_map import MemoryMap, RamRegion
     from pyocd.flash.flash import Flash
@@ -1412,6 +1587,49 @@ def test_chip_and_sector_erase_use_exact_modes_and_sorted_unique_addresses() -> 
         ("create", session, "SECTOR"),
         ("erase", [0x80000000, 0x80000200]),
     ]
+    backend.disconnect()
+
+
+def test_stm32l010_resets_and_halts_once_before_erase_and_program(
+    tmp_path: Path,
+) -> None:
+    events = []
+
+    class Eraser:
+        def __init__(self, _session, _mode):
+            pass
+
+        def erase(self, addresses=None):
+            events.append(("erase", addresses))
+
+    class Programmer:
+        def __init__(self, _session, **_kwargs):
+            pass
+
+        def program(self, path, **_kwargs):
+            events.append(("program", path))
+
+    firmware = tmp_path / "firmware.hex"
+    firmware.write_text(":00000001FF\n", encoding="ascii")
+    target = FakeTarget((FakeRegion(0x08000000, 0x4000),))
+    backend, _session = connected_backend(
+        target=target,
+        programmer_factory=Programmer,
+        eraser_factory=Eraser,
+    )
+    backend._algorithm_reset_required = True
+
+    backend.erase_sectors([0x08000000])
+    backend.program(ImageInspection(
+        "test",
+        file_path=str(firmware),
+        format="hex",
+        start=0x08000000,
+        end=0x0800000B,
+    ))
+
+    assert target.reset_and_halt_calls == 1
+    assert [event[0] for event in events] == ["erase", "program"]
     backend.disconnect()
 
 

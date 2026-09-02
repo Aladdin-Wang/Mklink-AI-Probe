@@ -43,6 +43,35 @@ def _cli_test(port: str):
     print("[*] 已断开连接")
 
 
+def _cli_security(args: argparse.Namespace) -> int:
+    """Run a guarded one-shot reversible target security operation."""
+    import json
+
+    from mklink.security_operations import run_security_operation
+
+    result = run_security_operation(
+        args.security_command,
+        args.target_part,
+        voltage_mv=args.voltage_mv,
+        confirm_user=args.confirm,
+        confirm_data_loss=getattr(args, "confirm_data_loss", False),
+        firmware=getattr(args, "firmware", None),
+        base_address=getattr(args, "base_address", None),
+        probe_id=args.probe_id,
+        frequency=args.frequency,
+        timeout=args.timeout,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        action = "解锁" if args.security_command == "unlock" else "加锁"
+        print(
+            f"[OK] {result['target_part']} {action}完成，"
+            f"已按 {result['voltage_mv']} mV 断电复位"
+        )
+    return 0
+
+
 def _cli_keil_parse(project_root: str):
     """解析 Keil .uvprojx 工程文件并显示配置。"""
     import json
@@ -4484,6 +4513,63 @@ def main():
         help="启动 MCP (Model Context Protocol) server（stdio，供 Claude Code / 其他 MCP client 调用）",
     )
 
+    security_parser = subparsers.add_parser(
+        "security",
+        help="目标芯片可逆读保护（与 WebGUI/MCP 共用安全后端）",
+    )
+    security_sub = security_parser.add_subparsers(
+        dest="security_command",
+        required=True,
+    )
+
+    def _add_security_arguments(command_parser, *, unlock: bool) -> None:
+        command_parser.add_argument("--target-part", required=True, help="精确器件型号")
+        command_parser.add_argument(
+            "--voltage-mv",
+            required=True,
+            type=int,
+            choices=(1800, 3300, 5000),
+            help="安全操作后恢复的 VCC 电压",
+        )
+        command_parser.add_argument(
+            "--confirm",
+            required=True,
+            action="store_true",
+            help="确认本次安全操作及指定的 VCC 恢复电压",
+        )
+        if unlock:
+            command_parser.add_argument(
+                "--confirm-data-loss",
+                required=True,
+                action="store_true",
+                help="确认解除读保护会永久擦除受保护的非易失数据",
+            )
+        else:
+            command_parser.add_argument(
+                "--firmware",
+                required=True,
+                help="加锁前必须校验通过的 BIN/HEX 固件",
+            )
+            command_parser.add_argument(
+                "--base-address",
+                type=lambda value: int(value, 0),
+                default=None,
+                help="BIN 固件起始地址（例如 0x08000000）",
+            )
+        command_parser.add_argument("--probe-id", default=None, help="可选探针 ID")
+        command_parser.add_argument("--frequency", type=int, default=1_000_000)
+        command_parser.add_argument("--timeout", type=float, default=240.0)
+        command_parser.add_argument("--json", action="store_true")
+
+    _add_security_arguments(
+        security_sub.add_parser("lock", help="启用已验证的可逆读保护"),
+        unlock=False,
+    )
+    _add_security_arguments(
+        security_sub.add_parser("unlock", help="解除读保护并擦除受保护数据"),
+        unlock=True,
+    )
+
     # 向后兼容：--test 标志
     parser.add_argument("--port", help="COM 端口（兼容旧版）")
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
@@ -4680,6 +4766,8 @@ def main():
         _cli_web_entry(args)
     elif args.command == "mcp":
         _cli_mcp(args)
+    elif args.command == "security":
+        return _cli_security(args)
     else:
         parser.print_help()
 

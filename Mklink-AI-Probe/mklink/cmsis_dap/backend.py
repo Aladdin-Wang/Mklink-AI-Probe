@@ -270,6 +270,8 @@ def _install_security_flm_region(
         STM32G4_OPTION_SIZE,
         STM32H7_OPTION_ADDRESS,
         STM32H7_OPTION_SIZE,
+        STM32L0_OPTION_ADDRESS,
+        STM32L0_OPTION_SIZE,
     )
 
     allowed_regions = {
@@ -277,6 +279,7 @@ def _install_security_flm_region(
         "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
         "stm32g474-rdp1": (STM32G4_OPTION_ADDRESS, STM32G4_OPTION_SIZE),
         "stm32h743-rdp1": (STM32H7_OPTION_ADDRESS, STM32H7_OPTION_SIZE),
+        "stm32l010x4-rdp1": (STM32L0_OPTION_ADDRESS, STM32L0_OPTION_SIZE),
     }
     expected_region = allowed_regions.get(family)
     if expected_region is None or region != expected_region:
@@ -422,6 +425,52 @@ def _enable_custom_flm_verify(algorithm: Any) -> None:
         return flash_algo
 
     algorithm.get_pyocd_flash_algo = MethodType(build_with_verify, algorithm)
+
+
+def _mask_custom_flm_interrupts(target: Any) -> None:
+    """Prevent application IRQ state from interrupting RAM flash algorithms."""
+
+    for region in target.memory_map:
+        if not str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
+            continue
+        flash = getattr(region, "flash", None)
+        original_call = getattr(flash, "_call_function", None)
+        original_uninit = getattr(flash, "uninit", None)
+        if not callable(original_call) or not callable(original_uninit):
+            continue
+        saved: dict[str, Optional[int]] = {"primask": None}
+
+        def call_masked(
+            self: Any,
+            *args: Any,
+            _call=original_call,
+            _saved=saved,
+            _target=target,
+            **kwargs: Any,
+        ):
+            if _saved["primask"] is None:
+                _saved["primask"] = int(_target.read_core_register("primask"))
+            _target.write_core_register("primask", 1)
+            return _call(*args, **kwargs)
+
+        def uninit_restored(
+            self: Any,
+            *args: Any,
+            _uninit=original_uninit,
+            _saved=saved,
+            _target=target,
+            **kwargs: Any,
+        ):
+            try:
+                return _uninit(*args, **kwargs)
+            finally:
+                previous = _saved["primask"]
+                _saved["primask"] = None
+                if previous is not None:
+                    _target.write_core_register("primask", previous)
+
+        flash._call_function = MethodType(call_masked, flash)
+        flash.uninit = MethodType(uninit_restored, flash)
 
 
 class HpmRomBackend:
@@ -784,6 +833,8 @@ class PyOcdBackend:
         self._reset_voltage_mv: Optional[int] = None
         self._probe_identifier = ""
         self._security_family = ""
+        self._algorithm_reset_required = False
+        self._algorithm_reset_done = False
         self._lock = threading.RLock()
 
     def connect(
@@ -929,6 +980,9 @@ class PyOcdBackend:
                     STM32H7_OPTION_ADDRESS,
                     STM32H7_OPTION_FLM_SHA256,
                     STM32H7_OPTION_SIZE,
+                    STM32L0_OPTION_ADDRESS,
+                    STM32L0_OPTION_FLM_SHA256,
+                    STM32L0_OPTION_SIZE,
                 )
 
                 security_whitelist = {
@@ -951,6 +1005,11 @@ class PyOcdBackend:
                         STM32H7_OPTION_FLM_SHA256,
                         STM32H7_OPTION_ADDRESS,
                         STM32H7_OPTION_SIZE,
+                    ),
+                    "stm32l010x4-rdp1": (
+                        STM32L0_OPTION_FLM_SHA256,
+                        STM32L0_OPTION_ADDRESS,
+                        STM32L0_OPTION_SIZE,
                     ),
                 }
                 allowed = security_whitelist.get(security_family)
@@ -1006,6 +1065,18 @@ class PyOcdBackend:
                 session_target = target
                 if security_family == "stm32h743-rdp1":
                     session_target = "stm32h743xx"
+                elif (
+                    resolved_pack is None
+                    and resolved_flms
+                    and str(target).casefold().startswith("stm32l010")
+                ):
+                    # The generic Cortex-M target can attach to L010 but uses
+                    # the wrong CoreSight topology, producing false zero reads
+                    # and failed RAM algorithm returns. L031 shares the L0
+                    # debug/Flash interface; L010-specific geometry and FLMs
+                    # are still installed below, and security operations also
+                    # verify DEV_ID 0x457 plus the 16 KiB size register.
+                    session_target = "stm32l031x6"
                 elif resolved_pack is None and resolved_flms:
                     TARGET = import_pyocd_attr("pyocd.target", "TARGET")
 
@@ -1046,6 +1117,8 @@ class PyOcdBackend:
                 if delegate is not getattr(session, "delegate", None):
                     session.delegate = delegate
                 session.open()
+                if resolved_flms:
+                    _mask_custom_flm_interrupts(session.target)
                 self._session = session
                 self._reset_mode = reset_mode
                 self._reset_voltage_mv = reset_voltage_mv
@@ -1053,6 +1126,11 @@ class PyOcdBackend:
                     getattr(resolved_probe, "unique_id", None) or probe or ""
                 ).strip()
                 self._security_family = security_family or ""
+                self._algorithm_reset_required = bool(
+                    resolved_flms
+                    and str(target).casefold().startswith("stm32l010")
+                )
+                self._algorithm_reset_done = False
             except FlashError:
                 if session is not None:
                     try:
@@ -1073,6 +1151,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32l010x4-rdp1":
+                    changed, _desired = self._write_stm32l010_rdp(0xAA)
+                    return (
+                        "STM32L010 read protection was disabled; main Flash, data EEPROM, and backup registers were erased; a power-cycle reset is required"
+                        if changed
+                        else "STM32L010 read protection was already disabled"
+                    )
                 if self._security_family == "stm32h743-rdp1":
                     changed, _desired = self._write_stm32h743_rdp(0xAA)
                     return (
@@ -1134,6 +1219,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32l010x4-rdp1":
+                    changed, _desired = self._write_stm32l010_rdp(0xBB)
+                    return (
+                        "STM32L010 reversible read protection was written; a power-cycle reset is required to activate it"
+                        if changed
+                        else "STM32L010 reversible read protection was already active"
+                    )
                 if self._security_family == "stm32h743-rdp1":
                     changed, _desired = self._write_stm32h743_rdp(0xBB)
                     return (
@@ -1193,6 +1285,149 @@ class PyOcdBackend:
                 raise
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.LOCK_FAIL) from None
+
+    _STM32L010_OPTION_ADDRESS = 0x1FF80000
+    _STM32L010_OPTION_SIZE = 20
+    _STM32L010_STATUS_ERROR_MASK = (
+        (1 << 17)
+        | (1 << 16)
+        | (1 << 13)
+        | (1 << 11)
+        | (1 << 10)
+        | (1 << 9)
+        | (1 << 8)
+    )
+    def _write_stm32l010_rdp(self, value: int) -> Tuple[bool, bytes]:
+        if value not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid STM32L010 reversible RDP value")
+        session = self._require_session()
+        target = session.target
+        device_id = int.from_bytes(
+            self._read_target_bytes(target, 0x40015800, 4), "little"
+        ) & 0xFFF
+        if device_id != 0x457:
+            raise RuntimeError("connected target identity does not match STM32L010 category 1")
+        flash_size_kib = int.from_bytes(
+            self._read_target_bytes(target, 0x1FF8007C, 2), "little"
+        )
+        if flash_size_kib != 16:
+            raise RuntimeError("connected target Flash size does not match STM32L010x4")
+        region = self._flash_region_for_address(target, self._STM32L010_OPTION_ADDRESS)
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != self._STM32L010_OPTION_ADDRESS
+            or int(region.length) != self._STM32L010_OPTION_SIZE
+            or getattr(region, "flash", None) is None
+        ):
+            raise RuntimeError("validated STM32L010 option-byte algorithm is unavailable")
+
+        current = self._read_target_bytes(
+            target, self._STM32L010_OPTION_ADDRESS, self._STM32L010_OPTION_SIZE
+        )
+        if len(current) != self._STM32L010_OPTION_SIZE:
+            raise RuntimeError("STM32L010 option-byte snapshot has an unexpected length")
+        logical = int.from_bytes(
+            self._read_target_bytes(target, 0x4002201C, 4), "little"
+        )
+        physical_rdp = current[0]
+        if current[2] != (physical_rdp ^ 0xFF):
+            raise RuntimeError("STM32L010 RDP option-byte complement is invalid")
+        if (logical & 0xFF) != physical_rdp:
+            raise RuntimeError("STM32L010 logical and physical RDP state is inconsistent")
+        if physical_rdp == 0xCC:
+            raise RuntimeError("STM32L010 RDP level 2 is irreversible and unsupported")
+        if value == 0xAA and physical_rdp == 0xAA:
+            return False, current
+        if value == 0xBB and physical_rdp not in {0xAA, 0xCC}:
+            return False, current
+
+        desired = bytearray(current)
+        # RM0451 requires this exact first option word. In particular,
+        # 0x015500AA is the only documented Level-1-to-Level-0 request that
+        # triggers the mandatory mass erase. Unused bits must not be copied
+        # from a prior physical readback.
+        desired_word = 0x015500AA if value == 0xAA else 0x014400BB
+        desired[:4] = desired_word.to_bytes(4, "little")
+        desired_bytes = bytes(desired)
+        self._program_stm32l010_option_word(target, desired_word)
+        actual = self._read_target_bytes(
+            target, self._STM32L010_OPTION_ADDRESS, self._STM32L010_OPTION_SIZE
+        )
+        if not self._stm32l010_options_match(actual, desired_bytes):
+            raise RuntimeError("STM32L010 option fields did not persist")
+        return True, desired_bytes
+
+    @classmethod
+    def _program_stm32l010_option_word(cls, target: Any, desired_word: int) -> None:
+        if desired_word not in {0x015500AA, 0x014400BB}:
+            raise RuntimeError("invalid STM32L010 reversible RDP option word")
+        write32 = getattr(target, "write32", None)
+        if not callable(write32):
+            raise RuntimeError("target does not support validated 32-bit option writes")
+        status = int.from_bytes(
+            cls._read_target_bytes(target, 0x40022018, 4), "little"
+        )
+        if status & 1:
+            raise RuntimeError("STM32L010 Flash interface is busy before option change")
+        if status & cls._STM32L010_STATUS_ERROR_MASK:
+            raise RuntimeError("STM32L010 Flash status contains a pre-existing error")
+
+        control = int.from_bytes(
+            cls._read_target_bytes(target, 0x40022004, 4), "little"
+        )
+        if control & 1:
+            write32(0x4002200C, 0x89ABCDEF)
+            write32(0x4002200C, 0x02030405)
+        control = int.from_bytes(
+            cls._read_target_bytes(target, 0x40022004, 4), "little"
+        )
+        if control & 1:
+            raise RuntimeError("STM32L010 FLASH_PECR did not unlock")
+        if control & (1 << 2):
+            write32(0x40022014, 0xFBEAD9C8)
+            write32(0x40022014, 0x24252627)
+        control = int.from_bytes(
+            cls._read_target_bytes(target, 0x40022004, 4), "little"
+        )
+        if control & (1 << 2):
+            raise RuntimeError("STM32L010 option bytes did not unlock")
+
+        write32(0x40022018, 1 << 1)
+        write32(cls._STM32L010_OPTION_ADDRESS, desired_word)
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
+        deadline = time.monotonic() + 60.0
+        while time.monotonic() < deadline:
+            status = int.from_bytes(
+                cls._read_target_bytes(target, 0x40022018, 4), "little"
+            )
+            if not (status & 1) and (status & (1 << 1)):
+                break
+            time.sleep(0.01)
+        else:
+            raise RuntimeError("STM32L010 option operation did not finish")
+        if status & cls._STM32L010_STATUS_ERROR_MASK:
+            raise RuntimeError("STM32L010 option operation reported an error")
+
+        control = int.from_bytes(
+            cls._read_target_bytes(target, 0x40022004, 4), "little"
+        )
+        write32(0x40022004, control | (1 << 2) | 1)
+        if callable(flush):
+            flush()
+
+    @staticmethod
+    def _stm32l010_options_match(actual: bytes, desired: bytes) -> bool:
+        """Compare every defined L010x4 option field, ignoring reserved bytes."""
+
+        if len(actual) != 20 or len(desired) != 20:
+            return False
+        # Bytes 1 and 3 of the first physical option word are reserved and
+        # may read back differently after the vendor FLM normalises them.
+        defined = (0, 2, *range(4, 20))
+        return all(actual[index] == desired[index] for index in defined)
 
     _STM32H743_OPTSR_CUR_REGISTERS = (0x5200201C, 0x5200211C)
     _STM32H743_OPTSR_PRG_REGISTERS = (0x52002020, 0x52002120)
@@ -1677,6 +1912,8 @@ class PyOcdBackend:
             self._probe_identifier = ""
             self._reset_voltage_mv = None
             self._security_family = ""
+            self._algorithm_reset_required = False
+            self._algorithm_reset_done = False
             if session is not None:
                 try:
                     session.close()
@@ -1687,6 +1924,7 @@ class PyOcdBackend:
         with self._lock:
             session = self._require_session()
             try:
+                self._prepare_algorithm_execution(session.target)
                 factory, mode = self._eraser(erase_mode="CHIP")
                 factory(session, mode).erase()
             except FlashError:
@@ -1699,6 +1937,7 @@ class PyOcdBackend:
             session = self._require_session()
             try:
                 unique = self._validated_sector_addresses(session.target, addresses)
+                self._prepare_algorithm_execution(session.target)
                 factory, mode = self._eraser(erase_mode="SECTOR")
                 factory(session, mode).erase(unique)
             except FlashError:
@@ -1720,6 +1959,7 @@ class PyOcdBackend:
                         FlashErrorCode.FILE_NOT_FOUND,
                         "firmware snapshot file was not found",
                     )
+                self._prepare_algorithm_execution(session.target)
                 factory = self._programmer_factory
                 if factory is None:
                     FileProgrammer = import_pyocd_attr(
@@ -1755,6 +1995,14 @@ class PyOcdBackend:
             except Exception as exc:
                 self._close_after_failure()
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
+
+    def _prepare_algorithm_execution(self, target: Any) -> None:
+        """Put STM32L010 in a deterministic state before its first RAM FLM call."""
+
+        if not self._algorithm_reset_required or self._algorithm_reset_done:
+            return
+        target.reset_and_halt()
+        self._algorithm_reset_done = True
 
     def verify(
         self,

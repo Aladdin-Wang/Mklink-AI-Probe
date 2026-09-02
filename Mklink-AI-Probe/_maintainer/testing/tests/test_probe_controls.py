@@ -302,6 +302,66 @@ def test_mcp_exposes_guarded_power_and_probe_reboot(monkeypatch):
     ]
 
 
+def test_mcp_security_tools_share_guarded_one_shot_backend(monkeypatch):
+    mcp = _Mcp()
+    calls = []
+    monkeypatch.setattr(mcp_server, "_reset_device", lambda: calls.append(("reset",)))
+    monkeypatch.setattr(
+        "mklink.security_operations.run_security_operation",
+        lambda action, target_part, **kwargs: calls.append(
+            (action, target_part, kwargs)
+        ) or {"status": "succeeded", "action": action},
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.security_capability",
+        lambda part: SimpleNamespace(public=lambda: {"part_number": part, "supported": True}),
+    )
+
+    mcp_server._register_security_tools(mcp)
+
+    assert mcp.tools["security_status"]("STM32L010F4P6")["supported"] is True
+    assert mcp.tools["security_lock"](
+        "STM32L010F4P6", "firmware.bin", 3300,
+        base_address=0x08000000,
+        confirm_user=True,
+    )["action"] == "lock"
+    assert mcp.tools["security_unlock"](
+        "STM32L010F4P6",
+        3300,
+        confirm_user=True,
+        confirm_data_loss=True,
+    )["action"] == "unlock"
+    assert calls == [
+        ("reset",),
+        (
+            "lock",
+            "STM32L010F4P6",
+            {
+                "voltage_mv": 3300,
+                "confirm_user": True,
+                "firmware": "firmware.bin",
+                "base_address": 0x08000000,
+                "probe_id": None,
+                "frequency": 1_000_000,
+                "timeout": 240.0,
+            },
+        ),
+        ("reset",),
+        (
+            "unlock",
+            "STM32L010F4P6",
+            {
+                "voltage_mv": 3300,
+                "confirm_user": True,
+                "confirm_data_loss": True,
+                "probe_id": None,
+                "frequency": 1_000_000,
+                "timeout": 240.0,
+            },
+        ),
+    ]
+
+
 def test_device_batch_read_coalesces_only_touching_ranges():
     device = _connected_device()
     calls = []

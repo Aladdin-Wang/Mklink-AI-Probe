@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Play, Square } from '@lucide/vue'
 import type { JobAction, JobState } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
-const props = defineProps<{ actions: JobAction[]; canStart: boolean; active: boolean; stopping: boolean; state: JobState | null; totalProgress: number; progressLabel?: string; progressState?: string; unlockEnabled?: boolean; lockEnabled?: boolean; securityReason?: string }>()
+const props = defineProps<{ actions: JobAction[]; canStart: boolean; active: boolean; stopping: boolean; state: JobState | null; totalProgress: number; progressLabel?: string; progressState?: string; unlockEnabled?: boolean; lockEnabled?: boolean; securityReason?: string; unlockErasesEeprom?: boolean; unlockErasesBackupRegisters?: boolean }>()
 const emit = defineEmits<{ actions: [actions: JobAction[]]; start: []; stop: [] }>()
 const choices = computed<Array<{ value: JobAction; label: string }>>(() => [{value:'connect',label:tr('连接', 'Connect')},{value:'unlock',label:tr('解锁', 'Unlock')},{value:'erase',label:tr('擦除', 'Erase')},{value:'program',label:tr('烧录', 'Program')},{value:'verify',label:tr('校验', 'Verify')},{value:'lock',label:tr('加锁', 'Lock')},{value:'reset',label:tr('复位', 'Reset')},{value:'disconnect',label:tr('断开', 'Disconnect')}])
 const mandatory = new Set<JobAction>(['connect', 'disconnect'])
@@ -13,9 +13,14 @@ function available(action: JobAction): boolean {
   return true
 }
 function confirmSecurityAction(action: JobAction): boolean {
+  const extraData = props.unlockErasesEeprom || props.unlockErasesBackupRegisters
   if (action === 'unlock') return confirm(tr(
-    '解锁会关闭读保护并强制整片擦除，Flash 中的全部数据都会永久删除。确定勾选“解锁”？',
-    'Unlocking disables read protection and forces a full-chip erase. All Flash data will be permanently deleted. Select Unlock?',
+    extraData
+      ? '解锁会关闭读保护并强制整片擦除，Flash、数据 EEPROM 和备份寄存器中的全部数据都会永久删除。确定勾选“解锁”？'
+      : '解锁会关闭读保护并强制整片擦除，Flash 中的全部数据都会永久删除。确定勾选“解锁”？',
+    extraData
+      ? 'Unlocking disables read protection and forces a full-chip erase. All Flash, data EEPROM, and backup-register data will be permanently deleted. Select Unlock?'
+      : 'Unlocking disables read protection and forces a full-chip erase. All Flash data will be permanently deleted. Select Unlock?',
   ))
   if (action === 'lock') return confirm(tr(
     '加锁会在校验完成后启用可逆读保护，并在复位后限制 Flash 读取和调试访问。以后解锁仍会整片擦除。确定勾选“加锁”？',

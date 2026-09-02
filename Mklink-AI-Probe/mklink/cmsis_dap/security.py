@@ -31,10 +31,16 @@ STM32H7_OPTION_SIZE = 36
 STM32H7_OPTION_FLM_SHA256 = (
     "e591ef4d2a2bc0a724f801f585c6be42b0939df5518a776041a94d4faee5833f"
 )
+STM32L0_OPTION_ADDRESS = 0x1FF80000
+STM32L0_OPTION_SIZE = 20
+STM32L0_OPTION_FLM_SHA256 = (
+    "0930351a8585fe9e74a8786655e412a5eabddd405ff3bb296a0c5a884653edaf"
+)
 _STM32F103 = re.compile(r"^STM32F103(?:[CTRVZ][468BCDEFG]|X[468BCDEFG])$", re.IGNORECASE)
 _STM32F413 = re.compile(r"^STM32F413(?:X[GH]|[A-Z][GH][A-Z0-9X]{2})$", re.IGNORECASE)
 _STM32G474_512K = re.compile(r"^STM32G474(?:XE|[A-Z]E[A-Z0-9X]{2})$", re.IGNORECASE)
 _STM32H743_2M = re.compile(r"^STM32H743(?:XI|[A-Z]I[A-Z0-9X]{2})$", re.IGNORECASE)
+_STM32L010_16K = re.compile(r"^STM32L010(?:X4|[A-Z]4[A-Z0-9X]{2})$", re.IGNORECASE)
 _GD32 = re.compile(r"^GD32", re.IGNORECASE)
 
 
@@ -45,6 +51,8 @@ class SecurityCapability:
     family: str = ""
     reason: str = ""
     unlock_erases_flash: bool = False
+    unlock_erases_eeprom: bool = False
+    unlock_erases_backup_registers: bool = False
     reversible_lock: bool = False
     option_address: int = 0
     option_size: int = 0
@@ -60,6 +68,8 @@ class SecurityCapability:
             "family": self.family,
             "reason": self.reason,
             "unlock_erases_flash": self.unlock_erases_flash,
+            "unlock_erases_eeprom": self.unlock_erases_eeprom,
+            "unlock_erases_backup_registers": self.unlock_erases_backup_registers,
             "reversible_lock": self.reversible_lock,
         }
 
@@ -94,6 +104,13 @@ def _stm32h743_bundle_part(part_number: str) -> Optional[str]:
     return "STM32H743xI"
 
 
+def _stm32l010_bundle_part(part_number: str) -> Optional[str]:
+    part = part_number.strip()
+    if _STM32L010_16K.fullmatch(part) is None:
+        return None
+    return "STM32L010x4"
+
+
 def security_capability(part_number: str) -> SecurityCapability:
     """Resolve only hardware-validated families and fail closed on asset mismatch."""
 
@@ -102,6 +119,31 @@ def security_capability(part_number: str) -> SecurityCapability:
     f413_bundle_part = _stm32f413_bundle_part(part)
     g474_bundle_part = _stm32g474_bundle_part(part)
     h743_bundle_part = _stm32h743_bundle_part(part)
+    l010_bundle_part = _stm32l010_bundle_part(part)
+    if l010_bundle_part is not None:
+        try:
+            algorithm = discover_builtin_option_algorithm(l010_bundle_part)
+        except (OSError, TypeError, ValueError):
+            return SecurityCapability(part, False, reason="内置选项字节算法不可用或完整性校验失败")
+        if (
+            algorithm is None
+            or algorithm.file_name.casefold() != "stm32l0xx_opt.flm"
+            or algorithm.sha256 != STM32L0_OPTION_FLM_SHA256
+        ):
+            return SecurityCapability(part, False, reason="内置选项字节算法不匹配安全白名单")
+        return SecurityCapability(
+            part_number=part,
+            supported=True,
+            family="stm32l010x4-rdp1",
+            unlock_erases_flash=True,
+            unlock_erases_eeprom=True,
+            unlock_erases_backup_registers=True,
+            reversible_lock=True,
+            option_address=STM32L0_OPTION_ADDRESS,
+            option_size=STM32L0_OPTION_SIZE,
+            algorithm_path=algorithm.path,
+            algorithm_sha256=algorithm.sha256,
+        )
     if h743_bundle_part is not None:
         try:
             algorithm = discover_builtin_option_algorithm(h743_bundle_part)

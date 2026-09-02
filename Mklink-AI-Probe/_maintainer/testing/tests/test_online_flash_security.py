@@ -9,6 +9,7 @@ from mklink.cmsis_dap.security import (
     STM32F4_OPTION_FLM_SHA256,
     STM32G4_OPTION_FLM_SHA256,
     STM32H7_OPTION_FLM_SHA256,
+    STM32L0_OPTION_FLM_SHA256,
     require_security_capability,
     security_capability,
 )
@@ -171,6 +172,53 @@ def test_stm32h743_fails_closed_when_option_algorithm_hash_changes(monkeypatch, 
     )
 
     capability = security_capability("STM32H743IIT6")
+
+    assert capability.supported is False
+    assert "白名单" in capability.reason
+
+
+def test_stm32l010x4_order_codes_use_only_pinned_option_algorithm(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32L010x4",
+        file_name="STM32L0xx_OPT.FLM",
+        path=tmp_path / "STM32L0xx_OPT.FLM",
+        sha256=STM32L0_OPTION_FLM_SHA256,
+        ram_start=0x20000000,
+        ram_size=0x800,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == "STM32L010x4" else None,
+    )
+
+    capability = security_capability("STM32L010F4P6")
+
+    assert capability.supported is True
+    assert capability.family == "stm32l010x4-rdp1"
+    assert capability.option_address == 0x1FF80000
+    assert capability.option_size == 20
+    assert capability.unlock_erases_flash is True
+    assert capability.unlock_erases_eeprom is True
+    assert capability.unlock_erases_backup_registers is True
+    assert security_capability("STM32L010x4").supported is True
+    assert security_capability("STM32L010F3P6").supported is False
+
+
+def test_stm32l010_fails_closed_when_option_algorithm_hash_changes(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32L010x4",
+        file_name="STM32L0xx_OPT.FLM",
+        path=tmp_path / "STM32L0xx_OPT.FLM",
+        sha256="0" * 64,
+        ram_start=0x20000000,
+        ram_size=0x800,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda _part: algorithm,
+    )
+
+    capability = security_capability("STM32L010F4P6")
 
     assert capability.supported is False
     assert "白名单" in capability.reason

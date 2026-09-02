@@ -34,6 +34,8 @@ export interface SecurityCapability {
   family: string
   reason: string
   unlock_erases_flash: boolean
+  unlock_erases_eeprom: boolean
+  unlock_erases_backup_registers: boolean
   reversible_lock: boolean
 }
 

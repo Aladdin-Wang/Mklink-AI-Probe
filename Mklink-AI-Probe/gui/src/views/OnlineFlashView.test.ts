@@ -584,17 +584,23 @@ function viewFetch(targets = [installedTarget]) {
       const supported = targetPart.startsWith('STM32F103')
         || targetPart.startsWith('STM32G474')
         || targetPart.startsWith('STM32H743')
+        || targetPart.startsWith('STM32L010')
       const family = targetPart.startsWith('STM32G474')
         ? 'stm32g474-rdp1'
         : targetPart.startsWith('STM32H743')
           ? 'stm32h743-rdp1'
+          : targetPart.startsWith('STM32L010')
+            ? 'stm32l010x4-rdp1'
           : supported ? 'stm32f103-rdp1' : ''
       return json({
         part_number: targetPart, supported,
         unlock_supported: supported, lock_supported: supported,
         family,
         reason: supported ? '' : '该器件尚未通过加锁/解锁真机验证',
-        unlock_erases_flash: supported, reversible_lock: supported,
+        unlock_erases_flash: supported,
+        unlock_erases_eeprom: targetPart.startsWith('STM32L010'),
+        unlock_erases_backup_registers: targetPart.startsWith('STM32L010'),
+        reversible_lock: supported,
       })
     }
     if (url.includes('/targets/') && url.endsWith('/memory-map')) return json([{
@@ -1033,6 +1039,23 @@ describe('online flash task workspace behavior', () => {
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
 
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('warns about all L010 data loss and selects its safe reset modes', async () => {
+    const target = { ...installedTarget, part_number: 'STM32L010F4P6' }
+    vi.stubGlobal('fetch', viewFetch([target]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32L010F4P6"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32L010F4P6"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('数据 EEPROM 和备份寄存器'))
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)

@@ -1074,6 +1074,7 @@ def _start_job_with_configuration(
             power_cycle_security = {
                 "stm32g474-rdp1",
                 "stm32h743-rdp1",
+                "stm32l010x4-rdp1",
             }
             if security.family in power_cycle_security and (
                 body.reset_mode != "power-cycle" or "reset" not in body.actions
