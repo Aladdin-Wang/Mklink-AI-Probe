@@ -262,6 +262,8 @@ def _install_security_flm_region(
     region: Tuple[int, int],
 ) -> None:
     from .security import (
+        GD32F30X_OPTION_ADDRESS,
+        GD32F30X_OPTION_SIZE,
         STM32F1_OPTION_ADDRESS,
         STM32F1_OPTION_SIZE,
         STM32F4_OPTION_ADDRESS,
@@ -275,6 +277,7 @@ def _install_security_flm_region(
     )
 
     allowed_regions = {
+        "gd32f303xe-spc": (GD32F30X_OPTION_ADDRESS, GD32F30X_OPTION_SIZE),
         "stm32f103-rdp1": (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE),
         "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
         "stm32g474-rdp1": (STM32G4_OPTION_ADDRESS, STM32G4_OPTION_SIZE),
@@ -968,6 +971,9 @@ class PyOcdBackend:
             security_payload = None
             if security_family is not None:
                 from .security import (
+                    GD32F30X_OPTION_ADDRESS,
+                    GD32F30X_OPTION_FLM_SHA256,
+                    GD32F30X_OPTION_SIZE,
                     STM32F1_OPTION_ADDRESS,
                     STM32F1_OPTION_FLM_SHA256,
                     STM32F1_OPTION_SIZE,
@@ -986,6 +992,11 @@ class PyOcdBackend:
                 )
 
                 security_whitelist = {
+                    "gd32f303xe-spc": (
+                        GD32F30X_OPTION_FLM_SHA256,
+                        GD32F30X_OPTION_ADDRESS,
+                        GD32F30X_OPTION_SIZE,
+                    ),
                     "stm32f103-rdp1": (
                         STM32F1_OPTION_FLM_SHA256,
                         STM32F1_OPTION_ADDRESS,
@@ -1151,6 +1162,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "gd32f303xe-spc":
+                    changed, _desired = self._write_gd32f303_spc(0xA5)
+                    return (
+                        "GD32F303 security protection was disabled; main Flash was mass-erased and a power-cycle reset is required"
+                        if changed
+                        else "GD32F303 security protection was already disabled"
+                    )
                 if self._security_family == "stm32l010x4-rdp1":
                     changed, _desired = self._write_stm32l010_rdp(0xAA)
                     return (
@@ -1219,6 +1237,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "gd32f303xe-spc":
+                    changed, _desired = self._write_gd32f303_spc(0x00)
+                    return (
+                        "GD32F303 reversible security protection was written; a power-cycle reset is required to activate it"
+                        if changed
+                        else "GD32F303 reversible security protection was already active"
+                    )
                 if self._security_family == "stm32l010x4-rdp1":
                     changed, _desired = self._write_stm32l010_rdp(0xBB)
                     return (
@@ -1835,6 +1860,110 @@ class PyOcdBackend:
             == int.from_bytes(desired, "little") & mask
         )
 
+    _GD32F303_OPTION_ADDRESS = 0x1FFFF800
+    _GD32F303_OPTION_SIZE = 16
+
+    @staticmethod
+    def _gd32f303_option_pairs_valid(payload: bytes) -> bool:
+        if len(payload) != PyOcdBackend._GD32F303_OPTION_SIZE:
+            return False
+        return all(
+            (payload[index] == 0xFF and payload[index + 1] == 0xFF)
+            or (payload[index] ^ payload[index + 1]) == 0xFF
+            for index in range(0, len(payload), 2)
+        )
+
+    def _write_gd32f303_spc(self, value: int) -> Tuple[bool, bytes]:
+        if value not in {0xA5, 0x00}:
+            raise RuntimeError("invalid GD32F303 reversible SPC value")
+        session = self._require_session()
+        target = session.target
+        dbg_id = int.from_bytes(
+            self._read_target_bytes(target, 0xE0042000, 4), "little"
+        )
+        if dbg_id & 0xFFF != 0x414:
+            raise RuntimeError("connected target identity does not match GD32F30x")
+        obstat = int.from_bytes(
+            self._read_target_bytes(target, 0x4002201C, 4), "little"
+        )
+        if obstat & 0x1:
+            raise RuntimeError("GD32F303 option-byte shadow reports a complement error")
+        current = bytes(
+            self._read_target_bytes(
+                target,
+                self._GD32F303_OPTION_ADDRESS,
+                self._GD32F303_OPTION_SIZE,
+            )
+        )
+        if not self._gd32f303_option_pairs_valid(current):
+            raise RuntimeError("GD32F303 option-byte complement validation failed")
+        protected = current[:2] != b"\xA5\x5A"
+        if protected != bool(obstat & 0x2):
+            raise RuntimeError("GD32F303 logical and physical SPC state is inconsistent")
+        try:
+            density = int.from_bytes(
+                self._read_target_bytes(target, 0x1FFFF7E0, 4), "little"
+            )
+        except Exception:
+            # GD32F30x security protection can block the factory signature
+            # range as well as main Flash.  In that state the family ID,
+            # pinned option algorithm, and independently matching physical
+            # SPC/shadow state remain authoritative.  An unprotected target
+            # must always expose and match its immutable density signature.
+            if not protected:
+                raise RuntimeError(
+                    "GD32F303 density signature is unavailable while unprotected"
+                ) from None
+        else:
+            if (density & 0xFFFF, density >> 16) != (512, 64):
+                raise RuntimeError(
+                    "connected target density does not match GD32F303xE"
+                )
+        if value == 0xA5 and not protected:
+            return False, current
+        if value == 0x00 and protected:
+            return False, current
+
+        desired = bytearray(current)
+        desired[:2] = bytes((value, value ^ 0xFF))
+        region = self._flash_region_for_address(
+            target, self._GD32F303_OPTION_ADDRESS
+        )
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != self._GD32F303_OPTION_ADDRESS
+            or int(region.length) != self._GD32F303_OPTION_SIZE
+        ):
+            raise RuntimeError("validated GD32F303 option-byte Flash region is unavailable")
+        flash = getattr(region, "flash", None)
+        if flash is None:
+            raise RuntimeError("GD32F303 option-byte Flash algorithm is unavailable")
+        flash.init(flash.Operation.ERASE)
+        try:
+            flash.erase_sector(self._GD32F303_OPTION_ADDRESS)
+        finally:
+            flash.uninit()
+        flash.init(flash.Operation.PROGRAM)
+        try:
+            flash.program_page(self._GD32F303_OPTION_ADDRESS, bytes(desired))
+        finally:
+            flash.uninit()
+        actual = bytes(
+            self._read_target_bytes(
+                target,
+                self._GD32F303_OPTION_ADDRESS,
+                self._GD32F303_OPTION_SIZE,
+            )
+        )
+        if (
+            not self._gd32f303_option_pairs_valid(actual)
+            or actual[:2] != bytes((value, value ^ 0xFF))
+            or actual[2::2] != desired[2::2]
+        ):
+            raise RuntimeError("GD32F303 SPC or preserved option bytes did not persist")
+        return True, actual
+
     def _write_stm32f103_rdp(self, value: int, complement: int) -> Tuple[bool, bytes]:
         session = self._require_session()
         address = 0x1FFFF800
@@ -2240,7 +2369,9 @@ class PyOcdBackend:
             try:
                 data = self._read_target_bytes(session.target, address, size)
             except Exception as exc:
-                if self._is_locked_error(exc) or self._stm32f103_rdp_active(session.target):
+                if self._is_locked_error(exc) or self._security_read_protection_active(
+                    session.target
+                ):
                     raise FlashError(
                         FlashErrorCode.TARGET_LOCKED,
                         "target memory is protected",
@@ -2256,8 +2387,8 @@ class PyOcdBackend:
                 )
             return data
 
-    def _stm32f103_rdp_active(self, target: Any) -> bool:
-        if self._security_family != "stm32f103-rdp1":
+    def _security_read_protection_active(self, target: Any) -> bool:
+        if self._security_family not in {"stm32f103-rdp1", "gd32f303xe-spc"}:
             return False
         if not any(
             str(getattr(region, "name", "")) == "mklink_security_option_bytes"

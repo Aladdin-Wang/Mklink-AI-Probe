@@ -1072,6 +1072,7 @@ def _start_job_with_configuration(
             security_flm_digest = security.algorithm_sha256
             security_flm_region = (security.option_address, security.option_size)
             power_cycle_security = {
+                "gd32f303xe-spc",
                 "stm32g474-rdp1",
                 "stm32h743-rdp1",
                 "stm32l010x4-rdp1",
@@ -1081,7 +1082,7 @@ def _start_job_with_configuration(
             ):
                 raise FlashError(
                     FlashErrorCode.SECURITY_NOT_SUPPORTED,
-                    "该 STM32 加锁/解锁必须选择断电复位并在操作后执行复位",
+                    "该器件加锁/解锁必须选择断电复位并在操作后执行复位",
                 )
             if (
                 security.family in power_cycle_security
@@ -1090,7 +1091,7 @@ def _start_job_with_configuration(
             ):
                 raise FlashError(
                     FlashErrorCode.SECURITY_NOT_SUPPORTED,
-                    "该 STM32 解锁必须使用复位下连接，避免目标程序与选项字节操作并发",
+                    "该器件解锁必须使用复位下连接，避免目标程序与选项字节操作并发",
                 )
         inspection = None
         if any(action in body.actions for action in ("program", "verify")):

@@ -17,13 +17,13 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '修复下载器热插拔重连及 RTT、串口与曲线高频显示停顿。',
       '兼容更多非规范 Pack，增加常用型号并统一精确型号与通用型号解析，提升器件联想速度。',
       '完善读取、回烧、校验和 1.8V/3.3V/5V 断电复位。',
-      '为已验证的 STM32 F1、F4、G4、H7、L0 增加安全的可逆加锁与解锁，其他器件保持置灰。',
+      '为已验证的 STM32 F1、F4、G4、H7、L0 和 GD32F30x 增加安全的可逆加锁与解锁，其他器件保持置灰。',
     ],
     changesEn: [
       'Fix probe hot-plug reconnects and high-rate RTT, serial, and chart display stalls.',
       'Support more nonstandard Packs, add common targets, unify exact/generic model matching, and speed up typeahead.',
       'Improve readback, reflashing, verification, and 1.8 V/3.3 V/5 V power-cycle reset.',
-      'Add safe reversible locking and unlocking for validated STM32 F1, F4, G4, H7, and L0 devices; other targets remain disabled.',
+      'Add safe reversible locking and unlocking for validated STM32 F1, F4, G4, H7, L0, and GD32F30x devices; other targets remain disabled.',
     ],
   },
   {

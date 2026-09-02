@@ -228,6 +228,103 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
     ]
 
 
+def test_gd32f303_security_validates_identity_and_preserves_erased_options() -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def __init__(self, target):
+            self.target = target
+            self.calls = []
+
+        def init(self, operation):
+            self.calls.append(("init", operation))
+
+        def erase_sector(self, address):
+            self.calls.append(("erase", address))
+
+        def program_page(self, address, data):
+            self.calls.append(("program", address, bytes(data)))
+            self.target.option_bytes[:] = data
+
+        def uninit(self):
+            self.calls.append(("uninit",))
+
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFFF800
+        length = 16
+        is_flash = True
+
+        def __init__(self, target):
+            self.flash = SecurityFlash(target)
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.option_bytes = bytearray(b"\xA5\x5A" + b"\xFF\xFF" * 7)
+            self.density_fault = False
+            self.option_region = OptionRegion(self)
+            super().__init__((self.option_region,))
+
+        def read_memory_block8(self, address, size):
+            if address == 0xE0042000:
+                return (0x21040414).to_bytes(4, "little")[:size]
+            if address == 0x1FFFF7E0:
+                if self.density_fault:
+                    raise RuntimeError("FAULT ACK")
+                return (0x00400200).to_bytes(4, "little")[:size]
+            if address == 0x4002201C:
+                protected = self.option_bytes[:2] != b"\xA5\x5A"
+                return (0x03FFFFFC | (0x2 if protected else 0)).to_bytes(4, "little")[:size]
+            if address == 0x1FFFF800:
+                return bytes(self.option_bytes[:size])
+            raise AssertionError(hex(address))
+
+    target = Target()
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "gd32f303xe-spc"
+
+    assert "power-cycle reset is required" in backend.lock_security()
+    assert target.option_bytes == b"\x00\xFF" + b"\xFF\xFF" * 7
+    target.density_fault = True
+    assert "mass-erased" in backend.unlock_security()
+    assert target.option_bytes == b"\xA5\x5A" + b"\xFF\xFF" * 7
+    programmed = [
+        call[2] for call in target.option_region.flash.calls if call[0] == "program"
+    ]
+    assert programmed == [
+        b"\x00\xFF" + b"\xFF\xFF" * 7,
+        b"\xA5\x5A" + b"\xFF\xFF" * 7,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("dbg_id", "density"),
+    [(0x21040413, 0x00400200), (0x21040414, 0x00400100)],
+)
+def test_gd32f303_security_rejects_identity_or_density_mismatch(dbg_id, density) -> None:
+    class Target:
+        def read_memory_block8(self, address, size):
+            values = {
+                0xE0042000: dbg_id,
+                0x1FFFF7E0: density,
+                0x4002201C: 0x03FFFFFC,
+            }
+            if address == 0x1FFFF800:
+                return (b"\xA5\x5A" + b"\xFF\xFF" * 7)[:size]
+            return values[address].to_bytes(4, "little")[:size]
+
+    backend = PyOcdBackend()
+    backend._session = FakeSession(Target())
+    backend._security_family = "gd32f303xe-spc"
+
+    with pytest.raises(FlashError) as raised:
+        backend.lock_security()
+    assert raised.value.code is FlashErrorCode.LOCK_FAIL
+
+
 def test_stm32f413_security_preserves_non_rdp_options_and_never_uses_level2() -> None:
     class SecurityFlash:
         class Operation:
