@@ -579,6 +579,17 @@ function viewFetch(targets = [installedTarget]) {
         ...record, default: false, source_kind: 'custom-flm', source_name: '用户 FLM',
       }))])
     }
+    if (url.includes('/targets/') && url.endsWith('/security')) {
+      const targetPart = decodeURIComponent(url.split('/targets/')[1].split('/security')[0])
+      const supported = targetPart.startsWith('STM32F103')
+      return json({
+        part_number: targetPart, supported,
+        unlock_supported: supported, lock_supported: supported,
+        family: supported ? 'stm32f103-rdp1' : '',
+        reason: supported ? '' : '该器件尚未通过加锁/解锁真机验证',
+        unlock_erases_flash: supported, reversible_lock: supported,
+      })
+    }
     if (url.includes('/targets/') && url.endsWith('/memory-map')) return json([{
       name: 'flash', start: 0x08000000, length: 0x80000, sector_size: 0x800,
     }])
@@ -949,6 +960,42 @@ describe('online flash task workspace behavior', () => {
       String(url).endsWith('/algorithms') && options?.method === 'POST'
     ))
     expect(upload?.[1]?.body).toBeInstanceOf(FormData)
+    wrapper.unmount()
+  })
+
+  it('keeps security actions off by default and greys them for unvalidated targets', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').element.closest('label')?.title).toContain('真机验证'))
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-unlock"]').element.checked).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-lock"]').element.checked).toBe(false)
+    expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('requires separate unlock and lock confirmations for validated STM32F103', async () => {
+    const target = { ...installedTarget, part_number: 'STM32F103RE' }
+    vi.stubGlobal('fetch', viewFetch([target]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32F103RE"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32F103RE"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[data-testid="action-lock"]').setValue(true)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
+
+    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('整片擦除'))
+    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringContaining('可逆读保护'))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
+    expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual([
+      'connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect',
+    ])
     wrapper.unmount()
   })
 
@@ -1623,10 +1670,10 @@ describe('online flash task workspace behavior', () => {
     const choices = wrapper.findAll('.action-choices label')
     expect(choices[0].get('input').attributes('disabled')).toBeDefined()
     expect(choices.at(-1)?.get('input').attributes('disabled')).toBeDefined()
-    await choices[1].get('input').setValue(false)
-    await choices[3].get('input').setValue(false)
-    await choices[1].get('input').setValue(true)
-    await choices[3].get('input').setValue(true)
+    await wrapper.get('[data-testid="action-erase"]').setValue(false)
+    await wrapper.get('[data-testid="action-verify"]').setValue(false)
+    await wrapper.get('[data-testid="action-erase"]').setValue(true)
+    await wrapper.get('[data-testid="action-verify"]').setValue(true)
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
@@ -1658,7 +1705,7 @@ describe('online flash task workspace behavior', () => {
 
     expect(wrapper.text()).toContain('扇区几何信息不可验证')
     expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
-    await wrapper.findAll('.action-choices label')[1].get('input').setValue(false)
+    await wrapper.get('[data-testid="action-erase"]').setValue(false)
     expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })

@@ -6,6 +6,7 @@ import pytest
 
 from mklink.cmsis_dap.builtin_flm_bundle import (
     BuiltinFlmBundleError,
+    discover_builtin_option_algorithm,
     discover_builtin_flm_algorithms,
     extract_builtin_flm,
     load_builtin_flm_targets,
@@ -66,6 +67,30 @@ def test_builtin_flm_bundle_rejects_changed_blob(tmp_path: Path):
 
     with pytest.raises(BuiltinFlmBundleError, match="integrity"):
         extract_builtin_flm(algorithm)
+
+
+def test_builtin_option_algorithm_is_explicit_and_integrity_checked(tmp_path: Path):
+    root, _payload = _bundle(tmp_path / "bundle")
+    option_payload = b"option-flm"
+    digest = hashlib.sha256(option_payload).hexdigest()
+    blob = root / "blobs" / digest[:2] / (digest + ".flm")
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(option_payload)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["targets"][0]["option_algorithm"] = {
+        "file_name": "PART_OPT.FLM",
+        "sha256": digest,
+        "blob": "blobs/{}/{}.flm".format(digest[:2], digest),
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    option = discover_builtin_option_algorithm("part-a", root)
+
+    assert option is not None
+    assert option.file_name == "PART_OPT.FLM"
+    assert option.path.read_bytes() == option_payload
+    assert option.sha256 == digest
 
 
 def test_builtin_flm_bundle_hpm_short_circuits_before_manifest_access(tmp_path: Path):

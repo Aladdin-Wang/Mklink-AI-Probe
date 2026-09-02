@@ -23,6 +23,14 @@ class FakeBackend:
     def erase_chip(self):
         self.calls.append(("erase", None))
 
+    def unlock_security(self):
+        self.calls.append(("unlock", None))
+        return "unlocked"
+
+    def lock_security(self):
+        self.calls.append(("lock", None))
+        return "locked"
+
     def erase_sectors(self, addresses):
         self.calls.append(("erase_sectors", tuple(addresses)))
 
@@ -76,6 +84,51 @@ def test_hpm_job_holds_debug_and_bridge_resources_until_disconnect():
     assert manager.wait(job_id, timeout=2).state is JobState.SUCCEEDED
     assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
     assert resources.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is None
+    manager.shutdown()
+
+
+def test_security_actions_run_in_safe_order_and_forward_validated_configuration():
+    backend = FakeBackend()
+    inspected = image()
+    manager = OnlineFlashJobManager(
+        lambda: backend,
+        ResourceManager(),
+        image_provider=lambda _image_id: inspected,
+    )
+    request = JobRequest(
+        actions=("connect", "unlock", "erase", "program", "verify", "lock", "reset", "disconnect"),
+        image_id=inspected.image_id,
+        probe_id="probe",
+        target_part="STM32F103RE",
+        security_family="stm32f103-rdp1",
+        security_flm_path="option.flm",
+        security_flm_digest="a" * 64,
+        security_flm_region=(0x1FFFF800, 16),
+    )
+
+    job_id = manager.start(request)
+    result = manager.wait(job_id, timeout=2)
+    manager.shutdown()
+
+    assert result.state is JobState.SUCCEEDED
+    assert [call[0] for call in backend.calls] == [
+        "connect", "unlock", "erase", "program", "verify", "lock", "reset", "disconnect",
+    ]
+    assert backend.calls[0][1]["security_flm_region"] == (0x1FFFF800, 16)
+
+
+def test_lock_is_rejected_without_adjacent_verify_and_reset():
+    manager = OnlineFlashJobManager(lambda: FakeBackend(), ResourceManager())
+    request = JobRequest(
+        actions=("connect", "lock", "disconnect"),
+        security_family="stm32f103-rdp1",
+        security_flm_path="option.flm",
+        security_flm_digest="a" * 64,
+        security_flm_region=(0x1FFFF800, 16),
+    )
+
+    with pytest.raises(ValueError, match="verify"):
+        manager.start(request)
     manager.shutdown()
 
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-01T19:20:00+08:00",
+  "updated_at": "2026-09-02T09:45:53+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,14 +15,14 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "已修复桌面上位机运行期间下载器热插拔后旧串口会话未释放、必须重启应用才能重连的问题，并完成 0.2.0 覆盖安装验证。",
+    "current_task": "在线烧录已为 STM32F103 增加安全加锁/解锁，并完成 RDP Level 1 加锁、受保护读取拒绝、解锁整片擦除及 bootloader/app 恢复真机闭环；GD32 等待换板验证。",
     "release": "本地候选基于源码提交 e40ea4b，标准 NSIS 与普通用户 Skill ZIP 已重新生成；正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
       "name": "0.2.0 开发周期",
       "status": "in_progress",
-      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范本地 CMSIS-Pack 宽松导入及常用型号内置算法目录扩充。"
+      "notes": "预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法及 STM32F103 安全加锁/解锁。"
     },
     {
       "name": "0.2.0 本地候选",
@@ -73,7 +73,7 @@
     },
     {
       "area": "STM32F103RE 真机 HIL",
-      "result": "烧录、调试读写、16 路 SuperWatch、RTT/SystemView、串口/YMODEM、在线烧录、MCP 越界拒绝均通过；详情见 docs/verification/v0.1.9-stm32f103re-release-hil.md。"
+      "result": "既有烧录、调试与实时流回归通过；0.2.0 新增加锁/解锁闭环：加锁前 bootloader/app 校验通过，RDP Level 1 复位后 OBR.RDPRT=1 且主 Flash 返回 TARGET_LOCKED，解锁确认整片擦除并完整保留其他选项字节，随后恢复并校验两个镜像与启动向量。详情见 docs/verification/v0.2.0-stm32f103re-security-hil.md。"
     },
     {
       "area": "SuperWatch",
@@ -81,7 +81,7 @@
     },
     {
       "area": "自动化与构建",
-      "result": "GUI 626 项通过；Python 1675 passed、12 failed、1 skipped，12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建和 NSIS 成功。"
+      "result": "GUI 全量 631 项通过，安全界面与版本信息定向 86 项通过；Python 安全相关定向 257 项通过。Python 全量运行 1672 passed、14 failed，新增错误码断言已修复且相关用例与一次瞬态桌面用例复跑 18 项通过，剩余 12 项均为当前 Windows 账户无目录 symlink 权限导致的 WinError 1314；标准生产构建成功。"
     }
   ],
   "decisions": [
@@ -93,7 +93,8 @@
     "普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。",
     "SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。",
     "串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；同一下载器不得并行调用，超时后先检查状态并重建会话；设备已因 USB 异常失效时，重连前必须关闭旧会话并释放串口句柄与端口锁。",
-    "应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。"
+    "应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。",
+    "安全加锁/解锁仅按真机验证型号逐项启用；必须白名单校验型号、算法哈希和选项区范围，只支持可逆保护，解锁必须提示整片擦除，未验证型号前后端均拒绝。"
   ],
   "hardware": {
     "probe": "主要 ARM 回归夹具为 MKLink V4；发布前验证固件 V4.3.9，调试端口 COM228、UART COM227。",
@@ -105,12 +106,14 @@
     "当前 Windows 账户缺少目录 symlink 权限，Python 全量有 12 项 WinError 1314；这不是业务测试失败。",
     "0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。",
     "Modbus 真机只验证安全读取；GD32E517 线圈 0–3 控制真实功率功能，未执行危险写入。",
-    "V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。"
+    "V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。",
+    "当前仅 STM32F103 完成 RDP Level 1 真机闭环；GD32 加锁/解锁入口保持置灰，必须在对应板卡上验证保护生效、解锁擦除和固件恢复后才能启用。"
   ],
   "next_actions": [
     "若 V4.3.9 现场再次出现 RTT 周期性停顿，先同步记录 SWD 失败、DapBusy、USB 环形队列水位和主机到达间隔，区分 200ms 固件退避与界面渲染背压。",
     "后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。",
-    "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。"
+    "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。",
+    "用户换接 GD32 板卡后，按 STM32 同等标准验证可逆加锁、受保护读取拒绝、解锁擦除及固件恢复，再决定启用的精确系列。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、端口、目标固件和运行进程；硬件操作保持串行。",

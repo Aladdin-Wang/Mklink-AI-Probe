@@ -1,0 +1,100 @@
+"""Fail-closed target security capabilities for online flashing."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from .builtin_flm_bundle import discover_builtin_option_algorithm
+from .errors import FlashError, FlashErrorCode
+
+
+STM32F1_OPTION_ADDRESS = 0x1FFFF800
+STM32F1_OPTION_SIZE = 16
+STM32F1_OPTION_FLM_SHA256 = (
+    "4a2efb1f314a4c70b4b9de9561fd288d3f48c7a363570bae5acc2a2aea72545a"
+)
+_STM32F103 = re.compile(r"^STM32F103(?:[CTRVZ][468BCDEFG]|X[468BCDEFG])$", re.IGNORECASE)
+_GD32 = re.compile(r"^GD32", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class SecurityCapability:
+    part_number: str
+    supported: bool
+    family: str = ""
+    reason: str = ""
+    unlock_erases_flash: bool = False
+    reversible_lock: bool = False
+    option_address: int = 0
+    option_size: int = 0
+    algorithm_path: Optional[Path] = None
+    algorithm_sha256: str = ""
+
+    def public(self) -> dict[str, object]:
+        return {
+            "part_number": self.part_number,
+            "supported": self.supported,
+            "unlock_supported": self.supported,
+            "lock_supported": self.supported,
+            "family": self.family,
+            "reason": self.reason,
+            "unlock_erases_flash": self.unlock_erases_flash,
+            "reversible_lock": self.reversible_lock,
+        }
+
+
+def _stm32f103_bundle_part(part_number: str) -> Optional[str]:
+    match = _STM32F103.fullmatch(part_number.strip())
+    if match is None:
+        return None
+    suffix = part_number.strip()[-1].upper()
+    return "STM32F103x{}".format(suffix)
+
+
+def security_capability(part_number: str) -> SecurityCapability:
+    """Resolve only hardware-validated families and fail closed on asset mismatch."""
+
+    part = str(part_number or "").strip()
+    bundle_part = _stm32f103_bundle_part(part)
+    if bundle_part is None:
+        if _GD32.match(part):
+            return SecurityCapability(
+                part,
+                False,
+                reason="GD32 加锁/解锁正在等待真机验证",
+            )
+        return SecurityCapability(part, False, reason="该器件尚未通过加锁/解锁真机验证")
+    try:
+        algorithm = discover_builtin_option_algorithm(bundle_part)
+    except (OSError, TypeError, ValueError):
+        return SecurityCapability(part, False, reason="内置选项字节算法不可用或完整性校验失败")
+    if (
+        algorithm is None
+        or algorithm.file_name.casefold() != "stm32f10x_opt.flm"
+        or algorithm.sha256 != STM32F1_OPTION_FLM_SHA256
+    ):
+        return SecurityCapability(part, False, reason="内置选项字节算法不匹配安全白名单")
+    return SecurityCapability(
+        part_number=part,
+        supported=True,
+        family="stm32f103-rdp1",
+        unlock_erases_flash=True,
+        reversible_lock=True,
+        option_address=STM32F1_OPTION_ADDRESS,
+        option_size=STM32F1_OPTION_SIZE,
+        algorithm_path=algorithm.path,
+        algorithm_sha256=algorithm.sha256,
+    )
+
+
+def require_security_capability(part_number: str) -> SecurityCapability:
+    capability = security_capability(part_number)
+    if not capability.supported or capability.algorithm_path is None:
+        raise FlashError(
+            FlashErrorCode.SECURITY_NOT_SUPPORTED,
+            capability.reason or "target security operations are not supported",
+        )
+    return capability

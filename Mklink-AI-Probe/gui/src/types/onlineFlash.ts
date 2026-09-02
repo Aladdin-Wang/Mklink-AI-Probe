@@ -26,6 +26,17 @@ export interface TargetMemoryRegion {
   sector_size: number
 }
 
+export interface SecurityCapability {
+  part_number: string
+  supported: boolean
+  unlock_supported: boolean
+  lock_supported: boolean
+  family: string
+  reason: string
+  unlock_erases_flash: boolean
+  reversible_lock: boolean
+}
+
 export interface PackStatus {
   last_error: string | null
   index_available: boolean
@@ -91,7 +102,7 @@ export interface SectorRecord {
   size: number
 }
 
-export type JobAction = 'connect' | 'erase' | 'program' | 'verify' | 'reset' | 'disconnect'
+export type JobAction = 'connect' | 'unlock' | 'erase' | 'program' | 'verify' | 'lock' | 'reset' | 'disconnect'
 
 export interface JobRequest {
   actions: JobAction[]
@@ -125,9 +136,11 @@ export interface ReadMemoryRequest {
 export type JobState =
   | 'queued'
   | 'connecting'
+  | 'unlocking'
   | 'erasing'
   | 'programming'
   | 'verifying'
+  | 'locking'
   | 'resetting'
   | 'disconnecting'
   | 'stopping'

@@ -10,20 +10,22 @@ export interface ReleaseHistoryEntry {
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.2.0',
-    date: '2026-09-01',
-    summary: '修复热插拔重连、RTT 高频显示与 Pack 解析，并增加常用型号',
-    summaryEn: 'Fixed hot-plug reconnects, high-rate RTT display, and Pack parsing, and added common MCU models',
+    date: '2026-09-02',
+    summary: '修复热插拔重连、RTT 高频显示与 Pack 解析，增加常用型号及安全加解锁',
+    summaryEn: 'Fixed reconnects, high-rate streams, and Pack parsing, and added common models and safe locking',
     changes: [
       '修复下载器拔插后旧串口会话未释放、必须重启上位机才能重新连接的问题。',
       '修复 RTT 与串口助手高频数据滚动偶发停顿，优化终端、日志和 RTT 曲线的持续刷新。',
       '放宽非规范 CMSIS-Pack 的加载解析，提升国产 MCU Pack 导入兼容性。',
       '增加了常用型号。',
+      '在线烧录为已验证的 STM32F103 增加可逆读保护加锁与解锁；解锁整片擦除和加锁操作均需单独二次确认，未验证器件保持置灰。',
     ],
     changesEn: [
       'Release stale serial sessions after probe hot-plug so reconnecting no longer requires restarting the desktop app.',
       'Fix intermittent stalls while scrolling high-rate RTT and Serial Assistant data, including terminal, log, and RTT chart updates.',
       'Relax nonstandard CMSIS-Pack parsing to improve compatibility with domestic MCU Packs.',
       'Add common MCU models.',
+      'Add hardware-validated reversible read-protection locking and unlocking for STM32F103, with separate destructive confirmations and fail-closed controls for unvalidated devices.',
     ],
   },
   {

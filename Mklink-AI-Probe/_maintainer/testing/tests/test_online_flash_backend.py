@@ -162,6 +162,85 @@ def test_pyocd_backend_reads_exact_bytes_from_target() -> None:
     backend.disconnect()
 
 
+def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def __init__(self, target):
+            self.target = target
+            self.calls = []
+
+        def init(self, operation):
+            self.calls.append(("init", operation))
+
+        def erase_sector(self, address):
+            self.calls.append(("erase", address))
+
+        def program_page(self, address, data):
+            self.calls.append(("program", address, bytes(data)))
+            self.target.option_bytes[:] = data
+
+        def uninit(self):
+            self.calls.append(("uninit",))
+
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFFF800
+        length = 16
+        is_flash = True
+
+        def __init__(self, target):
+            self.flash = SecurityFlash(target)
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.option_bytes = bytearray([0xA5, 0x5A] + [0xFF, 0x00] * 7)
+            self.option_region = OptionRegion(self)
+            super().__init__((self.option_region,))
+
+        def read_memory_block8(self, address, size):
+            if address == 0x1FFFF800:
+                return bytes(self.option_bytes[:size])
+            if address == 0x4002201C:
+                locked = self.option_bytes[:2] != b"\xA5\x5A"
+                return (0x03FFFFFC | (0x2 if locked else 0)).to_bytes(4, "little")[:size]
+            raise AssertionError(hex(address))
+
+    target = Target()
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+
+    assert "activated after reset" in backend.lock_security()
+    assert target.option_bytes[:2] == b"\x00\xFF"
+    assert target.option_bytes[2:] == bytes([0xFF, 0x00] * 7)
+    assert "mass-erased" in backend.unlock_security()
+    assert target.option_bytes[:2] == b"\xA5\x5A"
+    assert target.reset_and_halt_calls == 2
+    assert [call[0] for call in target.option_region.flash.calls] == [
+        "init", "erase", "uninit", "init", "program", "uninit",
+        "init", "erase", "uninit", "init", "program", "uninit",
+    ]
+
+
+def test_stm32f103_locked_options_are_reconstructed_from_shadow_registers() -> None:
+    class Target:
+        def read_memory_block8(self, address, size):
+            if address == 0x1FFFF800:
+                raise RuntimeError("FAULT ACK")
+            if address == 0x4002201C:
+                return (0x03FFFFFE).to_bytes(4, "little")[:size]
+            if address == 0x40022020:
+                return (0xFFFFFFFF).to_bytes(4, "little")[:size]
+            raise AssertionError(hex(address))
+
+    options, directly_readable = PyOcdBackend._stm32f103_option_snapshot(Target())
+
+    assert directly_readable is False
+    assert options == bytes([0x00, 0xFF] + [0xFF, 0x00] * 7)
+
+
 def test_hpm_rom_backend_programs_without_flm_and_verifies_by_readback(
     tmp_path: Path,
 ) -> None:

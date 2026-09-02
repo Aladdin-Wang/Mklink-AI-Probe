@@ -17,7 +17,7 @@ import {
   type BrowserFirmwareFileHandle,
   type PickedFirmwareSource,
 } from '../lib/filePicker'
-import type { CustomFlmRecord, FlashAlgorithmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, TargetMemoryRegion, TargetRecord } from '../types/onlineFlash'
+import type { CustomFlmRecord, FlashAlgorithmRecord, ImageInspection, JobAction, JobEvent, JobState, JobStreamEvent, JobSubscription, PackStatus, ProbeRecord, SecurityCapability, TargetMemoryRegion, TargetRecord } from '../types/onlineFlash'
 
 const STORAGE_KEY = 'mklink.onlineFlash.settings'
 const PROBE_DISCOVERY_ATTEMPTS = 6
@@ -26,7 +26,8 @@ const AUTO_INSPECT_DELAY_MS = 150
 const SOURCE_POLL_INTERVAL_MS = 1000
 const ONLINE_FREQUENCIES = new Set([1_000_000, 2_000_000, 4_000_000, 8_000_000, 10_000_000])
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
-const CANONICAL_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
+const CANONICAL_ACTIONS: JobAction[] = ['connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect']
+const DEFAULT_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
 const api = useOnlineFlashApi()
 
@@ -58,6 +59,7 @@ const targets = ref<TargetRecord[]>([])
 const selectedTarget = ref<TargetRecord | null>(null)
 const targetMemoryRegions = ref<TargetMemoryRegion[]>([])
 const targetMemoryMapBusy = ref(false)
+const security = ref<SecurityCapability>({ part_number: '', supported: false, unlock_supported: false, lock_supported: false, family: '', reason: tr('请选择已验证的目标器件', 'Select a hardware-validated target'), unlock_erases_flash: false, reversible_lock: false })
 const desiredPart = ref(saved.targetPart ?? '')
 const targetQuery = ref('')
 const packStatus = ref<PackStatus | null>(null)
@@ -91,7 +93,7 @@ const progressOwner = ref<'flash' | 'read'>('flash')
 const memoryReadBusy = computed(() => memoryReadState.value === 'reading')
 const paddingTop = ref(0)
 const paddingBottom = ref(0)
-const actions = ref<JobAction[]>([...CANONICAL_ACTIONS])
+const actions = ref<JobAction[]>([...DEFAULT_ACTIONS])
 const jobId = ref('')
 const jobState = ref<JobState | null>(null)
 const totalProgress = ref(0)
@@ -106,6 +108,7 @@ let viewportGeneration = 0
 let targetSearchGeneration = 0
 let targetSearchController: AbortController | null = null
 let targetMemoryMapToken = 0
+let securityToken = 0
 let packOperationToken = 0
 let customFlmToken = 0
 let flashAlgorithmToken = 0
@@ -146,12 +149,15 @@ function canonicalActions(values: readonly JobAction[]): JobAction[] {
 }
 function actionsAreValid(values: readonly JobAction[]): boolean {
   const canonical = canonicalActions(values)
+  const lockIndex = values.indexOf('lock')
   return values.length === new Set(values).size
     && values.length === canonical.length
     && values.every((value, index) => value === canonical[index])
     && values[0] === 'connect'
     && values.at(-1) === 'disconnect'
     && values.some(action => FLASH_ACTIONS.has(action))
+    && (!values.includes('unlock') || security.value.unlock_supported)
+    && (!values.includes('lock') || (security.value.lock_supported && lockIndex > 0 && values[lockIndex - 1] === 'verify' && values[lockIndex + 1] === 'reset'))
 }
 function setActions(values: JobAction[]): void { actions.value = canonicalActions(values) }
 const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
@@ -400,10 +406,24 @@ async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_numbe
   }
 }
 
+async function loadSecurityCapability(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
+  const token = ++securityToken
+  security.value = { part_number: partNumber, supported: false, unlock_supported: false, lock_supported: false, family: '', reason: tr('正在检查安全操作支持情况', 'Checking security-operation support'), unlock_erases_flash: false, reversible_lock: false }
+  if (!partNumber) return
+  try {
+    const capability = await api.getTargetSecurity(partNumber)
+    if (token === securityToken && !disposed) security.value = capability
+  } catch (error) {
+    if (token === securityToken) security.value = { ...security.value, reason: message(error) }
+  }
+}
+
 watch(() => selectedTarget.value?.part_number || '', partNumber => {
+  actions.value = canonicalActions(actions.value.filter(action => action !== 'unlock' && action !== 'lock'))
   void loadCustomFlms(partNumber)
   void loadFlashAlgorithms(partNumber)
   void loadTargetMemoryMap(partNumber)
+  void loadSecurityCapability(partNumber)
 })
 
 async function addCustomFlm(file: File): Promise<void> {
@@ -756,6 +776,14 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
       : []
   )
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
+  if (orderedActions.includes('unlock') && !confirm(tr(
+    '解锁会关闭读保护并强制整片擦除，Bootloader、应用程序和全部 Flash 数据都会永久删除。确定继续？',
+    'Unlocking disables read protection and forces a full-chip erase. The bootloader, application, and all Flash data will be permanently deleted. Continue?',
+  ))) return
+  if (orderedActions.includes('lock') && !confirm(tr(
+    '加锁会在校验完成后启用可逆读保护，并在复位后限制 Flash 读取和调试访问。以后解锁仍会整片擦除。确定继续？',
+    'Locking enables reversible read protection after verification and restricts Flash reads and debug access after reset. A later unlock will still erase the entire chip. Continue?',
+  ))) return
   progressOwner.value = 'flash'
   creatingJob.value = true
   try {
@@ -830,7 +858,7 @@ onBeforeUnmount(() => {
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :board="hpmBoard || undefined" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
-      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" @actions="setActions" @start="startJob()" @stop="stopJob" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
     <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>

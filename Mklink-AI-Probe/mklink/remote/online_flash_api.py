@@ -251,6 +251,7 @@ def _flash_status(code: FlashErrorCode) -> int:
         FlashErrorCode.BIN_ADDRESS_MISSING,
         FlashErrorCode.IMAGE_OUT_OF_RANGE,
         FlashErrorCode.TARGET_LOCKED,
+        FlashErrorCode.SECURITY_NOT_SUPPORTED,
     }:
         return 422
     if code is FlashErrorCode.PACK_INDEX_UNAVAILABLE:
@@ -259,9 +260,11 @@ def _flash_status(code: FlashErrorCode) -> int:
         FlashErrorCode.PACK_DOWNLOAD_FAIL,
         FlashErrorCode.PACK_INTEGRITY_ERROR,
         FlashErrorCode.CONNECT_FAIL,
+        FlashErrorCode.UNLOCK_FAIL,
         FlashErrorCode.ERASE_FAIL,
         FlashErrorCode.PROGRAM_FAIL,
         FlashErrorCode.VERIFY_FAIL,
+        FlashErrorCode.LOCK_FAIL,
         FlashErrorCode.RESET_FAIL,
     }:
         return 502
@@ -945,6 +948,19 @@ def _start_job_with_configuration(
         pack_flm_regions = ()
         custom_flm_ram_start = None
         custom_flm_ram_size = None
+        security_family = None
+        security_flm_path = None
+        security_flm_digest = None
+        security_flm_region = None
+        if any(action in body.actions for action in ("unlock", "lock")):
+            from mklink.cmsis_dap.security import require_security_capability
+
+            security = require_security_capability(target.part_number)
+            assert security.algorithm_path is not None
+            security_family = security.family
+            security_flm_path = str(security.algorithm_path)
+            security_flm_digest = security.algorithm_sha256
+            security_flm_region = (security.option_address, security.option_size)
         inspection = None
         if any(action in body.actions for action in ("program", "verify")):
             if not body.image_id:
@@ -1072,6 +1088,10 @@ def _start_job_with_configuration(
             sector_addresses=tuple(body.sector_addresses),
             board=board,
             hpm_flash_cfg=hpm_flash_cfg,
+            security_family=security_family,
+            security_flm_path=security_flm_path,
+            security_flm_digest=security_flm_digest,
+            security_flm_region=security_flm_region,
         )
         job_id = services.job_manager.start(job_request)
         return job_id, services.job_manager.get(job_id)
@@ -1167,6 +1187,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             and region.sector_size is not None
             and region.sector_size > 0
         ]
+
+    @router.get("/targets/{part_number}/security")
+    async def target_security(part_number: str) -> object:
+        target = await _blocking(_resolved_target, services.catalog, part_number)
+        from mklink.cmsis_dap.security import security_capability
+
+        return security_capability(target.part_number).public()
 
     @router.get("/targets/{part_number}/algorithms")
     async def target_flash_algorithms(part_number: str) -> object:

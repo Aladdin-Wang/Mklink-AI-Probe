@@ -11,9 +11,11 @@ from typing import FrozenSet, Mapping, Optional, Tuple
 class JobState(str, Enum):
     QUEUED = "queued"
     CONNECTING = "connecting"
+    UNLOCKING = "unlocking"
     ERASING = "erasing"
     PROGRAMMING = "programming"
     VERIFYING = "verifying"
+    LOCKING = "locking"
     RESETTING = "resetting"
     DISCONNECTING = "disconnecting"
     STOPPING = "stopping"
@@ -25,6 +27,16 @@ class JobState(str, Enum):
 ALLOWED_TRANSITIONS: Mapping[JobState, FrozenSet[JobState]] = MappingProxyType({
     JobState.QUEUED: frozenset({JobState.CONNECTING, JobState.FAILED, JobState.STOPPED}),
     JobState.CONNECTING: frozenset({
+        JobState.UNLOCKING,
+        JobState.ERASING,
+        JobState.PROGRAMMING,
+        JobState.VERIFYING,
+        JobState.RESETTING,
+        JobState.DISCONNECTING,
+        JobState.FAILED,
+        JobState.STOPPING,
+    }),
+    JobState.UNLOCKING: frozenset({
         JobState.ERASING,
         JobState.PROGRAMMING,
         JobState.VERIFYING,
@@ -48,6 +60,13 @@ ALLOWED_TRANSITIONS: Mapping[JobState, FrozenSet[JobState]] = MappingProxyType({
         JobState.STOPPING,
     }),
     JobState.VERIFYING: frozenset({
+        JobState.LOCKING,
+        JobState.RESETTING,
+        JobState.DISCONNECTING,
+        JobState.FAILED,
+        JobState.STOPPING,
+    }),
+    JobState.LOCKING: frozenset({
         JobState.RESETTING,
         JobState.DISCONNECTING,
         JobState.FAILED,
@@ -174,6 +193,10 @@ class JobRequest:
     sector_addresses: Tuple[int, ...] = ()
     board: Optional[str] = None
     hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
+    security_family: Optional[str] = None
+    security_flm_path: Optional[str] = None
+    security_flm_digest: Optional[str] = None
+    security_flm_region: Optional[Tuple[int, int]] = None
 
     @classmethod
     def full_sequence(

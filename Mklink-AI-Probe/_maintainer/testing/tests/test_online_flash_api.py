@@ -551,6 +551,32 @@ def test_target_algorithm_route_lists_pack_source_without_paths(app, services, m
     assert "secret" not in response.text.casefold()
 
 
+def test_target_security_route_is_fail_closed_for_unvalidated_device(app):
+    response = request(app, "GET", "/api/online-flash/targets/DEVICE_A/security")
+
+    assert response.status_code == 200
+    assert response.json()["supported"] is False
+    assert response.json()["unlock_supported"] is False
+    assert response.json()["lock_supported"] is False
+    assert response.json()["reason"]
+
+
+def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
+    response = request(
+        app,
+        "POST",
+        "/api/online-flash/jobs",
+        json={
+            "actions": ["connect", "unlock", "erase", "disconnect"],
+            "probe_id": "mk",
+            "target_part": "DEVICE_A",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
+
+
 def test_target_algorithm_route_describes_pyocd_builtin_regions(app, services, monkeypatch):
     builtin = TargetRecord(
         "DEVICE_A", "Vendor", installed=True, source="builtin",

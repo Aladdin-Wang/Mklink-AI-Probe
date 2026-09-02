@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import sys
@@ -15,6 +16,18 @@ from .models import TargetRecord
 
 class BuiltinFlmBundleError(ValueError):
     """The built-in FLM bundle is malformed or corrupted."""
+
+
+@dataclass(frozen=True)
+class BuiltinOptionAlgorithm:
+    """Integrity metadata for an option-byte FLM kept outside auto Flash selection."""
+
+    target_part: str
+    file_name: str
+    path: Path
+    sha256: str
+    ram_start: int
+    ram_size: int
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -208,6 +221,41 @@ def discover_builtin_flm_algorithms(part_number: str, root: Optional[Path] = Non
             ):
                 algorithms.append(candidate)
     return algorithms
+
+
+def discover_builtin_option_algorithm(
+    part_number: str,
+    root: Optional[Path] = None,
+) -> Optional[BuiltinOptionAlgorithm]:
+    """Return one exact, integrity-checked option algorithm without auto-selecting it."""
+
+    target = str(part_number or "").strip()
+    if not target:
+        return None
+    bundle_root = Path(root) if root is not None else _default_bundle_root()
+    matches = [
+        raw for raw in _target_records(bundle_root)
+        if str(raw.get("part_number") or "").casefold() == target.casefold()
+    ]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise BuiltinFlmBundleError("builtin option algorithm target is ambiguous")
+    raw = matches[0]
+    option = raw.get("option_algorithm")
+    if option is None:
+        return None
+    if not isinstance(option, Mapping):
+        raise BuiltinFlmBundleError("builtin option algorithm is invalid")
+    path, digest = _blob(bundle_root, option.get("blob"), option.get("sha256"))
+    return BuiltinOptionAlgorithm(
+        target_part=_text(raw.get("part_number"), "builtin FLM part number"),
+        file_name=_text(option.get("file_name"), "builtin option FLM file name"),
+        path=path,
+        sha256=digest,
+        ram_start=_integer(raw.get("ram_start"), "builtin FLM RAM start"),
+        ram_size=_integer(raw.get("ram_size"), "builtin FLM RAM size"),
+    )
 
 
 def extract_builtin_flm(algorithm: object) -> bytes:

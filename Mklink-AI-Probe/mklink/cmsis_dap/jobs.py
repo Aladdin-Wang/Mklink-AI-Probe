@@ -33,17 +33,21 @@ MAX_READ_MEMORY_SIZE = 64 * 1024 * 1024
 
 _ACTION_STATES = {
     "connect": JobState.CONNECTING,
+    "unlock": JobState.UNLOCKING,
     "erase": JobState.ERASING,
     "program": JobState.PROGRAMMING,
     "verify": JobState.VERIFYING,
+    "lock": JobState.LOCKING,
     "reset": JobState.RESETTING,
     "disconnect": JobState.DISCONNECTING,
 }
 _ACTION_ERRORS = {
     "connect": FlashErrorCode.CONNECT_FAIL,
+    "unlock": FlashErrorCode.UNLOCK_FAIL,
     "erase": FlashErrorCode.ERASE_FAIL,
     "program": FlashErrorCode.PROGRAM_FAIL,
     "verify": FlashErrorCode.VERIFY_FAIL,
+    "lock": FlashErrorCode.LOCK_FAIL,
     "reset": FlashErrorCode.RESET_FAIL,
     "disconnect": FlashErrorCode.UNKNOWN_ERROR,
 }
@@ -407,12 +411,24 @@ class OnlineFlashJobManager:
                                     connect_mode=job.request.connect_mode,
                                     reset_mode=job.request.reset_mode,
                                 )
+                                if job.request.security_family is not None:
+                                    connect_options.update(
+                                        security_family=job.request.security_family,
+                                        security_flm_path=job.request.security_flm_path,
+                                        security_flm_digest=job.request.security_flm_digest,
+                                        security_flm_region=job.request.security_flm_region,
+                                    )
                                 if is_hpm_target(job.request.target_part):
                                     connect_options.update(
                                         board=job.request.board,
                                         hpm_flash_cfg=job.request.hpm_flash_cfg,
                                     )
                                 backend.connect(**connect_options)
+                            elif action == "unlock":
+                                result = backend.unlock_security()
+                                if result:
+                                    with self._condition:
+                                        self._emit_locked(job, "log", message=str(result))
                             elif action == "erase":
                                 deferred_erase = bool(
                                     getattr(backend, "erase_deferred", False)
@@ -511,6 +527,11 @@ class OnlineFlashJobManager:
                                 else:
                                     verify(job.image)
                                 report_verify_progress(1)
+                            elif action == "lock":
+                                result = backend.lock_security()
+                                if result:
+                                    with self._condition:
+                                        self._emit_locked(job, "log", message=str(result))
                             elif action == "reset":
                                 backend.reset_run(job.request.reset_mode)
                         except FlashError:
@@ -836,6 +857,21 @@ class OnlineFlashJobManager:
             raise ValueError("program and verify require an image")
         if request.sector_addresses and "erase" not in actions:
             raise ValueError("sector addresses require erase")
+        security_actions = {"unlock", "lock"}.intersection(actions)
+        if security_actions and not all((
+            request.security_family,
+            request.security_flm_path,
+            request.security_flm_digest,
+            request.security_flm_region,
+        )):
+            raise ValueError("security actions require validated security configuration")
+        if "unlock" in actions and actions.index("unlock") != 1:
+            raise ValueError("unlock must immediately follow connect")
+        if "lock" in actions:
+            if "verify" not in actions or actions.index("lock") != actions.index("verify") + 1:
+                raise ValueError("lock must immediately follow verify")
+            if "reset" not in actions or actions.index("reset") != actions.index("lock") + 1:
+                raise ValueError("lock must be immediately followed by reset")
         state = JobState.QUEUED
         for action in actions:
             next_state = _ACTION_STATES[action]

@@ -180,6 +180,85 @@ class _CustomFlmDelegate:
         return getattr(self._next_delegate, name)
 
 
+class _SecurityFlmDelegate:
+    def __init__(
+        self,
+        payload: bytes,
+        next_delegate: Any = None,
+        region: Tuple[int, int] = (0, 0),
+    ) -> None:
+        self._payload = payload
+        self._next_delegate = next_delegate
+        self._region = region
+
+    def will_init_target(self, target: Any, init_sequence: Any) -> None:
+        callback = getattr(self._next_delegate, "will_init_target", None)
+        if callable(callback):
+            callback(target, init_sequence)
+        init_sequence.insert_before(
+            "create_flash",
+            (
+                "mklink_security_flm",
+                lambda: _install_security_flm_region(
+                    target, self._payload, self._region
+                ),
+            ),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        if self._next_delegate is None:
+            raise AttributeError(name)
+        return getattr(self._next_delegate, name)
+
+
+def _install_security_flm_region(
+    target: Any,
+    payload: bytes,
+    region: Tuple[int, int],
+) -> None:
+    from .security import STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE
+
+    if region != (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE):
+        raise FlashError(
+            FlashErrorCode.SECURITY_NOT_SUPPORTED,
+            "security option-byte region is not in the safety whitelist",
+        )
+    FlashRegion = import_pyocd_attr("pyocd.core.memory_map", "FlashRegion")
+    PackFlashAlgo = import_pyocd_attr(
+        "pyocd.target.pack.flash_algo", "PackFlashAlgo"
+    )
+    try:
+        algorithm = PackFlashAlgo(io.BytesIO(payload))
+    except Exception:
+        raise FlashError(
+            FlashErrorCode.FILE_FORMAT_ERROR,
+            "security option-byte FLM could not be loaded",
+        ) from None
+    if (
+        int(getattr(algorithm, "flash_start", -1)) != STM32F1_OPTION_ADDRESS
+        or int(getattr(algorithm, "flash_size", -1)) != STM32F1_OPTION_SIZE
+    ):
+        raise FlashError(
+            FlashErrorCode.SECURITY_NOT_SUPPORTED,
+            "security option-byte FLM metadata is outside the safety whitelist",
+        )
+    target.memory_map = target.memory_map.clone()
+    for existing in target.memory_map:
+        start = int(existing.start)
+        end = start + int(existing.length)
+        if STM32F1_OPTION_ADDRESS < end and start < STM32F1_OPTION_ADDRESS + STM32F1_OPTION_SIZE:
+            raise FlashError(
+                FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                "security option-byte region overlaps the target memory map",
+            )
+    target.memory_map.add_region(FlashRegion(
+        name="mklink_security_option_bytes",
+        start=STM32F1_OPTION_ADDRESS,
+        length=STM32F1_OPTION_SIZE,
+        flm=algorithm,
+    ))
+
+
 def _install_custom_flm_regions(
     target: Any,
     payloads: Tuple[bytes, ...],
@@ -613,6 +692,10 @@ class PyOcdBackend:
         custom_flm_ram_size: Optional[int] = None,
         connect_mode: str = "halt",
         reset_mode: str = "default",
+        security_family: Optional[str] = None,
+        security_flm_path: Optional[str] = None,
+        security_flm_digest: Optional[str] = None,
+        security_flm_region: Optional[Tuple[int, int]] = None,
     ) -> None:
         with self._lock:
             self.disconnect()
@@ -716,6 +799,38 @@ class PyOcdBackend:
                         "custom FLM integrity check failed",
                     )
                 resolved_flms.append(payload)
+            security_payload = None
+            if security_family is not None:
+                from .security import (
+                    STM32F1_OPTION_ADDRESS,
+                    STM32F1_OPTION_FLM_SHA256,
+                    STM32F1_OPTION_SIZE,
+                )
+
+                if (
+                    security_family != "stm32f103-rdp1"
+                    or security_flm_digest != STM32F1_OPTION_FLM_SHA256
+                    or security_flm_region
+                    != (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE)
+                    or not security_flm_path
+                ):
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "security configuration is not in the safety whitelist",
+                    )
+                security_path = Path(security_flm_path)
+                try:
+                    security_payload = security_path.read_bytes()
+                except OSError:
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "security option-byte algorithm is unavailable",
+                    ) from None
+                if hashlib.sha256(security_payload).hexdigest() != security_flm_digest:
+                    raise FlashError(
+                        FlashErrorCode.PACK_INTEGRITY_ERROR,
+                        "security option-byte algorithm integrity check failed",
+                    )
             ram_region = None
             if custom_flm_ram_start is not None or custom_flm_ram_size is not None:
                 if (
@@ -772,6 +887,13 @@ class PyOcdBackend:
                         ram_region,
                         tuple(resolved_regions),
                     )
+                if security_payload is not None:
+                    assert security_flm_region is not None
+                    delegate = _SecurityFlmDelegate(
+                        security_payload,
+                        delegate,
+                        security_flm_region,
+                    )
                 if delegate is not getattr(session, "delegate", None):
                     session.delegate = delegate
                 session.open()
@@ -792,6 +914,124 @@ class PyOcdBackend:
                     except Exception:
                         pass
                 raise self._mapped_error(exc, FlashErrorCode.CONNECT_FAIL) from None
+
+    def unlock_security(self) -> str:
+        """Disable STM32F103 RDP level 1; the device performs a mandatory mass erase."""
+
+        with self._lock:
+            try:
+                changed, desired = self._write_stm32f103_rdp(0xA5, 0x5A)
+                session = self._require_session()
+                session.target.reset_and_halt()
+                actual = self._read_target_bytes(
+                    session.target, 0x1FFFF800, 16
+                )
+                if actual != desired:
+                    raise RuntimeError("RDP unlock or preserved option bytes did not persist after reset")
+                return (
+                    "STM32F103 read protection was disabled; main Flash was mass-erased"
+                    if changed
+                    else "STM32F103 read protection was already disabled"
+                )
+            except FlashError:
+                raise
+            except Exception as exc:
+                raise self._mapped_error(exc, FlashErrorCode.UNLOCK_FAIL) from None
+
+    def lock_security(self) -> str:
+        """Enable reversible STM32F103 RDP level 1 and atomically reset to activate it."""
+
+        with self._lock:
+            try:
+                changed, _desired = self._write_stm32f103_rdp(0x00, 0xFF)
+                session = self._require_session()
+                session.target.reset_and_halt()
+                obr = int.from_bytes(
+                    self._read_target_bytes(session.target, 0x4002201C, 4),
+                    "little",
+                )
+                if not (obr & 0x2):
+                    raise RuntimeError("RDP lock did not activate after reset")
+                return (
+                    "STM32F103 reversible read protection was written and activated after reset"
+                    if changed
+                    else "STM32F103 reversible read protection was already active"
+                )
+            except FlashError:
+                raise
+            except Exception as exc:
+                raise self._mapped_error(exc, FlashErrorCode.LOCK_FAIL) from None
+
+    def _write_stm32f103_rdp(self, value: int, complement: int) -> Tuple[bool, bytes]:
+        session = self._require_session()
+        address = 0x1FFFF800
+        current, directly_readable = self._stm32f103_option_snapshot(session.target)
+        current = bytearray(current)
+        if len(current) != 16:
+            raise RuntimeError("option-byte read returned an unexpected length")
+        if any((current[index] ^ current[index + 1]) != 0xFF for index in range(0, 16, 2)):
+            raise RuntimeError("option-byte complement validation failed")
+        if current[:2] == bytes((value, complement)):
+            return False, bytes(current)
+        desired = bytes((value, complement)) + bytes(current[2:])
+        region = self._flash_region_for_address(session.target, address)
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != address
+            or int(region.length) != 16
+        ):
+            raise RuntimeError("validated option-byte Flash region is unavailable")
+        flash = getattr(region, "flash", None)
+        if flash is None:
+            raise RuntimeError("option-byte Flash algorithm is unavailable")
+        flash.init(flash.Operation.ERASE)
+        try:
+            flash.erase_sector(address)
+        finally:
+            flash.uninit()
+        flash.init(flash.Operation.PROGRAM)
+        try:
+            flash.program_page(address, desired)
+        finally:
+            flash.uninit()
+        if directly_readable:
+            actual = self._read_target_bytes(session.target, address, 16)
+            if actual != desired:
+                raise RuntimeError("option-byte write verification failed")
+        return True, desired
+
+    @classmethod
+    def _stm32f103_option_snapshot(cls, target: Any) -> Tuple[bytes, bool]:
+        """Read option bytes, or reconstruct them from safe shadow registers under RDP."""
+
+        address = 0x1FFFF800
+        try:
+            return cls._read_target_bytes(target, address, 16), True
+        except Exception as original_error:
+            try:
+                obr = int.from_bytes(cls._read_target_bytes(target, 0x4002201C, 4), "little")
+                wrpr = int.from_bytes(cls._read_target_bytes(target, 0x40022020, 4), "little")
+            except Exception:
+                raise original_error
+            if not (obr & 0x2):
+                raise original_error
+            if obr & 0x1:
+                raise RuntimeError("STM32F103 option-byte shadow register reports OPTERR")
+            user = 0xF8 | ((obr >> 2) & 0x07)
+            values = [
+                0x00,
+                user,
+                (obr >> 10) & 0xFF,
+                (obr >> 18) & 0xFF,
+                *(wrpr >> shift & 0xFF for shift in (0, 8, 16, 24)),
+            ]
+            reconstructed = bytes(
+                byte
+                for item in values
+                for byte in (item, item ^ 0xFF)
+            )
+            return reconstructed, False
 
     def disconnect(self) -> None:
         with self._lock:
@@ -1099,7 +1339,7 @@ class PyOcdBackend:
             try:
                 data = self._read_target_bytes(session.target, address, size)
             except Exception as exc:
-                if self._is_locked_error(exc):
+                if self._is_locked_error(exc) or self._stm32f103_rdp_active(session.target):
                     raise FlashError(
                         FlashErrorCode.TARGET_LOCKED,
                         "target memory is protected",
@@ -1114,6 +1354,19 @@ class PyOcdBackend:
                     f"target returned {len(data)} bytes for a {size}-byte read",
                 )
             return data
+
+    @classmethod
+    def _stm32f103_rdp_active(cls, target: Any) -> bool:
+        if not any(
+            str(getattr(region, "name", "")) == "mklink_security_option_bytes"
+            for region in getattr(target, "memory_map", ())
+        ):
+            return False
+        try:
+            obr = int.from_bytes(cls._read_target_bytes(target, 0x4002201C, 4), "little")
+        except Exception:
+            return False
+        return bool(obr & 0x2)
 
     @staticmethod
     def _iter_image_chunks(
