@@ -10,6 +10,7 @@ from mklink.cmsis_dap.builtin_flm_bundle import (
     discover_builtin_flm_algorithms,
     extract_builtin_flm,
     load_builtin_flm_targets,
+    resolve_builtin_flm_part,
 )
 
 
@@ -91,6 +92,41 @@ def test_builtin_option_algorithm_is_explicit_and_integrity_checked(tmp_path: Pa
     assert option.file_name == "PART_OPT.FLM"
     assert option.path.read_bytes() == option_payload
     assert option.sha256 == digest
+
+
+def test_generic_target_aliases_exact_order_codes_only_when_capacity_is_unique(tmp_path: Path):
+    root, _payload = _bundle(tmp_path / "bundle")
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["targets"][0]["part_number"] = "STM32F413xG"
+    second = json.loads(json.dumps(manifest["targets"][0]))
+    second["part_number"] = "STM32F413xH"
+    second["algorithms"][0]["flash_size"] = 0x180000
+    manifest["targets"].append(second)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert resolve_builtin_flm_part("STM32F413VGHx", root) == "STM32F413xG"
+    algorithms = discover_builtin_flm_algorithms("STM32F413VGHx", root)
+    assert len(algorithms) == 1
+    assert algorithms[0].target_part == "STM32F413VGHx"
+    assert algorithms[0].flash_size == 0x800000
+
+
+def test_concrete_target_accepts_only_a_short_ordering_suffix(tmp_path: Path):
+    root, _payload = _bundle(tmp_path / "bundle")
+
+    assert resolve_builtin_flm_part("PART-AT6", root) == "PART-A"
+    assert resolve_builtin_flm_part("PART-A-UNBOUNDED-SUFFIX", root) is None
+
+
+def test_uppercase_x_placeholders_resolve_vendor_generic_targets(tmp_path: Path):
+    root, _payload = _bundle(tmp_path / "bundle")
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["targets"][0]["part_number"] = "ACM32H5XX"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert resolve_builtin_flm_part("ACM32H503CBT6", root) == "ACM32H5XX"
 
 
 def test_builtin_flm_bundle_hpm_short_circuits_before_manifest_access(tmp_path: Path):

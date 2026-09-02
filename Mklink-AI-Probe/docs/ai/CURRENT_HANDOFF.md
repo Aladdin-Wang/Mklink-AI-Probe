@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-02T10:52:24+08:00`
+- 更新时间：`2026-09-02T12:25:23+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：在线烧录已将 STM32F103 加锁/解锁确认提前到勾选时，并新增断电复位及 1.8V/3.3V/5V 恢复电压（默认 3.3V）；断电保持已按真机反馈延长到 1 秒，后端按探针身份精确匹配命令口，GD32 等待换板验证。
+- 当前任务：在线烧录已统一精确订货型号与内置通用型号解析，修复 STM32F413 分段扇区读取镜像无法回烧，并完成 STM32F413/423 可逆 RDP Level 1 真机闭环；GD32 等待换板验证。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法、STM32F103 安全加锁/解锁及可选 VCC 断电复位。
+- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法、跨系列精确/通用型号解析、STM32F103 与 STM32F413/423 安全加锁/解锁及可选 VCC 断电复位。
 - **0.2.0 本地候选** — `complete`。标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录下载器热插拔重连、RTT/串口高频显示、非规范 Pack 解析和常用型号，补充版候选已完成覆盖安装与运行验证。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
@@ -28,14 +28,14 @@
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **0.2.0 流式自动化**：GUI 629 项与相关 Python 流测试 87 项通过；VOFA 10kHz×8 通道×10 秒基准处理 100000 项，reported/unreported drops 与 sequence errors 均为 0；生产构建通过。
-- **STM32F103RE 真机 HIL**：既有烧录、调试与实时流回归通过；0.2.0 新增加锁/解锁闭环：加锁前 bootloader/app 校验通过，RDP Level 1 复位后 OBR.RDPRT=1 且主 Flash 返回 TARGET_LOCKED，解锁确认整片擦除并完整保留其他选项字节，随后恢复并校验两个镜像与启动向量。详情见 docs/verification/v0.2.0-stm32f103re-security-hil.md。
+- **STM32 安全真机 HIL**：STM32F103RE 的 bootloader/app 加锁、受保护读取拒绝、解锁擦除及镜像恢复闭环通过。STM32F413VGHx 精确型号解析到内置 STM32F413xG，读取 1MiB 得到正确 12 扇区；加锁后 RDP=0xBB 且 WRP=0xFFF，解锁等待约 22 秒整片擦除，RDP=0xAA、USER/WRP 恢复，最后回写并逐字节校验完整备份。详见 docs/verification/v0.2.0-stm32f103re-security-hil.md 与 v0.2.0-stm32f413-security-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
 - **自动化与构建**：GUI 全量 633 项通过；断电保持延长到 1 秒及解锁警告文案调整后，在线烧录界面定向 84 项、Python 烧录后端/作业/API/探针控制定向 270 项通过，标准生产构建成功。断电复位界面显示 1.8V/3.3V/5V 且默认 3.3V，当前单只下载器的 CMSIS-DAP 与命令口身份一一匹配；未实际切换 VCC，等待用户在界面确认具体电压后手动验证。
 
 ## 架构决策
 
 - 预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。
-- 0.2.0 常用型号算法以维护仓库内被 Git 忽略的本地目录作为唯一打包源；桌面 sidecar、WebGUI 和普通用户 Skill ZIP 共用该资产，按内容哈希去重并在构建与运行时校验。
+- 0.2.0 常用型号算法以维护仓库内被 Git 忽略的本地目录作为唯一打包源；桌面 sidecar、WebGUI 和普通用户 Skill ZIP 共用该资产。精确订货型号通过 x/* 占位符和短后缀解析，只取最具体且 RAM、算法与几何一致的候选，否则拒绝猜测。
 - 不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。
 - 高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
@@ -43,12 +43,12 @@
 - SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。
 - 串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；同一下载器不得并行调用，超时后先检查状态并重建会话；设备已因 USB 异常失效时，重连前必须关闭旧会话并释放串口句柄与端口锁。
 - 应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。
-- 安全加锁/解锁仅按真机验证型号逐项启用，必须白名单校验型号、算法哈希和选项区范围；断电复位只允许 1.8V、3.3V、5V且默认 3.3V，每次执行前确认精确电压，并按 CMSIS-DAP/CDC 身份一一匹配，无法唯一匹配时拒绝关闭 VCC。
+- 安全加锁/解锁仅按真机验证型号逐项启用，必须白名单校验型号、芯片 ID、算法哈希和选项区范围；STM32F413 选项 FLM 输入按完整 FLASH_OPTCR 处理，只替换 RDP 字段并等待 FLASH_SR.BSY 清零；断电复位只允许 1.8V、3.3V、5V且默认 3.3V，每次执行前确认精确电压，并按 CMSIS-DAP/CDC 身份一一匹配，无法唯一匹配时拒绝关闭 VCC。
 
 ## 真机环境
 
 - **probe**：主要 ARM 回归夹具为 MKLink V4；发布前验证固件 V4.3.9，调试端口 COM228、UART COM227。
-- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；当前板上保留 1ms RTT 与约 5.2KB/s UART 联合压力固件，原 main.c 备份在工程 .mklink/work/rtt-scroll-repro-20260901。
+- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；另有 STM32F413VGHx（ID 0x463、1MiB）完成型号解析、读取回烧和 RDP Level 1 闭环，原始固件备份 SHA-256 为 D3A34815AC334480048E2E62E06B78BC29B91D919438231D030CAE498B5954AC。
 - **permission**：测试工程允许修改与下载；其分析材料只放工程自身 .build。
 
 ## 下一动作
@@ -66,7 +66,7 @@
 - 0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。
 - Modbus 真机只验证安全读取；GD32E517 线圈 0–3 控制真实功率功能，未执行危险写入。
 - V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。
-- 当前仅 STM32F103 完成 RDP Level 1 真机闭环；GD32 加锁/解锁入口保持置灰，必须在对应板卡上验证保护生效、解锁擦除和固件恢复后才能启用。
+- 当前 STM32F103 与 STM32F413/423 已完成 RDP Level 1 真机闭环；GD32 加锁/解锁入口保持置灰，必须在对应板卡上验证保护生效、解锁擦除和固件恢复后才能启用。
 - 断电复位的软件链路与真实 USB 身份映射已验证，但本轮未实际切换 VCC；用户需在 WebGUI 中确认目标供电方式与精确恢复电压后完成真机验证。
 
 ## 延续协议

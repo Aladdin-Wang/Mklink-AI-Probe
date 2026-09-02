@@ -11,8 +11,8 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.2.0',
     date: '2026-09-02',
-    summary: '修复热插拔重连、RTT 高频显示与 Pack 解析，增加常用型号及安全加解锁',
-    summaryEn: 'Fixed reconnects, high-rate streams, and Pack parsing, and added common models and safe locking',
+    summary: '修复热插拔重连、RTT 高频显示、Pack 与型号解析，增加常用型号及安全加解锁',
+    summaryEn: 'Fixed reconnects, high-rate streams, Pack/model parsing, and added common models and safe locking',
     changes: [
       '修复下载器拔插后旧串口会话未释放、必须重启上位机才能重新连接的问题。',
       '修复 RTT 与串口助手高频数据滚动偶发停顿，优化终端、日志和 RTT 曲线的持续刷新。',
@@ -20,6 +20,8 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       '增加了常用型号。',
       '在线烧录为已验证的 STM32F103 增加可逆读保护加锁与解锁；解锁整片擦除和加锁操作均需单独二次确认，未验证器件保持置灰。',
       '加锁与解锁改为勾选时立即确认；复位方式增加断电复位，可选择 1.8V、3.3V 或 5V 恢复 VCC 输出，默认 3.3V。',
+      '统一解析精确订货型号与内置通用型号，覆盖 STM32、GD32、APM32、AT32 等系列；读取 Flash 后可直接按正确扇区回烧。',
+      'STM32F413/423 增加真机验证的可逆 RDP Level 1，完整保留 USER 与写保护选项；解锁等待硬件整片擦除完成后再复位。',
     ],
     changesEn: [
       'Release stale serial sessions after probe hot-plug so reconnecting no longer requires restarting the desktop app.',
@@ -28,6 +30,8 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'Add common MCU models.',
       'Add hardware-validated reversible read-protection locking and unlocking for STM32F103, with separate destructive confirmations and fail-closed controls for unvalidated devices.',
       'Confirm locking and unlocking when selected, and add power-cycle reset with 1.8 V, 3.3 V, or 5 V VCC restore output (3.3 V default).',
+      'Resolve exact ordering codes against bundled generic targets across STM32, GD32, APM32, AT32, and other families, and allow captured Flash images to be programmed back with the correct sector geometry.',
+      'Add hardware-validated reversible RDP Level 1 for STM32F413/423 while preserving USER and write-protection options and waiting for the mandatory mass erase before reset.',
     ],
   },
   {

@@ -16,7 +16,13 @@ STM32F1_OPTION_SIZE = 16
 STM32F1_OPTION_FLM_SHA256 = (
     "4a2efb1f314a4c70b4b9de9561fd288d3f48c7a363570bae5acc2a2aea72545a"
 )
+STM32F4_OPTION_ADDRESS = 0x1FFFC000
+STM32F4_OPTION_SIZE = 4
+STM32F4_OPTION_FLM_SHA256 = (
+    "4fdd94fb68cf6659a6025639d5cf3b88a01658a4b5ab6b9e89cad87722b6fdf7"
+)
 _STM32F103 = re.compile(r"^STM32F103(?:[CTRVZ][468BCDEFG]|X[468BCDEFG])$", re.IGNORECASE)
+_STM32F413 = re.compile(r"^STM32F413(?:X[GH]|[A-Z][GH][A-Z0-9X]{2})$", re.IGNORECASE)
 _GD32 = re.compile(r"^GD32", re.IGNORECASE)
 
 
@@ -54,11 +60,42 @@ def _stm32f103_bundle_part(part_number: str) -> Optional[str]:
     return "STM32F103x{}".format(suffix)
 
 
+def _stm32f413_bundle_part(part_number: str) -> Optional[str]:
+    part = part_number.strip()
+    if _STM32F413.fullmatch(part) is None:
+        return None
+    suffix = part[len("STM32F413"):]
+    return "STM32F413x{}".format(suffix[1].upper())
+
+
 def security_capability(part_number: str) -> SecurityCapability:
     """Resolve only hardware-validated families and fail closed on asset mismatch."""
 
     part = str(part_number or "").strip()
     bundle_part = _stm32f103_bundle_part(part)
+    f413_bundle_part = _stm32f413_bundle_part(part)
+    if f413_bundle_part is not None:
+        try:
+            algorithm = discover_builtin_option_algorithm(f413_bundle_part)
+        except (OSError, TypeError, ValueError):
+            return SecurityCapability(part, False, reason="内置选项字节算法不可用或完整性校验失败")
+        if (
+            algorithm is None
+            or algorithm.file_name.casefold() != "stm32f413xx_423xx_opt.flm"
+            or algorithm.sha256 != STM32F4_OPTION_FLM_SHA256
+        ):
+            return SecurityCapability(part, False, reason="内置选项字节算法不匹配安全白名单")
+        return SecurityCapability(
+            part_number=part,
+            supported=True,
+            family="stm32f413-rdp1",
+            unlock_erases_flash=True,
+            reversible_lock=True,
+            option_address=STM32F4_OPTION_ADDRESS,
+            option_size=STM32F4_OPTION_SIZE,
+            algorithm_path=algorithm.path,
+            algorithm_sha256=algorithm.sha256,
+        )
     if bundle_part is None:
         if _GD32.match(part):
             return SecurityCapability(

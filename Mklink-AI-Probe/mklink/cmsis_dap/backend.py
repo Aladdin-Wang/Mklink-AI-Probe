@@ -227,10 +227,12 @@ class _SecurityFlmDelegate:
         self,
         payload: bytes,
         next_delegate: Any = None,
+        family: str = "",
         region: Tuple[int, int] = (0, 0),
     ) -> None:
         self._payload = payload
         self._next_delegate = next_delegate
+        self._family = family
         self._region = region
 
     def will_init_target(self, target: Any, init_sequence: Any) -> None:
@@ -242,7 +244,7 @@ class _SecurityFlmDelegate:
             (
                 "mklink_security_flm",
                 lambda: _install_security_flm_region(
-                    target, self._payload, self._region
+                    target, self._payload, self._family, self._region
                 ),
             ),
         )
@@ -256,15 +258,27 @@ class _SecurityFlmDelegate:
 def _install_security_flm_region(
     target: Any,
     payload: bytes,
+    family: str,
     region: Tuple[int, int],
 ) -> None:
-    from .security import STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE
+    from .security import (
+        STM32F1_OPTION_ADDRESS,
+        STM32F1_OPTION_SIZE,
+        STM32F4_OPTION_ADDRESS,
+        STM32F4_OPTION_SIZE,
+    )
 
-    if region != (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE):
+    allowed_regions = {
+        "stm32f103-rdp1": (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE),
+        "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
+    }
+    expected_region = allowed_regions.get(family)
+    if expected_region is None or region != expected_region:
         raise FlashError(
             FlashErrorCode.SECURITY_NOT_SUPPORTED,
             "security option-byte region is not in the safety whitelist",
         )
+    option_address, option_size = expected_region
     FlashRegion = import_pyocd_attr("pyocd.core.memory_map", "FlashRegion")
     PackFlashAlgo = import_pyocd_attr(
         "pyocd.target.pack.flash_algo", "PackFlashAlgo"
@@ -277,26 +291,29 @@ def _install_security_flm_region(
             "security option-byte FLM could not be loaded",
         ) from None
     if (
-        int(getattr(algorithm, "flash_start", -1)) != STM32F1_OPTION_ADDRESS
-        or int(getattr(algorithm, "flash_size", -1)) != STM32F1_OPTION_SIZE
+        int(getattr(algorithm, "flash_start", -1)) != option_address
+        or int(getattr(algorithm, "flash_size", -1)) != option_size
     ):
         raise FlashError(
             FlashErrorCode.SECURITY_NOT_SUPPORTED,
             "security option-byte FLM metadata is outside the safety whitelist",
         )
     target.memory_map = target.memory_map.clone()
-    for existing in target.memory_map:
+    for existing in list(target.memory_map):
         start = int(existing.start)
         end = start + int(existing.length)
-        if STM32F1_OPTION_ADDRESS < end and start < STM32F1_OPTION_ADDRESS + STM32F1_OPTION_SIZE:
-            raise FlashError(
-                FlashErrorCode.SECURITY_NOT_SUPPORTED,
-                "security option-byte region overlaps the target memory map",
-            )
+        if option_address < end and start < option_address + option_size:
+            if start == option_address and int(existing.length) == option_size:
+                target.memory_map.remove_region(existing)
+            else:
+                raise FlashError(
+                    FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                    "security option-byte region overlaps the target memory map",
+                )
     target.memory_map.add_region(FlashRegion(
         name="mklink_security_option_bytes",
-        start=STM32F1_OPTION_ADDRESS,
-        length=STM32F1_OPTION_SIZE,
+        start=option_address,
+        length=option_size,
         flm=algorithm,
     ))
 
@@ -754,6 +771,7 @@ class PyOcdBackend:
         self._reset_mode = "default"
         self._reset_voltage_mv: Optional[int] = None
         self._probe_identifier = ""
+        self._security_family = ""
         self._lock = threading.RLock()
 
     def connect(
@@ -890,13 +908,28 @@ class PyOcdBackend:
                     STM32F1_OPTION_ADDRESS,
                     STM32F1_OPTION_FLM_SHA256,
                     STM32F1_OPTION_SIZE,
+                    STM32F4_OPTION_ADDRESS,
+                    STM32F4_OPTION_FLM_SHA256,
+                    STM32F4_OPTION_SIZE,
                 )
 
+                security_whitelist = {
+                    "stm32f103-rdp1": (
+                        STM32F1_OPTION_FLM_SHA256,
+                        STM32F1_OPTION_ADDRESS,
+                        STM32F1_OPTION_SIZE,
+                    ),
+                    "stm32f413-rdp1": (
+                        STM32F4_OPTION_FLM_SHA256,
+                        STM32F4_OPTION_ADDRESS,
+                        STM32F4_OPTION_SIZE,
+                    ),
+                }
+                allowed = security_whitelist.get(security_family)
                 if (
-                    security_family != "stm32f103-rdp1"
-                    or security_flm_digest != STM32F1_OPTION_FLM_SHA256
-                    or security_flm_region
-                    != (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE)
+                    allowed is None
+                    or security_flm_digest != allowed[0]
+                    or security_flm_region != (allowed[1], allowed[2])
                     or not security_flm_path
                 ):
                     raise FlashError(
@@ -977,6 +1010,7 @@ class PyOcdBackend:
                     delegate = _SecurityFlmDelegate(
                         security_payload,
                         delegate,
+                        security_family or "",
                         security_flm_region,
                     )
                 if delegate is not getattr(session, "delegate", None):
@@ -989,6 +1023,7 @@ class PyOcdBackend:
                 self._probe_identifier = str(
                     getattr(resolved_probe, "unique_id", None) or probe or ""
                 ).strip()
+                self._security_family = security_family or ""
             except FlashError:
                 if session is not None:
                     try:
@@ -1005,10 +1040,29 @@ class PyOcdBackend:
                 raise self._mapped_error(exc, FlashErrorCode.CONNECT_FAIL) from None
 
     def unlock_security(self) -> str:
-        """Disable STM32F103 RDP level 1; the device performs a mandatory mass erase."""
+        """Disable a whitelisted reversible RDP level; this mass-erases Flash."""
 
         with self._lock:
             try:
+                if self._security_family == "stm32f413-rdp1":
+                    changed, desired = self._write_stm32f413_rdp(0xAA)
+                    session = self._require_session()
+                    session.target.reset_and_halt()
+                    actual = self._read_target_bytes(session.target, 0x40023C14, 4)
+                    if not self._stm32f413_optcr_matches(actual, desired):
+                        raise RuntimeError(
+                            "RDP unlock or preserved option bytes did not persist after reset"
+                        )
+                    return (
+                        "STM32F413 read protection was disabled; main Flash was mass-erased"
+                        if changed
+                        else "STM32F413 read protection was already disabled"
+                    )
+                if self._security_family != "stm32f103-rdp1":
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "security configuration is not in the safety whitelist",
+                    )
                 changed, desired = self._write_stm32f103_rdp(0xA5, 0x5A)
                 session = self._require_session()
                 session.target.reset_and_halt()
@@ -1028,10 +1082,32 @@ class PyOcdBackend:
                 raise self._mapped_error(exc, FlashErrorCode.UNLOCK_FAIL) from None
 
     def lock_security(self) -> str:
-        """Enable reversible STM32F103 RDP level 1 and atomically reset to activate it."""
+        """Enable a whitelisted reversible RDP level and reset to activate it."""
 
         with self._lock:
             try:
+                if self._security_family == "stm32f413-rdp1":
+                    changed, desired = self._write_stm32f413_rdp(0xBB)
+                    session = self._require_session()
+                    session.target.reset_and_halt()
+                    optcr = int.from_bytes(
+                        self._read_target_bytes(session.target, 0x40023C14, 4),
+                        "little",
+                    )
+                    if not self._stm32f413_optcr_matches(
+                        optcr.to_bytes(4, "little"), desired
+                    ):
+                        raise RuntimeError("RDP lock did not activate after reset")
+                    return (
+                        "STM32F413 reversible read protection was written and activated after reset"
+                        if changed
+                        else "STM32F413 reversible read protection was already active"
+                    )
+                if self._security_family != "stm32f103-rdp1":
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "security configuration is not in the safety whitelist",
+                    )
                 changed, _desired = self._write_stm32f103_rdp(0x00, 0xFF)
                 session = self._require_session()
                 session.target.reset_and_halt()
@@ -1050,6 +1126,100 @@ class PyOcdBackend:
                 raise
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.LOCK_FAIL) from None
+
+    def _write_stm32f413_rdp(self, value: int) -> Tuple[bool, bytes]:
+        if value not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid STM32F413 reversible RDP value")
+        session = self._require_session()
+        target = session.target
+        device_id = int.from_bytes(
+            self._read_target_bytes(target, 0xE0042000, 4), "little"
+        ) & 0xFFF
+        if device_id != 0x463:
+            raise RuntimeError(
+                "connected target identity does not match STM32F413/423"
+            )
+        address = 0x1FFFC000
+        current = bytearray(self._read_target_bytes(target, 0x40023C14, 4))
+        if len(current) != 4:
+            raise RuntimeError("FLASH_OPTCR read returned an unexpected length")
+        if current[1] == 0xCC:
+            raise RuntimeError("STM32F413 RDP level 2 is irreversible and unsupported")
+        if value == 0xAA and current[1] == 0xAA:
+            return False, bytes(current)
+        if value == 0xBB and current[1] not in {0xAA, 0xCC}:
+            return False, bytes(current)
+        desired_bytes = bytearray(current)
+        desired_bytes[1] = value
+        desired = bytes(desired_bytes)
+        region = self._flash_region_for_address(target, address)
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != address
+            or int(region.length) != 4
+        ):
+            raise RuntimeError("validated option-byte Flash region is unavailable")
+        flash = getattr(region, "flash", None)
+        if flash is None:
+            raise RuntimeError("option-byte Flash algorithm is unavailable")
+        flash.init(flash.Operation.ERASE)
+        try:
+            flash.erase_sector(address)
+        finally:
+            flash.uninit()
+        flash.init(flash.Operation.PROGRAM)
+        try:
+            flash.program_page(address, desired)
+        except Exception as exc:
+            # Changing F4 RDP can immediately reset/release the core. Some FLM
+            # runners then time out or fail while reading IPSR even though the
+            # option operation is still running. Never reset during the implicit
+            # mass erase: wait for FLASH_SR.BSY to clear, then let the caller
+            # reset and authoritatively validate every programmed OPTCR field.
+            self._wait_stm32f413_option_operation(target, exc)
+        finally:
+            try:
+                flash.uninit()
+            except Exception:
+                pass
+        return True, desired
+
+    @classmethod
+    def _wait_stm32f413_option_operation(
+        cls, target: Any, original_error: Exception
+    ) -> None:
+        deadline = time.monotonic() + 60.0
+        last_read_error: Optional[Exception] = None
+        while time.monotonic() < deadline:
+            try:
+                flash_sr = int.from_bytes(
+                    cls._read_target_bytes(target, 0x40023C0C, 4), "little"
+                )
+                last_read_error = None
+                if not (flash_sr & (1 << 16)):
+                    return
+            except Exception as exc:
+                last_read_error = exc
+            time.sleep(0.05)
+        if last_read_error is not None:
+            raise original_error from last_read_error
+        raise RuntimeError("STM32F413 option operation did not finish") from original_error
+
+    @staticmethod
+    def _stm32f413_optcr_matches(actual: bytes, desired: bytes) -> bool:
+        """Compare the fields programmed by the STM32F413 option FLM."""
+
+        if len(actual) != 4 or len(desired) != 4:
+            return False
+        # The FLM masks OPTSTRT/OPTLOCK (bits 1:0) and reserved bits 29:28,
+        # then writes the complete FLASH_OPTCR value. Compare every other bit,
+        # including USER, RDP, and all write-protection fields.
+        mask = 0xCFFFFFFC
+        return (
+            int.from_bytes(actual, "little") & mask
+            == int.from_bytes(desired, "little") & mask
+        )
 
     def _write_stm32f103_rdp(self, value: int, complement: int) -> Tuple[bool, bytes]:
         session = self._require_session()
@@ -1127,6 +1297,7 @@ class PyOcdBackend:
             session, self._session = self._session, None
             self._probe_identifier = ""
             self._reset_voltage_mv = None
+            self._security_family = ""
             if session is not None:
                 try:
                     session.close()
@@ -1458,15 +1629,16 @@ class PyOcdBackend:
                 )
             return data
 
-    @classmethod
-    def _stm32f103_rdp_active(cls, target: Any) -> bool:
+    def _stm32f103_rdp_active(self, target: Any) -> bool:
+        if self._security_family != "stm32f103-rdp1":
+            return False
         if not any(
             str(getattr(region, "name", "")) == "mklink_security_option_bytes"
             for region in getattr(target, "memory_map", ())
         ):
             return False
         try:
-            obr = int.from_bytes(cls._read_target_bytes(target, 0x4002201C, 4), "little")
+            obr = int.from_bytes(self._read_target_bytes(target, 0x4002201C, 4), "little")
         except Exception:
             return False
         return bool(obr & 0x2)

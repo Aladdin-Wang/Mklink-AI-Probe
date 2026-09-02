@@ -729,6 +729,24 @@ def _captured_image_flash_regions(
         and getattr(algorithm, "pack_path", None)
         and os.path.normcase(os.path.abspath(str(algorithm.pack_path))) == pack_path
     ]
+    def range_is_covered(start: int, end: int) -> bool:
+        cursor = start
+        for candidate in sorted(
+            (
+                region for region in base_regions
+                if region.is_flash and region.writable
+            ),
+            key=lambda region: (region.start, region.end),
+        ):
+            if candidate.end <= cursor:
+                continue
+            if candidate.start > cursor:
+                return False
+            cursor = max(cursor, candidate.end)
+            if cursor >= end:
+                return True
+        return False
+
     expanded = []
     overrides = []
     for region in base_regions:
@@ -746,6 +764,20 @@ def _captured_image_flash_regions(
             for algorithm in algorithms
             if int(getattr(algorithm, "flash_start", -1)) == region.start
             and int(getattr(algorithm, "flash_size", 0)) > region.length
+            and not range_is_covered(
+                int(getattr(algorithm, "flash_start", -1)),
+                int(getattr(algorithm, "flash_start", -1))
+                + int(getattr(algorithm, "flash_size", 0)),
+            )
+            and not any(
+                other is not region
+                and int(getattr(algorithm, "flash_start", -1)) < other.end
+                and other.start < (
+                    int(getattr(algorithm, "flash_start", -1))
+                    + int(getattr(algorithm, "flash_size", 0))
+                )
+                for other in base_regions
+            )
         ]
         if not candidates:
             expanded.append(region)

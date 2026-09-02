@@ -6,6 +6,7 @@ from mklink.cmsis_dap.builtin_flm_bundle import BuiltinOptionAlgorithm
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.security import (
     STM32F1_OPTION_FLM_SHA256,
+    STM32F4_OPTION_FLM_SHA256,
     require_security_capability,
     security_capability,
 )
@@ -61,3 +62,25 @@ def test_stm32f103_fails_closed_when_option_algorithm_hash_changes(monkeypatch, 
 
     assert capability.supported is False
     assert "白名单" in capability.reason
+
+
+def test_stm32f413_exact_order_code_uses_only_pinned_option_algorithm(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32F413xG",
+        file_name="STM32F413xx_423xx_OPT.FLM",
+        path=tmp_path / "STM32F413xx_423xx_OPT.FLM",
+        sha256=STM32F4_OPTION_FLM_SHA256,
+        ram_start=0x20000000,
+        ram_size=0x50000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == "STM32F413xG" else None,
+    )
+
+    capability = security_capability("STM32F413VGHx")
+
+    assert capability.supported is True
+    assert capability.family == "stm32f413-rdp1"
+    assert capability.option_address == 0x1FFFC000
+    assert capability.option_size == 4

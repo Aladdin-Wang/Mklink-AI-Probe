@@ -213,6 +213,7 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
     target = Target()
     backend = PyOcdBackend()
     backend._session = FakeSession(target)
+    backend._security_family = "stm32f103-rdp1"
 
     assert "activated after reset" in backend.lock_security()
     assert target.option_bytes[:2] == b"\x00\xFF"
@@ -224,6 +225,70 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
         "init", "erase", "uninit", "init", "program", "uninit",
         "init", "erase", "uninit", "init", "program", "uninit",
     ]
+
+
+def test_stm32f413_security_preserves_non_rdp_options_and_never_uses_level2() -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def __init__(self, target):
+            self.target = target
+            self.calls = []
+
+        def init(self, operation):
+            self.calls.append(("init", operation))
+
+        def erase_sector(self, address):
+            self.calls.append(("erase", address))
+
+        def program_page(self, address, data):
+            self.calls.append(("program", address, bytes(data)))
+            self.target.optcr[:] = data
+            raise RuntimeError("cannot read register ipsr because core #0 is not halted")
+
+        def uninit(self):
+            self.calls.append(("uninit",))
+
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFFC000
+        length = 4
+        is_flash = True
+
+        def __init__(self, target):
+            self.flash = SecurityFlash(target)
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.optcr = bytearray.fromhex("edaaff7f")
+            self.option_region = OptionRegion(self)
+            super().__init__((self.option_region,))
+
+        def read_memory_block8(self, address, size):
+            if address == 0xE0042000:
+                return (0x10006463).to_bytes(4, "little")[:size]
+            if address == 0x40023C14:
+                return bytes(self.optcr[:size])
+            if address == 0x40023C0C:
+                return (0).to_bytes(4, "little")[:size]
+            raise AssertionError(hex(address))
+
+    target = Target()
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "stm32f413-rdp1"
+
+    assert "activated after reset" in backend.lock_security()
+    assert target.optcr == bytes.fromhex("edbbff7f")
+    assert "mass-erased" in backend.unlock_security()
+    assert target.optcr == bytes.fromhex("edaaff7f")
+    programmed = [
+        call[2] for call in target.option_region.flash.calls if call[0] == "program"
+    ]
+    assert programmed == [bytes.fromhex("edbbff7f"), bytes.fromhex("edaaff7f")]
+    assert all(payload[1] != 0xCC for payload in programmed)
 
 
 def test_stm32f103_locked_options_are_reconstructed_from_shadow_registers() -> None:

@@ -29,6 +29,7 @@ from mklink.cmsis_dap.jobs import OnlineFlashJobManager
 from mklink.remote.online_flash_api import (
     OnlineFlashServices,
     _blocking,
+    _captured_image_flash_regions,
     _pack_memory_regions,
     _put_latest_pack_event,
     _target_flash_configuration,
@@ -1505,6 +1506,41 @@ def test_captured_image_can_use_same_pack_flm_range_for_programming(
 
     assert started.status_code == 200, started.text
     assert services.job_manager.started[0].pack_flm_regions == ((0x1000, 0x2000),)
+
+
+def test_captured_image_keeps_complete_segmented_sector_geometry(monkeypatch):
+    algorithm = FlashAlgorithm(
+        algorithm_id="stm32f413-main",
+        target_part="STM32F413VGHx",
+        file_name="STM32F4xx_1024.FLM",
+        flash_start=0x08000000,
+        flash_size=0x100000,
+        ram_start=0x20000000,
+        ram_size=0x50000,
+        default=True,
+        source_kind="installed-pack",
+        source_name="Keil.STM32F4xx_DFP@3.1.1",
+        source_token="catalog:installed:stm32f413",
+        pack_path="safe.pack",
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [algorithm],
+    )
+    regions = (
+        MemoryRegion("flash-16k", 0x08000000, 0x10000, True, True, 0x4000),
+        MemoryRegion("flash-64k", 0x08010000, 0x10000, True, True, 0x10000),
+        MemoryRegion("flash-128k", 0x08020000, 0xE0000, True, True, 0x20000),
+    )
+    target = TargetRecord(
+        "STM32F413VGHx", "Keil", pack_path="safe.pack", installed=True
+    )
+    services = type("Services", (), {"paths": object()})()
+
+    expanded, overrides = _captured_image_flash_regions(services, target, regions)
+
+    assert expanded == regions
+    assert overrides == ()
 
 
 def test_local_firmware_path_status_and_inspection_track_recompiled_files(app, services):

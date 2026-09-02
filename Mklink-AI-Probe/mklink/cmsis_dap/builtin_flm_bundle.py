@@ -31,6 +31,17 @@ class BuiltinOptionAlgorithm:
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_TARGET_RECORD_CACHE: dict[
+    Path, tuple[tuple[int, int], list[Mapping[str, object]]]
+] = {}
+_ALIAS_INDEX_CACHE: dict[
+    int,
+    tuple[
+        list[Mapping[str, object]],
+        dict[str, list[Mapping[str, object]]],
+        list[tuple[int, str, tuple[object, ...], re.Pattern[str]]],
+    ],
+] = {}
 
 
 def _default_bundle_root() -> Path:
@@ -105,6 +116,17 @@ def _blob(root: Path, value: object, digest: object) -> tuple[Path, str]:
 
 
 def _target_records(root: Path) -> list[Mapping[str, object]]:
+    manifest_path = root / "manifest.json"
+    try:
+        stat = manifest_path.stat()
+    except OSError:
+        _TARGET_RECORD_CACHE.pop(root.resolve(), None)
+        return []
+    cache_key = root.resolve()
+    signature = (stat.st_mtime_ns, stat.st_size)
+    cached = _TARGET_RECORD_CACHE.get(cache_key)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
     manifest = _load_manifest(root)
     if manifest is None:
         return []
@@ -112,7 +134,117 @@ def _target_records(root: Path) -> list[Mapping[str, object]]:
     assert isinstance(records, list)
     if any(not isinstance(record, Mapping) for record in records):
         raise BuiltinFlmBundleError("builtin FLM target is invalid")
+    _TARGET_RECORD_CACHE[cache_key] = (signature, records)
     return records
+
+
+def _programming_signature(raw: Mapping[str, object]) -> tuple[object, ...]:
+    algorithms = raw.get("algorithms")
+    if not isinstance(algorithms, list):
+        return ()
+    result = []
+    for item in algorithms:
+        if not isinstance(item, Mapping) or item.get("automatic", True) is False:
+            continue
+        raw_sectors = item.get("sector_sizes", [])
+        sectors = tuple(
+            tuple(pair) for pair in raw_sectors
+            if isinstance(pair, list) and len(pair) == 2
+        ) if isinstance(raw_sectors, list) else ()
+        result.append((
+            str(item.get("sha256") or "").casefold(),
+            item.get("flash_start"),
+            item.get("flash_size"),
+            item.get("page_size"),
+            sectors,
+        ))
+    return (raw.get("ram_start"), raw.get("ram_size"), tuple(result))
+
+
+def _generic_part_pattern(part_number: str) -> Optional[re.Pattern[str]]:
+    has_wildcard = "x" in part_number.casefold() or "*" in part_number
+    pieces = []
+    for character in part_number:
+        if character.casefold() == "x":
+            pieces.append(r"[A-Z0-9]")
+        elif character == "*":
+            pieces.append(r"[A-Z0-9]*")
+        else:
+            pieces.append(re.escape(character))
+    trailing = r"[A-Z0-9]{0,4}" if has_wildcard else r"[A-Z0-9]{1,4}"
+    return re.compile(r"^{}{}$".format("".join(pieces), trailing), re.IGNORECASE)
+
+
+def _resolution_index(records: list[Mapping[str, object]]):
+    cached = _ALIAS_INDEX_CACHE.get(id(records))
+    if cached is not None and cached[0] is records:
+        return cached[1], cached[2]
+    direct: dict[str, list[Mapping[str, object]]] = {}
+    generic = []
+    for raw in records:
+        candidate = str(raw.get("part_number") or "").strip()
+        direct.setdefault(candidate.casefold(), []).append(raw)
+        pattern = _generic_part_pattern(candidate)
+        if pattern is not None:
+            literal_count = len(
+                candidate.replace("x", "").replace("X", "").replace("*", "")
+            )
+            generic.append((literal_count, candidate, _programming_signature(raw), pattern))
+    _ALIAS_INDEX_CACHE[id(records)] = (records, direct, generic)
+    return direct, generic
+
+
+def _resolve_part_from_index(
+    part_number: str,
+    direct: dict[str, list[Mapping[str, object]]],
+    generic: list[tuple[int, str, tuple[object, ...], re.Pattern[str]]],
+) -> Optional[str]:
+    requested = str(part_number or "").strip()
+    if not requested:
+        return None
+    exact = direct.get(requested.casefold(), [])
+    if len(exact) == 1:
+        return _text(exact[0].get("part_number"), "builtin FLM part number")
+    candidates = [
+        (literal_count, candidate, signature)
+        for literal_count, candidate, signature, pattern in generic
+        if pattern.fullmatch(requested) is not None
+    ]
+    if not candidates:
+        return None
+    best_score = max(item[0] for item in candidates)
+    best = [item for item in candidates if item[0] == best_score]
+    if len({item[2] for item in best}) != 1:
+        return None
+    return sorted((item[1] for item in best), key=str.casefold)[0]
+
+
+def resolve_builtin_flm_parts(
+    part_numbers: List[str],
+    root: Optional[Path] = None,
+) -> dict[str, str]:
+    """Batch-resolve exact order codes while loading the large manifest once."""
+
+    bundle_root = Path(root) if root is not None else _default_bundle_root()
+    records = _target_records(bundle_root)
+    direct, generic = _resolution_index(records)
+    resolved = {}
+    for part_number in part_numbers:
+        canonical = _resolve_part_from_index(part_number, direct, generic)
+        if canonical is not None:
+            resolved[str(part_number).casefold()] = canonical
+    return resolved
+
+
+def resolve_builtin_flm_part(
+    part_number: str,
+    root: Optional[Path] = None,
+) -> Optional[str]:
+    """Resolve an exact order code to one capacity-consistent generic target."""
+
+    return resolve_builtin_flm_parts([part_number], root).get(
+        str(part_number or "").strip().casefold()
+    )
 
 
 def load_builtin_flm_targets(root: Optional[Path] = None) -> List[TargetRecord]:
@@ -151,9 +283,12 @@ def discover_builtin_flm_algorithms(part_number: str, root: Optional[Path] = Non
     from .algorithm_catalog import FlashAlgorithm, _encode_target
 
     bundle_root = Path(root) if root is not None else _default_bundle_root()
+    bundle_target = resolve_builtin_flm_part(target, bundle_root)
+    if bundle_target is None:
+        return []
     matches = [
         raw for raw in _target_records(bundle_root)
-        if str(raw.get("part_number") or "").casefold() == target.casefold()
+        if str(raw.get("part_number") or "").casefold() == bundle_target.casefold()
     ]
     algorithms = []
     for target_index, raw in enumerate(matches):
@@ -233,9 +368,12 @@ def discover_builtin_option_algorithm(
     if not target:
         return None
     bundle_root = Path(root) if root is not None else _default_bundle_root()
+    bundle_target = resolve_builtin_flm_part(target, bundle_root)
+    if bundle_target is None:
+        return None
     matches = [
         raw for raw in _target_records(bundle_root)
-        if str(raw.get("part_number") or "").casefold() == target.casefold()
+        if str(raw.get("part_number") or "").casefold() == bundle_target.casefold()
     ]
     if not matches:
         return None

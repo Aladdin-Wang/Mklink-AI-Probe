@@ -75,6 +75,60 @@ def test_searches_cached_index_case_insensitively(tmp_path):
     assert results[0].source == "index"
 
 
+def test_cached_exact_order_code_is_promoted_by_unique_builtin_alias(
+    tmp_path, monkeypatch
+):
+    paths = PackPaths(root=tmp_path)
+    _write_index(
+        paths,
+        {"STM32F413VGHx": _index_target("Keil", "STM32F4xx_DFP", "3.1.1")},
+    )
+    donor = TargetRecord(
+        "STM32F413xG", "STM32", installed=True, source="daplink-builtin"
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.builtin_flm_bundle.resolve_builtin_flm_parts",
+        lambda parts: {
+            part.casefold(): "STM32F413xG"
+            for part in parts
+            if part.casefold() == "stm32f413vghx"
+        },
+    )
+
+    result = PackCatalog(paths, builtin_provider=lambda: [donor]).search(
+        "STM32F413VGHx"
+    )[0]
+
+    assert result.part_number == "STM32F413VGHx"
+    assert result.installed is True
+    assert result.source == "daplink-builtin"
+    assert result.pack_id is None
+    assert result.pack_path is None
+
+
+def test_exact_order_code_search_works_without_online_index(tmp_path, monkeypatch):
+    paths = PackPaths(root=tmp_path)
+    donor = TargetRecord(
+        "STM32F413xG", "STM32", installed=True, source="daplink-builtin"
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.builtin_flm_bundle.resolve_builtin_flm_parts",
+        lambda _parts: {},
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.builtin_flm_bundle.resolve_builtin_flm_part",
+        lambda part: "STM32F413xG" if part == "STM32F413VGHx" else None,
+    )
+
+    result = PackCatalog(paths, builtin_provider=lambda: [donor]).search(
+        "STM32F413VGHx"
+    )[0]
+
+    assert result.part_number == "STM32F413VGHx"
+    assert result.installed is True
+    assert result.source == "daplink-builtin"
+
+
 def test_searches_part_number_vendor_family_and_series_without_changing_order(tmp_path):
     paths = PackPaths(root=tmp_path)
     _write_index(
