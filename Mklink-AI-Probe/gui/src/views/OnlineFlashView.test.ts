@@ -586,8 +586,11 @@ function viewFetch(targets = [installedTarget]) {
         || targetPart.startsWith('STM32H743')
         || targetPart.startsWith('STM32L010')
         || targetPart.startsWith('GD32F303')
+        || targetPart.startsWith('PY32F030')
       const family = targetPart.startsWith('GD32F303')
         ? 'gd32f303xe-spc'
+        : targetPart.startsWith('PY32F030')
+          ? 'py32f030x8-rdp1'
         : targetPart.startsWith('STM32G474')
         ? 'stm32g474-rdp1'
         : targetPart.startsWith('STM32H743')
@@ -1038,6 +1041,22 @@ describe('online flash task workspace behavior', () => {
     const wrapper = mount(await onlineFlashView())
     await vi.waitFor(() => expect(wrapper.find('[data-testid="target-GD32F303CET6"]').exists()).toBe(true))
     await wrapper.get('[data-testid="target-GD32F303CET6"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('selects the safe PY32F030 connection and reset modes when unlock is checked', async () => {
+    const target = { ...installedTarget, part_number: 'PY32F030K28T6' }
+    vi.stubGlobal('fetch', viewFetch([target]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-PY32F030K28T6"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-PY32F030K28T6"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)

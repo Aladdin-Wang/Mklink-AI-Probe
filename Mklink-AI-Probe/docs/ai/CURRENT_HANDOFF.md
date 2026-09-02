@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-02T22:48:00+08:00`
+- 更新时间：`2026-09-02T23:56:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：在线烧录已完成 STM32 F1/F4/G4/H7/L0 与 GD32F303xE 代表芯片的可逆保护真机闭环；GD32F303CET6 已验证 CLI 加锁、MCP 解锁、3.3V 断电复位、整片擦除和 512KiB 固件完整恢复。精确型号读取自动使用通用内置算法，器件联想热查询降至约 9–47ms。
+- 当前任务：在线烧录已完成 STM32 F1/F4/G4/H7/L0、GD32F303xE 与精确型号 PY32F030K28T6 的可逆保护真机闭环；PY32 已通过 WebGUI 验证 3.3V 断电复位、保护读取拒绝、解锁整片擦除和 64KiB 固件完整恢复。CLI、MCP 与 WebGUI 共用安全白名单和后端。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法、跨系列精确/通用型号解析、器件联想加速，以及 STM32 F1/F4/G4/H7/L0、GD32F303xE 安全加锁/解锁和 VCC 断电复位。
+- **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法、跨系列精确/通用型号解析、器件联想加速，以及 STM32 F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 安全加锁/解锁和 VCC 断电复位。
 - **0.2.0 本地候选** — `complete`。源码提交 37b0fbb 的标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录下载器热插拔重连、RTT/串口高频显示、非规范 Pack、系列级精确/通用型号解析、读取镜像回烧和 STM32F413/423 安全加解锁。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
 - **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
@@ -28,9 +28,9 @@
 - **器件自动联想性能**：目录合并和搜索文本改为按索引/安装状态快照缓存，普通联想只对实际返回窗口解析通用型号别名；前端防抖由 300ms 缩短到 150ms、候选窗口由 100 缩至 40。真实 15422 型号目录预热后 STM32 查询约 11.7ms，STM32G474RET6 精确查询约 9.2ms，宽泛查询约 12–47ms；首次载入内置资产约 1.9s。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
-- **MCU 安全真机 HIL**：STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6 与 GD32F303CET6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。GD32F303CET6 以 CLI 加锁、MCP 解锁并执行 3.3V 断电复位；解锁后 524288 字节全部为 FF，恢复前后 Flash SHA-256 均为 65ED9D7373EEA85ED2CAE55D346260F651C83C326BF09CFAC6072357E5543699。详见 docs/verification/v0.2.0-*-security-hil.md。
+- **MCU 安全真机 HIL**：STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。
 - **SuperWatch**：V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。
-- **自动化与构建**：GUI 全量 637 项、GD32/安全/CLI/MCP 定向 Python 210 项通过，标准生产构建成功；Python 全量 1723 项通过，另 12 项仅因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314。断电复位界面显示 1.8V/3.3V/5V 且默认 3.3V；STM32G474RET6、STM32H743IIT6、STM32L010F4P6 与 GD32F303CET6 已实际完成 3.3V 断电复位安全闭环。
+- **自动化与构建**：GUI 全量 638 项、PY32/内置算法/安全/API 定向 Python 228 项通过，标准生产构建成功；Python 全量 1732 项通过，另 12 项仅因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314。断电复位界面显示 1.8V/3.3V/5V 且默认 3.3V；STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 已实际完成 3.3V 断电复位安全闭环。
 
 ## 架构决策
 
@@ -43,12 +43,12 @@
 - SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。
 - 串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；同一下载器不得并行调用，超时后先检查状态并重建会话；设备已因 USB 异常失效时，重连前必须关闭旧会话并释放串口句柄与端口锁。
 - 应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。
-- 安全加锁/解锁按选项字节布局和保护机制划分白名单；每种架构至少用一块代表芯片完成保护、解锁擦除和恢复闭环，再用芯片 ID、容量、算法哈希及选项区范围覆盖同架构料号。只允许可逆等级并永久拒绝 RDP2。STM32G474、STM32H743、STM32L010 与 GD32F303xE 解锁使用复位下连接，安全操作强制使用用户确认电压的断电复位；GD32F303xE 在保护态容量签名不可读时只接受 DBG_ID 与 SPC 物理/影子双重一致。
+- 安全加锁/解锁按选项字节布局和保护机制划分白名单；每种架构至少用一块代表芯片完成保护、解锁擦除和恢复闭环，再用芯片 ID、容量、算法哈希及选项区范围覆盖同架构料号。只允许可逆等级并永久拒绝 RDP2。STM32G474、STM32H743、STM32L010、GD32F303xE 与 PY32F030K28T6 解锁使用复位下连接，安全操作强制使用用户确认电压的断电复位；PY32 目前只开放已验证的精确型号。
 
 ## 真机环境
 
 - **probe**：主要 ARM 回归夹具为 MKLink V4；发布前验证固件 V4.3.9，调试端口 COM228、UART COM227。
-- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；STM32F413VGHx（ID 0x463、1MiB）、STM32G474RET6（ID 0x469、512KiB、3.3V）、STM32H743IIT6（ID 0x450、2MiB、3.3V）、STM32L010F4P6（ID 0x457、16KiB、3.3V）与 GD32F303CET6（ID 0x414、512KiB、64KiB SRAM、3.3V）均完成型号解析、读取回烧与可逆保护闭环。GD32F303CET6 恢复前后 Flash SHA-256 均为 65ED9D7373EEA85ED2CAE55D346260F651C83C326BF09CFAC6072357E5543699。
+- **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；STM32F413VGHx（ID 0x463、1MiB）、STM32G474RET6（ID 0x469、512KiB、3.3V）、STM32H743IIT6（ID 0x450、2MiB、3.3V）、STM32L010F4P6（ID 0x457、16KiB、3.3V）、GD32F303CET6（ID 0x414、512KiB、64KiB SRAM、3.3V）与 PY32F030K28T6（ID 0x60001000、64KiB、3.3V）均完成型号解析、读取回烧与可逆保护闭环。PY32F030K28T6 恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。
 - **permission**：测试工程允许修改与下载；其分析材料只放工程自身 .build。
 
 ## 下一动作
@@ -66,8 +66,8 @@
 - 0.1.9 未覆盖 Authenticode/驱动签名、跨账号安装和 0.1.7 实包升级；per-machine 安装验证需要 UAC。
 - Modbus 真机只验证安全读取；GD32E517 线圈 0–3 控制真实功率功能，未执行危险写入。
 - V4 + STM32H743 的 16×float 连续采样约 9.54k samples/s，不能承诺 16 变量稳定 10kHz 或 20kHz。
-- 当前 STM32 F1、F4、G4、H7、L0 与 GD32F303xE 各有代表芯片完成真机闭环；STM32 F0/F3/F7/L1+/U/W 及其他 GD32 架构仍保持置灰，需按架构完成至少一块代表板验证后再成组启用。
-- 3.3V 断电复位已在 STM32G474RET6、STM32H743IIT6、STM32L010F4P6 与 GD32F303CET6 安全闭环中实际验证；1.8V 与 5V 仍只在目标板明确支持对应电压时使用。
+- 当前 STM32 F1、F4、G4、H7、L0 与 GD32F303xE 各有代表芯片完成真机闭环，PY32 只开放已验证的精确型号 PY32F030K28T6；STM32 F0/F3/F7/L1+/U/W、其他 GD32 架构和其他 PY32 型号仍保持置灰。
+- 3.3V 断电复位已在 STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 安全闭环中实际验证；1.8V 与 5V 仍只在目标板明确支持对应电压时使用。
 
 ## 延续协议
 

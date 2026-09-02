@@ -264,6 +264,8 @@ def _install_security_flm_region(
     from .security import (
         GD32F30X_OPTION_ADDRESS,
         GD32F30X_OPTION_SIZE,
+        PY32F030_OPTION_ADDRESS,
+        PY32F030_OPTION_SIZE,
         STM32F1_OPTION_ADDRESS,
         STM32F1_OPTION_SIZE,
         STM32F4_OPTION_ADDRESS,
@@ -278,6 +280,7 @@ def _install_security_flm_region(
 
     allowed_regions = {
         "gd32f303xe-spc": (GD32F30X_OPTION_ADDRESS, GD32F30X_OPTION_SIZE),
+        "py32f030x8-rdp1": (PY32F030_OPTION_ADDRESS, PY32F030_OPTION_SIZE),
         "stm32f103-rdp1": (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE),
         "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
         "stm32g474-rdp1": (STM32G4_OPTION_ADDRESS, STM32G4_OPTION_SIZE),
@@ -838,6 +841,8 @@ class PyOcdBackend:
         self._security_family = ""
         self._algorithm_reset_required = False
         self._algorithm_reset_done = False
+        self._connection_arguments: Optional[dict[str, Any]] = None
+        self._py32f030_unlock_transition_pending = False
         self._lock = threading.RLock()
 
     def connect(
@@ -974,6 +979,9 @@ class PyOcdBackend:
                     GD32F30X_OPTION_ADDRESS,
                     GD32F30X_OPTION_FLM_SHA256,
                     GD32F30X_OPTION_SIZE,
+                    PY32F030_OPTION_ADDRESS,
+                    PY32F030_OPTION_FLM_SHA256,
+                    PY32F030_OPTION_SIZE,
                     STM32F1_OPTION_ADDRESS,
                     STM32F1_OPTION_FLM_SHA256,
                     STM32F1_OPTION_SIZE,
@@ -996,6 +1004,11 @@ class PyOcdBackend:
                         GD32F30X_OPTION_FLM_SHA256,
                         GD32F30X_OPTION_ADDRESS,
                         GD32F30X_OPTION_SIZE,
+                    ),
+                    "py32f030x8-rdp1": (
+                        PY32F030_OPTION_FLM_SHA256,
+                        PY32F030_OPTION_ADDRESS,
+                        PY32F030_OPTION_SIZE,
                     ),
                     "stm32f103-rdp1": (
                         STM32F1_OPTION_FLM_SHA256,
@@ -1142,6 +1155,25 @@ class PyOcdBackend:
                     and str(target).casefold().startswith("stm32l010")
                 )
                 self._algorithm_reset_done = False
+                self._connection_arguments = {
+                    "probe": probe,
+                    "target": target,
+                    "frequency": frequency,
+                    "pack": pack,
+                    "custom_flm_paths": custom_flm_paths,
+                    "custom_flm_digests": custom_flm_digests,
+                    "custom_flm_regions": custom_flm_regions,
+                    "pack_flm_regions": pack_flm_regions,
+                    "custom_flm_ram_start": custom_flm_ram_start,
+                    "custom_flm_ram_size": custom_flm_ram_size,
+                    "connect_mode": connect_mode,
+                    "reset_mode": reset_mode,
+                    "reset_voltage_mv": reset_voltage_mv,
+                    "security_family": security_family,
+                    "security_flm_path": security_flm_path,
+                    "security_flm_digest": security_flm_digest,
+                    "security_flm_region": security_flm_region,
+                }
             except FlashError:
                 if session is not None:
                     try:
@@ -1168,6 +1200,13 @@ class PyOcdBackend:
                         "GD32F303 security protection was disabled; main Flash was mass-erased and a power-cycle reset is required"
                         if changed
                         else "GD32F303 security protection was already disabled"
+                    )
+                if self._security_family == "py32f030x8-rdp1":
+                    changed, _desired = self._write_py32f030_rdp(0xAA)
+                    return (
+                        "PY32F030 read protection was disabled; main Flash was mass-erased and a power-cycle reset is required"
+                        if changed
+                        else "PY32F030 read protection was already disabled"
                     )
                 if self._security_family == "stm32l010x4-rdp1":
                     changed, _desired = self._write_stm32l010_rdp(0xAA)
@@ -1243,6 +1282,13 @@ class PyOcdBackend:
                         "GD32F303 reversible security protection was written; a power-cycle reset is required to activate it"
                         if changed
                         else "GD32F303 reversible security protection was already active"
+                    )
+                if self._security_family == "py32f030x8-rdp1":
+                    changed, _desired = self._write_py32f030_rdp(0xBB)
+                    return (
+                        "PY32F030 reversible read protection was written; a power-cycle reset is required to activate it"
+                        if changed
+                        else "PY32F030 reversible read protection was already active"
                     )
                 if self._security_family == "stm32l010x4-rdp1":
                     changed, _desired = self._write_stm32l010_rdp(0xBB)
@@ -1860,6 +1906,142 @@ class PyOcdBackend:
             == int.from_bytes(desired, "little") & mask
         )
 
+    _PY32F030_OPTION_ADDRESS = 0x1FFF0E80
+    _PY32F030_OPTION_SIZE = 16
+    _PY32F030_DBG_ID = 0x60001000
+
+    @staticmethod
+    def _py32f030_option_words_valid(payload: bytes) -> bool:
+        if len(payload) != PyOcdBackend._PY32F030_OPTION_SIZE:
+            return False
+        for index in range(0, len(payload), 4):
+            word = payload[index:index + 4]
+            if word == b"\xFF" * 4:
+                continue
+            if word[0] ^ word[2] != 0xFF or word[1] ^ word[3] != 0xFF:
+                return False
+        return True
+
+    def _write_py32f030_rdp(self, value: int) -> Tuple[bool, bytes]:
+        if value not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid PY32F030 reversible RDP value")
+        session = self._require_session()
+        target = session.target
+        dbg_id = int.from_bytes(
+            self._read_target_bytes(target, 0x40015800, 4), "little"
+        )
+        factory_id = int.from_bytes(
+            self._read_target_bytes(target, 0x1FFF0FF8, 4), "little"
+        )
+        if dbg_id != self._PY32F030_DBG_ID or factory_id != dbg_id:
+            raise RuntimeError("connected target identity does not match PY32F030x8")
+        uid = self._read_target_bytes(target, 0x1FFF0E00, 16)
+        if uid[12] != 0x78 or uid in {b"\x00" * 16, b"\xFF" * 16}:
+            raise RuntimeError("connected target UID layout does not match PY32F030")
+        main_regions = [
+            region
+            for region in getattr(target, "memory_map", ())
+            if bool(getattr(region, "is_flash", False))
+            and int(getattr(region, "start", -1)) == 0x08000000
+            and int(getattr(region, "length", -1)) == 0x10000
+        ]
+        if len(main_regions) != 1:
+            raise RuntimeError("connected target Flash geometry does not match PY32F030x8")
+
+        status = int.from_bytes(
+            self._read_target_bytes(target, 0x40022010, 4), "little"
+        )
+        if status & ((1 << 16) | (1 << 15) | (1 << 4)):
+            raise RuntimeError("PY32F030 Flash status is busy or contains an error")
+        current = bytes(
+            self._read_target_bytes(
+                target,
+                self._PY32F030_OPTION_ADDRESS,
+                self._PY32F030_OPTION_SIZE,
+            )
+        )
+        if not self._py32f030_option_words_valid(current):
+            raise RuntimeError("PY32F030 option-byte complement validation failed")
+        physical_rdp = current[0]
+        if current[2] != (physical_rdp ^ 0xFF):
+            raise RuntimeError("PY32F030 RDP option-byte complement is invalid")
+        logical_rdp = int.from_bytes(
+            self._read_target_bytes(target, 0x40022020, 4), "little"
+        ) & 0xFF
+        if logical_rdp != physical_rdp:
+            raise RuntimeError("PY32F030 logical and physical RDP state is inconsistent")
+        if value == 0xAA and physical_rdp == 0xAA:
+            return False, current
+        if value == 0xBB and physical_rdp != 0xAA:
+            return False, current
+
+        desired = bytearray(current)
+        desired[0] = value
+        desired[2] = value ^ 0xFF
+        desired_bytes = bytes(desired)
+        region = self._flash_region_for_address(
+            target, self._PY32F030_OPTION_ADDRESS
+        )
+        if (
+            region is None
+            or str(getattr(region, "name", "")) != "mklink_security_option_bytes"
+            or int(region.start) != self._PY32F030_OPTION_ADDRESS
+            or int(region.length) != self._PY32F030_OPTION_SIZE
+        ):
+            raise RuntimeError("validated PY32F030 option-byte Flash region is unavailable")
+        flash = getattr(region, "flash", None)
+        if flash is None:
+            raise RuntimeError("PY32F030 option-byte Flash algorithm is unavailable")
+        flash.init(flash.Operation.ERASE)
+        try:
+            flash.erase_sector(self._PY32F030_OPTION_ADDRESS)
+        finally:
+            flash.uninit()
+        flash.init(flash.Operation.PROGRAM)
+        transition_interrupted = False
+        try:
+            try:
+                flash.program_page(self._PY32F030_OPTION_ADDRESS, desired_bytes)
+            except Exception as exc:
+                text = str(exc).casefold()
+                transition_interrupted = bool(
+                    value == 0xAA
+                    and physical_rdp != 0xAA
+                    and "target was not halted as expected after calling flash algorithm routine"
+                    in text
+                    and "ipsr=3" in text
+                )
+                if not transition_interrupted:
+                    raise
+        finally:
+            try:
+                flash.uninit()
+            except Exception:
+                if not transition_interrupted:
+                    raise
+        if transition_interrupted:
+            # RDP1 -> RDP0 starts a hardware mass erase and resets the core
+            # before this FLM can return normally.  Defer verification until
+            # the mandatory power cycle has re-established a fresh SWD link.
+            self._py32f030_unlock_transition_pending = True
+            return True, desired_bytes
+        actual = bytes(
+            self._read_target_bytes(
+                target,
+                self._PY32F030_OPTION_ADDRESS,
+                self._PY32F030_OPTION_SIZE,
+            )
+        )
+        if (
+            not self._py32f030_option_words_valid(actual)
+            or actual[0] != value
+            or actual[2] != (value ^ 0xFF)
+            or actual[1] != current[1]
+            or actual[3:] != desired_bytes[3:]
+        ):
+            raise RuntimeError("PY32F030 RDP or preserved option bytes did not persist")
+        return True, actual
+
     _GD32F303_OPTION_ADDRESS = 0x1FFFF800
     _GD32F303_OPTION_SIZE = 16
 
@@ -2043,6 +2225,8 @@ class PyOcdBackend:
             self._security_family = ""
             self._algorithm_reset_required = False
             self._algorithm_reset_done = False
+            self._connection_arguments = None
+            self._py32f030_unlock_transition_pending = False
             if session is not None:
                 try:
                     session.close()
@@ -2295,6 +2479,41 @@ class PyOcdBackend:
                         self._probe_identifier,
                         self._reset_voltage_mv,
                     )
+                    if self._py32f030_unlock_transition_pending:
+                        reconnect = self._connection_arguments
+                        if reconnect is None:
+                            raise RuntimeError(
+                                "PY32F030 unlock verification has no reconnect configuration"
+                            )
+                        reconnect = dict(reconnect)
+                        self.connect(**reconnect)
+                        session = self._require_session()
+                        option = self._read_target_bytes(
+                            session.target,
+                            self._PY32F030_OPTION_ADDRESS,
+                            self._PY32F030_OPTION_SIZE,
+                        )
+                        logical_rdp = int.from_bytes(
+                            self._read_target_bytes(session.target, 0x40022020, 4),
+                            "little",
+                        ) & 0xFF
+                        if (
+                            not self._py32f030_option_words_valid(option)
+                            or option[0] != 0xAA
+                            or option[2] != 0x55
+                            or logical_rdp != 0xAA
+                        ):
+                            raise RuntimeError(
+                                "PY32F030 RDP unlock did not persist after power cycle"
+                            )
+                        for address in range(0x08000000, 0x08010000, 4096):
+                            if self._read_target_bytes(
+                                session.target, address, 4096
+                            ) != b"\xFF" * 4096:
+                                raise RuntimeError(
+                                    "PY32F030 main Flash was not completely erased by RDP unlock"
+                                )
+                        self._py32f030_unlock_transition_pending = False
                     return
                 if mode == "default":
                     session.target.reset()
@@ -2388,7 +2607,11 @@ class PyOcdBackend:
             return data
 
     def _security_read_protection_active(self, target: Any) -> bool:
-        if self._security_family not in {"stm32f103-rdp1", "gd32f303xe-spc"}:
+        if self._security_family not in {
+            "stm32f103-rdp1",
+            "gd32f303xe-spc",
+            "py32f030x8-rdp1",
+        }:
             return False
         if not any(
             str(getattr(region, "name", "")) == "mklink_security_option_bytes"
@@ -2396,9 +2619,18 @@ class PyOcdBackend:
         ):
             return False
         try:
-            obr = int.from_bytes(self._read_target_bytes(target, 0x4002201C, 4), "little")
+            status_address = (
+                0x40022020
+                if self._security_family == "py32f030x8-rdp1"
+                else 0x4002201C
+            )
+            obr = int.from_bytes(
+                self._read_target_bytes(target, status_address, 4), "little"
+            )
         except Exception:
             return False
+        if self._security_family == "py32f030x8-rdp1":
+            return (obr & 0xFF) != 0xAA
         return bool(obr & 0x2)
 
     @staticmethod

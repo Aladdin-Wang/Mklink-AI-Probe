@@ -6,6 +6,7 @@ from mklink.cmsis_dap.builtin_flm_bundle import BuiltinOptionAlgorithm
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.security import (
     GD32F30X_OPTION_FLM_SHA256,
+    PY32F030_OPTION_FLM_SHA256,
     STM32F1_OPTION_FLM_SHA256,
     STM32F4_OPTION_FLM_SHA256,
     STM32G4_OPTION_FLM_SHA256,
@@ -96,6 +97,52 @@ def test_gd32f303_fails_closed_when_option_algorithm_hash_changes(monkeypatch, t
     )
 
     capability = security_capability("GD32F303CET6")
+
+    assert capability.supported is False
+    assert "白名单" in capability.reason
+
+
+def test_py32f030k28t6_uses_only_pinned_option_algorithm(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="PY32F030x8",
+        file_name="PY061xx_OB.FLM",
+        path=tmp_path / "PY061xx_OB.FLM",
+        sha256=PY32F030_OPTION_FLM_SHA256,
+        ram_start=0x20000000,
+        ram_size=0x2000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == "PY32F030x8" else None,
+    )
+
+    capability = security_capability("PY32F030K28T6")
+
+    assert capability.supported is True
+    assert capability.family == "py32f030x8-rdp1"
+    assert capability.option_address == 0x1FFF0E80
+    assert capability.option_size == 16
+    assert capability.unlock_erases_flash is True
+    assert capability.reversible_lock is True
+    assert security_capability("PY32F030K18T6").supported is False
+    assert security_capability("PY32F030K28T7").supported is False
+
+
+def test_py32f030_fails_closed_when_option_algorithm_hash_changes(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="PY32F030x8",
+        file_name="PY061xx_OB.FLM",
+        path=tmp_path / "PY061xx_OB.FLM",
+        sha256="0" * 64,
+        ram_start=0x20000000,
+        ram_size=0x2000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda _part: algorithm,
+    )
+
+    capability = security_capability("PY32F030K28T6")
 
     assert capability.supported is False
     assert "白名单" in capability.reason

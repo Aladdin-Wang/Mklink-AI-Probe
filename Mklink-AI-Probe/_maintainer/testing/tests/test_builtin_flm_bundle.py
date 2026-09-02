@@ -129,6 +129,23 @@ def test_uppercase_x_placeholders_resolve_vendor_generic_targets(tmp_path: Path)
     assert resolve_builtin_flm_part("ACM32H503CBT6", root) == "ACM32H5XX"
 
 
+def test_py32_full_order_code_resolves_by_its_capacity_character(tmp_path: Path):
+    root, _payload = _bundle(tmp_path / "bundle")
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["targets"][0]["part_number"] = "PY32F030x4"
+    second = json.loads(json.dumps(manifest["targets"][0]))
+    second["part_number"] = "PY32F030x8"
+    second["ram_size"] = 0x2000
+    second["algorithms"][0]["flash_size"] = 0x10000
+    manifest["targets"].append(second)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert resolve_builtin_flm_part("PY32F030K28T6", root) == "PY32F030x8"
+    assert resolve_builtin_flm_part("PY32F030K14T6", root) == "PY32F030x4"
+    assert resolve_builtin_flm_part("PY32F030K28T6-E", root) == "PY32F030x8"
+
+
 def test_builtin_flm_bundle_hpm_short_circuits_before_manifest_access(tmp_path: Path):
     missing = tmp_path / "missing"
 

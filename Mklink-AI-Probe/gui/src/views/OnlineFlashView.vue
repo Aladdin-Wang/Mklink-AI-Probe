@@ -167,7 +167,7 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
 function setActions(values: JobAction[]): void {
   const next = canonicalActions(values)
   if (
-    ['gd32f303xe-spc', 'stm32g474-rdp1', 'stm32h743-rdp1', 'stm32l010x4-rdp1'].includes(security.value.family)
+    ['gd32f303xe-spc', 'py32f030x8-rdp1', 'stm32g474-rdp1', 'stm32h743-rdp1', 'stm32l010x4-rdp1'].includes(security.value.family)
     && (next.includes('unlock') || next.includes('lock'))
   ) {
     resetMode.value = 'power-cycle'

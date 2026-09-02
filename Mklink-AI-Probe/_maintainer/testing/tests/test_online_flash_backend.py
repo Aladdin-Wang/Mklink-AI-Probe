@@ -325,6 +325,273 @@ def test_gd32f303_security_rejects_identity_or_density_mismatch(dbg_id, density)
     assert raised.value.code is FlashErrorCode.LOCK_FAIL
 
 
+def test_py32f030_security_validates_identity_and_preserves_other_options() -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def __init__(self, target):
+            self.target = target
+            self.calls = []
+
+        def init(self, operation):
+            self.calls.append(("init", operation))
+
+        def erase_sector(self, address):
+            self.calls.append(("erase", address))
+
+        def program_page(self, address, data):
+            self.calls.append(("program", address, bytes(data)))
+            self.target.option_bytes[:] = data
+
+        def uninit(self):
+            self.calls.append(("uninit",))
+
+    class MainRegion:
+        name = "flash"
+        start = 0x08000000
+        length = 0x10000
+        is_flash = True
+
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFF0E80
+        length = 16
+        is_flash = True
+
+        def __init__(self, target):
+            self.flash = SecurityFlash(target)
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.option_bytes = bytearray.fromhex(
+                "aa be 55 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
+            )
+            self.option_region = OptionRegion(self)
+            super().__init__((MainRegion(), self.option_region))
+
+        def read_memory_block8(self, address, size):
+            if address in {0x40015800, 0x1FFF0FF8}:
+                return (0x60001000).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E00:
+                uid = bytearray(range(16))
+                uid[12] = 0x78
+                return bytes(uid[:size])
+            if address == 0x40022010:
+                return (0).to_bytes(4, "little")[:size]
+            if address == 0x40022020:
+                return int(self.option_bytes[0]).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E80:
+                return bytes(self.option_bytes[:size])
+            raise AssertionError(hex(address))
+
+    target = Target()
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "py32f030x8-rdp1"
+
+    assert "power-cycle reset is required" in backend.lock_security()
+    assert target.option_bytes == bytes.fromhex(
+        "bb be 44 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
+    )
+    assert "mass-erased" in backend.unlock_security()
+    assert target.option_bytes == bytes.fromhex(
+        "aa be 55 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
+    )
+    programmed = [
+        call[2] for call in target.option_region.flash.calls if call[0] == "program"
+    ]
+    assert programmed[0][1] == programmed[1][1]
+    assert programmed[0][3:] == programmed[1][3:]
+
+
+@pytest.mark.parametrize("factory_id", [0x60001001, 0xFFFFFFFF])
+def test_py32f030_security_rejects_identity_mismatch(factory_id) -> None:
+    class MainRegion:
+        start = 0x08000000
+        length = 0x10000
+        is_flash = True
+
+    class Target:
+        memory_map = (MainRegion(),)
+
+        def read_memory_block8(self, address, size):
+            values = {
+                0x40015800: 0x60001000,
+                0x1FFF0FF8: factory_id,
+            }
+            return values[address].to_bytes(4, "little")[:size]
+
+    backend = PyOcdBackend()
+    backend._session = FakeSession(Target())
+    backend._security_family = "py32f030x8-rdp1"
+
+    with pytest.raises(FlashError) as raised:
+        backend.lock_security()
+    assert raised.value.code is FlashErrorCode.LOCK_FAIL
+
+
+def test_py32f030_unlock_accepts_only_reset_transition_and_verifies_after_power_cycle(
+    monkeypatch,
+) -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def __init__(self, target):
+            self.target = target
+
+        def init(self, _operation):
+            pass
+
+        def erase_sector(self, _address):
+            pass
+
+        def program_page(self, _address, data):
+            self.target.option_bytes[:] = data
+            raise RuntimeError(
+                "target was not halted as expected after calling flash algorithm routine (IPSR=3)"
+            )
+
+        def uninit(self):
+            if self.target.option_bytes[0] == 0xAA:
+                raise RuntimeError("the reset also interrupted UnInit")
+
+    class MainRegion:
+        name = "flash"
+        start = 0x08000000
+        length = 0x10000
+        is_flash = True
+
+    class OptionRegion:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFF0E80
+        length = 16
+        is_flash = True
+
+        def __init__(self, target, with_flash=True):
+            self.flash = SecurityFlash(target) if with_flash else object()
+
+    class Target(FakeTarget):
+        def __init__(self, protected=True, with_flash=True):
+            self.option_bytes = bytearray.fromhex(
+                ("bb be 44 41" if protected else "aa be 55 41")
+                + " ff 00 00 ff ff ff ff ff ff ff 00 00"
+            )
+            self.option_region = OptionRegion(self, with_flash=with_flash)
+            super().__init__((MainRegion(), self.option_region))
+
+        def read_memory_block8(self, address, size):
+            if address in {0x40015800, 0x1FFF0FF8}:
+                return (0x60001000).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E00:
+                uid = bytearray(range(16))
+                uid[12] = 0x78
+                return bytes(uid[:size])
+            if address == 0x40022010:
+                return (0).to_bytes(4, "little")[:size]
+            if address == 0x40022020:
+                return int(self.option_bytes[0]).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E80:
+                return bytes(self.option_bytes[:size])
+            if 0x08000000 <= address < 0x08010000:
+                return b"\xFF" * size
+            raise AssertionError(hex(address))
+
+    target = Target(protected=True)
+    power_cycles = []
+    backend = PyOcdBackend(power_cycle=lambda probe, voltage: power_cycles.append((probe, voltage)))
+    backend._session = FakeSession(target)
+    backend._security_family = "py32f030x8-rdp1"
+    backend._probe_identifier = "probe"
+    backend._reset_mode = "power-cycle"
+    backend._reset_voltage_mv = 3300
+    backend._connection_arguments = {"probe": "probe", "target": "PY32F030K28T6", "frequency": 1_000_000}
+
+    fresh_target = Target(protected=False, with_flash=False)
+
+    def reconnect(**kwargs):
+        backend._session = FakeSession(fresh_target)
+        backend._security_family = "py32f030x8-rdp1"
+        backend._reset_voltage_mv = 3300
+        backend._connection_arguments = kwargs
+
+    monkeypatch.setattr(backend, "connect", reconnect)
+
+    assert "mass-erased" in backend.unlock_security()
+    assert backend._py32f030_unlock_transition_pending is True
+    backend.reset_run("power-cycle")
+    assert power_cycles == [("probe", 3300)]
+    assert backend._py32f030_unlock_transition_pending is False
+
+
+def test_py32f030_unlock_does_not_hide_unrelated_algorithm_failures() -> None:
+    class SecurityFlash:
+        class Operation:
+            ERASE = "erase"
+            PROGRAM = "program"
+
+        def init(self, _operation):
+            pass
+
+        def erase_sector(self, _address):
+            pass
+
+        def program_page(self, _address, _data):
+            raise RuntimeError(
+                "target was not halted as expected after calling flash algorithm routine (IPSR=2)"
+            )
+
+        def uninit(self):
+            pass
+
+    class Region:
+        name = "mklink_security_option_bytes"
+        start = 0x1FFF0E80
+        length = 16
+        is_flash = True
+
+        def __init__(self):
+            self.flash = SecurityFlash()
+
+    class MainRegion:
+        start = 0x08000000
+        length = 0x10000
+        is_flash = True
+
+    class Target(FakeTarget):
+        def __init__(self):
+            self.option_bytes = bytes.fromhex(
+                "bb be 44 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
+            )
+            super().__init__((MainRegion(), Region()))
+
+        def read_memory_block8(self, address, size):
+            if address in {0x40015800, 0x1FFF0FF8}:
+                return (0x60001000).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E00:
+                uid = bytearray(range(16))
+                uid[12] = 0x78
+                return bytes(uid[:size])
+            if address == 0x40022010:
+                return (0).to_bytes(4, "little")[:size]
+            if address == 0x40022020:
+                return (0xBB).to_bytes(4, "little")[:size]
+            if address == 0x1FFF0E80:
+                return self.option_bytes[:size]
+            raise AssertionError(hex(address))
+
+    backend = PyOcdBackend()
+    backend._session = FakeSession(Target())
+    backend._security_family = "py32f030x8-rdp1"
+    with pytest.raises(FlashError) as raised:
+        backend.unlock_security()
+    assert raised.value.code is FlashErrorCode.UNLOCK_FAIL
+    assert backend._py32f030_unlock_transition_pending is False
+
+
 def test_stm32f413_security_preserves_non_rdp_options_and_never_uses_level2() -> None:
     class SecurityFlash:
         class Operation:

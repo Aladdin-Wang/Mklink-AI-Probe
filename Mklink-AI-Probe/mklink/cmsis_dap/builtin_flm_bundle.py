@@ -31,6 +31,10 @@ class BuiltinOptionAlgorithm:
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_PY32F030_ORDER_CODE = re.compile(
+    r"^(PY32F030)[A-Z][A-Z0-9]([4678])[A-Z][67](?:-[A-Z0-9]+)?$",
+    re.IGNORECASE,
+)
 _TARGET_RECORD_CACHE: dict[
     Path, tuple[tuple[int, int], list[Mapping[str, object]]]
 ] = {}
@@ -205,6 +209,16 @@ def _resolve_part_from_index(
     exact = direct.get(requested.casefold(), [])
     if len(exact) == 1:
         return _text(exact[0].get("part_number"), "builtin FLM part number")
+    py32 = _PY32F030_ORDER_CODE.fullmatch(requested)
+    if py32 is not None:
+        # Puya full order codes place the Flash-capacity character after the
+        # pin/peripheral variant (for example K28T6 -> x8).  The CMSIS target
+        # names omit that extra variant character, so a plain x-placeholder
+        # match cannot resolve them.
+        canonical = "{}x{}".format(py32.group(1), py32.group(2))
+        aliases = direct.get(canonical.casefold(), [])
+        if len(aliases) == 1:
+            return _text(aliases[0].get("part_number"), "builtin FLM part number")
     candidates = [
         (literal_count, candidate, signature)
         for literal_count, candidate, signature, pattern in generic

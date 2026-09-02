@@ -582,6 +582,7 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
     ("family", "option_address", "option_size"),
     [
         ("gd32f303xe-spc", 0x1FFFF800, 16),
+        ("py32f030x8-rdp1", 0x1FFF0E80, 16),
         ("stm32g474-rdp1", 0x1FFF7800, 84),
         ("stm32h743-rdp1", 0xFFFFFFFF, 36),
     ],

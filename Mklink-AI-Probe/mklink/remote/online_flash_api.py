@@ -1073,6 +1073,7 @@ def _start_job_with_configuration(
             security_flm_region = (security.option_address, security.option_size)
             power_cycle_security = {
                 "gd32f303xe-spc",
+                "py32f030x8-rdp1",
                 "stm32g474-rdp1",
                 "stm32h743-rdp1",
                 "stm32l010x4-rdp1",
