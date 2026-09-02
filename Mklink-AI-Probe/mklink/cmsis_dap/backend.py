@@ -25,7 +25,7 @@ _LOCKED_ERROR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _POWER_CYCLE_VOLTAGES_MV = frozenset({1800, 3300, 5000})
-_POWER_CYCLE_OFF_SECONDS = 0.25
+_POWER_CYCLE_OFF_SECONDS = 1.0
 
 
 def _power_cycle_mklink_probe(probe_identifier: str, voltage_mv: int) -> None:

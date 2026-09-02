@@ -786,8 +786,8 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
   if (selectedResetVoltage !== null && !confirm(tr(
-    `即将关闭下载器 VCC 输出，等待 250ms 后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
-    `The probe will disable VCC, wait 250 ms, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
+    `即将关闭下载器 VCC 输出，等待 1 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
+    `The probe will disable VCC, wait 1 second, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
   ))) return
   progressOwner.value = 'flash'
   creatingJob.value = true

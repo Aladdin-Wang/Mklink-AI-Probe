@@ -80,7 +80,7 @@ function updateResetVoltage(value: 1800 | 3300 | 5000, input: HTMLInputElement):
           {{ (choice / 1000).toFixed(choice === 5000 ? 0 : 1) }}V
         </label>
       </div>
-      <p class="power-warning">{{ tr('执行断电复位时会关闭 VCC，等待 250ms 后按所选电压重新输出。', 'Power-cycle reset disables VCC, waits 250 ms, then restores the selected voltage.') }}</p>
+      <p class="power-warning">{{ tr('执行断电复位时会关闭 VCC，等待 1 秒后按所选电压重新输出。', 'Power-cycle reset disables VCC, waits 1 second, then restores the selected voltage.') }}</p>
     </div>
   </section>
 </template>

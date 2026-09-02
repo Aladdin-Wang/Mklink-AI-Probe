@@ -986,7 +986,7 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
-    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('整片擦除'))
+    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('Flash 中的全部数据都会永久删除'))
     await wrapper.get('[data-testid="action-lock"]').setValue(true)
     expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringContaining('可逆读保护'))
     await wrapper.get('[data-testid="start-job"]').trigger('click')
@@ -1008,7 +1008,7 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
     await readyAndStart(wrapper)
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('3.3V 恢复输出'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('等待 1 秒后以 3.3V 恢复输出'))
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
     const body = JSON.parse(String(call?.[1]?.body))
     expect(body.reset_mode).toBe('power-cycle')

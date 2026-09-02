@@ -14,8 +14,8 @@ function available(action: JobAction): boolean {
 }
 function confirmSecurityAction(action: JobAction): boolean {
   if (action === 'unlock') return confirm(tr(
-    '解锁会关闭读保护并强制整片擦除，Bootloader、应用程序和全部 Flash 数据都会永久删除。确定勾选“解锁”？',
-    'Unlocking disables read protection and forces a full-chip erase. The bootloader, application, and all Flash data will be permanently deleted. Select Unlock?',
+    '解锁会关闭读保护并强制整片擦除，Flash 中的全部数据都会永久删除。确定勾选“解锁”？',
+    'Unlocking disables read protection and forces a full-chip erase. All Flash data will be permanently deleted. Select Unlock?',
   ))
   if (action === 'lock') return confirm(tr(
     '加锁会在校验完成后启用可逆读保护，并在复位后限制 Flash 读取和调试访问。以后解锁仍会整片擦除。确定勾选“加锁”？',

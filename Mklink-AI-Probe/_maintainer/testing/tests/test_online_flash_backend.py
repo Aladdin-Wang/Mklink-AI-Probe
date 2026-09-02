@@ -341,7 +341,7 @@ def test_hpm_power_cycle_reset_restores_selected_voltage(monkeypatch) -> None:
 
     assert calls == [
         ("power-off",),
-        ("wait", 0.25),
+        ("wait", 1.0),
         ("power-on", 5000, True),
     ]
     backend.disconnect()
@@ -1773,7 +1773,7 @@ def test_default_power_cycle_uses_matching_cdc_commands(monkeypatch) -> None:
         ("bridge", "COM42"),
         ("connect",),
         ("command", "cmd.set_power_off()", 10.0),
-        ("wait", 0.25),
+        ("wait", 1.0),
         ("command", "cmd.set_power_on(1800)", 10.0),
         ("close",),
     ]
