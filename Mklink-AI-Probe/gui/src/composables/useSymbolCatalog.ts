@@ -76,6 +76,7 @@ async function fetchCatalog(): Promise<SymbolCatalogPage> {
       || page.axf_path !== first.axf_path
       || page.fingerprint.size !== first.fingerprint.size
       || page.fingerprint.mtime_ns !== first.fingerprint.mtime_ns
+      || page.fingerprint.sha256 !== first.fingerprint.sha256
     ) {
       throw new Error('Symbol catalog changed while loading; retry')
     }
@@ -107,6 +108,7 @@ function sameIdentity(page: SymbolBrowsePage): boolean {
     && current !== null
     && page.fingerprint.size === current.size
     && page.fingerprint.mtime_ns === current.mtime_ns
+    && page.fingerprint.sha256 === current.sha256
 }
 
 async function fetchBrowse(path = '', offset: number | null = null): Promise<SymbolBrowsePage> {
@@ -207,6 +209,7 @@ async function refreshStatus(): Promise<SymbolCatalogStatus> {
     || currentFingerprint === null
     || status.fingerprint.size !== currentFingerprint.size
     || status.fingerprint.mtime_ns !== currentFingerprint.mtime_ns
+    || status.fingerprint.sha256 !== currentFingerprint.sha256
   )
   if (identityChanged) {
     await startLoad()

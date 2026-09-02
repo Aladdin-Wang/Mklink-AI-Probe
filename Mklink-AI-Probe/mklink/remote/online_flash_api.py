@@ -515,6 +515,9 @@ def _refresh_pack_index(
 
 
 def _upload_path(paths: object, file_name: str, allowed_suffixes: Sequence[str]) -> Path:
+    from mklink.file_content import is_metadata_file
+    if is_metadata_file(file_name):
+        raise ValueError("macOS metadata is not a firmware/algorithm file")
     suffix = Path(file_name or "").suffix.casefold()
     if suffix not in set(allowed_suffixes):
         raise ValueError("upload must use one of: {}".format(", ".join(allowed_suffixes)))
@@ -529,6 +532,9 @@ def _upload_path(paths: object, file_name: str, allowed_suffixes: Sequence[str])
 
 def _local_firmware_path(raw_path: str, limit: int) -> Path:
     source = Path(str(raw_path or "")).expanduser().resolve()
+    from mklink.file_content import is_metadata_file
+    if is_metadata_file(source):
+        raise ValueError("macOS metadata is not a firmware file")
     if source.suffix.casefold() not in (".bin", ".hex"):
         raise ValueError("firmware path must use .bin or .hex")
     if not source.is_file():
@@ -1709,14 +1715,14 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             source = await _blocking(
                 _local_firmware_path, path, services.upload_limit
             )
-            stat = await _blocking(source.stat)
+            from mklink.file_content import source_fingerprint
+            fingerprint = await _blocking(source_fingerprint, source)
         except (OSError, ValueError) as error:
             raise HTTPException(status_code=422, detail=str(error))
         return {
             "available": True,
             "file_name": source.name,
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
+            **fingerprint,
         }
 
     @router.get("/images/{image_id}/preview")

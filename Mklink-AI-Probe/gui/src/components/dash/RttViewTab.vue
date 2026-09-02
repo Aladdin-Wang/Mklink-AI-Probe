@@ -724,11 +724,24 @@ function detachBinary(): void {
   attachedBinaryMode = null
 }
 
+let lastSourceChange = 0
 async function refreshStatus(): Promise<Record<string, any> | null> {
   try {
     const response = await fetch(`${API_BASE}/api/dash/rtt/status`)
     if (response.ok) {
       const status = await response.json()
+      const changed = status.file_source_change
+      if (changed && changed.sequence !== lastSourceChange) {
+        lastSourceChange = changed.sequence
+        if (changed.rtt_addr && isRttAddress(changed.rtt_addr)) {
+          rttAddress.value = changed.rtt_addr
+          persistSettings({ ...settings.value, rttAddress: changed.rtt_addr })
+        } else {
+          rttAddress.value = ''
+          persistSettings({ ...settings.value, rttAddress: '' })
+        }
+        runtimeError.value = changed.error || changed.message || tr('符号文件已变化，请重新检测地址', 'Symbol file changed. Detect the address again.')
+      }
       statusKnown.value = true
       statusRunning.value = status.running === true
       if (statusRunning.value && typeof status.encoding === 'string') {

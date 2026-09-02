@@ -10,16 +10,18 @@ export interface ReleaseHistoryEntry {
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
     version: '0.2.0',
-    date: '2026-09-02',
+    date: '2026-09-03',
     summary: '完善连接、实时数据、Pack/型号兼容与安全烧录',
     summaryEn: 'Improved connections, live data, Pack/model compatibility, and secure flashing',
     changes: [
+      '改善 macOS/Linux 兼容，精简工程初始化，修复固件与符号文件变化后的重载。',
       '修复下载器热插拔重连及 RTT、串口与曲线高频显示停顿。',
       '兼容更多非规范 Pack，增加常用型号并统一精确型号与通用型号解析，提升器件联想速度。',
       '完善读取、回烧、校验和 1.8V/3.3V/5V 断电复位。',
       '为已验证的 STM32 F1、F4、G4、H7、L0、GD32F30x 和 PY32F030K28T6 增加安全的可逆加锁与解锁，其他器件保持置灰。',
     ],
     changesEn: [
+      'Improve macOS/Linux compatibility, simplify project setup, and reload changed firmware and symbol files.',
       'Fix probe hot-plug reconnects and high-rate RTT, serial, and chart display stalls.',
       'Support more nonstandard Packs, add common targets, unify exact/generic model matching, and speed up typeahead.',
       'Improve readback, reflashing, verification, and 1.8 V/3.3 V/5 V power-cycle reset.',

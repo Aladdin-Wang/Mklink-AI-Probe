@@ -1606,6 +1606,9 @@ class SuperWatchStreamManager:
         )
 
     def start(self, device) -> None:
+        catalog = getattr(device, "symbol_catalog", None)
+        if catalog is not None and catalog.is_stale():
+            raise RuntimeError("AXF content changed; reparse symbols before collecting")
         if self._thread is not None and self._thread.is_alive():
             if self.running:
                 return

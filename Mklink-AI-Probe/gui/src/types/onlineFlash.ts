@@ -90,6 +90,7 @@ export interface FirmwareSourceStatus {
   file_name: string
   size: number
   mtime_ns: number
+  sha256?: string
 }
 
 export interface PreviewPage {

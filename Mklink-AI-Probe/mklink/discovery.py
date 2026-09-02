@@ -37,6 +37,8 @@ def _normalize_flm_name(flm_name: str) -> str:
     """Return a plain FLM filename from a device path or filename."""
     flm_name = flm_name.replace("\\", "/").rstrip("/")
     flm_name = os.path.basename(flm_name)
+    if flm_name.startswith("._"):
+        return ""
     if flm_name and not flm_name.upper().endswith(".FLM"):
         flm_name = flm_name + ".FLM"
     return flm_name
@@ -507,19 +509,10 @@ def copy_flm_to_microkeen(flm_name: str) -> tuple[bool, str | None]:
     # 目标路径（设备上使用带扩展名的文件名）
     dest_path = os.path.join(flm_dir, flm_name_with_ext)
 
-    # 检查目标文件是否存在
-    if os.path.isfile(dest_path):
-        src_size = os.path.getsize(src_path)
-        dest_size = os.path.getsize(dest_path)
-        if src_size == dest_size:
-            print(f"[OK] FLM 已存在且大小相同，跳过拷贝: {dest_path} ({src_size} bytes)")
-            return True, dest_path
-        else:
-            print(f"[INFO] FLM 文件大小不同，将重新拷贝: {dest_path} (源:{src_size} vs 目标:{dest_size})")
-
     try:
-        shutil.copy2(src_path, dest_path)
-        print(f"[OK] 已拷贝 FLM: {src_path} -> {dest_path}")
+        from mklink.file_content import copy_verified
+        changed = copy_verified(src_path, dest_path)
+        print(f"[OK] FLM {'已拷贝' if changed else '内容相同'}: {dest_path}")
         return True, dest_path
     except Exception as e:
         print(f"[FAIL] 拷贝失败: {e}")

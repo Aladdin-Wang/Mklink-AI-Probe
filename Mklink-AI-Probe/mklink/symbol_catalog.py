@@ -35,14 +35,15 @@ class SymbolValueError(SymbolCatalogError):
 class AxfFingerprint:
     size: int
     mtime_ns: int
+    sha256: str = ""
 
     @classmethod
     def from_path(cls, path: str) -> "AxfFingerprint":
-        stat = Path(path).stat()
-        return cls(size=stat.st_size, mtime_ns=stat.st_mtime_ns)
+        from mklink.file_content import source_fingerprint
+        return cls(**source_fingerprint(path))
 
-    def to_dict(self) -> dict[str, int]:
-        return {"size": self.size, "mtime_ns": self.mtime_ns}
+    def to_dict(self) -> dict:
+        return {"size": self.size, "mtime_ns": self.mtime_ns, "sha256": self.sha256}
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,8 @@ class SymbolCatalog:
         return self._resolve_descriptor(path)
 
     def require(self, path: str, generation: int) -> SymbolDescriptor:
+        if self.fingerprint.sha256 and self.is_stale():
+            raise SymbolCatalogError("AXF content changed; reparse symbols before access")
         if generation != self.generation:
             raise SymbolCatalogError(
                 f"symbol generation is stale: expected {self.generation}, got {generation}"

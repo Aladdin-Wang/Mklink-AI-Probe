@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fileContentStamp } from '../lib/fileContent'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
@@ -121,6 +122,7 @@ let autoInspectTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollTimer: ReturnType<typeof setTimeout> | null = null
 let sourcePollingEnabled = false
 let sourceFingerprint = ''
+let firmwareSelection = 0
 let capturedReadSource = false
 let firmwareHandle: BrowserFirmwareFileHandle | null = null
 let stopNativeDropListener: (() => void) | null = null
@@ -522,11 +524,15 @@ function resetInspection(): void {
   inspection.value = null; selectedSectorAddresses.value = []; rows.value = []; paddingTop.value = 0; paddingBottom.value = 0; inspectError.value = ''; preview.setSource(null)
 }
 function setFirmware(file: File | null, handle: BrowserFirmwareFileHandle | null = null): void {
+  const selection = ++firmwareSelection
   capturedReadSource = false
   firmware.value = file
   firmwareHandle = handle
   firmwarePath.value = ''
-  sourceFingerprint = file && handle ? `${file.size}:${file.lastModified}` : ''
+  sourceFingerprint = ''
+  if (file && handle) void fileContentStamp(file).then(stamp => {
+    if (firmwareSelection === selection && firmwareHandle === handle && !firmwarePath.value) sourceFingerprint = stamp
+  }).catch(() => undefined)
   resetInspection()
   clearMemoryWindow()
   persist()
@@ -548,7 +554,7 @@ function setFirmwarePath(path: string): void {
   resetInspection()
   clearMemoryWindow()
   persist()
-  void pollFirmwareSource(true)
+  void pollFirmwareSource()
   promptForBinAddress(path)
   scheduleAutoInspection()
 }
@@ -599,7 +605,7 @@ function stopNativeDrops(): void {
   nativeDropActive.value = false
 }
 
-async function pollFirmwareSource(initial = false): Promise<void> {
+async function pollFirmwareSource(): Promise<void> {
   const path = firmwarePath.value
   const handle = firmwareHandle
   if ((!path && !handle) || disposed) return
@@ -608,10 +614,15 @@ async function pollFirmwareSource(initial = false): Promise<void> {
     const status = path ? await api.getImageSourceStatus(path) : null
     if (path !== firmwarePath.value || handle !== firmwareHandle || disposed) return
     const fingerprint = status
-      ? `${status.size}:${status.mtime_ns}`
-      : `${nextFile!.size}:${nextFile!.lastModified}`
+      ? `${status.size}:${status.mtime_ns}:${status.sha256 ?? ''}`
+      : await fileContentStamp(nextFile!)
+    if (path !== firmwarePath.value || handle !== firmwareHandle || disposed) return
     if (!sourceFingerprint) {
       sourceFingerprint = fingerprint
+      if (!inspection.value) {
+        if (nextFile) firmware.value = nextFile
+        scheduleAutoInspection()
+      }
     } else if (fingerprint !== sourceFingerprint) {
       sourceFingerprint = fingerprint
       if (nextFile) firmware.value = nextFile
@@ -621,7 +632,10 @@ async function pollFirmwareSource(initial = false): Promise<void> {
       scheduleAutoInspection()
     }
   } catch (error) {
-    if (initial) inspectError.value = tr(`固件路径不可用：${message(error)}`, `Firmware path is unavailable: ${message(error)}`)
+    if (path !== firmwarePath.value || handle !== firmwareHandle || disposed) return
+    sourceFingerprint = ''
+    resetInspection()
+    inspectError.value = tr(`固件路径不可用：${message(error)}`, `Firmware path is unavailable: ${message(error)}`)
   }
 }
 
@@ -873,7 +887,7 @@ onBeforeUnmount(() => {
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :board="hpmBoard || undefined" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
-      <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
+      <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @source-path="setFirmwarePath" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
     <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>

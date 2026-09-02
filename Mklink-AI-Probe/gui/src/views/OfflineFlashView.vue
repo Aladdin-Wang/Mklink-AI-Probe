@@ -382,7 +382,7 @@ async function pollFirmwareSources(): Promise<void> {
     if (!item.source_path) continue
     try {
       const status = await online.getImageSourceStatus(item.source_path)
-      const stamp = `${status.size}:${status.mtime_ns}`
+      const stamp = `${status.size}:${status.mtime_ns}:${status.sha256 ?? ''}`
       if (item.source_stamp && stamp !== item.source_stamp) {
         preview.value = null
         deployedScriptName.value = ''

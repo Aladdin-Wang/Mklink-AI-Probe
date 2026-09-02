@@ -992,6 +992,66 @@ def create_app(
         if callable(detach_terminal):
             detach_terminal(rtt_terminal_hub)
 
+
+    from mklink.source_monitor import SourceMonitor
+    source_monitor = SourceMonitor()
+    source_monitor_task = None
+    _state["file_source_change"] = None
+
+    async def check_file_sources():
+        device = _state.get("device")
+        if device is None or not device.connected:
+            return
+        if source_monitor.device is not device:
+            _state["file_source_change"] = None
+        project = load_project_info(_state["project_root"]) or {}
+        changed = await run_in_threadpool(source_monitor.changed, device, project)
+        if not changed or device is not _state.get("device"):
+            return
+        event = {"sequence": time.time_ns(), "files": [Path(path).name for path in changed]}
+        _state["file_source_change"] = event
+        try:
+            async with _exclusive_probe_control("reload-file-sources") as (active, stopped):
+                if active is not device:
+                    return
+                event["stopped"] = stopped
+                if getattr(device, "_axf", None):
+                    await _reparse_active_symbols()
+                from mklink.project_config import ensure_rtt_config_updated
+                rtt = await run_in_threadpool(
+                    ensure_rtt_config_updated, _state["project_root"],
+                    source_path=getattr(device, "_axf", None),
+                )
+                event["rtt_addr"] = (rtt or {}).get("rtt_addr")
+                event["message"] = "AXF/MAP 内容已变化并重载；采集已停止，请确认目标固件后重新启动"
+        except Exception as error:
+            event["error"] = str(error)
+            logger.warning("File source reload failed: %s", error)
+
+    app.state.check_file_sources = check_file_sources
+
+    async def monitor_file_sources():
+        while True:
+            await asyncio.sleep(1)
+            try:
+                await check_file_sources()
+            except Exception:
+                logger.exception("File source monitor failed")
+
+    async def startup_file_sources():
+        nonlocal source_monitor_task
+        source_monitor_task = asyncio.create_task(monitor_file_sources())
+
+    async def shutdown_file_sources():
+        if source_monitor_task is not None:
+            source_monitor_task.cancel()
+            try:
+                await source_monitor_task
+            except asyncio.CancelledError:
+                pass
+
+    app.add_event_handler("startup", startup_file_sources)
+    app.add_event_handler("shutdown", shutdown_file_sources)
     app.add_event_handler("shutdown", shutdown_stream_producers)
 
     async def shutdown_device_and_resources() -> None:
@@ -1317,11 +1377,7 @@ def create_app(
 
     @app.post("/api/project-init")
     async def project_init():
-        """Auto-detect and parse Keil/IAR project, match MCU, save config.
-
-        Scans the project root for .uvprojx or .ewp files, parses project
-        info, matches MCU profile, and saves config + project_info + rtt_config.
-        """
+        """Parse a supported project offline, preserving existing advanced settings."""
         import io
         import contextlib
         from mklink.cli import _cli_project_init
@@ -1340,22 +1396,7 @@ def create_app(
             project_info = load_project_info(project_root) or {}
             config_status = check_project_config(project_root)
 
-            # 探针固件版本检查（异步执行，避免阻塞事件循环）
-            firmware_check_result: dict = {"status": "skipped"}
-            try:
-                from mklink import firmware_check as _fc
-                port = None
-                # Prefer the device's port if currently connected
-                dev = _state.get("device")
-                if dev is not None and getattr(dev, "port", None):
-                    port = dev.port
-                root = _fc._resolve_firmware_root()
-                check = await loop.run_in_executor(
-                    None, _fc.check_probe_firmware, port, root
-                )
-                firmware_check_result = check.to_dict()
-            except Exception as e:
-                firmware_check_result = {"status": "skipped", "error": str(e)}
+            firmware_check_result = {"status": "skipped", "reason": "offline-project-init"}
 
             return {
                 "success": True,
@@ -1789,12 +1830,12 @@ def create_app(
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        async with async_target_debug_lease(_state, "flash"):
+        async with _exclusive_probe_control("flash") as (device, _stopped):
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
-                    lambda: _state["device"].flash(
+                    lambda: device.flash(
                         firmware, verify=verify, reset_after=reset_after
                     ),
                 )
@@ -2038,6 +2079,7 @@ def create_app(
                 search_size,
                 mode,
                 _state["project_root"],
+                source_path=getattr(_state["device"], "_axf", None),
             )
             validate_request = getattr(
                 _state["device"], "validate_rtt_stream_request", None,
@@ -2121,7 +2163,7 @@ def create_app(
     @app.get("/api/dash/rtt/status")
     async def rtt_status():
         managers = get_managers()
-        return managers["rtt"].get_status()
+        return {**managers["rtt"].get_status(), "file_source_change": _state["file_source_change"]}
 
     @app.get("/api/dash/rtt/history")
     async def rtt_history():
@@ -2169,6 +2211,7 @@ def create_app(
                 search_size,
                 mode,
                 _state["project_root"],
+                source_path=getattr(_state["device"], "_axf", None),
             )
             validate_request = getattr(
                 _state["device"], "validate_rtt_stream_request", None,

@@ -270,34 +270,39 @@ def save_rtt_config(project_root: str, rtt_config: dict) -> None:
     _save_json(project_root, _RTT_CONFIG_FILE, rtt_config)
 
 
-def ensure_rtt_config_updated(project_root: str) -> dict | None:
-    """每次启动 RTT 前调用。以 MAP 文件中的地址为准，若与 config 不同则更新。
+def ensure_rtt_config_updated(project_root: str, *, source_path: str | None = None) -> dict | None:
+    """启动 RTT 前解析当前 AXF/ELF，缺失时回退 MAP，避免沿用旧地址。
 
     Returns:
         更新后的 rtt_config dict，或 None（无法更新）
     """
     from mklink.rtt_addr import find_rtt_addr_from_map
 
-    rtt = load_rtt_config(project_root)
-    if rtt is None:
-        return None
+    rtt = load_rtt_config(project_root) or {}
 
-    project = load_project_info(project_root)
-    if project is None:
+    project = load_project_info(project_root) or {}
+    if not project and not source_path:
         return rtt
 
+    new_addr = None
+    explicit_source = source_path is not None
+    source_path = source_path or project.get("axf_path") or project.get("elf_path") or project.get("out_path")
+    if explicit_source and not Path(source_path).is_file():
+        raise FileNotFoundError(f"RTT symbol source is unavailable: {source_path}")
+    if source_path and Path(source_path).is_file():
+        from mklink.rtt_addr import diagnose_rtt_addr
+        new_addr = diagnose_rtt_addr(source_path).addr
     map_path = project.get("map_path", "")
-    if not map_path or not Path(map_path).exists():
-        return rtt
-
-    # 每次都从 map 文件解析最新地址（正则匹配文本文件，速度很快）
-    new_addr = find_rtt_addr_from_map(map_path)
+    if not new_addr and not explicit_source and map_path and Path(map_path).is_file():
+        new_addr = find_rtt_addr_from_map(map_path)
     if not new_addr:
+        if explicit_source and rtt.pop("rtt_addr", None) is not None:
+            save_rtt_config(project_root, rtt)
         return rtt
 
     old_addr = rtt.get("rtt_addr", "")
     if new_addr != old_addr:
-        print(f"[AUTO] RTT 地址已更新: {old_addr or '(空)'} → {new_addr}（来源: MAP 文件）")
+        print(f"[AUTO] RTT 地址已更新: {old_addr or '(空)'} → {new_addr}（来源: 当前 AXF/MAP）")
         rtt["rtt_addr"] = new_addr
         save_rtt_config(project_root, rtt)
 

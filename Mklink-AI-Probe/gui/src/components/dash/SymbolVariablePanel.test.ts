@@ -4,6 +4,8 @@ import { nextTick, ref, shallowRef } from 'vue'
 
 const mocks = vi.hoisted(() => ({
   ensureLoaded: vi.fn(),
+  refreshStatus: vi.fn(),
+  generation: null as any,
   reparse: vi.fn(),
   applyCLayout: vi.fn(),
   writeSymbol: vi.fn(),
@@ -77,7 +79,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
   useSymbolCatalog: () => ({
     items: mocks.items ??= shallowRef(catalogItems),
     containers: mocks.containers ??= shallowRef(catalogContainers),
-    generation: ref(1),
+    generation: mocks.generation ??= ref(1),
     stale: mocks.stale,
     truncatedRoots: shallowRef(['controller']),
     browseRoots: mocks.browseRoots ??= shallowRef(defaultBrowseRoots),
@@ -88,6 +90,7 @@ vi.mock('../../composables/useSymbolCatalog', () => ({
     applyingLayout: mocks.applyingLayout,
     error: mocks.error,
     ensureLoaded: mocks.ensureLoaded,
+    refreshStatus: mocks.refreshStatus,
     reparse: mocks.reparse,
     applyCLayout: mocks.applyCLayout,
     writeSymbol: mocks.writeSymbol,
@@ -112,6 +115,8 @@ function okJson(body: unknown): Response {
 describe('SymbolVariablePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.generation ??= ref(1)
+    mocks.generation.value = 1
     mocks.stale.value = false
     mocks.items ??= shallowRef(catalogItems)
     mocks.items.value = catalogItems
@@ -159,6 +164,28 @@ describe('SymbolVariablePanel', () => {
 
     await wrapper.get('[data-testid="branch-controller"]').trigger('click')
     expect(wrapper.get('[data-testid="leaf-controller.target"]').exists()).toBe(true)
+  })
+
+  it('refreshes an automatically replaced symbol generation and stops polling on unmount', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(SymbolVariablePanel, {
+      props: { deviceConnected: true, latestValues: {} },
+    })
+    try {
+      await flushPromises()
+      mocks.refreshStatus.mockImplementationOnce(async () => { mocks.generation.value = 2 })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.refreshStatus).toHaveBeenCalledOnce()
+      expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).toContain('符号已重载，采集已停止')
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(mocks.refreshStatus).toHaveBeenCalledOnce()
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('adds and removes a selected variable through the SuperWatch API', async () => {

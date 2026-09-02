@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-03T00:20:00+08:00`
+- 更新时间：`2026-09-03T01:25:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：处理 Mac/Parallels 使用报告：离线精简 project-init、Keil 跨平台路径/命名空间、Mac/Linux MICROKEEN 挂载发现与串口配置。继续处理固件/符号内容变化失效、烧录完成证据与 STM32F103 真机回归。
+- 当前任务：完成 Mac/Linux 初始化与文件内容重载修复、STM32F103RE 编译/下载和 WebGUI 回归；AXF/MAP 变化停止采集并更新符号/RTT，HEX/BIN 自动重新检查。未重打安装包。新发现在线烧录断开后 DWT Trace 关闭及本轮 UART 零接收，需后续核实。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -23,21 +23,21 @@
 
 ## 验证证据
 
-- **Mac/Linux 初始化兼容**：26 项定向测试通过：离线初始化不探测硬件/复制算法；保留已有配置；Windows 相对路径在 POSIX 解析、命名空间和 FileOption 隔离；Mac/Linux 挂载目录与端口格式。尚无 Mac/Linux 真机环境，不将 Windows fixture 结果视作现场验证。
+- **Mac/Linux 与内容重载**：离线初始化、跨平台路径/挂载、SHA-256 复制与缓存失效、完成响应判定已修复。STM32F103RE 实测重新编译令 RTT/变量地址各移动 64B，自动停止 SuperWatch、重载 AXF/MAP 与 HEX；CLI 原生校验和 GUI 在线烧录闭环通过，最终标记 2026090302。SuperWatch 9953 样本约 997Hz，零读错/丢样本/CRC 错误。串口打开但 RX=0；RTOS Trace 断开后时基停滞，MCU 复位恢复，尚未修复生命周期。无 Mac/Linux 真机；报告首次假烧录/进程退出未复现。详见 docs/verification/v0.2.0-macos-file-reload-hil.md。
 - **0.2.0 本地候选**：源码提交 24674d9 生成标准 NSIS 91526207B（SHA-256 885309A725DC966155EB5598B623C0CCA79C02D90F425A532E8EDC4E366F7796；签名 SHA-256 139E84C13023B20DC2242F6A3018A5FEEA519B136516DDF1A57DAC50EA4F0087），含 7059 个目标和 2224 个去重 FLM。已覆盖安装到 D:\Program Files\Mklink AI Probe；干净 PATH 启动、后端健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放 8765 端口均通过，尚未授权正式发布。
 - **常用型号内置算法**：维护仓库本地资产包含 7059 个目标和 2224 个按内容去重的 FLM；每个目标均有主编程算法，所有 blob 均被引用并通过大小与 SHA-256 校验。桌面 sidecar 和普通用户 Skill ZIP 共用同一份资产，正式构建缺失、不完整或损坏时直接失败。
 - **器件自动联想性能**：目录合并和搜索文本改为按索引/安装状态快照缓存，普通联想只对实际返回窗口解析通用型号别名；前端防抖由 300ms 缩短到 150ms、候选窗口由 100 缩至 40。真实 15422 型号目录预热后 STM32 查询约 11.7ms，STM32G474RET6 精确查询约 9.2ms，宽泛查询约 12–47ms；首次载入内置资产约 1.9s。
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **MCU 安全真机 HIL**：STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。
-- **自动化与构建**：GUI 全量 638 项、PY32/内置算法/安全/API 定向 Python 228 项通过，标准生产构建成功；Python 全量 1732 项通过，另 12 项仅因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314。断电复位界面显示 1.8V/3.3V/5V 且默认 3.3V；STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 已实际完成 3.3V 断电复位安全闭环。
+- **自动化与构建**：本轮 Python 全量 1767 项通过，12 项因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314；相关链接临时目录安全保留，不强删或伪装跳过。在线后端/任务定向 167 项、探针/API 流启动 105 项、GUI 全量 642 项通过。历史各白名单芯片的 3.3V 安全闭环证据仍有效，本轮未执行保护或 VCC 操作。
 
 ## 架构决策
 
 - 预发布分支持续维护，每个问题独立提交并及时推送；不再创建临时修复分支。
 - 0.2.0 常用型号算法以维护仓库内被 Git 忽略的本地目录作为唯一打包源；桌面 sidecar、WebGUI 和普通用户 Skill ZIP 共用该资产。精确订货型号通过 x/* 占位符和短后缀解析，只取最具体且 RAM、算法与几何一致的候选，否则拒绝猜测。
 - 不规范本地 Pack 只修正送入严格索引器的临时 PDSC 副本；原归档继续按哈希和安全路径管理，并由 pyOCD 从原归档发现、提取 FLM。
-- 高频终端输出在 animation frame 边界合并，并等待 xterm 写回调后再提交下一批；日志只对可见虚拟行生成文本/HEX，记录路径与显示格式解耦。
+- 高频终端按帧合并并等待 xterm 写回调；日志只渲染可见虚拟行，记录原始数据。固件/AXF 缓存以内容哈希失效，不信任同大小/mtime；源变化停止依赖采集并重载，不自动烧录或重启采集。普通浏览器上传只是快照，可用后端文件路径持续跟踪。
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
 - 普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。
 - SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。
@@ -54,7 +54,7 @@
 ## 下一动作
 
 1. 若 V4.3.9 现场再次出现 RTT 周期性停顿，先同步记录 SWD 失败、DapBusy、USB 环形队列水位和主机到达间隔，区分 200ms 固件退避与界面渲染背压。
-2. HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。
+2. 补 Mac/Linux 实机共享目录与 USB 测试，并补 UART 真正收数；修复 pyOCD 在线烧录断开清除 DEMCR 导致 SystemView 时基停止的问题，保留用户调试状态且不能用盲写全局寄存器替代生命周期验证。
 3. 后续 STM32 安全支持按保护架构挑选代表板验证，不逐一验证同架构的每个完整订货号；运行时继续校验芯片 ID、容量与固定算法。
 4. 后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。
 5. 长期累积加锁/解锁支持：有可用板卡时按保护架构扩展，维护 CLI/MCP/WebGUI 共用白名单和恢复验证证据；不设无人值守硬件任务。

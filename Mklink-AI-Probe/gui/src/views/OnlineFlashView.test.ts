@@ -1298,10 +1298,14 @@ describe('online flash task workspace behavior', () => {
     const fetchMock = viewFetch()
     vi.stubGlobal('fetch', fetchMock)
     let currentFile = new File(['old'], 'firmware.hex', { lastModified: 100 })
+    let unavailable = false
     const handle = {
       kind: 'file' as const,
       name: currentFile.name,
-      getFile: vi.fn(async () => currentFile),
+      getFile: vi.fn(async () => {
+        if (unavailable) throw new Error('source temporarily unavailable')
+        return currentFile
+      }),
     }
     vi.stubGlobal('showOpenFilePicker', vi.fn(async () => [handle]))
     const wrapper = mount(await onlineFlashView())
@@ -1310,15 +1314,21 @@ describe('online flash task workspace behavior', () => {
 
     await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
     await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(1))
-    currentFile = new File(['rebuilt-firmware'], 'firmware.hex', { lastModified: 200 })
+    currentFile = new File(['new'], 'firmware.hex', { lastModified: 100 })
 
     await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(2), { timeout: 3000 })
     const inspectCalls = fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))
     const firstFile = (inspectCalls[0][1]?.body as FormData).get('file') as File
     const rebuiltFile = (inspectCalls[1][1]?.body as FormData).get('file') as File
     expect(firstFile.size).toBe(3)
-    expect(rebuiltFile.size).toBe(16)
+    expect(rebuiltFile.size).toBe(3)
+    expect(await rebuiltFile.text()).toBe('new')
     expect(wrapper.text()).toContain('已自动加载重新编译的 firmware.hex')
+    unavailable = true
+    await vi.waitFor(() => expect(wrapper.text()).toContain('固件路径不可用'), { timeout: 3000 })
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    unavailable = false
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/images/inspect'))).toHaveLength(3), { timeout: 3000 })
     wrapper.unmount()
   })
 
@@ -2140,6 +2150,19 @@ describe('online flash component quality', () => {
     })
 
     expect(wrapper.emitted('dropFiles')?.[0]).toEqual([[file]])
+  })
+
+  it('allows tracking a firmware path on the backend computer without browser file permissions', async () => {
+    const wrapper = mount(FirmwareWorkspace, { props: {
+      file: null, sourcePath: '', baseAddress: '', baseError: '', inspection: null, rows: [],
+      paddingTop: 0, paddingBottom: 0, loading: false, error: '',
+    } })
+    await wrapper.findAll('button').find(button => button.text() === '文件路径')!.trigger('click')
+    await wrapper.get('#firmware-source-path').setValue(' /Volumes/shared/build/app.hex ')
+    await wrapper.get('form.path-entry').trigger('submit')
+    expect(wrapper.emitted('sourcePath')).toEqual([['/Volumes/shared/build/app.hex']])
+    expect(wrapper.find('form.path-entry').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows read data in the HEX window and emits save and clear actions', async () => {

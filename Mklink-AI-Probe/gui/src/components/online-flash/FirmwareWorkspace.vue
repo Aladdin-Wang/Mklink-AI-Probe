@@ -8,8 +8,16 @@ import { tr } from '../../composables/useLanguage'
 import { supportsTrackedFirmwarePicker } from '../../lib/filePicker'
 
 const props = defineProps<{ file: File | null; sourcePath?: string; nativeDropActive?: boolean; baseAddress: string; baseError: string; inspection: ImageInspection | null; rows: FormattedHexRow[]; paddingTop: number; paddingBottom: number; loading: boolean; error: string; memoryData?: Uint8Array | null; memoryAddress?: number; readDisabled?: boolean; readBusy?: boolean }>()
-const emit = defineEmits<{ file: [file: File | null]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number]; read: []; save: []; clearData: [] }>()
+const emit = defineEmits<{ file: [file: File | null]; sourcePath: [path: string]; browse: []; dropFiles: [files: File[]]; base: [value: string]; scroll: [top: number, height: number]; read: []; save: []; clearData: [] }>()
 const sourceName = computed(() => props.file?.name || props.sourcePath?.split(/[\\/]/).pop() || '')
+const pathEntryOpen = ref(false)
+const pathEntry = ref('')
+function loadPath() {
+  const path = pathEntry.value.trim()
+  if (!path) return
+  emit('sourcePath', path)
+  pathEntryOpen.value = false
+}
 const isBin = computed(() => sourceName.value.toLowerCase().endsWith('.bin'))
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
@@ -66,6 +74,7 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
     <button v-if="nativeApp || trackedBrowserPicker" data-testid="firmware-trigger" class="file-button" type="button" @click="emit('browse')">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}</button>
     <label v-else data-testid="firmware-trigger" class="file-button" role="button" tabindex="0" @keydown.enter.prevent="openFile" @keydown.space.prevent="openFile">{{ tr('选择 BIN / HEX', 'Select BIN / HEX') }}<input ref="fileInput" class="visually-hidden" data-testid="firmware-input" type="file" accept=".bin,.hex" @change="fileChanged"></label>
     <span class="filename">{{ sourceName || tr('拖拽 BIN / HEX 到此处，或选择固件', 'Drop BIN / HEX here, or select firmware') }}</span>
+    <button class="file-button" type="button" @click="pathEntry = sourcePath || ''; pathEntryOpen = !pathEntryOpen">{{ tr('文件路径', 'File Path') }}</button>
     <label v-if="isBin" class="base-field">{{ tr('基地址', 'Base Address') }}<input data-testid="bin-base" :value="baseAddress" :placeholder="tr('如 0x08000000', 'e.g. 0x08000000')" @input="emit('base', ($event.target as HTMLInputElement).value)"></label>
     <span v-if="loading" class="inspection-status">{{ tr('自动检查中…', 'Inspecting…') }}</span>
     <span v-else-if="inspection" class="inspection-status inspection-ok">{{ tr('已自动检查', 'Inspected') }}</span>
@@ -75,6 +84,11 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
       <button data-testid="memory-read-clear" class="file-action" type="button" :disabled="(!memoryData && !file && !sourcePath) || readBusy" :title="tr('清空当前数据', 'Clear current data')" @click="emit('clearData')"><Trash2 :size="14" aria-hidden="true" />{{ tr('清空窗口', 'Clear Window') }}</button>
     </div>
   </div>
+  <form v-if="pathEntryOpen" class="path-entry" @submit.prevent="loadPath">
+    <label for="firmware-source-path">{{ tr('后端电脑上的 HEX / BIN 路径', 'HEX / BIN path on the backend computer') }}</label>
+    <input id="firmware-source-path" v-model="pathEntry" autocomplete="off" placeholder="/path/to/firmware.hex">
+    <button class="file-button" type="submit" :disabled="!pathEntry.trim()">{{ tr('加载并跟踪', 'Load and Track') }}</button>
+  </form>
   <p v-if="baseError" data-testid="base-error" class="error">{{ baseError }}</p><p v-if="error" class="error">{{ error }}</p>
   <div v-if="memoryData && memoryAddress !== undefined" class="metadata"><span>BIN</span><span>{{ memoryData.length }} bytes</span><span>{{ address(memoryAddress) }} — {{ address(memoryAddress + memoryData.length) }}</span><span>{{ tr('读取数据', 'Read data') }}</span></div>
   <div v-else-if="inspection" class="metadata"><span>{{ inspection.format.toUpperCase() }}</span><span>{{ inspection.size }} bytes</span><span>{{ address(inspection.start) }} — {{ address(inspection.end) }}</span><span>SHA-256 {{ inspection.sha256.slice(0, 12) }}…</span></div>
@@ -89,5 +103,6 @@ function address(value: number) { return `0x${value.toString(16).toUpperCase().p
 </template>
 
 <style scoped>
+.path-entry{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--of-border);font-size:11px;color:var(--of-muted)}.path-entry input{flex:1;min-width:80px;padding:6px;border:1px solid var(--of-border);border-radius:4px;background:var(--of-input);color:var(--of-text)}
 .firmware-workspace{position:relative;min-height:0;height:100%;display:flex;flex-direction:column;outline:2px solid transparent;outline-offset:-2px}.firmware-workspace.dragging{outline-color:var(--of-accent);background:color-mix(in srgb,var(--of-accent) 8%,transparent)}.firmware-toolbar{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--of-border)}.file-button{padding:7px 10px;border:1px solid var(--of-border);border-radius:5px;background:var(--of-input);color:var(--of-text);font-size:11px;cursor:pointer}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.file-button:focus-visible{outline:2px solid var(--of-accent);outline-offset:2px}.filename{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--of-muted);font-size:11px}.inspection-status{margin-left:auto;color:var(--of-warn);font-size:10px;white-space:nowrap}.inspection-ok{color:var(--of-ok)}.base-field{margin-left:auto;display:flex;flex:0 0 auto;align-items:center;gap:5px;color:var(--of-muted);font-size:10px;white-space:nowrap}.base-field+.inspection-status{margin-left:0}.base-field input{flex:0 0 92px;width:92px;min-width:92px;padding:6px;border:1px solid var(--of-border);border-radius:4px;background:var(--of-input);color:var(--of-text);font-family:var(--of-mono)}.file-actions{display:flex;flex:0 0 auto;gap:6px;margin-left:auto}.file-action{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:6px 9px;border:1px solid var(--of-border);border-radius:5px;background:var(--of-input);color:var(--of-text);font-size:11px;white-space:nowrap}.file-action:disabled{cursor:not-allowed;opacity:.45}.error{margin:5px 10px;color:var(--of-danger);font-size:11px}.metadata{display:flex;gap:14px;padding:7px 10px;border-bottom:1px solid var(--of-border);color:var(--of-muted);font-size:10px}.hex-head,.hex-row{display:grid;grid-template-columns:78px minmax(430px,1fr) 136px;align-items:center;white-space:pre}.hex-head{padding:6px 10px;background:#191e24;color:var(--of-muted);font:10px var(--of-mono)}.hex-scroll{min-height:0;height:auto;flex:1;overflow:auto;text-align:left;background:#111419;font:11px/20px var(--of-mono)}.hex-row{height:20px;padding:0 10px;color:#c9d1d9}.cells{display:grid;grid-template-columns:repeat(16,2ch);column-gap:1ch}.cells i{font-style:normal;color:#d8dee9}.cells i.gap{color:#59616c}.empty{padding:50px 20px;text-align:center;color:var(--of-muted)}
 </style>

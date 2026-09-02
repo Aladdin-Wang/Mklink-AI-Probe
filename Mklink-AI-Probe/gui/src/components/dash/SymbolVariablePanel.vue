@@ -69,6 +69,7 @@
     </div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
+    <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载，采集已停止。确认目标已下载对应固件后再启动。', 'Symbols reloaded and acquisition stopped. Confirm matching firmware on the target before restarting.') }}</div>
     <SetupHint
       v-if="!deviceConnected"
       kind="device"
@@ -348,7 +349,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Activity, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Plus, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
@@ -390,6 +391,7 @@ const {
   parseSelectedSymbols,
 } = useDashboardSetup()
 const query = ref('')
+const sourceReloaded = ref(false)
 const manualAddOpen = ref(false)
 const manualPath = ref('')
 const manualAdding = ref(false)
@@ -729,7 +731,42 @@ function formatValue(value: number | boolean | undefined): string {
   return String(value)
 }
 
-onMounted(loadWorkspace)
+let statusTimer: ReturnType<typeof setInterval> | undefined
+let statusBusy = false
+let disposed = false
+async function refreshSourceStatus(): Promise<void> {
+  if (disposed || statusBusy || !props.deviceConnected || !props.symbolLoaded) return
+  statusBusy = true
+  try {
+    const previousGeneration = catalog.generation.value
+    await catalog.refreshStatus()
+    if (disposed) return
+    if (catalog.generation.value !== previousGeneration) {
+      sourceReloaded.value = true
+      editing.value = null
+      for (const path of Object.keys(writeSuccess)) delete writeSuccess[path]
+      await loadWorkspace()
+      const search = query.value.trim()
+      if (search) {
+        const requestId = ++searchRequest
+        const items = await catalog.searchSymbols(search)
+        if (!disposed && requestId === searchRequest) searchItems.value = items
+      }
+    }
+  } catch {
+    // Connection and parse errors are already surfaced by the dashboard.
+  } finally {
+    statusBusy = false
+  }
+}
+onMounted(() => {
+  void loadWorkspace()
+  statusTimer = setInterval(() => { void refreshSourceStatus() }, 2000)
+})
+onUnmounted(() => {
+  disposed = true
+  clearInterval(statusTimer)
+})
 watch(() => props.deviceConnected, connected => {
   if (connected && props.symbolLoaded) void loadWorkspace()
 })

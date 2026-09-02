@@ -2269,6 +2269,15 @@ describe('VOFA viewer hot path source guard', () => {
         historyOwner: 'worker', workerCapacity: 50_000, workerBufferedSamples: 1_024,
         mainRingCapacity: 2, mainRingMaxCount: 1, detailEnabled: false,
       })
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 800, channelCount: 2, pointCount: 4,
+        candidateSampleCount: 1_024, times: Float64Array.of(1_000, 2_000).buffer,
+        timeIndices: Uint32Array.of(0, 1, 0, 1).buffer,
+        values: Float32Array.of(1, 2, 10, 20).buffer,
+        channelOffsets: Uint32Array.of(0, 2, 4).buffer,
+      })
+      expect(document.getElementById('pts-count')!.textContent).toBe('1024 pts')
     } finally {
       runtime.cleanup()
     }

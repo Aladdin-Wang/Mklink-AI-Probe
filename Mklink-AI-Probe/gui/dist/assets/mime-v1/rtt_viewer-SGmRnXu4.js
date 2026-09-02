@@ -4732,7 +4732,10 @@ function drawMinimap() {
 function updateUI() {
   var total = 0, count = 0;
   for (var k in FIELDS) { total += FIELDS[k].ringBuf.count; count++; }
-  document.getElementById('pts-count').textContent = (count ? Math.floor(total/count) : 0) + ' pts';
+  // SuperWatch keeps history in the Worker and only one latest row on the UI thread.
+  var points = IS_SUPERWATCH_MODE && binaryLastSequence !== null
+    ? binaryBufferedSamples : (count ? Math.floor(total/count) : 0);
+  document.getElementById('pts-count').textContent = points + ' pts';
 
   var sel = document.getElementById('var-selector');
   var existing = {};

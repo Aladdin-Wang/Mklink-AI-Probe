@@ -1207,6 +1207,7 @@ def test_async_dashboard_initialization_failure_releases_leases(
     device = MagicMock()
     device.connected = True
     device._systemview_defaults.return_value = {}
+    device._axf = None
     getattr(device, start_method).side_effect = RuntimeError("async init failed")
     state["device"] = device
 

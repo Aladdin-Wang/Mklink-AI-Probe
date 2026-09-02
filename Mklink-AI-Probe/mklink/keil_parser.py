@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from mklink.file_content import is_metadata_file
 
 
 def _fmt_hex(hex_str: str) -> str:
@@ -43,22 +44,32 @@ def find_uvprojx(project_root: str) -> str | None:
     if root.is_absolute() and root.is_dir():
         # 直接搜索该目录下的 .uvprojx 文件
         for f in sorted(root.glob("*.uvprojx")):
+            if is_metadata_file(f):
+                continue
             return str(f)
         # 搜索 MDK-ARM/ 子目录
         for f in sorted(root.glob("MDK-ARM/*.uvprojx")):
+            if is_metadata_file(f):
+                continue
             return str(f)
         return None
 
     # 相对路径：优先搜索 MDK-ARM/ 子目录
     for f in sorted(root.glob("MDK-ARM/*.uvprojx")):
+        if is_metadata_file(f):
+            continue
         return str(f)
 
     # 项目根目录
     for f in sorted(root.glob("*.uvprojx")):
+        if is_metadata_file(f):
+            continue
         return str(f)
 
     # 一级子目录
     for f in sorted(root.glob("*/*.uvprojx")):
+        if is_metadata_file(f):
+            continue
         return str(f)
 
     return None

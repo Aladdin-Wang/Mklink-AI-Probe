@@ -292,9 +292,9 @@ def _cli_project_init(project_root: str):
     # Keep only inputs needed by build/download/symbol tools. Do not infer a
     # profile key from a shared SW-DP ID, scan serial ports or copy an FLM here.
     fields = {
-        "ide_type", "device", "vendor", "target_name", "compiler",
+        "ide_type", "device", "vendor", "target_name", "config_name", "compiler",
         "uvprojx_path", "ewp_path", "hex_path", "bin_path", "map_path",
-        "axf_path", "elf_path", "flash_base", "flash_size", "ram_base",
+        "axf_path", "elf_path", "out_path", "flash_base", "flash_size", "ram_base",
         "ram_size", "scatter_file", "bin_base", "download_base", "board",
         "hpm_flash_cfg",
     }

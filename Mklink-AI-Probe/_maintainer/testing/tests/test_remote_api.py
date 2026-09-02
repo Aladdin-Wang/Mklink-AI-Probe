@@ -23,6 +23,41 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
+    device, _ = _connected_symbol_device(tmp_path)
+    device.flash = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("verify failed"))
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state["device"] = device
+    with patch("mklink.remote.dashboards.stop_bridge_dashboards", return_value=[]), TestClient(app) as client:
+        result = client.post("/api/device/flash", json={"firmware": "test.hex"})
+        assert result.status_code == 500
+        assert result.json()["detail"] == "verify failed"
+        assert client.get("/api/health").status_code == 200
+        assert app.state.mklink_state["resource_manager"].get_status() == {}
+
+
+def test_source_reload_stops_dependents_before_parsing(tmp_path):
+    import os
+    from mklink.remote.dashboards import get_managers
+    device, axf = _connected_symbol_device(tmp_path)
+    device._axf = str(axf)
+    order = []
+    def parse(*args, **kwargs):
+        order.append("parse")
+        return {"loaded": True, "axf_path": str(axf)}
+    device.parse_axf = parse
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state["device"] = device
+    stat = axf.stat()
+    axf.write_bytes(b"new")
+    os.utime(axf, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    with patch("mklink.remote.dashboards.stop_bridge_dashboards", side_effect=lambda **kw: order.append("stop") or ["rtt"]), patch.object(get_managers()["superwatch"], "_runtime", None), patch("mklink.project_config.ensure_rtt_config_updated", return_value={"rtt_addr": "0x20000020"}):
+        asyncio.run(app.state.check_file_sources())
+        asyncio.run(app.state.check_file_sources())
+    assert order == ["stop", "parse"]
+    assert app.state.mklink_state["file_source_change"]["rtt_addr"] == "0x20000020"
+
+
 def _request(client, path, responses, key):
     try:
         responses[key] = client.get(path)
