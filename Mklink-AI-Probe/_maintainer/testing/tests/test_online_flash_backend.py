@@ -1383,6 +1383,8 @@ def test_unknown_target_with_builtin_flm_uses_generic_target_and_catalog_ram(
     assert observed["payloads"] == (b"flm",)
     assert observed["ram"] == (0x20000000, 0x10000)
     assert observed["regions"] == ()
+    assert backend._algorithm_reset_required is True
+    assert session.target.reset_and_halt_calls == 0
     backend.disconnect()
 
 
@@ -1954,7 +1956,7 @@ def test_chip_and_sector_erase_use_exact_modes_and_sorted_unique_addresses() -> 
     backend.disconnect()
 
 
-def test_stm32l010_resets_and_halts_once_before_erase_and_program(
+def test_custom_flm_resets_and_halts_once_before_erase_and_program(
     tmp_path: Path,
 ) -> None:
     events = []
@@ -2041,7 +2043,8 @@ def test_program_bin_passes_base_and_hex_does_not(tmp_path: Path) -> None:
     calls = []
 
     class Programmer:
-        def __init__(self, session):
+        def __init__(self, session, *, chip_erase):
+            assert chip_erase == "sector"
             calls.append(("create", session))
 
         def program(self, path, **kwargs):
@@ -2071,7 +2074,8 @@ def test_program_forwards_pyocd_progress_callback(tmp_path: Path) -> None:
     reported = []
 
     class Programmer:
-        def __init__(self, _session, *, progress):
+        def __init__(self, _session, *, progress, chip_erase):
+            assert chip_erase == "sector"
             progress(0.5)
 
         def program(self, _path, **_kwargs):
@@ -2123,7 +2127,7 @@ def test_program_disables_memory_scans_for_custom_flm_regions(tmp_path: Path) ->
     ))
 
     assert calls == [
-        ("create", session, {"smart_flash": False, "keep_unwritten": False}),
+        ("create", session, {"chip_erase": "sector", "smart_flash": False, "keep_unwritten": False}),
         ("program", str(firmware), {}),
     ]
     backend.disconnect()
@@ -2134,7 +2138,7 @@ def test_program_maps_locked_error_and_closes_session(tmp_path: Path) -> None:
     firmware.write_bytes(b"x")
 
     class Programmer:
-        def __init__(self, session):
+        def __init__(self, session, **kwargs):
             pass
 
         def program(self, path, **kwargs):
@@ -2156,7 +2160,7 @@ def test_program_maps_file_disappearance_to_file_not_found(tmp_path: Path) -> No
     firmware.write_bytes(b"x")
 
     class VanishedProgrammer:
-        def __init__(self, session):
+        def __init__(self, session, **kwargs):
             pass
 
         def program(self, path, **kwargs):

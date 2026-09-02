@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import re
 import threading
 import time
@@ -1150,10 +1151,7 @@ class PyOcdBackend:
                     getattr(resolved_probe, "unique_id", None) or probe or ""
                 ).strip()
                 self._security_family = security_family or ""
-                self._algorithm_reset_required = bool(
-                    resolved_flms
-                    and str(target).casefold().startswith("stm32l010")
-                )
+                self._algorithm_reset_required = bool(resolved_flms)
                 self._algorithm_reset_done = False
                 self._connection_arguments = {
                     "probe": probe,
@@ -2286,7 +2284,9 @@ class PyOcdBackend:
                     else image.start
                 )
                 region = self._flash_region_for_address(session.target, image_start)
-                programmer_options: dict[str, Any] = {}
+                # A program request only authorizes image-covered sectors, never
+                # pyOCD's automatic cost-based escalation to chip erase.
+                programmer_options: dict[str, Any] = {"chip_erase": "sector"}
                 if progress_callback is not None:
                     programmer_options["progress"] = progress_callback
                 if str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
@@ -2307,10 +2307,16 @@ class PyOcdBackend:
                 ) from None
             except Exception as exc:
                 self._close_after_failure()
+                logging.getLogger(__name__).exception("Online firmware programming failed")
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
 
     def _prepare_algorithm_execution(self, target: Any) -> None:
-        """Put STM32L010 in a deterministic state before its first RAM FLM call."""
+        """Reset custom-FLM targets once, immediately before destructive work.
+
+        Attaching to a running RTOS can retain exception/stack/MPU state that
+        is unsuitable for a RAM algorithm. Connection and read-only operations
+        remain non-resetting; erase/program need a deterministic execution state.
+        """
 
         if not self._algorithm_reset_required or self._algorithm_reset_done:
             return
