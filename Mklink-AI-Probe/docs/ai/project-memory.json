@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-02T22:37:00+08:00",
+  "updated_at": "2026-09-02T22:48:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -16,7 +16,7 @@
   "current_session": {
     "status": "v0.2.0-development",
     "current_task": "在线烧录已完成 STM32 F1/F4/G4/H7/L0 与 GD32F303xE 代表芯片的可逆保护真机闭环；GD32F303CET6 已验证 CLI 加锁、MCP 解锁、3.3V 断电复位、整片擦除和 512KiB 固件完整恢复。精确型号读取自动使用通用内置算法，器件联想热查询降至约 9–47ms。",
-    "release": "已从源码提交 37b0fbb 生成上一版 0.2.0 本地 NSIS 与普通用户 Skill 候选；本轮 G4 安全支持、精确型号读取和联想性能修复尚未重新打包，正式发布、标签和更新索引尚未授权。"
+    "release": "已从源码提交 24674d9 重新生成 0.2.0 本地 NSIS 并覆盖安装；安装版健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放端口均通过。正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
     {
@@ -53,7 +53,7 @@
   "verification": [
     {
       "area": "0.2.0 本地候选",
-      "result": "源码提交 37b0fbb 生成标准 NSIS 91491384B（SHA-256 F7960F042AB572DBFF1B468FDD831F7851DAA1E6BFFAD6DFFB31F7A3A5EA1662；签名 SHA-256 A66A06596C2C1743AD47623756B31FF1F7B24008D2713E03C38E75D3C45A1EA5）和普通用户 Skill ZIP 19333084B（SHA-256 4BD390BE8E22B5D5A1440B2E397897601DB31941D8B1DB10B7A5629329EAAA74），均含 7059 个目标和 2224 个去重 FLM。先前候选已完成覆盖安装与下载器热插拔重连验证；本候选补入系列级型号解析、读取镜像回烧和 STM32F413/423 安全闭环，尚未授权正式发布。"
+      "result": "源码提交 24674d9 生成标准 NSIS 91526207B（SHA-256 885309A725DC966155EB5598B623C0CCA79C02D90F425A532E8EDC4E366F7796；签名 SHA-256 139E84C13023B20DC2242F6A3018A5FEEA519B136516DDF1A57DAC50EA4F0087），含 7059 个目标和 2224 个去重 FLM。已覆盖安装到 D:\\Program Files\\Mklink AI Probe；干净 PATH 启动、后端健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放 8765 端口均通过，尚未授权正式发布。"
     },
     {
       "area": "常用型号内置算法",
