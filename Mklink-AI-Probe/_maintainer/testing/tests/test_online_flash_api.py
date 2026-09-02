@@ -578,17 +578,24 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
     assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
 
 
-def test_stm32g474_security_job_requires_power_cycle_reset(
-    app, services, monkeypatch, tmp_path
+@pytest.mark.parametrize(
+    ("family", "option_address", "option_size"),
+    [
+        ("stm32g474-rdp1", 0x1FFF7800, 84),
+        ("stm32h743-rdp1", 0xFFFFFFFF, 36),
+    ],
+)
+def test_stm32_security_job_requires_power_cycle_reset(
+    app, services, monkeypatch, tmp_path, family, option_address, option_size
 ):
-    option_flm = tmp_path / "STM32G4xx_DB_OPT.FLM"
+    option_flm = tmp_path / "STM32_OPT.FLM"
     option_flm.write_bytes(b"flm")
     capability = type("Capability", (), {
-        "family": "stm32g474-rdp1",
+        "family": family,
         "algorithm_path": option_flm,
         "algorithm_sha256": "3" * 64,
-        "option_address": 0x1FFF7800,
-        "option_size": 84,
+        "option_address": option_address,
+        "option_size": option_size,
     })()
     monkeypatch.setattr(
         "mklink.cmsis_dap.security.require_security_capability",

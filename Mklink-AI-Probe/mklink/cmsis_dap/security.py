@@ -26,9 +26,15 @@ STM32G4_OPTION_SIZE = 84
 STM32G4_OPTION_FLM_SHA256 = (
     "3ec1306cc4e9f1714eee094a66669edb42a7d9df9300fa5af847df343017dac1"
 )
+STM32H7_OPTION_ADDRESS = 0xFFFFFFFF
+STM32H7_OPTION_SIZE = 36
+STM32H7_OPTION_FLM_SHA256 = (
+    "e591ef4d2a2bc0a724f801f585c6be42b0939df5518a776041a94d4faee5833f"
+)
 _STM32F103 = re.compile(r"^STM32F103(?:[CTRVZ][468BCDEFG]|X[468BCDEFG])$", re.IGNORECASE)
 _STM32F413 = re.compile(r"^STM32F413(?:X[GH]|[A-Z][GH][A-Z0-9X]{2})$", re.IGNORECASE)
 _STM32G474_512K = re.compile(r"^STM32G474(?:XE|[A-Z]E[A-Z0-9X]{2})$", re.IGNORECASE)
+_STM32H743_2M = re.compile(r"^STM32H743(?:XI|[A-Z]I[A-Z0-9X]{2})$", re.IGNORECASE)
 _GD32 = re.compile(r"^GD32", re.IGNORECASE)
 
 
@@ -81,6 +87,13 @@ def _stm32g474_bundle_part(part_number: str) -> Optional[str]:
     return "STM32G474xE"
 
 
+def _stm32h743_bundle_part(part_number: str) -> Optional[str]:
+    part = part_number.strip()
+    if _STM32H743_2M.fullmatch(part) is None:
+        return None
+    return "STM32H743xI"
+
+
 def security_capability(part_number: str) -> SecurityCapability:
     """Resolve only hardware-validated families and fail closed on asset mismatch."""
 
@@ -88,6 +101,29 @@ def security_capability(part_number: str) -> SecurityCapability:
     bundle_part = _stm32f103_bundle_part(part)
     f413_bundle_part = _stm32f413_bundle_part(part)
     g474_bundle_part = _stm32g474_bundle_part(part)
+    h743_bundle_part = _stm32h743_bundle_part(part)
+    if h743_bundle_part is not None:
+        try:
+            algorithm = discover_builtin_option_algorithm(h743_bundle_part)
+        except (OSError, TypeError, ValueError):
+            return SecurityCapability(part, False, reason="内置选项字节算法不可用或完整性校验失败")
+        if (
+            algorithm is None
+            or algorithm.file_name.casefold() != "stm32h7xx_opt.flm"
+            or algorithm.sha256 != STM32H7_OPTION_FLM_SHA256
+        ):
+            return SecurityCapability(part, False, reason="内置选项字节算法不匹配安全白名单")
+        return SecurityCapability(
+            part_number=part,
+            supported=True,
+            family="stm32h743-rdp1",
+            unlock_erases_flash=True,
+            reversible_lock=True,
+            option_address=STM32H7_OPTION_ADDRESS,
+            option_size=STM32H7_OPTION_SIZE,
+            algorithm_path=algorithm.path,
+            algorithm_sha256=algorithm.sha256,
+        )
     if g474_bundle_part is not None:
         try:
             algorithm = discover_builtin_option_algorithm(g474_bundle_part)

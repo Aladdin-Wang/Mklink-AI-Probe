@@ -1071,21 +1071,25 @@ def _start_job_with_configuration(
             security_flm_path = str(security.algorithm_path)
             security_flm_digest = security.algorithm_sha256
             security_flm_region = (security.option_address, security.option_size)
-            if security.family == "stm32g474-rdp1" and (
+            power_cycle_security = {
+                "stm32g474-rdp1",
+                "stm32h743-rdp1",
+            }
+            if security.family in power_cycle_security and (
                 body.reset_mode != "power-cycle" or "reset" not in body.actions
             ):
                 raise FlashError(
                     FlashErrorCode.SECURITY_NOT_SUPPORTED,
-                    "STM32G474 加锁/解锁必须选择断电复位并在操作后执行复位",
+                    "该 STM32 加锁/解锁必须选择断电复位并在操作后执行复位",
                 )
             if (
-                security.family == "stm32g474-rdp1"
+                security.family in power_cycle_security
                 and "unlock" in body.actions
                 and body.connect_mode != "under-reset"
             ):
                 raise FlashError(
                     FlashErrorCode.SECURITY_NOT_SUPPORTED,
-                    "STM32G474 解锁必须使用复位下连接，避免目标程序与选项字节操作并发",
+                    "该 STM32 解锁必须使用复位下连接，避免目标程序与选项字节操作并发",
                 )
         inspection = None
         if any(action in body.actions for action in ("program", "verify")):

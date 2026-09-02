@@ -8,6 +8,7 @@ from mklink.cmsis_dap.security import (
     STM32F1_OPTION_FLM_SHA256,
     STM32F4_OPTION_FLM_SHA256,
     STM32G4_OPTION_FLM_SHA256,
+    STM32H7_OPTION_FLM_SHA256,
     require_security_capability,
     security_capability,
 )
@@ -126,6 +127,50 @@ def test_stm32g474_fails_closed_when_option_algorithm_hash_changes(monkeypatch, 
     )
 
     capability = security_capability("STM32G474RETx")
+
+    assert capability.supported is False
+    assert "白名单" in capability.reason
+
+
+def test_stm32h743_2m_order_codes_use_only_pinned_option_algorithm(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32H743xI",
+        file_name="STM32H7xx_OPT.FLM",
+        path=tmp_path / "STM32H7xx_OPT.FLM",
+        sha256=STM32H7_OPTION_FLM_SHA256,
+        ram_start=0x24000000,
+        ram_size=0x80000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == "STM32H743xI" else None,
+    )
+
+    capability = security_capability("STM32H743IIT6")
+
+    assert capability.supported is True
+    assert capability.family == "stm32h743-rdp1"
+    assert capability.option_address == 0xFFFFFFFF
+    assert capability.option_size == 36
+    assert security_capability("STM32H743xI").supported is True
+    assert security_capability("STM32H743IGT6").supported is False
+
+
+def test_stm32h743_fails_closed_when_option_algorithm_hash_changes(monkeypatch, tmp_path):
+    algorithm = BuiltinOptionAlgorithm(
+        target_part="STM32H743xI",
+        file_name="STM32H7xx_OPT.FLM",
+        path=tmp_path / "STM32H7xx_OPT.FLM",
+        sha256="0" * 64,
+        ram_start=0x24000000,
+        ram_size=0x80000,
+    )
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda _part: algorithm,
+    )
+
+    capability = security_capability("STM32H743IIT6")
 
     assert capability.supported is False
     assert "白名单" in capability.reason

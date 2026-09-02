@@ -382,6 +382,93 @@ def test_stm32g474_option_programming_rejects_irreversible_rdp2() -> None:
         PyOcdBackend._program_stm32g474_option_registers(Target(), bytes(desired))
 
 
+def test_stm32h743_security_updates_mirrors_and_preserves_other_options() -> None:
+    class Target(FakeTarget):
+        def __init__(self):
+            super().__init__()
+            self.current = [0x0BC6AAF0, 0x0BC6AAF0]
+            self.programmed = list(self.current)
+            self.flash_control = [0x31, 0x31]
+            self.option_control = 1
+            self.writes = []
+
+        def read_memory_block8(self, address, size):
+            if address == 0x5C001000:
+                return (0x20036450).to_bytes(4, "little")[:size]
+            if address == 0x1FF1E880:
+                return (2048).to_bytes(2, "little")[:size]
+            if address == 0x52002018:
+                return self.option_control.to_bytes(4, "little")[:size]
+            if address in PyOcdBackend._STM32H743_OPTSR_CUR_REGISTERS:
+                index = PyOcdBackend._STM32H743_OPTSR_CUR_REGISTERS.index(address)
+                return self.current[index].to_bytes(4, "little")[:size]
+            if address in PyOcdBackend._STM32H743_OPTSR_PRG_REGISTERS:
+                index = PyOcdBackend._STM32H743_OPTSR_PRG_REGISTERS.index(address)
+                return self.programmed[index].to_bytes(4, "little")[:size]
+            if address in PyOcdBackend._STM32H743_FLASH_SR_REGISTERS:
+                return (0).to_bytes(4, "little")[:size]
+            if address in PyOcdBackend._STM32H743_FLASH_CR_REGISTERS:
+                index = PyOcdBackend._STM32H743_FLASH_CR_REGISTERS.index(address)
+                return self.flash_control[index].to_bytes(4, "little")[:size]
+            raise AssertionError(hex(address))
+
+        def write32(self, address, value):
+            self.writes.append((address, value))
+            if address in PyOcdBackend._STM32H743_FLASH_KEY_REGISTERS:
+                index = PyOcdBackend._STM32H743_FLASH_KEY_REGISTERS.index(address)
+                self.flash_control[index] &= ~1
+            elif address == 0x52002008:
+                self.option_control &= ~1
+            elif address in PyOcdBackend._STM32H743_OPTSR_PRG_REGISTERS:
+                index = PyOcdBackend._STM32H743_OPTSR_PRG_REGISTERS.index(address)
+                self.programmed[index] = value
+            elif address == 0x52002018 and value == 2:
+                self.current = list(self.programmed)
+                self.option_control &= ~2
+            elif address == 0x52002018:
+                self.option_control = value
+            elif address in PyOcdBackend._STM32H743_FLASH_CR_REGISTERS:
+                index = PyOcdBackend._STM32H743_FLASH_CR_REGISTERS.index(address)
+                self.flash_control[index] = value
+
+        def flush(self):
+            pass
+
+    target = Target()
+    original = tuple(target.current)
+    backend = PyOcdBackend()
+    backend._session = FakeSession(target)
+    backend._security_family = "stm32h743-rdp1"
+
+    assert "global reversible" in backend.lock_security()
+    assert [word >> 8 & 0xFF for word in target.current] == [0xBB, 0xBB]
+    assert all(
+        current & ~PyOcdBackend._STM32H743_RDP_MASK
+        == before & ~PyOcdBackend._STM32H743_RDP_MASK
+        for current, before in zip(target.current, original)
+    )
+    assert "mass-erased" in backend.unlock_security()
+    assert tuple(target.current) == original
+    rdp_writes = [
+        value >> 8 & 0xFF
+        for address, value in target.writes
+        if address in PyOcdBackend._STM32H743_OPTSR_PRG_REGISTERS
+    ]
+    assert rdp_writes == [0xBB, 0xBB, 0xAA, 0xAA]
+    assert 0xCC not in rdp_writes
+
+
+def test_stm32h743_option_programming_rejects_irreversible_rdp2() -> None:
+    class Target:
+        def write32(self, _address, _value):
+            raise AssertionError("RDP2 payload must be rejected before any write")
+
+    with pytest.raises(RuntimeError, match="reversible RDP"):
+        PyOcdBackend._program_stm32h743_option_registers(
+            Target(), (0x0BC6CCF0, 0x0BC6CCF0)
+        )
+
+
 def test_stm32f103_locked_options_are_reconstructed_from_shadow_registers() -> None:
     class Target:
         def read_memory_block8(self, address, size):

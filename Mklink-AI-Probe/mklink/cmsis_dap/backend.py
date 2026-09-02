@@ -268,12 +268,15 @@ def _install_security_flm_region(
         STM32F4_OPTION_SIZE,
         STM32G4_OPTION_ADDRESS,
         STM32G4_OPTION_SIZE,
+        STM32H7_OPTION_ADDRESS,
+        STM32H7_OPTION_SIZE,
     )
 
     allowed_regions = {
         "stm32f103-rdp1": (STM32F1_OPTION_ADDRESS, STM32F1_OPTION_SIZE),
         "stm32f413-rdp1": (STM32F4_OPTION_ADDRESS, STM32F4_OPTION_SIZE),
         "stm32g474-rdp1": (STM32G4_OPTION_ADDRESS, STM32G4_OPTION_SIZE),
+        "stm32h743-rdp1": (STM32H7_OPTION_ADDRESS, STM32H7_OPTION_SIZE),
     }
     expected_region = allowed_regions.get(family)
     if expected_region is None or region != expected_region:
@@ -301,6 +304,12 @@ def _install_security_flm_region(
             FlashErrorCode.SECURITY_NOT_SUPPORTED,
             "security option-byte FLM metadata is outside the safety whitelist",
         )
+    if family == "stm32h743-rdp1":
+        # H743 option bytes are register-managed rather than memory mapped.
+        # Its pinned legacy FLM intentionally declares the 0xFFFFFFFF sentinel;
+        # validating that metadata is sufficient, and no fake memory region is
+        # installed for the host-driven reversible RDP procedure.
+        return
     target.memory_map = target.memory_map.clone()
     for existing in list(target.memory_map):
         start = int(existing.start)
@@ -917,6 +926,9 @@ class PyOcdBackend:
                     STM32G4_OPTION_ADDRESS,
                     STM32G4_OPTION_FLM_SHA256,
                     STM32G4_OPTION_SIZE,
+                    STM32H7_OPTION_ADDRESS,
+                    STM32H7_OPTION_FLM_SHA256,
+                    STM32H7_OPTION_SIZE,
                 )
 
                 security_whitelist = {
@@ -934,6 +946,11 @@ class PyOcdBackend:
                         STM32G4_OPTION_FLM_SHA256,
                         STM32G4_OPTION_ADDRESS,
                         STM32G4_OPTION_SIZE,
+                    ),
+                    "stm32h743-rdp1": (
+                        STM32H7_OPTION_FLM_SHA256,
+                        STM32H7_OPTION_ADDRESS,
+                        STM32H7_OPTION_SIZE,
                     ),
                 }
                 allowed = security_whitelist.get(security_family)
@@ -987,7 +1004,9 @@ class PyOcdBackend:
                         selected_probe, options=selected_options
                     )
                 session_target = target
-                if resolved_pack is None and resolved_flms:
+                if security_family == "stm32h743-rdp1":
+                    session_target = "stm32h743xx"
+                elif resolved_pack is None and resolved_flms:
                     TARGET = import_pyocd_attr("pyocd.target", "TARGET")
 
                     known = {str(name).casefold() for name in TARGET}
@@ -1054,6 +1073,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32h743-rdp1":
+                    changed, _desired = self._write_stm32h743_rdp(0xAA)
+                    return (
+                        "STM32H743 read protection was disabled; main Flash was mass-erased and a power-cycle reset is required"
+                        if changed
+                        else "STM32H743 read protection was already disabled"
+                    )
                 if self._security_family == "stm32g474-rdp1":
                     changed, _desired = self._write_stm32g474_rdp(0xAA)
                     session = self._require_session()
@@ -1108,6 +1134,13 @@ class PyOcdBackend:
 
         with self._lock:
             try:
+                if self._security_family == "stm32h743-rdp1":
+                    changed, _desired = self._write_stm32h743_rdp(0xBB)
+                    return (
+                        "STM32H743 global reversible read protection was written; a power-cycle reset is required to activate it"
+                        if changed
+                        else "STM32H743 reversible read protection was already active"
+                    )
                 if self._security_family == "stm32g474-rdp1":
                     changed, _desired = self._write_stm32g474_rdp(0xBB)
                     session = self._require_session()
@@ -1160,6 +1193,162 @@ class PyOcdBackend:
                 raise
             except Exception as exc:
                 raise self._mapped_error(exc, FlashErrorCode.LOCK_FAIL) from None
+
+    _STM32H743_OPTSR_CUR_REGISTERS = (0x5200201C, 0x5200211C)
+    _STM32H743_OPTSR_PRG_REGISTERS = (0x52002020, 0x52002120)
+    _STM32H743_FLASH_KEY_REGISTERS = (0x52002004, 0x52002104)
+    _STM32H743_FLASH_CR_REGISTERS = (0x5200200C, 0x5200210C)
+    _STM32H743_FLASH_SR_REGISTERS = (0x52002010, 0x52002110)
+    _STM32H743_RDP_MASK = 0x0000FF00
+    _STM32H743_OPTCHANGEERR = 1 << 30
+
+    @classmethod
+    def _stm32h743_option_words(
+        cls, target: Any, registers: Tuple[int, int]
+    ) -> Tuple[int, int]:
+        return tuple(
+            int.from_bytes(cls._read_target_bytes(target, address, 4), "little")
+            for address in registers
+        )  # type: ignore[return-value]
+
+    def _write_stm32h743_rdp(self, value: int) -> Tuple[bool, Tuple[int, int]]:
+        if value not in {0xAA, 0xBB}:
+            raise RuntimeError("invalid STM32H743 reversible RDP value")
+        session = self._require_session()
+        target = session.target
+        device_id = int.from_bytes(
+            self._read_target_bytes(target, 0x5C001000, 4), "little"
+        ) & 0xFFF
+        if device_id != 0x450:
+            raise RuntimeError("connected target identity does not match STM32H743")
+        flash_size_kib = int.from_bytes(
+            self._read_target_bytes(target, 0x1FF1E880, 2), "little"
+        )
+        if flash_size_kib != 2048:
+            raise RuntimeError("connected target Flash size does not match STM32H743xI")
+
+        current = self._stm32h743_option_words(
+            target, self._STM32H743_OPTSR_CUR_REGISTERS
+        )
+        programmed = self._stm32h743_option_words(
+            target, self._STM32H743_OPTSR_PRG_REGISTERS
+        )
+        current_rdp = tuple((word >> 8) & 0xFF for word in current)
+        programmed_rdp = tuple((word >> 8) & 0xFF for word in programmed)
+        if 0xCC in current_rdp or 0xCC in programmed_rdp:
+            raise RuntimeError("STM32H743 RDP level 2 is irreversible and unsupported")
+        if len(set(current_rdp)) != 1 or current_rdp != programmed_rdp:
+            raise RuntimeError("STM32H743 Flash banks have inconsistent RDP state")
+        if value == 0xAA and current_rdp[0] == 0xAA:
+            return False, programmed
+        if value == 0xBB and current_rdp[0] not in {0xAA, 0xCC}:
+            return False, programmed
+
+        desired = tuple(
+            (word & ~self._STM32H743_RDP_MASK) | (value << 8)
+            for word in programmed
+        )
+        self._program_stm32h743_option_registers(target, desired)
+        actual = self._stm32h743_option_words(
+            target, self._STM32H743_OPTSR_CUR_REGISTERS
+        )
+        for before, after in zip(current, actual):
+            if after & self._STM32H743_OPTCHANGEERR:
+                raise RuntimeError("STM32H743 option change reported an error")
+            if ((after >> 8) & 0xFF) != value:
+                raise RuntimeError("STM32H743 RDP change did not persist")
+            preserved_mask = ~(
+                self._STM32H743_RDP_MASK | self._STM32H743_OPTCHANGEERR
+            ) & 0xFFFFFFFF
+            if after & preserved_mask != before & preserved_mask:
+                raise RuntimeError("STM32H743 non-RDP option fields changed unexpectedly")
+        return True, desired
+
+    @classmethod
+    def _program_stm32h743_option_registers(
+        cls, target: Any, desired: Tuple[int, int]
+    ) -> None:
+        if (
+            len(desired) != 2
+            or any(((word >> 8) & 0xFF) not in {0xAA, 0xBB} for word in desired)
+        ):
+            raise RuntimeError("invalid STM32H743 reversible RDP value")
+        write32 = getattr(target, "write32", None)
+        if not callable(write32):
+            raise RuntimeError("target does not support validated 32-bit option writes")
+
+        for key_register, control_register, status_register in zip(
+            cls._STM32H743_FLASH_KEY_REGISTERS,
+            cls._STM32H743_FLASH_CR_REGISTERS,
+            cls._STM32H743_FLASH_SR_REGISTERS,
+        ):
+            if int.from_bytes(
+                cls._read_target_bytes(target, status_register, 4), "little"
+            ) & 1:
+                raise RuntimeError("STM32H743 Flash bank is busy before option change")
+            control = int.from_bytes(
+                cls._read_target_bytes(target, control_register, 4), "little"
+            )
+            if control & 1:
+                write32(key_register, 0x45670123)
+                write32(key_register, 0xCDEF89AB)
+
+        option_control = int.from_bytes(
+            cls._read_target_bytes(target, 0x52002018, 4), "little"
+        )
+        if option_control & 1:
+            write32(0x52002008, 0x08192A3B)
+            write32(0x52002008, 0x4C5D6E7F)
+        option_control = int.from_bytes(
+            cls._read_target_bytes(target, 0x52002018, 4), "little"
+        )
+        if option_control & 1:
+            raise RuntimeError("STM32H743 option registers did not unlock")
+
+        for address, word in zip(cls._STM32H743_OPTSR_PRG_REGISTERS, desired):
+            write32(address, word)
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
+        if cls._stm32h743_option_words(
+            target, cls._STM32H743_OPTSR_PRG_REGISTERS
+        ) != desired:
+            raise RuntimeError("STM32H743 option programming registers rejected RDP")
+
+        write32(0x52002018, 1 << 1)  # FLASH_OPTCR.OPTSTART
+        if callable(flush):
+            flush()
+        deadline = time.monotonic() + 180.0
+        while time.monotonic() < deadline:
+            status = cls._stm32h743_option_words(
+                target, cls._STM32H743_FLASH_SR_REGISTERS
+            )
+            option_control = int.from_bytes(
+                cls._read_target_bytes(target, 0x52002018, 4), "little"
+            )
+            if not any(word & 1 for word in status) and not (option_control & (1 << 1)):
+                break
+            time.sleep(0.05)
+        else:
+            raise RuntimeError("STM32H743 option operation did not finish")
+
+        current = cls._stm32h743_option_words(
+            target, cls._STM32H743_OPTSR_CUR_REGISTERS
+        )
+        if any(word & cls._STM32H743_OPTCHANGEERR for word in current):
+            raise RuntimeError("STM32H743 option change reported an error")
+
+        option_control = int.from_bytes(
+            cls._read_target_bytes(target, 0x52002018, 4), "little"
+        )
+        write32(0x52002018, option_control | 1)
+        for control_register in cls._STM32H743_FLASH_CR_REGISTERS:
+            control = int.from_bytes(
+                cls._read_target_bytes(target, control_register, 4), "little"
+            )
+            write32(control_register, control | 1)
+        if callable(flush):
+            flush()
 
     _STM32G474_OPTION_REGISTERS = (
         0x40022020,  # OPTR
