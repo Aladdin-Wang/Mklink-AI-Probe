@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-02T23:56:00+08:00",
+  "updated_at": "2026-09-03T00:20:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "在线烧录已完成 STM32 F1/F4/G4/H7/L0、GD32F303xE 与精确型号 PY32F030K28T6 的可逆保护真机闭环；PY32 已通过 WebGUI 验证 3.3V 断电复位、保护读取拒绝、解锁整片擦除和 64KiB 固件完整恢复。CLI、MCP 与 WebGUI 共用安全白名单和后端。",
+    "current_task": "处理 Mac/Parallels 使用报告：离线精简 project-init、Keil 跨平台路径/命名空间、Mac/Linux MICROKEEN 挂载发现与串口配置。继续处理固件/符号内容变化失效、烧录完成证据与 STM32F103 真机回归。",
     "release": "已从源码提交 24674d9 重新生成 0.2.0 本地 NSIS 并覆盖安装；安装版健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放端口均通过。正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
@@ -52,6 +52,10 @@
   ],
   "verification": [
     {
+      "area": "Mac/Linux 初始化兼容",
+      "result": "26 项定向测试通过：离线初始化不探测硬件/复制算法；保留已有配置；Windows 相对路径在 POSIX 解析、命名空间和 FileOption 隔离；Mac/Linux 挂载目录与端口格式。尚无 Mac/Linux 真机环境，不将 Windows fixture 结果视作现场验证。"
+    },
+    {
       "area": "0.2.0 本地候选",
       "result": "源码提交 24674d9 生成标准 NSIS 91526207B（SHA-256 885309A725DC966155EB5598B623C0CCA79C02D90F425A532E8EDC4E366F7796；签名 SHA-256 139E84C13023B20DC2242F6A3018A5FEEA519B136516DDF1A57DAC50EA4F0087），含 7059 个目标和 2224 个去重 FLM。已覆盖安装到 D:\\Program Files\\Mklink AI Probe；干净 PATH 启动、后端健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放 8765 端口均通过，尚未授权正式发布。"
     },
@@ -74,10 +78,6 @@
     {
       "area": "MCU 安全真机 HIL",
       "result": "STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。"
-    },
-    {
-      "area": "SuperWatch",
-      "result": "V4.3.9 下 16×float、1ms 请求得到 4690 样本，中位周期 1000us；暂停/停止后历史仍可查看。"
     },
     {
       "area": "自动化与构建",
@@ -115,7 +115,8 @@
     "后续问题在 codex/v0.2.0-development 预发布分支持续小步修复、验证并及时推送。",
     "HPM 系列回归、下载器固件深层问题和官方手册重构继续拆分推进。",
     "后续 STM32 安全支持按保护架构挑选代表板验证，不逐一验证同架构的每个完整订货号；运行时继续校验芯片 ID、容量与固定算法。",
-    "后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。"
+    "后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。",
+    "长期累积加锁/解锁支持：有可用板卡时按保护架构扩展，维护 CLI/MCP/WebGUI 共用白名单和恢复验证证据；不设无人值守硬件任务。"
   ],
   "continuation_protocol": [
     "开始前校正 Git、端口、目标固件和运行进程；硬件操作保持串行。",

@@ -123,7 +123,9 @@ def lint_json_file(project_root: str, filename: str) -> str | None:
         return f"{filename} 不存在"
     try:
         with open(p, "r", encoding="utf-8-sig") as f:
-            json.load(f)
+            value = json.load(f)
+            if not isinstance(value, dict):
+                return f"{filename} 顶层必须是 JSON 对象"
     except json.JSONDecodeError as e:
         return f"{filename} JSON 格式错误: 第 {e.lineno} 行第 {e.colno} 列: {e.msg}"
     except OSError as e:
@@ -134,7 +136,9 @@ def lint_json_file(project_root: str, filename: str) -> str | None:
 def lint_project_json(project_root: str, filenames: list[str] | None = None) -> list[str]:
     """lint .mklink/ 配置 JSON 文件，返回所有错误。"""
     if filenames is None:
-        filenames = [_CONFIG_FILE, _PROJECT_INFO_FILE, _RTT_CONFIG_FILE]
+        filenames = [_CONFIG_FILE, _PROJECT_INFO_FILE]
+        filenames += [name for name in (_RTT_CONFIG_FILE, _TOOLCHAIN_CONFIG_FILE)
+                      if (get_mklink_dir(project_root) / name).exists()]
     errors: list[str] = []
     for filename in filenames:
         error = lint_json_file(project_root, filename)
@@ -160,8 +164,11 @@ def lint_config_semantic(project_root: str) -> list[str]:
     config = load_config(project_root)
     if config:
         com = config.get("com_port", "")
-        if com and not _COM_PORT_RE.match(com):
-            warnings.append(f"config.json: com_port '{com}' 格式异常（应为 COM + 数字，如 COM6）")
+        if com and not (isinstance(com, str) and (
+            _COM_PORT_RE.fullmatch(com.upper())
+                or _re.fullmatch(r"/dev/(?:cu\.[^/\s]+|tty[^/\s]+|serial/(?:by-id|by-path)/[^/\s]+)", com)
+        )):
+            warnings.append(f"config.json: com_port '{com}' 格式异常（使用 COM6、/dev/cu.* 或 /dev/tty*；留空自动发现）")
 
         mcu = config.get("mcu_key", "")
         if mcu:
@@ -470,11 +477,6 @@ def check_project_config(project_root: str) -> ProjectConfigStatus:
             errors.append("config.json 不存在或无效")
     else:
         has_config = True
-        # 检查必要字段
-        if not config.get("mcu_key"):
-            warnings.append("config.json 缺少 mcu_key")
-        if not config.get("com_port"):
-            warnings.append("config.json 缺少 com_port（将无法直接烧录）")
 
     # 检查 project_info.json（IDE-agnostic）
     project = load_project_info(project_root)
@@ -506,10 +508,7 @@ def check_project_config(project_root: str) -> ProjectConfigStatus:
 
     # 检查 rtt_config.json
     rtt = load_rtt_config(project_root)
-    if rtt is None:
-        if not any("rtt_config.json" in e for e in errors + warnings):
-            warnings.append("rtt_config.json 不存在或无效（RTT 功能不可用）")
-    else:
+    if rtt is not None:
         has_rtt_config = True
 
     # 语义校验

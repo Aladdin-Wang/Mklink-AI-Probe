@@ -8,6 +8,8 @@ MKLink Serial Bridge — COM 口发现和磁盘管理。
 from __future__ import annotations
 
 import os
+import re
+import sys
 import serial
 from serial.tools import list_ports
 
@@ -239,6 +241,42 @@ def _windows_volume_label(root: str) -> str | None:
         return None
 
 
+def _find_posix_microkeen_disk() -> str | None:
+    """Only accept mounted MICROKEEN volumes, never an ordinary directory."""
+    def valid(path: str) -> bool:
+        name = os.path.basename(path.rstrip("/"))
+        label = r"MICROKEEN(?: [0-9]+)?" if sys.platform == "darwin" else r"MICROKEEN"
+        return (bool(re.fullmatch(label, name, re.IGNORECASE))
+                and not os.path.islink(path) and os.path.ismount(path)
+                and os.path.isdir(path))
+
+    configured = os.environ.get("MKLINK_MICROKEEN_DISK", "").strip()
+    if configured:
+        root = os.path.abspath(configured)
+        return root if valid(root) else None
+
+    parents = ["/Volumes"] if sys.platform == "darwin" else ["/media", "/run/media", "/mnt"]
+    candidates: set[str] = set()
+    for parent in parents:
+        try:
+            with os.scandir(parent) as entries:
+                children = [entry.path for entry in entries if entry.is_dir(follow_symlinks=False)]
+        except OSError:
+            continue
+        for child in children:
+            if valid(child):
+                candidates.add(child)
+            elif sys.platform != "darwin" and not os.path.ismount(child):
+                # Linux desktop automounters use /media/<user>/<volume>.
+                try:
+                    with os.scandir(child) as entries:
+                        candidates.update(entry.path for entry in entries if valid(entry.path))
+                except OSError:
+                    continue
+    # Do not program an arbitrary probe if several volumes are connected.
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def find_microkeen_disk() -> str | None:
     """查找 MICROKEEN 磁盘路径。
 
@@ -246,7 +284,7 @@ def find_microkeen_disk() -> str | None:
     返回磁盘根路径，如 'D:\\'，未找到返回 None。
     """
     if os.name != "nt":
-        return None
+        return _find_posix_microkeen_disk()
 
     # Service and scheduled-task sessions can enumerate removable volumes
     # differently from an interactive shell.  An operator may provide a
