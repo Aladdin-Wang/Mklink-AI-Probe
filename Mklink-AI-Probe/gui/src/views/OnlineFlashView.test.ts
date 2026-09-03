@@ -697,6 +697,9 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
   await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
   await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
   await wrapper.get('[data-testid="start-job"]').trigger('click')
+  if (wrapper.find('[data-testid="confirmation-accept"]').exists()) {
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+  }
   await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
 }
 
@@ -1005,13 +1008,17 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
-    expect(window.confirm).toHaveBeenNthCalledWith(1, expect.stringContaining('Flash 中的全部数据都会永久删除'))
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('Flash 中的全部数据都会永久删除')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-unlock"]').element.checked).toBe(false)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
     await wrapper.get('[data-testid="action-lock"]').setValue(true)
-    expect(window.confirm).toHaveBeenNthCalledWith(2, expect.stringContaining('可逆读保护'))
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('可逆读保护')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
 
-    expect(window.confirm).toHaveBeenCalledTimes(2)
+    expect(window.confirm).not.toHaveBeenCalled()
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
     expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual([
       'connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect',
@@ -1028,6 +1035,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
@@ -1044,6 +1052,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
@@ -1060,6 +1069,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
@@ -1076,6 +1086,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
@@ -1093,7 +1104,8 @@ describe('online flash task workspace behavior', () => {
 
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('数据 EEPROM 和备份寄存器'))
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('数据 EEPROM 和备份寄存器')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
@@ -1108,7 +1120,7 @@ describe('online flash task workspace behavior', () => {
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
     await readyAndStart(wrapper)
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('等待 1 秒后以 3.3V 恢复输出'))
+    expect(window.confirm).not.toHaveBeenCalled()
     const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/jobs'))
     const body = JSON.parse(String(call?.[1]?.body))
     expect(body.reset_mode).toBe('power-cycle')
@@ -1118,11 +1130,68 @@ describe('online flash task workspace behavior', () => {
 
   it('warns immediately before selecting a 5V power-cycle restore voltage', async () => {
     const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
     await wrapper.get('[data-testid="reset-mode"]').setValue('power-cycle')
     await wrapper.get('[data-testid="reset-voltage-5000"]').setValue(true)
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('5V 可能永久损坏'))
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('5V 可能永久损坏')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-5000"]').element.checked).toBe(false)
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-5000"]').element.checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not submit a job when the exact power-cycle voltage is declined', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="reset-mode"]').setValue('power-cycle')
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('等待 1 秒后以 3.3V 恢复输出')
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(false)
+    await wrapper.get('[data-testid="confirmation-cancel"]').trigger('click')
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(false)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('cancels security selection without calling desktop native confirm or starting a job', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => { throw new Error('native dialog unavailable') }))
+    vi.stubGlobal('fetch', viewFetch([{ ...installedTarget, part_number: 'STM32F103RE' }]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32F103RE"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32F103RE"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+    for (const action of ['unlock', 'lock']) {
+      await wrapper.get(`[data-testid="action-${action}"]`).setValue(true)
+      expect(wrapper.get('.online-flash-grid').attributes('inert')).toBeDefined()
+      expect(wrapper.get<HTMLInputElement>(`[data-testid="action-${action}"]`).element.checked).toBe(false)
+      await wrapper.get('[data-testid="confirmation-cancel"]').trigger('click')
+      expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+      expect(wrapper.get<HTMLInputElement>(`[data-testid="action-${action}"]`).element.checked).toBe(false)
+    }
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    await wrapper.get('[role="alertdialog"]').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(false)
+    expect(window.confirm).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('invalidates an open confirmation when the selected target changes', async () => {
+    vi.stubGlobal('fetch', viewFetch([{ ...installedTarget, part_number: 'STM32F103RE' }, regularTarget]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32F103RE"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32F103RE"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    // Simulate an external target change while the page is inert.
+    await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-unlock"]').element.checked).toBe(false)
     wrapper.unmount()
   })
 

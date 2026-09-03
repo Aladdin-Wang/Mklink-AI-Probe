@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useConfirmation } from '../../composables/useConfirmation'
 import { Play, Square } from '@lucide/vue'
 import type { JobAction, JobState } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
 const props = defineProps<{ actions: JobAction[]; canStart: boolean; active: boolean; stopping: boolean; state: JobState | null; totalProgress: number; progressLabel?: string; progressState?: string; unlockEnabled?: boolean; lockEnabled?: boolean; securityReason?: string; unlockErasesEeprom?: boolean; unlockErasesBackupRegisters?: boolean }>()
 const emit = defineEmits<{ actions: [actions: JobAction[]]; start: []; stop: [] }>()
+const confirm = useConfirmation()
+const confirming = ref(false)
 const choices = computed<Array<{ value: JobAction; label: string }>>(() => [{value:'connect',label:tr('连接', 'Connect')},{value:'unlock',label:tr('解锁', 'Unlock')},{value:'erase',label:tr('擦除', 'Erase')},{value:'program',label:tr('烧录', 'Program')},{value:'verify',label:tr('校验', 'Verify')},{value:'lock',label:tr('加锁', 'Lock')},{value:'reset',label:tr('复位', 'Reset')},{value:'disconnect',label:tr('断开', 'Disconnect')}])
 const mandatory = new Set<JobAction>(['connect', 'disconnect'])
 function available(action: JobAction): boolean {
@@ -12,7 +15,7 @@ function available(action: JobAction): boolean {
   if (action === 'lock') return props.lockEnabled === true
   return true
 }
-function confirmSecurityAction(action: JobAction): boolean {
+async function confirmSecurityAction(action: JobAction): Promise<boolean> {
   const extraData = props.unlockErasesEeprom || props.unlockErasesBackupRegisters
   if (action === 'unlock') return confirm(tr(
     extraData
@@ -28,12 +31,15 @@ function confirmSecurityAction(action: JobAction): boolean {
   ))
   return true
 }
-function toggle(action: JobAction, input: HTMLInputElement) {
+async function toggle(action: JobAction, input: HTMLInputElement) {
   const checked = input.checked
-  if (mandatory.has(action) || !available(action)) return
-  if (checked && !confirmSecurityAction(action)) {
+  if (mandatory.has(action) || !available(action) || props.active || confirming.value) return
+  if (checked && (action === 'unlock' || action === 'lock')) {
     input.checked = false
-    return
+    confirming.value = true
+    const accepted = await confirmSecurityAction(action)
+    confirming.value = false
+    if (!accepted || props.active || !available(action)) return
   }
   const selected = new Set(props.actions)
   if (checked) {
@@ -53,7 +59,7 @@ const totalPercent = computed(() => Math.round(Math.min(1, Math.max(0, props.tot
   <div class="action-bar">
     <div class="action-choices">
       <label v-for="choice in choices" :key="choice.value" :class="{ unavailable: !available(choice.value) }" :title="!available(choice.value) ? securityReason : undefined">
-        <input :data-testid="`action-${choice.value}`" type="checkbox" :checked="actions.includes(choice.value)" :disabled="active || mandatory.has(choice.value) || !available(choice.value)" @change="toggle(choice.value, $event.target as HTMLInputElement)">
+        <input :data-testid="`action-${choice.value}`" type="checkbox" :checked="actions.includes(choice.value)" :disabled="active || confirming || mandatory.has(choice.value) || !available(choice.value)" @change="toggle(choice.value, $event.target as HTMLInputElement)">
         {{ choice.label }}
       </label>
     </div>
@@ -67,7 +73,7 @@ const totalPercent = computed(() => Math.round(Math.min(1, Math.max(0, props.tot
     </div>
     <span v-if="stopping" class="waiting">{{ tr('等待探针安全停止', 'Waiting for the probe to stop safely') }}</span>
     <div class="job-actions">
-      <button data-testid="start-job" :disabled="!canStart" class="primary" @click="$emit('start')">
+      <button data-testid="start-job" :disabled="!canStart || confirming" class="primary" @click="$emit('start')">
         <Play :size="14" aria-hidden="true" />
         {{ tr('开始烧录', 'Start Flashing') }}
       </button>

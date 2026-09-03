@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ProbeRecord } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
+import { useConfirmation } from '../../composables/useConfirmation'
+const confirm = useConfirmation()
 
 const voltageChoices = [1800, 3300, 5000] as const
 
@@ -24,16 +26,17 @@ const emit = defineEmits<{
   'update:resetVoltageMv': [value: 1800 | 3300 | 5000]
 }>()
 
-function updateResetVoltage(value: 1800 | 3300 | 5000, input: HTMLInputElement): void {
-  if (value === 5000 && !confirm(tr(
-    '5V 可能永久损坏不耐受 5V 的目标板。仅在确认当前目标硬件支持 5V 时选择。确定选择 5V？',
-    '5 V may permanently damage a target that is not 5 V tolerant. Select it only after verifying the connected hardware. Select 5 V?',
-  ))) {
+async function updateResetVoltage(value: 1800 | 3300 | 5000, input: HTMLInputElement): Promise<void> {
+  if (value === 5000) {
     input.checked = false
     const previous = input.closest('.voltage-options')?.querySelector<HTMLInputElement>(`input[value="${props.resetVoltageMv}"]`)
     if (previous) previous.checked = true
-    return
+    if (!await confirm(tr(
+    '5V 可能永久损坏不耐受 5V 的目标板。仅在确认当前目标硬件支持 5V 时选择。确定选择 5V？',
+    '5 V may permanently damage a target that is not 5 V tolerant. Select it only after verifying the connected hardware. Select 5 V?',
+    ))) return
   }
+  if (props.busy) return
   emit('update:resetVoltageMv', value)
 }
 </script>

@@ -2,6 +2,8 @@
 import { fileContentStamp } from '../lib/fileContent'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import FlashActionBar from '../components/online-flash/FlashActionBar.vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import { provideConfirmation } from '../composables/useConfirmation'
 import FlashLogPanel from '../components/online-flash/FlashLogPanel.vue'
 import FlashMapPanel from '../components/online-flash/FlashMapPanel.vue'
 import MemoryReadPanel from '../components/online-flash/MemoryReadPanel.vue'
@@ -31,6 +33,7 @@ const CANONICAL_ACTIONS: JobAction[] = ['connect', 'unlock', 'erase', 'program',
 const DEFAULT_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
 const FLASH_ACTIONS = new Set<JobAction>(['erase', 'program', 'verify'])
 const api = useOnlineFlashApi()
+const { message: confirmationMessage, confirm: confirmRisk, answer: answerConfirmation } = provideConfirmation()
 
 defineOptions({ name: 'OnlineFlashView' })
 
@@ -798,7 +801,10 @@ function receiveEvent(event: JobStreamEvent): void {
   if (jobEvent.state && TERMINAL.has(jobEvent.state)) { totalProgress.value = jobEvent.state === 'succeeded' ? 1 : totalProgress.value; subscription = null }
 }
 
+watch([probeId, () => selectedTarget.value?.part_number, () => inspection.value?.image_id, resetMode, resetVoltageMv, active], () => answerConfirmation(false))
+
 async function startJob(customActions = actions.value, sectorAddresses?: number[]): Promise<void> {
+  if (confirmationMessage.value !== null) return
   const orderedActions = canonicalActions(customActions)
   if (creatingJob.value || active.value || !probeId.value || !selectedTarget.value?.installed || !actionsAreValid(orderedActions) || (orderedActions.some(action => action === 'program' || action === 'verify') && !inspection.value)) return
   const resolvedSectors = sectorAddresses ?? (
@@ -810,13 +816,14 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   const usesReset = orderedActions.includes('reset')
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
-  if (selectedResetVoltage !== null && !confirm(tr(
-    `即将关闭下载器 VCC 输出，等待 1 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
-    `The probe will disable VCC, wait 1 second, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
-  ))) return
-  progressOwner.value = 'flash'
   creatingJob.value = true
   try {
+    if (selectedResetVoltage !== null && !await confirmRisk(tr(
+      `即将关闭下载器 VCC 输出，等待 1 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
+      `The probe will disable VCC, wait 1 second, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
+    ))) return
+    if (disposed) return
+    progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
     const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
     if (disposed) return
@@ -879,7 +886,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="online-flash-grid">
+  <div class="online-flash-grid" :inert="confirmationMessage !== null">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
       <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
@@ -908,6 +915,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
   </div>
+  <ConfirmationDialog v-if="confirmationMessage !== null" :message="confirmationMessage" @answer="answerConfirmation" />
 </template>
 
 <style scoped>
