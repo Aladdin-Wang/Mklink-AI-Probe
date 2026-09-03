@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-03T10:43:00+08:00`
+- 更新时间：`2026-09-03T11:36:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：完成 SuperWatch 工程级常用变量置顶、排序和多关键词搜索；真实 Browser WebGUI 与 STM32F103RE 三通道 1ms 采集、刷新持久化、断开重连及重新解析通过，另修复窄面板按钮撑宽。104 项 Python 定向、647 项 GUI 全量及生产构建通过，未重打安装包。既有断开后 DWT Trace 关闭与 UART 零接收仍待处理。
+- 当前任务：修复合并 HEX 重复启动记录导致先擦除后报错、文件快照擦前复查与自定义 FLM 复位准备。V3 开漏 RST 接入下，STM32F103RE 真实 WebGUI 三种连接方式×默认/软件/硬件复位九组均通过烧录、校验及运行状态检查；485 项在线烧录 Python 与 647 项 GUI 通过。等待用户拔 RST 补测软件复位，之后换 GD32 验证客户 HEX。未重打安装包；既有 DWT Trace 关闭与 UART 零接收仍待处理。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -27,7 +27,7 @@
 - **0.2.0 本地候选**：源码提交 24674d9 生成标准 NSIS 91526207B（SHA-256 885309A725DC966155EB5598B623C0CCA79C02D90F425A532E8EDC4E366F7796；签名 SHA-256 139E84C13023B20DC2242F6A3018A5FEEA519B136516DDF1A57DAC50EA4F0087），含 7059 个目标和 2224 个去重 FLM。已覆盖安装到 D:\Program Files\Mklink AI Probe；干净 PATH 启动、后端健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放 8765 端口均通过，尚未授权正式发布。
 - **常用型号内置算法**：维护仓库本地资产包含 7059 个目标和 2224 个按内容去重的 FLM；每个目标均有主编程算法，所有 blob 均被引用并通过大小与 SHA-256 校验。桌面 sidecar 和普通用户 Skill ZIP 共用同一份资产，正式构建缺失、不完整或损坏时直接失败。
 - **器件自动联想性能**：目录合并和搜索文本改为按索引/安装状态快照缓存，普通联想只对实际返回窗口解析通用型号别名；前端防抖由 300ms 缩短到 150ms、候选窗口由 100 缩至 40。真实 15422 型号目录预热后 STM32 查询约 11.7ms，STM32G474RET6 精确查询约 9.2ms，宽泛查询约 12–47ms；首次载入内置资产约 1.9s。
-- **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
+- **合并 HEX 与复位连接矩阵**：GD32F303xE 客户 HEX 两个合法 05 启动地址记录触发旧执行解析器异常；现在预检查/编程/校验统一解析，实际 FileProgrammer 离线暂存两段共 180732B 与校验数据一致。V3 接 RST 的三种连接方式×默认/软件/硬件复位九组真机通过。原 V4 接线 A/B 显示软件复位受 RST 路径影响；新版硬件统一按开漏处理，不加旧硬件特例。详见 docs/verification/v0.2.0-hex-connect-modes-hil.md；GD32 原文件真机与 V3 拔 RST 补测待完成。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **MCU 安全真机 HIL**：STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。
 - **SuperWatch 收藏与自动化**：真实 Browser WebGUI 完成批量置顶、排序、取消采样/取消收藏独立、刷新保留和重新解析；STM32F103RE 三通道收到 20221 点，约 997–1000Hz，transport/backend 丢弃均为 0。Python 定向 104 项、GUI 全量 647 项及生产构建通过。详见 docs/verification/v0.2.0-superwatch-pins-hil.md。上一轮 Python 全量 1767 通过、12 项 Windows symlink 权限失败仍保留记录；本轮未重跑全量 Python、未执行保护或 VCC 操作。
@@ -41,19 +41,19 @@
 - 构建、测试、日志、临时脚本和可复用缓存统一位于 E:\software\HPM5300\Mklink-AI-Probe\.build，并经 scripts/build_workspace.ps1 运行；不上传 .build。
 - 普通用户 Skill 只包含运行时能力、安全边界和按需参考，不加载源码维护、构建或发布流程；U 盘 HTML 使用跨平台 Skill Web handler。
 - SuperWatch 连续采样使用 dump_memory；最多 15 region。MCP direct read/write≤4096B、batch≤16项/4096B、flush≤8项/12288B、capture≤30秒。
-- 串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；超时先检查并重建会话，USB 失效重连先释放旧句柄/锁。在线自定义 FLM 仅在首次擦写前复位/暂停，连接与只读不复位；普通烧录固定按扇区擦除，禁止 pyOCD 自动扩大为全片擦除。HPM 保持 ROM API 独立路径。
+- 串口、YMODEM、Modbus 和硬件控制共用单一 I/O 所有权；超时先检查并重建会话，USB 失效重连先释放旧句柄/锁。在线自定义 FLM 仅在首次擦写前按所选方式复位/暂停并检查上下文，最终复位检查运行状态；普通烧录固定按扇区擦除，禁止自动全片擦除或复位回退。新版 V3/V4 以开漏 RST 为硬件前提，不为旧非开漏 V4 增加特例。HPM 保持 ROM API 独立路径。
 - 应用发布与探针固件发布相互独立；正式索引必须在所有资产上传并校验后最后更新。
 - 安全加锁/解锁按选项字节布局和保护机制划分白名单；每种架构至少用一块代表芯片完成保护、解锁擦除和恢复闭环，再用芯片 ID、容量、算法哈希及选项区范围覆盖同架构料号。只允许可逆等级并永久拒绝 RDP2。STM32G474、STM32H743、STM32L010、GD32F303xE 与 PY32F030K28T6 解锁使用复位下连接，安全操作强制使用用户确认电压的断电复位；PY32 目前只开放已验证的精确型号。
 
 ## 真机环境
 
-- **probe**：主要 ARM 回归夹具为 MKLink V4；发布前验证固件 V4.3.9，调试端口 COM228、UART COM227。
+- **probe**：本轮已换 MKLink V3，用户确认 RST 为开漏；新版 V4 同样采用开漏。重新发现端口，不沿用原 V4 的端口号。
 - **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；STM32F413VGHx（ID 0x463、1MiB）、STM32G474RET6（ID 0x469、512KiB、3.3V）、STM32H743IIT6（ID 0x450、2MiB、3.3V）、STM32L010F4P6（ID 0x457、16KiB、3.3V）、GD32F303CET6（ID 0x414、512KiB、64KiB SRAM、3.3V）与 PY32F030K28T6（ID 0x60001000、64KiB、3.3V）均完成型号解析、读取回烧与可逆保护闭环。PY32F030K28T6 恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。
 - **permission**：测试工程允许修改与下载；其分析材料只放工程自身 .build。
 
 ## 下一动作
 
-1. 若 V4.3.9 现场再次出现 RTT 周期性停顿，先同步记录 SWD 失败、DapBusy、USB 环形队列水位和主机到达间隔，区分 200ms 固件退避与界面渲染背压。
+1. 待用户拔掉 V3 的 RST 后，补测暂停/保持运行配合默认/软件复位的无复位线下载；完成后通知用户换 GD32 板验证客户合并 HEX，核对具体型号与容量，禁止把 GD32 客户固件写入 STM32。
 2. 补 Mac/Linux 实机共享目录与 USB 测试，并补 UART 真正收数；修复 pyOCD 在线烧录断开清除 DEMCR 导致 SystemView 时基停止的问题，保留用户调试状态且不能用盲写全局寄存器替代生命周期验证。
 3. 后续 STM32 安全支持按保护架构挑选代表板验证，不逐一验证同架构的每个完整订货号；运行时继续校验芯片 ID、容量与固定算法。
 4. 后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。

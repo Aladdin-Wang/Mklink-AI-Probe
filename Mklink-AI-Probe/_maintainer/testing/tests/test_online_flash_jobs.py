@@ -1043,7 +1043,7 @@ def test_wait_for_events_unblocks_concurrent_waiter():
     assert observed[0].state is JobState.STOPPING
 
 
-def test_image_is_revalidated_only_immediately_before_program():
+def test_image_is_revalidated_before_connect_and_program():
     inspected = image()
     inspections = []
 
@@ -1055,7 +1055,7 @@ def test_image_is_revalidated_only_immediately_before_program():
     result = manager.wait(manager.start(JobRequest.program_only(inspected)), timeout=2)
     manager.shutdown()
     assert result.state is JobState.SUCCEEDED
-    assert inspections == [inspected.image_id]
+    assert inspections == [inspected.image_id, inspected.image_id]
 
 
 def test_verify_only_refreshes_image_immediately_before_backend_verify():
@@ -1076,7 +1076,7 @@ def test_verify_only_refreshes_image_immediately_before_backend_verify():
     manager.shutdown()
 
     assert result.state is JobState.SUCCEEDED
-    assert inspections == [inspected.image_id]
+    assert inspections == [inspected.image_id, inspected.image_id]
     assert backend.calls[1] == ("verify", inspected)
     assert result.image_sha256 == inspected.sha256
 
@@ -1094,7 +1094,7 @@ def test_full_sequence_refreshes_image_before_program_and_verify():
         end=0x8000800,
         base_address=0x8000000,
     )
-    supplied = iter((first, latest))
+    supplied = iter((first, first, latest))
     backend = FakeBackend()
     manager = OnlineFlashJobManager(
         lambda: backend, ResourceManager(), lambda _image_id: next(supplied)
@@ -1110,7 +1110,11 @@ def test_full_sequence_refreshes_image_before_program_and_verify():
     assert result.image_sha256 == latest.sha256
 
 
-def test_image_provider_failure_before_verify_disconnects_and_releases():
+@pytest.mark.parametrize("actions", [
+    ("connect", "verify", "disconnect"),
+    ("connect", "erase", "program", "verify", "reset", "disconnect"),
+])
+def test_image_provider_failure_does_not_connect_or_erase(actions):
     backend = FakeBackend()
     resources = ResourceManager()
 
@@ -1119,7 +1123,7 @@ def test_image_provider_failure_before_verify_disconnects_and_releases():
 
     manager = OnlineFlashJobManager(lambda: backend, resources, fail_provider)
     request = JobRequest(
-        actions=("connect", "verify", "disconnect"), image_id="missing-image"
+        actions=actions, image_id="missing-image"
     )
 
     result = manager.wait(manager.start(request), timeout=2)
@@ -1127,7 +1131,7 @@ def test_image_provider_failure_before_verify_disconnects_and_releases():
 
     assert result.state is JobState.FAILED
     assert result.error_code == FlashErrorCode.FILE_NOT_FOUND.value
-    assert [name for name, _ in backend.calls] == ["connect", "disconnect"]
+    assert backend.calls == []
     assert resources.get_status() == {}
 
 
@@ -1155,7 +1159,7 @@ def test_stop_while_verify_provider_is_blocked_skips_backend_verify():
     allow_provider.set()
     assert manager.wait(job_id, timeout=2).state is JobState.STOPPED
     manager.shutdown()
-    assert [name for name, _ in backend.calls] == ["connect", "disconnect"]
+    assert backend.calls == []
 
 
 def test_completed_history_is_bounded_and_shutdown_rejects_new_jobs():

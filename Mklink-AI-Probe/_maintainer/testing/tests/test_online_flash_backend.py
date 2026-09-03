@@ -31,6 +31,10 @@ class FakeTarget:
     def reset_and_halt(self) -> None:
         self.reset_and_halt_calls += 1
 
+    def read_core_register(self, name):
+        assert name in {"ipsr", "control"}
+        return 0
+
     def reset(self, reset_type=None) -> None:
         self.reset_calls.append(reset_type)
 
@@ -1240,6 +1244,7 @@ def test_connect_builds_supported_options_and_reconnect_closes_old(
                 "frequency": 2_000_000,
                 "connect_mode": "under-reset",
                 "auto_unlock": False,
+                "reset_type": "hardware",
                 "pack": str(pack.resolve()),
             },
         ),
@@ -1975,8 +1980,8 @@ def test_custom_flm_resets_and_halts_once_before_erase_and_program(
         def program(self, path, **_kwargs):
             events.append(("program", path))
 
-    firmware = tmp_path / "firmware.hex"
-    firmware.write_text(":00000001FF\n", encoding="ascii")
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"hello world")
     target = FakeTarget((FakeRegion(0x08000000, 0x4000),))
     backend, _session = connected_backend(
         target=target,
@@ -1989,13 +1994,35 @@ def test_custom_flm_resets_and_halts_once_before_erase_and_program(
     backend.program(ImageInspection(
         "test",
         file_path=str(firmware),
-        format="hex",
+        format="bin",
+        base_address=0x08000000,
         start=0x08000000,
         end=0x0800000B,
     ))
 
     assert target.reset_and_halt_calls == 1
     assert [event[0] for event in events] == ["erase", "program"]
+    backend.disconnect()
+
+
+@pytest.mark.parametrize(("ipsr", "control"), [(3, 0), (0, 2), (0, 1)])
+def test_custom_flm_unsafe_reset_context_is_rejected_before_erase(ipsr, control):
+    erased = []
+    class Eraser:
+        def __init__(self, *args):
+            pass
+        def erase(self, *args):
+            erased.append(True)
+
+    target = FakeTarget((FakeRegion(0x08000000, 0x4000),))
+    target.read_core_register = lambda name: {"ipsr": ipsr, "control": control}[name]
+    backend, _ = connected_backend(target=target, eraser_factory=Eraser)
+    backend._algorithm_reset_required = True
+    with pytest.raises(FlashError, match="Flash was not erased") as raised:
+        backend.erase_sectors([0x08000000])
+    assert raised.value.code is FlashErrorCode.CONNECT_FAIL
+    assert not erased
+    assert not backend._algorithm_reset_done
     backend.disconnect()
 
 
@@ -2039,7 +2066,7 @@ def test_sector_erase_accepts_real_flash_region_with_rx_access() -> None:
     backend.disconnect()
 
 
-def test_program_bin_passes_base_and_hex_does_not(tmp_path: Path) -> None:
+def test_program_bin_passes_base_and_hex_queues_sparse_data(tmp_path: Path) -> None:
     calls = []
 
     class Programmer:
@@ -2050,22 +2077,30 @@ def test_program_bin_passes_base_and_hex_does_not(tmp_path: Path) -> None:
         def program(self, path, **kwargs):
             calls.append(("program", path, kwargs))
 
+        def add_file(self, stream, **kwargs):
+            calls.append(("add", stream.read(), kwargs))
+
+        def commit(self):
+            calls.append(("commit",))
+
     binary = tmp_path / "firmware.bin"
     binary.write_bytes(b"bin")
     ihex = tmp_path / "firmware.hex"
-    ihex.write_text(":00000001FF\n", encoding="ascii")
+    ihex.write_text(":03000000616263D7\n:00000001FF\n", encoding="ascii")
     backend, session = connected_backend(programmer_factory=Programmer)
 
     backend.program(
         ImageInspection("bin", file_path=str(binary), format="bin", base_address=0x80000000)
     )
-    backend.program(ImageInspection("hex", file_path=str(ihex), format="hex"))
+    backend.program(ImageInspection("hex", file_path=str(ihex), format="hex",
+                                    start=0, end=3, segments=(ImageSegment(0, 3),)))
 
     assert calls == [
         ("create", session),
         ("program", str(binary), {"base_address": 0x80000000}),
         ("create", session),
-        ("program", str(ihex), {}),
+        ("add", b"abc", {"file_format": "bin", "base_address": 0}),
+        ("commit",),
     ]
     backend.disconnect()
 
@@ -2109,8 +2144,8 @@ def test_program_disables_memory_scans_for_custom_flm_regions(tmp_path: Path) ->
         def program(self, path, **kwargs):
             calls.append(("program", path, kwargs))
 
-    firmware = tmp_path / "external.hex"
-    firmware.write_text(":00000001FF\n", encoding="ascii")
+    firmware = tmp_path / "external.bin"
+    firmware.write_bytes(b"data")
     target = FakeTarget((FakeRegion(
         0x90000000,
         0x800000,
@@ -2121,14 +2156,15 @@ def test_program_disables_memory_scans_for_custom_flm_regions(tmp_path: Path) ->
     backend.program(ImageInspection(
         "external",
         file_path=str(firmware),
-        format="hex",
+        format="bin",
+        base_address=0x90000000,
         start=0x90000000,
         end=0x90001000,
     ))
 
     assert calls == [
         ("create", session, {"chip_erase": "sector", "smart_flash": False, "keep_unwritten": False}),
-        ("program", str(firmware), {}),
+        ("program", str(firmware), {"base_address": 0x90000000}),
     ]
     backend.disconnect()
 
@@ -2406,6 +2442,8 @@ def test_verify_sparse_hex_reads_only_inspected_segments(tmp_path: Path) -> None
         file_path=str(firmware),
         format="hex",
         segments=(ImageSegment(first, first + 2), ImageSegment(second, second + 2)),
+        start=first,
+        end=second + 2,
     )
 
     backend.verify(image)
@@ -2525,6 +2563,27 @@ def test_reset_uses_stored_and_overridden_public_reset_types() -> None:
     ]
     with pytest.raises(ValueError):
         backend.reset_run("mystery")
+    backend.disconnect()
+
+
+@pytest.mark.parametrize("state_name", ["HALTED", "LOCKUP", "RESET", "RUNNING", "SLEEPING"])
+@pytest.mark.parametrize("mode", ["default", "software", "hardware"])
+def test_final_reset_checks_execution_and_never_resumes_stranded_algorithm(state_name, mode):
+    from mklink.cmsis_dap.pyocd_runtime import import_pyocd_attr
+    Target = import_pyocd_attr("pyocd.core.target", "Target")
+    target = FakeTarget()
+    target.get_state = lambda: Target.State[state_name]
+    backend, session = connected_backend(target=target)
+    session.options = {}
+    backend._algorithm_reset_done = True
+    if state_name in {"RUNNING", "SLEEPING"}:
+        backend.reset_run(mode)
+        assert session.options == {}
+    else:
+        with pytest.raises(FlashError, match="reset did not start") as raised:
+            backend.reset_run(mode)
+        assert raised.value.code is FlashErrorCode.RESET_FAIL
+        assert session.options["resume_on_disconnect"] is False
     backend.disconnect()
 
 

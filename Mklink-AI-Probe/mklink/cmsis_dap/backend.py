@@ -14,7 +14,8 @@ from types import MethodType
 from typing import Any, Callable, Iterator, Mapping, Optional, Tuple
 
 from .errors import FlashError, FlashErrorCode
-from .models import ImageInspection, MemoryRegion
+from .images import ImageInspector
+from .models import ImageInspection, ImageSegment, MemoryRegion
 from .pyocd_runtime import import_pyocd_attr
 
 
@@ -1118,6 +1119,10 @@ class PyOcdBackend:
                     "connect_mode": connect_mode,
                     "auto_unlock": False,
                 }
+                if reset_mode == "hardware":
+                    # Apply the selected reset to algorithm preparation too,
+                    # not just to the final reset after verification.
+                    options["reset_type"] = "hardware"
                 if resolved_pack is not None:
                     options["pack"] = resolved_pack
                 session = factory(resolved_probe, options)
@@ -2270,6 +2275,10 @@ class PyOcdBackend:
                         FlashErrorCode.FILE_NOT_FOUND,
                         "firmware snapshot file was not found",
                     )
+                hex_data = (
+                    self._decode_hex_image(image)
+                    if image.format.lower() == "hex" else None
+                )
                 self._prepare_algorithm_execution(session.target)
                 factory = self._programmer_factory
                 if factory is None:
@@ -2295,7 +2304,19 @@ class PyOcdBackend:
                 kwargs = {}
                 if image.format.lower() == "bin":
                     kwargs["base_address"] = image.base_address
-                programmer.program(str(path), **kwargs)
+                if hex_data is None:
+                    programmer.program(str(path), **kwargs)
+                else:
+                    # Use the same validated segments as preview/verification.
+                    # Feeding the raw HEX to a second parser rejects harmless
+                    # repeated entry points after the target was already erased.
+                    # Queue all sparse segments before committing once.
+                    for segment, payload in hex_data:
+                        programmer.add_file(
+                            io.BytesIO(payload), file_format="bin",
+                            base_address=segment.start,
+                        )
+                    programmer.commit()
             except FlashError:
                 self._close_after_failure()
                 raise
@@ -2321,6 +2342,19 @@ class PyOcdBackend:
         if not self._algorithm_reset_required or self._algorithm_reset_done:
             return
         target.reset_and_halt()
+        # Some probes/targets acknowledge a software reset while retaining the
+        # running RTOS context. Do not erase and then run an FLM on its PSP or
+        # from an exception handler. Do not silently substitute a physical reset.
+        if (
+            int(target.read_core_register("ipsr")) != 0
+            or int(target.read_core_register("control")) & 3
+        ):
+            raise FlashError(
+                FlashErrorCode.CONNECT_FAIL,
+                "Target reset did not establish a privileged main-stack context; "
+                "Flash was not erased. Select hardware reset with NRST connected, "
+                "or connect under reset.",
+            )
         self._algorithm_reset_done = True
 
     def verify(
@@ -2523,16 +2557,27 @@ class PyOcdBackend:
                     return
                 if mode == "default":
                     session.target.reset()
-                    return
-                Target = import_pyocd_attr("pyocd.core.target", "Target")
-
-                reset_types = {
-                    "hardware": Target.ResetType.HARDWARE,
-                    "software": Target.ResetType.DEFAULT,
-                    "core": Target.ResetType.CORE,
-                    "system": Target.ResetType.SYSTEM,
-                }
-                session.target.reset(reset_types[mode])
+                else:
+                    Target = import_pyocd_attr("pyocd.core.target", "Target")
+                    reset_types = {
+                        "hardware": Target.ResetType.HARDWARE,
+                        "software": Target.ResetType.DEFAULT,
+                        "core": Target.ResetType.CORE,
+                        "system": Target.ResetType.SYSTEM,
+                    }
+                    session.target.reset(reset_types[mode])
+                if self._algorithm_reset_done:
+                    Target = import_pyocd_attr("pyocd.core.target", "Target")
+                    state = session.target.get_state()
+                    if state not in (Target.State.RUNNING, Target.State.SLEEPING):
+                        # Never resume a stranded RAM algorithm as if it were
+                        # the application during session teardown.
+                        session.options["resume_on_disconnect"] = False
+                        raise FlashError(
+                            FlashErrorCode.RESET_FAIL,
+                            "Flash operation finished but reset did not start the target "
+                            f"(state={state.name}); check the reset connection/method.",
+                        )
             except FlashError:
                 raise
             except Exception as exc:
@@ -2699,15 +2744,25 @@ class PyOcdBackend:
                     )
             return
 
-        from intelhex import IntelHex
+        for segment, payload in PyOcdBackend._decode_hex_image(image):
+            for offset in range(0, len(payload), 4096):
+                yield segment.start + offset, payload[offset:offset + 4096]
 
-        parsed = IntelHex(str(path))
-        for segment in image.segments:
-            address = segment.start
-            while address < segment.end:
-                size = min(4096, segment.end - address)
-                yield address, bytes(parsed.tobinarray(start=address, size=size))
-                address += size
+    @staticmethod
+    def _decode_hex_image(
+        image: ImageInspection,
+    ) -> Tuple[Tuple[ImageSegment, bytes], ...]:
+        segments, data = ImageInspector.decode_hex(Path(image.file_path))
+        if (
+            segments != image.segments
+            or segments[0].start != image.start
+            or segments[-1].end != image.end
+        ):
+            raise FlashError(
+                FlashErrorCode.FILE_FORMAT_ERROR,
+                "HEX image data does not match its inspection",
+            )
+        return data
 
     @staticmethod
     def _read_target_bytes(target: Any, address: int, size: int) -> bytes:

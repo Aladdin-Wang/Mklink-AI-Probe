@@ -378,6 +378,13 @@ class OnlineFlashJobManager:
                     cancelled_after_acquire = job.cancel_requested
 
                 if not cancelled_after_acquire:
+                    # Revalidate before connecting, unlocking, or erasing.
+                    # A stale snapshot must not destroy Flash.
+                    if job.request.image_id is not None:
+                        self._refresh_image(job)
+                    with self._condition:
+                        if job.cancel_requested:
+                            return
                     if self._prepare_connect is not None:
                         try:
                             self._prepare_connect(job.request)
