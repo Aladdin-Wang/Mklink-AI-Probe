@@ -2403,6 +2403,43 @@ def create_app(
         items = await run_in_threadpool(managers["superwatch"].list_watches)
         return {"items": items}
 
+    def pinned_variable_payload(preferences):
+        device = _state.get("device")
+        catalog = getattr(device, "symbol_catalog", None) if device else None
+        usable = catalog is not None and not catalog.is_stale()
+        entries = []
+        for name in preferences["pins"]:
+            descriptor = catalog.by_path(name) if usable else None
+            entries.append({
+                "path": name,
+                "descriptor": descriptor.to_dict() if descriptor else None,
+                "reason": "" if descriptor else ("missing" if usable else "source-unavailable"),
+            })
+        return {**preferences, "entries": entries,
+                "generation": catalog.generation if catalog else 0}
+
+    @app.get("/api/dash/superwatch/pins")
+    async def superwatch_pins():
+        from mklink.watch_preferences import load_pins
+        try:
+            preferences = await run_in_threadpool(load_pins, _state["project_root"])
+            return await run_in_threadpool(pinned_variable_payload, preferences)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/api/dash/superwatch/pins")
+    async def superwatch_save_pins(
+        pins: list[str] = Body(...), revision: str = Body(...),
+    ):
+        from mklink.watch_preferences import PreferencesConflict, save_pins
+        try:
+            preferences = await run_in_threadpool(save_pins, _state["project_root"], pins, revision)
+            return await run_in_threadpool(pinned_variable_payload, preferences)
+        except PreferencesConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.get("/api/dash/superwatch/array-snapshot")
     async def superwatch_array_snapshot():
         managers = get_managers()

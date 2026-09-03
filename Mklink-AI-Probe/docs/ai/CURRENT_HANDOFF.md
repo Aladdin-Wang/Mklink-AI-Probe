@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-03T01:30:00+08:00`
+- 更新时间：`2026-09-03T10:43:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：完成 Mac/Linux 文件内容重载与 STM32F103RE WebGUI 回归；另修复在线自定义 FLM 首次破坏性操作前复位/暂停，并禁止烧录自动升级为全片擦除。GUI 校验、复位和运行标记通过。未重打安装包；断开后 DWT Trace 关闭及 UART 零接收作为待处理项。
+- 当前任务：完成 SuperWatch 工程级常用变量置顶、排序和多关键词搜索；真实 Browser WebGUI 与 STM32F103RE 三通道 1ms 采集、刷新持久化、断开重连及重新解析通过，另修复窄面板按钮撑宽。104 项 Python 定向、647 项 GUI 全量及生产构建通过，未重打安装包。既有断开后 DWT Trace 关闭与 UART 零接收仍待处理。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -17,7 +17,7 @@
 - **0.2.0 开发周期** — `in_progress`。预发布分支从 origin/master 的 0.1.9 已发布基线建立；已完成下载器热插拔重连、RTT/串口高频显示、不规范 CMSIS-Pack 宽松导入、常用型号内置算法、跨系列精确/通用型号解析、器件联想加速，以及 STM32 F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 安全加锁/解锁和 VCC 断电复位。
 - **0.2.0 本地候选** — `complete`。源码提交 37b0fbb 的标准 NSIS 与普通用户 Skill ZIP 均包含 7059 个常用型号目标和 2224 个去重 FLM；版本信息完整记录下载器热插拔重连、RTT/串口高频显示、非规范 Pack、系列级精确/通用型号解析、读取镜像回烧和 STM32F413/423 安全加解锁。
 - **RTT 与串口高频显示** — `complete`。RTT 终端按帧合并并限制单次 xterm 写入；RTT/串口日志默认字符串、可切 HEX、时间戳独立开关，保存只写原始数据；RTT 曲线维持 Worker 降采样与 30 FPS 调度。
-- **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。
+- **SuperWatch 与流式性能** — `complete`。使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。新增工程级变量收藏、排序和多关键词搜索；收藏只保存符号路径，和采样选择独立，AXF 变化后重新解析地址。
 - **AI Skill/MCP 安全边界** — `complete`。普通用户 Skill 与维护流程分离；同一探针强制串行，限制读取、写入、批量、flush、dump_memory 和采集时长，超时后隔离会话。
 - **0.1.9 发布候选** — `complete`。标准 NSIS、updater 签名、普通用户 Skill 和 Site Agent 便携包已生成；新增 MicroLink V3.3.8/V4.3.9 UF2 已通过发布预检。
 
@@ -30,7 +30,7 @@
 - **Linko/WHXY 本地 Pack 导入**：真实 Linko.LKS07x.1.1.2.pack 导入 11 个器件并提取 12672B ELF FLM；真实 WHXY.CW32L012_DFP.1.0.2.pack 导入 1 个器件并提取 17540B ELF FLM；两个源文件 SHA-256 均保持不变，相关 Pack/算法/API 测试 246 项通过。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
 - **MCU 安全真机 HIL**：STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。
-- **自动化与构建**：本轮 Python 全量 1767 项通过，12 项因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314；相关链接临时目录安全保留，不强删或伪装跳过。在线后端/任务定向 167 项、探针/API 流启动 105 项、GUI 全量 642 项通过。历史各白名单芯片的 3.3V 安全闭环证据仍有效，本轮未执行保护或 VCC 操作。
+- **SuperWatch 收藏与自动化**：真实 Browser WebGUI 完成批量置顶、排序、取消采样/取消收藏独立、刷新保留和重新解析；STM32F103RE 三通道收到 20221 点，约 997–1000Hz，transport/backend 丢弃均为 0。Python 定向 104 项、GUI 全量 647 项及生产构建通过。详见 docs/verification/v0.2.0-superwatch-pins-hil.md。上一轮 Python 全量 1767 通过、12 项 Windows symlink 权限失败仍保留记录；本轮未重跑全量 Python、未执行保护或 VCC 操作。
 
 ## 架构决策
 

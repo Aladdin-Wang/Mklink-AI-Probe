@@ -19,6 +19,7 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完善连接、实时数据、Pack/型号兼容与安全烧录')
     expect(panel.text()).toContain('下载器热插拔重连')
     expect(panel.text()).toContain('RTT、串口与曲线高频显示停顿')
+    expect(panel.text()).toContain('SuperWatch 支持常用变量置顶和多关键词搜索')
     expect(panel.text()).toContain('更多非规范 Pack')
     expect(panel.text()).toContain('提升器件联想速度')
     expect(panel.text()).toContain('断电复位')

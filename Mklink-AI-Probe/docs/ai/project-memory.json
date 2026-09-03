@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-03T01:30:00+08:00",
+  "updated_at": "2026-09-03T10:43:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "完成 Mac/Linux 文件内容重载与 STM32F103RE WebGUI 回归；另修复在线自定义 FLM 首次破坏性操作前复位/暂停，并禁止烧录自动升级为全片擦除。GUI 校验、复位和运行标记通过。未重打安装包；断开后 DWT Trace 关闭及 UART 零接收作为待处理项。",
+    "current_task": "完成 SuperWatch 工程级常用变量置顶、排序和多关键词搜索；真实 Browser WebGUI 与 STM32F103RE 三通道 1ms 采集、刷新持久化、断开重连及重新解析通过，另修复窄面板按钮撑宽。104 项 Python 定向、647 项 GUI 全量及生产构建通过，未重打安装包。既有断开后 DWT Trace 关闭与 UART 零接收仍待处理。",
     "release": "已从源码提交 24674d9 重新生成 0.2.0 本地 NSIS 并覆盖安装；安装版健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放端口均通过。正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
@@ -37,7 +37,7 @@
     {
       "name": "SuperWatch 与流式性能",
       "status": "complete",
-      "notes": "使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。"
+      "notes": "使用批量直接解码、动态批量、Worker 单一历史和事务成本地址合并；修复暂停/停止后历史消失，并完成采样周期补偿。新增工程级变量收藏、排序和多关键词搜索；收藏只保存符号路径，和采样选择独立，AXF 变化后重新解析地址。"
     },
     {
       "name": "AI Skill/MCP 安全边界",
@@ -80,8 +80,8 @@
       "result": "STM32F103RE、STM32F413VGHx、STM32G474RET6、STM32H743IIT6、STM32L010F4P6、GD32F303CET6 与 PY32F030K28T6 的加锁、保护读取拒绝、解锁擦除和镜像恢复闭环通过。PY32F030K28T6 通过 WebGUI 执行 3.3V 断电复位；解锁后 65536 字节全部为 FF，恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。详见 docs/verification/v0.2.0-*-security-hil.md。"
     },
     {
-      "area": "自动化与构建",
-      "result": "本轮 Python 全量 1767 项通过，12 项因当前 Windows 账户缺少目录 symlink 权限触发 WinError 1314；相关链接临时目录安全保留，不强删或伪装跳过。在线后端/任务定向 167 项、探针/API 流启动 105 项、GUI 全量 642 项通过。历史各白名单芯片的 3.3V 安全闭环证据仍有效，本轮未执行保护或 VCC 操作。"
+      "area": "SuperWatch 收藏与自动化",
+      "result": "真实 Browser WebGUI 完成批量置顶、排序、取消采样/取消收藏独立、刷新保留和重新解析；STM32F103RE 三通道收到 20221 点，约 997–1000Hz，transport/backend 丢弃均为 0。Python 定向 104 项、GUI 全量 647 项及生产构建通过。详见 docs/verification/v0.2.0-superwatch-pins-hil.md。上一轮 Python 全量 1767 通过、12 项 Windows symlink 权限失败仍保留记录；本轮未重跑全量 Python、未执行保护或 VCC 操作。"
     }
   ],
   "decisions": [

@@ -5,7 +5,7 @@
         v-model="query"
         class="form-input"
         data-testid="variable-search"
-        :placeholder="tr('搜索变量', 'Search variables')"
+        :placeholder="tr('搜索变量，多个关键词用逗号分隔', 'Search variables; separate keywords with commas')"
       />
       <button
         class="icon-button"
@@ -66,7 +66,12 @@
         {{ tr('仅已选', 'Selected Only') }}
       </label>
       <span>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</span>
+      <button type="button" class="edit-button" data-testid="pin-selected"
+        :disabled="pinsBusy || !pinsReady || selected.size === 0" @click="pinSelected">
+        {{ tr('置顶已选', 'Pin selected') }}
+      </button>
     </div>
+    <div v-if="pinsError" class="stale-banner" role="alert">{{ pinsError }}</div>
 
     <div v-if="catalog.stale.value" class="stale-banner">{{ tr('AXF 已变化，请重新解析', 'AXF changed. Reparse symbols.') }}</div>
     <div v-else-if="sourceReloaded" class="stale-banner">{{ tr('符号已重载，采集已停止。确认目标已下载对应固件后再启动。', 'Symbols reloaded and acquisition stopped. Confirm matching firmware on the target before restarting.') }}</div>
@@ -98,10 +103,24 @@
     />
     <div v-else-if="catalog.loading.value" class="empty-state">{{ tr('正在加载符号...', 'Loading symbols...') }}</div>
     <div v-else class="variable-groups">
-      <h3 class="variable-root-heading">{{ tr('全局变量', 'Global Variables') }}</h3>
-      <template v-for="row in rows" :key="row.node.key">
+      <section v-for="group in variableGroups" :key="group.key" class="variable-section"
+        :class="{ 'pinned-section': group.key === 'pinned' }" :data-testid="`${group.key}-variables`">
+      <h3 class="variable-root-heading">{{ group.title }}</h3>
+      <div class="variable-section-rows">
+      <div v-if="group.key === 'pinned' && !pins.length" class="pin-help">
+        {{ tr('点击图钉，或置顶已选变量；取消采样不影响置顶。', 'Pin a variable or pin the selected set. Unchecking sampling keeps favorites here.') }}
+      </div>
+      <template v-for="row in group.rows" :key="row.node.key">
+        <div v-if="group.key === 'pinned' && !row.node.descriptor" class="missing-pin" :data-testid="`missing-pin-${row.node.key}`">
+          <input type="checkbox" disabled :aria-label="row.node.key" />
+          <span :title="row.node.key">{{ row.node.key }}</span>
+          <small>{{ tr('当前符号不可用', 'Symbol unavailable') }}</small>
+          <button class="pin-button" type="button" :disabled="pinsBusy"
+            :aria-label="tr(`取消置顶 ${row.node.key}`, `Unpin ${row.node.key}`)"
+            @click="togglePin(row.node.key)"><PinOff :size="14" /></button>
+        </div>
         <div
-          v-if="row.node.kind === 'branch' || row.node.kind === 'range'"
+          v-else-if="row.node.kind === 'branch' || row.node.kind === 'range'"
           class="branch-row"
           :title="row.node.key"
           @click="toggleBranch(row.node)"
@@ -175,7 +194,7 @@
               type="checkbox"
               :checked="selected.has(row.node.descriptor.path)"
               :data-testid="`toggle-${row.node.descriptor.path}`"
-              :disabled="selectionBusy.has(row.node.descriptor.path)"
+              :disabled="catalog.stale.value || selectionBusy.has(row.node.descriptor.path)"
               @change="toggleSelection(row.node.descriptor, $event)"
             />
             <span class="visibility-slot">
@@ -216,6 +235,23 @@
             >
               {{ tr('编辑', 'Edit') }}
             </button>
+            <span class="pin-controls">
+              <button v-if="group.key === 'pinned'" type="button" class="pin-button"
+                :disabled="pinsBusy || pins[0] === row.node.key"
+                :aria-label="tr(`上移 ${row.node.key}`, `Move up ${row.node.key}`)"
+                @click="movePin(row.node.key, -1)"><ArrowUp :size="13" /></button>
+              <button v-if="group.key === 'pinned'" type="button" class="pin-button"
+                :disabled="pinsBusy || pins[pins.length - 1] === row.node.key"
+                :aria-label="tr(`下移 ${row.node.key}`, `Move down ${row.node.key}`)"
+                @click="movePin(row.node.key, 1)"><ArrowDown :size="13" /></button>
+              <button type="button" class="pin-button" :disabled="pinsBusy || !pinsReady"
+                :data-testid="`pin-${row.node.key}`"
+                :aria-label="pinnedPaths.has(row.node.key) ? tr(`取消置顶 ${row.node.key}`, `Unpin ${row.node.key}`) : tr(`置顶 ${row.node.key}`, `Pin ${row.node.key}`)"
+                :title="pinnedPaths.has(row.node.key) ? tr('取消置顶', 'Unpin') : tr('置顶', 'Pin')"
+                @click="togglePin(row.node.key)">
+                <PinOff v-if="pinnedPaths.has(row.node.key)" :size="14" /><Pin v-else :size="14" />
+              </button>
+            </span>
           </div>
 
           <div v-if="editing === row.node.descriptor.path" class="write-editor">
@@ -263,7 +299,9 @@
           </div>
         </div>
       </template>
-      <div v-if="rows.length === 0" class="empty-state">{{ tr('无匹配变量', 'No matching variables') }}</div>
+      <div v-if="group.key === 'all' && group.rows.length === 0" class="empty-state">{{ tr('无匹配变量（置顶变量见上方）', 'No other matching variables; see pinned variables above') }}</div>
+      </div>
+      </section>
     </div>
 
     <div v-if="cLayoutOpen" class="modal-overlay" data-testid="c-layout-modal" @click.self="closeCLayout">
@@ -350,13 +388,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
-import { Activity, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Plus, RefreshCw, X } from '@lucide/vue'
+import { Activity, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Code2, Eye, EyeOff, LoaderCircle, Pin, PinOff, Plus, RefreshCw, X } from '@lucide/vue'
 import { useSymbolCatalog } from '../../composables/useSymbolCatalog'
 import { useToast } from '../../composables/useToast'
 import { useDashboardSetup } from '../../composables/useDashboardSetup'
 import { buildBrowseTree, buildSymbolTree, collectBranchKeys, visibleSymbolRows } from '../../lib/symbolTree'
 import type { SymbolDescriptor } from '../../types/mklink'
-import type { SymbolTreeNode } from '../../lib/symbolTree'
+import type { SymbolTreeNode, VisibleSymbolRow } from '../../lib/symbolTree'
 import { tr } from '../../composables/useLanguage'
 import SetupHint from './SetupHint.vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
@@ -409,6 +447,15 @@ const writeSuccess = reactive<Record<string, number | boolean | undefined>>({})
 const expanded = shallowRef(new Set<string>())
 const searchItems = shallowRef<SymbolDescriptor[]>([])
 const selectedDescriptors = shallowRef(new Map<string, SymbolDescriptor>())
+const pins = ref<string[]>([])
+const pinnedDescriptors = shallowRef(new Map<string, SymbolDescriptor>())
+const pinsRevision = ref('')
+const pinsBusy = ref(false)
+const pinsReady = ref(false)
+const pinsError = ref('')
+let pinsRequest = 0
+let pinsRefreshPending = false
+const pinnedPaths = computed(() => new Set(pins.value))
 const snapshotBusy = ref<string | null>(null)
 const snapshotDialogNode = ref<SymbolTreeNode | null>(null)
 const snapshotStartIndex = ref('0')
@@ -431,6 +478,82 @@ const rows = computed(() => visibleSymbolRows(tree.value, {
   query: query.value,
   selectedOnly: selectedOnly.value,
 }))
+const variableGroups = computed(() => [
+  {
+    key: 'pinned', title: tr(`常用变量 · ${pins.value.length}`, `Pinned variables · ${pins.value.length}`),
+    rows: pins.value.map(path => ({
+      node: { key: path, label: path, kind: 'leaf', descriptor: pinnedDescriptors.value.get(path) ?? null,
+        container: null, browse: null, children: [], leafCount: 1, childCount: null },
+      depth: 0, expanded: false, selectedLeafCount: Number(selected.value.has(path)),
+    } as VisibleSymbolRow)),
+  },
+  { key: 'all', title: query.value.trim() ? tr('搜索结果', 'Search results') : tr('全局变量', 'Global Variables'),
+    rows: rows.value.filter(row => !pinnedPaths.value.has(row.node.key)) },
+])
+
+function applyPins(payload: any): void {
+  pins.value = Array.isArray(payload.pins) ? payload.pins : []
+  pinsRevision.value = payload.revision ?? ''
+  pinnedDescriptors.value = new Map(
+    (payload.entries ?? []).filter((entry: any) => entry.descriptor && payload.generation === catalog.generation.value)
+      .map((entry: any) => [entry.path, entry.descriptor]),
+  )
+  pinsReady.value = Boolean(pinsRevision.value)
+}
+
+async function loadPins(): Promise<void> {
+  if (pinsBusy.value) { pinsRefreshPending = true; return }
+  const requestId = ++pinsRequest
+  try {
+    const payload = await request('/api/dash/superwatch/pins')
+    if (disposed || requestId !== pinsRequest) return
+    applyPins(payload)
+    pinsError.value = ''
+  } catch (cause) {
+    if (disposed || requestId !== pinsRequest) return
+    pinsReady.value = false
+    pinnedDescriptors.value = new Map()
+    pinsError.value = tr('常用变量读取失败：', 'Failed to load pinned variables: ') + String(cause)
+  }
+}
+
+async function savePins(next: string[]): Promise<void> {
+  if (pinsBusy.value || !pinsReady.value) return
+  pinsBusy.value = true
+  pinsRequest += 1
+  try {
+    applyPins(await request('/api/dash/superwatch/pins', {
+      method: 'PUT', body: JSON.stringify({ pins: next, revision: pinsRevision.value }),
+    }))
+    pinsError.value = ''
+  } catch (cause) {
+    pinsRefreshPending = true
+    pinsError.value = tr('置顶未保存：', 'Pinned variables were not saved: ') + String(cause)
+  } finally {
+    pinsBusy.value = false
+    if (pinsRefreshPending) {
+      pinsRefreshPending = false
+      const saveError = pinsError.value
+      await loadPins()
+      if (saveError) pinsError.value = saveError
+    }
+  }
+}
+
+function togglePin(path: string): void {
+  void savePins(pinnedPaths.value.has(path) ? pins.value.filter(item => item !== path) : [...pins.value, path])
+}
+function pinSelected(): void {
+  void savePins([...new Set([...pins.value, ...selected.value])])
+}
+function movePin(path: string, direction: number): void {
+  const next = [...pins.value]
+  const index = next.indexOf(path)
+  const destination = index + direction
+  if (index < 0 || destination < 0 || destination >= next.length) return
+  ;[next[index], next[destination]] = [next[destination]!, next[index]!]
+  void savePins(next)
+}
 
 async function request(path: string, options?: RequestInit): Promise<any> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -454,6 +577,7 @@ async function loadWorkspace(): Promise<void> {
       Array.isArray(response.items) ? response.items.map((item: { name: string }) => item.name) : [],
     )
     await refreshSelectedDescriptors()
+    await loadPins()
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
   }
@@ -569,10 +693,11 @@ async function toggleSelection(symbol: SymbolDescriptor, event: Event): Promise<
   selectionBusy.value = withSet(selectionBusy.value, path, true)
   try {
     const action = checked ? 'add' : 'remove'
-    await request(`/api/dash/superwatch/${action}`, {
+    const result = await request(`/api/dash/superwatch/${action}`, {
       method: 'POST',
       body: JSON.stringify({ name: path }),
     })
+    if (result?.error || result?.item?.error) throw new Error(result.error || result.item.error)
     selected.value = withSet(selected.value, path, checked)
     const descriptors = new Map(selectedDescriptors.value)
     if (checked) descriptors.set(path, symbol)
@@ -773,6 +898,10 @@ watch(() => props.deviceConnected, connected => {
 watch(() => props.symbolLoaded, loaded => {
   if (loaded && props.deviceConnected) void loadWorkspace()
 })
+watch(catalog.generation, () => {
+  pinnedDescriptors.value = new Map()
+  if (props.deviceConnected && props.symbolLoaded) void loadPins()
+})
 watch(query, (next, previous) => {
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
   if (!next.trim() && previous.trim() && searchExpansionSnapshot) {
@@ -803,6 +932,7 @@ watch(tree, roots => {
 
 <style scoped>
 .symbol-panel {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   min-width: 280px;
@@ -819,7 +949,18 @@ watch(tree, roots => {
 .panel-filters { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
-.variable-groups { min-height: 0; overflow: auto; }
+.variable-groups { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.variable-section { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.variable-section-rows { overflow: auto; min-height: 0; }
+.pinned-section { flex: 0 1 auto; max-height: 45%; border-bottom: 2px solid var(--border); }
+.pinned-section .variable-root-heading { color: var(--accent); }
+.pin-help { padding: 8px 10px; color: var(--muted); font-size: 11px; }
+.pin-controls { display: flex; }
+.pin-button { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.pin-button:disabled { color: var(--muted); opacity: .5; cursor: default; }
+.missing-pin { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 8px; color: var(--muted); }
+.missing-pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 12px Consolas, monospace; }
+.missing-pin small { white-space: nowrap; }
 .variable-root-heading { margin: 0; padding: 7px 10px; color: var(--muted); background: var(--bg); font-size: 11px; font-weight: 600; }
 .branch-row {
   align-items: center;
@@ -892,7 +1033,7 @@ watch(tree, roots => {
 .branch-count { color: var(--muted); font: 11px Consolas, monospace; }
 .variable-row { border-bottom: 1px solid var(--border); }
 .variable-row.selected { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.variable-main { display: grid; grid-template-columns: 18px 24px minmax(100px, 1fr) 64px 66px 42px; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; }
+.variable-main { display: grid; grid-template-columns: 18px 24px minmax(100px, 1fr) 64px 66px 42px auto; align-items: center; gap: 5px; min-height: 36px; padding: 4px 8px; }
 .visibility-slot { display: grid; place-items: center; width: 24px; height: 24px; }
 .visibility-button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
 .visibility-button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -901,6 +1042,16 @@ watch(tree, roots => {
 .variable-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; color: var(--fg); cursor: pointer; text-align: left; font: 12px Consolas, monospace; }
 .variable-type, .variable-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 11px Consolas, monospace; }
 .variable-value { color: var(--info); text-align: right; }
+@container (max-width: 440px) {
+  .variable-main { grid-template-columns: 18px 24px minmax(0, 1fr) 32px auto; row-gap: 0; }
+  .variable-main > input { grid-column: 1; grid-row: 1 / 3; }
+  .visibility-slot { grid-column: 2; grid-row: 1 / 3; }
+  .variable-name { grid-column: 3 / 6; grid-row: 1; }
+  .variable-type { display: none; }
+  .variable-value { grid-column: 3; grid-row: 2; text-align: left; }
+  .variable-main > .edit-button { grid-column: 4; grid-row: 2; }
+  .pin-controls { grid-column: 5; grid-row: 2; }
+}
 .edit-button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; }
 .edit-button:disabled { color: var(--muted); cursor: default; }
 .write-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 0 8px 8px 60px; }

@@ -252,19 +252,21 @@ class SymbolCatalog:
             return True
 
     def search(self, query: str, *, limit: int = 50) -> tuple[SymbolDescriptor, ...]:
-        query_key = query.strip().casefold()
+        terms = list(dict.fromkeys(term.strip() for term in re.split(r'[,，;；\n]+', query) if term.strip()))
+        query_keys = [term.casefold() for term in terms]
         count = max(1, min(int(limit), 500))
         found: list[SymbolDescriptor] = []
         seen: set[str] = set()
 
-        exact = self.by_path(query.strip()) if query.strip() else None
-        if exact is not None:
-            found.append(exact)
-            seen.add(exact.path)
+        for term in terms[:50]:
+            exact = self.by_path(term)
+            if exact is not None and exact.path not in seen:
+                found.append(exact)
+                seen.add(exact.path)
         for item in self.items:
             if item.path in seen:
                 continue
-            if query_key and query_key not in item.path.casefold() and query_key not in item.type_name.casefold():
+            if query_keys and not any(key in item.path.casefold() or key in item.type_name.casefold() for key in query_keys):
                 continue
             found.append(item)
             seen.add(item.path)
