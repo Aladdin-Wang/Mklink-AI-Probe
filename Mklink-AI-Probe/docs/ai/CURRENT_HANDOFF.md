@@ -4,22 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T12:16:00+08:00`
+- 更新时间：`2026-09-05T12:30:00+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`安装候选以本轮收口提交为源码基线；确切构建提交及校验值见本地安装验收报告。`
+- HEAD：`业务源码基线 d30b884；生产GUI资源快照 7b7902e。本轮交接结果随后独立提交。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
-- 工作树：历史脱机/GUI/PY32改动本轮审查收口；构建缓存、安装包和硬件原始证据仅保留忽略的 .build。
-- 当前任务：重建0.2.0标准NSIS并覆盖本机安装，整理紧凑交接和芯片安全长期任务。363项打包/在线/脱机定向测试通过；全量回归、安装验收进行中。使用local-bundle，不读取签名密钥、不发布版本；保留固件备份和唯一真机证据。
+- 工作树：历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。
+- 当前任务：0.2.0本地NSIS与Skill包构建完成；覆盖安装被Windows UAC取消，旧安装未改变，等待用户准备确认后重试。Python1845通过/12项symlink权限失败，GUI654通过，定向363通过。sidecar与Skill均验证7059目标/2224FLM。交接已精简，长期任务见security-roadmap.md。详情和校验值见docs/verification/v0.2.0-local-install-20260905.md。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 本地候选** — `in_progress`。收口连接、实时数据、Pack/型号兼容、在线/脱机安全操作与界面改进；本轮重建覆盖安装。
+- **0.2.0 本地候选** — `in_progress`。标准NSIS与Skill包已完成，UAC取消导致覆盖安装未完成。保留旧安装，等待用户确认后验收。
 - **芯片加锁/解锁长期任务** — `in_progress`。按保护架构和容量组累积代表板证据；当前范围、待办与完成标准见 docs/ai/security-roadmap.md。不设置无人值守硬件自动化。
 - **交接整理** — `complete`。常驻交接仅保留当前基线、长期规则、未解决问题和证据入口；逐次操作日志不搬入交接，不删除原始备份。
 
 ## 验证证据
 
+- **本轮打包**：生产构建成功；Python1845通过、12项WinError1314，GUI654通过，定向363通过。sidecar2225个资产文件逐项一致，Skill边界校验通过。安装被UAC取消，不计为安装通过。见docs/verification/v0.2.0-local-install-20260905.md。
 - **当前 V4 + STM32F103**：普通暂停、3.3V：在线及脱机加锁/解锁/恢复通过，512KiB全片比对一致，APP RTT正常。F1选项FLM上下文/中断/cleanup修复，148项定向测试通过。当前未锁运行。见 docs/verification/v0.2.0-v4-security-port.md。
 - **芯片安全证据**：在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。
 - **连接与 HEX**：STM32连接/复位矩阵与客户合并HEX在GD32验证通过；桌面勾选安全操作确认框修复。见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
@@ -45,7 +46,7 @@
 
 ## 下一动作
 
-1. 完成当前本地包覆盖安装与独立sidecar验收，更新安装报告中的构建提交、哈希和运行结果。
+1. 用户准备确认UAC后，重跑 .build/reports/install-local-20260905.ps1；停止已知源码8765服务再验证新安装的独立sidecar、界面、枚举和正常退出。不要把旧安装或源码响应当成新包结果。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. 补Mac/Linux、UART和RTOS Trace生命周期验证；正式发布前再跑发布全量门禁。
 
@@ -56,7 +57,7 @@
 - Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART新一轮真正收数待补。
 - RTOS Trace在pyOCD在线烧录断开后时基停止，生命周期问题尚未修复；禁止盲写全局寄存器掩盖。
 - RTT单次SWD失败仍可能退避200ms；高采样率需按通道数实测，不承诺16通道稳定10/20kHz。
-- Windows历史全量测试存在symlink权限限制；安装包未做Authenticode/跨账号与所有历史升级路径验收。
+- Windows全量12项symlink测试因WinError1314失败；带链接临时目录保留，不能强制清理。安装包无Authenticode；当前新包被UAC取消，安装/独立启动/退出验收待做。
 - 1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。
 
 ## 延续协议
