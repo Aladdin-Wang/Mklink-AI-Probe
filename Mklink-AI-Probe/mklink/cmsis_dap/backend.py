@@ -161,6 +161,62 @@ def _prepare_pack_flm_regions(
     _expand_pack_flm_regions(target, requested_regions)
 
 
+class _TraceStateDelegate:
+    """Preserve a running application's trace clock across pyOCD cleanup.
+
+    Armed only after a successful non-security reset/run. pyOCD's normal core
+    disconnect clears DEMCR, which otherwise stops firmware-owned DWT timing.
+    Capture at teardown (not connection), and restore only an observed TRCENA;
+    never restore debugger vector-catch bits or enable a previously disabled
+    trace clock. Normal breakpoint cleanup, resume, and probe close still run.
+    """
+
+    _DEMCR = 0xE000EDFC
+    _TRCENA = 1 << 24
+
+    def __init__(self, next_delegate: Any = None) -> None:
+        self._next_delegate = next_delegate
+        self.enabled = False
+        self.errors: list[str] = []
+        self._trace_by_core: dict[int, int] = {}
+
+    def will_stop_debug_core(self, core: Any) -> None:
+        callback = getattr(self._next_delegate, "will_stop_debug_core", None)
+        if callable(callback):
+            callback(core=core)
+        self._trace_by_core.pop(id(core), None)
+        if not self.enabled:
+            return
+        try:
+            self._trace_by_core[id(core)] = core.read32(self._DEMCR) & self._TRCENA
+        except Exception as exc:
+            # Do not prevent pyOCD from releasing a broken connection. Report
+            # the failure after session.close(), even when pyOCD swallows it.
+            self.errors.append(f"read target trace state: {exc}")
+
+    def did_stop_debug_core(self, core: Any) -> None:
+        callback = getattr(self._next_delegate, "did_stop_debug_core", None)
+        if callable(callback):
+            callback(core=core)
+        trace = self._trace_by_core.pop(id(core), 0)
+        if not trace:
+            return
+        try:
+            current = core.read32(self._DEMCR)
+            if not current & trace:
+                core.write32(self._DEMCR, current | trace)
+                core.flush()
+                if not core.read32(self._DEMCR) & trace:
+                    raise RuntimeError("TRCENA did not persist")
+        except Exception as exc:
+            self.errors.append(f"restore target trace state: {exc}")
+
+    def __getattr__(self, name: str) -> Any:
+        if self._next_delegate is None:
+            raise AttributeError(name)
+        return getattr(self._next_delegate, name)
+
+
 class _PackFlmDelegate:
     def __init__(
         self,
@@ -1145,8 +1201,7 @@ class PyOcdBackend:
                         security_family or "",
                         security_flm_region,
                     )
-                if delegate is not getattr(session, "delegate", None):
-                    session.delegate = delegate
+                session.delegate = _TraceStateDelegate(delegate)
                 session.open()
                 if resolved_flms or security_payload is not None:
                     _mask_custom_flm_interrupts(session.target)
@@ -2272,6 +2327,9 @@ class PyOcdBackend:
             if session is not None:
                 try:
                     session.close()
+                    trace_delegate = getattr(session, "delegate", None)
+                    if isinstance(trace_delegate, _TraceStateDelegate) and trace_delegate.errors:
+                        raise RuntimeError("; ".join(trace_delegate.errors))
                 except Exception as exc:
                     raise self._mapped_error(exc, FlashErrorCode.CONNECT_FAIL) from None
 
@@ -2543,6 +2601,9 @@ class PyOcdBackend:
     def reset_run(self, reset_mode: Optional[str] = None) -> None:
         with self._lock:
             session = self._require_session()
+            trace_delegate = getattr(session, "delegate", None)
+            if isinstance(trace_delegate, _TraceStateDelegate):
+                trace_delegate.enabled = False
             mode = self._reset_mode if reset_mode is None else reset_mode
             if mode not in {
                 "default", "hardware", "software", "core", "system", "power-cycle"
@@ -2617,6 +2678,8 @@ class PyOcdBackend:
                             "Flash operation finished but reset did not start the target "
                             f"(state={state.name}); check the reset connection/method.",
                         )
+                if isinstance(trace_delegate, _TraceStateDelegate) and not self._security_family:
+                    trace_delegate.enabled = True
             except FlashError:
                 raise
             except Exception as exc:

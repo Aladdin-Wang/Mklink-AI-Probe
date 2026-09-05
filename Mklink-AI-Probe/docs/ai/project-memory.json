@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-05T15:16:45+08:00",
+  "updated_at": "2026-09-05T15:39:29+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "SystemView上游修复源码ada1ca0，生产GUI按该提交重建；已安装本地候选仍为d30b884（旧GUI快照7b7902e），不含本次修复。",
+    "head": "7044dd4上游同步基线之后增加pyOCD断开时跟踪时钟保留修复；生产GUI仍为ada1ca0构建。已安装本地候选d30b884不含这两轮修复。",
     "remote_head": "每次维护前校正 GitHub origin/codex/v0.2.0-development。",
     "working_tree": "历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。"
   },
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "已将su5176的SystemView生命周期修复最终结果移入0.2.0（7946aa7至e843a30），本地源码ada1ca0。Python定向230、GUI全量655及生产构建通过；真实Edge生产页的模拟HTTP/SSE恢复提示与停止释放通过。未连接硬件，烧录后时基停止继续待复测。用户要求0.2.0开发完成后再向su5176提PR，本轮仅推送origin开发分支。",
+    "current_task": "F103真机复现并修复pyOCD普通在线烧录后清DEMCR导致SystemView时基停止；相同固件复烧后时钟前进，真实Edge约72秒590521事件、连续第二会话127216事件、无自动重试，暂停显示/停止/断连通过。Python定向510通过。用户接手UART排查，已释放UART和命令口；8765源码服务保留、设备未连接，不再自动占用串口。",
     "release": "本地候选安装已完成；包在 .build/artifacts/v0.2.0-local-d30b884-20260905。local-bundle无updater签名，不作正式发布。手动安装阶段PATH未受控，安装后纯系统PATH启动已测。证据见 docs/verification/v0.2.0-local-install-20260905.md。"
   },
   "milestones": [
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "SystemView上游同步",
-      "result": "源码ada1ca0：每次连接首会话最多恢复一次，单调时钟空闲判定、任务名解析生命周期与GUI恢复提示。Python230、GUI655、生产构建及真实Edge模拟状态验证通过；未做本地真机复验。来源、证据及限制见docs/verification/v0.2.0-systemview-upstream-sync.md。"
+      "result": "上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。"
     },
     {
       "area": "本地打包与安装",
@@ -76,23 +76,23 @@
     "加锁/解锁按保护架构和容量组验证后开放；CLI/MCP/在线共用后端，脱机另外核对执行器支持。禁止RDP2，异常身份/选项/算法一律拒绝。连接策略以当前代码和实测为准，不能沿用旧的统一under-reset说法。"
   ],
   "hardware": {
-    "probe": "上次真机验证为V4 + STM32F103RE，3.3V，原bootloader+APP已恢复、未锁运行；本次接管未重新确认连接及目标状态。新操作前重新枚举并核对电压。",
-    "backup": "V4/F103原始512KiB双读备份与日志：.build/reports/v4-f103-security-20260905；GD32新程序备份：.build/reports/gd32-new-program-20260905。禁止随日志整理删除。",
+    "probe": "本轮V4 + STM32F103RE，512KiB Flash、72MHz；保持原供电，APP build=2026090501已在线烧录验证，前置bootloader保留。目标运行，UART/命令口均已释放供用户手动测试。",
+    "backup": "本轮完整512KiB备份与原源码/AXF/HEX：.build/reports/systemview-hil-20260905/before；此前V4/F103双读备份：.build/reports/v4-f103-security-20260905；GD32备份：.build/reports/gd32-new-program-20260905。禁止删除唯一备份。",
     "permission": "测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。"
   },
   "known_limits": [
     "PY32F030K28T6近期加锁后重连/解锁异常尚未闭环；保留精确型号限制，不以历史成功代替当前复测。",
     "加锁后无调试独立运行尚需额外观测；SWD/RTT可能受读保护限制，调试接入会干扰判断。其他架构及V4组合不能从F103结果外推。",
-    "Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART新一轮真正收数待补。",
-    "SystemView主机会话生命周期已同步上游修复；pyOCD在线烧录断开后时基停止尚无对应真机复测证据，不能关闭。上游也保留探针冷启动复位/停流问题；禁止盲写全局寄存器或扩大重试掩盖。",
+    "Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART有效文本接收未通过，已释放接口由用户手动排查。",
+    "F103普通在线烧录后时基停止已修复并真机验证；探针断电冷启动复位/停流、其他芯片和保护操作不由此证明。保持单次有界恢复；不能盲写全局寄存器或扩大重试掩盖。",
     "RTT单次SWD失败仍可能退避200ms；高采样率需按通道数实测，不承诺16通道稳定10/20kHz。",
     "Windows全量12项symlink测试因WinError1314失败；带链接临时目录保留，不能强制清理。安装包无Authenticode；用户手动安装阶段PATH未受控，安装后纯系统PATH启动及退出已通过。",
     "1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。"
   ],
   "next_actions": [
-    "已安装d30b884候选不含SystemView新修复；接管检查时8765无监听。后续复测使用ada1ca0或更新源码/重建包，明确区分源码服务与已安装后端。",
+    "用户正在手动排查UART；源码服务8765保留但无设备/串口连接，不要自动重新占用。已安装d30b884不含上游和本轮pyOCD修复；后续使用最新源码或重建包。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
-    "用确认过的板卡/电压补SystemView冷启动、长流、连续启停及pyOCD烧录后时基复测；继续补Mac/Linux和UART验证。正式发布前再跑发布全量门禁。",
+    "F103的SystemView长流、连续启停和普通烧录后时基已完成；后续补探针断电冷启动、其他板卡、Mac/Linux及用户反馈后的UART验证。正式发布前重建安装包并跑发布全量门禁。",
     "按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。"
   ],
   "continuation_protocol": [
