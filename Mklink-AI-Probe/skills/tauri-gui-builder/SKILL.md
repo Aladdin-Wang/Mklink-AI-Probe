@@ -44,6 +44,7 @@ Run from the project root:
 ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('skills/tauri-gui-builder/scripts/build.py', '--check')
 ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('skills/tauri-gui-builder/scripts/build.py')
 ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('skills/tauri-gui-builder/scripts/build.py', '--bundle')
+./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('skills/tauri-gui-builder/scripts/build.py', '--local-bundle')
 ./scripts/build_workspace.ps1 -Action clean
 ```
 
@@ -68,6 +69,12 @@ Tauri child process and never prints it. Set `MKLINK_TAURI_UPDATER_KEY_PASSWORD`
 when the key uses a non-empty password; the generated local key uses an empty
 password by default.
 
+For local overwrite-install requests without signing authorization, use
+`--local-bundle`: it rebuilds the same sidecar and standard NSIS, disables updater
+artifact signing only for this build, never reads a private key, and restores
+the tracked configuration. A local package has no `.sig` and is not an updater
+release. Do not weaken the signed-release checks to accept it for publication.
+
 ## Release Candidates
 
 Copy candidate installers to the main checkout's `.build/artifacts` directory. Include the source commit in every filename and generate a SHA-256 list. Keep installers, sidecars, checksums, logs, and extracted MSI contents out of Git. Preserve existing official `release/` assets.
@@ -76,7 +83,8 @@ Generate only the standard NSIS by default. MSI and WebView2-offline variants re
 
 ## Required Verification
 
-1. Build exits successfully and produces the standard NSIS setup/updater executable and signature.
+1. Build exits successfully and produces standard NSIS; an authorized signed
+   bundle also requires its updater signature. A local bundle deliberately has none.
 2. Install NSIS with a PATH containing only Windows system directories.
 3. Start the installed app and verify `GET /api/health` returns `status=ok`.
 4. Verify `GET /api/online-flash/probes` runs without exposing complete probe identifiers in evidence.

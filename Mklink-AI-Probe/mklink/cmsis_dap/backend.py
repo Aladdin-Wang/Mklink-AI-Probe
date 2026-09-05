@@ -27,7 +27,7 @@ _LOCKED_ERROR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _POWER_CYCLE_VOLTAGES_MV = frozenset({1800, 3300, 5000})
-_POWER_CYCLE_OFF_SECONDS = 1.0
+_POWER_CYCLE_OFF_SECONDS = 3.0
 
 
 def _power_cycle_mklink_probe(probe_identifier: str, voltage_mv: int) -> None:
@@ -1207,8 +1207,10 @@ class PyOcdBackend:
                     )
                 if self._security_family == "py32f030x8-rdp1":
                     changed, _desired = self._write_py32f030_rdp(0xAA)
+                    if changed:
+                        self._verify_py32f030_transition(_desired, unlock=True)
                     return (
-                        "PY32F030 read protection was disabled; main Flash was mass-erased and a power-cycle reset is required"
+                        "PY32F030 read protection was disabled and verified after power cycle; all 64 KiB Flash was verified erased"
                         if changed
                         else "PY32F030 read protection was already disabled"
                     )
@@ -1289,8 +1291,10 @@ class PyOcdBackend:
                     )
                 if self._security_family == "py32f030x8-rdp1":
                     changed, _desired = self._write_py32f030_rdp(0xBB)
+                    if changed:
+                        self._verify_py32f030_transition(_desired, unlock=False)
                     return (
-                        "PY32F030 reversible read protection was written; a power-cycle reset is required to activate it"
+                        "PY32F030 reversible read protection was activated and verified after power cycle"
                         if changed
                         else "PY32F030 reversible read protection was already active"
                     )
@@ -1913,6 +1917,36 @@ class PyOcdBackend:
     _PY32F030_OPTION_ADDRESS = 0x1FFF0E80
     _PY32F030_OPTION_SIZE = 16
     _PY32F030_DBG_ID = 0x60001000
+
+    def _verify_py32f030_transition(self, desired: bytes, *, unlock: bool) -> None:
+        """Finish the security transition before a job may proceed to programming."""
+        if self._connection_arguments is None or self._reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
+            raise RuntimeError("PY32F030 security verification requires reconnect and power-cycle configuration")
+        reconnect = dict(self._connection_arguments)
+        reconnect["connect_mode"] = "halt" if unlock else "attach"
+        probe_identifier = self._probe_identifier
+        voltage = self._reset_voltage_mv
+        # Release the existing debug session before removing target power.
+        self._require_session().options["resume_on_disconnect"] = False
+        self.disconnect()
+        self._power_cycle(probe_identifier, voltage)
+        time.sleep(1.0)  # Allow option loading after the rail is restored.
+        self.connect(**reconnect)
+        target = self._require_session().target
+        dbg_id = int.from_bytes(self._read_target_bytes(target, 0x40015800, 4), "little")
+        factory_id = int.from_bytes(self._read_target_bytes(target, 0x1FFF0FF8, 4), "little")
+        uid = self._read_target_bytes(target, 0x1FFF0E00, 16)
+        if dbg_id != self._PY32F030_DBG_ID or factory_id != dbg_id or len(uid) != 16 or uid[12] != 0x78:
+            raise RuntimeError("PY32F030 identity verification failed after power cycle")
+        actual = self._read_target_bytes(target, self._PY32F030_OPTION_ADDRESS, self._PY32F030_OPTION_SIZE)
+        logical = int.from_bytes(self._read_target_bytes(target, 0x40022020, 4), "little") & 0xFF
+        if not self._py32f030_option_words_valid(actual) or actual != desired or logical != desired[0]:
+            raise RuntimeError("PY32F030 RDP or preserved option bytes did not persist after power cycle")
+        if unlock:
+            for address in range(0x08000000, 0x08010000, 4096):
+                if self._read_target_bytes(target, address, 4096) != b"\xFF" * 4096:
+                    raise RuntimeError("PY32F030 main Flash was not completely erased by RDP unlock")
+        self._py32f030_unlock_transition_pending = False
 
     @staticmethod
     def _py32f030_option_words_valid(payload: bytes) -> bool:

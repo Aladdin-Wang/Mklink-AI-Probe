@@ -55,7 +55,7 @@ const probeId = ref('')
 const probeBusy = ref(false)
 const probeError = ref('')
 const frequency = ref(savedFrequency(saved.frequency))
-const connectMode = ref(saved.connectMode ?? 'attach')
+const connectMode = ref(saved.connectMode ?? 'halt')
 const resetMode = ref(saved.resetMode ?? 'default')
 const resetVoltageMv = ref<ResetVoltageMv>(savedResetVoltage(saved.resetVoltageMv))
 const hpmBoards = [
@@ -176,7 +176,9 @@ function setActions(values: JobAction[]): void {
     && (next.includes('unlock') || next.includes('lock'))
   ) {
     resetMode.value = 'power-cycle'
-    if (next.includes('unlock')) connectMode.value = 'under-reset'
+    if (next.includes('unlock')) {
+      connectMode.value = ['py32f030x8-rdp1', 'gd32f303xe-spc'].includes(security.value.family) ? 'halt' : 'under-reset'
+    }
     persist()
   }
   actions.value = next
@@ -819,8 +821,8 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   creatingJob.value = true
   try {
     if (selectedResetVoltage !== null && !await confirmRisk(tr(
-      `即将关闭下载器 VCC 输出，等待 1 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
-      `The probe will disable VCC, wait 1 second, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
+      `即将关闭下载器 VCC 输出，等待 3 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
+      `The probe will disable VCC, wait 3 seconds, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
     ))) return
     if (disposed) return
     progressOwner.value = 'flash'

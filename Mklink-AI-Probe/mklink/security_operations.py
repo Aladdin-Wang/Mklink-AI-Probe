@@ -72,6 +72,9 @@ def run_security_operation(
     services = create_default_online_flash_services(ResourceManager())
     try:
         target = _resolved_target(services.catalog, part)
+        from mklink.cmsis_dap.security import require_security_capability
+
+        security = require_security_capability(target.part_number)
         probes = _enumerate_probes(services.probe_provider)
         if probe_id:
             selected = [probe for probe in probes if probe.unique_id == probe_id]
@@ -109,7 +112,12 @@ def run_security_operation(
             probe_id=selected[0].unique_id,
             target_part=target.part_number,
             frequency=frequency,
-            connect_mode="under-reset" if normalized_action == "unlock" else "halt",
+            connect_mode=(
+                "under-reset"
+                if normalized_action == "unlock"
+                and security.family not in {"py32f030x8-rdp1", "gd32f303xe-spc"}
+                else "halt"
+            ),
             reset_mode="power-cycle",
             reset_voltage_mv=voltage_mv,
         )

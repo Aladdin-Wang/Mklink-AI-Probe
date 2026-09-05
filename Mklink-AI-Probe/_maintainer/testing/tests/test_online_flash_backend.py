@@ -428,11 +428,11 @@ def test_py32f030_security_validates_identity_and_preserves_other_options() -> N
     backend._session = FakeSession(target)
     backend._security_family = "py32f030x8-rdp1"
 
-    assert "power-cycle reset is required" in backend.lock_security()
+    assert backend._write_py32f030_rdp(0xBB)[0] is True
     assert target.option_bytes == bytes.fromhex(
         "bb be 44 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
     )
-    assert "mass-erased" in backend.unlock_security()
+    assert backend._write_py32f030_rdp(0xAA)[0] is True
     assert target.option_bytes == bytes.fromhex(
         "aa be 55 41 ff 00 00 ff ff ff ff ff ff ff 00 00"
     )
@@ -469,8 +469,9 @@ def test_py32f030_security_rejects_identity_mismatch(factory_id) -> None:
     assert raised.value.code is FlashErrorCode.LOCK_FAIL
 
 
-def test_py32f030_unlock_accepts_only_reset_transition_and_verifies_after_power_cycle(
-    monkeypatch,
+@pytest.mark.parametrize("bad_result", [None, "preserved", "blank", "identity"])
+def test_py32f030_unlock_verifies_transition_before_returning_to_program(
+    monkeypatch, bad_result,
 ) -> None:
     class SecurityFlash:
         class Operation:
@@ -541,6 +542,8 @@ def test_py32f030_unlock_accepts_only_reset_transition_and_verifies_after_power_
     power_cycles = []
     backend = PyOcdBackend(power_cycle=lambda probe, voltage: power_cycles.append((probe, voltage)))
     backend._session = FakeSession(target)
+    old_session = backend._session
+    old_session.options = {}
     backend._security_family = "py32f030x8-rdp1"
     backend._probe_identifier = "probe"
     backend._reset_mode = "power-cycle"
@@ -548,18 +551,35 @@ def test_py32f030_unlock_accepts_only_reset_transition_and_verifies_after_power_
     backend._connection_arguments = {"probe": "probe", "target": "PY32F030K28T6", "frequency": 1_000_000}
 
     fresh_target = Target(protected=False, with_flash=False)
+    original_read = fresh_target.read_memory_block8
+    def read_result(address, size):
+        if bad_result == "identity" and address == 0x40015800:
+            return (0).to_bytes(4, "little")
+        if bad_result == "blank" and address == 0x0800F000:
+            return b"\x00" + b"\xFF" * (size - 1)
+        return original_read(address, size)
+    fresh_target.read_memory_block8 = read_result
+    if bad_result == "preserved":
+        fresh_target.option_bytes[1] = 0xBF
+        fresh_target.option_bytes[3] = 0x40
 
     def reconnect(**kwargs):
+        assert old_session.close_calls == 1
+        assert kwargs["connect_mode"] == "halt"
         backend._session = FakeSession(fresh_target)
         backend._security_family = "py32f030x8-rdp1"
         backend._reset_voltage_mv = 3300
         backend._connection_arguments = kwargs
 
     monkeypatch.setattr(backend, "connect", reconnect)
+    monkeypatch.setattr("mklink.cmsis_dap.backend.time.sleep", lambda _delay: None)
 
-    assert "mass-erased" in backend.unlock_security()
-    assert backend._py32f030_unlock_transition_pending is True
-    backend.reset_run("power-cycle")
+    if bad_result is not None:
+        with pytest.raises(FlashError) as raised:
+            backend.unlock_security()
+        assert raised.value.code is FlashErrorCode.UNLOCK_FAIL
+    else:
+        assert "verified erased" in backend.unlock_security()
     assert power_cycles == [("probe", 3300)]
     assert backend._py32f030_unlock_transition_pending is False
 
@@ -1074,7 +1094,7 @@ def test_hpm_power_cycle_reset_restores_selected_voltage(monkeypatch) -> None:
 
     assert calls == [
         ("power-off",),
-        ("wait", 1.0),
+        ("wait", 3.0),
         ("power-on", 5000, True),
     ]
     backend.disconnect()
@@ -2695,7 +2715,7 @@ def test_default_power_cycle_uses_matching_cdc_commands(monkeypatch) -> None:
         ("bridge", "COM42"),
         ("connect",),
         ("command", "cmd.set_power_off()", 10.0),
-        ("wait", 1.0),
+        ("wait", 3.0),
         ("command", "cmd.set_power_on(1800)", 10.0),
         ("close",),
     ]

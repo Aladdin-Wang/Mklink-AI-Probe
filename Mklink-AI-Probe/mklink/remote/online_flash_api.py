@@ -1084,6 +1084,15 @@ def _start_job_with_configuration(
                 "stm32h743-rdp1",
                 "stm32l010x4-rdp1",
             }
+            under_reset_unlock_security = power_cycle_security - {
+                "py32f030x8-rdp1",
+                "gd32f303xe-spc",
+            }
+            if security.family == "gd32f303xe-spc" and body.connect_mode not in {"halt", "under-reset"}:
+                raise FlashError(
+                    FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                    "GD32F303 加锁/解锁必须使用普通暂停连接或复位下连接",
+                )
             if security.family in power_cycle_security and (
                 body.reset_mode != "power-cycle" or "reset" not in body.actions
             ):
@@ -1092,7 +1101,7 @@ def _start_job_with_configuration(
                     "该器件加锁/解锁必须选择断电复位并在操作后执行复位",
                 )
             if (
-                security.family in power_cycle_security
+                security.family in under_reset_unlock_security
                 and "unlock" in body.actions
                 and body.connect_mode != "under-reset"
             ):

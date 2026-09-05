@@ -47,6 +47,33 @@ def test_stm32f103_is_enabled_only_with_pinned_option_algorithm(monkeypatch, tmp
     assert security_capability("STM32F103xE").supported is True
 
 
+@pytest.mark.parametrize(
+    ("part_number", "bundle_part"),
+    [
+        ("STM32F100C8", "STM32F100x8"),
+        ("STM32F101ZGT6", "STM32F101xG"),
+        ("STM32F102CBT6", "STM32F102xB"),
+        ("STM32F103RCT6", "STM32F103xC"),
+        ("STM32F105R8T6", "STM32F105x8"),
+        ("STM32F105RCT6", "STM32F105xC"),
+        ("STM32F107VCT6", "STM32F107xC"),
+    ],
+)
+def test_stm32f1_order_codes_share_the_validated_option_architecture(
+    monkeypatch, tmp_path, part_number, bundle_part
+):
+    algorithm = _algorithm(tmp_path)
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.security.discover_builtin_option_algorithm",
+        lambda part: algorithm if part == bundle_part else None,
+    )
+
+    capability = security_capability(part_number)
+
+    assert capability.supported is True
+    assert capability.family == "stm32f103-rdp1"
+
+
 def test_gd32f303xe_order_codes_use_only_pinned_option_algorithm(monkeypatch, tmp_path):
     algorithm = BuiltinOptionAlgorithm(
         target_part="GD32F303CE",

@@ -77,6 +77,47 @@ def test_external_bin_patch_restores_exact_config(builder, tmp_path):
     assert config.read_bytes() == original
 
 
+def test_local_bundle_disables_updater_artifacts_and_restores_config(builder, tmp_path):
+    config = tmp_path / "tauri.conf.json"
+    original = b'{"bundle":{"createUpdaterArtifacts":true}}\n'
+    config.write_bytes(original)
+    with builder.temporary_bundle_config(config, signed=False):
+        assert json.loads(config.read_text())["bundle"]["createUpdaterArtifacts"] is False
+    assert config.read_bytes() == original
+
+
+def test_local_bundle_never_reads_signing_key(builder, monkeypatch, tmp_path):
+    builder.TAURI_DIR = tmp_path
+    configure_stub_stcp(builder, tmp_path)
+    (tmp_path / "tauri.conf.json").write_text('{"bundle":{}}', encoding="utf-8")
+    monkeypatch.setattr(builder, "require_release_builtin_flm_bundle", lambda: tmp_path)
+    monkeypatch.setattr(builder, "load_updater_private_key", lambda: pytest.fail("must not read key"))
+    calls = []
+    monkeypatch.setattr(builder, "build_sidecar", lambda force=False: calls.append(force) or True)
+    monkeypatch.setattr(builder, "build_tauri", lambda **kwargs: calls.append(kwargs))
+    builder.build_release_bundle(signed=False)
+    assert calls == [True, {"bundle": True, "local_bundle": True}]
+
+
+def test_local_tauri_bundle_excludes_signing_environment(builder, monkeypatch, tmp_path):
+    builder.GUI_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "src-tauri"
+    release = builder.TAURI_DIR / "target" / "release"
+    nsis = release / "bundle" / "nsis"
+    nsis.mkdir(parents=True)
+    (release / "mklink-ai-probe.exe").write_bytes(b"exe")
+    setup = nsis / "local-setup.exe"
+    setup.write_bytes(b"setup")
+    names = ("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+             "MKLINK_TAURI_UPDATER_KEY", "MKLINK_TAURI_UPDATER_KEY_PASSWORD")
+    for name in names:
+        monkeypatch.setenv(name, "do-not-use")
+    calls = []
+    monkeypatch.setattr(builder, "run", lambda command, **kwargs: calls.append(kwargs) or 0)
+    assert builder.build_tauri(bundle=True, local_bundle=True) == {"setup": setup}
+    assert all(name not in calls[0]["env"] for name in names)
+
+
 def test_external_bin_patch_restores_after_failure(builder, tmp_path):
     config = tmp_path / "tauri.conf.json"
     original = b'{"bundle":{"active":true,"icon":[]}}'

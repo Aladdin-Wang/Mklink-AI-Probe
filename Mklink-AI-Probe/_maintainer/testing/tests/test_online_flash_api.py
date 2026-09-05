@@ -587,7 +587,7 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
         ("stm32h743-rdp1", 0xFFFFFFFF, 36),
     ],
 )
-def test_stm32_security_job_requires_power_cycle_reset(
+def test_security_job_requires_validated_power_cycle_and_connection(
     app, services, monkeypatch, tmp_path, family, option_address, option_size
 ):
     option_flm = tmp_path / "STM32_OPT.FLM"
@@ -620,7 +620,7 @@ def test_stm32_security_job_requires_power_cycle_reset(
     assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
     assert "断电复位" in response.json()["detail"]["message"]
 
-    wrong_connection = request(
+    halt_connection = request(
         app,
         "POST",
         "/api/online-flash/jobs",
@@ -633,8 +633,22 @@ def test_stm32_security_job_requires_power_cycle_reset(
             "reset_voltage_mv": 3300,
         },
     )
-    assert wrong_connection.status_code == 422
-    assert "复位下连接" in wrong_connection.json()["detail"]["message"]
+    if family in {"py32f030x8-rdp1", "gd32f303xe-spc"}:
+        assert halt_connection.status_code == 200, halt_connection.text
+        assert services.job_manager.started[-1].connect_mode == "halt"
+        if family == "gd32f303xe-spc":
+            running_connection = request(app, "POST", "/api/online-flash/jobs", json={
+                "actions": ["connect", "unlock", "reset", "disconnect"],
+                "probe_id": "mk", "target_part": "DEVICE_A",
+                "connect_mode": "attach", "reset_mode": "power-cycle",
+                "reset_voltage_mv": 3300,
+            })
+            assert running_connection.status_code == 422
+            assert "普通暂停" in running_connection.json()["detail"]["message"]
+        return
+
+    assert halt_connection.status_code == 422
+    assert "复位下连接" in halt_connection.json()["detail"]["message"]
 
     accepted = request(
         app,

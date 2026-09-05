@@ -46,7 +46,10 @@ PY32F030_OPTION_SIZE = 16
 PY32F030_OPTION_FLM_SHA256 = (
     "de2460697cc31abfd897570696bd6adb901acd7bbb5401c1dcdac2f15dc3bcbd"
 )
-_STM32F103 = re.compile(r"^STM32F103(?:[CTRVZ][468BCDEFG]|X[468BCDEFG])$", re.IGNORECASE)
+_STM32F1 = re.compile(
+    r"^STM32F10(?:0|1|2|3|5|7)(?:[A-Z][468BCDEFG][A-Z0-9X]{0,4}|X[468BCDEFG])$",
+    re.IGNORECASE,
+)
 _STM32F413 = re.compile(r"^STM32F413(?:X[GH]|[A-Z][GH][A-Z0-9X]{2})$", re.IGNORECASE)
 _STM32G474_512K = re.compile(r"^STM32G474(?:XE|[A-Z]E[A-Z0-9X]{2})$", re.IGNORECASE)
 _STM32H743_2M = re.compile(r"^STM32H743(?:XI|[A-Z]I[A-Z0-9X]{2})$", re.IGNORECASE)
@@ -89,12 +92,26 @@ class SecurityCapability:
         }
 
 
-def _stm32f103_bundle_part(part_number: str) -> Optional[str]:
-    match = _STM32F103.fullmatch(part_number.strip())
-    if match is None:
+_STM32F1_DENSITIES = {
+    "STM32F100": frozenset("468BCDE"),
+    "STM32F101": frozenset("468BCDEFG"),
+    "STM32F102": frozenset("468B"),
+    "STM32F103": frozenset("468BCDEFG"),
+    "STM32F105": frozenset("8BC"),
+    "STM32F107": frozenset("8BC"),
+}
+
+
+def _stm32f1_bundle_part(part_number: str) -> Optional[str]:
+    part = part_number.strip().upper()
+    if _STM32F1.fullmatch(part) is None:
         return None
-    suffix = part_number.strip()[-1].upper()
-    return "STM32F103x{}".format(suffix)
+    series = part[:9]
+    suffix = part[9:]
+    density = suffix[1]
+    if density not in _STM32F1_DENSITIES.get(series, ()):
+        return None
+    return f"{series}x{density}"
 
 
 def _stm32f413_bundle_part(part_number: str) -> Optional[str]:
@@ -144,7 +161,7 @@ def security_capability(part_number: str) -> SecurityCapability:
     """Resolve only hardware-validated families and fail closed on asset mismatch."""
 
     part = str(part_number or "").strip()
-    bundle_part = _stm32f103_bundle_part(part)
+    bundle_part = _stm32f1_bundle_part(part)
     f413_bundle_part = _stm32f413_bundle_part(part)
     g474_bundle_part = _stm32g474_bundle_part(part)
     h743_bundle_part = _stm32h743_bundle_part(part)
@@ -312,6 +329,9 @@ def security_capability(part_number: str) -> SecurityCapability:
     return SecurityCapability(
         part_number=part,
         supported=True,
+        # Keep the original internal family key for command/firmware ABI
+        # compatibility. The resolver now covers the complete STM32F1
+        # option-byte architecture rather than only STM32F103 order codes.
         family="stm32f103-rdp1",
         unlock_erases_flash=True,
         reversible_lock=True,

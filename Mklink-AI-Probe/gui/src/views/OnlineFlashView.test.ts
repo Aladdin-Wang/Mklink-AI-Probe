@@ -704,11 +704,11 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('online flash task workspace behavior', () => {
-  it('defaults the connection mode to keeping the target running', async () => {
+  it('defaults the programming connection mode to halt', async () => {
     const wrapper = mount(await onlineFlashView())
 
     expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value)
-      .toBe('attach')
+      .toBe('halt')
     wrapper.unmount()
   })
 
@@ -1054,7 +1054,7 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
     await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('halt')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
     wrapper.unmount()
@@ -1071,7 +1071,7 @@ describe('online flash task workspace behavior', () => {
     await wrapper.get('[data-testid="action-unlock"]').setValue(true)
     await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
 
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('under-reset')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('halt')
     expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('power-cycle')
     expect(wrapper.get<HTMLInputElement>('[data-testid="reset-voltage-3300"]').element.checked).toBe(true)
     wrapper.unmount()
@@ -1150,7 +1150,7 @@ describe('online flash task workspace behavior', () => {
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="reset-mode"]').setValue('power-cycle')
     await wrapper.get('[data-testid="start-job"]').trigger('click')
-    expect(wrapper.get('[role="alertdialog"]').text()).toContain('等待 1 秒后以 3.3V 恢复输出')
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('等待 3 秒后以 3.3V 恢复输出')
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(false)
     await wrapper.get('[data-testid="confirmation-cancel"]').trigger('click')
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(false)
