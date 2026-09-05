@@ -506,22 +506,17 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
 
 
 def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[str]:
-    """Stop bridge peers, then atomically lease resources for a dashboard."""
-    from mklink.remote.dashboards import stop_bridge_dashboards
+    """Lease a stream without implicitly stopping another user's capture."""
     from mklink.remote.resource_manager import ResourceGroup
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
-    stopped = stop_bridge_dashboards(
-        exclude=dashboard,
-        resource_manager=manager,
-    )
     manager.acquire_many(
         [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
         owner,
         preempt=True,
     )
-    return stopped
+    return []
 
 
 def _dashboard_start_lock(state: dict[str, Any]) -> asyncio.Lock:
@@ -2396,6 +2391,40 @@ def create_app(
             )
         except SuperWatchTransactionError as exc:
             raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
+
+    @app.get("/api/dash/superwatch/peripherals")
+    async def superwatch_peripherals():
+        return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog)
+
+    _svd_targets = {}
+    _svd_target_lock = asyncio.Lock()
+
+    @app.get("/api/dash/superwatch/peripherals/targets")
+    async def peripheral_targets(q: str = ""):
+        from mklink.peripheral_watch import discover_svd_targets
+        async with _svd_target_lock:
+            if not _svd_targets:
+                targets = await run_in_threadpool(discover_svd_targets, _state["project_root"])
+                _svd_targets.update({target.key: target for target in targets})
+        matches = [target.public() for target in _svd_targets.values()
+                   if q.casefold() in target.target.casefold()]
+        return {"targets": matches[:200], "total": len(matches)}
+
+    @app.post("/api/dash/superwatch/peripherals/select")
+    async def peripheral_select(target_id: str = Body(..., embed=True)):
+        device = _state.get("device")
+        if not device or not device.connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        target = _svd_targets.get(target_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Select a chip from the installed Pack list")
+        try:
+            async with _dashboard_start_lock(_state):
+                return await run_in_threadpool(get_managers()["superwatch"].select_peripherals, device, target)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Cannot load selected SVD: {exc}") from exc
 
     @app.get("/api/dash/superwatch/items")
     async def superwatch_items():

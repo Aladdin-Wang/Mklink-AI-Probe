@@ -783,6 +783,11 @@ function notifyVofaStreamState(state) {
 function apiErrorMessage(payload, status) {
   if (payload && payload.detail) {
     if (typeof payload.detail === 'string') return payload.detail;
+    if (payload.detail.code === 'PROBE_BUSY') {
+      var owner = String(payload.detail.conflict_owner || '').split(':').pop();
+      var label = { rtt: 'RTT View', superwatch: 'SuperWatch', systemview: 'RTOS Trace', vofa: 'VOFA+' }[owner] || owner;
+      return CONFIG.lang === 'en' ? 'Stop ' + label + ' before starting this feature.' : '请先停止 ' + label + '，再启动此功能。';
+    }
     try { return JSON.stringify(payload.detail); } catch (_) {}
   }
   if (payload && payload.error) return String(payload.error);

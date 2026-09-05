@@ -61,9 +61,10 @@
       @dismiss="updateDismissed = true"
     />
     <div class="app-main">
+      <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component }">
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
-          <component :is="Component" />
+          <component :is="Component" v-if="currentTab !== 'dashboard'" />
         </KeepAlive>
       </router-view>
       <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
@@ -82,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Languages } from '@lucide/vue'
 import StatusBar from './components/StatusBar.vue'
@@ -96,6 +97,9 @@ import { language, toggleLanguage, tr } from './composables/useLanguage'
 import { startBrowserSessionLease } from './lib/browserSessionLease'
 
 const router = useRouter()
+// Stream viewers use persistent DOM references while sampling in the background.
+// Keep the dashboard attached (hidden) rather than detaching it with KeepAlive.
+const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
 const { backendState, startHealthPolling, stopHealthPolling, restart, isTauri } = useBackendHealth()
@@ -116,6 +120,8 @@ const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
 
 const currentTab = computed(() => route.name as string)
+const dashboardVisited = ref(false)
+watch(currentTab, name => { if (name === 'dashboard') dashboardVisited.value = true }, { immediate: true })
 
 const tabs = computed(() => [
   { key: 'config', label: tr('配置', 'Config') },
