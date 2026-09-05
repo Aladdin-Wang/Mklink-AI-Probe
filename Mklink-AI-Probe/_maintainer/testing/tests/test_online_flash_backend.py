@@ -169,7 +169,8 @@ def test_pyocd_backend_reads_exact_bytes_from_target() -> None:
     backend.disconnect()
 
 
-def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> None:
+@pytest.mark.parametrize("invalid_context", [False, True])
+def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage(invalid_context) -> None:
     class SecurityFlash:
         class Operation:
             ERASE = "erase"
@@ -180,6 +181,7 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
             self.calls = []
 
         def init(self, operation):
+            assert self.target.reset_and_halt_calls >= 1
             self.calls.append(("init", operation))
 
         def erase_sector(self, address):
@@ -191,6 +193,9 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
 
         def uninit(self):
             self.calls.append(("uninit",))
+
+        def cleanup(self):
+            self.uninit()
 
     class OptionRegion:
         name = "mklink_security_option_bytes"
@@ -207,6 +212,9 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
             self.option_region = OptionRegion(self)
             super().__init__((self.option_region,))
 
+        def read_core_register(self, name):
+            return 2 if invalid_context and name == "control" else 0
+
         def read_memory_block8(self, address, size):
             if address == 0x1FFFF800:
                 return bytes(self.option_bytes[:size])
@@ -219,13 +227,21 @@ def test_stm32f103_security_writes_only_rdp_pair_and_verifies_each_stage() -> No
     backend = PyOcdBackend()
     backend._session = FakeSession(target)
     backend._security_family = "stm32f103-rdp1"
+    backend._algorithm_reset_required = True
+
+    if invalid_context:
+        with pytest.raises(FlashError, match="privileged main-stack"):
+            backend.lock_security()
+        assert target.option_region.flash.calls == []
+        assert target.option_bytes[:2] == b"\xA5\x5A"
+        return
 
     assert "activated after reset" in backend.lock_security()
     assert target.option_bytes[:2] == b"\x00\xFF"
     assert target.option_bytes[2:] == bytes([0xFF, 0x00] * 7)
     assert "mass-erased" in backend.unlock_security()
     assert target.option_bytes[:2] == b"\xA5\x5A"
-    assert target.reset_and_halt_calls == 2
+    assert target.reset_and_halt_calls == 3
     assert [call[0] for call in target.option_region.flash.calls] == [
         "init", "erase", "uninit", "init", "program", "uninit",
         "init", "erase", "uninit", "init", "program", "uninit",
@@ -1813,7 +1829,8 @@ def test_custom_flm_replaces_overlapping_builtin_region_on_cloned_map(
     assert len(target.memory_map.regions) == 2
 
 
-def test_custom_flm_interrupt_mask_is_restored_after_algorithm_uninit() -> None:
+@pytest.mark.parametrize("region_name", ["mklink_custom_flm_0", "mklink_security_option_bytes"])
+def test_custom_flm_interrupt_mask_is_restored_after_algorithm_uninit(region_name) -> None:
     events = []
 
     class Flash:
@@ -1828,7 +1845,7 @@ def test_custom_flm_interrupt_mask_is_restored_after_algorithm_uninit() -> None:
         def __init__(self):
             self.primask = 0
             self.memory_map = (
-                SimpleNamespace(name="mklink_custom_flm_0", flash=Flash()),
+                SimpleNamespace(name=region_name, flash=Flash()),
             )
 
         def read_core_register(self, name):

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-05T11:28:00+08:00",
+  "updated_at": "2026-09-05T11:57:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "用户换V4+STM32F103，要求移植V3安全与VCC代码，由用户完整编译升级。已保留V4已有通用执行器/绑定/关闭文件不复位，补齐GPIOB高阻释放、断电优先于VREF跟随、V4电压语义适配、暂停超时及擦除全扇区空白回退。7个HPM GCC翻译单元和10项mock电源测试通过；SEGGER已纳入执行器，旧Ninja需重配置。未操作硬件、未全链接/打包、未修改V3，V4源码仅本地。详见v0.2.0-v4-security-port.md和.build/reports/v4-security-port-20260905。等待用户升级后核对电压并备份STM32再HIL。",
+    "current_task": "用户已升级V4，确认3.3V及擦除。STM32F103RE普通暂停在线独立加锁/解锁、连续解锁下载校验加锁两轮，V4脱机同流程均通过，无ERROR_ERASE_SECTOR。首次在线F1选项FLM HardFault已修复：擦除前准备特权MSP、算法调用屏蔽中断、cleanup失效共享RAM代码；148项定向测试通过。最终脱机解锁全512KiB空白确认、恢复全片与原备份一致，复位运行后APP RTT build=2026090302计数递增，当前未加锁运行。详见v0.2.0-v4-security-port.md及.build/reports/v4-f103-security-20260905。V4固件无本轮新增修改，不需再刷固件；未重打包。保留既有未提交脱机/GUI/PY32改动，未纳入本轮提交。",
     "release": "已从源码提交 24674d9 重新生成 0.2.0 本地 NSIS 并覆盖安装；安装版健康、下载器枚举、GD32F303CET6 安全能力、无 Python 子进程及正常退出释放端口均通过。正式发布、标签和更新索引尚未授权。"
   },
   "milestones": [
@@ -77,7 +77,7 @@
     },
     {
       "area": "MCU 安全真机 HIL",
-      "result": "历史 STM32F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 证据见 v0.2.0-*-security-hil.md。2026-09-05 GD32 普通暂停：在线解锁全片空白、512 KiB 比对、加锁通过；选项 FLM cleanup 修复后完整作业约 36.32 秒成功。V3 脱机两轮通过、运行前独立镜像比对一致，3.3V/3秒/800mV。Python 定向306、GUI定向93通过，Chrome确认及自动halt已验证。客户程序自锁且锁定后调试状态异常，等待换程序对照，独立运行未闭环；新轮次 PY32 故障仍待复测。详见 docs/verification/v0.2.0-gd32-halt-security-retest.md。"
+      "result": "历史 STM32F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 见 v0.2.0-*-security-hil.md。GD32普通暂停在线与V3脱机闭环见v0.2.0-gd32-halt-security-retest.md。2026-09-05 V4升级后STM32F103RE：3.3V/3000ms/800mV普通暂停，在线独立加解锁及完整两轮成功；脱机解锁下载加锁成功，分步解锁全片FF、恢复512KiB独立比对一致，APP RTT正常。修复F1选项FLM上下文/中断/cleanup，定向148通过；REST作业与脱机CDC已测，本轮无浏览器点击或打包。详见v0.2.0-v4-security-port.md。加锁后无调试独立运行及PY32新轮故障仍待验证。"
     },
     {
       "area": "SuperWatch 收藏与自动化",
@@ -97,7 +97,7 @@
     "安全加锁/解锁按选项字节布局和保护机制划分白名单；每种架构至少用一块代表芯片完成保护、解锁擦除和恢复闭环，再用芯片 ID、容量、算法哈希及选项区范围覆盖同架构料号。只允许可逆等级并永久拒绝 RDP2。STM32G474、STM32H743、STM32L010、GD32F303xE 与 PY32F030K28T6 解锁使用复位下连接，安全操作强制使用用户确认电压的断电复位；PY32 目前只开放已验证的精确型号。"
   ],
   "hardware": {
-    "probe": "用户已换V4+STM32F103测试板，V4固件正在移植，当前仅源码/编译检查，未枚举或操作新硬件。等待用户升级后重新核对探针身份、MCU容量、镜像及明确供电电压。上一轮GD32新程序512KiB备份仍在.build/reports/gd32-new-program-20260905，保护恢复测试通过且最终未锁运行；不能将该结果视为V4测试通过。",
+    "probe": "当前V4已由用户升级，STM32F103RE 512KiB，3.3V；在线与脱机加解锁完成，最终未锁、全片恢复并通过APP RTT确认运行。原始双读备份和过程证据保留.build/reports/v4-f103-security-20260905。GD32旧备份保留.build/reports/gd32-new-program-20260905。设备身份只在本地日志，后续操作仍须重新枚举。",
     "target": "STM32F103RE 工程 E:\\PHDZ\\PROJECT\\liu\\STM32F103_test\\STM32F103RC；STM32F413VGHx（ID 0x463、1MiB）、STM32G474RET6（ID 0x469、512KiB、3.3V）、STM32H743IIT6（ID 0x450、2MiB、3.3V）、STM32L010F4P6（ID 0x457、16KiB、3.3V）、GD32F303CET6（ID 0x414、512KiB、64KiB SRAM、3.3V）与 PY32F030K28T6（ID 0x60001000、64KiB、3.3V）均完成型号解析、读取回烧与可逆保护闭环。PY32F030K28T6 恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。",
     "permission": "测试工程允许修改与下载；其分析材料只放工程自身 .build。"
   },
@@ -112,7 +112,7 @@
     "2026-09-05 GD32新程序的在线/脱机保护及解锁恢复通过，当前未加锁正常运行；加锁后无调试独立运行未证明，调试接入会干扰判断。GD32脱机已实现，旧的尚未开放描述为历史状态；未提交脱机/GUI/PY32工作须分别审查，PY32新轮故障未因换板而算解决。"
   ],
   "next_actions": [
-    "先等待用户编译下载V4移植固件，再核对电压、身份和STM32F103完整Flash备份，验证普通暂停在线/脱机加解锁、恢复bootloader+app并核对运行。GD32锁定独立运行、PY32新轮故障及Mac/Linux限制仍保留，不因换板关闭。",
+    "V4+STM32F103在线/脱机保护恢复闭环已完成，当前未锁运行；后续按用户选择扩展架构或验证无调试加锁独立运行、电源波形。既有脱机/GUI/PY32未提交改动需独立审查收口；GD32锁定独立运行、PY32新轮故障及Mac/Linux限制仍保留。",
     "补 Mac/Linux 实机共享目录与 USB 测试，并补 UART 真正收数；修复 pyOCD 在线烧录断开清除 DEMCR 导致 SystemView 时基停止的问题，保留用户调试状态且不能用盲写全局寄存器替代生命周期验证。",
     "后续 STM32 安全支持按保护架构挑选代表板验证，不逐一验证同架构的每个完整订货号；运行时继续校验芯片 ID、容量与固定算法。",
     "后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。",

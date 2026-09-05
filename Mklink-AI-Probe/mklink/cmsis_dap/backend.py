@@ -439,7 +439,8 @@ def _mask_custom_flm_interrupts(target: Any) -> None:
     """Prevent application IRQ state from interrupting RAM flash algorithms."""
 
     for region in target.memory_map:
-        if not str(getattr(region, "name", "")).startswith("mklink_custom_flm_"):
+        name = str(getattr(region, "name", ""))
+        if not (name.startswith("mklink_custom_flm_") or name == "mklink_security_option_bytes"):
             continue
         flash = getattr(region, "flash", None)
         original_call = getattr(flash, "_call_function", None)
@@ -1147,7 +1148,7 @@ class PyOcdBackend:
                 if delegate is not getattr(session, "delegate", None):
                     session.delegate = delegate
                 session.open()
-                if resolved_flms:
+                if resolved_flms or security_payload is not None:
                     _mask_custom_flm_interrupts(session.target)
                 self._session = session
                 self._reset_mode = reset_mode
@@ -1156,7 +1157,7 @@ class PyOcdBackend:
                     getattr(resolved_probe, "unique_id", None) or probe or ""
                 ).strip()
                 self._security_family = security_family or ""
-                self._algorithm_reset_required = bool(resolved_flms)
+                self._algorithm_reset_required = bool(resolved_flms) or security_family == "stm32f103-rdp1"
                 self._algorithm_reset_done = False
                 self._connection_arguments = {
                     "probe": probe,
@@ -2173,16 +2174,19 @@ class PyOcdBackend:
         flash = getattr(region, "flash", None)
         if flash is None:
             raise RuntimeError("option-byte Flash algorithm is unavailable")
-        flash.init(flash.Operation.ERASE)
+        # A standalone lock may follow read-only verification of a running
+        # RTOS. It needs the same privileged MSP context as main-Flash work,
+        # before erasing any option bytes.
+        self._prepare_algorithm_execution(session.target)
         try:
+            flash.init(flash.Operation.ERASE)
             flash.erase_sector(address)
-        finally:
             flash.uninit()
-        flash.init(flash.Operation.PROGRAM)
-        try:
+            flash.init(flash.Operation.PROGRAM)
             flash.program_page(address, desired)
         finally:
-            flash.uninit()
+            # Main and option algorithms share RAM across unlock/program/lock.
+            flash.cleanup()
         if directly_readable:
             actual = self._read_target_bytes(session.target, address, 16)
             if actual != desired:

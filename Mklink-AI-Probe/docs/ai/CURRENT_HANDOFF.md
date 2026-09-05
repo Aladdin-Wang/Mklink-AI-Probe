@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T11:28:00+08:00`
+- 更新时间：`2026-09-05T11:57:00+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`0.2.0 预发布开发从 origin/master 的 0.1.9 已发布基线 3af000d 开始。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：发布前应保持干净；构建产物仅位于仓库外层 .build。
-- 当前任务：用户换V4+STM32F103，要求移植V3安全与VCC代码，由用户完整编译升级。已保留V4已有通用执行器/绑定/关闭文件不复位，补齐GPIOB高阻释放、断电优先于VREF跟随、V4电压语义适配、暂停超时及擦除全扇区空白回退。7个HPM GCC翻译单元和10项mock电源测试通过；SEGGER已纳入执行器，旧Ninja需重配置。未操作硬件、未全链接/打包、未修改V3，V4源码仅本地。详见v0.2.0-v4-security-port.md和.build/reports/v4-security-port-20260905。等待用户升级后核对电压并备份STM32再HIL。
+- 当前任务：用户已升级V4，确认3.3V及擦除。STM32F103RE普通暂停在线独立加锁/解锁、连续解锁下载校验加锁两轮，V4脱机同流程均通过，无ERROR_ERASE_SECTOR。首次在线F1选项FLM HardFault已修复：擦除前准备特权MSP、算法调用屏蔽中断、cleanup失效共享RAM代码；148项定向测试通过。最终脱机解锁全512KiB空白确认、恢复全片与原备份一致，复位运行后APP RTT build=2026090302计数递增，当前未加锁运行。详见v0.2.0-v4-security-port.md及.build/reports/v4-f103-security-20260905。V4固件无本轮新增修改，不需再刷固件；未重打包。保留既有未提交脱机/GUI/PY32改动，未纳入本轮提交。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -29,7 +29,7 @@
 - **器件自动联想性能**：目录合并和搜索文本改为按索引/安装状态快照缓存，普通联想只对实际返回窗口解析通用型号别名；前端防抖由 300ms 缩短到 150ms、候选窗口由 100 缩至 40。真实 15422 型号目录预热后 STM32 查询约 11.7ms，STM32G474RET6 精确查询约 9.2ms，宽泛查询约 12–47ms；首次载入内置资产约 1.9s。
 - **合并 HEX 与复位连接矩阵**：重复 05 入口 HEX 共 180732B 在 GD32F303CET6 真机校验通过。客户固件自锁已确认；分步解锁后 GUI 三连接×三复位九组通过，未解锁两组 PROGRAM_FAIL 为对照。8 次 CLI 解锁使用 3.3V，首次全片 524288B 为 FF；STM32 V3 接 RST 九组与无 RST 四组通过。本轮页面确认后 GUI 单作业解锁/下载/校验/3.3V 复位成功 15.184 秒；新 Tauri exe 解锁/加锁弹窗均通过，未覆盖安装。GUI 全量 650 项及 Tauri 无包构建通过。详见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
 - **RTT/串口滚动与 RTT 曲线**：STM32F103RE 真机 1ms RTT 与 UART 压测：RTT/串口终端、日志及 RTT 曲线各连续 60 秒保持响应且主机队列无丢弃；V4.3.9 原始 RTT 120 秒采集 3649670B，启动 0.6 秒处一次 616ms 初始化空窗，此后约 119 秒最大到达间隔 14.26ms，未复现周期性停顿。固件静态审计确认任意 RTT SWD 访问失败仍会退避 200ms。
-- **MCU 安全真机 HIL**：历史 STM32F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 证据见 v0.2.0-*-security-hil.md。2026-09-05 GD32 普通暂停：在线解锁全片空白、512 KiB 比对、加锁通过；选项 FLM cleanup 修复后完整作业约 36.32 秒成功。V3 脱机两轮通过、运行前独立镜像比对一致，3.3V/3秒/800mV。Python 定向306、GUI定向93通过，Chrome确认及自动halt已验证。客户程序自锁且锁定后调试状态异常，等待换程序对照，独立运行未闭环；新轮次 PY32 故障仍待复测。详见 docs/verification/v0.2.0-gd32-halt-security-retest.md。
+- **MCU 安全真机 HIL**：历史 STM32F1/F4/G4/H7/L0、GD32F303xE、PY32F030K28T6 见 v0.2.0-*-security-hil.md。GD32普通暂停在线与V3脱机闭环见v0.2.0-gd32-halt-security-retest.md。2026-09-05 V4升级后STM32F103RE：3.3V/3000ms/800mV普通暂停，在线独立加解锁及完整两轮成功；脱机解锁下载加锁成功，分步解锁全片FF、恢复512KiB独立比对一致，APP RTT正常。修复F1选项FLM上下文/中断/cleanup，定向148通过；REST作业与脱机CDC已测，本轮无浏览器点击或打包。详见v0.2.0-v4-security-port.md。加锁后无调试独立运行及PY32新轮故障仍待验证。
 - **SuperWatch 收藏与自动化**：真实 Browser WebGUI 完成批量置顶、排序、取消采样/取消收藏独立、刷新保留和重新解析；STM32F103RE 三通道收到 20221 点，约 997–1000Hz，transport/backend 丢弃均为 0。Python 定向 104 项、GUI 全量 647 项及生产构建通过。详见 docs/verification/v0.2.0-superwatch-pins-hil.md。上一轮 Python 全量 1767 通过、12 项 Windows symlink 权限失败仍保留记录；本轮未重跑全量 Python、未执行保护或 VCC 操作。
 
 ## 架构决策
@@ -47,13 +47,13 @@
 
 ## 真机环境
 
-- **probe**：用户已换V4+STM32F103测试板，V4固件正在移植，当前仅源码/编译检查，未枚举或操作新硬件。等待用户升级后重新核对探针身份、MCU容量、镜像及明确供电电压。上一轮GD32新程序512KiB备份仍在.build/reports/gd32-new-program-20260905，保护恢复测试通过且最终未锁运行；不能将该结果视为V4测试通过。
+- **probe**：当前V4已由用户升级，STM32F103RE 512KiB，3.3V；在线与脱机加解锁完成，最终未锁、全片恢复并通过APP RTT确认运行。原始双读备份和过程证据保留.build/reports/v4-f103-security-20260905。GD32旧备份保留.build/reports/gd32-new-program-20260905。设备身份只在本地日志，后续操作仍须重新枚举。
 - **target**：STM32F103RE 工程 E:\PHDZ\PROJECT\liu\STM32F103_test\STM32F103RC；STM32F413VGHx（ID 0x463、1MiB）、STM32G474RET6（ID 0x469、512KiB、3.3V）、STM32H743IIT6（ID 0x450、2MiB、3.3V）、STM32L010F4P6（ID 0x457、16KiB、3.3V）、GD32F303CET6（ID 0x414、512KiB、64KiB SRAM、3.3V）与 PY32F030K28T6（ID 0x60001000、64KiB、3.3V）均完成型号解析、读取回烧与可逆保护闭环。PY32F030K28T6 恢复前后 Flash SHA-256 均为 39D9382B2C0CB5B5FF89B50C1DD45C86109376BD0B7A62ADED3CBC6FED6B3F02。
 - **permission**：测试工程允许修改与下载；其分析材料只放工程自身 .build。
 
 ## 下一动作
 
-1. 先等待用户编译下载V4移植固件，再核对电压、身份和STM32F103完整Flash备份，验证普通暂停在线/脱机加解锁、恢复bootloader+app并核对运行。GD32锁定独立运行、PY32新轮故障及Mac/Linux限制仍保留，不因换板关闭。
+1. V4+STM32F103在线/脱机保护恢复闭环已完成，当前未锁运行；后续按用户选择扩展架构或验证无调试加锁独立运行、电源波形。既有脱机/GUI/PY32未提交改动需独立审查收口；GD32锁定独立运行、PY32新轮故障及Mac/Linux限制仍保留。
 2. 补 Mac/Linux 实机共享目录与 USB 测试，并补 UART 真正收数；修复 pyOCD 在线烧录断开清除 DEMCR 导致 SystemView 时基停止的问题，保留用户调试状态且不能用盲写全局寄存器替代生命周期验证。
 3. 后续 STM32 安全支持按保护架构挑选代表板验证，不逐一验证同架构的每个完整订货号；运行时继续校验芯片 ID、容量与固定算法。
 4. 后续 GD32 安全支持继续按选项字节架构与容量组选择代表板验证；不得把 GD32F303xE 的结果直接泛化到其他 GD32 系列。
