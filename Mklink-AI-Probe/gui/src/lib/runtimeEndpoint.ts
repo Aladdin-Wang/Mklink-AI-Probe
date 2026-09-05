@@ -51,6 +51,11 @@ export function applyBackendEndpoint(endpoint: BackendEndpoint): void {
   backendPort.value = endpoint.port
 }
 
+export function applyReportedBackendPort(port: unknown): void {
+  if (!Number.isInteger(port) || Number(port) < 1 || Number(port) > 65535) return
+  backendPort.value = Number(port)
+}
+
 function markBackendUnavailable(): void {
   API_BASE = 'http://127.0.0.1:0'
   WS_BASE = 'ws://127.0.0.1:0'

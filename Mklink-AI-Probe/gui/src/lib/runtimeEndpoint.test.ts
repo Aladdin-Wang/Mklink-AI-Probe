@@ -3,6 +3,7 @@ import {
   API_BASE,
   WS_BASE,
   applyBackendEndpoint,
+  applyReportedBackendPort,
   browserRuntimeBase,
   browserRuntimePort,
   isTauriRuntime,
@@ -37,5 +38,16 @@ describe('runtime endpoint selection', () => {
     expect(API_BASE).toBe('http://127.0.0.1:8766')
     expect(WS_BASE).toBe('ws://127.0.0.1:8766')
     expect(runtimeBackendPort.value).toBe(8766)
+  })
+
+  it('uses a server-reported listener port without changing proxy transports', () => {
+    const apiBase = API_BASE
+    const wsBase = WS_BASE
+    applyReportedBackendPort(8765)
+    applyReportedBackendPort(0)
+    applyReportedBackendPort('8766')
+    expect(runtimeBackendPort.value).toBe(8765)
+    expect(API_BASE).toBe(apiBase)
+    expect(WS_BASE).toBe(wsBase)
   })
 })
