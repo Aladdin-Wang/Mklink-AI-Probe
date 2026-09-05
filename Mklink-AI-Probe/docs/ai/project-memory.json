@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-05T16:44:13+08:00",
+  "updated_at": "2026-09-05T16:46:08+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "e16ef55基线之后增加仪表盘持续采集、Pack/SVD外设观察和型号联想；源码GUI已重建。已安装本地候选d30b884尚未更新。",
+    "head": "源码9b243f2包含仪表盘持续采集、Pack/SVD外设观察和型号联想，生产GUI同步重建为9b243f2；已安装本地候选d30b884尚未更新。",
     "remote_head": "每次维护前校正 GitHub origin/codex/v0.2.0-development。",
     "working_tree": "历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。"
   },
