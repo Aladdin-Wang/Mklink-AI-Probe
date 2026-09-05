@@ -2124,16 +2124,17 @@ class PyOcdBackend:
         flash = getattr(region, "flash", None)
         if flash is None:
             raise RuntimeError("GD32F303 option-byte Flash algorithm is unavailable")
-        flash.init(flash.Operation.ERASE)
         try:
+            flash.init(flash.Operation.ERASE)
             flash.erase_sector(self._GD32F303_OPTION_ADDRESS)
-        finally:
             flash.uninit()
-        flash.init(flash.Operation.PROGRAM)
-        try:
+            flash.init(flash.Operation.PROGRAM)
             flash.program_page(self._GD32F303_OPTION_ADDRESS, bytes(desired))
         finally:
-            flash.uninit()
+            # Main-Flash programming reuses the same target RAM. uninit()
+            # alone leaves pyOCD believing the option FLM is still loaded,
+            # so unlock -> program -> lock would execute overwritten code.
+            flash.cleanup()
         actual = bytes(
             self._read_target_bytes(
                 target,

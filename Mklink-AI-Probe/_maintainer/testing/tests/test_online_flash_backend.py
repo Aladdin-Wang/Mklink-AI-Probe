@@ -241,8 +241,14 @@ def test_gd32f303_security_validates_identity_and_preserves_erased_options() -> 
         def __init__(self, target):
             self.target = target
             self.calls = []
+            self.prepared = False
+            self.ram_owner = None
 
         def init(self, operation):
+            if not self.prepared:
+                self.ram_owner = "options"
+                self.prepared = True
+            assert self.ram_owner == "options", "stale FLM cache after main-Flash programming"
             self.calls.append(("init", operation))
 
         def erase_sector(self, address):
@@ -254,6 +260,11 @@ def test_gd32f303_security_validates_identity_and_preserves_erased_options() -> 
 
         def uninit(self):
             self.calls.append(("uninit",))
+
+        def cleanup(self):
+            self.uninit()
+            self.prepared = False
+            self.calls.append(("cleanup",))
 
     class OptionRegion:
         name = "mklink_security_option_bytes"
@@ -295,12 +306,18 @@ def test_gd32f303_security_validates_identity_and_preserves_erased_options() -> 
     target.density_fault = True
     assert "mass-erased" in backend.unlock_security()
     assert target.option_bytes == b"\xA5\x5A" + b"\xFF\xFF" * 7
+    # Simulate the intervening main FLM overwriting target RAM in one job.
+    target.option_region.flash.ram_owner = "main"
+    target.density_fault = False
+    assert "power-cycle reset is required" in backend.lock_security()
+    assert target.option_region.flash.prepared is False
     programmed = [
         call[2] for call in target.option_region.flash.calls if call[0] == "program"
     ]
     assert programmed == [
         b"\x00\xFF" + b"\xFF\xFF" * 7,
         b"\xA5\x5A" + b"\xFF\xFF" * 7,
+        b"\x00\xFF" + b"\xFF\xFF" * 7,
     ]
 
 
