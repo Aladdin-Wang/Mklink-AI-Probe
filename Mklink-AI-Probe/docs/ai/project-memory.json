@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-05T13:59:00+08:00",
+  "updated_at": "2026-09-05T15:07:35+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "用户手动覆盖安装完成，安装后验收通过：新sidecar哈希一致，主EXE仅NSIS包类型标记不同；4个workspace文件及快捷方式保留。纯系统PATH启动健康、探针枚举、Tauri在线/脱机风险弹窗、正常退出释放进程/端口均通过。已重新打开安装版；8765由自带后端提供，源码服务已停止。无需再安装。",
+    "current_task": "继续接管0.2.0开发。已fetch并确认接管基线e0fca5d与origin一致，单一工作树且接管时干净，项目记忆校验通过。本地安装及安装后验收已完成，无需再安装。本次检查8765无监听、健康接口连接被拒绝，未发现安装版主进程或sidecar；此前重新打开的运行状态不再适用。本次仅核对与更新交接，未重新验证目标硬件。",
     "release": "本地候选安装已完成；包在 .build/artifacts/v0.2.0-local-d30b884-20260905。local-bundle无updater签名，不作正式发布。手动安装阶段PATH未受控，安装后纯系统PATH启动已测。证据见 docs/verification/v0.2.0-local-install-20260905.md。"
   },
   "milestones": [
@@ -72,7 +72,7 @@
     "加锁/解锁按保护架构和容量组验证后开放；CLI/MCP/在线共用后端，脱机另外核对执行器支持。禁止RDP2，异常身份/选项/算法一律拒绝。连接策略以当前代码和实测为准，不能沿用旧的统一under-reset说法。"
   ],
   "hardware": {
-    "probe": "当前V4 + STM32F103RE，3.3V，原bootloader+APP已恢复、未锁运行。新操作前重新枚举，安装验收不执行保护或VCC操作。",
+    "probe": "上次真机验证为V4 + STM32F103RE，3.3V，原bootloader+APP已恢复、未锁运行；本次接管未重新确认连接及目标状态。新操作前重新枚举并核对电压。",
     "backup": "V4/F103原始512KiB双读备份与日志：.build/reports/v4-f103-security-20260905；GD32新程序备份：.build/reports/gd32-new-program-20260905。禁止随日志整理删除。",
     "permission": "测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。"
   },
@@ -86,7 +86,7 @@
     "1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。"
   ],
   "next_actions": [
-    "本地安装已收口；当前使用安装版自带8765后端，无需重复安装。以后改源码后明确区分源码服务与已安装后端，避免测错版本。",
+    "本地安装已收口，无需重复安装；接管检查时8765无监听。下次验证前启动所需版本，明确区分源码服务与已安装后端，避免测错版本。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
     "补Mac/Linux、UART和RTOS Trace生命周期验证；正式发布前再跑发布全量门禁。"
   ],
