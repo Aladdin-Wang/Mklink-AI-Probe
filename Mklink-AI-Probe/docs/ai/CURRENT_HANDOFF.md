@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T12:30:00+08:00`
+- 更新时间：`2026-09-05T13:59:00+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`业务源码基线 d30b884；生产GUI资源快照 7b7902e。本轮交接结果随后独立提交。`
+- HEAD：`本地安装业务源码基线 d30b884，生产GUI快照 7b7902e；后续文档提交不改变安装包内容。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。
-- 当前任务：0.2.0本地NSIS与Skill包构建完成；覆盖安装被Windows UAC取消，旧安装未改变，等待用户准备确认后重试。Python1845通过/12项symlink权限失败，GUI654通过，定向363通过。sidecar与Skill均验证7059目标/2224FLM。交接已精简，长期任务见security-roadmap.md。详情和校验值见docs/verification/v0.2.0-local-install-20260905.md。
+- 当前任务：用户手动覆盖安装完成，安装后验收通过：新sidecar哈希一致，主EXE仅NSIS包类型标记不同；4个workspace文件及快捷方式保留。纯系统PATH启动健康、探针枚举、Tauri在线/脱机风险弹窗、正常退出释放进程/端口均通过。已重新打开安装版；8765由自带后端提供，源码服务已停止。无需再安装。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
 
-- **0.2.0 本地候选** — `in_progress`。标准NSIS与Skill包已完成，UAC取消导致覆盖安装未完成。保留旧安装，等待用户确认后验收。
+- **0.2.0 本地候选** — `complete`。标准NSIS和Skill包已构建；用户手动覆盖安装，独立sidecar、桌面界面、配置保留及正常退出验收通过。未正式发布。
 - **芯片加锁/解锁长期任务** — `in_progress`。按保护架构和容量组累积代表板证据；当前范围、待办与完成标准见 docs/ai/security-roadmap.md。不设置无人值守硬件自动化。
 - **交接整理** — `complete`。常驻交接仅保留当前基线、长期规则、未解决问题和证据入口；逐次操作日志不搬入交接，不删除原始备份。
 
 ## 验证证据
 
-- **本轮打包**：生产构建成功；Python1845通过、12项WinError1314，GUI654通过，定向363通过。sidecar2225个资产文件逐项一致，Skill边界校验通过。安装被UAC取消，不计为安装通过。见docs/verification/v0.2.0-local-install-20260905.md。
+- **本地打包与安装**：Python1845通过/12项WinError1314、GUI654通过、定向363通过；7059目标/2224FLM完整。用户手动安装后，新文件核对、配置保留、纯系统PATH启动、自带sidecar健康、探针枚举、在线/脱机确认弹窗及正常退出释放均通过。见docs/verification/v0.2.0-local-install-20260905.md。
 - **当前 V4 + STM32F103**：普通暂停、3.3V：在线及脱机加锁/解锁/恢复通过，512KiB全片比对一致，APP RTT正常。F1选项FLM上下文/中断/cleanup修复，148项定向测试通过。当前未锁运行。见 docs/verification/v0.2.0-v4-security-port.md。
 - **芯片安全证据**：在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。
 - **连接与 HEX**：STM32连接/复位矩阵与客户合并HEX在GD32验证通过；桌面勾选安全操作确认框修复。见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
@@ -46,7 +46,7 @@
 
 ## 下一动作
 
-1. 用户准备确认UAC后，重跑 .build/reports/install-local-20260905.ps1；停止已知源码8765服务再验证新安装的独立sidecar、界面、枚举和正常退出。不要把旧安装或源码响应当成新包结果。
+1. 本地安装已收口；当前使用安装版自带8765后端，无需重复安装。以后改源码后明确区分源码服务与已安装后端，避免测错版本。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. 补Mac/Linux、UART和RTOS Trace生命周期验证；正式发布前再跑发布全量门禁。
 
@@ -57,7 +57,7 @@
 - Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART新一轮真正收数待补。
 - RTOS Trace在pyOCD在线烧录断开后时基停止，生命周期问题尚未修复；禁止盲写全局寄存器掩盖。
 - RTT单次SWD失败仍可能退避200ms；高采样率需按通道数实测，不承诺16通道稳定10/20kHz。
-- Windows全量12项symlink测试因WinError1314失败；带链接临时目录保留，不能强制清理。安装包无Authenticode；当前新包被UAC取消，安装/独立启动/退出验收待做。
+- Windows全量12项symlink测试因WinError1314失败；带链接临时目录保留，不能强制清理。安装包无Authenticode；用户手动安装阶段PATH未受控，安装后纯系统PATH启动及退出已通过。
 - 1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。
 
 ## 延续协议
