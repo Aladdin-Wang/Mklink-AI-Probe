@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T18:37:01+02:00`
+- 更新时间：`2026-09-05T18:41:13+02:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`开发分支包含反代子路径兼容；本轮待提交健康接口返回真实后端监听端口，GUI据此显示端口而不改写反代传输地址。`
+- HEAD：`a5ab503 已推送至 fork/codex/issue-3839-proxy-subpath：健康接口返回真实后端监听端口，GUI据此显示端口而不改写反代传输地址。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
 - 工作树：历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。
-- 当前任务：修复 HWPOD UserApp 反代中的 MKLink AI Probe 状态栏端口缺失：服务端健康接口返回真实监听端口，GUI只消费该字段显示端口，不将公开反代端口当作后端端口。Python健康与双侧车端口回归、GUI窄测试已通过；待推送 fork，并在 mklink-test 正式用户应用入口截图验收。
+- 当前任务：修复 HWPOD UserApp 反代中的 MKLink AI Probe 状态栏端口缺失：a5ab503 已推送用户 fork，服务端健康接口返回真实监听端口，GUI只消费该字段显示端口，不将公开反代端口当作后端端口。Python健康与双侧车端口回归、GUI窄测试已通过；mklink-test Provider 离线，待恢复后从正式用户应用入口截图验收。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -52,7 +52,7 @@
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. F103的SystemView长流、连续启停、普通烧录时基及UART/仪表盘切页/外设GPIO已完成；后续补探针断电冷启动、其他板卡、Mac/Linux。正式发布前跑全量门禁。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。
-5. MKLink 子路径反代兼容已覆盖 Vite 相对资源、HTTP/WS/浏览器会话路径及窄屏布局；本轮在 /api/health 补充受校验的 backend_port，GUI仅据此更新显示。推送到 fork 后，仍需由可达的 mklink-test Provider 部署并从正式 UserApp 入口截图验收。
+5. MKLink 子路径反代兼容已覆盖 Vite 相对资源、HTTP/WS/浏览器会话路径及窄屏布局；a5ab503 在 /api/health 补充受校验的 backend_port，GUI仅据此更新显示。仍需由可达的 mklink-test Provider 部署并从正式 UserApp 入口截图验收。
 
 ## 已知限制
 
