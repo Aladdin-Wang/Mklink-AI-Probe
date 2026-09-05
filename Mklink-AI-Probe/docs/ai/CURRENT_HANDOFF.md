@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T20:35:16+08:00`
+- 更新时间：`2026-09-05T20:47:06+08:00`
 - 分支：`codex/v0.2.0-development`
 - HEAD：`源码9b243f2包含仪表盘持续采集、Pack/SVD外设观察和型号联想，生产GUI同步重建为9b243f2；已安装本地候选d30b884尚未更新。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
@@ -52,7 +52,7 @@
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. F103的SystemView长流、连续启停、普通烧录时基及UART/仪表盘切页/外设GPIO已完成；后续补探针断电冷启动、其他板卡、Mac/Linux。正式发布前跑全量门禁。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。
-5. MKLink 子路径反代兼容贡献仅覆盖 Vite 相对资源、HTTP/WS/浏览器会话路径及窄屏布局；D601 隔离 Node 校验、定向测试和构建受 .build\.lock 与 transv2 捕获超时阻塞，提交 PR 时保留未验证边界。
+5. MKLink 子路径反代兼容贡献仅覆盖 Vite 相对资源、HTTP/WS/浏览器会话路径及窄屏布局；Windows 隔离测试环境的 Node 完整性校验已与官方 SHA-256 一致，定向测试和构建尚无可采信完成回执（已有 .build\.lock 持有者且 transv2 捕获无输出），PR 保留未验证边界。
 
 ## 已知限制
 
