@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-06T17:51:31+08:00`
+- 更新时间：`2026-09-06T17:53:32+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`本次合并PR #5（fb14a77）并修复资源回归、补代理308配置；全量Python1896/GUI667及真实Nginx+Edge通过，GUI随后按合并提交标识重建。`
+- HEAD：`PR #5已合并为ca09b5639093并推送，GitHub状态MERGED；生产GUI按该来源提交重建，页脚v0.2.0 · ca09b5639093，资源及真实Nginx/Edge再次验证通过。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
-- 工作树：已解决交接冲突并保留本地USB问题记录；本次合并源码与受跟踪GUI一起提交，原始测试证据仅在.build。
-- 当前任务：按用户授权合入PR #5到0.2.0，GitHub base已由master改为当前开发分支。补相对资源图测试、六类流路径回归和308代理文档；修复已有SVD导入绕过pyOCD锁。Python管理员全量1896通过/零跳过，GUI667通过；真实Nginx+Edge四类入口、WS/端口/释放及中英文外设版本说明通过。USB暂缓，未操作硬件或重启用户原服务。
+- 工作树：源码合并与GUI构建产物分别提交到origin/codex/v0.2.0-development；原始证据和工具缓存仅在.build。
+- 当前任务：PR #5已完成修复并合入0.2.0；Python管理员全量1896通过/零跳过、GUI667通过。最终ca09b5639093 GUI资源复验和Nginx+Edge四类入口、端口、WS/释放、中英文外设版本说明通过，GitHub PR已自动标记MERGED。USB继续暂缓；现有用户服务未重启，未做硬件操作或更新安装包。
 - 状态：`v0.2.0-development`
 
 ## 里程碑

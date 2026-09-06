@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-06T17:51:31+08:00",
+  "updated_at": "2026-09-06T17:53:32+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "本次合并PR #5（fb14a77）并修复资源回归、补代理308配置；全量Python1896/GUI667及真实Nginx+Edge通过，GUI随后按合并提交标识重建。",
+    "head": "PR #5已合并为ca09b5639093并推送，GitHub状态MERGED；生产GUI按该来源提交重建，页脚v0.2.0 · ca09b5639093，资源及真实Nginx/Edge再次验证通过。",
     "remote_head": "每次维护前校正 GitHub origin/codex/v0.2.0-development。",
-    "working_tree": "已解决交接冲突并保留本地USB问题记录；本次合并源码与受跟踪GUI一起提交，原始测试证据仅在.build。"
+    "working_tree": "源码合并与GUI构建产物分别提交到origin/codex/v0.2.0-development；原始证据和工具缓存仅在.build。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill、串口/Modbus 和远程 Site Agent。",
@@ -15,7 +15,7 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "按用户授权合入PR #5到0.2.0，GitHub base已由master改为当前开发分支。补相对资源图测试、六类流路径回归和308代理文档；修复已有SVD导入绕过pyOCD锁。Python管理员全量1896通过/零跳过，GUI667通过；真实Nginx+Edge四类入口、WS/端口/释放及中英文外设版本说明通过。USB暂缓，未操作硬件或重启用户原服务。",
+    "current_task": "PR #5已完成修复并合入0.2.0；Python管理员全量1896通过/零跳过、GUI667通过。最终ca09b5639093 GUI资源复验和Nginx+Edge四类入口、端口、WS/释放、中英文外设版本说明通过，GitHub PR已自动标记MERGED。USB继续暂缓；现有用户服务未重启，未做硬件操作或更新安装包。",
     "release": "本地候选安装已完成；包在 .build/artifacts/v0.2.0-local-d30b884-20260905。local-bundle无updater签名，不作正式发布。手动安装阶段PATH未受控，安装后纯系统PATH启动已测。证据见 docs/verification/v0.2.0-local-install-20260905.md。"
   },
   "milestones": [
