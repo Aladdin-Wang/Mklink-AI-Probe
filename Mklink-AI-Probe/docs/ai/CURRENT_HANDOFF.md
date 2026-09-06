@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-05T16:46:08+08:00`
+- 更新时间：`2026-09-06T17:32:28+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`源码9b243f2包含仪表盘持续采集、Pack/SVD外设观察和型号联想，生产GUI同步重建为9b243f2；已安装本地候选d30b884尚未更新。`
+- HEAD：`9222574之后先保存USB故障登记、已验证的按需GUID恢复工具及SuperWatch外设版本说明；接着整合PR #5到当前0.2.0分支。`
 - 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
-- 工作树：历史脱机/GUI/PY32改动已收口提交。候选包和原始证据仅在忽略的 .build；源码与生成GUI均受版本管理。
-- 当前任务：完成仪表盘切页持续采集和SuperWatch芯片外设观察：型号联想、SVD文件选择、程序变量/外设双目录；按用户要求保留手动分图，不自动分离GPIO。F103/Edge HIL通过，UART10047条连续文本、SuperWatch约1kHz/19468缓冲点，GPIO位解码及切页保留通过；已释放所有串口。8765最新源码服务保留，旧8766关闭。
+- 工作树：上一任务修改先独立提交保存，PR接入保留本地交接；生产GUI待统一重建。
+- 当前任务：用户已授权按审查建议修复并合入PR #5到codex/v0.2.0-development。USB问题暂缓不继续操作硬件；接入代理路径/端口修复，适配资源测试并明确入口尾斜杠重定向。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -20,6 +20,7 @@
 
 ## 验证证据
 
+- **Windows DAP消失恢复**：现场PnP正常、GUID缺失、上位机枚举为空；备份补GUID并重启MI_00后枚举恢复1个，DAP Info 2.1.1/512B/2包/能力307通过。实读USB为High Speed，BOS33B/OS2集合170B，GUID内容正确。未卸载驱动/拔插/刷固件。定点工具12项条件验证及幂等自检通过；Keil界面和高速链路不稳定复现未验收。见docs/verification/v0.2.0-winusb-guid-recovery.md。
 - **仪表盘持续采集与SVD外设**：Python定向289通过、GUI全量657通过；F103真实Edge切子页/配置页无隐式停流、无缓冲重置、无JS错误，UART10047条连续文本、SW约1kHz/19468点、GPIOB.12与IDR bit12一致。transport/backend丢批为零；SW启动解析器丢弃74字节，不称全程绝对无损。Pack型号联想/SVD选择、原程序变量与手动分图保留。见docs/verification/v0.2.0-dashboard-peripheral-hil.md。
 - **SystemView上游同步**：上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。
 - **本地打包与安装**：Python1845通过/12项WinError1314、GUI654通过、定向363通过；7059目标/2224FLM完整。用户手动安装后，新文件核对、配置保留、纯系统PATH启动、自带sidecar健康、探针枚举、在线/脱机确认弹窗及正常退出释放均通过。见docs/verification/v0.2.0-local-install-20260905.md。
@@ -27,7 +28,6 @@
 - **芯片安全证据**：在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。
 - **连接与 HEX**：STM32连接/复位矩阵与客户合并HEX在GD32验证通过；桌面勾选安全操作确认框修复。见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
 - **文件重载与 SuperWatch**：STM32修改编译后重载AXF/HEX、GUI回烧及RTT通过；收藏/多关键词/刷新保留通过，三通道约1kHz且无丢样。见 docs/verification/v0.2.0-macos-file-reload-hil.md 和 v0.2.0-superwatch-pins-hil.md。
-- **内置资产与实时显示**：维护仓库本地算法资产：7059目标、2224去重FLM，桌面/Skill共用且打包强制哈希校验。RTT/串口/曲线健康链路高频测试未复现稳态停顿；错误链路200ms退避仍存在。
 
 ## 架构决策
 
@@ -42,15 +42,15 @@
 
 ## 真机环境
 
-- **probe**：本轮V4 + STM32F103RE，512KiB Flash、72MHz；保持原供电，APP build=2026090501已在线烧录验证，前置bootloader保留。目标运行，UART/命令口均已释放供用户手动测试。
+- **probe**：V4 + STM32F103RE、512KiB、72MHz，现有目标固件build=2026090501未改变。GUID已补回，DAP信息查询测试句柄已关闭；用户原有8765命令串口会话保留，本轮未打开UART或刷下载器。
 - **backup**：本轮完整512KiB备份与原源码/AXF/HEX：.build/reports/systemview-hil-20260905/before；此前V4/F103双读备份：.build/reports/v4-f103-security-20260905；GD32备份：.build/reports/gd32-new-program-20260905。禁止删除唯一备份。
 - **permission**：测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。
 
 ## 下一动作
 
-1. 用户可继续使用8765最新源码GUI；已释放UART与命令口，不自动重连。按明确偏好仅手动分图。已安装d30b884不含后续修复与外设功能，正式发布前重建安装包。
+1. PR #5等待用户决定下一步：修复2项资源回归、处理代理尾斜杠约束、保留本地交接并整合版本说明后重建GUI，再执行合入门禁。本轮只分析，未接入PR源码。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
-3. F103的SystemView长流、连续启停、普通烧录时基及UART/仪表盘切页/外设GPIO已完成；后续补探针断电冷启动、其他板卡、Mac/Linux。正式发布前跑全量门禁。
+3. USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。
 
 ## 已知限制
@@ -59,7 +59,7 @@
 - 加锁后无调试独立运行尚需额外观测；SWD/RTT可能受读保护限制，调试接入会干扰判断。其他架构及V4组合不能从F103结果外推。
 - Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART接线由用户修正后，本轮连续文本与切页验证通过。
 - F103普通在线烧录后时基停止已修复并真机验证；探针断电冷启动复位/停流、其他芯片和保护操作不由此证明。保持单次有界恢复；不能盲写全局寄存器或扩大重试掩盖。
-- RTT单次SWD失败仍可能退避200ms；高采样率需按通道数实测，不承诺16通道稳定10/20kHz。
+- USB GUID缺失已定点恢复，实测High Speed及512B正确；高速枚举中断/登记缺失的触发因果未证实。固件独立的FS包大小和other-speed类型问题不能当作本次根因。RTT失败退避和高采样率仍按原边界。
 - Windows全量12项symlink测试因WinError1314失败；带链接临时目录保留，不能强制清理。安装包无Authenticode；用户手动安装阶段PATH未受控，安装后纯系统PATH启动及退出已通过。
 - 1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。
 - 外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。
