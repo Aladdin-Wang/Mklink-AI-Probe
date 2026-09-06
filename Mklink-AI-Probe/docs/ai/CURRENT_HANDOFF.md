@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-06T17:53:32+08:00`
+- 更新时间：`2026-09-06T17:56:45+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`PR #5已合并为ca09b5639093并推送，GitHub状态MERGED；生产GUI按该来源提交重建，页脚v0.2.0 · ca09b5639093，资源及真实Nginx/Edge再次验证通过。`
-- 远端 HEAD：`每次维护前校正 GitHub origin/codex/v0.2.0-development。`
-- 工作树：源码合并与GUI构建产物分别提交到origin/codex/v0.2.0-development；原始证据和工具缓存仅在.build。
-- 当前任务：PR #5已完成修复并合入0.2.0；Python管理员全量1896通过/零跳过、GUI667通过。最终ca09b5639093 GUI资源复验和Nginx+Edge四类入口、端口、WS/释放、中英文外设版本说明通过，GitHub PR已自动标记MERGED。USB继续暂缓；现有用户服务未重启，未做硬件操作或更新安装包。
+- HEAD：`0.2.0已验证代码基线0a0e714（PR #5合并ca09b5639093）；本次仅更新master同步交接，不修改源码或GUI。`
+- 远端 HEAD：`用户于2026-09-06明确授权将0.2.0推至origin/master；本次使用原子快进推送使master与codex/v0.2.0-development指向同一提交。维护前继续fetch并核对。`
+- 工作树：保持codex/v0.2.0-development为本地开发分支；本次master同步仅含交接变更，推送后核对两个远端tip及工作区。
+- 当前任务：按用户明确指令将当前0.2.0同步到origin/master。核对master无独有提交，可安全快进；沿用同一代码基线刚完成的Python1896/GUI667、生产构建及最终GUI真实Nginx+Edge证据，不重复无变化的测试。两个远端分支原子同步；没有创建标签、正式发布或向su5176提交PR。USB继续暂缓，现有服务和硬件会话不变。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -48,7 +48,7 @@
 
 ## 下一动作
 
-1. PR #5代码整合完成；子路径部署遵循references/reverse-proxy.md的308/前缀剥离/WS约定。现有安装包尚未更新，发布前统一重建；本轮保持原8765服务与用户会话不重启。
+1. origin/master与0.2.0开发分支已按用户授权同步。后续维护仍从记录的开发分支继续；正式发布前另行重建安装包并验收，当前GUI来源标识ca09b5639093。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。
