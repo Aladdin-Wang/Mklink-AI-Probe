@@ -145,7 +145,9 @@ def discover_svd_targets(project_root: str) -> list[SvdTarget]:
 
 
 def svd_watch_items(data: bytes) -> tuple[dict[str, WatchItem], int]:
-    from pyocd.debug.svd.parser import SVDParser
+    from .cmsis_dap.pyocd_runtime import import_pyocd_module
+
+    SVDParser = import_pyocd_module('pyocd.debug.svd.parser').SVDParser
 
     root = _xml(data)
     device = SVDParser.for_xml_file(io.BytesIO(ET.tostring(root)), remove_reserved=True).get_device()

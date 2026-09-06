@@ -421,6 +421,7 @@ body {
 }
 .form-input, .form-select {
   flex: 1;
+  min-width: 0;
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--border);

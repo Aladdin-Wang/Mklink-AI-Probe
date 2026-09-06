@@ -698,6 +698,7 @@ def create_app(
     auth_token: str | None = None,
     project_root: str = ".",
     desktop_instance_id: str | None = None,
+    backend_port: int | None = None,
     browser_session_timeout: float | None = None,
 ):
     """Create the FastAPI application.
@@ -706,6 +707,7 @@ def create_app(
         auth_token: Required token for client authentication.
         project_root: Project root for .mklink/ config lookup.
         desktop_instance_id: Owning Tauri instance identifier, when packaged.
+        backend_port: Actual local HTTP listener port when already known.
         browser_session_timeout: Browser-tab lease timeout for Web-entry servers.
     """
     if not _check_fastapi():
@@ -755,6 +757,7 @@ def create_app(
         "auth_token": auth_token,
         "project_root": project_root,
         "desktop_instance_id": desktop_instance_id,
+        "backend_port": backend_port,
         "resource_manager": ResourceManager(),
     }
     _state["resource_manager"].on_preempt(
@@ -3365,6 +3368,9 @@ def create_app(
             "device_connected": dev.connected if dev else False,
             **elf_status(project_root=_state["project_root"]),
         }
+        backend_port = _state.get("backend_port")
+        if isinstance(backend_port, int) and 1 <= backend_port <= 65535:
+            payload["backend_port"] = backend_port
         if _state["desktop_instance_id"]:
             payload["desktop_instance_id"] = _state["desktop_instance_id"]
         return payload
@@ -3643,7 +3649,16 @@ def run_server(
     import uvicorn
 
     if app is None:
-        app = create_app(auth_token=auth_token, project_root=project_root)
+        app = create_app(
+            auth_token=auth_token,
+            project_root=project_root,
+            backend_port=port,
+        )
+
+    def set_backend_port(value: int) -> None:
+        state = getattr(app.state, "mklink_state", None)
+        if isinstance(state, dict):
+            state["backend_port"] = value
 
     if auto_connect:
         import mklink
@@ -3681,6 +3696,7 @@ def run_server(
             logger.warning("Auto-connect failed: %s", e)
 
     if desktop_port_end is None:
+        set_backend_port(port)
         browser_sessions = getattr(app.state, "browser_sessions", None)
         if browser_sessions is None:
             uvicorn.run(app, host=host, port=port, log_level="info")
@@ -3699,6 +3715,7 @@ def run_server(
         host, port, desktop_port_end,
     )
     try:
+        set_backend_port(selected_port)
         _write_desktop_runtime_info(
             desktop_runtime_info,
             port=selected_port,

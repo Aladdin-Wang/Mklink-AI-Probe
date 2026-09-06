@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import urljoin, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1140,7 +1141,8 @@ def test_web_app_shell_is_not_cached_but_hashed_assets_are_immutable():
     with TestClient(app) as client:
         index = client.get("/")
         fallback = client.get("/config")
-        asset_path = re.search(r'src="(/assets/[^"]+\.js)"', index.text).group(1)
+        script_src = re.search(r'src="([^"]+\.js)"', index.text).group(1)
+        asset_path = urlsplit(urljoin(str(index.url), script_src)).path
         asset = client.get(asset_path)
 
     assert index.status_code == 200
@@ -1189,11 +1191,17 @@ def test_built_web_asset_graph_uses_fresh_cache_namespace():
 
     dist = Path(api.__file__).resolve().parents[2] / "gui" / "dist"
     # Include Vite's lazy preload tables and worker URLs, not only index.html.
-    paths = set(re.findall(r'(?:src|href)="(/assets/[^\"]+)"',
-                           (dist / "index.html").read_text(encoding="utf-8")))
+    paths = {
+        urlsplit(urljoin("/index.html", reference)).path
+        for reference in re.findall(r'(?:src|href)="([^\"]+\.(?:js|css))"',
+                                    (dist / "index.html").read_text(encoding="utf-8"))
+    }
     for script in (dist / "assets").rglob("*.js"):
-        paths.update("/" + path.lstrip("/") for path in re.findall(
-            r'''["'`](/?assets/[^"'`\s]+)["'`]''', script.read_text(encoding="utf-8"),
+        # Vite emits imports, lazy preload entries and worker URLs relative to
+        # the referring module when base='./'. Resolve each at its own URL.
+        script_url = "/" + script.relative_to(dist).as_posix()
+        paths.update(urlsplit(urljoin(script_url, reference)).path for reference in re.findall(
+            r'''["'`]([\w./-]+\.(?:js|css))["'`]''', script.read_text(encoding="utf-8"),
         ))
 
     assert paths
