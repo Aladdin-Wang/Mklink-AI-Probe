@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-07T21:32:26.159529+08:00`
+- 更新时间：`2026-09-07T22:44:34.515074+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`63016e3 为已同步 master 的 HIL 基线；当前变更为 Skill 加载时主动检查更新及交接精简，最新 tip 以 Git 为准。`
+- HEAD：`63016e3 为已同步 master 的 HIL 基线；后续包含 Skill 加载检查与 SuperWatch 类型写入修复，最新 tip 以 Git 为准。`
 - 远端 HEAD：`origin/master 已同步 63016e3；后续维护提交推送 origin/codex/v0.2.0-development。`
 - 工作树：仅保留当前状态与证据入口，不在交接累积逐次操作记录。
-- 当前任务：用户 Skill 改为每会话首次加载即检查最新版本，绕过上次检查缓存；同会话不重复，离线继续，安装仍需用户同意。维护记录已压缩，原始 HIL 报告与备份保留。
+- 当前任务：STM32F103 真机 CLI + Chrome 常用类型写入完成；修复超范围输入提示、停流残留响应及 CLI typedef/数组解码，结果集中在验证报告。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -23,6 +23,7 @@
 - **GUI与代理**：文件重载、数组、导航、搜索、U盘复用及PR #5分别见 docs/verification/v0.2.0-file-reload-20260907.md、v0.2.0-flash-navigation-20260907.md、v0.2.0-symbol-search-20260907.md、v0.2.0-toolbar-usb-deploy-20260907.md、v0.2.0-pr5-proxy-integration.md。
 - **硬件限制与后续入口**：安全矩阵见 docs/ai/security-roadmap.md；高速USB现场记录见 docs/verification/v0.2.0-winusb-guid-recovery.md；RTT启动/停流残留见发布前HIL报告。
 - **Skill加载检查**：MCP ping(force_update_check=True) 与脚本 check --force 跳过近期缓存；普通健康检查仍复用缓存。103项更新/上下文/协议测试通过，本机用户Skill已同步；实际MCP与脚本均联网返回cached:false，用户Skill校验通过且不含维护上下文。
+- **SuperWatch类型写入**：docs/verification/v0.2.0-superwatch-write-20260907.md：Chrome 18项常用值、6项非法值、20次采集中写入及CLI 10组交叉验证通过；Python 1901通过，12项因当前Windows无符号链接权限失败。
 
 ## 架构决策
 
@@ -37,8 +38,8 @@
 
 ## 真机环境
 
-- **probe**：V4 + STM32F103RE，修复后正常测试程序运行、未保护；采集已停止，命令口与UART释放。
-- **backup**：原始512KiB Flash、源码/AXF/HEX/BIN前态与原始HIL证据保留在 .build/reports/prerelease-hil-20260907。安全往返已校验原备份；最终下载修复程序并独立回读校验。
+- **probe**：V4 + STM32F103RE，测试程序新增稳定 sw_write 结构体，写入值已恢复初值；采集停止，命令口与UART释放。
+- **backup**：原始512KiB Flash、源码/AXF/HEX/BIN前态与原始HIL证据保留在 .build/reports/prerelease-hil-20260907。安全往返已校验原备份；最终下载修复程序并独立回读校验。 本轮稳定写入夹具与工程前态保留在 .build/reports/superwatch-write-20260907。
 - **permission**：本轮F103RE测试获准修改/下载及3.3V加锁解锁擦除恢复；没有Modbus从站。
 
 ## 下一动作

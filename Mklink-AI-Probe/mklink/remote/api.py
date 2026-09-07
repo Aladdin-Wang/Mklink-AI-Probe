@@ -2393,6 +2393,8 @@ def create_app(
                 generation=generation,
                 value=value,
             )
+        except SymbolCatalogError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except SuperWatchTransactionError as exc:
             raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
 

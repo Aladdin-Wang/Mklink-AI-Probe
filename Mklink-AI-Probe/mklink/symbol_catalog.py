@@ -1019,7 +1019,10 @@ def encode_descriptor(descriptor: SymbolDescriptor, value: object) -> bytes:
             raise SymbolValueError("floating-point value must be finite")
         if size not in (4, 8):
             raise SymbolValueError(f"unsupported floating-point size: {size}")
-        return struct.pack("<f" if size == 4 else "<d", number)
+        try:
+            return struct.pack("<f" if size == 4 else "<d", number)
+        except OverflowError as exc:
+            raise SymbolValueError("floating-point value does not fit the selected type") from exc
     if kind == "bool":
         if not isinstance(value, bool):
             raise SymbolValueError("boolean value must be true or false")
