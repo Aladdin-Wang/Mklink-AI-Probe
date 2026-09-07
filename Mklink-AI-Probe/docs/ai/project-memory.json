@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T14:38:22+08:00",
+  "updated_at": "2026-09-07T14:53:28+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "运行代码b32a0f8：手动FLM允许桌面本地/U盘路径；后续提交保存同源GUI及只读验证。",
+    "head": "本轮移除两端在线烧录文件路径入口，修复工具栏挤压换行及字体回退；源码提交后同源构建。",
     "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "手动FLM误报不可用修复完成。GUI678、后端脱机60通过；桌面与U盘两份实际FLM解析成功、真实Edge上传预览及source_path API预览均通过，源文件不变。未部署或烧录。",
-    "release": "b32a0f8标准NSIS已生成供用户手动安装，未覆盖桌面或运行本轮桌面候选。Skill/Web已同源更新，运行时检查无维护上下文；候选目录.build/artifacts/v0.2.0-local-b32a0f8-20260907。未签名/未发布。"
+    "current_task": "按用户要求移除Web/桌面在线烧录手动文件路径入口，保留选择/拖拽及现有路径/句柄自动重载。工具栏控件换行、按钮不竖排、补中文字体回退；GUI679通过，进行生产布局验证。",
+    "release": "只生成NSIS交用户手动安装，更新本地Skill/Web；不写目标或改用户工程。"
   },
   "milestones": [
     {

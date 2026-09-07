@@ -172,11 +172,12 @@ onUnmounted(() => {
   --danger:  #b53333;
   --warn:    #b58a1b;
   --success: #2d6a4f;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
   --font-mono: Consolas, 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --radius: 6px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+button, input, select, textarea { font-family: inherit; }
 body {
   background: var(--bg);
   color: var(--fg);

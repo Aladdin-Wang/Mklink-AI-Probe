@@ -2221,16 +2221,19 @@ describe('online flash component quality', () => {
     expect(wrapper.emitted('dropFiles')?.[0]).toEqual([[file]])
   })
 
-  it('allows tracking a firmware path on the backend computer without browser file permissions', async () => {
+  it.each([false, true])('uses one file picker without a separate path entry (native=%s)', async native => {
+    vi.stubGlobal('isTauri', native)
     const wrapper = mount(FirmwareWorkspace, { props: {
-      file: null, sourcePath: '', baseAddress: '', baseError: '', inspection: null, rows: [],
+      file: null, sourcePath: '/build/firmware-with-a-long-name.hex', baseAddress: '', baseError: '', inspection: null, rows: [],
       paddingTop: 0, paddingBottom: 0, loading: false, error: '',
     } })
-    await wrapper.findAll('button').find(button => button.text() === '文件路径')!.trigger('click')
-    await wrapper.get('#firmware-source-path').setValue(' /Volumes/shared/build/app.hex ')
-    await wrapper.get('form.path-entry').trigger('submit')
-    expect(wrapper.emitted('sourcePath')).toEqual([['/Volumes/shared/build/app.hex']])
-    expect(wrapper.find('form.path-entry').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('文件路径')
+    expect(wrapper.find('#firmware-source-path').exists()).toBe(false)
+    expect(wrapper.get('.filename').attributes('title')).toBe('firmware-with-a-long-name.hex')
+    if (native) {
+      await wrapper.get('[data-testid="firmware-trigger"]').trigger('click')
+      expect(wrapper.emitted('browse')).toHaveLength(1)
+    } else expect(wrapper.find('[data-testid="firmware-input"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
