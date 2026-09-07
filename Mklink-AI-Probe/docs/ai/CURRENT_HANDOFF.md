@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-07T11:11:51+08:00`
+- 更新时间：`2026-09-07T12:00:12+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`运行代码基线6787302baa93；本次提交仅保存同源重建的gui/dist和本地安装验收记录。`
-- 远端 HEAD：`origin/master保持6787302baa93；本次构建资产及验收交接仅推送codex/v0.2.0-development，未再次合并master。`
-- 工作树：构建资产与验收记录完成后提交并核对origin开发分支tip；本地Skill和桌面界面同为6787302baa93。
-- 当前任务：按用户指令重建NSIS、覆盖本地安装并同步用户Skill。2448文件一致，Skill排除维护交接/测试/打包流程，保留用户配置；新版Web GUI已从安装Skill运行并打开，未连接设备或串口。
+- HEAD：`运行代码19a593f50e96：浏览器AXF句柄跟踪、符号重载串行停流、过滤数组手动收起；后续提交保存同源GUI及实际编译验收。`
+- 远端 HEAD：`本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。`
+- 工作树：修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。
+- 当前任务：同一F103工程实际修改并用Keil编译验证Web/真实Tauri客户端AXF、HEX、BIN原路径自动重载；搜索数组收起修复已实测。GUI672和后端相关129通过。工程源码/AXF/HEX/BIN已恢复为测试前逐字节相同，未烧录，设备与串口断开。用户原路径偶发不重载未复现，不能声称已解释全部报告。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -20,11 +20,11 @@
 
 ## 验证证据
 
+- **文件重载与搜索数组**：同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。
 - **PR #5代理接入**：Python全量1896通过、零失败零跳过（UAC提供符号链接权限）；GUI62文件667通过；生产构建及Nginx1.30.4+Edge根路径/子路径/index.html/308入口、实际端口、WS握手、释放200、中英文外设版本说明通过。未做真机采集。见docs/verification/v0.2.0-pr5-proxy-integration.md。
 - **Windows DAP消失恢复**：现场PnP正常、GUID缺失、上位机枚举为空；备份补GUID并重启MI_00后枚举恢复1个，DAP Info 2.1.1/512B/2包/能力307通过。实读USB为High Speed，BOS33B/OS2集合170B，GUID内容正确。未卸载驱动/拔插/刷固件。定点工具12项条件验证及幂等自检通过；Keil界面和高速链路不稳定复现未验收。见docs/verification/v0.2.0-winusb-guid-recovery.md。
 - **仪表盘持续采集与SVD外设**：Python定向289通过、GUI全量657通过；F103真实Edge切子页/配置页无隐式停流、无缓冲重置、无JS错误，UART10047条连续文本、SW约1kHz/19468点、GPIOB.12与IDR bit12一致。transport/backend丢批为零；SW启动解析器丢弃74字节，不称全程绝对无损。Pack型号联想/SVD选择、原程序变量与手动分图保留。见docs/verification/v0.2.0-dashboard-peripheral-hil.md。
 - **SystemView上游同步**：上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。
-- **本地打包与安装**：2026-09-07纯Windows PATH覆盖安装及启动通过；独立sidecar、探针枚举1个、SVD界面与版本说明、正常关闭释放8765均通过。sidecar/Skill均验证7059目标2224FLM；2448个Skill文件逐项匹配，GUI一致、用户配置保留。旧扩展导航脚本超时未计通过，详见docs/verification/v0.2.0-local-install-20260907.md。
 - **当前 V4 + STM32F103**：普通暂停、3.3V：在线及脱机加锁/解锁/恢复通过，512KiB全片比对一致，APP RTT正常。F1选项FLM上下文/中断/cleanup修复，148项定向测试通过。当前未锁运行。见 docs/verification/v0.2.0-v4-security-port.md。
 - **芯片安全证据**：在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。
 - **连接与 HEX**：STM32连接/复位矩阵与客户合并HEX在GD32验证通过；桌面勾选安全操作确认框修复。见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
@@ -42,13 +42,13 @@
 
 ## 真机环境
 
-- **probe**：V4 + STM32F103RE、512KiB、72MHz，现有目标固件build=2026090501未改变。GUID已补回，DAP信息查询测试句柄已关闭；用户原有8765命令串口会话保留，本轮未打开UART或刷下载器。
-- **backup**：本轮完整512KiB备份与原源码/AXF/HEX：.build/reports/systemview-hil-20260905/before；此前V4/F103双读备份：.build/reports/v4-f103-security-20260905；GD32备份：.build/reports/gd32-new-program-20260905。禁止删除唯一备份。
+- **probe**：V4 + STM32F103RE；本轮仅连接和符号准备，无目标写入。测试后设备与串口释放，Web已打开并保持未连接。
+- **backup**：本轮源码和AXF/HEX/BIN备份在.build/reports/file-reload-20260907/before；恢复后四文件SHA-256均与测试前一致。历史Flash唯一备份保留。
 - **permission**：测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。
 
 ## 下一动作
 
-1. origin/master与0.2.0开发分支已按用户授权同步。后续维护仍从记录的开发分支继续；正式发布前另行重建安装包并验收，当前GUI来源标识ca09b5639093。
+1. 维护继续从codex/v0.2.0-development；当前代码/Skill/Web为19a593f，已安装桌面6787302，19a593f候选覆盖安装的UAC被取消。后续按用户明确意愿再安装，不把候选运行验收当作安装成功。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。

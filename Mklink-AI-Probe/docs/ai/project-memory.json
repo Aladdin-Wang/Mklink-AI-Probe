@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T11:11:51+08:00",
+  "updated_at": "2026-09-07T12:00:12+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "运行代码基线6787302baa93；本次提交仅保存同源重建的gui/dist和本地安装验收记录。",
-    "remote_head": "origin/master保持6787302baa93；本次构建资产及验收交接仅推送codex/v0.2.0-development，未再次合并master。",
-    "working_tree": "构建资产与验收记录完成后提交并核对origin开发分支tip；本地Skill和桌面界面同为6787302baa93。"
+    "head": "运行代码19a593f50e96：浏览器AXF句柄跟踪、符号重载串行停流、过滤数组手动收起；后续提交保存同源GUI及实际编译验收。",
+    "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
+    "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill、串口/Modbus 和远程 Site Agent。",
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "按用户指令重建NSIS、覆盖本地安装并同步用户Skill。2448文件一致，Skill排除维护交接/测试/打包流程，保留用户配置；新版Web GUI已从安装Skill运行并打开，未连接设备或串口。",
-    "release": "2026-09-07本地候选6787302重新安装验收通过，NSIS与Skill ZIP在.build/artifacts/v0.2.0-local-6787302-20260907。未签名/未正式发布。见docs/verification/v0.2.0-local-install-20260907.md。"
+    "current_task": "同一F103工程实际修改并用Keil编译验证Web/真实Tauri客户端AXF、HEX、BIN原路径自动重载；搜索数组收起修复已实测。GUI672和后端相关129通过。工程源码/AXF/HEX/BIN已恢复为测试前逐字节相同，未烧录，设备与串口断开。用户原路径偶发不重载未复现，不能声称已解释全部报告。",
+    "release": "候选19a593f已构建；Windows UAC覆盖安装被取消，已安装桌面仍6787302。实际新桌面从构建目录测试通过；Skill/Web已19a593f且运行时白名单核对一致。候选在.build/artifacts/v0.2.0-local-19a593f-20260907；未签名/未发布。"
   },
   "milestones": [
     {
@@ -37,6 +37,10 @@
   ],
   "verification": [
     {
+      "area": "文件重载与搜索数组",
+      "result": "同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。"
+    },
+    {
       "area": "PR #5代理接入",
       "result": "Python全量1896通过、零失败零跳过（UAC提供符号链接权限）；GUI62文件667通过；生产构建及Nginx1.30.4+Edge根路径/子路径/index.html/308入口、实际端口、WS握手、释放200、中英文外设版本说明通过。未做真机采集。见docs/verification/v0.2.0-pr5-proxy-integration.md。"
     },
@@ -51,10 +55,6 @@
     {
       "area": "SystemView上游同步",
       "result": "上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。"
-    },
-    {
-      "area": "本地打包与安装",
-      "result": "2026-09-07纯Windows PATH覆盖安装及启动通过；独立sidecar、探针枚举1个、SVD界面与版本说明、正常关闭释放8765均通过。sidecar/Skill均验证7059目标2224FLM；2448个Skill文件逐项匹配，GUI一致、用户配置保留。旧扩展导航脚本超时未计通过，详见docs/verification/v0.2.0-local-install-20260907.md。"
     },
     {
       "area": "当前 V4 + STM32F103",
@@ -80,8 +80,8 @@
     "加锁/解锁按保护架构和容量组验证后开放；CLI/MCP/在线共用后端，脱机另外核对执行器支持。禁止RDP2，异常身份/选项/算法一律拒绝。连接策略以当前代码和实测为准，不能沿用旧的统一under-reset说法。"
   ],
   "hardware": {
-    "probe": "V4 + STM32F103RE、512KiB、72MHz，现有目标固件build=2026090501未改变。GUID已补回，DAP信息查询测试句柄已关闭；用户原有8765命令串口会话保留，本轮未打开UART或刷下载器。",
-    "backup": "本轮完整512KiB备份与原源码/AXF/HEX：.build/reports/systemview-hil-20260905/before；此前V4/F103双读备份：.build/reports/v4-f103-security-20260905；GD32备份：.build/reports/gd32-new-program-20260905。禁止删除唯一备份。",
+    "probe": "V4 + STM32F103RE；本轮仅连接和符号准备，无目标写入。测试后设备与串口释放，Web已打开并保持未连接。",
+    "backup": "本轮源码和AXF/HEX/BIN备份在.build/reports/file-reload-20260907/before；恢复后四文件SHA-256均与测试前一致。历史Flash唯一备份保留。",
     "permission": "测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。"
   },
   "known_limits": [
@@ -95,7 +95,7 @@
     "外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。"
   ],
   "next_actions": [
-    "origin/master与0.2.0开发分支已按用户授权同步。后续维护仍从记录的开发分支继续；正式发布前另行重建安装包并验收，当前GUI来源标识ca09b5639093。",
+    "维护继续从codex/v0.2.0-development；当前代码/Skill/Web为19a593f，已安装桌面6787302，19a593f候选覆盖安装的UAC被取消。后续按用户明确意愿再安装，不把候选运行验收当作安装成功。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
     "USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。",
     "按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。"
