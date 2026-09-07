@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T14:14:00+08:00",
+  "updated_at": "2026-09-07T14:31:42+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "运行代码4ea8127：SuperWatch合并完整目录搜索并等待初始目录加载；后续提交保存同源GUI与验证。",
+    "head": "本轮修复脱机FLM可用性漏判桌面原生文件路径，源码提交后构建同源GUI/NSIS。",
     "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "SuperWatch宽泛搜索修复：50条建议被数组占满导致通道遗漏，现合并已加载完整目录且等待初始加载。实际用户AXF搜索验证见docs/verification/v0.2.0-symbol-search-20260907.md。保留数组手动收起、展开，不修改目标程序或烧录。",
-    "release": "4ea8127标准NSIS和运行时Skill同源构建。用户自行安装，本轮未覆盖安装；本地Skill/Web同步更新，设备原连接保留，无硬件写入。候选目录.build/artifacts/v0.2.0-local-4ea8127-20260907。未签名/未发布。"
+    "current_task": "修复桌面及U盘手动FLM误报不可用：upload来源仅检查File，遗漏source_path。现与构建请求一致接受File或路径。三种来源回归通过，GUI678、脱机后端60通过；正在进行真实文件只读验证和构建。",
+    "release": "沿用用户要求生成桌面安装包交用户手动安装，更新Skill/Web；不部署U盘或触发烧录。"
   },
   "milestones": [
     {

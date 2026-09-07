@@ -18,6 +18,12 @@ const onlineMocks = vi.hoisted(() => ({
   installPack: vi.fn(),
 }))
 
+const pickerMocks = vi.hoisted(() => ({ pickFlmFile: vi.fn() }))
+vi.mock('../lib/filePicker', async importOriginal => ({
+  ...await importOriginal<typeof import('../lib/filePicker')>(),
+  pickFlmFile: pickerMocks.pickFlmFile,
+}))
+
 vi.mock('../composables/useOfflineFlashApi', () => ({
   useOfflineFlashApi: () => offlineMocks,
 }))
@@ -97,6 +103,36 @@ describe('OfflineFlashView', () => {
     expect(source).toContain('SWD 速率')
     expect(source).toContain('添加本地 FLM')
     expect(source).toContain('建议流程')
+  })
+
+  it.each(['desktop', 'usb', 'browser'])('allows preview with a manually selected %s FLM source', async kind => {
+    offlineMocks.getStatus.mockResolvedValue({ available: true, disk_path: 'G:\\', python_dir: 'G:\\python', flm_dir: 'G:\\FLM' })
+    const source = kind === 'browser' ? new File(['algorithm'], 'Device.FLM')
+      : kind === 'usb' ? 'G:\\FLM\\Device.FLM' : 'C:\\Users\\test\\Desktop\\Device.FLM'
+    pickerMocks.pickFlmFile.mockResolvedValue(source)
+    const wrapper = mount(OfflineFlashView)
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+      await wrapper.get('[data-testid="offline-add-flm"]').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('input[type="file"][multiple]')
+      Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['hex'], 'firmware.hex')] })
+      await input.trigger('change')
+      expect(wrapper.find('[data-testid="offline-selection-warning"]').exists()).toBe(false)
+      const previewButton = wrapper.findAll('button').find(button => button.text() === '生成预览')!
+      expect(previewButton.attributes('disabled')).toBeUndefined()
+      await previewButton.trigger('click')
+      await flushPromises()
+      expect(offlineMocks.preview).toHaveBeenCalledOnce()
+      const [payload] = offlineMocks.preview.mock.calls[0]
+      expect(payload.algorithms).toEqual([expect.objectContaining({
+        source_kind: 'upload', file_name: 'Device.FLM',
+        source_path: kind === 'browser' ? null : source,
+        upload_index: kind === 'browser' ? 0 : null,
+      })])
+      expect(offlineMocks.deploy).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
   })
 
   it('searches target suggestions while typing and supports keyboard selection', async () => {

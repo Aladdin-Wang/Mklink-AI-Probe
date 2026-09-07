@@ -127,7 +127,7 @@ const selectedAlgorithmIds = computed(() => new Set(
 ))
 const selectedAlgorithms = computed(() => algorithms.value.filter(item => selectedAlgorithmIds.value.has(item.id)))
 const unavailableSelectedAlgorithms = computed(() => selectedAlgorithms.value.filter(item => (
-  item.source_kind === 'upload' ? !item.file : !item.available
+  item.source_kind === 'upload' ? !(item.file || item.source_path) : !item.available
 )))
 const selectionWarning = computed(() => unavailableSelectedAlgorithms.value.length
   ? tr(
