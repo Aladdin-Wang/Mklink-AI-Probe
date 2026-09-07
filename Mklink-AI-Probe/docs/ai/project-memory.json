@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T12:46:00+08:00",
+  "updated_at": "2026-09-07T12:54:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "本轮修复在线/脱机烧录KeepAlive缓存键冲突；源码提交后构建同源Web和桌面NSIS。",
+    "head": "运行代码af35ded8eae0：修复在线/脱机页KeepAlive键冲突；后续提交保存同源GUI与两端导航验收。",
     "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "修复Web与桌面在线/脱机页切换后内容停留旧页。真实RouterView/KeepAlive回归在旧代码双向复现，显式页面路径缓存键修复，保留各页编辑和仪表盘常驻DOM。正在进行生产Web及桌面构建验收。",
-    "release": "用户明确要求只生成桌面安装包，由用户自行安装。本轮不执行覆盖安装。"
+    "current_task": "在线/脱机烧录页面切换修复完成。旧代码真实路由回归双向复现；修复后GUI674通过、生产Web与真实Tauri候选各44次导航通过，设置保留、仪表盘DOM保留、零JS错误。未进行硬件写入或采集。",
+    "release": "af35ded标准NSIS已生成，用户明确自行安装，本轮未安装。桌面候选独立sidecar/正常退出通过；Skill2448运行时文件与同源GUI一致，无开发上下文，Web已打开脱机页。候选在.build/artifacts/v0.2.0-local-af35ded-20260907，未签名/未发布。"
   },
   "milestones": [
     {
@@ -38,7 +38,7 @@
   "verification": [
     {
       "area": "文件重载与搜索数组",
-      "result": "同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。"
+      "result": "同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。 页面切换另已修复并验证，见docs/verification/v0.2.0-flash-navigation-20260907.md：GUI674、Web/Tauri各44次导航通过；独立sidecar与正常关闭通过。"
     },
     {
       "area": "PR #5代理接入",
@@ -95,7 +95,7 @@
     "外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。"
   ],
   "next_actions": [
-    "完成本轮切页修复生产Web与真实桌面候选验证，生成NSIS交用户自行安装；同步本地运行时Skill/Web，推送开发分支。",
+    "维护从codex/v0.2.0-development继续；当前代码/Skill/Web为af35ded，NSIS候选交用户自行安装。本轮未覆盖安装，不能将候选运行通过当作升级成功。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
     "USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。",
     "按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。"
