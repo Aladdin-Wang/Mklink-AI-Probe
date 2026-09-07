@@ -261,13 +261,16 @@ def _idcode(dev: Any) -> str | None:
 # ==========================================================================
 def _register_health_tools(mcp: Any) -> None:
     @mcp.tool()
-    def ping() -> dict:
+    def ping(force_update_check: bool = False) -> dict:
         """Health check for the mklink MCP server.
 
         Call this first to confirm the server is alive before invoking any
         hardware tool. Requires no device connection. Also reports the
         effective built-in ELF/DWARF backend and optional external GNU tool
         availability. AXF features use the bundled backend by default.
+        Set force_update_check=True when first loading the MKLink Skill in a
+        conversation to fetch the latest release instead of reusing the cache.
+        Subsequent health calls can use the default; this never installs updates.
         """
         from importlib.metadata import version, PackageNotFoundError
         from mklink.toolchain import status as toolchain_status
@@ -281,7 +284,7 @@ def _register_health_tools(mcp: Any) -> None:
             "server": "mklink-ai-probe",
             "transport": "stdio",
             "sdk_version": ver,
-            "update": check_for_update(),
+            "update": check_for_update(force=force_update_check),
             "limits": _capabilities(),
             **toolchain_status(),
         }

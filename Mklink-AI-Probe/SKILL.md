@@ -11,15 +11,18 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 
 ## 开始前
 
+- 每个会话首次加载本 Skill 时立即检查版本：调用 MCP
+  `ping(force_update_check=True)` 并读取 `update`；没有该参数或 MCP 时，在本
+  Skill 根目录运行 `python scripts/skill_update.py check --force --json`。
+  不等到首次设备操作，不使用上次会话的 24 小时缓存；本会话后续调用不重复检查。
+  离线继续任务，发现新版本时简要提示；安装仍须用户同意，按需读
+  [安装与更新](references/install.md)。
 - 有 MKLink MCP tool 时优先使用；能力未覆盖时用 `python -m mklink <command>`。
   参数以 tool schema/`--help` 为准，找不到入口再读[操作速查](references/tool-index.md)。
 - 首次需要生成脚本、日志、采集或报告时，工作根目录固定为用户指定的非系统盘
   目录；用户未指定时使用目标项目 `.mklink/`。项目在系统盘或没有项目时先询问，
   不写 Skill 目录、AI 客户端目录、桌面或系统临时目录。按需读取
   [工作目录与清理](references/work-files.md)，并报告实际路径。
-- 每会话首次实际使用时，只通过 MCP `ping.update` 或
-  `scripts/skill_update.py check --json` 检查一次更新。离线不阻塞任务；安装更新
-  只有用户明确同意后才执行，并读取[安装与更新](references/install.md)。
 
 ## 不可绕过的设备边界
 
