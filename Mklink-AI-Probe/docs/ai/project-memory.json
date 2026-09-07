@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T17:22:32.9896198+08:00",
+  "updated_at": "2026-09-07T18:42:25.161883+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "master已按用户授权快进至52ff114；当前开发分支新增发布前HIL发现的串口小包队列溢出与内嵌语言请求修复，最终tip以Git为准。",
-    "remote_head": "origin/master与开发分支已同步52ff114；新HIL修复通过完整门禁后继续同步两分支。",
-    "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
+    "head": "52ff114 后新增 6a92b5e 串口合批修复、fa8807b 桌面关闭退出修复及发布前 HIL 记录；源码运行时身份 fa8807b4ac40，最终文档/构建资产提交 tip 以 Git 为准。",
+    "remote_head": "本轮用户已明确授权推送 master；最终记录提交后将开发分支与 master 同步，远端实际 tip 以 Git 核验为准。",
+    "working_tree": "本轮修改、生产 GUI 和验证记录统一提交，核对 origin 开发分支及 master；不改正式发布指针。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill、串口/Modbus 和远程 Site Agent。",
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "发布前全功能HIL进行中。已完成初轮Python1899/GUI682、Web/Tauri在线/切页、MCP27、HardFault、SystemView；测试固件并发输出和波形任务饥饿已修正，YMODEM115936B零重试通过。修正固件后高吞吐揭示串口64批队列溢出，现增加20ms/4KiB合批、串口256批队列及持续流状态心跳，修复内嵌语言405；待新运行时全量回归/两端HIL与3.3V加锁解锁恢复。 用户新增授权由代理安装NSIS并用computer-use实测安装版。旧候选窗口关闭后主进程驻留，已补显式退出；Rust19项通过（测试副本加入Common-Controls v6清单），待新安装退出实测。",
-    "release": "master已推送52ff114，未创建标签或正式Release。HIL修复后将重建同源候选NSIS/Skill，用户自行安装桌面。"
+    "current_task": "发布前 V4 + STM32F103RE 实测完成，边界见 docs/verification/v0.2.0-prerelease-hil-20260907.md。修复测试固件 UART/任务饥饿、主机串口队列溢出及桌面关闭残留。Python1902、GUI682、Rust19通过；实际 NSIS 覆盖安装、独立后端、在线/脱机烧录、UART、高吞吐切页、YMODEM、CLI/MCP、安全操作通过。用户追加的原生 computer-use 16变量+GPIO混采通过，共324112组、导出20万行；已停止断开，桌面保留波形。",
+    "release": "master 推送已获本轮授权；本地 NSIS/Skill/Web/CLI/MCP 运行时同源 fa8807b4ac40，实际安装验收通过。未签名、未创建标签或正式 Release。"
   },
   "milestones": [
     {
@@ -36,6 +36,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "发布前全功能 HIL 与实际安装",
+      "result": "见 docs/verification/v0.2.0-prerelease-hil-20260907.md。Python1902/GUI682/Rust19，实际安装+原生操作/独立后端退出、Web/桌面连续流与USB文件复用、MCP27、CLI、SystemView、VOFA、HardFault、YMODEM113576B零重试、3.3V加锁解锁恢复通过。原生17通道324112组约996Hz，20万行CSV验证全部变量变化与GPIO 0/1，读取/CRC/帧/传输丢失为0，启动丢弃60字节。硬件覆盖仅V4/F103RE，保留RTT启动/停止残留问题与未覆盖矩阵。 Windows测试链接运行目录保留，不强制清理；完整Python以管理员符号链接权限通过。"
+    },
     {
       "area": "GUI文件与脱机下载",
       "result": "原文件重载/数组收起、导航KeepAlive及搜索遗漏修复见docs/verification/v0.2.0-file-reload-20260907.md、v0.2.0-flash-navigation-20260907.md、v0.2.0-symbol-search-20260907.md。手动FLM可用性见v0.2.0-manual-flm-20260907.md（该轮仅预览）。最新工具栏/U盘复用见docs/verification/v0.2.0-toolbar-usb-deploy-20260907.md：GUI682/Python63、Web10种布局/原路径自动重载通过；实际Web和Tauri各一次APP+BOOT烧录成功，原USB三文件内容/时间不变，UART递增输出、命令口及UART释放。旧桌面触发错误复现为Web占用命令口；保留互斥并显示具体原因。"
@@ -57,12 +61,8 @@
       "result": "上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。"
     },
     {
-      "area": "当前 V4 + STM32F103",
-      "result": "普通暂停、3.3V：在线及脱机加锁/解锁/恢复通过，512KiB全片比对一致，APP RTT正常。F1选项FLM上下文/中断/cleanup修复，148项定向测试通过。当前未锁运行。见 docs/verification/v0.2.0-v4-security-port.md。"
-    },
-    {
       "area": "芯片安全证据",
-      "result": "在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。"
+      "result": "在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。 早期F103修复见 docs/verification/v0.2.0-v4-security-port.md，最新安全往返见发布前HIL报告。"
     },
     {
       "area": "连接与 HEX",
@@ -80,8 +80,8 @@
     "加锁/解锁按保护架构和容量组验证后开放；CLI/MCP/在线共用后端，脱机另外核对执行器支持。禁止RDP2，异常身份/选项/算法一律拒绝。连接策略以当前代码和实测为准，不能沿用旧的统一under-reset说法。"
   ],
   "hardware": {
-    "probe": "V4 + STM32F103RE；本轮用户授权后Web/Tauri各部署并烧录一次现有APP+BOOT，未全片擦除或更改保护/供电。UART递增输出通过；命令口及UART均释放，Web未连接。",
-    "backup": "本轮512KiB双读一致原始Flash、固件源码前态及所有原始测试证据保留在.build/reports/prerelease-hil-20260907。目标目前为修正后的压力测试固件；仍需安全测试和最终恢复校验。",
+    "probe": "V4 + STM32F103RE；在线及脱机3.3V安全往返通过，最后为修复后正常测试程序、未保护。原生SuperWatch17通道测试已停止断开；最终UART401行连续，命令口与UART均释放，桌面保留曲线。",
+    "backup": "512KiB双读一致原始Flash、修改前源码与AXF/HEX/BIN及原始证据保留在.build/reports/prerelease-hil-20260907。安全测试恢复原备份全片一致；之后重新下载正常修复程序，独立全片回读确认应用与新HEX一致、BIN与HEX一致。不声称当前仍是原始映像。",
     "permission": "用户明确允许修改编译下载测试工程，允许本块STM32F103RE加锁、解锁擦除并恢复，供电3.3V；已确认没有Modbus从站。"
   },
   "known_limits": [
@@ -90,12 +90,12 @@
     "Mac/Linux无实机兼容验证；用户报告首次假烧录/后端退出缺少原始材料，未复现。UART接线由用户修正后，本轮连续文本与切页验证通过。",
     "F103普通在线烧录后时基停止已修复并真机验证；探针断电冷启动复位/停流、其他芯片和保护操作不由此证明。保持单次有界恢复；不能盲写全局寄存器或扩大重试掩盖。",
     "USB GUID缺失已定点恢复，实测High Speed及512B正确；高速枚举中断/登记缺失的触发因果未证实。固件独立的FS包大小和other-speed类型问题不能当作本次根因。RTT失败退避和高采样率仍按原边界。",
-    "此前Windows全量12项symlink权限失败，本次UAC管理员完整1896项已全部通过；含测试链接的运行目录保留，不强制清理。安装包仍无Authenticode；安装阶段及纯系统PATH验收边界见原记录。",
     "1.8V/5V及800mV电源边界波形未经本轮真机测量；Modbus危险写操作未验收。",
-    "外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。"
+    "外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。",
+    "RTT偶发首次启动控制块未找到，原始应答发现描述与负载交错；停止后首条UART help曾混入RTTView.stop(前缀。均有明确残留证据，未修改探针固件，不能以重试成功关闭。SystemView首会话启动溢出1且不增长，第二会话0，不称绝对无损。"
   ],
   "next_actions": [
-    "从codex/v0.2.0-development继续；NSIS/Skill/Web源码6a5c526，同源包已生成，用户手动安装。候选Tauri已真机触发成功，但未将候选运行当作安装/升级验收；用户旧桌面仍需安装新包。",
+    "继续在 codex/v0.2.0-development 维护；本轮同源 fa8807b NSIS 已实际安装，Skill/Web/CLI/MCP一致且不含开发上下文。当前受测V4/F103RE路径完成；后续优先RTT启动/停流串口残留，物理Modbus与其他平台/芯片仍需对应设施。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
     "USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。",
     "按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。"
