@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-07T14:31:42+08:00`
+- 更新时间：`2026-09-07T14:38:22+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`本轮修复脱机FLM可用性漏判桌面原生文件路径，源码提交后构建同源GUI/NSIS。`
+- HEAD：`运行代码b32a0f8：手动FLM允许桌面本地/U盘路径；后续提交保存同源GUI及只读验证。`
 - 远端 HEAD：`本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。`
 - 工作树：修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。
-- 当前任务：修复桌面及U盘手动FLM误报不可用：upload来源仅检查File，遗漏source_path。现与构建请求一致接受File或路径。三种来源回归通过，GUI678、脱机后端60通过；正在进行真实文件只读验证和构建。
+- 当前任务：手动FLM误报不可用修复完成。GUI678、后端脱机60通过；桌面与U盘两份实际FLM解析成功、真实Edge上传预览及source_path API预览均通过，源文件不变。未部署或烧录。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **文件重载与搜索数组**：同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。 页面切换另已修复并验证，见docs/verification/v0.2.0-flash-navigation-20260907.md：GUI674、Web/Tauri各44次导航通过；独立sidecar与正常关闭通过。 搜索遗漏修复见docs/verification/v0.2.0-symbol-search-20260907.md；完整目录合并与初始加载等待，实际Web验证64数组元素+16通道及手动收起。
+- **文件重载与搜索数组**：同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。 页面切换另已修复并验证，见docs/verification/v0.2.0-flash-navigation-20260907.md：GUI674、Web/Tauri各44次导航通过；独立sidecar与正常关闭通过。 搜索遗漏修复见docs/verification/v0.2.0-symbol-search-20260907.md；完整目录合并与初始加载等待，实际Web验证64数组元素+16通道及手动收起。 手动FLM路径漏判修复见docs/verification/v0.2.0-manual-flm-20260907.md：GUI678、后端60，实际桌面/U盘FLM解析及上传/路径预览通过，未部署。
 - **PR #5代理接入**：Python全量1896通过、零失败零跳过（UAC提供符号链接权限）；GUI62文件667通过；生产构建及Nginx1.30.4+Edge根路径/子路径/index.html/308入口、实际端口、WS握手、释放200、中英文外设版本说明通过。未做真机采集。见docs/verification/v0.2.0-pr5-proxy-integration.md。
 - **Windows DAP消失恢复**：现场PnP正常、GUID缺失、上位机枚举为空；备份补GUID并重启MI_00后枚举恢复1个，DAP Info 2.1.1/512B/2包/能力307通过。实读USB为High Speed，BOS33B/OS2集合170B，GUID内容正确。未卸载驱动/拔插/刷固件。定点工具12项条件验证及幂等自检通过；Keil界面和高速链路不稳定复现未验收。见docs/verification/v0.2.0-winusb-guid-recovery.md。
 - **仪表盘持续采集与SVD外设**：Python定向289通过、GUI全量657通过；F103真实Edge切子页/配置页无隐式停流、无缓冲重置、无JS错误，UART10047条连续文本、SW约1kHz/19468点、GPIOB.12与IDR bit12一致。transport/backend丢批为零；SW启动解析器丢弃74字节，不称全程绝对无损。Pack型号联想/SVD选择、原程序变量与手动分图保留。见docs/verification/v0.2.0-dashboard-peripheral-hil.md。
@@ -48,7 +48,7 @@
 
 ## 下一动作
 
-1. 维护从codex/v0.2.0-development继续；代码/Skill/Web为4ea8127，NSIS候选交用户手动安装。本轮未覆盖安装；保留此前桌面运行证据边界。
+1. 维护从codex/v0.2.0-development继续；代码/Skill/Web为b32a0f8，NSIS由用户手动安装。本轮仅包构建与只读预览，不冒充桌面原生对话框或升级验收。
 2. 芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。
 3. USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。
 4. 按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。
