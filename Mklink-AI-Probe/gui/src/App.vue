@@ -62,9 +62,10 @@
     />
     <div class="app-main">
       <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
-      <router-view v-if="initialBackendReady" v-slot="{ Component }">
+      <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
+        <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
-          <component :is="Component" v-if="currentTab !== 'dashboard'" />
+          <component :is="Component" v-if="viewRoute.name !== 'dashboard'" :key="viewRoute.path" />
         </KeepAlive>
       </router-view>
       <div v-else-if="backendState === 'starting'" class="backend-starting" data-testid="backend-starting" role="status">
