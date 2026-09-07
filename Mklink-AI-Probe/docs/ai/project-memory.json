@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T15:12:51+08:00",
+  "updated_at": "2026-09-07T15:25:39+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "本轮工具栏及U盘复用源码提交后同源构建；验收完成后提交生成资产与记录。",
+    "head": "源码6a5c526（含1a614fb工具栏修复）；生成GUI/验收记录另行提交，最终tip以Git为准。",
     "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "移除两端在线烧录文件路径按钮并修复窄工具栏/字体；相同U盘文件直接复用，不删除重写，保留变更文件事务回滚。补部署及串口失败详情。GUI682、后端63通过；用户追加授权触发实际STM32烧录，待Web/桌面验证。",
-    "release": "使用现有STM32测试工程验证部署/触发，无加锁解锁或全片擦除。NSIS交用户手动安装，更新本地Skill/Web。"
+    "current_task": "已完成两端文件路径按钮移除、工具栏布局/字体修复、U盘同内容文件复用和部署/触发错误详情。GUI682、Python定向63；实际Web与Tauri分别部署并烧录APP+BOOT成功，串口释放。详见docs/verification/v0.2.0-toolbar-usb-deploy-20260907.md。",
+    "release": "本地NSIS/Skill源码6a5c526，Skill2448文件与GUI一致、7059型号/2224算法验证通过。Web8765已重启并打开新页面，桌面候选正常关闭；用户自行安装NSIS，未代为覆盖旧桌面。"
   },
   "milestones": [
     {
@@ -37,8 +37,8 @@
   ],
   "verification": [
     {
-      "area": "文件重载与搜索数组",
-      "result": "同工程Keil多轮0错0警告；Web原路径AXF/HEX/BIN重载通过，修复版真实Tauri三格式与数组收起展开通过；原路径偶发失败未复现。浏览器AXF句柄跟踪为单元验证，普通上传仍快照。GUI672、后端129通过。源码和三产物恢复哈希一致，无硬件写。详见docs/verification/v0.2.0-file-reload-20260907.md。 页面切换另已修复并验证，见docs/verification/v0.2.0-flash-navigation-20260907.md：GUI674、Web/Tauri各44次导航通过；独立sidecar与正常关闭通过。 搜索遗漏修复见docs/verification/v0.2.0-symbol-search-20260907.md；完整目录合并与初始加载等待，实际Web验证64数组元素+16通道及手动收起。 手动FLM路径漏判修复见docs/verification/v0.2.0-manual-flm-20260907.md：GUI678、后端60，实际桌面/U盘FLM解析及上传/路径预览通过，未部署。"
+      "area": "GUI文件与脱机下载",
+      "result": "原文件重载/数组收起、导航KeepAlive及搜索遗漏修复见docs/verification/v0.2.0-file-reload-20260907.md、v0.2.0-flash-navigation-20260907.md、v0.2.0-symbol-search-20260907.md。手动FLM可用性见v0.2.0-manual-flm-20260907.md（该轮仅预览）。最新工具栏/U盘复用见docs/verification/v0.2.0-toolbar-usb-deploy-20260907.md：GUI682/Python63、Web10种布局/原路径自动重载通过；实际Web和Tauri各一次APP+BOOT烧录成功，原USB三文件内容/时间不变，UART递增输出、命令口及UART释放。旧桌面触发错误复现为Web占用命令口；保留互斥并显示具体原因。"
     },
     {
       "area": "PR #5代理接入",
@@ -80,8 +80,8 @@
     "加锁/解锁按保护架构和容量组验证后开放；CLI/MCP/在线共用后端，脱机另外核对执行器支持。禁止RDP2，异常身份/选项/算法一律拒绝。连接策略以当前代码和实测为准，不能沿用旧的统一under-reset说法。"
   ],
   "hardware": {
-    "probe": "V4 + STM32F103RE；本轮仅连接和符号准备，无目标写入。测试后设备与串口释放，Web已打开并保持未连接。",
-    "backup": "本轮源码和AXF/HEX/BIN备份在.build/reports/file-reload-20260907/before；恢复后四文件SHA-256均与测试前一致。历史Flash唯一备份保留。",
+    "probe": "V4 + STM32F103RE；本轮用户授权后Web/Tauri各部署并烧录一次现有APP+BOOT，未全片擦除或更改保护/供电。UART递增输出通过；命令口及UART均释放，Web未连接。",
+    "backup": "本轮源码和AXF/HEX/BIN备份在.build/reports/file-reload-20260907/before；恢复后四文件SHA-256均与测试前一致。历史Flash唯一备份保留。 本轮USB三个原文件备份在.build/reports/firmware-toolbar-20260907/usb-backup；内容与修改时间保持不变，临时测试脚本已移回报告目录。",
     "permission": "测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。"
   },
   "known_limits": [
@@ -95,7 +95,7 @@
     "外设为采样观察，可能漏掉短脉冲；仅过滤SVD明确标注的读取副作用，不证明厂商目录全部外设安全或适配所有封装。本轮GPIO实测，缓冲有容量上限。"
   ],
   "next_actions": [
-    "维护从codex/v0.2.0-development继续；代码/Skill/Web为b32a0f8，NSIS由用户手动安装。本轮仅包构建与只读预览，不冒充桌面原生对话框或升级验收。",
+    "从codex/v0.2.0-development继续；NSIS/Skill/Web源码6a5c526，同源包已生成，用户手动安装。候选Tauri已真机触发成功，但未将候选运行当作安装/升级验收；用户旧桌面仍需安装新包。",
     "芯片安全长期任务按 docs/ai/security-roadmap.md 推進；优先PY32异常和加锁后独立运行，有对应板卡再扩展。",
     "USB问题按用户要求暂缓，现场及恢复工具记录见docs/verification/v0.2.0-winusb-guid-recovery.md。根因仍待高速USB不稳定枚举阶段证据，FS兼容问题独立；不改写或烧录下载器固件。",
     "按用户要求，0.2.0开发完成后再向su5176/Mklink-AI-Probe提交PR；本轮不创建PR或发布。"
