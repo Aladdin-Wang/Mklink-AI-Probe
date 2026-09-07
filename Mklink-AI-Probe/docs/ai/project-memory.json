@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-06T17:56:45+08:00",
+  "updated_at": "2026-09-07T11:11:51+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "0.2.0已验证代码基线0a0e714（PR #5合并ca09b5639093）；本次仅更新master同步交接，不修改源码或GUI。",
-    "remote_head": "用户于2026-09-06明确授权将0.2.0推至origin/master；本次使用原子快进推送使master与codex/v0.2.0-development指向同一提交。维护前继续fetch并核对。",
-    "working_tree": "保持codex/v0.2.0-development为本地开发分支；本次master同步仅含交接变更，推送后核对两个远端tip及工作区。"
+    "head": "运行代码基线6787302baa93；本次提交仅保存同源重建的gui/dist和本地安装验收记录。",
+    "remote_head": "origin/master保持6787302baa93；本次构建资产及验收交接仅推送codex/v0.2.0-development，未再次合并master。",
+    "working_tree": "构建资产与验收记录完成后提交并核对origin开发分支tip；本地Skill和桌面界面同为6787302baa93。"
   },
   "mission": {
     "product": "维护 MKLink/MicroLink 的烧录、调试、Web/Tauri GUI、AI Skill、串口/Modbus 和远程 Site Agent。",
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "按用户明确指令将当前0.2.0同步到origin/master。核对master无独有提交，可安全快进；沿用同一代码基线刚完成的Python1896/GUI667、生产构建及最终GUI真实Nginx+Edge证据，不重复无变化的测试。两个远端分支原子同步；没有创建标签、正式发布或向su5176提交PR。USB继续暂缓，现有服务和硬件会话不变。",
-    "release": "本地候选安装已完成；包在 .build/artifacts/v0.2.0-local-d30b884-20260905。local-bundle无updater签名，不作正式发布。手动安装阶段PATH未受控，安装后纯系统PATH启动已测。证据见 docs/verification/v0.2.0-local-install-20260905.md。"
+    "current_task": "按用户指令重建NSIS、覆盖本地安装并同步用户Skill。2448文件一致，Skill排除维护交接/测试/打包流程，保留用户配置；新版Web GUI已从安装Skill运行并打开，未连接设备或串口。",
+    "release": "2026-09-07本地候选6787302重新安装验收通过，NSIS与Skill ZIP在.build/artifacts/v0.2.0-local-6787302-20260907。未签名/未正式发布。见docs/verification/v0.2.0-local-install-20260907.md。"
   },
   "milestones": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "area": "本地打包与安装",
-      "result": "Python1845通过/12项WinError1314、GUI654通过、定向363通过；7059目标/2224FLM完整。用户手动安装后，新文件核对、配置保留、纯系统PATH启动、自带sidecar健康、探针枚举、在线/脱机确认弹窗及正常退出释放均通过。见docs/verification/v0.2.0-local-install-20260905.md。"
+      "result": "2026-09-07纯Windows PATH覆盖安装及启动通过；独立sidecar、探针枚举1个、SVD界面与版本说明、正常关闭释放8765均通过。sidecar/Skill均验证7059目标2224FLM；2448个Skill文件逐项匹配，GUI一致、用户配置保留。旧扩展导航脚本超时未计通过，详见docs/verification/v0.2.0-local-install-20260907.md。"
     },
     {
       "area": "当前 V4 + STM32F103",

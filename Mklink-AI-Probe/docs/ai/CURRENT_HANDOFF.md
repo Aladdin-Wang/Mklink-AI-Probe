@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-06T17:56:45+08:00`
+- 更新时间：`2026-09-07T11:11:51+08:00`
 - 分支：`codex/v0.2.0-development`
-- HEAD：`0.2.0已验证代码基线0a0e714（PR #5合并ca09b5639093）；本次仅更新master同步交接，不修改源码或GUI。`
-- 远端 HEAD：`用户于2026-09-06明确授权将0.2.0推至origin/master；本次使用原子快进推送使master与codex/v0.2.0-development指向同一提交。维护前继续fetch并核对。`
-- 工作树：保持codex/v0.2.0-development为本地开发分支；本次master同步仅含交接变更，推送后核对两个远端tip及工作区。
-- 当前任务：按用户明确指令将当前0.2.0同步到origin/master。核对master无独有提交，可安全快进；沿用同一代码基线刚完成的Python1896/GUI667、生产构建及最终GUI真实Nginx+Edge证据，不重复无变化的测试。两个远端分支原子同步；没有创建标签、正式发布或向su5176提交PR。USB继续暂缓，现有服务和硬件会话不变。
+- HEAD：`运行代码基线6787302baa93；本次提交仅保存同源重建的gui/dist和本地安装验收记录。`
+- 远端 HEAD：`origin/master保持6787302baa93；本次构建资产及验收交接仅推送codex/v0.2.0-development，未再次合并master。`
+- 工作树：构建资产与验收记录完成后提交并核对origin开发分支tip；本地Skill和桌面界面同为6787302baa93。
+- 当前任务：按用户指令重建NSIS、覆盖本地安装并同步用户Skill。2448文件一致，Skill排除维护交接/测试/打包流程，保留用户配置；新版Web GUI已从安装Skill运行并打开，未连接设备或串口。
 - 状态：`v0.2.0-development`
 
 ## 里程碑
@@ -24,7 +24,7 @@
 - **Windows DAP消失恢复**：现场PnP正常、GUID缺失、上位机枚举为空；备份补GUID并重启MI_00后枚举恢复1个，DAP Info 2.1.1/512B/2包/能力307通过。实读USB为High Speed，BOS33B/OS2集合170B，GUID内容正确。未卸载驱动/拔插/刷固件。定点工具12项条件验证及幂等自检通过；Keil界面和高速链路不稳定复现未验收。见docs/verification/v0.2.0-winusb-guid-recovery.md。
 - **仪表盘持续采集与SVD外设**：Python定向289通过、GUI全量657通过；F103真实Edge切子页/配置页无隐式停流、无缓冲重置、无JS错误，UART10047条连续文本、SW约1kHz/19468点、GPIOB.12与IDR bit12一致。transport/backend丢批为零；SW启动解析器丢弃74字节，不称全程绝对无损。Pack型号联想/SVD选择、原程序变量与手动分图保留。见docs/verification/v0.2.0-dashboard-peripheral-hil.md。
 - **SystemView上游同步**：上游移植ada1ca0的软件/模拟状态证据见docs/verification/v0.2.0-systemview-upstream-sync.md。后续F103真机另修复pyOCD断开清TRCENA；普通烧录后长流及连续启停通过，Python510通过，7任务/72MHz/零自动重试。每会话解析器丢弃11字节，不称无损。见docs/verification/v0.2.0-systemview-f103-hil.md。
-- **本地打包与安装**：Python1845通过/12项WinError1314、GUI654通过、定向363通过；7059目标/2224FLM完整。用户手动安装后，新文件核对、配置保留、纯系统PATH启动、自带sidecar健康、探针枚举、在线/脱机确认弹窗及正常退出释放均通过。见docs/verification/v0.2.0-local-install-20260905.md。
+- **本地打包与安装**：2026-09-07纯Windows PATH覆盖安装及启动通过；独立sidecar、探针枚举1个、SVD界面与版本说明、正常关闭释放8765均通过。sidecar/Skill均验证7059目标2224FLM；2448个Skill文件逐项匹配，GUI一致、用户配置保留。旧扩展导航脚本超时未计通过，详见docs/verification/v0.2.0-local-install-20260907.md。
 - **当前 V4 + STM32F103**：普通暂停、3.3V：在线及脱机加锁/解锁/恢复通过，512KiB全片比对一致，APP RTT正常。F1选项FLM上下文/中断/cleanup修复，148项定向测试通过。当前未锁运行。见 docs/verification/v0.2.0-v4-security-port.md。
 - **芯片安全证据**：在线/脱机开放范围不同；代表板矩阵和证据入口统一见 docs/ai/security-roadmap.md。历史成功不能关闭PY32近期异常，也不能证明加锁后无调试独立运行。
 - **连接与 HEX**：STM32连接/复位矩阵与客户合并HEX在GD32验证通过；桌面勾选安全操作确认框修复。见 docs/verification/v0.2.0-hex-connect-modes-hil.md 和 v0.2.0-desktop-confirmation-offline-security.md。
