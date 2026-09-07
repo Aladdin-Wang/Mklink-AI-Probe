@@ -575,6 +575,18 @@ def _remove_probe_file(path: Path) -> None:
         path.unlink()
 
 
+def _same_file_content(first: Path, second: Path) -> bool:
+    if first.stat().st_size != second.stat().st_size:
+        return False
+    with first.open("rb") as left, second.open("rb") as right:
+        while True:
+            chunk = left.read(1024 * 1024)
+            if chunk != right.read(1024 * 1024):
+                return False
+            if not chunk:
+                return True
+
+
 def _transactional_copy(
     disk_root: Path,
     files: Sequence[tuple[Path, Optional[Path], Optional[bytes]]],
@@ -601,18 +613,21 @@ def _transactional_copy(
                 staged = staged_root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
+                    # A browser may still hold the selected USB file open. Reuse
+                    # identical content instead of deleting or rewriting it.
+                    if _same_file_content(destination, staged):
+                        continue
                     backup = backup_root / relative
                     backup.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(destination, backup)
-                    backups.append((destination, backup))
                     _remove_probe_file(destination)
+                    backups.append((destination, backup))
                 installed.append(destination)
                 shutil.copy2(staged, destination)
             return [
-                str(path.relative_to(disk_root)).replace("\\", "/")
-                for path in installed
+                relative.as_posix() for relative, _source, _content in files
             ]
-        except BaseException:
+        except BaseException as error:
             for destination in reversed(installed):
                 try:
                     if destination.exists():
@@ -626,6 +641,10 @@ def _transactional_copy(
                         shutil.copy2(backup, destination)
                 except OSError:
                     pass
+            if isinstance(error, OSError):
+                raise OfflineDownloadError(
+                    f"offline file operation failed: {relative.as_posix()}: {error}"
+                ) from error
             raise
 
 

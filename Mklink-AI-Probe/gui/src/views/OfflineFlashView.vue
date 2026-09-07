@@ -192,7 +192,17 @@ function setError(value: unknown): void {
   const raw = message(value)
   error.value = raw
   errorTitle.value = ''
-  errorDetail.value = ''
+  errorDetail.value = raw
+  if (/offline file operation failed/i.test(raw)) {
+    errorTitle.value = tr('U 盘文件更新失败', 'USB file update failed')
+    errorDetail.value = tr('内容相同的文件会直接复用。请查看技术详情中的文件名；若需要替换，请关闭占用它的程序，并确认 U 盘可写后重试。', 'Identical files are reused. Check the file name in Technical details; if replacement is needed, close programs using it and confirm the USB drive is writable before retrying.')
+    return
+  }
+  if (/Unable to connect to MKLink CDC port|could not open port|PermissionError|Access is denied|拒绝访问/i.test(raw)) {
+    errorTitle.value = tr('无法连接下载器命令串口', 'Cannot connect to probe command port')
+    errorDetail.value = tr('请先断开其他 WebGUI、桌面客户端或串口工具中的探针连接，确认 USB 连接正常，再点击触发测试。', 'Disconnect the probe in other WebGUI, desktop or serial tools, check the USB connection, then run the test again.')
+    return
+  }
   const missingFlm = raw.match(/existing FLM is missing:\s*(.+)$/i)
   if (missingFlm) {
     errorTitle.value = tr(`缺少下载算法 ${missingFlm[1]}`, `Missing flash algorithm ${missingFlm[1]}`)

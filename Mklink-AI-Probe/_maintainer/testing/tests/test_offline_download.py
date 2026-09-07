@@ -1417,3 +1417,42 @@ def test_deploy_revalidates_local_bin_after_preview(tmp_path, monkeypatch):
     assert deployed.status_code == 422
     assert "exceeds selected FLM coverage" in deployed.json()["detail"]
     assert list(disk.iterdir()) == []
+
+@pytest.mark.parametrize('same_source', [False, True])
+def test_deploy_reuses_unchanged_usb_files_even_when_replacement_is_locked(tmp_path, monkeypatch, same_source):
+    from mklink.offline_download import _transactional_copy
+    disk = tmp_path / 'probe'
+    destination = disk / 'FLM' / 'Device.FLM'
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b'algorithm')
+    source = destination if same_source else tmp_path / 'upload.flm'
+    if not same_source:
+        source.write_bytes(destination.read_bytes())
+    before = destination.stat().st_mtime_ns
+    def reject_remove(path):
+        pytest.fail('unchanged USB file must not be removed')
+    monkeypatch.setattr('mklink.offline_download._remove_probe_file', reject_remove)
+    result = _transactional_copy(disk, [(Path('FLM/Device.FLM'), source, None), (Path('python/test.py'), None, b'script')])
+    assert result == ['FLM/Device.FLM', 'python/test.py']
+    assert destination.read_bytes() == b'algorithm'
+    assert destination.stat().st_mtime_ns == before
+    assert (disk / 'python/test.py').read_bytes() == b'script'
+
+
+def test_locked_changed_file_reports_name_and_rolls_back_earlier_changes(tmp_path, monkeypatch):
+    from mklink.offline_download import _transactional_copy
+    disk = tmp_path / 'probe'
+    disk.mkdir()
+    (disk / 'app.hex').write_bytes(b'old-app')
+    (disk / 'Device.FLM').write_bytes(b'old-flm')
+    from mklink.offline_download import _remove_probe_file as remove
+    def locked_remove(path):
+        if path.name == 'Device.FLM':
+            raise PermissionError('file is in use')
+        remove(path)
+    monkeypatch.setattr('mklink.offline_download._remove_probe_file', locked_remove)
+    with pytest.raises(OfflineDownloadError, match='offline file operation failed: Device.FLM'):
+        _transactional_copy(disk, [(Path('app.hex'), None, b'new-app'), (Path('Device.FLM'), None, b'new-flm'), (Path('script.py'), None, b'script')])
+    assert (disk / 'app.hex').read_bytes() == b'old-app'
+    assert (disk / 'Device.FLM').read_bytes() == b'old-flm'
+    assert not (disk / 'script.py').exists()

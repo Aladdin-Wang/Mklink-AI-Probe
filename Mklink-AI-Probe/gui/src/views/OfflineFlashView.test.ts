@@ -135,6 +135,34 @@ describe('OfflineFlashView', () => {
     } finally { wrapper.unmount() }
   })
 
+  it.each([
+    ['deploy', 'offline file operation failed: Device.FLM: file is in use', 'U 盘文件更新失败'],
+    ['trigger', 'Unable to connect to MKLink CDC port', '无法连接下载器命令串口'],
+    ['trigger', 'Unexpected device response', 'Unexpected device response'],
+  ])('shows actionable details for %s errors: %s', async (operation, detail, expected) => {
+    pickerMocks.pickFlmFile.mockResolvedValue(new File(['algorithm'], 'Device.FLM'))
+    if (operation === 'deploy') offlineMocks.deploy.mockRejectedValueOnce(new Error(detail))
+    else offlineMocks.trigger.mockRejectedValueOnce(new Error(detail))
+    const wrapper = mount(OfflineFlashView)
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+      await wrapper.get('[data-testid="offline-add-flm"]').trigger('click')
+      await flushPromises()
+      const input = wrapper.get('input[type="file"][multiple]')
+      Object.defineProperty(input.element, 'files', { value: [new File(['hex'], 'firmware.hex')] })
+      await input.trigger('change')
+      await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+      await flushPromises()
+      if (operation === 'trigger') {
+        await wrapper.get('[data-testid="offline-trigger"]').trigger('click')
+        await flushPromises()
+      }
+      expect(wrapper.text()).toContain(expected)
+      expect(wrapper.get('.technical-error').text()).toContain(detail)
+    } finally { wrapper.unmount() }
+  })
+
   it('searches target suggestions while typing and supports keyboard selection', async () => {
     vi.useFakeTimers()
     onlineMocks.searchTargets.mockResolvedValue([{
