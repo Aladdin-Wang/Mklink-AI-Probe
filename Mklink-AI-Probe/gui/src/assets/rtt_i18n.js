@@ -269,11 +269,8 @@ function setLang(lang) {
   currentLang = lang;
   applyI18n();
   try { localStorage.setItem('mklink_lang', lang); } catch(e) {}
-  fetch('/api/lang', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({lang: lang})
-  }).catch(function(){});
+  // The integrated Web/Tauri GUI owns language state locally. The /api/lang
+  // endpoint belongs to the standalone RTT server, not this dashboard host.
 }
 
 // Language toggle button

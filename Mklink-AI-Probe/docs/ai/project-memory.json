@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T15:25:39+08:00",
+  "updated_at": "2026-09-07T17:10:50.3436312+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "源码6a5c526（含1a614fb工具栏修复）；生成GUI/验收记录另行提交，最终tip以Git为准。",
-    "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
+    "head": "master已按用户授权快进至52ff114；当前开发分支新增发布前HIL发现的串口小包队列溢出与内嵌语言请求修复，最终tip以Git为准。",
+    "remote_head": "origin/master与开发分支已同步52ff114；新HIL修复通过完整门禁后继续同步两分支。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
   "mission": {
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "已完成两端文件路径按钮移除、工具栏布局/字体修复、U盘同内容文件复用和部署/触发错误详情。GUI682、Python定向63；实际Web与Tauri分别部署并烧录APP+BOOT成功，串口释放。详见docs/verification/v0.2.0-toolbar-usb-deploy-20260907.md。",
-    "release": "本地NSIS/Skill源码6a5c526，Skill2448文件与GUI一致、7059型号/2224算法验证通过。Web8765已重启并打开新页面，桌面候选正常关闭；用户自行安装NSIS，未代为覆盖旧桌面。"
+    "current_task": "发布前全功能HIL进行中。已完成初轮Python1899/GUI682、Web/Tauri在线/切页、MCP27、HardFault、SystemView；测试固件并发输出和波形任务饥饿已修正，YMODEM115936B零重试通过。修正固件后高吞吐揭示串口64批队列溢出，现增加20ms/4KiB合批、串口256批队列及持续流状态心跳，修复内嵌语言405；待新运行时全量回归/两端HIL与3.3V加锁解锁恢复。",
+    "release": "master已推送52ff114，未创建标签或正式Release。HIL修复后将重建同源候选NSIS/Skill，用户自行安装桌面。"
   },
   "milestones": [
     {
@@ -81,8 +81,8 @@
   ],
   "hardware": {
     "probe": "V4 + STM32F103RE；本轮用户授权后Web/Tauri各部署并烧录一次现有APP+BOOT，未全片擦除或更改保护/供电。UART递增输出通过；命令口及UART均释放，Web未连接。",
-    "backup": "本轮源码和AXF/HEX/BIN备份在.build/reports/file-reload-20260907/before；恢复后四文件SHA-256均与测试前一致。历史Flash唯一备份保留。 本轮USB三个原文件备份在.build/reports/firmware-toolbar-20260907/usb-backup；内容与修改时间保持不变，临时测试脚本已移回报告目录。",
-    "permission": "测试工程允许修改下载；芯片、电压或擦除范围变化须重新确认。当前硬件状态与权限不能自动外推到下一块板。"
+    "backup": "本轮512KiB双读一致原始Flash、固件源码前态及所有原始测试证据保留在.build/reports/prerelease-hil-20260907。目标目前为修正后的压力测试固件；仍需安全测试和最终恢复校验。",
+    "permission": "用户明确允许修改编译下载测试工程，允许本块STM32F103RE加锁、解锁擦除并恢复，供电3.3V；已确认没有Modbus从站。"
   },
   "known_limits": [
     "PY32F030K28T6近期加锁后重连/解锁异常尚未闭环；保留精确型号限制，不以历史成功代替当前复测。",

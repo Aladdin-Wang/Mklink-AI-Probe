@@ -2577,6 +2577,7 @@ class SerialStreamManager:
     def __init__(self, stream_hub=None):
         self._bridge = AsyncBridge()
         self._monitor = None
+        self._byte_batcher = None
         self._running = False
         self._port_config: list[dict] = []
         self._profile: dict | None = None
@@ -2655,6 +2656,18 @@ class SerialStreamManager:
         self._tx_bytes = 0
         self._start_time = time.time()
 
+        from mklink.remote.serial_stream import SerialByteBatcher
+
+        def publish_bytes(data: bytes, direction: str):
+            if self._stream_hub is not None:
+                self._stream_hub.publish(
+                    data, item_count=len(data),
+                    flags=(SERIAL_RX_BYTES if direction == "RX" else SERIAL_TX_BYTES),
+                    stream_type=StreamType.SERIAL,
+                )
+
+        self._byte_batcher = SerialByteBatcher(publish_bytes)
+
         def _event_callback(event):
             if event.direction == "RX":
                 self._rx_count += 1
@@ -2702,13 +2715,7 @@ class SerialStreamManager:
                 self._rx_bytes += len(data)
             else:
                 self._tx_bytes += len(data)
-            if self._stream_hub is not None:
-                self._stream_hub.publish(
-                    data,
-                    item_count=len(data),
-                    flags=(SERIAL_RX_BYTES if direction == "RX" else SERIAL_TX_BYTES),
-                    stream_type=StreamType.SERIAL,
-                )
+            self._byte_batcher.feed(data, direction)
             if self._bridge.client_count == 0:
                 return
             self._bridge.put({
@@ -2751,7 +2758,12 @@ class SerialStreamManager:
             chunk_callback=_chunk_callback,
             protocol_callback=_protocol_callback,
         )
-        self._monitor.start()
+        try:
+            self._monitor.start()
+            self._byte_batcher.start()
+        except Exception:
+            self._byte_batcher.close()
+            raise
         self._running = True
         self._bridge.put({"event": "status", **self.get_status()})
 
@@ -2761,6 +2773,9 @@ class SerialStreamManager:
             monitor = self._monitor
             if monitor is not None:
                 monitor.stop()
+            if self._byte_batcher is not None:
+                self._byte_batcher.close()
+                self._byte_batcher = None
             with self._ymodem_lock:
                 transfer_thread = self._ymodem_thread
             if (
