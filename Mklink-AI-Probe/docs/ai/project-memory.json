@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T12:54:00+08:00",
+  "updated_at": "2026-09-07T14:03:00+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.0-development",
-    "head": "运行代码af35ded8eae0：修复在线/脱机页KeepAlive键冲突；后续提交保存同源GUI与两端导航验收。",
+    "head": "本轮修复完整符号目录搜索，源码提交后构建同源GUI和NSIS。",
     "remote_head": "本轮仅推送origin/codex/v0.2.0-development；origin/master仍为6787302，未授权再次合并。",
     "working_tree": "修改与编译验收记录提交后核对开发分支远端tip；不改用户安装包发布指针。"
   },
@@ -15,8 +15,8 @@
   },
   "current_session": {
     "status": "v0.2.0-development",
-    "current_task": "在线/脱机烧录页面切换修复完成。旧代码真实路由回归双向复现；修复后GUI674通过、生产Web与真实Tauri候选各44次导航通过，设置保留、仪表盘DOM保留、零JS错误。未进行硬件写入或采集。",
-    "release": "af35ded标准NSIS已生成，用户明确自行安装，本轮未安装。桌面候选独立sidecar/正常退出通过；Skill2448运行时文件与同源GUI一致，无开发上下文，Web已打开脱机页。候选在.build/artifacts/v0.2.0-local-af35ded-20260907，未签名/未发布。"
+    "current_task": "修复SuperWatch宽泛搜索遗漏变量：搜索接口50条被superwatch_array_wave占满，superwatch_c才返回16通道。合并已加载完整目录与后端精确路径，保留数组手动收起。正在构建与实际Web验证。",
+    "release": "沿用用户要求，只生成桌面安装包供手动安装；同步本地Skill/Web，不自动覆盖桌面。"
   },
   "milestones": [
     {

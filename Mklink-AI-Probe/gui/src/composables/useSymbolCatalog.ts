@@ -159,7 +159,20 @@ async function searchSymbols(query: string): Promise<SymbolDescriptor[]> {
   const payload = await request<{ results: SymbolSearchResult[] }>(
     `/api/symbols/search?${params.toString()}`,
   )
-  return payload.results.map(result => result.descriptor).filter(Boolean)
+  // The suggestion endpoint is capped at 50 leaves; a single array can fill it.
+  // Search the full loaded catalog too, retaining backend-only exact lazy paths.
+  const terms = query.split(/[,，;；\n]+/).map(term => term.trim().toLocaleLowerCase()).filter(Boolean)
+  const matches = items.value.filter(item => !terms.length || terms.some(term => (
+    item.path.toLocaleLowerCase().includes(term) || item.type_name.toLocaleLowerCase().includes(term)
+  )))
+  const merged = new Map<string, SymbolDescriptor>()
+  for (const result of payload.results) {
+    if (result.descriptor) merged.set(result.descriptor.path, result.descriptor)
+  }
+  for (const item of matches) {
+    if (!merged.has(item.path)) merged.set(item.path, item)
+  }
+  return [...merged.values()]
 }
 
 async function loadCatalog(): Promise<void> {
