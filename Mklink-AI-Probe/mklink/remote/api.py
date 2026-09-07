@@ -1813,7 +1813,8 @@ def create_app(
         elf_backend: str | None = Body(default=None, embed=True),
     ):
         """手动触发 AXF/ELF 符号表解析。"""
-        return await _reparse_active_symbols(axf, elf_backend)
+        async with _exclusive_probe_control("reload-symbol-source"):
+            return await _reparse_active_symbols(axf, elf_backend)
 
     class FlashRequest(BaseModel):
         firmware: str

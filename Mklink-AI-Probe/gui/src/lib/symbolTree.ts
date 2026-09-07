@@ -21,6 +21,7 @@ export interface VisibleSymbolRow {
 
 export interface VisibleSymbolOptions {
   expanded: ReadonlySet<string>
+  collapsed?: ReadonlySet<string>
   selected: ReadonlySet<string>
   query: string
   selectedOnly: boolean
@@ -208,7 +209,8 @@ export function visibleSymbolRows(
   function appendVisible(node: SymbolTreeNode, depth: number): void {
     if (!isVisible(node)) return
     const expandable = node.kind === 'branch' || node.kind === 'range'
-    const expanded = expandable && (forceExpanded || options.expanded.has(node.key))
+    const expanded = expandable && !options.collapsed?.has(node.key)
+      && (forceExpanded || options.expanded.has(node.key))
     rows.push({
       node,
       depth,

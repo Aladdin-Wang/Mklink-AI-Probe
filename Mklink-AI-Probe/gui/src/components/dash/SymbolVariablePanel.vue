@@ -129,6 +129,7 @@
             class="branch-toggle"
             type="button"
             :data-testid="`branch-${row.node.key}`"
+            :aria-expanded="row.expanded"
             :style="{ paddingLeft: rowIndent(row.depth) }"
             @click.stop="toggleBranch(row.node)"
           >
@@ -445,6 +446,7 @@ const editing = ref<string | null>(null)
 const editValues = reactive<Record<string, string>>({})
 const writeSuccess = reactive<Record<string, number | boolean | undefined>>({})
 const expanded = shallowRef(new Set<string>())
+const filteredCollapsed = shallowRef(new Set<string>())
 const searchItems = shallowRef<SymbolDescriptor[]>([])
 const selectedDescriptors = shallowRef(new Map<string, SymbolDescriptor>())
 const pins = ref<string[]>([])
@@ -474,6 +476,7 @@ const tree = computed(() => {
 })
 const rows = computed(() => visibleSymbolRows(tree.value, {
   expanded: expanded.value,
+  collapsed: query.value.trim() || selectedOnly.value ? filteredCollapsed.value : undefined,
   selected: selected.value,
   query: query.value,
   selectedOnly: selectedOnly.value,
@@ -667,7 +670,10 @@ function withSet(source: Set<string>, path: string, enabled: boolean): Set<strin
 }
 
 async function toggleBranch(node: SymbolTreeNode): Promise<void> {
-  if (query.value.trim() || selectedOnly.value) return
+  if (query.value.trim() || selectedOnly.value) {
+    filteredCollapsed.value = withSet(filteredCollapsed.value, node.key, !filteredCollapsed.value.has(node.key))
+    return
+  }
   if (expanded.value.has(node.key)) {
     expanded.value = withSet(expanded.value, node.key, false)
     return
@@ -903,6 +909,7 @@ watch(catalog.generation, () => {
   if (props.deviceConnected && props.symbolLoaded) void loadPins()
 })
 watch(query, (next, previous) => {
+  filteredCollapsed.value = new Set()
   if (next.trim() && !previous.trim()) searchExpansionSnapshot = new Set(expanded.value)
   if (!next.trim() && previous.trim() && searchExpansionSnapshot) {
     expanded.value = searchExpansionSnapshot
@@ -920,6 +927,7 @@ watch(query, (next, previous) => {
     if (requestId === searchRequest) toast.error(cause instanceof Error ? cause.message : String(cause))
   })
 })
+watch(selectedOnly, () => { filteredCollapsed.value = new Set() })
 watch(tree, roots => {
   if (query.value.trim() || selectedOnly.value) return
   const valid = collectBranchKeys(roots)

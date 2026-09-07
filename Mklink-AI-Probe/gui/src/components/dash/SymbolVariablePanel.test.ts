@@ -550,6 +550,25 @@ describe('SymbolVariablePanel', () => {
     expect(wrapper.get('[data-testid="leaf-values[999]"]').exists()).toBe(true)
   })
 
+  it('allows collapsing and reopening an array while searching, then restores browsing state', async () => {
+    mocks.searchSymbols.mockResolvedValue([{ ...catalogItems[2], path: 'samples[0]', parent_path: 'samples' }])
+    const wrapper = mount(SymbolVariablePanel, { props: { deviceConnected: true, latestValues: {} } })
+    await flushPromises()
+    await wrapper.get('[data-testid="variable-search"]').setValue('samples')
+    await flushPromises()
+    const branch = wrapper.get('[data-testid="branch-samples"]')
+    expect(branch.attributes('aria-expanded')).toBe('true')
+    await branch.trigger('click')
+    expect(wrapper.find('[data-testid="leaf-samples[0]"]').exists()).toBe(false)
+    expect(branch.attributes('aria-expanded')).toBe('false')
+    await branch.trigger('click')
+    expect(wrapper.find('[data-testid="leaf-samples[0]"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="variable-search"]').setValue('')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="leaf-controller.target"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('configures a bounded array snapshot without changing element selection', async () => {
     mocks.browseRoots.value = [{
       key: 'samples', path: 'samples', label: 'samples', kind: 'branch',
