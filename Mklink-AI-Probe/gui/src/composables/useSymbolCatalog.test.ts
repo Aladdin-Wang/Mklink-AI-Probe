@@ -82,8 +82,9 @@ describe('useSymbolCatalog', () => {
       return jsonResponse({ results: matches.map(descriptor => ({ descriptor })) })
     }))
     const symbols = await freshCatalog()
-    await symbols.ensureLoaded()
+    const loading = symbols.ensureLoaded()
     const results = await symbols.searchSymbols('superwatch_')
+    await loading
     expect(results).toHaveLength(80)
     expect(results.filter(item => item.path.startsWith('superwatch_ch'))).toEqual(channels)
     expect(new Set(results.map(item => item.path)).size).toBe(results.length)

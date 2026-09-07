@@ -155,6 +155,9 @@ async function loadBrowseChildren(node: SymbolBrowseNode): Promise<void> {
 }
 
 async function searchSymbols(query: string): Promise<SymbolDescriptor[]> {
+  // The search box is usable while the initial catalog pages are still loading.
+  if (loadingPromise) await loadingPromise
+  else if (generation.value <= 0) await startLoad()
   const params = new URLSearchParams({ q: query })
   const payload = await request<{ results: SymbolSearchResult[] }>(
     `/api/symbols/search?${params.toString()}`,
