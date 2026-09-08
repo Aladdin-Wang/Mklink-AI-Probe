@@ -4,21 +4,21 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-08T08:47:50.0994171+08:00`
+- 更新时间：`2026-09-08T09:13:03+08:00`
 - 分支：`master`
-- HEAD：`Git 为准；开发分支 631d3aa 的产品代码已通过完整门禁。`
-- 远端 HEAD：`合并前已 fetch master，无新增远端代码；完成合并后推送 origin/master。`
+- HEAD：`v0.2.0 发布提交 911a70f；后续 master 仅补验收与交接记录。`
+- 远端 HEAD：`GitHub/Gitee 已发布相同 v0.2.0 标签与七项资产；更新索引已同步。`
 - 工作树：仅保留当前结论；历史操作见 Git 和验证报告。
-- 当前任务：用户已授权正式发布 0.2.0；Python 管理员完整复测 1913、GUI 682、Rust 19 及 Chrome 通过，正在合并 master 并构建、安装验收正式包。
-- 状态：`0.2.0-release-preparation`
+- 当前任务：0.2.0 正式发布完成，桌面覆盖安装及本地 Skill/CLI/MCP 验证通过；新任务从 Git 和本交接校正基线。
+- 状态：`released-0.2.0`
 
 ## 里程碑
 
-- **0.2.0 发布** — `in_progress`。测试门禁通过；正式签名、安装验收、双端 Release 和更新指针待完成。
+- **0.2.0 正式版** — `complete`。GitHub/Gitee Release、更新签名与 latest.json 已发布；本地桌面和 Skill 已同步。
 
 ## 验证证据
 
-- **本轮门禁**：docs/verification/v0.2.0-release-qualification.md：擦除提示、GUI/Rust、构建与发布状态。原始证据在 .build/reports/release-0.2.0。
+- **本轮门禁**：docs/verification/v0.2.0-release-qualification.md：Python 1913、GUI 682、Rust 19；正式包安装、算法/文件哈希、CLI/MCP 和双端发布通过。
 - **真机基线**：docs/verification/v0.2.0-prerelease-hil-20260907.md；类型写入追加见 v0.2.0-superwatch-write-20260907.md。历史通过不能代替新正式包安装验收。
 
 ## 架构决策
@@ -30,13 +30,13 @@
 
 ## 真机环境
 
-- **current**：当前 V3 + STM32F103RE；正常 sw_write 测试程序，采集/串口已释放。此前完整 HIL 使用 V4。
+- **current**：最近受测 V3 + STM32F103RE；正常 sw_write 测试程序，采集/串口已释放。此前完整 HIL 使用 V4。本次发布验收只发现探针，未写目标芯片。
 - **backup**：Flash/工程备份留 .build/reports/prerelease-hil-20260907 和 superwatch-write-20260907。F103 测试获准修改/下载及 3.3V 保护往返；无 Modbus 从站。
 
 ## 下一动作
 
-1. 从干净 master 按 releasing.md 构建并实际安装验收；通过后发布 0.2.0，更新指针最后发布。
-2. 发布完成后以 Release/manifest 记录版本与资产，精简更新本交接；上游 PR 另按用户后续安排。
+1. 后续版本开发和上游 PR 按用户下一步安排；当前没有未完成的 0.2.0 发布动作。
+2. 保留已登记的 RTT、USB 和芯片安全限制，不能由本次发布推断已修复。
 
 ## 已知限制
 
