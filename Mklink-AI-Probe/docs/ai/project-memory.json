@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T09:13:03+08:00",
+  "updated_at": "2026-09-08T09:26:58+08:00",
   "repository": {
     "url": "https://github.com/Aladdin-Wang/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "master",
-    "head": "v0.2.0 发布提交 911a70f；后续 master 仅补验收与交接记录。",
-    "remote_head": "GitHub/Gitee 已发布相同 v0.2.0 标签与七项资产；更新索引已同步。",
+    "head": "应用 v0.2.0 发布提交 911a70f；master 后续包含验收记录及独立固件目录更新。",
+    "remote_head": "GitHub/Gitee 应用 0.2.0 与独立固件索引已同步；最新 master 以 Git 为准。",
     "working_tree": "仅保留当前结论；历史操作见 Git 和验证报告。"
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "released-0.2.0",
-    "current_task": "0.2.0 正式发布完成，桌面覆盖安装及本地 Skill/CLI/MCP 验证通过；新任务从 Git 和本交接校正基线。"
+    "status": "published",
+    "current_task": "应用 0.2.0 与 MicroLink V3.4.0/V4.4.0 固件发布完成；后者仅做格式、发布与下载验证，未做新固件 HIL。"
   },
   "milestones": [
     {
@@ -31,6 +31,10 @@
     {
       "area": "真机基线",
       "result": "docs/verification/v0.2.0-prerelease-hil-20260907.md；类型写入追加见 v0.2.0-superwatch-write-20260907.md。历史通过不能代替新正式包安装验收。"
+    },
+    {
+      "area": "固件发布",
+      "result": "docs/verification/firmware-20260908.md：V3.4.0/V4.4.0；25 项测试、UF2/版本检查、双端下载哈希和公开索引一致性通过。"
     }
   ],
   "decisions": [
@@ -50,7 +54,7 @@
     "外设轮询可能漏短脉冲，SVD 过滤依赖厂商标注，缓冲有限；SystemView 启动少量丢弃，不称绝对无损。"
   ],
   "next_actions": [
-    "后续版本开发和上游 PR 按用户下一步安排；当前没有未完成的 0.2.0 发布动作。",
+    "后续版本开发和上游 PR 按用户下一步安排；应用和本轮固件发布均已完成，新固件真机功能尚未验收。",
     "保留已登记的 RTT、USB 和芯片安全限制，不能由本次发布推断已修复。"
   ],
   "continuation_protocol": [
