@@ -253,7 +253,7 @@ def test_mcp_ping_reports_rtt_write_utf8_limit(monkeypatch):
     monkeypatch.setattr("mklink.toolchain.status", lambda: {})
     monkeypatch.setattr(
         "mklink.update_check.check_for_update",
-        lambda: {"checked": False},
+        lambda **kwargs: {"checked": False},
     )
     mcp = _Mcp()
     mcp_server._register_health_tools(mcp)

@@ -813,6 +813,28 @@ def test_superwatch_typed_write_route_passes_path_generation_and_value(tmp_path)
     write_symbol.assert_called_once_with("gain", generation=1, value=1.5)
 
 
+@pytest.mark.parametrize("value", [1e40, -1e40])
+def test_superwatch_typed_write_invalid_value_is_422_without_device_io(tmp_path, value):
+    from mklink.remote.dashboards import get_managers
+
+    device, _axf = _connected_symbol_device(tmp_path)
+    manager = get_managers()["superwatch"]
+    app = create_app(auth_token=None, project_root=".")
+    with patch("mklink.connect", return_value=device), TestClient(app) as client:
+        assert client.post("/api/device/connect", json={}).status_code == 200
+        manager._device = device
+        with patch.object(manager, "stop") as stop, patch.object(
+            device, "write_memory", create=True
+        ) as write:
+            response = client.post("/api/dash/superwatch/write", json={
+                "path": "gain", "generation": 1, "value": value,
+            })
+            stop.assert_not_called()
+            write.assert_not_called()
+    assert response.status_code == 422
+    assert "does not fit" in response.json()["detail"]
+
+
 def test_superwatch_typed_write_reports_transaction_phase(tmp_path):
     from mklink.remote.dashboards import SuperWatchTransactionError, get_managers
 
