@@ -403,6 +403,16 @@ class Device:
         from mklink.flash import MKLinkFlash
         self._flash = MKLinkFlash(self._bridge)
 
+        # The configuration page's raw SWD clock also applies to deferred GUI
+        # connections. Previously it was only consumed by flash(), so a new
+        # connection silently inherited whatever clock the probe last used.
+        if config.get("swd_clock"):
+            try:
+                self._flash.set_swd_clock(config["swd_clock"])
+            except Exception:
+                self.close()
+                raise
+
         # SWD DP init + IDCODE read + MCU match. This was previously only done
         # by the remote API layer; every other connect path (MCP, SDK users,
         # legacy socket server, SystemView CLI, pytest fixtures) skipped it, so

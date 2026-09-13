@@ -1242,6 +1242,14 @@ def create_app(
                     detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
                 )
             config["swd_clock"] = swd_clock
+            device = _state.get("device")
+            if device is not None and device.connected:
+                from mklink.flash import FlashError
+                try:
+                    async with _exclusive_probe_control("config-clock") as (device, _):
+                        await run_in_threadpool(device._flash.set_swd_clock, parsed_swd_clock)
+                except FlashError as error:
+                    raise HTTPException(status_code=422, detail=str(error)) from error
         save_config(_state["project_root"], config)
         return config
 

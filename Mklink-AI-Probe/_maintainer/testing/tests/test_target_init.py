@@ -108,6 +108,20 @@ class TestInitializeTarget:
 # ----------------------------------------------------------------------
 
 class TestDeviceConnectInitializesTarget:
+    def test_deferred_connection_applies_saved_clock(self):
+        dev = Device(initialize_target_now=False)
+        bridge = MagicMock()
+        bridge.connect.return_value = True
+        bridge.send_command.return_value = 'set clock 4000000\r\n0\r\n'
+        with patch('mklink.bridge.MKLinkSerialBridge', return_value=bridge), \
+             patch('mklink.project_config.load_config', return_value={'com_port': 'COM6', 'swd_clock': '4000000'}), \
+             patch('mklink.device.initialize_target') as initialize:
+            dev._connect()
+        initialize.assert_not_called()
+        bridge.send_command.assert_called_once_with('cmd.set_swd_clock(4000000)', echo=True)
+        assert bridge._ctx.swd_clock_hz == 4000000
+        dev.close()
+
     def test_connect_calls_initialize_target(self):
         dev = Device()
         new_bridge = MagicMock()

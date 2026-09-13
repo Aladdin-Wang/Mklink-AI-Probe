@@ -289,6 +289,23 @@ def test_config_api_rejects_swd_clock_above_10_mhz(tmp_path):
     assert "10 MHz" in response.json()["detail"]
 
 
+def test_config_clock_applies_before_persisting_and_rejection_keeps_old_value(tmp_path):
+    from unittest.mock import Mock
+    from mklink.flash import FlashError
+    from mklink.project_config import load_config
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._flash = SimpleNamespace(set_swd_clock=Mock())
+    app.state.mklink_state['device'] = device
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]), TestClient(app) as client:
+        assert client.put('/api/config', json={'swd_clock': '4000000'}).status_code == 200
+        device._flash.set_swd_clock.assert_called_once_with(4000000)
+        assert load_config(str(tmp_path))['swd_clock'] == '4000000'
+        device._flash.set_swd_clock.side_effect = FlashError('clock rejected')
+        assert client.put('/api/config', json={'swd_clock': '10000000'}).status_code == 422
+        assert load_config(str(tmp_path))['swd_clock'] == '4000000'
+
+
 def test_browser_symbol_upload_persists_in_a_controlled_project_directory(tmp_path):
     app = create_app(auth_token=None, project_root=str(tmp_path))
     with TestClient(app, raise_server_exceptions=False) as client:
