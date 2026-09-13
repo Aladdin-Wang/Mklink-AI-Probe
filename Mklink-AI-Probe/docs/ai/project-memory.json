@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-13T19:49:41+08:00",
+  "updated_at": "2026-09-13T21:02:03+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.1-development",
     "head": "最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。",
     "remote_head": "从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。",
-    "working_tree": "持续开发分支完成mem_dump四档及HPM6E80独立实板验收；配套固件AXI SRAM快路径/20MHz采样点修复已自动升级，本地Skill已更新。正式发布通道不变。"
+    "working_tree": "0.2.1开发分支补SWD低中档明确确认和失败回退；HPM高速策略不变。配套探针固件已更新，ARM20/30实验内核默认关闭。正式发布通道不变。"
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "HPM6E80真机闭环完成：304候选28项矩阵+30项长测/重连；cbd最终固件28项回归、CLI/MCP 24操作和Chrome曲线/四档通过，默认10MHz已停止并断开。"
+    "current_task": "STM32F103 ARM mem_dump：固定地址posted AP批量读取稳定版4/10M完成14项矩阵，10M60秒101.293kSa/s、4KB630.34KiB/s；20/30M实测未通过，保持拒绝。SDK/CLI/MCP stdio/Chrome资格确认及PID/Memory/HardFault/RTOS素材完成，RTT重复消费者已在演示工程修复；官网文档agent正在同步。"
   },
   "milestones": [
     {
@@ -45,8 +45,8 @@
       "result": "docs/verification/v0.2.1-device-configuration-stage1.md：Python 103、GUI 24、正式构建通过；HPM5301 CLI/MCP/Chrome 8 个公开字段一致；Chrome ARM 配置及脚本预览通过，没有 ARM 实板读写或 OTP 编程。"
     },
     {
-      "area": "STM32F103 选项字节第二阶段",
-      "result": "docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。"
+      "area": "STM32F103 选项字节与 ARM mem_dump",
+      "result": "docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。"
     },
     {
       "area": "mem_dump 四档与 HPM 实板稳定性",

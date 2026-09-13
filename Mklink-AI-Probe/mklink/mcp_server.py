@@ -2163,8 +2163,9 @@ def build_server() -> Any:
         High/ultra require the supported HPM JTAG interface and matching probe
         firmware. Profile acknowledgement does not identify the exact HPM part
         or establish stability of the connected board and wiring.
-        ARM low/medium retain existing SWD timing; high/ultra require HPM5301
-        and an exact kernel acknowledgement from compatible probe firmware.
+        ARM low/medium accept exact SWD profile acknowledgements; legacy
+        firmware is explicitly unconfirmed. ARM high/ultra remain blocked
+        because the STM32F103 electrical trials did not pass qualification.
         """
         return _connected_device().set_debug_speed(profile)
 

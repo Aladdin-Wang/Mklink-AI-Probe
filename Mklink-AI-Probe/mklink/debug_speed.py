@@ -30,17 +30,17 @@ def apply_bridge_profile(bridge, profile: str) -> dict:
         raise ValueError(f"{hz // 1_000_000} MHz requires the supported HPM JTAG interface; other interfaces await hardware qualification")
     response = bridge.send_command(f"cmd.set_swd_clock({hz})")
     confirmed = False
-    if hpm:
-        match = re.search(r"JTAG profile=(\d+)\b", response)
-        confirmed = bool(match and int(match.group(1)) == hz)
-        legacy = match is None and profile in ("low", "medium") and f"set clock {hz}" in response
-        if not confirmed and not legacy:
-            # The command completed but this firmware lacks the exact timing
-            # kernel. Restore a conservative clock, never label fallback as high.
-            bridge.send_command("cmd.set_swd_clock(1000000)")
-            bridge._ctx.swd_clock_hz = 1_000_000
-            raise ValueError("Probe firmware does not confirm this JTAG profile; restored 1 MHz")
+    interface = "JTAG" if hpm else "SWD"
+    match = re.search(rf"{interface} profile=(\d+)\b", response)
+    confirmed = bool(match and int(match.group(1)) == hz)
+    legacy = match is None and profile in ("low", "medium") and f"set clock {hz}" in response
+    if not confirmed and not legacy:
+        # The command completed but this firmware lacks the exact timing
+        # kernel. Restore a conservative clock, never label fallback as high.
+        bridge.send_command("cmd.set_swd_clock(1000000)")
+        bridge._ctx.swd_clock_hz = 1_000_000
+        raise ValueError(f"Probe firmware does not confirm this {interface} profile; restored 1 MHz")
     bridge._ctx.swd_clock_hz = hz
     return {"profile": profile, "clock_hz": hz, "profile_confirmed": confirmed,
-            "interface": "JTAG" if hpm else "SWD",
-            "qualification": "JTAG profile confirmed; exact target and board stability not identified by IDCODE" if confirmed else "legacy timing not hardware-qualified"}
+            "interface": interface,
+            "qualification": f"{interface} profile confirmed; exact target and board stability not identified by IDCODE" if confirmed else "legacy timing not hardware-qualified"}
