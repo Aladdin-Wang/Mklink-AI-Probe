@@ -3694,14 +3694,14 @@ def main():
     from mklink.peripheral_cli import add_parser as add_peripheral_parser
 
     add_peripheral_parser(subparsers)
-    speed_parser = subparsers.add_parser("debug-speed", help="Set low=4 MHz / medium=10 MHz / high=20 MHz debug timing")
-    speed_parser.add_argument("profile", choices=("low", "medium", "high"))
+    speed_parser = subparsers.add_parser("debug-speed", help="Set low=4 MHz / medium=10 MHz / high=20 MHz / ultra=30 MHz debug timing")
+    speed_parser.add_argument("profile", choices=("low", "medium", "high", "ultra"))
     speed_parser.add_argument("--port", default=None)
     speed_parser.add_argument("--project-root", default=".")
     speed_parser.add_argument("--save", action="store_true", help="Apply this profile on future connections")
     measure_parser = subparsers.add_parser("dump-benchmark", help="Measure periodic mem_dump without a waveform GUI")
     measure_parser.add_argument("regions", nargs="+")
-    measure_parser.add_argument("--speed", choices=("low", "medium", "high"), default=None)
+    measure_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None)
     measure_parser.add_argument("--port", default=None)
     measure_parser.add_argument("--project-root", default=".")
     measure_parser.add_argument("--duration", type=float, default=3.0)
@@ -3908,8 +3908,8 @@ def main():
         help="读取 dump_memory 二进制帧（公共高速内存 dump；默认采集 1 个样本）",
     )
     dump_memory_parser.add_argument("--port", help="COM 端口（默认自动检测）")
-    dump_memory_parser.add_argument("--speed", choices=("low", "medium", "high"), default=None,
-                                    help="mem_dump 档位：4/10/20 MHz；默认 medium，或已保存档位")
+    dump_memory_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None,
+                                    help="mem_dump 档位：4/10/20/30 MHz；默认 medium，或已保存档位")
     dump_memory_parser.add_argument(
         "regions",
         nargs="+",

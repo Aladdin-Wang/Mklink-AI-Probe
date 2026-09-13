@@ -430,7 +430,7 @@ class Device:
                 raise
 
     def set_debug_speed(self, profile: str) -> dict:
-        """Apply a named 4/10/20 MHz profile to an idle connection."""
+        """Apply a named 4/10/20/30 MHz profile to an idle connection."""
         from mklink.debug_speed import apply_profile
         return apply_profile(self, profile)
 

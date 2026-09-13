@@ -24,6 +24,27 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
+    from unittest.mock import Mock
+    from mklink.project_config import load_config
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._bridge = SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=30000000))
+    device.set_debug_speed = Mock(return_value={'profile':'ultra','clock_hz':30000000,'profile_confirmed':True})
+    app.state.mklink_state['device'] = device
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=['superwatch']), TestClient(app) as client:
+        options=client.get('/api/device/debug-speed').json()
+        assert options['profiles']=={'low':4000000,'medium':10000000,'high':20000000,'ultra':30000000}
+        assert options['default']=='medium'
+        result=client.post('/api/device/debug-speed',json={'profile':'ultra'})
+        assert result.status_code==200 and result.json()['stopped']==['superwatch']
+        assert load_config(str(tmp_path))['debug_speed']=='ultra'
+        device.set_debug_speed.side_effect=ValueError('Probe firmware does not confirm this JTAG profile')
+        result=client.post('/api/device/debug-speed',json={'profile':'high'})
+        assert result.status_code==400
+        assert load_config(str(tmp_path))['debug_speed']=='ultra'
+
+
 def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
     device, _ = _connected_symbol_device(tmp_path)
     device.flash = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("verify failed"))

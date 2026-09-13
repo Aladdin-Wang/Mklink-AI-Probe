@@ -132,6 +132,7 @@ def test_real_fastmcp_dump_memory_jsonrpc_result_snapshot(monkeypatch):
             },
             "sample_count": {"default": 1, "type": "integer"},
             "timeout": {"default": 10.0, "type": "number"},
+            "speed_profile": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
         },
         "required": ["regions"],
         "type": "object",

@@ -841,7 +841,7 @@ def _register_memory_tools(mcp: Any) -> None:
             regions: 1..8 closed objects of ``{"address": int, "size": int}``.
             sample_count: Complete one-shot samples to capture (default 1).
             timeout: Per-sample timeout in seconds, from 0.001 through 60.
-            speed_profile: Optional low/medium/high (4/10/20 MHz). When omitted,
+            speed_profile: Optional low/medium/high/ultra (4/10/20/30 MHz). When omitted,
                 retain set_debug_speed's selection; a new HPM session defaults to medium.
         """
         import math
@@ -2158,10 +2158,11 @@ def build_server() -> Any:
     @mcp.tool()
     @_exclusive_hardware_tool
     def set_debug_speed(profile: str) -> dict:
-        """Set low=4 MHz, medium=10 MHz, high=20 MHz. Stop streams first.
+        """Set low=4 MHz, medium=10 MHz, high=20 MHz, ultra=30 MHz. Stop streams first.
 
         High currently requires HPM5301 and supporting probe firmware.
-        ARM low/medium retain existing SWD timing; ARM high is not yet qualified.
+        ARM low/medium retain existing SWD timing; high/ultra require HPM5301
+        and an exact kernel acknowledgement from compatible probe firmware.
         """
         return _connected_device().set_debug_speed(profile)
 
@@ -2173,7 +2174,7 @@ def build_server() -> Any:
 
         At most 15 {address,size} regions, 4096 bytes total, 0.5..30 seconds.
         Returns sample frequency, payload throughput, interval percentiles and
-        integrity counters. speed_profile is low/medium/high (4/10/20 MHz).
+        integrity counters. speed_profile is low/medium/high/ultra (4/10/20/30 MHz).
         Omit it to retain the session's profile (new HPM session defaults to 10 MHz).
         """
         from mklink.dump_benchmark import measure

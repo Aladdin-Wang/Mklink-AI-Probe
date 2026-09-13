@@ -26,6 +26,7 @@
           <option value="low">{{ tr('低速 · 4 MHz', 'Low · 4 MHz') }}</option>
           <option value="medium">{{ tr('中速 · 10 MHz（默认）', 'Medium · 10 MHz (default)') }}</option>
           <option value="high">{{ tr('高速 · 20 MHz', 'High · 20 MHz') }}</option>
+          <option value="ultra">{{ tr('超高速 · 30 MHz', 'Ultra · 30 MHz') }}</option>
         </select>
         <button class="btn btn-sm" data-testid="apply-superwatch-speed" :disabled="!deviceConnected || applyingSpeed" @click="applySpeed">{{ tr('应用档位', 'Apply speed') }}</button>
         <span role="status">{{ speedMessage }}</span>
@@ -72,7 +73,7 @@ async function loadSpeed(): Promise<void> {
     const response = await fetch(`${API_BASE}/api/device/debug-speed`)
     if (!response.ok) return
     const payload = await response.json()
-    if (['low', 'medium', 'high'].includes(payload.profile)) speedProfile.value = payload.profile
+    if (['low', 'medium', 'high', 'ultra'].includes(payload.profile)) speedProfile.value = payload.profile
   } catch { /* The backend can still be starting. */ }
 }
 

@@ -5,6 +5,15 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.parametrize('command', ['debug-speed', 'dump-memory', 'dump-benchmark'])
+def test_dump_speed_entry_points_expose_all_four_profiles(command):
+    result = subprocess.run([sys.executable, '-m', 'mklink', command, '--help'],
+                            cwd=Path(__file__).resolve().parents[3],
+                            capture_output=True, encoding='utf-8', timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert '{low,medium,high,ultra}' in result.stdout
+
+
 def test_top_level_help_renders_systemview_commands():
     root = Path(__file__).resolve().parents[3]
 

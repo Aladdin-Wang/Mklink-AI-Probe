@@ -442,6 +442,12 @@ python -m mklink superwatch TIM2.CNT,ADC1.DR --svd path/to/device.svd --visualiz
 
 **Dump Memory 连续采样协议**
 
+调试时钟分为 `low`（4 MHz）、`medium`（10 MHz，默认）、`high`（20 MHz）、`ultra`（30 MHz）。SuperWatch 的“采样调试速率”与 CLI/MCP 使用同一组档位；原 `high` 配置继续表示 20 MHz。它调整调试链路时钟，实际采样率应以 dump 时间戳测量。
+
+CLI 使用 `python -m mklink debug-speed ultra --project-root <工程目录>`；加 `--save` 可保存供后续连接使用。`dump-memory` 和 `dump-benchmark` 的 `--speed ultra` 可为本次采样选择 30 MHz。MCP 使用 `set_debug_speed(profile="ultra")`，或 `measure_dump_memory(..., speed_profile="ultra")`。
+
+20/30 MHz 目前要求 HPM5301 及确认相应内核的配套探针固件；旧固件仅回显设置时钟不算确认。确认失败会恢复 1 MHz 并报错。其他目标（包括待验证的 HPM6E80）需要核对目标适配与实测结果，不能直接继承 HPM5301 的资格结论。CLI/MCP 切档前先停止流；Web 应用档位会先停止当前采集。默认保持 10 MHz。
+
 SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
 
 ```bash
