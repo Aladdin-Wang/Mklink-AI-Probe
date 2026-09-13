@@ -16,6 +16,8 @@ def test_qualified_profile(name,hz):
     d=device(response=f'JTAG profile={hz} scans=1')
     r=apply_profile(d,name)
     assert r['clock_hz']==hz and r['profile_confirmed']
+    assert 'not identified by IDCODE' in r['qualification']
+    assert 'HPM5301' not in r['qualification']
     d._bridge.send_command.assert_called_once_with(f'cmd.set_swd_clock({hz})')
 
 

@@ -2160,7 +2160,9 @@ def build_server() -> Any:
     def set_debug_speed(profile: str) -> dict:
         """Set low=4 MHz, medium=10 MHz, high=20 MHz, ultra=30 MHz. Stop streams first.
 
-        High currently requires HPM5301 and supporting probe firmware.
+        High/ultra require the supported HPM JTAG interface and matching probe
+        firmware. Profile acknowledgement does not identify the exact HPM part
+        or establish stability of the connected board and wiring.
         ARM low/medium retain existing SWD timing; high/ultra require HPM5301
         and an exact kernel acknowledgement from compatible probe firmware.
         """

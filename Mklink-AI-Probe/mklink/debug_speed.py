@@ -22,11 +22,12 @@ def apply_bridge_profile(bridge, profile: str) -> dict:
     hz = profile_clock(profile)
     if bridge.state != DeviceState.READY:
         raise ValueError("Stop the active stream before changing debug speed")
-    # High-speed kernels require the qualified target and an exact firmware
-    # acknowledgement. A generic clock echo does not prove a kernel exists.
+    # High-speed kernels require a supported debug interface and an exact
+    # firmware acknowledgement. This shared ID identifies neither the exact
+    # HPM part nor the electrical qualification of the connected board.
     hpm = bridge.idcode == 0x1000563D
     if not hpm and profile in ("high", "ultra"):
-        raise ValueError(f"{hz // 1_000_000} MHz currently requires HPM5301; other targets await hardware qualification")
+        raise ValueError(f"{hz // 1_000_000} MHz requires the supported HPM JTAG interface; other interfaces await hardware qualification")
     response = bridge.send_command(f"cmd.set_swd_clock({hz})")
     confirmed = False
     if hpm:
@@ -42,4 +43,4 @@ def apply_bridge_profile(bridge, profile: str) -> dict:
     bridge._ctx.swd_clock_hz = hz
     return {"profile": profile, "clock_hz": hz, "profile_confirmed": confirmed,
             "interface": "JTAG" if hpm else "SWD",
-            "qualification": "HPM5301" if confirmed else "legacy timing not hardware-qualified"}
+            "qualification": "JTAG profile confirmed; exact target and board stability not identified by IDCODE" if confirmed else "legacy timing not hardware-qualified"}
