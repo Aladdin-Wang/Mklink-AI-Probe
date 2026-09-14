@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-14T14:23:04+08:00`
+- 更新时间：`2026-09-14T14:28:28+08:00`
 - 分支：`codex/v0.2.1-development`
 - HEAD：`最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。`
 - 远端 HEAD：`从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。`
 - 工作树：0.2.1分支开放有精确回执的ARM/HPM四档，配套pipe-r20修复USB发送槽和RTT启动并发；正式发布通道不变。
-- 当前任务：pipe-r20 ARM四档20项mem_dump矩阵通过；补齐配置/在线/脱机最高10M旧限制，支持精确20/30M；在线四档成功，脱机时钟与安装后GUI继续验证。HPM新版真机仍待换板。
+- 当前任务：pipe-r20 ARM四档mem_dump、Keil、在线/脱机实板通过。Chrome发现SuperWatch仍限制10us，已同步前后端至1us，66项Python和95项GUI检查通过；安装后Chrome界面复测继续。HPM新版真机仍待换板。
 - 状态：`in_progress`
 
 ## 里程碑

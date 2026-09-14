@@ -503,8 +503,8 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(bufferInput.max).toBe('1000000')
       expect(bufferInput.step).toBe('10000')
       expect(input.value).toBe('0.001')
-      expect(input.min).toBe('0.00001')
-      expect(input.step).toBe('0.00001')
+      expect(input.min).toBe('0.000001')
+      expect(input.step).toBe('0.000001')
       expect(runtime.probe.currentInterval()).toBe(0.001)
 
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
@@ -513,15 +513,15 @@ describe('WaveformViewer VOFA binary transport', () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ interval: 0.00001 }),
+        json: async () => ({ interval: 0.000001 }),
       })
       vi.stubGlobal('fetch', fetchMock)
       input.focus()
-      input.value = '0.00001'
+      input.value = '0.000001'
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.blur()
       runtime.probe.syncStatus({ state: 'running', interval: 0.001, items: [] })
-      expect(input.value).toBe('0.00001')
+      expect(input.value).toBe('0.000001')
       document.getElementById('btn-apply-interval')?.click()
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
 
@@ -529,11 +529,11 @@ describe('WaveformViewer VOFA binary transport', () => {
         '/api/dash/superwatch/interval',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ interval: 0.00001 }),
+          body: JSON.stringify({ interval: 0.000001 }),
         }),
       )
-      expect(runtime.probe.currentInterval()).toBe(0.00001)
-      expect(input.value).toBe('0.00001')
+      expect(runtime.probe.currentInterval()).toBe(0.000001)
+      expect(input.value).toBe('0.000001')
       expect(runtime.probe.collectionState().state).toBe('running')
     } finally {
       runtime.cleanup()

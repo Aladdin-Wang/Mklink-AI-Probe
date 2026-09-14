@@ -976,7 +976,7 @@ document.getElementById('btn-apply-buffer').addEventListener('click', function()
 });
 document.getElementById('btn-apply-interval').addEventListener('click', function() {
   var val = parseFloat(intervalInput.value);
-  var minimumInterval = IS_SUPERWATCH_MODE ? 0.00001 : 0;
+  var minimumInterval = IS_SUPERWATCH_MODE ? 0.000001 : 0;
   if (!Number.isFinite(val) || val < minimumInterval || val > 60) {
     alert('Interval must be between ' + minimumInterval + ' and 60 seconds');
     return;
