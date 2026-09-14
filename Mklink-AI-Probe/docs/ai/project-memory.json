@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T22:53:36.3531389+08:00",
+  "updated_at": "2026-09-14T23:42:21.2491440+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.1-development",
     "head": "最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。",
     "remote_head": "从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。",
-    "working_tree": "Web HEX 预览与脱机配置折叠修复，开发分支提交；发布渠道不变。"
+    "working_tree": "发布准备沿用 codex/v0.2.1-development；PR #2 待审核整合 main，再生成正式签名版本。"
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "已完成大 HEX 记录数限制修复、解析与可烧录范围分离、无芯片导入 FLM 预览，以及脱机选项字节/安全区默认折叠。159 Python、121 GUI、生产构建、Chrome 两个用户 HEX 和 MH2457S.FLM 实际加载通过；未做 MH 芯片烧录。原 ARM/HPM 待办保留。"
+    "current_task": "0.2.1 发布准备：应用/Skill 更新首选迁移到 MicroKeen release，旧 GitHub updates 兼容本次升级，Gitee 不变。版本与更新说明已加入，三仓库发布工具和回归测试适配中；正在全量复测与本地 NSIS 覆盖安装验收。尚未发布索引、标签或 Release。"
   },
   "milestones": [
     {

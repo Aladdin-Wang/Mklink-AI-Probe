@@ -1,11 +1,10 @@
 # Maintainer Release Procedure
 
-The procedure below still targets the legacy Aladdin-Wang/Gitee publication
-channels and its `master` prerequisite. MicroKeen development uses reviewed PRs
-to `main`; the new protected `release` and `firmware` branches are initialized
-copies, not a completed publisher migration. Only Aladdin-Wang may publish.
-See `docs/ai/repository-governance.md` relative to the source root before any
-publication. Do not run the legacy publisher against MicroKeen unchanged.
+Application 0.2.1 prepares the migration to MicroKeen. Only Aladdin-Wang may
+publish. Use reviewed, clean `main` equal to the remote MicroKeen `main` tip.
+The application publisher sends identical signed assets and immutable tags to
+MicroKeen, legacy Aladdin-Wang GitHub, and the existing Gitee repository. It
+does not push source branches. See `docs/ai/repository-governance.md` before publication.
 
 GitHub is the primary source and collaboration repository. Gitee mirrors the
 official release for users who cannot access GitHub, but Gitee synchronization
@@ -30,8 +29,9 @@ Never commit, print, log, transmit, or copy these secrets into project files.
 
 ## Preconditions
 
-1. Work from a clean `master` whose intended release commit is pushed to
-   GitHub. Do not publish from a feature branch.
+1. Work from clean reviewed `main` equal to the current MicroKeen remote tip.
+   Do not publish from a feature branch. Candidate build/install testing can
+   run on the development branch; rebuild from the reviewed final commit before publication.
 2. Set the same version in `pyproject.toml`, `gui/src-tauri/Cargo.toml`, and
    `gui/src-tauri/tauri.conf.json`.
 3. Run tests appropriate to the release, then:
@@ -108,23 +108,30 @@ Publication is intentionally one maintainer command because ordering matters:
 ```powershell
 python _maintainer/release/publish_update_release.py `
   --version $Version `
-  --notes "<release notes>" `
+  --notes-file "<release-notes.md>" `
   --release-dir $ReleaseDir `
   --updater-installer "$ReleaseDir\Mklink-AI-Probe-v$Version-x64-Setup.exe" `
   --updater-signature "$ReleaseDir\Mklink-AI-Probe-v$Version-x64-Setup.exe.sig"
 ```
 
-The publisher verifies clean `master`, version agreement, source commit, exact
+The publisher verifies clean reviewed `main`, version agreement, source commit, exact
 asset set, sizes, and hashes. It then:
 
-1. pushes `master` and the annotated version tag to GitHub and Gitee;
-2. creates or verifies both Releases and uploads the same seven public files;
-3. anonymously downloads the Gitee installer and verifies size and SHA-256;
-4. publishes the single-file `updates/latest.json` branch to both hosts last.
+1. pushes only the immutable annotated version tag to both GitHub repositories and Gitee;
+2. creates or verifies all three Releases and uploads the same seven public files;
+3. anonymously downloads GitHub assets and the Gitee installer/Skill, verifying size and SHA-256;
+4. publishes indexes last: MicroKeen `release/latest.json`, legacy GitHub
+   `updates/latest.json`, and unchanged Gitee `updates/latest.json`. GitHub
+   manifests point to MicroKeen release assets; Gitee uses its own mirror URLs.
+
+0.2.0 clients retain their old endpoints and discover the compatibility index.
+The installed 0.2.1 application and Skill contain MicroKeen as their primary
+endpoint and Gitee as fallback. Keep the same updater key and application ID.
+Never remove the old index during migration or change the Gitee URL.
 
 Publishing `latest.json` last prevents clients from discovering an incomplete
 release. Never move a published tag. Documentation or tooling corrections after
-publication belong in later `master` commits or a new version.
+publication belong in later `main` commits or a new version.
 
 ## Publish Probe Firmware Independently
 

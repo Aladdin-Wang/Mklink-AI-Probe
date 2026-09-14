@@ -26,8 +26,8 @@ def test_runtime_update_cache_uses_build_workspace(monkeypatch, tmp_path):
 def test_runtime_manifest_sources_prefer_github_and_fall_back_to_gitee(monkeypatch):
     github, gitee = update_check.DEFAULT_MANIFEST_URLS
     assert github == (
-        "https://raw.githubusercontent.com/Aladdin-Wang/"
-        "Mklink-AI-Probe/updates/latest.json"
+        "https://raw.githubusercontent.com/MicroKeen/"
+        "Mklink-AI-Probe/release/latest.json"
     )
     assert gitee == (
         "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"

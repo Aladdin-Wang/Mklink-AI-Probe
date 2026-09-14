@@ -69,7 +69,7 @@ def test_publisher_defaults_to_official_repositories(publisher, tmp_path):
         "--updater-signature", str(tmp_path / "setup.exe.sig"),
     ])
 
-    assert args.github_repo == "Aladdin-Wang/Mklink-AI-Probe"
+    assert args.github_repo == "MicroKeen/Mklink-AI-Probe"
     assert args.gitee_repo == "Aladdin-Wang/Mklink-AI-Probe"
 
 
@@ -272,6 +272,7 @@ def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
         ("branch", "--show-current"): "feature/test",
         ("rev-parse", "HEAD"): "a" * 40,
         ("status", "--porcelain"): "",
+        ("ls-remote", "https://github.com/MicroKeen/Mklink-AI-Probe.git", "refs/heads/main"): "a" * 40 + "\trefs/heads/main",
     }
     monkeypatch.setattr(
         publisher,
@@ -279,7 +280,7 @@ def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
         lambda repository, *args: responses[args],
     )
 
-    with pytest.raises(RuntimeError, match="master"):
+    with pytest.raises(RuntimeError, match="main"):
         publisher.validate_release_preflight(
             repository=repository,
             release_dir=release_dir,
@@ -288,7 +289,7 @@ def test_release_preflight_rejects_dirty_branch_and_tampered_assets(
             updater_signature=signature,
         )
 
-    responses[("branch", "--show-current")] = "master"
+    responses[("branch", "--show-current")] = "main"
     responses[("status", "--porcelain")] = " M tracked-file"
     with pytest.raises(RuntimeError, match="clean"):
         publisher.validate_release_preflight(
@@ -402,5 +403,32 @@ def test_updates_branch_is_published_only_after_both_releases_and_verification(
     )
 
     assert events == [
-        "preflight", "tag", "github", "gitee", "verify", "verify", "updates"
+        "preflight", "tag", "github", "verify", "verify", "gitee", "verify", "verify", "updates"
     ]
+
+
+def test_migration_publishes_old_and_new_github_indexes_and_preserves_gitee(publisher, monkeypatch):
+    calls = []
+    monkeypatch.setattr(publisher, "_run", lambda command, **kw: calls.append(command))
+    monkeypatch.setattr(publisher, "_gitee_push", lambda **kw: calls.append(["gitee", kw["refspec"]]))
+    publisher.publish_updates_branch(
+        document={"version": "0.2.1"}, github_document={"version": "0.2.1", "notes": "migration"},
+        github_repo="MicroKeen/Mklink-AI-Probe", gitee_repo="Aladdin-Wang/Mklink-AI-Probe", gitee_token="test",
+    )
+    pushes = [c for c in calls if c[0] == "gitee" or "push" in c]
+    assert pushes == [
+        ["gitee", "updates:updates"],
+        ["git", "push", "--force", "https://github.com/MicroKeen/Mklink-AI-Probe.git", "updates:release"],
+        ["git", "push", "--force", "https://github.com/Aladdin-Wang/Mklink-AI-Probe.git", "updates:updates"],
+    ]
+
+
+def test_installed_updaters_share_new_primary_and_unchanged_fallback(publisher):
+    from mklink.update_check import DEFAULT_MANIFEST_URLS
+    root = SCRIPT_PATH.parents[2]
+    config = json.loads((root / "gui/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+    assert config["plugins"]["updater"]["endpoints"] == list(DEFAULT_MANIFEST_URLS)
+    assert DEFAULT_MANIFEST_URLS == (
+        "https://raw.githubusercontent.com/MicroKeen/Mklink-AI-Probe/release/latest.json",
+        "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json",
+    )

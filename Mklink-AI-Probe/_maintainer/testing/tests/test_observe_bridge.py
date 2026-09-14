@@ -107,10 +107,11 @@ def _install_observe(monkeypatch, producer, *, legacy=False):
                 return producer
 
     module = SimpleNamespace(ObservationRegistry=Registry)
+    real_import = observe_bridge.importlib.import_module
     monkeypatch.setattr(
         observe_bridge.importlib,
         "import_module",
-        lambda name: module if name == "hil_core.observe" else None,
+        lambda name, *args, **kwargs: module if name == "hil_core.observe" else real_import(name, *args, **kwargs),
     )
     return calls
 

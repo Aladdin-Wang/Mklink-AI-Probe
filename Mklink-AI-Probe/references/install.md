@@ -4,7 +4,7 @@
 
 ## 选择安装方式
 
-- **桌面应用**：使用[官方发布页](https://github.com/Aladdin-Wang/Mklink-AI-Probe/releases)
+- **桌面应用**：使用[官方发布页](https://github.com/MicroKeen/Mklink-AI-Probe/releases)
   的安装包。Python 后端与 Web 资源已经打包，不要求另装 Python、Node、Rust 或 MSVC。
 - **AI Skill / Python CLI / Web GUI**：使用官方发布的完整 Skill ZIP 和对应摘要，
   校验来源与 SHA-256，解压到当前 AI 客户端支持的用户 Skill 目录。不要仅复制

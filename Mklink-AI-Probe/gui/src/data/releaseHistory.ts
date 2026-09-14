@@ -9,6 +9,30 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+  "version": "0.2.1",
+  "date": "2026-09-14",
+  "summary": "统一高速采集、外设与选项字节配置，迁移官方更新仓库",
+  "summaryEn": "Unified high-speed capture, peripherals and device configuration; migrated update repository",
+  "changes": [
+    "ARM/HPM 统一 4、10、20、30 MHz 四档，默认 10 MHz；SuperWatch、CLI 与 MCP 可设置采集档位，高速档需要配套固件。",
+    "优化 mem_dump 批量采集、批间时间统计和高频曲线显示，区分批内采样率与全程持续速率。",
+    "补齐 HPM SDK 外设描述，统一 GUI、CLI、MCP 的寄存器读取；完善 ARM SVD 读取边界。",
+    "增加 STM32F103 选项字节可视化读取、配置与脱机脚本生成；HPM 提供公开 OTP 字段只读查看。",
+    "修复大 HEX 加载失败，支持不选芯片导入 FLM 后解析预览；地址越界单独提示，选项字节与安全操作默认折叠。",
+    "完善 RTT/SystemView 启停及 SuperWatch 数组显示；改善调试频率配置一致性。",
+    "升级后应用与 Skill 默认从 MicroKeen/Mklink-AI-Probe 获取更新；旧 GitHub 仓库提供本次兼容更新，Gitee 备用地址保持不变。"
+  ],
+  "changesEn": [
+    "Unify ARM/HPM 4, 10, 20 and 30 MHz profiles, defaulting to 10 MHz; configure from SuperWatch, CLI and MCP. High-speed profiles require compatible firmware.",
+    "Improve mem_dump batching, inter-batch timing statistics and high-rate charts; distinguish intra-batch cadence from sustained throughput.",
+    "Expand HPM SDK peripheral descriptions and unify GUI/CLI/MCP register reads; improve ARM SVD access validation.",
+    "Add STM32F103 option-byte reading, visual configuration and offline scripts; expose public HPM OTP fields for read-only inspection.",
+    "Fix large HEX loading and preview with a standalone FLM; report address mismatches separately. Collapse option-byte and security controls by default.",
+    "Improve RTT/SystemView startup and shutdown, SuperWatch arrays and consistent debug clock configuration.",
+    "After upgrading, application and Skill updates default to MicroKeen/Mklink-AI-Probe. The legacy GitHub repository bridges this upgrade; the Gitee fallback remains unchanged."
+  ]
+},
+  {
     version: '0.2.0',
     date: '2026-09-07',
     summary: '完善连接、实时数据、Pack/型号兼容与安全烧录',

@@ -1,6 +1,6 @@
 {
   "productName": "Mklink AI Probe",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.microkeen.mklink-ai-probe",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -52,6 +52,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://raw.githubusercontent.com/MicroKeen/Mklink-AI-Probe/release/latest.json",
         "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxOEE2QkM3REYyQjA3OTkKUldTWkJ5dmZ4MnVLVWRVKzV0WmRLQWg3VDc2Ky9td2tZZWJheW1lTzNzNEErbmQ3T2JteE1jUTMK"

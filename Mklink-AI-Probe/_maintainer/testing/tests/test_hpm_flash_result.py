@@ -37,10 +37,10 @@ def test_hpm_program_requires_loaded_successfully_or_100_percent():
     )["success"]
 
 
-def test_mklink_flash_rejects_swd_clock_above_10_mhz():
+def test_mklink_flash_rejects_non_profile_clock_above_10_mhz():
     flash = MKLinkFlash(type("Bridge", (), {"send_command": lambda *_args, **_kwargs: "0"})())
 
-    with pytest.raises(FlashError, match="10MHz"):
+    with pytest.raises(FlashError, match="10 MHz"):
         flash.set_swd_clock(10_000_001)
 
 

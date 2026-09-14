@@ -25,6 +25,15 @@ except ImportError:  # pragma: no cover
 
 
 GITEE_API = "https://gitee.com/api/v5"
+PRIMARY_GITHUB_REPO = "MicroKeen/Mklink-AI-Probe"
+LEGACY_GITHUB_REPO = "Aladdin-Wang/Mklink-AI-Probe"
+
+
+def github_channels(repo: str) -> tuple[tuple[str, str], ...]:
+    """Keep the old index reachable for clients that have not upgraded yet."""
+    if repo == PRIMARY_GITHUB_REPO:
+        return ((repo, "release"), (LEGACY_GITHUB_REPO, "updates"))
+    return ((repo, "updates"),)
 
 
 class GiteeApiError(RuntimeError):
@@ -62,11 +71,14 @@ def validate_release_preflight(
     *, repository: Path, release_dir: Path, version: str,
     updater_installer: Path, updater_signature: Path,
 ) -> list[Path]:
-    if git_output(repository, "branch", "--show-current") != "master":
-        raise RuntimeError("release publication must run from the master branch")
+    if git_output(repository, "branch", "--show-current") != "main":
+        raise RuntimeError("release publication must run from reviewed main")
     if git_output(repository, "status", "--porcelain"):
         raise RuntimeError("release publication requires a clean working tree")
     head = git_output(repository, "rev-parse", "HEAD")
+    remote_head = git_output(repository, "ls-remote", f"https://github.com/{PRIMARY_GITHUB_REPO}.git", "refs/heads/main").split()
+    if not remote_head or remote_head[0] != head:
+        raise RuntimeError("release HEAD must equal published MicroKeen/main")
 
     with (repository / "pyproject.toml").open("rb") as stream:
         python_version = str(tomllib.load(stream)["project"]["version"])
@@ -402,12 +414,9 @@ def push_version_tag(
         raise RuntimeError(f"tag {tag} points to a different commit")
     if existing.returncode != 0:
         _run(["git", "tag", "-a", tag, "-m", f"Mklink AI Probe {tag}"], cwd=repository)
-    _run(["git", "push", "origin", "master"], cwd=repository)
-    _gitee_push(
-        repository=repository, repo=gitee_repo, refspec="master:master",
-        token=gitee_token,
-    )
-    _run(["git", "push", "origin", tag], cwd=repository)
+    # Source integration is a reviewed PR operation, never a publisher push.
+    for repo, _branch in github_channels(github_repo):
+        _run(["git", "push", f"https://github.com/{repo}.git", tag], cwd=repository)
     _gitee_push(
         repository=repository, repo=gitee_repo, refspec=tag, token=gitee_token
     )
@@ -479,7 +488,7 @@ def publish_gitee_release(
 
 def publish_updates_branch(
     *, document: Mapping[str, object], github_repo: str, gitee_repo: str,
-    gitee_token: str,
+    gitee_token: str, github_document: Mapping[str, object] | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="mklink-updates-") as directory:
         checkout = Path(directory)
@@ -492,11 +501,18 @@ def publish_updates_branch(
         )
         _run(["git", "add", "latest.json"], cwd=checkout)
         _run(["git", "commit", "-m", f"release: publish v{document['version']} update"], cwd=checkout)
-        _run(["git", "push", "--force", f"https://github.com/{github_repo}.git", "updates:updates"], cwd=checkout)
         _gitee_push(
             repository=checkout, repo=gitee_repo, refspec="updates:updates",
             token=gitee_token, force=True,
         )
+        if github_document is not None:
+            (checkout / "latest.json").write_text(
+                json.dumps(github_document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8",
+            )
+            _run(["git", "add", "latest.json"], cwd=checkout)
+            _run(["git", "commit", "--allow-empty", "-m", "release: GitHub asset endpoints"], cwd=checkout)
+        for repo, branch in github_channels(github_repo):
+            _run(["git", "push", "--force", f"https://github.com/{repo}.git", f"updates:{branch}"], cwd=checkout)
 
 
 def publish_update_release(
@@ -521,9 +537,15 @@ def publish_update_release(
         repository=repository, tag=tag, github_repo=github_repo,
         gitee_repo=gitee_repo, gitee_token=gitee_token,
     )
-    publish_github_release(
-        repo=github_repo, tag=tag, title=title, notes=notes, assets=required
-    )
+    for repo, _branch in github_channels(github_repo):
+        publish_github_release(
+            repo=repo, tag=tag, title=title, notes=notes, assets=required
+        )
+        for asset in required:
+            verify_public_asset(
+                url=f"https://github.com/{repo}/releases/download/{tag}/{asset.name}",
+                expected_sha256=sha256(asset), expected_size=asset.stat().st_size,
+            )
     gitee = publish_gitee_release(
         repo=gitee_repo, tag=tag, title=title, notes=notes, token=gitee_token,
         assets=required,
@@ -562,9 +584,14 @@ def publish_update_release(
         skill_size=skill_archive.stat().st_size,
         source_commit=source_commit,
     )
+    github_document = json.loads(json.dumps(document))
+    github_document["platforms"]["windows-x86_64"]["url"] = (
+        f"https://github.com/{github_repo}/releases/download/{tag}/{updater_installer.name}"
+    )
+    github_document["skill"]["url"] = f"https://github.com/{github_repo}/releases/download/{tag}/{skill_archive.name}"
     publish_updates_branch(
         document=document, github_repo=github_repo, gitee_repo=gitee_repo,
-        gitee_token=gitee_token,
+        gitee_token=gitee_token, github_document=github_document,
     )
     return document
 
@@ -572,11 +599,13 @@ def publish_update_release(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
-    parser.add_argument("--notes", required=True)
+    notes = parser.add_mutually_exclusive_group(required=True)
+    notes.add_argument("--notes")
+    notes.add_argument("--notes-file", type=Path)
     parser.add_argument("--release-dir", required=True, type=Path)
     parser.add_argument("--updater-installer", required=True, type=Path)
     parser.add_argument("--updater-signature", required=True, type=Path)
-    parser.add_argument("--github-repo", default="Aladdin-Wang/Mklink-AI-Probe")
+    parser.add_argument("--github-repo", default=PRIMARY_GITHUB_REPO)
     parser.add_argument("--gitee-repo", default="Aladdin-Wang/Mklink-AI-Probe")
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     return parser
@@ -586,7 +615,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     document = publish_update_release(
         version=args.version,
-        notes=args.notes,
+        notes=args.notes_file.read_text(encoding="utf-8") if args.notes_file else args.notes,
         published_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         release_dir=args.release_dir.resolve(),
         updater_installer=args.updater_installer.resolve(),
