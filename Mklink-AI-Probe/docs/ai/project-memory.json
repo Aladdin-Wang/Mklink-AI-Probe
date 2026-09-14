@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T14:42:54+08:00",
+  "updated_at": "2026-09-14T22:53:36.3531389+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.2.1-development",
     "head": "最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。",
     "remote_head": "从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。",
-    "working_tree": "0.2.1分支开放有精确回执的ARM/HPM四档，配套pipe-r20修复USB发送槽和RTT启动并发；正式发布通道不变。"
+    "working_tree": "Web HEX 预览与脱机配置折叠修复，开发分支提交；发布渠道不变。"
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "ARM pipe-r20四档正式接口、20项mem_dump矩阵、Keil/配置/在线/脱机LA校准、USB/CDC/RTT/SystemView与安装后Chrome验证完成，固化包和源快照已归档。HPM新版批时间戳与USB改动仍待换板实测；不自动合并发布。"
+    "current_task": "已完成大 HEX 记录数限制修复、解析与可烧录范围分离、无芯片导入 FLM 预览，以及脱机选项字节/安全区默认折叠。159 Python、121 GUI、生产构建、Chrome 两个用户 HEX 和 MH2457S.FLM 实际加载通过；未做 MH 芯片烧录。原 ARM/HPM 待办保留。"
   },
   "milestones": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "area": "SuperWatch 与 SystemView 文档实测修复",
-      "result": "docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。"
+      "result": "docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。 Web修复：docs/verification/v0.2.1-hex-preview.md，159 Python、121 GUI、生产构建；Chrome 无芯片 FLM+25.5MiB HEX、IAP越界提示与预览、默认折叠通过。"
     }
   ],
   "decisions": [

@@ -157,7 +157,7 @@ class Inspector:
         self.preview_length = None
         self.seen_regions = ()
 
-    def inspect(self, path, regions, base_address=None):
+    def inspect(self, path, regions, base_address=None, *, require_flash_coverage=True):
         self.seen_path = Path(path)
         self.seen_base = base_address
         assert self.seen_path.exists()
@@ -428,7 +428,7 @@ def test_hpm_image_and_job_use_rom_api_without_pack_or_sector_geometry(app, serv
         0x80000400, 0x80000408, base_address=0x80000400,
     )
 
-    def inspect_hpm(path, regions, base_address=None):
+    def inspect_hpm(path, regions, base_address=None, *, require_flash_coverage=True):
         assert Path(path).is_file()
         assert tuple(regions) == (
             MemoryRegion("hpm-xpi", 0x80000000, 0x10000000, True, True, None),
@@ -1780,6 +1780,36 @@ def test_preview_defaults_to_4096_bytes(app, services):
 
     assert response.status_code == 200
     assert services.image_inspector.preview_length == 4096
+
+
+@pytest.mark.parametrize('part', ['', 'DEVICE_A'])
+def test_preview_without_compatible_target_cannot_start_job(app, services, tmp_path, part):
+    from mklink.cmsis_dap.images import ImageInspector
+    services.image_inspector = ImageInspector(tmp_path / 'preview-images')
+    response = request(app, 'POST', '/api/online-flash/images/inspect',
+        data={'part_number': part, 'base_address': '0x08001000'},
+        files={'file': ('external.bin', b'preview-data')})
+    assert response.status_code == 200, response.text
+    image = response.json()
+    assert image['preview_only'] and image['validation_message']
+    assert not image['sector_operations_available']
+    preview = request(app, 'GET', f"/api/online-flash/images/{image['image_id']}/preview?offset=0&length=12")
+    assert preview.status_code == 200
+    job = request(app, 'POST', '/api/online-flash/jobs', json={
+        'actions':['connect','verify','disconnect'], 'probe_id':'mk',
+        'target_part':'DEVICE_A', 'image_id':image['image_id']})
+    assert job.status_code == 422
+    assert not services.job_manager.started
+
+
+def test_custom_flm_can_be_imported_without_selecting_a_chip(app, services):
+    response = request(app, 'POST', '/api/online-flash/algorithms',
+        files={'file': ('external.flm', b'algorithm')})
+    assert response.status_code == 200, response.text
+    assert response.json()['target_part'] == '__flm_preview__'
+    listed = request(app, 'GET', '/api/online-flash/algorithms')
+    assert len(listed.json()) == 1
+    assert request(app, 'GET', '/api/online-flash/algorithms?part_number=DEVICE_A').json() == []
 
 
 def inspect_device_image(app):

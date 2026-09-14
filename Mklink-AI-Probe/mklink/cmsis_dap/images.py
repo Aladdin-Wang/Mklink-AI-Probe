@@ -25,7 +25,7 @@ _MAX_ADDRESS_EXCLUSIVE = 1 << 64
 _MISSING_BYTE = 0xFF
 _DEFAULT_MAX_FILE_SIZE = 256 * 1024 * 1024
 _DEFAULT_MAX_HEX_DECODED_SIZE = 64 * 1024 * 1024
-_DEFAULT_MAX_HEX_RECORDS = 262_144
+_DEFAULT_MAX_HEX_RECORDS = 4_194_304
 _DEFAULT_MAX_HEX_SEGMENTS = 65_536
 _MAX_INTEL_HEX_LINE_SIZE = 1 + 2 * (255 + 5)
 
@@ -108,15 +108,17 @@ class ImageInspector:
         file_path: Union[Path, str],
         memory_regions: Iterable[MemoryRegion],
         base_address: Optional[int] = None,
+        *, require_flash_coverage: bool = True,
     ) -> ImageInspection:
         with self._operation():
-            return self._inspect(file_path, memory_regions, base_address)
+            return self._inspect(file_path, memory_regions, base_address, require_flash_coverage)
 
     def _inspect(
         self,
         file_path: Union[Path, str],
         memory_regions: Iterable[MemoryRegion],
         base_address: Optional[int],
+        require_flash_coverage: bool,
     ) -> ImageInspection:
         source_path = self._validated_source_path(file_path)
         image_format = source_path.suffix.lower().lstrip(".")
@@ -153,7 +155,7 @@ class ImageInspector:
 
             regions = tuple(memory_regions)
             for segment in segments:
-                if not self._segment_is_covered(segment, regions):
+                if require_flash_coverage and not self._segment_is_covered(segment, regions):
                     raise FlashError(
                         FlashErrorCode.IMAGE_OUT_OF_RANGE,
                         "firmware segment is outside writable flash memory",
@@ -611,7 +613,13 @@ class ImageInspector:
                                 "Intel HEX address range overflows 32 bits",
                             )
                         if byte_count:
-                            chunks.append((absolute_start, payload))
+                            # Coalesce sequential records before sorting. Large
+                            # resource HEX files otherwise allocate millions of
+                            # Python tuples for one contiguous Flash segment.
+                            if chunks and chunks[-1][0] + len(chunks[-1][1]) == absolute_start:
+                                chunks[-1][1].extend(payload)
+                            else:
+                                chunks.append((absolute_start, bytearray(payload)))
                             decoded_size += byte_count
                     elif record_type == 0x01:
                         if byte_count != 0 or record_address != 0:

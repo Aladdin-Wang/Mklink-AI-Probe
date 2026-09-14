@@ -98,12 +98,13 @@ onBeforeUnmount(cancel)
 
 <template>
   <div class="configuration-panel" data-testid="device-configuration">
-    <div class="configuration-heading">
+    <details>
+    <summary class="configuration-heading">
       <strong>{{ tr('选项字节 / OTP 配置', 'Option Bytes / OTP') }}</strong>
+    </summary>
       <button class="btn" data-testid="configuration-read" :disabled="busy || !configuration?.read_supported" @click="load(true)">
         {{ busy ? tr('加载中…', 'Loading…') : tr('读取配置', 'Read Configuration') }}
       </button>
-    </div>
     <p v-if="!partNumber || !model">{{ tr('选择芯片和下载器型号后加载配置。', 'Select a chip and probe model to load configuration.') }}</p>
     <p v-if="error" class="configuration-error" role="alert">{{ error }}</p>
     <template v-if="configuration">
@@ -128,13 +129,14 @@ onBeforeUnmount(cancel)
       </div>
       <p v-if="configuration.kind === 'option_bytes' && configuration.read_supported" data-testid="configuration-plan">{{ tr('生成脚本的动作顺序：', 'Generated script sequence: ') }}{{ plan }}</p>
     </template>
+    </details>
     <slot />
   </div>
 </template>
 
 <style scoped>
 .configuration-panel{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
-.configuration-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.configuration-heading{cursor:pointer;font-size:12px}
 p{font-size:11px;line-height:1.5;color:var(--muted);margin:8px 0}
 .configuration-error{color:var(--danger)}
 .configuration-table{overflow-x:auto;max-height:360px;border:1px solid var(--border);border-radius:5px}

@@ -847,12 +847,12 @@ onBeforeUnmount(() => {
         <label class="setting-row"><span>{{ tr('IDCODE 超时', 'IDCODE Timeout') }}</span><input v-model.number="idcodeTimeout" type="number" min="500" max="600000" step="500" class="form-input"><em>ms</em></label>
         <label class="setting-row"><span>{{ tr('SWD 速率', 'SWD Rate') }}</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="4000000">4 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option><option v-if="effectiveModel === 'V4'" :value="20000000">20 MHz</option><option v-if="effectiveModel === 'V4'" :value="30000000">30 MHz</option></select></label>
         <DeviceConfigurationPanel v-model:changes="optionByteChanges" :has-firmware="firmwares.length > 0" :part-number="targetPart" :model="model" :unlock-before-download="unlockBeforeDownload" :lock-after-download="lockAfterDownload">
-        <div class="security-settings">
-          <div class="security-title">
+        <details class="security-settings">
+          <summary class="security-title">
             <span>{{ tr('擦除与安全操作', 'Erase and Security Operations') }}</span>
             <em v-if="securityLoading">{{ tr('正在检查器件支持…', 'Checking target support…') }}</em>
             <em v-else-if="securityCapability" :class="securityCapability.supported ? 'ok' : 'bad'">{{ securityCapability.supported ? tr('加锁/解锁已验证', 'Lock/unlock validated') : tr('加锁/解锁未支持', 'Lock/unlock unsupported') }}</em>
-          </div>
+          </summary>
           <label class="security-option">
             <input data-testid="offline-erase-all" type="checkbox" aria-describedby="offline-erase-all-hint" :checked="eraseAllBeforeDownload" :disabled="hpmMode || !firmwares.length" @change="toggleEraseAll">
             <span>{{ tr('下载前全片擦除（第一个固件对应的 Flash）', 'Chip erase before download (Flash selected by first firmware)') }}</span>
@@ -870,7 +870,7 @@ onBeforeUnmount(() => {
           <p v-if="securityLoading" class="security-reason">{{ tr('正在按下载器型号和已选器件加载安全操作白名单。', 'Loading the security-operation whitelist for the probe and selected target.') }}</p>
           <p v-else-if="securityCapability && !securityCapability.supported" class="security-reason">{{ securityCapability.reason }}</p>
           <p v-else-if="securityCapability?.supported" class="security-reason">{{ tr('加锁与解锁只对已真机验证的器件开放；配置、器件 ID、容量和 FLM 均会严格校验。', 'Lock and unlock are enabled only for hardware-validated targets; configuration, device ID, density, and FLM are strictly verified.') }}</p>
-        </div>
+        </details>
         </DeviceConfigurationPanel>
         <div class="deploy-actions">
           <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">{{ tr('生成预览', 'Generate Preview') }}</button>
