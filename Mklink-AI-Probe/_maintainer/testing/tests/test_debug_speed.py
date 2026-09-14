@@ -28,7 +28,7 @@ def test_old_firmware_restores_conservative_clock():
     assert d._bridge.send_command.call_args.args==('cmd.set_swd_clock(1000000)',)
 
 
-@pytest.mark.parametrize('profile,hz', [('low',4000000),('medium',10000000)])
+@pytest.mark.parametrize('profile,hz', [('low',4000000),('medium',10000000),('high',20000000),('ultra',30000000)])
 def test_swd_exact_profile_ack(profile,hz):
     d=device(ident=0x1BA01477,response=f'set clock {hz}\nSWD profile={hz}')
     result=apply_profile(d,profile)
@@ -53,8 +53,9 @@ def test_legacy_swd_remains_explicitly_unconfirmed():
 @pytest.mark.parametrize('ident', [0x1BA01477, 0x12345678])
 def test_other_targets_high_is_not_silently_mislabeled(profile,ident):
     d=device(ident=ident)
-    with pytest.raises(ValueError,match='qualification'): apply_profile(d,profile)
-    d._bridge.send_command.assert_not_called()
+    with pytest.raises(ValueError,match='restored 1 MHz'): apply_profile(d,profile)
+    assert d._bridge._ctx.swd_clock_hz == 1000000
+    assert d._bridge.send_command.call_args.args == ('cmd.set_swd_clock(1000000)',)
 
 
 @pytest.mark.parametrize('profile', ['high', 'ultra'])

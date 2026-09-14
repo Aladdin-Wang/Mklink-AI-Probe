@@ -446,7 +446,9 @@ python -m mklink superwatch TIM2.CNT,ADC1.DR --svd path/to/device.svd --visualiz
 
 CLI 使用 `python -m mklink debug-speed ultra --project-root <工程目录>`；加 `--save` 可保存供后续连接使用。`dump-memory` 和 `dump-benchmark` 的 `--speed ultra` 可为本次采样选择 30 MHz。MCP 使用 `set_debug_speed(profile="ultra")`，或 `measure_dump_memory(..., speed_profile="ultra")`。
 
-20/30 MHz 目前要求 HPM5301 及确认相应内核的配套探针固件；旧固件仅回显设置时钟不算确认。确认失败会恢复 1 MHz 并报错。其他目标（包括待验证的 HPM6E80）需要核对目标适配与实测结果，不能直接继承 HPM5301 的资格结论。CLI/MCP 切档前先停止流；Web 应用档位会先停止当前采集。默认保持 10 MHz。
+ARM SWD 和 HPM JTAG 使用相同的 4/10/20/30 MHz 档位；20/30 MHz 必须由配套探针固件明确确认相应接口与内核，旧固件仅回显设置时钟不算确认。确认失败会恢复 1 MHz 并报错。档位回执不证明任意目标或接线稳定，应按对应板卡和固件的实测结果选择。CLI/MCP 切档前先停止流；Web 应用档位会先停止当前采集。默认保持 10 MHz。
+
+档位设置改变探针的调试时钟，同一连接中的 RTT、SystemView 等内存访问也使用该时钟。Keil、在线烧录和脱机脚本会按各自配置重新设置时钟；不能用 SuperWatch 的档位代替下载配置。采样报告应分别注明包含批间空隙的持续速率与批内速率，不能混用。
 
 SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
 

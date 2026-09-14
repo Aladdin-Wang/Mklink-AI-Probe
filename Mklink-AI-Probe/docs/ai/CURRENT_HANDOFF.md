@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-13T22:21:00+08:00`
+- 更新时间：`2026-09-14T14:12:51+08:00`
 - 分支：`codex/v0.2.1-development`
 - HEAD：`最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。`
 - 远端 HEAD：`从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。`
-- 工作树：0.2.1开发分支补SWD低中档明确确认和失败回退；HPM高速策略不变。配套探针固件已更新，ARM20/30实验内核默认关闭。正式发布通道不变。
-- 当前任务：STM32F103RET6换板校准完成Keil1/2/5/10M、在线/脱机4/10M LA测量；真20/30M仍不合格。修复GUI保存时钟未应用和缺少回执确认，GUI同一配置API真机改频3.867/9.385MHz通过。RTT stop前缀泄漏修复后14项mem_dump回归通过，4/10M单变量49.83/93.71kSa/s，4KB261.77/575.18KiB/s；RTT/SystemView短时零新增错误。Chrome弹窗后控制超时，最终GUI截图仍待用户关闭提示。
+- 工作树：0.2.1分支开放有精确回执的ARM/HPM四档，配套pipe-r20修复USB发送槽和RTT启动并发；正式发布通道不变。
+- 当前任务：完成ARM/HPM公开4/10/20/30M档位统一。pipe-r20 USB/CDC/RTT/SystemView/CLI/MCP及Keil四档校准通过，最终mem_dump矩阵、在线/脱机及GUI验证继续。HPM批时间戳软件优化已完成，新版HPM实板待换板。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -23,7 +23,7 @@
 - **仓库权限**：GitHub API 回读四项 active 规则；release/firmware 与旧索引提交一致。仅 Aladdin-Wang 可绕过发布引用规则，main 审核/CI 无绕过者；未使用 su5176 身份执行写入测试。
 - **外设三端统一**：docs/verification/v0.2.1-peripheral-unification.md：Python 190 通过/1 跳过；HPM 43 型号共 1226962 条目录项可加载；HPM5301 CLI/MCP stdio/Chrome 三通道约 1 kHz，CRC/帧丢失/固件丢样标记为零。ARM 未做实板验证。
 - **选项字节/OTP 第一阶段**：docs/verification/v0.2.1-device-configuration-stage1.md：Python 103、GUI 24、正式构建通过；HPM5301 CLI/MCP/Chrome 8 个公开字段一致；Chrome ARM 配置及脚本预览通过，没有 ARM 实板读写或 OTP 编程。
-- **STM32F103 选项字节与 ARM mem_dump**：docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。 docs/verification/v0.2.1-stm32-clock-calibration.md：117相关Python测试通过；Keil/在线/脱机频率实测、RTT/SystemView短时复测通过，20/30M不合格。GUI同一API改频与LA通过，RTT修复后14项mem_dump通过；最终Chrome截图尚未完成。
+- **STM32F103 选项字节与 ARM mem_dump**：docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。 docs/verification/v0.2.1-stm32-clock-calibration.md：117相关Python测试通过；Keil/在线/脱机频率实测、RTT/SystemView短时复测通过，20/30M不合格。GUI同一API改频与LA通过，RTT修复后14项mem_dump通过；最终Chrome截图尚未完成。 本轮更新：docs/verification/v0.2.1-stm32-four-profile-freeze.md：主机108项和32项相关检查通过（覆盖重叠）。pipe-r20 USB20、CDC12、RTT四档/SV8、CLI/MCP通过，启动32次无交错；Keil1/2/5/10M校准误差<2%。最终矩阵及GUI正在补测，不称全部入口完成。
 - **mem_dump 四档与 HPM 实板稳定性**：docs/verification/v0.2.1-mem-dump-four-speeds.md：143 Python、3 GUI、生产构建、72打包/更新/边界通过；CLI/MCP stdio及Chrome四档切换/曲线实板通过。旧7510单变量两档各30min，旧20M 4KB失败保留；新2927修复版48用例通过，20M 4KB600s/30M300s及小块、动态RAM、10轮四档重连。SBA忙冲突按报告计数恢复，不称零冲突。 HPM6E80独立记录v0.2.1-hpm6e80-mem-dump.md：21软件测试、304候选28矩阵/30长测重连、cbd最终28回归、CLI/MCP24和Chrome通过；共享ID不识别精确型号。
 - **SuperWatch 与 SystemView 文档实测修复**：docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。
 
@@ -37,26 +37,26 @@
 
 ## 真机环境
 
-- **state**：HPM6E80 / hpm6e00evk / 600MHz，最终cbdedefb固件已自动UF2升级。四档及20/30MHz独立实板验证详见v0.2.1-hpm6e80-mem-dump.md；30档候选5分钟99.501kSa/s，最终短测100.358kSa/s，4KB .965MiB/s。最终无新增错误，10MHz停止/断开；Chrome8769保留。
+- **state**：STM32F103RET6 / 72MHz / RT-Thread 5.1.0；MKLINK V4 HPM5301 360MHz，pipe-r20已升级。LA5032 500MSa/s，CH1 SWDIO、CH2 SWCLK；最终资格测试进行中。
 - **backups**：.build/reports/prerelease-hil-20260907、superwatch-write-20260907；保留其他芯片唯一备份。；本轮本地证据 .build/reports/peripheral-unification。；本轮 OTP 只读和浏览器证据 .build/reports/device-configuration。；STM32F103 唯一原始备份与本轮证据 .build/reports/stm32f103-options。
 - **installer**：.build/artifacts/release-0.2.0-20260908/Mklink-AI-Probe-v0.2.0-x64-Setup.exe
 
 ## 下一动作
 
-1. HPM6E80本轮已完成；后续HPM5301需对新20MHz采样点实板回归，ARM高速另行验证，不沿用旧固件资格。
-2. 官网文档任务已收到HPM6E80最终报告与真实Chrome20/30MHz截图，完成本地文档构建/引用检查，不发布。原生CSV/PNG导出未新增验证。
+1. 完成pipe-r20最终ARM矩阵和GUI/在线/脱机校准，同步本地Skill；HPM5301/HPM6E80需换板回归批时间戳/USB改动，不继承旧版本资格。
+2. 官网文档任务同步STM32真实数据并保留r17/r19失败和历史。Chrome截图仍需浏览器连接，本轮不得将IAB材料称Chrome；不自动发布。
 3. 审核PR #2的外设/配置统一和四档mem_dump，不自动合并或发布。
 4. 后续按原计划补STM32F103看门狗、STOP/STANDBY和WRP拒写行为及其他ARM实板；HPM永久编程未开放。
 5. 本地Skill开发快照与正式安装器/发布渠道分开；定时任务维持暂停。
 
 ## 已知限制
 
-- 高速 USB 识别异常暂缓；RTT 偶发启动失败及停止后 UART 残留未闭环。
+- 本轮已复现的USB停读后32B缺失由独立对齐DMA槽修复，并修复RTT回执/描述符并发。有限缓存仍不保证无限暂停或物理断线无损；历史枚举异常未做全部场景认证。
 - PY32F030 保护后恢复未闭环；未覆盖物理 Modbus、所有板卡、Mac/Linux 与跨主机 Agent。
 - 外设轮询可漏短脉冲，缓冲有限；SystemView 启动可能丢弃少量数据。
 - 共享外设目录目前只支持对齐 32 位、小端、无已知读取副作用的寄存器；真实 16 位 MMIO 需要探针协议/固件补齐和 ARM 实板验证。HPM 全型号目录加载不等同全外设 HIL。
 - STM32F103 非 XL USER/DATA/WRP 配置已开放，实板为 V4 高容量组；WDG_SW 保持软件模式，未验证低功耗进入和 WRP 拒写行为。V3/其他容量仅描述与生成测试；其他 ARM 维持原有安全配方，G474/PY32 仍仅 V3。HPM OTP 永久写入未开放。
-- 批量路径覆盖已列明HPM5301 DLM/XIP和新增HPM6E80 AXI SRAM、最多15区域；shared JTAG ID不识别精确型号，也不证明接线稳定。<50us请求沿用满速语义，非原子多变量/硬实时。XIP有界块忙冲突恢复不适用于RAM/MMIO或真实总线错误。HPM6E80候选长测和最终回归分开记录；HPM5301新20MHz采样点/ARM高速未验证。
+- 批量路径覆盖已列明HPM5301 DLM/XIP和新增HPM6E80 AXI SRAM、最多15区域；shared JTAG ID不识别精确型号，也不证明接线稳定。<50us请求沿用满速语义，非原子多变量/硬实时。XIP有界块忙冲突恢复不适用于RAM/MMIO或真实总线错误。历史HPM资格按对应固件保留；pipe-r20 HPM批时间戳/USB改动仍待HPM实板回归。ARM高速本轮按专门报告验证。
 
 ## 延续协议
 

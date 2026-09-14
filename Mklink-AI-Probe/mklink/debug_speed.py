@@ -26,8 +26,8 @@ def apply_bridge_profile(bridge, profile: str) -> dict:
     # firmware acknowledgement. This shared ID identifies neither the exact
     # HPM part nor the electrical qualification of the connected board.
     hpm = bridge.idcode == 0x1000563D
-    if not hpm and profile in ("high", "ultra"):
-        raise ValueError(f"{hz // 1_000_000} MHz requires the supported HPM JTAG interface; other interfaces await hardware qualification")
+    # New SWD firmware exposes the same four profiles. Require its exact
+    # acknowledgement below; old firmware must never be labelled 20/30 MHz.
     response = bridge.send_command(f"cmd.set_swd_clock({hz})")
     confirmed = False
     interface = "JTAG" if hpm else "SWD"

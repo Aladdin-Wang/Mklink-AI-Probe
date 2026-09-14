@@ -2160,12 +2160,10 @@ def build_server() -> Any:
     def set_debug_speed(profile: str) -> dict:
         """Set low=4 MHz, medium=10 MHz, high=20 MHz, ultra=30 MHz. Stop streams first.
 
-        High/ultra require the supported HPM JTAG interface and matching probe
-        firmware. Profile acknowledgement does not identify the exact HPM part
-        or establish stability of the connected board and wiring.
-        ARM low/medium accept exact SWD profile acknowledgements; legacy
-        firmware is explicitly unconfirmed. ARM high/ultra remain blocked
-        because the STM32F103 electrical trials did not pass qualification.
+        HPM JTAG and ARM SWD use the same named profiles with matching probe
+        firmware. High/ultra require an exact interface/profile acknowledgement;
+        legacy firmware cannot silently claim high-speed timing. Acknowledgement
+        identifies the selected kernel, not the exact target or wiring stability.
         """
         return _connected_device().set_debug_speed(profile)
 
