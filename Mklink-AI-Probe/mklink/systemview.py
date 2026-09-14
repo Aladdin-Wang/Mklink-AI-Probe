@@ -146,12 +146,17 @@ class SystemViewSession:
             chunk = self._bridge.drain_stream_bytes()
             if chunk:
                 received.extend(chunk)
-                if len(received) >= 4:
-                    if received[:2] != self._CLIENT_HELLO_PREFIX:
+                # Pika emits ">>> "; the bridge recognizes ">>>" and may
+                # preserve its final space in the stream tail. Accept only
+                # that one optional byte, even if USB splits it from SV.
+                hello_offset = 1 if received[:1] == b" " else 0
+                if len(received) >= hello_offset + 4:
+                    if received[hello_offset:hello_offset + 2] != self._CLIENT_HELLO_PREFIX:
                         raise RuntimeError(
                             "SystemView Recorder 握手失败：探针未返回 SV 响应"
+                            f"（前缀 {bytes(received[:16]).hex(' ')}）"
                         )
-                    return bytes(received[4:])
+                    return bytes(received[hello_offset + 4:])
             time.sleep(0.01)
         raise RuntimeError("SystemView Recorder 握手超时")
 

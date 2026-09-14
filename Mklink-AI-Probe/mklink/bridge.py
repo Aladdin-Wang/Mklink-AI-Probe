@@ -14,6 +14,9 @@ import time
 from collections.abc import Callable
 
 import serial
+from mklink._isolated_serial import IsolatedSerial
+import os
+import sys
 
 from mklink._types import (
     DEFAULT_BAUDRATE,
@@ -71,7 +74,7 @@ class MKLinkSerialBridge:
         self._port = port
         self._baudrate = baudrate
         self._port_lock = _PortLock(port)
-        self._serial: serial.Serial | None = None  # 延迟到 connect() 中打开
+        self._serial: serial.Serial | IsolatedSerial | None = None
         self._ctx = DeviceContext()
         self._reader_thread: threading.Thread | None = None
         self._running = False
@@ -116,7 +119,12 @@ class MKLinkSerialBridge:
             return False
 
         try:
-            self._serial = serial.Serial(self._port, self._baudrate, timeout=0.01)
+            # The bundled desktop/CLI/MCP Python runtime can pause all threads
+            # during GC or native parsing. Keep Windows CDC draining elsewhere.
+            isolated = (os.name == 'nt' and not getattr(sys, 'frozen', False)
+                        and getattr(serial.Serial, '__module__', '') == 'serial.serialwin32')
+            constructor = IsolatedSerial if isolated else serial.Serial
+            self._serial = constructor(self._port, self._baudrate, timeout=0.01)
         except serial.SerialException as e:
             self._port_lock.release()
             msg = str(e).lower()

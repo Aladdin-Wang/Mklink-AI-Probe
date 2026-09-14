@@ -603,8 +603,8 @@ class HpmRomBackend:
 
         if not is_hpm_target(target):
             raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "target is not an HPM device")
-        if not isinstance(frequency, int) or isinstance(frequency, bool) or not 1 <= frequency <= 10_000_000:
-            raise ValueError("frequency must be between 1 and 10000000 Hz")
+        from mklink.debug_speed import validate_clock_hz
+        validate_clock_hz(frequency)
         if reset_voltage_mv is not None and reset_voltage_mv not in _POWER_CYCLE_VOLTAGES_MV:
             raise ValueError("reset_voltage_mv must be 1800, 3300, or 5000")
         if reset_mode != "power-cycle" and reset_voltage_mv is not None:

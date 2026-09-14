@@ -370,8 +370,8 @@ function buildTemplate(mode: string): string {
   const minPoints = mode === 'SuperWatch' ? 50000 : 2
   const maxPoints = mode === 'SuperWatch' ? 50000 : 10000
   const intervalValue = mode === 'SuperWatch' ? '0.001' : '0'
-  const intervalMinimum = mode === 'SuperWatch' ? '0.00001' : '0'
-  const intervalStep = mode === 'SuperWatch' ? '0.00001' : '0.001'
+  const intervalMinimum = mode === 'SuperWatch' ? '0.000001' : '0'
+  const intervalStep = mode === 'SuperWatch' ? '0.000001' : '0.001'
   return `
 <header>
   <div class="header-status">

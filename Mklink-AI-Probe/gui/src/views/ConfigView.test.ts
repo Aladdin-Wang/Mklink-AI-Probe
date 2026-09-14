@@ -361,10 +361,17 @@ describe('ConfigView', () => {
     expect(wrapper.get('[data-testid="disconnect-local"]').attributes('disabled')).toBeDefined()
   })
 
-  it('rejects local SWD clock settings above 10 MHz', async () => {
+  it.each(['20000000', '30000000'])('saves calibrated high clock %s', async (hz) => {
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="swd-clock"]').setValue(hz)
+    await flushPromises()
+    expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ swd_clock: hz }))
+  })
+
+  it('rejects unnamed high clocks', async () => {
     const wrapper = await mountView()
     const input = wrapper.get('[data-testid="swd-clock"]')
-    expect(input.attributes('max')).toBe('10000000')
+    expect(input.attributes('max')).toBe('30000000')
 
     await input.setValue('10000001')
     await flushPromises()

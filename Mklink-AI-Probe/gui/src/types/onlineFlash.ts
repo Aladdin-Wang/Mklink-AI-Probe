@@ -72,6 +72,9 @@ export interface ImageSegment {
 }
 
 export interface ImageInspection {
+  preview_only?: boolean
+  validation_message?: string
+  uncovered_segments?: ImageSegment[]
   image_id: string
   file_name: string
   format: string

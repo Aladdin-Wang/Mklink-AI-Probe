@@ -49,9 +49,20 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(11)
+    expect(wrapper.findAll('[data-testid="release-entry"]')).toHaveLength(12)
     expect(wrapper.get('.release-entry.current').text()).toContain('v0.2.0')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
+    wrapper.unmount()
+  })
+
+  it('includes the migration and hardware requirements in 0.2.1', async () => {
+    const wrapper = mount(VersionHistoryPopover, { props: { version: '0.2.1', buildCommit: 'candidate' } })
+    await wrapper.trigger('mouseenter')
+    const current = wrapper.get('.release-entry.current').text()
+    expect(current).toContain('MicroKeen/Mklink-AI-Probe')
+    expect(current).toContain('Gitee 备用地址保持不变')
+    expect(current).toContain('高速档需要配套固件')
+    expect(current).toContain('大 HEX')
     wrapper.unmount()
   })
 

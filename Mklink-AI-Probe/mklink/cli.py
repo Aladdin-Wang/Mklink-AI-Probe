@@ -1383,11 +1383,36 @@ def _cli_read_reg(
     count: int,
     output_format: str,
     raw: bool,
+    project_root: str = ".",
+    svd: str | None = None,
+    chip: str | None = None,
+    target_id: str | None = None,
 ):
     """读取内存映射寄存器。"""
     from mklink.memory_access import read_memory
     from mklink.registers import resolve_register
+    from mklink.peripheral_watch import load_catalog, read_item
 
+    if width != 32 or count < 1:
+        raise ValueError("Register reads require width=32 and a positive count")
+    catalog = load_catalog(project_root, svd=svd, chip=chip, target_id=target_id)
+    if catalog:
+        if count != 1 or raw or addr:
+            raise ValueError(
+                "Catalog reads take one named register/field; use read-ram for explicit raw memory"
+            )
+        item = catalog.resolve(register or "")
+        from mklink.device import connect
+
+        with connect(port=port, project_root=project_root) as device:
+            value = read_item(device, item)
+        display = {
+            "hex": f"0x{value:08X}",
+            "dec": str(value),
+            "bin": f"0b{value:032b}",
+        }.get(output_format, f"0x{value:08X} ({value})")
+        print(f"{item.name} @ 0x{item.address:08X} = {display}")
+        return
     target = register or addr
     if not target:
         print("[FAIL] 请指定寄存器名或 --addr")
@@ -1399,7 +1424,17 @@ def _cli_read_reg(
         return
 
     bytes_per = max(1, width // 8)
-    data, raw_resp = read_memory(port, reg.address, bytes_per * count)
+    if register and not register.strip().lower().startswith("0x"):
+        from mklink.device import connect
+
+        with connect(port=port, project_root=project_root) as device:
+            first = device.read_register(register)
+            data = first.to_bytes(4, "little")
+            if count > 1:
+                data += device.read_memory(reg.address + 4, 4 * (count - 1))
+        raw_resp = data.hex(" ")
+    else:
+        data, raw_resp = read_memory(port, reg.address, bytes_per * count)
     if raw:
         print(raw_resp.strip())
         return
@@ -1783,6 +1818,7 @@ def _cli_dump_memory(
     duration: float = 2.0,
     save: str | None = None,
     json_output: bool = False,
+    speed_profile: str | None = None,
 ) -> int:
     """Public dump_memory CLI.
 
@@ -1851,6 +1887,10 @@ def _cli_dump_memory(
         return frame.get("block_index", 0) + 1 >= frame.get("block_count", 1)
 
     try:
+        from mklink.debug_speed import apply_bridge_profile
+        from mklink.project_config import load_config
+        chosen_speed = speed_profile or (load_config(".") or {}).get("debug_speed", "medium")
+        print(json.dumps(apply_bridge_profile(bridge, chosen_speed), ensure_ascii=False))
         print(f"[*] {cmd}")
         bridge._enter_stream(DeviceState.DUMP_STREAM)
         stream_started = True
@@ -2289,21 +2329,26 @@ def _cli_superwatch(args):
 
     from mklink.superwatch import (
         build_read_blocks,
-        find_project_svd,
-        load_svd_registers,
         poll_blocks_dumpmem,
         resolve_watch_items,
         run_superwatch_visualizer,
     )
 
     svd_registers = {}
-    svd_path = args.svd or find_project_svd(args.project_root)
-    if svd_path:
-        try:
-            svd_registers = load_svd_registers(svd_path)
-            print(f"[OK] SVD loaded: {svd_path}")
-        except Exception as e:
-            print(f"[WARN] SVD unavailable: {e}")
+    from mklink.peripheral_watch import load_catalog
+    from mklink.superwatch import catalog_registers
+
+    try:
+        catalog = load_catalog(
+            args.project_root,
+            svd=args.svd,
+            chip=getattr(args, "chip", None),
+            target_id=getattr(args, "target_id", None),
+        )
+        svd_registers = catalog_registers(catalog)
+    except Exception as e:
+        print(f"[FAIL] SVD unavailable: {e}")
+        raise SystemExit(1)
 
     dwarf_info = None
     if args.source:
@@ -3646,6 +3691,31 @@ def main():
         description="MKLink Flash Programmer CLI",
     )
     subparsers = parser.add_subparsers(dest="command")
+    from mklink.peripheral_cli import add_parser as add_peripheral_parser
+
+    add_peripheral_parser(subparsers)
+    speed_parser = subparsers.add_parser("debug-speed", help="Set low=4 MHz / medium=10 MHz / high=20 MHz / ultra=30 MHz debug timing")
+    speed_parser.add_argument("profile", choices=("low", "medium", "high", "ultra"))
+    speed_parser.add_argument("--port", default=None)
+    speed_parser.add_argument("--project-root", default=".")
+    speed_parser.add_argument("--save", action="store_true", help="Apply this profile on future connections")
+    measure_parser = subparsers.add_parser("dump-benchmark", help="Measure periodic mem_dump without a waveform GUI")
+    measure_parser.add_argument("regions", nargs="+")
+    measure_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None)
+    measure_parser.add_argument("--port", default=None)
+    measure_parser.add_argument("--project-root", default=".")
+    measure_parser.add_argument("--duration", type=float, default=3.0)
+    measure_parser.add_argument("--period", type=float, default=0.000001)
+    config_parser = subparsers.add_parser(
+        "configuration",
+        help="Inspect option bytes/OTP and generate option configuration scripts",
+    )
+    config_parser.add_argument("action", choices=("describe", "read", "generate"))
+    config_parser.add_argument("--set", action="append", default=[], metavar="FIELD=VALUE")
+    config_parser.add_argument("--chip", required=True)
+    config_parser.add_argument("--model", choices=("V2", "V3", "V4"), default="V4")
+    config_parser.add_argument("--port")
+    config_parser.add_argument("--project-root", default=".")
 
     subparsers.add_parser(
         "remote",
@@ -3818,6 +3888,10 @@ def main():
     read_reg_parser.add_argument("--count", type=int, default=1, help="连续读取数量（默认 1）")
     read_reg_parser.add_argument("--format", choices=["hex", "dec", "bin", "both"], default="both", help="显示格式")
     read_reg_parser.add_argument("--raw", action="store_true", help="直接输出设备原始响应")
+    read_reg_parser.add_argument("--project-root", default=".")
+    read_reg_parser.add_argument("--svd")
+    read_reg_parser.add_argument("--chip")
+    read_reg_parser.add_argument("--target-id")
 
     # write-ram 子命令
     write_ram_parser = subparsers.add_parser("write-ram", help="写入数据到目标芯片 RAM 并回读验证")
@@ -3834,6 +3908,8 @@ def main():
         help="读取 dump_memory 二进制帧（公共高速内存 dump；默认采集 1 个样本）",
     )
     dump_memory_parser.add_argument("--port", help="COM 端口（默认自动检测）")
+    dump_memory_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None,
+                                    help="mem_dump 档位：4/10/20/30 MHz；默认 medium，或已保存档位")
     dump_memory_parser.add_argument(
         "regions",
         nargs="+",
@@ -3962,7 +4038,14 @@ def main():
     superwatch_parser.add_argument("--project-root", default=".", help="project root")
     superwatch_parser.add_argument("--port", help="COM port")
     superwatch_parser.add_argument("--source", help="ELF/AXF path for DWARF variable resolution")
-    superwatch_parser.add_argument("--svd", help="CMSIS-SVD path; auto-detected from Keil Pack when omitted")
+    superwatch_parser.add_argument(
+        "--svd",
+        help="CMSIS-SVD path; otherwise restore the project peripheral selection",
+    )
+    superwatch_parser.add_argument("--chip", help="Exact installed Pack chip name")
+    superwatch_parser.add_argument(
+        "--target-id", help="Unambiguous installed peripheral target ID"
+    )
     superwatch_parser.add_argument("--period", type=float, default=0.001,
         help="sampling period in seconds (default: 0.001)")
     superwatch_parser.add_argument("--visualize", action="store_true", help="start Web visualizer")
@@ -4344,7 +4427,26 @@ def main():
         _cli_test(args.port)
         return
 
-    if args.command == "test":
+    if args.command == "dump-benchmark":
+        import json
+        from mklink.device import connect
+        from mklink.dump_benchmark import measure
+        regions = [_parse_dump_region(r) for r in args.regions]
+        with connect(port=args.port, project_root=args.project_root) as device:
+            result = measure(device, regions, duration=args.duration, period=args.period, speed_profile=args.speed)
+        print(json.dumps(result, ensure_ascii=False))
+    elif args.command == "debug-speed":
+        import json
+        from mklink.device import connect
+        from mklink.project_config import load_config, save_config
+        with connect(port=args.port, project_root=args.project_root) as device:
+            result = device.set_debug_speed(args.profile)
+        if args.save:
+            config = load_config(args.project_root) or {}
+            config["debug_speed"] = args.profile
+            save_config(args.project_root, config)
+        print(json.dumps(result, ensure_ascii=False))
+    elif args.command == "test":
         _cli_test(args.port)
     elif args.command == "discover":
         if args.list:
@@ -4444,7 +4546,19 @@ def main():
     elif args.command == "version":
         _cli_version(args.port, all_history=args.all, raw=args.raw)
     elif args.command == "read-reg":
-        _cli_read_reg(args.port, args.register, args.addr, args.width, args.count, args.format, args.raw)
+        _cli_read_reg(
+            args.port,
+            args.register,
+            args.addr,
+            args.width,
+            args.count,
+            args.format,
+            args.raw,
+            args.project_root,
+            args.svd,
+            args.chip,
+            args.target_id,
+        )
     elif args.command == "write-ram":
         _cli_write_ram(args.port, args.addr, args.data)
     elif args.command in ("dump-memory", "dump"):
@@ -4456,6 +4570,7 @@ def main():
             duration=args.duration,
             save=args.save,
             json_output=args.json,
+            speed_profile=args.speed,
         )
     elif args.command == "flush-memory":
         # argparse aliases: 旧拼写 "flush-memroy" 仍可工作，但会归一化为
@@ -4506,6 +4621,14 @@ def main():
         _cli_memmap(args)
     elif args.command == "watch":
         _cli_watch(args)
+    elif args.command == "configuration":
+        from mklink.device_configuration import run_cli
+
+        run_cli(args)
+    elif args.command == "peripherals":
+        from mklink.peripheral_cli import run
+
+        run(args)
     elif args.command == "superwatch":
         _cli_superwatch(args)
     elif args.command == "modbus":

@@ -62,6 +62,8 @@ async function updateResetVoltage(value: 1800 | 3300 | 5000, input: HTMLInputEle
         <option :value="1000000">1 MHz</option><option :value="2000000">2 MHz</option>
         <option :value="4000000">4 MHz</option><option :value="8000000">8 MHz</option>
         <option :value="10000000">10 MHz</option>
+        <option :value="20000000">20 MHz</option>
+        <option :value="30000000">30 MHz</option>
       </select>
     </label>
     <label>{{ tr('连接方式', 'Connection Mode') }}

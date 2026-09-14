@@ -18,7 +18,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from mklink.debug_speed import validate_clock_hz
 from starlette.concurrency import run_in_threadpool
 
 from mklink.cmsis_dap.backend import _pack_flm_address_offset
@@ -144,17 +145,25 @@ class PackInstallBody(BaseModel):
 
 class LocalImageBody(BaseModel):
     path: str
-    part_number: str
+    part_number: str = ""
     base_address: Optional[Union[str, int]] = None
 
 
-class JobBody(BaseModel):
+class ClockBody(BaseModel):
+    frequency: int = Field(default=1_000_000, strict=True)
+
+    @field_validator("frequency")
+    @classmethod
+    def calibrated_frequency(cls, value: int) -> int:
+        return validate_clock_hz(value)
+
+
+class JobBody(ClockBody):
     actions: List[str]
     image_id: Optional[str] = None
     preempt_ai: bool = True
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
-    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
     reset_voltage_mv: Optional[int] = None
@@ -164,13 +173,12 @@ class JobBody(BaseModel):
     hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
 
 
-class ReadMemoryBody(BaseModel):
+class ReadMemoryBody(ClockBody):
     address: Union[str, int]
     size: int = Field(..., ge=1, le=64 * 1024 * 1024)
     probe_id: Optional[str] = None
     target_part: str
     preempt_ai: bool = True
-    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
     chunk_sizes: List[int] = Field(default_factory=list, max_length=65536)
@@ -845,11 +853,11 @@ def _add_custom_flm_configuration(
                 FlashErrorCode.PROBE_BUSY,
                 "custom FLM configuration is in use by an online flash job",
             )
-        target = _exact_installed_target(services.catalog, part_number)
+        target = _exact_installed_target(services.catalog, part_number) if part_number.strip() else None
         return services.custom_flms.add(
             temporary,
             file_name,
-            target.part_number,
+            target.part_number if target else "__flm_preview__",
             (),
         )
 
@@ -865,7 +873,7 @@ def _remove_custom_flm_configuration(
                 FlashErrorCode.PROBE_BUSY,
                 "custom FLM configuration is in use by an online flash job",
             )
-        services.custom_flms.remove(part_number, algorithm_id)
+        services.custom_flms.remove(part_number or "__flm_preview__", algorithm_id)
 
 
 def _job_flash_algorithms(
@@ -1257,17 +1265,21 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     ) -> object:
         from mklink.hpm_config import is_hpm_target
 
-        target = await _blocking(_resolved_target, services.catalog, part_number)
-        if is_hpm_target(target.part_number) and source.suffix.casefold() != ".bin":
+        target = await _blocking(_resolved_target, services.catalog, part_number) if part_number.strip() else None
+        if target and is_hpm_target(target.part_number) and source.suffix.casefold() != ".bin":
             _raise_http(FlashError(
                 FlashErrorCode.FILE_FORMAT_ERROR,
                 "HPM ROM API only supports BIN firmware",
             ))
-        regions, fingerprint, _paths = await _blocking(
-            _target_flash_configuration, services, target.part_number
-        )
+        if target:
+            regions, fingerprint, _paths = await _blocking(
+                _target_flash_configuration, services, target.part_number
+            )
+        else:
+            regions = await _blocking(services.custom_flms.regions, "__flm_preview__") if services.custom_flms else ()
+            fingerprint = ()
         pack_flm_regions = ()
-        if captured_from_target and not is_hpm_target(target.part_number):
+        if captured_from_target and target and not is_hpm_target(target.part_number):
             regions, pack_flm_regions = await _blocking(
                 _captured_image_flash_regions,
                 services,
@@ -1280,8 +1292,15 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             source,
             regions,
             base_address=parsed_base,
+            require_flash_coverage=False,
         )
-        if is_hpm_target(target.part_number):
+        from mklink.cmsis_dap.images import ImageInspector
+        from mklink.cmsis_dap.models import ImageSegment
+        segments = inspection.segments or (ImageSegment(inspection.start, inspection.end),)
+        uncovered = [segment for segment in segments
+                     if not ImageInspector._segment_is_covered(segment, regions)]
+        preview_only = target is None or bool(uncovered)
+        if preview_only or is_hpm_target(target.part_number):
             from mklink.cmsis_dap.images import SectorCoverage
 
             coverage = SectorCoverage((), False)
@@ -1291,9 +1310,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 inspection.image_id,
                 regions,
             )
-        services.image_targets[inspection.image_id] = (
-            target.part_number.casefold(), fingerprint
-        )
+        if not preview_only:
+            services.image_targets[inspection.image_id] = (
+                target.part_number.casefold(), fingerprint
+            )
         if pack_flm_regions:
             services.image_flash_overrides[inspection.image_id] = (
                 tuple(regions), pack_flm_regions
@@ -1301,6 +1321,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         payload = _json_primitive(inspection, hide_paths=True)
         payload["sector_operations_available"] = coverage.sector_operations_available
         payload["sectors"] = _json_primitive(coverage.sectors)
+        payload["preview_only"] = preview_only
+        payload["uncovered_segments"] = _json_primitive(uncovered)
+        payload["validation_message"] = (
+            "HEX/BIN 解析成功；镜像地址超出已加载算法或器件的 Flash 范围，请核对器件和算法。"
+            if uncovered and regions else
+            "解析成功；请选择精确器件后重新检查，才能烧录。" if target is None else ""
+        )
         return payload
 
     @router.get("/probes")
@@ -1612,20 +1639,20 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return {"status": "removed", "pack_id": pack_id, "version": version}
 
     @router.get("/algorithms")
-    async def custom_flm_list(part_number: str) -> object:
+    async def custom_flm_list(part_number: str = "") -> object:
         from mklink.hpm_config import is_hpm_target
 
         if is_hpm_target(part_number):
             return []
         if services.custom_flms is None:
             return []
-        records = await _blocking(services.custom_flms.list, part_number)
+        records = await _blocking(services.custom_flms.list, part_number or "__flm_preview__")
         return [_custom_flm_payload(record) for record in records]
 
     @router.post("/algorithms")
     async def custom_flm_add(
         file: UploadFile = File(...),
-        part_number: str = Form(...),
+        part_number: str = Form(""),
     ) -> object:
         from mklink.hpm_config import is_hpm_target
 
@@ -1689,7 +1716,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     @router.post("/images/inspect")
     async def image_inspect(
         file: UploadFile = File(...),
-        part_number: str = Form(...),
+        part_number: str = Form(""),
         base_address: Optional[str] = Form(None),
         captured_from_target: bool = Form(False),
     ) -> object:

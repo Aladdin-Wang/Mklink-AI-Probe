@@ -101,14 +101,21 @@ def test_encoder_rejects_non_finite_double_fields(field, value):
         encode_systemview_events([{"kind": "task_info", "task_id": 1, field: value}])
 
 
-def test_length_prefixed_parser_events_use_a_generic_fixed_record():
+@pytest.mark.parametrize("event_id", [32, 35, 36, 511, 512, 4096])
+def test_length_prefixed_parser_events_use_a_generic_fixed_record(event_id):
     payload = encode_systemview_events([
-        {"kind": "raw_512", "event_id": 512, "t_ticks": 9, "t_us": 1.5}
+        {"kind": f"raw_{event_id}", "event_id": event_id, "t_ticks": 9, "t_us": 1.5}
     ])
 
     assert decode_systemview_events(payload) == [
-        {"kind": "raw_512", "t_ticks": 9, "t_us": 1.5, "event_id": 512}
+        {"kind": f"raw_{event_id}", "t_ticks": 9, "t_us": 1.5, "event_id": event_id}
     ]
+
+
+@pytest.mark.parametrize("event_id", [-1, 0, 31, 4097])
+def test_raw_event_ids_outside_parser_range_are_rejected(event_id):
+    with pytest.raises(ValueError, match="unknown SystemView event kind"):
+        encode_systemview_events([{"kind": f"raw_{event_id}"}])
 
 
 def test_recording_precedes_bounded_live_publication_and_keeps_all_events():

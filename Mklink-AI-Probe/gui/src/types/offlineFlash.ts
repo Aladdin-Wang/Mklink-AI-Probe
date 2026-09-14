@@ -54,6 +54,7 @@ export interface OfflineConfigPayload {
   unlock_before_download: boolean
   lock_after_download: boolean
   security_voltage_mv: number | null
+  option_bytes?: Record<string, number | string>
   algorithms: OfflineAlgorithmConfig[]
   firmwares: OfflineFirmwareConfig[]
 }

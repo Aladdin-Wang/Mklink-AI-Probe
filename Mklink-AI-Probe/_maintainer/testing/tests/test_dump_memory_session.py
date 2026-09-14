@@ -178,6 +178,10 @@ def test_cli_main_reports_unsafe_stream_request_as_failure(
 
 def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
     from mklink import bridge as bridge_module, cli
+    from unittest.mock import Mock
+    speed = Mock(return_value={'profile': 'medium', 'clock_hz': 10000000})
+    monkeypatch.setattr('mklink.debug_speed.apply_bridge_profile', speed)
+    monkeypatch.setattr('mklink.project_config.load_config', lambda root: {})
 
     class CliBridge(FakeBridge):
         def __init__(self, port):
@@ -206,6 +210,7 @@ def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
     )
 
     assert exit_code == 1
+    speed.assert_called_once_with(created[0], 'medium')
     writes = [call[1] for call in created[0].calls if call[0] == "write"]
     assert writes == [
         b"cmd.dump_memory(0x20000000, 4, 0.001)\n",

@@ -194,10 +194,26 @@ def test_v2_rejects_automatic_multi_round_downloads():
         parse_offline_config(payload)
 
 
-def test_offline_swd_clock_is_limited_to_10_mhz():
+def test_offline_swd_clock_rejects_unnamed_high_clock():
     payload = _config()
     payload["swd_clock_hz"] = 10_000_001
-    with pytest.raises(OfflineDownloadError, match="SWD clock.*10000000"):
+    with pytest.raises(OfflineDownloadError, match="SWD clock.*10 MHz"):
+        parse_offline_config(payload)
+
+
+@pytest.mark.parametrize("hz", [4_000_000, 10_000_000, 20_000_000, 30_000_000])
+def test_v4_offline_four_clock_profiles(hz):
+    payload = _config("V4")
+    payload["swd_clock_hz"] = hz
+    assert parse_offline_config(payload).swd_clock_hz == hz
+
+
+@pytest.mark.parametrize("model", ["V2", "V3"])
+def test_legacy_offline_models_keep_ten_mhz_limit(model):
+    payload = _config(model)
+    payload["auto_download_count"] = 1
+    payload["swd_clock_hz"] = 20_000_000
+    with pytest.raises(OfflineDownloadError, match="SWD clock"):
         parse_offline_config(payload)
 
 
@@ -510,11 +526,12 @@ def test_offline_security_rejects_unvalidated_target_and_accepts_board_voltage()
     with pytest.raises(OfflineDownloadError, match="1.8V, 3.3V, or 5V"):
         parse_offline_config(payload)
 
-def test_hpm_offline_script_uses_rom_api_without_flm():
+@pytest.mark.parametrize("model", ["V2", "V3", "V4"])
+def test_hpm_offline_script_uses_rom_api_without_flm(model):
     payload = {
-        "model": "V4",
+        "model": model,
         "script_name": "hpm-offline.py",
-        "auto_download_count": 2,
+        "auto_download_count": 1 if model == "V2" else 2,
         "wait_idcode_timeout_ms": 10000,
         "swd_clock_hz": 10000000,
         "target_part": "HPM5301xEGx",
@@ -538,6 +555,9 @@ def test_hpm_offline_script_uses_rom_api_without_flm():
     assert 'hpm.board("hpm5301evklite")' in script
     assert 'hpm.program("app.bin", 0x80000400)' in script
     assert "load.flm" not in script
+    assert "cmd.set_reset()" not in script
+    assert "cmd.cpu_run()" not in script
+    assert "cmd.set_beep_on()" in script
 
 
 def test_non_hpm_offline_config_rejects_hpm_board_settings():
@@ -1065,6 +1085,8 @@ def test_preview_keeps_local_hpm_bin_outside_cmsis_gate(tmp_path):
 
     assert response.status_code == 200, response.text
     assert 'hpm.program("hpm-app.bin", 0x80000400)' in response.json()["script"]
+    assert "cmd.set_reset()" not in response.json()["script"]
+    assert "cmd.cpu_run()" not in response.json()["script"]
 
 
 def test_trigger_api_runs_the_configured_v4_script_with_both_resources_leased(monkeypatch):

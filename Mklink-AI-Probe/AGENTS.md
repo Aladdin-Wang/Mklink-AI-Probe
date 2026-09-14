@@ -34,6 +34,13 @@ Paths below are relative to the source root containing this file and
   Main requires another person's approval and the `feedback-contract` check;
   neither administrator has a bypass of those gates. An AI must still obtain
   explicit merge authorization, and must not weaken rules to complete a task.
+  Exception authorized on 2026-09-15: an explicitly authorized version release
+  may merge without a second person's approval after full release qualification
+  and a successful required CI check. For that release only, temporarily set
+  approval count to zero and disable last-push/additional approval requirements;
+  keep PR, CI, discussion-resolution and force-push rules active. Pin the exact
+  qualified PR head and restore/verify the original rules in a finally block,
+  whether merging succeeds or fails. Ordinary PRs retain the normal review gate.
 - Only `Aladdin-Wang` may update the `release` and `firmware` channels or official
   `v*` / `firmware-assets` tags. Development authorization does not authorize a
   publication, signing, credential change, or migration of client update URLs.

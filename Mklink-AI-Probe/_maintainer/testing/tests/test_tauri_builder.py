@@ -469,7 +469,10 @@ def test_stable_product_version_and_signed_updater_are_configured():
     assert len(config["version"].split(".")) == 3
     assert all(part.isdigit() for part in config["version"].split("."))
     assert config["bundle"]["createUpdaterArtifacts"] is True
-    assert config["plugins"]["updater"]["endpoints"] == [GITEE_UPDATER_ENDPOINT]
+    assert config["plugins"]["updater"]["endpoints"] == [
+        "https://raw.githubusercontent.com/MicroKeen/Mklink-AI-Probe/release/latest.json",
+        GITEE_UPDATER_ENDPOINT,
+    ]
     assert config["plugins"]["updater"]["pubkey"].strip()
 
     assert 'tauri-plugin-updater = "2"' in cargo

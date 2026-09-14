@@ -359,6 +359,25 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('labels a standalone array snapshot by index and counts its elements', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      ;(window as any).__canvasLabels = []
+      runtime.probe.setArraySnapshot({
+        name: 'samples', type_name: 'float', element_size: 4,
+        start_index: 4, sequence: 1, values: [1, 5, 2, 3, 4, 6],
+      })
+      const labels = (window as any).__canvasLabels
+      expect(labels).toContain('index')
+      expect(labels).toContain('4')
+      expect(labels).toContain('9')
+      expect(labels).not.toContain('time (ms)')
+      expect(document.getElementById('pts-count')?.textContent).toBe('6 pts')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('stops SuperWatch transport without clearing the retained viewer state', async () => {
     const resetBinaryStream = vi.fn()
     ;(window as any).__waveformViewers.SuperWatch = { resetBinaryStream }
@@ -484,8 +503,8 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(bufferInput.max).toBe('1000000')
       expect(bufferInput.step).toBe('10000')
       expect(input.value).toBe('0.001')
-      expect(input.min).toBe('0.00001')
-      expect(input.step).toBe('0.00001')
+      expect(input.min).toBe('0.000001')
+      expect(input.step).toBe('0.000001')
       expect(runtime.probe.currentInterval()).toBe(0.001)
 
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
@@ -494,15 +513,15 @@ describe('WaveformViewer VOFA binary transport', () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: async () => ({ interval: 0.00001 }),
+        json: async () => ({ interval: 0.000001 }),
       })
       vi.stubGlobal('fetch', fetchMock)
       input.focus()
-      input.value = '0.00001'
+      input.value = '0.000001'
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.blur()
       runtime.probe.syncStatus({ state: 'running', interval: 0.001, items: [] })
-      expect(input.value).toBe('0.00001')
+      expect(input.value).toBe('0.000001')
       document.getElementById('btn-apply-interval')?.click()
       for (let turn = 0; turn < 6; turn++) await Promise.resolve()
 
@@ -510,11 +529,11 @@ describe('WaveformViewer VOFA binary transport', () => {
         '/api/dash/superwatch/interval',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ interval: 0.00001 }),
+          body: JSON.stringify({ interval: 0.000001 }),
         }),
       )
-      expect(runtime.probe.currentInterval()).toBe(0.00001)
-      expect(input.value).toBe('0.00001')
+      expect(runtime.probe.currentInterval()).toBe(0.000001)
+      expect(input.value).toBe('0.000001')
       expect(runtime.probe.collectionState().state).toBe('running')
     } finally {
       runtime.cleanup()
@@ -2112,7 +2131,7 @@ describe('VOFA viewer hot path source guard', () => {
   })
 
   it('stops collection directly and surfaces stop failures inline', () => {
-    const stopHandler = viewerSource.match(/document\.getElementById\('btn-stop'\)\.addEventListener[\s\S]*?\n}\);/)?.[0] ?? ''
+    const stopHandler = viewerSource.match(/function stopCollection\(\)[\s\S]*?\n}/)?.[0] ?? ''
     expect(stopHandler).not.toContain('confirm(')
     expect(stopHandler).toContain('showControlError')
   })
@@ -3010,6 +3029,155 @@ describe('VOFA viewer typed-ring runtime', () => {
     }
     },
   )
+
+  it('rearms an enabled SuperWatch trigger with detail after every acquisition reset', async () => {
+    mocks.useBinaryStream.mockReturnValue({
+      ...mocks.binary, waveformBatch: shallowRef(null), envelope: shallowRef(null),
+      telemetry: shallowRef(null), state: shallowRef({ phase: 'stopped' }),
+      error: shallowRef(null), superwatchMetadata: shallowRef(null),
+    })
+    const runtime = await loadRttViewerRuntime('SuperWatch', 32)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      const detail = vi.fn()
+      runtime.viewer.setBinaryDetailRequester(detail)
+      Object.assign(runtime.probe.trigger, { source: 'A', mode: 'single', preTriggerSamples: 2 })
+      document.getElementById('trigger-enable-btn')!.click()
+      for (let run = 0; run < 2; run++) {
+        runtime.probe.syncStatus({ state: 'running' })
+        runtime.viewer.resetBinaryStream()
+        expect(runtime.probe.trigger.state).toBe('armed')
+        expect(detail).toHaveBeenLastCalledWith(true)
+        expect(runtime.viewer.acceptBinaryBatch({
+          sequence: 1n, timestampNs: 5_000_000n, itemCount: 5, channelCount: 1,
+          layout: 'sample-major-float32', values: Float32Array.of(-2, -1, 1, 2, 3).buffer,
+          times: Float64Array.of(1, 2, 3, 4, 5).buffer,
+        })).toBe(true)
+        expect(runtime.probe.trigger.state).toBe('done')
+        expect(detail).toHaveBeenLastCalledWith(false)
+        expect(runtime.probe.fields().A.ringBuf.toArray().map((p: any) => p.y)).toEqual([-2, -1, 1, 2, 3])
+        const capturedRange = runtime.probe.fullTimeRange()
+        expect(capturedRange.tMax - capturedRange.tMin).toBeCloseTo(0.004)
+        runtime.viewer.acceptBinarySummary({
+          sequence: 99n, channelCount: 1, latestTimeMs: 9_000,
+          bufferStartMs: 0, bufferEndMs: 9_000,
+          latestValues: Float32Array.of(99).buffer,
+        })
+        runtime.viewer.renderBinaryEnvelope({ invalid: 'late pending render' }, true)
+        expect(runtime.probe.fullTimeRange()).toEqual(capturedRange)
+        expect(runtime.probe.fields().A.ringBuf.count).toBe(5)
+        expect(runtime.viewer.getBinaryVisibleRange()).toBeNull()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        expect(runtime.probe.collectionState().state).toBe('stopped')
+        expect(fetch).toHaveBeenCalledWith('/api/dash/superwatch/stop', { method: 'POST' })
+      }
+      document.getElementById('trigger-enable-btn')!.click()
+      runtime.viewer.resetBinaryStream()
+      expect(runtime.probe.trigger.state).toBe('idle')
+      expect(detail).toHaveBeenLastCalledWith(false)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('freezes 16 channels at 100 pre + crossing + 100 post samples and retains them if stop fails', async () => {
+    mocks.useBinaryStream.mockReturnValue({
+      ...mocks.binary, waveformBatch: shallowRef(null), envelope: shallowRef(null),
+      telemetry: shallowRef(null), state: shallowRef({ phase: 'stopped' }),
+      error: shallowRef(null), superwatchMetadata: shallowRef(null),
+    })
+    const runtime = await loadRttViewerRuntime('SuperWatch', 32)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      runtime.viewer.configureBinaryChannels(Array.from({ length: 16 }, (_, i) => ({ name: `wave[${i}]` })))
+      Object.assign(runtime.probe.trigger, { source: 'wave[0]', mode: 'single', preTriggerSamples: 100 })
+      document.getElementById('trigger-enable-btn')!.click()
+      runtime.probe.syncStatus({ state: 'running' })
+      runtime.viewer.resetBinaryStream()
+      let failStop = true
+      vi.mocked(fetch).mockImplementation(async url => {
+        if (String(url).endsWith('/stop') && failStop) {
+          failStop = false
+          return { ok: false, status: 503, json: async () => ({ detail: 'stop failed' }) } as Response
+        }
+        return { ok: true, json: async () => ({}) } as Response
+      })
+      const send = (sequence: bigint, first: number, count: number) => runtime.viewer.acceptBinaryBatch({
+        sequence, timestampNs: BigInt(first + count) * 1_000_000n, itemCount: count, channelCount: 16,
+        layout: 'sample-major-float32',
+        values: Float32Array.from({ length: count * 16 }, (_, i) => first + Math.floor(i / 16) - 199.5 + (i % 16) * 1000).buffer,
+        times: Float64Array.from({ length: count }, (_, i) => first + i).buffer,
+      })
+      send(1n, 0, 200)
+      expect(runtime.probe.trigger.state).toBe('armed')
+      send(2n, 200, 110)
+      expect(runtime.probe.trigger.state).toBe('done')
+      send(3n, 310, 100)
+      for (let channel = 0; channel < 16; channel++) {
+        const ring = runtime.probe.fields()[`wave[${channel}]`].ringBuf
+        expect(ring.count).toBe(201)
+        expect(ring.valueAt(0)).toBe(-99.5 + channel * 1000)
+        expect(ring.valueAt(200)).toBe(100.5 + channel * 1000)
+      }
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(runtime.probe.collectionState()).toMatchObject({ state: 'paused', paused: true })
+      expect(document.getElementById('conn-status')?.textContent).toContain('stop failed')
+      document.getElementById('btn-stop')!.click()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(runtime.probe.collectionState().state).toBe('stopped')
+      expect(runtime.probe.fields()['wave[0]'].ringBuf.count).toBe(201)
+      const save = vi.fn()
+      const previousSave = (window as any).__MKLINK_SAVE_FILE__
+      ;(window as any).__MKLINK_SAVE_FILE__ = save
+      try {
+        runtime.probe.exportCSV()
+        expect(save).toHaveBeenCalledOnce()
+        const rows = String(save.mock.calls[0][1]).split('\n')
+        expect(rows).toHaveLength(202)
+        expect(rows[0].split(',')).toHaveLength(17)
+        const channelZero = rows[0].split(',').indexOf('wave[0]')
+        expect(Number(rows[1].split(',')[channelZero])).toBe(-99.5)
+        expect(Number(rows[201].split(',')[channelZero])).toBe(100.5)
+      } finally {
+        ;(window as any).__MKLINK_SAVE_FILE__ = previousSave
+      }
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it.each(['time', 'value'])('uses the same SuperWatch history for both %s cursor readouts', async mode => {
+    mocks.useBinaryStream.mockReturnValue({
+      ...mocks.binary, waveformBatch: shallowRef(null), envelope: shallowRef(null),
+      telemetry: shallowRef(null), state: shallowRef({ phase: 'stopped' }),
+      error: shallowRef(null), superwatchMetadata: shallowRef(null),
+    })
+    const runtime = await loadRttViewerRuntime('SuperWatch', 32)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      runtime.viewer.acceptBinarySummary({
+        sequence: 1n, timestampNs: 8_000_000_000n,
+        collectedItemCount: 8, bufferedItemCount: 8, channelCount: 1,
+        bufferStartMs: 0, bufferEndMs: 8_000, latestTimeMs: 8_000,
+        latestValues: Float32Array.of(99).buffer,
+      })
+      Object.assign(runtime.probe.cursor, { enabled: true, mode, a: { t: 1 }, b: { t: 2 } })
+      runtime.viewer.renderBinaryEnvelope({
+        type: 'render-envelope', mode: 'min-max-v1', timestampKind: 'sample-milliseconds',
+        requestId: 1, pixelWidth: 800, channelCount: 1, pointCount: 3,
+        candidateSampleCount: 3, times: Float64Array.of(0, 1_000, 2_000).buffer,
+        timeIndices: Uint32Array.of(0, 1, 2).buffer,
+        values: Float32Array.of(0, 10, 30).buffer,
+        channelOffsets: Uint32Array.of(0, 3).buffer,
+      })
+      expect(runtime.probe.fields().A.ringBuf.count).toBe(1)
+      expect(document.getElementById('cursor-readout')?.textContent).toContain('A d=20.00')
+      expect(document.getElementById('cursor-measure-panel')?.textContent)
+        .toContain(mode === 'time' ? 'd=20.00' : 'A:10.00 B:30.00 dV:20.00')
+    } finally {
+      runtime.cleanup()
+    }
+  })
 
   it('renders wrapped multi-channel cursor data without copying either ring', async () => {
     const runtime = await loadRttViewerRuntime()

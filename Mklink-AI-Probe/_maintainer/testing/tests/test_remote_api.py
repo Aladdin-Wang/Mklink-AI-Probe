@@ -24,6 +24,27 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
+    from unittest.mock import Mock
+    from mklink.project_config import load_config
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._bridge = SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=30000000))
+    device.set_debug_speed = Mock(return_value={'profile':'ultra','clock_hz':30000000,'profile_confirmed':True})
+    app.state.mklink_state['device'] = device
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=['superwatch']), TestClient(app) as client:
+        options=client.get('/api/device/debug-speed').json()
+        assert options['profiles']=={'low':4000000,'medium':10000000,'high':20000000,'ultra':30000000}
+        assert options['default']=='medium'
+        result=client.post('/api/device/debug-speed',json={'profile':'ultra'})
+        assert result.status_code==200 and result.json()['stopped']==['superwatch']
+        assert load_config(str(tmp_path))['debug_speed']=='ultra'
+        device.set_debug_speed.side_effect=ValueError('Probe firmware does not confirm this JTAG profile')
+        result=client.post('/api/device/debug-speed',json={'profile':'high'})
+        assert result.status_code==400
+        assert load_config(str(tmp_path))['debug_speed']=='ultra'
+
+
 def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
     device, _ = _connected_symbol_device(tmp_path)
     device.flash = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("verify failed"))
@@ -266,6 +287,23 @@ def test_config_api_rejects_swd_clock_above_10_mhz(tmp_path):
 
     assert response.status_code == 422
     assert "10 MHz" in response.json()["detail"]
+
+
+def test_config_clock_applies_before_persisting_and_rejection_keeps_old_value(tmp_path):
+    from unittest.mock import Mock
+    from mklink.flash import FlashError
+    from mklink.project_config import load_config
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._flash = SimpleNamespace(set_swd_clock=Mock())
+    app.state.mklink_state['device'] = device
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]), TestClient(app) as client:
+        assert client.put('/api/config', json={'swd_clock': '4000000'}).status_code == 200
+        device._flash.set_swd_clock.assert_called_once_with(4000000)
+        assert load_config(str(tmp_path))['swd_clock'] == '4000000'
+        device._flash.set_swd_clock.side_effect = FlashError('clock rejected')
+        assert client.put('/api/config', json={'swd_clock': '10000000'}).status_code == 422
+        assert load_config(str(tmp_path))['swd_clock'] == '4000000'
 
 
 def test_browser_symbol_upload_persists_in_a_controlled_project_directory(tmp_path):
@@ -1117,6 +1155,36 @@ def test_device_connect_closes_stale_hotplug_session_before_reconnect(tmp_path):
     assert connect.call_args.kwargs["port"] is None
     assert connect.call_args.kwargs["preferred_port"] is None
     assert connect.call_args.kwargs["initialize_target_now"] is False
+
+
+def test_connect_catalog_failure_closes_unpublished_device_and_allows_retry(tmp_path):
+    from mklink.remote.dashboards import get_managers
+
+    device, _ = _connected_symbol_device(tmp_path)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    state = app.state.mklink_state
+    manager = get_managers()['superwatch']
+    saved_connection = dict(state.get('last_device_connection') or {})
+    with patch.object(manager, '_runtime', None), patch.object(manager, '_device', None), patch(
+        'mklink.connect', return_value=device,
+    ), patch.object(device, 'close') as close, patch(
+        'mklink.device.initialize_target', return_value={},
+    ) as initialize, TestClient(app) as client:
+        with patch('mklink.peripheral_watch.load_catalog', side_effect=ValueError('Select an exact target_id')):
+            response = client.post('/api/device/connect', json={})
+        assert response.status_code == 400
+        assert response.json()['detail'] == 'Cannot restore peripheral selection: Select an exact target_id'
+        close.assert_called_once_with()
+        initialize.assert_not_called()
+        assert state['device'] is state['dispatcher'] is None
+        assert manager._device is None
+        assert dict(state.get('last_device_connection') or {}) == saved_connection
+        assert state['resource_manager'].get_status() == {}
+        assert client.get('/api/device/status').json()['connected'] is False
+        with patch('mklink.peripheral_watch.load_catalog', return_value=None):
+            assert client.post('/api/device/connect', json={}).status_code == 200
+        assert state['device'] is device
+        assert manager._device is device
 
 
 def test_device_parse_axf_forwards_explicit_elf_backend(tmp_path):

@@ -124,6 +124,7 @@ class SvdRegister:
     width: int = 32
     description: str = ""
     fields: list[dict] = field(default_factory=list)
+    watch_item: WatchItem | None = None
 
 
 def parse_timestamped_read_ram_response(response: str) -> TimestampedRead:
@@ -279,6 +280,13 @@ def sample_blocks(
         for item in block.items:
             offset = item.address - block.address
             data = parsed.data[offset:offset + item.size]
+            if "bit_width" in item.metadata:
+                if len(data) != item.size:
+                    raise ValueError(f"Incomplete peripheral read: {item.name}")
+                point[item.name] = (
+                    int.from_bytes(data, "little") >> item.metadata["bit_offset"]
+                ) & ((1 << item.metadata["bit_width"]) - 1)
+                continue
             point[item.name] = decode_value(
                 data,
                 item.type_name,
@@ -352,19 +360,18 @@ def poll_blocks_dumpmem(
 ) -> list[dict]:
     """Collect device-timestamped samples through the shared binary session."""
     import math
-    from mklink.dump_memory import DumpMemoryStreamSession, decode_frame_to_points, FLAG_REGION_ERROR, DumpMemoryReadError
+    from mklink.dump_memory import (
+        DumpMemoryStreamSession,
+        FLAG_REGION_ERROR,
+        DumpMemoryReadError,
+    )
 
     if not blocks:
         return []
     if not math.isfinite(period) or period <= 0:
         raise ValueError("SuperWatch dump period must be finite and greater than zero")
-    block_addresses = [
-        (block.address, block.size, [
-            (item.name, item.type_name, item.address - block.address,
-             item.size, item.scalar_kind, item.enum_values)
-            for item in block.items
-        ]) for block in blocks
-    ]
+    channels = [item for block in blocks for item in block.items]
+    decoder = compile_frame_decoder(channels, blocks)
     bridge = _open_sampling_bridge(port)
     session = None
     points = []
@@ -381,8 +388,18 @@ def poll_blocks_dumpmem(
             for frame in frames:
                 if int(frame.get("flags", 0)) & FLAG_REGION_ERROR:
                     raise DumpMemoryReadError("SuperWatch target memory read failed (region error)")
-                decoded, origin_us = decode_frame_to_points(frame, block_addresses, origin_us)
-                points.extend(decoded)
+                values = decoder.decode(frame)
+                if values is None:
+                    raise DumpMemoryReadError("Incomplete SuperWatch register sample")
+                if origin_us is None:
+                    origin_us = frame["timestamp_us"]
+                points.append(
+                    {
+                        "_t": (frame["timestamp_us"] - origin_us) / 1_000_000,
+                        "timestamp_us": frame["timestamp_us"],
+                        **dict(zip(decoder.channel_names, values)),
+                    }
+                )
             if not frames:
                 if not received and clock() - start > max(3.0, period * 2):
                     raise TimeoutError("No SuperWatch dump-memory samples received")
@@ -432,6 +449,9 @@ def resolve_watch_items(
         reg_key = raw_name.upper().replace("->", ".")
         svd_match = next((r for k, r in svd_registers.items() if k.upper() == reg_key), None)
         if svd_match:
+            if svd_match.watch_item is not None:
+                items.append(svd_match.watch_item)
+                continue
             items.append(
                 WatchItem(
                     name=svd_match.name,
@@ -470,7 +490,11 @@ def resolve_watch_items(
             continue
         from mklink.registers import resolve_register
 
+        if svd_registers:
+            raise KeyError(f"Unknown or excluded peripheral: {raw_name}")
         reg = resolve_register(raw_name)
+        if reg.address in (0xE000E010, 0xE000EDF0):
+            raise ValueError(f"{reg.name} has read side effects and cannot be polled")
         items.append(
             WatchItem(
                 name=reg.name,
@@ -516,34 +540,26 @@ def _normalize_names(names: list[str]) -> list[str]:
 
 
 def load_svd_registers(path: str) -> dict[str, SvdRegister]:
-    tree = ET.parse(path)
-    root = tree.getroot()
-    regs: dict[str, SvdRegister] = {}
-    for peripheral in root.findall(".//peripheral"):
-        pname = _xml_text(peripheral, "name")
-        base = int(_xml_text(peripheral, "baseAddress", "0"), 0)
-        for reg in peripheral.findall("./registers/register"):
-            rname = _xml_text(reg, "name")
-            offset = int(_xml_text(reg, "addressOffset", "0"), 0)
-            width = int(_xml_text(reg, "size", "32"), 0)
-            full_name = f"{pname}.{rname}"
-            fields = []
-            for field_el in reg.findall("./fields/field"):
-                fields.append(
-                    {
-                        "name": _xml_text(field_el, "name"),
-                        "bit_offset": int(_xml_text(field_el, "bitOffset", "0"), 0),
-                        "bit_width": int(_xml_text(field_el, "bitWidth", "1"), 0),
-                    }
-                )
-            regs[full_name] = SvdRegister(
-                name=full_name,
-                address=base + offset,
-                width=width,
-                description=_xml_text(reg, "description", ""),
-                fields=fields,
+    from .peripheral_watch import load_catalog
+
+    return catalog_registers(load_catalog(svd=path))
+
+
+def catalog_registers(catalog):
+    return (
+        {
+            name: SvdRegister(
+                name,
+                item.address,
+                item.size * 8,
+                item.metadata.get("description", ""),
+                watch_item=item,
             )
-    return regs
+            for name, item in catalog.items.items()
+        }
+        if catalog
+        else {}
+    )
 
 
 def _xml_text(parent: ET.Element, tag: str, default: str = "") -> str:
@@ -552,38 +568,24 @@ def _xml_text(parent: ET.Element, tag: str, default: str = "") -> str:
 
 
 def find_project_svd(project_root: str = ".") -> str | None:
-    candidates: list[str] = []
-    keil_json = os.path.join(project_root, ".mklink", "keil_project.json")
-    if os.path.isfile(keil_json):
-        try:
-            info = json.loads(open(keil_json, "r", encoding="utf-8").read())
-            pack_id = str(info.get("pack_id", ""))
-            device = str(info.get("device", ""))
-            flm_path = str(info.get("flm_path", ""))
-            if flm_path:
-                pack_root = os.path.dirname(os.path.dirname(flm_path))
-                candidates.extend(_find_svd_files(pack_root, device))
-            if pack_id:
-                candidates.extend(_find_svd_files(os.path.expanduser("~/AppData/Local/Arm/Packs"), device))
-        except Exception:
-            pass
-    candidates.extend(_find_svd_files(project_root, ""))
-    return candidates[0] if candidates else None
+    """Return only an explicitly selected local SVD, never a filename guess."""
+    from mklink.peripheral_watch import load_catalog, discover_svd_targets
 
-
-def _find_svd_files(root: str, device: str) -> list[str]:
-    if not root or not os.path.isdir(root):
-        return []
-    found: list[str] = []
-    device_key = device.lower()
-    for dirpath, _dirnames, filenames in os.walk(root):
-        for filename in filenames:
-            if not filename.lower().endswith(".svd"):
-                continue
-            path = os.path.join(dirpath, filename)
-            if not device_key or device_key in filename.lower() or "svd" in dirpath.lower():
-                found.append(path)
-    return found
+    catalog = load_catalog(project_root)
+    if catalog is None:
+        return None
+    if not catalog.selection.get("id"):
+        return catalog.selection["svd"]
+    matches = [
+        t
+        for t in discover_svd_targets(project_root)
+        if t.key == catalog.selection["id"] and not t.archive
+    ]
+    return (
+        str((matches[0].source.parent / matches[0].svd).resolve())
+        if len(matches) == 1
+        else None
+    )
 
 
 def build_inspector_tree(name: str, type_name: str, data: bytes, dwarf_info) -> dict:

@@ -272,13 +272,9 @@ def _register_health_tools(mcp: Any) -> None:
         conversation to fetch the latest release instead of reusing the cache.
         Subsequent health calls can use the default; this never installs updates.
         """
-        from importlib.metadata import version, PackageNotFoundError
         from mklink.toolchain import status as toolchain_status
-        from mklink.update_check import check_for_update
-        try:
-            ver = version("mklink")
-        except PackageNotFoundError:  # pragma: no cover
-            ver = "unknown"
+        from mklink.update_check import check_for_update, current_version
+        ver = current_version()
         return {
             "ok": True,
             "server": "mklink-ai-probe",
@@ -824,10 +820,12 @@ def _register_memory_tools(mcp: Any) -> None:
             return response
 
     @mcp.tool()
+    @_exclusive_hardware_tool
     def dump_memory(
         regions: list[dict],
         sample_count: int = 1,
         timeout: float = 10.0,
+        speed_profile: str | None = None,
     ) -> dict:
         """Capture a bounded number of complete dump-memory samples.
 
@@ -839,6 +837,8 @@ def _register_memory_tools(mcp: Any) -> None:
             regions: 1..8 closed objects of ``{"address": int, "size": int}``.
             sample_count: Complete one-shot samples to capture (default 1).
             timeout: Per-sample timeout in seconds, from 0.001 through 60.
+            speed_profile: Optional low/medium/high/ultra (4/10/20/30 MHz). When omitted,
+                retain set_debug_speed's selection; a new HPM session defaults to medium.
         """
         import math
         import secrets
@@ -909,6 +909,8 @@ def _register_memory_tools(mcp: Any) -> None:
             operation_id = f"op-{secrets.token_hex(8)}"
             samples = []
             with exclusive_dump_memory_capture():
+                if speed_profile is not None:
+                    dev.set_debug_speed(speed_profile)
                 for sample_index in range(sample_count):
                     try:
                         payloads = read_dump_memory_regions_once(
@@ -975,6 +977,67 @@ def _register_memory_tools(mcp: Any) -> None:
 
 
 def _register_variable_tools(mcp: Any) -> None:
+    @mcp.tool()
+    def configuration_script(
+        part_number: str, changes: dict[str, int], model: str = "V4"
+    ) -> dict:
+        """Generate a guarded STM32F103 USER/DATA/WRP offline script; no hardware writes. RDP is excluded."""
+        from .device_configuration import configuration_script as generate
+
+        return generate(part_number, changes, model)
+
+    @mcp.tool()
+    def configuration_description(part_number: str, model: str = "V4") -> dict:
+        """Describe supported option-byte/OTP fields without opening a device."""
+        from .device_configuration import describe_configuration
+
+        return describe_configuration(part_number, model)
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def read_configuration(part_number: str, model: str = "V4") -> dict:
+        """Read a bounded public configuration snapshot; never program OTP or change protection."""
+        from .device_configuration import read_configuration as read
+
+        return read(_connected_device(), part_number, model)
+
+    @mcp.tool()
+    def peripheral_targets(project_root: str = ".", query: str = "") -> dict:
+        """List installed peripheral chip descriptions without opening hardware."""
+        from .peripheral_watch import discover_svd_targets
+
+        return {
+            "targets": [
+                t.public()
+                for t in discover_svd_targets(project_root)
+                if query.casefold() in t.target.casefold()
+            ]
+        }
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def select_peripherals(target_id: str = "", chip: str = "", svd: str = "") -> dict:
+        """Select one exact chip ID/name or SVD; shared with CLI/Web in this project."""
+        return _connected_device().select_peripherals(
+            target_id=target_id or None, chip=chip or None, svd=svd or None
+        )
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def list_peripherals(query: str = "") -> dict:
+        """List readable register and bit-field names in the selected catalog."""
+        return _connected_device().peripheral_catalog(query)
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def capture_peripherals(
+        names: list[str], duration: float = 1.0, period: float = 0.01
+    ) -> dict:
+        """Capture selected register/field channels; <=15 regions and <=30 seconds."""
+        return _connected_device().capture_peripherals(
+            names, duration=duration, period=period
+        )
+
     from mklink.mcp_stream_bridge import publish_mcp_superwatch
 
     @mcp.tool()
@@ -2087,6 +2150,35 @@ def build_server() -> Any:
     _register_flush_tools(mcp)
     _register_modbus_tools(mcp)
     _register_serial_tools(mcp)
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def set_debug_speed(profile: str) -> dict:
+        """Set low=4 MHz, medium=10 MHz, high=20 MHz, ultra=30 MHz. Stop streams first.
+
+        HPM JTAG and ARM SWD use the same named profiles with matching probe
+        firmware. High/ultra require an exact interface/profile acknowledgement;
+        legacy firmware cannot silently claim high-speed timing. Acknowledgement
+        identifies the selected kernel, not the exact target or wiring stability.
+        """
+        return _connected_device().set_debug_speed(profile)
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
+    def measure_dump_memory(regions: list[dict], duration: float = 3.0,
+                            period: float = 0.000001, speed_profile: str | None = None) -> dict:
+        """Measure periodic mem_dump throughput without SuperWatch.
+
+        At most 15 {address,size} regions, 4096 bytes total, 0.5..30 seconds.
+        Returns sample frequency, payload throughput, interval percentiles and
+        integrity counters. speed_profile is low/medium/high/ultra (4/10/20/30 MHz).
+        Omit it to retain the session's profile (new HPM session defaults to 10 MHz).
+        """
+        from mklink.dump_benchmark import measure
+        if not isinstance(regions, list) or any(not isinstance(r, dict) or set(r) != {'address','size'} for r in regions):
+            raise ValueError('regions must be address/size objects')
+        return measure(_connected_device(), [(r['address'],r['size']) for r in regions],
+                       duration=duration, period=period, speed_profile=speed_profile)
 
     # Phase 4: symbol search/typeinfo, SKILL.md methodology realignment,
     # and test_mcp_server.py unit tests.

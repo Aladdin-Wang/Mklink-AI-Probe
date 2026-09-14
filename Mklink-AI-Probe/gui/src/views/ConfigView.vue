@@ -107,8 +107,8 @@ async function saveLocalConfig() {
   const rawClock = String(config.value.swd_clock ?? '').trim()
   if (rawClock) {
     const clock = Number(rawClock)
-    if (!Number.isInteger(clock) || clock < 1 || clock > 10_000_000) {
-      toast.error(tr('SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数', 'SWD clock must be an integer from 1 Hz to 10 MHz'))
+    if (!Number.isInteger(clock) || !(clock >= 1 && clock <= 10_000_000 || clock === 20_000_000 || clock === 30_000_000)) {
+      toast.error(tr('SWD 时钟支持 1 Hz 至 10 MHz，或 20 MHz、30 MHz 档位', 'SWD clock supports 1 Hz to 10 MHz, or the 20 MHz / 30 MHz profiles'))
       return
     }
   }
@@ -482,7 +482,7 @@ onUnmounted(() => {
             v-model="config.swd_clock"
             type="number"
             min="1"
-            max="10000000"
+            max="30000000"
             step="1"
             class="form-input"
             data-testid="swd-clock"

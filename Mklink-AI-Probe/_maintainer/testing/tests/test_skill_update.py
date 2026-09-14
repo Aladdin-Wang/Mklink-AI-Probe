@@ -97,8 +97,8 @@ def test_manifest_sources_prefer_github_and_fall_back_to_gitee(
 ):
     github, gitee = updater.DEFAULT_MANIFEST_URLS
     assert github == (
-        "https://raw.githubusercontent.com/Aladdin-Wang/"
-        "Mklink-AI-Probe/updates/latest.json"
+        "https://raw.githubusercontent.com/MicroKeen/"
+        "Mklink-AI-Probe/release/latest.json"
     )
     assert gitee == (
         "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"
@@ -280,6 +280,7 @@ def test_copy_installed_skill_removes_legacy_maintainer_context(
     )
 
     assert not any(path.exists() for path in legacy_files)
+    assert not (root / "mklink.egg-info").exists()
     assert user_file.read_text(encoding="utf-8") == "keep"
 
 

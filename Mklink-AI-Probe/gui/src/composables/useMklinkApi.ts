@@ -174,6 +174,10 @@ export function useMklinkApi() {
     await refreshStatus()
   }
 
+  async function setDebugSpeed(profile: string): Promise<{ clock_hz: number; profile_confirmed: boolean }> {
+    return api('/api/device/debug-speed', { method: 'POST', body: JSON.stringify({ profile }) })
+  }
+
   async function refreshStatus(): Promise<DeviceStatus> {
     try {
       const s = await api<DeviceStatus>('/api/device/status')
@@ -336,6 +340,7 @@ export function useMklinkApi() {
     downloadProbeFirmware,
     connectDevice,
     disconnectDevice,
+    setDebugSpeed,
     refreshStatus,
     flashDevice,
     resetDevice,

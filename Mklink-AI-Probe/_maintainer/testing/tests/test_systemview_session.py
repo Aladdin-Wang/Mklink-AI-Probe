@@ -91,6 +91,26 @@ def test_systemview_session_uses_recorder_handshake_and_control_commands():
     assert bridge.state is DeviceState.READY
 
 
+@pytest.mark.parametrize("chunks", [
+    [b" SV\x06\x07\x20\xaa"],
+    [b" ", b"S", b"V", b"\x06", b"\x07\x20\xaa"],
+    [b" SV\x06", b"\x07\x20\xaa"],
+])
+def test_recorder_handshake_accepts_pika_prompt_space_without_trimming_payload(chunks):
+    bridge = RecorderBridge()
+    incoming = iter(chunks)
+    bridge.drain_stream_bytes = lambda: next(incoming, b"")
+    assert SystemViewSession(bridge)._read_recorder_hello(timeout=1) == b"\x20\xaa"
+
+
+@pytest.mark.parametrize("hello", [b"  SV\x06\x07", b"XSV\x06\x07", b" NOPE"])
+def test_recorder_handshake_rejects_other_prefixes(hello):
+    bridge = RecorderBridge()
+    bridge.stream.extend(hello)
+    with pytest.raises(RuntimeError, match="前缀"):
+        SystemViewSession(bridge)._read_recorder_hello(timeout=1)
+
+
 def test_systemview_stop_does_not_write_after_transport_error():
     bridge = MKLinkSerialBridge("TEST_SYSTEMVIEW_STOP_TRANSPORT_ERROR")
     writes = []

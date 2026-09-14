@@ -13,7 +13,8 @@
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
 | 安全保护 | `security_status` · `security_lock` · `security_unlock` | 先查精确型号能力；加锁前强制校验固件，解锁强制确认永久数据丢失，操作后按明确电压断电复位 |
 | 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 快照 regions 最多 16 项/总计 4096B；flush 单批最多 12 KiB/8 项，超额由调用方串行分批 |
-| 变量/寄存器 | `read_variable` · `write_variable` · `read_register` | 需先 connect(axf=) 或 load_symbols |
+| 变量/寄存器 | `read_variable` · `write_variable` · `read_register` | 变量需 AXF；外设字段使用项目所选目录，无需 AXF |
+| 外设目录/采集（0.2.1 开发） | `peripheral_targets` · `select_peripherals` · `list_peripherals` · `capture_peripherals` | 与 CLI/Web 共用项目选择，采集 ≤30 秒、≤15 区域 |
 | 调试 | `halt` · `resume` · `step` · `set_breakpoint` · `clear_breakpoint` · `clear_all_breakpoints` · `read_core_registers` | FPB 硬件断点 |
 | 符号 | `load_symbols` · `symbols_status` · `memory_map` | DWARF 段表 |
 | RTT | `rtt_start`(mode=auto/dynamic/static) · `rtt_read` · `rtt_write` · `rtt_stop` · `capture_rtt` | mode 决策见 [rtt-static-mode.md](rtt-static-mode.md) |

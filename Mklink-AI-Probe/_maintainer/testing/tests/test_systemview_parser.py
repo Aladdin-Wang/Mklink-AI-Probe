@@ -7,6 +7,7 @@ from mklink.systemview_parser import (
     EVTID_TASK_STOP_EXEC,
     SystemViewParser,
 )
+import pytest
 
 
 def _encode_u32(value: int) -> bytes:
@@ -16,6 +17,30 @@ def _encode_u32(value: int) -> bytes:
         value >>= 7
     encoded.append(value)
     return bytes(encoded)
+
+
+@pytest.mark.parametrize('chunk_size', [1, 2, 7, 4096])
+def test_freertos_api_events_and_64bit_systime_preserve_packet_boundaries(chunk_size):
+    low, high = 123456, 2
+    packets = (
+        bytes((13,)) + _encode_u32(low) + _encode_u32(high) + _encode_u32(2576)
+        + bytes((36, 0)) + _encode_u32(5)  # vTaskDelayUntil, no payload
+        + bytes((35, 2)) + _encode_u32(1000) + _encode_u32(9)  # vTaskDelay
+        + _encode_u32(128) + bytes((1, 7, 3))  # length-prefixed RTOS API
+        + bytes((17, 1))  # idle, timestamp only
+    )
+    parser = SystemViewParser()
+    events = []
+    for offset in range(0, len(packets), chunk_size):
+        events.extend(parser.feed(packets[offset:offset + chunk_size]))
+    assert [event['kind'] for event in events] == ['systime_us', 'raw_36', 'raw_35', 'raw_128', 'idle']
+    assert events[0]['systime'] == (high << 32) | low
+    assert events[0]['delta_ticks'] == 2576
+    assert events[1]['payload_hex'] == ''
+    assert events[2]['payload_hex'] == 'e807'
+    assert events[-1]['t_ticks'] == 2594
+    assert parser.dropped_bytes == parser.dropped_packets == 0
+    assert not parser._buf
 
 
 def test_task_info_uses_segger_task_id_priority_name_order():

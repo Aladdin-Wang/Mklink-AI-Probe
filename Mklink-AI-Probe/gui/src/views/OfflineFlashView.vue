@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
+import DeviceConfigurationPanel from '../components/DeviceConfigurationPanel.vue'
 import { provideConfirmation } from '../composables/useConfirmation'
 import { useOfflineFlashApi } from '../composables/useOfflineFlashApi'
 import { useOnlineFlashApi } from '../composables/useOnlineFlashApi'
@@ -135,6 +136,7 @@ const selectionWarning = computed(() => unavailableSelectedAlgorithms.value.leng
     `The flash sequence uses unavailable algorithms: ${unavailableSelectedAlgorithms.value.map(item => item.file_name).join(', ')}. Choose a local FLM replacement or select another algorithm.`,
   )
   : '')
+const optionByteChanges = ref<Record<string, number | string>>({})
 const securityRequested = computed(() => unlockBeforeDownload.value || lockAfterDownload.value)
 const securityReady = computed(() => (
   !securityRequested.value
@@ -147,12 +149,13 @@ const canBuild = computed(() => (
   !!effectiveModel.value
   && !!disk.value?.available
   && securityReady.value
-  && firmwares.value.length > 0
-  && (hpmMode.value
+  && ((firmwares.value.length === 0 && Object.keys(optionByteChanges.value).length > 0
+    && !securityRequested.value && !eraseAllBeforeDownload.value)
+  || (firmwares.value.length > 0 && (hpmMode.value
     ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && item.format === 'bin' && !!item.base_address)
     : selectedAlgorithms.value.length > 0
       && unavailableSelectedAlgorithms.value.length === 0
-      && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id && algorithms.value.some(algorithm => algorithm.id === item.algorithm_id)))
+      && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id && algorithms.value.some(algorithm => algorithm.id === item.algorithm_id)))))
 ))
 const canTrigger = computed(() => (
   !!disk.value?.available
@@ -162,7 +165,7 @@ const canTrigger = computed(() => (
 ))
 
 watch(
-  [model, scriptName, automaticCount, idcodeTimeout, swdClock, targetPart, hpmBoard, algorithms, firmwares, eraseAllBeforeDownload, unlockBeforeDownload, lockAfterDownload, securityVoltageMv],
+  [model, scriptName, automaticCount, idcodeTimeout, swdClock, targetPart, hpmBoard, algorithms, firmwares, eraseAllBeforeDownload, unlockBeforeDownload, lockAfterDownload, securityVoltageMv, optionByteChanges],
   () => {
     preview.value = null
     deployedScriptName.value = ''
@@ -264,6 +267,7 @@ async function refreshSecurityCapability(): Promise<void> {
   answerConfirmation(false)
   unlockBeforeDownload.value = false
   lockAfterDownload.value = false
+  optionByteChanges.value = {}
   securityCapability.value = null
   securityLoading.value = false
   if (!model.value || !targetPart.value || hpmMode.value) return
@@ -353,9 +357,12 @@ async function toggleLock(event: Event): Promise<void> {
   ))) lockAfterDownload.value = true
 }
 
+let targetSearchRevision = 0
 async function searchTargets(openSuggestions = true): Promise<void> {
+  const revision = ++targetSearchRevision
   const query = targetQuery.value.trim()
   if (!query) {
+    targetBusy.value = false
     targets.value = []
     targetSuggestionsOpen.value = false
     activeTargetSuggestion.value = -1
@@ -364,15 +371,18 @@ async function searchTargets(openSuggestions = true): Promise<void> {
   targetBusy.value = true
   clearError()
   try {
-    targets.value = await online.searchTargets(query, { limit: 30 })
+    const results = await online.searchTargets(query, { limit: 30 })
+    if (revision !== targetSearchRevision) return
+    targets.value = results
     activeTargetSuggestion.value = targets.value.length ? 0 : -1
     targetSuggestionsOpen.value = openSuggestions && targets.value.length > 0
   }
-  catch (value) { setError(value) }
-  finally { targetBusy.value = false }
+  catch (value) { if (revision === targetSearchRevision) setError(value) }
+  finally { if (revision === targetSearchRevision) targetBusy.value = false }
 }
 
 function scheduleTargetSearch(): void {
+  targetSearchRevision++
   if (targetSearchTimer !== null) clearTimeout(targetSearchTimer)
   activeTargetSuggestion.value = -1
   targetSearchTimer = setTimeout(() => { void searchTargets(true) }, 150)
@@ -425,6 +435,7 @@ function mergeAlgorithms(items: OfflineAlgorithmCandidate[]): void {
 }
 
 async function addTargetAlgorithms(target: TargetRecord): Promise<void> {
+  targetSearchRevision++
   targetBusy.value = true
   clearError()
   notice.value = ''
@@ -673,6 +684,7 @@ function buildRequest(): {
       unlock_before_download: unlockBeforeDownload.value,
       lock_after_download: lockAfterDownload.value,
       security_voltage_mv: securityRequested.value ? securityVoltageMv.value : null,
+      option_bytes: optionByteChanges.value,
       algorithms: algorithmPayload,
       firmwares: firmwarePayload,
     },
@@ -741,6 +753,7 @@ onDeactivated(() => {
   stopNativeDrops()
 })
 onBeforeUnmount(() => {
+  targetSearchRevision++
   if (targetSearchTimer !== null) clearTimeout(targetSearchTimer)
   stopSourcePolling()
   stopNativeDrops()
@@ -821,7 +834,7 @@ onBeforeUnmount(() => {
               <button class="icon-command" :title="tr('移除固件', 'Remove firmware')" @click="firmwares.splice(index, 1)">×</button>
             </div>
           </div>
-          <p v-if="!firmwares.length" class="empty-state">{{ tr('拖拽 BIN / HEX 到此工作区，或点击“添加固件”', 'Drop BIN / HEX into this workspace, or click Add Firmware') }}</p>
+          <p v-if="!firmwares.length" class="empty-state">{{ tr('拖拽 BIN / HEX 到此工作区，或点击“添加固件”。仅配置选项字节时无需添加固件。', 'Drop BIN / HEX here, or click Add Firmware. Option-only configuration needs no firmware file.') }}</p>
         </div>
       </section>
 
@@ -832,13 +845,14 @@ onBeforeUnmount(() => {
         <label class="setting-row"><span>{{ tr('脚本文件名', 'Script File Name') }}</span><input v-model="scriptFieldName" class="form-input mono" data-testid="offline-script-name" :disabled="effectiveModel !== 'V4'"></label>
         <label class="setting-row"><span>{{ tr('自动烧录次数', 'Automatic Flash Count') }}</span><input v-model.number="automaticCount" type="number" min="1" max="9999" class="form-input" :disabled="effectiveModel === 'V2'"></label>
         <label class="setting-row"><span>{{ tr('IDCODE 超时', 'IDCODE Timeout') }}</span><input v-model.number="idcodeTimeout" type="number" min="500" max="600000" step="500" class="form-input"><em>ms</em></label>
-        <label class="setting-row"><span>{{ tr('SWD 速率', 'SWD Rate') }}</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option></select></label>
-        <div class="security-settings">
-          <div class="security-title">
+        <label class="setting-row"><span>{{ tr('SWD 速率', 'SWD Rate') }}</span><select v-model.number="swdClock" class="form-select"><option :value="1000000">1 MHz</option><option :value="4000000">4 MHz</option><option :value="5000000">5 MHz</option><option :value="8000000">8 MHz</option><option :value="10000000">10 MHz</option><option v-if="effectiveModel === 'V4'" :value="20000000">20 MHz</option><option v-if="effectiveModel === 'V4'" :value="30000000">30 MHz</option></select></label>
+        <DeviceConfigurationPanel v-model:changes="optionByteChanges" :has-firmware="firmwares.length > 0" :part-number="targetPart" :model="model" :unlock-before-download="unlockBeforeDownload" :lock-after-download="lockAfterDownload">
+        <details class="security-settings">
+          <summary class="security-title">
             <span>{{ tr('擦除与安全操作', 'Erase and Security Operations') }}</span>
             <em v-if="securityLoading">{{ tr('正在检查器件支持…', 'Checking target support…') }}</em>
             <em v-else-if="securityCapability" :class="securityCapability.supported ? 'ok' : 'bad'">{{ securityCapability.supported ? tr('加锁/解锁已验证', 'Lock/unlock validated') : tr('加锁/解锁未支持', 'Lock/unlock unsupported') }}</em>
-          </div>
+          </summary>
           <label class="security-option">
             <input data-testid="offline-erase-all" type="checkbox" aria-describedby="offline-erase-all-hint" :checked="eraseAllBeforeDownload" :disabled="hpmMode || !firmwares.length" @change="toggleEraseAll">
             <span>{{ tr('下载前全片擦除（第一个固件对应的 Flash）', 'Chip erase before download (Flash selected by first firmware)') }}</span>
@@ -856,7 +870,8 @@ onBeforeUnmount(() => {
           <p v-if="securityLoading" class="security-reason">{{ tr('正在按下载器型号和已选器件加载安全操作白名单。', 'Loading the security-operation whitelist for the probe and selected target.') }}</p>
           <p v-else-if="securityCapability && !securityCapability.supported" class="security-reason">{{ securityCapability.reason }}</p>
           <p v-else-if="securityCapability?.supported" class="security-reason">{{ tr('加锁与解锁只对已真机验证的器件开放；配置、器件 ID、容量和 FLM 均会严格校验。', 'Lock and unlock are enabled only for hardware-validated targets; configuration, device ID, density, and FLM are strictly verified.') }}</p>
-        </div>
+        </details>
+        </DeviceConfigurationPanel>
         <div class="deploy-actions">
           <button class="btn" :disabled="operationBusy || !canBuild" @click="generatePreview">{{ tr('生成预览', 'Generate Preview') }}</button>
           <button class="btn btn-primary" data-testid="offline-deploy" :disabled="operationBusy || !canBuild" @click="deploy">{{ tr('部署到 U 盘', 'Deploy to USB Drive') }}</button>

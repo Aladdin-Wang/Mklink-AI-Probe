@@ -536,7 +536,7 @@ def encode_systemview_events(events) -> bytes:
                 raw_event_id = int(kind_name[4:])
             except ValueError:
                 raw_event_id = None
-            if raw_event_id is not None and 512 <= raw_event_id <= 4096:
+            if raw_event_id is not None and 32 <= raw_event_id <= 4096:
                 kind = SYSTEMVIEW_EVENT_KINDS["raw"]
         if kind is None:
             raise ValueError(f"unknown SystemView event kind: {kind_name!r}")

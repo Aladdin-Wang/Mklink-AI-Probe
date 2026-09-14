@@ -33,6 +33,45 @@ python -m mklink read-reg --addr 0xE000ED28 --width 32
 
 注意：`read-reg` 读取的是内存映射寄存器地址；R0/R1/MSP/PSP/LR/PC 这类 CPU 核心寄存器不是普通内存地址，不能直接用 `cmd.read_ram` 当作地址读取。HardFault 自动栈帧解析需要用户提供异常栈帧地址 `--sp`。
 
+### 外设目录、字段与采集（0.2.1 开发分支）
+
+CLI、MCP 和 Web 的外设目录共用同一解析与位提取逻辑，无需 AXF。
+先指定项目和实际型号；选择保存在项目 `.mklink/peripheral-selection.json`。
+三端必须使用同一 `project_root`。Web 重连会恢复选择；停止采集后再换型号。
+多个 Pack 提供同名型号时，使用 `targets` 返回的精确 `--target-id`，不会猜第一个 SVD。
+
+```powershell
+python -m mklink peripherals targets --query HPM --project-root .
+python -m mklink peripherals select --chip HPM5301 --project-root . --query UART0.GPR
+python -m mklink peripherals list --query UART0.GPR --project-root .
+python -m mklink peripherals read UART0.GPR.DATA --project-root .
+python -m mklink peripherals capture UART0.GPR.DATA --duration 3 --period 0.001 --project-root .
+python -m mklink read-reg UART0.GPR.DATA --project-root . --format dec
+```
+
+自备 SVD 可用 `peripherals select --svd <文件>`，ARM 型号从已安装 CMSIS-Pack 的
+PDSC 精确映射发现。`superwatch --chip/--target-id/--svd` 也使用此目录；省略选择参数时恢复项目选择。
+已选芯片后，不在该目录里的寄存器名或裸地址不会回退到其他芯片的定义。
+显式裸内存操作仍由 `read-ram` / `dump-memory` 提供，不受 SVD 副作用过滤保护。
+
+MCP 对应 `peripheral_targets(project_root, query)`、连接后
+`select_peripherals(chip=...)`、`list_peripherals(query=...)`、
+`read_register(name=...)`、`capture_peripherals(names=[...], duration=3, period=0.001)`。
+采集返回通道名称、设备时间戳、位提取后的数值以及完整性计数；最长 30 秒、最多
+15 个寄存器区域、最多 100000 行。同一寄存器多个字段共用一次读取，不跨邻接寄存器合并。
+
+当前共享目录只接受对齐的 **32 位、小端** 寄存器访问。位字段读取整个所属寄存器后
+执行移位和掩码，保留位不会混入字段值。当前探针 ARM 实现的 16 位读取拆为两个字节事务，
+因此不模拟窄寄存器访问，也不扩大读取范围；真正支持半字事务需另行修改探针协议/固件。
+已声明的只写、读取清除/弹出、替代寄存器组等不进入目录；SysTick CSR/CTRL 也不参与轮询。
+未标注的副作用、时钟关闭、封装差异仍需依据对应芯片资料判断。
+ARM 内置寄存器名仅用于未选择目录的兼容快照入口，不应套用到 HPM。
+
+目录支持 SVD 的继承、cluster、寄存器/字段数组、字母索引和 bitRange。
+型号覆盖取决于本地描述文件；本机 HPM SDK 1.11.0 的 43 个型号描述已验证可加载，
+不代表每个外设都已做实板验证。GUI 波形传输为 Float32，大整数曲线可能舍入；
+需要精确寄存器值时使用单次 `read` / `read_register`。
+
 ### 写入 RAM
 
 #### `python -m mklink write-ram --addr <地址> <字节1> <字节2> ... [--port COM6]`
@@ -402,6 +441,14 @@ python -m mklink superwatch TIM2.CNT,ADC1.DR --svd path/to/device.svd --visualiz
 ```
 
 **Dump Memory 连续采样协议**
+
+调试时钟分为 `low`（4 MHz）、`medium`（10 MHz，默认）、`high`（20 MHz）、`ultra`（30 MHz）。SuperWatch 的“采样调试速率”与 CLI/MCP 使用同一组档位；原 `high` 配置继续表示 20 MHz。它调整调试链路时钟，实际采样率应以 dump 时间戳测量。
+
+CLI 使用 `python -m mklink debug-speed ultra --project-root <工程目录>`；加 `--save` 可保存供后续连接使用。`dump-memory` 和 `dump-benchmark` 的 `--speed ultra` 可为本次采样选择 30 MHz。MCP 使用 `set_debug_speed(profile="ultra")`，或 `measure_dump_memory(..., speed_profile="ultra")`。
+
+ARM SWD 和 HPM JTAG 使用相同的 4/10/20/30 MHz 档位；20/30 MHz 必须由配套探针固件明确确认相应接口与内核，旧固件仅回显设置时钟不算确认。确认失败会恢复 1 MHz 并报错。档位回执不证明任意目标或接线稳定，应按对应板卡和固件的实测结果选择。CLI/MCP 切档前先停止流；Web 应用档位会先停止当前采集。默认保持 10 MHz。
+
+档位设置改变探针的调试时钟，同一连接中的 RTT、SystemView 等内存访问也使用该时钟。Keil、在线烧录和脱机脚本会按各自配置重新设置时钟；不能用 SuperWatch 的档位代替下载配置。采样报告应分别注明包含批间空隙的持续速率与批内速率，不能混用。
 
 SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
 

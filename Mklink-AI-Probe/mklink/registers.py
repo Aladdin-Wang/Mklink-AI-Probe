@@ -40,6 +40,8 @@ REGISTER_TABLE: dict[str, RegisterDef] = {
 
 def resolve_register(name_or_addr: str, width: int = 32) -> RegisterDef:
     """Resolve a symbolic register name or numeric address."""
+    if width not in (8, 16, 32):
+        raise ValueError("Register width must be 8, 16 or 32")
     key = name_or_addr.strip().upper().replace("->", ".")
     if key in REGISTER_TABLE:
         return REGISTER_TABLE[key]
@@ -48,6 +50,8 @@ def resolve_register(name_or_addr: str, width: int = 32) -> RegisterDef:
     except ValueError as exc:
         known = ", ".join(sorted(REGISTER_TABLE)[:8])
         raise KeyError(f"unknown register '{name_or_addr}'. Examples: {known}") from exc
+    if not 0 <= address <= 0x100000000 - width // 8 or address % (width // 8):
+        raise ValueError("Register address is out of range or misaligned")
     return RegisterDef(f"0x{address:08X}", address, width)
 
 

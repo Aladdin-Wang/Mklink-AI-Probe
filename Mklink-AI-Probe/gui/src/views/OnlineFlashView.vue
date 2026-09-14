@@ -27,7 +27,7 @@ const PROBE_DISCOVERY_ATTEMPTS = 6
 const PROBE_DISCOVERY_DELAY_MS = 500
 const AUTO_INSPECT_DELAY_MS = 150
 const SOURCE_POLL_INTERVAL_MS = 1000
-const ONLINE_FREQUENCIES = new Set([1_000_000, 2_000_000, 4_000_000, 8_000_000, 10_000_000])
+const ONLINE_FREQUENCIES = new Set([1_000_000, 2_000_000, 4_000_000, 8_000_000, 10_000_000, 20_000_000, 30_000_000])
 const TERMINAL = new Set<JobState>(['succeeded', 'failed', 'stopped'])
 const CANONICAL_ACTIONS: JobAction[] = ['connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect']
 const DEFAULT_ACTIONS: JobAction[] = ['connect', 'erase', 'program', 'verify', 'reset', 'disconnect']
@@ -183,7 +183,7 @@ function setActions(values: JobAction[]): void {
   }
   actions.value = next
 }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
 const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value)
 const hpmAlgorithmNotRequired = computed(() => (
   selectedTarget.value?.part_number.toLowerCase().startsWith('hpm') ?? false
@@ -330,6 +330,17 @@ function applyPackEvent(event: Awaited<ReturnType<typeof api.installPack>>['even
   }
 }
 
+function clearTarget(): void {
+  if (active.value || packBusy.value) return
+  selectedTarget.value = null
+  desiredPart.value = ''
+  targetQuery.value = ''
+  hpmBoard.value = ''
+  resetInspection()
+  clearMemoryWindow()
+  persist()
+}
+
 async function selectTarget(target: TargetRecord): Promise<void> {
   if (active.value || packBusy.value) return
   const targetChanged = selectedTarget.value?.part_number !== target.part_number
@@ -376,7 +387,7 @@ async function selectTarget(target: TargetRecord): Promise<void> {
 async function loadCustomFlms(partNumber = selectedTarget.value?.part_number || ''): Promise<void> {
   const token = ++customFlmToken
   customFlmError.value = ''
-  if (!partNumber || isHpmPart(partNumber)) {
+  if (isHpmPart(partNumber)) {
     customFlms.value = []
     customFlmBusy.value = false
     return
@@ -452,7 +463,7 @@ watch(() => selectedTarget.value?.part_number || '', partNumber => {
 
 async function addCustomFlm(file: File): Promise<void> {
   const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
-  if (!partNumber || customFlmBusy.value || active.value) return
+  if (customFlmBusy.value || active.value) return
   customFlmBusy.value = true
   customFlmError.value = ''
   try {
@@ -469,7 +480,7 @@ async function addCustomFlm(file: File): Promise<void> {
 
 async function removeCustomFlm(algorithmId: string): Promise<void> {
   const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
-  if (!partNumber || customFlmBusy.value || active.value) return
+  if (customFlmBusy.value || active.value) return
   if (!confirm(tr('移除此自定义 FLM？已有固件检查结果将失效。', 'Remove this custom FLM? Existing firmware inspection results will be invalidated.'))) return
   customFlmBusy.value = true
   customFlmError.value = ''
@@ -672,7 +683,7 @@ function setBase(value: string): void {
 function scheduleAutoInspection(): void {
   if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
   autoInspectTimer = null
-  if (!firmwareName.value || !selectedTarget.value?.installed || baseError.value || binAddressOpen.value) return
+  if (!firmwareName.value || baseError.value || binAddressOpen.value) return
   autoInspectTimer = setTimeout(() => {
     autoInspectTimer = null
     void inspectImage()
@@ -682,8 +693,8 @@ function scheduleAutoInspection(): void {
 watch([firmware, firmwarePath, () => selectedTarget.value?.part_number, baseAddress], scheduleAutoInspection)
 
 async function inspectImage(): Promise<void> {
-  if (!firmwareName.value || !selectedTarget.value?.installed || baseError.value) {
-    inspectError.value = !selectedTarget.value?.installed ? tr('请先选择已安装的精确器件型号', 'Select an installed exact target first') : baseError.value || tr('请选择固件', 'Select firmware')
+  if (!firmwareName.value || baseError.value) {
+    inspectError.value = baseError.value || tr('请选择固件', 'Select firmware')
     return
   }
   resetInspection(); inspectBusy.value = true; inspectError.value = ''
@@ -692,10 +703,10 @@ async function inspectImage(): Promise<void> {
   inspectionController = controller
   try {
     const result = firmwarePath.value
-      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value.part_number, isBin.value ? parsedBase.value : null, controller.signal)
+      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value?.part_number || '', isBin.value ? parsedBase.value : null, controller.signal)
       : await api.inspectImage(
           firmware.value!,
-          selectedTarget.value.part_number,
+          selectedTarget.value?.part_number || '',
           isBin.value ? parsedBase.value : null,
           controller.signal,
           capturedReadSource,
@@ -703,6 +714,7 @@ async function inspectImage(): Promise<void> {
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error(tr('服务端返回的镜像地址范围无效', 'The server returned an invalid image address range'))
     inspection.value = result
+    inspectError.value = result.validation_message || ''
     selectedSectorAddresses.value = result.sector_operations_available
       ? result.sectors.map(sector => sector.address)
       : []
@@ -860,7 +872,7 @@ function toggleSector(address: number): void {
 
 onMounted(() => {
   startSourcePolling()
-  void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(targetQuery.value), refreshDesiredTarget()])
+  void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(targetQuery.value), refreshDesiredTarget(), loadCustomFlms()])
     .catch(error => { if (!disposed) packError.value = message(error) })
 })
 onActivated(() => {
@@ -891,7 +903,7 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid" :inert="confirmationMessage !== null">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
-      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!!selectedTarget?.installed && !active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
+      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="targetQuery = $event" @select="selectTarget" @clear-target="clearTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">

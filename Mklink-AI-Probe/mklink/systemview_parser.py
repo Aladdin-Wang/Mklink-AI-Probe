@@ -112,7 +112,7 @@ _EVENT_SPECS: dict[int, tuple[str, list[tuple[str, str]]]] = {
     EVTID_TRACE_START:      ("trace_start", []),
     EVTID_TRACE_STOP:       ("trace_stop", []),
     EVTID_SYSTIME_CYCLES:   ("systime_cycles", [("u32", "systime")]),
-    EVTID_SYSTIME_US:       ("systime_us", [("u32", "systime")]),
+    EVTID_SYSTIME_US:       ("systime_us", [("u32", "systime_low"), ("u32", "systime_high")]),
     EVTID_SYSDESC:          ("sysdesc", [("str", "desc")]),
     EVTID_USER_START:       ("user_start", [("u32", "user_id")]),
     EVTID_USER_STOP:        ("user_stop", [("u32", "user_id")]),
@@ -329,9 +329,11 @@ class SystemViewParser:
             event_id_end = pos
             length = None  # 无 length，按 EventId 规范解码
 
-        # 合法事件 ID：核心 0-31，中间件模块 512-4096。其余视为分帧错误（垃圾数据）
-        # —— 这让乱码尽快触发重同步，而不是被当成假包一路吃进同步序列。
-        if not (event_id <= 31 or 512 <= event_id <= 4096):
+        # Core events occupy 0-31; RTOS API events occupy 32-511 (for
+        # example FreeRTOS delay/delay-until are 35/36). These APIs have a
+        # length prefix and must be retained as raw events with their delta.
+        # Dynamically declared middleware modules start at 512.
+        if event_id > 4096:
             raise _FramingError(f"implausible event id {event_id}")
         # A timestamp tail can look like a valid multi-byte module event while
         # recovering after target overflow.  Module events are impossible until the
@@ -408,7 +410,10 @@ class SystemViewParser:
 
     def _post_process(self, ev: dict) -> None:
         kind = ev["kind"]
-        if kind == "init":
+        if kind == "systime_us":
+            # SEGGER RecordSystime sends low/high U32 varints before delta.
+            ev["systime"] = ev["systime_low"] | (ev["systime_high"] << 32)
+        elif kind == "init":
             if self._cpu_freq_override is None:
                 self._cpu_freq = ev.get("cpu_freq", 0) or self._cpu_freq
             else:

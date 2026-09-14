@@ -11,6 +11,11 @@ import tempfile
 from typing import Mapping, Optional, Sequence, Union
 
 from mklink.offline_security import OfflineSecurityPlan, resolve_offline_security
+from mklink.stm32f1_options import (
+    OptionPlan,
+    resolve_plan as resolve_option_plan,
+    script_block,
+)
 
 
 _SAFE_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -59,6 +64,7 @@ class OfflineDownloadConfig:
     algorithms: tuple[OfflineAlgorithm, ...]
     firmwares: tuple[OfflineFirmware, ...]
     security: Optional[OfflineSecurityPlan]
+    option_bytes: Optional[OptionPlan] = None
 
     @property
     def script_name(self) -> str:
@@ -160,9 +166,20 @@ def parse_offline_config(
         payload.get("swd_clock_hz", 10000000),
         "SWD clock",
         100000,
-        10000000,
+        30000000 if model == "V4" else 10000000,
     )
+    from mklink.debug_speed import validate_clock_hz
+    try:
+        validate_clock_hz(swd_clock)
+    except ValueError as error:
+        raise OfflineDownloadError("SWD " + str(error)) from error
     target_part = str(payload.get("target_part") or "").strip() or None
+    try:
+        option_bytes = resolve_option_plan(
+            target_part or "", model, payload.get("option_bytes", {})
+        )
+    except (ValueError, OSError) as error:
+        raise OfflineDownloadError(str(error)) from error
     from mklink.hpm_config import is_hpm_target, normalize_hpm_configuration
 
     hpm_target = is_hpm_target(target_part)
@@ -242,8 +259,10 @@ def parse_offline_config(
         )
     if hpm_target and algorithms:
         raise OfflineDownloadError("HPM targets do not use FLM algorithms")
-    if not hpm_target and not algorithms:
+    if not hpm_target and not algorithms and option_bytes is None:
         raise OfflineDownloadError("at least one FLM algorithm is required")
+    if option_bytes and any(item.file_name.casefold() == 'stm32f10x_opt.flm' for item in algorithms):
+        raise OfflineDownloadError('The option algorithm is managed internally; do not replace it with a firmware algorithm')
 
     raw_firmwares = payload.get("firmwares")
     if not isinstance(raw_firmwares, Sequence) or isinstance(raw_firmwares, (str, bytes)):
@@ -297,7 +316,7 @@ def parse_offline_config(
                 source_path=source_path,
             )
         )
-    if not firmwares:
+    if not firmwares and option_bytes is None:
         raise OfflineDownloadError("at least one firmware file is required")
 
     try:
@@ -308,6 +327,8 @@ def parse_offline_config(
         )
     except ValueError as error:
         raise OfflineDownloadError(str(error)) from error
+    if not firmwares and (security or erase_all_before_download):
+        raise OfflineDownloadError('Configuration-only scripts cannot erase firmware or change read protection')
 
     return OfflineDownloadConfig(
         model=model,
@@ -322,6 +343,7 @@ def parse_offline_config(
         algorithms=tuple(algorithms),
         firmwares=tuple(firmwares),
         security=security,
+        option_bytes=option_bytes,
     )
 
 
@@ -451,7 +473,7 @@ def _generate_v2_script(config: OfflineDownloadConfig) -> str:
         (
             "if not abort:",
             '    print("offline download finished")',
-            "    cmd.set_reset()",
+            *([] if config.is_hpm else ["    cmd.set_reset()"]),
             "    cmd.set_beep_on()",
             "    time.sleep_ms(1000)",
             "    cmd.set_beep_off()",
@@ -503,7 +525,22 @@ def generate_offline_script(config: OfflineDownloadConfig) -> str:
         lines[insert_at:insert_at] = _security_api_preflight_lines("    ")
     if config.security is not None and config.security.unlock_before_download:
         lines.extend(_security_lines(config.security, action="unlock", indent="    "))
-    lines.extend(_program_lines(config, "    "))
+    if config.option_bytes is not None:
+        lines.extend(
+            script_block(
+                config.option_bytes, True, firmware_lines=_program_lines(config, "")
+            )
+        )
+        lines.extend(
+            [
+                "    if option_rc != 0:",
+                '        print("option configuration failed:", option_rc)',
+                "        abort = True",
+                "        break",
+            ]
+        )
+    else:
+        lines.extend(_program_lines(config, "    "))
     if config.security is not None and config.security.lock_after_download:
         lines.extend(_security_lines(config.security, action="lock", indent="    "))
     lines.extend(
@@ -523,8 +560,8 @@ def generate_offline_script(config: OfflineDownloadConfig) -> str:
             "        elapsed += 500",
             "if not abort:",
             '    print("auto download finished")',
-            "    cmd.set_reset()",
-            "    cmd.cpu_run()",
+            # HPM ROM programming already resets and starts the target.
+            *([] if config.is_hpm else ["    cmd.set_reset()", "    cmd.cpu_run()"]),
             "    cmd.set_beep_on()",
             "    time.sleep_ms(1000)",
             "    cmd.set_beep_off()",
@@ -727,8 +764,28 @@ def deploy_offline_bundle(
             seen_destinations.add(key)
             plan.append((relative, source, content))
 
+    if config.option_bytes is not None:
+        import json
+
+        options = config.option_bytes
+        if (
+            hashlib.sha256(options.algorithm_path.read_bytes()).hexdigest()
+            != options.algorithm_sha256
+        ):
+            raise OfflineDownloadError("Option algorithm integrity check failed")
+        relative = Path("FLM/STM32F10x_OPT.FLM")
+        if str(relative).casefold() not in seen_destinations:
+            plan.append((relative, options.algorithm_path, None))
+        manifest = json.dumps(
+            {"part_number": options.part_number, "changes": options.changes},
+            sort_keys=True,
+        ).encode("utf-8")
+        plan.append((Path("CFG") / options.config_dir / "options.json", None, manifest))
+
     script_relative = Path("python") / config.script_name
-    plan.append((script_relative, None, generate_offline_script(config).encode("utf-8")))
+    plan.append(
+        (script_relative, None, generate_offline_script(config).encode("utf-8"))
+    )
     deployed = _transactional_copy(disk, plan)
     return {
         "status": "deployed",

@@ -1,6 +1,32 @@
 from mklink import mcp_server, update_check
 
 
+def test_skill_version_uses_adjacent_payload_over_stale_distribution(monkeypatch, tmp_path):
+    monkeypatch.setattr(update_check, "__file__", str(tmp_path / "mklink" / "update_check.py"))
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.2.1"\n', encoding="utf-8")
+    monkeypatch.setattr(update_check, "version", lambda _: "0.2.0")
+    assert update_check.current_version() == "0.2.1"
+    monkeypatch.setattr(update_check, "version", lambda _: None)
+    assert update_check.current_version() == "0.2.1"
+
+
+def test_missing_distribution_version_keeps_health_check_available(monkeypatch, tmp_path):
+    monkeypatch.setattr(update_check, "__file__", str(tmp_path / "mklink" / "update_check.py"))
+    monkeypatch.setattr(update_check, "version", lambda _: None)
+    monkeypatch.setattr(update_check, "fetch_manifest", lambda *args, **kwargs:
+                        ({"version": "0.2.1"}, "https://example.test/latest.json"))
+    assert update_check.current_version() == "unknown"
+    result = update_check.check_for_update(cache_file=tmp_path / "cache.json")
+    assert result["status"] == "unavailable"
+    assert result["current_version"] == "unknown"
+
+
+def test_wheel_version_falls_back_to_distribution(monkeypatch, tmp_path):
+    monkeypatch.setattr(update_check, "__file__", str(tmp_path / "mklink" / "update_check.py"))
+    monkeypatch.setattr(update_check, "version", lambda _: "0.2.1")
+    assert update_check.current_version() == "0.2.1"
+
+
 def test_runtime_update_cache_uses_explicit_task_cache(monkeypatch, tmp_path):
     cache_root = tmp_path / "task-cache"
     monkeypatch.setenv("MKLINK_CACHE_DIR", str(cache_root))
@@ -26,8 +52,8 @@ def test_runtime_update_cache_uses_build_workspace(monkeypatch, tmp_path):
 def test_runtime_manifest_sources_prefer_github_and_fall_back_to_gitee(monkeypatch):
     github, gitee = update_check.DEFAULT_MANIFEST_URLS
     assert github == (
-        "https://raw.githubusercontent.com/Aladdin-Wang/"
-        "Mklink-AI-Probe/updates/latest.json"
+        "https://raw.githubusercontent.com/MicroKeen/"
+        "Mklink-AI-Probe/release/latest.json"
     )
     assert gitee == (
         "https://gitee.com/Aladdin-Wang/Mklink-AI-Probe/raw/updates/latest.json"

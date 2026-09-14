@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import OfflineFlashView from './OfflineFlashView.vue'
+import DeviceConfigurationPanel from '../components/DeviceConfigurationPanel.vue'
 import router from '../router'
 
 const offlineMocks = vi.hoisted(() => ({
@@ -35,6 +36,9 @@ vi.mock('../composables/useOnlineFlashApi', () => ({
 describe('OfflineFlashView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      kind: 'option_bytes', read_supported: false, fields: [], reason: 'Configuration description fixture',
+    }) }))
     const stored = new Map<string, string>()
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => stored.get(key) ?? null,
@@ -105,6 +109,23 @@ describe('OfflineFlashView', () => {
     expect(source).toContain('建议流程')
   })
 
+  it('previews and deploys option-only changes without firmware, then clears them on model change', async () => {
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+    await flushPromises()
+    wrapper.getComponent(DeviceConfigurationPanel).vm.$emit('update:changes', { DATA0: '0x5A' })
+    await flushPromises()
+    await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
+    await flushPromises()
+    expect(offlineMocks.preview.mock.calls[0]?.[0]).toMatchObject({ option_bytes: { DATA0: '0x5A' }, firmwares: [], algorithms: [] })
+    expect(offlineMocks.deploy).toHaveBeenCalledTimes(1)
+    await wrapper.get('[data-testid="offline-model"]').setValue('V3')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="offline-deploy"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
   it.each(['desktop', 'usb', 'browser'])('allows preview with a manually selected %s FLM source', async kind => {
     offlineMocks.getStatus.mockResolvedValue({ available: true, disk_path: 'G:\\', python_dir: 'G:\\python', flm_dir: 'G:\\FLM' })
     const source = kind === 'browser' ? new File(['algorithm'], 'Device.FLM')
@@ -161,6 +182,23 @@ describe('OfflineFlashView', () => {
       expect(wrapper.text()).toContain(expected)
       expect(wrapper.get('.technical-error').text()).toContain(detail)
     } finally { wrapper.unmount() }
+  })
+
+  it('ignores the slow initial target search after a newer query finishes', async () => {
+    vi.useFakeTimers()
+    let finishInitial!: (value: unknown[]) => void
+    onlineMocks.searchTargets.mockImplementationOnce(() => new Promise(resolve => { finishInitial = resolve }))
+      .mockResolvedValue([{ part_number: 'STM32F103RE', vendor: 'STMicroelectronics', installed: true, source: 'builtin' }])
+    const wrapper = mount(OfflineFlashView)
+    try {
+      await wrapper.get('[data-testid="offline-target-search"]').setValue('STM32F103RE')
+      await vi.advanceTimersByTimeAsync(151)
+      await flushPromises()
+      finishInitial([{ part_number: 'STM32F103RC', vendor: 'STMicroelectronics' }])
+      await flushPromises()
+      expect(wrapper.get('.target-results').text()).toContain('STM32F103RE')
+      expect(wrapper.get('.target-results').text()).not.toContain('STM32F103RC')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
   })
 
   it('searches target suggestions while typing and supports keyboard selection', async () => {

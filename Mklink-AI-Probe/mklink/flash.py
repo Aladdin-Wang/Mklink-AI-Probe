@@ -182,9 +182,23 @@ class MKLinkFlash:
             parsed_clock = int(clock_hz, 0) if isinstance(clock_hz, str) else int(clock_hz)
         except (TypeError, ValueError):
             raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
-        if parsed_clock < 1 or parsed_clock > 10_000_000:
-            raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
-        self._bridge.send_command(f"cmd.set_swd_clock({parsed_clock})", echo=True)
+        from mklink.debug_speed import validate_clock_hz, apply_bridge_profile, PROFILES
+        try:
+            validate_clock_hz(parsed_clock)
+        except ValueError as error:
+            raise FlashError(str(error)) from error
+        if parsed_clock > 10_000_000:
+            try:
+                apply_bridge_profile(self._bridge, next(p for p, hz in PROFILES.items() if hz == parsed_clock))
+            except ValueError as error:
+                raise FlashError(str(error)) from error
+            return
+        response = self._bridge.send_command(f"cmd.set_swd_clock({parsed_clock})", echo=True)
+        if not isinstance(response, str) or not any(
+            line.strip() == f"set clock {parsed_clock}" for line in response.splitlines()
+        ):
+            raise FlashError("Probe did not acknowledge the requested SWD clock")
+        self._bridge._ctx.swd_clock_hz = parsed_clock
 
     def load_flm(self, flm_path: str, flash_base: str, ram_base: str) -> bool:
         """加载 Flash 算法文件。

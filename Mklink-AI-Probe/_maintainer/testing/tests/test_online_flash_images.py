@@ -58,6 +58,21 @@ def assert_flash_error(code: FlashErrorCode, call) -> FlashError:
     return raised.value
 
 
+def test_large_contiguous_hex_exceeds_old_record_limit(tmp_path):
+    path = tmp_path / 'large.hex'
+    count = 262145
+    with path.open('w', encoding='ascii') as stream:
+        for i in range(count):
+            address = i * 16
+            if address % 65536 == 0:
+                stream.write(ihex_record(0, 4, (address >> 16).to_bytes(2, 'big')) + '\n')
+            stream.write(ihex_record(address & 65535, 0, bytes([i & 255]) * 16) + '\n')
+        stream.write(ihex_record(0, 1) + '\n')
+    segments, data = ImageInspector.decode_hex(path)
+    assert segments == (ImageSegment(0, count * 16),)
+    assert data[0][1][-16:] == bytes([(count-1) & 255]) * 16
+
+
 def test_inspects_bin_and_previews_bytes(tmp_path: Path):
     firmware = tmp_path / "firmware.BIN"
     snapshot_root = tmp_path / "snapshots"
