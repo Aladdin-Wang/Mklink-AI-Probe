@@ -272,13 +272,9 @@ def _register_health_tools(mcp: Any) -> None:
         conversation to fetch the latest release instead of reusing the cache.
         Subsequent health calls can use the default; this never installs updates.
         """
-        from importlib.metadata import version, PackageNotFoundError
         from mklink.toolchain import status as toolchain_status
-        from mklink.update_check import check_for_update
-        try:
-            ver = version("mklink")
-        except PackageNotFoundError:  # pragma: no cover
-            ver = "unknown"
+        from mklink.update_check import check_for_update, current_version
+        ver = current_version()
         return {
             "ok": True,
             "server": "mklink-ai-probe",

@@ -280,6 +280,7 @@ def test_copy_installed_skill_removes_legacy_maintainer_context(
     )
 
     assert not any(path.exists() for path in legacy_files)
+    assert not (root / "mklink.egg-info").exists()
     assert user_file.read_text(encoding="utf-8") == "keep"
 
 

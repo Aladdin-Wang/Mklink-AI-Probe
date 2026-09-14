@@ -36,17 +36,23 @@ def version_key(value: str) -> tuple[int, int, int, int]:
 
 
 def current_version() -> str:
+    # A Skill archive can supersede an older editable/pip installation. Its
+    # adjacent project metadata describes the code actually being executed.
+    root = Path(__file__).resolve().parent.parent
     try:
-        return version("mklink")
-    except PackageNotFoundError:
-        root = Path(__file__).resolve().parent.parent
-        try:
-            import tomllib
+        import tomllib
 
-            with (root / "pyproject.toml").open("rb") as stream:
-                return str(tomllib.load(stream)["project"]["version"])
-        except (ImportError, KeyError, OSError, TypeError, ValueError):
-            return "unknown"
+        with (root / "pyproject.toml").open("rb") as stream:
+            local = tomllib.load(stream)["project"]["version"]
+        if isinstance(local, str) and local.strip():
+            return local.strip()
+    except (ImportError, KeyError, OSError, TypeError, ValueError):
+        pass
+    try:
+        installed = version("mklink")
+        return installed.strip() if isinstance(installed, str) and installed.strip() else "unknown"
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def default_cache_file() -> Path:

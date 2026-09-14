@@ -274,6 +274,12 @@ def _remove_unlisted_managed_files(
                     path.rmdir()
                 except OSError:
                     pass
+        # An empty egg-info directory is still discovered by importlib.metadata
+        # and yields a None version, shadowing valid installed metadata.
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 def install_skill_archive(
