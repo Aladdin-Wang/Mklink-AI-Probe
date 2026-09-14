@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T23:42:21.2491440+08:00",
+  "updated_at": "2026-09-15T00:14:55.9117651+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "0.2.1 发布准备：应用/Skill 更新首选迁移到 MicroKeen release，旧 GitHub updates 兼容本次升级，Gitee 不变。版本与更新说明已加入，三仓库发布工具和回归测试适配中；正在全量复测与本地 NSIS 覆盖安装验收。尚未发布索引、标签或 Release。"
+    "current_task": "0.2.1候选回归和覆盖安装完成：Python2187通过/2可选依赖跳过，GUI698，Rust19，真实Skill/MCP68工具和ping通过；修复空egg-info导致版本为None。2026-09-15用户追加授权自动审核合并PR #2并正式发布。待最后提交推送后尝试受保护PR合并；尚未签名、发布标签/Release/索引。"
   },
   "milestones": [
     {
@@ -26,7 +26,7 @@
   "verification": [
     {
       "area": "正式版",
-      "result": "docs/verification/v0.2.0-release-qualification.md：Python 1913、GUI 682、Rust 19；安装/Skill/CLI/MCP 及下载校验通过。 docs/verification/v0.2.0-prerelease-hil-20260907.md、v0.2.0-superwatch-write-20260907.md；firmware-20260908.md 仅验证发布/格式/哈希，新固件未做 HIL。"
+      "result": "docs/verification/v0.2.0-release-qualification.md：Python 1913、GUI 682、Rust 19；安装/Skill/CLI/MCP 及下载校验通过。 docs/verification/v0.2.0-prerelease-hil-20260907.md、v0.2.0-superwatch-write-20260907.md；firmware-20260908.md 仅验证发布/格式/哈希，新固件未做 HIL。 docs/verification/v0.2.1-release-candidate.md：完整回归、0.2.1实际覆盖安装、68工具MCP、7059型号/2224算法审计通过。新旧GitHub/Gitee迁移准备完成；正式发布未执行。"
     },
     {
       "area": "报障流程",
@@ -67,7 +67,7 @@
   "hardware": {
     "state": "STM32F103RET6 / 72MHz / RT-Thread 5.1.0；MKLINK V4 HPM5301 360MHz，pipe-r20固化候选已升级并通过报告所列ARM验证；恢复10M并断开。Chrome新安装版GUI保留8771页面。HPM板切换待用户。",
     "backups": ".build/reports/prerelease-hil-20260907、superwatch-write-20260907；保留其他芯片唯一备份。；本轮本地证据 .build/reports/peripheral-unification。；本轮 OTP 只读和浏览器证据 .build/reports/device-configuration。；STM32F103 唯一原始备份与本轮证据 .build/reports/stm32f103-options。",
-    "installer": ".build/artifacts/release-0.2.0-20260908/Mklink-AI-Probe-v0.2.0-x64-Setup.exe"
+    "installer": ".build/artifacts/release-0.2.1-candidate/Mklink-AI-Probe-v0.2.1-x64-Setup.exe"
   },
   "known_limits": [
     "本轮已复现的USB停读后32B缺失由独立对齐DMA槽修复，并修复RTT回执/描述符并发。有限缓存仍不保证无限暂停或物理断线无损；历史枚举异常未做全部场景认证。",
@@ -78,9 +78,9 @@
     "批量路径覆盖已列明HPM5301 DLM/XIP和新增HPM6E80 AXI SRAM、最多15区域；shared JTAG ID不识别精确型号，也不证明接线稳定。<50us请求沿用满速语义，非原子多变量/硬实时。XIP有界块忙冲突恢复不适用于RAM/MMIO或真实总线错误。历史HPM资格按对应固件保留；pipe-r20 HPM批时间戳/USB改动仍待HPM实板回归。ARM高速本轮按专门报告验证。"
   ],
   "next_actions": [
+    "按2026-09-15追加授权审核并尝试合并PR #2，保持另一维护者审批和CI规则；合并后的确定main上签名重建、完整资产校验并同步两个GitHub和Gitee，最后更新三端索引。",
     "换接HPM5301/HPM6E80回归pipe-r20批时间戳、USB和四档，不继承旧版硬件资格。ARM固化包已通过77源文件哈希对照。",
     "官网文档任务已收到四档Chrome真图和技术附件；保留公众号风格及技术附件分层，不自动发布。继续优化前先拆分批间组帧/调度开销；慢浏览器订阅需按队列背压评估，勿与USB字节故障混同。",
-    "审核PR #2的外设/配置统一和四档mem_dump，不自动合并或发布。",
     "后续按原计划补STM32F103看门狗、STOP/STANDBY和WRP拒写行为及其他ARM实板；HPM永久编程未开放。",
     "本地Skill开发快照与正式安装器/发布渠道分开；定时任务维持暂停。"
   ],
