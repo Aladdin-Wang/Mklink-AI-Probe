@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-14T14:12:51+08:00`
+- 更新时间：`2026-09-14T14:23:04+08:00`
 - 分支：`codex/v0.2.1-development`
 - HEAD：`最新提交以 Git 为准；应用发布标签 v0.2.0 = 911a70f。`
 - 远端 HEAD：`从 microkeen/main 的 7b826c35b1bea146c9afae6f0054e7df5477f28c 创建 0.2.1 开发分支，已包含合并的 PR #1。`
 - 工作树：0.2.1分支开放有精确回执的ARM/HPM四档，配套pipe-r20修复USB发送槽和RTT启动并发；正式发布通道不变。
-- 当前任务：完成ARM/HPM公开4/10/20/30M档位统一。pipe-r20 USB/CDC/RTT/SystemView/CLI/MCP及Keil四档校准通过，最终mem_dump矩阵、在线/脱机及GUI验证继续。HPM批时间戳软件优化已完成，新版HPM实板待换板。
+- 当前任务：pipe-r20 ARM四档20项mem_dump矩阵通过；补齐配置/在线/脱机最高10M旧限制，支持精确20/30M；在线四档成功，脱机时钟与安装后GUI继续验证。HPM新版真机仍待换板。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -25,7 +25,7 @@
 - **选项字节/OTP 第一阶段**：docs/verification/v0.2.1-device-configuration-stage1.md：Python 103、GUI 24、正式构建通过；HPM5301 CLI/MCP/Chrome 8 个公开字段一致；Chrome ARM 配置及脚本预览通过，没有 ARM 实板读写或 OTP 编程。
 - **STM32F103 选项字节与 ARM mem_dump**：docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。 docs/verification/v0.2.1-stm32-clock-calibration.md：117相关Python测试通过；Keil/在线/脱机频率实测、RTT/SystemView短时复测通过，20/30M不合格。GUI同一API改频与LA通过，RTT修复后14项mem_dump通过；最终Chrome截图尚未完成。 本轮更新：docs/verification/v0.2.1-stm32-four-profile-freeze.md：主机108项和32项相关检查通过（覆盖重叠）。pipe-r20 USB20、CDC12、RTT四档/SV8、CLI/MCP通过，启动32次无交错；Keil1/2/5/10M校准误差<2%。最终矩阵及GUI正在补测，不称全部入口完成。
 - **mem_dump 四档与 HPM 实板稳定性**：docs/verification/v0.2.1-mem-dump-four-speeds.md：143 Python、3 GUI、生产构建、72打包/更新/边界通过；CLI/MCP stdio及Chrome四档切换/曲线实板通过。旧7510单变量两档各30min，旧20M 4KB失败保留；新2927修复版48用例通过，20M 4KB600s/30M300s及小块、动态RAM、10轮四档重连。SBA忙冲突按报告计数恢复，不称零冲突。 HPM6E80独立记录v0.2.1-hpm6e80-mem-dump.md：21软件测试、304候选28矩阵/30长测重连、cbd最终28回归、CLI/MCP24和Chrome通过；共享ID不识别精确型号。
-- **SuperWatch 与 SystemView 文档实测修复**：docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。
+- **SuperWatch 与 SystemView 文档实测修复**：四档mem_dump最终矩阵20项通过，持续59.598/111.956/157.770/187.636 kSa/s。主机入口405项Python、GUI144项及新增配置29项（重叠）通过，生产构建通过；在线四档实板编程/校验通过，脱机LA采集和GUI继续。
 
 ## 架构决策
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T14:12:51+08:00",
+  "updated_at": "2026-09-14T14:23:04+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "完成ARM/HPM公开4/10/20/30M档位统一。pipe-r20 USB/CDC/RTT/SystemView/CLI/MCP及Keil四档校准通过，最终mem_dump矩阵、在线/脱机及GUI验证继续。HPM批时间戳软件优化已完成，新版HPM实板待换板。"
+    "current_task": "pipe-r20 ARM四档20项mem_dump矩阵通过；补齐配置/在线/脱机最高10M旧限制，支持精确20/30M；在线四档成功，脱机时钟与安装后GUI继续验证。HPM新版真机仍待换板。"
   },
   "milestones": [
     {
@@ -54,7 +54,7 @@
     },
     {
       "area": "SuperWatch 与 SystemView 文档实测修复",
-      "result": "docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。"
+      "result": "四档mem_dump最终矩阵20项通过，持续59.598/111.956/157.770/187.636 kSa/s。主机入口405项Python、GUI144项及新增配置29项（重叠）通过，生产构建通过；在线四档实板编程/校验通过，脱机LA采集和GUI继续。"
     }
   ],
   "decisions": [

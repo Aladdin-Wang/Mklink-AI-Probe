@@ -182,8 +182,17 @@ class MKLinkFlash:
             parsed_clock = int(clock_hz, 0) if isinstance(clock_hz, str) else int(clock_hz)
         except (TypeError, ValueError):
             raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
-        if parsed_clock < 1 or parsed_clock > 10_000_000:
-            raise FlashError("SWD 时钟必须是 1Hz 到 10MHz 之间的整数")
+        from mklink.debug_speed import validate_clock_hz, apply_bridge_profile, PROFILES
+        try:
+            validate_clock_hz(parsed_clock)
+        except ValueError as error:
+            raise FlashError(str(error)) from error
+        if parsed_clock > 10_000_000:
+            try:
+                apply_bridge_profile(self._bridge, next(p for p, hz in PROFILES.items() if hz == parsed_clock))
+            except ValueError as error:
+                raise FlashError(str(error)) from error
+            return
         response = self._bridge.send_command(f"cmd.set_swd_clock({parsed_clock})", echo=True)
         if not isinstance(response, str) or not any(
             line.strip() == f"set clock {parsed_clock}" for line in response.splitlines()

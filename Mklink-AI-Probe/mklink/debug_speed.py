@@ -4,6 +4,13 @@ from __future__ import annotations
 PROFILES = {"low": 4_000_000, "medium": 10_000_000, "high": 20_000_000, "ultra": 30_000_000}
 
 
+def validate_clock_hz(hz: int) -> int:
+    """Keep legacy clocks up to 10 MHz and the two calibrated high kernels."""
+    if type(hz) is not int or not (1 <= hz <= 10_000_000 or hz in (20_000_000, 30_000_000)):
+        raise ValueError("clock must be an integer from 1 Hz to 10 MHz, or exactly 20 MHz / 30 MHz")
+    return hz
+
+
 def profile_clock(profile: str) -> int:
     if not isinstance(profile, str) or profile not in PROFILES:
         raise ValueError("debug speed must be low (4 MHz), medium (10 MHz), high (20 MHz), or ultra (30 MHz)")

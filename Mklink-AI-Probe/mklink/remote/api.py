@@ -1236,11 +1236,14 @@ def create_app(
                     status_code=422,
                     detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
                 )
-            if parsed_swd_clock < 1 or parsed_swd_clock > 10_000_000:
+            from mklink.debug_speed import validate_clock_hz
+            try:
+                validate_clock_hz(parsed_swd_clock)
+            except ValueError as error:
                 raise HTTPException(
                     status_code=422,
-                    detail="SWD 时钟必须是 1 Hz 到 10 MHz 之间的整数",
-                )
+                    detail=str(error),
+                ) from error
             config["swd_clock"] = swd_clock
             device = _state.get("device")
             if device is not None and device.connected:

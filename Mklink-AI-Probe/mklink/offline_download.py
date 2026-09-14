@@ -166,8 +166,13 @@ def parse_offline_config(
         payload.get("swd_clock_hz", 10000000),
         "SWD clock",
         100000,
-        10000000,
+        30000000 if model == "V4" else 10000000,
     )
+    from mklink.debug_speed import validate_clock_hz
+    try:
+        validate_clock_hz(swd_clock)
+    except ValueError as error:
+        raise OfflineDownloadError("SWD " + str(error)) from error
     target_part = str(payload.get("target_part") or "").strip() or None
     try:
         option_bytes = resolve_option_plan(

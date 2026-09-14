@@ -18,7 +18,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from mklink.debug_speed import validate_clock_hz
 from starlette.concurrency import run_in_threadpool
 
 from mklink.cmsis_dap.backend import _pack_flm_address_offset
@@ -148,13 +149,21 @@ class LocalImageBody(BaseModel):
     base_address: Optional[Union[str, int]] = None
 
 
-class JobBody(BaseModel):
+class ClockBody(BaseModel):
+    frequency: int = Field(default=1_000_000, strict=True)
+
+    @field_validator("frequency")
+    @classmethod
+    def calibrated_frequency(cls, value: int) -> int:
+        return validate_clock_hz(value)
+
+
+class JobBody(ClockBody):
     actions: List[str]
     image_id: Optional[str] = None
     preempt_ai: bool = True
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
-    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
     reset_voltage_mv: Optional[int] = None
@@ -164,13 +173,12 @@ class JobBody(BaseModel):
     hpm_flash_cfg: Optional[Tuple[str, str, str, str]] = None
 
 
-class ReadMemoryBody(BaseModel):
+class ReadMemoryBody(ClockBody):
     address: Union[str, int]
     size: int = Field(..., ge=1, le=64 * 1024 * 1024)
     probe_id: Optional[str] = None
     target_part: str
     preempt_ai: bool = True
-    frequency: int = Field(default=1_000_000, ge=1, le=10_000_000)
     connect_mode: str = "halt"
     reset_mode: str = "default"
     chunk_sizes: List[int] = Field(default_factory=list, max_length=65536)
