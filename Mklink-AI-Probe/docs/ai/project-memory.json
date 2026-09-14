@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T14:28:28+08:00",
+  "updated_at": "2026-09-14T14:42:54+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "pipe-r20 ARM四档mem_dump、Keil、在线/脱机实板通过。Chrome发现SuperWatch仍限制10us，已同步前后端至1us，66项Python和95项GUI检查通过；安装后Chrome界面复测继续。HPM新版真机仍待换板。"
+    "current_task": "ARM pipe-r20四档正式接口、20项mem_dump矩阵、Keil/配置/在线/脱机LA校准、USB/CDC/RTT/SystemView与安装后Chrome验证完成，固化包和源快照已归档。HPM新版批时间戳与USB改动仍待换板实测；不自动合并发布。"
   },
   "milestones": [
     {
@@ -46,7 +46,7 @@
     },
     {
       "area": "STM32F103 选项字节与 ARM mem_dump",
-      "result": "docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。 docs/verification/v0.2.1-stm32-clock-calibration.md：117相关Python测试通过；Keil/在线/脱机频率实测、RTT/SystemView短时复测通过，20/30M不合格。GUI同一API改频与LA通过，RTT修复后14项mem_dump通过；最终Chrome截图尚未完成。 本轮更新：docs/verification/v0.2.1-stm32-four-profile-freeze.md：主机108项和32项相关检查通过（覆盖重叠）。pipe-r20 USB20、CDC12、RTT四档/SV8、CLI/MCP通过，启动32次无交错；Keil1/2/5/10M校准误差<2%。最终矩阵及GUI正在补测，不称全部入口完成。"
+      "result": "docs/verification/v0.2.1-stm32f103-options-stage2.md：Python 99、GUI 29、生产构建通过；CLI/MCP stdio/Chrome 10 字段一致，DATA、两项低功耗复位位及 WRP3 写入/复位/回读/恢复通过；组合下载通过，最终全部 512 KiB Flash 与原始备份一致。未测试 RDP 转换及看门狗/低功耗/WRP 拒写行为。 docs/verification/v0.2.1-stm32f103-mem-dump.md：27软件测试、14项稳定矩阵、LA3.904/10.549MHz测量、CLI/MCP/Chrome低中档通过；20/30电气试验失败保留。单RAM60s约603万点101.293kSa/s，4KB630.34KiB/s；GUI功能素材和RTT双消费者修复分别记录A/B演示构建，未做多小时认证。 docs/verification/v0.2.1-stm32-clock-calibration.md：117相关Python测试通过；Keil/在线/脱机频率实测、RTT/SystemView短时复测通过，20/30M不合格。GUI同一API改频与LA通过，RTT修复后14项mem_dump通过；最终Chrome截图尚未完成。 本轮更新（旧失败仅属旧板/旧固件）：docs/verification/v0.2.1-stm32-four-profile-freeze.md。pipe-r20四档20项完整矩阵通过，持续59.598/111.956/157.770/187.636kSa/s；20M60秒/30M120秒。Keil1/2/5/10M，Chrome配置四档和SuperWatch四档，在线/脱机各四档LA通过。USB暂停/启停20、CDC12、RTT/SV32次启动及功能/CLI/MCP通过。入口Python405、间隔66、GUI144/29（重叠）/95、生产构建与2460文件本地Skill安装审计通过。Chrome真图已交文档任务，发布渠道不变。"
     },
     {
       "area": "mem_dump 四档与 HPM 实板稳定性",
@@ -54,7 +54,7 @@
     },
     {
       "area": "SuperWatch 与 SystemView 文档实测修复",
-      "result": "四档mem_dump最终矩阵20项通过，持续59.598/111.956/157.770/187.636 kSa/s。主机入口405项Python、GUI144项及新增配置29项（重叠）通过，生产构建通过；在线四档实板编程/校验通过，脱机LA采集和GUI继续。"
+      "result": "docs/verification/v0.2.1-hpm-gui-acceptance.md：172+159+158 Python、95 GUI/构建；HPM脱机78464B全回读、数组index0..15/16pts通过。新9a338046探针+Web codec两轮Chrome16449/16577事件、3任务、RuntimeDrop0，已断开。原生CSV/PNG保存未验证。"
     }
   ],
   "decisions": [
@@ -65,7 +65,7 @@
     "2026-09-10 用户指定 codex/v0.2.1-development 为本轮持续开发分支；后续修复继续该分支并推送 microkeen，整合 main 仍走审核 PR，不自动发布。"
   ],
   "hardware": {
-    "state": "STM32F103RET6 / 72MHz / RT-Thread 5.1.0；MKLINK V4 HPM5301 360MHz，pipe-r20已升级。LA5032 500MSa/s，CH1 SWDIO、CH2 SWCLK；最终资格测试进行中。",
+    "state": "STM32F103RET6 / 72MHz / RT-Thread 5.1.0；MKLINK V4 HPM5301 360MHz，pipe-r20固化候选已升级并通过报告所列ARM验证；恢复10M并断开。Chrome新安装版GUI保留8771页面。HPM板切换待用户。",
     "backups": ".build/reports/prerelease-hil-20260907、superwatch-write-20260907；保留其他芯片唯一备份。；本轮本地证据 .build/reports/peripheral-unification。；本轮 OTP 只读和浏览器证据 .build/reports/device-configuration。；STM32F103 唯一原始备份与本轮证据 .build/reports/stm32f103-options。",
     "installer": ".build/artifacts/release-0.2.0-20260908/Mklink-AI-Probe-v0.2.0-x64-Setup.exe"
   },
@@ -78,8 +78,8 @@
     "批量路径覆盖已列明HPM5301 DLM/XIP和新增HPM6E80 AXI SRAM、最多15区域；shared JTAG ID不识别精确型号，也不证明接线稳定。<50us请求沿用满速语义，非原子多变量/硬实时。XIP有界块忙冲突恢复不适用于RAM/MMIO或真实总线错误。历史HPM资格按对应固件保留；pipe-r20 HPM批时间戳/USB改动仍待HPM实板回归。ARM高速本轮按专门报告验证。"
   ],
   "next_actions": [
-    "完成pipe-r20最终ARM矩阵和GUI/在线/脱机校准，同步本地Skill；HPM5301/HPM6E80需换板回归批时间戳/USB改动，不继承旧版本资格。",
-    "官网文档任务同步STM32真实数据并保留r17/r19失败和历史。Chrome截图仍需浏览器连接，本轮不得将IAB材料称Chrome；不自动发布。",
+    "换接HPM5301/HPM6E80回归pipe-r20批时间戳、USB和四档，不继承旧版硬件资格。ARM固化包已通过77源文件哈希对照。",
+    "官网文档任务已收到四档Chrome真图和技术附件；保留公众号风格及技术附件分层，不自动发布。继续优化前先拆分批间组帧/调度开销；慢浏览器订阅需按队列背压评估，勿与USB字节故障混同。",
     "审核PR #2的外设/配置统一和四档mem_dump，不自动合并或发布。",
     "后续按原计划补STM32F103看门狗、STOP/STANDBY和WRP拒写行为及其他ARM实板；HPM永久编程未开放。",
     "本地Skill开发快照与正式安装器/发布渠道分开；定时任务维持暂停。"
