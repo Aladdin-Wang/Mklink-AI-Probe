@@ -131,9 +131,11 @@ def parse_timestamped_read_ram_response(response: str) -> TimestampedRead:
     match = _TIMESTAMP_RE.search(response)
     timestamp_us = int(match.group(1), 0) if match else None
     data = bytearray()
+    header_seen = False
     for line in response.splitlines():
         header = _TIMESTAMP_HEADER_RE.match(line)
-        if header:
+        if header and not header_seen and not data:
+            header_seen = True
             if timestamp_us is None:
                 timestamp_us = int(header.group(1), 16)
             continue
