@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-28T17:11:15+08:00`
+- 更新时间：`2026-09-28T17:25:20+08:00`
 - 分支：`codex/0.2.3-dev`
-- HEAD：`VCC 测量功能提交 342ac86；本次交接记忆随后单独提交`
-- 远端 HEAD：`342ac86 已推送并核对 microkeen/codex/0.2.3-dev；现有草稿 PR #9 继续开放，交接记忆随后推送`
-- 工作树：0.2.3 RAM 表头冲突修复及 V3/H743 验收文档待本轮提交；固件工作区保留用户修改。未发布。
-- 当前任务：V3 电压接口 raw/CLI/MCP 真机通过；H563 客户验收通过。H743 AP/Memory/SuperWatch 三场景、非对齐写入/零值/恢复最终一轮通过，4140 样本无读错误丢弃；文本 RAM 表头碰撞已修复，98 项回归通过。历史 USB 掉线和 Windows 433 未解决，用户要求继续排查连续芯片识别失败后的恢复问题。源码发现 DAP 整命令关中断、USB RESET 队列未复位等风险，尚未做 USB 修复。V4 遥测实测和安装包集成仍待完成。
+- HEAD：`9b5cc65 后新增 USB 修复验收文档，本轮随后提交`
+- 远端 HEAD：`已 fetch microkeen/codex/0.2.3-dev；USB 验收交接随后推送`
+- 工作树：V3/V4 USB 固件本地修复并构建；V3 已升级真机通过，固件工作区保留未提交修改；主机验收文档随后提交。未发布。
+- 当前任务：V3/V4 USB 风险修复：命令级关中断改调度锁，保留底层时序保护，DAP复位队列/代次/独立包/响应背压，V3控制台恢复修复；两版SEGGER和实际C模型及AP回归通过。V3已刷新固件，H743三场景4170样本、非对齐读写/零值/恢复通过；直接USB241次ID、5次重配置及约21ms Abort通过。本机缺少WinUSB接口GUID，经用户授权管理员备份补齐后可直接访问。V4/JTAG/真实目标断线压力未验证，V2 USB本轮未改。
 - 状态：`active`
 
 ## 里程碑
@@ -25,7 +25,7 @@
 - **0.2.3本地安装交接**：标准builder成功，覆盖安装退出0；Skill升级至0.2.3，插件版本及安装清单、安装包SHA256、D盘ProductVersion=0.2.3均核对。用户启动后8765 health=ok、探针枚举正常；nrf54l/V4 unlock_supported=true、lock_supported=false。sidecar SHA256=925C353519384C6EADE1D8C9467218D212C69A6904B4C42CCF6AA8B1E62221DF，与构建产物一致；无Python回退，正常退出后主进程/sidecar及8765监听均清零。
 - **0.2.3在线nRF54L安全操作阶段验证**：docs/verification/v0.2.3-nrf54l-online-security.md：新配方9项、在线API/CLI相关155项、GUI相关101项通过；生产前端构建成功。全量Python2320通过/2跳过、GUI721通过，各有1项既有版本断言失效，修正后单项复测通过。真实Chrome的V4探针/目标选择和两项确认弹窗通过，弹窗取消；未执行真机安全写入。
 - **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
-- **0.2.3 VCC 测量**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项、Skill与V3/V4 C模型和SEGGER构建通过。V3实际 raw/CLI/MCP 电压3246–3248mV、current/power null通过；未测V4和仪表精度。另见v0.2.3-v3-h743-acceptance-20260928.md：H743三场景4140样本、非对齐读写/全零/恢复通过；RAM表头碰撞修复，98项回归通过。历史USB掉线及Windows433待解决，未发布。
+- **0.2.3 VCC 测量**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项、Skill与V3/V4 C模型和SEGGER构建通过。V3实际 raw/CLI/MCP 电压3246–3248mV、current/power null通过；未测V4和仪表精度。另见v0.2.3-v3-h743-acceptance-20260928.md：H743三场景4140样本、非对齐读写/全零/恢复通过；RAM表头碰撞修复，98项回归通过。历史USB掉线及Windows433待解决，未发布。 USB修复见v3-v4-usb-recovery-20260928.md：V3已刷机，直接USB241次ID/5次重配置/Abort约21ms，通过后H7434170样本读写恢复通过；V4仅构建模型。
 
 ## 架构决策
 
@@ -37,13 +37,13 @@
 
 ## 真机环境
 
-- **state**：2026-09-28：V3+STM32H743 已连接。V3 电压约 3246–3248mV，current/power 不支持返回 null；实际 CLI 与 MCP 测试通过。H743 功能验收通过，USB 稳定性问题独立未解决；未用仪表校准，未测试 V4。
+- **state**：V3 已升级 USB 修复固件，H743 功能及直接 USB/Abort/重配置通过；V3电压3251mV，current/power null。本机WinUSB节点缺GUID已定向备份修复。V4/JTAG仍无本轮实机。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：.build/artifacts/v0.2.3-local-20260924/Mklink-AI-Probe-v0.2.3-x64-Setup.exe；SHA256 552EB646504C162AE4E5738280A054063704A88DA97F9EEC8202C69017BDD6D0。标准NSIS，自带后端与7059型号/2224算法，安装/S退出0；未正式发布，无更新签名。 实际安装目录 D:/Program Files/Mklink AI Probe，ProductVersion=0.2.3。
 
 ## 下一动作
 
-1. 继续 USB 稳定性排查：连续芯片识别失败、DAP 整命令关中断、USB 重配置收发队列状态、看门狗复位原因。H743 功能最终轮和客户 H563 已通过；不能据此宣称 USB 稳定性通过。V4 遥测及外部仪表精度待测，安装包尚未集成本轮解析修复。
+1. 参考 docs/verification/v3-v4-usb-recovery-20260928.md。保留新UF2与原始测试记录；后续用真实目标断线和长时压力验证历史USB故障，V4/JTAG和V2 USB单独验证。无需重复修改本机已有GUID。新固件与主机解析修复尚未发布/集成安装包。
 2. 用户若明确授权，按当前目标与已验证客户HEX执行在线GUI加锁、复位核对、CTRL-AP解锁、重烧和全量回读；记录证据。未经授权不执行擦除或安全写入。
 3. 若有STM32F767xG板卡，先确认实际Bank模式，再用对应FLM执行真机检查与独立回读；对26个缺扇区表FLM取得可信Pack/厂商资料后补齐。
 4. 手动清理移交：旧候选.build/artifacts/v0.2.3-dev和v0.2.3-nrf54l-offline此前删除被自动审批拦截，路径已给用户；未核实用户是否删除，不重试绕过。保留v0.2.3-local-20260924、正式0.2.2及唯一真机证据。 新会话继续codex/0.2.3-dev，先读取本文件并重新加载本地0.2.3 Skill。用户安装版位于D:/Program Files/Mklink AI Probe；开发WebGUI此前使用8785，操作前重新核对进程、设备和端口。0.2.3尚未正式发布。
