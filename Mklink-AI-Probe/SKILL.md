@@ -78,6 +78,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 | 固定 RTT 控制块地址 | [RTT 静态模式](references/rtt-static-mode.md) |
 | SystemView RTOS 跟踪与报告 | [SystemView](references/systemview-rtthread.md) |
 | RAM、变量、VOFA/SuperWatch、AXF、HardFault | [内存与符号](references/commands-memory.md) |
+| 下载器 VCC 输出电压、电流、功率测量 | [供电测量](references/power-telemetry.md) |
 | flush-memory、多地址或分块写入 | [静默写边界](references/flush-memory.md) |
 | Modbus、RS485、点表 | [Modbus](references/commands-modbus.md) |
 | UART、串口 profile | [串口](references/commands-serial.md) |

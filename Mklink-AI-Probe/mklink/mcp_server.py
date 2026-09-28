@@ -547,6 +547,19 @@ def _register_flash_tools(mcp: Any) -> None:
 
     @mcp.tool()
     @_exclusive_hardware_tool
+    def get_power() -> dict:
+        """Read probe VCC voltage_mv, current_ma, power_mw and sample_age_ms.
+
+        Read-only: no voltage confirmation, reset or target memory access.
+        Requires telemetry-capable V3/V4 firmware and an idle command session.
+        current_supported describes hardware capability; null means unavailable,
+        never zero. Power is calculated from filtered voltage and current, not
+        an instantaneous waveform or energy measurement.
+        """
+        return _connected_device().get_power()
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
     def set_power_on(
         voltage_mv: int,
         confirm_5v: bool = False,

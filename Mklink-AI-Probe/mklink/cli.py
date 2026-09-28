@@ -1294,6 +1294,43 @@ def _parse_version_response(text: str) -> tuple[str | None, list[str]]:
     return current, history
 
 
+def _cli_power_read(port: str | None, as_json: bool = False) -> int:
+    """Probe-only telemetry; deliberately avoids target/SWD initialization."""
+    import contextlib
+    import json
+
+    from mklink.bridge import MKLinkSerialBridge
+    from mklink.power import read_power
+
+    bridge = None
+    try:
+        # Keep --json stdout machine-readable even when discovery logs.
+        with contextlib.redirect_stdout(sys.stderr):
+            bridge = MKLinkSerialBridge(_resolve_port(port))
+            if not bridge.connect():
+                raise ConnectionError("Cannot connect to the probe command port")
+            result = read_power(bridge)
+    except Exception as exc:
+        print(f"[FAIL] {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if bridge is not None:
+            with contextlib.redirect_stdout(sys.stderr):
+                bridge.close()
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        for key, label, unit in (("voltage_mv", "VCC", "mV"),
+                                 ("current_ma", "Current", "mA"),
+                                 ("power_mw", "Power", "mW")):
+            value = result[key]
+            print(f"{label}: unavailable" if value is None else f"{label}: {value:g} {unit}")
+        print(f"Sample age: {result['sample_age_ms']} ms")
+        if not result["current_supported"]:
+            print("Current/power measurement is not supported by this firmware/hardware.")
+    return 0
+
+
 def _cli_version(port: str | None, all_history: bool = False, raw: bool = False):
     """读取烧录器自身固件版本（cmd.get_version）。
 
@@ -3871,6 +3908,12 @@ def main():
     read_ram_parser.add_argument("--size", type=int, default=256, help="读取字节数（默认 256）")
     read_ram_parser.add_argument("--save", help="保存到设备文件（如 ram.bin）")
 
+    power_parser = subparsers.add_parser(
+        "power-read", help="只读获取下载器 VCC 实测电压、电流和计算功率"
+    )
+    power_parser.add_argument("--port", help="命令串口（默认自动检测）")
+    power_parser.add_argument("--json", action="store_true", help="输出 JSON，单位 mV/mA/mW")
+
     # version 子命令
     version_parser = subparsers.add_parser(
         "version", help="读取烧录器自身固件版本（cmd.get_version）"
@@ -4546,6 +4589,8 @@ def main():
         )
     elif args.command == "read-ram":
         _cli_read_ram(args.port, args.addr, args.size, args.save)
+    elif args.command == "power-read":
+        return _cli_power_read(args.port, as_json=args.json)
     elif args.command == "version":
         _cli_version(args.port, all_history=args.all, raw=args.raw)
     elif args.command == "read-reg":

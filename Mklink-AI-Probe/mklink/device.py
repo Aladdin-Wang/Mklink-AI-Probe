@@ -1134,6 +1134,18 @@ class Device:
         if self._systemview_session and self._systemview_session._running:
             self.systemview_stop()
 
+    def get_power(self) -> dict:
+        """Read filtered VCC voltage/current/power without changing the output.
+
+        Returns voltage_mv, current_ma, power_mw, current_supported and
+        sample_age_ms. Null measurements are unavailable, not zero. Requires
+        telemetry-capable firmware and an idle command session.
+        """
+        from mklink.power import read_power
+
+        self._require_connected()
+        return read_power(self._bridge)
+
     def set_power_on(self, voltage_mv: int, *, confirm_5v: bool = False) -> None:
         """Enable probe VCC output at one supported voltage.
 

@@ -8,6 +8,7 @@
 | 域 | Tools | 备注 |
 |---|---|---|
 | 健康 | `ping` | 无需连接，首调确认 server 活着 |
+| 供电测量（0.2.3） | `get_power` | 只读 VCC 快照；V3 仅电压，V4 电压/电流/计算功率；需配套新固件，详见 [供电测量](power-telemetry.md) |
 | 项目配置 | `detect_mcu_profile` | 新 MCU 发现、FLM 候选选择、profile 固化 |
 | 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
@@ -47,6 +48,7 @@
 | `flush-memory` | 静默写 RAM；不得与 dump/VOFA/RTT/SystemView 并发。**单批总计 ≤12 KiB、≤8 个地址项**，超额串行分批并等待提示符；详见 [references/flush-memory.md](flush-memory.md) |
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
+| `power-read` | 只读 VCC 测量，支持 `--port`、`--json`；单位 mV/mA/mW，无需 AXF 或目标内存地址 |
 | `vofa` | VOFA+ 实时变量观测（快速连续 float 最多 16 路；精确离散地址/类型最多 15 路；Pika 命令最多 511 UTF-8 字节；支持 `--visualize`） |
 | `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
