@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-28T16:37:57+08:00`
+- 更新时间：`2026-09-28T17:11:15+08:00`
 - 分支：`codex/0.2.3-dev`
 - HEAD：`VCC 测量功能提交 342ac86；本次交接记忆随后单独提交`
 - 远端 HEAD：`342ac86 已推送并核对 microkeen/codex/0.2.3-dev；现有草稿 PR #9 继续开放，交接记忆随后推送`
-- 工作树：主机功能、测试、Skill 已提交；V3/V4 本地固件新增 cmd.get_power 并编译，通过模型测试，未发布固件。此前 AP 修复等待客户验证。
-- 当前任务：0.2.3 新增只读 VCC 测量：CLI power-read、MCP/Device get_power 和 Skill 已完成并推送。用户确认 V3 没有电流采样，因此仅返回电压，V4 返回电压/电流/计算功率。135 项主机测试及 V3/V4 C 模型测试通过，两版 SEGGER 构建通过；没有物理探针，精度及上板验收待测。当前安装包尚不含本次代码。此前扇区几何与 nRF54L 在线安全功能的硬件验证、脱机下载后加锁开发仍待完成。
+- 工作树：0.2.3 RAM 表头冲突修复及 V3/H743 验收文档待本轮提交；固件工作区保留用户修改。未发布。
+- 当前任务：V3 电压接口 raw/CLI/MCP 真机通过；H563 客户验收通过。H743 AP/Memory/SuperWatch 三场景、非对齐写入/零值/恢复最终一轮通过，4140 样本无读错误丢弃；文本 RAM 表头碰撞已修复，98 项回归通过。历史 USB 掉线和 Windows 433 未解决，用户要求继续排查连续芯片识别失败后的恢复问题。源码发现 DAP 整命令关中断、USB RESET 队列未复位等风险，尚未做 USB 修复。V4 遥测实测和安装包集成仍待完成。
 - 状态：`active`
 
 ## 里程碑
@@ -25,7 +25,7 @@
 - **0.2.3本地安装交接**：标准builder成功，覆盖安装退出0；Skill升级至0.2.3，插件版本及安装清单、安装包SHA256、D盘ProductVersion=0.2.3均核对。用户启动后8765 health=ok、探针枚举正常；nrf54l/V4 unlock_supported=true、lock_supported=false。sidecar SHA256=925C353519384C6EADE1D8C9467218D212C69A6904B4C42CCF6AA8B1E62221DF，与构建产物一致；无Python回退，正常退出后主进程/sidecar及8765监听均清零。
 - **0.2.3在线nRF54L安全操作阶段验证**：docs/verification/v0.2.3-nrf54l-online-security.md：新配方9项、在线API/CLI相关155项、GUI相关101项通过；生产前端构建成功。全量Python2320通过/2跳过、GUI721通过，各有1项既有版本断言失效，修正后单项复测通过。真实Chrome的V4探针/目标选择和两项确认弹窗通过，弹窗取消；未执行真机安全写入。
 - **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
-- **0.2.3 VCC 测量**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项通过，Skill校验通过；V3/V4实际C代码模型覆盖单位、能力、ADC无效、预热、陈旧、零值及tick回绕，两版SEGGER编译通过。未连接物理下载器，未刷机或发布。V3电流/功率为null，V4使用原有ADC换算；CLI查询不初始化目标SWD。
+- **0.2.3 VCC 测量**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项、Skill与V3/V4 C模型和SEGGER构建通过。V3实际 raw/CLI/MCP 电压3246–3248mV、current/power null通过；未测V4和仪表精度。另见v0.2.3-v3-h743-acceptance-20260928.md：H743三场景4140样本、非对齐读写/全零/恢复通过；RAM表头碰撞修复，98项回归通过。历史USB掉线及Windows433待解决，未发布。
 
 ## 架构决策
 
@@ -37,13 +37,13 @@
 
 ## 真机环境
 
-- **state**：2026-09-28：本轮只枚举虚拟串口与蓝牙串口，没有物理 MKLink，VCC 测量未做硬件验证。此前 nRF54L15 真机验证仍仅适用于其历史记录。
+- **state**：2026-09-28：V3+STM32H743 已连接。V3 电压约 3246–3248mV，current/power 不支持返回 null；实际 CLI 与 MCP 测试通过。H743 功能验收通过，USB 稳定性问题独立未解决；未用仪表校准，未测试 V4。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：.build/artifacts/v0.2.3-local-20260924/Mklink-AI-Probe-v0.2.3-x64-Setup.exe；SHA256 552EB646504C162AE4E5738280A054063704A88DA97F9EEC8202C69017BDD6D0。标准NSIS，自带后端与7059型号/2224算法，安装/S退出0；未正式发布，无更新签名。 实际安装目录 D:/Program Files/Mklink AI Probe，ProductVersion=0.2.3。
 
 ## 下一动作
 
-1. 等待客户验证前轮 AP 发现修复。VCC 测量新包独立保存；有硬件后用仪表对照 V3 电压和 V4 电压/电流、核对只读无供电副作用。需要集成安装包时重新构建，保持未发布状态。
+1. 继续 USB 稳定性排查：连续芯片识别失败、DAP 整命令关中断、USB 重配置收发队列状态、看门狗复位原因。H743 功能最终轮和客户 H563 已通过；不能据此宣称 USB 稳定性通过。V4 遥测及外部仪表精度待测，安装包尚未集成本轮解析修复。
 2. 用户若明确授权，按当前目标与已验证客户HEX执行在线GUI加锁、复位核对、CTRL-AP解锁、重烧和全量回读；记录证据。未经授权不执行擦除或安全写入。
 3. 若有STM32F767xG板卡，先确认实际Bank模式，再用对应FLM执行真机检查与独立回读；对26个缺扇区表FLM取得可信Pack/厂商资料后补齐。
 4. 手动清理移交：旧候选.build/artifacts/v0.2.3-dev和v0.2.3-nrf54l-offline此前删除被自动审批拦截，路径已给用户；未核实用户是否删除，不重试绕过。保留v0.2.3-local-20260924、正式0.2.2及唯一真机证据。 新会话继续codex/0.2.3-dev，先读取本文件并重新加载本地0.2.3 Skill。用户安装版位于D:/Program Files/Mklink AI Probe；开发WebGUI此前使用8785，操作前重新核对进程、设备和端口。0.2.3尚未正式发布。
