@@ -1096,7 +1096,7 @@ def test_superwatch_concurrent_poll_add_remove_pressure_keeps_batches_aligned(mo
     class SamplingSession:
         stats = {}
 
-        def __init__(self, _bridge, regions, _period):
+        def __init__(self, _bridge, regions, _period, **_kwargs):
             self.channel_count = regions[0][1] // 4
 
         def start(self):

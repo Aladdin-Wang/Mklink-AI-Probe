@@ -1611,6 +1611,7 @@ class SuperWatchStreamManager:
         self._write_events = deque(maxlen=128)
         self._write_requests = deque()
         self._live_write_supported = False
+        self._live_write_ranges = ()
         self._dump_restart = threading.Event()
         self._array_snapshot: dict[str, Any] | None = None
         self.set_stream_hub(stream_hub)
@@ -1819,8 +1820,19 @@ class SuperWatchStreamManager:
                 return
             raise RuntimeError("SuperWatch worker thread is still active")
         self.prepare(device)
-        capability = getattr(getattr(device, "_bridge", None), "supports_dump_write", None)
+        from mklink.dump_memory import ARM_WRITE_RANGES, HPM_WRITE_RANGES
+        bridge = getattr(device, "_bridge", None)
+        is_hpm = getattr(getattr(bridge, "_ctx", None), "idcode", None) == 0x1000563D
+        capability = getattr(bridge, "supports_hpm_dump_write" if is_hpm else "supports_dump_write", None)
         self._live_write_supported = bool(capability()) if callable(capability) else False
+        self._live_write_ranges = ARM_WRITE_RANGES
+        if is_hpm:
+            ram = device._target_writable_ram_ranges()
+            self._live_write_ranges = tuple(
+                (max(a, c), min(b, d)) for a, b in HPM_WRITE_RANGES
+                for c, d in ram if max(a, c) < min(b, d)
+            )
+            self._live_write_supported = self._live_write_supported and bool(self._live_write_ranges)
         stop_event = threading.Event()
         generation = object()
         self._stop_event = stop_event
@@ -1890,6 +1902,7 @@ class SuperWatchStreamManager:
                         scalar_count = len(scalar_items)
                         session = DumpMemoryStreamSession(
                             bridge, region_pairs, self._interval,
+                            write_ranges=self._live_write_ranges,
                         )
                         completed_integrity = dict(self._stream_integrity)
                         try:
@@ -1904,7 +1917,7 @@ class SuperWatchStreamManager:
                                 if request is not None:
                                     address, payload, future = request
                                     if future.set_running_or_notify_cancel():
-                                        if self._live_write_supported and 0x20000000 <= address <= 0x40000000 - len(payload):
+                                        if self._live_write_supported and any(a <= address and address + len(payload) <= b for a, b in self._live_write_ranges):
                                             try:
                                                 session.request_write(address, payload, future)
                                             except Exception as exc:

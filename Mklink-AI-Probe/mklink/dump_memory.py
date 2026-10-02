@@ -45,12 +45,22 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 import secrets
+
 import binascii
 import struct
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+
+# Protocol envelope; the manager additionally intersects HPM ranges with the
+# target's writable ELF/profile RAM. Never infer an exact chip from JTAG ID.
+ARM_WRITE_RANGES = ((0x20000000, 0x40000000),)
+HPM_WRITE_RANGES = (
+    (0x00000000, 0x00040000), (0x00200000, 0x00240000),
+    (0x01200000, 0x012C0000), (0x012FC000, 0x01300000),
+    (0xF0200000, 0xF0208000),
+)
 
 # ---------------------------------------------------------------------------
 # Protocol constants
@@ -908,6 +918,7 @@ class DumpMemoryStreamSession:
         period: float,
         *,
         stop_grace_s: float = 0.05,
+        write_ranges: tuple[tuple[int, int], ...] = ARM_WRITE_RANGES,
     ):
         if not region_pairs:
             raise ValueError("dump-memory requires at least one region")
@@ -922,6 +933,7 @@ class DumpMemoryStreamSession:
         self.region_pairs = list(region_pairs)
         self.period = float(period)
         self.stop_grace_s = max(0.0, float(stop_grace_s))
+        self.write_ranges = tuple(write_ranges)
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
         self._write_pending = None
@@ -948,8 +960,11 @@ class DumpMemoryStreamSession:
         """Called by the sole stream owner; ACKs arrive through read_frames()."""
         if not self.started or self._write_pending is not None:
             raise RuntimeError("No idle dump write slot")
-        if len(data) not in (1, 2, 4, 8) or not 0x20000000 <= address <= 0x40000000 - len(data):
-            raise ValueError("Live writes support ARM SRAM scalars of 1/2/4/8 bytes")
+        if len(data) not in (1, 2, 4, 8) or not any(
+            start <= address and address + len(data) <= end
+            for start, end in self.write_ranges
+        ):
+            raise ValueError("Live writes require supported target RAM scalars of 1/2/4/8 bytes")
         request_id = secrets.randbits(32) or 1
         packet = struct.pack('<4sIIB3x8s', b'SW01', request_id, address, len(data), data)
         packet += struct.pack('<I', binascii.crc32(packet) & 0xffffffff)

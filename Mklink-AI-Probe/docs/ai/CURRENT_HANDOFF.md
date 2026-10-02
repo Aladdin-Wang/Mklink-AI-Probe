@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T15:59:29.835583+08:00`
+- 更新时间：`2026-10-02T16:19:41.882482+08:00`
 - 分支：`codex/superwatch-live-write`
 - HEAD：`Based on microkeen/main 9758c677; SuperWatch live writes and device-timestamped GUI markers.`
 - 远端 HEAD：`Task branch submitted for review; no merge or release authorized.`
 - 工作树：Isolated host branch. Original checkout, separate firmware and MicroBoot pre-existing edits preserved.
-- 当前任务：按用户要求复测V4/HPM6E80：确认当前仅兼容路径，有约592ms采样空档。HPM实时通道尚未实现；原参数恢复，连接释放，记录已更新PR #13。
+- 当前任务：V4 HPM专用实时写入通道已实现、编译升级并通过HPM6E80实机及Web GUI验证；1ms采样写入附近最大1.218ms，原参数恢复。V2/V3未修改，PR #13待审查，未发布。
 - 状态：`complete`
 
 ## 里程碑
@@ -18,7 +18,7 @@
 
 ## 验证证据
 
-- **HPM6E80实时写入复测**：docs/verification/superwatch-live-write-hpm6e80-20261002.md：V4.5.2能力标识存在，但主机和固件限制ARM/SWD，HPM实际legacy-gap，最大间隔591.719ms。写入回读、会话保持、恢复通过，实时写入不支持。
+- **HPM6E80实时写入复测**：docs/verification/superwatch-live-write-hpm6e80-20261002.md：V4新增DUMP_WRITE_HPM=1，JTAG/sysbus内部RAM实时写入。四种宽度16次事务及4096字节恢复通过；真实manager最大1.218ms（修复前591.719ms）；Web GUI连续曲线、写入标记及零丢包通过。Python247、GUI128、生产构建通过。
 - **V2实时写入实机验证**：V2.8.0/DUMP_WRITE=1，30MHz，8/16/32/64位写入恢复通过；1ms模式最大间隔1136us，最快模式350us，CRC与固件错误零。SuperWatch会话保持、暂停写入通过；上层阶跃间隔1002/1001/1001us。详见superwatch-live-write-v23-20261002.md。
 - **V3实时写入实机验证**：V3.5.1/DUMP_WRITE=1，30MHz，8/16/32/64位写入与恢复通过；1ms模式最大间隔1167us，最快模式378us，CRC/固件错误零。SuperWatch会话保持、暂停写入和恢复通过；未新增浏览器验证。见superwatch-live-write-v23-20261002.md。
 - **SuperWatch实时写入**：docs/verification/superwatch-live-write-20261002.md：Python235、GUI128、生产构建与固件控制测试通过；V4实机升级，8/16/32/64位写入回读，Web GUI 19秒真实阶跃录像。
@@ -37,15 +37,15 @@
 
 ## 真机环境
 
-- **state**：V4 + HPM6E80，用户SDK1.12.1 hello_world；有效ELF Flash段一致，BIN差异仅填充。最终wave_tick递增，原response_gain已恢复回读。无刷机/供电修改，连接释放。
+- **state**：V4已升级HPM实时写入候选固件，HPM6E80用户hello_world工程实测通过；原response_gain与4096字节fixture恢复回读，连接释放，测试后端/浏览器关闭。未修改目标Flash或供电；V2/V3八份源文件哈希保持一致。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：.build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。
 
 ## 下一动作
 
-1. HPM实时写入需另行补齐JTAG/sysbus路径及目标RAM校验，修正能力与兼容提示语义；不能用ARM实测外推。
+1. 审查PR #13的V4 HPM专用通道及本地精确固件补丁；当前HIL限定HPM6E80内部RAM，其他HPM型号和外部SDRAM未认证。
 2. V2/V3/V4实时写入HIL均完成；审查PR #13及各固件checkout的精确补丁，再按授权整合发布。原始实测记录位于.build/reports/live-write-v2-hil、live-write-v3-hil与live-write。
-3. 审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。
+3. 实时通道：ARM需DUMP_WRITE=1，HPM需DUMP_WRITE_HPM=1并通过目标RAM校验；旧固件或不适用地址保持兼容路径及明确采样空档提示。
 4. 配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。
 5. 本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。
 

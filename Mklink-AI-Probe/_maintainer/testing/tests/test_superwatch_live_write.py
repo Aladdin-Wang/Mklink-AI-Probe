@@ -70,9 +70,19 @@ class Peer:
         return (self.chunks.pop(0) if self.chunks else b'') + _dump_frame(self.timestamp, struct.pack('<f', self.value))
 
 
-def manager_peer(tmp_path, live=True, write_error=None):
+def manager_peer(tmp_path, live=True, write_error=None, hpm=False):
     device, operations = _symbol_write_device(tmp_path, write_error=write_error)
     peer = Peer(live)
+    address = 0x20000020
+    if hpm:
+        from dataclasses import replace
+        address = 0x01200020
+        peer._ctx = SimpleNamespace(idcode=0x1000563D)
+        peer.supports_hpm_dump_write = lambda: live
+        device._target_writable_ram_ranges = lambda: [(address, address + 4)]
+        device.symbol_catalog = replace(device.symbol_catalog, items=tuple(
+            replace(desc, address=address) for desc in device.symbol_catalog.items
+        ))
     device._bridge = peer
     device.read_memory = lambda address, size: struct.pack('<f', peer.value)
     original_write = device.write_memory
@@ -81,7 +91,7 @@ def manager_peer(tmp_path, live=True, write_error=None):
         peer.value = struct.unpack('<f', data)[0]
     device.write_memory = write
     manager = SuperWatchStreamManager()
-    manager._runtime = SuperWatchRuntime(items=[WatchItem('gain', 0x20000020, 'float', 4)])
+    manager._runtime = SuperWatchRuntime(items=[WatchItem('gain', address, 'float', 4)])
     manager.start(device)
     end = time.monotonic() + 1
     while manager._origin_us is None and time.monotonic() < end: time.sleep(.001)
@@ -163,3 +173,43 @@ def test_stopping_worker_rejects_idle_write(tmp_path):
     with pytest.raises(RuntimeError, match='stopping'):
         manager.write_symbol('gain', generation=1, value=2.0)
     assert operations == []
+
+
+@pytest.mark.parametrize('live', [True, False])
+def test_hpm_capability_and_target_ram_intersection(tmp_path, live):
+    manager, peer, operations = manager_peer(tmp_path, live, hpm=True)
+    try:
+        epoch = (manager._thread, manager._origin_us, manager._metadata_version)
+        result = manager.write_symbol('gain', generation=1, value=3.125)
+        assert result['mode'] == ('live' if live else 'legacy-gap')
+        assert result['verified'] and result['value'] == 3.125
+        assert manager._live_write_ranges == ((0x01200020, 0x01200024),)
+        assert manager.get_status()['live_write_supported'] is live
+        assert epoch == (manager._thread, manager._origin_us, manager._metadata_version)
+    finally:
+        manager.stop()
+
+
+@pytest.mark.parametrize('address,size,allowed', [
+    (0x01200020, 1, True), (0x01200020, 2, True),
+    (0x01200020, 4, True), (0x01200020, 8, True),
+    (0x012BFFFC, 8, False), (0x012C0000, 4, False),
+    (0x80000000, 4, False), (0xF0000000, 4, False),
+    (0x20000020, 4, False), (0x01200020, 3, False),
+])
+def test_hpm_session_rejects_unsupported_ranges_before_transmit(address, size, allowed):
+    from mklink.dump_memory import HPM_WRITE_RANGES
+    peer = Peer()
+    session = DumpMemoryStreamSession(peer, [(0x01200020, 4)], .001, write_ranges=HPM_WRITE_RANGES)
+    session.start()
+    before = len(peer.writes)
+    if allowed:
+        # Peer decodes float writes only; use the real framing with a raw sink.
+        peer._write_raw = lambda data: peer.writes.append(data)
+        session.request_write(address, bytes(size), Future())
+        assert len(peer.writes) == before + 1
+    else:
+        with pytest.raises(ValueError):
+            session.request_write(address, bytes(size), Future())
+        assert len(peer.writes) == before
+    session.stop()
