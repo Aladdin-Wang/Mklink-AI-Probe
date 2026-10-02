@@ -66,6 +66,12 @@
         {{ tr('仅已选', 'Selected Only') }}
       </label>
       <span>{{ tr(`已选 ${selected.size}`, `${selected.size} selected`) }}</span>
+      <span class="path-alignment" :aria-label="tr('变量名称对齐', 'Variable name alignment')">
+        <button type="button" class="edit-button" data-testid="align-paths-left" @click="alignPaths('left')"
+          :title="tr('一键查看所有变量名称开头', 'Show the beginning of all variable names')">{{ tr('左对齐', 'Align left') }}</button>
+        <button type="button" class="edit-button" data-testid="align-paths-right" @click="alignPaths('right')"
+          :title="tr('一键查看所有变量名称末尾', 'Show the end of all variable names')">{{ tr('右对齐', 'Align right') }}</button>
+      </span>
       <button type="button" class="edit-button" data-testid="pin-selected"
         :disabled="pinsBusy || !pinsReady || selected.size === 0" @click="pinSelected">
         {{ tr('置顶已选', 'Pin selected') }}
@@ -136,7 +142,7 @@
             <LoaderCircle v-if="catalog.browseLoading.value.has(row.node.key)" class="branch-spinner" :size="15" aria-hidden="true" />
             <ChevronDown v-else-if="row.expanded" :size="15" aria-hidden="true" />
             <ChevronRight v-else :size="15" aria-hidden="true" />
-            <span class="branch-name">{{ row.node.label }}</span>
+            <VariablePath class="branch-name" :path="row.node.label" :alignment="pathAlignment" />
             <span v-if="row.node.childCount !== null" class="branch-count">
               {{ row.node.kind === 'range' ? row.node.childCount : `${row.selectedLeafCount} / ${row.node.childCount}` }}
             </span>
@@ -180,7 +186,7 @@
           @click="openCLayout(row.node.container.path)"
         >
           <Code2 :size="15" aria-hidden="true" />
-          <span class="branch-name">{{ row.node.label }}</span>
+          <VariablePath class="branch-name" :path="row.node.label" :alignment="pathAlignment" />
           <span class="container-type">{{ row.node.container.type_name }}</span>
           <span class="container-state">{{ tr('待定义', 'Needs definition') }}</span>
         </button>
@@ -214,7 +220,7 @@
                 <Eye v-else :size="15" aria-hidden="true" />
               </button>
             </span>
-            <VariablePath class="variable-name" :path="row.node.descriptor.path" />
+            <VariablePath class="variable-name" :path="row.node.descriptor.path" :alignment="pathAlignment" />
             <span class="variable-type">{{ row.node.descriptor.type_name }}</span>
             <span :data-testid="`latest-${row.node.descriptor.path}`" class="variable-value" :title="formatValue(latestValues[row.node.descriptor.path])">
               {{ formatValue(latestValues[row.node.descriptor.path]) }}
@@ -424,6 +430,10 @@ const {
   parseSelectedSymbols,
 } = useDashboardSetup()
 const query = ref('')
+const pathAlignment = ref<{ edge: 'left' | 'right'; revision: number }>({ edge: 'left', revision: 0 })
+function alignPaths(edge: 'left' | 'right'): void {
+  pathAlignment.value = { edge, revision: pathAlignment.value.revision + 1 }
+}
 const sourceReloaded = ref(false)
 const manualAddOpen = ref(false)
 const manualPath = ref('')
@@ -948,7 +958,8 @@ watch(tree, roots => {
 .icon-button:disabled { color: var(--muted); cursor: default; }
 .manual-add-row { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .manual-add-row .form-input { min-width: 0; flex: 1; }
-.panel-filters { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+.panel-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: space-between; padding: 7px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+.path-alignment { display: flex; gap: 4px; }
 .panel-filters label { display: flex; align-items: center; gap: 5px; }
 .stale-banner { padding: 7px 10px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 12px; }
 .variable-groups { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -1031,7 +1042,7 @@ watch(tree, roots => {
 .container-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
 .container-type { overflow: hidden; color: var(--muted); font: 11px Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .container-state { color: var(--warn); font-size: 11px; white-space: nowrap; }
-.branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px Consolas, monospace; }
+.branch-name { min-width: 0; white-space: nowrap; font: 12px Consolas, monospace; }
 .branch-count { color: var(--muted); font: 11px Consolas, monospace; }
 .variable-row { border-bottom: 1px solid var(--border); }
 .variable-row.selected { background: color-mix(in srgb, var(--accent) 7%, transparent); }
