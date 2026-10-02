@@ -27,6 +27,9 @@ Run through `scripts/build_workspace.ps1` on Windows:
 - 84 Python RTT/SuperWatch streaming tests passed after adding the standalone
   template assets. The build wrapper retained test scratch containing links for
   safe manual inspection; no linked paths were force-cleaned.
+- The first feedback-contract run caught a README link to an unshipped `docs`
+  file. User instructions were moved to public `references/superwatch-replay.md`;
+  all 60 feedback queue/public-package boundary tests then passed.
 
 ## Real Chrome (2026-10-02)
 
