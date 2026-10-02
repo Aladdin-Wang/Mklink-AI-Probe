@@ -43,6 +43,8 @@ Zero internal mklink dependencies — only uses struct/binascii from stdlib.
 
 from __future__ import annotations
 
+from concurrent.futures import Future
+import secrets
 import binascii
 import struct
 import threading
@@ -264,6 +266,11 @@ class DumpMemoryParser:
         # Step 4: Detect B1 vs OLD
         region_count = frame_bytes[18]
 
+        if region_count == 0 and frame_length == 42 and frame_bytes[19] == 0x57:
+            request_id, address, size, status = struct.unpack_from('<IIBB', frame_bytes, 20)
+            return {"format": "WRITE_ACK", "timestamp_us": struct.unpack_from('<Q', frame_bytes, 8)[0],
+                    "request_id": request_id, "address": address, "size": size,
+                    "status": status, "data": frame_bytes[30:38][:size]}
         if self._looks_like_b1(frame_bytes, frame_length, region_count):
             return self._parse_b1(frame_bytes, frame_length)
         return self._parse_old(frame_bytes, frame_length, region_count)
@@ -917,6 +924,7 @@ class DumpMemoryStreamSession:
         self.stop_grace_s = max(0.0, float(stop_grace_s))
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
+        self._write_pending = None
         self._protocol_frames = 0
         self._complete_samples = 0
         self._firmware_flagged_frames = 0
@@ -936,12 +944,43 @@ class DumpMemoryStreamSession:
             raise
         self.started = True
 
+    def request_write(self, address: int, data: bytes, future: Future) -> None:
+        """Called by the sole stream owner; ACKs arrive through read_frames()."""
+        if not self.started or self._write_pending is not None:
+            raise RuntimeError("No idle dump write slot")
+        if len(data) not in (1, 2, 4, 8) or not 0x20000000 <= address <= 0x40000000 - len(data):
+            raise ValueError("Live writes support ARM SRAM scalars of 1/2/4/8 bytes")
+        request_id = secrets.randbits(32) or 1
+        packet = struct.pack('<4sIIB3x8s', b'SW01', request_id, address, len(data), data)
+        packet += struct.pack('<I', binascii.crc32(packet) & 0xffffffff)
+        self._write_pending = (request_id, address, data, future)
+        self.bridge._write_raw(b'\x1e' + packet.hex().encode('ascii') + b'\n')
+
+    def _write_ack(self, frame: dict) -> None:
+        pending = self._write_pending
+        if pending is None or frame['request_id'] != pending[0]:
+            return
+        self._write_pending = None
+        _, address, data, future = pending
+        if frame['address'] != address or frame['size'] != len(data):
+            future.set_exception(RuntimeError("Live write ACK address/size mismatch; result unknown"))
+        elif frame['status'] or frame['data'] != data:
+            future.set_exception(RuntimeError(f"Live write failed verification (status={frame['status']})"))
+        else:
+            future.set_result({"data": frame['data'], "timestamp_us": frame['timestamp_us'],
+                               "request_id": frame['request_id'], "mode": "live"})
+
     def read_frames(self, max_bytes: int | None = None) -> list[dict]:
         if not self.started:
             raise RuntimeError("dump-memory stream is not started")
         raw = self.bridge.drain_stream_bytes(max_bytes=max_bytes)
         frames = self.parser.feed(raw) if raw else []
+        samples = []
         for frame in frames:
+            if frame.get("format") == "WRITE_ACK":
+                self._write_ack(frame)
+                continue
+            samples.append(frame)
             self._protocol_frames += 1
             flags = int(frame.get("flags", 0))
             if flags:
@@ -953,9 +992,14 @@ class DumpMemoryStreamSession:
                 or frame.get("block_index", 0) + 1 >= frame.get("block_count", 1)
             ):
                 self._complete_samples += 1
-        return frames
+        return samples
 
     def stop(self) -> None:
+        if self._write_pending is not None:
+            future = self._write_pending[3]
+            self._write_pending = None
+            if not future.done():
+                future.set_exception(RuntimeError("Stream stopped before write acknowledgement; result unknown"))
         if not self.started:
             return
         command = build_dump_mem_command(

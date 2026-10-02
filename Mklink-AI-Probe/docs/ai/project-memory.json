@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-21T15:15:15.4137261+08:00",
+  "updated_at": "2026-10-02T14:49:23.990605+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/release-022-handoff",
-    "head": "基于已发布 main 424f470；本分支整理交接并将MK-Firmware同步为已发布的四份新固件。",
-    "remote_head": "PR #5 已合并；v0.2.2 固定在 424f4700a4d9726db1e9e1a7cfbadaee68a737e6。",
-    "working_tree": "正式发布附件与MK-Firmware四份新固件SHA-256一致。原主工作区及其他仓库修改保留。"
+    "branch": "codex/superwatch-live-write",
+    "head": "Based on microkeen/main 9758c677; SuperWatch live writes and device-timestamped GUI markers.",
+    "remote_head": "Task branch submitted for review; no merge or release authorized.",
+    "working_tree": "Isolated host branch. Original checkout, separate firmware and MicroBoot pre-existing edits preserved."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "complete",
-    "current_task": "将已发布的四份固件同步到主线MK-Firmware目录，并按维护者授权核对检查后合并PR #6。"
+    "current_task": "SuperWatch连续采集写变量：完成主机/配套V4固件、升级与实机Web GUI验证，更新MicroBoot真实阶跃GIF。等待PR整合与配套固件发布决策。"
   },
   "milestones": [
     {
@@ -24,6 +24,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "SuperWatch实时写入",
+      "result": "docs/verification/superwatch-live-write-20261002.md：Python235、GUI128、生产构建与固件控制测试通过；V4实机升级，8/16/32/64位写入回读，Web GUI 19秒真实阶跃录像。"
+    },
     {
       "area": "发布与安装",
       "result": "docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。"
@@ -53,7 +57,7 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "HPMLink V4 + HPM5301。Word72=1、Word79=3、HARD_LOCK=0x304C0016；38,364字节固件独立回读一致，UART0心跳递增。组18/19已永久锁定，禁止重放原配方。实际断电后GUI/独立回读和UART复核通过，不进行安全生命周期操作。",
+    "state": "本次V4连接STM32F103RET6，升级V4.5.2实时写入开发候选固件。目标RAM参数及自动阶跃已恢复回读，连接已释放。历史HPM OTP记录仅供查阅，禁止重复烧写。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
     "installer": ".build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。"
   },
@@ -66,11 +70,9 @@
     "HPM6E80回归有限时长且无UART；本次用户更新的四份固件只做格式/CRC/公开发布验证，不把历史实测外推到新二进制。"
   ],
   "next_actions": [
-    "先读取本交接与docs/verification/v0.2.2-release-final.md；根据用户新任务选取具体历史报告，不重复已完成发布。",
-    "PR #6包含精简交接和已发布固件目录同步；从主工作区更新源码前核对用户修改，勿reset/stash未知修改。",
-    "如需V2自动升级，单独实现RBL类型、校验与升级路径并回归；当前只提供手动RBL下载。",
-    "Cargo debug/release生成物已清理，后续构建自动重建；STM32测试.mklink历史capture.csv已转为相邻capture.csv.gz，旧分析脚本使用前按需解压。审计见.build/reports/disk-cleanup-20260921；其他E:/PHDZ由维护者处理。",
-    "MicroBoot文档及固件源码各有独立修改，接手先检查各仓库状态；硬件操作先枚举当前连接，勿重复OTP烧写。"
+    "审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。",
+    "配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。",
+    "本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"

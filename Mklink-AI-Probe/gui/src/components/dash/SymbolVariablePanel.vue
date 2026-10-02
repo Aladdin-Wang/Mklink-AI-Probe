@@ -829,6 +829,10 @@ async function writeValue(symbol: SymbolDescriptor): Promise<void> {
   try {
     const result = await catalog.writeSymbol(symbol.path, typedValue(symbol))
     writeSuccess[symbol.path] = result.value
+    if (result.mode === 'legacy-gap') {
+      toast.info(tr('已写入并校验。旧固件写入期间有采样空档，曲线历史已保留。',
+        'Written and verified. Older firmware has a sampling gap during writes; curve history is preserved.'))
+    }
     editing.value = null
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
