@@ -8,6 +8,7 @@ Browser side uses Chart.js loaded from CDN.
 from __future__ import annotations
 
 import atexit
+from collections import deque
 import json
 import queue
 import re
@@ -248,6 +249,11 @@ class VisualizationServer:
         }
         self._estimated_interval = 0.0
         self._estimated_rate = 0.0
+        self._last_valid_sample = None
+        self._sample_arrivals = deque(maxlen=10000)
+        self._stream_health = "starting"
+        self._stream_error = ""
+        self._health_lock = threading.Lock()
         # Collection control state
         self._collecting = threading.Event()
         self._collecting.set()  # start in "collecting" state
@@ -311,6 +317,7 @@ class VisualizationServer:
                         "mode": server._mode,
                         "channel_metadata": server._channel_metadata,
                         "clients": client_count,
+                        **server.sample_health(),
                     })
                 elif this.path.startswith("/static/"):
                     from mklink._static import serve_static
@@ -557,6 +564,17 @@ class VisualizationServer:
         if not self._running.is_set():
             return
 
+        if not any(key not in {"_t", "timestamp_us"} for key in data):
+            return
+        with self._health_lock:
+            now = time.monotonic()
+            self._last_valid_sample = now
+            # Several regions of one acquisition share a timestamp.
+            if not self._history or self._history[-1].get("timestamp_us", self._history[-1].get("_t")) != data.get("timestamp_us", data.get("_t")):
+                self._sample_arrivals.append(now)
+            self._stream_health = "running"
+            self._stream_error = ""
+
         self._update_sample_estimate(data)
 
         # Maintain history ring buffer
@@ -574,6 +592,32 @@ class VisualizationServer:
                     dead.append(cq)
             for dq in dead:
                 self._clients.remove(dq)
+
+    def set_stream_health(self, state: str, message: str = "") -> None:
+        with self._health_lock:
+            self._stream_health = state
+            self._stream_error = message
+        self.push_event("stream_health", {"state": state, "message": message})
+
+    def sample_health(self) -> dict:
+        if self._mode != "SuperWatch":
+            return {}
+        with self._health_lock:
+            now = time.monotonic()
+            age = None if self._last_valid_sample is None else now - self._last_valid_sample
+            state = self._stream_health
+            if state == "running" and (age is None or age > max(5.0, 3 * self._interval)):
+                state = "stalled"
+            if self._collection_state != "running":
+                state = self._collection_state
+            while self._sample_arrivals and self._sample_arrivals[0] < now - 5:
+                self._sample_arrivals.popleft()
+            rate = 0.0
+            if state == "running" and len(self._sample_arrivals) > 1:
+                rate = (len(self._sample_arrivals) - 1) / max(now - self._sample_arrivals[0], 1e-6)
+            return {"state": state, "estimated_rate": rate,
+                    "estimated_interval": 1 / rate if rate else 0.0,
+                    "last_sample_age": age, "stream_error": self._stream_error}
 
     def _update_sample_estimate(self, data: dict[str, float]) -> None:
         """Estimate sample interval/rate from recent timestamped data points."""
