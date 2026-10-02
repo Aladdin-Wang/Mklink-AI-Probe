@@ -338,6 +338,70 @@ var channelYState = {};  // { name: { zoom: 1, offset: 0, autoRange: true } }
 var selectedChannel = null;  // Channel under mouse for Y-axis zoom
 var splitChannelName = null;
 var chartPanelLayout = null;
+var watchWorkspace = IS_SUPERWATCH_MODE ? window.__MKLINK_WATCH_WORKSPACE__ || null : null;
+var workspaceY = Object.create(null);
+var workspaceSignature = null;
+function signalStyle(name) { return watchWorkspace && watchWorkspace.signals && watchWorkspace.signals[name] || {}; }
+function signalLabel(name) { return signalStyle(name).alias || name; }
+function setWorkspace(value) {
+  if (!IS_SUPERWATCH_MODE || !value || !Array.isArray(value.panes) || !value.panes.length) return;
+  var signature=JSON.stringify(value);
+  if (signature === workspaceSignature) return;
+  workspaceSignature=signature;
+  watchWorkspace = value;
+  var wrap=document.getElementById('chart-wrap');
+  if (wrap) {
+    wrap.style.minHeight = Math.max(240,value.panes.length*130)+'px';
+    var parent=wrap.parentElement;
+    if (parent) parent.style.overflowY='auto';
+  }
+  if (chartLegend) delete chartLegend.dataset.signature;
+  updateChartLegend(); drawChart();
+}
+function syncWorkspaceDividers(panels) {
+  var host=document.getElementById('chart-wrap');
+  if (!host) return;
+  var controls=host.querySelectorAll('.workspace-divider');
+  if (controls.length !== panels.length-1) {
+    controls.forEach(function(el){el.remove();});
+    panels.slice(0,-1).forEach(function(panel,index){
+      var divider=document.createElement('div');
+      divider.className='workspace-divider';divider.setAttribute('role','separator');
+      divider.setAttribute('aria-label','Resize plot '+(index+1));divider.setAttribute('aria-orientation','horizontal');divider.tabIndex=0;
+      function resizeBy(delta) {
+        var panes=watchWorkspace.panes.map(function(p){return Object.assign({},p);});
+        var total=panes[index].height+panes[index+1].height;
+        panes[index].height=Math.max(100,Math.min(total-100,panes[index].height+delta));
+        panes[index+1].height=total-panes[index].height;
+        window.dispatchEvent(new CustomEvent('mklink:workspace-resize',{detail:panes}));
+      }
+      divider.addEventListener('keydown',function(e){if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();resizeBy(e.key==='ArrowUp'?-20:20);}});
+      divider.addEventListener('mousedown',function(e){
+        e.preventDefault();var start=e.clientY;
+        var onUp=function(end){resizeBy(end.clientY-start);window.removeEventListener('mouseup',onUp);};
+        window.addEventListener('mouseup',onUp,{once:true,signal:viewerAbortController.signal});
+      });
+      host.appendChild(divider);
+    });
+    controls=host.querySelectorAll('.workspace-divider');
+  }
+  controls.forEach(function(el,index){el.style.top=(panels[index].top+panels[index].height+8)+'px';});
+}
+function panelForSignal(name) {
+  var panes = chartPanelLayout && chartPanelLayout.panes;
+  if (!panes) return null;
+  return panes.find(function(p) { return p.id === signalStyle(name).pane; }) || panes[0];
+}
+function workspaceRange(panel) {
+  if (workspaceY[panel.id]) return workspaceY[panel.id];
+  var low=Infinity, high=-Infinity;
+  Object.keys(FIELDS).forEach(function(name) {
+    if (!FIELDS[name].visible || panelForSignal(name).id !== panel.id) return;
+    var range=getChannelYRange(name);
+    if (range) { low=Math.min(low,range.yMin); high=Math.max(high,range.yMax); }
+  });
+  return Number.isFinite(low) ? {yMin:low,yMax:high} : {yMin:-1,yMax:1};
+}
 
 // Timeline navigation (Task 5I)
 var DEFAULT_TIMELINE_ZOOM = CONFIG.mode === 'SuperWatch' ? 2 : 1;
@@ -515,7 +579,7 @@ function updateChartLegend() {
     swatch.style.background = meta.color;
     var label = document.createElement('span');
     label.className = 'chart-legend-name';
-    label.textContent = name;
+    label.textContent = signalLabel(name); label.title = name; if (signalStyle(name).emphasis) label.style.fontWeight = 'bold';
     row.appendChild(swatch);
     row.appendChild(label);
     if (IS_SUPERWATCH_MODE) {
@@ -550,6 +614,10 @@ function updateSplitPanelControl(active, dividerY) {
 
 function setSplitChannel(name) {
   if (!IS_SUPERWATCH_MODE || !FIELDS[name] || !FIELDS[name].visible) return false;
+  if (watchWorkspace) {
+    window.dispatchEvent(new CustomEvent('mklink:workspace-split', {detail: {path: name}}));
+    return true;
+  }
   var names = visibleChartChannelNames();
   if (names.length < 2) return false;
   splitChannelName = (splitChannelName === name) ? null : name;
@@ -1645,7 +1713,7 @@ function _buildWatchRowHtml(name, m) {
   );
   return '<tr data-channel="' + escapeHtml(name) + '">' +
     '<td class="watch-col-delete"><button class="watch-delete-btn" data-name="' + escapeHtml(name) + '" title="Remove">&times;</button></td>' +
-    '<td data-col="name" class="' + watchColClass('name') + '" style="' + watchColStyle('name') + 'color:' + m.color + '"><span class="watch-name-cell">' + expandHtml + visHtml + '<span class="watch-name-text">' + escapeHtml(name) + '</span></span></td>' +
+    '<td data-col="name" class="' + watchColClass('name') + '" style="' + watchColStyle('name') + 'color:' + m.color + '"><span class="watch-name-cell">' + expandHtml + visHtml + '<span class="watch-name-text">' + escapeHtml(signalLabel(name)) + '</span></span></td>' +
     '<td data-col="type" class="' + watchColClass('type') + '" style="' + watchColStyle('type') + '">' + escapeHtml(typeText) + '</td>' +
     '<td data-col="value" class="' + valClass + watchColClass('value') + (_watchWrittenValues[name] ? ' watch-val-written' : '') + '" style="' + watchColStyle('value') + '"><span class="watch-value-cell"><span class="watch-value-text">' + escapeHtml(_watchWrittenValues[name] ? _watchWrittenValues[name].displayText : cur) + '</span>' + (isStruct ? '' : renderValueFormatSelect(name, m)) + '</span></td>' +
     '<td data-col="y" class="' + watchColClass('y') + '" style="' + watchColStyle('y') + '">' + yHtml + '</td>' +
@@ -2350,6 +2418,7 @@ function serializeState() {
     channels.push(ch);
   }
   var state = { channels: channels };
+  if (watchWorkspace) state.workspace = JSON.parse(JSON.stringify(watchWorkspace));
   state.splitChannel = splitChannelName;
   state.globalYView = {
     zoom: globalYView.zoom,
@@ -2381,6 +2450,7 @@ function deserializeState(json) {
   try {
     var state = (typeof json === 'string') ? JSON.parse(json) : json;
     if (!state || !state.channels) return false;
+    if (state.workspace) window.dispatchEvent(new CustomEvent('mklink:workspace-import', { detail: state.workspace }));
     globalYView = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
     splitChannelName = null;
     for (var i = 0; i < state.channels.length; i++) {
@@ -2468,6 +2538,11 @@ function deserializeState(json) {
 // ============================================================
 // CSV/PNG export
 // ============================================================
+function csvHeader(name, unit) {
+  var label=signalLabel(name);
+  var text=(label === name ? name : label+' ['+name+']')+(unit ? ' ('+unit+')' : '');
+  return /[,;"\n\r]/.test(text) ? '"'+text.replace(/"/g,'""')+'"' : text;
+}
 function exportCSV() {
   if (IS_SUPERWATCH_MODE && binaryHistoryRequester && !singleTriggerCaptureFrozen) {
     if (!binaryExportPending) {
@@ -2484,7 +2559,7 @@ function exportCSV() {
   if (csvCfg.includeTimestamp !== false) headers.push('timestamp');
   for (var i = 0; i < names.length; i++) {
     var ch = FIELDS[names[i]];
-    headers.push(names[i] + (ch.unit ? ' (' + ch.unit + ')' : ''));
+    headers.push(csvHeader(names[i], ch.unit));
   }
   var rows = [headers.join(delim)];
 
@@ -2559,7 +2634,7 @@ function exportBinaryHistorySnapshot(snapshot) {
   if (csvCfg.includeTimestamp !== false) headers.push('timestamp');
   for (var nameIndex = 0; nameIndex < names.length; nameIndex++) {
     var field = FIELDS[names[nameIndex]];
-    headers.push(names[nameIndex] + (field.unit ? ' (' + field.unit + ')' : ''));
+    headers.push(csvHeader(names[nameIndex], field.unit));
   }
   var rows = new Array(snapshot.itemCount + 1);
   rows[0] = headers.join(delim);
@@ -3312,6 +3387,7 @@ function disposeViewer() {
 if (typeof window !== 'undefined') {
   if (!window.__waveformViewers) window.__waveformViewers = {};
   var binaryViewer = window.__waveformViewers[CONFIG.mode] || {};
+  binaryViewer.setWorkspace = setWorkspace;
   binaryViewer.configureBinaryChannels = configureBinaryChannels;
   binaryViewer.acceptBinaryBatch = acceptBinaryBatch;
   binaryViewer.acceptBinarySummary = acceptBinarySummary;
@@ -3504,6 +3580,9 @@ function getSharedYRange(excludedName) {
 }
 
 function getSuperwatchPanelAtY(localY) {
+  if (chartPanelLayout && chartPanelLayout.panes) {
+    return chartPanelLayout.panes.find(function(p) { return localY >= p.top && localY <= p.top+p.height+12; }) || chartPanelLayout.panes[0];
+  }
   if (!IS_SUPERWATCH_MODE || !chartPanelLayout || !chartPanelLayout.split) {
     return { kind: 'main', top: chartPanelLayout ? chartPanelLayout.mainTop : 0, height: chartPanelLayout ? chartPanelLayout.mainHeight : 1 };
   }
@@ -3514,11 +3593,16 @@ function getSuperwatchPanelAtY(localY) {
 }
 
 function getPanelYRange(panel) {
+  if (panel && panel.kind === "workspace") return workspaceRange(panel);
   if (panel && panel.kind === 'split' && panel.name) return getChannelYRange(panel.name);
   return getSharedYRange(splitChannelName);
 }
 
 function setPanelYRange(panel, yMin, yMax) {
+  if (panel && panel.kind === 'workspace') {
+    if (!Number.isFinite(yMin) || !Number.isFinite(yMax) || yMax <= yMin) return false;
+    workspaceY[panel.id] = {yMin:yMin,yMax:yMax}; return true;
+  }
   if (panel && panel.kind === 'split' && panel.name) {
     var ys = ensureChannelYState(panel.name);
     yMin = Number(yMin);
@@ -3552,6 +3636,7 @@ function zoomPanelYAt(panel, anchorRatio, deltaY) {
 }
 
 function resetPanelY(panel) {
+  if (panel && panel.kind === 'workspace') { delete workspaceY[panel.id]; drawChart(); return; }
   if (panel && panel.kind === 'split' && panel.name) resetChannelY(panel.name);
   else globalYView = { zoom: 1, offset: 0, autoRange: true, manualMin: null, manualMax: null };
   drawChart();
@@ -3856,7 +3941,7 @@ function drawChart() {
   var ph = H - mt - mb;
   if (pw <= 0 || ph <= 0) return;
 
-  var splitActive = IS_SUPERWATCH_MODE && splitChannelName &&
+  var splitActive = !watchWorkspace && IS_SUPERWATCH_MODE && splitChannelName &&
     FIELDS[splitChannelName] && FIELDS[splitChannelName].visible &&
     visChNames.length >= 2;
   if (IS_SUPERWATCH_MODE && splitChannelName && !splitActive) {
@@ -3878,6 +3963,22 @@ function drawChart() {
     width: pw
   };
   updateSplitPanelControl(splitActive, splitActive ? mainTop + mainHeight + panelGap / 2 : null);
+  var workspacePanels = null;
+  if (IS_SUPERWATCH_MODE && watchWorkspace) {
+    var totalWeight=watchWorkspace.panes.reduce(function(sum,p){return sum+p.height;},0);
+    var availableHeight=Math.max(1,ph-(watchWorkspace.panes.length-1)*24);
+    var top=mt;
+    workspacePanels=watchWorkspace.panes.map(function(p){
+      var height=availableHeight*p.height/totalWeight;
+      var panel={kind:'workspace',id:p.id,name:p.name,top:top,height:height};
+      top+=height+24; return panel;
+    });
+    chartPanelLayout.panes=workspacePanels;
+    workspacePanels.forEach(function(p){p.range=workspaceRange(p);});
+    syncWorkspaceDividers(workspacePanels);
+    mainTop=workspacePanels[0].top; mainHeight=workspacePanels[0].height;
+  }
+
 
   // Global Y range (shared in SuperWatch main panel, legacy per-channel in VOFA)
   var yMin = Infinity, yMax = -Infinity;
@@ -3885,7 +3986,7 @@ function drawChart() {
   var mainYRange = null;
   var splitYRange = null;
   if (IS_SUPERWATCH_MODE) {
-    mainYRange = getSharedYRange(splitActive ? splitChannelName : null);
+    mainYRange = workspacePanels ? workspacePanels[0].range : getSharedYRange(splitActive ? splitChannelName : null);
     if (!mainYRange) return;
     yMin = mainYRange.yMin;
     yMax = mainYRange.yMax;
@@ -3919,6 +4020,10 @@ function drawChart() {
   // Per-channel Y: each channel normalized to its own min/max by default
   // (avoids small signals being crushed when channels have very different ranges)
   function tyForChannel(v, name) {
+    if (workspacePanels) {
+      var panel=panelForSignal(name), range=panel.range;
+      return panel.top+panel.height-(v-range.yMin)/(range.yMax-range.yMin || 1)*panel.height;
+    }
     if (IS_SUPERWATCH_MODE) {
       if (splitActive && name === splitChannelName && splitYRange) {
         return splitTop + splitHeight - (v - splitYRange.yMin) /
@@ -3950,7 +4055,12 @@ function drawChart() {
       }
     }
   }
-  drawPanelGrid(mainTop, mainHeight, IS_SUPERWATCH_MODE ? mainYRange : { yMin: yMin, yMax: yMax });
+  if (workspacePanels) workspacePanels.forEach(function(panel) {
+    drawPanelGrid(panel.top,panel.height,panel.range);
+    ctx.fillStyle=TEXT_DIM; ctx.textAlign='left';ctx.font='bold 11px sans-serif';
+    ctx.fillText(panel.name,ml+8,panel.top+12);
+  });
+  else drawPanelGrid(mainTop, mainHeight, IS_SUPERWATCH_MODE ? mainYRange : { yMin: yMin, yMax: yMax });
   if (splitActive) drawPanelGrid(splitTop, splitHeight, splitYRange);
 
   // Time grid is shared, but each split panel gets its own vertical strokes.
@@ -3958,7 +4068,8 @@ function drawChart() {
     var xv = tMin + (tMax - tMin) * i / 5;
     var xp = Math.round(tx(xv)) + 0.5;
     ctx.beginPath();
-    ctx.moveTo(xp, mainTop); ctx.lineTo(xp, mainTop + mainHeight);
+    if (workspacePanels) workspacePanels.forEach(function(panel){ctx.moveTo(xp,panel.top);ctx.lineTo(xp,panel.top+panel.height);});
+    else {ctx.moveTo(xp, mainTop); ctx.lineTo(xp, mainTop + mainHeight);}
     if (splitActive) {
       ctx.moveTo(xp, splitTop); ctx.lineTo(xp, splitTop + splitHeight);
     }
@@ -3990,7 +4101,7 @@ function drawChart() {
     ctx.fillRect(ml, mainTop + mainHeight + Math.floor(panelGap / 2), pw, 1);
   }
 
-  var names = sortedFieldNames();
+  var names = sortedFieldNames().slice().sort(function(a,b){return Number(!!signalStyle(a).emphasis)-Number(!!signalStyle(b).emphasis);});
   for (var ni = 0; ni < names.length; ni++) {
     var name = names[ni];
     var meta = FIELDS[name];
@@ -3998,15 +4109,15 @@ function drawChart() {
     if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 1 && !envelopeChannelRange) ||
         (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
 
-    var curveTop = splitActive && name === splitChannelName ? splitTop : mainTop;
-    var curveHeight = splitActive && name === splitChannelName ? splitHeight : mainHeight;
+    var curveTop = workspacePanels ? panelForSignal(name).top : splitActive && name === splitChannelName ? splitTop : mainTop;
+    var curveHeight = workspacePanels ? panelForSignal(name).height : splitActive && name === splitChannelName ? splitHeight : mainHeight;
     ctx.save();
     ctx.beginPath();
     ctx.rect(ml, curveTop, pw, curveHeight);
     ctx.clip();
 
     ctx.strokeStyle = meta.color;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = signalStyle(name).emphasis ? 3 : 1.5;
     ctx.beginPath();
     var started = false;
     var ring = meta.ringBuf;
@@ -4097,8 +4208,8 @@ function drawChart() {
       ? { kind: 'split', name: splitChannelName }
       : { kind: 'main' };
     var trigY = tyForChannel(triggerSettings.level, triggerSettings.source);
-    var triggerTop = triggerPanel.kind === 'split' ? splitTop : mainTop;
-    var triggerBottom = triggerPanel.kind === 'split' ? splitTop + splitHeight : mainTop + mainHeight;
+    var triggerTop = workspacePanels ? panelForSignal(triggerSettings.source).top : triggerPanel.kind === 'split' ? splitTop : mainTop;
+    var triggerBottom = workspacePanels ? triggerTop+panelForSignal(triggerSettings.source).height : triggerPanel.kind === 'split' ? splitTop + splitHeight : mainTop + mainHeight;
     if (trigY >= triggerTop && trigY <= triggerBottom) {
       ctx.save();
       ctx.strokeStyle = '#b53333';
@@ -4139,7 +4250,7 @@ function drawChart() {
       ctx.setLineDash([3, 3]); ctx.beginPath();
       ctx.moveTo(x, mt); ctx.lineTo(x, mt + ph); ctx.stroke();
       ctx.setLineDash([]);
-      var label = String(event.path) + ' = ' + String(event.value);
+      var label = signalLabel(event.path) + ' = ' + String(event.value);
       ctx.fillText(label, Math.min(x + 4, ml + pw - ctx.measureText(label).width), mt + 14 + (index % 3) * 14);
     });
     ctx.restore();
@@ -4237,7 +4348,7 @@ function drawChart() {
         lines.push(
           '<span class="tooltip-row">' +
           '<span class="tooltip-swatch" style="background:' + FIELDS[k].color + '"></span>' +
-          '<span>' + escapeHtml(k) + ': ' + escapeHtml(tipVal) + '</span>' +
+          '<span>' + escapeHtml(signalLabel(k)) + ': ' + escapeHtml(tipVal) + '</span>' +
           '</span>'
         );
       }
@@ -4371,11 +4482,11 @@ function drawChart() {
         ? { kind: 'split', name: splitChannelName }
         : { kind: 'main' };
       var trigY = tyForChannel(triggerSettings.level, triggerSettings.source);
-      var triggerTop = triggerPanel.kind === 'split' ? splitTop : mainTop;
-      var triggerBottom = triggerPanel.kind === 'split' ? splitTop + splitHeight : mainTop + mainHeight;
+      var triggerTop = workspacePanels ? panelForSignal(triggerSettings.source).top : triggerPanel.kind === 'split' ? splitTop : mainTop;
+      var triggerBottom = workspacePanels ? triggerTop+panelForSignal(triggerSettings.source).height : triggerPanel.kind === 'split' ? splitTop + splitHeight : mainTop + mainHeight;
       if (Math.abs(my - trigY) < 8 && my >= triggerTop && my <= triggerBottom) {
         draggingTrigger = true;
-        draggingTriggerPanel = triggerPanel;
+        draggingTriggerPanel = workspacePanels ? panelForSignal(triggerSettings.source) : triggerPanel;
         e.preventDefault();
         return;
       }
@@ -4462,8 +4573,8 @@ function drawChart() {
         var my = e.clientY - rect.top;
         var triggerTarget = draggingTriggerPanel || { kind: 'main' };
         var triggerRange = getPanelYRange(triggerTarget) || { yMin: yMin, yMax: yMax };
-        var triggerTop = triggerTarget.kind === 'split' ? splitTop : mainTop;
-        var triggerHeight = triggerTarget.kind === 'split' ? splitHeight : mainHeight;
+        var triggerTop = triggerTarget.kind === 'workspace' ? triggerTarget.top : triggerTarget.kind === 'split' ? splitTop : mainTop;
+        var triggerHeight = triggerTarget.kind === 'workspace' ? triggerTarget.height : triggerTarget.kind === 'split' ? splitHeight : mainHeight;
         var newLevel = triggerRange.yMin +
           (1 - (my - triggerTop) / Math.max(1, triggerHeight)) *
           (triggerRange.yMax - triggerRange.yMin);
@@ -4592,7 +4703,7 @@ function updateCursorReadout() {
       lines.push('+' + (names.length - i) + ' ch');
       break;
     }
-    lines.push(name + ' d=' + (bv - av).toFixed(meta.precision || 2));
+    lines.push(signalLabel(name) + ' d=' + (bv - av).toFixed(meta.precision || 2));
     deltaCount++;
   }
   cursorReadout.textContent = lines.join('  ');
@@ -4615,7 +4726,7 @@ function updateCursorReadout() {
         if (vc >= deltaLimit) break;
         var prec = vm.precision || 2;
         html += '<div class="cm-row">';
-        html += '<span class="cm-label" style="color:' + vm.color + '">' + escapeHtml(vn) + '</span>';
+        html += '<span class="cm-label" style="color:' + vm.color + '">' + escapeHtml(signalLabel(vn)) + '</span>';
         html += '<span class="cm-value">A:' + va.toFixed(prec) + ' B:' + vb.toFixed(prec) + ' dV:' + (vb - va).toFixed(prec) + '</span>';
         html += '</div>';
         vc++;
@@ -4635,7 +4746,7 @@ function updateCursorReadout() {
         if (ta === null || tb === null) continue;
         if (tc >= deltaLimit) break;
         html += '<div class="cm-row">';
-        html += '<span class="cm-label" style="color:' + tm.color + '">' + escapeHtml(tn) + '</span>';
+        html += '<span class="cm-label" style="color:' + tm.color + '">' + escapeHtml(signalLabel(tn)) + '</span>';
         html += '<span class="cm-value">d=' + (tb - ta).toFixed(tm.precision || 2) + '</span>';
         html += '</div>';
         tc++;

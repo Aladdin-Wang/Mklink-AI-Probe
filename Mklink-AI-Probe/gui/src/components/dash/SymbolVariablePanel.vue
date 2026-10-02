@@ -1,11 +1,12 @@
 <template>
   <aside class="symbol-panel">
+    <SelectedSignals :paths="[...selected]" :values="latestValues" :hidden="hiddenChannels" @visibility="(path, visible) => emit('visibility-change', path, visible)" />
     <div class="panel-toolbar">
       <input
         v-model="query"
         class="form-input"
         data-testid="variable-search"
-        :placeholder="tr('搜索变量，多个关键词用逗号分隔', 'Search variables; separate keywords with commas')"
+        :placeholder="tr('搜索：空格同时匹配，逗号任一匹配', 'Search: spaces AND, commas OR')"
       />
       <button
         class="icon-button"
@@ -220,7 +221,7 @@
                 <Eye v-else :size="15" aria-hidden="true" />
               </button>
             </span>
-            <VariablePath class="variable-name" :path="row.node.descriptor.path" :alignment="pathAlignment" />
+            <VariablePath class="variable-name" :path="displayPrefs.style(row.node.descriptor.path).alias || row.node.descriptor.path" :alignment="pathAlignment" />
             <span class="variable-type">{{ row.node.descriptor.type_name }}</span>
             <span :data-testid="`latest-${row.node.descriptor.path}`" class="variable-value" :title="formatValue(latestValues[row.node.descriptor.path])">
               {{ formatValue(latestValues[row.node.descriptor.path]) }}
@@ -398,6 +399,8 @@ import type { SymbolTreeNode, VisibleSymbolRow } from '../../lib/symbolTree'
 import { tr } from '../../composables/useLanguage'
 import SetupHint from './SetupHint.vue'
 import VariablePath from './VariablePath.vue'
+import SelectedSignals from './SelectedSignals.vue'
+import { useWatchWorkspace } from '../../composables/useWatchWorkspace'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 
 const props = withDefaults(defineProps<{
@@ -420,6 +423,7 @@ const emit = defineEmits<{
 }>()
 
 const catalog = useSymbolCatalog()
+const displayPrefs = useWatchWorkspace()
 const toast = useToast()
 const {
   connecting,
@@ -483,6 +487,7 @@ const rows = computed(() => visibleSymbolRows(tree.value, {
   collapsed: query.value.trim() || selectedOnly.value ? filteredCollapsed.value : undefined,
   selected: selected.value,
   query: query.value,
+  alias: path => displayPrefs.style(path).alias,
   selectedOnly: selectedOnly.value,
 }))
 const variableGroups = computed(() => [
@@ -880,6 +885,15 @@ async function refreshSourceStatus(): Promise<void> {
     const previousGeneration = catalog.generation.value
     await catalog.refreshStatus()
     if (disposed) return
+    const watchList = await request('/api/dash/superwatch/items')
+    if (disposed) return
+    if (Array.isArray(watchList.items)) {
+      const next = new Set<string>(watchList.items.map((item: { name: string }) => item.name))
+      if (next.size !== selected.value.size || [...next].some(path => !selected.value.has(path))) {
+        selected.value = next
+        await refreshSelectedDescriptors()
+      }
+    }
     if (catalog.generation.value !== previousGeneration) {
       sourceReloaded.value = true
       editing.value = null

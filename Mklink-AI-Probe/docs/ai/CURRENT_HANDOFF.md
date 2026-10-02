@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T19:15:45.303559+08:00`
-- 分支：`codex/v023-f103-regression`
-- HEAD：`Documentation-only STM32F103 installed regression evidence based on f83fb91.`
-- 远端 HEAD：`PR #9–#14 merged; main f83fb91 before this evidence PR.`
-- 工作树：Only verification report and generated handoff updated; user firmware preserved.
-- 当前任务：HPM与STM32F103安装版回归完成。STM32三端日志2670行一致，Web/桌面连续采集361269次零错误零丢样；烧录、RAM、实时写入、RTT/SystemView通过，测试区恢复并退出释放。
+- 更新时间：`2026-10-02T20:13:00.1512261+08:00`
+- 分支：`codex/superwatch-workspace`
+- HEAD：`SuperWatch workspace feature based on main 0cee0fae294a; awaiting PR integration.`
+- 远端 HEAD：`main 0cee0fae294a; original PRs #9–#15 integrated.`
+- 工作树：Isolated feature worktree; original main user firmware preserved.
+- 当前任务：SuperWatch分组/强调/中文别名/专注/多波形区/空格AND搜索与深层bat_num搜索实现并验证；待PR合并及安装包安排。
 - 状态：`complete`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 - **0.2.3集成验收**：docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。
 - **SuperWatch实时写入及回放**：superwatch-live-write-20261002.md、superwatch-live-write-v23-20261002.md、superwatch-live-write-hpm6e80-20261002.md和superwatch-replay-20261002.md记录各版本实机及浏览器验证。V4 HPM需DUMP_WRITE_HPM=1；本轮V2/V3未更新。
-- **SuperWatch界面及恢复**：issue-7-variable-panel-20261002.md和issue-8-superwatch-recovery-20261002.md记录可调面板/长名称及独立采集恢复。
+- **SuperWatch界面及恢复**：superwatch-workspace-20261002.md：Python2454/2跳过，GUI759，生产前端及Tauri开发构建通过。V4+F103六通道三波形区，Web678438次/桌面572115次读取错误与丢样0；中文名称、分组折叠、专注、拖动分隔与20万行CSV跨端回放通过。深层bat_num夹具回归通过，客户原ELF未提供。历史界面恢复见issue-7-variable-panel-20261002.md、issue-8-superwatch-recovery-20261002.md。
 - **0.2.2 发布、安装与固件**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。 HPMLinkV4.5.1、MicroLinkV4.5.1/V3.5.0/V2.8.0已公开下载校验；25项发布/升级测试通过。V2 RBL头/体CRC、长度及程序版本验证，打包头V1.0.0保留原件。此发布轮未刷机，不新增硬件认证。 PR #6同步四份固件至源码目录，合并前Python2306/2跳过、GUI720及生产构建通过。
 - **nRF54L15保护**：Python真机 APPROTECT/SECUREAPPROTECT 写入、复位保护状态3、AHB关闭、CTRL-AP恢复0.923秒、1560576字节全空检查、客户HEX恢复校验通过。原始证据保存在用户测试目录 .mklink/security_roundtrip_20260924.json。别名与算法目录回归19项通过。
 - **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
@@ -37,14 +37,14 @@
 
 ## 真机环境
 
-- **state**：V4 + STM32F103RET6回归结束，PID目标/自动阶跃开关及RAM测试结构恢复，CFSR/HFSR零、心跳递增；设备释放，测试桌面/浏览器退出。此前HPM回归亦已完成。
+- **state**：V4 + STM32F103RET6工作区验证完成；本轮无目标变量/固件写入，CFSR/HFSR零、心跳递增，采集停止并释放，原项目目录恢复，测试桌面/浏览器退出。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：已安装22669a7修复NSIS，89.2MiB，SHA256 db7481c25a5ef816d3a71780c4aa756d0574e7d7d0f307890ba946c60e686eea。本地Skill源码575f17f，ZIP SHA256 ff1a6c2cc7907f138ba1b9ef45d137d6dbf7f8ed0b1228c5a3eaa848894689e7。
 
 ## 下一动作
 
-1. 将本轮文档验收记录经PR整合main，保留用户固件改动。
-2. 保留nRF54L15 GUI豁免及各报告的实测范围；正式签名/发布需另行授权。
+1. 推送SuperWatch工作区功能PR，待明确合并授权；随后再安排NSIS覆盖安装。当前开发桌面验收不等于新安装包验收。
+2. 客户提供原始ELF后复核HouTai_data.Prama_Set.bat_num；保留nRF54L15 GUI豁免与既有实测边界。
 
 ## 已知限制
 

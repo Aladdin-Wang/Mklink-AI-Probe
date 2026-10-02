@@ -2538,6 +2538,25 @@ def create_app(
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @app.get("/api/dash/superwatch/workspace")
+    async def superwatch_workspace():
+        from mklink.watch_workspace import load_workspace
+        try:
+            return await run_in_threadpool(load_workspace, _state["project_root"])
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/api/dash/superwatch/workspace")
+    async def superwatch_save_workspace(workspace: dict = Body(...), revision: str = Body(...)):
+        from mklink.watch_workspace import save_workspace
+        from mklink.watch_preferences import PreferencesConflict
+        try:
+            return await run_in_threadpool(save_workspace, _state["project_root"], workspace, revision)
+        except PreferencesConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (OSError, ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.get("/api/dash/superwatch/array-snapshot")
     async def superwatch_array_snapshot():
         managers = get_managers()

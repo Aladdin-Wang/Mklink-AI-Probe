@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-02T19:15:45.303559+08:00",
+  "updated_at": "2026-10-02T20:13:00.1512261+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/v023-f103-regression",
-    "head": "Documentation-only STM32F103 installed regression evidence based on f83fb91.",
-    "remote_head": "PR #9–#14 merged; main f83fb91 before this evidence PR.",
-    "working_tree": "Only verification report and generated handoff updated; user firmware preserved."
+    "branch": "codex/superwatch-workspace",
+    "head": "SuperWatch workspace feature based on main 0cee0fae294a; awaiting PR integration.",
+    "remote_head": "main 0cee0fae294a; original PRs #9–#15 integrated.",
+    "working_tree": "Isolated feature worktree; original main user firmware preserved."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "complete",
-    "current_task": "HPM与STM32F103安装版回归完成。STM32三端日志2670行一致，Web/桌面连续采集361269次零错误零丢样；烧录、RAM、实时写入、RTT/SystemView通过，测试区恢复并退出释放。"
+    "current_task": "SuperWatch分组/强调/中文别名/专注/多波形区/空格AND搜索与深层bat_num搜索实现并验证；待PR合并及安装包安排。"
   },
   "milestones": [
     {
@@ -34,7 +34,7 @@
     },
     {
       "area": "SuperWatch界面及恢复",
-      "result": "issue-7-variable-panel-20261002.md和issue-8-superwatch-recovery-20261002.md记录可调面板/长名称及独立采集恢复。"
+      "result": "superwatch-workspace-20261002.md：Python2454/2跳过，GUI759，生产前端及Tauri开发构建通过。V4+F103六通道三波形区，Web678438次/桌面572115次读取错误与丢样0；中文名称、分组折叠、专注、拖动分隔与20万行CSV跨端回放通过。深层bat_num夹具回归通过，客户原ELF未提供。历史界面恢复见issue-7-variable-panel-20261002.md、issue-8-superwatch-recovery-20261002.md。"
     },
     {
       "area": "0.2.2 发布、安装与固件",
@@ -65,7 +65,7 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "V4 + STM32F103RET6回归结束，PID目标/自动阶跃开关及RAM测试结构恢复，CFSR/HFSR零、心跳递增；设备释放，测试桌面/浏览器退出。此前HPM回归亦已完成。",
+    "state": "V4 + STM32F103RET6工作区验证完成；本轮无目标变量/固件写入，CFSR/HFSR零、心跳递增，采集停止并释放，原项目目录恢复，测试桌面/浏览器退出。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
     "installer": "已安装22669a7修复NSIS，89.2MiB，SHA256 db7481c25a5ef816d3a71780c4aa756d0574e7d7d0f307890ba946c60e686eea。本地Skill源码575f17f，ZIP SHA256 ff1a6c2cc7907f138ba1b9ef45d137d6dbf7f8ed0b1228c5a3eaa848894689e7。"
   },
@@ -80,8 +80,8 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "将本轮文档验收记录经PR整合main，保留用户固件改动。",
-    "保留nRF54L15 GUI豁免及各报告的实测范围；正式签名/发布需另行授权。"
+    "推送SuperWatch工作区功能PR，待明确合并授权；随后再安排NSIS覆盖安装。当前开发桌面验收不等于新安装包验收。",
+    "客户提供原始ELF后复核HouTai_data.Prama_Set.bat_num；保留nRF54L15 GUI豁免与既有实测边界。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"

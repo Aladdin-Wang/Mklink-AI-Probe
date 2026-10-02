@@ -1,3 +1,4 @@
+vi.mock('./SelectedSignals.vue', () => ({ default: { template: '<div />' } }))
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, shallowRef } from 'vue'
