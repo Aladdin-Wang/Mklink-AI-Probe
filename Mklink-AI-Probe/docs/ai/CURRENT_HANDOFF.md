@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T14:49:23.990605+08:00`
+- 更新时间：`2026-10-02T15:02:48.070605+08:00`
 - 分支：`codex/superwatch-live-write`
 - HEAD：`Based on microkeen/main 9758c677; SuperWatch live writes and device-timestamped GUI markers.`
 - 远端 HEAD：`Task branch submitted for review; no merge or release authorized.`
 - 工作树：Isolated host branch. Original checkout, separate firmware and MicroBoot pre-existing edits preserved.
-- 当前任务：SuperWatch连续采集写变量：完成主机/配套V4固件、升级与实机Web GUI验证，更新MicroBoot真实阶跃GIF。等待PR整合与配套固件发布决策。
+- 当前任务：SuperWatch连续采集写入：V4已实机验证；V3/V2已移植编译，协议原生测试与UF2/RBL校验通过，待对应型号实机测试。PR #13未合并。
 - 状态：`complete`
 
 ## 里程碑
@@ -18,6 +18,7 @@
 
 ## 验证证据
 
+- **V3/V2实时写入固件**：docs/verification/superwatch-live-write-v23-20261002.md：两版固件编译和真实C控制逻辑测试通过；V3 UF2、V2 RBL已校验。未连接对应硬件，未刷机。V2应用区余2302字节。
 - **SuperWatch实时写入**：docs/verification/superwatch-live-write-20261002.md：Python235、GUI128、生产构建与固件控制测试通过；V4实机升级，8/16/32/64位写入回读，Web GUI 19秒真实阶跃录像。
 - **发布与安装**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。
 - **STM32与HPM功能回归**：按目标和功能查阅 v0.2.2-v4-stm32-regression-20260920.md、v0.2.2-v4-hpm6e80-regression-20260920.md、v0.2.2-online-verify-theme-20260920.md（均位于docs/verification）。包含高速档、烧录、窄值/非对齐、共享流、CLI/MCP/GUI；HPM6E80本轮UART未接。
@@ -41,9 +42,10 @@
 
 ## 下一动作
 
-1. 审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。
-2. 配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。
-3. 本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。
+1. 连接对应V3/V2后完成实时写入、采样连续性及升级HIL；候选包与精确源码补丁保存在本地.build/reports/live-write-v23，禁止跨型号刷写。
+2. 审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。
+3. 配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。
+4. 本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。
 
 ## 已知限制
 
