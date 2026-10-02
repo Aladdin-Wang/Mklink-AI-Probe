@@ -10,6 +10,22 @@ function parse(text: string) {
 }
 
 describe('SuperWatch file replay', () => {
+  it.each([
+    ['[2026-10-02 00:00:00.000] gain=1', '[2026-10-02 00:00:00.100] gain=2'],
+    ['{"_t":0,"gain":1}', '{"_t":0.1,"gain":2}'],
+  ])('imports live-write metadata before and between samples without changing their clock', (first, last) => {
+    const event = JSON.stringify({ event: 'write', path: 'gain', value: 2, verified: true, mode: 'live', timestamp_us: 123456789 })
+    const data = parse([event, first, event, last].join('\n'))
+    expect(data.rows).toBe(2)
+    expect(data.writeEvents).toBe(2)
+    expect(data.duration).toBeCloseTo(.1)
+    expect(data.channels.map((c: any) => c.name)).toEqual(['gain'])
+    expect([...data.channels[0].values]).toEqual([1, 2])
+  })
+  it('rejects malformed write metadata and event-only logs', () => {
+    expect(() => parse('{"event":"write"}')).toThrow('Invalid write event')
+    expect(() => parse('{"event":"write","path":"gain","value":2,"verified":true,"mode":"live"}')).toThrow('No samples')
+  })
   it('round trips exported CSV, BOM/CRLF, sparse values and microsecond timestamps', () => {
     const data = parse('\uFEFFtimestamp_us,a,b\r\n1000000,2,\r\n1050000,,false\r\n1100000,4,true\r\n')
     expect(data.rows).toBe(3)

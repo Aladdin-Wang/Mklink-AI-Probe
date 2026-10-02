@@ -72,6 +72,7 @@ export class ReplayParser {
   constructor() {
     this.format = ''; this.header = null; this.channels = new Map(); this.lineNumber = 0;
     this.rows = 0; this.values = 0; this.origin = null; this.end = null;
+    this.writeEvents = 0;
   }
   line(raw) {
     this.lineNumber++;
@@ -79,6 +80,20 @@ export class ReplayParser {
     if (!line) return;
     try {
       if (line.length > REPLAY_LIMITS.line) throw new Error('Line exceeds 1 MiB');
+      // Live-write status records can precede or interrupt either TXT or JSONL
+      // samples. They are metadata, not samples in the capture's time domain.
+      if (line.startsWith('{')) {
+        const event = JSON.parse(line);
+        if (event.event === 'write') {
+          if (typeof event.path !== 'string' || !event.path || event.path.length > 512 ||
+              typeof event.verified !== 'boolean' || !['live', 'legacy-gap', 'idle'].includes(event.mode)) {
+            throw new Error('Invalid write event');
+          }
+          numberValue(event.value);
+          this.writeEvents++;
+          return;
+        }
+      }
       if (!this.format) this.format = line.startsWith('{') ? 'jsonl' : line.startsWith('[') ? 'raw' : 'csv';
       let time, fields;
       if (this.format === 'csv') {
@@ -137,7 +152,8 @@ export class ReplayParser {
   finish() {
     if (!this.rows) throw new Error('No samples in file');
     return { channels: [...this.channels.values()].map(channel => channel.finish(this.origin)),
-      duration: this.end - this.origin, origin: this.origin, rows: this.rows, values: this.values, format: this.format };
+      duration: this.end - this.origin, origin: this.origin, rows: this.rows, values: this.values,
+      writeEvents: this.writeEvents, format: this.format };
   }
 }
 

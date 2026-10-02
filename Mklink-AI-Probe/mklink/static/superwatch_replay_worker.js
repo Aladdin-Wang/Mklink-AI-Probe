@@ -9,7 +9,8 @@ self.onmessage = async ({ data: message }) => {
         if (performance.now() - last > 100) { last = performance.now(); self.postMessage({ type: 'progress', fraction }); }
       });
       self.postMessage({ type: 'loaded', duration: data.duration, rows: data.rows, values: data.values,
-        origin: data.origin, format: data.format, channels: data.channels.map(c => ({ name: c.name, count: c.times.length })) });
+        origin: data.origin, format: data.format, writeEvents: data.writeEvents,
+        channels: data.channels.map(c => ({ name: c.name, count: c.times.length })) });
     } else if (message.type === 'view' && data) {
       self.postMessage({ type: 'view', id: message.id, ...replayView(data, message.position, message.span, message.width, message.names) });
     }

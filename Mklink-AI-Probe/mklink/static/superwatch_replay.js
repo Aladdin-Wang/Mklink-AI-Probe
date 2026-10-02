@@ -141,6 +141,7 @@ export function mountReplayButton(host, options = {}) {
           dialog.dataset.logRows = String(data.rows); dialog.dataset.logValues = String(data.values);
           seek.max = String(data.duration || 1); position = 0; span = 10; action('span').value = '10'; controls(true);
           status(`${file.name} · ${data.rows.toLocaleString()} ${t('行', 'rows')} · ${data.channels.length} ${t('通道', 'channels')} · ${data.duration.toFixed(3)} s`);
+          if (data.writeEvents) message.textContent += ` · ${data.writeEvents} ${t('条写入记录（不计入采样）', 'write records (excluded from samples)')}`;
           data.channels.forEach((channel, index) => {
             const row = document.createElement('label'), checkbox = document.createElement('input'), name = document.createElement('span'), value = document.createElement('output');
             checkbox.type = 'checkbox'; checkbox.checked = index < 8; if (checkbox.checked) selected.add(channel.name);

@@ -49,7 +49,7 @@ describe('VersionHistoryPopover', () => {
     expect(panel.text()).toContain('完整 AXF 路径')
     expect(panel.text()).toContain('内置 pyelftools')
     expect(panel.text()).toContain('避免污染 JSON-RPC')
-    expect(panel.text()).toContain('统一 nRF54L 在线与脱机下载算法发现')
+    expect(panel.text()).toContain('新增 SuperWatch 日志回放与实时写入')
     expect(wrapper.findAll('[data-testid="release-entry"]').length).toBeGreaterThanOrEqual(13)
     expect(wrapper.get('.release-entry.current').text()).toContain('v0.2.0')
     expect(wrapper.get('.current-badge').text()).toBe('当前版本')
