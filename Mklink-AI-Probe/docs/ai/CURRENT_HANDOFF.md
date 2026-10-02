@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-09-21T15:15:15.4137261+08:00`
-- 分支：`codex/release-022-handoff`
-- HEAD：`基于已发布 main 424f470；本分支整理交接并将MK-Firmware同步为已发布的四份新固件。`
-- 远端 HEAD：`PR #5 已合并；v0.2.2 固定在 424f4700a4d9726db1e9e1a7cfbadaee68a737e6。`
-- 工作树：正式发布附件与MK-Firmware四份新固件SHA-256一致。原主工作区及其他仓库修改保留。
-- 当前任务：将已发布的四份固件同步到主线MK-Firmware目录，并按维护者授权核对检查后合并PR #6。
-- 状态：`complete`
+- 更新时间：`2026-10-02T12:01:19.3897708+08:00`
+- 分支：`codex/issue-8`
+- HEAD：`abab3dc: standalone SuperWatch health/recovery and bounded rendering.`
+- 远端 HEAD：`Based on microkeen/main 9758c677; task branch to be pushed for PR review.`
+- 工作树：Issue #8 code and verification committed; unrelated user work preserved.
+- 当前任务：User authorized fixing and closing #8/#7 with V4 + STM32F103RET6 validation; implement SuperWatch log playback afterwards in its own branch/PR.
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -18,6 +18,7 @@
 
 ## 验证证据
 
+- **Issue #8**：docs/verification/issue-8-superwatch-recovery-20261002.md: 140 focused tests; real Chrome 600k points; V4.5.2/F103 eight channels ~20Hz, injected stalls and region errors recovered. Finite duration, no firmware rewrite.
 - **发布与安装**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。
 - **STM32与HPM功能回归**：按目标和功能查阅 v0.2.2-v4-stm32-regression-20260920.md、v0.2.2-v4-hpm6e80-regression-20260920.md、v0.2.2-online-verify-theme-20260920.md（均位于docs/verification）。包含高速档、烧录、窄值/非对齐、共享流、CLI/MCP/GUI；HPM6E80本轮UART未接。
 - **HPM5301用户OTP**：docs/verification/v0.2.2-hpm-offline-otp-20260920.md：独立Flash回读门槛、旧API/旧值/缺文件停止、用户字和组18/19永久锁、真实Chrome/UART及断电保持通过。不能外推其他型号或安全生命周期字段。
@@ -34,17 +35,16 @@
 
 ## 真机环境
 
-- **state**：HPMLink V4 + HPM5301。Word72=1、Word79=3、HARD_LOCK=0x304C0016；38,364字节固件独立回读一致，UART0心跳递增。组18/19已永久锁定，禁止重放原配方。实际断电后GUI/独立回读和UART复核通过，不进行安全生命周期操作。
+- **state**：Current task: V4.5.2 + STM32F103RET6; existing target test firmware usable, no firmware/protection/voltage changes. Earlier HPM OTP evidence is historical; never replay its irreversible steps.
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：.build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。
 
 ## 下一动作
 
-1. 先读取本交接与docs/verification/v0.2.2-release-final.md；根据用户新任务选取具体历史报告，不重复已完成发布。
-2. PR #6包含精简交接和已发布固件目录同步；从主工作区更新源码前核对用户修改，勿reset/stash未知修改。
-3. 如需V2自动升级，单独实现RBL类型、校验与升级路径并回归；当前只提供手动RBL下载。
-4. Cargo debug/release生成物已清理，后续构建自动重建；STM32测试.mklink历史capture.csv已转为相邻capture.csv.gz，旧分析脚本使用前按需解压。审计见.build/reports/disk-cleanup-20260921；其他E:/PHDZ由维护者处理。
-5. MicroBoot文档及固件源码各有独立修改，接手先检查各仓库状态；硬件操作先枚举当前连接，勿重复OTP烧写。
+1. Push codex/issue-8 and open review PR. User explicitly requested issue closure after fixes; no merge/release authorization.
+2. Fix #7 variable-panel width and path alignment in isolated codex/issue-7 from current main, browser-test and close after resolution.
+3. Then implement complete SuperWatch CSV log import/offline playback: play/pause, speed, seek/restart, timestamps/channels validation and large-file handling; separate branch/PR.
+4. Preserve other worktrees, including codex/0.2.3-dev; main worktree has unrelated firmware modification.
 
 ## 已知限制
 
