@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-02T15:02:48.070605+08:00",
+  "updated_at": "2026-10-02T15:09:32.899474+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "SuperWatch连续采集写入：V4已实机验证；V3/V2已移植编译，协议原生测试与UF2/RBL校验通过，待对应型号实机测试。PR #13未合并。"
+    "current_task": "SuperWatch连续采集写入：V4与V3实机通过；V3四种宽度写入恢复、采样时序与上层会话保持验证完成，V2仍待实机。"
   },
   "milestones": [
     {
@@ -24,6 +24,10 @@
     }
   ],
   "verification": [
+    {
+      "area": "V3实时写入实机验证",
+      "result": "V3.5.1/DUMP_WRITE=1，30MHz，8/16/32/64位写入与恢复通过；1ms模式最大间隔1167us，最快模式378us，CRC/固件错误零。SuperWatch会话保持、暂停写入和恢复通过；未新增浏览器验证。见superwatch-live-write-v23-20261002.md。"
+    },
     {
       "area": "V3/V2实时写入固件",
       "result": "docs/verification/superwatch-live-write-v23-20261002.md：两版固件编译和真实C控制逻辑测试通过；V3 UF2、V2 RBL已校验。未连接对应硬件，未刷机。V2应用区余2302字节。"
@@ -61,7 +65,7 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "本次V4连接STM32F103RET6，升级V4.5.2实时写入开发候选固件。目标RAM参数及自动阶跃已恢复回读，连接已释放。历史HPM OTP记录仅供查阅，禁止重复烧写。",
+    "state": "V3 + STM32F103RET6：用户已升级实时写入候选固件；所有测试变量恢复并独立回读通过，连接已释放。V2仍待实机。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
     "installer": ".build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。"
   },
@@ -74,7 +78,7 @@
     "HPM6E80回归有限时长且无UART；本次用户更新的四份固件只做格式/CRC/公开发布验证，不把历史实测外推到新二进制。"
   ],
   "next_actions": [
-    "连接对应V3/V2后完成实时写入、采样连续性及升级HIL；候选包与精确源码补丁保存在本地.build/reports/live-write-v23，禁止跨型号刷写。",
+    "连接V2完成实时写入、采样连续性与升级HIL；V3本轮实机已通过。候选包与精确补丁保存在.build/reports/live-write-v23，V3原始实测记录位于.build/reports/live-write-v3-hil。",
     "审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。",
     "配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。",
     "本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。"

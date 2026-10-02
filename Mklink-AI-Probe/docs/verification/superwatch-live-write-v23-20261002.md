@@ -25,6 +25,26 @@ ELF load addresses and binary lengths were checked. Both binaries contain the ca
 
 ## Limits and integration
 
-**No V3 or V2 probe was upgraded or physically tested in this run.** The previously connected V4 and its target were not modified. Compilation and native control tests do not certify USB scheduling, sampling jitter or upgrade success on those two hardware variants. Verify each matching probe with the host branch before release; never cross-flash model variants.
+The initial port/build run did not upgrade or physically test either model. The user subsequently upgraded and connected V3; its follow-up HIL results are below. **V2 still has no physical validation for this feature.** Compilation and native control tests do not certify USB scheduling, sampling jitter or upgrade success on V2. Verify the matching probe before release; never cross-flash model variants.
 
 Candidates and exact source patches remain local; no firmware channel, official asset, version tag or installer was published. Source edits reside in their respective firmware checkouts. This report accompanies the host PR so integration can track all three supported firmware implementations without claiming that V4 hardware evidence certifies V3/V2.
+
+## V3 hardware follow-up, 2026-10-02
+
+The user upgraded and connected V3 to the STM32F103RET6 test project. Read-only firmware query returned `V3.5.1` and `DUMP_WRITE=1`. The probe confirmed the 30 MHz SWD profile. This verifies the running capability, not a readback hash of the entire installed probe image; the upgrade itself was performed by the user.
+
+Each rate exercised 8-, 16-, 32- and 64-bit RAM variables, with a write followed by restoration for each variable: 16 acknowledged transactions across the two rates. All readbacks matched and final independent reads confirmed original bytes. Samples retained strictly increasing device timestamps.
+
+| Measurement | 1 ms requested | Fastest requested (1 us) |
+| --- | ---: | ---: |
+| Complete samples | 1,329 | 239,296 |
+| Mean device interval | 999.998 us | 5.565302 us |
+| Maximum interval | 1,167 us | 378 us |
+| Intervals spanning writes/restores | 1,083–1,167 us | 233–378 us |
+| Host acknowledgement latency | 3.687–6.241 ms | 3.926–6.555 ms |
+| Parser CRC errors / dropped frames | 0 / 0 | 0 / 0 |
+| Firmware error / sample-drop flags | 0 / 0 | 0 / 0 |
+
+The real SuperWatch manager was then exercised against the same device with three watched RAM values (a float fixture, guard and heartbeat). Its production stream hub accepted the binary batches. The float changed `1.25 → 3.125 → -1.5 → 1.25` in one capture: 1,320 continuous samples, maximum interval 1.140 ms, and write brackets of 1.095/1.140/1.086 ms showing the expected before/after values. Worker identity, time origin and metadata epoch stayed unchanged. A further verified write while paused preserved the paused state; resume succeeded. Guard bytes, original float and all earlier test values were preserved/restored. Read drops/errors, binary publication drops, CRC errors and firmware error flags were zero in this final manager run.
+
+The first manager harness omitted its stream hub and therefore reported local publication drops; it was corrected to use the production hub and rerun. Both raw records remain local. This follow-up validates device transport and manager lifecycle, **not a new browser-rendering or WebSocket subscriber test**. Initial parser discarded-byte counts (46/49 bytes in the low-level runs) were command/prompt text; no zero-discard claim is made. No target firmware, PID parameters or power settings were changed. All sessions were stopped and disconnected. V2 remains pending HIL.
