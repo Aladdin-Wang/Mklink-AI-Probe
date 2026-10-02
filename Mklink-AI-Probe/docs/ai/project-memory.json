@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-21T15:15:15.4137261+08:00",
+  "updated_at": "2026-10-02T12:05:41.9221659+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/release-022-handoff",
-    "head": "基于已发布 main 424f470；本分支整理交接并将MK-Firmware同步为已发布的四份新固件。",
-    "remote_head": "PR #5 已合并；v0.2.2 固定在 424f4700a4d9726db1e9e1a7cfbadaee68a737e6。",
-    "working_tree": "正式发布附件与MK-Firmware四份新固件SHA-256一致。原主工作区及其他仓库修改保留。"
+    "branch": "codex/issue-7",
+    "head": "63d4fff: variable panel resize and alignment.",
+    "remote_head": "Based on microkeen/main 9758c677; task branch prepared for PR review.",
+    "working_tree": "Issue #7 code, production resources and report committed; unrelated work preserved."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "complete",
-    "current_task": "将已发布的四份固件同步到主线MK-Firmware目录，并按维护者授权核对检查后合并PR #6。"
+    "status": "in_progress",
+    "current_task": "Fix/close #7 after #8; then implement complete SuperWatch log import/playback in a separate PR as requested."
   },
   "milestones": [
     {
@@ -24,6 +24,14 @@
     }
   ],
   "verification": [
+    {
+      "area": "Issue #7",
+      "result": "docs/verification/issue-7-variable-panel-20261002.md: 27 component tests and production build passed; real Chrome loaded 5325 target symbols, expanded panel to 940px, right/left path scrolling verified."
+    },
+    {
+      "area": "Issue #8",
+      "result": "PR #10 submitted; Issue #8 closed per user request. 140 tests, real Chrome 600k points, V4.5.2/F103 host-injected stream faults recovered. PR not merged/released."
+    },
     {
       "area": "发布与安装",
       "result": "docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。"
@@ -53,7 +61,7 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "HPMLink V4 + HPM5301。Word72=1、Word79=3、HARD_LOCK=0x304C0016；38,364字节固件独立回读一致，UART0心跳递增。组18/19已永久锁定，禁止重放原配方。实际断电后GUI/独立回读和UART复核通过，不进行安全生命周期操作。",
+    "state": "V4.5.2 + STM32F103RET6, existing target test firmware; no flash/protection/voltage changes. Probe disconnected after #7 browser checks. Older HPM OTP evidence is historical and must not be replayed.",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
     "installer": ".build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。"
   },
@@ -66,11 +74,9 @@
     "HPM6E80回归有限时长且无UART；本次用户更新的四份固件只做格式/CRC/公开发布验证，不把历史实测外推到新二进制。"
   ],
   "next_actions": [
-    "先读取本交接与docs/verification/v0.2.2-release-final.md；根据用户新任务选取具体历史报告，不重复已完成发布。",
-    "PR #6包含精简交接和已发布固件目录同步；从主工作区更新源码前核对用户修改，勿reset/stash未知修改。",
-    "如需V2自动升级，单独实现RBL类型、校验与升级路径并回归；当前只提供手动RBL下载。",
-    "Cargo debug/release生成物已清理，后续构建自动重建；STM32测试.mklink历史capture.csv已转为相邻capture.csv.gz，旧分析脚本使用前按需解压。审计见.build/reports/disk-cleanup-20260921；其他E:/PHDZ由维护者处理。",
-    "MicroBoot文档及固件源码各有独立修改，接手先检查各仓库状态；硬件操作先枚举当前连接，勿重复OTP烧写。"
+    "Push codex/issue-7, open PR and close #7 per explicit user request; no merge/release authorization.",
+    "Implement complete SuperWatch log import/playback on a separate branch: CSV and raw log formats, offline play/pause, speed, seek/restart, input validation, large files, real browser verification.",
+    "Preserve codex/0.2.3-dev worktree and unrelated firmware modification in main checkout; issue branches are independent of pending PR #9."
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"
