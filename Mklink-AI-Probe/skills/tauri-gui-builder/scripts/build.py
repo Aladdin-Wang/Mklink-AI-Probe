@@ -151,6 +151,18 @@ def require_release_builtin_flm_bundle():
     return root
 
 
+def build_web_assets():
+    """Build the browser UI before freezing its assets into the sidecar."""
+    gui_dir = SKILL_DIR / "gui"
+    env = os.environ.copy()
+    env["VITE_MKLINK_API"] = "http://127.0.0.1:8765"
+    run(["npm", "run", "build"], cwd=str(gui_dir), env=env)
+    dist = gui_dir / "dist"
+    if not (dist / "index.html").is_file():
+        raise RuntimeError("Web GUI build did not produce gui/dist/index.html")
+    return dist
+
+
 def build_sidecar(force=False):
     """Build Python sidecar exe with PyInstaller."""
     sidecar_dir = TAURI_DIR / "binaries"
@@ -168,6 +180,7 @@ def build_sidecar(force=False):
         print(f"[OK] Sidecar already exists: {sidecar_exe}")
         return True
 
+    gui_dist = build_web_assets()
     print("[INFO] Building Python sidecar with PyInstaller...")
     try:
         import PyInstaller  # noqa: F401
@@ -220,6 +233,7 @@ def build_sidecar(force=False):
             "--collect-all", "cmsis_pack_manager",
             "--collect-all", "hid",
         ] + builtin_args + [
+            "--add-data", "{}{}gui/dist".format(gui_dist, os.pathsep),
             "-p", str(SKILL_DIR),
             str(SKILL_DIR / "mklink" / "__main__.py"),
         ], cwd=str(SKILL_DIR))
