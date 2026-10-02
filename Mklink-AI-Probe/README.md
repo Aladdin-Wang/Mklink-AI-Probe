@@ -25,7 +25,7 @@
 |------|------|
 | **固件烧录** | 一键烧录 Keil/IAR 工程产物（HEX/BIN），自动检测 MCU 与 FLM |
 | **RTT 实时捕获** | SEGGER RTT 数据流捕获，内置波形可视化（RTT View / VOFA+） |
-| **SuperWatch** | 高频变量连续采样与实时 Web 波形图 |
+| **SuperWatch** | 高频变量连续采样、实时 Web 波形图与[离线日志回放](docs/superwatch-replay.md) |
 | **内存读写** | RAM / Flash / 寄存器 读写操作，十六进制查看器 |
 | **符号与类型** | 通过 DWARF/ELF 解析 AXF 符号表、结构体、枚举定义 |
 | **HardFault 解码** | Cortex-M Fault 寄存器自动解码，内置 DWARF 源码定位 |
