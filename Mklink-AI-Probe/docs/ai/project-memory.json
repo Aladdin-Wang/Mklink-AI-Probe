@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-02T16:36:40.984726+08:00",
+  "updated_at": "2026-10-02T16:49:39.652357+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/0.2.3-dev",
-    "head": "Integrated PR #9–#13 with merge ancestry and rebuilt GUI; final qualification commit follows.",
-    "remote_head": "main 9758c677 before authorized integration.",
-    "working_tree": "Isolated integration checkout; original modified firmware preserved."
+    "branch": "codex/0.2.3-local-qualification",
+    "head": "Based on merged main 97a61dc962a9c8eca09861873225793e62a06774; local qualification checkpoint.",
+    "remote_head": "PR #9–#13 all merged; local original main fast-forwarded to 97a61dc.",
+    "working_tree": "Original user firmware SHA preserved. Qualification branch contains documentation only."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
     "status": "active",
-    "current_task": "用户授权合并全部PR #9–#13、0.2.3本地安装包覆盖安装和Skill更新，再HPM/STM32F103回归。已整合并修复写入日志与回放冲突，全量测试和浏览器、HPM合并前验证通过；待合并、构建安装及安装版回归。"
+    "current_task": "全部PR已合并，0.2.3 NSIS及Skill基于97a61dc构建成功，Skill已更新、CLI/HPM回归通过。覆盖安装被Windows UAC取消，桌面仍旧安装；等待用户确认重新弹出UAC。随后验证安装版Web GUI/桌面/CLI一致性及HPM，再通知换STM32F103。"
   },
   "milestones": [
     {
@@ -26,7 +26,7 @@
   "verification": [
     {
       "area": "0.2.3集成验收",
-      "result": "docs/verification/v0.2.3-integration-20261002.md：Python2446/2跳过、GUI755、Rust19及生产构建通过；混合写入日志浏览器回放通过，HPM实时写入最大1.167ms，参数恢复。"
+      "result": "docs/verification/v0.2.3-integration-20261002.md：Python2446/2跳过、GUI755、Rust19及生产构建通过；混合写入日志浏览器回放通过，HPM实时写入最大1.167ms，参数恢复。 所有PR已合并至97a61dc；本地NSIS构建成功，Skill已更新并验证7059型号/2224算法；安装UAC被取消，安装版验收尚未完成。"
     },
     {
       "area": "SuperWatch实时写入及回放",
@@ -61,9 +61,9 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "V4 + HPM6E80 hello_world。合并前采集写入回归通过，原参数恢复、连接释放。V4已是HPM实时通道候选固件；V2/V3未修改。",
+    "state": "V4 + HPM6E80。集成源码manager和新版Skill CLI通过；CLI采集2648样本、1/2/4/8字节非对齐写入回读和完整4096字节恢复通过。连接已释放。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
-    "installer": ".build/artifacts/v0.2.3-local-20260924/Mklink-AI-Probe-v0.2.3-x64-Setup.exe；SHA256 552EB646504C162AE4E5738280A054063704A88DA97F9EEC8202C69017BDD6D0。标准NSIS，自带后端与7059型号/2224算法，安装/S退出0；未正式发布，无更新签名。 实际安装目录 D:/Program Files/Mklink AI Probe，ProductVersion=0.2.3。"
+    "installer": ".build/artifacts/v0.2.3-local-97a61dc/Mklink-AI-Probe-v0.2.3-97a61dc-x64-Setup.exe；SHA256 5d7ed14c17e5b584aa235817b0355ec50c928cdeba4fe32995acea44c43153aa。已构建，首次UAC被取消，尚未覆盖安装。"
   },
   "known_limits": [
     "有限缓冲不保证无限暂停/物理断线无损；外设轮询可能漏短脉冲，多变量不是原子快照。 VCC遥测需要配套新固件；V3仅电压，V4功率为滤波电压电流乘积，未新增校准。135项测试和固件编译不能替代真实负载精度验证。已安装0.2.3二进制尚不含本次源码。",
@@ -76,10 +76,10 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "合并已验证的PR #9集成头，其祖先包含#10–#13；保留必需CI、精确head核对与分支保护。",
-    "从合并主线构建0.2.3本地标准NSIS，覆盖D盘安装，更新本地Skill并验证内置后端/资源与正常退出。",
-    "安装版HPM回归完成、参数恢复、连接释放后通知用户换接STM32F103，再做对应回归。",
-    "本次不进行官方签名、标签或渠道发布；原固件/MicroBoot独立修改保持。"
+    "等待用户确认后重新启动本地NSIS安装，Windows UAC必须由用户手动允许；上次返回操作被用户取消，禁止声称已覆盖。",
+    "安装后验证受限PATH、健康检查、内置sidecar无Python子进程、资源完整性与正常退出；用同一HPM工程验证Web GUI/CLI/桌面一致性。",
+    "实测脚本和日志在.build/reports/v023-integration；installed-hpm.py尚未执行，cli-hpm.py已通过。hpm-cli-capture.csv为2648行真实硬件日志，供GUI/桌面回放对照。",
+    "HPM安装版回归通过并恢复释放后通知用户换STM32F103。V2/V3不再更新；不发布官方签名、版本标签或渠道。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"
