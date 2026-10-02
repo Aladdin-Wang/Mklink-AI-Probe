@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T18:48:40.838312+08:00`
-- 分支：`codex/0.2.3-local-qualification`
-- HEAD：`Qualification of packaging fix 22669a7 and assets 575f17f; final evidence commit pending.`
-- 远端 HEAD：`PR #9–#13 all merged; local original main fast-forwarded to 97a61dc.`
-- 工作树：Only qualification evidence updated; user firmware preserved.
-- 当前任务：修复包覆盖成功，Web 404已解决。HPM三端所列流程回归完成：Web/桌面实时采集写入及同CLI日志回放一致，双客户端197215采样无读/传输丢样，新Skill CLI2714样本通过。准备合并PR14并等待用户换STM32F103。
-- 状态：`active`
+- 更新时间：`2026-10-02T19:15:45.303559+08:00`
+- 分支：`codex/v023-f103-regression`
+- HEAD：`Documentation-only STM32F103 installed regression evidence based on f83fb91.`
+- 远端 HEAD：`PR #9–#14 merged; main f83fb91 before this evidence PR.`
+- 工作树：Only verification report and generated handoff updated; user firmware preserved.
+- 当前任务：HPM与STM32F103安装版回归完成。STM32三端日志2670行一致，Web/桌面连续采集361269次零错误零丢样；烧录、RAM、实时写入、RTT/SystemView通过，测试区恢复并退出释放。
+- 状态：`complete`
 
 ## 里程碑
 
@@ -25,6 +25,7 @@
 - **nRF54L15保护**：Python真机 APPROTECT/SECUREAPPROTECT 写入、复位保护状态3、AHB关闭、CTRL-AP恢复0.923秒、1560576字节全空检查、客户HEX恢复校验通过。原始证据保存在用户测试目录 .mklink/security_roundtrip_20260924.json。别名与算法目录回归19项通过。
 - **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
 - **0.2.3 电源、AP 与 USB 实机验收**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项、Skill及V3/V4模型和SEGGER构建通过，V3电压/不可用电流字段实机通过。v0.2.3-v3-h743-acceptance-20260928.md：AP/内存/变量三场景及RAM表头解析修复通过。v3-v4-usb-recovery-20260928.md：V3已刷机、USB241次ID/5次重配置/约21ms Abort及H7434170样本通过，缺WinUSB GUID经定向备份修复。v0.2.3-v4-f103-regression-20260930.md：V4.5.2实机电源CLI/MCP、USB恢复、AP/变量/CPU/RTT/VOFA/SystemView/UART及真实GUI通过；在线6轮、脱机算法6轮独立回读，应用与Bootloader一致，GUI686585次无错误/丢样。目标运行，未改固件或发布；外部测量精度仍未标定。
+- **0.2.3安装版STM32F103**：docs/verification/v0.2.3-installed-f103-20261002.md：应用114840字节在线烧录回读、Bootloader20480字节保留；RAM128项、实时四种宽度1776样本最大间隔1197us；Web/桌面361269次采集零错误/丢样，CLI2670行日志两端回放一致，RTT317行/SystemView22570事件通过。测试变量恢复、心跳正常、设备及进程释放。
 
 ## 架构决策
 
@@ -36,15 +37,14 @@
 
 ## 真机环境
 
-- **state**：V4 + HPM6E80回归结束，增益恢复0.05并独立读回；CLI测试区完整恢复，设备释放，桌面/浏览器已退出。等待STM32F103。
+- **state**：V4 + STM32F103RET6回归结束，PID目标/自动阶跃开关及RAM测试结构恢复，CFSR/HFSR零、心跳递增；设备释放，测试桌面/浏览器退出。此前HPM回归亦已完成。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：已安装22669a7修复NSIS，89.2MiB，SHA256 db7481c25a5ef816d3a71780c4aa756d0574e7d7d0f307890ba946c60e686eea。本地Skill源码575f17f，ZIP SHA256 ff1a6c2cc7907f138ba1b9ef45d137d6dbf7f8ed0b1228c5a3eaa848894689e7。
 
 ## 下一动作
 
-1. 核对PR14最终CI与讨论并按授权合并main，保留用户固件改动。
-2. 等待用户连接STM32F103后执行安装版回归；HPM已释放。
-3. 保留nRF54L15 GUI豁免及实测范围限制；不更新V2/V3，不做官方发布。
+1. 将本轮文档验收记录经PR整合main，保留用户固件改动。
+2. 保留nRF54L15 GUI豁免及各报告的实测范围；正式签名/发布需另行授权。
 
 ## 已知限制
 
