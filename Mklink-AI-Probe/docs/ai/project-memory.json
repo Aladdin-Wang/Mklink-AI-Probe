@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-02T12:19:13.7697958+08:00",
+  "updated_at": "2026-10-02T12:21:30.7472963+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/superwatch-replay",
-    "head": "3f072d5: local SuperWatch CSV/TXT/JSONL offline replay.",
-    "remote_head": "Based on microkeen/main 9758c677; feature branch prepared for PR review.",
+    "head": "35a8cd1: replay feature plus public documentation path correction.",
+    "remote_head": "PR #12 open at MicroKeen/Mklink-AI-Probe; #10/#11 fix closed issues #8/#7. No PR merged or released.",
     "working_tree": "Replay implementation, production resources, tests and usage/verification docs committed. Other worktrees preserved."
   },
   "mission": {
@@ -25,7 +25,7 @@
   ],
   "verification": [
     {
-      "result": "docs/verification/superwatch-replay-20261002.md: 124 GUI tests, 84 Python tests and production build passed; real Chrome desktop/standalone CSV/TXT/JSONL, seek/pause/4x/restart/error/cancel checks; 1M rows and 8M values imported and viewed.",
+      "result": "docs/verification/superwatch-replay-20261002.md: 124 GUI tests, 84 Python tests and production build passed; real Chrome desktop/standalone CSV/TXT/JSONL, seek/pause/4x/restart/error/cancel checks; 1M rows and 8M values imported and viewed. Initial feedback CI found an unshipped documentation link; moved instructions into references and all 62 local feedback/public-package checks passed.",
       "area": "SuperWatch replay"
     },
     {
@@ -80,7 +80,7 @@
     "HPM6E80回归有限时长且无UART；本次用户更新的四份固件只做格式/CRC/公开发布验证，不把历史实测外推到新二进制。"
   ],
   "next_actions": [
-    "Review and integrate the replay PR plus #10 and #11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.",
+    "Review and integrate PR #12 plus #10/#11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.",
     "All three branches start from main independently. Reconcile generated gui/dist and project memory during integration; no main/0.2.3 development branch was overwritten.",
     "Preserve codex/0.2.3-dev and its pending PR #9. Existing main worktree firmware modification remains untouched. No release/signing/update-pointer changes authorized.",
     "Use docs/superwatch-replay.md for user instructions; no background automation or new task was created."

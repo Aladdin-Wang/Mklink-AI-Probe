@@ -29,7 +29,7 @@ Run through `scripts/build_workspace.ps1` on Windows:
   safe manual inspection; no linked paths were force-cleaned.
 - The first feedback-contract run caught a README link to an unshipped `docs`
   file. User instructions were moved to public `references/superwatch-replay.md`;
-  all 60 feedback queue/public-package boundary tests then passed.
+  all 62 feedback queue/public-package boundary tests then passed.
 
 ## Real Chrome (2026-10-02)
 

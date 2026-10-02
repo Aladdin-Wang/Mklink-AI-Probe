@@ -4,10 +4,10 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T12:19:13.7697958+08:00`
+- 更新时间：`2026-10-02T12:21:30.7472963+08:00`
 - 分支：`codex/superwatch-replay`
-- HEAD：`3f072d5: local SuperWatch CSV/TXT/JSONL offline replay.`
-- 远端 HEAD：`Based on microkeen/main 9758c677; feature branch prepared for PR review.`
+- HEAD：`35a8cd1: replay feature plus public documentation path correction.`
+- 远端 HEAD：`PR #12 open at MicroKeen/Mklink-AI-Probe; #10/#11 fix closed issues #8/#7. No PR merged or released.`
 - 工作树：Replay implementation, production resources, tests and usage/verification docs committed. Other worktrees preserved.
 - 当前任务：User-requested issue #8/#7 fixes completed and issues closed; complete SuperWatch offline log playback implemented and verified, pending PR integration/release.
 - 状态：`complete`
@@ -18,7 +18,7 @@
 
 ## 验证证据
 
-- **SuperWatch replay**：docs/verification/superwatch-replay-20261002.md: 124 GUI tests, 84 Python tests and production build passed; real Chrome desktop/standalone CSV/TXT/JSONL, seek/pause/4x/restart/error/cancel checks; 1M rows and 8M values imported and viewed.
+- **SuperWatch replay**：docs/verification/superwatch-replay-20261002.md: 124 GUI tests, 84 Python tests and production build passed; real Chrome desktop/standalone CSV/TXT/JSONL, seek/pause/4x/restart/error/cancel checks; 1M rows and 8M values imported and viewed. Initial feedback CI found an unshipped documentation link; moved instructions into references and all 62 local feedback/public-package checks passed.
 - **Issue #8**：Closed per explicit user request; PR #10 (codex/issue-8), 140 tests plus V4.5.2/F103 fault recovery and 600k-point real-browser stress. Not merged/released.
 - **Issue #7**：Closed per explicit user request; PR #11 (codex/issue-7), 27 GUI tests/build, real Chrome 940px panel and left/right path alignment. Not merged/released.
 - **发布与安装**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。
@@ -43,7 +43,7 @@
 
 ## 下一动作
 
-1. Review and integrate the replay PR plus #10 and #11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.
+1. Review and integrate PR #12 plus #10/#11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.
 2. All three branches start from main independently. Reconcile generated gui/dist and project memory during integration; no main/0.2.3 development branch was overwritten.
 3. Preserve codex/0.2.3-dev and its pending PR #9. Existing main worktree firmware modification remains untouched. No release/signing/update-pointer changes authorized.
 4. Use docs/superwatch-replay.md for user instructions; no background automation or new task was created.
