@@ -390,7 +390,7 @@ function syncWorkspaceDividers(panels) {
 function panelForSignal(name) {
   var panes = chartPanelLayout && chartPanelLayout.panes;
   if (!panes) return null;
-  return panes.find(function(p) { return p.id === signalStyle(name).pane; }) || panes[0];
+  return panes.find(function(p) { return p.id === (signalStyle(name).pane || watchWorkspace.defaultGroup); }) || panes[0];
 }
 function workspaceRange(panel) {
   if (workspaceY[panel.id]) return workspaceY[panel.id];
@@ -4117,6 +4117,9 @@ function drawChart() {
     ctx.clip();
 
     ctx.strokeStyle = meta.color;
+    var pointsOnly = signalStyle(name).renderMode === 'points';
+    var pointSize = signalStyle(name).emphasis ? 5 : 3;
+    ctx.fillStyle = meta.color;
     ctx.lineWidth = signalStyle(name).emphasis ? 3 : 1.5;
     ctx.beginPath();
     var started = false;
@@ -4126,10 +4129,11 @@ function drawChart() {
       for (var arrayIndex = 0; arrayIndex < arrayValues.length; arrayIndex++) {
         var arrayX = ml + (arrayIndex / Math.max(1, arrayValues.length - 1)) * pw;
         var arrayY = tyForChannel(arrayValues[arrayIndex], name);
-        if (arrayIndex === 0) { ctx.moveTo(arrayX, arrayY); started = true; }
+        if (pointsOnly) ctx.fillRect(arrayX-pointSize/2,arrayY-pointSize/2,pointSize,pointSize);
+        else if (arrayIndex === 0) { ctx.moveTo(arrayX, arrayY); started = true; }
         else ctx.lineTo(arrayX, arrayY);
       }
-      ctx.stroke();
+      if (!pointsOnly) ctx.stroke();
       ctx.restore();
       continue;
     }
@@ -4143,7 +4147,8 @@ function drawChart() {
         var envelopeX = tx(envelopeTime);
         var envelopeY = tyForChannel(binaryEnvelope.values[envelopePoint], name);
         if (envelopeX < ml - 10 || envelopeX > ml + pw + 10) continue;
-        if (!started) { ctx.moveTo(envelopeX, envelopeY); started = true; }
+        if (pointsOnly) ctx.fillRect(envelopeX-pointSize/2,envelopeY-pointSize/2,pointSize,pointSize);
+        else if (!started) { ctx.moveTo(envelopeX, envelopeY); started = true; }
         else ctx.lineTo(envelopeX, envelopeY);
       }
     } else {
@@ -4158,11 +4163,12 @@ function drawChart() {
       for (var i = ringStart; i < ringEnd; i += ringStep) {
         var sx = tx(ring.timeAt(i)), sy = tyForChannel(ring.valueAt(i), name);
         if (sx < ml - 10 || sx > ml + pw + 10) continue;
-        if (!started) { ctx.moveTo(sx, sy); started = true; }
+        if (pointsOnly) ctx.fillRect(sx-pointSize/2,sy-pointSize/2,pointSize,pointSize);
+        else if (!started) { ctx.moveTo(sx, sy); started = true; }
         else ctx.lineTo(sx, sy);
       }
     }
-    ctx.stroke();
+    if (!pointsOnly) ctx.stroke();
     ctx.restore();
   }
 
@@ -4821,6 +4827,8 @@ function drawMinimap() {
     var meta = FIELDS[names[ni]];
     if (!meta.visible || (!meta.isArraySnapshot && meta.ringBuf.count < 2) ||
         (meta.isArraySnapshot && (!meta.arrayValues || meta.arrayValues.length < 2))) continue;
+    var pointsOnly = signalStyle(names[ni]).renderMode === 'points';
+    minimapCtx.fillStyle = meta.color;
     minimapCtx.strokeStyle = meta.color;
     minimapCtx.lineWidth = 1;
     minimapCtx.beginPath();
@@ -4833,10 +4841,11 @@ function drawMinimap() {
       for (var arrayPoint = 0; arrayPoint < meta.arrayValues.length; arrayPoint++) {
         var arrayPx = arrayPoint / Math.max(1, meta.arrayValues.length - 1) * W;
         var arrayPy = H - ((meta.arrayValues[arrayPoint] - bufMin) / yRange) * (H - 4) - 2;
-        if (!started) { minimapCtx.moveTo(arrayPx, arrayPy); started = true; }
+        if (pointsOnly) minimapCtx.fillRect(arrayPx-1,arrayPy-1,2,2);
+        else if (!started) { minimapCtx.moveTo(arrayPx, arrayPy); started = true; }
         else minimapCtx.lineTo(arrayPx, arrayPy);
       }
-      minimapCtx.stroke();
+      if (!pointsOnly) minimapCtx.stroke();
       continue;
     }
     var minimapChannel = binaryChannelIndex[names[ni]];
@@ -4848,7 +4857,8 @@ function drawMinimap() {
         var minimapTime = binaryEnvelope.times[minimapTimeIndex] / 1000 - binaryTimeOrigin;
         var envelopePx = mtx(minimapTime);
         var envelopePy = H - ((binaryEnvelope.values[minimapPoint] - bufMin) / yRange) * (H - 4) - 2;
-        if (!started) { minimapCtx.moveTo(envelopePx, envelopePy); started = true; }
+        if (pointsOnly) minimapCtx.fillRect(envelopePx-1,envelopePy-1,2,2);
+        else if (!started) { minimapCtx.moveTo(envelopePx, envelopePy); started = true; }
         else minimapCtx.lineTo(envelopePx, envelopePy);
       }
     } else {
@@ -4857,11 +4867,12 @@ function drawMinimap() {
       for (var i = 0; i < ring.count; i += step) {
         var px = mtx(ring.timeAt(i));
         var py = H - ((ring.valueAt(i) - bufMin) / yRange) * (H - 4) - 2;
-        if (!started) { minimapCtx.moveTo(px, py); started = true; }
+        if (pointsOnly) minimapCtx.fillRect(px-1,py-1,2,2);
+        else if (!started) { minimapCtx.moveTo(px, py); started = true; }
         else minimapCtx.lineTo(px, py);
       }
     }
-    minimapCtx.stroke();
+    if (!pointsOnly) minimapCtx.stroke();
   }
   minimapCtx.globalAlpha = 1;
 

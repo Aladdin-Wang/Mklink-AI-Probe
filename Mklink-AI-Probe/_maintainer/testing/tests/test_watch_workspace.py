@@ -13,7 +13,7 @@ def test_workspace_roundtrip_and_isolation(tmp_path):
     workspace['signals']={'motor.rpm':{'alias':'转速','emphasis':True,'group':'motor','pane':'current','address':1234}}
     saved=save_workspace(root,workspace,initial['revision'])
     assert load_workspace(root)==saved
-    assert saved['workspace']['signals']['motor.rpm']=={'alias':'转速','emphasis':True,'group':'motor','pane':'current'}
+    assert saved['workspace']['signals']['motor.rpm']=={'alias':'转速','emphasis':True,'group':'motor','pane':'motor','renderMode':'line'}
     assert load_workspace(str(tmp_path/'two'))['workspace']['signals']=={}
     with pytest.raises(PreferencesConflict): save_workspace(root,workspace,initial['revision'])
 
@@ -36,7 +36,7 @@ def test_missing_groups_and_panes_fall_back_without_addresses(tmp_path):
     w={'version':1,'signals':{'a':{'alias':'测试','pane':'missing','group':'missing'}}}
     result=save_workspace(str(tmp_path),w,state['revision'])['workspace']
     assert result['signals']['a']['pane']=='main'
-    assert result['signals']['a']['group']==''
+    assert result['signals']['a']['group']=='main'
 
 
 def test_space_search_is_and_commas_are_or(tmp_path):
@@ -67,3 +67,43 @@ def test_lazy_nested_member_after_large_array_is_searchable(tmp_path):
         result=cat.search(query)
         assert [x.path for x in result]==['HouTai_data.Prama_Set.bat_num']
         assert result[0].address==0x20001000
+
+
+def test_legacy_groups_and_plots_migrate_idempotently():
+    from mklink.watch_workspace import normalize_workspace
+    old={'version':1,'groups':[{'id':'same','name':'控制','collapsed':True}],
+         'panes':[{'id':'same','name':'旧波形','height':300}],
+         'signals':{'a':{'group':'same','pane':'same','alias':'电流','emphasis':True},
+                    'b':{'pane':'same','renderMode':'points'}}}
+    new=normalize_workspace(old)
+    assert new['version']==2
+    assert new['signals']['a']['pane']=='same'
+    assert new['signals']['b']['group']=='plot:same'
+    assert new['signals']['b']['renderMode']=='points'
+    assert next(g for g in new['groups'] if g['id']=='same')['collapsed'] is True
+    assert all(not p['collapsed'] for p in new['panes'])
+    assert [g['id'] for g in new['groups']]==[p['id'] for p in new['panes']]
+    assert normalize_workspace(new)==new
+    new['groups']=[g for g in new['groups'] if g['id']=='same']
+    restored=normalize_workspace(new)
+    assert restored['signals']['b']['group']=='same'
+    assert restored['signals']['b']['pane']=='same'
+
+
+def test_invalid_display_preferences_rejected():
+    from mklink.watch_workspace import normalize_workspace
+    for patch in ({'signals':{'a':{'renderMode':'other'}}},
+                  {'groups':[{'id':'g','height':float('nan')}]},
+                  {'groups':[{'id':'g','height':float('inf')}]}):
+        with pytest.raises(ValueError): normalize_workspace({'version':2,**patch})
+
+
+def test_reordering_groups_preserves_default_membership():
+    from mklink.watch_workspace import normalize_workspace
+    state=normalize_workspace({'version':2,'groups':[{'id':'a'},{'id':'b'}]})
+    state['groups'].reverse()
+    state['signals']={'unassigned':{}}
+    result=normalize_workspace(state)
+    assert result['defaultGroup']=='a'
+    assert result['signals']['unassigned']['group']=='a'
+    assert result['signals']['unassigned']['pane']=='a'

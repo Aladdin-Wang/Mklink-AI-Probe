@@ -88,6 +88,7 @@ function canvasContext(): CanvasRenderingContext2D {
   const visitPoint = () => { (window as any).__canvasPointVisits++ }
   return new Proxy({} as CanvasRenderingContext2D, {
     get(target, property) {
+      if (property === 'fillRect' || property === 'stroke') return (...args: unknown[]) => { (window as any).__canvasDraws?.push({op:property,color:property==='stroke'?target.strokeStyle:target.fillStyle,args}) }
       if (property === 'measureText') return () => ({ width: 10 })
       if (property === 'createLinearGradient') return () => gradient
       if (property === 'fillText') {
@@ -1371,6 +1372,17 @@ describe('VOFA viewer hot path source guard', () => {
       expect(runtime.probe.fields().a.ringBuf.count).toBe(2)
       expect(runtime.probe.serializeState().workspace).toEqual(workspace)
       expect(document.querySelector('.chart-legend-name')?.textContent).toBe('信号a')
+      ;(window as any).__canvasDraws=[]
+      runtime.viewer.setWorkspace({...workspace,signals:{...workspace.signals,a:{...workspace.signals.a,renderMode:'points'}}})
+      const color=runtime.probe.fields().a.color
+      const draws=(window as any).__canvasDraws.filter((d:any)=>d.color===color)
+      expect(draws.some((d:any)=>d.op==='fillRect' && d.args[2]===5)).toBe(true)
+      expect(draws.some((d:any)=>d.op==='stroke')).toBe(false)
+      expect(runtime.probe.fields().a.ringBuf.count).toBe(2)
+      ;(window as any).__canvasDraws=[]
+      runtime.viewer.setWorkspace(workspace)
+      expect((window as any).__canvasDraws.some((d:any)=>d.color===color&&d.op==='stroke')).toBe(true)
+      delete (window as any).__canvasDraws
       const other = {...panes[1].range}
       document.getElementById('chart')!.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,clientX:400,clientY:panes[0].top+20,cancelable:true}))
       expect(runtime.probe.panelYRange(panes[1])).toEqual(other)
