@@ -24,8 +24,11 @@ def parse_read_ram_response(response: str) -> bytes:
     parseable dump. Callers should retain and display the raw response.
     """
     data = bytearray()
+    header_seen = False
     for line in response.splitlines():
-        if _HEX_DUMP_HEADER_RE.match(line):
+        # Only the leading timestamp row is a header. RAM can contain 00..0F.
+        if not header_seen and not data and _HEX_DUMP_HEADER_RE.match(line):
+            header_seen = True
             continue
         m = _HEX_DUMP_RE.match(line)
         if not m:

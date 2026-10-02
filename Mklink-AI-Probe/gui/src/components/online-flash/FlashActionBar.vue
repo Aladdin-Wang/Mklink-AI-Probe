@@ -4,7 +4,7 @@ import { useConfirmation } from '../../composables/useConfirmation'
 import { Play, Square } from '@lucide/vue'
 import type { JobAction, JobState } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
-const props = defineProps<{ actions: JobAction[]; canStart: boolean; active: boolean; stopping: boolean; state: JobState | null; totalProgress: number; progressLabel?: string; progressState?: string; unlockEnabled?: boolean; lockEnabled?: boolean; securityReason?: string; unlockErasesEeprom?: boolean; unlockErasesBackupRegisters?: boolean }>()
+const props = defineProps<{ actions: JobAction[]; canStart: boolean; active: boolean; stopping: boolean; state: JobState | null; totalProgress: number; progressLabel?: string; progressState?: string; securityFamily?: string; unlockEnabled?: boolean; lockEnabled?: boolean; securityReason?: string; unlockErasesEeprom?: boolean; unlockErasesBackupRegisters?: boolean }>()
 const emit = defineEmits<{ actions: [actions: JobAction[]]; start: []; stop: [] }>()
 const confirm = useConfirmation()
 const confirming = ref(false)
@@ -16,6 +16,16 @@ function available(action: JobAction): boolean {
   return true
 }
 async function confirmSecurityAction(action: JobAction): Promise<boolean> {
+  if (props.securityFamily === 'nrf54l15-ctrl-ap') {
+    if (action === 'unlock') return confirm(tr(
+      'nRF54L15 CTRL-AP 恢复会永久擦除程序和 UICR 配置，之后需要重新烧录。确定勾选“解锁”？',
+      'nRF54L15 CTRL-AP recovery permanently erases program memory and UICR configuration. Reprogramming is required. Select Unlock?',
+    ))
+    if (action === 'lock') return confirm(tr(
+      'nRF54L15 加锁会在固件校验后写入 APPROTECT 和 SECUREAPPROTECT，复位后关闭调试访问。以后解锁会擦除程序和 UICR。确定勾选“加锁”？',
+      'nRF54L15 lock writes APPROTECT and SECUREAPPROTECT after firmware verification and disables debug access after reset. A later unlock erases program memory and UICR. Select Lock?',
+    ))
+  }
   const extraData = props.unlockErasesEeprom || props.unlockErasesBackupRegisters
   if (action === 'unlock') return confirm(tr(
     extraData

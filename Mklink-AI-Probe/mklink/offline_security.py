@@ -48,7 +48,7 @@ class OfflineSecurityPlan:
     lock_after_download: bool
     voltage_mv: int
     algorithm_file_name: str
-    algorithm_path: Path
+    algorithm_path: Optional[Path]
     algorithm_sha256: str
     option_address: int
     ram_base: int
@@ -402,6 +402,21 @@ def offline_security_capability(model: str, part_number: str) -> dict[str, objec
 
     normalized_model = str(model or "").strip().upper()
     part = str(part_number or "").strip()
+    # The catalog exposes the compact ``nrf54l`` alias, while the CTRL-AP
+    # recovery recipe is pinned to the concrete nRF54L15 device.  Resolve the
+    # alias here so the offline UI uses the same capability as online flash.
+    if part.casefold() in {"nrf54l", "nrf54l15"}:
+        part = "nRF54L15"
+        supported = normalized_model == "V4"
+        return {
+            "model": normalized_model, "part_number": part,
+            "supported": supported, "unlock_supported": supported,
+            "lock_supported": False, "family": "nrf54l15-ctrl-ap",
+            "reason": "需要支持 CTRL-AP 恢复命令的 V4 固件；恢复将擦除程序及 UICR。",
+            "unlock_erases_flash": True, "reversible_lock": False,
+            "voltage_options_mv": [], "default_voltage_mv": None,
+            "apply_method": "ctrl-ap",
+        }
     base = security_capability(part)
     profile = _offline_profile(part, base.family)
     supported = (
@@ -464,6 +479,20 @@ def resolve_offline_security(
     status = offline_security_capability(model, part_number)
     if not status["supported"]:
         raise ValueError(str(status["reason"]))
+    if status.get("apply_method") == "ctrl-ap":
+        if lock:
+            raise ValueError("nRF54L15 offline lock is not supported")
+        return OfflineSecurityPlan(
+            family="nrf54l15-ctrl-ap", unlock_before_download=unlock,
+            lock_after_download=False, voltage_mv=0, algorithm_file_name="",
+            algorithm_path=None, algorithm_sha256="", option_address=0,
+            ram_base=0, config_dir="nRF54L15",
+            unlock_config=(b"format=mklink-ctrl-ap-recover-v1\n"
+                           b"targetid=0x001c0289\nctrl_ap_idr=0x32880000\n"
+                           b"partid_addr=0x00ffc31c\npartid=0x00054b15\n"
+                           b"action=unlock\nerase_all=1\n"),
+            lock_config=b"",
+        )
     base = security_capability(part_number)
     profile = _offline_profile(part_number, base.family)
     assert profile is not None

@@ -67,6 +67,7 @@ export interface OfflineConfigPayload {
 }
 
 export interface OfflineSecurityCapability {
+  apply_method?: 'ctrl-ap'
   model: string
   part_number: string
   supported: boolean

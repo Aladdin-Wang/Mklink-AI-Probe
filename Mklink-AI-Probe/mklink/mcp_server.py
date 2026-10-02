@@ -547,6 +547,19 @@ def _register_flash_tools(mcp: Any) -> None:
 
     @mcp.tool()
     @_exclusive_hardware_tool
+    def get_power() -> dict:
+        """Read probe VCC voltage_mv, current_ma, power_mw and sample_age_ms.
+
+        Read-only: no voltage confirmation, reset or target memory access.
+        Requires telemetry-capable V3/V4 firmware and an idle command session.
+        current_supported describes hardware capability; null means unavailable,
+        never zero. Power is calculated from filtered voltage and current, not
+        an instantaneous waveform or energy measurement.
+        """
+        return _connected_device().get_power()
+
+    @mcp.tool()
+    @_exclusive_hardware_tool
     def set_power_on(
         voltage_mv: int,
         confirm_5v: bool = False,
@@ -602,17 +615,18 @@ def _register_security_tools(mcp: Any) -> None:
     def security_lock(
         target_part: str,
         firmware: str,
-        voltage_mv: StrictInt,
+        voltage_mv: StrictInt | None = None,
         base_address: StrictInt | None = None,
         confirm_user: bool = False,
         probe_id: str | None = None,
         frequency: StrictInt = 1_000_000,
         timeout: float = 240.0,
     ) -> dict:
-        """Enable validated reversible read protection, then power-cycle.
+        """Enable validated protection after image verification.
 
         ``confirm_user`` must be true only after the user explicitly confirms
-        this operation and the exact ``voltage_mv`` for this call.
+        this operation. Other targets also require the exact ``voltage_mv``;
+        nRF54L15 uses CTRL-AP reset and requires the voltage to be omitted.
         """
         from mklink.security_operations import run_security_operation
 
@@ -635,23 +649,24 @@ def _register_security_tools(mcp: Any) -> None:
     @_exclusive_hardware_tool
     def security_unlock(
         target_part: str,
-        voltage_mv: StrictInt,
+        voltage_mv: StrictInt | None = None,
         confirm_user: bool = False,
         confirm_data_loss: bool = False,
         probe_id: str | None = None,
         frequency: StrictInt = 1_000_000,
         timeout: float = 240.0,
     ) -> dict:
-        """Disable validated read protection, erase protected data, and power-cycle.
+        """Disable validated protection and erase protected data.
 
         Both confirmations must be true. The user must explicitly confirm the
-        exact restore voltage and permanent loss of protected nonvolatile data.
+        permanent loss of protected nonvolatile data. Other targets require
+        an exact restore voltage; nRF54L15 uses CTRL-AP reset without VCC change.
         """
         from mklink.security_operations import run_security_operation
 
         if confirm_user is not True or confirm_data_loss is not True:
             raise ValueError(
-                "security unlock requires explicit voltage and data-loss confirmations"
+                "security unlock requires explicit operation and data-loss confirmations"
             )
         _reset_device()
         return run_security_operation(

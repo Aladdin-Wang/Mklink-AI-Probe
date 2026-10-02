@@ -77,6 +77,33 @@ describe('OfflineFlashView', () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
+  it('offers CTRL-AP recovery without a voltage control or post-download lock', async () => {
+    onlineMocks.searchTargets.mockResolvedValue([{
+      part_number: 'nRF54L15', vendor: 'Nordic', pack_id: '',
+      pack_version: '', installed: true, source: 'builtin',
+    }])
+    offlineMocks.getSecurityStatus.mockResolvedValue({
+      model: 'V4', part_number: 'nRF54L15', supported: true,
+      unlock_supported: true, lock_supported: false, family: 'nrf54l15-ctrl-ap', reason: '',
+      unlock_erases_flash: true, reversible_lock: false,
+      voltage_options_mv: [], default_voltage_mv: null, apply_method: 'ctrl-ap',
+    })
+    const wrapper = mount(OfflineFlashView)
+    await flushPromises()
+    await wrapper.get('[data-testid="offline-model"]').setValue('V4')
+    await wrapper.get('.target-result').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="offline-security-voltage"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="offline-lock"]').attributes('disabled')).toBeDefined()
+    const unlock = wrapper.get<HTMLInputElement>('[data-testid="offline-unlock"]')
+    await unlock.setValue(true)
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('UICR')
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('不会切换目标供电电压')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    await flushPromises()
+    expect(unlock.element.checked).toBe(true)
+  })
+
   it('registers a top-level offline flash route', () => {
     const route = router.getRoutes().find(candidate => candidate.name === 'offline-flash')
     expect(route?.path).toBe('/offline-flash')

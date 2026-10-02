@@ -332,6 +332,9 @@ def test_standalone_superwatch_uses_explicit_dump_stop(monkeypatch):
         def push_event(self, event, payload):
             self.events.append((event, payload))
 
+        def set_stream_health(self, state, message=""):
+            self.events.append((state, message))
+
         def push_data_point(self, point):
             return None
 
@@ -350,10 +353,13 @@ def test_standalone_superwatch_uses_explicit_dump_stop(monkeypatch):
             self.commands.append(command)
             return ""
 
+        def _write_raw(self, data):
+            self.commands.append(data.decode().strip())
+
         def _enter_stream(self, state):
             return None
 
-        def drain_stream_bytes(self):
+        def drain_stream_bytes(self, max_bytes=None):
             return b""
 
         def _exit_stream(self):

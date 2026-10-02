@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-const props = defineProps<{ path: string }>()
+const props = defineProps<{ path: string; alignment?: { edge: 'left' | 'right'; revision: number } }>()
 const viewport = ref<HTMLElement | null>(null)
 const overflowing = ref(false)
 const drag = ref<{ id: number; x: number; left: number } | null>(null)
@@ -15,6 +15,7 @@ let observer: ResizeObserver | undefined
 function measure() {
   const el = viewport.value
   overflowing.value = !!el && el.scrollWidth > el.clientWidth
+  if (el && props.alignment) el.scrollLeft = props.alignment.edge === 'right' ? el.scrollWidth - el.clientWidth : 0
 }
 function startDrag(event: PointerEvent) {
   const el = viewport.value
@@ -48,7 +49,7 @@ onMounted(() => {
   observer = new ResizeObserver(measure)
   if (viewport.value) observer.observe(viewport.value)
 })
-watch(() => props.path, async () => {
+watch(() => [props.path, props.alignment], async () => {
   if (viewport.value) viewport.value.scrollLeft = 0
   await nextTick()
   measure()

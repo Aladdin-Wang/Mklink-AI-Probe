@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ImageSegment, SectorRecord } from '../../types/onlineFlash'
 import { tr } from '../../composables/useLanguage'
-defineProps<{ segments: ImageSegment[]; sectors: SectorRecord[]; selectedAddresses: number[]; inspectionReady: boolean; geometryReliable: boolean; canErase: boolean }>()
+defineProps<{ segments: ImageSegment[]; sectors: SectorRecord[]; selectedAddresses: number[]; inspectionReady: boolean; geometryReliable: boolean; geometryMessage?: string; canErase: boolean }>()
 defineEmits<{ chipErase: []; selectedErase: []; rangeErase: []; selectAll: []; clearSelection: []; toggleSector: [address: number] }>()
 const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8, '0')}`
 </script>
@@ -12,7 +12,7 @@ const hex = (value: number) => `0x${value.toString(16).toUpperCase().padStart(8,
       <h3>{{ tr('扇区', 'Sectors') }}</h3>
       <span v-if="inspectionReady" class="badge">{{ geometryReliable ? tr('FLM 已验证', 'FLM verified') : tr('几何未验证', 'Geometry unverified') }}</span>
     </div>
-    <p v-if="inspectionReady && !geometryReliable" class="warning">{{ tr('扇区几何信息不可验证，已禁用选择与普通烧录擦除。', 'Sector geometry could not be verified. Selection and normal flash erase are disabled.') }}</p>
+    <p v-if="inspectionReady && !geometryReliable" class="warning">{{ geometryMessage || tr('扇区几何信息不可验证，已禁用选择与普通烧录擦除。', 'Sector geometry could not be verified. Selection and normal flash erase are disabled.') }}</p>
     <div class="sector-actions"><button data-testid="select-all-sectors" :disabled="!geometryReliable" @click="$emit('selectAll')">{{ tr('全选', 'Select All') }}</button><button :disabled="!geometryReliable" @click="$emit('clearSelection')">{{ tr('清空', 'Clear') }}</button></div>
     <div v-if="geometryReliable" class="sector-list"><label v-for="sector in sectors" :key="sector.address" class="sector-row"><input type="checkbox" :checked="selectedAddresses.includes(sector.address)" @change="$emit('toggleSector', sector.address)"><span>{{ hex(sector.address) }}</span><span>{{ sector.size }} B</span></label></div>
     <div v-else class="sector-empty">{{ inspectionReady ? tr('服务端未提供可靠扇区表', 'No reliable sector table is available') : tr('加载固件后显示扇区表', 'Load firmware to display sectors') }}</div>

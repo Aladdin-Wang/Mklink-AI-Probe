@@ -65,10 +65,12 @@ def _cli_security(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         action = "解锁" if args.security_command == "unlock" else "加锁"
-        print(
-            f"[OK] {result['target_part']} {action}完成，"
-            f"已按 {result['voltage_mv']} mV 断电复位"
+        reset = (
+            "已完成 CTRL-AP 复位，未切换 VCC"
+            if result["reset_mode"] == "default" and result["voltage_mv"] is None
+            else f"已按 {result['voltage_mv']} mV 断电复位"
         )
+        print(f"[OK] {result['target_part']} {action}完成，{reset}")
     return 0
 
 
@@ -1290,6 +1292,43 @@ def _parse_version_response(text: str) -> tuple[str | None, list[str]]:
         return None, []
     current, *history = matches
     return current, history
+
+
+def _cli_power_read(port: str | None, as_json: bool = False) -> int:
+    """Probe-only telemetry; deliberately avoids target/SWD initialization."""
+    import contextlib
+    import json
+
+    from mklink.bridge import MKLinkSerialBridge
+    from mklink.power import read_power
+
+    bridge = None
+    try:
+        # Keep --json stdout machine-readable even when discovery logs.
+        with contextlib.redirect_stdout(sys.stderr):
+            bridge = MKLinkSerialBridge(_resolve_port(port))
+            if not bridge.connect():
+                raise ConnectionError("Cannot connect to the probe command port")
+            result = read_power(bridge)
+    except Exception as exc:
+        print(f"[FAIL] {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if bridge is not None:
+            with contextlib.redirect_stdout(sys.stderr):
+                bridge.close()
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        for key, label, unit in (("voltage_mv", "VCC", "mV"),
+                                 ("current_ma", "Current", "mA"),
+                                 ("power_mw", "Power", "mW")):
+            value = result[key]
+            print(f"{label}: unavailable" if value is None else f"{label}: {value:g} {unit}")
+        print(f"Sample age: {result['sample_age_ms']} ms")
+        if not result["current_supported"]:
+            print("Current/power measurement is not supported by this firmware/hardware.")
+    return 0
 
 
 def _cli_version(port: str | None, all_history: bool = False, raw: bool = False):
@@ -3869,6 +3908,12 @@ def main():
     read_ram_parser.add_argument("--size", type=int, default=256, help="读取字节数（默认 256）")
     read_ram_parser.add_argument("--save", help="保存到设备文件（如 ram.bin）")
 
+    power_parser = subparsers.add_parser(
+        "power-read", help="只读获取下载器 VCC 实测电压、电流和计算功率"
+    )
+    power_parser.add_argument("--port", help="命令串口（默认自动检测）")
+    power_parser.add_argument("--json", action="store_true", help="输出 JSON，单位 mV/mA/mW")
+
     # version 子命令
     version_parser = subparsers.add_parser(
         "version", help="读取烧录器自身固件版本（cmd.get_version）"
@@ -4373,16 +4418,15 @@ def main():
         command_parser.add_argument("--target-part", required=True, help="精确器件型号")
         command_parser.add_argument(
             "--voltage-mv",
-            required=True,
             type=int,
             choices=(1800, 3300, 5000),
-            help="安全操作后恢复的 VCC 电压",
+            help="非 nRF54L15 安全操作后恢复的 VCC 电压；nRF54L15 请省略",
         )
         command_parser.add_argument(
             "--confirm",
             required=True,
             action="store_true",
-            help="确认本次安全操作及指定的 VCC 恢复电压",
+            help="确认本次安全操作；非 nRF54L15 还需确认指定的 VCC 恢复电压",
         )
         if unlock:
             command_parser.add_argument(
@@ -4545,6 +4589,8 @@ def main():
         )
     elif args.command == "read-ram":
         _cli_read_ram(args.port, args.addr, args.size, args.save)
+    elif args.command == "power-read":
+        return _cli_power_read(args.port, as_json=args.json)
     elif args.command == "version":
         _cli_version(args.port, all_history=args.all, raw=args.raw)
     elif args.command == "read-reg":

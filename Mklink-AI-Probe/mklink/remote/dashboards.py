@@ -1607,6 +1607,11 @@ class SuperWatchStreamManager:
         self._binary_dropped_items = 0
         self._acquisition_mode = "idle"
         self._stream_integrity: dict[str, int] = {}
+        self._write_event_seq = 0
+        self._write_events = deque(maxlen=128)
+        self._write_requests = deque()
+        self._live_write_supported = False
+        self._live_write_ranges = ()
         self._dump_restart = threading.Event()
         self._array_snapshot: dict[str, Any] | None = None
         self.set_stream_hub(stream_hub)
@@ -1815,6 +1820,19 @@ class SuperWatchStreamManager:
                 return
             raise RuntimeError("SuperWatch worker thread is still active")
         self.prepare(device)
+        from mklink.dump_memory import ARM_WRITE_RANGES, HPM_WRITE_RANGES
+        bridge = getattr(device, "_bridge", None)
+        is_hpm = getattr(getattr(bridge, "_ctx", None), "idcode", None) == 0x1000563D
+        capability = getattr(bridge, "supports_hpm_dump_write" if is_hpm else "supports_dump_write", None)
+        self._live_write_supported = bool(capability()) if callable(capability) else False
+        self._live_write_ranges = ARM_WRITE_RANGES
+        if is_hpm:
+            ram = device._target_writable_ram_ranges()
+            self._live_write_ranges = tuple(
+                (max(a, c), min(b, d)) for a, b in HPM_WRITE_RANGES
+                for c, d in ram if max(a, c) < min(b, d)
+            )
+            self._live_write_supported = self._live_write_supported and bool(self._live_write_ranges)
         stop_event = threading.Event()
         generation = object()
         self._stop_event = stop_event
@@ -1825,6 +1843,8 @@ class SuperWatchStreamManager:
         with self._read_lock:
             self._flush_binary_batch_locked()
             self._origin_us = None
+            self._write_event_seq = 0
+            self._write_events.clear()
             # A new capture starts a new device timeline, even with identical
             # channels. Existing GUI/AI subscribers must reset before sample 0.
             self._rebuild_metadata_cache_locked(publish=True, new_epoch=True)
@@ -1836,7 +1856,7 @@ class SuperWatchStreamManager:
                 while not stop_event.is_set():
                     with self._read_lock:
                         if (
-                            self._collecting.is_set()
+                            (self._collecting.is_set() or self._write_requests)
                             and self._runtime is not None
                             and bool(self._runtime.items or self._array_snapshot)
                         ):
@@ -1882,6 +1902,7 @@ class SuperWatchStreamManager:
                         scalar_count = len(scalar_items)
                         session = DumpMemoryStreamSession(
                             bridge, region_pairs, self._interval,
+                            write_ranges=self._live_write_ranges,
                         )
                         completed_integrity = dict(self._stream_integrity)
                         try:
@@ -1891,6 +1912,39 @@ class SuperWatchStreamManager:
                                 and config_generation == self._config_generation
                                 and not self._dump_restart.is_set()
                             ):
+                                with self._read_lock:
+                                    request = self._write_requests.popleft() if self._write_requests and origin_us is not None else None
+                                if request is not None:
+                                    address, payload, future = request
+                                    if future.set_running_or_notify_cancel():
+                                        if self._live_write_supported and any(a <= address and address + len(payload) <= b for a, b in self._live_write_ranges):
+                                            try:
+                                                session.request_write(address, payload, future)
+                                            except Exception as exc:
+                                                future.set_exception(exc)
+                                                raise
+                                        else:
+                                            # Legacy firmware needs command mode, but the logical
+                                            # capture, metadata epoch and device clock stay intact.
+                                            try:
+                                                session.stop()
+                                                write_error = None
+                                                try:
+                                                    device.write_memory(address, payload)
+                                                    data = self._readback_once(address, len(payload))
+                                                    if data != payload:
+                                                        raise RuntimeError("SuperWatch readback mismatch")
+                                                except Exception as exc:
+                                                    write_error = exc
+                                                finally:
+                                                    session.start()
+                                                if write_error is not None:
+                                                    future.set_exception(write_error)
+                                                else:
+                                                    future.set_result({"data": data, "mode": "legacy-gap", "timestamp_us": None})
+                                            except Exception as exc:
+                                                future.set_exception(exc)
+                                                raise
                                 frames = session.read_frames(max_bytes=1024 * 1024)
                                 self._stream_integrity = _sum_counter_snapshots(
                                     completed_integrity, session.stats,
@@ -1899,6 +1953,10 @@ class SuperWatchStreamManager:
                                     self._flush_binary_batch_if_due()
                                     stop_event.wait(0.0005)
                                     continue
+                                if origin_us is None:
+                                    origin_us = int(frames[0]["timestamp_us"])
+                                    with self._read_lock:
+                                        self._origin_us = origin_us
                                 if not self._collecting.is_set():
                                     continue
                                 for frame in frames:
@@ -1938,6 +1996,11 @@ class SuperWatchStreamManager:
                 logger.error("SuperWatch stream error: %s", e)
                 self._bridge.put({"event": "error", "message": str(e)})
             finally:
+                with self._read_lock:
+                    while self._write_requests:
+                        future = self._write_requests.popleft()[2]
+                        if not future.done():
+                            future.set_exception(RuntimeError("SuperWatch stream stopped before write"))
                 self._flush_binary_batch()
                 if getattr(self, "_generation", None) is generation:
                     self._running = False
@@ -1983,39 +2046,58 @@ class SuperWatchStreamManager:
                 raise RuntimeError(f"Symbol is read-only: {path}")
             payload = encode_descriptor(descriptor, value)
             was_running = self.running
-            was_collecting = self._collecting.is_set()
+            if not was_running and self._thread is not None and self._thread.is_alive():
+                raise RuntimeError("SuperWatch stream is stopping")
 
-            try:
-                if was_running:
-                    try:
-                        self.stop()
-                    except Exception as exc:
-                        raise SuperWatchTransactionError("stop", exc) from exc
+            if was_running:
+                from concurrent.futures import Future, TimeoutError as WriteTimeout
+                future = Future()
+                with self._read_lock:
+                    if not self.running or self._stop_event.is_set():
+                        raise RuntimeError("SuperWatch stream is stopping")
+                    self._write_requests.append((descriptor.address, payload, future))
                 try:
-                    device.write_memory(descriptor.address, payload)
+                    ack = future.result(timeout=max(5.0, self._interval + 3.0))
+                except WriteTimeout as exc:
+                    # An executed write cannot safely be retried. Cancel queued
+                    # work or stop the stream to cancel the firmware generation.
+                    if not future.cancel():
+                        self._stop_event.set()
+                    raise SuperWatchTransactionError("write", RuntimeError("Write acknowledgement timed out; result unknown, do not retry automatically")) from exc
                 except Exception as exc:
                     raise SuperWatchTransactionError("write", exc) from exc
-                try:
-                    actual_raw = self._readback_once(descriptor.address, descriptor.size)
-                    if actual_raw[: descriptor.size] != payload:
-                        raise RuntimeError(f"SuperWatch readback mismatch for {path}")
-                    actual = decode_descriptor(descriptor, actual_raw)
-                except Exception as exc:
-                    raise SuperWatchTransactionError("readback", exc) from exc
-                return {
-                    "path": path,
-                    "generation": catalog.generation,
-                    "value": actual,
-                    "verified": True,
-                }
-            finally:
-                if was_running:
-                    try:
-                        self.start(device)
-                        if not was_collecting:
-                            self.pause()
-                    except Exception as exc:
-                        raise SuperWatchTransactionError("restore", exc) from exc
+                timestamp = ack["timestamp_us"]
+                with self._read_lock:
+                    origin = self._origin_us
+                result = {"path": path, "generation": catalog.generation,
+                          "value": decode_descriptor(descriptor, ack["data"]), "verified": True,
+                          "mode": ack["mode"], "timestamp_us": timestamp,
+                          "time_ms": (timestamp - origin) / 1000 if timestamp is not None and origin is not None else None,
+                          "request_id": ack.get("request_id")}
+                with self._read_lock:
+                    self._write_event_seq += 1
+                    result["event_id"] = self._write_event_seq
+                    self._write_events.append(dict(result))
+                self._bridge.put({"event": "write", **result})
+                return result
+
+            try:
+                device.write_memory(descriptor.address, payload)
+            except Exception as exc:
+                raise SuperWatchTransactionError("write", exc) from exc
+            try:
+                actual_raw = self._readback_once(descriptor.address, descriptor.size)
+                if actual_raw[: descriptor.size] != payload:
+                    raise RuntimeError(f"SuperWatch readback mismatch for {path}")
+                actual = decode_descriptor(descriptor, actual_raw)
+            except Exception as exc:
+                raise SuperWatchTransactionError("readback", exc) from exc
+            return {
+                "path": path,
+                "generation": catalog.generation,
+                "value": actual,
+                "verified": True,
+            }
 
     def reparse_symbols(
         self,
@@ -2524,12 +2606,16 @@ class SuperWatchStreamManager:
             state = "paused"
         else:
             state = "stopped"
-        _payload, snapshot_json, metadata_version = self._metadata_cache
+        with self._read_lock:
+            _payload, snapshot_json, metadata_version = self._metadata_cache
+            write_events = list(self._write_events)
         return {
             "state": state,
             "interval": self._interval,
             "items": json.loads(snapshot_json),
             "metadata_version": metadata_version,
+            "live_write_supported": self._live_write_supported,
+            "write_events": write_events,
             "read_cycles": self._completed_read_cycles,
             "read_drops": self._dropped_read_cycles,
             "read_errors": self._read_errors,

@@ -1478,6 +1478,21 @@ def test_unknown_target_with_builtin_flm_uses_generic_target_and_catalog_ram(
     backend.disconnect()
 
 
+def test_nrf54_builtin_target_requires_reset_before_flash_algorithm(
+) -> None:
+    session = FakeSession()
+
+    # Keep target discovery deterministic without opening a real probe. The
+    # backend must still mark the built-in nRF54L algorithm as requiring the
+    # same reset-and-halt preparation used by imported FLMs.
+    backend = PyOcdBackend(session_factory=lambda _probe, _options: session)
+    backend.connect(object(), "nrf54l", 1_000_000)
+
+    assert backend._algorithm_reset_required is True
+    assert session.target.reset_and_halt_calls == 0
+    backend.disconnect()
+
+
 def test_stm32l010_custom_flm_uses_l031_debug_topology(
     tmp_path: Path, monkeypatch,
 ) -> None:

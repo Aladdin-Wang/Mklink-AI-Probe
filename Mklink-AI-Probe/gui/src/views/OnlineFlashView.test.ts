@@ -582,12 +582,15 @@ function viewFetch(targets = [installedTarget]) {
     if (url.includes('/targets/') && url.endsWith('/security')) {
       const targetPart = decodeURIComponent(url.split('/targets/')[1].split('/security')[0])
       const supported = targetPart.startsWith('STM32F103')
+        || targetPart === 'nrf54l'
         || targetPart.startsWith('STM32G474')
         || targetPart.startsWith('STM32H743')
         || targetPart.startsWith('STM32L010')
         || targetPart.startsWith('GD32F303')
         || targetPart.startsWith('PY32F030')
-      const family = targetPart.startsWith('GD32F303')
+      const family = targetPart === 'nrf54l'
+        ? 'nrf54l15-ctrl-ap'
+        : targetPart.startsWith('GD32F303')
         ? 'gd32f303xe-spc'
         : targetPart.startsWith('PY32F030')
           ? 'py32f030x8-rdp1'
@@ -704,6 +707,57 @@ async function readyAndStart(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('online flash task workspace behavior', () => {
+  it('binds a conflicting FLM choice to inspection and the flash job', async () => {
+    const target = { ...installedTarget, part_number: 'STM32F767xG', source: 'daplink-builtin' }
+    const fallback = viewFetch([target])
+    const choices = [
+      { algorithm_id: 'dual', target_part: target.part_number, file_name: 'STM32F7x_1024dual.FLM',
+        flash_start: 0x08000000, flash_size: 0x100000, default: true,
+        source_kind: 'daplink-builtin', source_name: '内置算法', sector_sizes: [[0, 0x4000]] },
+      { algorithm_id: 'single', target_part: target.part_number, file_name: 'STM32F7x_1024.FLM',
+        flash_start: 0x08000000, flash_size: 0x100000, default: false,
+        source_kind: 'daplink-builtin', source_name: '内置算法', sector_sizes: [[0, 0x8000]] },
+    ]
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
+      if (url.endsWith('/targets/STM32F767xG/algorithms')) return json(choices)
+      if (url.includes('/targets/STM32F767xG/memory-map')) return json([])
+      if (url.endsWith('/images/inspect')) {
+        const chosen = (options?.body as FormData).get('algorithm_id')
+        return json({
+          image_id: chosen ? `image-${chosen}` : 'image-unselected',
+          file_name: 'firmware.bin', format: 'bin', size: 4, sha256: 'abc',
+          start: 0x08000000, end: 0x08000004,
+          segments: [{ start: 0x08000000, end: 0x08000004 }], base_address: 0x08000000,
+          sector_operations_available: !!chosen,
+          sectors: chosen ? [{ address: 0x08000000, size: chosen === 'dual' ? 0x4000 : 0x8000 }] : [],
+        })
+      }
+      return fallback(input, options)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-STM32F767xG"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-STM32F767xG"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="flash-algorithm-choice"]').exists()).toBe(true))
+    await chooseFirmware(wrapper)
+    await wrapper.get('[data-testid="bin-base"]').setValue('0x08000000')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/images/inspect'))).toBe(true))
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('请先在左侧选择与目标 Bank 模式一致的 FLM'))
+
+    await wrapper.get('[data-testid="flash-algorithm-choice"]').setValue('single')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+    const inspections = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/images/inspect'))
+    expect((inspections.at(-1)?.[1]?.body as FormData).get('algorithm_id')).toBe('single')
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
+    const job = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/jobs'))
+    expect(JSON.parse(String(job?.[1]?.body)).algorithm_id).toBe('single')
+    wrapper.unmount()
+  })
+
   it('defaults the programming connection mode to halt', async () => {
     const wrapper = mount(await onlineFlashView())
 
@@ -1042,6 +1096,28 @@ describe('online flash task workspace behavior', () => {
     expect(JSON.parse(String(call?.[1]?.body)).actions).toEqual([
       'connect', 'unlock', 'erase', 'program', 'verify', 'lock', 'reset', 'disconnect',
     ])
+    wrapper.unmount()
+  })
+
+  it('selects CTRL-AP attach and warns that nRF54L recovery erases UICR', async () => {
+    const target = { ...installedTarget, part_number: 'nrf54l' }
+    vi.stubGlobal('fetch', viewFetch([target]))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="target-nrf54l"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="target-nrf54l"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="action-unlock"]').attributes('disabled')).toBeUndefined())
+
+    await wrapper.get('[data-testid="action-unlock"]').setValue(true)
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('擦除程序和 UICR')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="connect-mode"]').element.value).toBe('attach')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="reset-mode"]').element.value).toBe('default')
+
+    await wrapper.get('[data-testid="action-lock"]').setValue(true)
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('APPROTECT 和 SECUREAPPROTECT')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-verify"]').element.checked).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="action-reset"]').element.checked).toBe(true)
     wrapper.unmount()
   })
 

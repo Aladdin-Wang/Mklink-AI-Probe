@@ -202,6 +202,31 @@
         }
       ],
       "cpu_freq_default": 100000000
+    },
+    "nrf54l": {
+      "name": "nRF54L15",
+      "idcode_pattern": "",
+      "device_prefix": "nRF54L",
+      "flm_path": "FLM/nRF54L15.FLM",
+      "flash_base": "0x00000000",
+      "ram_base": "0x20000000",
+      "page_size": 256,
+      "sector_size": 4096,
+      "flash_size": "1536KB",
+      "swd_clock_default": 10000000,
+      "regions": [
+        {
+          "name": "flash",
+          "start": "0x00000000",
+          "size": "0x00180000"
+        },
+        {
+          "name": "ram",
+          "start": "0x20000000",
+          "size": "0x00040000"
+        }
+      ],
+      "cpu_freq_default": 128000000
     }
   }
 }

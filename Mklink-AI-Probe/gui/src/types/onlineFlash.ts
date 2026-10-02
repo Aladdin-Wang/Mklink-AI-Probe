@@ -64,6 +64,7 @@ export interface FlashAlgorithmRecord {
   default: boolean
   source_kind: 'installed-pack' | 'builtin-pack' | 'daplink-builtin' | 'pyocd-builtin' | 'custom-flm' | 'hpm-rom-api' | string
   source_name: string
+  sector_sizes?: Array<[number, number]>
 }
 
 export interface ImageSegment {
@@ -113,6 +114,7 @@ export type JobAction = 'connect' | 'unlock' | 'erase' | 'program' | 'verify' | 
 export interface JobRequest {
   actions: JobAction[]
   image_id?: string | null
+  algorithm_id?: string | null
   preempt_ai?: boolean
   probe_id?: string | null
   target_part?: string | null

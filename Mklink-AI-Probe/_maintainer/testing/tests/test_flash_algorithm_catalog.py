@@ -284,6 +284,54 @@ def test_offline_algorithm_list_keeps_lower_priority_explicit_choices(
     ]
 
 
+def test_offline_algorithm_list_exposes_nrf54_profile_flm_on_probe_disk(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from mklink.remote.offline_download_api import discover_algorithms
+
+    flm = tmp_path / "FLM" / "nRF54L15.FLM"
+    flm.parent.mkdir()
+    flm.write_bytes(b"nrf54l-flm")
+    monkeypatch.setattr(
+        "mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "mklink.profiles.load_mcu_profiles",
+        lambda: {
+            "nrf54l": {
+                "device_prefix": "nRF54L",
+                "flm_path": "FLM/nRF54L15.FLM",
+                "flash_base": "0x00000000",
+                "ram_base": "0x20000000",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "mklink.discovery.resolve_keil_flm_path",
+        lambda _name: None,
+    )
+    monkeypatch.setattr(
+        "mklink.discovery.check_flm_on_microkeen",
+        lambda _name: (True, str(flm)),
+    )
+
+    candidates = discover_algorithms(PackPaths(tmp_path / "cache"), "nrf54l", tmp_path)
+
+    assert candidates == [{
+        "id": "profile-nrf54l",
+        "file_name": "nRF54L15.FLM",
+        "flash_base": "0x00000000",
+        "ram_base": "0x20000000",
+        "source_kind": "existing",
+        "source_token": None,
+        "origin": "MCU profile",
+        "available": True,
+        "on_probe": True,
+    }]
+
+
 def test_state_pack_outside_managed_data_directory_is_ignored(tmp_path: Path):
     paths = PackPaths(tmp_path / "cache")
     paths.root.mkdir(parents=True)

@@ -146,7 +146,8 @@ const securityReady = computed(() => (
   !securityRequested.value
   || (
     !!securityCapability.value?.supported
-    && securityCapability.value.voltage_options_mv.includes(securityVoltageMv.value)
+    && (securityCapability.value.apply_method === 'ctrl-ap'
+      || securityCapability.value.voltage_options_mv.includes(securityVoltageMv.value))
   )
 ))
 const canBuild = computed(() => (
@@ -299,6 +300,13 @@ async function toggleUnlock(event: Event): Promise<void> {
     return
   }
   if (!securityCapability.value?.unlock_supported) return
+  if (securityCapability.value.apply_method === 'ctrl-ap') {
+    if (await confirmRisk(tr(
+      'CTRL-AP 恢复会永久擦除 nRF54L15 的程序及 UICR 配置。不会切换目标供电电压。确定启用“下载前解锁”？',
+      'CTRL-AP recovery permanently erases nRF54L15 program memory and UICR. Target supply voltage is unchanged. Enable Unlock before download?',
+    ))) unlockBeforeDownload.value = true
+    return
+  }
   const voltage = `${(securityVoltageMv.value / 1000).toFixed(securityVoltageMv.value === 5000 ? 0 : 1)}V`
   const voltageWarning = securityVoltageMv.value === 5000
     ? tr('5V 可能损坏不耐受的目标板，必须确认供电路径和全部负载耐压。', '5V can damage an incompatible target; confirm the power path and voltage rating of every load. ')
@@ -494,6 +502,11 @@ function addManualFlmSource(source: string | File): void {
   if (algorithms.value.length === 1) {
     firmwares.value.forEach(item => { item.algorithm_id = id })
   }
+  // A missing-catalog warning can be raised before the user supplies a local
+  // FLM.  Once that replacement is present, the old warning must not keep
+  // blocking the offline workflow or remain visible as if discovery failed.
+  clearError()
+  preview.value = null
 }
 
 async function browseManualFlm(): Promise<void> {
@@ -859,7 +872,7 @@ onBeforeUnmount(() => {
           <summary class="security-title">
             <span>{{ tr('擦除与安全操作', 'Erase and Security Operations') }}</span>
             <em v-if="securityLoading">{{ tr('正在检查器件支持…', 'Checking target support…') }}</em>
-            <em v-else-if="securityCapability" :class="securityCapability.supported ? 'ok' : 'bad'">{{ securityCapability.supported ? tr('加锁/解锁已验证', 'Lock/unlock validated') : tr('加锁/解锁未支持', 'Lock/unlock unsupported') }}</em>
+            <em v-else-if="securityCapability" :class="securityCapability.supported ? 'ok' : 'bad'">{{ securityCapability.supported ? (securityCapability.apply_method === 'ctrl-ap' ? tr('CTRL-AP 恢复', 'CTRL-AP recovery') : tr('加锁/解锁已验证', 'Lock/unlock validated')) : tr('加锁/解锁未支持', 'Lock/unlock unsupported') }}</em>
           </summary>
           <label class="security-option">
             <input data-testid="offline-erase-all" type="checkbox" aria-describedby="offline-erase-all-hint" :checked="eraseAllBeforeDownload" :disabled="hpmMode || !firmwares.length" @change="toggleEraseAll">
@@ -874,9 +887,10 @@ onBeforeUnmount(() => {
             <input data-testid="offline-lock" type="checkbox" :checked="lockAfterDownload" :disabled="!securityCapability?.lock_supported" @change="toggleLock">
             <span>{{ tr('下载成功后加锁', 'Lock after successful download') }}</span>
           </label>
-          <label v-if="securityCapability?.supported" class="setting-row security-voltage"><span>{{ tr('断电恢复电压', 'Power Restore Voltage') }}</span><select :value="securityVoltageMv" class="form-select" data-testid="offline-security-voltage" @change="changeSecurityVoltage"><option v-for="voltage in securityCapability.voltage_options_mv" :key="voltage" :value="voltage">{{ (voltage / 1000).toFixed(voltage === 5000 ? 0 : 1) }} V</option></select></label>
+          <label v-if="securityCapability?.supported && securityCapability.voltage_options_mv.length" class="setting-row security-voltage"><span>{{ tr('断电恢复电压', 'Power Restore Voltage') }}</span><select :value="securityVoltageMv" class="form-select" data-testid="offline-security-voltage" @change="changeSecurityVoltage"><option v-for="voltage in securityCapability.voltage_options_mv" :key="voltage" :value="voltage">{{ (voltage / 1000).toFixed(voltage === 5000 ? 0 : 1) }} V</option></select></label>
           <p v-if="securityLoading" class="security-reason">{{ tr('正在按下载器型号和已选器件加载安全操作白名单。', 'Loading the security-operation whitelist for the probe and selected target.') }}</p>
           <p v-else-if="securityCapability && !securityCapability.supported" class="security-reason">{{ securityCapability.reason }}</p>
+          <p v-else-if="securityCapability?.apply_method === 'ctrl-ap'" class="security-reason">{{ tr('需要支持 CTRL-AP 恢复命令的 V4 固件；恢复会擦除程序及 UICR，随后重新烧录。不支持下载后加锁。', 'Requires V4 firmware with CTRL-AP recovery. Recovery erases program memory and UICR before reprogramming. Lock after download is unsupported.') }}</p>
           <p v-else-if="securityCapability?.supported" class="security-reason">{{ tr('加锁与解锁只对已真机验证的器件开放；配置、器件 ID、容量和 FLM 均会严格校验。', 'Lock and unlock are enabled only for hardware-validated targets; configuration, device ID, density, and FLM are strictly verified.') }}</p>
         </details>
         </DeviceConfigurationPanel>

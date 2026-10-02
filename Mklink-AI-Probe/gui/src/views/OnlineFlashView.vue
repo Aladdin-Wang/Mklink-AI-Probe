@@ -79,6 +79,7 @@ const packPhase = ref('preparing')
 const packError = ref('')
 const customFlms = ref<CustomFlmRecord[]>([])
 const flashAlgorithms = ref<FlashAlgorithmRecord[]>([])
+const selectedAlgorithmId = ref('')
 const customFlmBusy = ref(false)
 const customFlmError = ref('')
 const firmware = ref<File | null>(null)
@@ -149,6 +150,23 @@ const geometryReliable = computed(() => (
   inspection.value?.sector_operations_available === true
   && inspection.value.sectors.length > 0
 ))
+const algorithmChoices = computed(() => {
+  const algorithms = flashAlgorithms.value.filter(item => item.source_kind === 'daplink-builtin')
+  const conflicting = new Set<string>()
+  for (let left = 0; left < algorithms.length; left += 1) {
+    for (let right = left + 1; right < algorithms.length; right += 1) {
+      const first = algorithms[left]
+      const second = algorithms[right]
+      if (first.flash_start < second.flash_start + second.flash_size
+        && second.flash_start < first.flash_start + first.flash_size
+        && JSON.stringify(first.sector_sizes) !== JSON.stringify(second.sector_sizes)) {
+        conflicting.add(first.algorithm_id)
+        conflicting.add(second.algorithm_id)
+      }
+    }
+  }
+  return algorithms.filter(item => conflicting.has(item.algorithm_id))
+})
 const requiresSectorGeometry = computed(() => (
   actions.value.includes('erase') || actions.value.includes('program')
 ))
@@ -171,6 +189,11 @@ function actionsAreValid(values: readonly JobAction[]): boolean {
 }
 function setActions(values: JobAction[]): void {
   const next = canonicalActions(values)
+  if (security.value.family === 'nrf54l15-ctrl-ap' && (next.includes('unlock') || next.includes('lock'))) {
+    connectMode.value = next.includes('unlock') ? 'attach' : 'halt'
+    resetMode.value = 'default'
+    persist()
+  }
   if (
     ['gd32f303xe-spc', 'py32f030x8-rdp1', 'stm32g474-rdp1', 'stm32h743-rdp1', 'stm32l010x4-rdp1'].includes(security.value.family)
     && (next.includes('unlock') || next.includes('lock'))
@@ -183,8 +206,8 @@ function setActions(values: JobAction[]): void {
   }
   actions.value = next
 }
-const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value))
-const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value)
+const canStart = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !!inspection.value && !inspection.value.preview_only && !!firmwareName.value && !baseError.value && !active.value && !creatingJob.value && !packBusy.value && !inspectBusy.value && actionsAreValid(actions.value) && (!hpmMode.value || (!!hpmBoard.value && isBin.value)) && (!requiresSectorGeometry.value || geometryReliable.value || hpmMode.value) && (!actions.value.includes('erase') || !algorithmChoices.value.length || !!selectedAlgorithmId.value))
+const canErase = computed(() => !!probeId.value && !!selectedTarget.value?.installed && !hpmMode.value && !active.value && !creatingJob.value && (!algorithmChoices.value.length || !!selectedAlgorithmId.value))
 const hpmAlgorithmNotRequired = computed(() => (
   selectedTarget.value?.part_number.toLowerCase().startsWith('hpm') ?? false
 ))
@@ -423,7 +446,10 @@ async function loadFlashAlgorithms(partNumber = selectedTarget.value?.part_numbe
   }
   try {
     const records = await api.listTargetAlgorithms(partNumber)
-    if (token === flashAlgorithmToken && !disposed) flashAlgorithms.value = records
+    if (token === flashAlgorithmToken && !disposed) {
+      flashAlgorithms.value = records
+      if (selectedAlgorithmId.value && !records.some(item => item.algorithm_id === selectedAlgorithmId.value)) selectedAlgorithmId.value = ''
+    }
   } catch (error) {
     if (token === flashAlgorithmToken) {
       flashAlgorithms.value = []
@@ -441,7 +467,7 @@ async function loadTargetMemoryMap(partNumber = selectedTarget.value?.part_numbe
   }
   targetMemoryMapBusy.value = true
   try {
-    const regions = await api.getTargetMemoryMap(partNumber)
+    const regions = await api.getTargetMemoryMap(partNumber, selectedAlgorithmId.value)
     if (token === targetMemoryMapToken && !disposed) targetMemoryRegions.value = regions
   } catch {
     if (token === targetMemoryMapToken) targetMemoryRegions.value = []
@@ -463,12 +489,21 @@ async function loadSecurityCapability(partNumber = selectedTarget.value?.part_nu
 }
 
 watch(() => selectedTarget.value?.part_number || '', partNumber => {
+  selectedAlgorithmId.value = ''
   actions.value = canonicalActions(actions.value.filter(action => action !== 'unlock' && action !== 'lock'))
   void loadCustomFlms(partNumber)
   void loadFlashAlgorithms(partNumber)
   void loadTargetMemoryMap(partNumber)
   void loadSecurityCapability(partNumber)
 })
+
+function selectAlgorithm(algorithmId: string): void {
+  if (active.value || (algorithmId && !algorithmChoices.value.some(item => item.algorithm_id === algorithmId))) return
+  selectedAlgorithmId.value = algorithmId
+  resetInspection()
+  void loadTargetMemoryMap()
+  scheduleAutoInspection()
+}
 
 async function addCustomFlm(file: File): Promise<void> {
   const partNumber = selectedTarget.value?.installed ? selectedTarget.value.part_number : ''
@@ -712,13 +747,14 @@ async function inspectImage(): Promise<void> {
   inspectionController = controller
   try {
     const result = firmwarePath.value
-      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value?.part_number || '', isBin.value ? parsedBase.value : null, controller.signal)
+      ? await api.inspectImagePath(firmwarePath.value, selectedTarget.value?.part_number || '', isBin.value ? parsedBase.value : null, controller.signal, selectedAlgorithmId.value)
       : await api.inspectImage(
           firmware.value!,
           selectedTarget.value?.part_number || '',
           isBin.value ? parsedBase.value : null,
           controller.signal,
           capturedReadSource,
+          selectedAlgorithmId.value,
         )
     if (disposed || generation !== inspectionGeneration || controller.signal.aborted || inspectionController !== controller) throw new DOMException('Aborted', 'AbortError')
     if (result.end < result.start || (isBin.value && result.base_address !== parsedBase.value)) throw new Error(tr('服务端返回的镜像地址范围无效', 'The server returned an invalid image address range'))
@@ -836,6 +872,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
       : []
   )
   if (sectorAddresses === undefined && orderedActions.includes('erase') && !geometryReliable.value && !hpmMode.value) return
+  if (orderedActions.includes('erase') && algorithmChoices.value.length && !selectedAlgorithmId.value) return
   const usesReset = orderedActions.includes('reset')
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
@@ -848,7 +885,7 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     if (disposed) return
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
-    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
+    const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null })
     if (disposed) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
@@ -912,15 +949,15 @@ onBeforeUnmount(() => {
   <div class="online-flash-grid" :inert="confirmationMessage !== null">
     <aside class="workspace-zone settings-zone" data-zone="settings">
       <ProbeSettingsPanel :probes="probes" :selected-id="probeId" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :reset-voltage-mv="resetVoltageMv" :busy="probeBusy || active" :error="probeError" @refresh="refreshProbes" @update:selected-id="probeId = $event" @update:frequency="frequency = $event" @update:connect-mode="connectMode = $event" @update:reset-mode="resetMode = $event" @update:reset-voltage-mv="resetVoltageMv = $event" />
-      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :selection-locked="active" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="updateTargetQuery" @select="selectTarget" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
+      <TargetPackPanel :targets="targets" :query="targetQuery" :selected-part="selectedTarget?.part_number || ''" :selected-installed="!!selectedTarget?.installed" :selected-algorithm-id="selectedAlgorithmId" :algorithm-choices="algorithmChoices" :selection-locked="active" :status="packStatus" :busy="packBusy" :cancel-pending="packCancelPending" :progress="packProgress" :phase="packPhase" :error="packError" :algorithms="customFlms" :flash-algorithms="flashAlgorithms" :algorithm-busy="customFlmBusy" :algorithm-error="customFlmError" :can-manage-algorithms="!active && !hpmAlgorithmNotRequired" :algorithm-not-required="hpmAlgorithmNotRequired" @search="searchTargets" @update:query="updateTargetQuery" @select="selectTarget" @select-algorithm="selectAlgorithm" @update-index="updatePackIndex" @import-pack="importPack" @cancel="cancelPack" @add-algorithm="addCustomFlm" @remove-algorithm="removeCustomFlm" />
       <label v-if="hpmMode" class="hpm-setting"><span>{{ tr('HPM 板卡', 'HPM Board') }}</span><select v-model="hpmBoard" data-testid="hpm-board"><option v-for="item in hpmBoards" :key="item" :value="item">{{ item }}</option></select></label>
     </aside>
     <main class="workspace-zone firmware-zone" data-zone="firmware">
       <MemoryReadPanel ref="memoryReadRef" embedded :probe-id="probeId" :target-part="selectedTarget?.part_number || ''" :hpm="hpmMode" :board="hpmBoard || undefined" :frequency="frequency" :connect-mode="connectMode" :reset-mode="resetMode" :memory-regions="targetMemoryRegions" :memory-map-busy="targetMemoryMapBusy" :disabled="memoryReadDisabled" @progress="onMemoryReadProgress" @log="onMemoryReadLog" @data="onMemoryReadData" />
       <FirmwareWorkspace :file="firmware" :source-path="firmwarePath" :native-drop-active="nativeDropActive" :base-address="baseAddress" :base-error="baseError" :inspection="inspection" :rows="rows" :padding-top="paddingTop" :padding-bottom="paddingBottom" :loading="inspectBusy" :error="inspectError" :memory-data="memoryReadData" :memory-address="memoryReadAddress" :read-disabled="memoryReadDisabled" :read-busy="memoryReadBusy" @file="setFirmware" @browse="browseFirmware" @drop-files="acceptFirmwareSources" @base="setBase" @scroll="loadVisible" @read="openMemoryReadDialog" @save="saveMemoryFile" @clear-data="clearDataWindow" />
-      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
+      <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :security-family="security.family" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
-    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
+    <aside class="workspace-zone flash-map-zone" data-zone="flash-map"><FlashMapPanel :segments="inspection?.segments || []" :sectors="inspection?.sectors || []" :selected-addresses="selectedSectorAddresses" :inspection-ready="!!inspection" :geometry-reliable="geometryReliable" :geometry-message="algorithmChoices.length && !selectedAlgorithmId ? tr('该器件有多套扇区布局，请先在左侧选择与目标 Bank 模式一致的 FLM。', 'This target has multiple sector layouts. Select the FLM matching its bank mode on the left.') : inspection?.validation_message" :can-erase="canErase" @chip-erase="chipErase" @selected-erase="selectedErase" @range-erase="rangeErase" @select-all="selectedSectorAddresses = inspection?.sectors.map(sector => sector.address) || []" @clear-selection="selectedSectorAddresses = []" @toggle-sector="toggleSector" /></aside>
     <section class="workspace-zone logs-zone" data-zone="logs"><FlashLogPanel :lines="logs" :stream-disconnected="streamDisconnected" @clear="logs = []" @reconnect="subscribe(lastSequence)" /></section>
     <div v-if="binAddressOpen" class="bin-address-backdrop" data-testid="bin-address-dialog" @click.self="cancelBinAddress">
       <section class="bin-address-dialog" role="dialog" aria-modal="true" aria-labelledby="bin-address-title">

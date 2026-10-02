@@ -12,7 +12,7 @@ def run_security_operation(
     action: str,
     target_part: str,
     *,
-    voltage_mv: int,
+    voltage_mv: Optional[int],
     confirm_user: bool,
     confirm_data_loss: bool = False,
     firmware: Optional[str] = None,
@@ -21,7 +21,7 @@ def run_security_operation(
     frequency: int = 1_000_000,
     timeout: float = 240.0,
 ) -> dict[str, object]:
-    """Run one validated RDP1 lock/unlock through the online-flash backend.
+    """Run one validated lock/unlock through the online-flash backend.
 
     This is the common non-UI entry point used by the CLI and MCP. The WebGUI
     uses the same capability resolver, job configuration, backend, and reset
@@ -34,12 +34,14 @@ def run_security_operation(
     part = str(target_part or "").strip()
     if not part:
         raise ValueError("target_part is required")
-    if isinstance(voltage_mv, bool) or voltage_mv not in _VOLTAGES_MV:
+    nrf54l_request = part.casefold() in {"nrf54l", "nrf54l15"}
+    if nrf54l_request:
+        if voltage_mv is not None:
+            raise ValueError("nRF54L15 CTRL-AP security does not change VCC; omit voltage_mv")
+    elif isinstance(voltage_mv, bool) or voltage_mv not in _VOLTAGES_MV:
         raise ValueError("voltage_mv must be 1800, 3300, or 5000")
     if confirm_user is not True:
-        raise ValueError(
-            "security operation requires explicit confirmation for the exact restore voltage"
-        )
+        raise ValueError("security operation requires explicit confirmation")
     if normalized_action == "unlock" and confirm_data_loss is not True:
         raise ValueError(
             "unlock requires explicit confirmation that protected nonvolatile data will be erased"
@@ -75,6 +77,7 @@ def run_security_operation(
         from mklink.cmsis_dap.security import require_security_capability
 
         security = require_security_capability(target.part_number)
+        nrf54l_ctrl_ap = security.family == "nrf54l15-ctrl-ap"
         probes = _enumerate_probes(services.probe_provider)
         if probe_id:
             selected = [probe for probe in probes if probe.unique_id == probe_id]
@@ -100,6 +103,15 @@ def run_security_operation(
                 target.part_number.casefold(), fingerprint
             )
 
+        if nrf54l_ctrl_ap:
+            connect_mode = "attach" if normalized_action == "unlock" else "halt"
+        elif normalized_action == "unlock" and security.family not in {
+            "py32f030x8-rdp1", "gd32f303xe-spc"
+        }:
+            connect_mode = "under-reset"
+        else:
+            connect_mode = "halt"
+
         body = JobBody(
             actions=(
                 ["connect", "verify", "lock", "reset", "disconnect"]
@@ -112,14 +124,9 @@ def run_security_operation(
             probe_id=selected[0].unique_id,
             target_part=target.part_number,
             frequency=frequency,
-            connect_mode=(
-                "under-reset"
-                if normalized_action == "unlock"
-                and security.family not in {"py32f030x8-rdp1", "gd32f303xe-spc"}
-                else "halt"
-            ),
-            reset_mode="power-cycle",
-            reset_voltage_mv=voltage_mv,
+            connect_mode=connect_mode,
+            reset_mode="default" if nrf54l_ctrl_ap else "power-cycle",
+            reset_voltage_mv=None if nrf54l_ctrl_ap else voltage_mv,
         )
         job_id, _snapshot = _start_job_with_configuration(services, body, target)
         snapshot = services.job_manager.wait(job_id, timeout=float(timeout))
@@ -138,7 +145,7 @@ def run_security_operation(
             "status": "succeeded",
             "action": normalized_action,
             "target_part": target.part_number,
-            "voltage_mv": voltage_mv,
+            "voltage_mv": None if nrf54l_ctrl_ap else voltage_mv,
             "connect_mode": body.connect_mode,
             "reset_mode": body.reset_mode,
             "messages": messages,

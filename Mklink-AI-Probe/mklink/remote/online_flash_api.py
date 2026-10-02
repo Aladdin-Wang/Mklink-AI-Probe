@@ -67,6 +67,7 @@ class OnlineFlashServices:
     configuration_lock: object = field(default_factory=threading.RLock)
     image_targets: Dict[str, object] = field(default_factory=dict)
     image_flash_overrides: Dict[str, object] = field(default_factory=dict)
+    image_algorithm_selections: Dict[str, str] = field(default_factory=dict)
     upload_limit: int = _DEFAULT_UPLOAD_LIMIT
     pack_index_updater: Optional[Callable[[Callable[[Dict[str, object]], None]], object]] = None
     heartbeat_interval: float = 15.0
@@ -147,6 +148,7 @@ class LocalImageBody(BaseModel):
     path: str
     part_number: str = ""
     base_address: Optional[Union[str, int]] = None
+    algorithm_id: Optional[str] = None
 
 
 class ClockBody(BaseModel):
@@ -161,6 +163,7 @@ class ClockBody(BaseModel):
 class JobBody(ClockBody):
     actions: List[str]
     image_id: Optional[str] = None
+    algorithm_id: Optional[str] = None
     preempt_ai: bool = True
     probe_id: Optional[str] = None
     target_part: Optional[str] = None
@@ -654,7 +657,7 @@ def _custom_flm_payload(record: object) -> Dict[str, object]:
 
 def _flash_algorithm_payload(record: object) -> Dict[str, object]:
     """Return public metadata for an algorithm that can serve a target."""
-    return {
+    payload = {
         "algorithm_id": str(getattr(record, "algorithm_id")),
         "target_part": str(getattr(record, "target_part")),
         "file_name": str(getattr(record, "file_name")),
@@ -664,11 +667,57 @@ def _flash_algorithm_payload(record: object) -> Dict[str, object]:
         "source_kind": str(getattr(record, "source_kind")),
         "source_name": str(getattr(record, "source_name")),
     }
+    if getattr(record, "source_kind", "") == "daplink-builtin":
+        payload["sector_sizes"] = [list(pair) for pair in getattr(record, "sector_sizes", ())]
+    return payload
+
+
+def _builtin_algorithm_regions(algorithm: object, name: str) -> List[MemoryRegion]:
+    """Use only complete, aligned FLM sector ranges; never invent a last sector."""
+    start = int(algorithm.flash_start)
+    size = int(algorithm.flash_size)
+    sectors = tuple(algorithm.sector_sizes)
+    if size <= 0 or not sectors or sectors[0][0] != 0:
+        return [MemoryRegion(name, start, size, True, True, None)]
+    regions = []
+    for index, (offset, sector_size) in enumerate(sectors):
+        next_offset = sectors[index + 1][0] if index + 1 < len(sectors) else size
+        if not 0 <= offset < next_offset <= size or sector_size <= 0:
+            return [MemoryRegion(name, start, size, True, True, None)]
+        complete_length = ((next_offset - offset) // sector_size) * sector_size
+        if complete_length:
+            regions.append(MemoryRegion(
+                "{}-{}".format(name, index), start + offset,
+                complete_length, True, True, sector_size,
+            ))
+        if complete_length < next_offset - offset:
+            regions.append(MemoryRegion(
+                "{}-{}-partial".format(name, index),
+                start + offset + complete_length,
+                next_offset - offset - complete_length, True, True, None,
+            ))
+    return regions
+
+
+def _builtin_geometry_is_ambiguous(part_number: str) -> bool:
+    from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
+
+    algorithms = discover_builtin_flm_algorithms(part_number)
+    for index, first in enumerate(algorithms):
+        for second in algorithms[index + 1:]:
+            if (
+                first.flash_start < second.flash_start + second.flash_size
+                and second.flash_start < first.flash_start + first.flash_size
+                and first.sector_sizes != second.sector_sizes
+            ):
+                return True
+    return False
 
 
 def _target_flash_configuration(
     services: OnlineFlashServices,
     part_number: str,
+    algorithm_id: Optional[str] = None,
 ) -> tuple[tuple[MemoryRegion, ...], tuple[str, ...], tuple[str, ...]]:
     from mklink.hpm_config import is_hpm_target
 
@@ -680,9 +729,36 @@ def _target_flash_configuration(
         )
     target = _exact_installed_target(services.catalog, part_number)
     base_regions = tuple(services.target_memory_provider(part_number))
+    selected_range = None
+    if algorithm_id:
+        if target.source != "daplink-builtin":
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "algorithm selection is unavailable for this target")
+        from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
+
+        matches = [
+            algorithm for algorithm in discover_builtin_flm_algorithms(part_number)
+            if algorithm.algorithm_id == algorithm_id
+        ]
+        if len(matches) != 1:
+            raise FlashError(FlashErrorCode.TARGET_NOT_SUPPORTED, "selected Flash algorithm is unavailable")
+        chosen = matches[0]
+        end = chosen.flash_start + chosen.flash_size
+        selected_range = (chosen.flash_start, end)
+        base_regions = tuple(
+            region for region in base_regions
+            if region.end <= chosen.flash_start or region.start >= end
+        ) + tuple(_builtin_algorithm_regions(chosen, "selected-flm"))
     if services.custom_flms is None:
         return base_regions, (), ()
     custom_regions = tuple(services.custom_flms.regions(part_number))
+    if selected_range and any(
+        region.start < selected_range[1] and selected_range[0] < region.end
+        for region in custom_regions
+    ):
+        raise FlashError(
+            FlashErrorCode.TARGET_NOT_SUPPORTED,
+            "selected builtin FLM overlaps a configured custom Flash algorithm",
+        )
     retained_base = list(base_regions)
     for index, region in enumerate(custom_regions):
         for other in tuple(retained_base) + custom_regions[:index]:
@@ -1057,6 +1133,16 @@ def _start_job_with_configuration(
                 "reset_voltage_mv is only valid for power-cycle reset"
             )
         hpm_target = is_hpm_target(target.part_number)
+        if (
+            target.source == "daplink-builtin"
+            and "erase" in body.actions
+            and not body.algorithm_id
+            and _builtin_geometry_is_ambiguous(target.part_number)
+        ):
+            raise FlashError(
+                FlashErrorCode.TARGET_NOT_SUPPORTED,
+                "select the Flash algorithm matching the target sector layout",
+            )
         board = body.board
         hpm_flash_cfg = body.hpm_flash_cfg
         if hpm_target:
@@ -1064,7 +1150,7 @@ def _start_job_with_configuration(
                 target.part_number, board=board, flash_cfg=hpm_flash_cfg
             )
         regions, fingerprint, configured_flm_paths = _target_flash_configuration(
-            services, target.part_number
+            services, target.part_number, body.algorithm_id
         )
         custom_flm_paths = ()
         custom_flm_digests = ()
@@ -1080,11 +1166,27 @@ def _start_job_with_configuration(
             from mklink.cmsis_dap.security import require_security_capability
 
             security = require_security_capability(target.part_number)
-            assert security.algorithm_path is not None
             security_family = security.family
-            security_flm_path = str(security.algorithm_path)
-            security_flm_digest = security.algorithm_sha256
-            security_flm_region = (security.option_address, security.option_size)
+            if security.algorithm_path is not None:
+                security_flm_path = str(security.algorithm_path)
+                security_flm_digest = security.algorithm_sha256
+                security_flm_region = (security.option_address, security.option_size)
+            if security.family == "nrf54l15-ctrl-ap":
+                if "unlock" in body.actions and body.connect_mode != "attach":
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "nRF54L15 CTRL-AP 解锁必须选择附加连接",
+                    )
+                if "lock" in body.actions and "unlock" not in body.actions and body.connect_mode != "halt":
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "nRF54L15 加锁必须选择暂停连接",
+                    )
+                if body.reset_mode != "default" or body.reset_voltage_mv is not None:
+                    raise FlashError(
+                        FlashErrorCode.SECURITY_NOT_SUPPORTED,
+                        "nRF54L15 安全操作使用 CTRL-AP 复位，不切换目标电压",
+                    )
             power_cycle_security = {
                 "gd32f303xe-spc",
                 "py32f030x8-rdp1",
@@ -1133,6 +1235,11 @@ def _start_job_with_configuration(
                     FlashErrorCode.TARGET_NOT_SUPPORTED,
                     "image inspection does not match the selected target",
                 )
+            if services.image_algorithm_selections.get(body.image_id) != body.algorithm_id:
+                raise FlashError(
+                    FlashErrorCode.TARGET_NOT_SUPPORTED,
+                    "Flash algorithm selection changed after image inspection",
+                )
             flash_override = services.image_flash_overrides.get(body.image_id)
             if flash_override is not None:
                 regions, pack_flm_regions = flash_override
@@ -1154,11 +1261,13 @@ def _start_job_with_configuration(
                     if needs_catalog else []
                 )
                 configured_paths = {str(path) for path in configured_flm_paths}
-                preferred_algorithm_ids = tuple(
-                    algorithm.algorithm_id
-                    for algorithm in catalog
-                    if algorithm.source_kind == "custom-flm"
-                    and str(algorithm.custom_path) in configured_paths
+                preferred_algorithm_ids = (
+                    (body.algorithm_id,) if body.algorithm_id else tuple(
+                        algorithm.algorithm_id
+                        for algorithm in catalog
+                        if algorithm.source_kind == "custom-flm"
+                        and str(algorithm.custom_path) in configured_paths
+                    )
                 )
                 selected = _job_flash_algorithms(
                     target,
@@ -1262,6 +1371,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         part_number: str,
         base_address: Optional[Union[str, int]],
         captured_from_target: bool = False,
+        algorithm_id: Optional[str] = None,
     ) -> object:
         from mklink.hpm_config import is_hpm_target
 
@@ -1273,7 +1383,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             ))
         if target:
             regions, fingerprint, _paths = await _blocking(
-                _target_flash_configuration, services, target.part_number
+                _target_flash_configuration, services, target.part_number, algorithm_id
             )
         else:
             regions = await _blocking(services.custom_flms.regions, "__flm_preview__") if services.custom_flms else ()
@@ -1314,6 +1424,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             services.image_targets[inspection.image_id] = (
                 target.part_number.casefold(), fingerprint
             )
+            if algorithm_id:
+                services.image_algorithm_selections[inspection.image_id] = algorithm_id
+            else:
+                services.image_algorithm_selections.pop(inspection.image_id, None)
         if pack_flm_regions:
             services.image_flash_overrides[inspection.image_id] = (
                 tuple(regions), pack_flm_regions
@@ -1328,6 +1442,13 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             if uncovered and regions else
             "解析成功；请选择精确器件后重新检查，才能烧录。" if target is None else ""
         )
+        if target and not preview_only and not is_hpm_target(target.part_number) and not coverage.sector_operations_available:
+            payload["validation_message"] = (
+                "该器件有多套覆盖相同地址的 FLM 扇区布局，请选择与目标 Bank 模式一致的烧录算法后重新检查。"
+                if target.source == "daplink-builtin" and not algorithm_id
+                and _builtin_geometry_is_ambiguous(target.part_number)
+                else "当前 FLM 未提供可验证的完整扇区布局；请检查算法或安装包含扇区信息的 Pack。"
+            )
         return payload
 
     @router.get("/probes")
@@ -1345,10 +1466,14 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return _json_primitive(result, hide_paths=True)
 
     @router.get("/targets/{part_number}/memory-map")
-    async def target_memory_map(part_number: str) -> object:
+    async def target_memory_map(part_number: str, algorithm_id: Optional[str] = None) -> object:
         target = await _blocking(_resolved_target, services.catalog, part_number)
+        if target.source == "daplink-builtin" and not algorithm_id and await _blocking(
+            _builtin_geometry_is_ambiguous, target.part_number
+        ):
+            return []
         regions, _fingerprint, _paths = await _blocking(
-            _target_flash_configuration, services, target.part_number
+            _target_flash_configuration, services, target.part_number, algorithm_id
         )
         return [
             {
@@ -1719,6 +1844,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         part_number: str = Form(""),
         base_address: Optional[str] = Form(None),
         captured_from_target: bool = Form(False),
+        algorithm_id: Optional[str] = Form(None),
     ) -> object:
         temporary = None  # type: Optional[Path]
         try:
@@ -1730,6 +1856,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
                 part_number,
                 base_address,
                 captured_from_target,
+                algorithm_id,
             )
         finally:
             await run_in_threadpool(_unlink, temporary)
@@ -1743,7 +1870,7 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
             )
         except (OSError, ValueError) as error:
             raise HTTPException(status_code=422, detail=str(error))
-        return await inspect_source(source, body.part_number, body.base_address)
+        return await inspect_source(source, body.part_number, body.base_address, algorithm_id=body.algorithm_id)
 
     @router.get("/images/source-status")
     async def image_source_status(path: str = Query(...)) -> object:
@@ -1873,32 +2000,7 @@ def default_target_memory_provider(
         algorithms = discover_builtin_flm_algorithms(part_number)
         regions = []
         for algorithm_index, algorithm in enumerate(algorithms):
-            sector_sizes = algorithm.sector_sizes
-            if not sector_sizes:
-                regions.append(MemoryRegion(
-                    "daplink-flm-{}".format(algorithm_index),
-                    algorithm.flash_start,
-                    algorithm.flash_size,
-                    True,
-                    True,
-                    None,
-                ))
-                continue
-            for sector_index, (offset, sector_size) in enumerate(sector_sizes):
-                next_offset = (
-                    sector_sizes[sector_index + 1][0]
-                    if sector_index + 1 < len(sector_sizes)
-                    else algorithm.flash_size
-                )
-                if 0 <= offset < next_offset <= algorithm.flash_size and sector_size > 0:
-                    regions.append(MemoryRegion(
-                        "daplink-flm-{}-{}".format(algorithm_index, sector_index),
-                        algorithm.flash_start + offset,
-                        next_offset - offset,
-                        True,
-                        True,
-                        sector_size,
-                    ))
+            regions.extend(_builtin_algorithm_regions(algorithm, "daplink-flm-{}".format(algorithm_index)))
         if regions:
             return regions
     except (ImportError, OSError, TypeError, ValueError):
@@ -1939,37 +2041,67 @@ def _memory_map_regions(memory_map: object) -> List[MemoryRegion]:
         start = getattr(region, "start", None)
         length = getattr(region, "length", None)
         if is_flash and isinstance(start, int) and isinstance(length, int) and length > 0:
+            name = str(getattr(region, "name", "flash"))
+            flm = getattr(region, "flm", None)
+            ranges = getattr(flm, "iter_sector_size_ranges", None)
+            if callable(ranges):
+                flm_offset = _pack_flm_address_offset(
+                    start, length,
+                    getattr(flm, "flash_start", None),
+                    getattr(flm, "flash_size", None),
+                )
+                candidates = []
+                for sector_range, range_sector_size in ranges():
+                    raw_start = int(sector_range.start) + flm_offset
+                    raw_end = int(sector_range.end) + 1 + flm_offset
+                    range_start = max(start, raw_start)
+                    range_end = min(start + length, raw_end)
+                    if range_start >= range_end:
+                        continue
+                    valid = (
+                        isinstance(range_sector_size, int)
+                        and not isinstance(range_sector_size, bool)
+                        and range_sector_size > 0
+                        and (range_start - raw_start) % range_sector_size == 0
+                        and (range_end - raw_start) % range_sector_size == 0
+                    )
+                    candidates.append((range_start, range_end, range_sector_size if valid else None))
+                if candidates:
+                    cursor = start
+                    flm_regions = []
+                    overlapping = False
+                    for index, (range_start, range_end, range_sector_size) in enumerate(
+                        sorted(candidates, key=lambda item: (item[0], item[1]))
+                    ):
+                        if range_start < cursor:
+                            flm_regions = [MemoryRegion(name, start, length, True, True, None)]
+                            overlapping = True
+                            break
+                        if range_start > cursor:
+                            flm_regions.append(MemoryRegion(
+                                "{}-gap-{}".format(name, index), cursor,
+                                range_start - cursor, True, True, None,
+                            ))
+                        flm_regions.append(MemoryRegion(
+                            name if index == 0 else "{}-{}".format(name, index), range_start,
+                            range_end - range_start, True, True, range_sector_size,
+                        ))
+                        cursor = range_end
+                    if cursor < start + length and not overlapping:
+                        flm_regions.append(MemoryRegion(
+                            "{}-gap-end".format(name), cursor,
+                            start + length - cursor, True, True, None,
+                        ))
+                    result.extend(flm_regions)
+                    continue
+                result.append(MemoryRegion(name, start, length, True, True, None))
+                continue
             sector_size = getattr(region, "sector_size", None)
             if not isinstance(sector_size, int) or isinstance(sector_size, bool) or sector_size <= 0:
                 sector_size = getattr(region, "blocksize", None)
             if not isinstance(sector_size, int) or isinstance(sector_size, bool) or sector_size <= 0:
-                flm = getattr(region, "flm", None)
-                ranges = getattr(flm, "iter_sector_size_ranges", None)
-                if callable(ranges):
-                    flm_offset = _pack_flm_address_offset(
-                        start,
-                        length,
-                        getattr(flm, "flash_start", None),
-                        getattr(flm, "flash_size", None),
-                    )
-                    flm_regions = []
-                    for index, (sector_range, range_sector_size) in enumerate(ranges()):
-                        range_start = max(start, int(sector_range.start) + flm_offset)
-                        range_end = min(start + length, int(sector_range.end) + 1 + flm_offset)
-                        if range_start < range_end and isinstance(range_sector_size, int) and range_sector_size > 0:
-                            name = str(getattr(region, "name", "flash"))
-                            flm_regions.append(MemoryRegion(
-                                name if index == 0 else "{}-{}".format(name, index),
-                                range_start,
-                                range_end - range_start,
-                                True,
-                                True,
-                                range_sector_size,
-                            ))
-                    if flm_regions:
-                        result.extend(flm_regions)
-                        continue
-            result.append(MemoryRegion(str(getattr(region, "name", "flash")), start, length, True, True, sector_size))
+                sector_size = None
+            result.append(MemoryRegion(name, start, length, True, True, sector_size))
     return result
 
 

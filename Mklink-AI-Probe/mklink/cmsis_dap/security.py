@@ -76,13 +76,15 @@ class SecurityCapability:
     option_size: int = 0
     algorithm_path: Optional[Path] = None
     algorithm_sha256: str = ""
+    unlock_supported: Optional[bool] = None
+    lock_supported: Optional[bool] = None
 
     def public(self) -> dict[str, object]:
         return {
             "part_number": self.part_number,
             "supported": self.supported,
-            "unlock_supported": self.supported,
-            "lock_supported": self.supported,
+            "unlock_supported": self.supported if self.unlock_supported is None else self.unlock_supported,
+            "lock_supported": self.supported if self.lock_supported is None else self.lock_supported,
             "family": self.family,
             "reason": self.reason,
             "unlock_erases_flash": self.unlock_erases_flash,
@@ -161,6 +163,15 @@ def security_capability(part_number: str) -> SecurityCapability:
     """Resolve only hardware-validated families and fail closed on asset mismatch."""
 
     part = str(part_number or "").strip()
+    if part.casefold() in {"nrf54l", "nrf54l15"}:
+        return SecurityCapability(
+            part_number="nRF54L15",
+            supported=True,
+            family="nrf54l15-ctrl-ap",
+            reason="CTRL-AP 解锁会擦除程序和 UICR；加锁后须通过 CTRL-AP 擦除才能恢复调试访问。",
+            unlock_erases_flash=True,
+            reversible_lock=True,
+        )
     bundle_part = _stm32f1_bundle_part(part)
     f413_bundle_part = _stm32f413_bundle_part(part)
     g474_bundle_part = _stm32g474_bundle_part(part)
@@ -344,7 +355,9 @@ def security_capability(part_number: str) -> SecurityCapability:
 
 def require_security_capability(part_number: str) -> SecurityCapability:
     capability = security_capability(part_number)
-    if not capability.supported or capability.algorithm_path is None:
+    if not capability.supported or (
+        capability.algorithm_path is None and capability.family != "nrf54l15-ctrl-ap"
+    ):
         raise FlashError(
             FlashErrorCode.SECURITY_NOT_SUPPORTED,
             capability.reason or "target security operations are not supported",

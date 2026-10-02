@@ -244,8 +244,9 @@ export function useOnlineFlashApi() {
     return request(`/targets?${params.toString()}`, { signal })
   }
 
-  function getTargetMemoryMap(partNumber: string): Promise<TargetMemoryRegion[]> {
-    return request(`/targets/${encoded(partNumber)}/memory-map`)
+  function getTargetMemoryMap(partNumber: string, algorithmId = ''): Promise<TargetMemoryRegion[]> {
+    const query = algorithmId ? `?algorithm_id=${encoded(algorithmId)}` : ''
+    return request(`/targets/${encoded(partNumber)}/memory-map${query}`)
   }
 
   function getTargetSecurity(partNumber: string): Promise<SecurityCapability> {
@@ -308,6 +309,7 @@ export function useOnlineFlashApi() {
     baseAddress?: number | string | null,
     signal?: AbortSignal,
     capturedFromTarget = false,
+    algorithmId = '',
   ): Promise<ImageInspection> {
     const body = new FormData()
     body.append('file', file)
@@ -316,6 +318,7 @@ export function useOnlineFlashApi() {
       body.append('base_address', String(baseAddress))
     }
     if (capturedFromTarget) body.append('captured_from_target', 'true')
+    if (algorithmId) body.append('algorithm_id', algorithmId)
     return request('/images/inspect', { method: 'POST', body, signal })
   }
 
@@ -324,12 +327,14 @@ export function useOnlineFlashApi() {
     partNumber: string,
     baseAddress?: number | string | null,
     signal?: AbortSignal,
+    algorithmId = '',
   ): Promise<ImageInspection> {
     return request('/images/inspect-path', {
       method: 'POST',
       body: JSON.stringify({
         path,
         part_number: partNumber,
+        algorithm_id: algorithmId || null,
         base_address: baseAddress === undefined || baseAddress === null ? null : String(baseAddress),
       }),
       signal,

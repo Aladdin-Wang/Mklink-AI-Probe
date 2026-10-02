@@ -882,13 +882,20 @@ class OnlineFlashJobManager:
                 "reset_voltage_mv is only valid for power-cycle reset"
             )
         security_actions = {"unlock", "lock"}.intersection(actions)
-        if security_actions and not all((
+        if security_actions and request.security_family != "nrf54l15-ctrl-ap" and not all((
             request.security_family,
             request.security_flm_path,
             request.security_flm_digest,
             request.security_flm_region,
         )):
             raise ValueError("security actions require validated security configuration")
+        if request.security_family == "nrf54l15-ctrl-ap" and (
+            request.security_flm_path is not None
+            or request.security_flm_digest is not None
+            or request.security_flm_region is not None
+            or str(request.target_part or "").casefold() not in {"nrf54l", "nrf54l15"}
+        ):
+            raise ValueError("nRF54L15 CTRL-AP security configuration is invalid")
         if "unlock" in actions and actions.index("unlock") != 1:
             raise ValueError("unlock must immediately follow connect")
         if "lock" in actions:

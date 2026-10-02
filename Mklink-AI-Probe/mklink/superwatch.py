@@ -131,9 +131,11 @@ def parse_timestamped_read_ram_response(response: str) -> TimestampedRead:
     match = _TIMESTAMP_RE.search(response)
     timestamp_us = int(match.group(1), 0) if match else None
     data = bytearray()
+    header_seen = False
     for line in response.splitlines():
         header = _TIMESTAMP_HEADER_RE.match(line)
-        if header:
+        if header and not header_seen and not data:
+            header_seen = True
             if timestamp_us is None:
                 timestamp_us = int(header.group(1), 16)
             continue
@@ -846,6 +848,78 @@ class SuperWatchRuntime:
         return results
 
 
+def _run_visualizer_stream(bridge, server, runtime, stop_event, reconfigure,
+                           *, clock=time.monotonic, stall_timeout=5.0, max_recoveries=3):
+    """Keep the standalone stream observable and recover bounded session faults."""
+    from mklink.dump_memory import DumpMemoryStreamSession, decode_frame_to_points
+
+    failures = 0
+    origin_us = None
+    while not stop_event.is_set():
+        blocks = runtime.blocks
+        if not blocks:
+            server.set_stream_health("stopped", "No blocks to monitor")
+            return
+        reconfigure.clear()
+        version = runtime.blocks_version
+        period = server._interval
+        layout = [(block.address, block.size, [
+            (item.name, item.type_name, item.address - block.address, item.size,
+             item.scalar_kind, item.enum_values) for item in block.items
+        ]) for block in blocks]
+        session = DumpMemoryStreamSession(bridge, [(b.address, b.size) for b in blocks], period)
+        started = last_valid = clock()
+        fault = None
+        stop_failed = False
+        try:
+            session.start()
+            while not stop_event.is_set():
+                if runtime.blocks_version != version or reconfigure.is_set():
+                    break
+                # Always drain paused streams so they cannot accumulate in the bridge.
+                frames = session.read_frames()
+                for frame in frames:
+                    points, origin_us = decode_frame_to_points(frame, layout, origin_us)
+                    if not points:
+                        raise ValueError("dump_memory returned no variable values")
+                    last_valid = clock()
+                    if last_valid - started >= 30:
+                        failures = 0
+                    if server.collecting.is_set():
+                        for point in points:
+                            server.push_data_point(point)
+                if clock() - last_valid > max(stall_timeout, 3 * period):
+                    raise TimeoutError("SuperWatch received no valid samples before timeout")
+                if not frames:
+                    stop_event.wait(0.005)
+        except Exception as exc:
+            fault = str(exc)
+        finally:
+            try:
+                session.stop()
+            except Exception as exc:
+                # No new command may be sent until command mode is synchronized.
+                server.set_stream_health("error", "Stream stop failed: " + str(exc))
+                server.push_event("error", {"message": "Stream stop failed: " + str(exc)})
+                stop_failed = True
+        if stop_failed:
+            return
+        if stop_event.is_set():
+            return
+        if fault:
+            failures += 1
+            server.push_event("error", {"message": fault, "recovery_attempt": failures})
+            if failures > max_recoveries:
+                server.set_stream_health("error", fault + "; recovery limit reached")
+                return
+            server.set_stream_health("recovering", fault)
+            if stop_event.wait(min(failures * 0.25, 1.0)):
+                return
+        # A recovered or reconfigured session gets a fresh timeline.
+        origin_us = None
+        server.push_event("stream_reset", {})
+
+
 def run_superwatch_visualizer(
     *,
     items: list[WatchItem],
@@ -892,7 +966,6 @@ def run_superwatch_visualizer(
     server._interval = period
     stop_event = threading.Event()
     _interval_changed = threading.Event()
-    origin_us: int | None = None
     actual_port = server.start()
     url = f"http://{host}:{actual_port}"
     print(f"[OK] SuperWatch Viewer started: {url}")
@@ -900,113 +973,22 @@ def run_superwatch_visualizer(
         webbrowser.open(url)
 
     def _poll_loop() -> None:
-        nonlocal origin_us
         from mklink.bridge import MKLinkSerialBridge
         from mklink.cli import _resolve_port
 
         resolved_port = _resolve_port(port)
         bridge = MKLinkSerialBridge(resolved_port)
         if not bridge.connect():
+            server.set_stream_health("error", "Bridge connect failed")
             server.push_event("error", {"message": "Bridge connect failed"})
             return
         try:
-            _dump_mem_poll_loop(bridge, server, runtime, origin_us, stop_event, read_lock)
+            _run_visualizer_stream(bridge, server, runtime, stop_event, _interval_changed)
+        except Exception as exc:
+            server.set_stream_health("error", str(exc))
+            server.push_event("error", {"message": str(exc)})
         finally:
             bridge.close()
-
-    def _dump_mem_poll_loop(bridge, server, runtime, origin_us_ref, stop_event, read_lock) -> None:
-        nonlocal origin_us
-        from mklink._types import DeviceState
-        from mklink.dump_memory import (
-            DUMP_MEMORY_STOP_PERIOD,
-            DumpMemoryParser,
-            build_dump_mem_command,
-            decode_frame_to_points,
-        )
-
-        # Build block-to-region mapping
-        blocks = runtime.blocks
-        if not blocks:
-            server.push_event("error", {"message": "No blocks to monitor"})
-            return
-
-        region_pairs = [(b.address, b.size) for b in blocks]
-        period = server._interval  # already in seconds
-        cmd = build_dump_mem_command(region_pairs, period)
-
-        # Probe the command before switching the serial bridge to binary mode.
-        try:
-            resp = bridge.send_command(cmd, timeout=5.0)
-        except Exception:
-            resp = "Error"
-
-        if "Error" in resp or resp.strip() == "-1":
-            server.push_event("error", {
-                "message": (
-                    "SuperWatch requires cmd.dump_memory binary streaming; "
-                    "read_ram fallback is disabled"
-                ),
-            })
-            stop_event.set()
-            return
-
-        # Device accepted — it's now streaming binary frames.
-        # Enter binary stream mode (any text left in buffer will be
-        # skipped by the MAGIC sync in the parser).
-        bridge._enter_stream(DeviceState.DUMP_STREAM)
-
-        # Build per-region item info for decode_frame_to_points
-        block_addresses = []
-        for block in blocks:
-            items_info = [
-                (item.name, item.type_name, item.address - block.address, item.enum_values)
-                for item in block.items
-            ]
-            block_addresses.append((block.address, block.size, items_info))
-
-        parser = DumpMemoryParser(region_sizes=[b.size for b in blocks])
-        initial_version = runtime.blocks_version
-
-        try:
-            while not stop_event.is_set():
-                # Detect blocks change (add/remove from web UI)
-                if runtime.blocks_version != initial_version:
-                    break  # Exit to reconfigure
-
-                if not server.collecting.is_set():
-                    stop_event.wait(timeout=0.05)
-                    continue
-
-                try:
-                    raw = bridge.drain_stream_bytes()
-                    if not raw:
-                        time.sleep(0.001)
-                        continue
-                    frames = parser.feed(raw)
-                    for frame in frames:
-                        points, origin_us = decode_frame_to_points(
-                            frame, block_addresses, origin_us,
-                        )
-                        for point in points:
-                            server.push_data_point(point)
-                except Exception as exc:
-                    server.push_event("error", {"message": str(exc)})
-                    break
-        finally:
-            # Use the firmware's explicit stop value.  period=0 requests one
-            # additional sample and can leave it queued for the next command.
-            try:
-                bridge._exit_stream()
-                stop_cmd = build_dump_mem_command(
-                    region_pairs, DUMP_MEMORY_STOP_PERIOD,
-                )
-                bridge.send_command(stop_cmd, timeout=3.0)
-            except Exception:
-                pass
-
-        # If we exited due to blocks change, re-enter
-        if runtime.blocks_version != initial_version and not stop_event.is_set():
-            _dump_mem_poll_loop(bridge, server, runtime, origin_us, stop_event, read_lock)
 
     thread = threading.Thread(target=_poll_loop, daemon=True)
     thread.start()

@@ -1,5 +1,5 @@
 <template>
-  <div class="superwatch-workspace" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
+  <div ref="workspace" class="superwatch-workspace" :style="{ gridTemplateColumns: `${panelWidth}px 5px minmax(0, 1fr)` }">
     <div class="watch-catalog-pane">
       <div class="watch-source-tabs">
         <button :class="{ active: source === 'variables' }" @click="source = 'variables'">{{ tr('程序变量', 'Variables') }}</button>
@@ -18,7 +18,11 @@
     />
       <PeripheralWatchPanel v-show="source === 'peripherals'" :device-connected="deviceConnected" :latest-values="latestValues" />
     </div>
-    <div class="workspace-resizer" :title="tr('调整变量目录宽度', 'Resize variable catalog')" @mousedown="startResize"></div>
+    <div class="workspace-resizer" role="separator" tabindex="0" aria-orientation="vertical"
+      :aria-valuenow="panelWidth" :aria-valuemin="280" :aria-valuemax="maxPanelWidth()"
+      :aria-label="tr('调整变量目录宽度', 'Resize variable catalog')"
+      :title="tr('拖动或使用方向键调整目录宽度', 'Drag or use arrow keys to resize catalog')"
+      @mousedown.prevent="startResize" @keydown="resizeByKey"></div>
     <div class="waveform-pane">
       <div class="speed-controls">
         <label for="superwatch-speed">{{ tr('采样调试速率', 'Memory sampling clock') }}</label>
@@ -60,6 +64,8 @@ const props = withDefaults(defineProps<{
 })
 
 const panelWidth = ref(340)
+const workspace = ref<HTMLElement | null>(null)
+let workspaceObserver: ResizeObserver | undefined
 const source = ref('variables')
 const latestValues = shallowRef<Record<string, number | boolean>>({})
 const hiddenChannels = shallowRef(new Set<string>())
@@ -129,14 +135,38 @@ function startResize(event: MouseEvent): void {
 }
 
 function resizePanel(event: MouseEvent): void {
-  panelWidth.value = Math.min(520, Math.max(280, resizeStartWidth + event.clientX - resizeStartX))
+  panelWidth.value = clampPanelWidth(resizeStartWidth + event.clientX - resizeStartX)
 }
+
+function maxPanelWidth(): number {
+  // Leave a small usable waveform pane; large screens can use their full width.
+  return Math.max(280, (workspace.value?.clientWidth || window.innerWidth) - 165)
+}
+
+function clampPanelWidth(width: number): number {
+  return Math.min(maxPanelWidth(), Math.max(280, width))
+}
+
+function resizeByKey(event: KeyboardEvent): void {
+  if (event.key === 'ArrowLeft') panelWidth.value = clampPanelWidth(panelWidth.value - 40)
+  else if (event.key === 'ArrowRight') panelWidth.value = clampPanelWidth(panelWidth.value + 40)
+  else if (event.key === 'Home') panelWidth.value = 280
+  else if (event.key === 'End') panelWidth.value = maxPanelWidth()
+  else return
+  event.preventDefault()
+}
+
+onMounted(() => {
+  workspaceObserver = new ResizeObserver(() => { panelWidth.value = clampPanelWidth(panelWidth.value) })
+  if (workspace.value) workspaceObserver.observe(workspace.value)
+})
 
 function stopResize(): void {
   document.removeEventListener('mousemove', resizePanel)
 }
 
 onUnmounted(() => {
+  workspaceObserver?.disconnect()
   document.removeEventListener('mousemove', resizePanel)
   document.removeEventListener('mouseup', stopResize)
 })
@@ -163,7 +193,7 @@ watch(() => props.deviceConnected, loadSpeed)
 </script>
 
 <style scoped>
-.watch-catalog-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.watch-catalog-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .watch-catalog-pane :deep(.symbol-panel) { flex: 1; min-height: 0; }
 .watch-source-tabs { display: flex; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .watch-source-tabs button { flex: 1; padding: 10px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }

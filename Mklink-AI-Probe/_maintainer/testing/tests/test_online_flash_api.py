@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import asyncio
 import threading
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
 from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
-from mklink.cmsis_dap.images import SectorCoverage, SectorRecord
+from mklink.cmsis_dap.images import ImageInspector, SectorCoverage, SectorRecord
 from mklink.cmsis_dap.models import (
     ImageInspection,
     ImageSegment,
@@ -28,6 +29,7 @@ from mklink.cmsis_dap.pack_catalog import PackCatalog
 from mklink.cmsis_dap.jobs import OnlineFlashJobManager
 from mklink.remote.online_flash_api import (
     OnlineFlashServices,
+    _builtin_algorithm_regions,
     _blocking,
     _captured_image_flash_regions,
     _pack_memory_regions,
@@ -576,6 +578,39 @@ def test_security_job_is_rejected_server_side_for_unvalidated_device(app):
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "SECURITY_NOT_SUPPORTED"
+
+
+def test_nrf54l_ctrl_ap_job_requires_attach_without_voltage_change(app, services, monkeypatch):
+    monkeypatch.setattr(
+        services.catalog, "search",
+        lambda query, **_kwargs: [TargetRecord("nrf54l", "Nordic", installed=True)]
+        if query.casefold() == "nrf54l" else [],
+    )
+    capability = request(app, "GET", "/api/online-flash/targets/nrf54l/security")
+    assert capability.status_code == 200
+    assert capability.json()["unlock_supported"]
+    assert capability.json()["lock_supported"]
+
+    payload = {
+        "actions": ["connect", "unlock", "reset", "disconnect"],
+        "probe_id": "mk", "target_part": "nrf54l",
+        "connect_mode": "attach", "reset_mode": "default",
+    }
+    accepted = request(app, "POST", "/api/online-flash/jobs", json=payload)
+    assert accepted.status_code == 200, accepted.text
+    started = services.job_manager.started[-1]
+    assert started.security_family == "nrf54l15-ctrl-ap"
+    assert started.security_flm_path is None
+    assert started.reset_voltage_mv is None
+
+    wrong_connect = request(app, "POST", "/api/online-flash/jobs", json={
+        **payload, "connect_mode": "halt",
+    })
+    assert wrong_connect.status_code == 422
+    changed_voltage = request(app, "POST", "/api/online-flash/jobs", json={
+        **payload, "reset_mode": "power-cycle", "reset_voltage_mv": 3300,
+    })
+    assert changed_voltage.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -2193,6 +2228,110 @@ def test_builtin_registry_name_resolves_sector_geometry():
     )
 
 
+def test_builtin_flm_does_not_claim_a_truncated_tail_as_a_sector():
+    algorithm = type("Algorithm", (), {
+        "flash_start": 0x08000000,
+        "flash_size": 0x2500,
+        "sector_sizes": ((0, 0x1000),),
+    })()
+    assert _builtin_algorithm_regions(algorithm, "flash") == [
+        MemoryRegion("flash-0", 0x08000000, 0x2000, True, True, 0x1000),
+        MemoryRegion("flash-0-partial", 0x08002000, 0x500, True, True, None),
+    ]
+
+
+def test_overlapping_builtin_flms_require_one_matching_geometry_and_job_selection(
+    app, services, tmp_path, monkeypatch,
+):
+    root = tmp_path / "builtin"
+    algorithms = []
+    for name, sectors in (
+        ("dual.flm", [[0, 0x4000], [0x10000, 0x10000]]),
+        ("single.flm", [[0, 0x8000], [0x10000, 0x10000]]),
+    ):
+        data = name.encode()
+        digest = hashlib.sha256(data).hexdigest()
+        relative = "blobs/{}/{}.flm".format(digest[:2], digest)
+        blob = root / relative
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        blob.write_bytes(data)
+        algorithms.append({
+            "file_name": name, "flash_start": 0x08000000,
+            "flash_size": 0x20000, "page_size": 0x100,
+            "sector_sizes": sectors, "blob": relative, "sha256": digest,
+        })
+    (root / "manifest.json").write_text(json.dumps({
+        "schema": 1,
+        "targets": [{
+            "part_number": "BANKED", "manufacturer": "Vendor",
+            "ram_start": 0x20000000, "ram_size": 0x10000,
+            "algorithms": algorithms,
+        }],
+    }), encoding="utf-8")
+    monkeypatch.setenv("MKLINK_BUILTIN_FLM_ROOT", str(root))
+    services.catalog.search = lambda query, **_kwargs: [TargetRecord(
+        "BANKED", "Vendor", installed=True, source="daplink-builtin",
+    )] if query.casefold() == "banked" else []
+    services.target_memory_provider = default_target_memory_provider
+    services.image_inspector = ImageInspector(snapshot_root=tmp_path / "images")
+
+    catalog = request(app, "GET", "/api/online-flash/targets/BANKED/algorithms")
+    assert catalog.status_code == 200
+    choices = catalog.json()
+    assert [item["sector_sizes"] for item in choices] == [item["sector_sizes"] for item in algorithms]
+    assert request(app, "GET", "/api/online-flash/targets/BANKED/memory-map").json() == []
+    image = {"file": ("firmware.bin", b"test")}
+    base = {"part_number": "BANKED", "base_address": "0x08000000"}
+    ambiguous = request(app, "POST", "/api/online-flash/images/inspect", data=base, files=image)
+    assert ambiguous.status_code == 200
+    assert ambiguous.json()["sector_operations_available"] is False
+    assert ambiguous.json()["sectors"] == []
+
+    for index, (choice, expected_size) in enumerate(zip(choices, (0x4000, 0x8000))):
+        memory_map = request(app, "GET", "/api/online-flash/targets/BANKED/memory-map",
+                             params={"algorithm_id": choice["algorithm_id"]})
+        assert memory_map.status_code == 200
+        assert memory_map.json()[0]["sector_size"] == expected_size
+        selected = request(app, "POST", "/api/online-flash/images/inspect",
+                           data={**base, "algorithm_id": choice["algorithm_id"]}, files=image)
+        assert selected.status_code == 200
+        assert selected.json()["sector_operations_available"] is True
+        assert selected.json()["sectors"] == [{"address": 0x08000000, "size": expected_size}]
+        wrong = request(app, "POST", "/api/online-flash/jobs", json={
+            "actions": ["connect", "erase", "program", "disconnect"],
+            "image_id": selected.json()["image_id"], "probe_id": "mk",
+            "target_part": "BANKED", "sector_addresses": [0x08000000],
+            "algorithm_id": choices[1 - index]["algorithm_id"],
+        })
+        assert wrong.status_code == 422
+        assert wrong.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+
+    implicit_chip_erase = request(app, "POST", "/api/online-flash/jobs", json={
+        "actions": ["connect", "erase", "disconnect"],
+        "probe_id": "mk", "target_part": "BANKED",
+    })
+    assert implicit_chip_erase.status_code == 422
+    assert implicit_chip_erase.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+
+    accepted = request(app, "POST", "/api/online-flash/jobs", json={
+        "actions": ["connect", "erase", "program", "disconnect"],
+        "image_id": selected.json()["image_id"], "probe_id": "mk",
+        "target_part": "BANKED", "algorithm_id": choices[1]["algorithm_id"],
+        "sector_addresses": [0x08000000],
+    })
+    assert accepted.status_code == 200
+    assert services.job_manager.started[0].custom_flm_paths[0].endswith(".flm")
+    assert services.job_manager.started[0].custom_flm_digests == (algorithms[1]["sha256"],)
+
+    services.custom_flms.regions = lambda _part: (
+        MemoryRegion("custom-overlap", 0x08000000, 0x20000, True, True, 0x1000),
+    )
+    conflicting_custom = request(app, "GET", "/api/online-flash/targets/BANKED/memory-map",
+                                 params={"algorithm_id": choices[1]["algorithm_id"]})
+    assert conflicting_custom.status_code == 422
+    assert conflicting_custom.json()["detail"]["code"] == "TARGET_NOT_SUPPORTED"
+
+
 def test_installed_pack_memory_map_uses_pyocd_flm_geometry(tmp_path, monkeypatch):
     pack_path = tmp_path / "Vendor.Device.pack"
     pack_path.write_bytes(b"pack")
@@ -2204,7 +2343,7 @@ def test_installed_pack_memory_map_uses_pyocd_flm_geometry(tmp_path, monkeypatch
         is_flash = True
         is_writable = True
         sector_size = 0
-        blocksize = 0
+        blocksize = 0x800
 
         class flm:
             @staticmethod

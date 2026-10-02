@@ -429,9 +429,10 @@ def _security_lines(
     action: str,
     indent: str,
 ) -> list[str]:
-    config_file = f"CFG/{security.config_dir}/{action}.cfg"
+    config_root = "Python/CFG" if security.algorithm_path is None else "CFG"
+    config_file = f"{config_root}/{security.config_dir}/{action}.cfg"
     result_name = f"security_{action}_rc"
-    return [
+    load_lines = [
         (
             f'{indent}if load.flm("FLM/{security.algorithm_file_name}", '
             f"0x{security.option_address:08X}, 0x{security.ram_base:08X}) != 0:"
@@ -439,6 +440,8 @@ def _security_lines(
         f'{indent}    print("load option flm failed: {security.algorithm_file_name}")',
         f"{indent}    abort = True",
         f"{indent}    break",
+    ] if security.algorithm_path is not None else []
+    return load_lines + [
         f'{indent}{result_name} = cmd.{action}("{config_file}")',
         f"{indent}if {result_name} != 0:",
         f'{indent}    print("security {action} failed:", {result_name})',
@@ -748,28 +751,29 @@ def deploy_offline_bundle(
 
     if config.security is not None:
         security = config.security
-        try:
-            digest = hashlib.sha256(security.algorithm_path.read_bytes()).hexdigest()
-        except OSError as error:
-            raise OfflineDownloadError("built-in option-byte FLM is unavailable") from error
-        if digest != security.algorithm_sha256:
-            raise OfflineDownloadError("built-in option-byte FLM integrity check failed")
-        security_files = [
-            (
-                Path("FLM") / security.algorithm_file_name,
-                security.algorithm_path,
-                None,
-            ),
-        ]
+        security_files = []
+        if security.algorithm_path is not None:
+            try:
+                digest = hashlib.sha256(security.algorithm_path.read_bytes()).hexdigest()
+            except OSError as error:
+                raise OfflineDownloadError("built-in option-byte FLM is unavailable") from error
+            if digest != security.algorithm_sha256:
+                raise OfflineDownloadError("built-in option-byte FLM integrity check failed")
+            security_files.append((Path("FLM") / security.algorithm_file_name,
+                                   security.algorithm_path, None))
         if security.unlock_before_download:
             security_files.append((
-                Path("CFG") / security.config_dir / "unlock.cfg",
+                (Path("Python") / "CFG" / security.config_dir / "unlock.cfg")
+                if security.algorithm_path is None
+                else (Path("CFG") / security.config_dir / "unlock.cfg"),
                 None,
                 security.unlock_config,
             ))
         if security.lock_after_download:
             security_files.append((
-                Path("CFG") / security.config_dir / "lock.cfg",
+                (Path("Python") / "CFG" / security.config_dir / "lock.cfg")
+                if security.algorithm_path is None
+                else (Path("CFG") / security.config_dir / "lock.cfg"),
                 None,
                 security.lock_config,
             ))
