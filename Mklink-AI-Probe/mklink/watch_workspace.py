@@ -10,7 +10,7 @@ from .watch_preferences import _LOCK, PreferencesConflict
 
 
 def normalize_workspace(value):
-    if not isinstance(value, dict) or value.get('version') != 1:
+    if not isinstance(value, dict) or value.get('version') not in (1, 2):
         raise ValueError('Unsupported workspace version')
     def text(v, limit=512):
         if not isinstance(v, str) or len(v) > limit or any(ord(c) < 32 for c in v):
@@ -18,29 +18,57 @@ def normalize_workspace(value):
         return v
     def sections(key):
         rows = value.get(key, [])
-        if not isinstance(rows, list) or len(rows) > 64:
-            raise ValueError('Expected at most 64 sections')
+        if not isinstance(rows, list) or len(rows) > 128:
+            raise ValueError('Expected at most 128 sections')
         result=[]; ids=set()
         for row in rows:
             if not isinstance(row, dict): raise ValueError('Invalid section')
             ident=text(row.get('id'))
             if not ident or ident in ids: raise ValueError('Duplicate section id')
             ids.add(ident)
-            result.append({'id':ident,'name':text(row.get('name',''),128),'collapsed':bool(row.get('collapsed',False)),'height':max(100,min(1000,float(row.get('height',200))))})
-            if not math.isfinite(result[-1]['height']): raise ValueError('Invalid height')
+            try: height=float(row.get('height',200))
+            except (TypeError,ValueError) as exc: raise ValueError('Invalid height') from exc
+            if not math.isfinite(height): raise ValueError('Invalid height')
+            result.append({'id':ident,'name':text(row.get('name',''),128),'collapsed':bool(row.get('collapsed',False)),'height':max(100,min(1000,height))})
         return result
     groups=sections('groups'); panes=sections('panes')
-    if not panes: panes=[{'id':'main','name':'波形区 1','collapsed':False,'height':240}]
     signals=value.get('signals',{})
     if not isinstance(signals,dict) or len(signals)>1024: raise ValueError('Too many signals')
+    # Version 1 had independent membership and plots. Explicit group wins;
+    # ungrouped signals retain their old plot through a migrated group.
+    legacy=value['version']==1
+    pane_groups={}
+    if legacy:
+        if not panes: panes=[{'id':'main','name':'默认分组','collapsed':False,'height':240}]
+        used={g['id'] for g in groups}
+        for pane in panes:
+            ident=pane['id']
+            while ident in used: ident='plot:'+ident
+            pane_groups[pane['id']]=ident
+            used.add(ident)
+            groups.append({**pane,'id':ident,'collapsed':False})
+    if not groups: groups=[{'id':'main','name':'默认分组','collapsed':False,'height':240}]
+    if len(groups)>128: raise ValueError('Too many groups')
+    ids={g['id'] for g in groups}
+    default=pane_groups.get(panes[0]['id'],groups[0]['id']) if legacy and panes else groups[0]['id']
+    requested_default=text(value.get('defaultGroup',''))
+    if not legacy and requested_default in ids: default=requested_default
+    if legacy:
+        groups.sort(key=lambda g: g['id'] != default)
     result={}
     for path,row in signals.items():
         text(path)
         if not path or not isinstance(row,dict): raise ValueError('Invalid signal')
+        group=text(row.get('group',''))
+        pane=text(row.get('pane',''))
+        if group not in ids: group=pane_groups.get(pane,default) if legacy else default
+        mode=row.get('renderMode','line')
+        if mode not in ('line','points'): raise ValueError('Invalid signal render mode')
         result[path]={'alias':text(row.get('alias',''),128),'emphasis':bool(row.get('emphasis',False)),
-                      'group':row.get('group','') if row.get('group','') in {g['id'] for g in groups} else '',
-                      'pane':row.get('pane') if row.get('pane') in {p['id'] for p in panes} else panes[0]['id']}
-    return {'version':1,'groups':groups,'panes':panes,'signals':result}
+                      'group':group,'pane':group,'renderMode':mode}
+    # Collapse only affects the signal list, never acquisition or plot visibility.
+    return {'version':2,'defaultGroup':default,'groups':groups,'panes':[{**g,'collapsed':False} for g in groups],'signals':result}
+
 
 
 def _path(root):

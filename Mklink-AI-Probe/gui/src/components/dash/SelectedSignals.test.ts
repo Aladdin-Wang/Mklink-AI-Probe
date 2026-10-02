@@ -6,7 +6,7 @@ import { useWatchWorkspace } from '../../composables/useWatchWorkspace'
 afterEach(() => vi.unstubAllGlobals())
 it('persists Chinese aliases and folding/assignments without acquisition calls', async () => {
   let revision=0
-  let workspace:any={version:1,groups:[{id:'motor',name:'电机',collapsed:false,height:200}],panes:[{id:'a',name:'速度',height:200},{id:'b',name:'电流',height:200},{id:'c',name:'电压',height:200}],signals:{rpm:{alias:'目标转速',group:'motor',pane:'a',emphasis:false}}}
+  let workspace:any={version:2,groups:[{id:'motor',name:'电机',collapsed:false,height:200},{id:'c',name:'电压',collapsed:false,height:200}],panes:[{id:'a',name:'速度',height:200},{id:'b',name:'电流',height:200},{id:'c',name:'电压',height:200}],signals:{rpm:{alias:'目标转速',group:'motor',pane:'a',emphasis:false}}}
   const fetch=vi.fn(async (_url:any,init?:RequestInit)=> {
     if(init) {workspace=JSON.parse(String(init.body)).workspace;revision++}
     return {ok:true,json:async()=>({workspace:structuredClone(workspace),revision:String(revision)})}
@@ -15,7 +15,7 @@ it('persists Chinese aliases and folding/assignments without acquisition calls',
   const wrapper=mount(SelectedSignals,{props:{paths:['rpm','amps'],values:{rpm:800,amps:3}}})
   await flushPromises()
   expect(wrapper.text()).toContain('目标转速')
-  const fold=wrapper.findAll('.group-heading')[0]
+  const fold=wrapper.findAll('.group-heading button')[0]
   await fold.trigger('click');await flushPromises()
   expect((wrapper.find('.selected-signal').element as HTMLElement).style.display).toBe('none')
   expect(workspace.groups[0].collapsed).toBe(true)
@@ -29,8 +29,20 @@ it('persists Chinese aliases and folding/assignments without acquisition calls',
   await wrapper.setProps({values:{rpm:900,amps:4}})
   expect(aliasInput.element.value).toBe('主轴转速')
   await aliasInput.trigger('change');await flushPromises()
-  await wrapper.get('[aria-label="波形区 rpm"]').setValue('c');await flushPromises()
-  expect(workspace.signals.rpm).toMatchObject({alias:'主轴转速',pane:'c'})
+  await wrapper.get('[aria-label="分组 rpm"]').setValue('c');await flushPromises()
+  expect(workspace.signals.rpm).toMatchObject({alias:'主轴转速',pane:'c',group:'c'})
+  await wrapper.get('[aria-label="采样点 rpm"]').trigger('click');await flushPromises()
+  expect(workspace.signals.rpm.renderMode).toBe('points')
+  expect(workspace.signals.rpm.emphasis).toBe(true)
+  expect(wrapper.text()).not.toContain('新增波形区')
+  expect(wrapper.find('.group-name').element.tagName).toBe('SPAN')
+  expect(wrapper.find('[aria-label="分组名称"]').element.closest('[draggable=true]')).toBeNull()
+  await wrapper.get('[aria-label="选择 amps"]').setValue(true)
+  await wrapper.get('[placeholder="分组名称"]').setValue('电流')
+  await wrapper.get('[placeholder="分组名称"]').trigger('keydown', {key:'Enter'});await flushPromises()
+  expect(workspace.groups.at(-1).name).toBe('电流')
+  expect(workspace.signals.amps.group).toBe(workspace.groups.at(-1).id)
+  expect(workspace.signals.amps.pane).toBe(workspace.signals.amps.group)
   expect(fetch.mock.calls.every(([url])=>String(url).endsWith('/workspace'))).toBe(true)
   wrapper.unmount()
 })

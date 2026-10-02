@@ -6,36 +6,43 @@
     </header>
     <p v-if="prefs.error.value" role="alert">{{ prefs.error.value }}</p>
     <fieldset v-if="settings" :disabled="!prefs.ready.value || prefs.busy.value">
-      <input v-model="newName" :placeholder="tr('分组或波形区名称', 'Group or plot name')" />
-      <button @click="add('groups')">{{ tr('新增分组', 'New group') }}</button>
-      <button @click="add('panes')">{{ tr('新增波形区', 'New plot') }}</button>
-      <label>{{ tr('批量移动', 'Move checked') }}
-        <select aria-label="批量分组" @change="batch('group', $event)"><option value="">{{ tr('未分组', 'Ungrouped') }}</option><option v-for="g in prefs.workspace.value.groups" :value="g.id">{{ g.name }}</option></select>
-        <select aria-label="批量波形区" @change="batch('pane', $event)"><option v-for="p in prefs.workspace.value.panes" :value="p.id">{{ p.name }}</option></select>
-      </label>
-      <div v-for="kind in (['groups','panes'] as const)" :key="kind">
-        <div class="section-editor" v-for="(section,index) in prefs.workspace.value[kind]" :key="section.id" draggable="true" @dragstart="drag = {kind, index}" @dragover.prevent @drop="reorder(kind,index)">
-          <input :aria-label="kind === 'groups' ? '分组名称' : '波形区名称'" :value="drafts[kind + section.id] ?? section.name" @input="drafts[kind + section.id] = value($event)" @change="rename(kind,section.id,$event)" />
-          <input v-if="kind === 'panes'" type="range" min="100" max="1000" step="10" :value="section.height" aria-label="波形区高度" @change="height(section.id,$event)" />
-          <button :disabled="index === 0" @click="move(kind,index,-1)">↑</button><button :disabled="index === prefs.workspace.value[kind].length-1" @click="move(kind,index,1)">↓</button>
-          <button :disabled="kind === 'panes' && prefs.workspace.value.panes.length === 1" @click="remove(kind,section.id)">×</button>
-        </div>
+      <p class="hint">{{ tr('一个分组对应一个波形区；折叠列表不影响采样和波形。', 'Each group has its own plot. Folding the list keeps sampling and plots visible.') }}</p>
+      <div class="section-editor">
+        <input v-model="newName" maxlength="128" :placeholder="tr('分组名称', 'Group name')" @keydown.enter.prevent="add()" />
+        <button :disabled="prefs.workspace.value.groups.length >= 128" @click="add()">{{ tr('新增分组', 'New group') }}</button>
+      </div>
+      <div class="section-editor">
+        <button @click="checked = checked.length === paths.length ? [] : [...paths]">{{ tr('全选 / 清空', 'All / none') }}</button>
+        <select aria-label="批量分组" :value="''" :disabled="!checked.length" @change="batch($event)">
+          <option value="" disabled>{{ tr('移动已勾选信号到…', 'Move checked signals to…') }} ({{ checked.length }})</option>
+          <option v-for="g in prefs.workspace.value.groups" :key="g.id" :value="g.id">{{ g.name }}</option>
+        </select>
       </div>
     </fieldset>
     <div class="selected-groups">
       <section v-for="group in groups" :key="group.id" @dragover.prevent @drop="dropSignal(group.id)">
-        <button class="group-heading" :aria-expanded="!group.collapsed" @click="collapse(group.id)">{{ group.collapsed ? '▸' : '▾' }} {{ group.name }} · {{ group.paths.length }}</button>
-        <div v-show="!group.collapsed" v-for="path in group.paths" :key="path" class="selected-signal" :class="{ emphasized: prefs.style(path).emphasis }" draggable="true" @dragstart.stop="dragPath = path">
+        <div class="group-heading">
+          <button :aria-label="`折叠 ${group.name}`" :aria-expanded="!group.collapsed" @click="collapse(group.id)">{{ group.collapsed ? '▸' : '▾' }}</button>
+          <span class="group-name">{{ group.name }}</span><small>{{ group.paths.length }}</small>
+        </div>
+        <fieldset v-if="settings" class="section-editor" :disabled="!prefs.ready.value || prefs.busy.value">
+          <input aria-label="分组名称" :value="drafts['group:' + group.id] ?? group.name" maxlength="128" @input="drafts['group:' + group.id] = value($event)" @change="rename(group.id,$event)" @keydown.enter="($event.target as HTMLInputElement).blur()" />
+          <button :disabled="groups[0].id === group.id" title="上移分组" @click="move(group.id,-1)">↑</button>
+          <button :disabled="groups[groups.length-1].id === group.id" title="下移分组" @click="move(group.id,1)">↓</button>
+          <button :disabled="groups.length === 1" title="删除分组，信号移入第一个分组" @click="remove(group.id)">×</button>
+        </fieldset>
+        <div v-show="!group.collapsed" v-for="path in group.paths" :key="path" class="selected-signal" :class="{ emphasized: prefs.style(path).emphasis }">
           <div class="signal-heading">
+            <span v-if="settings" class="drag-handle" draggable="true" title="拖动到分组" @dragstart.stop="dragPath = path" @dragend="dragPath = ''">⠿</span>
             <input v-if="settings" type="checkbox" :value="path" v-model="checked" :aria-label="`选择 ${path}`" />
             <button :title="tr('显示或隐藏波形', 'Show or hide waveform')" @click="$emit('visibility', path, hidden?.has(path) ?? false)">{{ hidden?.has(path) ? '○' : '●' }}</button>
             <span :title="path">{{ prefs.style(path).alias || path }}</span><output>{{ formatValue(values[path]) }}</output>
             <button :aria-label="`强调 ${path}`" :aria-pressed="prefs.style(path).emphasis" @click="prefs.setStyle([path], { emphasis: !prefs.style(path).emphasis })"><b>B</b></button>
+            <button :aria-label="`采样点 ${path}`" :title="tr('仅显示采样点，不连线', 'Sample points only, no lines')" :aria-pressed="prefs.style(path).renderMode === 'points'" @click="prefs.setStyle([path], { renderMode: prefs.style(path).renderMode === 'points' ? 'line' : 'points' })">{{ tr('点','Dots') }}</button>
           </div>
           <div v-if="settings" class="signal-settings">
             <input :aria-label="`名称 ${path}`" :placeholder="path" :value="drafts[path] ?? prefs.style(path).alias" @input="drafts[path] = value($event)" @change="alias(path,$event)" maxlength="128" />
-            <select :aria-label="`分组 ${path}`" :value="prefs.style(path).group" @change="assign(path,'group',$event)"><option value="">{{ tr('未分组', 'Ungrouped') }}</option><option v-for="g in prefs.workspace.value.groups" :value="g.id">{{ g.name }}</option></select>
-            <select :aria-label="`波形区 ${path}`" :value="prefs.style(path).pane" @change="assign(path,'pane',$event)"><option v-for="p in prefs.workspace.value.panes" :value="p.id">{{ p.name }}</option></select>
+            <select :aria-label="`分组 ${path}`" :value="prefs.style(path).group" @change="assign(path,$event)"><option v-for="g in prefs.workspace.value.groups" :key="g.id" :value="g.id">{{ g.name }}</option></select>
           </div>
         </div>
       </section>
@@ -49,23 +56,27 @@ import { tr } from '../../composables/useLanguage'
 const props = defineProps<{ paths: string[]; values: Record<string, number | boolean>; hidden?: ReadonlySet<string> }>()
 defineEmits<{ visibility: [path: string, visible: boolean] }>()
 const drafts = reactive<Record<string,string>>({})
-const prefs = useWatchWorkspace(), settings = ref(false), newName = ref(''), checked = ref<string[]>([]), ungroupedCollapsed = ref(false)
-type Kind = 'groups' | 'panes'
-const drag = ref<{kind: Kind; index: number} | null>(null)
+const prefs = useWatchWorkspace(), settings = ref(false), newName = ref(''), checked = ref<string[]>([])
 let dragPath = ''
-const groups = computed(() => [...prefs.workspace.value.groups, { id: '', name: tr('未分组','Ungrouped'), collapsed: ungroupedCollapsed.value }].map(g => ({...g, paths: props.paths.filter(p => prefs.style(p).group === g.id)})))
+const groups = computed(() => prefs.workspace.value.groups.map(g => ({...g, paths: props.paths.filter(p => prefs.style(p).group === g.id)})))
 const formatValue = (v: number | boolean | undefined) => typeof v === 'number' ? Number.isInteger(v) ? String(v) : v.toPrecision(7) : v === undefined ? '—' : String(v)
 const value = (event: Event) => (event.target as HTMLInputElement).value
-function add(kind: Kind) { void prefs.update(w => w[kind].push({id: crypto.randomUUID(), name: newName.value.trim() || (kind==='groups' ? tr('新分组','New group') : tr('新波形区','New plot')), collapsed: false, height: 200})); newName.value='' }
-function collapse(id: string) { if (!id) { ungroupedCollapsed.value=!ungroupedCollapsed.value; return }; void prefs.update(w => { const g=w.groups.find(g=>g.id===id)!;g.collapsed=!g.collapsed }) }
-function assign(path: string, key: 'group'|'pane', e: Event) { void prefs.setStyle([path],{[key]:value(e)}) }
+async function add() {
+  if(prefs.workspace.value.groups.length >= 128) return
+  const id=crypto.randomUUID(), name=newName.value.trim() || tr('新分组','New group')
+  await prefs.update(w => {
+    w.groups.push({id, name, collapsed: false, height: 200})
+    for(const path of checked.value.filter(p=>props.paths.includes(p))) w.signals[path]={...prefs.style(path),group:id,pane:id}
+  })
+  if(!prefs.error.value) {newName.value='';checked.value=[]}
+}
+function collapse(id: string) { void prefs.update(w => { const g=w.groups.find(g=>g.id===id)!;g.collapsed=!g.collapsed }) }
+function assign(path: string, e: Event) { void prefs.setStyle([path],{group:value(e)}) }
 async function alias(path: string,e: Event) { await prefs.setStyle([path],{alias:value(e)}); if(!prefs.error.value)delete drafts[path] }
-function batch(key: 'group'|'pane',e: Event) { void prefs.setStyle(checked.value.filter(p=>props.paths.includes(p)),{[key]:value(e)}) }
-async function rename(kind: Kind,id: string,e: Event) { const name=value(e);await prefs.update(w=>{w[kind].find(p=>p.id===id)!.name=name});if(!prefs.error.value)delete drafts[kind+id] }
-function height(id: string,e: Event) { const h=Number(value(e));void prefs.update(w=>{w.panes.find(p=>p.id===id)!.height=h}) }
-function remove(kind: Kind,id: string) { void prefs.update(w=>{w[kind]=w[kind].filter(p=>p.id!==id); for(const s of Object.values(w.signals)) { if(kind==='groups'&&s.group===id)s.group='';if(kind==='panes'&&s.pane===id)s.pane=w.panes[0].id }}) }
-function move(kind: Kind,index: number,delta: number) { void prefs.update(w=>{const a=w[kind];const [item]=a.splice(index,1);a.splice(index+delta,0,item)}) }
-function reorder(kind: Kind,index: number) { if(drag.value?.kind===kind)move(kind,drag.value.index,index-drag.value.index);drag.value=null }
+async function batch(e: Event) { await prefs.setStyle(checked.value.filter(p=>props.paths.includes(p)),{group:value(e)}); (e.target as HTMLSelectElement).value='' }
+async function rename(id: string,e: Event) { const name=value(e);await prefs.update(w=>{w.groups.find(p=>p.id===id)!.name=name});if(!prefs.error.value)delete drafts['group:'+id] }
+function remove(id: string) { void prefs.update(w=>{w.groups=w.groups.filter(p=>p.id!==id); if(w.defaultGroup===id)w.defaultGroup=w.groups[0].id; for(const s of Object.values(w.signals)) if(s.group===id){s.group=w.groups[0].id;s.pane=s.group} }) }
+function move(id: string,delta: number) { void prefs.update(w=>{const a=w.groups,index=a.findIndex(g=>g.id===id);const [item]=a.splice(index,1);a.splice(index+delta,0,item)}) }
 function dropSignal(group: string) { if(dragPath)void prefs.setStyle([dragPath],{group});dragPath='' }
 let timer: ReturnType<typeof setInterval>
 onMounted(() => { void prefs.load(); timer=setInterval(() => { if (!settings.value) void prefs.load() },3000) })
@@ -77,7 +88,11 @@ header,.signal-heading,.section-editor,.signal-settings { display:flex; align-it
 header strong,.signal-heading span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 button,input,select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:3px; min-width:0; }
 input { width:100%; } input[type=checkbox] { width:auto; } fieldset { border:0; padding:4px; }
-.section-editor input { flex:1; } .group-heading { width:100%; text-align:left; background:var(--bg); }
+.section-editor input { flex:1; } .group-heading { display:flex; align-items:center; gap:6px; padding:4px; background:var(--bg); }
+.group-name { flex:1; user-select:text; cursor:text; overflow-wrap:anywhere; }
+.drag-handle { flex:0 !important; cursor:grab; user-select:none; }
+.hint { font-size:12px; color:var(--text-muted); margin:4px; }
+button[aria-pressed=true] { color:var(--accent); border-color:var(--accent); }
 .signal-settings { flex-wrap:wrap; } .signal-settings select { flex:1; width:40%; }
 .emphasized .signal-heading { font-weight:700; } output { font-family:monospace; } p[role=alert] { color:var(--danger,#e66); }
 </style>
