@@ -1,20 +1,20 @@
 <template>
   <section class="selected-workspace">
     <header><strong>{{ tr('已选信号', 'Selected signals') }} · {{ paths.length }}</strong>
-      <button @click="settings = !settings">{{ tr('整理', 'Organize') }}</button>
+      <button @click="settings = !settings">{{ settings ? tr('完成', 'Done') : tr('整理', 'Organize') }}</button>
       <button @click="prefs.load()" :disabled="prefs.busy.value">{{ tr('刷新配置', 'Reload settings') }}</button>
     </header>
     <p v-if="prefs.error.value" role="alert">{{ prefs.error.value }}</p>
     <fieldset v-if="settings" :disabled="!prefs.ready.value || prefs.busy.value">
-      <p class="hint">{{ tr('一个分组对应一个波形区；折叠列表不影响采样和波形。', 'Each group has its own plot. Folding the list keeps sampling and plots visible.') }}</p>
+      <p class="hint">{{ tr('分组即波形区；空组不占图，折叠不影响采样。', 'One plot per group. Empty groups take no plot space; folding keeps sampling.') }}</p>
       <div class="section-editor">
         <input v-model="newName" maxlength="128" :placeholder="tr('分组名称', 'Group name')" @keydown.enter.prevent="add()" />
         <button :disabled="prefs.workspace.value.groups.length >= 128" @click="add()">{{ tr('新增分组', 'New group') }}</button>
       </div>
       <div class="section-editor">
-        <button @click="checked = checked.length === paths.length ? [] : [...paths]">{{ tr('全选 / 清空', 'All / none') }}</button>
+        <button @click="checked = checked.length === paths.length ? [] : [...paths]">{{ checked.length === paths.length && paths.length ? tr('清空勾选','Clear checks') : tr('全选','Select all') }}</button>
         <select aria-label="批量分组" :value="''" :disabled="!checked.length" @change="batch($event)">
-          <option value="" disabled>{{ tr('移动已勾选信号到…', 'Move checked signals to…') }} ({{ checked.length }})</option>
+          <option value="" disabled>{{ tr('移动到分组…', 'Move to group…') }} ({{ checked.length }})</option>
           <option v-for="g in prefs.workspace.value.groups" :key="g.id" :value="g.id">{{ g.name }}</option>
         </select>
       </div>
@@ -31,17 +31,18 @@
           <button :disabled="groups[groups.length-1].id === group.id" title="下移分组" @click="move(group.id,1)">↓</button>
           <button :disabled="groups.length === 1" title="删除分组，信号移入第一个分组" @click="remove(group.id)">×</button>
         </fieldset>
+        <p v-if="!group.paths.length" class="hint empty-group">{{ tr('空组：移入信号后显示波形', 'Empty: move signals here to show a plot') }}</p>
         <div v-show="!group.collapsed" v-for="path in group.paths" :key="path" class="selected-signal" :class="{ emphasized: prefs.style(path).emphasis }">
           <div class="signal-heading">
             <span v-if="settings" class="drag-handle" draggable="true" title="拖动到分组" @dragstart.stop="dragPath = path" @dragend="dragPath = ''">⠿</span>
             <input v-if="settings" type="checkbox" :value="path" v-model="checked" :aria-label="`选择 ${path}`" />
             <button :title="tr('显示或隐藏波形', 'Show or hide waveform')" @click="$emit('visibility', path, hidden?.has(path) ?? false)">{{ hidden?.has(path) ? '○' : '●' }}</button>
             <span :title="path">{{ prefs.style(path).alias || path }}</span><output>{{ formatValue(values[path]) }}</output>
-            <button :aria-label="`强调 ${path}`" :aria-pressed="prefs.style(path).emphasis" @click="prefs.setStyle([path], { emphasis: !prefs.style(path).emphasis })"><b>B</b></button>
-            <button :aria-label="`采样点 ${path}`" :title="tr('仅显示采样点，不连线', 'Sample points only, no lines')" :aria-pressed="prefs.style(path).renderMode === 'points'" @click="prefs.setStyle([path], { renderMode: prefs.style(path).renderMode === 'points' ? 'line' : 'points' })">{{ tr('点','Dots') }}</button>
+            <button :aria-label="`强调 ${path}`" :aria-pressed="prefs.style(path).emphasis" @click="toggleStyle(path,'emphasis')"><b>B</b></button>
+            <button :aria-label="`采样点 ${path}`" :title="tr('仅显示采样点，不连线', 'Sample points only, no lines')" :aria-pressed="prefs.style(path).renderMode === 'points'" @click="toggleStyle(path,'renderMode')">{{ tr('点','Dots') }}</button>
           </div>
           <div v-if="settings" class="signal-settings">
-            <input :aria-label="`名称 ${path}`" :placeholder="path" :value="drafts[path] ?? prefs.style(path).alias" @input="drafts[path] = value($event)" @change="alias(path,$event)" maxlength="128" />
+            <input :aria-label="`名称 ${path}`" :placeholder="path" :value="drafts[path] ?? prefs.style(path).alias" @input="drafts[path] = value($event)" @change="alias(path,$event)" @keydown.enter="($event.target as HTMLInputElement).blur()" maxlength="128" />
             <select :aria-label="`分组 ${path}`" :value="prefs.style(path).group" @change="assign(path,$event)"><option v-for="g in prefs.workspace.value.groups" :key="g.id" :value="g.id">{{ g.name }}</option></select>
           </div>
         </div>
@@ -63,18 +64,20 @@ const formatValue = (v: number | boolean | undefined) => typeof v === 'number' ?
 const value = (event: Event) => (event.target as HTMLInputElement).value
 async function add() {
   if(prefs.workspace.value.groups.length >= 128) return
-  const id=crypto.randomUUID(), name=newName.value.trim() || tr('新分组','New group')
-  await prefs.update(w => {
+  const id=crypto.randomUUID(); let name=newName.value.trim()
+  if(!name) {let n=1; do {name=tr('分组 ','Group ')+n++} while(prefs.workspace.value.groups.some(g=>g.name===name))}
+  const saved=await prefs.update(w => {
     w.groups.push({id, name, collapsed: false, height: 200})
     for(const path of checked.value.filter(p=>props.paths.includes(p))) w.signals[path]={...prefs.style(path),group:id,pane:id}
   })
-  if(!prefs.error.value) {newName.value='';checked.value=[]}
+  if(saved) {newName.value='';checked.value=[]}
 }
+function toggleStyle(path: string, key: 'emphasis'|'renderMode') { void prefs.update(w=>{const current=w.signals[path] || {...prefs.style(path)}; w.signals[path]={...current,...(key==='emphasis' ? {emphasis:!current.emphasis} : {renderMode:current.renderMode==='points' ? 'line' as const : 'points' as const})} }) }
 function collapse(id: string) { void prefs.update(w => { const g=w.groups.find(g=>g.id===id)!;g.collapsed=!g.collapsed }) }
 function assign(path: string, e: Event) { void prefs.setStyle([path],{group:value(e)}) }
-async function alias(path: string,e: Event) { await prefs.setStyle([path],{alias:value(e)}); if(!prefs.error.value)delete drafts[path] }
+async function alias(path: string,e: Event) { const saved=await prefs.setStyle([path],{alias:value(e)}); if(saved)delete drafts[path] }
 async function batch(e: Event) { await prefs.setStyle(checked.value.filter(p=>props.paths.includes(p)),{group:value(e)}); (e.target as HTMLSelectElement).value='' }
-async function rename(id: string,e: Event) { const name=value(e);await prefs.update(w=>{w.groups.find(p=>p.id===id)!.name=name});if(!prefs.error.value)delete drafts['group:'+id] }
+async function rename(id: string,e: Event) { const name=value(e).trim();const saved=await prefs.update(w=>{const group=w.groups.find(p=>p.id===id)!;group.name=name || group.name});if(saved)delete drafts['group:'+id] }
 function remove(id: string) { void prefs.update(w=>{w.groups=w.groups.filter(p=>p.id!==id); if(w.defaultGroup===id)w.defaultGroup=w.groups[0].id; for(const s of Object.values(w.signals)) if(s.group===id){s.group=w.groups[0].id;s.pane=s.group} }) }
 function move(id: string,delta: number) { void prefs.update(w=>{const a=w.groups,index=a.findIndex(g=>g.id===id);const [item]=a.splice(index,1);a.splice(index+delta,0,item)}) }
 function dropSignal(group: string) { if(dragPath)void prefs.setStyle([dragPath],{group});dragPath='' }
@@ -86,6 +89,8 @@ onUnmounted(() => clearInterval(timer))
 .selected-workspace { border-bottom: 1px solid var(--border); min-height: 80px; overflow: auto; max-height: 55%; flex-shrink: 0; }
 header,.signal-heading,.section-editor,.signal-settings { display:flex; align-items:center; gap:5px; padding:4px; }
 header strong,.signal-heading span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+button { white-space:nowrap; flex-shrink:0; }
+.section-editor select { flex:1; min-width:0; }
 button,input,select { background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:3px; min-width:0; }
 input { width:100%; } input[type=checkbox] { width:auto; } fieldset { border:0; padding:4px; }
 .section-editor input { flex:1; } .group-heading { display:flex; align-items:center; gap:6px; padding:4px; background:var(--bg); }

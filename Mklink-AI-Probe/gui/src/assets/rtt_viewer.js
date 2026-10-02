@@ -351,12 +351,20 @@ function setWorkspace(value) {
   watchWorkspace = value;
   var wrap=document.getElementById('chart-wrap');
   if (wrap) {
-    wrap.style.minHeight = Math.max(240,value.panes.length*130)+'px';
     var parent=wrap.parentElement;
     if (parent) parent.style.overflowY='auto';
   }
   if (chartLegend) delete chartLegend.dataset.signature;
   updateChartLegend(); drawChart();
+}
+function activeWorkspacePanes() {
+  if (!IS_SUPERWATCH_MODE || !watchWorkspace) return null;
+  var used=Object.create(null);
+  Object.keys(FIELDS).forEach(function(name) {
+    if (FIELDS[name].visible) used[signalStyle(name).pane || watchWorkspace.defaultGroup || watchWorkspace.panes[0].id]=true;
+  });
+  var active=watchWorkspace.panes.filter(function(p){return used[p.id];});
+  return active.length ? active : [watchWorkspace.panes.find(function(p){return p.id===watchWorkspace.defaultGroup;}) || watchWorkspace.panes[0]];
 }
 function syncWorkspaceDividers(panels) {
   var host=document.getElementById('chart-wrap');
@@ -370,9 +378,12 @@ function syncWorkspaceDividers(panels) {
       divider.setAttribute('aria-label','Resize plot '+(index+1));divider.setAttribute('aria-orientation','horizontal');divider.tabIndex=0;
       function resizeBy(delta) {
         var panes=watchWorkspace.panes.map(function(p){return Object.assign({},p);});
-        var total=panes[index].height+panes[index+1].height;
-        panes[index].height=Math.max(100,Math.min(total-100,panes[index].height+delta));
-        panes[index+1].height=total-panes[index].height;
+        var active=chartPanelLayout.panes;
+        var first=panes.find(function(p){return p.id===active[index].id;});
+        var second=panes.find(function(p){return p.id===active[index+1].id;});
+        var total=first.height+second.height;
+        first.height=Math.max(100,Math.min(total-100,first.height+delta));
+        second.height=total-first.height;
         window.dispatchEvent(new CustomEvent('mklink:workspace-resize',{detail:panes}));
       }
       divider.addEventListener('keydown',function(e){if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();resizeBy(e.key==='ArrowUp'?-20:20);}});
@@ -3907,6 +3918,12 @@ function formatYAxisValue(value, span) {
 // Canvas chart drawing (enhanced with per-channel Y, timeline, cursors)
 // ============================================================
 function drawChart() {
+  var activePanes=activeWorkspacePanes();
+  var workspaceWrap=document.getElementById('chart-wrap');
+  if (activePanes && workspaceWrap) {
+    var desiredHeight=Math.max(240,activePanes.length*130)+'px';
+    if (workspaceWrap.style.minHeight!==desiredHeight) workspaceWrap.style.minHeight=desiredHeight;
+  }
   if (!resize()) return;
   resizeMinimap();
   var W = canvas.clientWidth || parseFloat(canvas.style.width);
@@ -3965,10 +3982,10 @@ function drawChart() {
   updateSplitPanelControl(splitActive, splitActive ? mainTop + mainHeight + panelGap / 2 : null);
   var workspacePanels = null;
   if (IS_SUPERWATCH_MODE && watchWorkspace) {
-    var totalWeight=watchWorkspace.panes.reduce(function(sum,p){return sum+p.height;},0);
-    var availableHeight=Math.max(1,ph-(watchWorkspace.panes.length-1)*24);
+    var totalWeight=activePanes.reduce(function(sum,p){return sum+p.height;},0);
+    var availableHeight=Math.max(1,ph-(activePanes.length-1)*24);
     var top=mt;
-    workspacePanels=watchWorkspace.panes.map(function(p){
+    workspacePanels=activePanes.map(function(p){
       var height=availableHeight*p.height/totalWeight;
       var panel={kind:'workspace',id:p.id,name:p.name,top:top,height:height};
       top+=height+24; return panel;

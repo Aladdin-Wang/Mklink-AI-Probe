@@ -54,3 +54,31 @@ it('keeps current presentation on failed save and exposes a reload path',async()
   expect(JSON.stringify(prefs.workspace.value)).toBe(before)
   expect(prefs.error.value).toContain('another window')
 })
+
+
+it('serializes rapid display edits and retains both changes with fresh revisions', async()=>{
+  const prefs=useWatchWorkspace()
+  let revision=0
+  let workspace:any={version:2,defaultGroup:'main',groups:[{id:'main',name:'默认分组',collapsed:false,height:200}],panes:[{id:'main',name:'默认分组',height:200}],signals:{}}
+  let release: (()=>void)|undefined
+  vi.stubGlobal('fetch',vi.fn(async (_url:any,init?:RequestInit)=>{
+    if(init){
+      const body=JSON.parse(String(init.body))
+      expect(body.revision).toBe(String(revision))
+      if(revision===0) await new Promise<void>(resolve=>{release=resolve})
+      workspace=body.workspace;revision++
+    }
+    return {ok:true,json:async()=>({workspace:structuredClone(workspace),revision:String(revision)})}
+  }))
+  await prefs.load()
+  const first=prefs.setStyle(['rpm'],{alias:'中文速度'})
+  const second=prefs.setStyle(['rpm'],{renderMode:'points'})
+  await flushPromises()
+  expect(revision).toBe(0)
+  release!()
+  expect(await first).toBe(true)
+  expect(await second).toBe(true)
+  expect(revision).toBe(2)
+  expect(prefs.style('rpm')).toMatchObject({alias:'中文速度',renderMode:'points'})
+  expect(prefs.busy.value).toBe(false)
+})

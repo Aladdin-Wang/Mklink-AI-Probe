@@ -107,3 +107,10 @@ def test_reordering_groups_preserves_default_membership():
     assert result['defaultGroup']=='a'
     assert result['signals']['unassigned']['group']=='a'
     assert result['signals']['unassigned']['pane']=='a'
+
+
+def test_empty_group_names_get_readable_defaults():
+    from mklink.watch_workspace import normalize_workspace
+    state=normalize_workspace({'version':2,'groups':[{'id':'a','name':'   '},{'id':'b','name':''}]})
+    assert [g['name'] for g in state['groups']]==['分组 1','分组 2']
+    assert [p['name'] for p in state['panes']]==['分组 1','分组 2']

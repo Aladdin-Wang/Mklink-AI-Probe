@@ -29,7 +29,7 @@ def normalize_workspace(value):
             try: height=float(row.get('height',200))
             except (TypeError,ValueError) as exc: raise ValueError('Invalid height') from exc
             if not math.isfinite(height): raise ValueError('Invalid height')
-            result.append({'id':ident,'name':text(row.get('name',''),128),'collapsed':bool(row.get('collapsed',False)),'height':max(100,min(1000,height))})
+            result.append({'id':ident,'name':text(row.get('name',''),128).strip() or f'分组 {len(result)+1}','collapsed':bool(row.get('collapsed',False)),'height':max(100,min(1000,height))})
         return result
     groups=sections('groups'); panes=sections('panes')
     signals=value.get('signals',{})
