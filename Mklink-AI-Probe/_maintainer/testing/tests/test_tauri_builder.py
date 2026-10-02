@@ -41,6 +41,7 @@ def builder(monkeypatch, tmp_path):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "build_web_assets", lambda: tmp_path / "gui" / "dist")
     return module
 
 
@@ -1082,3 +1083,56 @@ def test_release_bundle_accepts_complete_builtin_flm_assets(
     monkeypatch.setattr(builder, "validate_builtin_flm_bundle", lambda _root=None: {})
 
     assert builder.require_release_builtin_flm_bundle() == root
+
+
+def test_sidecar_includes_web_assets_at_frozen_api_path(builder, monkeypatch, tmp_path):
+    builder.SKILL_DIR = tmp_path
+    builder.TAURI_DIR = tmp_path / "gui" / "src-tauri"
+    calls = []
+    dist = tmp_path / "gui" / "dist"
+    def frontend():
+        calls.append("frontend")
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_text("fresh", encoding="utf-8")
+        return dist
+    def freeze(command, **kwargs):
+        assert calls == ["frontend"]
+        assert (dist / "index.html").read_text() == "fresh"
+        pairs = list(zip(command, command[1:]))
+        assert ("--add-data", str(dist) + builder.os.pathsep + "gui/dist") in pairs
+        calls.append("freeze")
+        output = Path(command[command.index("--distpath") + 1])
+        output.mkdir(parents=True)
+        (output / "mklink-sidecar.exe").write_bytes(b"sidecar")
+        return 0
+    monkeypatch.setattr(builder, "build_web_assets", frontend)
+    monkeypatch.setattr(builder, "run", freeze)
+    monkeypatch.setattr(builder, "builtin_pack_roots", lambda: [])
+    monkeypatch.setattr(builder, "builtin_flm_root", lambda: tmp_path / "absent")
+    assert builder.build_sidecar(force=True)
+    assert calls == ["frontend", "freeze"]
+
+
+def test_web_assets_build_requires_output_and_packaged_origin(monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location("web_builder", BUILDER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.SKILL_DIR = tmp_path
+    calls = []
+    monkeypatch.setattr(module, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+    with pytest.raises(RuntimeError, match="index.html"):
+        module.build_web_assets()
+    command, options = calls[0]
+    assert command == ["npm", "run", "build"]
+    assert options["cwd"] == str(tmp_path / "gui")
+    assert options["env"]["VITE_MKLINK_API"] == "http://127.0.0.1:8765"
+
+
+def test_failed_frontend_prevents_sidecar_freeze(builder, monkeypatch, tmp_path):
+    builder.TAURI_DIR = tmp_path
+    monkeypatch.setattr(builder, "run", lambda *args, **kwargs: pytest.fail("must not freeze"))
+    def fail():
+        raise SystemExit(1)
+    monkeypatch.setattr(builder, "build_web_assets", fail)
+    with pytest.raises(SystemExit):
+        builder.build_sidecar(force=True)
