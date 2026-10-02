@@ -46,7 +46,7 @@
 1. Review and integrate PR #12 plus #10/#11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.
 2. All three branches start from main independently. Reconcile generated gui/dist and project memory during integration; no main/0.2.3 development branch was overwritten.
 3. Preserve codex/0.2.3-dev and its pending PR #9. Existing main worktree firmware modification remains untouched. No release/signing/update-pointer changes authorized.
-4. Use docs/superwatch-replay.md for user instructions; no background automation or new task was created.
+4. Use references/superwatch-replay.md for user instructions; no background automation or new task was created.
 
 ## 已知限制
 

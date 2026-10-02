@@ -83,7 +83,7 @@
     "Review and integrate PR #12 plus #10/#11 only after explicit merge authorization; reconcile current main and rerun full suites/build and affected real-surface gates.",
     "All three branches start from main independently. Reconcile generated gui/dist and project memory during integration; no main/0.2.3 development branch was overwritten.",
     "Preserve codex/0.2.3-dev and its pending PR #9. Existing main worktree firmware modification remains untouched. No release/signing/update-pointer changes authorized.",
-    "Use docs/superwatch-replay.md for user instructions; no background automation or new task was created."
+    "Use references/superwatch-replay.md for user instructions; no background automation or new task was created."
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"
