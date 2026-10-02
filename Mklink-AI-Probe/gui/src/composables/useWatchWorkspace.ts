@@ -31,17 +31,25 @@ async function load() {
   })()
   return loading
 }
-async function update(change: (value: WatchWorkspace) => void) {
-  if (!ready.value || busy.value) return
-  busy.value = true
-  const next = JSON.parse(JSON.stringify(workspace.value)) as WatchWorkspace
-  change(next)
-  try {
-    const data = await request({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: next, revision }) })
-    workspace.value = data.workspace; revision = data.revision; error.value = ''; publish()
-  } catch (e) { error.value = String(e) }
-  finally { busy.value = false }
+let writeQueue: Promise<unknown> = Promise.resolve()
+let pendingWrites = 0
+function update(change: (value: WatchWorkspace) => void): Promise<boolean> {
+  pendingWrites++; busy.value = true
+  const operation = writeQueue.then(async () => {
+    if (loading) await loading
+    if (!ready.value) return false
+    try {
+      const next = JSON.parse(JSON.stringify(workspace.value)) as WatchWorkspace
+      change(next)
+      const data = await request({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: next, revision }) })
+      workspace.value = data.workspace; revision = data.revision; error.value = ''; publish()
+      return true
+    } catch (e) { error.value = String(e); return false }
+  }).finally(() => { pendingWrites--; busy.value = pendingWrites > 0 })
+  writeQueue = operation
+  return operation
 }
+
 function style(path: string): SignalStyle {
   return workspace.value.signals[path] || { alias: '', emphasis: false, group: workspace.value.defaultGroup || workspace.value.groups[0]?.id || 'main', pane: workspace.value.defaultGroup || workspace.value.groups[0]?.id || 'main', renderMode: 'line' }
 }

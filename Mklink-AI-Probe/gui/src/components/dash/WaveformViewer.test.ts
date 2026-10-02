@@ -1383,6 +1383,18 @@ describe('VOFA viewer hot path source guard', () => {
       runtime.viewer.setWorkspace(workspace)
       expect((window as any).__canvasDraws.some((d:any)=>d.color===color&&d.op==='stroke')).toBe(true)
       delete (window as any).__canvasDraws
+      // Empty groups neither reserve canvas space nor change signal routing.
+      const withEmpty={...workspace,panes:[{id:'empty',name:'空组',height:800},...workspace.panes]}
+      runtime.viewer.setWorkspace(withEmpty)
+      expect(runtime.probe.panelLayout().panes.map((p:any)=>p.id)).toEqual(['p1','p2','p3'])
+      let resized:any
+      const capture=(event:Event)=>{resized=(event as CustomEvent).detail}
+      window.addEventListener('mklink:workspace-resize',capture)
+      document.querySelector('.workspace-divider')!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))
+      window.removeEventListener('mklink:workspace-resize',capture)
+      expect(resized.find((p:any)=>p.id==='empty').height).toBe(800)
+      expect(resized.find((p:any)=>p.id==='p1').height).toBe(220)
+      expect(resized.find((p:any)=>p.id==='p2').height).toBe(180)
       const other = {...panes[1].range}
       document.getElementById('chart')!.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,clientX:400,clientY:panes[0].top+20,cancelable:true}))
       expect(runtime.probe.panelYRange(panes[1])).toEqual(other)
