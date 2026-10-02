@@ -1484,3 +1484,6 @@ tr.watch-child-row td[data-col="value"] {
   color: var(--fg);
   line-height: 1.5;
 }
+
+.workspace-divider { position:absolute; left:64px; right:16px; height:8px; cursor:row-resize; z-index:7; border-top:1px solid var(--border); }
+.workspace-divider:hover,.workspace-divider:focus { background:var(--accent);opacity:.5; }

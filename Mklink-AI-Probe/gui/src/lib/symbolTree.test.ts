@@ -138,3 +138,13 @@ describe('symbolTree', () => {
     expect(rows.every(row => row.node.kind === 'branch')).toBe(true)
   })
 })
+
+// Search must survive both the catalog filter and the tree visibility filter.
+it('uses whitespace AND and aliases when filtering nested leaves', () => {
+  const descriptor = {path:'HouTai_data.Prama_Set.bat_num',type_name:'uint32_t',address:0x20000000,size:4,scalar_kind:'unsigned',writable:true,enum_values:{}} as any
+  const tree=buildSymbolTree([descriptor])
+  const options={expanded:new Set<string>(),selected:new Set<string>(),selectedOnly:false,query:'HouTai bat_num'}
+  expect(visibleSymbolRows(tree,options).some(r=>r.node.key===descriptor.path)).toBe(true)
+  expect(visibleSymbolRows(tree,{...options,query:'电池 数量',alias:()=> '电池数量'}).some(r=>r.node.key===descriptor.path)).toBe(true)
+  expect(visibleSymbolRows(tree,{...options,query:'HouTai missing'})).toEqual([])
+})

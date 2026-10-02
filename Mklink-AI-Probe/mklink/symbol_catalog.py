@@ -253,7 +253,7 @@ class SymbolCatalog:
 
     def search(self, query: str, *, limit: int = 50) -> tuple[SymbolDescriptor, ...]:
         terms = list(dict.fromkeys(term.strip() for term in re.split(r'[,，;；\n]+', query) if term.strip()))
-        query_keys = [term.casefold() for term in terms]
+        query_keys = [term.casefold().split() for term in terms]
         count = max(1, min(int(limit), 500))
         found: list[SymbolDescriptor] = []
         seen: set[str] = set()
@@ -266,13 +266,84 @@ class SymbolCatalog:
         for item in self.items:
             if item.path in seen:
                 continue
-            if query_keys and not any(key in item.path.casefold() or key in item.type_name.casefold() for key in query_keys):
+            if query_keys and not any(all(key in item.path.casefold() or key in item.type_name.casefold() for key in keys) for keys in query_keys):
                 continue
             found.append(item)
             seen.add(item.path)
             if len(found) >= count:
                 break
+        # Catalog pages intentionally cap eager leaves per root. Search the DWARF
+        # tree as well, independent of which branches the UI has expanded.
+        if query_keys and len(found) < count and self._info is not None:
+            for descriptor in self._search_lazy(query_keys):
+                if descriptor.path in seen:
+                    continue
+                found.append(descriptor)
+                seen.add(descriptor.path)
+                if len(found) >= count:
+                    break
         return tuple(found[:count])
+
+    def _search_lazy(self, query_keys):
+        info = self._info
+        assert info is not None
+        def matches(text):
+            folded = text.casefold()
+            return any(all(key in folded for key in keys) for keys in query_keys)
+
+        # Type summaries prune arrays that cannot contain the requested member.
+        # Only names/types are inspected; pointers are never dereferenced.
+        summaries = {}
+        def summary(offset, visited=frozenset()):
+            offset = _follow_type(info, offset)
+            if offset in visited:
+                return ''
+            if offset in summaries:
+                return summaries[offset]
+            array = get_array_type(info, offset)
+            record = get_record_type(info, offset)
+            if array is not None:
+                return summary(array.element_type_offset, visited | {offset})
+            if record is None:
+                return resolve_type_name(info, offset)[0] if offset is not None else ''
+            text = ' '.join(member.name + ' ' + member.type_name + ' ' + summary(member.type_offset, visited | {offset}) for member in record.members)
+            summaries[offset] = text
+            return text
+
+        def walk(node, ancestors=frozenset(), depth=0):
+            if depth > 32:
+                return
+            descriptor = self._descriptor_from_node(node)
+            if descriptor is not None:
+                if matches(descriptor.path + ' ' + descriptor.type_name):
+                    yield descriptor
+                return
+            shape = self._array_shape(node)
+            if shape is not None:
+                dimensions, element = shape
+                possible = node.path + ' ' + node.type_name + ' ' + summary(element)
+                # Numeric index queries are resolved against actual element paths.
+                if not matches(possible) and not any(any(c.isdigit() for c in key) for keys in query_keys for key in keys):
+                    return
+                for index in range(dimensions[0]):
+                    yield from walk(self._array_child(node, index), ancestors, depth + 1)
+                return
+            record = self._record_for(node)
+            if record is None or record.offset in ancestors:
+                return
+            for member in record.members:
+                if member.bit_size is not None:
+                    continue
+                child = _ResolvedNode(
+                    path=f'{node.path}.{member.name}' if member.name else node.path,
+                    address=node.address + member.offset, type_name=member.type_name,
+                    type_offset=member.type_offset, size=member.size,
+                    overlapping=node.overlapping or record.kind == 'union')
+                yield from walk(child, ancestors | {record.offset}, depth + 1)
+        for name in sorted(info.variables, key=_natural_path_key):
+            node = self._resolve_node(name)
+            if node is not None:
+                yield from walk(node)
 
     def browse_roots(self) -> tuple[SymbolBrowseNode, ...]:
         if self._info is None:

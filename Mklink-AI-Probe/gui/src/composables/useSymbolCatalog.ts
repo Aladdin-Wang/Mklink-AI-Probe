@@ -1,3 +1,4 @@
+import { matchesSignal } from '../lib/signalSearch'
 import { readonly, ref, shallowRef } from 'vue'
 import type {
   AxfFingerprint,
@@ -13,6 +14,7 @@ import type {
   SuperWatchWriteResult,
 } from '../types/mklink'
 import { tr } from './useLanguage'
+import { useWatchWorkspace } from './useWatchWorkspace'
 import { API_BASE } from '../lib/runtimeEndpoint'
 const PAGE_SIZE = 500
 
@@ -164,10 +166,7 @@ async function searchSymbols(query: string): Promise<SymbolDescriptor[]> {
   )
   // The suggestion endpoint is capped at 50 leaves; a single array can fill it.
   // Search the full loaded catalog too, retaining backend-only exact lazy paths.
-  const terms = query.split(/[,，;；\n]+/).map(term => term.trim().toLocaleLowerCase()).filter(Boolean)
-  const matches = items.value.filter(item => !terms.length || terms.some(term => (
-    item.path.toLocaleLowerCase().includes(term) || item.type_name.toLocaleLowerCase().includes(term)
-  )))
+  const matches = items.value.filter(item => matchesSignal(query, item.path, item.type_name, useWatchWorkspace().style(item.path).alias))
   const merged = new Map<string, SymbolDescriptor>()
   for (const result of payload.results) {
     if (result.descriptor) merged.set(result.descriptor.path, result.descriptor)

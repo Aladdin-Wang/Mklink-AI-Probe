@@ -1345,6 +1345,39 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('lays out three multi-signal panes without resetting samples and preserves aliases', async () => {
+    mocks.binary.waveformBatch = shallowRef(null)
+    mocks.binary.envelope = shallowRef(null)
+    mocks.binary.telemetry = shallowRef(null)
+    mocks.binary.state = shallowRef({ phase: 'stopped' })
+    mocks.binary.error = shallowRef(null)
+    mocks.binary.superwatchMetadata = shallowRef(null)
+    mocks.useBinaryStream.mockReturnValue(mocks.binary)
+    ;(window as any).__waveformViewers = {}
+    const runtime = await loadRttViewerRuntime('SuperWatch', 10)
+    try {
+      const names = ['a','b','c','d','e','f']
+      runtime.viewer.configureBinaryChannels(names.map(name => ({name})))
+      runtime.viewer.acceptBinaryBatch({sequence:1n,timestampNs:1_100_000_000n,itemCount:2,channelCount:6,
+        layout:'sample-major-float32',values:Float32Array.of(1,2,100,200,1000,2000,2,3,110,210,1100,2100).buffer,
+        times:Float64Array.of(1000,1100).buffer})
+      const workspace = {version:1,groups:[],panes:['p1','p2','p3'].map(id=>({id,name:id,height:200})),
+        signals:Object.fromEntries(names.map((name,i)=>[name,{pane:'p'+(Math.floor(i/2)+1),alias:'信号'+name,emphasis:i===0}]))}
+      runtime.viewer.setWorkspace(workspace)
+      const panes = runtime.probe.panelLayout().panes
+      expect(panes).toHaveLength(3)
+      expect(panes[0].range.yMax).toBeLessThan(panes[1].range.yMin)
+      expect(panes[1].range.yMax).toBeLessThan(panes[2].range.yMin)
+      expect(runtime.probe.fields().a.ringBuf.count).toBe(2)
+      expect(runtime.probe.serializeState().workspace).toEqual(workspace)
+      expect(document.querySelector('.chart-legend-name')?.textContent).toBe('信号a')
+      const other = {...panes[1].range}
+      document.getElementById('chart')!.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,clientX:400,clientY:panes[0].top+20,cancelable:true}))
+      expect(runtime.probe.panelYRange(panes[1])).toEqual(other)
+      expect(runtime.probe.fields().a.ringBuf.count).toBe(2)
+    } finally { runtime.cleanup() }
+  })
+
   it('splits one SuperWatch channel into an independent Y panel and merges it back', async () => {
     mocks.binary.waveformBatch = shallowRef(null)
     mocks.binary.envelope = shallowRef(null)
