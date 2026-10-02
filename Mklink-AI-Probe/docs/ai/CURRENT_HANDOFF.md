@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T23:38:09.193626+08:00`
+- 更新时间：`2026-10-02T23:46:32.656934+08:00`
 - 分支：`codex/superwatch-inline-names`
 - HEAD：`Inline group and signal name editor based on main 11d698a.`
 - 远端 HEAD：`main 11d698a; PR21 retains previous installation evidence.`
 - 工作树：Isolated task worktree; original main user firmware preserved.
-- 当前任务：分组/变量名称原位编辑，移除额外编辑行，整理操作紧凑化；浏览器及组件验证完成，提交PR。
-- 状态：`complete`
+- 当前任务：用户授权PR22合并并覆盖安装；已删除版本更新中的nRF54L15在线安全操作中英文条目，正在执行合并验证。
+- 状态：`in_progress`
 
 ## 里程碑
 
@@ -43,8 +43,8 @@
 
 ## 下一动作
 
-1. 原位命名提交独立PR；尚未合并或覆盖安装。
-2. 保留nRF54L15 GUI豁免及既有验收边界。
+1. 完成PR22全量门禁，合并后从合并提交构建本地NSIS、覆盖安装并验证原位命名。
+2. 内部保留既有nRF54L15 GUI验收边界；仅删除面向用户的指定更新条目。
 
 ## 已知限制
 
