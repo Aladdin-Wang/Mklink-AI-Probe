@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T15:09:32.899474+08:00`
+- 更新时间：`2026-10-02T15:18:08.368505+08:00`
 - 分支：`codex/superwatch-live-write`
 - HEAD：`Based on microkeen/main 9758c677; SuperWatch live writes and device-timestamped GUI markers.`
 - 远端 HEAD：`Task branch submitted for review; no merge or release authorized.`
 - 工作树：Isolated host branch. Original checkout, separate firmware and MicroBoot pre-existing edits preserved.
-- 当前任务：SuperWatch连续采集写入：V4与V3实机通过；V3四种宽度写入恢复、采样时序与上层会话保持验证完成，V2仍待实机。
+- 当前任务：SuperWatch连续采集写入：V2/V3/V4均已完成STM32F103RET6实机验证。所有测试变量已恢复并回读，连接已释放。PR #13待整合。
 - 状态：`complete`
 
 ## 里程碑
@@ -18,8 +18,8 @@
 
 ## 验证证据
 
+- **V2实时写入实机验证**：V2.8.0/DUMP_WRITE=1，30MHz，8/16/32/64位写入恢复通过；1ms模式最大间隔1136us，最快模式350us，CRC与固件错误零。SuperWatch会话保持、暂停写入通过；上层阶跃间隔1002/1001/1001us。详见superwatch-live-write-v23-20261002.md。
 - **V3实时写入实机验证**：V3.5.1/DUMP_WRITE=1，30MHz，8/16/32/64位写入与恢复通过；1ms模式最大间隔1167us，最快模式378us，CRC/固件错误零。SuperWatch会话保持、暂停写入和恢复通过；未新增浏览器验证。见superwatch-live-write-v23-20261002.md。
-- **V3/V2实时写入固件**：docs/verification/superwatch-live-write-v23-20261002.md：两版固件编译和真实C控制逻辑测试通过；V3 UF2、V2 RBL已校验。未连接对应硬件，未刷机。V2应用区余2302字节。
 - **SuperWatch实时写入**：docs/verification/superwatch-live-write-20261002.md：Python235、GUI128、生产构建与固件控制测试通过；V4实机升级，8/16/32/64位写入回读，Web GUI 19秒真实阶跃录像。
 - **发布与安装**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。
 - **STM32与HPM功能回归**：按目标和功能查阅 v0.2.2-v4-stm32-regression-20260920.md、v0.2.2-v4-hpm6e80-regression-20260920.md、v0.2.2-online-verify-theme-20260920.md（均位于docs/verification）。包含高速档、烧录、窄值/非对齐、共享流、CLI/MCP/GUI；HPM6E80本轮UART未接。
@@ -37,13 +37,13 @@
 
 ## 真机环境
 
-- **state**：V3 + STM32F103RET6：用户已升级实时写入候选固件；所有测试变量恢复并独立回读通过，连接已释放。V2仍待实机。
+- **state**：V2 + STM32F103RET6：用户已升级实时写入固件；全部测试变量恢复并独立回读通过，连接已释放。V3/V4此前也已实机验证。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
 - **installer**：.build/artifacts/v0.2.2-official/Mklink-AI-Probe-v0.2.2-x64-Setup.exe（正式签名更新包，已覆盖安装）。
 
 ## 下一动作
 
-1. 连接V2完成实时写入、采样连续性与升级HIL；V3本轮实机已通过。候选包与精确补丁保存在.build/reports/live-write-v23，V3原始实测记录位于.build/reports/live-write-v3-hil。
+1. V2/V3/V4实时写入HIL均完成；审查PR #13及各固件checkout的精确补丁，再按授权整合发布。原始实测记录位于.build/reports/live-write-v2-hil、live-write-v3-hil与live-write。
 2. 审查并整合SuperWatch实时写入任务PR；新版实时通道需要声明DUMP_WRITE=1的配套固件，旧固件保持历史但有采样间隙。
 3. 配套固件源码和MicroBoot文章有独立未提交修改；按本地构建报告中的精确补丁与原始备份审查，勿提交其他已有修改。
 4. 本次没有正式固件发布、安装器发布或合并；后续须按具体授权执行。

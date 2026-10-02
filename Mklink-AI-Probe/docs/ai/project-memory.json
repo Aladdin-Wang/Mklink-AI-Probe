@@ -33,10 +33,6 @@
       "result": "V3.5.1/DUMP_WRITE=1，30MHz，8/16/32/64位写入与恢复通过；1ms模式最大间隔1167us，最快模式378us，CRC/固件错误零。SuperWatch会话保持、暂停写入和恢复通过；未新增浏览器验证。见superwatch-live-write-v23-20261002.md。"
     },
     {
-      "area": "V3/V2实时写入固件",
-      "result": "docs/verification/superwatch-live-write-v23-20261002.md：两版固件编译和真实C控制逻辑测试通过；V3 UF2、V2 RBL已校验。未连接对应硬件，未刷机。V2应用区余2302字节。"
-    },
-    {
       "area": "SuperWatch实时写入",
       "result": "docs/verification/superwatch-live-write-20261002.md：Python235、GUI128、生产构建与固件控制测试通过；V4实机升级，8/16/32/64位写入回读，Web GUI 19秒真实阶跃录像。"
     },
