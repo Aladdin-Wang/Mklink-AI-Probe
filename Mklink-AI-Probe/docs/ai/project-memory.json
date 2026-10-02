@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-02T22:59:09.294494+08:00",
+  "updated_at": "2026-10-02T23:46:32.656934+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/superwatch-group-usability",
-    "head": "Usability follow-up based on merged PR18/main 1a44c92.",
-    "remote_head": "main 1a44c92; PR19 records prior local install.",
+    "branch": "codex/superwatch-inline-names",
+    "head": "Inline group and signal name editor based on main 11d698a.",
+    "remote_head": "main 11d698a; PR21 retains previous installation evidence.",
     "working_tree": "Isolated task worktree; original main user firmware preserved."
   },
   "mission": {
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "按用户授权自行体验、优化分组操作并合并覆盖安装。空组不占图、连续修改排队和命名/整理布局优化已通过全量回归。"
+    "current_task": "用户授权PR22合并并覆盖安装；已删除版本更新中的nRF54L15在线安全操作中英文条目，正在执行合并验证。"
   },
   "milestones": [
     {
@@ -34,7 +34,7 @@
     },
     {
       "area": "SuperWatch界面及恢复",
-      "result": "PR18已合并并覆盖安装1a44c92，桌面/Web及V4+F103三信号110693次采集零错误/丢样，详见PR19。后续易用性优化见superwatch-group-usability-20261002.md：Python2458通过/2跳过、GUI760通过、生产构建与真实Chrome合成信号验证通过；待新包安装验证。"
+      "result": "PR20/main11d698a已安装，V4/F103127471次零错误丢样记录在PR21。本轮原位命名：5个组件用例通过（含IME、取消、失败保留、清空别名和拖拽）；生产构建及真实Chrome340px侧栏通过。详见superwatch-inline-names-20261002.md；本轮未重新安装。"
     },
     {
       "area": "0.2.2 发布、安装与固件",
@@ -65,9 +65,9 @@
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "用户允许丢弃测试布局并由助手操作；V4/F103仍连接，前一安装版采集已停止。未更改固件。",
+    "state": "本轮仅浏览器合成信号及配置API验证，未操作硬件。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
-    "installer": "1a44c92本地0.2.3覆盖安装及Skill更新完成；本轮易用性优化待合并后重建覆盖。"
+    "installer": "当前安装版0.2.3/11d698a及本地Skill保持上轮已验证状态；原位命名尚未打包安装。"
   },
   "known_limits": [
     "有限缓冲不保证无限暂停/物理断线无损；外设轮询可能漏短脉冲，多变量不是原子快照。 VCC遥测需要配套新固件；V3仅电压，V4功率为滤波电压电流乘积，未新增校准。135项测试和固件编译不能替代真实负载精度验证。Web静态资源遗漏已修复并覆盖验收。",
@@ -80,8 +80,8 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "按持续有效的合并/覆盖安装授权完成易用性PR集成、NSIS本地构建和安装版验证。",
-    "保留nRF54L15 GUI豁免及既有验收边界；PR17/PR19历史验证记录独立保留。"
+    "完成PR22全量门禁，合并后从合并提交构建本地NSIS、覆盖安装并验证原位命名。",
+    "内部保留既有nRF54L15 GUI验收边界；仅删除面向用户的指定更新条目。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"

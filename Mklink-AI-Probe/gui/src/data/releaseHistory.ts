@@ -16,13 +16,11 @@ export const releaseHistory: ReleaseHistoryEntry[] = [
       'SuperWatch 支持日志回放、持续采样时写入变量，V4 新增 HPM/JTAG 实时通道（需配套固件）。',
       '分组即波形区，支持中文别名、加粗、采样点显示和专注视图；优化多关键词与结构体成员搜索。',
       '修复采集停滞、扇区识别及 nRF54L 在线/脱机烧录问题，新增电源遥测。',
-      '新增 nRF54L15 在线安全操作；GUI 真机保护闭环仍待验收。',
     ],
     changesEn: [
       'Add log replay and writes during capture; V4 adds HPM/JTAG live access with companion firmware.',
       'One group per plot, aliases, bold traces, sample points and focus view; improve keyword and struct-member search.',
       'Fix capture stalls, sector detection and nRF54L flashing; add power telemetry.',
-      'Add nRF54L15 online security operations; GUI hardware protection verification remains pending.',
     ],
   },
   {
