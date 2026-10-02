@@ -335,6 +335,8 @@ es.onmessage = function(e) {
       applyChannelMetadata(data.channels || {});
       return;
     }
+    if (data._event === 'stream_reset') { resetStreamView(); return; }
+    if (data._event === 'stream_health') { updateCollectionUI(data.state); return; }
     if (data._event === 'error') {
       var connStatus = document.getElementById('conn-status');
       if (connStatus) {
@@ -357,9 +359,7 @@ es.onerror = function() {
 es.onopen = function() {
   document.getElementById('conn-status').textContent = t('live');
   document.getElementById('conn-status').className = 'badge badge-ok';
-  // Reset time origin and clear ring buffers to avoid stale data
-  swTimeOrigin = null;
-  for (var k in FIELDS) { if (FIELDS[k] && FIELDS[k].ringBuf) FIELDS[k].ringBuf.clear(); }
+  resetStreamView();
 };
 
 // ============================================================
@@ -432,7 +432,7 @@ function updateCollectionUI(state) {
   btnPause.classList.toggle('active', state === 'paused');
   btnPause.textContent = (state === 'paused') ? t('resume') : t('pause');
 
-  btnStart.disabled = (state === 'running' || state === 'stopped');
+  btnStart.disabled = (state !== 'paused');
   btnPause.disabled = (state === 'stopped');
   btnStop.disabled = (state === 'stopped');
 
@@ -449,6 +449,9 @@ function updateCollectionUI(state) {
     connStatus.textContent = t('paused');
     connStatus.className = 'badge badge-warn';
     paused = true;
+  } else if (state === 'starting' || state === 'stalled' || state === 'recovering' || state === 'error') {
+    connStatus.textContent = state;
+    connStatus.className = 'badge badge-err';
   } else {
     connStatus.textContent = t('stopped');
     connStatus.className = 'badge badge-warn';
@@ -508,7 +511,8 @@ document.getElementById('btn-apply-interval').addEventListener('click', function
     });
 });
 
-// Sync initial state from server
+// Poll health independently of SSE so a silent stream cannot keep a green badge.
+function refreshServerStatus() {
 fetch('/api/status')
   .then(function(r){return r.json()})
   .then(function(d){
@@ -520,6 +524,9 @@ fetch('/api/status')
     }
   })
   .catch(function(){});
+}
+refreshServerStatus();
+setInterval(refreshServerStatus, 1000);
 
 // ============================================================
 // Bottom panel management
@@ -528,10 +535,49 @@ var rawLogPanel = document.getElementById('raw-log-panel');
 var rawLogEl = document.getElementById('raw-log');
 var rawLogCountEl = document.getElementById('raw-log-count');
 var rawLogOpen = false;
+var RAW_LOG_CAPACITY = 5000;
+var rawLogLines = new Array(RAW_LOG_CAPACITY);
+var rawLogHead = 0;
+var rawLogStoredCount = 0;
+var rawLogLastPaint = 0;
+
+function rawLogSnapshot() {
+  var snapshot = new Array(rawLogStoredCount);
+  for (var i = 0; i < rawLogStoredCount; i++) {
+    snapshot[i] = rawLogLines[(rawLogHead + i) % RAW_LOG_CAPACITY];
+  }
+  return snapshot;
+}
+
+function paintRawLog(force) {
+  if (!rawLogOpen) return;
+  var now = performance.now();
+  if (!force && now - rawLogLastPaint < 100) return;
+  rawLogLastPaint = now;
+  var snapshot = rawLogSnapshot();
+  rawLogEl.textContent = snapshot.join('\n') + (snapshot.length ? '\n' : '');
+  rawLogCountEl.textContent = rawLogLineCount + ' lines';
+  rawLogEl.scrollTop = rawLogEl.scrollHeight;
+}
+
+function appendRawLogLine(line) {
+  if (rawLogStoredCount < RAW_LOG_CAPACITY) {
+    rawLogLines[(rawLogHead + rawLogStoredCount) % RAW_LOG_CAPACITY] = line;
+    rawLogStoredCount++;
+  } else {
+    rawLogLines[rawLogHead] = line;
+    rawLogHead = (rawLogHead + 1) % RAW_LOG_CAPACITY;
+  }
+  rawLogLineCount++;
+  paintRawLog(false);
+}
+
+
 
 function setRawLogOpen(open) {
   rawLogOpen = open;
   rawLogPanel.dataset.open = open ? 'true' : 'false';
+  if (open) paintRawLog(true);
 }
 
 function toggleRawLog() { setRawLogOpen(!rawLogOpen); }
@@ -543,6 +589,7 @@ document.getElementById('raw-log-close').addEventListener('click', function() { 
 document.getElementById('raw-log-clear').addEventListener('click', function() {
   rawLogEl.textContent = '';
   rawLogLineCount = 0;
+  rawLogHead = 0; rawLogStoredCount = 0; rawLogLines.fill(undefined);
   rawLogCountEl.textContent = '0 lines';
 });
 
@@ -1799,6 +1846,15 @@ function exportPNG() {
 var updatePending = false;
 var renderGeneration = 0;
 var swTimeOrigin = null; // SuperWatch mode: subtract first _t so axis starts at 0
+function resetStreamView() {
+  renderGeneration++;
+  updatePending = false;
+  swTimeOrigin = null;
+  tStart = null;
+  window._lastSampleTime = null;
+  estimatedInterval = 0; estimatedRate = 0;
+  for (var k in FIELDS) { if (FIELDS[k] && FIELDS[k].ringBuf) FIELDS[k].ringBuf.clear(); }
+}
 function processPoint(point) {
   if (paused) return;
   var pointRenderGeneration = renderGeneration;
@@ -1869,11 +1925,7 @@ function processPoint(point) {
     m.ringBuf.push(t, v);
   }
 
-  // Raw log
-  rawLogLineCount++;
-  rawLogEl.textContent += JSON.stringify(point) + '\n';
-  rawLogCountEl.textContent = rawLogLineCount + ' lines';
-  if (rawLogOpen) rawLogEl.scrollTop = rawLogEl.scrollHeight;
+  appendRawLogLine(JSON.stringify(point));
 
   updateTriggerSourceOptions();
   if (point._t) {
@@ -3058,10 +3110,14 @@ function updateTriggerStateBadge() {
   badge.className = info.cls;
 }
 
+var triggerSourceNames = '';
 function updateTriggerSourceOptions() {
   var sel = document.getElementById('trigger-source');
   var current = sel.value;
   var names = Object.keys(FIELDS).sort();
+  var signature = JSON.stringify(names);
+  if (signature === triggerSourceNames) return;
+  triggerSourceNames = signature;
   sel.innerHTML = '<option value="">--</option>';
   for (var i = 0; i < names.length; i++) {
     var opt = document.createElement('option');

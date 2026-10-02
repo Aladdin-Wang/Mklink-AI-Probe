@@ -1018,6 +1018,19 @@ def decode_frame_to_points(
     """
     from mklink.watch import decode_value
 
+    if int(frame.get("flags", 0)) & ~FLAG_SAMPLE_DROPPED:
+        raise ValueError("dump_memory firmware reported region/read error")
+    regions = frame["regions"]
+    seen = set()
+    for index, payload in regions:
+        if index < 0 or index >= len(block_addresses) or index in seen:
+            raise ValueError("dump_memory region configuration mismatch")
+        seen.add(index)
+        if len(payload) != block_addresses[index][1]:
+            raise ValueError("dump_memory region payload length mismatch")
+    if seen != set(range(len(block_addresses))):
+        raise ValueError("dump_memory frame is missing configured regions")
+
     current_origin = origin_us
     if current_origin is None:
         current_origin = frame["timestamp_us"]
@@ -1039,6 +1052,8 @@ def decode_frame_to_points(
             else:
                 name, type_name, item_offset, item_size, scalar_kind, enum_values = item
             data = region_data[item_offset:item_offset + item_size]
+            if len(data) != item_size:
+                raise ValueError("dump_memory variable payload is incomplete: " + name)
             if data:
                 # Store raw numeric value for charting; enum display is handled by frontend
                 point[name] = decode_value(
@@ -1047,7 +1062,8 @@ def decode_frame_to_points(
                     known_size=item_size,
                     scalar_kind=scalar_kind,
                 )
-        points.append(point)
+        if len(point) > 2:
+            points.append(point)
 
     return points, current_origin
 
