@@ -25,7 +25,7 @@ ELF load addresses and binary lengths were checked. Both binaries contain the ca
 
 ## Limits and integration
 
-The initial port/build run did not upgrade or physically test either model. The user subsequently upgraded and connected V3; its follow-up HIL results are below. **V2 still has no physical validation for this feature.** Compilation and native control tests do not certify USB scheduling, sampling jitter or upgrade success on V2. Verify the matching probe before release; never cross-flash model variants.
+The initial port/build run did not upgrade or physically test either model. The user subsequently upgraded and connected V3, then V2; their follow-up HIL results are below. These tests cover the connected STM32F103RET6 and stated sampling configurations, not every target or USB host. Never cross-flash model variants.
 
 Candidates and exact source patches remain local; no firmware channel, official asset, version tag or installer was published. Source edits reside in their respective firmware checkouts. This report accompanies the host PR so integration can track all three supported firmware implementations without claiming that V4 hardware evidence certifies V3/V2.
 
@@ -47,4 +47,22 @@ Each rate exercised 8-, 16-, 32- and 64-bit RAM variables, with a write followed
 
 The real SuperWatch manager was then exercised against the same device with three watched RAM values (a float fixture, guard and heartbeat). Its production stream hub accepted the binary batches. The float changed `1.25 → 3.125 → -1.5 → 1.25` in one capture: 1,320 continuous samples, maximum interval 1.140 ms, and write brackets of 1.095/1.140/1.086 ms showing the expected before/after values. Worker identity, time origin and metadata epoch stayed unchanged. A further verified write while paused preserved the paused state; resume succeeded. Guard bytes, original float and all earlier test values were preserved/restored. Read drops/errors, binary publication drops, CRC errors and firmware error flags were zero in this final manager run.
 
-The first manager harness omitted its stream hub and therefore reported local publication drops; it was corrected to use the production hub and rerun. Both raw records remain local. This follow-up validates device transport and manager lifecycle, **not a new browser-rendering or WebSocket subscriber test**. Initial parser discarded-byte counts (46/49 bytes in the low-level runs) were command/prompt text; no zero-discard claim is made. No target firmware, PID parameters or power settings were changed. All sessions were stopped and disconnected. V2 remains pending HIL.
+The first manager harness omitted its stream hub and therefore reported local publication drops; it was corrected to use the production hub and rerun. Both raw records remain local. This follow-up validates device transport and manager lifecycle, **not a new browser-rendering or WebSocket subscriber test**. Initial parser discarded-byte counts (46/49 bytes in the low-level runs) were command/prompt text; no zero-discard claim is made. No target firmware, PID parameters or power settings were changed. All sessions were stopped and disconnected.
+
+## V2 hardware follow-up, 2026-10-02
+
+After the user's upgrade and connection, `cmd.get_version()` returned `V2.8.0` and the separate capability line `DUMP_WRITE=1`. At 30 MHz SWD, the same STM32F103RET6 fixture passed 16 live write/restore transactions across 8/16/32/64-bit variables and two sampling rates. All acknowledged readbacks matched; independent reads after stopping confirmed original bytes.
+
+| Measurement | 1 ms requested | Fastest requested (1 us) |
+| --- | ---: | ---: |
+| Complete samples | 1,591 | 303,552 |
+| Mean device interval | 1,001.231 us | 5.277719 us |
+| Maximum interval | 1,136 us | 350 us |
+| Intervals spanning writes/restores | 999–1,136 us | 235–350 us |
+| Host acknowledgement latency | 3.557–4.166 ms | 3.764–5.567 ms |
+| Parser CRC errors / dropped frames | 0 / 0 | 0 / 0 |
+| Firmware error / sample-drop flags | 0 / 0 | 0 / 0 |
+
+The real SuperWatch manager and production stream hub also passed a three-variable capture. In one continuous capture the float fixture changed `1.25 → 3.125 → -1.5 → 1.25`; all transitions were present in 1,607 samples with strictly increasing device timestamps. Maximum interval was 1.005 ms; write brackets were 1.002/1.001/1.001 ms. Worker, time origin and metadata epoch were unchanged. A verified write while paused preserved pause, followed by successful resume. Read errors/drops, binary publication drops, CRC errors and firmware error flags were zero. The guard stayed intact and the original float was independently verified after stop.
+
+This run used the user's upgraded probe without re-flashing it or reading back its full firmware hash. It did not repeat browser rendering or WebSocket subscriber delivery tests. Parser discarded-byte counts included command/prompt text (44/47 bytes for the low-level runs). Target firmware, PID settings and power were unchanged; all test values were restored and the connection released. V2, V3 and V4 now each have real-device live-write evidence within their respective documented test scopes.
