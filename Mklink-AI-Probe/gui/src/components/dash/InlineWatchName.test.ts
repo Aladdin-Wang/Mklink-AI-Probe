@@ -1,0 +1,42 @@
+import { mount, flushPromises } from '@vue/test-utils'
+import { expect, it, vi } from 'vitest'
+import InlineWatchName from './InlineWatchName.vue'
+
+it('edits in place, protects IME Enter, saves once and cancels without saving', async () => {
+  const commit=vi.fn(async()=>true)
+  const w=mount(InlineWatchName,{props:{value:'转速',fallback:'motor.rpm',label:'名称',commit}})
+  await w.get('.name-text').trigger('dblclick')
+  const input=w.get('input')
+  await input.setValue('中文转速')
+  await w.setProps({value:'外部名称'})
+  expect(input.element.value).toBe('中文转速')
+  await input.trigger('compositionstart')
+  await input.trigger('keydown',{key:'Enter',isComposing:true})
+  expect(commit).not.toHaveBeenCalled()
+  await input.trigger('compositionend')
+  await input.trigger('keydown',{key:'Enter'})
+  await input.trigger('blur'); await flushPromises()
+  expect(commit).toHaveBeenCalledExactlyOnceWith('中文转速')
+  expect(w.find('input').exists()).toBe(false)
+  await w.get('button').trigger('click')
+  await w.get('input').setValue('取消内容')
+  await w.get('input').trigger('keydown',{key:'Escape'})
+  await flushPromises()
+  expect(commit).toHaveBeenCalledTimes(1)
+  expect(w.text()).toContain('外部名称')
+  w.unmount()
+})
+
+it('keeps failed drafts for retry and permits clearing an alias on blur',async()=>{
+  const commit=vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  const w=mount(InlineWatchName,{props:{value:'转速',fallback:'motor.rpm',label:'名称',commit}})
+  await w.get('button').trigger('click')
+  await w.get('input').setValue('')
+  await w.get('input').trigger('blur');await flushPromises()
+  expect(w.get('input').element.value).toBe('')
+  await w.get('input').trigger('keydown',{key:'Enter'});await flushPromises()
+  expect(commit).toHaveBeenLastCalledWith('')
+  await w.setProps({value:''})
+  expect(w.get('.name-text').text()).toBe('motor.rpm')
+  w.unmount()
+})
