@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-02T18:34:10.725049+08:00`
+- 更新时间：`2026-10-02T18:39:13.230477+08:00`
 - 分支：`codex/0.2.3-local-qualification`
 - HEAD：`Based on merged main 97a61dc962a9c8eca09861873225793e62a06774; local qualification checkpoint.`
 - 远端 HEAD：`PR #9–#13 all merged; local original main fast-forwarded to 97a61dc.`
 - 工作树：Qualification branch fixes missing frozen Web GUI assets; original user firmware preserved.
-- 当前任务：用户已覆盖97a61dc；安装版HPM内存128项、ROM烧录全量回读、桌面实时写入及CLI日志回放通过。发现sidecar漏打gui/dist导致Web 404，已修复构建顺序和资源收集，Python2449/2跳过通过，正在前端回归及重建，随后再次安装验证三端一致性。
+- 当前任务：Web资源打包修复22669a7全量Python2449/2跳过、GUI755及NSIS构建通过，89.2MiB新包已启动覆盖，等待用户UAC。原安装版HPM RAM/Flash/实时写入/日志回放/RTT/SystemView及受限PATH启动正常退出通过。新包浏览器验收后完成PR14，再切STM32。
 - 状态：`active`
 
 ## 里程碑
@@ -38,13 +38,13 @@
 
 - **state**：V4 + HPM6E80。安装版RAM/Flash/桌面实时写入与日志回放通过，增益恢复并断开连接。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
-- **installer**：97a61dc已由用户覆盖安装。发现sidecar未含Web资源；新修复包待构建安装。
+- **installer**：修复包 .build/artifacts/v0.2.3-local-22669a7/Mklink-AI-Probe-v0.2.3-22669a7-x64-Setup.exe；SHA256 db7481c25a5ef816d3a71780c4aa756d0574e7d7d0f307890ba946c60e686eea；等待UAC覆盖及Web验证。
 
 ## 下一动作
 
-1. 完成打包修复GUI及生产构建；更新PR14并重建本地NSIS。
-2. 新包验证浏览器/WebView/CLI一致性、受限PATH启动与正常退出；RTT/SystemView补测。
-3. HPM安装版回归完成后通知换STM32F103；保留nRF54L15 GUI闭环豁免，不更新V2/V3。
+1. 用户允许UAC后验证新包Web资源、浏览器实时写入及同一CLI日志回放。
+2. 更新本地Skill及PR14结果，核对并合并；受限PATH和退出验证保持记录。
+3. HPM完成后换STM32F103；nRF54L15 GUI豁免保留，不更新V2/V3。
 
 ## 已知限制
 
