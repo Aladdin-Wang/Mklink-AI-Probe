@@ -331,6 +331,10 @@ export interface SymbolCLayoutResult {
 }
 
 export interface SuperWatchWriteResult {
+  mode?: 'live' | 'legacy-gap'
+  timestamp_us?: number | null
+  time_ms?: number | null
+  request_id?: number | null
   path: string
   generation: number
   value: number | boolean

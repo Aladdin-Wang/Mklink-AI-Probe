@@ -829,6 +829,16 @@ function superwatchErrorMessage(message, name) {
 
 function syncDashboardStatus(d) {
   if (!d) return;
+  if (IS_SUPERWATCH_MODE && Array.isArray(d.write_events)) {
+    superwatchWriteEvents = d.write_events.slice(-128);
+    superwatchWriteEvents.forEach(function(event) {
+      if (event.event_id > superwatchLastWriteEvent) {
+        appendRawLogLine(JSON.stringify(Object.assign({event: 'write'}, event)));
+        superwatchLastWriteEvent = event.event_id;
+      }
+    });
+    canvas.dataset.writeEventCount = String(superwatchWriteEvents.length);
+  }
   if (IS_VOFA_MODE && Array.isArray(d.channels)) {
     vofaChannels = normalizeVofaChannels(d.channels);
     notifyVofaChannels();
@@ -2787,6 +2797,8 @@ function setArraySnapshot(snapshot) {
 var binaryChannelNames = [];
 var binaryChannelSignature = null;
 var binaryTimeOrigin = null;
+var superwatchWriteEvents = [];
+var superwatchLastWriteEvent = 0;
 var binaryLastTimestamp = null;
 var binaryLastSequence = null;
 var binaryLastDetailSequence = null;
@@ -3225,6 +3237,8 @@ function renderBinaryEnvelope(envelope, renderWhilePaused) {
 
 function resetBinaryStream() {
   if (!IS_BINARY_WAVEFORM_MODE) return;
+  superwatchWriteEvents = [];
+  superwatchLastWriteEvent = 0;
   singleTriggerCaptureFrozen = false;
   binaryTimeOrigin = null;
   binaryLastTimestamp = null;
@@ -4111,6 +4125,24 @@ function drawChart() {
 
       ctx.restore();
     }
+  }
+
+  // Actual probe-side write timestamps share the sample clock.
+  if (IS_SUPERWATCH_MODE && binaryTimeOrigin !== null) {
+    ctx.save();
+    ctx.strokeStyle = '#e5a128'; ctx.fillStyle = '#e5a128';
+    ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+    superwatchWriteEvents.forEach(function(event, index) {
+      if (event.time_ms === null || !Number.isFinite(event.time_ms)) return;
+      var x = tx(event.time_ms / 1000 - binaryTimeOrigin);
+      if (x < ml || x > ml + pw) return;
+      ctx.setLineDash([3, 3]); ctx.beginPath();
+      ctx.moveTo(x, mt); ctx.lineTo(x, mt + ph); ctx.stroke();
+      ctx.setLineDash([]);
+      var label = String(event.path) + ' = ' + String(event.value);
+      ctx.fillText(label, Math.min(x + 4, ml + pw - ctx.measureText(label).width), mt + 14 + (index % 3) * 14);
+    });
+    ctx.restore();
   }
 
   // Measurement cursors A/B (Task 5I)

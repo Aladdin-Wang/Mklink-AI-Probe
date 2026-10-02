@@ -99,6 +99,14 @@ class MKLinkSerialBridge:
     # ------------------------------------------------------------------
     # 连接管理
     # ------------------------------------------------------------------
+    def supports_dump_write(self) -> bool:
+        response = self.send_command("cmd.get_version()", timeout=3.0)
+        return any(line.strip() == "DUMP_WRITE=1" for line in response.splitlines())
+
+    def supports_hpm_dump_write(self) -> bool:
+        response = self.send_command("cmd.get_version()", timeout=3.0)
+        return any(line.strip() == "DUMP_WRITE_HPM=1" for line in response.splitlines())
+
     def _verify_identity(self) -> bool:
         try:
             response = self.send_command(MKLINK_IDENTITY_COMMAND, timeout=2.0)
