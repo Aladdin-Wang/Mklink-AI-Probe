@@ -17,6 +17,8 @@ import viewerUrl from '../../assets/rtt_viewer.js?url'
 import { language } from '../../composables/useLanguage'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { saveTextFile } from '../../lib/downloadTextFile'
+import { mountReplayButton } from '../../../../mklink/static/superwatch_replay.js'
+import '../../../../mklink/static/superwatch_replay.css'
 
 const props = defineProps<{
   mode: 'SuperWatch' | 'VOFA'
@@ -50,6 +52,7 @@ let latestVofaStatus: Record<string, unknown> | null = null
 let arraySnapshotTimer: ReturnType<typeof setTimeout> | null = null
 let arraySnapshotGeneration = 0
 let disposed = false
+let disposeReplay: (() => void) | null = null
 function requestLatestVisibleRange(interactive = false): void {
   if (visibleRequestInFlight !== null) {
     visibleRangePending = true
@@ -319,6 +322,9 @@ onMounted(() => {
 
   // 1. Inject HTML template
   el.innerHTML = buildTemplate(props.mode)
+  if (props.mode === 'SuperWatch') {
+    disposeReplay = mountReplayButton(el.querySelector('.header-actions') as HTMLElement, { language: language.value })
+  }
 
   // 2. Inject CONFIG + load scripts
   injectScripts(el, props.mode)
@@ -348,6 +354,7 @@ watch(language, value => {
 })
 
 onUnmounted(() => {
+  disposeReplay?.()
   disposed = true
   stopVofaStatusPolling()
   stopArraySnapshotPolling()
