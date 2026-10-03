@@ -14,33 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount
 
 from mklink.runtime import PROTOCOL, VERSION
-
-# These are GUI service operations, never raw Python method/attribute access.
-CAPABILITIES = {
-    "device_status": ("GET", "/api/device/status"),
-    "resources": ("GET", "/api/resources/status"),
-    "read_memory": ("POST", "/api/device/read-memory"),
-    "read_variable": ("POST", "/api/device/read-variable"),
-    "symbol_search": ("GET", "/api/symbols/search"),
-    "symbol_typeinfo": ("GET", "/api/symbols/typeinfo"),
-    "memory_map": ("GET", "/api/device/memory-map"),
-    "rtt_status": ("GET", "/api/dash/rtt/status"),
-    "rtt_history": ("GET", "/api/dash/rtt/history"),
-    "rtt_start": ("POST", "/api/dash/rtt/start"),
-    "rtt_stop": ("POST", "/api/dash/rtt/stop"),
-    "superwatch_status": ("GET", "/api/dash/superwatch/status"),
-    "superwatch_items": ("GET", "/api/dash/superwatch/items"),
-    "superwatch_snapshot": ("GET", "/api/dash/superwatch/array-snapshot"),
-    "superwatch_values": ("GET", "/api/dash/superwatch/latest"),
-    "superwatch_start": ("POST", "/api/dash/superwatch/start"),
-    "superwatch_stop": ("POST", "/api/dash/superwatch/stop"),
-    "superwatch_add": ("POST", "/api/dash/superwatch/add"),
-    "systemview_status": ("GET", "/api/dash/systemview/status"),
-    "systemview_history": ("GET", "/api/dash/systemview/history"),
-    "serial_status": ("GET", "/api/dash/serial/status"),
-    "modbus_status": ("GET", "/api/dash/modbus/status"),
-    "vofa_status": ("GET", "/api/dash/vofa/status"),
-}
+from mklink.runtime_capabilities import CAPABILITIES, STREAMS, validate_arguments
 
 
 async def settle(task):
@@ -67,6 +41,10 @@ def same_path(left, right):
 class Session:
     project_root: str
     axf: str | None
+    kind: str = 'mcp'
+    name: str = 'AI client'
+    public_id: str = field(default_factory=lambda: secrets.token_hex(8))
+    joined: float = field(default_factory=time.monotonic)
     expires: float = field(default_factory=lambda: time.monotonic() + 120)
     streams: set = field(default_factory=set)
 
@@ -80,10 +58,54 @@ class RuntimeControl:
         self.operation_lock = asyncio.Lock()
         self.shutdown = None
         self.stopping = False
+        self.views = {}
+        self.current_operation = None
+        self.last_operation = None
+        self.started = time.monotonic()
 
     def prune(self):
         now = time.monotonic()
         self.sessions = {key: session for key, session in self.sessions.items() if session.expires > now}
+        self.views = {key: view for key, view in self.views.items() if view['expires'] > now}
+
+    def presence(self):
+        from mklink.probes import inventory
+        probes = inventory()
+        selected = next((p for p in probes if p['probe_id'] == self.info.get('probe_id')), None)
+        device = self.app.state.mklink_state.get('device')
+        status = 'present' if selected else 'missing'
+        if self.info.get('probe_id') == 'lobby':
+            status = 'unselected'
+        elif selected and device and device.connected and device.port.casefold() != selected['port'].casefold():
+            status = 'port_changed'
+        return {'status': status, 'probe': selected, 'probes': probes}
+
+    def require_identity(self):
+        if not self.info.get('probe_id'):  # isolated API fixtures
+            return
+        presence = self.presence()
+        if presence['status'] != 'present':
+            raise HTTPException(409, {'reason': presence['status'], 'message': 'Bound probe unavailable or port changed; release the old connection and reconnect this same identity explicitly'})
+
+    async def snapshot(self):
+        from mklink.remote.dashboards import get_managers
+        self.prune()
+        now = time.monotonic()
+        clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'streams': sorted(s.streams),
+                    'age_seconds': now-s.joined, 'expires_in': max(0, s.expires-now)} for s in self.sessions.values()]
+        clients += [{'id': key, 'kind': 'gui', 'name': view['name'], 'streams': [],
+                     'age_seconds': now-view['joined'], 'expires_in': max(0, view['expires']-now)} for key, view in self.views.items()]
+        device = self.app.state.mklink_state.get('device')
+        return {'protocol': PROTOCOL, 'version': VERSION, 'probe_id': self.info.get('probe_id'),
+                'instance_id': self.info['instance_id'], 'pid': self.info.get('pid'),
+                'project_root': self.app.state.mklink_state['project_root'], 'transport': 'cdc',
+                'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked(),
+                'operation': self.current_operation, 'last_operation': self.last_operation,
+                'connected': bool(device and device.connected),
+                'streams': [{'name': name, 'running': manager.running,
+                             'subscribers': sum(name in s.streams for s in self.sessions.values())}
+                            for name, manager in get_managers().items()],
+                **await asyncio.to_thread(self.presence)}
 
     def session(self, session_id):
         self.prune()
@@ -156,19 +178,29 @@ class RuntimeGate:
         method = scope.get("method", "GET")
         hardware = path.startswith("/api/") and (
             method not in {"GET", "HEAD", "OPTIONS"}
-            or path in {"/api/device/core-registers", "/api/device/hardfault", "/api/device/hardfault-detail"}
-        ) and not path.startswith(("/api/browser-session/", "/api/session/"))
+            or path in {"/api/device/core-registers", "/api/device/hardfault", "/api/device/hardfault-detail",
+                        "/api/dash/superwatch/inspect"}
+        ) and not path.startswith(("/api/browser-session/", "/api/session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)
         from mklink.probes import inventory, select_probe
         from mklink.runtime import RuntimeErrorResponse
+        if path.startswith(('/api/device/', '/api/dash/')) and not path.endswith(('/stop', '/disconnect')):
+            try:
+                c.require_identity()
+            except HTTPException as exc:
+                return await reject(exc.status_code, exc.detail)
         if path in {"/api/probe/firmware-upgrade", "/api/offline-download/deploy", "/api/offline-download/trigger"} and len(inventory()) > 1:
             return await reject(409, "This disk-based operation is not yet bound to a probe identity; use a single-probe maintenance session")
-        if path in {"/api/online-flash/jobs", "/api/online-flash/memory/read", "/api/online-flash/memory/read-stream"}:
-            try:
-                selected = select_probe(c.info.get("probe_id"))
-            except RuntimeErrorResponse as exc:
-                return await reject(409, str(exc))
+        validated_capability = next((name for name in ('read_memory', 'write_memory', 'write_variable', 'rtt_write')
+                                     if CAPABILITIES[name][1] == path), None)
+        online_flash = path in {"/api/online-flash/jobs", "/api/online-flash/memory/read", "/api/online-flash/memory/read-stream"}
+        if online_flash or validated_capability:
+            if online_flash:
+                try:
+                    selected = select_probe(c.info.get("probe_id"))
+                except RuntimeErrorResponse as exc:
+                    return await reject(409, str(exc))
             chunks = bytearray()
             while True:
                 message = await receive()
@@ -183,8 +215,15 @@ class RuntimeGate:
                 body = json.loads(chunks)
             except (ValueError, UnicodeError):
                 return await reject(422, "Invalid JSON control request")
-            if not isinstance(body, dict) or str(body.get("probe_id", "")).casefold() != selected["serial_number"].casefold():
+            if not isinstance(body, dict):
+                return await reject(422, 'Control body must be an object')
+            if online_flash and str(body.get("probe_id", "")).casefold() != selected["serial_number"].casefold():
                 return await reject(409, "CMSIS-DAP probe does not match this window's physical probe")
+            if validated_capability:
+                try:
+                    chunks = json.dumps(validate_arguments(validated_capability, body)).encode('utf-8')
+                except HTTPException as exc:
+                    return await reject(exc.status_code, exc.detail)
             original_receive = receive
             replayed = False
             async def replay():
@@ -210,13 +249,27 @@ class RuntimeGate:
         if path in {f"/api/dash/{name}/start" for name in ("rtt", "superwatch", "systemview", "vofa")}:
             if any(name in active for name in ("rtt", "superwatch", "systemview", "vofa")):
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
-        if path.startswith("/api/device/") and path != "/api/device/connect":
+        if (path.startswith("/api/device/") and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
             if active:
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
         if c.operation_lock.locked():
             return await reject(409, "Another shared operation is in flight; wait for completion")
         async with c.operation_lock:
-            await settle(asyncio.create_task(self.app(scope, receive, send)))
+            started = time.monotonic()
+            session = c.sessions.get(session_id)
+            c.current_operation = {'path': path, 'client': session.name if session else 'GUI / API', 'started_at': time.time()}
+            status_code = None
+            async def observe(message):
+                nonlocal status_code
+                if message['type'] == 'http.response.start':
+                    status_code = message['status']
+                await send(message)
+            try:
+                await settle(asyncio.create_task(self.app(scope, receive, observe)))
+            finally:
+                c.last_operation = {**c.current_operation, 'duration_seconds': time.monotonic()-started,
+                                    'http_status': status_code}
+                c.current_operation = None
 
 
 def install_runtime(app, info):
@@ -265,6 +318,10 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
             control.prune()
             if len(control.sessions) >= 128:
                 raise HTTPException(429, "Too many attached clients")
+            control.require_identity()
+            kind, name = body.get('kind', 'mcp'), body.get('name', 'AI client')
+            if kind not in ('mcp', 'cli') or not isinstance(name, str) or not 1 <= len(name.strip()) <= 64:
+                raise HTTPException(422, 'Client kind must be mcp/cli and name must contain 1..64 characters')
             project = body.get("project_root")
             if any(body.get(key) is not None and not isinstance(body[key], str)
                    for key in ("project_root", "port", "axf", "mcu", "elf_backend", "session_id")):
@@ -301,7 +358,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
             if session_id not in control.sessions:
                 session_id = secrets.token_urlsafe(24)
             if session_id not in control.sessions:
-                control.sessions[session_id] = Session(state["project_root"], (device_status.get("axf") or {}).get("axf_path"))
+                control.sessions[session_id] = Session(state["project_root"], (device_status.get("axf") or {}).get("axf_path"), kind=kind, name=name.strip())
             else:
                 control.session(session_id)
             return {**device_status, "session_id": session_id, "shared": True,
@@ -334,15 +391,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
         arguments = body.get("arguments", {})
         if not isinstance(arguments, dict) or len(json.dumps(arguments)) > 16384:
             raise HTTPException(422, "Arguments must be an object of at most 16 KiB")
-        if capability == "read_memory":
-            try:
-                size = arguments["size"]
-                address = int(str(arguments["address"]), 0)
-                if type(size) is not int or not 1 <= size <= 4096 or not 0 <= address <= 0x100000000 - size:
-                    raise ValueError()
-                arguments["address"] = hex(address)
-            except (KeyError, TypeError, ValueError):
-                raise HTTPException(422, "read_memory requires a 32-bit address and 1..4096 bytes")
+        arguments = validate_arguments(capability, arguments)
         stream = capability.split("_")[0]
         if capability.endswith("_start"):
             if control.operation_lock.locked():
@@ -353,7 +402,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                     raise HTTPException(409, "Acquisition already runs; subscribe without reconfiguring it")
                 session.streams.add(stream)
                 return {"status": "subscribed", "reused": True}
-        if capability.endswith("_stop"):
+        if capability.endswith(("_stop", "_pause", "_resume")):
             if control.created_streams.get(stream) != session_id:
                 raise HTTPException(409, "This acquisition was started by another client; detach instead")
         method, path = CAPABILITIES[capability]
@@ -383,4 +432,6 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     app.router.routes.insert(0, Mount("/_runtime", app=api))
     app.add_middleware(RuntimeGate, control=control)
     app.state.shared_runtime = control
+    from mklink.runtime_management import install_management
+    install_management(app, control)
     return control

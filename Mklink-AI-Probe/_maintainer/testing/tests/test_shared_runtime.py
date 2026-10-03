@@ -18,6 +18,7 @@ def runtime(monkeypatch, tmp_path):
     calls = []
     managers = {name: SimpleNamespace(running=False) for name in ("rtt", "superwatch", "systemview")}
     monkeypatch.setattr("mklink.remote.dashboards.get_managers", lambda: managers)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
 
     @app.get("/api/device/status")
     async def status():
@@ -32,6 +33,11 @@ def runtime(monkeypatch, tmp_path):
     async def read(body: dict):
         calls.append("read")
         return {"data_hex": "00" * body["size"]}
+
+    @app.post('/api/device/write-memory')
+    async def write(body: dict):
+        calls.append('write')
+        return {'bytes_written': len(bytes.fromhex(body['data_hex']))}
 
     @app.post("/api/dash/rtt/start")
     async def start(body: dict):
@@ -195,3 +201,71 @@ def test_shared_runtime_disables_legacy_agent_that_bypasses_admission():
     install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'test'})
     assert app.state.site_agent.settings.enabled is False
     assert 'not yet supported' in app.state.site_agent.settings.configuration_error
+
+
+def test_write_validation_and_capture_busy_never_reach_hardware(runtime):
+    client, _, calls, managers, _ = runtime
+    session = attach(client)
+    assert client.post('/api/device/write-memory', json={'address':'0','data_hex':'zz'}).status_code == 422
+    assert client.post('/api/dash/rtt/write', json={'data_hex':('a'*257).encode().hex()}).status_code == 422
+    assert client.post('/api/dash/rtt/write', json={'data_hex':b'RTTView.stop()'.hex()}).status_code == 422
+    for arguments in ({'address': '0xffffffff', 'data_hex': '0000'}, {'address': '0', 'data_hex': '0g'},
+                      {'address': '0', 'data_hex': '0'}, {'address': '0', 'data_hex': ''}):
+        assert call(client, session, 'write_memory', arguments).status_code == 422
+    managers['superwatch'].running = True
+    assert client.get('/api/dash/superwatch/inspect', params={'name':'test'}).status_code == 409
+    assert call(client, session, 'write_memory', {'address':'0x20000000', 'data_hex':'0102'}).status_code == 409
+    assert not calls
+    managers['superwatch'].running = False
+    assert call(client, session, 'write_memory', {'address':'0x20000000', 'data_hex':'0102'}).json()['bytes_written'] == 2
+    assert calls == ['write']
+
+
+def test_management_view_detach_stop_release_are_distinct(runtime):
+    client, control, calls, managers, _ = runtime
+    session = attach(client)
+    assert call(client, session, 'rtt_start').status_code == 200
+    base = '/api/runtime/control'
+    client.post(base+'/view', json={'client_id':'test-window'})
+    snapshot = client.get(base+'/status').json()
+    assert sorted(c['kind'] for c in snapshot['clients']) == ['gui','mcp']
+    assert session not in str(snapshot)  # Public handles are not session credentials.
+    assert snapshot['last_operation']['path'] == '/api/dash/rtt/start'
+    assert client.post(base+'/release-device', json={'confirm':True}).status_code == 409
+    assert client.post(base+'/stop-acquisition', json={'stream':'rtt','confirm':True}).status_code == 409
+    public_id = next(c['id'] for c in snapshot['clients'] if c['kind']=='mcp')
+    assert client.post(base+'/detach-client', json={'client_id':public_id}).status_code == 422
+    assert client.post(base+'/detach-client', json={'client_id':public_id,'confirm':True}).status_code == 200
+    assert managers['rtt'].running
+    assert call(client, session, 'device_status').status_code == 409
+    assert client.post(base+'/release-device', json={'confirm':True}).status_code == 409
+    assert client.post(base+'/stop-acquisition', json={'stream':'rtt','confirm':True}).status_code == 200
+    assert client.post(base+'/release-device', json={'confirm':True}).status_code == 200
+    assert calls == ['start','stop','disconnect']
+    client.post(base+'/view', json={'client_id':'test-window','release':True})
+    assert not control.views
+
+
+def test_management_backend_stop_respects_other_windows(runtime):
+    client, control, _, _, _ = runtime
+    base = '/api/runtime/control'
+    for name in ('one','two'):
+        client.post(base+'/view', json={'client_id':name})
+    assert client.post(base+'/stop-backend', json={'confirm':True}).status_code == 409
+    control.views['two']['expires']=0
+    assert client.post(base+'/stop-backend', json={'confirm':True}).status_code == 200
+
+
+def test_hotplug_never_retargets_a_window_to_another_probe(runtime, monkeypatch):
+    client, control, calls, _, app = runtime
+    session = attach(client)
+    control.info['probe_id']='usb-'+'1'*24
+    # Original probe disappeared; another now owns its old COM number.
+    monkeypatch.setattr('mklink.probes.inventory', lambda:[{'probe_id':'usb-'+'2'*24,'port':'COM9'}])
+    assert call(client, session, 'read_memory', {'address':'0','size':4}).status_code == 409
+    assert client.get('/api/runtime/control/status').json()['status']=='missing'
+    # Original device returned with a new COM number. Old handle must be released explicitly.
+    monkeypatch.setattr('mklink.probes.inventory', lambda:[{'probe_id':control.info['probe_id'],'port':'COM10'}])
+    assert client.get('/api/runtime/control/status').json()['status']=='port_changed'
+    assert call(client, session, 'write_memory', {'address':'0','data_hex':'00'}).status_code == 409
+    assert not calls

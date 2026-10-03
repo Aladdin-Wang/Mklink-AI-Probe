@@ -22,6 +22,7 @@ import { sharedRuntime } from '../composables/useBackendHealth'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
+import RuntimePanel from '../components/config/RuntimePanel.vue'
 
 const {
   deviceStatus,
@@ -469,8 +470,9 @@ onUnmounted(() => {
     <ConfigSectionNav v-model="activeSection" />
 
     <main class="section-content">
+      <RuntimePanel v-if="activeSection === 'runtime'" />
       <section
-        v-if="activeSection === 'local'"
+        v-else-if="activeSection === 'local'"
         class="card local-panel"
         data-testid="local-device-panel"
         aria-labelledby="local-device-title"

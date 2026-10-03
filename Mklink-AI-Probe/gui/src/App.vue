@@ -110,6 +110,7 @@ import { useAppUpdater } from './composables/useAppUpdater'
 import { language, toggleLanguage, tr } from './composables/useLanguage'
 import { themePreference, setTheme, type ThemePreference } from './composables/useTheme'
 import { startBrowserSessionLease } from './lib/browserSessionLease'
+import { startSharedRuntimeView } from './lib/sharedRuntimeView'
 
 const router = useRouter()
 // Stream viewers use persistent DOM references while sampling in the background.
@@ -131,6 +132,10 @@ const initialBackendReady = ref(false)
 const updateDismissed = ref(false)
 let statusPollingStarted = false
 let stopBrowserSessionLease: () => void = () => undefined
+let stopSharedView: (() => void) | undefined
+watch(() => sharedRuntime?.value, enabled => {
+  if (enabled && !stopSharedView) stopSharedView = startSharedRuntimeView()
+}, { immediate: true })
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
 
@@ -168,6 +173,7 @@ onUnmounted(() => {
   if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()
   stopBrowserSessionLease()
+  stopSharedView?.()
 })
 </script>
 

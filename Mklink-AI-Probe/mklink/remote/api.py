@@ -1647,6 +1647,10 @@ def create_app(
                 raise HTTPException(409, str(exc)) from exc
             runtime.prune()
             current = _state.get("device")
+            if current and runtime.sessions and not current.connected:
+                raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
+            if current and current.connected and current.port.casefold() != port.casefold():
+                raise HTTPException(409, 'Probe port changed; release the old connection first')
             if runtime.sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
@@ -3263,6 +3267,7 @@ def create_app(
     async def write_memory(
         address: str = Body(...),
         data_hex: str = Body(...),
+        verify: bool = Body(default=False),
     ):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
@@ -3274,7 +3279,11 @@ def create_app(
                 await loop.run_in_executor(
                     None, lambda: _state["device"].write_memory(addr, data)
                 )
-                return {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
+                result = {"status": "ok", "address": hex(addr), "bytes_written": len(data)}
+                if verify:
+                    actual = await loop.run_in_executor(None, lambda: _state["device"].read_memory(addr, len(data)))
+                    result['verified'] = actual == data
+                return result
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 

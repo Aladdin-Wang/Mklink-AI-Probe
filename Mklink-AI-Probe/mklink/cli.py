@@ -3668,7 +3668,7 @@ def _cli_runtime(args):
             info = selected_runtime(args.probe)
             result = request(info, "POST", "/_runtime/stop", {"confirm": True}) if info else {"status": "not_running"}
         else:
-            client = RuntimeClient(project_root=args.project_root or ".")
+            client = RuntimeClient(project_root=args.project_root or ".", kind='cli', name='CLI runtime call')
             try:
                 client.connect(project_root=args.project_root, probe=args.probe, port=args.device_port, axf=args.axf)
                 result = client.call(args.capability, json.loads(args.arguments))
@@ -4551,7 +4551,26 @@ def main():
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
     parser.add_argument("--test", action="store_true", help="运行基本测试（兼容旧版）")
 
+    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser):
+        entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
+        entry.add_argument('--direct', action='store_true', help='显式使用旧版独占 CDC 兼容入口')
+    for name in ('device-status', 'read-variable', 'write-variable'):
+        entry = subparsers.add_parser(name, help='通过共享后台访问设备')
+        entry.add_argument('--probe')
+        entry.add_argument('--port')
+        entry.add_argument('--project-root', default=None)
+        entry.add_argument('--source', help='AXF/ELF 符号文件')
+        if name != 'device-status':
+            entry.add_argument('name', help='变量名')
+        if name == 'write-variable':
+            entry.add_argument('value', help='整数值，支持 0x 前缀')
     args = parser.parse_args()
+
+    from mklink.runtime_cli import COMMANDS
+    if args.command in COMMANDS and not getattr(args, 'direct', False):
+        from mklink.runtime_cli import run
+        run(args)
+        return
 
     if args.command == "runtime":
         _cli_runtime(args)

@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 2
+PROTOCOL = 3
 VERSION = "0.3.0"
 
 
@@ -186,12 +186,13 @@ def browser_url(info: dict) -> str:
 
 
 class RuntimeClient:
-    def __init__(self, *, project_root=".", info=None):
+    def __init__(self, *, project_root=".", info=None, kind='mcp', name='AI client'):
         self.info = info
         self.project_root = project_root
         self.session_id = None
         self._stop = threading.Event()
         self._heartbeat = None
+        self.kind, self.name = kind, name
 
     def connect(self, *, project_root=None, port=None, probe=None, axf=None, mcu=None, elf_backend=None):
         if self.info is None:
@@ -203,6 +204,7 @@ class RuntimeClient:
         result = request(self.info, "POST", "/_runtime/attach", {
             "project_root": project_root, "port": port, "axf": axf,
             "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
+            'kind': self.kind, 'name': self.name,
         })
         self.session_id = result["session_id"]
         if self._heartbeat is None or not self._heartbeat.is_alive():
