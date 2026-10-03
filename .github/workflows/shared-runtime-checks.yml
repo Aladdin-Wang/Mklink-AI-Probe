@@ -1,0 +1,78 @@
+name: Shared runtime checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shared-runtime-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  shared-runtime-contract:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install shared runtime dependencies
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList @('-m', 'pip', 'install', '.[mcp]', 'pytest==8.4.2')
+      - name: Check admission, jobs, identity, adapters and process locks
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          $tests = @('test_shared_runtime', 'test_shared_device', 'test_shared_debug', 'test_runtime_jobs', 'test_runtime_mcp', 'test_runtime_cli', 'test_probe_identity', 'test_port_lock_process', 'test_runtime_proxy')
+          $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")
+          $arguments += $tests | ForEach-Object { "_maintainer/testing/tests/$_.py" }
+          ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList $arguments
+      - name: Attach contract report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shared-runtime-report
+          path: .build/reports/shared-runtime.xml
+          if-no-files-found: warn
+          retention-days: 14
+  shared-gui-contract:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install locked GUI dependencies
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('ci')
+      - name: Check shared windows, recovery and runtime management
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/components/config/RuntimePanel.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
+      - name: Check types and production bundle
+        shell: pwsh
+        working-directory: Mklink-AI-Probe
+        run: |
+          $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('run', 'build', '--', '--outDir', "$($paths.artifacts)/shared-runtime-web")
+      - name: Attach GUI contract report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shared-gui-report
+          path: .build/reports/shared-gui.xml
+          if-no-files-found: warn
+          retention-days: 14
