@@ -4,7 +4,7 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T18:48:22+00:00`
+- 更新时间：`2026-10-03T18:50:47+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared flush CLI/MCP and common Device write engine after cfccd1c; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第十四批：本地869通过、2跳过；CI集合515后台/79GUI。真实双下载器/Edge/CLI/MCP/SDK：RTT时写入拒绝、第二探针独立，停止后96字节4批、8地址2批、4KiB短表达式回读通过；专用数组恢复原值。GUI再启停、Boot/选项字节/VTOR/配置保持、tick推进。12KiB仅契约边界覆盖。GUI未改，沿用第九批资源。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第十四批：本地869通过、2跳过；CI集合515后台/79GUI。真实双下载器/Edge/CLI/MCP/SDK：RTT时写入拒绝、第二探针独立，停止后96字节4批、8地址2批、4KiB短表达式回读通过；专用数组恢复原值。GUI再启停、Boot/选项字节/VTOR/配置保持、tick推进。12KiB仅契约边界覆盖。GUI未改，沿用第九批资源。 远端首轮公开文档契约发现固定边界文字缺失，已恢复；本地反馈/文档边界66项通过。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。

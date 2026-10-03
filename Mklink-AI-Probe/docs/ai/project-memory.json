@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T18:48:22+00:00",
+  "updated_at": "2026-10-03T18:50:47+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第十四批：本地869通过、2跳过；CI集合515后台/79GUI。真实双下载器/Edge/CLI/MCP/SDK：RTT时写入拒绝、第二探针独立，停止后96字节4批、8地址2批、4KiB短表达式回读通过；专用数组恢复原值。GUI再启停、Boot/选项字节/VTOR/配置保持、tick推进。12KiB仅契约边界覆盖。GUI未改，沿用第九批资源。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第十四批：本地869通过、2跳过；CI集合515后台/79GUI。真实双下载器/Edge/CLI/MCP/SDK：RTT时写入拒绝、第二探针独立，停止后96字节4批、8地址2批、4KiB短表达式回读通过；专用数组恢复原值。GUI再启停、Boot/选项字节/VTOR/配置保持、tick推进。12KiB仅契约边界覆盖。GUI未改，沿用第九批资源。 远端首轮公开文档契约发现固定边界文字缺失，已恢复；本地反馈/文档边界66项通过。"
     },
     {
       "area": "正式版与安装",
