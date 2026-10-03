@@ -962,6 +962,8 @@ def create_app(
         prepare_connect=lambda request: prepare_online_flash_connect(_state, request),
     )
     app.state.online_flash = online_flash
+    from mklink.remote.debug_api import create_debug_router
+    app.include_router(create_debug_router(_state, async_target_debug_lease))
     app.include_router(online_flash_api.create_online_flash_router(online_flash))
     from mklink.remote import offline_download_api
     app.include_router(

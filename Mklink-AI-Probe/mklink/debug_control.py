@@ -92,7 +92,7 @@ def read_debug_state(bridge: MKLinkSerialBridge) -> DebugState:
 
     # Read FP_CTRL to get number of comparators
     fp_ctrl = _read_u32(bridge, FP_CTRL)
-    state.num_breakpoints = (fp_ctrl >> 4) & 0x0F  # NUM_CODE field [7:4]
+    state.num_breakpoints = ((fp_ctrl >> 4) & 0x0F) | ((fp_ctrl >> 8) & 0x70)  # NUM_CODE field [7:4]
 
     # Read each comparator
     for i in range(state.num_breakpoints):
@@ -101,7 +101,7 @@ def read_debug_state(bridge: MKLinkSerialBridge) -> DebugState:
         if comp_val & 0x01:  # ENABLE bit
             # FPBv1: address in bits [28:2], REPLACE in [31:30]
             # FPBv2: address in bits [31:1]
-            bp_addr = comp_val & 0x1FFFFFFC
+            bp_addr = (comp_val & 0x1FFFFFFC) | (2 if comp_val >> 30 == 2 else 0)
             state.breakpoints.append(BreakpointSlot(index=i, address=bp_addr, enabled=True))
 
     return state
@@ -134,7 +134,7 @@ def step_cpu(bridge: MKLinkSerialBridge) -> DebugState:
 def get_num_breakpoints(bridge: MKLinkSerialBridge) -> int:
     """Get the number of FPB hardware breakpoint comparators available."""
     fp_ctrl = _read_u32(bridge, FP_CTRL)
-    return (fp_ctrl >> 4) & 0x0F
+    return ((fp_ctrl >> 4) & 0x0F) | ((fp_ctrl >> 8) & 0x70)
 
 
 def set_breakpoint(bridge: MKLinkSerialBridge, address: int, slot: int | None = None) -> int:

@@ -1,6 +1,6 @@
 # 0.3.0 共享 CDC 后台与多下载器
 
-本页对应 0.3.0 开发分支的第四阶段实现；现有正式安装版不会自动变成此版本。
+本页对应 0.3.0 开发分支的第五阶段实现；现有正式安装版不会自动变成此版本。
 底层仍使用原有 CDC，不需要更新下载器固件。
 
 ## 连接与选择
@@ -80,8 +80,8 @@ python -m mklink runtime stop --probe "电机板" --confirm
 ## 常用 CLI
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
-`rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`，以及下文的
-`flash`、`erase`、`reset` 均通过共享后台运行，共 15 类命令，支持 `--probe` 设备 ID
+`rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
+`flash`、`erase`、`reset` 均通过共享后台运行，共 18 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -109,6 +109,36 @@ host/port/chart 参数。外设目录应先在 GUI 选择，图表使用共享 G
 算法专用读取的非映射存储器不属于此入口。`halt/resume/step` 返回 `halted` 状态，
 会影响同一目标的执行；持续采集或独占任务进行时拒绝，不抢占采集。
 
+## 寄存器、故障快照与断点
+
+`read-reg`、`hardfault`、`break` 已改为共享 CLI，支持 `--probe`，没有直连回退。
+MCP `gui_call` 和 SDK `call` 对应 `register_snapshot`、`fault_snapshot`、`breakpoints`。
+三者均受采集、独占任务及同探针硬件操作的互斥控制；忙时拒绝，不排队或自动重试。
+
+```powershell
+python -m mklink read-reg SCB.VTOR --probe "电机板" --format hex
+python -m mklink hardfault --probe "电机板"
+python -m mklink break --status --probe "电机板"
+python -m mklink break main --probe "电机板"
+python -m mklink break --clear 0 --probe "电机板"
+```
+
+寄存器读取支持 32 位、1..1024 项，保留 hex/dec/bin/both 格式；`--raw` 现在输出
+解码后的十六进制字节，不包含 CDC 提示符或命令回显。已选外设目录时只接受一个
+命名寄存器/字段，沿用目录的可读限制；批量原始内存用 `read-ram`。
+
+`fault_snapshot` 读取五个 Cortex-M 架构故障寄存器，仅显式提供 `sp` / `--sp` 时
+读取 32 字节异常帧，并用后台当前 AXF 定位。它不发出 halt/resume，也不会自动
+寻找 MSP/PSP。多次读取持有一个后台租约，但运行中的目标仍可改变这些值，因此
+不保证目标级原子快照。现有 `hardfault` 能力/GUI 详细诊断仍保留原来的暂停分析行为。
+
+`breakpoints` 参数为 `action`（status/list/set/clear/clear_all）；set 需要 `target`
+（0x 地址或函数名）及可选整数 `slot`，clear 必须提供 slot。函数按后台 AXF 解析；
+当前只支持 Cortex-M FPBv1、低于 0x20000000 的偶数字节地址。设置只能使用空闲
+槽位，已有断点需显式清除后替换；设置和清除都读回校验，失败后先检查状态。
+`break` 输出 JSON，同一探针的所有客户端共享物理断点；客户端退出保留断点，
+任何客户端显式清除都会影响其他客户端。`--clear` 不带槽位明确表示清除全部。
+
 ## Python 共享 SDK
 
 共享接口作为 `SharedDevice` / `connect_shared` 导出，客户端通过本机 HTTP 调用
@@ -134,7 +164,7 @@ with connect_shared(probe="电机板", name="测试脚本") as device:
 返回记录，使用 `job_status(job_id)` 查询。SDK close 后仍可查询该后台的任务结果，
 但普通硬件调用需要重新显式 connect；close 不释放整个设备，也不取消任务。
 SDK 会话在后台管理页标记为 `sdk`，适用相同的会话续期、订阅与结束会话规则。
-此阶段后台协议为 5，使用新源码前需要显式退出旧开发后台。
+此阶段后台协议为 6，使用新源码前需要显式退出旧开发后台。
 
 ## 兼容边界
 

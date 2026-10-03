@@ -1105,96 +1105,8 @@ def _cli_version(port: str | None, all_history: bool = False, raw: bool = False)
         print(f"     文档: {doc_match.group(0)}")
 
 
-def _format_reg_value(data: bytes, width: int) -> int | None:
-    if width <= 8 and len(data) >= 1:
-        return data[0]
-    if width <= 16 and len(data) >= 2:
-        return int.from_bytes(data[:2], "little")
-    if len(data) >= 4:
-        return int.from_bytes(data[:4], "little")
-    return None
 
 
-def _cli_read_reg(
-    port: str | None,
-    register: str | None,
-    addr: str | None,
-    width: int,
-    count: int,
-    output_format: str,
-    raw: bool,
-    project_root: str = ".",
-    svd: str | None = None,
-    chip: str | None = None,
-    target_id: str | None = None,
-):
-    """读取内存映射寄存器。"""
-    from mklink.memory_access import read_memory
-    from mklink.registers import resolve_register
-    from mklink.peripheral_watch import load_catalog, read_item
-
-    if width != 32 or count < 1:
-        raise ValueError("Register reads require width=32 and a positive count")
-    catalog = load_catalog(project_root, svd=svd, chip=chip, target_id=target_id)
-    if catalog:
-        if count != 1 or raw or addr:
-            raise ValueError(
-                "Catalog reads take one named register/field; use read-ram for explicit raw memory"
-            )
-        item = catalog.resolve(register or "")
-        from mklink.device import connect
-
-        with connect(port=port, project_root=project_root) as device:
-            value = read_item(device, item)
-        display = {
-            "hex": f"0x{value:08X}",
-            "dec": str(value),
-            "bin": f"0b{value:032b}",
-        }.get(output_format, f"0x{value:08X} ({value})")
-        print(f"{item.name} @ 0x{item.address:08X} = {display}")
-        return
-    target = register or addr
-    if not target:
-        print("[FAIL] 请指定寄存器名或 --addr")
-        return
-    try:
-        reg = resolve_register(target, width=width)
-    except KeyError as e:
-        print(f"[FAIL] {e}")
-        return
-
-    bytes_per = max(1, width // 8)
-    if register and not register.strip().lower().startswith("0x"):
-        from mklink.device import connect
-
-        with connect(port=port, project_root=project_root) as device:
-            first = device.read_register(register)
-            data = first.to_bytes(4, "little")
-            if count > 1:
-                data += device.read_memory(reg.address + 4, 4 * (count - 1))
-        raw_resp = data.hex(" ")
-    else:
-        data, raw_resp = read_memory(port, reg.address, bytes_per * count)
-    if raw:
-        print(raw_resp.strip())
-        return
-    print(f"{reg.name} @ 0x{reg.address:08X}")
-    for i in range(count):
-        chunk = data[i * bytes_per:(i + 1) * bytes_per]
-        value = _format_reg_value(chunk, width)
-        if value is None:
-            print(raw_resp.strip())
-            return
-        suffix = f"[{i}]" if count > 1 else ""
-        if output_format == "hex":
-            display = f"0x{value:0{bytes_per * 2}X}"
-        elif output_format == "dec":
-            display = str(value)
-        elif output_format == "bin":
-            display = f"0b{value:0{width}b}"
-        else:
-            display = f"0x{value:0{bytes_per * 2}X} ({value})"
-        print(f"  {reg.name}{suffix} = {display}")
 
 
 # ---------------------------------------------------------------------------
@@ -1831,50 +1743,6 @@ def _profile_sizes(project_root: str) -> tuple[int, int]:
     return flash_size, ram_size
 
 
-def _cli_hardfault(
-    port: str | None,
-    source: str | None,
-    sp: str | None,
-    *,
-    backend: str | None = None,
-    project_root: str | None = None,
-):
-    from mklink.hardfault import FAULT_REGISTERS, addr2line, format_hardfault_report, parse_exception_stack_frame
-    from mklink.memory_access import read_memory
-    from mklink.registers import resolve_register
-
-    fault_values: dict[str, int] = {}
-    for reg_name in FAULT_REGISTERS:
-        reg = resolve_register(reg_name)
-        data, raw = read_memory(port, reg.address, 4)
-        if len(data) >= 4:
-            fault_values[reg_name] = int.from_bytes(data[:4], "little")
-        else:
-            print(f"[WARN] 无法解析 {reg_name} 响应:")
-            print(raw.strip())
-
-    frame = None
-    locations = {}
-    if sp:
-        sp_addr = int(sp, 0)
-        data, raw = read_memory(port, sp_addr, 32)
-        if len(data) >= 32:
-            frame = parse_exception_stack_frame(data)
-            if source:
-                locations = addr2line(
-                    source,
-                    frame["pc"],
-                    frame["lr"],
-                    backend=backend,
-                    project_root=project_root,
-                )
-        else:
-            print("[WARN] 无法解析异常栈帧:")
-            print(raw.strip())
-    else:
-        print("[INFO] 未指定 --sp；只读取 Fault 寄存器。CPU MSP/PSP 不是普通内存地址，不能用 read_ram 自动读取。")
-
-    print(format_hardfault_report(fault_values, frame=frame, locations=locations))
 
 
 def _cli_typeinfo(args):
@@ -2809,130 +2677,6 @@ def _cli_serial_dispatch(args):
 # --- CPU Debug Control CLI handlers ---
 
 
-def _cli_break(args):
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.debug_control import (
-        set_breakpoint, clear_breakpoint, clear_all_breakpoints,
-        read_debug_state, get_num_breakpoints,
-    )
-    port = _resolve_port(args.port)
-    if not port:
-        return
-    bridge = MKLinkSerialBridge(port)
-    try:
-        bridge.connect()
-        _init_target_bridge(bridge)
-
-        # --status: show debug state
-        if args.status:
-            state = read_debug_state(bridge)
-            print(f"CPU: {'HALTED' if state.halted else 'RUNNING'} (DHCSR=0x{state.dhcsr_raw:08X})")
-            print(f"FPB: {state.num_breakpoints} 个比较器")
-            if state.breakpoints:
-                for bp in state.breakpoints:
-                    print(f"  [{bp.index}] 0x{bp.address:08X} (enabled)")
-            else:
-                print("  无活跃断点")
-            return
-
-        # --list: list breakpoints
-        if args.list:
-            state = read_debug_state(bridge)
-            print(f"FPB 硬件断点 ({state.num_breakpoints} 个槽位):")
-            if state.breakpoints:
-                for bp in state.breakpoints:
-                    print(f"  [{bp.index}] 0x{bp.address:08X}")
-            else:
-                print("  无活跃断点")
-            return
-
-        # --clear: clear breakpoints
-        if args.clear is not None:
-            if args.clear == "all":
-                n = clear_all_breakpoints(bridge)
-                print(f"[OK] 已清除 {n} 个断点")
-            else:
-                try:
-                    slot = int(args.clear)
-                except ValueError:
-                    print(f"[FAIL] 无效槽位号: {args.clear}")
-                    return
-                clear_breakpoint(bridge, slot)
-                print(f"[OK] 已清除断点 [{slot}]")
-            return
-
-        # Set breakpoint
-        if not args.target:
-            print("[FAIL] 请指定断点目标（函数名或地址），或使用 --list / --clear / --status")
-            return
-
-        target = args.target
-        # Try parsing as hex address
-        address = None
-        if target.startswith("0x") or target.startswith("0X"):
-            try:
-                address = int(target, 16)
-            except ValueError:
-                pass
-
-        # If not an address, resolve as function symbol
-        if address is None:
-            source = args.source
-            if not source:
-                # Try to find AXF from project config
-                from mklink.project_config import load_config
-                config = load_config(".")
-                if config and config.get("axf_path"):
-                    source = config["axf_path"]
-            if not source:
-                print(f"[FAIL] 需要 --source 指定 AXF 文件来解析函数名 '{target}'")
-                return
-
-            from mklink.debug_control import (
-                resolve_function_address,
-                search_functions,
-            )
-
-            try:
-                address = resolve_function_address(
-                    source,
-                    target,
-                    backend=getattr(args, "elf_backend", None),
-                    project_root=_project_root_from_args(args),
-                )
-            except Exception as e:
-                print(f"[FAIL] {e}")
-                return
-
-            if address is None:
-                import re
-
-                similar = [
-                    item["name"] for item in search_functions(
-                        source,
-                        re.escape(target),
-                        max_results=5,
-                        backend=getattr(args, "elf_backend", None),
-                        project_root=_project_root_from_args(args),
-                    )
-                ]
-                print(f"[FAIL] 未找到函数 '{target}'")
-                if similar:
-                    print(f"  相似函数: {', '.join(similar)}")
-                return
-
-        try:
-            slot = set_breakpoint(bridge, address, args.slot)
-            print(f"[OK] 断点已设置: [{slot}] @ 0x{address:08X}", end="")
-            if target and not target.startswith("0x"):
-                print(f" ({target})")
-            else:
-                print()
-        except (ValueError, RuntimeError) as e:
-            print(f"[FAIL] {e}")
-
-    finally:
-        bridge.close()
 
 
 def _cli_gui(args):
@@ -3388,7 +3132,7 @@ def main():
     read_reg_parser.add_argument("--width", type=int, choices=[8, 16, 32], default=32, help="位宽（默认 32）")
     read_reg_parser.add_argument("--count", type=int, default=1, help="连续读取数量（默认 1）")
     read_reg_parser.add_argument("--format", choices=["hex", "dec", "bin", "both"], default="both", help="显示格式")
-    read_reg_parser.add_argument("--raw", action="store_true", help="直接输出设备原始响应")
+    read_reg_parser.add_argument("--raw", action="store_true", help="输出解码后的十六进制字节（共享后台）")
     read_reg_parser.add_argument("--project-root", default=".")
     read_reg_parser.add_argument("--svd")
     read_reg_parser.add_argument("--chip")
@@ -3956,7 +3700,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -4091,20 +3835,6 @@ def main():
         return _cli_power_read(args.port, as_json=args.json)
     elif args.command == "version":
         _cli_version(args.port, all_history=args.all, raw=args.raw)
-    elif args.command == "read-reg":
-        _cli_read_reg(
-            args.port,
-            args.register,
-            args.addr,
-            args.width,
-            args.count,
-            args.format,
-            args.raw,
-            args.project_root,
-            args.svd,
-            args.chip,
-            args.target_id,
-        )
     elif args.command in ("dump-memory", "dump"):
         return _cli_dump_memory(
             args.port,
@@ -4149,14 +3879,6 @@ def main():
             backend=args.elf_backend,
             project_root=args.project_root,
         )
-    elif args.command == "hardfault":
-        _cli_hardfault(
-            args.port,
-            args.source,
-            args.sp,
-            backend=args.elf_backend,
-            project_root=args.project_root,
-        )
     elif args.command == "typeinfo":
         _cli_typeinfo(args)
     elif args.command == "memmap":
@@ -4175,8 +3897,6 @@ def main():
         _cli_modbus_dispatch(args)
     elif args.command == "serial":
         _cli_serial_dispatch(args)
-    elif args.command == "break":
-        _cli_break(args)
     elif args.command == "serve":
         _cli_serve(args)
     elif args.command == "gui":

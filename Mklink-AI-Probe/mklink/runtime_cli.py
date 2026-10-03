@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break'}
 
 
 def run(args):
@@ -26,6 +26,26 @@ def run(args):
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
             or getattr(args, 'port_http', 0) != 0 or getattr(args, 'max_points', 500) != 500):
         raise SystemExit('Shared visualization uses the backend GUI; private host/port/chart overrides are unsupported')
+    debug_arguments = None
+    if args.command == 'break':
+        selected = [bool(args.target), args.list, args.status, args.clear is not None]
+        if sum(selected) != 1 or (args.slot is not None and not args.target):
+            raise SystemExit('Choose exactly one breakpoint target, --list, --status or --clear; --slot is for set only')
+        action = 'set' if args.target else 'list' if args.list else 'status' if args.status else 'clear_all' if args.clear == 'all' else 'clear'
+        debug_arguments = {'action': action}
+        if args.target:
+            debug_arguments['target'] = args.target
+        try:
+            slot = int(args.clear) if action == 'clear' else args.slot
+            if slot is not None:
+                if slot < 0:
+                    raise ValueError()
+                debug_arguments['slot'] = slot
+        except ValueError:
+            raise SystemExit('Breakpoint slot must be a nonnegative integer')
+    if args.command == 'read-reg':
+        if bool(args.register) == (args.addr is not None) or args.width != 32 or not 1 <= args.count <= 1024:
+            raise SystemExit('Specify one register or --addr, width=32, count=1..1024')
     client = RuntimeClient(project_root=project or '.', kind='cli', name='CLI '+args.command)
     owned_stream = None
     try:
@@ -50,6 +70,26 @@ def run(args):
                 result = request(client.info, 'GET', '/api/runtime/jobs/'+result['job_id'])
             if result['state'] != 'succeeded':
                 raise RuntimeErrorResponse(json.dumps(result, ensure_ascii=False))
+        elif args.command == 'read-reg':
+            result = client.call('register_snapshot', {'register': args.register, 'address': args.addr,
+                                'width': args.width, 'count': args.count, 'raw': args.raw})
+            if args.raw:
+                print(bytes.fromhex(result['data_hex']).hex(' '))
+            else:
+                print(f"{result['name']} @ 0x{result['address']:08X}")
+                for index, value in enumerate(result['values']):
+                    display = {'hex': f'0x{value:08X}', 'dec': str(value), 'bin': f'0b{value:032b}'}.get(args.format, f'0x{value:08X} ({value})')
+                    suffix = f'[{index}]' if args.count > 1 else ''
+                    print(f"  {result['name']}{suffix} = {display}")
+            return
+        elif args.command == 'hardfault':
+            result = client.call('fault_snapshot', {'sp': args.sp})
+            if args.sp is None:
+                print('[INFO] No --sp supplied; fault registers only. The target was not paused.')
+            print(result['report'])
+            return
+        elif args.command == 'break':
+            result = client.call('breakpoints', debug_arguments)
         elif args.command == 'device-status':
             result = client.call('device_status')
         elif args.command in {'halt', 'resume', 'step'}:
