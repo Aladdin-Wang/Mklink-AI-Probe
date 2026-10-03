@@ -3668,7 +3668,7 @@ def create_app(
     # Static frontend (Vue 3 dist) — catch-all, lowest priority
     # Registered AFTER all /api/* and /ws routes so they take precedence.
     # ===================================================================
-    # AI Session Management
+    # Resource management and browser-owned server lifecycle
     # ===================================================================
 
     @app.get("/api/resources/status")
@@ -3768,54 +3768,6 @@ def create_app(
             pass
         finally:
             browser_sessions.release(client_id)
-
-    @app.post("/api/session/acquire")
-    async def session_acquire(
-        session_id: str = Body(...),
-        resources: list[str] = Body(default=["mklink_bridge"]),
-        ttl: float = Body(default=60.0),
-    ):
-        """AI agent acquires resource lease(s)."""
-        from mklink.remote.resource_manager import ResourceGroup, ResourceError as RErr
-        rm = _state["resource_manager"]
-        group_map = {
-            "mklink_bridge": ResourceGroup.MKLINK_BRIDGE,
-            "target_debug": ResourceGroup.TARGET_DEBUG,
-            "serial_port": ResourceGroup.SERIAL_PORT,
-            "modbus_port": ResourceGroup.MODBUS_PORT,
-        }
-        owner = f"ai:session:{session_id}"
-        requested = [(name, group_map[name]) for name in resources if name in group_map]
-        try:
-            rm.acquire_many(
-                [group for _name, group in requested],
-                owner,
-                ttl=ttl,
-                preempt=False,
-            )
-            return {
-                "status": "acquired",
-                "owner": owner,
-                "resources": [name for name, _group in requested],
-            }
-        except RErr as e:
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": e.conflict_owner, "resource": e.resource.value},
-            )
-
-    @app.post("/api/session/release")
-    async def session_release(session_id: str = Body(...)):
-        """AI agent releases its lease(s)."""
-        rm = _state["resource_manager"]
-        released = rm.release(f"ai:session:{session_id}")
-        return {"status": "released", "resources": [r.value for r in released]}
-
-    @app.get("/api/session/status")
-    async def session_status():
-        """Current resource allocation status."""
-        rm = _state["resource_manager"]
-        return rm.get_status()
 
     # ===================================================================
 

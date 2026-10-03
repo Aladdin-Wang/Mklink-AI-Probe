@@ -24,6 +24,20 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+def test_resources_status_preserves_owner_without_legacy_session_routes(tmp_path):
+    from mklink.remote.resource_manager import ResourceGroup
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['resource_manager']
+    lease = manager.acquire(ResourceGroup.MKLINK_BRIDGE, 'user:dashboard:rtt')
+    assert not any(getattr(route, 'path', '').startswith('/api/session/') for route in app.routes)
+    with TestClient(app) as client:
+        assert client.get('/api/resources/status').json() == manager.get_status()
+        for action in ['acquire', 'release']:
+            response = client.post('/api/session/' + action, json={'session_id': 'unused'})
+            assert response.status_code in (404, 405)
+            assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is lease
+
+
 @pytest.mark.parametrize('operation', ['halt', 'resume', 'step'])
 def test_debug_control_keeps_event_loop_responsive_until_worker_finishes(tmp_path, operation):
     app = create_app(auth_token=None, project_root=str(tmp_path))

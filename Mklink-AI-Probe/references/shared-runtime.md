@@ -94,6 +94,9 @@ python -m mklink runtime stop --probe "电机板" --confirm
 该下载器后台及其采集；不影响其他下载器。异常后的操作结果可能未知，不能把
 请求超时当成硬件命令已取消，也不能自动重试写操作。
 
+旧 `/api/session/acquire`、`release`、`status` 已删除，不提供兼容转发。
+程序接入使用共享客户端的 connect/close；资源占用查询统一使用 `/api/resources/status`。
+
 ## 跨进程端口锁
 
 CMD、通用串口和 Modbus 共用同一端口锁，按端口分别互斥。默认注册目录在当前用户的

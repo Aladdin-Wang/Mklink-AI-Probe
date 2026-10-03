@@ -18,7 +18,7 @@ const status = ref<ResourceStatus>({})
 export function useResourceStatus() {
   async function refresh() {
     try {
-      const resp = await fetch(`${API_BASE}/api/session/status`)
+      const resp = await fetch(`${API_BASE}/api/resources/status`)
       if (resp.ok) {
         status.value = await resp.json()
       }

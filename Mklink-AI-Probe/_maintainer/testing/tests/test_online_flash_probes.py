@@ -1159,36 +1159,6 @@ def test_dashboard_preempt_stop_failure_restores_old_lease():
     ).owner == "user:dashboard:rtt"
 
 
-def test_session_acquire_failure_preserves_same_ai_owner_existing_lease():
-    from mklink.remote.resource_manager import ResourceGroup
-
-    managers = {
-        name: SimpleNamespace(running=False, start=MagicMock(), stop=MagicMock())
-        for name in ("rtt", "systemview", "superwatch", "vofa", "serial", "modbus")
-    }
-    client, state = _dashboard_client(managers)
-    manager = state["resource_manager"]
-    old_lease = manager.acquire(
-        ResourceGroup.MKLINK_BRIDGE,
-        "ai:session:existing",
-        ttl=30,
-    )
-    manager.acquire(ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt")
-
-    response = client.post(
-        "/api/session/acquire",
-        json={
-            "session_id": "existing",
-            "resources": ["mklink_bridge", "target_debug"],
-            "ttl": 60,
-        },
-    )
-
-    assert response.status_code == 409
-    assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is old_lease
-    assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG).owner == "user:dashboard:rtt"
-
-
 @pytest.mark.parametrize(
     ("dashboard", "manager_class", "start_method"),
     [

@@ -249,7 +249,7 @@ class RuntimeGate:
             method not in {"GET", "HEAD", "OPTIONS"}
             or path in {"/api/device/core-registers", "/api/device/hardfault", "/api/device/hardfault-detail",
                         "/api/dash/superwatch/inspect", "/api/probe/firmware-check"}
-        ) and not path.startswith(("/api/browser-session/", "/api/session/", "/api/runtime/"))
+        ) and not path.startswith(("/api/browser-session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)
         from mklink.runtime_jobs import PATHS, executing_job
