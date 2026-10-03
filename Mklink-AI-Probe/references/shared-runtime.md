@@ -38,6 +38,11 @@ MCP 提供发现/连接、设备状态、内存和整数变量读写、寄存器
 `client_name` 可用于管理页识别不同 AI 客户端。
 `gui_call` 只接受 `ping` 声明的能力，不支持任意 REST、Python 方法或原始命令。
 
+`get_power(probe=设备ID或别名)` 只读取下载器电压/电流遥测，无需先连接目标。
+省略 probe 时使用当前已附着的下载器，未附着时须只有一只可选下载器；显式查询
+其他下载器不切换当前会话。查询走对应共享后台，不改变供电或初始化目标。
+CDC 采集期间返回 busy，需显式停止后查询；不会为查询停止流或自动恢复连接。
+
 GUI 已在采集时，AI 使用以下能力：
 
 - `superwatch_start` 携带空参数：订阅现有采集，不重启；`superwatch_values`
@@ -109,7 +114,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed` 均通过共享后台运行，共 19 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version` 均通过共享后台运行，共 21 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -123,6 +128,8 @@ python -m mklink step --probe "电机板"
 python -m mklink resume --probe "电机板"
 python -m mklink debug-speed low --probe "电机板"
 python -m mklink debug-speed medium --probe "电机板" --save
+python -m mklink power-read --probe "电机板" --json
+python -m mklink version --probe "电机板" --raw
 ```
 
 未指定工程/符号时采用后台当前配置。`write-ram` 在同一次共享操作内写入并回读

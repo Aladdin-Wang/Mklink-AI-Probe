@@ -12,6 +12,37 @@ from test_shared_device import shared
 from test_shared_runtime import runtime
 
 
+def test_power_query_uses_selected_or_attached_backend_without_implicit_target(monkeypatch):
+    created, queries = [], []
+    class ProbeClient:
+        info = {'port': 8765, 'token': 'existing'}
+        def __init__(self, **options):
+            created.append(options)
+        def connect(self, **options):
+            return {'attached': True}
+        def close(self):
+            pass
+    def query(capability, **kwargs):
+        queries.append((capability, kwargs))
+        return {'voltage_mv': 3300}
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', ProbeClient)
+    monkeypatch.setattr('mklink.runtime.query_probe', query)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            assert (await mcp.call_tool('get_power', {'probe': 'second'})).data['voltage_mv'] == 3300
+            assert not created
+            await mcp.call_tool('connect', {'probe': 'first'})
+            await mcp.call_tool('get_power', {})
+            await mcp.call_tool('get_power', {'probe': 'second'})
+            await mcp.call_tool('get_power', {})
+    asyncio.run(scenario())
+    assert len(created) == 1
+    assert queries == [('power_read', {'info': None, 'probe': 'second'}),
+                       ('power_read', {'info': ProbeClient.info, 'probe': None}),
+                       ('power_read', {'info': None, 'probe': 'second'}),
+                       ('power_read', {'info': ProbeClient.info, 'probe': None})]
+
+
 def test_tools_before_connect_do_not_create_implicit_client(monkeypatch):
     created = []
     class ProbeClient:

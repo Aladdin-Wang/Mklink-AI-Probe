@@ -995,29 +995,9 @@ def _parse_version_response(text: str) -> tuple[str | None, list[str]]:
     return current, history
 
 
-def _cli_power_read(port: str | None, as_json: bool = False) -> int:
-    """Probe-only telemetry; deliberately avoids target/SWD initialization."""
-    import contextlib
+def _print_power_read(result: dict, as_json: bool = False) -> int:
     import json
 
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.power import read_power
-
-    bridge = None
-    try:
-        # Keep --json stdout machine-readable even when discovery logs.
-        with contextlib.redirect_stdout(sys.stderr):
-            bridge = MKLinkSerialBridge(_resolve_port(port))
-            if not bridge.connect():
-                raise ConnectionError("Cannot connect to the probe command port")
-            result = read_power(bridge)
-    except Exception as exc:
-        print(f"[FAIL] {exc}", file=sys.stderr)
-        return 1
-    finally:
-        if bridge is not None:
-            with contextlib.redirect_stdout(sys.stderr):
-                bridge.close()
     if as_json:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -1032,31 +1012,7 @@ def _cli_power_read(port: str | None, as_json: bool = False) -> int:
     return 0
 
 
-def _cli_version(port: str | None, all_history: bool = False, raw: bool = False):
-    """读取烧录器自身固件版本（cmd.get_version）。
-
-    默认输出当前版本号；--all 输出完整版本历史；
-    --raw 输出设备原始响应（不做解析）。
-    """
-    from mklink.bridge import MKLinkSerialBridge
-
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return
-
-    try:
-        print("[*] 发送 cmd.get_version()")
-        resp = bridge.send_command("cmd.get_version()", timeout=5.0)
-    except Exception as e:
-        print(f"[FAIL] {e}")
-        bridge.close()
-        return
-
-    bridge.close()
-
+def _print_probe_version(resp: str, all_history: bool = False, raw: bool = False):
     if raw:
         print(resp.rstrip())
         return
@@ -3690,7 +3646,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3810,10 +3766,6 @@ def main():
             _resolve_project_root(args), port=args.port, duration=args.duration,
             out_path=args.out, no_browser=args.no_browser,
         )
-    elif args.command == "power-read":
-        return _cli_power_read(args.port, as_json=args.json)
-    elif args.command == "version":
-        _cli_version(args.port, all_history=args.all, raw=args.raw)
     elif args.command in ("dump-memory", "dump"):
         return _cli_dump_memory(
             args.port,

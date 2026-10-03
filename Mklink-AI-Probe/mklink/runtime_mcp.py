@@ -60,6 +60,19 @@ def build_server():
         return inventory()
 
     @server.tool()
+    def get_power(probe: str | None = None) -> dict:
+        """Read probe VCC telemetry via the shared backend, without target initialization.
+
+        Does not change power or clocks. Requires idle CDC; never stops capture.
+        Uses the attached probe when omitted, otherwise select a probe ID/alias.
+        """
+        from mklink.runtime import query_probe
+        with lock:
+            current = holder.get('client')
+            info = current.info if current and not probe else None
+        return query_probe('power_read', info=info, probe=probe)
+
+    @server.tool()
     def set_probe_alias(probe: str, alias: str) -> dict:
         """Set this computer's alias for a stable probe ID or COM port. Does not change firmware."""
         from mklink.probes import set_alias

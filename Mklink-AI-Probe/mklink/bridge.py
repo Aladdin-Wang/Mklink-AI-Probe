@@ -117,7 +117,7 @@ class MKLinkSerialBridge:
             for line in response.splitlines()
         )
 
-    def connect(self) -> bool:
+    def connect(self, *, recover_stream: bool = True) -> bool:
         """打开串口并同步设备状态（等待 >>> 提示符）。"""
         self._transport_error = None
         # 进程级互斥：获取文件锁
@@ -177,6 +177,10 @@ class MKLinkSerialBridge:
             self._serial.reset_input_buffer()
             with self._buffer_lock:
                 self._response_buffer.clear()
+
+        if not recover_stream:
+            self.close()
+            return False
 
         # --- 正常握手失败，尝试流模式恢复 ---
         print("[WARN] 握手超时，设备可能处于流模式，尝试恢复...")

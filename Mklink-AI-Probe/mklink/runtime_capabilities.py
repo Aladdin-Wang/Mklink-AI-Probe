@@ -44,6 +44,10 @@ for stream in ('serial', 'modbus', 'vofa'):
     CAPABILITIES[f'{stream}_status'] = ('GET', f'/api/dash/{stream}/status')
 
 
+PROBE_QUERIES = {'power_read': '/api/probe/power-read', 'probe_version': '/api/probe/version'}
+CAPABILITIES.update({name: ('POST', path) for name, path in PROBE_QUERIES.items()})
+
+
 def validate_arguments(capability, arguments):
     """Reject malformed/range-overflow writes before a device is touched."""
     arguments = dict(arguments)

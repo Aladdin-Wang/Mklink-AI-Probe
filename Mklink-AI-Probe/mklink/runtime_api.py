@@ -261,7 +261,7 @@ class RuntimeGate:
             return await reject(409, 'An exclusive job is active; inspect its result before further hardware operations')
         from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
-        if path.startswith(('/api/device/', '/api/dash/')) and not path.endswith(('/stop', '/disconnect')):
+        if path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) and not path.endswith(('/stop', '/disconnect')):
             try:
                 c.require_identity()
             except HTTPException as exc:
@@ -334,7 +334,7 @@ class RuntimeGate:
         if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
             if active:
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
-        if (path.startswith("/api/device/") and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
+        if (path.startswith(("/api/device/", "/api/probe/")) and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
             if active:
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
         async def observe(message):
@@ -502,6 +502,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     app.router.routes.insert(0, Mount("/_runtime", app=api))
     app.add_middleware(RuntimeGate, control=control)
     app.state.shared_runtime = control
+    from mklink.runtime_probe import create_probe_router
+    app.router.routes[0:0] = create_probe_router(state).routes
     from mklink.runtime_management import install_management
     install_management(app, control)
     from mklink.runtime_jobs import install_jobs

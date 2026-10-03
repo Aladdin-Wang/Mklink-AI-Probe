@@ -5,6 +5,7 @@ from __future__ import annotations
 from mklink import bridge as bridge_module
 from mklink.bridge import MKLinkSerialBridge
 from mklink._types import DeviceState
+import pytest
 
 
 def test_mklink_bridges_lock_each_cmd_port_independently(tmp_path, monkeypatch):
@@ -50,7 +51,8 @@ def test_reader_uses_available_bytes_without_waiting_for_a_fixed_4096_chunk():
 
     assert serial_port.read_sizes == [1, 100, 65536]
     assert bridge.drain_stream_bytes() == b"xxx"
-def test_connect_uses_staged_fast_timeouts_before_stream_recovery(monkeypatch):
+@pytest.mark.parametrize('recover_stream', [True, False])
+def test_connect_uses_staged_fast_timeouts_before_optional_stream_recovery(monkeypatch, recover_stream):
     class PortLock:
         def acquire(self):
             return True
@@ -110,7 +112,12 @@ def test_connect_uses_staged_fast_timeouts_before_stream_recovery(monkeypatch):
     bridge._prompt_event = PromptEvent()
     monkeypatch.setattr(bridge, "_verify_identity", lambda: True)
 
-    assert bridge.connect()
+    assert bridge.connect(recover_stream=recover_stream) is recover_stream
+    if not recover_stream:
+        assert bridge._prompt_event.timeouts == [0.3, 0.7]
+        assert serial_port.writes == [b'\n', b'\n']
+        assert not serial_port.is_open and bridge.state == DeviceState.DISCONNECTED
+        return
     assert bridge._prompt_event.timeouts == [0.3, 0.7, 1.0]
     assert serial_port.writes[:2] == [b"\n", b"\n"]
     # A probe left in SystemView stream mode must receive its binary STOP

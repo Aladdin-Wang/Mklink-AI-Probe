@@ -35,6 +35,35 @@ def test_cli_read_routes_to_shared_backend(adapter):
     assert ('read_memory',{'address':'0x20000000','size':4}) in adapter
 
 
+@pytest.mark.parametrize('command', ['power-read', 'version'])
+def test_probe_queries_do_not_create_target_session_or_retry(adapter, monkeypatch, capsys, command):
+    import sys
+    from mklink import cli
+    seen = []
+    def query(capability, **kwargs):
+        seen.append((capability, kwargs))
+        raise RuntimeErrorResponse('unavailable; no replay')
+    monkeypatch.setattr('mklink.runtime.query_probe', query)
+    monkeypatch.setattr(sys, 'argv', ['mklink', command, '--probe', 'chosen'])
+    with pytest.raises(SystemExit, match='no replay'):
+        cli.main()
+    assert seen == [('power_read' if command == 'power-read' else 'probe_version', {'probe': 'chosen', 'port': None})]
+    assert not adapter and not capsys.readouterr().out
+
+
+@pytest.mark.parametrize('flag', ['', '--all', '--raw'])
+def test_version_cli_retains_output_options_without_direct_bridge(adapter, monkeypatch, capsys, flag):
+    import sys
+    from mklink import cli
+    response = 'cmd.get_version()\nV4.5.2\nLatest changes\nV4.5.1\nOlder changes\n>>> '
+    monkeypatch.setattr('mklink.runtime.query_probe', lambda *a, **kw: {'raw': response})
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'version', '--probe', 'chosen'] + ([flag] if flag else []))
+    cli.main()
+    output = capsys.readouterr().out
+    assert 'V4.5.2' in output and 'V4.5.1' in output and not adapter
+    assert ('Older changes' in output) is bool(flag)
+
+
 @pytest.mark.parametrize('save', [False, True])
 def test_debug_speed_cli_uses_selected_shared_probe_and_backend_persistence(adapter, monkeypatch, save):
     import sys

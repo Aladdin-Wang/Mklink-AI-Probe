@@ -187,6 +187,18 @@ def browser_url(info: dict) -> str:
     return f"http://127.0.0.1:{info['port']}/_runtime/open#{info['token']}"
 
 
+def query_probe(capability, *, info=None, probe=None, port=None):
+    """One probe-only query; never attach/initialize a target or retry a command."""
+    from mklink.runtime_capabilities import PROBE_QUERIES
+    if capability not in PROBE_QUERIES:
+        raise ValueError('Unsupported probe query')
+    if info is not None and (probe or port):
+        raise ValueError('Specify an existing runtime or a probe selector, not both')
+    if info is None:
+        info = ensure_runtime(probe=probe, device_port=port)
+    return request(info, 'POST', PROBE_QUERIES[capability], {})
+
+
 def job_status(info, job_id=None):
     """Query a retained result without attaching or reconnecting hardware."""
     if info is None:

@@ -9,10 +9,20 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version'}
 
 
 def run(args):
+    if args.command in {'power-read', 'version'}:
+        from mklink.runtime import query_probe
+        from mklink.cli import _print_power_read, _print_probe_version
+        try:
+            result = query_probe('power_read' if args.command == 'power-read' else 'probe_version',
+                                 probe=args.probe, port=args.port)
+        except (RuntimeErrorResponse, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        return (_print_power_read(result, args.json) if args.command == 'power-read'
+                else _print_probe_version(result['raw'], args.all, args.raw))
     project = getattr(args, 'project_root', None)
     if project in (None, '.'):
         project = getattr(args, 'project_root_positional', None)
