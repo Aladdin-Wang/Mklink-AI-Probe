@@ -40,7 +40,7 @@
 | `web-entry` | 安装跨平台 URL Handler、自动生成 U 盘/桌面快速启动页、启动/停止其自有 Web 服务 |
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `remote` | 工程师侧直连 VPN/局域网站点：注册/选择、状态、能力、重连、原子上传与高风险操作 |
-| `project-init` | 初始化项目配置（自动检测 IAR/Keil、MCU、COM 口） |
+| `project-init` | 离线解析 IAR/Keil 工程并初始化配置；不枚举或连接下载器 |
 | `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
 | `project-info` | 显示项目配置状态 |
 | `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
@@ -70,7 +70,7 @@
 | `rtt_storage_mode=1` | 静态 RTT 编译（详见 [references/rtt-static-mode.md](rtt-static-mode.md)） |
 | `copy-flm` | 拷贝 profile/工程指定的 FLM 到 MICROKEEN 磁盘 |
 | `keil-parse` / `iar-parse` | 解析 Keil/IAR 工程文件 |
-| `discover` | 发现 MKLink 端口 |
+| `probes list` | 被动枚举下载器身份、别名与当前端口 |
 | `test --port COM6` | 测试连接 |
 | `modbus` | Modbus RTU 调试（scan/read/write/poll/monitor/dashboard/pointmap） |
 | `serial` | 通用 UART/RS485 串口调试；MKLink 仅隐藏 MI_04 命令口 |

@@ -105,23 +105,12 @@ def test_discover_all_command_ports_skips_non_command_and_bluetooth(monkeypatch)
     ]
 
 
-def test_discover_all_command_ports_keeps_legacy_identity_fallback(monkeypatch):
-    ports = [
-        port("COM44", hwid="USB VID:PID=0D28:0202", vid=0x0D28, pid=0x0202),
-        port("COM45", hwid="USB VID:PID=0D28:0202", vid=0x0D28, pid=0x0202),
-    ]
-    probed = []
-    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
-    monkeypatch.setattr(
-        discovery,
-        "_probe_port",
-        lambda device: probed.append(device) or device == "COM45",
-    )
-
-    assert [item.device for item in discovery.discover_mklink_command_ports()] == [
-        "COM45"
-    ]
-    assert probed == ["COM44", "COM45"]
+def test_missing_interface_metadata_never_probes_serial_ports(monkeypatch):
+    ports = [port('COM44', vid=0x0D28, pid=0x0202), port('COM45', hwid='USB OTHER')]
+    monkeypatch.setattr(discovery.list_ports, 'comports', lambda: ports)
+    monkeypatch.setattr(discovery, '_probe_port', lambda *_: (_ for _ in ()).throw(AssertionError('unexpected serial I/O')))
+    assert discovery.discover_mklink_command_ports() == []
+    assert discovery.find_mklink_cdc_port() is None
 
 
 def test_discovery_uses_mi04_from_the_requested_composite_device(monkeypatch):
@@ -146,92 +135,20 @@ def test_discovery_uses_mi04_from_the_requested_composite_device(monkeypatch):
     assert discovery.find_mklink_cdc_port(serial_number="probe-v4") == "COM55"
 
 
-def test_discovery_keeps_automatic_fallback_for_a_logical_probe_id(monkeypatch):
-    ports = [
-        port(
-            "COM55",
-            vid=0x0D28,
-            pid=0x0202,
-            serial_number="usb-serial",
-            location="1-2:x.4",
-        ),
-    ]
-    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
-
-    assert discovery.find_mklink_cdc_port(serial_number="logical-probe-id") == "COM55"
+def test_missing_serial_never_falls_back_to_another_probe(monkeypatch):
+    ports = [port('COM55', vid=0x0D28, pid=0x0202, serial_number='present', location='1-2:x.4')]
+    monkeypatch.setattr(discovery.list_ports, 'comports', lambda: ports)
+    assert discovery.find_mklink_cdc_port(serial_number='missing') is None
 
 
-def test_discovery_probes_usb_before_virtual_and_skips_bluetooth(monkeypatch):
-    ports = [
-        port("COM98", hwid="BTHENUM\\device", manufacturer="Microsoft"),
-        port("COM9", hwid="VSBC\\device", manufacturer="ELTIMA Software"),
-        port("COM228", hwid="USB VID:PID=0D28:0202", vid=0x0D28, pid=0x0202),
-        port("COM227", hwid="USB VID:PID=0D28:0202", vid=0x0D28, pid=0x0202),
-    ]
-    probed = []
-    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
-    monkeypatch.setattr(
-        discovery,
-        "_probe_port",
-        lambda device: probed.append(device) or device == "COM227",
-    )
-
-    assert discovery.find_mklink_cdc_port() == "COM227"
-    assert probed == ["COM228", "COM227"]
-
-
-def test_discovery_probes_composite_interfaces_with_same_serial(monkeypatch):
-    ports = [
-        port(
-            "COM221",
-            hwid="USB VID:PID=0D28:0202",
-            vid=0x0D28,
-            pid=0x0202,
-            serial_number="probe-1",
-        ),
-        port(
-            "COM220",
-            hwid="USB VID:PID=0D28:0202",
-            vid=0x0D28,
-            pid=0x0202,
-            serial_number="probe-1",
-        ),
-        port(
-            "COM219",
-            hwid="USB VID:PID=0D28:0202",
-            vid=0x0D28,
-            pid=0x0202,
-            serial_number="probe-1",
-        ),
-    ]
-    probed = []
-    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
-    monkeypatch.setattr(
-        discovery,
-        "_probe_port",
-        lambda device: probed.append(device) or device == "COM220",
-    )
-
-    assert discovery.find_mklink_cdc_port(serial_number="probe-1") == "COM220"
-    assert probed == ["COM221", "COM220"]
-
-
-def test_discovery_excludes_a_cmd_port_claimed_by_another_instance(monkeypatch):
-    ports = [
-        port("COM46", hwid="USB VID:PID=0D28:0202"),
-        port("COM47", hwid="USB VID:PID=0D28:0202"),
-        port("COM228", hwid="USB VID:PID=0D28:0202"),
-    ]
-    probed = []
-    monkeypatch.setattr(discovery.list_ports, "comports", lambda: ports)
-    monkeypatch.setattr(
-        discovery,
-        "_probe_port",
-        lambda device: probed.append(device) or device == "COM228",
-    )
-
-    assert discovery.find_mklink_cdc_port(exclude_ports={"com46"}) == "COM228"
-    assert probed == ["COM47", "COM228"]
+def test_multiple_command_ports_require_unique_identity(monkeypatch):
+    ports = [port('COM55', vid=0x0D28, pid=0x0202, serial_number='one', location='1-2:x.4'),
+             port('COM66', vid=0x0D28, pid=0x0202, serial_number='two', location='1-3:x.4')]
+    monkeypatch.setattr(discovery.list_ports, 'comports', lambda: ports)
+    assert discovery.find_mklink_cdc_port() is None
+    assert discovery.find_mklink_cdc_port(serial_number='TWO') == 'COM66'
+    ports[1].serial_number='one'
+    assert discovery.find_mklink_cdc_port(serial_number='one') is None
 
 
 def test_identity_response_rejects_a_generic_target_uart_prompt():

@@ -58,7 +58,7 @@ python -m mklink rtt
 
 | 场景 | 处理方式 |
 |------|----------|
-| COM 口不存在 | `python -m mklink discover` 查找端口 |
+| COM 口不存在 | `python -m mklink probes list` 查找端口 |
 | IDCODE 无效 | 检查 SWD 接线和目标板供电 |
 | 新 MCU 未知 / profile 缺失 | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、自定义 FLM 顺序解析；仍无匹配时运行 `python -m mklink mcu-detect`，多候选再选择内部 Flash FLM 固化 |
 | 找不到 H723/H7 等 FLM | 先确认发布包内置 Pack/DAPLink 算法；再检查已安装 Keil/Arm Pack；最后才使用显式自定义 `--flm` |

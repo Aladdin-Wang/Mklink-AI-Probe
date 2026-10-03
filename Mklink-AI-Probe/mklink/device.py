@@ -318,86 +318,26 @@ class Device:
     # ------------------------------------------------------------------
     def _connect(self) -> None:
         from mklink.bridge import MKLinkSerialBridge
-        from mklink.discovery import find_mklink_cdc_port, list_available_ports
-        from mklink.project_config import load_config, save_config
-        from mklink.serial._port import _PortLock
+        from mklink.discovery import find_mklink_cdc_port
+        from mklink.project_config import load_config
 
-        automatic = self._port is None
         config = load_config(self._project_root) or {}
-        saved_port = str(config.get("com_port") or "").strip() or None
-        candidate = self._port or self._preferred_port or saved_port
-        attempted: set[str] = set()
-        candidate_attempts: dict[str, int] = {}
-        discovery_lock = None
-
-        try:
-            while True:
-                if candidate is None:
-                    if discovery_lock is None:
-                        discovery_lock = _PortLock("mklink_auto_connect")
-                        deadline = time.monotonic() + 60.0
-                        while not discovery_lock.acquire():
-                            if time.monotonic() >= deadline:
-                                break
-                            time.sleep(0.05)
-                        else:
-                            deadline = None
-                        if deadline is not None:
-                            break
-
-                    candidate = find_mklink_cdc_port(exclude_ports=set(attempted))
-                    if candidate is None:
-                        break
-
-                candidate_key = candidate.strip().casefold()
-                attempt = candidate_attempts.get(candidate_key, 0)
-                bridge = MKLinkSerialBridge(candidate)
-                if bridge.connect():
-                    self._bridge = bridge
-                    self._port = candidate
-                    break
-                bridge.close()
-
-                # USB CDC ports can be visible a short moment before the
-                # firmware REPL is ready. Retry the same candidate once so a
-                # transient enumeration race does not require a second user
-                # click. Only exhausted candidates are excluded from the next
-                # discovery pass.
-                if attempt == 0:
-                    candidate_attempts[candidate_key] = 1
-                    time.sleep(0.15)
-                    continue
-
-                attempted.add(candidate_key)
-
-                if not automatic:
-                    break
-                candidate = None
-        finally:
-            if discovery_lock is not None:
-                discovery_lock.release()
-
-        if self._bridge is None:
-            ports = ", ".join(sorted(attempted)) or "none"
+        # COM numbers saved in a project are neither an identity nor permission
+        # to switch probes. Shared callers already supply the selected port.
+        candidate = self._port or self._preferred_port or find_mklink_cdc_port()
+        if candidate is None:
             raise DeviceNotConnectedError(
-                f"Failed to connect to an available MKLink port (tried: {ports})"
+                'No unique MKLink command port; run mklink probes list and select a probe or explicit port'
             )
-
-        if automatic and self._port != saved_port:
-            visible_ports = {
-                str(info.get("device") or "").strip().casefold()
-                for info in list_available_ports()
-            }
-            saved_port_is_present = (
-                saved_port is not None and saved_port.casefold() in visible_ports
-            )
-            if not saved_port_is_present:
-                updated = dict(config)
-                updated["com_port"] = self._port
-                try:
-                    save_config(self._project_root, updated)
-                except Exception:
-                    pass
+        bridge = MKLinkSerialBridge(candidate)
+        try:
+            if not bridge.connect():
+                raise DeviceNotConnectedError(f'Failed to connect to selected MKLink port {candidate}; no fallback attempted')
+        except BaseException:
+            bridge.close()
+            raise
+        self._bridge = bridge
+        self._port = candidate
         self._connected = True
 
         from mklink.flash import MKLinkFlash
@@ -2546,7 +2486,7 @@ def connect(
 
     Args:
         port: Explicit COM port. Auto-detected if not specified.
-        preferred_port: Soft preference used before automatic discovery.
+        preferred_port: Previously selected port; a failed connection never falls back.
         axf: Path to AXF/ELF file for symbol resolution.
         mcu: MCU profile hint (e.g. "stm32f4").
         project_root: Project root for .mklink/ config lookup.

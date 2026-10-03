@@ -8,9 +8,8 @@ import os
 
 
 def inventory() -> list[dict]:
-    from serial.tools.list_ports import comports
-    from mklink.usb_interfaces import MKLINK_COMMAND_INTERFACE, is_mklink_usb_port, usb_interface_number
-    ports = [p for p in comports() if is_mklink_usb_port(p) and usb_interface_number(p) == MKLINK_COMMAND_INTERFACE]
+    from mklink.discovery import discover_mklink_command_ports
+    ports = discover_mklink_command_ports()
     identities = [(p.vid, p.pid, (p.serial_number or "").strip().casefold()) for p in ports]
     counts = Counter(identities)
     aliases = load_aliases()

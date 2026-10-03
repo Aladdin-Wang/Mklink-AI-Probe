@@ -15,7 +15,6 @@ from serial.tools import list_ports
 
 from mklink._types import (
     DEFAULT_BAUDRATE,
-    KNOWN_MKLINK_VID_PIDS,
     MKLINK_IDENTITY_COMMAND,
     MKLINK_IDENTITY_TOKEN,
     PROMPT,
@@ -89,128 +88,29 @@ def _probe_port(port_device: str) -> bool:
                 pass
 
 
-def find_mklink_cdc_port(
-    serial_number: object = None,
-    *,
-    exclude_ports: set[str] | None = None,
-) -> str | None:
-    """自动扫描并识别 MicroLink 的 USB CDC 虚拟串口。
-
-    新版 V2/V3/V4 固件固定使用 MI_04 作为命令接口，因此有完整 USB
-    接口元数据时直接返回该端口。旧固件或元数据缺失时仍逐端口执行
-    唯一身份命令，不并发探测。
-    """
-    excluded = {str(port).strip().casefold() for port in (exclude_ports or set())}
-    ports = [
-        port_info
-        for port_info in list_ports.comports()
-        if str(port_info.device).strip().casefold() not in excluded
-    ]
-    requested_serial = str(serial_number or "").strip().casefold()
-    if requested_serial:
-        matching_ports = [
-            port_info for port_info in ports
-            if str(getattr(port_info, "serial_number", "") or "").strip().casefold()
-            == requested_serial
-        ]
-        if matching_ports:
-            ports = matching_ports
-
-    command_ports = [
-        port_info for port_info in ports
-        if is_mklink_usb_port(port_info)
-        and usb_interface_number(port_info) == MKLINK_COMMAND_INTERFACE
-    ]
-    if command_ports:
-        return command_ports[0].device
-
-    # 单轮扫描，每端口执行残留行清理和身份确认
-    # Probe physical USB serial ports first. Bluetooth RFCOMM opens can block
-    # for tens of seconds and cannot be an MKLink CDC interface.
-    probe_candidates = [
-        port_info for port_info in ports
-        if not str(getattr(port_info, "hwid", "") or "").upper().startswith("BTHENUM")
-    ]
-    def probe_priority(port_info: object) -> int:
-        mfr = str(getattr(port_info, "manufacturer", "") or "").lower()
-        if any(name in mfr for name in ("microkeen", "microlink", "mklink")):
-            return 0
-        if (
-            getattr(port_info, "vid", None),
-            getattr(port_info, "pid", None),
-        ) in KNOWN_MKLINK_VID_PIDS:
-            return 0
-        if (
-            getattr(port_info, "vid", None) is not None
-            or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
-        ):
-            return 1
-        return 2
-
-    probe_candidates.sort(key=probe_priority)
-
-    for port_info in probe_candidates:
-        if _probe_port(port_info.device):
-            return port_info.device
-
-    return None
-
-
 def discover_mklink_command_ports() -> list[object]:
-    """Return every MKLink command interface without probing unrelated ports.
+    """Passively enumerate supported USB command interfaces; never open ports.
 
-    Composite V3/V4 probes expose MI_02/MI_04/MI_06.  Only MI_04 accepts the
-    Python command protocol.  Older firmware may lack interface metadata, so
-    those physical serial candidates still use the identity handshake.  A
-    Bluetooth RFCOMM open can block for tens of seconds and can never be an
-    MKLink USB CDC command interface, therefore it is excluded entirely.
+    Missing interface metadata is not permission to send commands to arbitrary
+    UARTs. Such devices require an explicitly selected port for connection.
     """
-    ports = list(list_ports.comports())
-    results: list[object] = []
-    fallback: list[object] = []
+    return [port for port in list_ports.comports()
+            if is_mklink_usb_port(port)
+            and usb_interface_number(port) == MKLINK_COMMAND_INTERFACE]
 
-    for port_info in ports:
-        interface_number = usb_interface_number(port_info)
-        if is_mklink_usb_port(port_info):
-            if interface_number == MKLINK_COMMAND_INTERFACE:
-                results.append(port_info)
-            elif interface_number is None:
-                fallback.append(port_info)
-            continue
 
-        hwid = str(getattr(port_info, "hwid", "") or "").upper()
-        if hwid.startswith("BTHENUM"):
-            continue
-        fallback.append(port_info)
+def find_mklink_cdc_port(serial_number: object = None) -> str | None:
+    """Return a unique command port, optionally matching an exact USB serial.
 
-    def probe_priority(port_info: object) -> int:
-        mfr = str(getattr(port_info, "manufacturer", "") or "").lower()
-        desc = str(getattr(port_info, "description", "") or "").lower()
-        if any(
-            name in (mfr + " " + desc)
-            for name in ("microkeen", "microlink", "mklink")
-        ):
-            return 0
-        if (
-            getattr(port_info, "vid", None),
-            getattr(port_info, "pid", None),
-        ) in KNOWN_MKLINK_VID_PIDS:
-            return 0
-        if (
-            getattr(port_info, "vid", None) is not None
-            or str(getattr(port_info, "hwid", "") or "").upper().startswith("USB")
-        ):
-            return 1
-        return 2
-
-    fallback.sort(key=probe_priority)
-    seen = {str(item.device).strip().casefold() for item in results}
-    for port_info in fallback:
-        key = str(port_info.device).strip().casefold()
-        if key not in seen and _probe_port(port_info.device):
-            results.append(port_info)
-            seen.add(key)
-    return results
+    Missing or ambiguous identities return None. Never choose the first device,
+    probe unrelated ports, or replace a missing selection with another probe.
+    """
+    ports = discover_mklink_command_ports()
+    requested_serial = str(serial_number or '').strip().casefold()
+    if requested_serial:
+        ports = [port for port in ports
+                 if str(port.serial_number or '').strip().casefold() == requested_serial]
+    return ports[0].device if len(ports) == 1 else None
 
 
 def list_available_ports() -> list[dict]:

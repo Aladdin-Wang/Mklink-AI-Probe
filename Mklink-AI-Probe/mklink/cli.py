@@ -904,50 +904,16 @@ def _cli_rtt_integrate(
         print("\n[!] RTT 地址未找到，请重新编译项目后再次运行 `python -m mklink rtt-integrate`")
 
 
-def _resolve_port(port: str | None, project_root: str = ".") -> str:
-    """解析 COM 端口。优先级：
-    1. 显式指定的 --port 参数
-    2. config.json 中保存的 com_port（验证连通性）
-    3. 自动扫描发现新端口（更新 config）
-    """
+def _resolve_port(port: str | None) -> str:
+    """Resolve a unique passive selection without opening ports or saving config."""
     if port:
         return port
-
-    from mklink.discovery import find_mklink_cdc_port
-    from mklink.project_config import load_config, save_config
-
-    config = load_config(project_root)
-
-    # 优先使用配置中的端口
-    if config and config.get("com_port"):
-        saved_port = config["com_port"]
-        from mklink.bridge import MKLinkSerialBridge
-        bridge = MKLinkSerialBridge(saved_port)
-        if bridge.connect():
-            bridge.close()
-            return saved_port
-        bridge.close()
-        # 配置端口失败，fallback 到扫描
-
-    found = find_mklink_cdc_port()
-    if not found:
-        print("[FAIL] 未找到 MKLink 设备，请用 --port 指定")
-        raise SystemExit(1)
-
-    # 更新配置
-    if config and config.get("com_port") != found:
-        print(f"[WARN] 保存的端口 {config.get('com_port', '(空)')} 不可用，检测到新端口 {found}")
-        print(f"[AUTO] 更新配置端口为 {found}")
-        config["com_port"] = found
-        save_config(project_root, config)
-    elif not config:
-        # 没有配置文件时也尝试保存
-        try:
-            save_config(project_root, {"com_port": found})
-        except Exception:
-            pass
-
-    return found
+    from mklink.probes import select_probe
+    from mklink.runtime import RuntimeErrorResponse
+    try:
+        return select_probe()['port']
+    except RuntimeErrorResponse as error:
+        raise SystemExit(str(error)) from error
 
 
 def _init_target_bridge(bridge, project_root: str = "."):
@@ -2460,7 +2426,6 @@ def main():
     require_dependencies()
 
     # 延迟导入（依赖检查通过后再导入 pyserial 相关模块）
-    from mklink.discovery import find_mklink_cdc_port, list_available_ports
     from mklink.rtt_addr import diagnose_rtt_addr, find_rtt_addr_from_map
     from mklink.autostart import generate_autostart_config
 
@@ -2506,10 +2471,6 @@ def main():
     test_parser = subparsers.add_parser("test", help="基本连接测试")
     test_parser.add_argument("--port", required=True)
     test_parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
-
-    # discover 子命令
-    disc_parser = subparsers.add_parser("discover", help="查找 MKLink CDC 端口")
-    disc_parser.add_argument("--list", action="store_true", help="列出所有端口")
 
     # rtt-find 子命令
     rtt_parser = subparsers.add_parser("rtt-find", help="从 map/elf 查找 RTT 地址")
@@ -3280,26 +3241,6 @@ def main():
 
     if args.command == "test":
         _cli_test(args.port)
-    elif args.command == "discover":
-        if args.list:
-            for p in list_available_ports():
-                print(f"  {p['device']} — {p['description']}")
-        else:
-            port = find_mklink_cdc_port()
-            if port:
-                print(f"[OK] 发现 MKLink CDC 端口: {port}")
-                # 自动保存到 .mklink/config.json（如果配置已存在）
-                from mklink.project_config import load_config, save_config
-                config = load_config(".")
-                if config is not None:
-                    if config.get("com_port") != port:
-                        config["com_port"] = port
-                        save_config(".", config)
-                        print(f"[AUTO] 已更新配置中的端口为 {port}")
-                    else:
-                        print(f"[OK] 配置中的端口已是 {port}")
-            else:
-                print("[FAIL] 未找到 MKLink CDC 端口")
     elif args.command == "rtt-find":
         result = diagnose_rtt_addr(args.path)
         if result.addr:

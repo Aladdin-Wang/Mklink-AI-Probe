@@ -262,7 +262,7 @@ def test_failed_source_reload_requires_new_content_before_automatic_retry(tmp_pa
     with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]):
         asyncio.run(app.state.check_file_sources())
         asyncio.run(app.state.check_file_sources())
-        assert device.parse_axf.call_count == 1
+        assert device.parse_axf.call_count == 1, str(app.state.mklink_state['file_source_change'])
         assert app.state.mklink_state['file_source_change']['state'] == 'failed'
         axf.write_bytes(b'new content')
         asyncio.run(app.state.check_file_sources())

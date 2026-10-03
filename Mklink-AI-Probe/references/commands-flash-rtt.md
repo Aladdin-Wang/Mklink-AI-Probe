@@ -1,27 +1,30 @@
 # 烧录、RTT 与工程配置
 
-> 触发词：flash、rtt、project-init、discover、version、Keil、IAR、copy-flm
+> 触发词：flash、rtt、project-init、probes、version、Keil、IAR、copy-flm
 > 返回索引：[SKILL.md](../SKILL.md)
 
 ## 命令说明
 
 ### 连接管理
 
-#### `python -m mklink discover`
-发现 MKLink CDC 端口。V2/V3/V4 新固件的命令接口固定为 `MI_04`，Windows 等
-能提供复合接口元数据的平台直接选择该端口，不再依次打开 UART/RS485 发送探测命令。
-实际连接仍执行一次无副作用的身份校验，防止错误设备或异常枚举。
+#### `python -m mklink probes list`
 
-旧固件、接口元数据缺失或布局未知时回退为逐端口快速确认：先发送空行结束可能残留
-的半条 REPL 命令，再发送唯一身份命令；读取在看到 `>>>` 时立即结束，不固定等待。
+被动列出下载器的 USB 身份、当前命令端口、本机别名及身份稳定性。
+V2/V3/V4 的命令接口为 `MI_04`；枚举只读取 USB 元数据，不打开串口，
+不会向 UART/RS485 发送身份命令，也不改写工程中的 `com_port`。
+GUI 正在采集时仍可枚举。旧 `discover` 及其自动保存端口的行为已删除。
 
-检测到的端口会自动保存到 `.mklink/config.json`（如果配置已存在）。
+多只下载器须用 `--probe ID/别名` 选择各自共享后台；省略选择仅在只有一只时有效。
+已选设备缺失或身份不唯一会失败，不转连另一只。序列号缺失或重复时仍分别枚举，
+但不能保存持久别名；接口元数据缺失的旧设备不参加自动扫描。
 
-**串口操作互斥保护**：同一时刻只有一个进程可以操作串口。如果另一个进程正在使用串口，会提示"串口正被其他进程使用"。
+底层 Device 自动连接也只接受唯一被动候选，不使用工程里保存的 COM 号选择设备，
+不重试失败连接、不遍历其他设备；显式端口连接仍执行现有 Bridge 同步及接口检查。
+没有接口元数据时，仅保留低层显式端口连接，不能据此宣称支持共享身份绑定。
 
-```
-[OK] 发现 MKLink CDC 端口: COM6
-[AUTO] 已更新配置中的端口为 COM6
+```powershell
+python -m mklink probes list
+python -m mklink version --probe <probe-id>
 ```
 
 #### `python -m mklink test --port COM6`
@@ -40,7 +43,7 @@ IDCODE 响应: idcode = 0X2BA01477
 - 默认仅显示当前版本号 + 近期 3 个版本 + 文档链接。
 - `--all` 显示完整版本历史（按 V*.*.* 段切分）。
 - `--raw` 直接打印设备原始响应（不解析）。
-- 与 `discover` 类似,支持端口自动检测/持久化,配置见 `.mklink/config.json`。
+- 经共享后台查询；多设备使用 `--probe ID/别名`，不自动持久化 COM 号，采集中返回忙。
 
 ```
 [*] 连接 COM6 ...
