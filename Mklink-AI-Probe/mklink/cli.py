@@ -1345,200 +1345,6 @@ def _parse_dump_region(raw: str) -> tuple[int, int]:
     return addr, size
 
 
-def _dump_frame_payload(frame: dict) -> bytes:
-    return b"".join(data for _, data in frame.get("regions", []))
-
-
-def _dump_frame_to_jsonable(frame: dict, region_pairs: list[tuple[int, int]]) -> dict:
-    item = {
-        "timestamp_us": frame.get("timestamp_us"),
-        "format": frame.get("format"),
-        "flags": frame.get("flags", 0),
-        "regions": [],
-    }
-    for idx, data in frame.get("regions", []):
-        addr = region_pairs[idx][0] if 0 <= idx < len(region_pairs) else None
-        item["regions"].append(
-            {
-                "index": idx,
-                "address": f"0x{addr:08X}" if addr is not None else None,
-                "size": len(data),
-                "hex": data.hex(" "),
-            }
-        )
-    for key in ("total_size", "block_size", "block_index", "block_count", "block_crc_ok"):
-        if key in frame:
-            item[key] = frame[key]
-    return item
-
-
-def _cli_dump_memory(
-    port: str | None,
-    regions: list[str],
-    *,
-    period: float = 0.0,
-    frames: int = 1,
-    duration: float = 2.0,
-    save: str | None = None,
-    json_output: bool = False,
-    speed_profile: str | None = None,
-) -> int:
-    """Public dump_memory CLI.
-
-    The firmware emits binary MPMDMPMD frames. Collection is bounded by default
-    so an abandoned command does not leave the probe in stream mode forever.
-    """
-    import json
-    import time
-    from pathlib import Path
-
-    from mklink._types import DeviceState
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.dump_memory import (
-        DUMP_MEMORY_STOP_PERIOD,
-        DumpMemoryParser,
-        MAX_SAFE_REPL_REGIONS,
-        build_dump_mem_command,
-    )
-
-    if not regions:
-        print("[FAIL] no regions specified")
-        print("      usage: python -m mklink dump-memory 0x20000000:16")
-        return 2
-    if frames < 0 or frames > 100000:
-        print("[FAIL] --frames must be between 0 and 100000")
-        return 2
-    if duration < 0 or duration > 300:
-        print("[FAIL] --duration must be between 0 and 300 seconds")
-        return 2
-    if frames == 0 and duration == 0:
-        print("[FAIL] --frames 0 requires --duration > 0")
-        return 2
-
-    try:
-        region_pairs = [_parse_dump_region(raw) for raw in regions]
-        if len(region_pairs) > MAX_SAFE_REPL_REGIONS:
-            raise ValueError(
-                f"too many regions for the safe Pika API boundary: "
-                f"{len(region_pairs)} > {MAX_SAFE_REPL_REGIONS}"
-            )
-        cmd = build_dump_mem_command(region_pairs, period)
-    except ValueError as exc:
-        print(f"[FAIL] invalid dump-memory request: {exc}")
-        return 2
-
-    port = _resolve_port(port)
-    print(f"[*] Connecting {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] connect failed")
-        return 1
-
-    _init_target_bridge(bridge)
-
-    parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
-    collected_frames: list[dict] = []
-    saved_payload = bytearray()
-    raw_seen = bytearray()
-    sample_count = 0
-    stream_started = False
-    exit_code = 0
-
-    def _is_complete_sample(frame: dict) -> bool:
-        if frame.get("format") != "B1":
-            return True
-        return frame.get("block_index", 0) + 1 >= frame.get("block_count", 1)
-
-    try:
-        from mklink.debug_speed import apply_bridge_profile
-        from mklink.project_config import load_config
-        chosen_speed = speed_profile or (load_config(".") or {}).get("debug_speed", "medium")
-        print(json.dumps(apply_bridge_profile(bridge, chosen_speed), ensure_ascii=False))
-        print(f"[*] {cmd}")
-        bridge._enter_stream(DeviceState.DUMP_STREAM)
-        stream_started = True
-        bridge._write_raw((cmd + "\n").encode("utf-8"))
-
-        start = time.monotonic()
-        deadline = start + duration if duration > 0 else None
-        while True:
-            if frames and sample_count >= frames:
-                break
-            if deadline is not None and time.monotonic() >= deadline:
-                break
-
-            raw = bridge.drain_stream_bytes()
-            if not raw:
-                time.sleep(0.005)
-                continue
-
-            if len(raw_seen) < 4096:
-                raw_seen.extend(raw[: 4096 - len(raw_seen)])
-            for frame in parser.feed(raw):
-                if frames and sample_count >= frames:
-                    break
-                collected_frames.append(frame)
-                saved_payload.extend(_dump_frame_payload(frame))
-                if _is_complete_sample(frame):
-                    sample_count += 1
-
-                if json_output:
-                    print(json.dumps(_dump_frame_to_jsonable(frame, region_pairs), ensure_ascii=False))
-                else:
-                    frame_no = len(collected_frames)
-                    fmt = frame.get("format", "?")
-                    flags = frame.get("flags", 0)
-                    print(f"[{frame_no}] {fmt} timestamp_us={frame.get('timestamp_us')} flags=0x{flags:04X}")
-                    for idx, data in frame.get("regions", []):
-                        addr = region_pairs[idx][0] if 0 <= idx < len(region_pairs) else 0
-                        preview = data[:32].hex(" ")
-                        suffix = " ..." if len(data) > 32 else ""
-                        print(f"    region{idx} 0x{addr:08X} size={len(data)}  {preview}{suffix}")
-
-        if save and saved_payload:
-            Path(save).write_bytes(bytes(saved_payload))
-            print(f"[OK] saved {len(saved_payload)} bytes to {save}")
-
-        if collected_frames:
-            print(f"[OK] collected {len(collected_frames)} protocol frame(s), {sample_count} complete sample(s)")
-            if parser.crc_errors or parser.dropped_frames:
-                print(
-                    f"[WARN] parser dropped_frames={parser.dropped_frames} "
-                    f"crc_errors={parser.crc_errors} dropped_bytes={parser.dropped_bytes}"
-                )
-        else:
-            exit_code = 1
-            diag = raw_seen.decode("utf-8", errors="replace").strip()
-            if diag:
-                print(f"[FAIL] no dump_memory frames parsed; device response: {diag[:300]}")
-            else:
-                print("[FAIL] no dump_memory frames parsed")
-    except KeyboardInterrupt:
-        print("\n[*] interrupted")
-        exit_code = 130
-    except Exception as exc:
-        print(f"[FAIL] {exc}")
-        exit_code = 1
-    finally:
-        if stream_started:
-            try:
-                if period != 0:
-                    stop_cmd = build_dump_mem_command(
-                        region_pairs, DUMP_MEMORY_STOP_PERIOD,
-                    )
-                    bridge._write_raw((stop_cmd + "\n").encode("utf-8"))
-                    time.sleep(0.1)
-                    try:
-                        bridge.drain_stream_bytes()
-                    except Exception:
-                        pass
-                bridge._exit_stream()
-            except Exception:
-                pass
-        bridge.close()
-    return exit_code
-
-
 def _cli_resources(args):
     """Local resource management that does not require FastAPI."""
     import json
@@ -3099,9 +2905,10 @@ def main():
         aliases=["dump"],
         help="读取 dump_memory 二进制帧（公共高速内存 dump；默认采集 1 个样本）",
     )
-    dump_memory_parser.add_argument("--port", help="COM 端口（默认自动检测）")
+    dump_memory_parser.add_argument("--port", help="共享后台 CMD 端口")
+    dump_memory_parser.add_argument("--project-root", default=None)
     dump_memory_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None,
-                                    help="mem_dump 档位：4/10/20/30 MHz；默认 medium，或已保存档位")
+                                    help="显式改变当前共享速度；省略保持后台速度")
     dump_memory_parser.add_argument(
         "regions",
         nargs="+",
@@ -3123,10 +2930,10 @@ def main():
         "--duration",
         type=float,
         default=2.0,
-        help="最长采集秒数；默认 2s，防止流模式占用",
+        help="首个完整样本后的最长采集秒数；0按数量但最多300s，结果上限16MiB JSON",
     )
     dump_memory_parser.add_argument("--save", help="保存 region payload 到本地二进制文件")
-    dump_memory_parser.add_argument("--json", action="store_true", help="逐帧 JSON 输出")
+    dump_memory_parser.add_argument("--json", action="store_true", help="采集完成后输出完整样本 JSON")
 
     flush_memory_parser = subparsers.add_parser(
         "flush-memory",
@@ -3647,7 +3454,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3766,17 +3573,6 @@ def main():
         _cli_systemview_report(
             _resolve_project_root(args), port=args.port, duration=args.duration,
             out_path=args.out, no_browser=args.no_browser,
-        )
-    elif args.command in ("dump-memory", "dump"):
-        return _cli_dump_memory(
-            args.port,
-            args.regions,
-            period=args.period,
-            frames=args.frames,
-            duration=args.duration,
-            save=args.save,
-            json_output=args.json,
-            speed_profile=args.speed,
         )
     elif args.command == "flush-memory":
         # argparse aliases: 旧拼写 "flush-memroy" 仍可工作，但会归一化为

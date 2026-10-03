@@ -134,7 +134,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）均通过共享后台运行，共 23 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）、`dump-memory`（别名 `dump`）均通过共享后台运行，共 24 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -258,7 +258,26 @@ sample_count（1..64）、每样本 timeout（0.001..60 秒）及可选 speed_pr
 确认后返回；停止失败也报错，不把连接强行标成可用。HTTP 等待预算包含显式采样
 与停止确认，用户端请求中断不表示硬件已取消。GUI 采集或独占任务忙时拒绝。
 显式 speed_profile 会改变当前共享探针速度（不保存工程配置）；省略则保持当前速度。
-这是有界单次样本集合，旧 `dump-memory` CLI 的周期流和本地文件输出仍待迁移。
+这是有界单次样本集合。周期 CLI 使用下面的 `capture_dump` 能力。
+
+`dump-memory` / `dump` 已改用共享后台，支持 `--probe`、`--project-root`。
+`--period 0` 读取一个样本；多样本须使用正周期。正周期保留 `--frames`（0..100000）
+和 `--duration`（0..300 秒）两种停止条件，先到者结束；两者不能同时为零。
+首个完整样本最多等待 2 秒，然后开始计算时长；只按数量采集也最多持续 300 秒。
+最多 15 区域，每样本不超过现有设备上限。完整样本的 JSON 合计上限 16MiB，
+超过则报错且不保存；持续时间边界上的不完整末尾样本不返回，`incomplete_tail`
+明确标记。缺块、CRC 或停止确认失败直接报错，不把最后一个块当作完整样本。
+
+```powershell
+python -m mklink dump-memory 0x20000000:16 --probe "电机板" --period 0.01 --frames 10 --save samples.bin --json
+```
+
+`--save` 写入当前 CLI 所在电脑，按样本、区域的输入顺序拼接已校验字节；后台不接收
+输出路径。`--json` 在采集完成后输出一个完整 JSON 结果，不再输出未组装的逐块数据。
+MCP 使用 `gui_call('capture_dump', {...})`，SDK 使用 `call('capture_dump', {...})`，
+参数为 regions、period、frames、duration、可选 speed_profile。省略速度保持后台当前值。
+采集占用同探针 CDC，GUI 的持续采集需要先显式停止；其他探针独立运行。
+完整样本不代表目标多区域原子快照。关闭客户端不等同于立即取消后台的有界操作。
 
 `start_job(action, request_id=..., confirm=True, arguments=...)` 提交独占任务后立即
 返回记录，使用 `job_status(job_id)` 查询。SDK close 后仍可查询该后台的任务结果，

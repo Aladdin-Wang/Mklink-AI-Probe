@@ -207,3 +207,45 @@ def test_cli_submits_once_and_only_polls_an_unknown_job(monkeypatch, capsys):
     assert calls == [('submit', 'reset', {'arguments': {}, 'request_id': 'stable-request', 'confirm': True}),
                      ('query', 'a' * 32), ('detach',)]
     assert 'stable-request' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('command',['dump-memory','dump'])
+def test_dump_cli_uses_shared_capture_and_saves_complete_sample_bytes(monkeypatch,tmp_path,capsys,command):
+    import json,sys
+    from mklink import cli
+    calls=[]
+    result={'sample_count':1,'region_count':1,'total_bytes':4,'stopped_by':'frames',
+            'samples':[{'sample_index':0,'regions':[{'address':'0x20000000','size':4,'data_hex':'01020304'}]}]}
+    class Client:
+        def __init__(self,**kwargs): pass
+        def connect(self,**kwargs):calls.append(('connect',kwargs))
+        def call(self,name,args):calls.append((name,args));return result
+        def close(self):calls.append(('detach',None))
+    monkeypatch.setattr(runtime_cli,'RuntimeClient',Client)
+    def forbidden(*args,**kwargs):raise AssertionError('dump CLI opened CDC')
+    monkeypatch.setattr('mklink.bridge.MKLinkSerialBridge',forbidden)
+    target=tmp_path/'sample.bin'
+    monkeypatch.setattr(sys,'argv',['mklink',command,'0x20000000:4','--probe','chosen','--period','.01','--frames','1','--save',str(target),'--json'])
+    cli.main()
+    assert target.read_bytes()==b'\x01\x02\x03\x04'
+    assert json.loads(capsys.readouterr().out)==result
+    assert calls[0][1]['probe']=='chosen'
+    assert calls[1]==('capture_dump',{'regions':[{'address':0x20000000,'size':4}],'period':.01,'frames':1,'duration':2.0,'speed_profile':None})
+    assert calls[-1]==('detach',None)
+
+
+def test_dump_cli_failure_preserves_file_and_detaches_without_retry(monkeypatch,tmp_path):
+    import sys
+    from mklink import cli
+    calls=[]
+    target=tmp_path/'existing.bin';target.write_bytes(b'preserve')
+    class Client:
+        def __init__(self,**kwargs):pass
+        def connect(self,**kwargs):pass
+        def call(self,*args):calls.append('call');return {'sample_count':1,'samples':[]}
+        def close(self):calls.append('detach')
+    monkeypatch.setattr(runtime_cli,'RuntimeClient',Client)
+    monkeypatch.setattr(sys,'argv',['mklink','dump-memory','0x20000000:4','--save',str(target)])
+    with pytest.raises(SystemExit,match='Invalid shared dump'):
+        cli.main()
+    assert calls==['call','detach'] and target.read_bytes()==b'preserve'

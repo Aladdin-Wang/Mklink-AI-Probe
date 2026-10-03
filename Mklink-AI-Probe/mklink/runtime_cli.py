@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
 
 
 def run(args):
@@ -35,7 +35,7 @@ def run(args):
     duration = getattr(args, 'duration', 0)
     if not math.isfinite(duration) or duration < 0:
         raise SystemExit('duration must be finite and nonnegative')
-    if getattr(args, 'save', None):
+    if getattr(args, 'save', None) and args.command not in {'dump-memory', 'dump'}:
         raise SystemExit('Shared memory reads do not support --save to probe storage')
     if args.command not in {'configuration', 'peripherals'} and any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
         raise SystemExit('Select the peripheral catalog in the shared GUI first')
@@ -52,6 +52,16 @@ def run(args):
         if selectors.get('svd'):
             from pathlib import Path
             selectors['svd'] = str(Path(selectors['svd']).expanduser().resolve())
+    if args.command in {'dump-memory', 'dump'}:
+        from mklink.cli import _parse_dump_region
+        from mklink.dump_memory import validate_dump_stream
+        try:
+            dump_regions = [{'address': address, 'size': size} for address, size in map(_parse_dump_region, args.regions)]
+            dump_arguments = dict(regions=dump_regions, period=args.period, frames=args.frames,
+                                  duration=args.duration, speed_profile=args.speed)
+            validate_dump_stream(**dump_arguments)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
     if args.command == 'break':
         selected = [bool(args.target), args.list, args.status, args.clear is not None]
         if sum(selected) != 1 or (args.slot is not None and not args.target):
@@ -120,6 +130,34 @@ def run(args):
             if args.action == 'capture':
                 arguments.update(duration=args.duration, period=args.period)
             result = client.call(args.action + '_peripherals', arguments)
+        elif args.command in {'dump-memory', 'dump'}:
+            result = client.call('capture_dump', dump_arguments)
+            payloads = []
+            try:
+                if result['sample_count'] != len(result['samples']) or result['sample_count'] < 1:
+                    raise ValueError('Invalid sample count')
+                for sample in result['samples']:
+                    if len(sample['regions']) != len(dump_regions):
+                        raise ValueError('Invalid region count')
+                    for row, expected in zip(sample['regions'], dump_regions):
+                        payload = bytes.fromhex(row['data_hex'])
+                        if row['address'] != f"0x{expected['address']:08X}" or row['size'] != expected['size'] or len(payload) != expected['size']:
+                            raise ValueError('Invalid region response')
+                        payloads.append(payload)
+                if sum(map(len, payloads)) != result['total_bytes']:
+                    raise ValueError('Invalid byte count')
+            except (KeyError, TypeError, ValueError) as error:
+                raise RuntimeErrorResponse('Invalid shared dump response; no file written or command retried') from error
+            if args.save:
+                from pathlib import Path
+                Path(args.save).write_bytes(b''.join(payloads))
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False))
+            else:
+                print(f"Collected {result['sample_count']} complete samples, {result['total_bytes']} bytes; stopped by {result['stopped_by']}")
+                if args.save:
+                    print(f'Saved to {args.save}')
+            return
         elif args.command == 'device-status':
             result = client.call('device_status')
         elif args.command == 'debug-speed':
@@ -170,7 +208,7 @@ def run(args):
                 pass
             result = client.call(stream+('_values' if stream == 'superwatch' else '_history'))
         print(json.dumps(result, ensure_ascii=False, indent=2))
-    except (RuntimeErrorResponse, ValueError) as exc:
+    except (RuntimeErrorResponse, ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from exc
     finally:
         if owned_stream:

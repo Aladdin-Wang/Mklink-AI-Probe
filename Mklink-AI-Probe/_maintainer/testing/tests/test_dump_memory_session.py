@@ -127,23 +127,6 @@ def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
         build_dump_mem_command([(0x20000000, 4)], float("inf"))
 
 
-def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch, capsys):
-    from mklink import cli
-
-    def unexpected_port(_port):
-        raise AssertionError("unsafe request reached port discovery")
-
-    monkeypatch.setattr(cli, "_resolve_port", unexpected_port)
-    exit_code = cli._cli_dump_memory(
-        None,
-        [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 2
-    assert "safe Pika API boundary" in output
-
-
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
@@ -169,56 +152,27 @@ def test_cli_main_reports_unsafe_stream_request_as_failure(
     from mklink import cli
 
     monkeypatch.setattr(sys, "argv", ["mklink", *arguments])
+    if arguments[0] == 'dump-memory':
+        with pytest.raises(SystemExit, match=message):
+            cli.main()
+        return
     exit_code = cli.main()
     output = capsys.readouterr().out
-
-    assert exit_code == 2
-    assert "[FAIL]" in output
-    assert message in output
-    assert "Connecting" not in output
-    assert "[*] 连接" not in output
+    assert exit_code == 2 and '[FAIL]' in output and message in output
+    assert 'Connecting' not in output and '[*] 连接' not in output
 
 
-def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
-    from mklink import bridge as bridge_module, cli
-    from unittest.mock import Mock
-    speed = Mock(return_value={'profile': 'medium', 'clock_hz': 10000000})
-    monkeypatch.setattr('mklink.debug_speed.apply_bridge_profile', speed)
-    monkeypatch.setattr('mklink.project_config.load_config', lambda root: {})
-
-    class CliBridge(FakeBridge):
-        def __init__(self, port):
-            super().__init__([])
-            self.port = port
-
-        def connect(self):
-            return True
-
-        def close(self):
-            self.calls.append(("close",))
-
-    created = []
-
-    def make_bridge(port):
-        instance = CliBridge(port)
-        created.append(instance)
-        return instance
-
-    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
-    monkeypatch.setattr(cli, "_init_target_bridge", lambda bridge: None)
-    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", make_bridge)
-
-    exit_code = cli._cli_dump_memory(
-        None, ["0x20000000:4"], period=0.001, frames=0, duration=0.001,
-    )
-
-    assert exit_code == 1
-    speed.assert_called_once_with(created[0], 'medium')
-    writes = [call[1] for call in created[0].calls if call[0] == "write"]
-    assert writes == [
-        b"cmd.dump_memory(0x20000000, 4, 0.001)\n",
-        b"cmd.dump_memory(0x20000000, 4, -1.0)\n",
-    ]
+def test_dump_capture_finally_confirms_stop_after_no_samples(monkeypatch):
+    from types import SimpleNamespace
+    from mklink.dump_memory import capture_dump_stream
+    bridge = FakeBridge([])
+    ticks = iter([0, 0, 3])
+    monkeypatch.setattr('mklink.dump_memory.time.monotonic', lambda: next(ticks))
+    with pytest.raises(TimeoutError, match='No complete'):
+        capture_dump_stream(SimpleNamespace(_bridge=bridge), [{'address':0x20000000,'size':4}],
+                            period=.001, frames=0, duration=.1)
+    assert [call[1] for call in bridge.calls if call[0]=='write']==[
+        b'cmd.dump_memory(0x20000000, 4, 0.001)\n', b'cmd.dump_memory(0x20000000, 4, -1.0)\n']
 
 
 def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkeypatch):
@@ -950,33 +904,19 @@ def test_multi_region_timeout_without_frames_reports_missing_block_gap():
 
 
 @pytest.mark.parametrize("blocked", [False, True])
-def test_cli_dump_limits_complete_samples_inside_one_usb_read(monkeypatch, tmp_path, blocked):
-    from mklink import bridge as bridge_module, cli
-    monkeypatch.setattr("mklink.debug_speed.apply_bridge_profile", lambda *a: {})
-    monkeypatch.setattr("mklink.project_config.load_config", lambda *a: {})
-    expected = b"A" * (4096 if blocked else 4)
+def test_dump_capture_limits_complete_samples_inside_one_usb_read(blocked):
+    from types import SimpleNamespace
+    from mklink.dump_memory import capture_dump_stream
+    expected = b'A' * (4096 if blocked else 4)
     if blocked:
-        raw = b"".join(
-            _b1_frame(t, value * 2048, block_index=i, block_count=2, total_size=4096)
-            for t, value, i in ((1, b"A", 0), (2, b"A", 1), (3, b"B", 0), (4, b"B", 1))
-        )
+        raw = b''.join(_b1_frame(t,value*2048,block_index=i,block_count=2,total_size=4096)
+                      for t,value,i in ((1,b'A',0),(2,b'A',1),(3,b'B',0),(4,b'B',1)))
     else:
-        raw = _old_frame(1, expected) + _old_frame(2, b"BBBB")
-    class CliBridge(FakeBridge):
-        def __init__(self, port):
-            super().__init__([raw])
-        def connect(self):
-            return True
-        def close(self):
-            pass
-    monkeypatch.setattr(bridge_module, "MKLinkSerialBridge", CliBridge)
-    monkeypatch.setattr(cli, "_resolve_port", lambda p: "TEST")
-    monkeypatch.setattr(cli, "_init_target_bridge", lambda b: None)
-    output = tmp_path / "sample.bin"
-    result = cli._cli_dump_memory(None, [f"0x20000000:{len(expected)}"],
-                                  period=.001, frames=1, duration=1, save=str(output))
-    assert result == 0
-    assert output.read_bytes() == expected
+        raw = _old_frame(1,expected)+_old_frame(2,b'BBBB')
+    result = capture_dump_stream(SimpleNamespace(_bridge=FakeBridge([raw])),
+                                  [{'address':0x20000000,'size':len(expected)}], period=.001, frames=1)
+    assert result['sample_count']==1 and result['total_bytes']==len(expected)
+    assert bytes.fromhex(result['samples'][0]['regions'][0]['data_hex'])==expected
 
 
 def test_range_read_uses_acknowledged_stop_without_fixed_delay(monkeypatch):

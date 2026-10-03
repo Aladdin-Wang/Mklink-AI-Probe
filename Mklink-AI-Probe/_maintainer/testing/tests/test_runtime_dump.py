@@ -119,3 +119,83 @@ def test_active_mcp_dump_is_shared_thin_adapter(monkeypatch):
             assert not (await mcp.call_tool('dump_memory',body)).is_error
     asyncio.run(run())
     assert calls==['new',('dump_memory',{**body,'sample_count':1,'timeout':10.0,'speed_profile':None})]
+
+
+@pytest.mark.parametrize('options', [
+    {'period':-1},{'period':True},{'duration':301},{'duration':True},
+    {'frames':True},{'frames':100001},{'frames':0,'duration':0},{'period':0,'frames':2},
+    {'speed_profile':'bad'},{'regions':[{'address':0,'size':4}]*16},
+])
+def test_periodic_capture_invalid_arguments_never_start_or_change_clock(batch,options):
+    client,_,device,_,_=batch
+    device.set_debug_speed=Mock()
+    device._bridge=Mock()
+    response=client.post('/api/device/dump-memory/capture',json={'regions':[{'address':0,'size':4}],**options})
+    assert response.status_code==422,response.text
+    device.set_debug_speed.assert_not_called()
+    device._bridge._enter_stream.assert_not_called()
+
+
+def test_periodic_capture_assembles_each_sample_and_ignores_extra_queued_samples(batch):
+    client,_,device,_,_=batch
+    raw=b''.join(_b1_frame(t,value*2048,block_index=i,block_count=2,total_size=4096)
+                 for t,value,i in ((1,b'A',0),(2,b'A',1),(3,b'B',0),(4,b'B',1),(5,b'C',0),(6,b'C',1)))
+    device._bridge=FakeBridge([raw])
+    response=client.post('/api/device/dump-memory/capture',json={'regions':[{'address':0,'size':4096}], 'period':.001,'frames':2})
+    assert response.status_code==200,response.text
+    result=response.json()
+    assert result['sample_count']==2 and result['total_bytes']==8192 and result['stopped_by']=='frames'
+    assert [bytes.fromhex(s['regions'][0]['data_hex']) for s in result['samples']]==[b'A'*4096,b'B'*4096]
+    assert device._bridge.calls[-1]==('exit',)
+
+
+@pytest.mark.parametrize('case',['missing_first','duplicate_first','crc','limit','stop'])
+def test_periodic_capture_never_succeeds_with_incomplete_or_unconfirmed_data(batch,monkeypatch,case):
+    client,state,device,_,_=batch
+    first=_b1_frame(1,b'A'*2048,block_index=0,block_count=2,total_size=4096)
+    last=_b1_frame(2,b'A'*2048,block_index=1,block_count=2,total_size=4096)
+    raw=last if case=='missing_first' else first+first+last if case=='duplicate_first' else first+last
+    if case=='crc':raw=raw[:-1]+bytes([raw[-1]^255])
+    device._bridge=FakeBridge([raw])
+    if case=='limit':monkeypatch.setattr(dump_memory,'MAX_DUMP_RESULT_JSON_BYTES',20)
+    if case=='stop':device._bridge._stop_stream_and_sync=Mock(return_value=False)
+    response=client.post('/api/device/dump-memory/capture',json={'regions':[{'address':0,'size':4096}],'period':.001,'frames':1})
+    assert response.status_code== (422 if case=='limit' else 500),response.text
+    assert not state['resource_manager'].get_status()
+    assert sum(c==('write',b'cmd.dump_memory(0x00000000, 4096, 0.001)\n') for c in device._bridge.calls)==1
+
+
+def test_periodic_capture_duration_reports_only_complete_samples_and_partial_tail(monkeypatch):
+    from types import SimpleNamespace
+    good=_b1_frame(1,b'A'*2048,block_index=0,block_count=2,total_size=4096)+_b1_frame(2,b'A'*2048,block_index=1,block_count=2,total_size=4096)
+    tail=_b1_frame(3,b'B'*2048,block_index=0,block_count=2,total_size=4096)
+    ticks=iter([0,0,.1,1])
+    monkeypatch.setattr(dump_memory.time,'monotonic',lambda:next(ticks))
+    result=dump_memory.capture_dump_stream(SimpleNamespace(_bridge=FakeBridge([good+tail])),[{'address':0,'size':4096}],period=.01,frames=0,duration=.25)
+    assert result['sample_count']==1 and result['incomplete_tail'] and result['stopped_by']=='duration'
+
+
+def test_periodic_capture_startup_does_not_consume_collection_window(monkeypatch):
+    from types import SimpleNamespace
+    ticks=iter([0,.5,.5,.6,.9])
+    monkeypatch.setattr(dump_memory.time,'monotonic',lambda:next(ticks))
+    bridge=FakeBridge([_old_regions_frame(1,[(0,b'AAAA')]),_old_regions_frame(2,[(0,b'BBBB')])])
+    result=dump_memory.capture_dump_stream(SimpleNamespace(_bridge=bridge),[{'address':0,'size':4}],period=.01,frames=0,duration=.25)
+    assert result['sample_count']==2 and result['stopped_by']=='duration'
+
+
+def test_periodic_capture_busy_rejects_without_stopping_gui(batch):
+    client,_,device,_,managers=batch
+    managers['rtt'].running=True
+    device._bridge=Mock()
+    response=client.post('/api/device/dump-memory/capture',json={'regions':[{'address':0,'size':4}]})
+    assert response.status_code==409 and managers['rtt'].running
+    device._bridge._enter_stream.assert_not_called()
+
+
+def test_periodic_transport_budget_covers_count_only_request(monkeypatch):
+    call=Mock(return_value={})
+    monkeypatch.setattr('mklink.runtime.request',call)
+    client=RuntimeClient(info={'port':8765});client.session_id='one'
+    client.call('capture_dump',{'regions':[{'address':0,'size':4}],'period':.001,'frames':10,'duration':0})
+    assert call.call_args.kwargs['timeout']==320

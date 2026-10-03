@@ -611,6 +611,143 @@ def read_dump_memory_regions_once(
         )
 
 
+class DumpSampleAssembler:
+    """Validate and assemble exactly one OLD/B1 sample; never return partial bytes."""
+
+    def __init__(self, region_sizes):
+        self.region_sizes = list(region_sizes)
+        self.total_size = sum(region_sizes)
+        self.blocks = {}
+        self.expected_blocks = None
+        self.expected_block_size = None
+        self.incomplete_region_count = 0
+
+    def feed(self, frame):
+        flags = int(frame.get("flags", 0))
+        if flags:
+            raise DumpMemoryReadError(
+                "dump_memory returned firmware error flags",
+                gap_fact="firmware_error_count",
+            )
+        regions = frame.get("regions", ())
+        by_region: dict[int, bytes] = {}
+        valid_regions = True
+        for region_index, payload in regions:
+            if (
+                type(region_index) is not int
+                or not 0 <= region_index < len(self.region_sizes)
+                or region_index in by_region
+                or not isinstance(payload, (bytes, bytearray, memoryview))
+            ):
+                valid_regions = False
+                break
+            by_region[region_index] = bytes(payload)
+        if not valid_regions:
+            raise DumpMemoryReadError(
+                "dump_memory region coverage is invalid",
+                gap_fact="region_gap_count",
+            )
+
+        if frame.get("format") == "OLD":
+            if len(by_region) != len(self.region_sizes):
+                self.incomplete_region_count = max(
+                    self.incomplete_region_count,
+                    len(self.region_sizes) - len(by_region),
+                )
+                return None
+            mismatched_regions = sum(
+                len(by_region.get(index, b"")) != size
+                for index, size in enumerate(self.region_sizes)
+            )
+            if mismatched_regions:
+                self.incomplete_region_count = max(
+                    self.incomplete_region_count,
+                    mismatched_regions,
+                )
+                return None
+            return tuple(by_region[index] for index in range(len(self.region_sizes)))
+
+        if int(frame.get("total_size", 0)) != self.total_size:
+            # The bridge may still contain a complete sample left by a
+            # prior request; total size is the protocol's discriminator.
+            return None
+        block_size = int(frame.get("block_size", 0))
+        block_index = int(frame.get("block_index", -1))
+        block_count = int(frame.get("block_count", 0))
+        calculated_count = (
+            (self.total_size + block_size - 1) // block_size
+            if block_size > 0
+            else 0
+        )
+        if (
+            block_size <= 0
+            or block_count != calculated_count
+            or block_index < 0
+            or block_index >= block_count
+        ):
+            raise DumpMemoryReadError(
+                "dump_memory block metadata is invalid",
+                gap_fact="invalid_block_count",
+            )
+        if not bool(frame.get("block_crc_ok", False)):
+            raise DumpMemoryReadError(
+                "dump_memory block CRC validation failed",
+                gap_fact="crc_error_count",
+            )
+        if self.expected_blocks is None:
+            self.expected_blocks = block_count
+            self.expected_block_size = block_size
+        elif (
+            self.expected_blocks != block_count
+            or self.expected_block_size != block_size
+        ):
+            raise DumpMemoryReadError(
+                "dump_memory block layout changed",
+                gap_fact="invalid_block_count",
+            )
+        expected_payload = min(
+            block_size,
+            self.total_size - block_index * block_size,
+        )
+        if sum(len(data) for data in by_region.values()) != expected_payload:
+            raise DumpMemoryReadError(
+                "dump_memory block coverage is incomplete",
+                gap_fact="region_gap_count",
+            )
+        if block_index in self.blocks:
+            raise DumpMemoryReadError(
+                "dump_memory repeated a block index",
+                gap_fact="invalid_block_count",
+            )
+        self.blocks[block_index] = by_region
+        if len(self.blocks) == self.expected_blocks:
+            if set(self.blocks) != set(range(self.expected_blocks)):
+                raise DumpMemoryReadError(
+                    "dump_memory block sequence is incomplete",
+                    gap_fact="missing_block_count",
+                )
+            assembled = [bytearray() for _ in self.region_sizes]
+            for current_index in range(self.expected_blocks):
+                for region_index, data in self.blocks[current_index].items():
+                    assembled[region_index].extend(data)
+                    if len(assembled[region_index]) > self.region_sizes[region_index]:
+                        raise DumpMemoryReadError(
+                            "dump_memory region coverage overflowed",
+                            gap_fact="region_gap_count",
+                        )
+            incomplete_regions = sum(
+                len(data) != self.region_sizes[index]
+                for index, data in enumerate(assembled)
+            )
+            if incomplete_regions:
+                raise DumpMemoryReadError(
+                    "dump_memory region coverage is incomplete",
+                    gap_fact="region_gap_count",
+                    gap_count=incomplete_regions,
+                )
+            return tuple(bytes(data) for data in assembled)
+
+
 def _read_dump_memory_regions_once_locked(
     bridge,
     region_pairs: list[tuple[int, int]],
@@ -653,10 +790,7 @@ def _read_dump_memory_regions_once_locked(
     command = build_dump_mem_command(normalized, 0)
     stop_command = build_dump_mem_command([(normalized[0][0], 1)], -1)
     deadline = time.monotonic() + max(0.001, float(timeout))
-    blocks: dict[int, dict[int, bytes]] = {}
-    expected_blocks: int | None = None
-    expected_block_size: int | None = None
-    incomplete_region_count = 0
+    assembler = DumpSampleAssembler(region_sizes)
     raw_tail = bytearray()
     _enter_dump_stream(bridge)
     try:
@@ -673,129 +807,9 @@ def _read_dump_memory_regions_once_locked(
                     gap_count=parser.crc_errors,
                 )
             for frame in frames:
-                flags = int(frame.get("flags", 0))
-                if flags:
-                    raise DumpMemoryReadError(
-                        "dump_memory returned firmware error flags",
-                        gap_fact="firmware_error_count",
-                    )
-                regions = frame.get("regions", ())
-                by_region: dict[int, bytes] = {}
-                valid_regions = True
-                for region_index, payload in regions:
-                    if (
-                        type(region_index) is not int
-                        or not 0 <= region_index < len(normalized)
-                        or region_index in by_region
-                        or not isinstance(payload, (bytes, bytearray, memoryview))
-                    ):
-                        valid_regions = False
-                        break
-                    by_region[region_index] = bytes(payload)
-                if not valid_regions:
-                    raise DumpMemoryReadError(
-                        "dump_memory region coverage is invalid",
-                        gap_fact="region_gap_count",
-                    )
-
-                if frame.get("format") == "OLD":
-                    if len(by_region) != len(normalized):
-                        incomplete_region_count = max(
-                            incomplete_region_count,
-                            len(normalized) - len(by_region),
-                        )
-                        continue
-                    mismatched_regions = sum(
-                        len(by_region.get(index, b"")) != size
-                        for index, size in enumerate(region_sizes)
-                    )
-                    if mismatched_regions:
-                        incomplete_region_count = max(
-                            incomplete_region_count,
-                            mismatched_regions,
-                        )
-                        continue
-                    return tuple(by_region[index] for index in range(len(normalized)))
-
-                if int(frame.get("total_size", 0)) != total_size:
-                    # The bridge may still contain a complete sample left by a
-                    # prior request; total size is the protocol's discriminator.
-                    continue
-                block_size = int(frame.get("block_size", 0))
-                block_index = int(frame.get("block_index", -1))
-                block_count = int(frame.get("block_count", 0))
-                calculated_count = (
-                    (total_size + block_size - 1) // block_size
-                    if block_size > 0
-                    else 0
-                )
-                if (
-                    block_size <= 0
-                    or block_count != calculated_count
-                    or block_index < 0
-                    or block_index >= block_count
-                ):
-                    raise DumpMemoryReadError(
-                        "dump_memory block metadata is invalid",
-                        gap_fact="invalid_block_count",
-                    )
-                if not bool(frame.get("block_crc_ok", False)):
-                    raise DumpMemoryReadError(
-                        "dump_memory block CRC validation failed",
-                        gap_fact="crc_error_count",
-                    )
-                if expected_blocks is None:
-                    expected_blocks = block_count
-                    expected_block_size = block_size
-                elif (
-                    expected_blocks != block_count
-                    or expected_block_size != block_size
-                ):
-                    raise DumpMemoryReadError(
-                        "dump_memory block layout changed",
-                        gap_fact="invalid_block_count",
-                    )
-                expected_payload = min(
-                    block_size,
-                    total_size - block_index * block_size,
-                )
-                if sum(len(data) for data in by_region.values()) != expected_payload:
-                    raise DumpMemoryReadError(
-                        "dump_memory block coverage is incomplete",
-                        gap_fact="region_gap_count",
-                    )
-                if block_index in blocks:
-                    raise DumpMemoryReadError(
-                        "dump_memory repeated a block index",
-                        gap_fact="invalid_block_count",
-                    )
-                blocks[block_index] = by_region
-                if len(blocks) == expected_blocks:
-                    if set(blocks) != set(range(expected_blocks)):
-                        raise DumpMemoryReadError(
-                            "dump_memory block sequence is incomplete",
-                            gap_fact="missing_block_count",
-                        )
-                    assembled = [bytearray() for _ in normalized]
-                    for current_index in range(expected_blocks):
-                        for region_index, data in blocks[current_index].items():
-                            assembled[region_index].extend(data)
-                            if len(assembled[region_index]) > region_sizes[region_index]:
-                                raise DumpMemoryReadError(
-                                    "dump_memory region coverage overflowed",
-                                    gap_fact="region_gap_count",
-                                )
-                    incomplete_regions = sum(
-                        len(data) != region_sizes[index]
-                        for index, data in enumerate(assembled)
-                    )
-                    if incomplete_regions:
-                        raise DumpMemoryReadError(
-                            "dump_memory region coverage is incomplete",
-                            gap_fact="region_gap_count",
-                            gap_count=incomplete_regions,
-                        )
-                    return tuple(bytes(data) for data in assembled)
+                payloads = assembler.feed(frame)
+                if payloads is not None:
+                    return payloads
             if poll_interval:
                 time.sleep(poll_interval)
 
@@ -815,15 +829,15 @@ def _read_dump_memory_regions_once_locked(
                 gap_fact="crc_error_count",
                 gap_count=parser.crc_errors,
             )
-        if incomplete_region_count:
+        if assembler.incomplete_region_count:
             raise DumpMemoryReadError(
                 "dump_memory region coverage is incomplete",
                 gap_fact="region_gap_count",
-                gap_count=incomplete_region_count,
+                gap_count=assembler.incomplete_region_count,
             )
         missing = (
-            max(1, expected_blocks - len(blocks))
-            if expected_blocks is not None
+            max(1, assembler.expected_blocks - len(assembler.blocks))
+            if assembler.expected_blocks is not None
             else 1
         )
         raise DumpMemoryReadError(
@@ -914,6 +928,87 @@ def capture_memory(device, regions, *, sample_count=1, timeout=10.0, speed_profi
         return response
 
 
+MAX_DUMP_RESULT_JSON_BYTES = 16 * 1024 * 1024
+
+
+def validate_dump_stream(regions, period=0.0, frames=1, duration=2.0, speed_profile=None):
+    """Validate the finite CLI capture contract before a bridge or clock is touched."""
+    import math
+    if not isinstance(regions, list) or not 1 <= len(regions) <= MAX_SAFE_REPL_REGIONS:
+        raise ValueError('dump capture requires 1..15 regions (safe Pika API boundary)')
+    if type(frames) is not int or not 0 <= frames <= 100000:
+        raise ValueError('frames must be between 0 and 100000')
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in (period, duration)):
+        raise ValueError('period and duration must be finite numbers')
+    if period < 0 or not 0 <= duration <= 300 or (not frames and not duration):
+        raise ValueError('Use period >= 0, duration 0..300, and at least one capture bound')
+    if period == 0 and frames not in (0, 1):
+        raise ValueError('period=0 produces one sample; choose a positive period for multiple samples')
+    if speed_profile is not None and speed_profile not in ('low', 'medium', 'high', 'ultra'):
+        raise ValueError('speed_profile must be low/medium/high/ultra')
+    pairs = []
+    for region in regions:
+        if not isinstance(region, dict) or set(region) != {'address', 'size'}:
+            raise ValueError('Each region requires exactly address and size')
+        pairs.append((region['address'], region['size']))
+    build_dump_mem_command(pairs, period)
+    return pairs
+
+
+def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, speed_profile=None):
+    """Collect complete samples using the existing session and shared assembler.
+
+    First sample has a 2s startup allowance; duration starts at that sample.
+    A count-only capture still ends within 300s. Serialized samples are bounded
+    by 16 MiB; overflow fails instead of returning or saving an incomplete result.
+    """
+    import json
+    pairs = validate_dump_stream(regions, period, frames, duration, speed_profile)
+    if speed_profile is not None:
+        device.set_debug_speed(speed_profile)
+    session = DumpMemoryStreamSession(device._bridge, pairs, period)
+    assembler = DumpSampleAssembler([size for _, size in pairs])
+    samples, result_bytes = [], 0
+    deadline = time.monotonic() + 2.0
+    stopped_by = 'duration'
+    try:
+        session.start()
+        while time.monotonic() < deadline:
+            batch = session.read_frames(max_bytes=1024 * 1024)
+            if session.parser.crc_errors:
+                raise DumpMemoryReadError('dump_memory frame CRC validation failed', gap_fact='crc_error_count')
+            for frame in batch:
+                if frame.get('format') == 'B1' and frame.get('block_index') != len(assembler.blocks):
+                    raise DumpMemoryReadError('Periodic dump lost block sequence', gap_fact='missing_block_count')
+                payloads = assembler.feed(frame)
+                if payloads is None:
+                    continue
+                if not samples:
+                    deadline = time.monotonic() + (duration or 300)
+                sample = {'sample_index': len(samples), 'timestamp_us': frame.get('timestamp_us'),
+                          'regions': [{'address': f'0x{address:08X}', 'size': len(data), 'data_hex': data.hex()}
+                                      for (address, _), data in zip(pairs, payloads)]}
+                result_bytes += len(json.dumps(sample, separators=(',', ':')).encode('utf-8')) + 1
+                if result_bytes > MAX_DUMP_RESULT_JSON_BYTES:
+                    raise ValueError('Dump result exceeds 16 MiB JSON limit; reduce frames, duration or regions')
+                samples.append(sample)
+                assembler = DumpSampleAssembler([size for _, size in pairs])
+                if period == 0 or (frames and len(samples) >= frames):
+                    stopped_by = 'frames'
+                    break
+            if stopped_by == 'frames':
+                break
+            time.sleep(.001)
+    finally:
+        session.stop()
+    if not samples:
+        raise TimeoutError('No complete dump sample received')
+    return {'sample_count': len(samples), 'region_count': len(pairs),
+            'total_bytes': sum(size for _, size in pairs) * len(samples), 'samples': samples,
+            'stopped_by': stopped_by, 'incomplete_tail': bool(assembler.blocks or assembler.incomplete_region_count),
+            'stats': session.stats}
+
+
 class DumpMemoryStreamSession:
     """Own one MKLink ``cmd.dump_memory`` binary-stream lifecycle.
 
@@ -937,8 +1032,9 @@ class DumpMemoryStreamSession:
                 f"too many regions for the safe text API: {len(region_pairs)} > "
                 f"{MAX_SAFE_REPL_REGIONS}"
             )
-        if period <= 0:
-            raise ValueError("streaming period must be greater than zero")
+        import math
+        if not math.isfinite(period) or period < 0:
+            raise ValueError("dump period must be nonnegative and finite")
         self.bridge = bridge
         self.region_pairs = list(region_pairs)
         self.period = float(period)
