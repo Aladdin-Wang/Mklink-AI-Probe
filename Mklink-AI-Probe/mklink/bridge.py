@@ -119,6 +119,7 @@ class MKLinkSerialBridge:
 
     def connect(self, *, recover_stream: bool = True) -> bool:
         """打开串口并同步设备状态（等待 >>> 提示符）。"""
+        from mklink.probes import require_runtime_port
         self._transport_error = None
         # 进程级互斥：获取文件锁
         if not self._port_lock.acquire():
@@ -127,14 +128,18 @@ class MKLinkSerialBridge:
             return False
 
         try:
+            require_runtime_port(self._port)
             # The bundled desktop/CLI/MCP Python runtime can pause all threads
             # during GC or native parsing. Keep Windows CDC draining elsewhere.
             isolated = (os.name == 'nt' and not getattr(sys, 'frozen', False)
                         and getattr(serial.Serial, '__module__', '') == 'serial.serialwin32')
             constructor = IsolatedSerial if isolated else serial.Serial
             self._serial = constructor(self._port, self._baudrate, timeout=0.01)
-        except serial.SerialException as e:
-            self._port_lock.release()
+            # Opening the Windows worker/serial handle can take time. Recheck
+            # before clearing buffers, starting a reader or sending sync/stop.
+            require_runtime_port(self._port)
+        except (serial.SerialException, ConnectionError) as e:
+            self.close()
             msg = str(e).lower()
             if "access" in msg or "denied" in msg or "already open" in msg or "in use" in msg:
                 print(f"[FAIL] 端口 {self._port} 被占用: {e}")
@@ -142,6 +147,9 @@ class MKLinkSerialBridge:
             else:
                 print(f"[FAIL] 无法打开端口 {self._port}: {e}")
             return False
+        except BaseException:
+            self.close()
+            raise
         self._ctx.state = DeviceState.CONNECTING
         self._running = True
 

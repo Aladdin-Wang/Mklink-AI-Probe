@@ -9,17 +9,6 @@ import re
 import shutil
 import subprocess
 
-# A runtime process owns exactly one probe. Worker threads share this immutable
-# binding; direct/legacy processes retain their existing discovery behavior.
-_bound_probe = None
-
-
-def bind_runtime(probe_id):
-    global _bound_probe
-    if _bound_probe is not None and _bound_probe != probe_id:
-        raise RuntimeError('A runtime cannot change its physical probe identity')
-    _bound_probe = probe_id
-
 
 def usb_ancestor(instance_id):
     api = ctypes.WinDLL('cfgmgr32')
@@ -80,7 +69,3 @@ def resolve_volume(probe_id):
     if not re.fullmatch(r'\\\\\?\\Volume\{[0-9a-f-]{36}\}\\', row['root'], re.I):
         raise RuntimeError('A stable Windows volume GUID is required')
     return {'probe_id': probe_id, 'root': row['root'], 'drive': row['drive'], 'verified': True}
-
-
-def bound_disk():
-    return resolve_volume(_bound_probe)['root']

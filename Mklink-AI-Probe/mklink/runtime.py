@@ -333,7 +333,7 @@ def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):
 
 
 def _serve_runtime(*, project_root, port, probe_id):
-    from mklink.probe_volumes import bind_runtime
+    from mklink.probes import bind_runtime
     bind_runtime(probe_id)
     import uvicorn
     from mklink.remote.api import create_app

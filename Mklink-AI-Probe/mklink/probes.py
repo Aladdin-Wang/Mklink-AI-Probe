@@ -7,6 +7,38 @@ import json
 import os
 
 
+# One immutable physical selection per backend, shared by CDC and MSC workers.
+_bound_probe = None
+
+
+def bind_runtime(probe_id):
+    global _bound_probe
+    if _bound_probe is not None and _bound_probe != probe_id:
+        raise RuntimeError('A runtime cannot change its physical probe identity')
+    _bound_probe = probe_id
+
+
+def bound_probe():
+    """Return a backend's physical selection; the lobby is never hardware."""
+    if _bound_probe == 'lobby':
+        raise ConnectionError('Select a physical probe before accessing hardware')
+    return _bound_probe
+
+
+def require_runtime_port(port):
+    """Validate the backend's current USB selection before any CDC commands."""
+    probe_id = bound_probe()
+    if probe_id is None:
+        return
+    from mklink.runtime import RuntimeErrorResponse
+    try:
+        selected = select_probe(probe_id)
+    except RuntimeErrorResponse as error:
+        raise ConnectionError('Bound probe unavailable; command connection refused') from error
+    if selected['port'].casefold() != port.casefold():
+        raise ConnectionError('Command port does not match the bound probe; reconnect explicitly')
+
+
 def inventory() -> list[dict]:
     from mklink.discovery import discover_mklink_command_ports
     ports = discover_mklink_command_ports()

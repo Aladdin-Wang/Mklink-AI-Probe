@@ -182,12 +182,14 @@ def _find_posix_microkeen_disk() -> str | None:
 def find_microkeen_disk() -> str | None:
     """查找 MICROKEEN 磁盘路径。
 
-    在 Windows 上查找名为 [MICROKEEN] 的可移动磁盘。
-    返回磁盘根路径，如 'D:\\'，未找到返回 None。
+    共享后台只解析绑定 USB 身份的稳定卷路径，未选择设备时拒绝访问。
+    独立进程保留 MICROKEEN 卷标发现，未找到返回 None。
     """
-    from mklink import probe_volumes
-    if probe_volumes._bound_probe is not None:
-        return probe_volumes.bound_disk()
+    from mklink.probes import bound_probe
+    probe_id = bound_probe()
+    if probe_id is not None:
+        from mklink.probe_volumes import resolve_volume
+        return resolve_volume(probe_id)['root']
     if os.name != "nt":
         return _find_posix_microkeen_disk()
 

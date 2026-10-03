@@ -34,9 +34,25 @@ def test_duplicate_missing_serial_and_drive_letter_fallback_rejected(monkeypatch
 
 def test_runtime_disk_failure_never_uses_label_or_environment_fallback(monkeypatch):
     from mklink.discovery import find_microkeen_disk
-    monkeypatch.setattr(volumes, '_bound_probe', 'selected')
+    monkeypatch.setattr('mklink.probes._bound_probe', 'selected')
     monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'Z:\\')
-    def unavailable(): raise RuntimeError('identity missing')
-    monkeypatch.setattr(volumes, 'bound_disk', unavailable)
+    def unavailable(probe_id):
+        assert probe_id == 'selected'
+        raise RuntimeError('identity missing')
+    monkeypatch.setattr(volumes, 'resolve_volume', unavailable)
     with pytest.raises(RuntimeError, match='identity missing'):
+        find_microkeen_disk()
+
+
+def test_lobby_never_resolves_a_disk_even_with_a_matching_alias(monkeypatch, tmp_path):
+    from mklink import probes
+    from mklink.discovery import find_microkeen_disk
+    from test_probe_identity import port
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR', str(tmp_path))
+    monkeypatch.setattr('serial.tools.list_ports.comports', lambda: [port('COM10', 'first')])
+    selected = probes.inventory()[0]['probe_id']
+    monkeypatch.setattr(probes, 'load_aliases', lambda: {selected: 'lobby'})
+    monkeypatch.setattr(probes, '_bound_probe', 'lobby')
+    monkeypatch.setattr(volumes, 'volume_inventory', lambda: pytest.fail('Lobby inspected hardware volumes'))
+    with pytest.raises(ConnectionError, match='Select a physical probe'):
         find_microkeen_disk()
