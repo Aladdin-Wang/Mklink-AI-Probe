@@ -7,6 +7,7 @@ the serial client.
 
 from __future__ import annotations
 
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 import queue
 import threading
@@ -24,9 +25,7 @@ SUPPORTED_FUNCTIONS = frozenset(READ_LIMITS | WRITE_LIMITS)
 @dataclass(slots=True)
 class _Task:
     operation: Callable[[], Any]
-    done: threading.Event
-    result: Any = None
-    error: BaseException | None = None
+    future: Future
 
 
 def validate_transaction(
@@ -124,41 +123,86 @@ class ModbusWorker:
     def __init__(self, client, slave: int):
         self._client = client
         self._slave = slave
-        self._queue: queue.Queue[_Task | None] = queue.Queue()
+        self._queue: queue.Queue[_Task | None] = queue.Queue(maxsize=64)
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
+        self._lifecycle_lock = threading.Lock()
+        self._stopping = False
 
     @property
     def slave(self) -> int:
         return self._slave
 
-    def start(self) -> None:
-        if self._running.is_set():
-            return
-        self._running.set()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="mklink-modbus-io",
-            daemon=True,
-        )
-        self._thread.start()
+    @property
+    def worker_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
 
-    def stop(self) -> None:
-        self._running.clear()
-        self._queue.put(None)
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3.0)
+    def start(self) -> None:
+        with self._lifecycle_lock:
+            if self._stopping:
+                raise RuntimeError("Previous Modbus worker must finish stopping first")
+            if self._running.is_set():
+                return
+            if self.worker_alive:
+                raise RuntimeError("Previous Modbus worker is still active")
+            self._running.set()
+            self._thread = threading.Thread(
+                target=self._run, name="mklink-modbus-io", daemon=True,
+            )
+            try:
+                self._thread.start()
+            except Exception:
+                self._running.clear()
+                self._thread = None
+                raise
+
+    def request_stop(self) -> None:
+        """Reject new submissions and cancel queued work, without joining I/O."""
+        with self._lifecycle_lock:
+            self._stopping = True
+            self._running.clear()
+            while True:
+                try:
+                    task = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if task is not None:
+                    task.future.cancel()
+            self._queue.put_nowait(None)
+
+    def stop(self, timeout: float = 3.0) -> None:
+        self.request_stop()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=max(0, timeout))
+        if self.worker_alive:
+            raise TimeoutError("Modbus I/O worker is still active; ownership retained")
+        with self._lifecycle_lock:
+            self._thread = None
+            self._stopping = False
+            # A never-started/already-exited worker cannot consume the wakeup.
+            while not self._queue.empty():
+                self._queue.get_nowait()
 
     def _submit(self, operation: Callable[[], Any], timeout: float = 10.0) -> Any:
-        if not self._running.is_set():
-            raise RuntimeError("Modbus I/O worker is not running")
-        task = _Task(operation=operation, done=threading.Event())
-        self._queue.put(task)
-        if not task.done.wait(timeout=timeout):
-            raise TimeoutError("Modbus I/O worker did not complete the request")
-        if task.error is not None:
-            raise task.error
-        return task.result
+        task = _Task(operation=operation, future=Future())
+        with self._lifecycle_lock:
+            if not self._running.is_set():
+                raise RuntimeError("Modbus I/O worker is not running")
+            try:
+                self._queue.put_nowait(task)
+            except queue.Full:
+                raise RuntimeError("Modbus request queue is full; request was not submitted") from None
+        try:
+            return task.future.result(timeout=timeout)
+        except CancelledError:
+            raise RuntimeError("Modbus request cancelled before execution") from None
+        except TimeoutError:
+            if task.future.cancel():
+                raise TimeoutError("Modbus request timed out in queue and was cancelled before execution") from None
+            if task.future.done():
+                return task.future.result()
+            raise TimeoutError("Modbus request is already executing; result unknown, do not retry") from None
 
     def execute(
         self,
@@ -206,38 +250,35 @@ class ModbusWorker:
         self.execute(fc, start, values=values)
 
     def _run(self) -> None:
-        while self._running.is_set() or not self._queue.empty():
-            try:
-                task = self._queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
+        while True:
+            task = self._queue.get()
             if task is None:
-                continue
+                return
+            with self._lifecycle_lock:
+                if not self._running.is_set():
+                    task.future.cancel()
+                if not task.future.set_running_or_notify_cancel():
+                    continue
             try:
-                task.result = task.operation()
+                result = task.operation()
             except BaseException as error:
-                task.error = error
-            finally:
-                task.done.set()
+                task.future.set_exception(error)
+            else:
+                task.future.set_result(result)
 
     def _batch_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
         result: dict[int, int | float] = {}
         for group in _group_consecutive(specs):
-            group_start = group[0].addr
-            group_end = max(spec.addr + spec.reg_count for spec in group)
-            cursor = group_start
-            while cursor < group_end:
-                count = min(125, group_end - cursor)
-                registers = self._client.read_holding_registers(
-                    cursor, count, self._slave
-                )
-                for spec in group:
-                    offset = spec.addr - cursor
-                    if 0 <= offset and offset + spec.reg_count <= len(registers):
-                        values = registers_to_values(
-                            registers[offset : offset + spec.reg_count], spec.type
-                        )
-                        if values:
-                            result[spec.addr] = values[0]
-                cursor += count
+            start = group[0].addr
+            count = group[-1].addr + group[-1].reg_count - start
+            read = (self._client.read_input_registers if group[0].register_type == 'input'
+                    else self._client.read_holding_registers)
+            registers = read(start, count, self._slave)
+            if len(registers) != count:
+                raise OSError("Modbus read returned an incomplete register group")
+            for spec in group:
+                offset = spec.addr - start
+                result[spec.addr] = registers_to_values(
+                    registers[offset:offset + spec.reg_count], spec.type,
+                )[0]
         return result

@@ -77,6 +77,9 @@ def test_modbus_start_reports_busy_serial_port(monkeypatch, tmp_path):
         def open(self):
             return False
 
+        def close(self):
+            pass
+
     monkeypatch.setattr("mklink.modbus._client.ModbusClient", BusyModbusClient)
     app = create_app(auth_token=None, project_root=str(tmp_path))
 

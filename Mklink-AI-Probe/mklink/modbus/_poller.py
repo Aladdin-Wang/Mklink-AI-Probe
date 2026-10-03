@@ -21,6 +21,7 @@ def _group_consecutive(specs: list[RegisterSpec]) -> list[list[RegisterSpec]]:
         if (
             spec.addr == prev_end
             and spec.register_type == prev.register_type
+            and spec.addr + spec.reg_count - groups[-1][0].addr <= 125
         ):
             groups[-1].append(spec)
         else:

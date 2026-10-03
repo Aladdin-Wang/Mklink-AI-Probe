@@ -13,7 +13,7 @@
       <div class="hero-status">
         <span class="protocol-tag">RTU</span>
         <span class="protocol-tag">CRC-16</span>
-        <span class="state-pill" :class="{ online: running }"><i></i>{{ running ? tr('链路在线', 'Link online') : tr('链路离线', 'Link offline') }}</span>
+        <span class="state-pill" :class="{ online: running }"><i></i>{{ stopping ? tr('等待停止', 'Waiting for stop') : running ? tr('链路在线', 'Link online') : tr('链路离线', 'Link offline') }}</span>
       </div>
     </header>
 
@@ -26,30 +26,30 @@
         <div class="config-group primary-config">
           <span class="group-label">{{ tr('链路', 'LINK') }}</span>
           <div class="link-grid">
-            <label class="port-field"><span>{{ tr('串口', 'Port') }}</span><select v-model="settings.port" class="form-input"><option v-for="p in ports" :key="p.device" :value="p.device">{{ p.device }} {{ p.description ? `· ${p.description}` : '' }}</option></select></label>
-            <label><span>{{ tr('波特率', 'Baud') }}</span><input v-model.number="settings.baudrate" type="number" class="form-input mono" min="300" max="4000000" /></label>
+            <label class="port-field"><span>{{ tr('串口', 'Port') }}</span><select :disabled="running || stopping || connecting" v-model="settings.port" class="form-input"><option v-for="p in ports" :key="p.device" :value="p.device">{{ p.device }} {{ p.description ? `· ${p.description}` : '' }}</option></select></label>
+            <label><span>{{ tr('波特率', 'Baud') }}</span><input :disabled="running || stopping || connecting" v-model.number="settings.baudrate" type="number" class="form-input mono" min="300" max="4000000" /></label>
           </div>
         </div>
         <div class="config-group serial-config">
           <span class="group-label">{{ tr('帧格式', 'FRAME') }}</span>
           <div class="serial-grid">
-            <label><span>{{ tr('数据位', 'Data') }}</span><select v-model.number="settings.bytesize" class="form-input"><option :value="8">8 bit</option><option :value="7">7 bit</option></select></label>
-            <label><span>{{ tr('校验', 'Parity') }}</span><select v-model="settings.parity" class="form-input"><option value="N">None</option><option value="E">Even</option><option value="O">Odd</option></select></label>
-            <label><span>{{ tr('停止位', 'Stop') }}</span><select v-model.number="settings.stopbits" class="form-input"><option :value="1">1 bit</option><option :value="2">2 bit</option></select></label>
+            <label><span>{{ tr('数据位', 'Data') }}</span><select :disabled="running || stopping || connecting" v-model.number="settings.bytesize" class="form-input"><option :value="8">8 bit</option><option :value="7">7 bit</option></select></label>
+            <label><span>{{ tr('校验', 'Parity') }}</span><select :disabled="running || stopping || connecting" v-model="settings.parity" class="form-input"><option value="N">None</option><option value="E">Even</option><option value="O">Odd</option></select></label>
+            <label><span>{{ tr('停止位', 'Stop') }}</span><select :disabled="running || stopping || connecting" v-model.number="settings.stopbits" class="form-input"><option :value="1">1 bit</option><option :value="2">2 bit</option></select></label>
           </div>
         </div>
         <div class="config-group protocol-config">
           <span class="group-label">{{ tr('协议', 'PROTOCOL') }}</span>
           <div class="protocol-grid">
-            <label><span>{{ tr('从站地址', 'Slave') }}</span><input v-model.number="settings.slave" type="number" class="form-input mono" min="1" max="247" /></label>
-            <label><span>{{ tr('超时', 'Timeout') }}</span><div class="input-unit"><input v-model.number="settings.timeout" type="number" class="form-input mono" min="0.05" max="10" step="0.05" /><span>s</span></div></label>
-            <label><span>{{ tr('重试', 'Retries') }}</span><input v-model.number="settings.retries" type="number" class="form-input mono" min="0" max="5" /></label>
+            <label><span>{{ tr('从站地址', 'Slave') }}</span><input :disabled="running || stopping || connecting" v-model.number="settings.slave" type="number" class="form-input mono" min="1" max="247" /></label>
+            <label><span>{{ tr('超时', 'Timeout') }}</span><div class="input-unit"><input :disabled="running || stopping || connecting" v-model.number="settings.timeout" type="number" class="form-input mono" min="0.05" max="10" step="0.05" /><span>s</span></div></label>
+            <label><span>{{ tr('重试', 'Retries') }}</span><input :disabled="running || stopping || connecting" v-model.number="settings.retries" type="number" class="form-input mono" min="0" max="5" /></label>
           </div>
         </div>
         <div class="connect-block">
-          <label class="echo-toggle"><input v-model="settings.localEcho" type="checkbox" /><span><b>{{ tr('本地回显', 'Local echo') }}</b><small>{{ tr('适配器回显兼容', 'Adapter compatibility') }}</small></span></label>
-          <button v-if="!running" class="btn btn-primary connection-action" :disabled="!settings.port || connecting" @click="connect">{{ connecting ? tr('连接中…', 'Connecting…') : tr('连接', 'Connect') }}</button>
-          <button v-else class="btn btn-danger connection-action" @click="disconnect">{{ tr('断开连接', 'Disconnect') }}</button>
+          <label class="echo-toggle"><input :disabled="running || stopping || connecting" v-model="settings.localEcho" type="checkbox" /><span><b>{{ tr('本地回显', 'Local echo') }}</b><small>{{ tr('适配器回显兼容', 'Adapter compatibility') }}</small></span></label>
+          <button v-if="!running && !stopping" class="btn btn-primary connection-action" :disabled="!settings.port || connecting" @click="connect">{{ connecting ? tr('连接中…', 'Connecting…') : tr('连接', 'Connect') }}</button>
+          <button v-else class="btn btn-danger connection-action" :disabled="disconnecting" @click="disconnect">{{ tr('断开连接', 'Disconnect') }}</button>
         </div>
       </div>
     </section>
@@ -68,11 +68,11 @@
         </div>
         <div class="request-preview mono"><span>SLAVE <b>{{ String(settings.slave).padStart(3, '0') }}</b></span><span>FC <b>{{ String(settings.fc).padStart(2, '0') }}</b></span><span>{{ tr('起始', 'START') }} <b>{{ settings.start || '0' }}</b></span><span v-if="isRead">{{ tr('数量', 'QTY') }} <b>{{ settings.quantity }}</b></span></div>
         <div class="request-actions">
-          <button class="btn btn-primary send-button" :disabled="!running || sending" @click="sendOnce">{{ sending ? tr('发送中…', 'Sending…') : tr('发送请求', 'Send request') }}<span>→</span></button>
+          <button class="btn btn-primary send-button" :disabled="!running || stopping || sending" @click="sendOnce">{{ sending ? tr('发送中…', 'Sending…') : tr('发送请求', 'Send request') }}<span>→</span></button>
           <div class="loop-controls">
             <label><span>{{ tr('间隔(ms)', 'Interval (ms)') }}</span><input v-model.number="settings.loopIntervalMs" type="number" class="form-input" min="20" /></label>
             <label><span>{{ tr('次数 (0=连续)', 'Count (0=continuous)') }}</span><input v-model.number="settings.loopCount" type="number" class="form-input" min="0" max="100000" /></label>
-            <button v-if="!loopRunning" class="btn" :disabled="!running" @click="startLoop">{{ tr('循环发送', 'Start Loop') }}</button>
+            <button v-if="!loopRunning" class="btn" :disabled="!running || stopping" @click="startLoop">{{ tr('循环发送', 'Start Loop') }}</button>
             <button v-else class="btn btn-danger" @click="stopLoop">{{ tr('停止循环', 'Stop Loop') }}</button>
           </div>
         </div>
@@ -116,6 +116,7 @@ const stored = loadModbusSettings(typeof localStorage === 'undefined' ? null : l
 const settings = reactive({ ...DEFAULT_MODBUS_SETTINGS, ...stored })
 const ports = ref<PortInfo[]>([])
 const portsLoaded = ref(false), refreshingPorts = ref(false), connecting = ref(false), sending = ref(false)
+const stopping = ref(false), disconnecting = ref(false)
 const running = ref(false), loopRunning = ref(false), logPaused = ref(false)
 const loopStatus = ref<Record<string, number>>({ completed: 0, errors: 0 })
 const lastResult = ref<TransactionResult | null>(null)
@@ -137,14 +138,59 @@ async function api(path: string, body?: unknown) {
   return payload
 }
 async function refreshPorts() { refreshingPorts.value = true; try { ports.value = await fetchPorts(); if (!ports.value.some(item => item.device === settings.port)) settings.port = ports.value[0]?.device || '' } catch (error) { toast.error(String(error)) } finally { refreshingPorts.value = false; portsLoaded.value = true } }
-async function restoreStatus() { try { const status = await api('/api/dash/modbus/status'); running.value = Boolean(status.running); loopRunning.value = Boolean(status.loop?.running); loopStatus.value = running.value ? (status.loop || loopStatus.value) : { completed: 0, errors: 0 }; if (running.value) connectSSE() } catch { /* backend may still be starting */ } }
-async function connect() { connecting.value = true; try { await api('/api/dash/modbus/start', { port: settings.port, slave: settings.slave, baudrate: settings.baudrate, bytesize: settings.bytesize, parity: settings.parity, stopbits: settings.stopbits, timeout: settings.timeout, retries: settings.retries, local_echo: settings.localEcho, registers: [], interval: Math.max(0.02, settings.loopIntervalMs / 1000) }); running.value = true; connectSSE(); toast.success(tr('Modbus 已连接', 'Modbus connected')) } catch (error) { toast.error(tr('连接失败: ', 'Connection failed: ') + String(error)) } finally { connecting.value = false } }
-async function disconnect() { stopEventSource(); try { await api('/api/dash/modbus/stop', {}) } catch { /* already stopped */ } running.value = false; loopRunning.value = false; loopStatus.value = { completed: 0, errors: 0 }; toast.info(tr('Modbus 已断开', 'Modbus disconnected')) }
+function applyStatus(status: any): void {
+  running.value = Boolean(status.running)
+  stopping.value = Boolean(status.stopping)
+  loopRunning.value = Boolean(status.loop?.running)
+  loopStatus.value = status.loop || { completed: 0, errors: 0 }
+  if ((running.value || stopping.value) && status.connection) {
+    const connection = status.connection
+    Object.assign(settings, {
+      port: connection.port, baudrate: connection.baudrate, bytesize: connection.bytesize,
+      parity: connection.parity, stopbits: connection.stopbits, timeout: connection.timeout,
+      retries: connection.retries, localEcho: connection.local_echo, slave: status.slave,
+    })
+  }
+}
+async function restoreStatus() {
+  try {
+    applyStatus(await api('/api/dash/modbus/status'))
+    if (running.value) connectSSE()
+  } catch { /* Preserve the last confirmed state while the backend is unavailable. */ }
+}
+async function connect() { connecting.value = true; try { await api('/api/dash/modbus/start', { port: settings.port, slave: settings.slave, baudrate: settings.baudrate, bytesize: settings.bytesize, parity: settings.parity, stopbits: settings.stopbits, timeout: settings.timeout, retries: settings.retries, local_echo: settings.localEcho, registers: [], interval: Math.max(0.02, settings.loopIntervalMs / 1000) }); running.value = true; stopping.value = false; connectSSE(); toast.success(tr('Modbus 已连接', 'Modbus connected')) } catch (error) { toast.error(tr('连接失败: ', 'Connection failed: ') + String(error)) } finally { connecting.value = false } }
+async function disconnect() {
+  disconnecting.value = true
+  stopping.value = true
+  try {
+    await api('/api/dash/modbus/stop', {})
+    stopEventSource()
+    running.value = false
+    stopping.value = false
+    loopRunning.value = false
+    loopStatus.value = { completed: 0, errors: 0 }
+    toast.info(tr('Modbus 已断开', 'Modbus disconnected'))
+  } catch (error) {
+    toast.error(tr('停止未完成: ', 'Stop did not complete: ') + String(error))
+    await restoreStatus()
+  } finally {
+    disconnecting.value = false
+  }
+}
 function requestPayload() { return buildTransaction(settings) }
 async function sendOnce() { sending.value = true; try { lastResult.value = await api('/api/dash/modbus/transaction', requestPayload()) } catch (error) { toast.error(tr('请求失败: ', 'Request failed: ') + String(error)) } finally { sending.value = false } }
 async function startLoop() { try { loopStatus.value = await api('/api/dash/modbus/loop/start', { ...requestPayload(), interval: settings.loopIntervalMs / 1000, count: settings.loopCount }); loopRunning.value = true } catch (error) { toast.error(tr('循环启动失败: ', 'Loop start failed: ') + String(error)) } }
-async function stopLoop() { try { loopStatus.value = await api('/api/dash/modbus/loop/stop', {}) } catch { /* session stopped */ } loopRunning.value = false }
-function connectSSE() { stopEventSource(); es = new EventSource(`${API_BASE}/api/dash/modbus/stream`); es.onmessage = event => { try { const value = JSON.parse(event.data); if (value.event === 'transaction') lastResult.value = value; if (value.event === 'loop') { loopRunning.value = Boolean(value.running); loopStatus.value = value }; if (value.event === 'stopped') { running.value = false; loopRunning.value = false }; if (value.event === 'error') toast.error(value.message); if (value.event === 'history') { if (!logPaused.value) logs.value = [...logs.value, ...(value.points || []).filter((item: LogEntry) => ['frame', 'error'].includes(item.event))].slice(-500) } else if (!logPaused.value && ['frame', 'error'].includes(value.event)) logs.value = [...logs.value, value].slice(-500); nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight }) } catch { /* malformed event */ } } }
+async function stopLoop() {
+  try {
+    const status = await api('/api/dash/modbus/loop/stop', {})
+    loopStatus.value = status
+    loopRunning.value = Boolean(status.running)
+  } catch (error) {
+    toast.error(tr('循环停止未完成: ', 'Loop stop did not complete: ') + String(error))
+    await restoreStatus()
+  }
+}
+function connectSSE() { stopEventSource(); es = new EventSource(`${API_BASE}/api/dash/modbus/stream`); es.onmessage = event => { try { const value = JSON.parse(event.data); if (value.event === 'status') applyStatus(value); if (value.event === 'transaction') lastResult.value = value; if (value.event === 'loop') { loopRunning.value = Boolean(value.running); loopStatus.value = value }; if (value.event === 'stopped') { running.value = false; stopping.value = false; loopRunning.value = false; stopEventSource() }; if (value.event === 'error') toast.error(value.message); if (value.event === 'history') { if (!logPaused.value) logs.value = [...logs.value, ...(value.points || []).filter((item: LogEntry) => ['frame', 'error'].includes(item.event))].slice(-500) } else if (!logPaused.value && ['frame', 'error'].includes(value.event)) logs.value = [...logs.value, value].slice(-500); nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight }) } catch { /* malformed event */ } } }
 function stopEventSource() { if (es) { es.close(); es = null } }
 function formatAddress(value: number) { return `${value} / 0x${value.toString(16).toUpperCase().padStart(4, '0')}` }
 function formatHex(value: number | boolean) { const n = typeof value === 'boolean' ? Number(value) : value; return `0x${n.toString(16).toUpperCase().padStart(4, '0')}` }

@@ -29,7 +29,10 @@ class _ExplicitSerialClient(ModbusSerialClient):
     """pymodbus requests may check connectivity, but must never reopen a COM port."""
 
     def open_port(self) -> bool:
-        return super().connect()
+        if not super().connect():
+            return False
+        self.socket.write_timeout = self.comm_params.timeout_connect
+        return True
 
     def connect(self) -> bool:
         return bool(self.socket and self.socket.is_open)

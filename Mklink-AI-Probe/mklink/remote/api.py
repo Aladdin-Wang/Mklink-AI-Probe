@@ -514,8 +514,10 @@ def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[s
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
-    resources = ([ResourceGroup.SERIAL_PORT] if dashboard == "serial" else
-                 [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG])
+    resources = {
+        "serial": [ResourceGroup.SERIAL_PORT],
+        "modbus": [ResourceGroup.MODBUS_PORT],
+    }.get(dashboard, [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG])
     manager.acquire_many(
         resources,
         owner,
@@ -2976,107 +2978,27 @@ def create_app(
     ):
         managers = get_managers()
         mm = managers["modbus"]
-        if mm.running:
-            _state["resource_manager"].acquire(
-                ResourceGroup.MODBUS_PORT,
-                "user:dashboard:modbus",
-                preempt=True,
-            )
-            return {"status": "already_running"}
-
-        rm = _state["resource_manager"]
-        owner = "user:dashboard:modbus"
+        connection = {
+            "port": port, "baudrate": baudrate, "bytesize": bytesize,
+            "parity": parity, "stopbits": stopbits, "timeout": timeout,
+            "retries": retries, "local_echo": local_echo,
+        }
         try:
-            rm.acquire(ResourceGroup.MODBUS_PORT, owner, preempt=True)
-        except Exception as e:
-            resource = getattr(e, "resource", ResourceGroup.MODBUS_PORT)
-            conflict_owner = getattr(e, "conflict_owner", str(e))
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": conflict_owner, "resource": resource.value},
+            status, _ = await start_dashboard_manager(
+                _state, "modbus", mm, lambda: mm.start(connection, slave, registers, interval),
             )
-
-        try:
-            port = str(port).strip()
-            parity = str(parity).strip().upper()
-            if not port:
-                raise ValueError("Serial port is required")
-            if isinstance(slave, bool) or not 1 <= int(slave) <= 247:
-                raise ValueError("Slave address must be in the range 1..247")
-            if isinstance(baudrate, bool) or not 300 <= int(baudrate) <= 4000000:
-                raise ValueError("Baud rate must be in the range 300..4000000")
-            if bytesize not in (7, 8):
-                raise ValueError("Data bits must be 7 or 8")
-            if parity not in ("N", "E", "O"):
-                raise ValueError("Parity must be N, E or O")
-            if stopbits not in (1, 2):
-                raise ValueError("Stop bits must be 1 or 2")
-            if not 0.05 <= float(timeout) <= 10.0:
-                raise ValueError("Timeout must be in the range 0.05..10 seconds")
-            if isinstance(retries, bool) or not 0 <= int(retries) <= 5:
-                raise ValueError("Retries must be in the range 0..5")
-            if not 0.02 <= float(interval) <= 3600.0:
-                raise ValueError("Polling interval must be in the range 0.02..3600 seconds")
-            from mklink.modbus._client import ModbusClient
-            client = ModbusClient(
-                port=port,
-                baudrate=int(baudrate),
-                bytesize=int(bytesize),
-                parity=parity,
-                stopbits=int(stopbits),
-                timeout=float(timeout),
-                retries=int(retries),
-                handle_local_echo=bool(local_echo),
-                trace_packet=mm.trace_packet,
-            )
-            if not client.open():
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "conflict": f"serial port {port} is busy or unavailable",
-                        "resource": ResourceGroup.MODBUS_PORT.value,
-                    },
-                )
-        except HTTPException:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise
-        except ValueError as e:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            release_resource_owner(_state, owner, stop_active=False)
-            raise HTTPException(status_code=500, detail=f"Modbus connect failed: {e}")
-
-        loop = asyncio.get_event_loop()
-        try:
-            await loop.run_in_executor(
-                None,
-                lambda: mm.start(
-                    client,
-                    int(slave),
-                    registers,
-                    float(interval),
-                    {
-                        "port": port,
-                        "baudrate": int(baudrate),
-                        "bytesize": int(bytesize),
-                        "parity": parity,
-                        "stopbits": int(stopbits),
-                        "timeout": float(timeout),
-                        "retries": int(retries),
-                        "local_echo": bool(local_echo),
-                    },
-                ),
-            )
-        except Exception:
-            release_resource_owner(_state, owner, stop_active=True)
-            raise
-        return {"status": "started"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=409, detail={
+                "conflict": str(exc), "resource": ResourceGroup.MODBUS_PORT.value,
+            }) from exc
+        return {"status": status}
 
     @app.post("/api/dash/modbus/stop")
     async def modbus_stop():
-        result = release_resource_owner(_state, "user:dashboard:modbus")
-        return {"status": "stopped", **result}
+        await stop_dashboard_manager_transaction(_state, "modbus", get_managers()["modbus"])
+        return {"status": "stopped"}
 
     @app.post("/api/dash/modbus/write")
     async def modbus_write(
@@ -3172,7 +3094,10 @@ def create_app(
 
     @app.post("/api/dash/modbus/loop/stop")
     async def modbus_loop_stop():
-        return get_managers()["modbus"].stop_loop()
+        try:
+            return await asyncio.to_thread(get_managers()["modbus"].stop_loop)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/dash/modbus/status")
     async def modbus_status():

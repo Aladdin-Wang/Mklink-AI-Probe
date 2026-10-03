@@ -133,6 +133,8 @@ class SerialMonitor:
     def send(self, port: str, data: bytes) -> bool:
         port = canonical_serial_port(port)
         with self._protocol_lock:
+            if self._stop_event.is_set():
+                return False
             if port in self._protocol_queues:
                 return False
             with self._lock:
@@ -176,6 +178,8 @@ class SerialMonitor:
         port = canonical_serial_port(port)
         receive_queue: queue.Queue[bytes] = queue.Queue()
         with self._protocol_lock:
+            if self._stop_event.is_set():
+                raise RuntimeError("Serial monitor is stopping")
             if port in self._protocol_queues:
                 raise RuntimeError(f"serial port {port} already has an active transfer")
             with self._lock:

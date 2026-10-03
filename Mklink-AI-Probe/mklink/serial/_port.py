@@ -98,6 +98,7 @@ class SerialPort:
                 stopbits=self._stopbits,
                 parity=self._parity,
                 timeout=self._timeout,
+                write_timeout=1.0,
             )
             require_uart_port(self._port)
             return True
