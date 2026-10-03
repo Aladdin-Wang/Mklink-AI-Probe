@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T09:38:02.4608144+08:00",
+  "updated_at": "2026-10-03T10:05:03.9804479+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/v023-release-readme",
+    "branch": "codex/v023-site-agent-acl",
     "head": "Release preparation based on main ae83a37.",
     "remote_head": "main 391918f; PR23 retains installation evidence.",
     "working_tree": "Isolated task worktree; original main user firmware preserved."
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "用户授权处理待合并PR、简化README并正式发布0.2.3；已汇总PR17/19/21/23/25验收文档，保留最新功能代码。"
+    "current_task": "正式Site Agent启动冒烟发现上传目录权限处理错误：已属当前用户却无WRITE_OWNER时重复设置owner被拒绝；修复只在需要时设置owner，补充真实ACL回归。websockets假设已排除，试改撤回。"
   },
   "milestones": [
     {
@@ -80,8 +80,8 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "通过完整门禁后合并发布准备PR；关闭已被汇总的历史安装验收PR。",
-    "从干净最新main构建签名NSIS、Skill与Site Agent，验证后发布三个渠道及更新索引。"
+    "完成ACL修复门禁、合并后重建所有正式包。",
+    "真实验证Agent生命周期及正式安装后发布三个渠道。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"

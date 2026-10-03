@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T09:38:02.4608144+08:00`
-- 分支：`codex/v023-release-readme`
+- 更新时间：`2026-10-03T10:05:03.9804479+08:00`
+- 分支：`codex/v023-site-agent-acl`
 - HEAD：`Release preparation based on main ae83a37.`
 - 远端 HEAD：`main 391918f; PR23 retains installation evidence.`
 - 工作树：Isolated task worktree; original main user firmware preserved.
-- 当前任务：用户授权处理待合并PR、简化README并正式发布0.2.3；已汇总PR17/19/21/23/25验收文档，保留最新功能代码。
+- 当前任务：正式Site Agent启动冒烟发现上传目录权限处理错误：已属当前用户却无WRITE_OWNER时重复设置owner被拒绝；修复只在需要时设置owner，补充真实ACL回归。websockets假设已排除，试改撤回。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -43,8 +43,8 @@
 
 ## 下一动作
 
-1. 通过完整门禁后合并发布准备PR；关闭已被汇总的历史安装验收PR。
-2. 从干净最新main构建签名NSIS、Skill与Site Agent，验证后发布三个渠道及更新索引。
+1. 完成ACL修复门禁、合并后重建所有正式包。
+2. 真实验证Agent生命周期及正式安装后发布三个渠道。
 
 ## 已知限制
 

@@ -108,6 +108,37 @@ def _assert_restrictive(path, *, directory=False):
     assert rule["Propagation"] == "None"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows owner and DACL rights")
+def test_upload_storage_owned_by_user_without_write_owner(tmp_path):
+    from mklink.remote.transfer import enforce_owner_only_permissions
+
+    root = tmp_path / "modify-only"
+    root.mkdir()
+    # Begin with known ownership, then reproduce a normal inherited Modify
+    # directory: its owner can set permissions but cannot reassign ownership.
+    enforce_owner_only_permissions(root, directory=True)
+    from mklink.remote.transfer import _windows_current_sid
+    subprocess.run(
+        ["icacls", str(root), "/inheritance:r", "/grant:r",
+         f"*{_windows_current_sid()}:(OI)(CI)M"],
+        check=True, capture_output=True,
+    )
+    try:
+        acl = _windows_acl(root)
+        assert acl["OwnerSid"] == acl["CurrentSid"]
+        rules = acl["Rules"]
+        if isinstance(rules, dict):
+            rules = [rules]
+        assert all(not (int(rule["Rights"]) & 0x00080000) for rule in rules)
+        manager = UploadManager(root)
+        try:
+            _assert_restrictive(manager.root, directory=True)
+        finally:
+            manager.close()
+    finally:
+        enforce_owner_only_permissions(root, directory=True)
+
+
 @pytest.mark.parametrize("filename", ["../escape.bin", "dir/file.bin", "dir\\file.bin", "", ".", "..", "bad\x00.bin"])
 def test_upload_rejects_client_path_traversal_and_non_basename_names(tmp_path, filename):
     manager = UploadManager(tmp_path / "uploads")

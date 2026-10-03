@@ -273,6 +273,36 @@ def _windows_sid_text(sid: int) -> str:
         kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
 
 
+def _windows_owner_sid(path: Path) -> str:
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32.GetNamedSecurityInfoW.argtypes = (
+        wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+    )
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    kernel32.LocalFree.argtypes = (ctypes.c_void_p,)
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    owner, descriptor = ctypes.c_void_p(), ctypes.c_void_p()
+    status = advapi32.GetNamedSecurityInfoW(
+        str(path), 1, 1, ctypes.byref(owner), None, None, None,
+        ctypes.byref(descriptor),
+    )
+    if status != 0:
+        raise PermissionError("Unable to verify owner-only permissions")
+    try:
+        if not owner.value:
+            raise PermissionError("Unable to verify owner-only permissions")
+        return _windows_sid_text(owner.value)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
 def _set_windows_owner_only_acl(path: Path, *, directory: bool) -> None:
     import ctypes
     from ctypes import wintypes
@@ -283,11 +313,11 @@ def _set_windows_owner_only_acl(path: Path, *, directory: bool) -> None:
     sddl_revision_1 = 1
     sid = _windows_current_sid()
     inheritance = "OICI" if directory else ""
-    # Setting only the DACL is insufficient when the path was created under
-    # an inherited/elevated owner (for example an SSH-launched process whose
-    # profile directory is owned by the local Administrators group).  The
-    # public contract requires the current identity to be both the owner and
-    # the sole allowed principal, so apply both parts atomically.
+    # An owner can change the DACL without WRITE_OWNER. Reassigning an already
+    # correct owner unnecessarily requests that extra right and can fail on
+    # ordinary inherited Modify permissions. A different owner still requires
+    # the atomic owner + DACL update; never silently accept foreign ownership.
+    owner_matches = _windows_owner_sid(path) == sid
     sddl = f"O:{sid}D:P(A;{inheritance};FA;;;{sid})"
 
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
@@ -319,11 +349,9 @@ def _set_windows_owner_only_acl(path: Path, *, directory: bool) -> None:
     ):
         raise PermissionError("Unable to enforce owner-only permissions")
     try:
-        information = (
-            owner_security_information
-            | dacl_security_information
-            | protected_dacl_security_information
-        )
+        information = dacl_security_information | protected_dacl_security_information
+        if not owner_matches:
+            information |= owner_security_information
         if not advapi32.SetFileSecurityW(
             str(path),
             information,
