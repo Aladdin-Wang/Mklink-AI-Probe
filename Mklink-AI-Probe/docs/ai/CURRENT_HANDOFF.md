@@ -4,59 +4,52 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T02:31:11.928688+00:00`
-- 分支：`codex/v023-release-record`
-- HEAD：`Release source/tag v0.2.3: b0e0f61e0c8f51f548718bb8e670eda729db3698; this branch adds publication records.`
-- 远端 HEAD：`main b0e0f61 after PR27; PR26 contains README and consolidated evidence.`
-- 工作树：Documentation-only release record; original user firmware preserved.
-- 当前任务：0.2.3已正式发布三个渠道，公开文件和更新索引校验通过；README改为AI操作指引，旧PR已处理，本地安装版和Skill已更新。
+- 更新时间：`2026-10-03T03:43:06.163989+00:00`
+- 分支：`codex/firmware-20261003`
+- HEAD：`Based on main b35a32d; firmware publication and handoff cleanup.`
+- 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
+- 工作树：Latest user firmware copied and hash-checked; use Git status for live state.
+- 当前任务：发布四份用户更新固件；同步V4/V3/V2主工程main；清理过期候选包并压缩交接。外部Arm-2D/MicroBoot保持原状、不上传。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.2.3正式发布** — `complete`。MicroKeen、旧GitHub和Gitee发布相同7个文件；更新索引最后切换；标签固定b0e0f61。详见docs/verification/v0.2.3-release-final.md。
+- **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
+- **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **0.2.3集成验收**：docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。 正式发布补充：Python2459通过/2跳过、GUI762及最终生产构建通过；Agent真实ACL及启停、签名、受限PATH覆盖安装、桌面/Web版本、内置后端和退出释放通过；三端发布及公开索引已验证。
-- **SuperWatch实时写入及回放**：superwatch-live-write-20261002.md、superwatch-live-write-v23-20261002.md、superwatch-live-write-hpm6e80-20261002.md和superwatch-replay-20261002.md记录各版本实机及浏览器验证。V4 HPM需DUMP_WRITE_HPM=1；本轮V2/V3未更新。
-- **SuperWatch界面及恢复**：PR24拖动修复已合并并覆盖安装，桌面真实鼠标移入普通组及折叠空组、Web同步通过。PR26保留此前安装证据。正式包0.2.3/b0e0f61已安装验证；详见superwatch-drag-groups-20261003.md及v0.2.3-release-final.md。
-- **0.2.2 发布、安装与固件**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。 HPMLinkV4.5.1、MicroLinkV4.5.1/V3.5.0/V2.8.0已公开下载校验；25项发布/升级测试通过。V2 RBL头/体CRC、长度及程序版本验证，打包头V1.0.0保留原件。此发布轮未刷机，不新增硬件认证。 PR #6同步四份固件至源码目录，合并前Python2306/2跳过、GUI720及生产构建通过。
-- **nRF54L15保护**：Python真机 APPROTECT/SECUREAPPROTECT 写入、复位保护状态3、AHB关闭、CTRL-AP恢复0.923秒、1560576字节全空检查、客户HEX恢复校验通过。原始证据保存在用户测试目录 .mklink/security_roundtrip_20260924.json。别名与算法目录回归19项通过。
-- **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
-- **0.2.3 电源、AP 与 USB 实机验收**：docs/verification/v0.2.3-power-telemetry-20260928.md：主机135项、Skill及V3/V4模型和SEGGER构建通过，V3电压/不可用电流字段实机通过。v0.2.3-v3-h743-acceptance-20260928.md：AP/内存/变量三场景及RAM表头解析修复通过。v3-v4-usb-recovery-20260928.md：V3已刷机、USB241次ID/5次重配置/约21ms Abort及H7434170样本通过，缺WinUSB GUID经定向备份修复。v0.2.3-v4-f103-regression-20260930.md：V4.5.2实机电源CLI/MCP、USB恢复、AP/变量/CPU/RTT/VOFA/SystemView/UART及真实GUI通过；在线6轮、脱机算法6轮独立回读，应用与Bootloader一致，GUI686585次无错误/丢样。目标运行，未改固件或发布；外部测量精度仍未标定。
-- **0.2.3安装版STM32F103**：docs/verification/v0.2.3-installed-f103-20261002.md：应用114840字节在线烧录回读、Bootloader20480字节保留；RAM128项、实时四种宽度1776样本最大间隔1197us；Web/桌面361269次采集零错误/丢样，CLI2670行日志两端回放一致，RTT317行/SystemView22570事件通过。测试变量恢复、心跳正常、设备及进程释放。
+- **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
+- **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
+- **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
 
 ## 架构决策
 
-- 开发主仓库MicroKeen/main；后续修改从最新main创建codex分支，经PR及必需CI整合。审批人数0，发布和合并仍需明确授权；标签不可变。
-- 应用主索引MicroKeen/release，旧GitHub/updates兼容，Gitee/updates备用。固件三个firmware索引保持兼容，客户端URL仍可指向旧GitHub。
-- 现有自动固件更新仅支持UF2；V2 RBL作为手动升级附件，不写入严格UF2索引，避免破坏0.2.2解析。
-- 此前Gitee历史清理仅针对0.2.2发布轮；本轮新增0.2.3，不额外删除历史发布，固件渠道独立。
-- 保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。
+- 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
+- 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
+- V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
+- 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
 
 ## 真机环境
 
-- **state**：V4/F103已连接用于桌面信号分组验证，采样停止；本轮未写入目标内存或固件。
-- **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
-- **installer**：正式0.2.3/b0e0f61已覆盖安装，公共Skill为同一提交；最终Agent本地启停通过。
+- **state**：本轮只做发布、主机模型测试和代码同步，没有刷写设备。
+- **installer**：本地0.2.3/b0e0f61；本次固件独立发布，不重建应用。
+- **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 按后续明确任务继续开发；0.2.3标签及已发布文件不可覆盖。
-2. 若补做nRF54L15 GUI或跨主机Agent验收，使用对应设备并单独记录，不外推现有证据。
+1. 按新任务继续；先查Git/设备现状，仅阅读相关验证报告。
+2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- 有限缓冲不保证无限暂停/物理断线无损；外设轮询可能漏短脉冲，多变量不是原子快照。 VCC遥测需要配套新固件；V3仅电压，V4功率为滤波电压电流乘积，未新增校准。135项测试和固件编译不能替代真实负载精度验证。Web静态资源遗漏已修复并覆盖验收。
-- 客户原始ELF/程序不可用，不能宣称复现其毛刺根因；odd-address packed halfword不保证原子性。
-- HPM OTP仅按报告限定型号和字段；当前HPM5301组18/19永久锁定，禁止重放配方。其他安全GUI写入口未开放。
-- PY32F030保护后恢复、物理Modbus、所有板卡、Mac/Linux与跨主机Agent未完整认证；STM32看门狗、STOP/STANDBY、WRP拒写仍待专测。
-- Windows安装器无Authenticode签名（未知发布者），自动更新签名已验证；标准包不含离线WebView2。本轮已验证原生桌面实时写入和CLI日志回放。
-- HPM6E80回归有限时长且无UART；本次用户更新的四份固件只做格式/CRC/公开发布验证，不把历史实测外推到新二进制。
-- nRF54L15 CTRL-AP 解锁已在 V4.5.1 真机验证：脚本恢复后客户 HEX 脱机烧录、全量回读和运行后保护状态通过；未在固件中写入 nRF54L15 型号。在线GUI已接入安全操作，但尚未做本轮真机加锁/CTRL-AP解锁闭环；脱机GUI仍仅解锁配方。此前Python真机配方通过不能外推为本轮GUI验收。 2026-10-02用户明确豁免nRF54L15在线GUI保护闭环缺失，允许带限制合并和本地构建；不等于该路径真机验收通过。
-- STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。
+- nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
+- 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
+- HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
+- STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。
+- Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。
+- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。
 
 ## 延续协议
 
-- 先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。
+- 交接只保存现状、关键限制和报告索引；详细历史留在docs/verification。
