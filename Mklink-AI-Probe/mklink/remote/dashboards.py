@@ -2767,6 +2767,14 @@ class SerialStreamManager:
             self._stream_hub = None
 
     @property
+    def worker_alive(self) -> bool:
+        return bool(
+            (self._monitor is not None and self._monitor.worker_alive)
+            or (self._byte_batcher is not None and self._byte_batcher.worker_alive)
+            or (self._ymodem_thread is not None and self._ymodem_thread.is_alive())
+        )
+
+    @property
     def running(self) -> bool:
         return self._running
 
@@ -2779,6 +2787,8 @@ class SerialStreamManager:
                       auto_reply_rules: list[dict] | None = None) -> None:
         if self._running:
             return
+        if self.worker_alive:
+            raise RuntimeError("Previous serial workers are still active; stop first")
         with self._ymodem_lock:
             if self._ymodem_status["active"]:
                 raise RuntimeError("previous YMODEM transfer is still active")
@@ -2790,6 +2800,9 @@ class SerialStreamManager:
 
         from mklink.serial._monitor import SerialMonitor
 
+        from mklink.usb_interfaces import canonical_serial_port
+
+        ports = [dict(cfg, port=canonical_serial_port(cfg["port"])) for cfg in ports]
         self._port_config = ports
         self._profile = profile
         self._auto_reply_rules = auto_reply_rules
@@ -2905,7 +2918,7 @@ class SerialStreamManager:
             self._monitor.start()
             self._byte_batcher.start()
         except Exception:
-            self._byte_batcher.close()
+            self.stop()
             raise
         self._running = True
         self._bridge.put({"event": "status", **self.get_status()})

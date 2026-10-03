@@ -23,6 +23,10 @@ class SerialByteBatcher:
             target=self._run, name="serial-byte-batches", daemon=True,
         )
 
+    @property
+    def worker_alive(self) -> bool:
+        return self._thread.is_alive()
+
     def start(self) -> None:
         self._thread.start()
 

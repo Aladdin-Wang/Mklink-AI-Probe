@@ -31,7 +31,8 @@ def port_lock_dir() -> str:
 
 
 def _safe_port_name(port: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
+    from mklink.usb_interfaces import canonical_serial_port
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", canonical_serial_port(port).upper())
 
 
 def serial_lock_path(port: str) -> str:

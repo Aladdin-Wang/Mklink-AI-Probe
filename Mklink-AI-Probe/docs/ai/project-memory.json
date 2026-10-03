@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T22:31:25+00:00",
+  "updated_at": "2026-10-03T23:04:10+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; VOFA shared migration and private/native legacy removal implemented after 647f3a7; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; UART/Modbus port safety and shared serial lifecycle implemented after f8e75dd; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审/验证。VOFA已共享化，复用dump会话/样本组装/符号目录/租约；删除直连、JustFloat、私有服务、host-polling及旧流状态。扩展1633通过/2可选跳过，GUI784及最终相关131、类型/构建通过。双下载器WebGUI/CLI/SDK/MCP真机和实际进程退出通过，继续其他专用入口及A7。"
+    "current_task": "持续循环评审/验证。第二十四批修复UART误占命令口及WebGUI错误端口列表；删除自动重连，复用共享启停事务，停止超时保留资源；Modbus禁止请求隐式开口。扩展1865通过/2可选跳过，最终相关212、GUI785、类型/构建通过。双下载器WebGUI RTT+UART+MCP/SDK共存及实际进程退出通过。继续Modbus生命周期/串口共享能力及A7。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第二十三批：1633通过/2可选依赖跳过，GUI784及相关131、类型/外置构建通过；CI新增VOFA与图形契约，精确结果看PR。VOFA创建/订阅/停止失败不重放、符号重解析、15组/64通道、公共OLD/B1组装、稀疏样本及时推送通过。双下载器/Edge/SDK/CLI/MCP：RTT冲突不抢停、混合通道匹配裸内存、借用退出不停止、网页两次启停及0.5秒首样本显示。Boot/选项字节/VTOR/配置保持，tick推进，后台及串口子进程实际退出。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第二十四批：扩展1865通过/2可选依赖跳过，最终相关212、GUI785、类型/外置构建通过；新增UART/Modbus契约进入CI。初次真机发现串口页面误用命令口列表，修复并重验。双后台各自UART、主GUI RTT/MCP/SDK共存；同UART跨后台409、命令口400、失败后恢复、连续启停成功。Boot/选项字节/VTOR/配置保持、tick推进，后台及串口子进程实际退出；未发送UART/Modbus数据。"
     },
     {
       "area": "正式版与安装",
@@ -59,13 +59,13 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT时VOFA拒绝且会话保持；停止后SDK拥有/MCP与CLI借用/WebGUI同一波形，网页两次启停、0.5秒稀疏样本显示通过。第二探针仅版本查询、未初始化目标。Boot20KiB/选项字节/VTOR/配置保持、tick推进；后台及串口子进程实际退出。未reset/烧录/擦除/写RAM/改保护/OTP/VCC/时钟；每轮须重枚举。",
+    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。双后台分别打开各自UART，主WebGUI RTT和MCP/SDK并存；同UART跨后台409、命令口400、失败后恢复及连续启停通过。第二探针仅版本查询和UART开关，未初始化目标。Boot20KiB/选项字节/VTOR/配置保持、tick推进；后台及串口子进程实际退出。未发送UART/Modbus数据、reset/烧录/擦除/写RAM/改保护/OTP/VCC/时钟；每轮须重枚举。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
     "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
-    "0.3.0第七阶段：串口/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。",
+    "0.3.0第七阶段：串口/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。串口REST已复用异步启停事务，Modbus REST与跨客户端UART订阅/发送归属尚未迁移；尚未覆盖实际Modbus从站、串口拔插或OS开口阻塞。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "继续审计串口/Modbus/分析等专用CLI、独立Agent及旧MCP调用方，复用现有后台能力与准入，删除无人使用的独占路径，避免添加兼容层。随后A7双设备长稳、拔插/休眠和NSIS；保持实际后台/串口子进程退出断言。不改下载器固件/WinUSB，不自动合并发布。",
+    "下一轮优先收敛Modbus REST启动/取消/停止生命周期，复用公共事务；再迁移UART/Modbus专用CLI与旧MCP能力，定义独立端口的共享订阅/发送归属，避免套用MCU独占租约。继续审计分析入口及独立Agent，随后A7双设备长稳、拔插/休眠和NSIS。保留实际进程退出断言，不改下载器固件/WinUSB，不自动合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

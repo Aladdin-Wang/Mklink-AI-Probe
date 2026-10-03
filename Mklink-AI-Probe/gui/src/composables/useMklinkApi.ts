@@ -84,6 +84,10 @@ export function useMklinkApi() {
     return api('/api/ports')
   }
 
+  async function listUartPorts(): Promise<PortInfo[]> {
+    return api('/api/ports/uart')
+  }
+
   async function discoverPort(): Promise<{ port: string | null }> {
     return api('/api/ports/discover')
   }
@@ -353,6 +357,7 @@ export function useMklinkApi() {
   return {
     deviceStatus: readonly(deviceStatus),
     listPorts,
+    listUartPorts,
     discoverPort,
     getProfiles,
     getConfig,

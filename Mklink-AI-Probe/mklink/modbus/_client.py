@@ -8,6 +8,7 @@ from pymodbus.client import ModbusSerialClient
 from pymodbus import FramerType, ModbusException
 
 from mklink.local_resources import _PortLock
+from mklink.usb_interfaces import canonical_serial_port, require_uart_port
 
 
 class ModbusError(Exception):
@@ -22,6 +23,16 @@ class ModbusSlaveError(ModbusError):
         self.fc = fc
         self.response = response
         super().__init__(f"从站 {slave} 返回异常 (FC={fc:#04x}): {response}")
+
+
+class _ExplicitSerialClient(ModbusSerialClient):
+    """pymodbus requests may check connectivity, but must never reopen a COM port."""
+
+    def open_port(self) -> bool:
+        return super().connect()
+
+    def connect(self) -> bool:
+        return bool(self.socket and self.socket.is_open)
 
 
 class ModbusClient:
@@ -40,7 +51,8 @@ class ModbusClient:
         trace_packet: Callable[[bool, bytes], bytes] | None = None,
         trace_connect: Callable[[bool], None] | None = None,
     ):
-        self._client = ModbusSerialClient(
+        port = canonical_serial_port(port)
+        self._client = _ExplicitSerialClient(
             port=port,
             framer=FramerType.RTU,
             baudrate=baudrate,
@@ -60,19 +72,31 @@ class ModbusClient:
     def open(self) -> bool:
         """打开串口连接。"""
         if self._is_open:
-            return True
+            if self._client.connect():
+                return True
+            self.close()
+        require_uart_port(self._port)
         if not self._lock.acquire():
             print(f"[FAIL] Modbus 串口 {self._port} 已被 mklink 其他进程占用；不要并发访问同一串口")
             return False
         try:
-            ok = self._client.connect()
+            ok = self._client.open_port()
             if not ok:
-                self._lock.release()
+                try:
+                    self._client.close()
+                finally:
+                    self._lock.release()
                 return False
+            require_uart_port(self._port)
             self._is_open = True
             return True
         except Exception as e:
-            self._lock.release()
+            try:
+                self._client.close()
+            finally:
+                self._lock.release()
+            if isinstance(e, ValueError):
+                raise
             print(f"[FAIL] 无法打开端口 {self._port}: {e}")
             return False
 

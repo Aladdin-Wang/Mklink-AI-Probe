@@ -375,6 +375,8 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
 
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
     class FakeMonitor:
+        worker_alive = False
+
         def __init__(self, **kwargs):
             self.event_callback = kwargs["event_callback"]
             self.chunk_callback = kwargs["chunk_callback"]
@@ -428,6 +430,7 @@ def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypat
 
 
 class _YModemMonitor:
+    worker_alive = False
     mode = "complete"
     entered = threading.Event()
 
@@ -646,6 +649,8 @@ def test_serial_stream_manager_stop_retains_lifecycle_while_worker_is_alive(
     release = threading.Event()
 
     class StuckMonitor:
+        worker_alive = False
+
         def __init__(self, **_kwargs):
             self.port_status = {"TEST": "open"}
 
@@ -820,6 +825,8 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
 
 def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):
     class FakeMonitor:
+        worker_alive = False
+
         def __init__(self, **kwargs):
             self.event_callback = kwargs["event_callback"]
             self.chunk_callback = kwargs["chunk_callback"]

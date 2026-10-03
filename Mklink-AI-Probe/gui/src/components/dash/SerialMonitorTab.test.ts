@@ -4,7 +4,7 @@ import { shallowRef } from 'vue'
 import SerialMonitorTab from './SerialMonitorTab.vue'
 
 const mocks = vi.hoisted(() => ({
-  listPorts: vi.fn(),
+  listUartPorts: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   toastInfo: vi.fn(),
@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../composables/useMklinkApi', () => ({
-  useMklinkApi: () => ({ listPorts: mocks.listPorts }),
+  useMklinkApi: () => ({ listUartPorts: mocks.listUartPorts }),
 }))
 
 vi.mock('../../composables/useToast', () => ({
@@ -129,7 +129,7 @@ describe('SerialMonitorTab', () => {
     mocks.useBinaryStream.mockReset().mockImplementation((_name, options) => (
       options.decoderMode === 'serial-log' ? mocks.logBinary : mocks.terminalBinary
     ))
-    mocks.listPorts.mockReset().mockResolvedValue([
+    mocks.listUartPorts.mockReset().mockResolvedValue([
       { device: 'TEST_UART', description: 'USB UART', is_mklink: false },
     ])
     mocks.toastError.mockReset()

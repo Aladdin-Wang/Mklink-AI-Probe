@@ -14,6 +14,7 @@ from mklink.serial._autoreply import AutoReplyEngine
 from mklink.serial._frame import FrameParser, ParsedFrame
 from mklink.serial._logger import FileLogger
 from mklink.serial._port import SerialPort
+from mklink.usb_interfaces import canonical_serial_port, require_uart_port
 
 
 @dataclass
@@ -36,7 +37,10 @@ class SerialMonitor:
         chunk_callback: Callable[[str, str, bytes, float], None] | None = None,
         protocol_callback: Callable[[str, str, bytes, float], None] | None = None,
     ):
-        self._port_configs = ports
+        self._port_configs = [dict(cfg, port=canonical_serial_port(cfg["port"])) for cfg in ports]
+        ports = self._port_configs
+        if not ports or len(ports) > 16 or len({cfg["port"] for cfg in ports}) != len(ports):
+            raise ValueError("Select 1..16 distinct UART ports")
         self._profile = profile
         self._auto_reply_rules = auto_reply_rules
         self._logger = logger
@@ -51,6 +55,8 @@ class SerialMonitor:
         self._serial_ports: dict[str, SerialPort] = {}
         self._port_statuses: dict[str, str] = {cfg["port"]: "closed" for cfg in ports}
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
+        self._stop_timeout = 3.0
         self._protocol_lock = threading.Lock()
         self._protocol_queues: dict[str, queue.Queue[bytes]] = {}
         # Completed protocols hand unread terminal bytes back to the normal
@@ -69,39 +75,63 @@ class SerialMonitor:
                 self._parsers[cfg["port"]] = FrameParser(profile)
 
     def start(self) -> None:
-        if self._running:
-            return
-        self._stop_event.clear()
-        self._running = True
+        with self._lifecycle_lock:
+            if self.is_running():
+                return
+            if self._running:
+                self.stop()
+            if self.worker_alive:
+                raise RuntimeError('Previous serial reader is still active')
+            self._threads.clear()
+            self._stop_event.clear()
+            # Validate every selection before opening the first port. No retry or
+            # automatic reattachment: COM numbers can be reused by another device.
+            for cfg in self._port_configs:
+                require_uart_port(cfg['port'])
+            try:
+                for cfg in self._port_configs:
+                    name = cfg['port']
+                    sp = SerialPort(port=name, baudrate=cfg.get('baudrate', 115200),
+                                    databits=cfg.get('databits', 8), stopbits=cfg.get('stopbits', 1),
+                                    parity=cfg.get('parity', 'N'))
+                    if not sp.open():
+                        self._port_statuses[name] = 'error: port is busy or unavailable'
+                        raise OSError(f'Serial port {name} is busy or unavailable')
+                    self._serial_ports[name] = sp
+                    self._port_statuses[name] = 'open'
+                self._running = True
+                for cfg in self._port_configs:
+                    thread = threading.Thread(target=self._reader_loop, args=(cfg,), daemon=True,
+                                              name=f"serial-reader-{cfg['port']}")
+                    thread.start()
+                    self._threads.append(thread)
+            except Exception:
+                self.stop()
+                raise
 
-        for cfg in self._port_configs:
-            t = threading.Thread(
-                target=self._reader_loop,
-                args=(cfg,),
-                daemon=True,
-                name=f"serial-reader-{cfg['port']}",
-            )
-            self._threads.append(t)
-            t.start()
+    @property
+    def worker_alive(self) -> bool:
+        return any(thread.is_alive() for thread in self._threads)
 
     def stop(self) -> None:
-        if not self._running:
-            return
-        self._stop_event.set()
-        for t in self._threads:
-            t.join(timeout=3.0)
-        self._threads.clear()
-
-        with self._lock:
-            for sp in self._serial_ports.values():
-                sp.close()
-            self._serial_ports.clear()
-            for port_name in self._port_statuses:
-                self._port_statuses[port_name] = "closed"
-
-        self._running = False
+        with self._lifecycle_lock:
+            self._stop_event.set()
+            deadline = time.monotonic() + self._stop_timeout
+            for thread in self._threads:
+                if thread is not threading.current_thread():
+                    thread.join(timeout=max(0, deadline - time.monotonic()))
+            if self.worker_alive:
+                raise TimeoutError('Serial reader is still active; port ownership retained')
+            self._threads.clear()
+            with self._lock:
+                for name, sp in self._serial_ports.items():
+                    sp.close()
+                    self._port_statuses[name] = 'closed'
+                self._serial_ports.clear()
+            self._running = False
 
     def send(self, port: str, data: bytes) -> bool:
+        port = canonical_serial_port(port)
         with self._protocol_lock:
             if port in self._protocol_queues:
                 return False
@@ -143,6 +173,7 @@ class SerialMonitor:
         """
         from mklink.serial._ymodem import YModemCancelled, YModemSender
 
+        port = canonical_serial_port(port)
         receive_queue: queue.Queue[bytes] = queue.Queue()
         with self._protocol_lock:
             if port in self._protocol_queues:
@@ -223,7 +254,7 @@ class SerialMonitor:
         return results
 
     def is_running(self) -> bool:
-        return self._running
+        return self._running and self.worker_alive
 
     @property
     def port_status(self) -> dict[str, str]:
@@ -282,86 +313,64 @@ class SerialMonitor:
             pass
 
     def _reader_loop(self, cfg: dict) -> None:
-        port_name = cfg["port"]
-        baudrate = cfg.get("baudrate", 115200)
-        databits = cfg.get("databits", 8)
-        stopbits = cfg.get("stopbits", 1)
-        parity = cfg.get("parity", "N")
+        port_name = cfg['port']
+        sp = self._serial_ports[port_name]
+        parser = self._parsers.get(port_name)
+        line_buffer = bytearray()
+        protocol_was_active = False
 
-        while not self._stop_event.is_set():
-            sp = SerialPort(
-                port=port_name,
-                baudrate=baudrate,
-                databits=databits,
-                stopbits=stopbits,
-                parity=parity,
-            )
-            if not sp.open():
-                with self._lock:
-                    self._port_statuses[port_name] = "error: port is busy or unavailable"
-                self._stop_event.wait(2.0)
-                continue
-
-            with self._lock:
-                self._serial_ports[port_name] = sp
-                self._port_statuses[port_name] = "open"
-
-            parser = self._parsers.get(port_name)
-            line_buffer = bytearray()
-            protocol_was_active = False
-
-            try:
-                while not self._stop_event.is_set():
-                    data = sp.read_available()
-                    with self._protocol_lock:
-                        protocol_queue = self._protocol_queues.get(port_name)
-                        if protocol_queue is not None:
-                            if data:
-                                self._emit_protocol_chunk(
-                                    port_name, "RX", data, time.time(),
-                                )
-                                # Keep the put inside the lock.  Transfer
-                                # teardown can now remove+drain atomically.
-                                protocol_queue.put(data)
-                            handoff = b""
-                        else:
-                            handoff = bytes(
-                                self._protocol_handoffs.pop(port_name, b""),
-                            )
+        try:
+            while not self._stop_event.is_set():
+                data = sp.read_available()
+                with self._protocol_lock:
+                    protocol_queue = self._protocol_queues.get(port_name)
                     if protocol_queue is not None:
-                        if not protocol_was_active:
-                            line_buffer.clear()
-                        protocol_was_active = True
-                        if not data:
-                            self._stop_event.wait(0.01)
-                        continue
-                    if protocol_was_active:
-                        line_buffer.clear()
-                        protocol_was_active = False
-                    if handoff:
-                        # A protocol may start and finish between reader
-                        # iterations, so the handoff itself is also a boundary.
-                        line_buffer.clear()
-                        self._process_rx_data(
-                            port_name, handoff, parser, line_buffer,
+                        if data:
+                            self._emit_protocol_chunk(
+                                port_name, "RX", data, time.time(),
+                            )
+                            # Keep the put inside the lock.  Transfer
+                            # teardown can now remove+drain atomically.
+                            protocol_queue.put(data)
+                        handoff = b""
+                    else:
+                        handoff = bytes(
+                            self._protocol_handoffs.pop(port_name, b""),
                         )
-                    if data:
-                        self._process_rx_data(
-                            port_name, data, parser, line_buffer,
-                        )
-                    elif not handoff:
+                if protocol_queue is not None:
+                    if not protocol_was_active:
+                        line_buffer.clear()
+                    protocol_was_active = True
+                    if not data:
                         self._stop_event.wait(0.01)
+                    continue
+                if protocol_was_active:
+                    line_buffer.clear()
+                    protocol_was_active = False
+                if handoff:
+                    # A protocol may start and finish between reader
+                    # iterations, so the handoff itself is also a boundary.
+                    line_buffer.clear()
+                    self._process_rx_data(
+                        port_name, handoff, parser, line_buffer,
+                    )
+                if data:
+                    self._process_rx_data(
+                        port_name, data, parser, line_buffer,
+                    )
+                elif not handoff:
+                    self._stop_event.wait(0.01)
 
-            except Exception as e:
-                with self._lock:
-                    self._port_statuses[port_name] = f"error: {e}"
-            finally:
-                sp.close()
-                with self._lock:
-                    self._serial_ports.pop(port_name, None)
+        except Exception as e:
+            with self._lock:
+                self._port_statuses[port_name] = f"error: {e}"
+        finally:
+            sp.close()
+            with self._lock:
+                self._serial_ports.pop(port_name, None)
 
-            if not self._stop_event.is_set():
-                self._stop_event.wait(2.0)
+                if not self._port_statuses[port_name].startswith('error:'):
+                    self._port_statuses[port_name] = 'closed'
 
     def _process_rx_data(
         self,

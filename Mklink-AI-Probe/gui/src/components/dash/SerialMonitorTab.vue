@@ -218,7 +218,7 @@ const idleYmodemStatus = (): YmodemStatus => ({
 
 const baudrates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 const toast = useToast()
-const { listPorts: fetchPorts } = useMklinkApi()
+const { listUartPorts: fetchPorts } = useMklinkApi()
 const logBinary = useBinaryStream('serial', {
   capacity: 5000, channelCount: 1, decoderMode: 'serial-log',
 })

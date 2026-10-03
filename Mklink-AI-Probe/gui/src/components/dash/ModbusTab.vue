@@ -111,7 +111,7 @@ interface TransactionResult { id: number; fc: number; start: number; values: Arr
 interface LogEntry { event: string; timestamp: number; direction?: string; hex?: string; crc_ok?: boolean | null; message?: string; [key: string]: unknown }
 
 const toast = useToast()
-const { listPorts: fetchPorts } = useMklinkApi()
+const { listUartPorts: fetchPorts } = useMklinkApi()
 const stored = loadModbusSettings(typeof localStorage === 'undefined' ? null : localStorage)
 const settings = reactive({ ...DEFAULT_MODBUS_SETTINGS, ...stored })
 const ports = ref<PortInfo[]>([])

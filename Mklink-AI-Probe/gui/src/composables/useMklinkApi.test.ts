@@ -15,6 +15,13 @@ describe('RTT API contracts', () => {
     vi.stubGlobal('fetch', fetchMock)
   })
 
+  it('uses separate probe and UART inventories', async () => {
+    sharedRuntime.value = true
+    await useMklinkApi().listPorts()
+    await useMklinkApi().listUartPorts()
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ports', '/api/ports/uart'])
+  })
+
   it('queries an accepted shared reset job without issuing a second reset', async () => {
     sharedRuntime.value = true
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'running' }) })

@@ -2,12 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  listPorts: vi.fn(),
+  listUartPorts: vi.fn(),
   toastError: vi.fn(),
 }))
 
 vi.mock('../../composables/useMklinkApi', () => ({
-  useMklinkApi: () => ({ listPorts: mocks.listPorts }),
+  useMklinkApi: () => ({ listUartPorts: mocks.listUartPorts }),
 }))
 
 vi.mock('../../composables/useToast', () => ({
@@ -26,7 +26,7 @@ describe('ModbusTab prerequisites', () => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })))
-    mocks.listPorts.mockResolvedValue([{
+    mocks.listUartPorts.mockResolvedValue([{
       device: 'SERIAL_PORT', description: 'Virtual serial', manufacturer: 'test', vid: null, pid: null,
     }])
   })

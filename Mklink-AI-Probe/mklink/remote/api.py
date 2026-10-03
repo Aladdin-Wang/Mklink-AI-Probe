@@ -282,6 +282,9 @@ class DashboardStopPending(Exception):
 
 
 def _dashboard_worker_alive(manager) -> bool:
+    workers = getattr(manager, "worker_alive", None)
+    if workers is not None:
+        return bool(workers)
     thread = getattr(manager, "_thread", None)
     if thread is not None:
         return bool(thread.is_alive())
@@ -511,8 +514,10 @@ def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[s
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
+    resources = ([ResourceGroup.SERIAL_PORT] if dashboard == "serial" else
+                 [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG])
     manager.acquire_many(
-        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+        resources,
         owner,
         preempt=True,
     )
@@ -1521,6 +1526,11 @@ def create_app(
             return [{**probe, "device": probe["port"], "manufacturer": "MicroKeen",
                      "vid": 0x0D28, "pid": 0x0202} for probe in inventory()]
         return list_available_ports()
+
+    @app.get("/api/ports/uart")
+    async def list_uart_ports():
+        from mklink.serial._port import list_uart_ports as enumerate_uart
+        return await run_in_threadpool(enumerate_uart)
 
     @app.post("/api/runtime/alias")
     async def runtime_alias(body: dict):
@@ -2796,14 +2806,6 @@ def create_app(
         """
         managers = get_managers()
         sm = managers["serial"]
-        if sm.running:
-            _state["resource_manager"].acquire(
-                ResourceGroup.SERIAL_PORT,
-                "user:dashboard:serial",
-                preempt=True,
-            )
-            return {"status": "already_running"}
-
         # Normalize port configs
         port_configs = []
         for p in ports:
@@ -2824,30 +2826,20 @@ def create_app(
         if not port_configs:
             raise HTTPException(status_code=400, detail="No ports specified")
 
-        rm = _state["resource_manager"]
-        owner = "user:dashboard:serial"
         try:
-            rm.acquire(ResourceGroup.SERIAL_PORT, owner, preempt=True)
-        except Exception as e:
-            resource = getattr(e, "resource", ResourceGroup.SERIAL_PORT)
-            conflict_owner = getattr(e, "conflict_owner", str(e))
-            raise HTTPException(
-                status_code=409,
-                detail={"conflict": conflict_owner, "resource": resource.value},
+            status, _ = await start_dashboard_manager(
+                _state, "serial", sm, lambda: sm.start(port_configs),
             )
-
-        loop = asyncio.get_event_loop()
-        try:
-            await loop.run_in_executor(None, lambda: sm.start(port_configs))
-        except Exception:
-            release_resource_owner(_state, owner, stop_active=True)
-            raise
-        return {"status": "started"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": status}
 
     @app.post("/api/dash/serial/stop")
     async def serial_stop():
-        result = release_resource_owner(_state, "user:dashboard:serial")
-        return {"status": "stopped", **result}
+        await stop_dashboard_manager_transaction(_state, "serial", get_managers()["serial"])
+        return {"status": "stopped"}
 
     @app.post("/api/dash/serial/send")
     async def serial_send(
