@@ -9,6 +9,8 @@ import { setLanguage } from './composables/useLanguage'
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 const startStatusPolling = vi.fn()
 const restart = vi.fn()
+const refreshHealth = vi.fn()
+const authenticationRequired = ref(false)
 const checkForUpdates = vi.fn()
 const installAndRelaunch = vi.fn()
 const retryUpdate = vi.fn()
@@ -30,9 +32,11 @@ vi.mock('./composables/useMklinkApi', () => ({
 vi.mock('./composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
     backendState,
+    authenticationRequired,
     startHealthPolling: vi.fn(),
     stopHealthPolling: vi.fn(),
     restart,
+    refreshHealth,
     isTauri: nativeRuntime.value,
   }),
 }))
@@ -69,6 +73,10 @@ describe('App version footer', () => {
   beforeEach(() => {
     setLanguage('zh')
     nativeRuntime.value = true
+    backendState.value = 'starting'
+    authenticationRequired.value = false
+    restart.mockClear()
+    refreshHealth.mockClear()
   })
 
   it('switches the global navigation between Chinese and English', async () => {
@@ -186,6 +194,42 @@ describe('App version footer', () => {
     expect(wrapper.find('[data-testid="backend-starting"]').exists()).toBe(false)
     await wrapper.get('[data-testid="backend-restart"]').trigger('click')
     expect(restart).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('keeps cached views mounted and explains offline and expired authorization recovery', async () => {
+    nativeRuntime.value = false
+    backendState.value = 'alive'
+    const wrapper = mountApp()
+    backendState.value = 'dead'
+    await nextTick()
+    expect(wrapper.get('[data-testid="route-view"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="backend-interrupted"]').text()).toContain('此前的数据')
+    expect(wrapper.get('[data-testid="backend-interrupted"]').text()).toContain('无法连接')
+    authenticationRequired.value = true
+    await nextTick()
+    expect(wrapper.get('[data-testid="backend-interrupted"]').text()).toContain('授权已失效')
+    expect(wrapper.get('[data-testid="backend-interrupted"]').text()).toContain('mklink gui --probe')
+    await wrapper.get('[data-testid="backend-recheck"]').trigger('click')
+    expect(refreshHealth).toHaveBeenCalledOnce()
+    expect(restart).not.toHaveBeenCalled()
+    backendState.value = 'alive'
+    authenticationRequired.value = false
+    await nextTick()
+    expect(wrapper.find('[data-testid="backend-interrupted"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers a health check rather than a process restart in a browser on initial failure', async () => {
+    nativeRuntime.value = false
+    backendState.value = 'dead'
+    authenticationRequired.value = true
+    const wrapper = mountApp()
+    expect(wrapper.text()).toContain('授权已失效')
+    expect(wrapper.find('[data-testid="backend-restart"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="backend-recheck"]').trigger('click')
+    expect(refreshHealth).toHaveBeenCalledOnce()
+    expect(restart).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

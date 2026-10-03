@@ -69,6 +69,14 @@
       @retry="retryUpdate"
       @dismiss="updateDismissed = true"
     />
+    <div v-if="initialBackendReady && backendState === 'dead'" class="backend-interrupted alert-error" data-testid="backend-interrupted" role="alert">
+      <div>
+        <strong>{{ recoveryTitle }}</strong>
+        <p>{{ tr('页面保留的是此前的数据，当前未确认实时状态。', 'The page retains previous data; live status is currently unconfirmed.') }}</p>
+        <p v-if="!isTauri">{{ recoveryHint }}</p>
+      </div>
+      <button class="btn" data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
+    </div>
     <div class="app-main">
       <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
@@ -81,8 +89,12 @@
         {{ tr('正在启动本地服务…', 'Starting local service…') }}
       </div>
       <div v-else class="backend-recovery" role="alert">
-        <strong>{{ tr('本地服务未启动', 'Local service is not running') }}</strong>
-        <button data-testid="backend-restart" @click="restart">{{ tr('重启服务', 'Restart Service') }}</button>
+        <div>
+          <strong>{{ recoveryTitle }}</strong>
+          <p v-if="!isTauri">{{ recoveryHint }}</p>
+        </div>
+        <button v-if="isTauri" data-testid="backend-restart" @click="restart">{{ tr('重启服务', 'Restart Service') }}</button>
+        <button v-else data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
       </div>
     </div>
     <footer class="app-footer">
@@ -118,7 +130,13 @@ const router = useRouter()
 const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { backendState, sharedRuntime, startHealthPolling, stopHealthPolling, restart, isTauri } = useBackendHealth()
+const { backendState, sharedRuntime, authenticationRequired, startHealthPolling, stopHealthPolling, restart, refreshHealth, isTauri } = useBackendHealth()
+const recoveryTitle = computed(() => authenticationRequired.value
+  ? tr('当前页面授权已失效', 'This page is no longer authorized')
+  : tr('无法连接本地服务', 'Cannot reach the local service'))
+const recoveryHint = computed(() => authenticationRequired.value
+  ? tr('请重新运行 mklink gui --probe <下载器 ID 或别名>，使用新链接打开对应下载器。', 'Run mklink gui --probe <probe ID or alias> again and open the new link for that probe.')
+  : tr('连接恢复后会自动更新；若后台已退出，请重新运行 mklink gui --probe <下载器 ID 或别名>。', 'Updates resume when the connection returns. If the backend has exited, run mklink gui --probe <probe ID or alias> again.'))
 const {
   state: updateState,
   version: updateVersion,
@@ -377,6 +395,15 @@ body {
   justify-content: center;
   gap: 12px;
   color: var(--danger);
+}
+.backend-interrupted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  flex-shrink: 0;
+  font-size: 13px;
 }
 .backend-recovery button {
   border: 1px solid var(--border);

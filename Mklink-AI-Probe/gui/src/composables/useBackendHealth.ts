@@ -10,6 +10,7 @@ import {
 /** 'starting' = backend not yet checked / currently booting */
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 export const sharedRuntime = ref(false)
+const authenticationRequired = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let refCount = 0
 let firstCheckDone = false
@@ -17,6 +18,7 @@ let firstCheckDone = false
 async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(3000) })
+    authenticationRequired.value = res.status === 401
     if (!res.ok) return false
     const payload = await res.json().catch(() => null)
     if (payload && typeof payload === 'object') {
@@ -25,6 +27,7 @@ async function checkBackendHealth(): Promise<boolean> {
     }
     return true
   } catch {
+    authenticationRequired.value = false
     return false
   }
 }
@@ -37,7 +40,7 @@ async function refreshHealth() {
   if (alive) {
     backendState.value = 'alive'
     firstCheckDone = true
-  } else if (firstCheckDone) {
+  } else if (firstCheckDone || authenticationRequired.value) {
     // Only show 'dead' after at least one successful check
     // This prevents flashing red during initial startup
     backendState.value = 'dead'
@@ -121,6 +124,7 @@ export function useBackendHealth() {
   return {
     backendState,
     sharedRuntime,
+    authenticationRequired,
     backendPort: runtimeBackendPort,
     isTauri: IS_TAURI,
     startHealthPolling,
