@@ -243,11 +243,19 @@ with connect_shared(probe="电机板", name="测试脚本") as device:
 返回错误，没有自动重试或直连回退。`read_memory` 返回 bytes，`write_memory`
 默认同次操作内回读校验，失败会抛出异常。`halt/resume/step` 与 GUI 使用相同准入。
 
+`read_memory_regions([(address, size), ...])` 返回按输入顺序排列的 bytes 列表。
+一次最多 16 个区域、总计 4096 字节；地址/长度必须是整数，范围在 32 位地址空间内。
+连续或重叠区域复用底层一次读取，离散区域分别读取，不读取地址间隙；因此不保证
+所有值来自同一时刻。失败或短响应直接报错，没有自动补读。GUI 持续采集时拒绝调用。
+MCP 同名工具与 `gui_call('read_memory_regions', {'regions': [...]})` 使用同一能力；
+JSON 每个区域格式为 `{"address": 536870912, "size": 4}`。这属于显式原始地址读取，
+不会替用户筛除 MMIO 读副作用；读取外设描述中的安全字段可用 `read_peripherals`。
+
 `start_job(action, request_id=..., confirm=True, arguments=...)` 提交独占任务后立即
 返回记录，使用 `job_status(job_id)` 查询。SDK close 后仍可查询该后台的任务结果，
 但普通硬件调用需要重新显式 connect；close 不释放整个设备，也不取消任务。
 SDK 会话在后台管理页标记为 `sdk`，适用相同的会话续期、订阅与结束会话规则。
-此阶段后台协议为 6，使用新源码前需要显式退出旧开发后台。
+此阶段后台协议为 7，使用新源码前需要显式退出旧开发后台。
 
 ## 兼容边界
 

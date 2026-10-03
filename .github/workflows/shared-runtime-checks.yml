@@ -30,7 +30,7 @@ jobs:
         working-directory: Mklink-AI-Probe
         run: |
           $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
-          $tests = @('test_shared_runtime', 'test_shared_device', 'test_shared_debug', 'test_runtime_jobs', 'test_runtime_mcp', 'test_runtime_cli', 'test_runtime_probe', 'test_runtime_peripherals', 'test_power_telemetry', 'test_bridge_port_lock', 'test_probe_identity', 'test_port_lock_process', 'test_runtime_proxy', 'test_runtime_logging', 'test_remote_api', 'test_device_configuration', 'test_peripheral_watch', 'test_peripheral_unified')
+          $tests = @('test_shared_runtime', 'test_shared_device', 'test_shared_debug', 'test_runtime_jobs', 'test_runtime_mcp', 'test_runtime_cli', 'test_runtime_probe', 'test_runtime_peripherals', 'test_runtime_memory', 'test_power_telemetry', 'test_bridge_port_lock', 'test_probe_identity', 'test_port_lock_process', 'test_runtime_proxy', 'test_runtime_logging', 'test_remote_api', 'test_device_configuration', 'test_peripheral_watch', 'test_peripheral_unified')
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")
           $arguments += $tests | ForEach-Object { "_maintainer/testing/tests/$_.py" }
           ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList $arguments

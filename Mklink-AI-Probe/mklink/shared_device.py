@@ -60,6 +60,31 @@ class SharedDevice:
             raise RuntimeErrorResponse('Invalid shared memory response; command was not retried') from exc
         return data
 
+    def read_memory_regions(self, regions: list[tuple[int, int]]) -> list[bytes]:
+        """Read up to 16 ranges / 4096 bytes in order; no atomicity or replay."""
+        from mklink.memory_access import validate_memory_regions
+        if not isinstance(regions, list) or any(not isinstance(pair, (tuple, list)) or len(pair) != 2 for pair in regions):
+            raise ValueError('regions must be a list of (address, size) pairs')
+        request_regions = [{'address': address, 'size': size} for address, size in regions]
+        pairs = validate_memory_regions(request_regions)
+        result = self.call('read_memory_regions', {'regions': request_regions})
+        try:
+            entries = result['regions']
+            if (result['region_count'] != len(pairs) or len(entries) != len(pairs)
+                    or result['total_bytes'] != sum(size for _, size in pairs)):
+                raise ValueError('Invalid batch size')
+            payloads = []
+            for entry, (address, size) in zip(entries, pairs):
+                if entry['address'] != f'0x{address:08X}' or entry['size'] != size:
+                    raise ValueError('Invalid batch region')
+                data = bytes.fromhex(entry['hex'])
+                if len(data) != size:
+                    raise ValueError('Incomplete batch region')
+                payloads.append(data)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise RuntimeErrorResponse('Invalid shared batch response; command was not retried') from exc
+        return payloads
+
     def write_memory(self, address: int, data: bytes, *, verify: bool = True):
         if not isinstance(data, (bytes, bytearray)) or type(verify) is not bool:
             raise ValueError('data must be bytes and verify must be boolean')

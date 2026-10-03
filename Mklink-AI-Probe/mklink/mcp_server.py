@@ -38,8 +38,10 @@ from pydantic import StrictInt, StrictStr
 log = logging.getLogger("mklink.mcp")
 
 MCP_MAX_DIRECT_READ_BYTES = 4096
-MCP_MAX_BATCH_REGIONS = 16
-MCP_MAX_BATCH_TOTAL_BYTES = 4096
+from mklink.memory_access import (
+    BATCH_READ_MAX_REGIONS as MCP_MAX_BATCH_REGIONS,
+    BATCH_READ_MAX_TOTAL_BYTES as MCP_MAX_BATCH_TOTAL_BYTES,
+)
 MCP_MAX_WRITE_BYTES = 4096
 MCP_MAX_FLUSH_WRITES = 8
 MCP_MAX_FLUSH_ITEM_BYTES = 12 * 1024
@@ -710,7 +712,7 @@ def _register_memory_tools(mcp: Any) -> None:
     @mcp.tool()
     @_exclusive_hardware_tool
     def read_memory_regions(regions: list[dict]) -> dict:
-        """Read up to 16 RAM/peripheral regions in one logical snapshot.
+        """Read up to 16 RAM/peripheral regions; separate reads are not atomic.
 
         The host merges only overlapping or exactly contiguous addresses, so
         the common 16-scalar layout uses one REPL/SWD transaction. Disjoint
@@ -721,43 +723,8 @@ def _register_memory_tools(mcp: Any) -> None:
             regions: List of {"address": int, "size": int}; at most 16
                 entries and 4096 returned bytes in total.
         """
-        if not isinstance(regions, list) or not regions:
-            raise ValueError("regions must be a non-empty list")
-        if len(regions) > MCP_MAX_BATCH_REGIONS:
-            raise ValueError(
-                f"regions must contain at most {MCP_MAX_BATCH_REGIONS} entries"
-            )
-        pairs: list[tuple[int, int]] = []
-        for index, region in enumerate(regions):
-            if not isinstance(region, dict) or set(region) != {"address", "size"}:
-                raise ValueError(
-                    f"regions[{index}] must contain exactly address and size"
-                )
-            address, size = region["address"], region["size"]
-            _validate_memory_range(
-                address, size, max_size=MCP_MAX_BATCH_TOTAL_BYTES
-            )
-            pairs.append((address, size))
-        total = sum(size for _, size in pairs)
-        if total > MCP_MAX_BATCH_TOTAL_BYTES:
-            raise ValueError(
-                f"total requested bytes must not exceed "
-                f"{MCP_MAX_BATCH_TOTAL_BYTES}"
-            )
-        dev = _connected_device()
-        payloads = dev.read_memory_regions(pairs)
-        return {
-            "region_count": len(pairs),
-            "total_bytes": sum(len(payload) for payload in payloads),
-            "regions": [
-                {
-                    "address": f"0x{address:08X}",
-                    "size": size,
-                    "hex": payload.hex(),
-                }
-                for (address, size), payload in zip(pairs, payloads)
-            ],
-        }
+        from mklink.memory_access import read_memory_regions as read_batch
+        return read_batch(_connected_device(), regions)
 
     @mcp.tool()
     @_exclusive_hardware_tool

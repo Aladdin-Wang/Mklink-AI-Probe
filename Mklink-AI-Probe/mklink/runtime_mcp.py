@@ -12,6 +12,7 @@ from mklink.runtime import RuntimeClient, RuntimeErrorResponse, VERSION
 def build_server():
     from fastmcp import FastMCP
     from mklink.runtime_capabilities import CAPABILITIES
+    from mklink.memory_access import BATCH_READ_MAX_REGIONS, BATCH_READ_MAX_TOTAL_BYTES
 
     holder = {}
     lock = threading.Lock()
@@ -54,7 +55,8 @@ def build_server():
         from mklink.update_check import check_for_update
         return {"ok": True, "version": VERSION, "mode": "shared-cdc", "capabilities": sorted(CAPABILITIES),
                 "update": check_for_update(force=force_update_check),
-                "limits": {"direct_read_max_bytes": 4096},
+                "limits": {"direct_read_max_bytes": 4096, "batch_read_max_regions": BATCH_READ_MAX_REGIONS,
+                           "batch_read_max_total_bytes": BATCH_READ_MAX_TOTAL_BYTES},
                 "guidance": "Call connect, then GUI capabilities. Read shared history while GUI captures. Disconnect detaches only this AI client."}
 
     @server.tool()
@@ -84,6 +86,17 @@ def build_server():
         never changes protection, writes OTP or stops another client's capture.
         """
         return client().call('read_configuration', {'part_number': part_number, 'model': model})
+
+    @server.tool()
+    def read_memory_regions(regions: list[dict]) -> dict:
+        """Read 1..16 regions, at most 4096 bytes, through the shared backend.
+
+        Each region has integer address and size. Results preserve order;
+        adjacent/overlapping ranges share a read, gaps are never read.
+        Separate reads are not atomic. Requires idle CDC; never stops GUI
+        capture or retries a failed/partial response.
+        """
+        return client().call('read_memory_regions', {'regions': regions})
 
     @server.tool()
     def select_peripherals(target_id: str = "", chip: str = "", svd: str = "") -> dict:

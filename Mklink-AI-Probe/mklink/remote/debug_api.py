@@ -138,6 +138,12 @@ def breakpoints(device, body):
     return {'action': action, 'cleared': slots, 'verified': True}
 
 
+def memory_regions(device, body):
+    from mklink.memory_access import read_memory_regions
+    _fields(body, {'regions'})
+    return read_memory_regions(device, body.get('regions'))
+
+
 def peripheral_read(device, body):
     from mklink.peripheral_watch import load_catalog, read_item
     names = _peripheral_names(body, {'names'})
@@ -187,6 +193,7 @@ def create_debug_router(state, lease):
                     raise HTTPException(500, str(error)) from error
         router.add_api_route('/' + path, endpoint, methods=['POST'], name=path)
 
+    add('read-memory-regions', memory_regions)
     add('register-snapshot', register_snapshot)
     add('fault-snapshot', fault_snapshot)
     add('breakpoints', breakpoints)
