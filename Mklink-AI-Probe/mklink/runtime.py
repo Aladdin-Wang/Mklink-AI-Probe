@@ -225,17 +225,22 @@ class RuntimeClient:
                 'kind': self.kind, 'name': self.name,
             })
             self.session_id = result["session_id"]
-            if self._heartbeat is None or not self._heartbeat.is_alive():
-                self._stop.clear()
-                self._heartbeat = threading.Thread(target=self._renew, daemon=True, name="runtime-session")
-                self._heartbeat.start()
+            self._stop_heartbeat()
+            # Never reuse a stop signal or session snapshot from an older
+            # attachment, even if its timed-out renewal is still returning.
+            self._stop = threading.Event()
+            self._heartbeat = threading.Thread(target=self._renew, args=(self._stop, self.session_id),
+                                               daemon=True, name="runtime-session")
+            self._heartbeat.start()
             return result
 
-    def _renew(self):
-        while not self._stop.wait(20):
-            session_id = self.session_id
-            if not session_id:
-                return
+    def _stop_heartbeat(self):
+        self._stop.set()
+        if self._heartbeat and self._heartbeat is not threading.current_thread():
+            self._heartbeat.join(timeout=6)
+
+    def _renew(self, stop, session_id):
+        while not stop.wait(20):
             try:
                 request(self.info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=5)
             except RuntimeErrorResponse:
@@ -264,13 +269,11 @@ class RuntimeClient:
 
     def close(self):
         with self._lock:
-            self._stop.set()
             session_id = self.session_id
             # A lost detach response must not leave this client able to send
             # commands on a session it has already relinquished locally.
             self.session_id = None
-            if self._heartbeat and self._heartbeat is not threading.current_thread():
-                self._heartbeat.join(timeout=6)
+            self._stop_heartbeat()
             if session_id:
                 request(self.info, "POST", "/_runtime/detach", {"session_id": session_id})
 

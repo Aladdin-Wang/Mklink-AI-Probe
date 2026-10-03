@@ -26,6 +26,58 @@ def test_failed_detach_invalidates_local_session_without_retry(monkeypatch):
     assert calls == [('/_runtime/detach', {'session_id': 'old-session'})]
 
 
+@pytest.mark.parametrize('detach_first,same_session,old_error', [
+    (False, False, True), (False, True, True), (True, False, True), (False, False, False),
+])
+def test_explicit_reattach_renews_new_session_when_old_heartbeat_is_stuck(
+        monkeypatch, detach_first, same_session, old_error):
+    import threading
+    from mklink import runtime as transport
+    blocked, release, renewed = (threading.Event() for _ in range(3))
+    original_wait, original_join = threading.Event.wait, threading.Thread.join
+    # Compress only renewal/cleanup delays; requests still run in real threads.
+    monkeypatch.setattr(threading.Event, 'wait', lambda event, timeout=None:
+                        original_wait(event, .01 if timeout == 20 else timeout))
+    monkeypatch.setattr(threading.Thread, 'join', lambda thread, timeout=None:
+                        original_join(thread, .02 if timeout == 6 else timeout))
+    attached = []
+    heartbeat_threads = []
+    def request(info, method, path, payload=None, **kwargs):
+        if path == '/_runtime/attach':
+            attached.append(str(len(attached) + 1))
+            return {'session_id': '1' if same_session else attached[-1]}
+        if path == '/_runtime/heartbeat':
+            heartbeat_threads.append(threading.current_thread())
+            if not blocked.is_set():
+                blocked.set()
+                assert release.wait(5)
+                if old_error:
+                    raise RuntimeErrorResponse('old renewal response lost')
+            else:
+                renewed.set()
+        return {}
+    monkeypatch.setattr(transport, 'request', request)
+    client = transport.RuntimeClient(info={'port': 8765})
+    client.connect()
+    old_thread = client._heartbeat
+    try:
+        assert blocked.wait(2)
+        if detach_first:
+            client.close()
+        client.connect()
+        assert renewed.wait(2), 'new attachment inherited the failing old renewal'
+        release.set()
+        original_join(old_thread, 2)
+        assert not old_thread.is_alive()
+        renewed.clear()
+        assert renewed.wait(2), 'old renewal failure stopped the new session'
+        assert heartbeat_threads.count(old_thread) == 1
+    finally:
+        release.set()
+        client.close()
+        original_join(old_thread, 2)
+
+
 @pytest.mark.parametrize('operation', ['call', 'start_job', 'connect'])
 def test_client_close_waits_for_admitted_operation(monkeypatch, operation):
     from concurrent.futures import ThreadPoolExecutor
