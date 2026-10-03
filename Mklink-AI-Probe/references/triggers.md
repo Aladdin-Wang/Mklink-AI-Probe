@@ -31,7 +31,7 @@
 | "多变量观测" / "混合类型观测" / "VOFA 精确模式" | `python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.001`（方式2） |
 | "符号解析" / "列出变量" / "解析 AXF" / "查看 AXF 符号" | 直接执行 `python -m mklink symbols --source <axf>`，默认使用内置 pyelftools；仅在用户明确指定 `elf_backend=external` 时检查 GNU 工具 |
 | "VOFA 可视化" / "VOFA 波形" / "变量实时图表" / "本地看 VOFA" | `python -m mklink vofa <变量参数> --visualize --period 0.01 --names 名称1,名称2` |
-| "停止 VOFA" / "停止观测" | `python -m mklink vofa --stop` |
+| "停止 VOFA" / "停止观测" | 让订阅者退出后，在创建会话调用 `vofa_stop` 或从 VOFA 网页显式停止 |
 | "连接烧录器" / "测试连接" | `python -m mklink probes list` |
 | "烧录器版本" / "查看固件版本" / "MKLink 版本" / "MicroLink 版本" | `python -m mklink version`（默认仅当前版本；`--all` 看完整历史；`--raw` 看原始响应） |
 | "查看项目配置" | `python -m mklink project-info` |

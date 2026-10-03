@@ -1221,150 +1221,6 @@ def _cli_memmap(args):
     print(format_memmap_json(summary) if args.json else format_memmap(summary))
 
 
-def _cli_vofa(
-    port: str | None,
-    variables: list[str],
-    period: float,
-    stop: bool,
-    visualize: bool = False,
-    host: str = "127.0.0.1",
-    port_http: int = 0,
-    no_browser: bool = False,
-    max_points: int = 500,
-    duration: float = 30.0,
-    names: str | None = None,
-    source: str | None = None,
-    elf_backend: str | None = None,
-    project_root: str | None = None,
-) -> int:
-    """启动或停止 VOFA+ 实时变量观测。"""
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink._types import DeviceState
-    from mklink.vofa_viewer import build_vofa_command
-
-    original_variables = list(variables)
-    resolved_variables = list(variables)
-    if source and resolved_variables:
-        from mklink.vofa_viewer import resolve_variable_names
-        resolved_variables = resolve_variable_names(
-            resolved_variables,
-            source,
-            backend=elf_backend,
-            project_root=project_root,
-        )
-
-    try:
-        if stop and not resolved_variables:
-            cmd, var_args, channel_count, _mode = build_vofa_command(
-                ["0x20000000", "uint8_t"], 0,
-            )
-        else:
-            if not resolved_variables:
-                print("[FAIL] 请指定观测变量，用法:")
-                print('  python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.00001')
-                return 2
-            cmd, var_args, channel_count, _mode = build_vofa_command(
-                resolved_variables, 0 if stop else period,
-            )
-    except ValueError as exc:
-        print(f"[FAIL] 无效 VOFA 请求: {exc}")
-        return 2
-
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return 1
-
-    exit_code = 0
-    try:
-        if stop:
-            print(f"[*] 停止 VOFA: {cmd}")
-            resp = bridge.send_command(cmd, timeout=5.0)
-            print(resp.strip())
-            print("[OK] VOFA 已停止")
-        else:
-            print(f"[*] 启动 VOFA: {cmd}")
-
-            # 切换到流模式
-            bridge._enter_stream(DeviceState.VOFA_STREAM)
-            bridge._write_raw((cmd + "\n").encode("utf-8"))
-
-            if visualize:
-                # --- 可视化模式 ---
-                from mklink.vofa_viewer import run_vofa_visualizer
-                channel_names = [n.strip() for n in names.split(",")] if names else None
-                run_vofa_visualizer(
-                    bridge,
-                    variables=resolved_variables,
-                    var_args=var_args,
-                    period=period,
-                    duration=duration,
-                    host=host,
-                    port=port_http,
-                    no_browser=no_browser,
-                    max_points=max_points,
-                    channel_names=channel_names,
-                    source=source,
-                    original_variables=original_variables,
-                    backend=elf_backend,
-                    project_root=project_root,
-                )
-            else:
-                # --- 控制台模式 ---
-                from mklink.vofa_viewer import JustFloatParser, _infer_channel_names
-                ch_names = _infer_channel_names(resolved_variables, channel_count)
-                parser = JustFloatParser(channel_count, ch_names)
-
-                print(f"[OK] VOFA 已启动，采样周期 {period}s，通道数 {channel_count}")
-                if duration > 0:
-                    print(f"[*] 采集 {duration}s ...")
-                else:
-                    print("[*] 按 Ctrl+C 停止...")
-
-                import time
-                start = time.time()
-                frame_count = 0
-                try:
-                    while True:
-                        if duration > 0 and time.time() - start >= duration:
-                            break
-                        time.sleep(0.05)
-                        raw = bridge.drain_stream_bytes()
-                        if raw:
-                            frames = parser.feed(raw)
-                            for f in frames:
-                                frame_count += 1
-                                vals = " | ".join(f"{k}={f[k]:.4g}" for k in ch_names if k in f)
-                                print(f"[{frame_count}] {vals}")
-                except KeyboardInterrupt:
-                    print("\n[*] 用户中断")
-
-                print(f"[*] 共接收 {frame_count} 帧")
-                if parser.dropped_frames:
-                    print(f"[WARN] 丢弃 {parser.dropped_frames} 帧 ({parser.dropped_bytes} bytes)")
-
-                # 停止
-                bridge._exit_stream()
-                stop_cmd = f'vofa.send({var_args}, 0)'
-                bridge.send_command(stop_cmd, timeout=5.0)
-                print("[OK] VOFA 已停止")
-    except Exception as e:
-        print(f"[FAIL] {e}")
-        exit_code = 1
-        # 异常时尝试停止 VOFA 流，防止设备锁死在流模式
-        if bridge.state in (DeviceState.VOFA_STREAM, DeviceState.READY):
-            try:
-                bridge._exit_stream()
-                bridge.send_command('vofa.send(0x20000000, "uint8_t", 0)', timeout=3.0)
-            except Exception:
-                pass
-    finally:
-        bridge.close()
-    return exit_code
-
-
 def _enable_utf8_console():
     """Windows 控制台 UTF-8 模式支持。"""
     import os
@@ -2597,19 +2453,15 @@ def main():
     read_flash_parser.add_argument("--save", help="不再支持写下载器文件；使用共享 Python SDK 保存到主机")
 
     # vofa 子命令
-    vofa_parser = subparsers.add_parser("vofa", help="VOFA+ 实时变量观测（启动/停止）")
+    vofa_parser = subparsers.add_parser("vofa", help="共享 VOFA 波形采集或订阅，复用后台二进制流")
     vofa_parser.add_argument("--port", help="COM 端口（默认自动检测）")
-    vofa_parser.add_argument("--period", type=float, default=0.001, help="采样周期（秒，默认 0.001）")
-    vofa_parser.add_argument("--stop", action="store_true", help="停止 VOFA 观测")
+    vofa_parser.add_argument("--period", type=float, default=None, help="采样周期秒；新采集默认 0.001，订阅时不可改动")
     vofa_parser.add_argument("--visualize", action="store_true", help="启动 Web 可视化仪表盘")
-    vofa_parser.add_argument("--host", default="127.0.0.1", help="HTTP 服务器绑定地址（默认 127.0.0.1）")
-    vofa_parser.add_argument("--port-http", type=int, default=0, help="HTTP 端口（默认随机可用端口）")
     vofa_parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
-    vofa_parser.add_argument("--max-points", type=int, default=500, help="图表最大数据点数（默认 500）")
     vofa_parser.add_argument("--duration", type=float, default=30.0, help="可视化运行时长（秒，默认 30）")
     vofa_parser.add_argument("--names", help="通道名称，逗号分隔（如 ntc_temp,comp_coeff）")
     vofa_parser.add_argument("--source", help="ELF/AXF 文件路径，用于变量名/struct.field 解析")
-    vofa_parser.add_argument("--project-root", default=".", help="项目根目录")
+    vofa_parser.add_argument("--project-root", default=None, help="项目根目录")
     _add_elf_backend_arg(vofa_parser)
     vofa_parser.add_argument("variables", nargs="*", help="变量列表: 地址 类型 地址 类型 ...（如 0x20000030 uint8_t 0x2000154c float）")
 
@@ -3077,7 +2929,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser, watch_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser, watch_parser, vofa_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3164,20 +3016,6 @@ def main():
         )
     elif args.command in ("resources", "resource"):
         _cli_resources(args)
-    elif args.command == "vofa":
-        return _cli_vofa(
-            args.port, args.variables, args.period, args.stop,
-            visualize=args.visualize,
-            host=args.host,
-            port_http=args.port_http,
-            no_browser=args.no_browser,
-            max_points=args.max_points,
-            duration=args.duration,
-            names=args.names,
-            source=args.source,
-            elf_backend=args.elf_backend,
-            project_root=args.project_root,
-        )
     elif args.command == "symbols":
         _cli_symbols(
             args.source,

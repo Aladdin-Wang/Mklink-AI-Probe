@@ -6,6 +6,7 @@ import App from './App.vue'
 import VersionHistoryPopover from './components/VersionHistoryPopover.vue'
 import { setLanguage } from './composables/useLanguage'
 
+const routeName = ref('dashboard')
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
 const startStatusPolling = vi.fn()
 const restart = vi.fn()
@@ -24,7 +25,7 @@ const { startSharedRuntimeView } = vi.hoisted(() => ({ startSharedRuntimeView: v
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ name: 'dashboard' }),
+  useRoute: () => ({ get name() { return routeName.value } }),
 }))
 
 vi.mock('./composables/useMklinkApi', () => ({
@@ -103,6 +104,17 @@ describe('App version footer', () => {
 
     expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).not.toContain('现场 Agent')
     wrapper.unmount()
+  })
+
+  it('never mounts the global SuperWatch viewer alongside the dedicated VOFA page', async () => {
+    backendState.value = 'alive'
+    const wrapper = mountApp()
+    expect(wrapper.findComponent({ name: 'DashboardView' }).exists()).toBe(true)
+    routeName.value = 'vofa'
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'DashboardView' }).exists()).toBe(false)
+    wrapper.unmount()
+    routeName.value = 'dashboard'
   })
 
   it('leases the backend only for browser GUI windows', () => {

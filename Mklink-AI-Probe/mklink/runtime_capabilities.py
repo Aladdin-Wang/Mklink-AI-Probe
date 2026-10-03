@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-STREAMS = ('rtt', 'superwatch', 'systemview')
+STREAMS = ('rtt', 'superwatch', 'systemview', 'vofa')
 CAPABILITIES = {
     'device_status': ('GET', '/api/device/status'),
     'debug_speed': ('GET', '/api/device/debug-speed'),
@@ -50,9 +50,9 @@ CAPABILITIES = {
 for stream in STREAMS:
     for action in ('status', 'start', 'stop', 'pause', 'resume'):
         CAPABILITIES[f'{stream}_{action}'] = ('GET' if action == 'status' else 'POST', f'/api/dash/{stream}/{action}')
-for stream in ('rtt', 'systemview'):
+for stream in ('rtt', 'systemview', 'vofa'):
     CAPABILITIES[f'{stream}_history'] = ('GET', f'/api/dash/{stream}/history')
-for stream in ('serial', 'modbus', 'vofa'):
+for stream in ('serial', 'modbus'):
     CAPABILITIES[f'{stream}_status'] = ('GET', f'/api/dash/{stream}/status')
 
 

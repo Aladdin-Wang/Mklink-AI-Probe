@@ -140,7 +140,7 @@ def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
             + [
                 value
                 for index in range(16)
-                for value in (f"0x{0x20000000 + index * 4:08X}", "float")
+                for value in (f"0x{0x20000000 + index * 4096:08X}", "float")
             ],
             "at most 15",
         ),
@@ -152,14 +152,10 @@ def test_cli_main_reports_unsafe_stream_request_as_failure(
     from mklink import cli
 
     monkeypatch.setattr(sys, "argv", ["mklink", *arguments])
-    if arguments[0] == 'dump-memory':
-        with pytest.raises(SystemExit, match=message):
-            cli.main()
-        return
-    exit_code = cli.main()
-    output = capsys.readouterr().out
-    assert exit_code == 2 and '[FAIL]' in output and message in output
-    assert 'Connecting' not in output and '[*] 连接' not in output
+    from mklink import runtime_cli
+    monkeypatch.setattr(runtime_cli, 'RuntimeClient', lambda **kw: pytest.fail('invalid stream input connected'))
+    with pytest.raises(SystemExit, match=message):
+        cli.main()
 
 
 def test_dump_capture_finally_confirms_stop_after_no_samples(monkeypatch):
@@ -521,7 +517,6 @@ def test_multi_region_one_shot_accepts_exact_old_sample_and_reuses_bridge():
     [
         DeviceState.RTT_STREAM,
         DeviceState.SYSTEMVIEW_STREAM,
-        DeviceState.VOFA_STREAM,
         DeviceState.DUMP_STREAM,
     ],
 )

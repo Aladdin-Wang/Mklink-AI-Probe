@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'watch', 'dump-benchmark', 'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
+COMMANDS = {'vofa', 'watch', 'dump-benchmark', 'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
 
 
 def run(args):
@@ -61,6 +61,16 @@ def run(args):
                 watch_names.extend(profile['variables'])
             watch_names = validate_watch_names(watch_names)
         except (ValueError, OSError) as error:
+            raise SystemExit(str(error)) from error
+    if args.command == 'vofa':
+        from mklink.vofa_viewer import parse_vofa_inputs
+        try:
+            if args.period is not None and (not math.isfinite(args.period) or not 0 < args.period <= 60):
+                raise ValueError('VOFA period must be finite and in (0, 60]')
+            vofa_channels = parse_vofa_inputs(args.variables, args.names) if args.variables else None
+            if args.names and not args.variables:
+                raise ValueError('VOFA names require channel arguments')
+        except ValueError as error:
             raise SystemExit(str(error)) from error
     debug_arguments = None
     if args.command == 'peripherals':
@@ -244,6 +254,13 @@ def run(args):
             status = client.call(stream+'_status')
             running = bool(status.get('running')) or status.get('state') in {'running', 'paused'}
             options = {}
+            if stream == 'vofa':
+                if running and (vofa_channels is not None or args.period is not None):
+                    raise RuntimeErrorResponse('Capture already running; omit channels/period to subscribe')
+                if not running:
+                    options = {'interval': args.period if args.period is not None else .001}
+                    if vofa_channels is not None:
+                        options['channels'] = vofa_channels
             if stream == 'superwatch':
                 if running and (args.variables or args.period != .001):
                     raise RuntimeErrorResponse('Capture already running; omit variable/period changes to subscribe')
@@ -261,15 +278,30 @@ def run(args):
             if not started.get('reused'):
                 owned_stream = stream
             if getattr(args, 'visualize', False) and not getattr(args, 'no_browser', False):
-                webbrowser.open(browser_url(client.info))
+                webbrowser.open(browser_url(client.info, page="vofa" if stream == "vofa" else "config"))
             deadline = time.monotonic()+duration if duration else None
             print(json.dumps({'capture': stream, 'shared': True, **started}, ensure_ascii=False), flush=True)
             try:
                 while deadline is None or time.monotonic() < deadline:
                     time.sleep(min(.25, max(0, deadline-time.monotonic())) if deadline else .25)
+                    if stream == 'vofa':
+                        current = client.call('vofa_status')
+                        if current.get('error') or not current.get('running'):
+                            raise RuntimeErrorResponse(current.get('error') or 'VOFA acquisition stopped')
             except KeyboardInterrupt:
                 pass
             result = client.call(stream+('_values' if stream == 'superwatch' else '_history'))
+            if stream == 'vofa':
+                if result.get('error') or not result.get('completed_samples'):
+                    raise RuntimeErrorResponse(result.get('error') or 'VOFA returned no complete samples')
+                if owned_stream:
+                    owned_stream = None  # Stop once; a failed confirmation must not be replayed in finally.
+                    try:
+                        client.call('vofa_stop')
+                    except RuntimeErrorResponse as error:
+                        if error.status_code != 409:
+                            raise
+                        print(f'Capture left running: {error}; detaching this client', file=sys.stderr)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (RuntimeErrorResponse, ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from exc

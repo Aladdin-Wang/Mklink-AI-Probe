@@ -1011,7 +1011,6 @@ document.getElementById('btn-start').addEventListener('click', function() {
   if (IS_VOFA_MODE && vofaChannels.length > 0) {
     opts.headers = {'Content-Type': 'application/json'};
     opts.body = JSON.stringify({
-      channels: vofaChannels,
       interval: currentInterval > 0 ? currentInterval : 0.1
     });
   }

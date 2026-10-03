@@ -30,7 +30,7 @@ from mklink._types import (
 from mklink.local_resources import _PortLock
 
 # SystemView 在二进制流中使用 0x02 停止帧；随后发送文本命令让固件状态机
-# 回到 Pika REPL。必须先独立尝试这一序列，避免后续 RTT/VOFA 命令在状态机
+# 回到 Pika REPL。必须先独立尝试这一序列，避免后续 RTT/dump-memory 命令在状态机
 # 切回命令模式的瞬间拼接成 ``RTTView.stop(RTTView.stop...``。
 _SYSTEMVIEW_STOP_COMMANDS = [
     b"\x02",
@@ -39,7 +39,6 @@ _SYSTEMVIEW_STOP_COMMANDS = [
 # 其他流模式的文本兜底命令，仅在 SystemView 专用恢复没有得到提示符时发送。
 _STREAM_FALLBACK_STOP_COMMANDS = [
     b"RTTView.stop()\n",
-    b'vofa.send(0x20000000, "uint8_t", 0)\n',
     b"cmd.dump_memory(0x20000054, 4, -1.0)\n",
 ]
 _STREAM_READ_POLL_INTERVAL = 0.01
@@ -231,7 +230,7 @@ class MKLinkSerialBridge:
                     print("[OK] 流模式恢复成功")
                     return True
 
-            # 非 SystemView 流模式（例如 RTT/VOFA）不会响应上述握手，才发送
+            # 非 SystemView 流模式（例如 RTT/dump-memory）不会响应上述握手，才发送
             # 各自的文本停止命令，再进行一次短提示符同步。
             for stop_cmd in _STREAM_FALLBACK_STOP_COMMANDS:
                 try:
@@ -728,15 +727,14 @@ class MKLinkSerialBridge:
     def drain_stream_bytes(self, max_bytes: int | None = None) -> bytes:
         """读取并清空 VOFA / SystemView 二进制流缓冲区。
 
-        仅在 VOFA_STREAM / DUMP_STREAM / SYSTEMVIEW_STREAM 状态下调用。
+        仅在 DUMP_STREAM / SYSTEMVIEW_STREAM 状态下调用。
         """
         if self._ctx.state not in (
-            DeviceState.VOFA_STREAM,
             DeviceState.DUMP_STREAM,
             DeviceState.SYSTEMVIEW_STREAM,
         ):
             raise RuntimeError(
-                "drain_stream_bytes() 仅在 VOFA_STREAM / DUMP_STREAM / "
+                "drain_stream_bytes() 仅在 DUMP_STREAM / "
                 "SYSTEMVIEW_STREAM 状态下可用"
             )
         if max_bytes is not None:
@@ -818,13 +816,11 @@ class MKLinkSerialBridge:
             is_stream = self._ctx.state in (
                 DeviceState.RTT_STREAM,
                 DeviceState.SYSTEMVIEW_STREAM,
-                DeviceState.VOFA_STREAM,
                 DeviceState.DUMP_STREAM,
             )
 
             if is_stream:
                 if self._ctx.state in (
-                    DeviceState.VOFA_STREAM,
                     DeviceState.DUMP_STREAM,
                     DeviceState.SYSTEMVIEW_STREAM,
                 ):

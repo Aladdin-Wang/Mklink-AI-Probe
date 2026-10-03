@@ -19,6 +19,11 @@ const router = createRouter({
       component: () => import('./views/DashboardView.vue'),
     },
     {
+      path: '/vofa',
+      name: 'vofa',
+      component: () => import('./views/VofaView.vue'),
+    },
+    {
       path: '/offline-flash',
       name: 'offline-flash',
       component: () => import('./views/OfflineFlashView.vue'),

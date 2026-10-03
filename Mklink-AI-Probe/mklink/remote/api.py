@@ -3188,7 +3188,7 @@ def create_app(
         return managers["modbus"].get_status()
 
     # ===================================================================
-    # Integrated Dashboard SSE — VOFA+ JustFloat
+    # Integrated Dashboard — shared VOFA waveform
     # ===================================================================
 
     @app.get("/api/dash/vofa/stream")
@@ -3209,9 +3209,9 @@ def create_app(
         channels: list[dict] | None = Body(default=None),
         interval: float = Body(default=0.1),
     ):
-        """Start VOFA JustFloat streaming.
+        """Start a shared dump-memory waveform producer.
 
-        channels: list of {name, addr, type?, size?} dicts.
+        channels: catalog {path, name?, type?} or raw {addr, type?, size?, name?}.
         addr can be hex string or int. type defaults to "float", size to 4.
         """
         if not _state["device"] or not _state["device"].connected:
@@ -3223,32 +3223,43 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         managers = get_managers()
         vm = managers["vofa"]
-        if not channels:
-            channels = list(getattr(vm, "_channels", []) or [])
+        if channels is None:
+            channels = list(getattr(vm, "_channel_specs", []) or [])
         if not channels:
             raise HTTPException(
                 status_code=400,
                 detail="VOFA channels are required before starting",
             )
-        from mklink.vofa_viewer import normalize_vofa_channels
+        from mklink.vofa_viewer import resolve_vofa_channels, validate_vofa_groups
+        from mklink.symbol_catalog import SymbolSourceChangedError
+        requested_channels = channels
         try:
-            channels = normalize_vofa_channels(channels)
+            channels = resolve_vofa_channels(_state["device"], channels)
+            validate_vofa_groups(channels, interval)
+        except SymbolSourceChangedError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        status, stopped = await start_dashboard_manager(
-            _state,
-            "vofa",
-            vm,
-            lambda: vm.start(_state["device"], channels, interval),
-        )
+        try:
+            status, stopped = await start_dashboard_manager(
+                _state, "vofa", vm,
+                lambda: vm.start(_state["device"], requested_channels, interval),
+            )
+        except SymbolSourceChangedError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except (RuntimeError, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
         return {"status": status, "stopped": stopped, "channels": channels}
 
     @app.post("/api/dash/vofa/stop")
     async def vofa_stop():
         managers = get_managers()
-        await stop_dashboard_manager_transaction(
-            _state, "vofa", managers["vofa"],
-        )
+        try:
+            await stop_dashboard_manager_transaction(_state, "vofa", managers["vofa"])
+        except (RuntimeError, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
         return {"status": "stopped"}
 
     @app.post("/api/dash/vofa/pause")
@@ -3267,6 +3278,11 @@ def create_app(
     async def vofa_status():
         managers = get_managers()
         return managers["vofa"].get_status()
+
+    @app.get("/api/dash/vofa/history")
+    async def vofa_history():
+        manager = get_managers()['vofa']
+        return {'points': manager.get_history(), **manager.get_status()}
 
     @app.post("/api/dash/vofa/interval")
     async def vofa_interval(interval: float = Body(..., embed=True)):

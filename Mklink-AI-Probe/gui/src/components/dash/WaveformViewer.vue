@@ -212,9 +212,9 @@ function startVofaStatusPolling(startTransport: boolean): void {
 function onVofaStreamState(event: Event): void {
   const state = (event as CustomEvent<unknown>).detail
   if (state === 'running') {
-    if (props.mode === 'SuperWatch') binary.stop()
+    binary.stop()
     resetVofaSession()
-    if (props.mode === 'SuperWatch') binary.start()
+    binary.start()
     startVofaStatusPolling(false)
   } else if (state === 'stopped') {
     pendingBatch = null
@@ -619,6 +619,7 @@ function injectScripts(el: HTMLDivElement, mode: string) {
   const i18nScript = document.createElement('script')
   i18nScript.src = i18nUrl
   i18nScript.onload = () => {
+    if (disposed) return
     // DOMContentLoaded already fired, call applyI18n manually
     if (typeof (window as any).setLang === 'function') {
       ;(window as any).setLang(language.value)
@@ -633,6 +634,7 @@ function loadViewerScript(el: HTMLDivElement) {
   const viewerScript = document.createElement('script')
   viewerScript.src = viewerUrl
   viewerScript.onload = () => {
+    if (disposed) return
     // Store es reference for cleanup (var es leaks to window in classic scripts)
     const viewers = (window as any).__waveformViewers
     if (viewers && !viewers[props.mode]) {

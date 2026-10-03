@@ -78,7 +78,7 @@
       <button class="btn" data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
     </div>
     <div class="app-main">
-      <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
+      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa'" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
@@ -173,6 +173,13 @@ const tabs = computed(() => [
 ].filter(entry => entry.key !== 'site-agent' || isTauri))
 
 function navigate(key: string) {
+  // The legacy waveform script owns document-wide IDs; leave its dedicated page
+  // through a fresh document so it never shares globals with SuperWatch.
+  if (currentTab.value === 'vofa') {
+    window.location.assign(router.resolve({ name: key }).href)
+    window.location.reload()
+    return
+  }
   router.push({ name: key })
 }
 

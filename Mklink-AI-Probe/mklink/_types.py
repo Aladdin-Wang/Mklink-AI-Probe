@@ -34,7 +34,6 @@ class DeviceState(Enum):
     BUSY = "busy"
     RTT_STREAM = "rtt_stream"
     SYSTEMVIEW_STREAM = "systemview_stream"
-    VOFA_STREAM = "vofa_stream"
     DUMP_STREAM = "dump_stream"
     ERROR = "error"
 

@@ -37,8 +37,9 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   不选择枚举列表的第一项。共享 `disconnect` 只退出本客户端；不要为了读变量停止
   其他客户端的采集。独立工具复用连接、不并行设备调用，停止流后再断开。
 - **VOFA 与 dump**：`read_memory`/`read_ram` 只做快照；连续曲线用
-  `dump_memory`。精确 VOFA 和 dump/SuperWatch 每次最多 **15 个**离散地址或
-  region；快速连续 float VOFA 最多 **16 路**；发送给 Pika 的完整命令最多
+  `dump_memory`。dump/SuperWatch 每次最多 **15 个**离散地址或 region；共享
+  VOFA 最多 **64 路**、对齐合并后最多 **15 个读取分组**，连续 float 简写最多
+  **16 路**；发送给 Pika 的完整命令最多
   **511 UTF-8 字节**。不得用循环 `read_ram` 绕过流边界。
 - **flush**：单批总数据最多 **12 KiB**、最多 **8 个地址项**。超额时按批串行，
   每批等待提示符；不得与 dump、VOFA、RTT 或 SystemView 并发。

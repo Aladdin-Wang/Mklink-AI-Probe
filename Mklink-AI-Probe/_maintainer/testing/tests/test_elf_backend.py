@@ -16,7 +16,6 @@ from mklink.elf_external import ExternalElfBackend
 from mklink.memmap import analyze_memmap
 from mklink.project_config import save_toolchain_config
 from mklink.superwatch import _symbol_size_lookup
-from mklink.vofa_viewer import resolve_variable_names
 
 
 def test_backend_defaults_to_builtin_when_external_tool_exists(
@@ -153,13 +152,10 @@ def test_builtin_consumers_use_structured_service_without_subprocess(monkeypatch
 
     summary = analyze_memmap("firmware.axf", backend="builtin")
     sizes = _symbol_size_lookup("firmware.axf", backend="builtin")
-    resolved = resolve_variable_names(
-        ["g_counter", "uint32_t"], "firmware.axf", backend="builtin"
-    )
+
 
     assert summary["ram_used"] == 32
     assert sizes == {"g_counter": 4}
-    assert resolved == ["0x20000010", "uint32_t"]
 
 
 def test_writable_memory_ranges_support_hpm_dlm_and_exclude_xip(monkeypatch):

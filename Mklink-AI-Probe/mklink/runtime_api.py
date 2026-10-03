@@ -324,8 +324,8 @@ class RuntimeGate:
         if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout", "/api/resources/release-all",
                     "/api/resources/release", "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.sessions or c.attach_lock.locked()):
             return await reject(409, "Other runtime clients are attached; detach them before changing the shared device/project")
-        for stream in ("rtt", "superwatch", "systemview"):
-            if path in {f"/api/dash/{stream}/stop", f"/api/dash/{stream}/pause"}:
+        for stream in STREAMS:
+            if path in {f"/api/dash/{stream}/stop", f"/api/dash/{stream}/pause"} or (stream == "vofa" and path == "/api/dash/vofa/interval"):
                 others = [key for key, s in c.sessions.items() if stream in s.streams and key != session_id]
                 if others:
                     return await reject(409, "Other clients subscribe to this acquisition; detach them before stopping it")
@@ -369,9 +369,10 @@ def install_runtime(app, info):
     async def open_gui():
         return HTMLResponse("""<!doctype html><meta charset="utf-8"><title>MKLink Runtime</title>
 <p id="status">正在连接共享后台…</p><script>
+const page = new URLSearchParams(location.search).get('page') === 'vofa' ? 'vofa' : 'config';
 const token = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token})})
-.then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace('/#/config')})
+.then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace('/#/' + page)})
 .catch(e => document.getElementById('status').textContent = e.message);
 </script>""", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 

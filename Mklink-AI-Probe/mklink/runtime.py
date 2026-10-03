@@ -19,7 +19,9 @@ VERSION = "0.3.0"
 
 
 class RuntimeErrorResponse(RuntimeError):
-    pass
+    def __init__(self, message, *, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def runtime_dir(probe_id=None) -> Path:
@@ -85,7 +87,7 @@ def request(info: dict, method: str, path: str, payload=None, *, timeout=35):
             return json.load(response)
     except HTTPError as exc:
         detail = exc.read(65536).decode("utf-8", "replace")
-        raise RuntimeErrorResponse(f"Runtime HTTP {exc.code}: {detail}") from exc
+        raise RuntimeErrorResponse(f"Runtime HTTP {exc.code}: {detail}", status_code=exc.code) from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise RuntimeErrorResponse("Shared runtime is unavailable; no direct CDC fallback was attempted") from exc
 
@@ -187,9 +189,12 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
     raise RuntimeErrorResponse("Timed out waiting for runtime startup")
 
 
-def browser_url(info: dict) -> str:
+def browser_url(info: dict, *, page: str = "config") -> str:
+    if page not in {"config", "vofa"}:
+        raise ValueError("Unsupported runtime browser page")
+    query = "?page=vofa" if page == "vofa" else ""
     # Fragment is not sent in HTTP requests or access logs; login clears it.
-    return f"http://127.0.0.1:{info['port']}/_runtime/open#{info['token']}"
+    return f"http://127.0.0.1:{info['port']}/_runtime/open{query}#{info['token']}"
 
 
 def query_probe(capability, *, info=None, probe=None, port=None):

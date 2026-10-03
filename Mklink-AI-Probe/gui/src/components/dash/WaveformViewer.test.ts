@@ -444,6 +444,12 @@ describe('WaveformViewer VOFA binary transport', () => {
 
         document.getElementById('btn-start')?.click()
         for (let turn = 0; turn < 6; turn++) await Promise.resolve()
+        if (mode === 'VOFA') {
+          const calls = vi.mocked(fetch).mock.calls
+          const start = calls.find(([url]) => String(url).endsWith('/vofa/start'))
+          expect(start).toBeDefined()
+          expect(JSON.parse(String(start?.[1]?.body || '{}'))).not.toHaveProperty('channels')
+        }
         expect(states).toEqual(['running'])
         expect(mocks.binary.reset).toHaveBeenCalledTimes(1)
         expect(Object.values(runtime.probe.fields()).every(
@@ -1033,7 +1039,7 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(updateAcquisitionStatus).toHaveBeenLastCalledWith(
         expect.objectContaining({ actual_rate: 12_345 }),
       )
-      expect(mocks.binary.start).toHaveBeenCalledOnce()
+      expect(mocks.binary.start).toHaveBeenCalledTimes(2)
       expect(mocks.binary.configure).toHaveBeenCalledOnce()
 
       wrapper.unmount()

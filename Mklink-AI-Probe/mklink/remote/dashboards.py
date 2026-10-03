@@ -3503,7 +3503,7 @@ class ModbusStreamManager:
 
 
 # ---------------------------------------------------------------------------
-# VOFA+ JustFloat SSE Generator
+# Shared VOFA waveform producer
 # ---------------------------------------------------------------------------
 
 def normalize_vofa_interval(interval: float) -> float:
@@ -3518,11 +3518,7 @@ def normalize_vofa_interval(interval: float) -> float:
 
 
 class VofaStreamManager:
-    """Manages VOFA+ JustFloat variable streaming via memory reads.
-
-    Reads device RAM at specified addresses, interprets as floats,
-    and streams the data via SSE for the VofaTab chart.
-    """
+    """One dump-memory producer, shared Float32 history and binary subscribers."""
 
     def __init__(
         self,
@@ -3538,6 +3534,7 @@ class VofaStreamManager:
         self._paused.set()
         self._stop_event = threading.Event()
         self._channels: list[dict] = []  # [{name, addr, type, size}]
+        self._channel_specs: list[dict] = []
         self._interval: float = 0.1  # seconds
         self._history: list[dict] = []
         self._max_history = 500
@@ -3546,14 +3543,18 @@ class VofaStreamManager:
         self._clock = clock
         self._read_groups = []
         self._pending_samples: list[tuple[float, ...]] = []
+        self._pending_started_at = None
         self._completed_samples = 0
-        self._completed_reads = 0
         self._read_errors = 0
         self._rate_timestamps = deque()
         self._actual_rate = 0.0
         self._acquisition_mode = "idle"
         self._stream_integrity: dict[str, int] = {}
         self._dump_restart = threading.Event()
+        self._error = None
+        self._start_failure_callback = None
+        self._startup_timeout = 10.0
+        self._idle_timeout = 5.0
 
     @property
     def running(self) -> bool:
@@ -3570,39 +3571,36 @@ class VofaStreamManager:
         if self._stream_hub is stream_hub:
             self._stream_hub = None
 
+    def set_start_failure_callback(self, callback):
+        self._start_failure_callback = callback
+
+    def get_history(self):
+        return [dict(point) for point in list(self._history)]
+
     def configure(self, channels: list[dict], interval: float | None = None) -> None:
-        from mklink.vofa_viewer import build_vofa_read_groups, normalize_vofa_channels
+        from mklink.vofa_viewer import validate_vofa_groups, normalize_vofa_channels
 
         normalized_interval = (
             self._interval if interval is None else normalize_vofa_interval(interval)
         )
         normalized = normalize_vofa_channels(channels)
-        read_groups = build_vofa_read_groups(normalized)
+        read_groups = validate_vofa_groups(normalized, normalized_interval)
+        self._error = None
         self._channels = normalized
+        self._channel_specs = [dict(channel) for channel in channels]
         self._interval = normalized_interval
         self._read_groups = read_groups
+        from mklink.dump_memory import DumpSampleAssembler
+        self._assembler = DumpSampleAssembler([group.size for group in read_groups], ordered=True)
         self._pending_samples.clear()
+        self._pending_started_at = None
         self._completed_samples = 0
-        self._completed_reads = 0
         self._read_errors = 0
-        self._rate_timestamps.clear()
+        self._rate_timestamps = deque()
         self._actual_rate = 0.0
         self._acquisition_mode = "idle"
         self._stream_integrity = {}
         self._dump_restart.clear()
-
-    @staticmethod
-    def _unpack_spec(type_name: str) -> tuple[str, int]:
-        return {
-            "float": ("<f", 4), "fp32": ("<f", 4),
-            "int32_t": ("<i", 4), "int32": ("<i", 4),
-            "uint32_t": ("<I", 4), "uint32": ("<I", 4),
-            "int16_t": ("<h", 2), "int16": ("<h", 2),
-            "uint16_t": ("<H", 2), "uint16": ("<H", 2),
-            "int8_t": ("<b", 1), "int8": ("<b", 1),
-            "uint8_t": ("<B", 1), "uint8": ("<B", 1),
-            "bool": ("<?", 1), "boolean": ("<?", 1),
-        }.get(type_name, ("<f", 4))
 
     def _accept_values(self, values: list) -> bool:
         if any(value is None for value in values):
@@ -3614,14 +3612,15 @@ class VofaStreamManager:
         )
         self._completed_samples += 1
         completed_at = self._clock()
-        self._rate_timestamps.append(completed_at)
+        timestamps = self._rate_timestamps
+        timestamps.append(completed_at)
         cutoff = completed_at - 1.0
-        while self._rate_timestamps and self._rate_timestamps[0] < cutoff:
-            self._rate_timestamps.popleft()
-        if len(self._rate_timestamps) >= 2:
-            elapsed = self._rate_timestamps[-1] - self._rate_timestamps[0]
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.popleft()
+        if len(timestamps) >= 2:
+            elapsed = timestamps[-1] - timestamps[0]
             self._actual_rate = (
-                (len(self._rate_timestamps) - 1) / elapsed if elapsed > 0 else 0.0
+                (len(timestamps) - 1) / elapsed if elapsed > 0 else 0.0
             )
         else:
             self._actual_rate = 0.0
@@ -3634,54 +3633,37 @@ class VofaStreamManager:
         self._history.append(point)
         if len(self._history) > self._max_history:
             del self._history[:-self._max_history]
+        if not self._pending_samples:
+            self._pending_started_at = self._clock()
         self._pending_samples.append(sample)
         if len(self._pending_samples) >= self._batch_samples:
             self._flush_binary_batch()
         return True
 
-    def _accept_dump_frame(self, frame: dict) -> bool:
-        from mklink.dump_memory import FLAG_REGION_ERROR
+    def _accept_dump_frame(self, frame: dict) -> bool | None:
+        from mklink.dump_memory import DumpMemoryReadError, DumpSampleAssembler
+        from mklink.watch import TYPE_FORMATS
 
-        if int(frame.get("flags", 0)) & FLAG_REGION_ERROR:
-            self._read_errors += 1
-            return False
-        values = [None] * len(self._channels)
-        regions = dict(frame.get("regions", []))
         try:
-            for region_index, group in enumerate(self._read_groups):
-                raw = regions.get(region_index)
-                if raw is None or len(raw) != group.size:
-                    raise ValueError("non-exact VOFA dump-memory region")
-                for channel in group.channels:
-                    fmt, width = self._unpack_spec(channel.type_name)
-                    start = channel.offset
-                    values[channel.channel_index] = struct.unpack(
-                        fmt, raw[start:start + width],
-                    )[0]
-        except Exception:
+            payloads = self._assembler.feed(frame)
+        except DumpMemoryReadError:
             self._read_errors += 1
             return False
-        return self._accept_values(values)
-
-    def collect_cycle(self, device) -> bool:
-        import struct as _struct
-
+        if payloads is None:
+            return None
+        self._assembler = DumpSampleAssembler(
+            [group.size for group in self._read_groups], ordered=True,
+        )
+        # Pausing publication must not bypass validation or stop draining CDC.
+        if not self._paused.is_set():
+            return True
         values = [None] * len(self._channels)
-        try:
-            for group in self._read_groups:
-                raw = device.read_memory(group.address, group.size)
-                self._completed_reads += 1
-                if len(raw) != group.size:
-                    raise ValueError("non-exact VOFA memory read")
-                for channel in group.channels:
-                    fmt, width = self._unpack_spec(channel.type_name)
-                    start = channel.offset
-                    values[channel.channel_index] = _struct.unpack(
-                        fmt, raw[start:start + width],
-                    )[0]
-        except Exception:
-            self._read_errors += 1
-            return False
+        for raw, group in zip(payloads, self._read_groups):
+            for channel in group.channels:
+                fmt, width = TYPE_FORMATS[channel.type_name]
+                values[channel.channel_index] = struct.unpack(
+                    fmt, raw[channel.offset:channel.offset + width],
+                )[0]
         return self._accept_values(values)
 
     def publish_samples(self, samples) -> None:
@@ -3703,95 +3685,87 @@ class VofaStreamManager:
             return
         pending = self._pending_samples
         self._pending_samples = []
+        self._pending_started_at = None
         self.publish_samples(pending)
 
     def start(self, device, channels: list[dict], interval: float = 0.1) -> None:
-        """Start VOFA polling.
-
-        Args:
-            device: Device instance with read_memory()
-            channels: List of {name, addr (int or hex str), type?, size?}
-            interval: Polling interval in seconds
-        """
         if self._thread is not None and self._thread.is_alive():
             if self.running:
                 return
             raise RuntimeError("VOFA worker thread is still active")
-
-        self.configure(channels, interval)
+        bridge = getattr(device, '_bridge', None)
+        if bridge is None:
+            raise ValueError('VOFA requires the backend dump-memory bridge; host polling is unsupported')
+        from mklink.vofa_viewer import resolve_vofa_channels
+        self.configure(resolve_vofa_channels(device, channels), interval)
+        self._channel_specs = [dict(channel) for channel in channels]
         stop_event = threading.Event()
         generation = object()
+        ready = threading.Event()
         self._stop_event = stop_event
         self._generation = generation
         self._paused.set()
         self._running = True
         self._history.clear()
+        failure_callback = self._start_failure_callback
 
         def _poll():
+            failure = None
             try:
-                bridge = getattr(device, "_bridge", None)
-                from mklink.dump_memory import (
-                    DumpMemoryStreamSession,
-                    MAX_SAFE_REPL_REGIONS,
-                )
-                if (
-                    bridge is not None
-                    and 0 < len(self._read_groups) <= MAX_SAFE_REPL_REGIONS
-                ):
-
-                    self._acquisition_mode = "dump-memory"
-                    region_pairs = [
-                        (group.address, group.size) for group in self._read_groups
-                    ]
-                    while not stop_event.is_set():
-                        self._dump_restart.clear()
-                        session = DumpMemoryStreamSession(
-                            bridge, region_pairs, self._interval,
-                        )
-                        completed_integrity = dict(self._stream_integrity)
-                        try:
-                            session.start()
-                            while (
-                                not stop_event.is_set()
-                                and not self._dump_restart.is_set()
-                            ):
-                                frames = session.read_frames(max_bytes=1024 * 1024)
-                                self._stream_integrity = _sum_counter_snapshots(
-                                    completed_integrity, session.stats,
-                                )
-                                if not frames:
-                                    stop_event.wait(0.0005)
-                                    continue
-                                if not self._paused.is_set():
-                                    continue
-                                for frame in frames:
-                                    self._accept_dump_frame(frame)
-                        finally:
-                            session.stop()
-                            self._stream_integrity = _sum_counter_snapshots(
-                                completed_integrity, session.stats,
-                            )
-                else:
-                    self._acquisition_mode = "read-memory"
-                    while not stop_event.is_set():
-                        if not self._paused.is_set():
-                            stop_event.wait(self._interval)
-                            continue
-
-                        self.collect_cycle(device)
-                        stop_event.wait(self._interval)
-
-            except Exception as e:
-                logger.error("VOFA stream error: %s", e)
-                self._bridge.put({"event": "error", "message": str(e)})
+                from mklink.dump_memory import DumpMemoryStreamSession, DumpSampleAssembler
+                region_pairs = [(group.address, group.size) for group in self._read_groups]
+                while not stop_event.is_set():
+                    self._dump_restart.clear()
+                    self._assembler = DumpSampleAssembler([size for _, size in region_pairs], ordered=True)
+                    session = DumpMemoryStreamSession(bridge, region_pairs, self._interval)
+                    completed_integrity = dict(self._stream_integrity)
+                    try:
+                        session.start()
+                        self._acquisition_mode = 'dump-memory'
+                        ready.set()  # Command delivery completed, not proof of a valid sample.
+                        last_sample = time.monotonic()
+                        while not stop_event.is_set() and not self._dump_restart.is_set():
+                            frames = session.read_frames(max_bytes=1024 * 1024)
+                            self._stream_integrity = _sum_counter_snapshots(completed_integrity, session.stats)
+                            if self._pending_started_at is not None and self._clock() - self._pending_started_at >= .020:
+                                self._flush_binary_batch()
+                            for frame in frames:
+                                accepted = self._accept_dump_frame(frame)
+                                if accepted is False:
+                                    raise RuntimeError('VOFA received an incomplete or failed sample')
+                                if accepted:
+                                    last_sample = time.monotonic()
+                            if time.monotonic() - last_sample > max(self._idle_timeout, self._interval * 2 + 1):
+                                raise TimeoutError('VOFA received no complete samples; acquisition stopped')
+                            if not frames:
+                                stop_event.wait(0.0005)
+                    finally:
+                        session.stop()
+                        self._stream_integrity = _sum_counter_snapshots(completed_integrity, session.stats)
+            except Exception as error:
+                failure = error
+                self._error = str(error)
+                logger.error('VOFA stream error: %s', error)
+                self._bridge.put({'event': 'error', 'message': str(error)})
             finally:
-                if getattr(self, "_generation", None) is generation:
+                if getattr(self, '_generation', None) is generation:
+                    self._flush_binary_batch()
                     self._running = False
-                    self._bridge.put({"event": "stopped"})
+                    self._bridge.put({'event': 'stopped'})
                     self._bridge.stop()
+                try:
+                    if failure is not None and failure_callback is not None:
+                        failure_callback(failure)
+                finally:
+                    ready.set()
 
         self._thread = threading.Thread(target=_poll, daemon=True)
         self._thread.start()
+        if not ready.wait(self._startup_timeout):
+            stop_event.set()
+            raise TimeoutError('VOFA worker has not finished startup; wait for cleanup before retrying')
+        if self._error:
+            raise RuntimeError(self._error)
 
     def stop(self, timeout: float = 5.0) -> bool:
         thread = self._thread
@@ -3804,15 +3778,17 @@ class VofaStreamManager:
         self._flush_binary_batch()
         if self._thread is thread:
             self._thread = None
+        if self._error:
+            raise RuntimeError(self._error)
         return True
 
     def pause(self) -> None:
         self._paused.clear()
-        self._rate_timestamps.clear()
+        self._rate_timestamps = deque()
         self._actual_rate = 0.0
 
     def resume(self) -> None:
-        self._rate_timestamps.clear()
+        self._rate_timestamps = deque()
         self._actual_rate = 0.0
         self._paused.set()
 
@@ -3823,6 +3799,7 @@ class VofaStreamManager:
 
     def get_status(self) -> dict:
         return {
+            "error": self._error,
             "running": self.running,
             "paused": self.paused,
             "channels": self._channels,
@@ -3830,9 +3807,8 @@ class VofaStreamManager:
             "clients": self._bridge.client_count,
             "history_size": len(self._history),
             "completed_samples": self._completed_samples,
-            "completed_reads": self._completed_reads,
             "read_errors": self._read_errors,
-            "actual_rate": round(self._actual_rate, 6),
+            "actual_rate": 0.0 if self.paused else round(self._actual_rate, 6),
             "acquisition_mode": self._acquisition_mode,
             "stream_integrity": dict(self._stream_integrity),
             "layout": "sample-major-float32",

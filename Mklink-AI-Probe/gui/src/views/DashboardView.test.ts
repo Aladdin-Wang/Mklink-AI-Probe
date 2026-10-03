@@ -515,7 +515,7 @@ describe('DashboardView layout classes', () => {
       },
     })
 
-    expect(wrapper.text()).not.toContain('VOFA+')
+    expect(wrapper.get('[data-testid=vofa-page]').attributes('target')).toBe('_blank')
     expect(wrapper.find('.rtt-route-probe').exists()).toBe(true)
     const rttButton = wrapper.findAll('button').find(button => button.text() === 'RTT View')
     expect(rttButton?.classes()).toContain('active')

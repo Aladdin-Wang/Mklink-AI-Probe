@@ -134,7 +134,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）、`dump-memory`（别名 `dump`）、`flush-memory`、`dump-benchmark`、`watch` 均通过共享后台运行，共 27 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）、`dump-memory`（别名 `dump`）、`flush-memory`、`dump-benchmark`、`watch`、`vofa` 均通过共享后台运行，共 28 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -307,7 +307,7 @@ demo.map）及明确工程根目录内的 C/H 内容；未给工程根目录时�
 
 0.3.0 已删除 GUI、MCP 和已迁移 CLI 的 `--direct` 入口、重复的直连实现，以及
 Web 快捷入口的旧进程接管逻辑。这些入口统一通过共享后台使用 CDC。
-其余 CLI（包括 VOFA、串口/Modbus、分析工作流）、独立远程 Agent 和低层 Python `Device`
+其余 CLI（包括串口/Modbus、分析工作流）、独立远程 Agent 和低层 Python `Device`
 仍有直接操作设备的实现，尚未迁移。使用它们之前必须显式释放对应后台，不能因为
 共享能力尚未覆盖就自动退回直连。底层 CDC 驱动仍供共享后台使用，不属于待删除的旧模式。
 
@@ -323,6 +323,17 @@ CMSIS-DAP 在线操作必须选择与窗口绑定设备相同的序列号，后�
 Windows 驱动或固件版本。跨电脑 Agent、WinUSB、自动崩溃重连、完整 MCP 工具迁移
 及长时间稳定性验收属于后续阶段。共享模式暂时禁用旧内嵌 Site Agent，防止其直接
 调用 Device 绕过共享仲裁；独立远程工作流仍须独占设备，不能与对应共享后台并用。
+
+## VOFA 共享采集
+
+`vofa_start` 空参数订阅已有流；新采集可传 `channels`（目录 `path` 或裸 `addr/type`）
+和 `interval`。所有入口复用同一管理器、CDC 租约及停止事务。其他客户端还在订阅
+时禁止停止、后台暂停和改周期；停止确认失败返回错误，不重放停止命令。错误采样
+会终止并通过状态/历史公开原因。客户端退出只解除自身，不替别人释放下载器。
+
+`vofa --visualize` 打开共享 WebGUI 的独立波形页；复用现有二进制绘图组件，未新建
+服务器。旧直连、JustFloat、私有服务及 host-polling 回退已删除。通道定义与限制见
+[VOFA 命令](commands-memory.md#vofa-共享实时变量观测030)。
 
 ## WebGUI 释放与恢复
 

@@ -215,162 +215,57 @@ python -m mklink read-flash --addr 0x08000000 --size 128
 python -m mklink read-flash --addr 0x08005000 --size 4096 --save flash_dump.bin
 ```
 
-### VOFA+ 实时变量观测
+### VOFA+ 共享实时变量观测（0.3.0）
 
-MKLink 通过 SWD 直接读取目标芯片内存中的变量数据，实时封装为 VOFA+ 协议（JustFloat）经 USB CDC 虚拟串口发送至 PC。**不占用 MCU 串口资源，不侵入业务代码**，可替代 J-Link J-Scope。快速连续布局最多读取 **16 路 float**；精确离散布局最多读取 **15 个地址/类型对**。最小采样周期为 **1us**。
+VOFA CLI、WebGUI、SDK 和 MCP 复用所选下载器的共享后台。后台用现有
+`dump_memory` 二进制采集，通过有界历史和 WebSocket 分发波形；客户端不打开
+CDC、不启动另一台网页服务，也不使用旧 `vofa.send` / JustFloat 路径。无需修改
+目标程序或下载器固件。详见 [共享后台](shared-runtime.md)。
 
-#### 使用方式1：连续读取 float 变量（快速模式）
-
-MKLink 固件支持的 `vofa.send` 命令形式之一，用于读取一段连续内存中的 float 变量。只需指定起始地址和个数，固件将数据以 VOFA+ JustFloat 协议输出。
-
-```
-python -m mklink vofa <起始地址> <个数> --period <秒>
-```
-
-- `<起始地址>`：第一个 float 变量的内存地址
-- `<个数>`：连续读取的 float 数量（1~16）
-- `--period`：采样周期（秒），最小 1us（0.000001），设为 0 停止
-
-#### dump_memory 流停止与 AI 恢复边界
-
-当前 V4.3.8 中 `period>0` 持续采样，`period=0` 输出一个完整样本后回到 idle，
-`period=-1` 用于显式停止。主机停止后至少保留默认 **50 ms** 排空时间；V4 实测把
-等待缩到 10 ms 会残留二进制流并污染后续命令。不要快速 start/stop，也不要在同一
-下载器上并行发命令。
-
-结束 dump/VOFA/RTT/SystemView 后关闭当前连接；普通 `read_ram` 等命令重新连接后再发。
-若 MCP tool 超时，只调用一次 `device_status`，随后结束旧会话并只执行一次
-`disconnect` → `connect`。任一步失败就停止并请用户拔插 USB；不得自动重试超时原
-调用，也不得循环发送 stop、`reboot_probe` 或 `reboot()`。
-
-```
-# 从 0x20000030 开始，连续读取 5 个 float，周期 10us
-python -m mklink vofa 0x20000030 5 --period 0.00001
-
-# 从 0x20000000 读取 3 个 float
-python -m mklink vofa 0x20000000 3 --period 0.001
+```powershell
+# 按当前 AXF/ELF 的标量类型采集，支持字段和数组元素
+python -m mklink vofa rt_tick "g_config.speed" "samples[0]" --probe "电机板" --period 0.01 --visualize
+# 裸地址必须给出类型；相邻通道会合并为对齐读取
+python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --probe "电机板" --names adc,filtered
+# 连续 1..16 个 float；符号数组仍检查元素类型与边界
+python -m mklink vofa 0x20000030 3 --probe "电机板" --duration 60
+# 已有采集：不提供通道/周期，订阅它而不改变设置
+python -m mklink vofa --probe "电机板" --duration 10 --visualize
 ```
 
-#### 使用方式2：多地址、多类型读取（精确模式）
+新采集默认周期 0.001 秒；`--period` 要求有限正数、不超过 60 秒，实际最小值为
+1 us。请求周期不等于实际采样率，状态返回 `actual_rate`、`completed_samples`、
+`read_errors` 和 `stream_integrity`。首次 start 成功只证明命令送达；CLI 结束前
+检查实际完整样本，空流、终止错误或停止确认失败会非零退出。
 
-MKLink 固件支持的 `vofa.send` 命令形式之二，用于读取不同地址、不同类型的变量。每个变量指定地址和类型，固件将数据以 VOFA+ JustFloat 协议输出。
+通道上限 64，地址按 4 字节边界合并后最多 15 个读取分组，完整 REPL 命令最多
+511 UTF-8 字节。超过限制会拒绝，不退回主机逐变量轮询。支持 float、bool、
+int8/16/32_t、uint8/16/32_t，以及 char/uchar、short/ushort、int/uint、fp32 等别名。
+符号类型由当前目录确定，显式类型须匹配；double、64 位整数和整体结构/数组不能
+作为单个通道。读取非原子快照；对齐读取的邻接地址也必须可安全读取，不宜猜测
+带读取副作用的外设地址。
 
-精确模式最多 **15 个** `(地址, 类型)` 对。16 对再加采样周期会形成 33 个
-Pika 位置参数，触及已知会使 REPL 失去响应的边界。主机还会按 UTF-8 字节数校验
-完整 `vofa.send(...)` 命令，安全上限为 **511B**；超限请求会在发现端口前拒绝。
-快速模式只使用 `起始地址、通道数、周期` 3 个参数，因此保留独立的 **1~16 路**
-连续 float 上限，不能把这个通道上限套用到精确模式。
+`--source` 可在首次连接时指定 AXF/ELF；省略时采用后台当前目录。符号通道保留
+路径，每次显式启动重新解析；源内容变化时拒绝沿用旧描述，不自动切换工程或
+抢停其他采集。裸地址通道始终按用户指定地址处理。
 
-```
-python -m mklink vofa <地址1> <类型1> [<地址2> <类型2> ...] --period <秒>
-```
+`--duration` 默认 30 秒，0 表示运行到 Ctrl+C。创建采集的 CLI 在正常结束时
+尝试停止一次；若另一个 AI/SDK 仍在订阅，后台拒绝停止，CLI 提示保留采集后
+只解除自己。借用已有采集的 CLI 始终只解除自己。删除了旧 `--stop`；不要用新
+临时客户端代替创建者强停，可先让订阅者退出，再从创建者或 GUI 显式停止。
 
-```
-# 观测 2 个不同地址的变量（混合类型）
-python -m mklink vofa 0x20000030 uint8_t 0x2000154c float --period 0.001
+`--visualize` 打开同一后台的独立 VOFA 页面；仪表盘右上角 VOFA+ 也可打开它。
+页面复用现有绘图组件，暂停按钮仅冻结本地绘图；停止和周期变更接受后台仲裁。
+独立页面隔离现有绘图脚本的全局状态，不与 SuperWatch 同文档挂载。停止保留
+最后曲线，重新开始恢复二进制订阅。网页本身不提供新通道编辑器，使用 CLI 或
+AI 配置。`--no-browser` 可禁用自动打开，旧 `--host`、`--port-http`、
+`--max-points` 和自定义私有 HTML 服务入口已删除。
 
-# 观测 3 个变量
-python -m mklink vofa 0x20000030 uint8_t 0x2000154c uint16_t 0x20001550 float --period 0.00001
-
-# 观测 4 个变量
-python -m mklink vofa 0x20000030 int32_t 0x20000034 float 0x20000038 uint16_t 0x2000003c int8_t --period 0.0001
-```
-
-**MKLink 固件接受的变量类型字符串：**
-
-| 关键字 | C 类型 | 字节数 | 说明 |
-|--------|--------|--------|------|
-| `int8_t` / `int8` / `char` | int8_t | 1 | 有符号 8 位 |
-| `uint8_t` / `uint8` / `uchar` | uint8_t | 1 | 无符号 8 位 |
-| `int16_t` / `int16` / `short` | int16_t | 2 | 有符号 16 位 |
-| `uint16_t` / `uint16` / `ushort` | uint16_t | 2 | 无符号 16 位 |
-| `int32_t` / `int32` / `int` | int32_t | 4 | 有符号 32 位 |
-| `uint32_t` / `uint32` / `uint` | uint32_t | 4 | 无符号 32 位 |
-| `float` / `fp32` | float | 4 | 单精度浮点 |
-| `bool` / `boolean` | bool | 1 | 布尔类型 |
-
-> 以下类型由 MKLink 固件解析，CLI 将类型字符串原样传递给 `vofa.send()` 命令。
-
-> **对齐警告（MKLink SWD 读取限制）：非 4 字节变量（int8_t、uint8_t、int16_t、uint16_t、bool）必须强制 4 字节对齐，否则 MKLink 固件通过 SWD 32 位读取时会出现数据撕裂。** 在 C 代码中声明变量时使用：
-> ```c
-> __attribute__((aligned(4))) static volatile uint16_t my_var = 0;
-> ```
-
-#### 停止观测
-
-```
-python -m mklink vofa --stop
-```
-
-#### VOFA+ Web 可视化（--visualize）
-
-启动 Web 仪表盘，在浏览器中实时显示 VOFA+ JustFloat 数据的趋势图表，无需 VOFA+ 桌面软件。
-
-```
-python -m mklink vofa <变量参数> --visualize [选项]
-```
-
-自动完成：发现端口 → 连接 → 启动 VOFA 采样 → 解析 JustFloat 二进制帧 → 启动 Web 服务器 → 打开浏览器 → 实时绘图
-
-**使用示例：**
-
-```bash
-# 快速模式可视化（3 个连续 float）
-python -m mklink vofa 0x20000030 3 --period 0.01 --visualize
-
-# 精确模式可视化（混合类型，自动用地址作通道名）
-python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --period 0.01 --visualize
-
-# 自定义通道名（推荐，直观识别每条曲线）
-python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --period 0.01 --visualize --names raw_adc,filtered,speed
-
-# 固定端口，不打开浏览器（用于远程查看）
-python -m mklink vofa 0x20000030 3 --visualize --port-http 8888 --no-browser
-
-# 限时运行 60 秒
-python -m mklink vofa 0x20000030 3 --period 0.01 --visualize --duration 60
-
-# 使用 AXF 符号名 / struct.field（需要 --source）
-python -m mklink vofa g_appState uint8_t --source path/to/firmware.axf --visualize
-python -m mklink vofa g_config.setpoint float --source path/to/firmware.axf --visualize
-```
-
-**可视化选项：**
-
-| 选项 | 说明 |
-|------|------|
-| `--host 127.0.0.1` | HTTP 服务器绑定地址（默认 127.0.0.1） |
-| `--port-http 0` | HTTP 端口（默认 0 = 随机可用端口） |
-| `--no-browser` | 不自动打开浏览器 |
-| `--max-points 500` | 浏览器最大数据点数（默认 500） |
-| `--duration 30` | 运行时长（秒，默认 30） |
-| `--names a,b,c` | 通道名称，逗号分隔（如 `ch0,ch1,ch2`） |
-
-**通道命名规则：**
-- 使用 `--names`：按指定名称显示（推荐，直观识别每条曲线）
-- 快速模式无 `--names`：自动用地址偏移命名，如 `0x20000030`, `0x20000034`, `0x20000038`
-- 精确模式无 `--names`：自动用变量地址命名，如 `0x20000030`, `0x20000034`
-
-**VOFA 类型显示：**
-- 快速模式 `vofa <addr> <count>` 默认每个通道是 `float`，`Size` 为 `4B`。
-- 精确模式 `vofa <addr> <type> ...` 最多 15 路，会在 Watch 表显示规范 C 类型和字节数。
-- Watch 表中的 `Type` 是变量 C 类型；`Size` 是该类型字节数；`Unit` 是物理单位（如 `V`、`rpm`、`degC`），没有单位时显示 `-`。
-- 支持的类型别名见上文「MKLink 固件接受的变量类型字符串」表格。
-
-**浏览器界面说明：**
-- 标题栏显示 **MKLink VOFA Viewer**，RTT 模式显示 **MKLink RTT View**
-- 左上角 **VOFA** / **RTT** 模式徽章，区分当前数据来源
-- 实时折线图，每条曲线独立颜色，点击通道名切换显示/隐藏
-- 统计面板：当前值、最小值、最大值、平均值
-- 按 `Space` 暂停/恢复，按 `L` 显示/隐藏原始日志
-
-**VOFA 仪表盘 HTML 加载优先级（与 RTT 共用模板）：**
-
-1. `.mklink/vofa_viewer.html` — **完全自定义 HTML**（需自行通过 SSE `/stream` 端点获取数据）
-2. `.mklink/vofa_viewer_template.html` — **用户模板**（保留 `__MAX_POINTS__`、`__TITLE__`、`__MODE__` 占位符，服务器自动注入，其余可自由修改）
-3. 内置模板 `_rtt_viewer_template.html`（默认，与 RTT 共用）
-
-> **注意**：VOFA 可视化复用 RTT 的 `VisualizationServer`，前端数据格式一致。如需自定义样式，拷贝内置模板到 `.mklink/` 下修改即可。
+MCP 使用 `gui_call` 的 `vofa_start/stop/pause/resume/status/history` 能力；
+共享 SDK 使用同名 `call`，不增加专门的 MCP 服务。`vofa_history` 最多保留 500
+个样本。浏览器波形使用 Float32，大于 2^24 的整数可能失去低位精度；精确判断
+请读取历史或停止采集后用内存/变量接口。非有限浮点在图表/历史中替换为 0。
+有限缓冲和断线不保证无损。
 
 ### AXF/DWARF 调试增强
 
@@ -459,17 +354,6 @@ python -m mklink hardfault --source path/to/firmware.axf --sp 0x20001FF0
 ```
 python -m mklink memmap --source path/to/firmware.axf
 python -m mklink memmap --source path/to/firmware.axf --json
-```
-
-**JustFloat 二进制解析特性：**
-- 自动解析 VOFA+ JustFloat 协议帧（小端 IEEE 754 float + 帧尾 `0x00 0x00 0x80 0x7f`）
-- 基于通道数的帧长度校验，防止数据损坏或中途捕获导致的解析错误
-- 正确处理通道值为 +Inf（`0x7f800000`）的情况，不与帧尾混淆
-- 自动重同步：遇到损坏帧时丢弃并继续解析后续有效帧
-- 支持帧尾跨 read 分割、垃圾数据后正常帧恢复等边界场景
-
-```
-python -m mklink vofa --stop
 ```
 
 #### 变量地址查找
