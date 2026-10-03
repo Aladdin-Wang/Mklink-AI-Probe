@@ -138,6 +138,38 @@ def breakpoints(device, body):
     return {'action': action, 'cleared': slots, 'verified': True}
 
 
+def peripheral_read(device, body):
+    from mklink.peripheral_watch import load_catalog, read_item
+    names = _peripheral_names(body, {'names'})
+    catalog = load_catalog(device._project_root)
+    if catalog is None:
+        raise ValueError('Select a peripheral catalog first')
+    items = [catalog.resolve(name) for name in names]
+    return {'values': {item.name: read_item(device, item) for item in items}}
+
+
+def _peripheral_names(body, allowed):
+    _fields(body, allowed)
+    names = body.get('names')
+    if (not isinstance(names, list) or not 1 <= len(names) <= 64
+            or any(not isinstance(name, str) or not name.strip() or len(name) > 256 for name in names)):
+        raise ValueError('Select 1..64 peripheral register or field names')
+    if len({name.strip().replace('->', '.').casefold() for name in names}) != len(names):
+        raise ValueError('Peripheral channel names must be unique')
+    return names
+
+
+def peripheral_capture(device, body):
+    import math
+    names = _peripheral_names(body, {'names', 'duration', 'period'})
+    duration, period = body.get('duration', 1.0), body.get('period', .01)
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in (duration, period)):
+        raise ValueError('Capture duration and period must be finite numbers')
+    if not 0 < duration <= 30 or period <= 0:
+        raise ValueError('Capture requires 0 < duration <= 30 and period > 0')
+    return device.capture_peripherals(names, duration=duration, period=period)
+
+
 def create_debug_router(state, lease):
     router = APIRouter(prefix='/api/device')
 
@@ -158,4 +190,6 @@ def create_debug_router(state, lease):
     add('register-snapshot', register_snapshot)
     add('fault-snapshot', fault_snapshot)
     add('breakpoints', breakpoints)
+    add('peripherals/read', peripheral_read)
+    add('peripherals/capture', peripheral_capture)
     return router

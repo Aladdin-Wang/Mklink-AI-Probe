@@ -107,6 +107,12 @@ def pdsc_targets(
     return results
 
 
+def list_svd_targets(project_root: str = ".", query: str = "") -> dict:
+    """Offline installed-description index; does not select or open a probe."""
+    return {"targets": [target.public() for target in discover_svd_targets(project_root)
+                        if query.casefold() in target.target.casefold()]}
+
+
 def discover_svd_targets(project_root: str) -> list[SvdTarget]:
     """Inspect installed Packs only; never download or guess SVD filenames."""
     from mklink.project_config import load_project_info
@@ -425,13 +431,19 @@ def capture_items(device, items, *, duration=1.0, period=0.01):
     invalid = 0
     try:
         session.start()
-        begin = time.monotonic()
-        while time.monotonic() - begin < duration:
+        # start() sends the command; firmware still has to attach and produce
+        # its first frame. Keep that bounded startup outside the sample window.
+        deadline = time.monotonic() + 2.0
+        collecting = False
+        while time.monotonic() < deadline:
             for frame in session.read_frames(max_bytes=1024 * 1024):
                 values = decoder.decode(frame)
                 if frame.get("flags") or values is None:
                     invalid += 1
                     continue
+                if not collecting:
+                    collecting = True
+                    deadline = time.monotonic() + duration
                 if len(rows) >= 100000:
                     raise ValueError(
                         "Capture result limit reached; reduce duration or rate"

@@ -9,10 +9,13 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals'}
 
 
 def run(args):
+    if args.command == 'peripherals' and args.action == 'targets':
+        from mklink.peripheral_cli import run_offline_targets
+        return run_offline_targets(args)
     if args.command == 'configuration' and args.action != 'read':
         from mklink.device_configuration import run_offline_cli
         return run_offline_cli(args)
@@ -34,12 +37,21 @@ def run(args):
         raise SystemExit('duration must be finite and nonnegative')
     if getattr(args, 'save', None):
         raise SystemExit('Shared memory reads do not support --save to probe storage')
-    if args.command != 'configuration' and any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
+    if args.command not in {'configuration', 'peripherals'} and any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
         raise SystemExit('Select the peripheral catalog in the shared GUI first')
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
             or getattr(args, 'port_http', 0) != 0 or getattr(args, 'max_points', 500) != 500):
         raise SystemExit('Shared visualization uses the backend GUI; private host/port/chart overrides are unsupported')
     debug_arguments = None
+    if args.command == 'peripherals':
+        selectors = {key: getattr(args, key) for key in ('svd', 'chip', 'target_id') if getattr(args, key, None)}
+        if (args.action == 'select' and len(selectors) != 1) or (args.action != 'select' and selectors):
+            raise SystemExit('Use peripherals select with exactly one --target-id, --chip or --svd')
+        if args.action in {'read', 'capture'} and not args.names:
+            raise SystemExit('Specify peripheral register or field names')
+        if selectors.get('svd'):
+            from pathlib import Path
+            selectors['svd'] = str(Path(selectors['svd']).expanduser().resolve())
     if args.command == 'break':
         selected = [bool(args.target), args.list, args.status, args.clear is not None]
         if sum(selected) != 1 or (args.slot is not None and not args.target):
@@ -102,6 +114,12 @@ def run(args):
             result = client.call('breakpoints', debug_arguments)
         elif args.command == 'configuration':
             result = client.call('read_configuration', {'part_number': args.chip, 'model': args.model})
+        elif args.command == 'peripherals':
+            arguments = (selectors if args.action == 'select' else {'q': args.query} if args.action == 'list'
+                         else {'names': args.names})
+            if args.action == 'capture':
+                arguments.update(duration=args.duration, period=args.period)
+            result = client.call(args.action + '_peripherals', arguments)
         elif args.command == 'device-status':
             result = client.call('device_status')
         elif args.command == 'debug-speed':

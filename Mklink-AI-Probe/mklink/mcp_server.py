@@ -967,18 +967,8 @@ def _register_variable_tools(mcp: Any) -> None:
 
         return read(_connected_device(), part_number, model)
 
-    @mcp.tool()
-    def peripheral_targets(project_root: str = ".", query: str = "") -> dict:
-        """List installed peripheral chip descriptions without opening hardware."""
-        from .peripheral_watch import discover_svd_targets
-
-        return {
-            "targets": [
-                t.public()
-                for t in discover_svd_targets(project_root)
-                if query.casefold() in t.target.casefold()
-            ]
-        }
+    from mklink.mcp_peripheral import register_peripheral_offline_tools
+    register_peripheral_offline_tools(mcp)
 
     @mcp.tool()
     @_exclusive_hardware_tool

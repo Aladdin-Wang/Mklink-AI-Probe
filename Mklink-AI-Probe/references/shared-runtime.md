@@ -134,7 +134,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read` 均通过共享后台运行，共 22 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）均通过共享后台运行，共 23 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -151,6 +151,11 @@ python -m mklink debug-speed medium --probe "电机板" --save
 python -m mklink power-read --probe "电机板" --json
 python -m mklink version --probe "电机板" --raw
 python -m mklink configuration read --chip STM32F103RET6 --probe "电机板"
+python -m mklink peripherals targets --project-root <工程目录> --query STM32F103RE
+python -m mklink peripherals select --target-id <目录ID> --probe "电机板"
+python -m mklink peripherals list --query GPIOB --probe "电机板"
+python -m mklink peripherals read GPIOB.IDR GPIOB.12 --probe "电机板"
+python -m mklink peripherals capture GPIOB.IDR GPIOB.12 --duration 1 --period 0.01 --probe "电机板"
 ```
 
 未指定工程/符号时采用后台当前配置。`write-ram` 在同一次共享操作内写入并回读
@@ -164,8 +169,23 @@ python -m mklink configuration read --chip STM32F103RET6 --probe "电机板"
 供后续连接使用。结果中的 `saved` 表示是否保存。所有附着客户端看到同一速度，
 不会另开 CDC、停止他人采集或重试失败命令。
 
-共享内存读取不接受 `--save` 探针文件写入；共享模式也不接受私有外设目录覆盖或非默认的独立可视化
-host/port/chart 参数。外设目录应先在 GUI 选择，图表使用共享 GUI 配置。
+`peripherals select/list/read/capture` 使用后台工程和 GUI 的目录选择入口；选择
+支持一个 `--target-id`、`--chip` 或 `--svd`，其余动作只使用已选目录。更改目录前
+其他 AI/SDK 客户端须解除附着，SuperWatch 须完全停止；调用方自己可以保留会话。
+目录枚举 targets 是离线操作，使用 `--project-root`，不接受 `--probe/--port`。
+MCP 同名 peripheral_targets 也离线；已连接时可通过
+`gui_call('peripheral_targets', {'q': 'STM32F103RE'})` 枚举后台工程目录。
+活动 MCP 提供 select_peripherals、list_peripherals、capture_peripherals，
+共享 SDK 可直接调用相应能力及 read_peripherals。
+
+外设短时采样需要空闲 CDC，最多 64 个通道、15 个区域、30 秒、100000 个结果行；
+首帧最多等待 2 秒，再开始计算采样时长，结束后恢复命令模式。寄存器/字段解码
+复用已有 SVD 和 dump-memory 算法，过滤已标注的读副作用；读取不是多变量原子快照，
+轮询可能漏短脉冲。GUI 采集时可读取目录元数据，硬件读/短时采样会拒绝，且不重试。
+
+共享内存读取不接受 `--save` 探针文件写入；读/采集命令不接受临时私有外设目录覆盖。
+外设目录应先在 GUI 或通过 `peripherals select` 选择。独立可视化的非默认
+host/port/chart 参数不受支持，图表使用共享 GUI 配置。
 
 `read-flash` 现在读取目标内存映射 Flash，每次 1..4096 字节，输出 JSON 中的
 `data_hex`/`data_base64`；不再加载 FLM 或把快照写到下载器磁盘。需要原生 Flash

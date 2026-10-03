@@ -89,6 +89,48 @@ def test_configuration_read_mcp_obeys_shared_capture_gate_without_retry(shared):
 
 
 @pytest.mark.parametrize('legacy', [False, True])
+def test_peripheral_description_index_is_offline_and_registered_once(monkeypatch, legacy):
+    from mklink import mcp_server
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Offline peripheral discovery connected hardware')
+    monkeypatch.setattr(runtime_mcp,'RuntimeClient',forbidden)
+    monkeypatch.setattr(mcp_server,'_connected_device',forbidden)
+    monkeypatch.setattr('mklink.peripheral_watch.list_svd_targets',lambda root,q:{'targets':[root,q]})
+    server=mcp_server.build_server() if legacy else runtime_mcp.build_server()
+    async def scenario():
+        async with Client(server) as mcp:
+            assert [tool.name for tool in await mcp.list_tools()].count('peripheral_targets')==1
+            assert (await mcp.call_tool('peripheral_targets',{'project_root':'chosen','query':'GPIO'})).data=={'targets':['chosen','GPIO']}
+    asyncio.run(scenario())
+
+
+def test_peripheral_mcp_thin_adapters_use_explicit_shared_client(monkeypatch):
+    calls=[]
+    class Adapter:
+        info=None
+        def __init__(self,**kwargs): calls.append(('create',kwargs))
+        def connect(self,**kwargs): return {'connected':True}
+        def call(self,name,body):
+            calls.append((name,body))
+            return {'capability':name}
+        def close(self): calls.append(('detach',None))
+    monkeypatch.setattr(runtime_mcp,'RuntimeClient',Adapter)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            for name,args in [('select_peripherals',{'chip':'TEST'}),('list_peripherals',{}),('capture_peripherals',{'names':['GPIOB.12']})]:
+                assert (await mcp.call_tool(name,args,raise_on_error=False)).is_error
+            assert not calls
+            await mcp.call_tool('connect',{'probe':'selected'})
+            await mcp.call_tool('select_peripherals',{'chip':'TEST'})
+            await mcp.call_tool('list_peripherals',{'query':'GPIO'})
+            await mcp.call_tool('capture_peripherals',{'names':['GPIOB.12'],'duration':.1})
+            await mcp.call_tool('disconnect')
+    asyncio.run(scenario())
+    assert calls[1:]==[('select_peripherals',{'chip':'TEST'}),('list_peripherals',{'q':'GPIO'}),
+                       ('capture_peripherals',{'names':['GPIOB.12'],'duration':.1,'period':.01}),('detach',None)]
+
+
+@pytest.mark.parametrize('legacy', [False, True])
 def test_offline_analysis_available_without_connect_and_preserves_trace_gaps(monkeypatch, legacy):
     from mklink import mcp_server
     def forbidden(*args, **kwargs):

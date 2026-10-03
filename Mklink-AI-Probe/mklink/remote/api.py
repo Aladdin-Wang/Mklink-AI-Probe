@@ -2582,8 +2582,8 @@ def create_app(
             raise HTTPException(status_code=409, detail=exc.to_detail()) from exc
 
     @app.get("/api/dash/superwatch/peripherals")
-    async def superwatch_peripherals():
-        return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog)
+    async def superwatch_peripherals(q: str = ""):
+        return await run_in_threadpool(get_managers()["superwatch"].peripheral_catalog, q)
 
     _svd_targets = {}
     _svd_target_lock = asyncio.Lock()
@@ -2600,16 +2600,17 @@ def create_app(
         return {"targets": matches[:200], "total": len(matches)}
 
     @app.post("/api/dash/superwatch/peripherals/select")
-    async def peripheral_select(target_id: str = Body(..., embed=True)):
+    async def peripheral_select(target_id: str | None = Body(None), chip: str | None = Body(None),
+                                svd: str | None = Body(None)):
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        target = _svd_targets.get(target_id)
-        if target is None:
-            raise HTTPException(status_code=404, detail="Select a chip from the installed Pack list")
+        if sum(bool(value) for value in (target_id, chip, svd)) != 1:
+            raise HTTPException(422, "Select exactly one target_id, chip or SVD")
         try:
             async with _dashboard_start_lock(_state):
-                return await run_in_threadpool(get_managers()["superwatch"].select_peripherals, device, target)
+                return await run_in_threadpool(get_managers()["superwatch"].select_peripherals, device,
+                                              target_id=target_id, chip=chip, svd=svd)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:

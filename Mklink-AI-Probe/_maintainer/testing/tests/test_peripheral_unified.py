@@ -45,10 +45,10 @@ def test_legacy_cli_adapter_and_shared_catalog_resolve_same_bit(selected):
             resolve_watch_items([name], svd_registers=regs)
 
 
-def test_device_and_cli_decode_field_and_read_exact_register(
+def test_device_and_shared_read_service_decode_field_and_read_exact_register(
     selected, tmp_path, monkeypatch, capsys
 ):
-    from mklink.peripheral_cli import run
+    from mklink.remote.debug_api import peripheral_read
 
     path, catalog = selected
     reads = []
@@ -61,27 +61,7 @@ def test_device_and_cli_decode_field_and_read_exact_register(
     assert dev.read_register("GPIOB.12") == 1
     assert reads == [(0x40010C08, 4)]
 
-    class Connection:
-        def __enter__(self):
-            return dev
-
-        def __exit__(self, *args):
-            pass
-
-    monkeypatch.setattr("mklink.device.connect", lambda **kwargs: Connection())
-    run(
-        SimpleNamespace(
-            action="read",
-            project_root=str(tmp_path),
-            target_id=None,
-            chip=None,
-            svd=None,
-            query="",
-            port=None,
-            names=["GPIOB.12"],
-        )
-    )
-    assert json.loads(capsys.readouterr().out)["values"] == {"GPIOB.12": 1}
+    assert peripheral_read(dev, {'names':['GPIOB.12']})['values'] == {'GPIOB.12':1}
     with pytest.raises(KeyError):
         dev.read_register("GPIOB.CLEAR")
     assert len(reads) == 2
@@ -240,6 +220,28 @@ def test_capture_no_samples_still_stops_session(selected, monkeypatch):
             duration=0.001,
         )
     assert events == ["start", "stop"]
+
+
+def test_capture_duration_begins_with_first_valid_frame_not_command_dispatch(selected, monkeypatch):
+    now = [0.0]
+    events = []
+    class Session:
+        stats = {}
+        def __init__(self, *args): pass
+        def start(self): events.append('start')
+        def stop(self): events.append('stop')
+        def read_frames(self, **kwargs):
+            now[0] += .1
+            if now[0] < .5:
+                return []
+            return [{'regions':[(0,b'\x00\x10\x00\x00')], 'timestamp_us':int(now[0]*1e6)}]
+    monkeypatch.setattr('mklink.dump_memory.DumpMemoryStreamSession',Session)
+    monkeypatch.setattr('time.monotonic',lambda:now[0])
+    monkeypatch.setattr('time.sleep',lambda _:None)
+    result=capture_items(SimpleNamespace(_bridge=None),[selected[1].resolve('GPIOB.IDR')],duration=.2)
+    assert len(result['samples'])>=2 and now[0]>=.7
+    assert result['samples'][0]['timestamp_us']==500000
+    assert events==['start','stop']
 
 
 def test_capture_rejects_duplicate_channels_before_io(selected):

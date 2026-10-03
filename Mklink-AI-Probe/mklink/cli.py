@@ -3817,10 +3817,6 @@ def main():
         _cli_memmap(args)
     elif args.command == "watch":
         _cli_watch(args)
-    elif args.command == "peripherals":
-        from mklink.peripheral_cli import run
-
-        run(args)
     elif args.command == "modbus":
         _cli_modbus_dispatch(args)
     elif args.command == "serial":

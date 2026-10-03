@@ -2234,13 +2234,16 @@ class SuperWatchStreamManager:
                     except Exception as exc:
                         raise SuperWatchTransactionError("restore", exc) from exc
 
-    def select_peripherals(self, device, target) -> dict:
+    def select_peripherals(self, device, target=None, *, target_id=None, chip=None, svd=None) -> dict:
         from mklink.peripheral_watch import load_catalog, save_catalog_selection
 
         with self._operation_lock:
             if self.running or (self._thread and self._thread.is_alive()):
                 raise RuntimeError("Stop SuperWatch before changing the peripheral chip")
-            catalog = load_catalog(getattr(device, "_project_root", "."), target=target)
+            catalog = load_catalog(getattr(device, "_project_root", "."), target=target,
+                                   target_id=target_id, chip=chip, svd=svd)
+            if catalog is None:
+                raise ValueError("Select one target_id, chip or SVD")
             items, skipped = catalog.items, catalog.skipped
             self.prepare(device)
             save_catalog_selection(getattr(device, "_project_root", "."), catalog)
@@ -2252,15 +2255,16 @@ class SuperWatchStreamManager:
                 from mklink.superwatch import catalog_registers
 
                 self._runtime.svd_registers = catalog_registers(catalog)
-                self._peripheral_selection = {**target.public(), "skipped_registers": skipped}
+                self._peripheral_selection = {**catalog.selection, "skipped_registers": skipped}
                 self._rebuild_metadata_cache_locked(publish=True)
             return self.peripheral_catalog()
 
-    def peripheral_catalog(self) -> dict:
+    def peripheral_catalog(self, query: str = "") -> dict:
         from mklink.superwatch import make_channel_metadata
 
         with self._read_lock:
-            items = list(getattr(self._runtime, "peripheral_items", {}).values())
+            items = [item for item in getattr(self._runtime, "peripheral_items", {}).values()
+                     if query.casefold() in item.name.casefold()]
             metadata = make_channel_metadata(items)
             return {"selection": getattr(self, "_peripheral_selection", None),
                     "items": [{"name": item.name, **metadata[item.name]} for item in items]}

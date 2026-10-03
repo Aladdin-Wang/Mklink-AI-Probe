@@ -58,6 +58,34 @@ def test_configuration_description_cli_stays_offline(adapter, monkeypatch, capsy
     assert json.loads(capsys.readouterr().out)['read_supported']
 
 
+@pytest.mark.parametrize('arguments,capability,body', [
+    (['select','--chip','TEST'],'select_peripherals',{'chip':'TEST'}),
+    (['list','--query','GPIO'],'list_peripherals',{'q':'GPIO'}),
+    (['read','GPIOB.12'],'read_peripherals',{'names':['GPIOB.12']}),
+    (['capture','GPIOB.12','--duration','.1'],'capture_peripherals',{'names':['GPIOB.12'],'duration':.1,'period':.01}),
+])
+def test_peripheral_cli_adopts_shared_backend_without_direct_connection(adapter,monkeypatch,arguments,capability,body):
+    import sys
+    from mklink import cli
+    def forbidden(*args,**kwargs):
+        raise AssertionError('Peripheral CLI opened CDC directly')
+    monkeypatch.setattr('mklink.device.connect',forbidden)
+    monkeypatch.setattr(sys,'argv',['mklink','peripherals',*arguments,'--probe','selected'])
+    cli.main()
+    assert adapter[0][1]['probe']=='selected' and adapter[0][1]['project_root'] is None
+    assert adapter[1]==(capability,body) and adapter[-1]==('detach',None)
+
+
+def test_peripheral_targets_cli_is_offline(adapter,monkeypatch,capsys):
+    import sys,json
+    from mklink import cli
+    monkeypatch.setattr('mklink.peripheral_watch.list_svd_targets',lambda root,q:{'targets':[root,q]})
+    monkeypatch.setattr(sys,'argv',['mklink','peripherals','targets','--project-root','selected','--query','GPIO'])
+    cli.main()
+    assert not adapter
+    assert json.loads(capsys.readouterr().out)=={'targets':['selected','GPIO']}
+
+
 @pytest.mark.parametrize('command', ['power-read', 'version'])
 def test_probe_queries_do_not_create_target_session_or_retry(adapter, monkeypatch, capsys, command):
     import sys

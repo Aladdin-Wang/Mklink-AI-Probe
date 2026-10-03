@@ -38,6 +38,8 @@ def build_server():
     register_systemview_offline_tools(server)
     from mklink.mcp_configuration import register_configuration_offline_tools
     register_configuration_offline_tools(server)
+    from mklink.mcp_peripheral import register_peripheral_offline_tools
+    register_peripheral_offline_tools(server)
 
     def client():
         with lock:
@@ -82,6 +84,33 @@ def build_server():
         never changes protection, writes OTP or stops another client's capture.
         """
         return client().call('read_configuration', {'part_number': part_number, 'model': model})
+
+    @server.tool()
+    def select_peripherals(target_id: str = "", chip: str = "", svd: str = "") -> dict:
+        """Select one peripheral catalog through the GUI's manager.
+
+        Other AI/SDK clients must detach first. Stop SuperWatch explicitly;
+        never changes another probe or silently stops an acquisition.
+        """
+        if svd:
+            from pathlib import Path
+            svd = str(Path(svd).expanduser().resolve())
+        return client().call('select_peripherals', {
+            key: value for key, value in {'target_id': target_id, 'chip': chip, 'svd': svd}.items() if value})
+
+    @server.tool()
+    def list_peripherals(query: str = "") -> dict:
+        """List readable register/field metadata from the connected GUI catalog."""
+        return client().call('list_peripherals', {'q': query})
+
+    @server.tool()
+    def capture_peripherals(names: list[str], duration: float = 1.0, period: float = .01) -> dict:
+        """Sample selected side-effect-free peripheral channels for up to 30 seconds.
+
+        Requires idle CDC; no automatic stop, reconnect or replay. Maximum 64
+        channels / 15 regions; finite buffered result, not an atomic snapshot.
+        """
+        return client().call('capture_peripherals', {'names': names, 'duration': duration, 'period': period})
 
     @server.tool()
     def set_probe_alias(probe: str, alias: str) -> dict:

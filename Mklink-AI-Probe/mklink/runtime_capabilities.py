@@ -14,6 +14,11 @@ CAPABILITIES = {
     'resources': ('GET', '/api/resources/status'),
     'read_memory': ('POST', '/api/device/read-memory'),
     'read_configuration': ('POST', '/api/device/configuration/read'),
+    'peripheral_targets': ('GET', '/api/dash/superwatch/peripherals/targets'),
+    'select_peripherals': ('POST', '/api/dash/superwatch/peripherals/select'),
+    'list_peripherals': ('GET', '/api/dash/superwatch/peripherals'),
+    'read_peripherals': ('POST', '/api/device/peripherals/read'),
+    'capture_peripherals': ('POST', '/api/device/peripherals/capture'),
     'write_memory': ('POST', '/api/device/write-memory'),
     'read_variable': ('POST', '/api/device/read-variable'),
     'write_variable': ('POST', '/api/device/write-variable'),
@@ -52,6 +57,10 @@ CAPABILITIES.update({name: ('POST', path) for name, path in PROBE_QUERIES.items(
 def validate_arguments(capability, arguments):
     """Reject malformed/range-overflow writes before a device is touched."""
     arguments = dict(arguments)
+    if capability == 'select_peripherals':
+        if (arguments.keys() - {'target_id', 'chip', 'svd'} or len(arguments) != 1
+                or any(not isinstance(value, str) or not value.strip() for value in arguments.values())):
+            raise HTTPException(422, 'Select exactly one nonempty target_id, chip or SVD')
     if capability in {'read_memory', 'write_memory'}:
         try:
             address = int(str(arguments['address']), 0)

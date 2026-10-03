@@ -318,6 +318,9 @@ class RuntimeGate:
             receive = replay
         c.prune()
         session_id = headers.get(b"x-mklink-session", b"").decode()
+        if path == '/api/dash/superwatch/peripherals/select' and (
+                c.attach_lock.locked() or any(key != session_id for key in c.sessions)):
+            return await reject(409, 'Detach other shared clients before changing the peripheral catalog')
         if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout", "/api/resources/release-all",
                     "/api/resources/release", "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.sessions or c.attach_lock.locked()):
             return await reject(409, "Other runtime clients are attached; detach them before changing the shared device/project")
