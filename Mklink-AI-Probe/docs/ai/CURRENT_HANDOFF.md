@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T23:33:47+00:00`
+- 更新时间：`2026-10-03T23:52:13+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; Modbus cancellation/lifecycle and WebGUI stop-state fixes implemented after 7be8e2a; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; accelerated waveform test isolation and GC checkpoints corrected after 7711f68; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。第二十五批用Future取消超时/停止时尚未执行的Modbus请求；队列有界，执行中超时明确结果未知。Modbus管理器统一开口及三类线程生命周期，API复用公共事务，完整停止后关闭端口；删除重复轮询分组。修复GUI吞掉停止失败及错误连接参数显示。扩展1885通过/2可选跳过，GUI788、类型/构建通过；双后台UART/Modbus、RTT、MCP/SDK及实际进程退出通过。继续共享能力、HTTP取消及A7。
+- 当前任务：持续循环评审/验证。第二十六批处理7711f68远端VOFA内存门限失败：消除测试顺序依赖和画布mock历史留存，60秒加速循环加入固定GC检查点，在回收前采样，维持192MiB/128MiB门限。GUI788、波形96及独立压力测试、类型/外置构建通过；原Modbus后端远端CI通过，本批远端CI待核对。继续UART/Modbus共享能力、HTTP取消、循环事件顺序及A7。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十五批：1885通过/2可选依赖跳过，GUI788、类型/外置构建通过。Future取消排队任务、运行中超时不重放、停止保留worker/租约/端口及125寄存器边界通过；真实pymodbus配合模拟串口完成RTU编解码。双下载器Edge中两个Modbus手动会话各占各自UART，主RTT/MCP/SDK共存、第二浏览器恢复真实配置并独立退出；同端口竞争409和两次重连通过。Boot/选项字节/VTOR/配置保持、tick推进，后台及串口子进程实际退出；真机未发送UART/Modbus请求。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十五/二十六批：前批1885通过/2可选跳过及双后台UART/Modbus真机验证保持。7711f68远端后端通过、GUI因VOFA堆峰值209418736B超过192MiB失败；本批仅修测试工具与隔离，GUI788、波形96、单独压力测试及类型/构建通过。加速60秒300帧/1800渲染、20万点环、无丢帧/错误，回收前峰值增量58093240B、结束ArrayBuffer增量73404B；不是实际60秒浏览器或长期稳定性验收。精确提交CI推送后核对。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。

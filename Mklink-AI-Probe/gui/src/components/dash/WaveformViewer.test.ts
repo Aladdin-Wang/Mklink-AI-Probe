@@ -83,8 +83,8 @@ function superwatchFrame(
 }
 
 function canvasContext(): CanvasRenderingContext2D {
-  const gradient = { addColorStop: vi.fn() }
   const noop = () => undefined
+  const gradient = { addColorStop: noop }
   const visitPoint = () => { (window as any).__canvasPointVisits++ }
   return new Proxy({} as CanvasRenderingContext2D, {
     get(target, property) {
@@ -92,7 +92,7 @@ function canvasContext(): CanvasRenderingContext2D {
       if (property === 'measureText') return () => ({ width: 10 })
       if (property === 'createLinearGradient') return () => gradient
       if (property === 'fillText') {
-        return (value: unknown) => { (window as any).__canvasLabels.push(String(value)) }
+        return (value: unknown) => { (window as any).__canvasLabels?.push(String(value)) }
       }
       if (property === 'moveTo' || property === 'lineTo') {
         return visitPoint
@@ -127,10 +127,21 @@ async function loadRttViewerRuntime(
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true, json: async () => ({ running: false, channels: [] }),
   }))
-  const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-    .mockReturnValue(canvasContext())
-  const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockImplementation(function(this: HTMLElement) {
+  // These are DOM substitutes, not assertions: recording every call retains
+  // thousands of contexts/rectangles during the sustained render gate.
+  const restore: Array<() => void> = []
+  function replaceProperty(target: object, name: string, descriptor: PropertyDescriptor) {
+    const original = Object.getOwnPropertyDescriptor(target, name)
+    Object.defineProperty(target, name, { configurable: true, ...descriptor })
+    restore.push(() => {
+      if (original) Object.defineProperty(target, name, original)
+      else Reflect.deleteProperty(target, name)
+    })
+  }
+  const context = canvasContext()
+  replaceProperty(HTMLCanvasElement.prototype, 'getContext', { value: () => context })
+  replaceProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    value: function(this: HTMLElement) {
       if (this.id === 'y-axis-hit') {
         return {
           x: 0, y: 8, width: 64, height: 360, top: 8, right: 64,
@@ -141,11 +152,10 @@ async function loadRttViewerRuntime(
         x: 0, y: 0, width: 800, height: 400, top: 0, right: 800,
         bottom: 400, left: 0, toJSON: () => ({}),
       }
-    })
-  const widthSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
-    .mockReturnValue(800)
-  const heightSpy = vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get')
-    .mockReturnValue(400)
+    },
+  })
+  replaceProperty(HTMLCanvasElement.prototype, 'clientWidth', { get: () => 800 })
+  replaceProperty(HTMLCanvasElement.prototype, 'clientHeight', { get: () => 400 })
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   vi.stubGlobal('EventSource', class {
     static CLOSED = 2
@@ -229,10 +239,7 @@ window.__rttTestProbe = {
     cleanup() {
       wrapper.unmount()
       host.remove()
-      contextSpy.mockRestore()
-      rectSpy.mockRestore()
-      widthSpy.mockRestore()
-      heightSpy.mockRestore()
+      restore.reverse().forEach(restoreProperty => restoreProperty())
     },
   }
 }
@@ -254,17 +261,21 @@ vi.mock('../../lib/stream/renderScheduler', () => ({
   },
 }))
 
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.schedulerInstances.length = 0
+  mocks.binary.waveformBatch = shallowRef(null)
+  mocks.binary.envelope = shallowRef(null)
+  mocks.binary.telemetry = shallowRef(null)
+  mocks.binary.state = shallowRef({ phase: 'stopped' })
+  mocks.binary.error = shallowRef(null)
+  mocks.binary.superwatchMetadata = shallowRef(null)
+  mocks.useBinaryStream.mockReturnValue(mocks.binary)
+  ;(window as any).__waveformViewers = {}
+})
+
 describe('WaveformViewer VOFA binary transport', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.schedulerInstances.length = 0
-    mocks.binary.waveformBatch = shallowRef(null)
-    mocks.binary.envelope = shallowRef(null)
-    mocks.binary.telemetry = shallowRef(null)
-    mocks.binary.state = shallowRef({ phase: 'stopped' })
-    mocks.binary.error = shallowRef(null)
-    mocks.binary.superwatchMetadata = shallowRef(null)
-    mocks.useBinaryStream.mockReturnValue(mocks.binary)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -275,7 +286,6 @@ describe('WaveformViewer VOFA binary transport', () => {
         ],
       }),
     }))
-    ;(window as any).__waveformViewers = {}
   })
 
   it('enables the binary stream only for VOFA and disposes its 30 FPS scheduler', async () => {
@@ -2891,6 +2901,14 @@ describe('VOFA viewer typed-ring runtime', () => {
         configurable: true, get: () => rawCountText,
         set: value => { rawDomWrites++; rawCountText = String(value) },
       })
+      // Do not include a growing canvas-label transcript in the memory gate.
+      ;(window as any).__canvasLabels = undefined
+      // The accelerated loop delivers 60 seconds without idle time. Collect
+      // before the baseline and once per simulated second so raw heap peaks
+      // do not depend on the host's V8 heap expansion/GC schedule. Keep sampling
+      // BEFORE collection and preserve the existing allocation limits.
+      if (!globalThis.gc) throw new Error('The memory gate requires --expose-gc')
+      globalThis.gc()
       const baseline = process.memoryUsage()
       let peakHeap = baseline.heapUsed
       let seed = 0x12345678
@@ -2920,6 +2938,7 @@ describe('VOFA viewer typed-ring runtime', () => {
           })
         }
         peakHeap = Math.max(peakHeap, process.memoryUsage().heapUsed)
+        if ((batch + 1) % (sampleRate / batchSamples) === 0) globalThis.gc()
       }
       const elapsedMs = performance.now() - started
       const finalMemory = process.memoryUsage()
