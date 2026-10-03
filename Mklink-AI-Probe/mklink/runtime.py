@@ -270,9 +270,18 @@ class RuntimeClient:
         with self._lock:
             if not self.session_id:
                 raise RuntimeErrorResponse("Call connect first")
+            transport_options = {}
+            if capability == 'dump_memory':
+                from mklink.dump_memory import validate_dump_capture
+                args = arguments or {}
+                validate_dump_capture(args.get('regions'), args.get('sample_count', 1),
+                                      args.get('timeout', 10.0), args.get('speed_profile'))
+                # Cover every explicit sample plus the bridge's confirmed-stop
+                # budget. A slow capture must not inherit the default 35s HTTP limit.
+                transport_options['timeout'] = max(35, args.get('sample_count', 1) * (args.get('timeout', 10.0) + 5) + 15)
             return request(self.info, "POST", "/_runtime/call", {
                 "session_id": self.session_id, "capability": capability, "arguments": arguments or {},
-            })
+            }, **transport_options)
 
     def start_job(self, action, *, request_id, confirm=False, arguments=None):
         """Submit once with this session; the backend owns validation and deduplication."""

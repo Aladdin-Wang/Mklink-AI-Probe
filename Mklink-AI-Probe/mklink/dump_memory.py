@@ -38,7 +38,8 @@ host level.
   - cmd.dump_memory(0x20010200, 32, 0): OLD, full 32B, flags=0
   - cmd.dump_memory(0x08020000, 2049, 0): B1, 2048B + 1B, flags=0
 
-Zero internal mklink dependencies — only uses struct/binascii from stdlib.
+The parser uses standard-library primitives. Capture helpers accept an existing
+bridge and share the operation-observation and memory-result contracts.
 """
 
 from __future__ import annotations
@@ -480,51 +481,6 @@ def build_dump_mem_command(
     return command
 
 
-def read_dump_memory_once(
-    bridge,
-    address: int,
-    size: int,
-    *,
-    timeout: float = 2.0,
-    poll_interval: float = 0.0005,
-) -> bytes:
-    """Read one complete dump-memory sample and explicitly leave stream mode."""
-    if size <= 0:
-        raise ValueError("dump-memory size must be greater than zero")
-    from mklink._types import DeviceState
-
-    parser = DumpMemoryParser(region_sizes=[size])
-    command = build_dump_mem_command([(address, size)], 0)
-    stop_command = build_dump_mem_command(
-        [(address, 1)], DUMP_MEMORY_STOP_PERIOD,
-    )
-    deadline = time.monotonic() + max(0.001, float(timeout))
-    bridge._enter_stream(DeviceState.DUMP_STREAM)
-    try:
-        bridge._write_raw((command + "\n").encode("utf-8"))
-        while time.monotonic() < deadline:
-            raw = bridge.drain_stream_bytes(max_bytes=1024 * 1024)
-            for frame in parser.feed(raw) if raw else ():
-                for region_index, payload in frame.get("regions", ()):
-                    if region_index == 0 and len(payload) >= size:
-                        return payload[:size]
-            if poll_interval:
-                time.sleep(poll_interval)
-        raise TimeoutError("timed out waiting for one dump-memory sample")
-    finally:
-        try:
-            # ``RTTView.stop`` does not stop dump_memory and period=0 would
-            # request another one-shot sample.  Use the firmware's explicit
-            # dump stop value even when the one-shot read failed.
-            bridge._write_raw((stop_command + "\n").encode("utf-8"))
-            try:
-                bridge.drain_stream_bytes()
-            except Exception:
-                pass
-        finally:
-            bridge._exit_stream()
-
-
 def read_dump_memory_range_once(
     bridge,
     address: int,
@@ -533,15 +489,7 @@ def read_dump_memory_range_once(
     timeout: float = 10.0,
     poll_interval: float = 0.0005,
 ) -> bytes:
-    """Read one complete region, including B1 multi-block responses.
-
-    ``read_dump_memory_once`` is retained for the streaming consumers that
-    only request a small sample.  Online Flash reads need the complete
-    payload: current firmware emits one B1 frame per 2048-byte block when a
-    request is larger than 2048 bytes.  This helper collects and validates all
-    blocks before returning, and never sends a text stream-stop command that
-    could be interpreted as target data.
-    """
+    """Read and validate a complete single-region OLD/B1 sample."""
     if type(address) is not int or address < 0:
         raise ValueError("dump-memory address must be a non-negative integer")
     if type(size) is not int or size <= 0 or size > MAX_TOTAL_DATA_SIZE:
@@ -636,23 +584,14 @@ def read_dump_memory_range_once(
             raise DumpMemoryUnsupported("cmd.dump_memory is not supported by the probe")
         raise TimeoutError("timed out waiting for one complete dump-memory range")
     finally:
-        synchronize = getattr(bridge, "_stop_stream_and_sync", None)
-        if callable(synchronize):
-            # A confirmed identity reply drains earlier stop prompts without
-            # imposing a fixed 200 ms delay on every verification block.
-            # Failure must leave the bridge in ERROR, not silently mark READY.
-            if not synchronize((stop_command + "\n").encode("utf-8")):
-                raise TimeoutError("dump-memory range stop did not restore command mode")
-        else:
-            # Compatibility with older bridge implementations.
-            try:
-                bridge._write_raw((stop_command + "\n").encode("utf-8"))
-                stop_deadline = time.monotonic() + 0.2
-                while time.monotonic() < stop_deadline:
-                    bridge.drain_stream_bytes(max_bytes=1024 * 1024)
-                    time.sleep(0.002)
-            finally:
-                bridge._exit_stream()
+        _stop_dump_read(bridge, stop_command)
+
+
+def _stop_dump_read(bridge, stop_command):
+    # Use the current bridge contract; a delay cannot prove command readiness.
+    # Failed confirmation leaves the bridge in ERROR and must invalidate success.
+    if not bridge._stop_stream_and_sync((stop_command + "\n").encode("utf-8")):
+        raise TimeoutError("dump-memory stop did not restore command mode")
 
 
 def read_dump_memory_regions_once(
@@ -893,15 +832,86 @@ def _read_dump_memory_regions_once_locked(
             gap_count=missing,
         )
     finally:
-        try:
-            bridge._write_raw((stop_command + "\n").encode("utf-8"))
-            stop_deadline = time.monotonic() + 0.2
-            while time.monotonic() < stop_deadline:
-                bridge.drain_stream_bytes(max_bytes=1024 * 1024)
-                time.sleep(0.002)
-        except Exception:
-            pass
-        bridge._exit_stream()
+        _stop_dump_read(bridge, stop_command)
+
+
+def validate_dump_capture(regions, sample_count=1, timeout=10.0, speed_profile=None):
+    """The bounded MCP/API contract, independent of transport and publication."""
+    import math
+    from mklink.remote.stream_protocol import MAX_MEMORY_REGIONS, MAX_MEMORY_SAMPLES
+    if not isinstance(regions, list) or not 1 <= len(regions) <= MAX_MEMORY_REGIONS:
+        raise ValueError(f"regions must contain 1..{MAX_MEMORY_REGIONS} entries")
+    if type(sample_count) is not int or not 1 <= sample_count <= MAX_MEMORY_SAMPLES:
+        raise ValueError("sample_count must be between 1 and 64")
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not .001 <= timeout <= 60:
+        raise ValueError("timeout must be between 0.001 and 60 seconds")
+    if speed_profile is not None and speed_profile not in ('low', 'medium', 'high', 'ultra'):
+        raise ValueError("speed_profile must be low/medium/high/ultra")
+    pairs = []
+    for index, region in enumerate(regions):
+        if not isinstance(region, dict) or set(region) != {'address', 'size'}:
+            raise ValueError(f"regions[{index}] must contain only address and size")
+        address, size = region['address'], region['size']
+        if (type(address) is not int or type(size) is not int or size <= 0
+                or not 0 <= address <= 0x10000000000000000 - size):
+            raise ValueError(f"regions[{index}] has an invalid address/size range")
+        pairs.append((address, size))
+    total = sum(size for _, size in pairs)
+    if total > MAX_TOTAL_DATA_SIZE:
+        raise ValueError(f"one sample exceeds the {MAX_TOTAL_DATA_SIZE}-byte device limit")
+    if total * sample_count > 512 * 1024:
+        raise ValueError("capture exceeds the 524288-byte result limit")
+    # Validate the actual 32-bit Pika command before changing the debug clock.
+    build_dump_mem_command(pairs, 0)
+    return pairs
+
+
+def capture_memory(device, regions, *, sample_count=1, timeout=10.0, speed_profile=None,
+                   publish_sample=None, publish_gap=None):
+    """Capture complete samples on an already-owned bridge, with no replay.
+
+    Optional publishers keep legacy sidecar wiring outside the acquisition
+    service. Shared callers use the ordinary operation/observation records.
+    """
+    from mklink.observe_bridge import observe_operation, memory_dump_facts
+    from mklink.remote.stream_protocol import canonical_memory_address
+    pairs = validate_dump_capture(regions, sample_count, timeout, speed_profile)
+    def gap(fact, count):
+        if publish_gap:
+            try:
+                publish_gap(fact, count)
+            except Exception:
+                pass
+    with observe_operation('memory.dump', capability='target.memory', action_class='observe') as observation:
+        operation_id = f"op-{secrets.token_hex(8)}"
+        samples = []
+        with exclusive_dump_memory_capture():
+            if speed_profile is not None:
+                device.set_debug_speed(speed_profile)
+            for index in range(sample_count):
+                try:
+                    payloads = read_dump_memory_regions_once(device._bridge, pairs, timeout=float(timeout))
+                    if (len(payloads) != len(pairs) or any(not isinstance(data, bytes) or len(data) != size
+                            for (_, size), data in zip(pairs, payloads))):
+                        raise DumpMemoryReadError('dump_memory returned incomplete region coverage', gap_fact='region_gap_count')
+                except DumpMemoryReadError as error:
+                    gap(error.gap_fact, error.gap_count)
+                    raise
+                if publish_sample:
+                    try:
+                        published = publish_sample(pairs, payloads, index, sample_count, operation_id)
+                    except Exception:
+                        published = False
+                    if not published:
+                        gap('publish_drop_count', 1)
+                samples.append({'sample_index': index, 'regions': [
+                    {'address': canonical_memory_address(address), 'size': len(data), 'data_hex': data.hex().upper()}
+                    for (address, _), data in zip(pairs, payloads)]})
+        response = {'sample_count': sample_count, 'region_count': len(pairs),
+                    'total_bytes': sum(size for _, size in pairs) * sample_count, 'samples': samples}
+        observation.complete(facts=memory_dump_facts(canonical_memory_address(pairs[0][0]),
+            total_bytes=response['total_bytes'], region_count=len(pairs), sample_count=sample_count))
+        return response
 
 
 class DumpMemoryStreamSession:

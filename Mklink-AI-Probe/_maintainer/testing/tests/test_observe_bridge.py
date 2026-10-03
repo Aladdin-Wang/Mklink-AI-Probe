@@ -1043,7 +1043,7 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
     result = mcp.tools["dump_memory"](
         [
             {"address": 0x20000000, "size": 4},
-            {"address": 0x1_00000000, "size": 2},
+            {"address": 0x20001000, "size": 2},
         ],
         sample_count=2,
         timeout=0.25,
@@ -1051,8 +1051,8 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
 
     assert observe_bridge.flush_process_observation(timeout=1.0) is True
     assert calls == [
-        (bridge, [(0x20000000, 4), (0x1_00000000, 2)], 0.25),
-        (bridge, [(0x20000000, 4), (0x1_00000000, 2)], 0.25),
+        (bridge, [(0x20000000, 4), (0x20001000, 2)], 0.25),
+        (bridge, [(0x20000000, 4), (0x20001000, 2)], 0.25),
     ]
     assert result == {
         "sample_count": 2,
@@ -1063,14 +1063,14 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
                 "sample_index": 0,
                 "regions": [
                     {"address": "0x20000000", "size": 4, "data_hex": "01010101"},
-                    {"address": "0x0000000100000000", "size": 2, "data_hex": "1111"},
+                    {"address": "0x20001000", "size": 2, "data_hex": "1111"},
                 ],
             },
             {
                 "sample_index": 1,
                 "regions": [
                     {"address": "0x20000000", "size": 4, "data_hex": "02020202"},
-                    {"address": "0x0000000100000000", "size": 2, "data_hex": "1212"},
+                    {"address": "0x20001000", "size": 2, "data_hex": "1212"},
                 ],
             },
         ],

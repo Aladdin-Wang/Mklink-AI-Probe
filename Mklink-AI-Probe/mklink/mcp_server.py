@@ -655,7 +655,6 @@ def _register_memory_tools(mcp: Any) -> None:
         publish_mcp_memory_regions,
     )
     from mklink.observe_bridge import (
-        memory_dump_facts,
         memory_read_facts,
         memory_write_facts,
         observe_operation,
@@ -786,140 +785,14 @@ def _register_memory_tools(mcp: Any) -> None:
             speed_profile: Optional low/medium/high/ultra (4/10/20/30 MHz). When omitted,
                 retain set_debug_speed's selection; a new HPM session defaults to medium.
         """
-        import math
-        import secrets
-
-        from mklink.dump_memory import (
-            DumpMemoryReadError,
-            MAX_TOTAL_DATA_SIZE,
-            exclusive_dump_memory_capture,
-            read_dump_memory_regions_once,
-        )
-        from mklink.remote.stream_protocol import MAX_MEMORY_REGIONS
-
-        with observe_operation(
-            "memory.dump",
-            capability="target.memory",
-            action_class="observe",
-        ) as observation:
-            if not isinstance(regions, list) or not 1 <= len(regions) <= MAX_MEMORY_REGIONS:
-                raise ValueError(
-                    f"regions must contain 1..{MAX_MEMORY_REGIONS} entries"
-                )
-            if (
-                isinstance(sample_count, bool)
-                or not isinstance(sample_count, int)
-                or not 1 <= sample_count <= 64
-            ):
-                raise ValueError("sample_count must be between 1 and 64")
-            if (
-                isinstance(timeout, bool)
-                or not isinstance(timeout, (int, float))
-                or not math.isfinite(float(timeout))
-                or not 0.001 <= float(timeout) <= 60.0
-            ):
-                raise ValueError("timeout must be between 0.001 and 60 seconds")
-
-            pairs: list[tuple[int, int]] = []
-            per_sample_bytes = 0
-            for index, region in enumerate(regions):
-                if not isinstance(region, dict) or set(region) != {"address", "size"}:
-                    raise ValueError(
-                        f"regions[{index}] must contain only address and size"
-                    )
-                address = region["address"]
-                size = region["size"]
-                if (
-                    isinstance(address, bool)
-                    or not isinstance(address, int)
-                    or not 0 <= address <= 0xFFFFFFFFFFFFFFFF
-                    or isinstance(size, bool)
-                    or not isinstance(size, int)
-                    or size <= 0
-                    or address + size > 0x10000000000000000
-                ):
-                    raise ValueError(f"regions[{index}] has an invalid address/size range")
-                per_sample_bytes += size
-                pairs.append((address, size))
-            if per_sample_bytes > MAX_TOTAL_DATA_SIZE:
-                raise ValueError(
-                    f"one sample exceeds the {MAX_TOTAL_DATA_SIZE}-byte device limit"
-                )
-            max_capture_bytes = 512 * 1024
-            if per_sample_bytes * sample_count > max_capture_bytes:
-                raise ValueError(
-                    f"capture exceeds the {max_capture_bytes}-byte MCP limit"
-                )
-
-            dev = _connected_device()
-            operation_id = f"op-{secrets.token_hex(8)}"
-            samples = []
-            with exclusive_dump_memory_capture():
-                if speed_profile is not None:
-                    dev.set_debug_speed(speed_profile)
-                for sample_index in range(sample_count):
-                    try:
-                        payloads = read_dump_memory_regions_once(
-                            dev._bridge,
-                            pairs,
-                            timeout=float(timeout),
-                        )
-                        if (
-                            len(payloads) != len(pairs)
-                            or any(
-                                not isinstance(payload, bytes) or len(payload) != size
-                                for (_address, size), payload in zip(pairs, payloads)
-                            )
-                        ):
-                            raise DumpMemoryReadError(
-                                "dump_memory returned incomplete region coverage",
-                                gap_fact="region_gap_count",
-                            )
-                    except DumpMemoryReadError as exc:
-                        try:
-                            publish_mcp_memory_gap(exc.gap_fact, exc.gap_count)
-                        except Exception:
-                            pass
-                        raise
-                    try:
-                        private_published = publish_mcp_memory_regions(
-                            "dump",
-                            list(zip((address for address, _size in pairs), payloads)),
-                            sample_index=sample_index,
-                            sample_count=sample_count,
-                            operation_id=operation_id,
-                        )
-                    except Exception:
-                        private_published = False
-                    if not private_published:
-                        try:
-                            publish_mcp_memory_gap("publish_drop_count", 1)
-                        except Exception:
-                            pass
-                    samples.append({
-                        "sample_index": sample_index,
-                        "regions": [
-                            {
-                                "address": canonical_memory_address(address),
-                                "size": len(payload),
-                                "data_hex": payload.hex().upper(),
-                            }
-                            for (address, _size), payload in zip(pairs, payloads)
-                        ],
-                    })
-            response = {
-                "sample_count": sample_count,
-                "region_count": len(pairs),
-                "total_bytes": per_sample_bytes * sample_count,
-                "samples": samples,
-            }
-            observation.complete(facts=memory_dump_facts(
-                canonical_memory_address(pairs[0][0]),
-                total_bytes=response["total_bytes"],
-                region_count=len(pairs),
-                sample_count=sample_count,
-            ))
-            return response
+        from mklink.dump_memory import capture_memory
+        def publish_sample(pairs, payloads, index, count, operation_id):
+            return publish_mcp_memory_regions(
+                'dump', list(zip((address for address, _ in pairs), payloads)),
+                sample_index=index, sample_count=count, operation_id=operation_id)
+        return capture_memory(_connected_device(), regions, sample_count=sample_count,
+                              timeout=timeout, speed_profile=speed_profile,
+                              publish_sample=publish_sample, publish_gap=publish_mcp_memory_gap)
 
 
 def _register_variable_tools(mcp: Any) -> None:

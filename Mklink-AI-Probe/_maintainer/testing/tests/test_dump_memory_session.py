@@ -16,7 +16,6 @@ from mklink.dump_memory import (
     MAGIC,
     MAX_SAFE_REPL_REGIONS,
     build_dump_mem_command,
-    read_dump_memory_once,
     read_dump_memory_range_once,
     read_dump_memory_regions_once,
 )
@@ -106,6 +105,12 @@ class FakeBridge:
     def _exit_stream(self):
         self.calls.append(("exit",))
         return ""
+
+    def _stop_stream_and_sync(self, command):
+        self._write_raw(command)
+        self.drain_stream_bytes()
+        self._exit_stream()
+        return True
 
 
 def test_dump_command_rejects_unsafe_pika_argument_boundary_before_io():
@@ -462,7 +467,7 @@ def test_dump_session_reports_crc_loss_and_firmware_drop_flags_separately():
 def test_one_shot_dump_reads_payload_and_stops_stream_cleanly():
     bridge = FakeBridge([b"noise", _old_frame(123, b"\x01\x02\x03\x04")])
 
-    payload = read_dump_memory_once(
+    payload = read_dump_memory_range_once(
         bridge, 0x20000020, 4, timeout=0.1, poll_interval=0,
     )
 
@@ -484,7 +489,7 @@ def test_one_shot_dump_error_uses_dump_stop_without_requesting_another_sample():
     bridge = FakeBridge([])
 
     with pytest.raises(TimeoutError, match="timed out"):
-        read_dump_memory_once(
+        read_dump_memory_range_once(
             bridge, 0x20000020, 4, timeout=0.001, poll_interval=0,
         )
 
@@ -990,3 +995,21 @@ def test_range_read_rejects_failed_command_resynchronization():
     with pytest.raises(TimeoutError, match="restore command mode"):
         read_dump_memory_range_once(bridge, 0x80000000, 4, poll_interval=0)
     assert ("exit",) not in bridge.calls
+
+
+def test_multi_region_read_uses_acknowledged_stop_without_fixed_delay(monkeypatch):
+    bridge = FakeBridge([_old_regions_frame(1, [(0, b'abcd')])])
+    stopped = []
+    bridge._stop_stream_and_sync = lambda command: stopped.append(command) or True
+    monkeypatch.setattr('mklink.dump_memory.time.sleep', lambda _: pytest.fail('fixed sleep'))
+    assert read_dump_memory_regions_once(bridge, [(0x20000000, 4)], poll_interval=0) == (b'abcd',)
+    assert stopped == [b'cmd.dump_memory(0x20000000, 1, -1.0)\n']
+    assert ('exit',) not in bridge.calls
+
+
+def test_multi_region_read_rejects_failed_command_resynchronization():
+    bridge = FakeBridge([_old_regions_frame(1, [(0, b'abcd')])])
+    bridge._stop_stream_and_sync = lambda command: False
+    with pytest.raises(TimeoutError, match='restore command mode'):
+        read_dump_memory_regions_once(bridge, [(0x20000000, 4)], poll_interval=0)
+    assert ('exit',) not in bridge.calls

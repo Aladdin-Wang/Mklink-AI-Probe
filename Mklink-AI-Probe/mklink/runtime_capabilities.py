@@ -13,6 +13,7 @@ CAPABILITIES = {
     'step': ('POST', '/api/device/step'),
     'resources': ('GET', '/api/resources/status'),
     'read_memory': ('POST', '/api/device/read-memory'),
+    'dump_memory': ('POST', '/api/device/dump-memory'),
     'read_memory_regions': ('POST', '/api/device/read-memory-regions'),
     'read_configuration': ('POST', '/api/device/configuration/read'),
     'peripheral_targets': ('GET', '/api/dash/superwatch/peripherals/targets'),

@@ -251,6 +251,15 @@ MCP 同名工具与 `gui_call('read_memory_regions', {'regions': [...]})` 使用
 JSON 每个区域格式为 `{"address": 536870912, "size": 4}`。这属于显式原始地址读取，
 不会替用户筛除 MMIO 读副作用；读取外设描述中的安全字段可用 `read_peripherals`。
 
+MCP `dump_memory` 和 SDK `call('dump_memory', arguments)` 已共享；参数为 regions、
+sample_count（1..64）、每样本 timeout（0.001..60 秒）及可选 speed_profile。
+最多 8 个区域，整数地址/长度限定在 32 位地址空间，所有样本的原始数据合计不超过 512KiB。复用既有二进制
+解析和完整性校验，每个样本只发一次读取，失败不补发。所有样本结束且停止身份应答
+确认后返回；停止失败也报错，不把连接强行标成可用。HTTP 等待预算包含显式采样
+与停止确认，用户端请求中断不表示硬件已取消。GUI 采集或独占任务忙时拒绝。
+显式 speed_profile 会改变当前共享探针速度（不保存工程配置）；省略则保持当前速度。
+这是有界单次样本集合，旧 `dump-memory` CLI 的周期流和本地文件输出仍待迁移。
+
 `start_job(action, request_id=..., confirm=True, arguments=...)` 提交独占任务后立即
 返回记录，使用 `job_status(job_id)` 查询。SDK close 后仍可查询该后台的任务结果，
 但普通硬件调用需要重新显式 connect；close 不释放整个设备，也不取消任务。

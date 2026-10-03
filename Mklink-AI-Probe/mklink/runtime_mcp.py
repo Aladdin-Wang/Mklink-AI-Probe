@@ -88,6 +88,20 @@ def build_server():
         return client().call('read_configuration', {'part_number': part_number, 'model': model})
 
     @server.tool()
+    def dump_memory(regions: list[dict], sample_count: int = 1, timeout: float = 10.0,
+                    speed_profile: str | None = None) -> dict:
+        """Capture 1..64 complete one-shot samples through the shared backend.
+
+        1..8 integer address/size regions, at most 512 KiB over all samples.
+        Timeout is per sample (0.001..60 seconds). An explicit speed_profile
+        changes the shared probe clock; omitted retains it. Requires idle CDC,
+        never stops GUI capture or repeats a failed sample. Returns only after
+        command mode has been confirmed; detached callers do not cancel work.
+        """
+        return client().call('dump_memory', {'regions': regions, 'sample_count': sample_count,
+                                           'timeout': timeout, 'speed_profile': speed_profile})
+
+    @server.tool()
     def read_memory_regions(regions: list[dict]) -> dict:
         """Read 1..16 regions, at most 4096 bytes, through the shared backend.
 
