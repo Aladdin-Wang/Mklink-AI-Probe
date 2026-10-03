@@ -27,7 +27,7 @@ from mklink._types import (
     MKLINK_IDENTITY_COMMAND,
     MKLINK_IDENTITY_TOKEN,
 )
-from mklink.serial._port import _PortLock
+from mklink.local_resources import _PortLock
 
 # SystemView 在二进制流中使用 0x02 停止帧；随后发送文本命令让固件状态机
 # 回到 Pika REPL。必须先独立尝试这一序列，避免后续 RTT/VOFA 命令在状态机

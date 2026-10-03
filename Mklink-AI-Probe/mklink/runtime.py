@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 6
+PROTOCOL = 7  # Stable shared port-lock namespace; stop older runtimes explicitly.
 VERSION = "0.3.0"
 
 

@@ -2,82 +2,18 @@
 
 from __future__ import annotations
 
-import os
 import threading
 from typing import Optional
 
 import serial
 import serial.tools.list_ports
 
-from mklink.local_resources import serial_lock_path
+from mklink.local_resources import _PortLock
 from mklink.usb_interfaces import (
     MKLINK_COMMAND_INTERFACE,
     is_mklink_usb_port,
     usb_interface_number,
 )
-
-
-# ---------------------------------------------------------------------------
-# Cross-process port lock (adapted from modbus/_client.py)
-# ---------------------------------------------------------------------------
-class _PortLock:
-    """Cross-process advisory lock for one serial port."""
-
-    _guard = threading.Lock()
-
-    def __init__(self, port: str):
-        self._path = serial_lock_path(port)
-        self._fd: Optional[object] = None
-        self._locked = False
-
-    def acquire(self) -> bool:
-        if self._locked:
-            return True
-        with self._guard:
-            try:
-                os.makedirs(os.path.dirname(self._path), exist_ok=True)
-                self._fd = open(self._path, "a+")
-            except OSError:
-                self._fd = None
-                return False
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    self._fd.seek(0)
-                    msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                self._fd.close()
-                self._fd = None
-                return False
-            self._fd.seek(0)
-            self._fd.truncate()
-            self._fd.write(str(os.getpid()))
-            self._fd.flush()
-            self._locked = True
-            return True
-
-    def release(self) -> None:
-        if not self._locked or self._fd is None:
-            return
-        try:
-            self._fd.seek(0)
-            self._fd.truncate()
-            self._fd.write("0")
-            self._fd.flush()
-            if os.name == "nt":
-                import msvcrt
-                self._fd.seek(0)
-                msvcrt.locking(self._fd.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-        finally:
-            self._fd.close()
-            self._fd = None
-            self._locked = False
 
 
 # ---------------------------------------------------------------------------

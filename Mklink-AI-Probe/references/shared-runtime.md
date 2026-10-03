@@ -87,6 +87,22 @@ python -m mklink runtime stop --probe "电机板" --confirm
 该下载器后台及其采集；不影响其他下载器。异常后的操作结果可能未知，不能把
 请求超时当成硬件命令已取消，也不能自动重试写操作。
 
+## 跨进程端口锁
+
+CMD、通用串口和 Modbus 共用同一端口锁，按端口分别互斥。默认注册目录在当前用户的
+应用数据目录下（Windows 通常为 `%LOCALAPPDATA%/Mklink AI Probe/locks`），不随
+TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port COM口 --json`
+可以看到下载器后台的持有者 PID。文件存在不代表端口仍被占用；进程退出会释放系统锁。
+
+普通资源清理保留活跃持有者，只在取得系统锁后清空失效 PID，保留锁文件本身。
+`--force` 仍表示明确结束持有进程，会影响该后台的所有客户端，不能用来绕过共享准入。
+隔离测试可设置绝对路径 `MKLINK_LOCK_DIR`；访问同一端口的所有进程必须使用同一配置。
+此锁只约束采用该实现的进程，不替代操作系统的串口占用检查或 USB/MSC 身份绑定。
+
+本次后台协议为 7。升级时先从旧后台的管理页正常退出，再启动新版本；协议 6 后台会被
+新客户端拒绝，不自动接管。旧版工具仍可能使用 TEMP 中的旧锁目录，不能假定新旧进程
+混用具备同样的跨进程协调能力。旧全局锁的诊断/清理代码和返回字段已删除，不扫描旧 TEMP。
+
 ## 常用 CLI
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
-import re
-import threading
 from collections.abc import Callable
 
 from pymodbus.client import ModbusSerialClient
 from pymodbus import FramerType, ModbusException
+
+from mklink.local_resources import _PortLock
 
 
 class ModbusError(Exception):
@@ -23,74 +22,6 @@ class ModbusSlaveError(ModbusError):
         self.fc = fc
         self.response = response
         super().__init__(f"从站 {slave} 返回异常 (FC={fc:#04x}): {response}")
-
-
-class _PortLock:
-    """Cross-process advisory lock for one Modbus serial port."""
-
-    _guard = threading.Lock()
-
-    def __init__(self, port: str):
-        safe_port = re.sub(r"[^A-Za-z0-9_.-]+", "_", port.upper())
-        lock_dir = os.path.join(os.environ.get("TEMP", "/tmp"), "mklink_modbus_locks")
-        # A basename such as ``COM6.lock`` still resolves to the reserved
-        # Windows device ``COM6``.  Prefix the filename so it is always a real
-        # filesystem entry before applying the byte-range lock.
-        self._path = os.path.join(lock_dir, f"port_{safe_port}.lock")
-        self._fd = None
-        self._locked = False
-
-    def acquire(self) -> bool:
-        if self._locked:
-            return True
-        with self._guard:
-            os.makedirs(os.path.dirname(self._path), exist_ok=True)
-            # Use a binary descriptor for msvcrt.locking().  Text/append mode
-            # produces EINVAL on real Windows hosts even with a materialized
-            # byte, which made every port look permanently busy.
-            self._fd = open(self._path, "a+b")
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    # Windows byte-range locks cannot reliably lock beyond EOF.
-                    # A freshly created lock file is empty, which caused every
-                    # first acquisition to be misclassified as "port busy" on
-                    # real field hosts.  Materialize the byte before locking it.
-                    self._fd.seek(0, os.SEEK_END)
-                    if self._fd.tell() == 0:
-                        self._fd.write(b"\0")
-                        self._fd.flush()
-                    self._fd.seek(0)
-                    msvcrt.locking(self._fd.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                self._fd.close()
-                self._fd = None
-                return False
-            self._fd.seek(0)
-            self._fd.truncate()
-            self._fd.write(str(os.getpid()).encode("ascii"))
-            self._fd.flush()
-            self._locked = True
-            return True
-
-    def release(self) -> None:
-        if not self._locked or self._fd is None:
-            return
-        try:
-            if os.name == "nt":
-                import msvcrt
-                self._fd.seek(0)
-                msvcrt.locking(self._fd.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
-        finally:
-            self._fd.close()
-            self._fd = None
-            self._locked = False
 
 
 class ModbusClient:

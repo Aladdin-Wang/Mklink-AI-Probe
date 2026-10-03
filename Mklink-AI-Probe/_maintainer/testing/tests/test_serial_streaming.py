@@ -41,7 +41,7 @@ def _wait_until(predicate, timeout=1.0):
 
 
 def test_serial_port_lock_releases_owner_and_can_be_reacquired(monkeypatch, tmp_path):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
 
     for _ in range(2):
         lock = _PortLock("COM6")
@@ -59,13 +59,13 @@ def test_serial_port_lock_file_open_error_is_reported_as_unavailable(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
     lock = _PortLock("COM6")
 
     def fail_open(*_args, **_kwargs):
         raise OSError("lock path unavailable")
 
-    monkeypatch.setattr("builtins.open", fail_open)
+    monkeypatch.setattr("mklink.local_resources.os.open", fail_open)
     assert lock.acquire() is False
 
 

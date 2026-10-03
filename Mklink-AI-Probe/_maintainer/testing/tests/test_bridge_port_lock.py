@@ -8,7 +8,7 @@ from mklink._types import DeviceState
 
 
 def test_mklink_bridges_lock_each_cmd_port_independently(tmp_path, monkeypatch):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
     first = MKLinkSerialBridge("COM201")
     second = MKLinkSerialBridge("COM202")
     duplicate = MKLinkSerialBridge("COM201")

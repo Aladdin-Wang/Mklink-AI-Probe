@@ -59,6 +59,20 @@ def test_runtime_owner_locks_are_per_probe_and_exclusive(monkeypatch, tmp_path):
         runtime_dir('../escape')
 
 
+def test_discovery_rejects_backend_using_previous_lock_namespace(monkeypatch, tmp_path):
+    import json
+    from mklink import runtime
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR', str(tmp_path))
+    probe_id = 'usb-' + '1' * 24
+    root = runtime.runtime_dir(probe_id)
+    root.mkdir(parents=True)
+    info = {'instance_id': 'old-backend', 'protocol': 6, 'version': '0.3.0'}
+    (root / 'endpoint.json').write_text(json.dumps(info), encoding='utf-8')
+    monkeypatch.setattr(runtime, 'request', lambda *args, **kwargs: info)
+    with pytest.raises(RuntimeErrorResponse, match='stop the old runtime explicitly'):
+        runtime.discover(probe_id)
+
+
 def test_simultaneous_clients_reuse_one_worker_but_other_probe_is_independent(monkeypatch, tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     import time

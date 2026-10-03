@@ -92,18 +92,17 @@ def test_windows_pid_exists_reports_completed_real_process_as_dead():
 
 
 def test_release_serial_resources_removes_exited_auto_connect_owner(tmp_path, monkeypatch):
-    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("MKLINK_LOCK_DIR", str(tmp_path))
     kernel32 = _Kernel32(exit_code=1)
     _install_windows_process_api(monkeypatch, kernel32)
     path = local_resources.serial_lock_path("MKLINK_AUTO_CONNECT")
-    lock_path = tmp_path / "mklink_serial_locks" / "serial_MKLINK_AUTO_CONNECT.lock"
+    lock_path = tmp_path / "serial_MKLINK_AUTO_CONNECT.lock"
     assert path == str(lock_path)
-    lock_path.parent.mkdir(parents=True)
-    lock_path.write_text("99106", encoding="utf-8")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_bytes(b"\0" + b"99106")
 
     result = local_resources.release_serial_resources(
         port="MKLINK_AUTO_CONNECT",
-        include_mklink_bridge=False,
     )
 
     assert result["serial_locks"] == [{
@@ -112,9 +111,9 @@ def test_release_serial_resources_removes_exited_auto_connect_owner(tmp_path, mo
         "exists": True,
         "owner_pid": 99106,
         "owner_alive": False,
-        "action": "removed_stale_lock",
+        "action": "cleared_stale_lock",
     }]
-    assert not lock_path.exists()
+    assert lock_path.read_bytes() == b"\0" + b"0"
 
 
 class _Serial:

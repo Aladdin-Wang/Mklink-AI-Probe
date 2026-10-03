@@ -1613,13 +1613,6 @@ def _cli_resources(args):
     else:
         print("[OK] local serial resources checked")
 
-    bridge = result.get("mklink_bridge")
-    if bridge:
-        owner = bridge.get("owner_pid") or "-"
-        print(
-            f"  mklink_bridge: {bridge.get('action', 'status')} "
-            f"pid={owner} alive={bridge.get('owner_alive', False)}"
-        )
     for item in result.get("serial_locks", []):
         owner = item.get("owner_pid") or "-"
         print(
@@ -1627,8 +1620,6 @@ def _cli_resources(args):
             f"pid={owner} alive={item.get('owner_alive', False)} "
             f"path={item.get('path')}"
         )
-    if result.get("stopped"):
-        print(f"  stopped: {', '.join(result['stopped'])}")
 
 
 def _cli_symbols(
