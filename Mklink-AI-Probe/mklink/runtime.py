@@ -163,14 +163,16 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
                 scratch.mkdir(exist_ok=True)
                 environment.update(TEMP=str(scratch), TMP=str(scratch), TMPDIR=str(scratch))
                 kwargs["env"] = environment
-                with (root / "runtime.log").open("ab") as output:
+                # Only pre-server/native diagnostics use the inherited handle.
+                # The server owns and rotates its Python diagnostics separately.
+                with (root / "startup.log").open("wb") as output:
                     process = subprocess.Popen(command, stdout=output, stderr=output, **kwargs)
                 while time.monotonic() < deadline:
                     info = discover(probe_id)
                     if info:
                         return info
                     if process.poll() is not None:
-                        raise RuntimeErrorResponse(f"Runtime startup failed; inspect {root / 'runtime.log'}")
+                        raise RuntimeErrorResponse(f"Runtime startup failed; inspect {root / 'runtime.log'} and {root / 'startup.log'}")
                     time.sleep(0.2)
                 raise RuntimeErrorResponse("Runtime startup timed out; do not open CDC independently")
         except RuntimeErrorResponse as exc:
@@ -279,42 +281,47 @@ class RuntimeClient:
 
 
 def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):
+    from mklink.runtime_logging import runtime_diagnostics
+    with runtime_lock("owner.lock", probe_id), runtime_diagnostics(_private_dir(probe_id)):
+        _serve_runtime(project_root=project_root, port=port, probe_id=probe_id)
+
+
+def _serve_runtime(*, project_root, port, probe_id):
     from mklink.probe_volumes import bind_runtime
     bind_runtime(probe_id)
     import uvicorn
     from mklink.remote.api import create_app
     from mklink.runtime_api import install_runtime
-    with runtime_lock("owner.lock", probe_id):
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if os.name == "nt":
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name == "nt":
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
         try:
-            try:
-                listener.bind(("127.0.0.1", port))
-            except OSError:
-                listener.bind(("127.0.0.1", 0))
-            listener.listen(128)
-            info = {"port": listener.getsockname()[1], "token": secrets.token_urlsafe(32),
-                    "instance_id": secrets.token_hex(16), "protocol": PROTOCOL, "version": VERSION, "pid": os.getpid(),
-                    "probe_id": probe_id}
-            info['jobs_path'] = str(_private_dir(probe_id) / 'jobs.json')
-            app = create_app(project_root=str(Path(project_root).resolve()), backend_port=info["port"])
-            control = install_runtime(app, info)
-            from mklink.observe_bridge import configure_stream_observation
-            configure_stream_observation(app, host="127.0.0.1", port=info["port"],
-                                         auth_token=info["token"], private_correlation=info["instance_id"])
-            server = uvicorn.Server(uvicorn.Config(app, log_level="info", access_log=False,
-                                                  ws="websockets-sansio", ws_per_message_deflate=False))
-            control.shutdown = lambda: setattr(server, "should_exit", True)
-            path = _private_dir(probe_id) / "endpoint.json"
-            temporary = path.with_suffix(".tmp")
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as output:
-                json.dump(info, output)
-            temporary.replace(path)
-            try:
-                server.run(sockets=[listener])
-            finally:
-                path.unlink(missing_ok=True)
+            listener.bind(("127.0.0.1", port))
+        except OSError:
+            listener.bind(("127.0.0.1", 0))
+        listener.listen(128)
+        info = {"port": listener.getsockname()[1], "token": secrets.token_urlsafe(32),
+                "instance_id": secrets.token_hex(16), "protocol": PROTOCOL, "version": VERSION, "pid": os.getpid(),
+                "probe_id": probe_id}
+        info['jobs_path'] = str(_private_dir(probe_id) / 'jobs.json')
+        app = create_app(project_root=str(Path(project_root).resolve()), backend_port=info["port"])
+        control = install_runtime(app, info)
+        from mklink.observe_bridge import configure_stream_observation
+        configure_stream_observation(app, host="127.0.0.1", port=info["port"],
+                                     auth_token=info["token"], private_correlation=info["instance_id"])
+        server = uvicorn.Server(uvicorn.Config(app, log_level="info", access_log=False,
+                                              ws="websockets-sansio", ws_per_message_deflate=False))
+        control.shutdown = lambda: setattr(server, "should_exit", True)
+        path = _private_dir(probe_id) / "endpoint.json"
+        temporary = path.with_suffix(".tmp")
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(info, output)
+        temporary.replace(path)
+        try:
+            server.run(sockets=[listener])
         finally:
-            listener.close()
+            path.unlink(missing_ok=True)
+    finally:
+        listener.close()

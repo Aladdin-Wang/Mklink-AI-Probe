@@ -9,16 +9,9 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 import tempfile
 import time
 from pathlib import Path
-
-# Windows 终端默认 GBK 编码，设备返回的特殊字符会导致 encode 失败
-# 透明替换无法编码的字符，避免 UnicodeEncodeError
-if sys.platform == "win32":
-    sys.stdout.reconfigure(errors="replace", encoding="utf-8")
-    sys.stderr.reconfigure(errors="replace", encoding="utf-8")
 
 from mklink.bridge import MKLinkSerialBridge, quote_probe_string
 from mklink.discovery import find_microkeen_disk
