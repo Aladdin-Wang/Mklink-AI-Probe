@@ -143,6 +143,11 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
                 info = discover(probe_id)
                 if info:
                     return info
+                # HTTP can disappear before shutdown finishes closing the
+                # device and diagnostics. Wait using the existing owner lock
+                # before spawning a replacement that would immediately exit.
+                with runtime_lock("owner.lock", probe_id):
+                    pass
                 root = _private_dir(probe_id)
                 command = [sys.executable]
                 if not getattr(sys, "frozen", False):

@@ -318,7 +318,7 @@ class RuntimeGate:
             receive = replay
         c.prune()
         session_id = headers.get(b"x-mklink-session", b"").decode()
-        if path in {"/api/device/disconnect", "/api/project-root", "/api/symbols/reparse", "/api/symbols/c-layout", "/api/resources/release-all",
+        if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout", "/api/resources/release-all",
                     "/api/resources/release", "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.sessions or c.attach_lock.locked()):
             return await reject(409, "Other runtime clients are attached; detach them before changing the shared device/project")
         for stream in ("rtt", "superwatch", "systemview"):
@@ -406,7 +406,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                    for key in ("project_root", "port", "axf", "mcu", "elf_backend", "session_id")):
                 raise HTTPException(422, "Connection parameters must be strings or null")
             if project and not same_path(project, state["project_root"]):
-                raise HTTPException(409, "Runtime has a different project; switch it explicitly after detaching clients")
+                raise HTTPException(409, "Runtime has a different project; detach clients, stop this probe's backend explicitly, then start it with the requested project")
             dev = state.get("device")
             if dev and dev.connected:
                 if body.get("port") and body["port"].casefold() != dev.port.casefold():

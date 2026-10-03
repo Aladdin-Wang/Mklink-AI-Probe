@@ -1188,19 +1188,6 @@ def create_app(
     async def get_project_root():
         return {"project_root": _state["project_root"]}
 
-    @app.put("/api/project-root")
-    async def set_project_root(path: str = Body(..., embed=True)):
-        import os
-        p = os.path.abspath(path)
-        if not os.path.isdir(p):
-            raise HTTPException(status_code=400, detail=f"目录不存在: {p}")
-        _state["project_root"] = p
-        if site_agent.settings.enabled and site_agent.project_root != p:
-            await site_agent.stop()
-            site_agent.project_root = p
-            await site_agent.start()
-        return {"project_root": p}
-
     @app.get("/api/project-root/browse")
     async def browse_project_root(path: str = ""):
         import os

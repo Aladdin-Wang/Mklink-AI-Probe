@@ -174,11 +174,14 @@ def test_subscribe_cannot_join_a_capture_while_it_is_stopping(runtime):
 
 
 def test_auth_origin_and_project_binding(runtime, tmp_path):
-    client, _, calls, _, _ = runtime
+    client, control, calls, _, _ = runtime
     assert client.get("/_runtime/status", headers={"X-Auth-Token": "bad"}).status_code == 401
     assert client.get("/_runtime/status", headers={"Origin": "https://evil.example"}).status_code == 403
     assert client.get("/_runtime/status", headers={"Host": "evil.example"}).status_code == 403
-    assert client.post("/_runtime/attach", json={"project_root": str(tmp_path / "other")}).status_code == 409
+    mismatch = client.post("/_runtime/attach", json={"project_root": str(tmp_path / "other")})
+    assert mismatch.status_code == 409
+    assert "stop this probe's backend explicitly" in mismatch.text
+    assert not control.sessions and calls == []
     assert client.post("/_runtime/attach", json={"axf": str(tmp_path / "other.axf")}).status_code == 409
     assert calls == []
 

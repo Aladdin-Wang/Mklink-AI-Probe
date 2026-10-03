@@ -92,6 +92,12 @@ def test_simultaneous_clients_reuse_one_worker_but_other_probe_is_independent(mo
         assert other['pid'] != pair[0]['pid']
         assert other['port'] != pair[0]['port']
         request(pair[0], 'POST', '/_runtime/stop', {'confirm': True})
+        new_project = tmp_path / 'new-project'
+        new_project.mkdir()
+        replacement = ensure_runtime(project_root=str(new_project), probe=first['probe_id'])
+        workers.append(replacement)
+        assert replacement['instance_id'] != pair[0]['instance_id']
+        assert request(replacement, 'GET', '/_runtime/status')['project_root'] == str(new_project.resolve())
         assert request(other, 'GET', '/_runtime/status')['probe_id'] == second['probe_id']
     finally:
         for info in workers:
@@ -105,3 +111,35 @@ def test_simultaneous_clients_reuse_one_worker_but_other_probe_is_independent(mo
                 break
             time.sleep(.1)
         assert not any((runtime_dir(info['probe_id']) / 'endpoint.json').exists() for info in workers)
+
+
+def test_startup_waits_for_owner_after_http_has_disappeared(monkeypatch, tmp_path):
+    from mklink import runtime
+
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR', str(tmp_path))
+    probe_id = 'usb-' + '1' * 24
+    monkeypatch.setattr('mklink.probes.select_probe', lambda *args, **kwargs: {'probe_id': probe_id})
+    spawned = []
+    info = {'instance_id': 'replacement'}
+    monkeypatch.setattr(runtime, 'discover', lambda key: info if spawned else None)
+    owner = runtime_lock('owner.lock', probe_id)
+    owner.__enter__()
+    released = False
+    waits = []
+    def finish_shutdown(seconds):
+        nonlocal released
+        waits.append(seconds)
+        owner.__exit__(None, None, None)
+        released = True
+    def spawn(*args, **kwargs):
+        assert released, 'Replacement spawned while the previous backend still owns the probe'
+        spawned.append(args)
+        return SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(runtime.time, 'sleep', finish_shutdown)
+    monkeypatch.setattr(runtime.subprocess, 'Popen', spawn)
+    try:
+        assert runtime.ensure_runtime(probe=probe_id) is info
+        assert len(spawned) == 1 and waits == [.2]
+    finally:
+        if not released:
+            owner.__exit__(None, None, None)

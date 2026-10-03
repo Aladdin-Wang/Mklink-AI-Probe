@@ -10,6 +10,13 @@
 同一下载器的多个窗口共享工程、符号和采集设置，不是独立硬件会话。
 建议不同目标选择不同工程目录，避免同时编辑同一份工程配置文件。
 
+工程目录在后台进程生命周期内固定，旧 `PUT /api/project-root` 已删除。已有后台
+会继续使用启动时的工程；切换工程需先停止采集、分离 AI/CLI/SDK 客户端并关闭
+其他 GUI 窗口，再执行 `runtime stop --probe <设备> --confirm`，然后用
+`gui --probe <设备> --project-root <新工程>` 启动。新后台重建符号、外设目录和
+重连记录，其他下载器的后台保持运行。启动会等待旧进程释放现有实例锁，
+不会因 HTTP 已关闭而抢在设备清理结束前启动第二个后台。
+
 ```powershell
 python -m mklink probes list
 python -m mklink probes alias <设备ID或COM口> "电机板"

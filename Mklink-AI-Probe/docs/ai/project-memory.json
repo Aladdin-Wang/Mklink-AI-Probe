@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T16:16:45+00:00",
+  "updated_at": "2026-10-03T16:39:10+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared configuration CLI/MCP migration after 3a31296; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; fixed backend project lifetime and shutdown/startup race after b81eefc; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审、修改和验证。configuration read CLI/MCP复用既有后台读取，删除CLI直连；离线说明/脚本抽到新旧MCP共同注册，未新增写入入口。330项回归和F103真机快照一致/容量不符拒绝/选项字节不变验证通过，继续A6剩余工具与長稳验收。"
+    "current_task": "持续循环评审、修改和验证。删除无调用方的工程热切换接口/前端适配，工程固定于后台生命周期；复用实例锁修复HTTP关闭后清理未完成的重启竞态。311后台/29GUI、生产构建与双探针工程A-B-A真机验证通过。下一轮审查配置保存的网络自动重试，再推进A6和长稳验收。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第七批：CI集合296后台/29GUI，相关Python330项通过。真实CLI/MCP未连接即可生成一致脚本且不执行；GUI RTT期间配置读拒绝，停止后CLI/MCP/SDK快照一致，错误容量型号拒绝。选项字节/Boot/VTOR和配置保持，tick推进；沿用前轮WebGUI，非安装包/长稳验收。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第八批：CI固定集合303后台/29GUI，本地含外设目录311项通过，类型/新生产构建通过。GUI单独连接及RTT时旧工程切换拒绝；真机原工程-空工程-原工程显式重启通过，第二后台不变；旧工程attach不连接目标。Boot/选项字节/VTOR/配置保持，tick推进。首轮HIL重启竞态已修并完整复验。"
     },
     {
       "area": "正式版与安装",
@@ -53,18 +53,18 @@
   ],
   "decisions": [
     "应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。",
-    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议7，内嵌Agent暂禁用。",
+    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议7，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。",
     "应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。",
     "V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。",
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT时配置读取拒绝，离线配方可生成但未执行；停止后CLI/MCP/SDK配置字段一致，错用RCT6容量拒绝。选项字节/Boot20KiB/VTOR/工程配置不变，tick推进，GUI再启停正常；第二只独立查询版本，两个后台退出。未reset、烧录、擦除、改保护/OTP/VCC；每轮须重枚举。",
+    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI单独连接/RTT时工程不可被旧请求切换；原工程-空工程-原工程创建三个后台实例并显式重连成功，第二后台不变且无目标连接。Boot20KiB/选项字节/VTOR/工程配置不变，tick推进，两个后台退出。未reset、烧录、擦除、改保护/OTP/VCC；每轮须重枚举。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "A5已收敛。A6活动MCP29工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增296项后台（含实际API、探针与配置读取）/29项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
+    "A5已收敛。A6活动MCP29工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增303项后台（含实际API、探针与配置读取）/29项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
     "0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "持续评审/验证：继续A6剩余能力/专用CLI迁移，复用既有服务并删无调用方实现；随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。",
+    "持续评审/验证：先审查GUI配置保存的Failed to fetch自动重试（接口可能调在线SWD时钟）；继续A6剩余能力/专用CLI迁移并删除无调用方实现；随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

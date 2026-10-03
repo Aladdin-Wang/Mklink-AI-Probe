@@ -24,6 +24,42 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+@pytest.mark.parametrize('shared', [False, True])
+@pytest.mark.parametrize('connected', [None, False, True])
+def test_project_is_fixed_for_backend_lifetime(tmp_path, monkeypatch, shared, connected):
+    from mklink.runtime_api import install_runtime
+
+    original = tmp_path / 'original'
+    requested = tmp_path / 'requested'
+    original.mkdir()
+    requested.mkdir()
+    app = create_app(auth_token=None, project_root=str(original))
+    state = app.state.mklink_state
+    device = None if connected is None else SimpleNamespace(connected=connected)
+    previous = {'axf': str(original / 'firmware.axf')}
+    state.update(device=device, last_device_connection=previous)
+    roots = []
+    def discover(root):
+        roots.append(root)
+        return [SimpleNamespace(target='CHIP', key='chip', public=lambda: {'project': root})]
+    monkeypatch.setattr('mklink.peripheral_watch.discover_svd_targets', discover)
+    if shared:
+        install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'test-instance'})
+    try:
+        with TestClient(app, base_url='http://127.0.0.1:8765',
+                        headers={'X-Auth-Token': 'test-secret'}) as client:
+            catalog = client.get('/api/dash/superwatch/peripherals/targets').json()
+            response = client.put('/api/project-root', json={'path': str(requested)})
+            assert response.status_code == 405, response.text
+            assert client.get('/api/project-root').json() == {'project_root': str(original)}
+            assert client.get('/api/dash/superwatch/peripherals/targets').json() == catalog
+            assert roots == [str(original)]
+            assert state['device'] is device and state['last_device_connection'] is previous
+            assert app.state.site_agent.project_root == str(original)
+    finally:
+        state['device'] = None  # Fixture devices have no physical connection to close.
+
+
 def test_resources_status_preserves_owner_without_legacy_session_routes(tmp_path):
     from mklink.remote.resource_manager import ResourceGroup
     app = create_app(auth_token=None, project_root=str(tmp_path))

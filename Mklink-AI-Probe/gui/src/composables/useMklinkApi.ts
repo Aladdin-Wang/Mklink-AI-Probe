@@ -299,13 +299,6 @@ export function useMklinkApi() {
     }
   }
 
-  async function setProjectRoot(path: string): Promise<{ project_root: string }> {
-    return api('/api/project-root', {
-      method: 'PUT',
-      body: JSON.stringify({ path }),
-    })
-  }
-
   async function getProjectRoot(): Promise<{ project_root: string }> {
     return api('/api/project-root')
   }
@@ -388,7 +381,6 @@ export function useMklinkApi() {
     parseAxf,
     startStatusPolling,
     stopStatusPolling,
-    setProjectRoot,
     getProjectRoot,
     browseProjectRoot,
     findRtt,
