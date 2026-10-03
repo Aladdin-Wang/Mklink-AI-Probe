@@ -1257,7 +1257,8 @@ def test_trigger_api_streams_device_output_before_the_terminal_result(monkeypatc
     assert messages[-1]["result"]["status"] == "completed"
 
 
-def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
+@pytest.mark.parametrize('shared', [False, True])
+def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes(monkeypatch, shared):
     allow_finish = threading.Event()
 
     class Bridge:
@@ -1279,6 +1280,10 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
 
     app = create_app(auth_token=None, project_root=".")
     app.state.mklink_state["device"] = Device()
+    if shared:
+        from types import SimpleNamespace
+        app.state.shared_runtime = SimpleNamespace(info={'probe_id':'test-probe'})
+        monkeypatch.setattr('mklink.probes.select_probe', lambda _: {'port':'TEST_CDC'})
     manager = app.state.mklink_state["resource_manager"]
     route = find_route(app, "/api/offline-download/trigger")
 
@@ -1299,12 +1304,15 @@ def test_trigger_stream_keeps_resources_until_the_serial_thread_finishes():
         )
         iterator = response.body_iterator
         await iterator.__anext__()
-        await iterator.aclose()
+        closing = asyncio.create_task(iterator.aclose())
+        await asyncio.sleep(.01)
+        assert not closing.done()
         await asyncio.sleep(0)
         assert manager.get_active_lease(ResourceGroup.MKLINK_BRIDGE) is not None
         assert manager.get_active_lease(ResourceGroup.TARGET_DEBUG) is not None
 
         allow_finish.set()
+        await closing
         for _ in range(100):
             if manager.get_status() == {}:
                 break

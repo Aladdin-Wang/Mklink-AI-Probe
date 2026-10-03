@@ -18,6 +18,7 @@ EXCLUDED_PREFIXES = (
     "mklink.runtime_management",
     "mklink.runtime_capabilities",
     "mklink.runtime_cli",
+    "mklink.runtime_jobs",
     "mklink.probes",
     "mklink.remote.api",
     "mklink.remote.dashboards",

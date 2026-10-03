@@ -6,9 +6,10 @@ import math
 import sys
 import time
 import webbrowser
+import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset'}
 
 
 def run(args):
@@ -19,18 +20,37 @@ def run(args):
     if not math.isfinite(duration) or duration < 0:
         raise SystemExit('duration must be finite and nonnegative')
     if getattr(args, 'save', None):
-        raise SystemExit('Shared read-ram does not write probe files; use --direct explicitly for --save')
+        raise SystemExit('Shared read-ram does not support --save to probe storage')
     if any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
-        raise SystemExit('Select the peripheral catalog in the shared GUI first; private catalog overrides require --direct')
+        raise SystemExit('Select the peripheral catalog in the shared GUI first')
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
             or getattr(args, 'port_http', 0) != 0 or getattr(args, 'max_points', 500) != 500):
-        raise SystemExit('Shared visualization uses the backend GUI; private host/port/chart overrides require --direct')
+        raise SystemExit('Shared visualization uses the backend GUI; private host/port/chart overrides are unsupported')
     client = RuntimeClient(project_root=project or '.', kind='cli', name='CLI '+args.command)
     owned_stream = None
     try:
         client.connect(project_root=project, port=getattr(args, 'port', None), probe=getattr(args, 'probe', None),
                        axf=getattr(args, 'source', None), elf_backend=getattr(args, 'elf_backend', None))
-        if args.command == 'device-status':
+        if args.command in {'flash', 'erase', 'reset'}:
+            from mklink.runtime import request
+            arguments = {}
+            if args.command == 'flash':
+                if not args.hex:
+                    raise RuntimeErrorResponse('Shared flash requires an explicit --hex firmware path')
+                from pathlib import Path
+                arguments = {'firmware': str(Path(args.hex).resolve()), 'verify': True, 'reset_after': True}
+            request_id = getattr(args, 'request_id', None) or str(uuid.uuid4())
+            print(json.dumps({'request_id': request_id, 'action': args.command}), flush=True)
+            result = request(client.info, 'POST', '/api/runtime/jobs/', {
+                'action': args.command, 'arguments': arguments, 'request_id': request_id, 'confirm': True,
+                'session_id': client.session_id})
+            print(json.dumps({'job_id': result['job_id'], 'state': result['state']}), flush=True)
+            while result['state'] not in {'succeeded', 'failed', 'unknown'}:
+                time.sleep(.25)
+                result = request(client.info, 'GET', '/api/runtime/jobs/'+result['job_id'])
+            if result['state'] != 'succeeded':
+                raise RuntimeErrorResponse(json.dumps(result, ensure_ascii=False))
+        elif args.command == 'device-status':
             result = client.call('device_status')
         elif args.command == 'read-ram':
             result = client.call('read_memory', {'address': args.addr, 'size': args.size})

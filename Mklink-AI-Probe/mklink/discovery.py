@@ -285,6 +285,9 @@ def find_microkeen_disk() -> str | None:
     在 Windows 上查找名为 [MICROKEEN] 的可移动磁盘。
     返回磁盘根路径，如 'D:\\'，未找到返回 None。
     """
+    from mklink import probe_volumes
+    if probe_volumes._bound_probe is not None:
+        return probe_volumes.bound_disk()
     if os.name != "nt":
         return _find_posix_microkeen_disk()
 

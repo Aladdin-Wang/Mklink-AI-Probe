@@ -23,7 +23,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   Keil 能下载时，优先复用该工程配置，不继续盲试脱机 FLM。
 - 其他设备操作有 MKLink MCP tool 时优先使用。`ping.mode=shared-cdc` 时先读
   [共享后台与多下载器](references/shared-runtime.md)，能力未覆盖不得自动打开独占 CDC。
-  独占兼容模式下，能力未覆盖时用 `python -m mklink <command>`。
+  GUI/MCP 与已迁移 CLI 已移除 `--direct`；其余独立工具须先显式释放对应后台。
   参数以 tool schema/`--help` 为准，找不到入口再读[操作速查](references/tool-index.md)。
 - 首次需要生成脚本、日志、采集或报告时，工作根目录固定为用户指定的非系统盘
   目录；用户未指定时使用目标项目 `.mklink/`。项目在系统盘或没有项目时先询问，
@@ -35,7 +35,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 - **单探针串行**：先读 `ping.limits`。同一下载器、命令口或目标串口同一时刻只
   执行一个硬件操作；共享模式可同时读取后台已采集的缓存。多下载器先 `discover_probes`，明确选择 ID 或别名，
   不选择枚举列表的第一项。共享 `disconnect` 只退出本客户端；不要为了读变量停止
-  其他客户端的采集。独占兼容模式复用连接、不并行 tool 调用，停止流后再断开。
+  其他客户端的采集。独立工具复用连接、不并行设备调用，停止流后再断开。
 - **VOFA 与 dump**：`read_memory`/`read_ram` 只做快照；连续曲线用
   `dump_memory`。精确 VOFA 和 dump/SuperWatch 每次最多 **15 个**离散地址或
   region；快速连续 float VOFA 最多 **16 路**；发送给 Pika 的完整命令最多

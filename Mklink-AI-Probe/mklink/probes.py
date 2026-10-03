@@ -20,7 +20,7 @@ def inventory() -> list[dict]:
         # Missing/duplicate serials must not silently merge two physical devices.
         material = repr(identity) if stable else repr((identity, port.location, port.device))
         probe_id = ("usb-" if stable else "local-") + hashlib.sha256(material.encode()).hexdigest()[:24]
-        probes.append({"probe_id": probe_id, "port": port.device, "serial_number": port.serial_number or "",
+        probes.append({"probe_id": probe_id, "port": port.device, "vid": port.vid, "pid": port.pid, "serial_number": port.serial_number or "",
                        "description": port.description, "location": port.location or "", "identity_stable": stable,
                        "alias": aliases.get(probe_id, "") if stable else ""})
     return sorted(probes, key=lambda p: (p["alias"].casefold(), p["probe_id"]))

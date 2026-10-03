@@ -1,0 +1,140 @@
+"""Bounded, journaled exclusive jobs. Disconnect is not cancellation or retry."""
+from __future__ import annotations
+
+import asyncio
+from contextvars import ContextVar
+import hashlib
+import json
+from pathlib import Path
+import secrets
+import time
+
+from fastapi import FastAPI, HTTPException
+from starlette.routing import Mount
+
+executing_job = ContextVar('mklink_executing_job', default=None)
+PATHS = {'flash': '/api/device/flash', 'erase': '/api/device/erase', 'reset': '/api/device/reset'}
+TERMINAL = {'succeeded', 'failed', 'unknown'}
+
+
+class RuntimeJobs:
+    def __init__(self, control):
+        self.control = control
+        self.jobs = {}
+        self.tasks = set()
+        self.path = Path(control.info['jobs_path']) if control.info.get('jobs_path') else None
+        if self.path and self.path.exists():
+            try:
+                rows = json.loads(self.path.read_text(encoding='utf-8'))
+                for row in rows[-64:]:
+                    if row['state'] not in TERMINAL:
+                        row.update(state='unknown', error='Backend interrupted; inspect target before any new operation', finished=time.time())
+                    self.jobs[row['job_id']] = row
+                self.save()
+            except (ValueError, KeyError, TypeError) as exc:
+                raise RuntimeError('Cannot read job journal; preserve it for inspection') from exc
+
+    @property
+    def active(self):
+        return next((j for j in self.jobs.values() if j['state'] not in TERMINAL), None)
+
+    def save(self):
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(list(self.jobs.values()), ensure_ascii=False), encoding='utf-8')
+            temporary.replace(self.path)
+
+    def submit(self, body):
+        action, request_id = body.get('action'), body.get('request_id')
+        arguments = body.get('arguments', {})
+        if body.get('session_id') is not None:
+            self.control.session(body['session_id'])
+        if action not in PATHS or not isinstance(arguments, dict) or body.get('confirm') is not True:
+            raise HTTPException(422, 'Select flash/erase/reset with arguments and confirm=true')
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise HTTPException(422, 'A stable request_id is required; reuse it to query an uncertain submission')
+        allowed = {'firmware', 'verify', 'reset_after'} if action == 'flash' else set()
+        if arguments.keys() - allowed:
+            raise HTTPException(422, 'Unsupported job arguments')
+        fingerprint = hashlib.sha256(json.dumps([action, arguments], sort_keys=True).encode()).hexdigest()
+        previous = next((j for j in self.jobs.values() if j['request_id'] == request_id), None)
+        if previous:
+            if previous['fingerprint'] != fingerprint:
+                raise HTTPException(409, 'request_id already belongs to a different operation')
+            return previous
+        c = self.control
+        c.require_identity()
+        if self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
+            raise HTTPException(409, 'Another operation is active; no job was queued')
+        from mklink.remote.dashboards import get_managers
+        if any(m.running for m in get_managers().values()):
+            raise HTTPException(409, 'Stop acquisition explicitly before an exclusive job')
+        device = c.app.state.mklink_state.get('device')
+        if not device or not device.connected:
+            raise HTTPException(409, 'Connect the bound probe before submitting a job')
+        if action == 'flash':
+            firmware = arguments.get('firmware')
+            if not isinstance(firmware, str) or not firmware:
+                raise HTTPException(422, 'An explicit firmware file is required')
+            if not Path(firmware).is_file():
+                raise HTTPException(422, 'Firmware file is unavailable')
+            if any(type(arguments[key]) is not bool for key in ('verify', 'reset_after') if key in arguments):
+                raise HTTPException(422, 'verify/reset_after must be booleans')
+        job = {'job_id': secrets.token_hex(16), 'request_id': request_id, 'fingerprint': fingerprint,
+               'action': action, 'probe_id': c.info.get('probe_id'), 'state': 'running', 'started': time.time(),
+               'result': None, 'error': None, 'replay': False}
+        while len(self.jobs) >= 64:
+            self.jobs.pop(next(iter(self.jobs)))
+        self.jobs[job['job_id']] = job
+        try:
+            self.save()  # Persist acceptance before hardware can run.
+        except OSError:
+            self.jobs.pop(job['job_id'])
+            raise HTTPException(503, 'Job journal unavailable; no operation was started')
+        task = asyncio.create_task(self.execute(job, dict(arguments)))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return job
+
+    async def execute(self, job, arguments):
+        token = executing_job.set(job['job_id'])
+        try:
+            result = await self.control.invoke('POST', PATHS[job['action']], arguments)
+            encoded = json.dumps(result, ensure_ascii=False)
+            job['result'] = result if len(encoded) <= 16384 else {'summary': encoded[:16384], 'truncated': True}
+            job['state'] = 'failed' if result.get('success') is False or result.get('status') == 'failed' else 'succeeded'
+        except HTTPException as exc:
+            job.update(state='failed' if exc.status_code < 500 else 'unknown', error=str(exc.detail)[:2048])
+        except BaseException as exc:
+            job.update(state='unknown', error=str(exc)[:2048] or 'Execution interrupted; result unknown')
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+        finally:
+            job['finished'] = time.time()
+            executing_job.reset(token)
+            try:
+                self.save()
+            except OSError:
+                job.update(state='unknown', error='Result journal failed; inspect target before proceeding')
+
+
+def install_jobs(app, control):
+    jobs = control.jobs = RuntimeJobs(control)
+    api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @api.get('/')
+    async def listing():
+        return {'jobs': list(reversed(jobs.jobs.values()))}
+
+    @api.post('/', status_code=202)
+    async def submit(body: dict):
+        return jobs.submit(body)
+
+    @api.get('/{job_id}')
+    async def get(job_id: str):
+        if job_id not in jobs.jobs:
+            raise HTTPException(404, 'Job not retained; never infer failure or retry from this response')
+        return jobs.jobs[job_id]
+
+    app.router.routes.insert(0, Mount('/api/runtime/jobs', app=api))

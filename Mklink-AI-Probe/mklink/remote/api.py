@@ -1559,8 +1559,8 @@ def create_app(
     @app.get("/api/microkeen")
     async def get_microkeen_info():
         from mklink.discovery import find_microkeen_disk, get_microkeen_flm_path
-        disk = find_microkeen_disk()
-        flm_dir = get_microkeen_flm_path()
+        disk = await run_in_threadpool(find_microkeen_disk)
+        flm_dir = await run_in_threadpool(get_microkeen_flm_path)
         return {
             "disk_path": disk,
             "flm_dir": flm_dir,
@@ -2054,7 +2054,7 @@ def create_app(
             raise HTTPException(status_code=400, detail="Device not connected")
         with target_debug_lease(_state, "erase"):
             try:
-                ok = _state["device"].erase_chip()
+                ok = await run_in_threadpool(_state["device"].erase_chip)
                 return {"success": ok}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))

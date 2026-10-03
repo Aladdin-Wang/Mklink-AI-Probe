@@ -62,6 +62,17 @@ class RuntimeControl:
         self.current_operation = None
         self.last_operation = None
         self.started = time.monotonic()
+        self.jobs = None
+
+    def online_job(self):
+        services = getattr(self.app.state, 'online_flash', None)
+        if services is None:
+            return None
+        from mklink.remote.online_flash_api import _active_snapshot, _safe_job_snapshot
+        return _safe_job_snapshot(_active_snapshot(services.job_manager))
+
+    def job_busy(self):
+        return bool((self.jobs and self.jobs.active) or self.online_job())
 
     def prune(self):
         now = time.monotonic()
@@ -99,7 +110,8 @@ class RuntimeControl:
         return {'protocol': PROTOCOL, 'version': VERSION, 'probe_id': self.info.get('probe_id'),
                 'instance_id': self.info['instance_id'], 'pid': self.info.get('pid'),
                 'project_root': self.app.state.mklink_state['project_root'], 'transport': 'cdc',
-                'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked(),
+                'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked() or self.job_busy(),
+                'jobs': list(reversed(list(self.jobs.jobs.values())))[:8] if self.jobs else [], 'online_job': self.online_job(),
                 'operation': self.current_operation, 'last_operation': self.last_operation,
                 'connected': bool(device and device.connected),
                 'streams': [{'name': name, 'running': manager.running,
@@ -183,15 +195,27 @@ class RuntimeGate:
         ) and not path.startswith(("/api/browser-session/", "/api/session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)
-        from mklink.probes import inventory, select_probe
+        from mklink.runtime_jobs import executing_job
+        own_job = c.jobs and c.jobs.active and executing_job.get() == c.jobs.active['job_id']
+        online_stop = path.startswith('/api/online-flash/jobs/') and path.endswith('/stop')
+        if c.job_busy() and not own_job and not online_stop:
+            return await reject(409, 'An exclusive job is active; inspect its result before further hardware operations')
+        from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
         if path.startswith(('/api/device/', '/api/dash/')) and not path.endswith(('/stop', '/disconnect')):
             try:
                 c.require_identity()
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail)
-        if path in {"/api/probe/firmware-upgrade", "/api/offline-download/deploy", "/api/offline-download/trigger"} and len(inventory()) > 1:
-            return await reject(409, "This disk-based operation is not yet bound to a probe identity; use a single-probe maintenance session")
+        if path == '/api/probe/firmware-upgrade':
+            return await reject(409, 'Bootloader re-enumeration is not identity-bound yet; use an explicit maintenance session')
+        if path in {'/api/offline-download/deploy', '/api/offline-download/trigger'}:
+            try:
+                c.require_identity()
+                from mklink.probe_volumes import resolve_volume
+                await asyncio.to_thread(resolve_volume, c.info.get('probe_id'))
+            except (RuntimeError, HTTPException) as exc:
+                return await reject(409, str(exc))
         validated_capability = next((name for name in ('read_memory', 'write_memory', 'write_variable', 'rtt_write')
                                      if CAPABILITIES[name][1] == path), None)
         online_flash = path in {"/api/online-flash/jobs", "/api/online-flash/memory/read", "/api/online-flash/memory/read-stream"}
@@ -246,12 +270,17 @@ class RuntimeGate:
         # Do not let a one-shot operation preempt the GUI's continuous capture.
         from mklink.remote.dashboards import get_managers
         active = [name for name, manager in get_managers().items() if manager.running]
+        if active and (path.startswith('/api/offline-download/') or online_flash):
+            return await reject(409, 'Stop acquisition explicitly before offline/online target operations')
         if path in {f"/api/dash/{name}/start" for name in ("rtt", "superwatch", "systemview", "vofa")}:
             if any(name in active for name in ("rtt", "superwatch", "systemview", "vofa")):
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
         if (path.startswith("/api/device/") and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
             if active:
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
+        own_job = c.jobs and c.jobs.active and executing_job.get() == c.jobs.active['job_id']
+        if c.job_busy() and not own_job and not online_stop:
+            return await reject(409, 'An exclusive job became active while this request was being prepared')
         if c.operation_lock.locked():
             return await reject(409, "Another shared operation is in flight; wait for completion")
         async with c.operation_lock:
@@ -420,7 +449,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     @api.post("/stop")
     async def stop(body: dict):
         control.prune()
-        if control.sessions or control.operation_lock.locked() or control.attach_lock.locked():
+        if control.sessions or control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
             raise HTTPException(409, "Detach runtime clients and wait for hardware operations before stopping")
         if body.get("confirm") is not True:
             raise HTTPException(422, "Explicit confirm=true required")
@@ -434,4 +463,6 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     app.state.shared_runtime = control
     from mklink.runtime_management import install_management
     install_management(app, control)
+    from mklink.runtime_jobs import install_jobs
+    install_jobs(app, control)
     return control

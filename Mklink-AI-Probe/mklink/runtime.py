@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 3
+PROTOCOL = 4
 VERSION = "0.3.0"
 
 
@@ -241,6 +241,8 @@ class RuntimeClient:
 
 
 def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):
+    from mklink.probe_volumes import bind_runtime
+    bind_runtime(probe_id)
     import uvicorn
     from mklink.remote.api import create_app
     from mklink.runtime_api import install_runtime
@@ -257,6 +259,7 @@ def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):
             info = {"port": listener.getsockname()[1], "token": secrets.token_urlsafe(32),
                     "instance_id": secrets.token_hex(16), "protocol": PROTOCOL, "version": VERSION, "pid": os.getpid(),
                     "probe_id": probe_id}
+            info['jobs_path'] = str(_private_dir(probe_id) / 'jobs.json')
             app = create_app(project_root=str(Path(project_root).resolve()), backend_port=info["port"])
             control = install_runtime(app, info)
             from mklink.observe_bridge import configure_stream_observation

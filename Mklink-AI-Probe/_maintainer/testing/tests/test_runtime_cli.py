@@ -43,17 +43,18 @@ def test_cli_rejects_private_capture_overrides_and_invalid_duration(adapter):
         runtime_cli.run(SimpleNamespace(command='rtt',duration=float('nan')))
 
 
-def test_existing_cli_defaults_to_shared_and_direct_is_explicit(monkeypatch):
+def test_existing_cli_is_shared_and_direct_switch_is_removed(monkeypatch):
     import sys
     from mklink import cli
     seen=[]
     monkeypatch.setattr(runtime_cli,'run',lambda args:seen.append(('shared',args.command)))
-    monkeypatch.setattr(cli,'_cli_read_ram',lambda *args,**kwargs:seen.append(('direct','read-ram')))
     monkeypatch.setattr(sys,'argv',['mklink','read-ram','--addr','0','--size','4'])
     cli.main()
     monkeypatch.setattr(sys,'argv',['mklink','read-ram','--addr','0','--size','4','--direct'])
-    cli.main()
-    assert seen==[('shared','read-ram'),('direct','read-ram')]
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 2
+    assert seen==[('shared','read-ram')]
 
 
 def test_cli_rejects_ignored_visualization_overrides_before_connect(adapter):

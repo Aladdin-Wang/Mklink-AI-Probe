@@ -62,6 +62,24 @@ const deviceStatus = ref<DeviceStatus>({
 let statusInterval: ReturnType<typeof setInterval> | null = null
 
 export function useMklinkApi() {
+  async function exclusiveJob(action: string, args: object = {}) {
+    interface Job { job_id: string; state: string; result: unknown; error?: string }
+    const requestId = crypto.randomUUID()
+    let job: Job
+    try {
+      job = await api<Job>('/api/runtime/jobs/', { method: 'POST', body: JSON.stringify({
+        action, arguments: args, request_id: requestId, confirm: true,
+      }) })
+      while (job.state === 'running') {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        job = await api<Job>(`/api/runtime/jobs/${job.job_id}`)
+      }
+    } catch (error) {
+      throw new Error(`${String(error)} · Request ${requestId}. Check backend jobs before starting again.`)
+    }
+    if (job.state !== 'succeeded') throw new Error(`${job.state}: ${job.error || JSON.stringify(job.result)} · ${job.job_id}`)
+    return job.result
+  }
   async function listPorts(): Promise<PortInfo[]> {
     return api('/api/ports')
   }
@@ -223,6 +241,7 @@ export function useMklinkApi() {
   }
 
   async function flashDevice(req: FlashRequest) {
+    if (sharedRuntime.value) return exclusiveJob('flash', req)
     return api('/api/device/flash', {
       method: 'POST',
       body: JSON.stringify(req),
@@ -230,6 +249,7 @@ export function useMklinkApi() {
   }
 
   async function resetDevice() {
+    if (sharedRuntime.value) return exclusiveJob('reset')
     return api('/api/device/reset', { method: 'POST' })
   }
 
@@ -250,6 +270,7 @@ export function useMklinkApi() {
   }
 
   async function eraseDevice() {
+    if (sharedRuntime.value) return exclusiveJob('erase')
     return api('/api/device/erase', { method: 'POST' })
   }
 

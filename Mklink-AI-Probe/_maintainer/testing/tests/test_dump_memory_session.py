@@ -133,12 +133,10 @@ def test_cli_rejects_unsafe_dump_and_direct_read_before_port_access(monkeypatch,
         None,
         [f"0x{0x20000000 + index * 4:08X}:4" for index in range(16)],
     )
-    cli._cli_read_ram(None, "0x20000000", 4097, None)
 
     output = capsys.readouterr().out
     assert exit_code == 2
     assert "safe Pika API boundary" in output
-    assert "use dump-memory for larger reads" in output
 
 
 @pytest.mark.parametrize(
@@ -218,43 +216,6 @@ def test_cli_dump_stream_finally_sends_explicit_stop_not_one_shot(monkeypatch):
     ]
 
 
-def test_cli_write_ram_uses_device_path_and_verifies_zero_payload(monkeypatch, capsys):
-    from types import SimpleNamespace
-    from mklink import cli, device
-
-    writes = []
-    fake = SimpleNamespace(
-        write_memory=lambda address, data: writes.append((address, data)),
-        read_memory=lambda address, size: b"\x00" * size,
-        close=lambda: writes.append(("close",)),
-    )
-    monkeypatch.setattr(cli, "_resolve_port", lambda port: port or "COM_TEST")
-    monkeypatch.setattr(device, "connect", lambda **kwargs: fake)
-
-    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4)
-
-    assert writes == [(0x24040100, b"\x00" * 4), ("close",)]
-    assert "[OK] 回读验证通过" in capsys.readouterr().out
-
-
-def test_cli_write_ram_rejects_invalid_or_oversize_data_before_port_access(monkeypatch, capsys):
-    from mklink import cli
-
-    monkeypatch.setattr(
-        cli,
-        "_resolve_port",
-        lambda _port: (_ for _ in ()).throw(AssertionError("port discovery reached")),
-    )
-    cli._cli_write_ram(None, "0x24040100", ["0x100"])
-    cli._cli_write_ram(None, "0xFFFFFFFE", ["0x00"] * 4)
-    cli._cli_write_ram(None, "0x24040100", ["0x00"] * 4097)
-
-    output = capsys.readouterr().out
-    assert "格式无效" in output
-    assert "超出 32 位地址空间" in output
-    assert "单次最多写入 4096 字节" in output
-
-
 def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkeypatch):
     from unittest.mock import Mock
     from mklink import superwatch
@@ -281,23 +242,6 @@ def test_superwatch_poll_reuses_one_connection_and_accounts_for_read_time(monkey
     assert factory.call_count == init.call_count == 1
     assert sleeps == pytest.approx([.01, .01])
     bridge.close.assert_called_once()
-
-
-@pytest.mark.parametrize("dump_mem", [False, True])
-def test_superwatch_cli_always_selects_stream_collector(monkeypatch, dump_mem):
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-    from mklink import cli, superwatch
-    collector = Mock(return_value=[])
-    monkeypatch.setattr(superwatch, 'poll_blocks_dumpmem', collector, raising=False)
-    monkeypatch.setattr(superwatch, 'find_project_svd', lambda _: None)
-    monkeypatch.setattr(superwatch, 'resolve_watch_items', lambda *a, **k: [superwatch.WatchItem('a', 0x20000000, 'float', 4)])
-    poll = Mock(return_value=[])
-    monkeypatch.setattr(superwatch, 'poll_blocks', poll)
-    cli._cli_superwatch(SimpleNamespace(svd=None, project_root='.', source=None, variables=['a'],
-                                       visualize=False, period=.001, port='test', duration=1, dump_mem=dump_mem))
-    collector.assert_called_once()
-    poll.assert_not_called()
 
 
 def test_superwatch_dump_collector_decodes_device_time_and_releases_stream(monkeypatch):

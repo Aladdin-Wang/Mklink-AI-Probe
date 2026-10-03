@@ -448,30 +448,6 @@ def write_quick_launchers(
     return [write_launcher_html(fallback, icon_data_uri=icon_data_uri).resolve()]
 
 
-def gui_server_command(
-    *,
-    port: int,
-    executable: Path | None = None,
-    repository_root: Path | None = None,
-    project_root: Path | None = None,
-) -> list[str]:
-    executable = executable or Path(sys.executable)
-    repository_root = repository_root or globals()["repository_root"]()
-    project_root = project_root or Path(".")
-    if getattr(sys, "frozen", False):
-        command = [str(executable), "gui"]
-    else:
-        command = [str(executable), "-m", "mklink", "gui"]
-    return command + [
-        "--host", "127.0.0.1",
-        "--port", str(port),
-        "--no-browser",
-        "--direct",
-        "--browser-session-timeout", "15",
-        "--project-root", str(project_root),
-    ]
-
-
 def probe_server(port: int, *, timeout: float = 0.6) -> str | None:
     base = f"http://127.0.0.1:{port}"
     try:
@@ -499,75 +475,6 @@ def port_available(port: int) -> bool:
         except OSError:
             return False
     return True
-
-
-def _state_path(data_dir: Path) -> Path:
-    return data_dir / STATE_FILE_NAME
-
-
-def _load_state(data_dir: Path) -> dict[str, Any] | None:
-    try:
-        value = json.loads(_state_path(data_dir).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def _save_state(data_dir: Path, state: dict[str, Any]) -> None:
-    data_dir.mkdir(parents=True, exist_ok=True)
-    target = _state_path(data_dir)
-    temporary = target.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    os.replace(temporary, target)
-
-
-def _clear_state(data_dir: Path) -> None:
-    try:
-        _state_path(data_dir).unlink()
-    except FileNotFoundError:
-        pass
-
-
-def spawn_gui_process(
-    command: list[str],
-    *,
-    cwd: Path,
-) -> subprocess.Popen:
-    options: dict[str, Any] = {
-        "cwd": str(cwd),
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-    }
-    if os.name == "nt":
-        options["creationflags"] = (
-            getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | 0x00000008  # DETACHED_PROCESS
-        )
-    else:
-        options["start_new_session"] = True
-    return subprocess.Popen(command, **options)
-
-
-def terminate_owned_process(pid: int) -> None:
-    if pid <= 0:
-        return
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        return
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
 
 
 def get_process_identity(pid: int, *, system: str | None = None) -> str | None:
@@ -647,173 +554,29 @@ def get_process_identity(pid: int, *, system: str | None = None) -> str | None:
     return f"{system.lower()}:{value}" if result.returncode == 0 and value else None
 
 
-def start_web_entry(
-    *,
-    shared: bool = True,
-    data_dir: Path | None = None,
-    preferred_port: int = DEFAULT_PORT,
-    probe: Callable[[int], str | None] = probe_server,
-    port_available: Callable[[int], bool] = port_available,
-    spawn: Callable[..., Any] = spawn_gui_process,
-    terminate: Callable[[int], None] = terminate_owned_process,
-    browser_open: Callable[[str], Any] = webbrowser.open,
-    process_identity: Callable[[int], str | None] = get_process_identity,
-    sleep: Callable[[float], None] = time.sleep,
-    timeout: float = WEB_START_TIMEOUT_SECONDS,
-) -> dict[str, Any]:
-    if shared:
-        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
-        try:
-            info = ensure_runtime(port=preferred_port, allow_lobby=True)
-            browser_open(browser_url(info))
-            return {"status": "reused", "port": info["port"], "owned": False, "shared": True}
-        except RuntimeErrorResponse as exc:
-            raise WebEntryError(str(exc)) from exc
-    data_dir = Path(data_dir or platform_data_dir())
-    state = _load_state(data_dir)
-    if state and state.get("owned") is True:
-        state_port = int(state.get("port", 0) or 0)
-        state_pid = int(state.get("pid", 0) or 0)
-        saved_identity = state.get("process_identity")
-        current_identity = process_identity(state_pid)
-        if (
-            state_port
-            and saved_identity
-            and current_identity == saved_identity
-            and probe(state_port) == "web"
-        ):
-            browser_open(web_entry_url(state_port))
-            return {
-                "status": "reused",
-                "port": state_port,
-                "owned": True,
-                "pid": state_pid,
-            }
-        _clear_state(data_dir)
-
-    selected_port = None
-    for port in range(preferred_port, preferred_port + MAX_PORT_ATTEMPTS):
-        detected = probe(port)
-        if detected == "web":
-            browser_open(web_entry_url(port))
-            return {"status": "reused", "port": port, "owned": False}
-        if detected == "api":
-            # An API-only service still occupies the port.  Keep it untouched
-            # and continue scanning so the Web GUI can start on the next port.
-            continue
-        if selected_port is None and port_available(port):
-            selected_port = port
-    if selected_port is None:
-        raise WebEntryError("No local port is available for MKLink Web")
-
-    root = repository_root()
-    index = root / "gui" / "dist" / "index.html"
-    if not index.is_file():
-        raise WebEntryError(
-            "MKLink Web assets are missing; reinstall the complete skill/runtime"
-        )
-    runtime_project_root = data_dir / "workspace"
-    runtime_project_root.mkdir(parents=True, exist_ok=True)
-    command = gui_server_command(
-        port=selected_port,
-        repository_root=root,
-        project_root=runtime_project_root,
-    )
-    process = spawn(command, cwd=root)
-    pid = int(process.pid)
-    identity = process_identity(pid)
-    if not identity:
-        terminate(pid)
-        raise WebEntryError("Unable to verify the started MKLink Web process")
-    _save_state(data_dir, {
-        "version": 1,
-        "owned": True,
-        "pid": pid,
-        "process_identity": identity,
-        "port": selected_port,
-        "started_at": time.time(),
-        "repository_root": str(root),
-        "project_root": str(runtime_project_root),
-    })
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if probe(selected_port) == "web":
-            url = web_entry_url(selected_port, root=root)
-            browser_open(url)
-            return {
-                "status": "started",
-                "port": selected_port,
-                "owned": True,
-                "pid": pid,
-            }
-        sleep(0.15)
-
-    terminate(pid)
-    _clear_state(data_dir)
-    raise WebEntryError("MKLink Web service did not become ready")
+def start_web_entry(*, preferred_port: int = DEFAULT_PORT, browser_open=webbrowser.open) -> dict[str, Any]:
+    from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
+    try:
+        info = ensure_runtime(port=preferred_port, allow_lobby=True)
+        browser_open(browser_url(info))
+        return {"status": "reused", "port": info["port"], "owned": False, "shared": True}
+    except RuntimeErrorResponse as exc:
+        raise WebEntryError(str(exc)) from exc
 
 
-def stop_web_entry(
-    *,
-    shared: bool = True,
-    data_dir: Path | None = None,
-    terminate: Callable[[int], None] = terminate_owned_process,
-    process_identity: Callable[[int], str | None] = get_process_identity,
-) -> dict[str, Any]:
-    if shared:
-        from mklink.runtime import RuntimeErrorResponse, discover, request
-        try:
-            info = discover()
-            return request(info, "POST", "/_runtime/stop", {"confirm": True}) if info else {"status": "not_running"}
-        except RuntimeErrorResponse as exc:
-            raise WebEntryError(str(exc)) from exc
-    data_dir = Path(data_dir or platform_data_dir())
-    state = _load_state(data_dir)
-    if not state:
-        return {"status": "not_running"}
-    if state.get("owned") is not True:
-        _clear_state(data_dir)
-        return {"status": "not_owned", "port": int(state.get("port", 0) or 0)}
-    pid = int(state.get("pid", 0) or 0)
-    port = int(state.get("port", 0) or 0)
-    saved_identity = state.get("process_identity")
-    if not saved_identity or process_identity(pid) != saved_identity:
-        _clear_state(data_dir)
-        return {"status": "stale", "port": port, "pid": pid}
-    terminate(pid)
-    _clear_state(data_dir)
-    return {"status": "stopped", "port": port, "pid": pid}
-
-
-def web_entry_status(
-    *,
-    shared: bool = True,
-    data_dir: Path | None = None,
-    process_identity: Callable[[int], str | None] = get_process_identity,
-) -> dict[str, Any]:
-    if shared:
-        from mklink.runtime import discover
+def stop_web_entry() -> dict[str, Any]:
+    from mklink.runtime import RuntimeErrorResponse, discover, request
+    try:
         info = discover()
-        return {"status": "running", "port": info["port"], "owned": False, "shared": True} if info else {"status": "stopped", "owned": False}
-    data_dir = Path(data_dir or platform_data_dir())
-    state = _load_state(data_dir)
-    if state and state.get("owned") is True:
-        port = int(state.get("port", 0) or 0)
-        pid = int(state.get("pid", 0) or 0)
-        saved_identity = state.get("process_identity")
-        if not saved_identity or process_identity(pid) != saved_identity:
-            _clear_state(data_dir)
-            return {"status": "stopped", "port": port, "pid": pid, "owned": False}
-        detected = probe_server(port) if port else None
-        if detected == "web":
-            return {"status": "running", "port": port, "pid": pid, "owned": True}
-        _clear_state(data_dir)
-        return {"status": "stopped", "port": port, "pid": pid, "owned": False}
-    detected = probe_server(DEFAULT_PORT)
-    if detected == "web":
-        return {"status": "running", "port": DEFAULT_PORT, "owned": False}
-    return {"status": "stopped", "owned": False}
+        return request(info, "POST", "/_runtime/stop", {"confirm": True}) if info else {"status": "not_running"}
+    except RuntimeErrorResponse as exc:
+        raise WebEntryError(str(exc)) from exc
+
+
+def web_entry_status() -> dict[str, Any]:
+    from mklink.runtime import discover
+    info = discover()
+    return {"status": "running", "port": info["port"], "owned": False, "shared": True} if info else {"status": "stopped", "owned": False}
 
 
 def protocol_python_executable() -> Path:
@@ -1112,7 +875,7 @@ def uninstall_protocol(
     data_dir = Path(data_dir or platform_data_dir(
         system=system, environment=environment, home=home,
     ))
-    stop_web_entry(data_dir=data_dir)
+    # Removing the URL handler must not stop a shared hardware backend.
     if system == "Windows":
         if _windows_protocol_owned_by(data_dir / "handler.py"):
             _delete_windows_registry_tree(rf"Software\Classes\{SCHEME}")
@@ -1145,8 +908,8 @@ def handle_protocol_uri(uri: str) -> dict[str, Any]:
     data_dir = platform_data_dir()
     with _operation_lock(data_dir):
         if action in {"start", "open"}:
-            return start_web_entry(data_dir=data_dir)
-        return stop_web_entry(data_dir=data_dir)
+            return start_web_entry()
+        return stop_web_entry()
 
 
 def _show_error(message: str) -> None:

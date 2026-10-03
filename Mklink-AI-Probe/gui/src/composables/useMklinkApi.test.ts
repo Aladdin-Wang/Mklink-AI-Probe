@@ -1,16 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMklinkApi } from './useMklinkApi'
+import { sharedRuntime } from './useBackendHealth'
 
 describe('RTT API contracts', () => {
   const fetchMock = vi.fn()
 
   beforeEach(() => {
+    sharedRuntime.value = false
     fetchMock.mockReset()
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({}),
     })
     vi.stubGlobal('fetch', fetchMock)
+  })
+
+  it('queries an accepted shared reset job without issuing a second reset', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'running' }) })
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-one', state: 'succeeded', result: { status: 'ok' } }) })
+    expect(await useMklinkApi().resetDevice()).toEqual({ status: 'ok' })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/runtime/jobs/')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/runtime/jobs/job-one')
+    expect(fetchMock.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1)
+    sharedRuntime.value = false
+  })
+
+  it('does not retry an exclusive job with an unknown result', async () => {
+    sharedRuntime.value = true
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ job_id: 'job-unknown', state: 'unknown', error: 'transport lost' }) })
+    await expect(useMklinkApi().eraseDevice()).rejects.toThrow('unknown')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    sharedRuntime.value = false
   })
 
   it('passes an optional explicit source path to RTT detection', async () => {

@@ -60,6 +60,7 @@ def build_server():
         with lock:
             current = holder.pop("client", None)
             if current:
+                holder['last_info'] = current.info
                 current.close()
         return {"detached": True, "device_closed": False}
 
@@ -153,9 +154,37 @@ def build_server():
 
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
         rtt_start or superwatch_start with {} subscribes if already running. Stop requires ownership
-        and no other subscriber. Unsupported legacy tools require explicit exclusive --direct mode.
+        and no other subscriber. Unsupported capabilities fail without a direct serial fallback.
         """
         return client().call(capability, arguments)
+
+    @server.tool()
+    def start_job(action: str, request_id: str, confirm: bool = False, arguments: dict | None = None) -> dict:
+        """Submit flash/erase/reset to this probe. Requires explicit confirm and a unique request_id.
+
+        Stop capture first. Disconnect does not cancel. Keep the returned job_id and query job_status;
+        never retry an unknown hardware result. Deduplication retains only the latest 64 jobs.
+        flash arguments: firmware (explicit local path), verify and reset_after (booleans).
+        """
+        from mklink.runtime import request, RuntimeErrorResponse
+        current = client()
+        if current.info is None or not current.session_id:
+            raise RuntimeErrorResponse('Connect to the selected probe first')
+        return request(current.info, 'POST', '/api/runtime/jobs/', {
+            'action': action, 'request_id': request_id, 'confirm': confirm, 'arguments': arguments or {},
+            'session_id': current.session_id})
+
+    @server.tool()
+    def job_status(job_id: str | None = None, probe: str | None = None) -> dict:
+        """Read retained exclusive-job results without touching hardware. Unknown is never success."""
+        from mklink.runtime import request, RuntimeErrorResponse, selected_runtime
+        current = holder.get('client')
+        info = selected_runtime(probe) if probe else (current.info if current else holder.get('last_info'))
+        if info is None:
+            raise RuntimeErrorResponse('Select a runtime first')
+        if job_id is not None and (len(job_id) != 32 or any(c not in '0123456789abcdef' for c in job_id)):
+            raise ValueError('Invalid job ID')
+        return request(info, 'GET', '/api/runtime/jobs/' + (job_id or ''))
 
     def close():
         try:

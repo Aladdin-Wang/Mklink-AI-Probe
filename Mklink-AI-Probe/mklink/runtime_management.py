@@ -13,7 +13,7 @@ def install_management(app, control):
     def confirmed(body):
         if body.get('confirm') is not True:
             raise HTTPException(422, 'confirm=true required')
-        if control.operation_lock.locked() or control.attach_lock.locked():
+        if control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
             raise HTTPException(409, 'An operation is still running; wait for completion')
         control.prune()
 
@@ -26,6 +26,15 @@ def install_management(app, control):
     @api.get('/status')
     async def status():
         return await control.snapshot()
+
+    @api.get('/volume')
+    async def volume():
+        import asyncio
+        from mklink.probe_volumes import resolve_volume
+        try:
+            return await asyncio.to_thread(resolve_volume, control.info.get('probe_id'))
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @api.post('/view')
     async def view(body: dict):

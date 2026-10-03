@@ -638,8 +638,10 @@ def create_offline_download_router(
                 await task
             finally:
                 accepting_output = False
-                if task.done():
-                    await task
+                import anyio
+                from mklink.runtime_api import settle
+                with anyio.CancelScope(shield=True):
+                    await settle(task)
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
 
@@ -809,6 +811,13 @@ def create_offline_download_router(
         values = payload or {}
         raw_port = values.get("port")
         port = str(raw_port) if raw_port else None
+        runtime = getattr(request.app.state, 'shared_runtime', None)
+        if runtime:
+            from mklink.probes import select_probe
+            selected = select_probe(runtime.info['probe_id'])
+            if port and port.casefold() != selected['port'].casefold():
+                raise HTTPException(409, 'Trigger port does not match the bound probe')
+            port = selected['port']
         try:
             if values:
                 model = str(values.get("model") or "").upper()

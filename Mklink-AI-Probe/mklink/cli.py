@@ -313,193 +313,6 @@ def _cli_project_init(project_root: str):
     print("[INFO] 连接时自动发现端口；烧录时按精确器件/地址选择算法，缺失或不明确时停止")
 
 
-def _cli_flash(project_root: str, port: str | None, hex_path: str | None):
-    """一站式烧录：连接 → IDCODE → FLM → 烧录。"""
-    from mklink.flash import burn_hex_file
-    from mklink.project_config import (
-        check_project_config, format_config_status, load_config, load_project_info, save_config,
-    )
-
-    # 1. 配置检查（提示用户如果配置不完整）
-    status = check_project_config(project_root)
-    if not status.is_valid:
-        print(format_config_status(status))
-        return
-    if status.needs_init():
-        print("[WARN] 项目未初始化或配置不完整:")
-        print(format_config_status(status))
-        print()
-
-    # 如果未指定端口，加载配置中的端口并验证连通性
-    resolved_port = port
-    config = load_config(project_root) or {}
-    project = load_project_info(project_root) or {}
-    if not resolved_port:
-        if config and config.get("com_port"):
-            from mklink.bridge import MKLinkSerialBridge
-            test_bridge = MKLinkSerialBridge(config["com_port"])
-            if test_bridge.connect():
-                resolved_port = config["com_port"]
-                test_bridge.close()
-            else:
-                # 配置的端口无效，自动重新检测
-                from mklink.discovery import find_mklink_cdc_port
-                detected = find_mklink_cdc_port()
-                if detected and detected != config["com_port"]:
-                    print(f"[WARN] 保存的端口 {config['com_port']} 无法连接，检测到新端口 {detected}")
-                    print(f"[AUTO] 更新配置端口为 {detected}")
-                    config["com_port"] = detected
-                    save_config(project_root, config)
-                    resolved_port = detected
-                else:
-                    test_bridge.close()
-                    if detected is None:
-                        print("[FAIL] 未找到 MKLink 设备，请检查连接")
-                        return
-                    resolved_port = detected
-
-    # BIN 文件安全检查
-    resolved_firmware = hex_path or project.get("bin_path") or project.get("hex_path", "")
-    if resolved_firmware and resolved_firmware.lower().endswith(".bin"):
-        bin_base = project.get("bin_base") or project.get("download_base") or project.get("flash_base")
-        print(f"[AUTO] 使用 .bin 固件，下载地址: {bin_base}")
-        print()
-
-    try:
-        result = burn_hex_file(
-            hex_path=hex_path or project.get("bin_path") or project.get("hex_path"),
-            port=resolved_port,
-            mcu_key=config.get("mcu_key"),
-            flash_base=project.get("flash_base") or "0x08000000",
-            swd_clock=config.get("swd_clock"),
-            project_root=project_root,
-        )
-        if result["success"]:
-            print(f"\n[OK] 烧录成功 ({result['time_ms']}ms)")
-        else:
-            print(f"\n[FAIL] 烧录失败")
-            print(f"  响应: {result.get('response', '')[:200]}")
-    except Exception as e:
-        print(f"[FAIL] {e}")
-
-
-def _cli_rtt(
-    project_root: str,
-    port: str | None,
-    duration: float,
-    visualize: bool = False,
-    host: str = "127.0.0.1",
-    port_http: int = 0,
-    no_browser: bool = False,
-):
-    """一站式 RTT 捕获：连接 → 启动 RTT → 读取输出。
-
-    支持两种模式：
-      - 控制台模式（默认）：实时打印原始 RTT 数据到终端
-      - RTT View 模式（--visualize）：启动 Web RAW 终端
-    """
-    import time
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.rtt import RTTSession
-    from mklink.discovery import find_mklink_cdc_port
-    from mklink.project_config import (
-        load_rtt_config, ensure_rtt_config_updated, load_config, save_config,
-        resolve_rtt_storage_mode,
-    )
-
-    resolved_port = port
-    if not resolved_port:
-        config = load_config(project_root)
-        if config and config.get("com_port"):
-            test_bridge = MKLinkSerialBridge(config["com_port"])
-            if test_bridge.connect():
-                resolved_port = config["com_port"]
-                test_bridge.close()
-            else:
-                test_bridge.close()
-                detected = find_mklink_cdc_port()
-                if detected and detected != config.get("com_port"):
-                    print(f"[WARN] 保存的端口 {config['com_port']} 无法连接，检测到新端口 {detected}")
-                    print(f"[AUTO] 更新配置端口为 {detected}")
-                    config["com_port"] = detected
-                    save_config(project_root, config)
-                    resolved_port = detected
-                elif detected:
-                    resolved_port = detected
-                else:
-                    print("[FAIL] 未找到 MKLink 设备，请检查连接")
-                    return
-        else:
-            resolved_port = find_mklink_cdc_port()
-            if not resolved_port:
-                print("[FAIL] 未找到 MKLink 设备")
-                return
-
-    # 自动更新 RTT 地址（如果 MAP 文件比配置新）
-    ensure_rtt_config_updated(project_root)
-
-    rtt_cfg = load_rtt_config(project_root)
-    if not rtt_cfg or not rtt_cfg.get("rtt_addr"):
-        print("[FAIL] RTT 地址未配置，请先运行:")
-        print("  python -m mklink rtt-integrate --project-root .")
-        return
-
-    print(f"[*] 连接 {resolved_port} ...")
-    bridge = MKLinkSerialBridge(resolved_port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return
-    print("[OK] 连接成功")
-
-    session = RTTSession(bridge, channel=rtt_cfg.get("channel", 0))
-    rtt_mode = resolve_rtt_storage_mode(rtt_cfg)
-    mode_label = "动态搜寻" if rtt_mode == 0 else "静态编译"
-    print(f"[*] RTT 控制块存储方式: {mode_label} (rtt_storage_mode={rtt_mode})")
-    result = session.start("", project_root=project_root, mode=rtt_mode)
-
-    if not result.get("control_block_addr"):
-        print("[FAIL] 未找到 RTT 控制块")
-        bridge.close()
-        return
-
-    print(f"[OK] RTT 已启动 (控制块: {result['control_block_addr']}, 模式: {mode_label})")
-    if result.get("warnings"):
-        for w in result["warnings"]:
-            print(f"[WARN] {w}")
-
-    if visualize:
-        # --- RTT View 模式（Web RAW 终端）---
-        from mklink.rtt_viewer import run_rtt_raw_viewer
-        try:
-            run_rtt_raw_viewer(
-                session=session,
-                bridge=bridge,
-                host=host,
-                port=port_http,
-                no_browser=no_browser,
-                duration=duration,
-            )
-        except Exception as e:
-            print(f"[FAIL] RTT RAW 终端启动失败: {e}")
-            session.stop()
-            bridge.close()
-    else:
-        # --- 控制台模式（原有行为）---
-        print(f"[*] 读取 RTT 输出 {duration} 秒...\n")
-        start = time.time()
-        try:
-            while time.time() - start < duration:
-                data = session.read_output(0.5)
-                if data:
-                    print(data, end="", flush=True)
-        except KeyboardInterrupt:
-            print("\n[*] 用户中断")
-        finally:
-            session.stop()
-            bridge.close()
-            print(f"\n[OK] RTT 会话结束")
-
-
 def _format_systemview_event(ev: dict) -> str:
     """把单个 SystemView 事件格式化成单行控制台输出。"""
     kind = ev.get("kind", "?")
@@ -518,74 +331,6 @@ def _format_systemview_event(ev: dict) -> str:
         extras.append(f"user={ev['user_id']}")
     tail = " ".join([n for n in [name] if n] + extras)
     return f"[t={tstamp}] {kind:<18} {tail}".rstrip()
-
-
-def _cli_systemview(
-    project_root: str,
-    port: str | None,
-    duration: float,
-    channel: int = 1,
-    addr: str | None = None,
-    visualize: bool = False,
-):
-    """一站式 SystemView RTOS 跟踪：连接 → 启动 → 解码打印事件。
-
-    需要目标工程已集成 SEGGER_SYSVIEW（先运行 ``python -m mklink
-    systemview-integrate --project-root .``）。控制台模式实时打印解码出
-    的 RTOS 事件；可视化请用 ``mklink gui`` 打开 Dashboard 的 RTOS Trace Tab。
-    """
-    import time
-    import mklink
-    from mklink.project_config import ensure_rtt_config_updated
-
-    # 与 RTT 共用 RTT 地址，自动更新
-    ensure_rtt_config_updated(project_root)
-
-    print(f"[*] 连接 MKLink（端口: {port or '自动检测'}）...")
-    try:
-        dev = mklink.connect(port=port, project_root=project_root)
-    except Exception as e:
-        print(f"[FAIL] 连接失败: {e}")
-        return
-    print("[OK] 连接成功")
-
-    if visualize:
-        print("[*] SystemView 可视化请在 GUI 中查看：运行 `mklink gui`，")
-        print("    打开 Dashboard → 'RTOS Trace' Tab（SSE: /api/dash/systemview/stream）。")
-        dev.close()
-        return
-
-    try:
-        result = dev.systemview_start(addr=addr, channel=channel)
-    except Exception as e:
-        print(f"[FAIL] SystemView 启动失败: {e}")
-        dev.close()
-        return
-
-    if not result.get("control_block_addr"):
-        print("[FAIL] 未找到 RTT 控制块——请确认已集成 RTT 并烧录运行")
-        dev.close()
-        return
-
-    print(f"[OK] SystemView 已启动 (RTT 控制块: {result['control_block_addr']}, "
-          f"通道: {channel})")
-    print(f"[*] 解码 RTOS 事件 {duration} 秒（Ctrl+C 中断）...\n")
-
-    start = time.time()
-    try:
-        while time.time() - start < duration:
-            res = dev.systemview_read(duration=0.5)
-            for ev in res.get("events", []):
-                print(_format_systemview_event(ev))
-    except KeyboardInterrupt:
-        print("\n[*] 用户中断")
-    finally:
-        try:
-            dev.systemview_stop()
-        except Exception:
-            pass
-        dev.close()
-        print(f"\n[OK] SystemView 会话结束")
 
 
 def _cli_copy_flm(project_root: str):
@@ -691,7 +436,6 @@ def _cli_project_info(project_root: str):
         print(f"  停止位: {config.get('modbus_stopbits', 1)}")
 
 
-
 def _print_integration_result_v2(result: dict) -> None:
     """打印 v2 静态模式集成结果。"""
     print()
@@ -766,7 +510,6 @@ def _find_and_save_rtt_addr(project_root: str) -> None:
             print("[!] RTT 地址未找到，请重新编译项目后再次运行")
     else:
         print("[!] 未找到 MAP 文件，无法自动获取 RTT 地址")
-
 
 
 def _cli_systemview_analyze(project_root: str, port: str | None, duration: float):
@@ -1224,48 +967,6 @@ def _init_target_bridge(bridge, project_root: str = "."):
     initialize_target(bridge, MKLinkFlash(bridge), project_root=project_root)
 
 
-def _cli_read_ram(port: str | None, addr: str, size: int, save: str | None):
-    """读取目标芯片 RAM 数据。"""
-    from mklink.bridge import MKLinkSerialBridge
-
-    try:
-        address = int(addr, 0)
-    except (TypeError, ValueError):
-        print("[FAIL] --addr must be a 32-bit integer such as 0x20000000")
-        return
-    if not 0 <= address <= 0xFFFFFFFF or not 0 < size <= 4096:
-        print("[FAIL] read-ram requires a 32-bit address and --size 1..4096")
-        print("       use dump-memory for larger reads")
-        return
-    if address + size > 0x100000000:
-        print("[FAIL] address + size exceeds the 32-bit address space")
-        return
-
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return
-
-    try:
-        _init_target_bridge(bridge)
-        if save:
-            cmd = f'cmd.read_ram({addr}, {size}, "{save}")'
-        else:
-            cmd = f'cmd.read_ram({addr}, {size})'
-        print(f"[*] {cmd}")
-        resp = bridge.send_command(cmd, timeout=10.0)
-        print(resp.strip())
-        if save:
-            print(f"\n[OK] 数据已保存到设备文件: {save}")
-            print("     重启下载器后可在 U 盘中查看")
-    except Exception as e:
-        print(f"[FAIL] {e}")
-    finally:
-        bridge.close()
-
-
 # ---------------------------------------------------------------------------
 # 烧录器版本信息
 # ---------------------------------------------------------------------------
@@ -1494,51 +1195,6 @@ def _cli_read_reg(
         else:
             display = f"0x{value:0{bytes_per * 2}X} ({value})"
         print(f"  {reg.name}{suffix} = {display}")
-
-
-def _cli_write_ram(port: str | None, addr: str, data_bytes: list[str]):
-    """写入数据到目标芯片 RAM 并回读验证。"""
-    if not data_bytes:
-        print("[FAIL] 未指定写入数据，用法: python -m mklink write-ram --addr 0x20001000 0xDE 0xAD 0xBE 0xEF")
-        return
-
-    try:
-        address = int(addr, 0)
-        payload = bytes(int(value, 0) for value in data_bytes)
-    except (ValueError, OverflowError):
-        print("[FAIL] 地址或数据格式无效；地址和每个字节应使用 0x 前缀，字节范围为 0x00..0xFF")
-        return
-    if not 0 <= address <= 0xFFFFFFFF or address + len(payload) > 0x100000000:
-        print("[FAIL] 写入范围超出 32 位地址空间")
-        return
-    if len(payload) > 4096:
-        print("[FAIL] write-ram 单次最多写入 4096 字节，请分块写入")
-        return
-
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    from mklink.device import connect
-
-    device = None
-    try:
-        device = connect(port=port, project_root=".")
-        print(f"[*] 写入 0x{address:08X}，共 {len(payload)} 字节")
-        # 统一使用 Device 的 flush_memory 分块/折叠路径。旧固件的
-        # cmd.write_ram 逐参数路径曾出现静默不生效，不能只依赖命令回显。
-        device.write_memory(address, payload)
-        actual = device.read_memory(address, len(payload))
-        if actual != payload:
-            print(
-                f"[FAIL] 回读不一致：期望 {payload.hex(' ')}，"
-                f"实际 {actual.hex(' ') if actual else '<无可解析数据>'}"
-            )
-            return
-        print(f"[OK] 回读验证通过: {actual.hex(' ')}")
-    except Exception as e:
-        print(f"[FAIL] {e}")
-    finally:
-        if device is not None:
-            device.close()
 
 
 # ---------------------------------------------------------------------------
@@ -2360,89 +2016,6 @@ def _cli_watch(args):
             ), as_json=args.json))
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        print(f"[FAIL] {e}")
-
-
-def _cli_superwatch(args):
-    """Start SuperWatch dump_memory variable/register visualization."""
-    import json
-
-    from mklink.superwatch import (
-        build_read_blocks,
-        poll_blocks_dumpmem,
-        resolve_watch_items,
-        run_superwatch_visualizer,
-    )
-
-    svd_registers = {}
-    from mklink.peripheral_watch import load_catalog
-    from mklink.superwatch import catalog_registers
-
-    try:
-        catalog = load_catalog(
-            args.project_root,
-            svd=args.svd,
-            chip=getattr(args, "chip", None),
-            target_id=getattr(args, "target_id", None),
-        )
-        svd_registers = catalog_registers(catalog)
-    except Exception as e:
-        print(f"[FAIL] SVD unavailable: {e}")
-        raise SystemExit(1)
-
-    dwarf_info = None
-    if args.source:
-        try:
-            from mklink.dwarf_parser import load_dwarf_info
-            dwarf_info = load_dwarf_info(
-                args.source,
-                backend=getattr(args, "elf_backend", None),
-                project_root=args.project_root,
-            )
-        except Exception as e:
-            print(f"[WARN] DWARF unavailable: {e}")
-
-    try:
-        items = resolve_watch_items(
-            args.variables,
-            source=args.source,
-            dwarf_info=dwarf_info,
-            svd_registers=svd_registers,
-            backend=getattr(args, "elf_backend", None),
-            project_root=args.project_root,
-        )
-    except Exception as e:
-        print(f"[FAIL] {e}")
-        return
-    if not items and not args.visualize:
-        print("[FAIL] No SuperWatch variables or registers specified")
-        return
-
-    if args.visualize:
-        run_superwatch_visualizer(
-            items=items,
-            period=args.period,
-            port=args.port,
-            host=args.host,
-            port_http=args.port_http,
-            no_browser=args.no_browser,
-            max_points=args.max_points,
-            duration=args.duration,
-            dwarf_info=dwarf_info,
-            svd_registers=svd_registers,
-            dump_mem=True,
-        )
-        return
-
-    try:
-        points = poll_blocks_dumpmem(
-            build_read_blocks(items, max_gap=0),
-            port=args.port,
-            duration=args.duration,
-            period=args.period,
-        )
-        print(json.dumps(points, ensure_ascii=False, indent=2))
     except Exception as e:
         print(f"[FAIL] {e}")
 
@@ -3476,81 +3049,23 @@ def _cli_break(args):
 
 
 def _cli_gui(args):
-    """启动 MKLink GUI（构建前端 + FastAPI 服务器 + 浏览器）。"""
-    if not getattr(args, "direct", False):
-        import webbrowser
-        from mklink.runtime import RuntimeClient, browser_url, ensure_runtime
-        if args.host != "127.0.0.1":
-            raise SystemExit("Shared GUI binds only 127.0.0.1; use --direct for the legacy server")
-        info = ensure_runtime(project_root=args.project_root, port=args.port, probe=args.probe,
-                              device_port=args.device_port, allow_lobby=True)
-        if args.device_port or args.axf:
-            client = RuntimeClient(info=info)
-            client.connect(project_root=args.project_root if args.project_root != "." else None, port=args.device_port, axf=args.axf)
-            client.close()
-        url = browser_url(info)
-        print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
-        print("[MKLink] Closing the GUI leaves the shared runtime running. Stop with: mklink runtime stop --confirm")
-        if not args.no_browser:
-            webbrowser.open(url)
-        return
-    from mklink._deps import require_gui_dependencies
-    require_gui_dependencies()
-
-    import os
-    import subprocess
+    """Open the selected shared CDC backend."""
     import webbrowser
-    from pathlib import Path
-
-    skill_dir = Path(__file__).resolve().parent.parent
-    gui_dir = skill_dir / "gui"
-    dist_dir = gui_dir / "dist"
-
-    # 解析项目目录：优先用 --project-root 参数，否则用当前工作目录
-    project_root = os.path.abspath(args.project_root) if args.project_root != "." else os.getcwd()
-
-    # 1. 检查/构建前端
-    if not dist_dir.is_dir() or not (dist_dir / "index.html").exists():
-        print("[MKLink] 前端未构建，正在构建...")
-        if not (gui_dir / "node_modules").is_dir():
-            print("[MKLink] 安装 npm 依赖...")
-            subprocess.run(["npm", "install"], cwd=str(gui_dir), check=True)
-        subprocess.run(["npm", "run", "build"], cwd=str(gui_dir), check=True)
-        print("[MKLink] 前端构建完成")
-
-    # 2. 创建 FastAPI app（挂载了 Vue 静态文件）
-    from mklink.remote.api import create_app, run_server
-    browser_session_timeout = args.browser_session_timeout
-    # --no-browser only suppresses automatic tab opening. The Vue app still
-    # owns the browser session, so closing the last tab must release the probe
-    # and let this backend exit instead of retaining COM indefinitely.
-    if browser_session_timeout is None:
-        browser_session_timeout = 15
-    app = create_app(
-        project_root=project_root,
-        browser_session_timeout=browser_session_timeout,
-    )
-
-    # 3. 打开浏览器
-    url = f"http://{args.host}:{args.port}"
+    from mklink.runtime import RuntimeClient, browser_url, ensure_runtime
+    if args.host != "127.0.0.1":
+        raise SystemExit("Shared GUI binds only 127.0.0.1")
+    info = ensure_runtime(project_root=args.project_root, port=args.port, probe=args.probe,
+                          device_port=args.device_port, allow_lobby=True)
+    if args.device_port or args.axf:
+        client = RuntimeClient(info=info)
+        client.connect(project_root=args.project_root if args.project_root != "." else None, port=args.device_port, axf=args.axf)
+        client.close()
+    url = browser_url(info)
+    print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
+    print("[MKLink] Closing the GUI leaves the shared runtime running. Stop with: mklink runtime stop --confirm")
     if not args.no_browser:
-        import threading
-        def _open():
-            import time
-            time.sleep(1.5)
-            webbrowser.open(url)
-        threading.Thread(target=_open, daemon=True).start()
-
-    print(f"[MKLink] GUI 启动中...")
-    print(f"[MKLink] 项目目录: {project_root}")
-    print(f"[MKLink] 浏览器地址: {url}")
-    print(f"[MKLink] API 文档: {url}/docs")
-    print(f"[MKLink] 按 Ctrl+C 退出")
-
-    run_server(
-        app, host=args.host, port=args.port,
-        project_root=project_root,
-    )
+        webbrowser.open(url)
+    return
 
 
 def _cli_web_entry(args):
@@ -3636,18 +3151,9 @@ def _cli_serve(args):
 
 
 def _cli_mcp(args):
-    """启动 MCP (Model Context Protocol) server。
-
-    暴露 mklink 能力为 vendor-neutral tool（能力层 = mklink.mcp_server，
-    编排方法论 = SKILL.md）。使用 stdio transport：严禁向 stdout 输出任何
-    内容（该流承载 JSON-RPC 协议）；诊断信息走 stderr / logging。
-    """
-    if not getattr(args, "direct", False):
-        from mklink.runtime_mcp import run
-        run()
-        return
-    from mklink.mcp_server import run as run_mcp_server
-    run_mcp_server()
+    """Start the shared-backend MCP adapter."""
+    from mklink.runtime_mcp import run
+    run()
 
 
 def _cli_runtime(args):
@@ -3662,6 +3168,13 @@ def _cli_runtime(args):
             result = request(info, "GET", "/_runtime/status")
         elif args.runtime_command == "status":
             result = [request(info, "GET", "/_runtime/status") for info in running_runtimes()]
+        elif args.runtime_command == 'jobs':
+            info = selected_runtime(args.probe)
+            if info is None:
+                raise RuntimeErrorResponse('Selected backend is not running')
+            if args.job and (len(args.job) != 32 or any(c not in '0123456789abcdef' for c in args.job)):
+                raise RuntimeErrorResponse('Invalid job ID')
+            result = request(info, 'GET', '/api/runtime/jobs/'+(args.job or ''))
         elif args.runtime_command == "stop":
             if not args.confirm:
                 raise RuntimeErrorResponse("Stopping the shared backend requires --confirm")
@@ -4422,11 +3935,6 @@ def main():
     gui_parser.add_argument("--probe", default=None, help="下载器稳定 ID 或本机别名")
     gui_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
     gui_parser.add_argument("--project-root", default=".", help="项目根目录")
-    gui_parser.add_argument("--direct", action="store_true", help="兼容模式：独立后台，独占 CDC")
-    gui_parser.add_argument(
-        "--browser-session-timeout", type=float, default=None,
-        help=argparse.SUPPRESS,
-    )
 
     # web-entry 子命令（U 盘单 HTML 跨平台启动入口）
     web_entry_parser = subparsers.add_parser(
@@ -4460,7 +3968,6 @@ def main():
         "mcp",
         help="启动 MCP (Model Context Protocol) server（stdio，供 Claude Code / 其他 MCP client 调用）",
     )
-    mcp_parser.add_argument("--direct", action="store_true", help="兼容模式：旧版完整工具集，独占 CDC")
 
     runtime_parser = subparsers.add_parser("runtime", help="管理 0.3 共享 CDC 后台及调用 GUI 能力")
     runtime_sub = runtime_parser.add_subparsers(dest="runtime_command", required=True)
@@ -4472,6 +3979,9 @@ def main():
         entry.add_argument("--device-port", default=None)
         entry.add_argument("--probe-id", default="lobby", help=argparse.SUPPRESS)
     runtime_sub.add_parser("status")
+    runtime_jobs = runtime_sub.add_parser('jobs', help='只查询已保留的独占任务，不连接硬件')
+    runtime_jobs.add_argument('--probe')
+    runtime_jobs.add_argument('--job')
     runtime_stop = runtime_sub.add_parser("stop")
     runtime_stop.add_argument("--confirm", action="store_true")
     runtime_stop.add_argument("--probe", default=None)
@@ -4551,9 +4061,15 @@ def main():
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
     parser.add_argument("--test", action="store_true", help="运行基本测试（兼容旧版）")
 
-    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser):
+    flash_parser.add_argument('--request-id', help='保留任务请求 ID；结果未知时查询已有任务，不重放')
+    for name in ('erase', 'reset'):
+        entry = subparsers.add_parser(name, help='通过共享后台执行独占目标任务')
+        entry.add_argument('--probe')
+        entry.add_argument('--port')
+        entry.add_argument('--project-root', default=None)
+        entry.add_argument('--request-id')
+    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
-        entry.add_argument('--direct', action='store_true', help='显式使用旧版独占 CDC 兼容入口')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
         entry.add_argument('--probe')
@@ -4567,7 +4083,7 @@ def main():
     args = parser.parse_args()
 
     from mklink.runtime_cli import COMMANDS
-    if args.command in COMMANDS and not getattr(args, 'direct', False):
+    if args.command in COMMANDS:
         from mklink.runtime_cli import run
         run(args)
         return
@@ -4674,27 +4190,6 @@ def main():
         _cli_systemview_integrate(_resolve_project_root(args), sv_dir=args.sv_dir)
     elif args.command == "copy-flm":
         _cli_copy_flm(_resolve_project_root(args))
-    elif args.command == "flash":
-        _cli_flash(_resolve_project_root(args), args.port, args.hex)
-    elif args.command == "rtt":
-        _cli_rtt(
-            _resolve_project_root(args),
-            port=args.port,
-            duration=args.duration,
-            visualize=args.visualize,
-            host=args.host,
-            port_http=args.port_http,
-            no_browser=args.no_browser,
-        )
-    elif args.command == "systemview":
-        _cli_systemview(
-            _resolve_project_root(args),
-            port=args.port,
-            duration=args.duration,
-            channel=args.channel,
-            addr=args.addr,
-            visualize=args.visualize,
-        )
     elif args.command == "systemview-analyze":
         _cli_systemview_analyze(
             _resolve_project_root(args), port=args.port, duration=args.duration,
@@ -4704,8 +4199,6 @@ def main():
             _resolve_project_root(args), port=args.port, duration=args.duration,
             out_path=args.out, no_browser=args.no_browser,
         )
-    elif args.command == "read-ram":
-        _cli_read_ram(args.port, args.addr, args.size, args.save)
     elif args.command == "power-read":
         return _cli_power_read(args.port, as_json=args.json)
     elif args.command == "version":
@@ -4724,8 +4217,6 @@ def main():
             args.chip,
             args.target_id,
         )
-    elif args.command == "write-ram":
-        _cli_write_ram(args.port, args.addr, args.data)
     elif args.command in ("dump-memory", "dump"):
         return _cli_dump_memory(
             args.port,
@@ -4794,8 +4285,6 @@ def main():
         from mklink.peripheral_cli import run
 
         run(args)
-    elif args.command == "superwatch":
-        _cli_superwatch(args)
     elif args.command == "modbus":
         _cli_modbus_dispatch(args)
     elif args.command == "serial":
