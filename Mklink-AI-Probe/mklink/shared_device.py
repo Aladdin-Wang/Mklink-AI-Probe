@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import binascii
 
-from mklink.runtime import RuntimeClient, RuntimeErrorResponse, request
+from mklink.runtime import RuntimeClient, RuntimeErrorResponse
 
 
 class SharedDevice:
@@ -86,20 +86,11 @@ class SharedDevice:
         Query job_status after submission. Never automatically repeat an unknown
         result. The backend retains request-ID deduplication for its last 64 jobs.
         """
-        if not self._client.session_id:
-            raise RuntimeErrorResponse('Connect to the selected probe first')
-        return request(self._client.info, 'POST', '/api/runtime/jobs/', {
-            'action': action, 'request_id': request_id, 'confirm': confirm,
-            'arguments': arguments if arguments is not None else {}, 'session_id': self._client.session_id})
+        return self._client.start_job(action, request_id=request_id, confirm=confirm, arguments=arguments)
 
     def job_status(self, job_id=None):
         """Read retained results even after close(); does not reconnect hardware."""
-        if self._client.info is None:
-            raise RuntimeErrorResponse('Select a runtime by connecting first')
-        if job_id is not None and (not isinstance(job_id, str) or len(job_id) != 32
-                                   or any(c not in '0123456789abcdef' for c in job_id)):
-            raise ValueError('Invalid job ID')
-        return request(self._client.info, 'GET', '/api/runtime/jobs/' + (job_id or ''))
+        return self._client.job_status(job_id)
 
 
 def connect_shared(**options) -> SharedDevice:

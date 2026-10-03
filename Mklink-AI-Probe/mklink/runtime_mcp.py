@@ -1,7 +1,9 @@
 """MCP adapter for the shared GUI backend. No Device or bridge is created here."""
 from __future__ import annotations
 
-import atexit
+import asyncio
+from contextlib import asynccontextmanager
+import logging
 import threading
 
 from mklink.runtime import RuntimeClient, VERSION
@@ -11,9 +13,27 @@ def build_server():
     from fastmcp import FastMCP
     from mklink.runtime_capabilities import CAPABILITIES
 
-    server = FastMCP("mklink-shared-runtime")
     holder = {}
     lock = threading.Lock()
+
+    def close():
+        with lock:
+            current = holder.pop('client', None)
+            if current:
+                holder['last_info'] = current.info
+                current.close()
+
+    @asynccontextmanager
+    async def lifespan(server):
+        try:
+            yield
+        finally:
+            try:
+                await asyncio.to_thread(close)
+            except Exception:
+                logging.getLogger(__name__).warning('Shared MCP detach failed; session will expire', exc_info=True)
+
+    server = FastMCP("mklink-shared-runtime", lifespan=lifespan)
 
     def client():
         if "client" not in holder:
@@ -57,11 +77,7 @@ def build_server():
     @server.tool()
     def disconnect() -> dict:
         """Detach this AI session. The GUI, acquisition, and device remain connected."""
-        with lock:
-            current = holder.pop("client", None)
-            if current:
-                holder['last_info'] = current.info
-                current.close()
+        close()
         return {"detached": True, "device_closed": False}
 
     @server.tool()
@@ -166,39 +182,19 @@ def build_server():
         never retry an unknown hardware result. Deduplication retains only the latest 64 jobs.
         flash arguments: firmware (explicit local path), verify and reset_after (booleans).
         """
-        from mklink.runtime import request, RuntimeErrorResponse
-        current = client()
-        if current.info is None or not current.session_id:
-            raise RuntimeErrorResponse('Connect to the selected probe first')
-        return request(current.info, 'POST', '/api/runtime/jobs/', {
-            'action': action, 'request_id': request_id, 'confirm': confirm, 'arguments': arguments or {},
-            'session_id': current.session_id})
+        return client().start_job(action, request_id=request_id, confirm=confirm, arguments=arguments)
 
     @server.tool()
     def job_status(job_id: str | None = None, probe: str | None = None) -> dict:
         """Read retained exclusive-job results without touching hardware. Unknown is never success."""
-        from mklink.runtime import request, RuntimeErrorResponse, selected_runtime
+        from mklink.runtime import job_status as query_jobs, selected_runtime
         current = holder.get('client')
         info = selected_runtime(probe) if probe else (current.info if current else holder.get('last_info'))
-        if info is None:
-            raise RuntimeErrorResponse('Select a runtime first')
-        if job_id is not None and (len(job_id) != 32 or any(c not in '0123456789abcdef' for c in job_id)):
-            raise ValueError('Invalid job ID')
-        return request(info, 'GET', '/api/runtime/jobs/' + (job_id or ''))
-
-    def close():
-        try:
-            current = holder.get("client")
-            if current:
-                current.close()
-        except Exception:
-            pass
-
-    atexit.register(close)
+        return query_jobs(info, job_id)
     return server
 
 
 def run():
-    from mklink.mcp_server import _isolate_stdio_protocol
-    with _isolate_stdio_protocol():
+    from mklink.mcp_stdio import isolate_stdio_protocol
+    with isolate_stdio_protocol():
         build_server().run(transport="stdio", show_banner=False)

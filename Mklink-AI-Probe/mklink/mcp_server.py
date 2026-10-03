@@ -4,11 +4,10 @@ embedded-debug capabilities as vendor-neutral tools.
 
 Architecture
 ------------
-Independent process speaking stdio transport. Holds a single ``Device``
-singleton (lazily connected via the ``connect`` tool). Hardware access is
-serialized across this MCP process and any concurrent ``mklink serve``
-(FastAPI) process by the file-based ``SerialLock`` (bridge.py:39) — they
-never collide on the probe.
+Legacy exclusive implementation retained while its remaining capabilities
+are migrated. Holds a single ``Device`` singleton. This is NOT the
+``mklink mcp`` entry point; that command uses ``runtime_mcp`` and the shared
+backend. Do not run this legacy implementation alongside a shared owner.
 
 This is the **能力/管道 (capability/plumbing)** layer of the mklink plugin:
 
@@ -20,12 +19,6 @@ This is the **能力/管道 (capability/plumbing)** layer of the mklink plugin:
 Design principle: MCP tools do *atomic operations + smart defaults*; the
 Skill teaches *when/how to orchestrate* them.
 
-Run
----
-    python -m mklink mcp
-or auto-loaded by Claude Code via the plugin's ``.mcp.json`` (skills-dir
-plugin, no marketplace required).
-
 Tools are registered with ``@mcp.tool()`` and grouped by capability
 (_register_* helpers) so Phase 2/3 additions stay isolated.
 """
@@ -35,9 +28,10 @@ from contextlib import contextmanager
 import atexit
 from functools import wraps
 import logging
-import sys
 import threading
-from typing import Any, Iterator, TextIO
+from typing import Any, Iterator
+
+from mklink.mcp_stdio import isolate_stdio_protocol
 
 from pydantic import StrictInt, StrictStr
 
@@ -55,36 +49,6 @@ MCP_MAX_SEARCH_BYTES = 64 * 1024
 MCP_MAX_RTT_WRITE_BYTES = 256
 MCP_MAX_RTT_PATTERN_BYTES = 256
 
-
-class _McpProtocolStdout:
-    """Keep JSON-RPC on stdout while routing ordinary prints to stderr."""
-
-    def __init__(self, protocol_stream: TextIO, diagnostic_stream: TextIO) -> None:
-        self._protocol_stream = protocol_stream
-        self._diagnostic_stream = diagnostic_stream
-
-    @property
-    def buffer(self) -> Any:
-        return self._protocol_stream.buffer
-
-    def write(self, text: str) -> int:
-        return self._diagnostic_stream.write(text)
-
-    def flush(self) -> None:
-        self._diagnostic_stream.flush()
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._diagnostic_stream, name)
-
-
-@contextmanager
-def _isolate_stdio_protocol() -> Iterator[None]:
-    protocol_stdout = sys.stdout
-    sys.stdout = _McpProtocolStdout(protocol_stdout, sys.stderr)
-    try:
-        yield
-    finally:
-        sys.stdout = protocol_stdout
 
 # --------------------------------------------------------------------------
 # Lazy Device singleton (double-checked locking).
@@ -2206,7 +2170,7 @@ mcp: Any = None
 
 
 def run() -> None:
-    """Entry point for the ``mklink mcp`` CLI subcommand.
+    """Legacy exclusive runner, retained for migration tests and old embedders.
 
     Uses stdio transport. MUST NOT print to stdout — that stream carries the
     JSON-RPC protocol. Diagnostic output goes to stderr via ``logging``.
@@ -2226,7 +2190,7 @@ def run() -> None:
         # Observation is optional and must never prevent the MCP owner from
         # serving device tools. Avoid logging on the stdio protocol channel.
         pass
-    with _isolate_stdio_protocol():
+    with isolate_stdio_protocol():
         try:
             mcp.run(transport="stdio")
         finally:

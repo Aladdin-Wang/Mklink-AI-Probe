@@ -90,3 +90,24 @@ def test_cli_lost_backend_during_detach_preserves_primary_failure(monkeypatch, c
     with pytest.raises(SystemExit, match='original connection failure'):
         runtime_cli.run(SimpleNamespace(command='device-status'))
     assert 'session will expire' in capsys.readouterr().err
+
+
+def test_cli_submits_once_and_only_polls_an_unknown_job(monkeypatch, capsys):
+    calls = []
+    class Client:
+        def __init__(self, **kwargs): pass
+        def connect(self, **kwargs): pass
+        def start_job(self, action, **kwargs):
+            calls.append(('submit', action, kwargs))
+            return {'job_id': 'a' * 32, 'state': 'running'}
+        def job_status(self, job_id):
+            calls.append(('query', job_id))
+            return {'job_id': job_id, 'state': 'unknown'}
+        def close(self): calls.append(('detach',))
+    monkeypatch.setattr(runtime_cli, 'RuntimeClient', Client)
+    monkeypatch.setattr(runtime_cli.time, 'sleep', lambda _: None)
+    with pytest.raises(SystemExit, match='unknown'):
+        runtime_cli.run(SimpleNamespace(command='reset', request_id='stable-request'))
+    assert calls == [('submit', 'reset', {'arguments': {}, 'request_id': 'stable-request', 'confirm': True}),
+                     ('query', 'a' * 32), ('detach',)]
+    assert 'stable-request' in capsys.readouterr().out

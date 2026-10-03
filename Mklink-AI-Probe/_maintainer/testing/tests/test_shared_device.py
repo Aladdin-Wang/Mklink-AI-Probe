@@ -17,7 +17,6 @@ def shared(runtime, monkeypatch):
     monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **kwargs: control.info)
     monkeypatch.setattr('mklink.probes.select_probe', lambda _: {'probe_id': control.info.get('probe_id')})
     monkeypatch.setattr('mklink.runtime.request', request)
-    monkeypatch.setattr('mklink.shared_device.request', request)
     # The SDK may not accidentally use the low-level hardware implementation.
     def forbidden(*args, **kwargs): raise AssertionError('Direct CDC must never be opened by SDK')
     monkeypatch.setattr('mklink.bridge.MKLinkSerialBridge.connect', forbidden)
@@ -122,3 +121,27 @@ def test_sdk_write_verification_failure_is_not_replayed(monkeypatch):
     with pytest.raises(RuntimeErrorResponse, match='verification failed'):
         device.write_memory(0,b'\x00')
     assert len(calls)==1
+
+
+@pytest.mark.parametrize('job_id', ['', '../status', 'A' * 32, 123, 'a' * 33])
+def test_job_query_rejects_invalid_id_without_io(monkeypatch, job_id):
+    from mklink.runtime import RuntimeClient
+    client = RuntimeClient(info={'port': 8765})
+    def forbidden(*args, **kwargs): raise AssertionError('Invalid query reached transport')
+    monkeypatch.setattr('mklink.runtime.request', forbidden)
+    with pytest.raises(ValueError, match='Invalid job ID'):
+        client.job_status(job_id)
+
+
+def test_job_submission_requires_session_and_preserves_invalid_arguments_for_backend(shared):
+    from mklink.runtime import RuntimeClient
+    client = RuntimeClient()
+    with pytest.raises(RuntimeErrorResponse, match='Connect'):
+        client.start_job('reset', request_id='once', confirm=True)
+    client.connect()
+    try:
+        # An empty list must not silently become {}, bypassing backend validation.
+        with pytest.raises(RuntimeErrorResponse, match='422'):
+            client.start_job('reset', request_id='once', confirm=True, arguments=[])
+    finally:
+        client.close()

@@ -2803,9 +2803,8 @@ def _cli_runtime(args):
             info = selected_runtime(args.probe)
             if info is None:
                 raise RuntimeErrorResponse('Selected backend is not running')
-            if args.job and (len(args.job) != 32 or any(c not in '0123456789abcdef' for c in args.job)):
-                raise RuntimeErrorResponse('Invalid job ID')
-            result = request(info, 'GET', '/api/runtime/jobs/'+(args.job or ''))
+            from mklink.runtime import job_status
+            result = job_status(info, args.job)
         elif args.runtime_command == "stop":
             if not args.confirm:
                 raise RuntimeErrorResponse("Stopping the shared backend requires --confirm")

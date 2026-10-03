@@ -52,7 +52,6 @@ def run(args):
         client.connect(project_root=project, port=getattr(args, 'port', None), probe=getattr(args, 'probe', None),
                        axf=getattr(args, 'source', None), elf_backend=getattr(args, 'elf_backend', None))
         if args.command in {'flash', 'erase', 'reset'}:
-            from mklink.runtime import request
             arguments = {}
             if args.command == 'flash':
                 if not args.hex:
@@ -61,13 +60,11 @@ def run(args):
                 arguments = {'firmware': str(Path(args.hex).resolve()), 'verify': True, 'reset_after': True}
             request_id = getattr(args, 'request_id', None) or str(uuid.uuid4())
             print(json.dumps({'request_id': request_id, 'action': args.command}), flush=True)
-            result = request(client.info, 'POST', '/api/runtime/jobs/', {
-                'action': args.command, 'arguments': arguments, 'request_id': request_id, 'confirm': True,
-                'session_id': client.session_id})
+            result = client.start_job(args.command, arguments=arguments, request_id=request_id, confirm=True)
             print(json.dumps({'job_id': result['job_id'], 'state': result['state']}), flush=True)
             while result['state'] not in {'succeeded', 'failed', 'unknown'}:
                 time.sleep(.25)
-                result = request(client.info, 'GET', '/api/runtime/jobs/'+result['job_id'])
+                result = client.job_status(result['job_id'])
             if result['state'] != 'succeeded':
                 raise RuntimeErrorResponse(json.dumps(result, ensure_ascii=False))
         elif args.command == 'read-reg':

@@ -185,6 +185,16 @@ def browser_url(info: dict) -> str:
     return f"http://127.0.0.1:{info['port']}/_runtime/open#{info['token']}"
 
 
+def job_status(info, job_id=None):
+    """Query a retained result without attaching or reconnecting hardware."""
+    if info is None:
+        raise RuntimeErrorResponse('Select a runtime first')
+    if job_id is not None and (not isinstance(job_id, str) or len(job_id) != 32
+                               or any(c not in '0123456789abcdef' for c in job_id)):
+        raise ValueError('Invalid job ID')
+    return request(info, 'GET', '/api/runtime/jobs/' + (job_id or ''))
+
+
 class RuntimeClient:
     def __init__(self, *, project_root=".", info=None, kind='mcp', name='AI client'):
         self.info = info
@@ -230,6 +240,17 @@ class RuntimeClient:
         return request(self.info, "POST", "/_runtime/call", {
             "session_id": self.session_id, "capability": capability, "arguments": arguments or {},
         })
+
+    def start_job(self, action, *, request_id, confirm=False, arguments=None):
+        """Submit once with this session; the backend owns validation and deduplication."""
+        if self.info is None or not self.session_id:
+            raise RuntimeErrorResponse('Connect to the selected probe first')
+        return request(self.info, 'POST', '/api/runtime/jobs/', {
+            'action': action, 'request_id': request_id, 'confirm': confirm,
+            'arguments': arguments if arguments is not None else {}, 'session_id': self.session_id})
+
+    def job_status(self, job_id=None):
+        return job_status(self.info, job_id)
 
     def close(self):
         self._stop.set()
