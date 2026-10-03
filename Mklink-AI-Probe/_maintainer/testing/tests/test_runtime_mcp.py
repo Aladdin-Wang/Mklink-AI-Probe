@@ -12,11 +12,72 @@ from test_shared_device import shared
 from test_shared_runtime import runtime
 
 
+@pytest.mark.parametrize('legacy', [False, True])
+def test_offline_analysis_available_without_connect_and_preserves_trace_gaps(monkeypatch, legacy):
+    from mklink import mcp_server
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Offline analysis attempted a device connection')
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', forbidden)
+    monkeypatch.setattr(mcp_server, '_connected_device', forbidden)
+    server = mcp_server.build_server() if legacy else runtime_mcp.build_server()
+    async def scenario():
+        async with Client(server) as mcp:
+            names = [tool.name for tool in await mcp.list_tools()]
+            assert names.count('systemview_decode') == names.count('systemview_analyze_events') == 1
+            decoded = await mcp.call_tool('systemview_decode', {'hex_bytes': '11 01'})
+            assert decoded.data['events'] == [{'kind': 'idle', 'delta_ticks': 1, 't_ticks': 1}]
+            assert decoded.data['event_count'] == 1 and decoded.data['bytes_read'] == 2
+            assert decoded.data['dropped_bytes'] == decoded.data['dropped_packets'] == 0
+            invalid = await mcp.call_tool('systemview_decode', {'hex_bytes': '0x11'}, raise_on_error=False)
+            assert invalid.is_error
+            report = await mcp.call_tool('systemview_analyze_events', {'events': [
+                {'kind': 'task_start_exec', 'task_id': 1, 't_us': 10},
+                {'kind': 'overflow', 'drop_count': 1234, 't_us': 35000000},
+                {'kind': 'task_start_exec', 'task_id': 2, 't_us': 35000100},
+                {'kind': 'task_stop_exec', 'task_id': 2, 't_us': 35000300},
+                {'kind': 'idle', 't_us': 35001100},
+            ]})
+            assert report.data['summary']['target_drop_count'] == 1234
+            assert report.data['summary']['observed_us'] == 1000
+            assert [task['id'] for task in report.data['tasks']] == [2]
+            empty = await mcp.call_tool('systemview_analyze_events', {'events': []})
+            assert empty.data['anomalies'][0]['kind'] == 'no_data'
+    asyncio.run(scenario())
+
+
+def test_mcp_debug_speed_uses_shared_admission_without_retry(shared):
+    _, _, calls, managers, app = shared
+    from fastapi import HTTPException
+    @app.post('/api/device/debug-speed')
+    async def speed(body: dict):
+        calls.append(body)
+        raise HTTPException(500, 'unknown clock result')
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect', {'probe': 'test'})
+            managers['rtt'].running = True
+            refused = await mcp.call_tool('set_debug_speed', {'profile': 'low'}, raise_on_error=False)
+            assert refused.is_error and not calls and managers['rtt'].running
+            # Offline tools remain available even while capture owns the bridge.
+            assert not (await mcp.call_tool('systemview_decode', {'hex_bytes': '1101'})).is_error
+            managers['rtt'].running = False
+            failed = await mcp.call_tool('set_debug_speed', {'profile': 'low'}, raise_on_error=False)
+            assert failed.is_error
+    asyncio.run(scenario())
+    assert calls == [{'profile': 'low'}]
+
+
 def test_shared_stdio_does_not_import_legacy_device_server():
     result = subprocess.run([sys.executable, '-c', '''
 import sys
+import asyncio
+from fastmcp import Client
 from mklink import runtime_mcp
-runtime_mcp.build_server()
+async def offline():
+    async with Client(runtime_mcp.build_server()) as client:
+        assert not (await client.call_tool('systemview_decode', {'hex_bytes': '1101'})).is_error
+        assert not (await client.call_tool('systemview_analyze_events', {'events': []})).is_error
+asyncio.run(offline())
 assert 'mklink.mcp_server' not in sys.modules
 assert 'mklink.mcp_stream_bridge' not in sys.modules
 class Server:

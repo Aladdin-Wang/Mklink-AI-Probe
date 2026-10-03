@@ -72,6 +72,47 @@ def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
         assert load_config(str(tmp_path))['debug_speed']=='ultra'
 
 
+def test_shared_debug_speed_reuses_validation_persistence_and_capture_gate(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from mklink.project_config import load_config
+    from mklink.runtime_api import install_runtime
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device.port = 'COM9'
+    device._bridge = SimpleNamespace(_ctx=SimpleNamespace(swd_clock_hz=10000000))
+    device.set_debug_speed = Mock(return_value={'profile': 'low', 'clock_hz': 4000000})
+    app.state.mklink_state['device'] = device
+    info = {'port': 8765, 'token': 'test-secret', 'instance_id': 'test-instance'}
+    control = install_runtime(app, info)
+    managers = {name: SimpleNamespace(running=False) for name in ('rtt', 'superwatch', 'systemview')}
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: managers)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]) as stop, TestClient(
+        app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': info['token']}
+    ) as client:
+        session = client.post('/_runtime/attach', json={}).json()['session_id']
+        def call(capability, arguments=None):
+            return client.post('/_runtime/call', json={
+                'session_id': session, 'capability': capability, 'arguments': arguments or {}})
+        managers['rtt'].running = True
+        assert call('debug_speed').json()['profile'] == 'medium'
+        assert call('set_debug_speed', {'profile': 'low'}).status_code == 409
+        assert client.post('/api/device/debug-speed', json={'profile': 'low'}).status_code == 409
+        assert managers['rtt'].running
+        stop.assert_not_called()
+        device.set_debug_speed.assert_not_called()
+        managers['rtt'].running = False
+        assert call('set_debug_speed', {'profile': 'invalid'}).status_code == 400
+        device.set_debug_speed.assert_not_called()
+        assert call('set_debug_speed', {'profile': 'low'}).status_code == 200
+        device.set_debug_speed.assert_called_once_with('low')
+        assert load_config(str(tmp_path))['debug_speed'] == 'low'
+        device.set_debug_speed.side_effect = ValueError('firmware profile unconfirmed')
+        assert call('set_debug_speed', {'profile': 'high'}).status_code == 400
+        assert load_config(str(tmp_path))['debug_speed'] == 'low'
+        assert not control.operation_lock.locked()
+
+
 def test_flash_failure_is_request_scoped_and_releases_lease(tmp_path):
     device, _ = _connected_symbol_device(tmp_path)
     device.flash = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("verify failed"))

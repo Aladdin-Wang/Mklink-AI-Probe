@@ -6,6 +6,8 @@ from fastapi import HTTPException
 STREAMS = ('rtt', 'superwatch', 'systemview')
 CAPABILITIES = {
     'device_status': ('GET', '/api/device/status'),
+    'debug_speed': ('GET', '/api/device/debug-speed'),
+    'set_debug_speed': ('POST', '/api/device/debug-speed'),
     'halt': ('POST', '/api/device/halt'),
     'resume': ('POST', '/api/device/resume'),
     'step': ('POST', '/api/device/step'),

@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T12:31:09+00:00`
+- 更新时间：`2026-10-03T12:55:12+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; MCP stdio isolation, shared job client contract and lifecycle cleanup after c99cf4b; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared offline SystemView tools and debug-speed route reuse after 9bd1eb3; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：完成A6首批依赖收敛：中性stdio模块、MCP/CLI/SDK任务契约统一、MCP服务生命周期清理。已盘点全部69个旧工具；尚未迁移的能力与旧服务器仍保留。
+- 当前任务：完成A6第二批：新旧MCP共用SystemView离线工具，共享调试速度复用原后台路由。活动MCP现25工具；未迁移的供电、安全、批量/流式、串口等旧能力继续保留。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.0 MCP依赖与任务适配收敛** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
+- **0.3.0 MCP离线能力与后台路由收敛** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md：相关Python333通过/2跳过。真实Edge/MCP/SDK/CLI验证进程退出不影响GUI RTT；SDK一次reset，CLI请求ID去重复用，MCP查询同一记录，Boot不变。首轮退出断言误用了keep_alive默认值，修正测试后通过。本轮GUI未改，沿用上一轮生产资源；上轮全量证据见符号重载报告。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二批：Python244通过/1跳过。真实Edge/MCP/SDK验证离线分析无需连接，GUI RTT期间改速拒绝；停止后4MHz成功、恢复原30MHz，GUI重新启停正常。Boot不变、VTOR正确、tick推进，后台退出。GUI未改，沿用前轮生产资源；第一批333/2及更早全量证据保留。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。MCP进程正常退出仅解除自身会话，GUI RTT/SDK保持。显式停止RTT后仅执行一次reset，三客户端共用记录；Boot20KiB不变、VTOR正确、tick推进。后台全部退出，未烧录或改VCC。第二只仅重新枚举，每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT期间MCP离线分析可用、改速被拒；显式停止后MCP设4MHz，SDK一致，恢复原30MHz后GUI可再启停。Boot20KiB不变、VTOR正确、tick推进。后台全部退出；未reset、烧录、擦除或改VCC。第二只仅枚举，每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 按A6工具对应表继续操作级契约与能力迁移，优先纯计算/文件服务及既有后台路由；保留供电、安全配置、批量/流式和独立串口语义后才删除旧实现。随后稳定锁目录、bfcache、共享契约CI、双设备长稳及NSIS。保持CDC和Boot+0x08005000 App，不自动合并发布。
+1. 继续按A6对应表迁移剩余能力及专用CLI，优先既有后台路由/纯文件服务；供电、安全、批量/流式、串口语义完整后才删旧实现。补稳定锁目录、bfcache和共享契约CI，再双设备长稳及NSIS。保持CDC和Boot+0x08005000 App，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- A5已收敛。A6已解除活动MCP对旧服务器依赖并统一任务客户端，但69个旧工具仍有未迁移能力，完整对应表见v0.3.0-mcp-consolidation.md；旧服务器/sidecar及远程能力表未删除。A7锁目录受TEMP影响、CI未覆盖共享契约，bfcache待修。
+- A5已收敛。A6已统一stdio/任务客户端/服务清理，复用SystemView离线分析和后台调试速度，活动MCP25工具；旧69工具仍有未迁移能力，见v0.3.0-mcp-consolidation.md。旧服务器/sidecar与远程能力表未删除。A7锁目录受TEMP影响、CI未覆盖共享契约，bfcache待修。
 - 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复/日志轮转、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。

@@ -5,6 +5,11 @@
 
 ## MCP tool 速查（按能力域）
 
+下表保留 0.2.x 工具名称。0.3.0 开发分支的共享入口及参数差异见
+[共享后台说明](shared-runtime.md)，实际可用工具以 MCP `tools/list` 为准。
+共享入口已提供离线 `systemview_decode`、`systemview_analyze_events` 和
+后台 `set_debug_speed`；其他旧名称不能据此视为全部兼容。
+
 | 域 | Tools | 备注 |
 |---|---|---|
 | 健康 | `ping` | 无需连接，首调确认 server 活着 |

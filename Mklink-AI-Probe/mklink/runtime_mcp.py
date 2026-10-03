@@ -34,6 +34,8 @@ def build_server():
                 logging.getLogger(__name__).warning('Shared MCP detach failed; session will expire', exc_info=True)
 
     server = FastMCP("mklink-shared-runtime", lifespan=lifespan)
+    from mklink.mcp_analysis import register_systemview_offline_tools
+    register_systemview_offline_tools(server)
 
     def client():
         if "client" not in holder:
@@ -84,6 +86,15 @@ def build_server():
     def device_status() -> dict:
         """Read the shared device status without touching CDC."""
         return client().call("device_status")
+
+    @server.tool()
+    def set_debug_speed(profile: str) -> dict:
+        """Set low/medium/high/ultra through the shared backend; busy during capture.
+
+        Changes this probe's debug clock and saves the project profile after success.
+        All attached clients share it. Inspect gui_call('debug_speed') for cached status.
+        """
+        return client().call('set_debug_speed', {'profile': profile})
 
     @server.tool()
     def read_memory(address: int, size: int) -> dict:

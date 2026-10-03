@@ -54,6 +54,16 @@ GUI 已在采集时，AI 使用以下能力：
 从 `gui_call("symbol_status")` 取得的 `generation`，执行实时写入及校验。
 RTT 输入限制为 1..256 个 UTF-8 字节，拒绝保留的停止命令。
 
+MCP 的 `systemview_decode(hex_bytes=...)` 和 `systemview_analyze_events(events=...)`
+可离线调用，无需 `connect` 或选择下载器；运行中的 GUI 采集也不会被打断。
+分析已有共享跟踪数据时，将 `systemview(action="history")` 返回的 `points` 事件列表传给
+分析工具。离线解码使用调用方提供的字节，不启动或读取目标通道。
+
+`set_debug_speed(profile="low")` 通过同一后台修改调试速度，支持
+low/medium/high/ultra；持续采集期间拒绝，需先显式停止采集。成功后保存工程配置，
+同一下载器的所有客户端共享该速度。`gui_call("debug_speed")` 读取后台缓存的时钟和
+可用档位，采集期间也可调用；这是后台记录值，不是独立硬件测量。
+
 停止采集要求拥有启动权且没有其他 AI 订阅者。AI `disconnect`、关闭 GUI、关闭
 桌面代理均不停止后台。断线会话在 120 秒后过期；过期不自动重放命令或停止采集。
 配置页的“后台管理”显示绑定设备、当前端口、工程、GUI/AI/CLI/SDK 客户端、采集订阅
