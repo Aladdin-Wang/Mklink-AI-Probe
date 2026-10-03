@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T00:21:04.7235043+08:00`
-- 分支：`codex/superwatch-drag-groups`
-- HEAD：`Pointer-based group drag fix based on main 391918f.`
+- 更新时间：`2026-10-03T09:38:02.4608144+08:00`
+- 分支：`codex/v023-release-readme`
+- HEAD：`Release preparation based on main ae83a37.`
 - 远端 HEAD：`main 391918f; PR23 retains installation evidence.`
 - 工作树：Isolated task worktree; original main user firmware preserved.
-- 当前任务：修复Windows桌面SuperWatch拖入分组失败；真实桌面与浏览器拖动通过，提交PR待合并。
+- 当前任务：用户授权处理待合并PR、简化README并正式发布0.2.3；已汇总PR17/19/21/23/25验收文档，保留最新功能代码。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -39,12 +39,12 @@
 
 - **state**：V4/F103已连接用于桌面信号分组验证，采样停止；本轮未写入目标内存或固件。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
-- **installer**：当前安装版0.2.3/391918f及本地Skill已验证；拖动修复仅测试原生构建，尚未覆盖安装。
+- **installer**：本地0.2.3/ae83a37已安装验证；正式签名候选待构建验收。
 
 ## 下一动作
 
-1. 提交拖动修复PR；获授权合并时执行完整合并门禁及覆盖安装。
-2. 内部保留既有nRF54L15 GUI验收边界。
+1. 通过完整门禁后合并发布准备PR；关闭已被汇总的历史安装验收PR。
+2. 从干净最新main构建签名NSIS、Skill与Site Agent，验证后发布三个渠道及更新索引。
 
 ## 已知限制
 

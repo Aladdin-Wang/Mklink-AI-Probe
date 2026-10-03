@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T00:21:04.7235043+08:00",
+  "updated_at": "2026-10-03T09:38:02.4608144+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/superwatch-drag-groups",
-    "head": "Pointer-based group drag fix based on main 391918f.",
+    "branch": "codex/v023-release-readme",
+    "head": "Release preparation based on main ae83a37.",
     "remote_head": "main 391918f; PR23 retains installation evidence.",
     "working_tree": "Isolated task worktree; original main user firmware preserved."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "修复Windows桌面SuperWatch拖入分组失败；真实桌面与浏览器拖动通过，提交PR待合并。"
+    "current_task": "用户授权处理待合并PR、简化README并正式发布0.2.3；已汇总PR17/19/21/23/25验收文档，保留最新功能代码。"
   },
   "milestones": [
     {
@@ -67,7 +67,7 @@
   "hardware": {
     "state": "V4/F103已连接用于桌面信号分组验证，采样停止；本轮未写入目标内存或固件。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
-    "installer": "当前安装版0.2.3/391918f及本地Skill已验证；拖动修复仅测试原生构建，尚未覆盖安装。"
+    "installer": "本地0.2.3/ae83a37已安装验证；正式签名候选待构建验收。"
   },
   "known_limits": [
     "有限缓冲不保证无限暂停/物理断线无损；外设轮询可能漏短脉冲，多变量不是原子快照。 VCC遥测需要配套新固件；V3仅电压，V4功率为滤波电压电流乘积，未新增校准。135项测试和固件编译不能替代真实负载精度验证。Web静态资源遗漏已修复并覆盖验收。",
@@ -80,8 +80,8 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "提交拖动修复PR；获授权合并时执行完整合并门禁及覆盖安装。",
-    "内部保留既有nRF54L15 GUI验收边界。"
+    "通过完整门禁后合并发布准备PR；关闭已被汇总的历史安装验收PR。",
+    "从干净最新main构建签名NSIS、Skill与Site Agent，验证后发布三个渠道及更新索引。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"

@@ -9,7 +9,7 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
-    version: '0.2.3', date: '2026-10-02',
+    version: '0.2.3', date: '2026-10-03',
     summary: '优化 SuperWatch，完善烧录与采集稳定性',
     summaryEn: 'Improve SuperWatch, flashing and capture reliability',
     changes: [
