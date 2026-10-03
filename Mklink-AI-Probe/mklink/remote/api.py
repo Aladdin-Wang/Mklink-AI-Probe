@@ -36,7 +36,7 @@ import time
 from typing import Annotated, Any
 import weakref
 
-from mklink.symbol_catalog import SymbolCatalogError
+from mklink.symbol_catalog import SymbolCatalogError, SymbolSourceChangedError
 
 logger = logging.getLogger(__name__)
 
@@ -3340,6 +3340,8 @@ def create_app(
                     None, lambda: _state["device"].read_variable(name)
                 )
                 return {"name": name, "value": value}
+            except SymbolSourceChangedError as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3357,6 +3359,8 @@ def create_app(
                     None, lambda: _state["device"].write_variable(name, value)
                 )
                 return {"status": "ok", "name": name, "value": value}
+            except SymbolSourceChangedError as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 

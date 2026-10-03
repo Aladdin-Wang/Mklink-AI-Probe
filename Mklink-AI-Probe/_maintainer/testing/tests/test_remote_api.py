@@ -906,6 +906,70 @@ def _connected_large_array_device(tmp_path):
     return device, axf
 
 
+@pytest.mark.parametrize('operation', ['read', 'write'])
+@pytest.mark.parametrize('change', ['replace', 'remove', 'same_metadata'])
+def test_variable_access_rejects_changed_source_without_reloading_or_io(
+    tmp_path, monkeypatch, operation, change,
+):
+    import os
+    from unittest.mock import Mock
+    from mklink.device import Device
+    from mklink._types import DeviceState
+    from mklink.runtime_api import install_runtime
+
+    fixture, axf = _connected_symbol_device(tmp_path)
+    device = Device(axf=str(axf), project_root=str(tmp_path))
+    device._connected = True
+    device._port = 'COM9'
+    device._bridge = SimpleNamespace(state=DeviceState.READY, idcode=0, current_mcu='fixture')
+    device._dwarf_info = fixture._dwarf_info
+    catalog = device._symbol_catalog = fixture.symbol_catalog
+    device.read_memory = Mock(return_value=b'\0' * 4)
+    device.write_memory = Mock()
+    # An accidental reload must be visible even if its parser would have failed.
+    device.reparse_axf_atomically = Mock(return_value=catalog)
+    device.close = lambda: None
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    control = install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'fixture'})
+    managers = {name: SimpleNamespace(running=False) for name in ('rtt', 'superwatch', 'systemview')}
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: managers)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    with TestClient(app, base_url='http://127.0.0.1:8765',
+                    headers={'X-Auth-Token': 'test-secret'}) as client:
+        session = client.post('/_runtime/attach', json={}).json()['session_id']
+        if change == 'remove':
+            axf.unlink()
+        else:
+            before = axf.stat()
+            axf.write_bytes(b'new' if change == 'same_metadata' else b'new source')
+            if change == 'same_metadata':
+                os.utime(axf, ns=(before.st_atime_ns, before.st_mtime_ns))
+        arguments = {'name': 'gain', **({'value': 1} if operation == 'write' else {})}
+        for path, body in [
+            (f'/api/device/{operation}-variable', arguments),
+            ('/_runtime/call', {'session_id': session,
+                               'capability': f'{operation}_variable', 'arguments': arguments}),
+        ]:
+            response = client.post(path, json=body)
+            assert response.status_code == 409, response.text
+            assert 'AXF' in response.text and 'reparse' in response.text
+        device.reparse_axf_atomically.assert_not_called()
+        device.read_memory.assert_not_called()
+        device.write_memory.assert_not_called()
+        assert device.symbol_catalog is catalog
+        assert list(control.sessions) == [session]
+        assert not control.operation_lock.locked()
+        assert app.state.mklink_state['resource_manager'].get_status() == {}
+        # Restoring the exact source permits access without replacing the catalog.
+        axf.write_bytes(b'axf')
+        os.utime(axf, ns=(catalog.fingerprint.mtime_ns, catalog.fingerprint.mtime_ns))
+        response = client.post('/api/device/read-variable', json={'name': 'gain'})
+        assert response.status_code == 200 and response.json()['value'] == 0.0
+        device.read_memory.assert_called_once_with(0x20000010, 4)
+        device.reparse_axf_atomically.assert_not_called()
+
+
 def test_symbol_catalog_api_lists_valid_variables_immediately(tmp_path):
     device, _axf = _connected_symbol_device(tmp_path)
     app = create_app(auth_token=None, project_root=".")

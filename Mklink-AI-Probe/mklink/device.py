@@ -2143,8 +2143,9 @@ class Device:
     # ------------------------------------------------------------------
     def read_variable(self, name: str) -> Any:
         self._require_connected()
-        if self.symbol_catalog is not None and self.symbol_catalog.is_stale():
-            self.reparse_axf_atomically()
+        catalog = self.symbol_catalog
+        if catalog is not None:
+            catalog.require_fresh_source()
         if not self._dwarf_info:
             return self._read_variable_from_map(name)
         from mklink.watch import resolve_variable_path, decode_value
@@ -2182,8 +2183,9 @@ class Device:
 
     def write_variable(self, name: str, value: int) -> None:
         self._require_connected()
-        if self.symbol_catalog is not None and self.symbol_catalog.is_stale():
-            raise DeviceError("AXF content changed; reparse and confirm target firmware before writing")
+        catalog = self.symbol_catalog
+        if catalog is not None:
+            catalog.require_fresh_source()
         if not self._dwarf_info:
             raise DeviceError(
                 "No AXF/ELF loaded. Pass axf= to connect() for variable access."

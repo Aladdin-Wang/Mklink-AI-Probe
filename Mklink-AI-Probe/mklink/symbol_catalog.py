@@ -31,6 +31,10 @@ class SymbolValueError(SymbolCatalogError):
     """A user value cannot be represented by the selected symbol type."""
 
 
+class SymbolSourceChangedError(SymbolCatalogError):
+    """The loaded catalog no longer describes its source file."""
+
+
 @dataclass(frozen=True)
 class AxfFingerprint:
     size: int
@@ -187,8 +191,7 @@ class SymbolCatalog:
         return self._resolve_descriptor(path)
 
     def require(self, path: str, generation: int) -> SymbolDescriptor:
-        if self.fingerprint.sha256 and self.is_stale():
-            raise SymbolCatalogError("AXF content changed; reparse symbols before access")
+        self.require_fresh_source()
         if generation != self.generation:
             raise SymbolCatalogError(
                 f"symbol generation is stale: expected {self.generation}, got {generation}"
@@ -244,6 +247,13 @@ class SymbolCatalog:
                 )
             descriptors.append(descriptor)
         return tuple(descriptors)
+
+    def require_fresh_source(self) -> None:
+        if self.is_stale():
+            raise SymbolSourceChangedError(
+                "AXF content changed or is unavailable; explicitly reparse symbols "
+                "and confirm target firmware before variable access"
+            )
 
     def is_stale(self) -> bool:
         try:

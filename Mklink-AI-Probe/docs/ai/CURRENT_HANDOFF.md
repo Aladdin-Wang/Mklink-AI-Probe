@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T20:05:48+00:00`
+- 更新时间：`2026-10-03T20:22:16+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; obsolete exclusive diagnostics and unused CLI helpers removed after 226e54d; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; implicit variable-read symbol reload removed after f6e7751; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。删除test/--test独占诊断、顶层兼容port/baud、无调用初始化和事件格式化；使用已有共享version/device-status。140项定向通过，双下载器GUI RTT期间状态查询、旧入口解析拒绝及会话保持通过。继续watch类型/结构体/数组/MAP及当前C布局的共享迁移与A7。
+- 当前任务：持续循环评审/验证。移除变量读取隐式AXF重载；变量读写与目录共用文件指纹检查，源变化返回409并保持会话/目录。1278通过、2可选依赖跳过；双下载器/Edge/REST/SDK/MCP过期读取拒绝、延后重载及恢复读通过。继续watch共享迁移及A7。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第十八批：140项定向CLI/发现/初始化/文档通过，CI集合798后台/79GUI；前轮扩展1213通过/2可选依赖跳过。真机双下载器/Edge/CLI/MCP/SDK：RTT时共享device-status成功，旧test/--test三种形式解析拒绝，两个会话/采集保持；第二探针独立，不同MSC卷；Boot/选项字节/VTOR/配置保持，tick推进。GUI沿用第九批资源。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第十九批：定向141通过；扩展1278通过/2可选依赖跳过，CI集合804后台/79GUI。真机AXF副本变化：GUI RTT保持、手动解析拒绝；停止后REST/SDK/MCP过期变量读取409且两会话/代次保持，第二探针独立。全部退出后重载一次，恢复原AXF再附着可读；Boot/选项字节/VTOR/配置/原AXF保持，tick推进。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT期间共享诊断及旧独占入口拒绝通过，双下载器CDC/MSC独立；第二探针仅版本查询。Boot20KiB/选项字节/VTOR/配置保持，tick推进，两个后台退出。未reset、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。AXF副本变更、GUI RTT延后重载、REST/SDK/MCP变量409及重新附着恢复通过；第二探针仅版本查询。Boot20KiB/选项字节/VTOR/配置/原AXF保持，tick推进，两个后台退出。未reset、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 持续评审/验证：迁移watch，复用现有类型/结构体/数组/MAP解析、后台当前符号及C布局、受限批量读取与共享准入；随后其他专用CLI、独立服务和旧MCP，迁移后删除重复路径。双设备长稳、实际拔插/休眠、原生bfcache补验和NSIS继续。不改下载器固件/WinUSB，不自动合并发布。
+1. 持续评审/验证：已移除Device变量读的隐式AXF重载；继续迁移watch，复用当前符号和C布局、只读Flash描述、受限批量读取及共享准入，明确MAP/C源变化边界；迁移后删除独占路径。随后其他专用CLI、独立服务和旧MCP。双设备长稳、实际拔插/休眠、原生bfcache补验和NSIS继续。不改下载器固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增798项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
+- A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增804项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
 - 0.3.0第七阶段：watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
