@@ -35,6 +35,22 @@ def test_cli_read_routes_to_shared_backend(adapter):
     assert ('read_memory',{'address':'0x20000000','size':4}) in adapter
 
 
+@pytest.mark.parametrize('save', [False, True])
+def test_debug_speed_cli_uses_selected_shared_probe_and_backend_persistence(adapter, monkeypatch, save):
+    import sys
+    from mklink import cli
+    def forbidden(*args, **kwargs):
+        raise AssertionError('CLI opened a direct device or wrote local configuration')
+    monkeypatch.setattr('mklink.device.connect', forbidden)
+    monkeypatch.setattr('mklink.project_config.save_config', forbidden)
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'debug-speed', 'low', '--probe', 'board'] + (['--save'] if save else []))
+    cli.main()
+    assert adapter[0][1]['probe'] == 'board'
+    assert adapter[0][1]['project_root'] is None
+    assert adapter[1] == ('set_debug_speed', {'profile': 'low', 'save': save})
+    assert adapter[-1] == ('detach', None)
+
+
 @pytest.mark.parametrize('command', ['halt', 'resume', 'step', 'read-flash'])
 def test_debug_and_flash_read_cli_share_selected_backend(adapter, monkeypatch, command):
     import sys

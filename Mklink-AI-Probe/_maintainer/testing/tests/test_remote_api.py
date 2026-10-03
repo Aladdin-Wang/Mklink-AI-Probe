@@ -104,6 +104,13 @@ def test_shared_debug_speed_reuses_validation_persistence_and_capture_gate(tmp_p
         managers['rtt'].running = False
         assert call('set_debug_speed', {'profile': 'invalid'}).status_code == 400
         device.set_debug_speed.assert_not_called()
+        assert call('set_debug_speed', {'profile': 'low', 'save': 'false'}).status_code == 422
+        device.set_debug_speed.assert_not_called()
+        temporary = call('set_debug_speed', {'profile': 'low', 'save': False})
+        assert temporary.status_code == 200 and temporary.json()['saved'] is False
+        assert 'debug_speed' not in (load_config(str(tmp_path)) or {})
+        device.set_debug_speed.assert_called_once_with('low')
+        device.set_debug_speed.reset_mock()
         assert call('set_debug_speed', {'profile': 'low'}).status_code == 200
         device.set_debug_speed.assert_called_once_with('low')
         assert load_config(str(tmp_path))['debug_speed'] == 'low'

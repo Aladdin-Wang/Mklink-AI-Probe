@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed'}
 
 
 def run(args):
@@ -89,6 +89,8 @@ def run(args):
             result = client.call('breakpoints', debug_arguments)
         elif args.command == 'device-status':
             result = client.call('device_status')
+        elif args.command == 'debug-speed':
+            result = client.call('set_debug_speed', {'profile': args.profile, 'save': args.persist_profile})
         elif args.command in {'halt', 'resume', 'step'}:
             result = client.call(args.command)
         elif args.command in {'read-ram', 'read-flash'}:

@@ -109,7 +109,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset` 均通过共享后台运行，共 18 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed` 均通过共享后台运行，共 19 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -121,6 +121,8 @@ python -m mklink read-flash --addr 0x08005000 --size 16 --probe "电机板"
 python -m mklink halt --probe "电机板"
 python -m mklink step --probe "电机板"
 python -m mklink resume --probe "电机板"
+python -m mklink debug-speed low --probe "电机板"
+python -m mklink debug-speed medium --probe "电机板" --save
 ```
 
 未指定工程/符号时采用后台当前配置。`write-ram` 在同一次共享操作内写入并回读
@@ -129,7 +131,12 @@ python -m mklink resume --probe "电机板"
 启动参数重配；CLI 结束时只解除订阅。CLI 自行启动的采集会尝试停止，若其他客户端
 已订阅则保留运行并提示。历史缓存不保证覆盖整个请求时长。
 
-共享模式不接受 `--save` 探针文件写入、私有外设目录覆盖或非默认的独立可视化
+`debug-speed` 复用后台调速，GUI 采集期间拒绝。未指定 `--save` 时只改变当前后台
+连接的速度，CLI 退出不会还原；带 `--save` 则在调速成功后保存到后台当前工程，
+供后续连接使用。结果中的 `saved` 表示是否保存。所有附着客户端看到同一速度，
+不会另开 CDC、停止他人采集或重试失败命令。
+
+共享内存读取不接受 `--save` 探针文件写入；共享模式也不接受私有外设目录覆盖或非默认的独立可视化
 host/port/chart 参数。外设目录应先在 GUI 选择，图表使用共享 GUI 配置。
 
 `read-flash` 现在读取目标内存映射 Flash，每次 1..4096 字节，输出 JSON 中的

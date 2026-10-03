@@ -2002,7 +2002,7 @@ def create_app(
         return {"status": "ok", "stopped": stopped}
 
     @app.post("/api/device/debug-speed")
-    async def set_debug_speed(profile: str = Body(..., embed=True)):
+    async def set_debug_speed(profile: str = Body(..., embed=True), save: bool = Body(True, strict=True)):
         from mklink.debug_speed import profile_clock
         try:
             profile_clock(profile)
@@ -2010,10 +2010,11 @@ def create_app(
                 result = await run_in_threadpool(device.set_debug_speed, profile)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
-        config = load_config(_state["project_root"]) or {}
-        config["debug_speed"] = profile
-        save_config(_state["project_root"], config)
-        return {**result, "stopped": stopped}
+        if save:
+            config = load_config(_state["project_root"]) or {}
+            config["debug_speed"] = profile
+            save_config(_state["project_root"], config)
+        return {**result, "stopped": stopped, "saved": save}
 
     @app.get("/api/device/debug-speed")
     async def get_debug_speed():

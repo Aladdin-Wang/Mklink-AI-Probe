@@ -2926,8 +2926,8 @@ def main():
     speed_parser = subparsers.add_parser("debug-speed", help="Set low=4 MHz / medium=10 MHz / high=20 MHz / ultra=30 MHz debug timing")
     speed_parser.add_argument("profile", choices=("low", "medium", "high", "ultra"))
     speed_parser.add_argument("--port", default=None)
-    speed_parser.add_argument("--project-root", default=".")
-    speed_parser.add_argument("--save", action="store_true", help="Apply this profile on future connections")
+    speed_parser.add_argument("--project-root", default=None)
+    speed_parser.add_argument("--save", dest="persist_profile", action="store_true", help="Save this profile in the shared backend's project for future connections")
     measure_parser = subparsers.add_parser("dump-benchmark", help="Measure periodic mem_dump without a waveform GUI")
     measure_parser.add_argument("regions", nargs="+")
     measure_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None)
@@ -3690,7 +3690,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3735,17 +3735,6 @@ def main():
         regions = [_parse_dump_region(r) for r in args.regions]
         with connect(port=args.port, project_root=args.project_root) as device:
             result = measure(device, regions, duration=args.duration, period=args.period, speed_profile=args.speed)
-        print(json.dumps(result, ensure_ascii=False))
-    elif args.command == "debug-speed":
-        import json
-        from mklink.device import connect
-        from mklink.project_config import load_config, save_config
-        with connect(port=args.port, project_root=args.project_root) as device:
-            result = device.set_debug_speed(args.profile)
-        if args.save:
-            config = load_config(args.project_root) or {}
-            config["debug_speed"] = args.profile
-            save_config(args.project_root, config)
         print(json.dumps(result, ensure_ascii=False))
     elif args.command == "test":
         _cli_test(args.port)
