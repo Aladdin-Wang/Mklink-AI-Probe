@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T16:39:10+00:00`
+- 更新时间：`2026-10-03T16:57:59+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; fixed backend project lifetime and shutdown/startup race after b81eefc; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; configuration save no-replay and shared no-preemption after 7e5c007; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审、修改和验证。删除无调用方的工程热切换接口/前端适配，工程固定于后台生命周期；复用实例锁修复HTTP关闭后清理未完成的重启竞态。311后台/29GUI、生产构建与双探针工程A-B-A真机验证通过。下一轮审查配置保存的网络自动重试，再推进A6和长稳验收。
+- 当前任务：持续循环评审、修改和验证。删除配置保存网络自动重试，复用savingLocal防止重入并显示保存未确认；共享公共独占操作不隐式停止采集，同步/异步目标租约均不抢占。569后台/72GUI、生产构建及双窗口丢失响应真机注入通过，继续A6剩余能力迁移和长稳验收。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第八批：CI固定集合303后台/29GUI，本地含外设目录311项通过，类型/新生产构建通过。GUI单独连接及RTT时旧工程切换拒绝；真机原工程-空工程-原工程显式重启通过，第二后台不变；旧工程attach不连接目标。Boot/选项字节/VTOR/配置保持，tick推进。首轮HIL重启竞态已修并完整复验。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第九批：CI集合311后台/72GUI；相关后台569项、GUI72项、类型及新生产构建通过。真实后台先调4MHz再丢失浏览器响应，只有一次PUT，SDK/MCP一致；刷新后显式编辑成功。第二GUI在RTT时仅收到一次409且采集不受影响，第二探针查询独立。已恢复30MHz/配置原字节，Boot/选项字节/VTOR保持，tick推进。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI单独连接/RTT时工程不可被旧请求切换；原工程-空工程-原工程创建三个后台实例并显式重连成功，第二后台不变且无目标连接。Boot20KiB/选项字节/VTOR/工程配置不变，tick推进，两个后台退出。未reset、烧录、擦除、改保护/OTP/VCC；每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。双GUI/MCP/SDK真实丢失响应注入：4MHz已生效但响应丢失时不重放，显式刷新/改10MHz成功；RTT时第二GUI调速拒绝，第二探针独立查询版本。已恢复30MHz和工程配置原字节；Boot20KiB/选项字节/VTOR不变，tick推进，两个后台退出。未reset、烧录、擦除、改保护/OTP/VCC；每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 持续评审/验证：先审查GUI配置保存的Failed to fetch自动重试（接口可能调在线SWD时钟）；继续A6剩余能力/专用CLI迁移并删除无调用方实现；随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。
+1. 持续评审/验证：继续A6外设目录/专用CLI等剩余能力迁移，复用既有服务及准入；审核仍有调用方的独立服务和旧MCP，迁移后删除重复路径。随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- A5已收敛。A6活动MCP29工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增303项后台（含实际API、探针与配置读取）/29项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
+- A5已收敛。A6活动MCP29工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增311项后台（含实际API、探针与配置读取）/72项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
 - 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。

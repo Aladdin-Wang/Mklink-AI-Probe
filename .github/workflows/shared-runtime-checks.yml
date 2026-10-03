@@ -61,7 +61,7 @@ jobs:
         working-directory: Mklink-AI-Probe
         run: |
           $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
-          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/composables/useResourceStatus.test.ts', 'src/components/config/RuntimePanel.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/composables/useResourceStatus.test.ts', 'src/components/config/RuntimePanel.test.ts', 'src/views/ConfigView.test.ts', 'src/composables/useMklinkApi.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
       - name: Check types and production bundle
         shell: pwsh
         working-directory: Mklink-AI-Probe

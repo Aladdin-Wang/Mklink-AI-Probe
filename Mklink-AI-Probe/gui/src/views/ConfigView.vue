@@ -83,7 +83,7 @@ const browsingFiles = ref(false)
 const parsingSymbols = ref(false)
 let symbolParseGeneration = 0
 let disposed = false
-const localSaveState = ref<'idle' | 'saving' | 'saved'>('idle')
+const localSaveState = ref<'idle' | 'saving' | 'saved' | 'unconfirmed'>('idle')
 
 const remoteUrl = ref('ws://127.0.0.1:8765')
 const remoteToken = ref('')
@@ -133,10 +133,12 @@ async function loadConfig() {
 }
 
 async function saveLocalConfig() {
+  if (savingLocal.value) return
   const rawClock = String(config.value.swd_clock ?? '').trim()
   if (rawClock) {
     const clock = Number(rawClock)
     if (!Number.isInteger(clock) || !(clock >= 1 && clock <= 10_000_000 || clock === 20_000_000 || clock === 30_000_000)) {
+      localSaveState.value = 'idle'
       toast.error(tr('SWD 时钟支持 1 Hz 至 10 MHz，或 20 MHz、30 MHz 档位', 'SWD clock supports 1 Hz to 10 MHz, or the 20 MHz / 30 MHz profiles'))
       return
     }
@@ -149,22 +151,10 @@ async function saveLocalConfig() {
     swd_clock: rawClock || undefined,
   }
   try {
-    let lastError: any
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        config.value = await updateConfig(payload)
-        lastError = null
-        break
-      } catch (error: any) {
-        lastError = error
-        if (error?.message !== 'Failed to fetch' || attempt === 2) throw error
-        await new Promise(resolve => window.setTimeout(resolve, 200 * (attempt + 1)))
-      }
-    }
-    if (lastError) throw lastError
+    config.value = await updateConfig(payload)
     localSaveState.value = 'saved'
   } catch (error: any) {
-    localSaveState.value = 'idle'
+    localSaveState.value = 'unconfirmed'
     toast.error(tr('保存配置失败: ', 'Failed to save configuration: ') + error.message)
   } finally {
     savingLocal.value = false
@@ -489,7 +479,7 @@ onUnmounted(() => {
 
         <div class="form-row">
           <label class="form-label" for="local-port">{{ tr('串口', 'Serial Port') }}</label>
-          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" @change="selectLocalPort">
+          <select id="local-port" v-model="localPort" class="form-select" data-testid="local-port" :disabled="savingLocal" @change="selectLocalPort">
             <option value="">{{ tr('自动搜索', 'Auto Search') }}</option>
             <option v-for="port in portOptions" :key="port.value" :value="port.value">
               {{ port.label }}
@@ -528,6 +518,7 @@ onUnmounted(() => {
             step="1"
             class="form-input"
             data-testid="swd-clock"
+            :disabled="savingLocal"
             :placeholder="tr('如 1000000', 'e.g. 1000000')"
             @change="saveLocalConfig"
           />
@@ -535,7 +526,7 @@ onUnmounted(() => {
 
         <div class="local-actions">
           <span class="auto-save-state" data-testid="local-auto-save">
-            {{ localSaveState === 'saving' ? tr('自动保存中...', 'Saving...') : localSaveState === 'saved' ? tr('已自动保存', 'Saved') : tr('修改后自动保存', 'Changes save automatically') }}
+            {{ localSaveState === 'saving' ? tr('自动保存中...', 'Saving...') : localSaveState === 'saved' ? tr('已自动保存', 'Saved') : localSaveState === 'unconfirmed' ? tr('保存未确认，请刷新页面核对配置', 'Save unconfirmed; refresh the page to check configuration') : tr('修改后自动保存', 'Changes save automatically') }}
           </span>
           <button
             class="btn btn-primary icon-command"

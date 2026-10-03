@@ -368,6 +368,49 @@ describe('ConfigView', () => {
     expect(mocks.api.updateConfig).toHaveBeenCalledWith(expect.objectContaining({ swd_clock: hz }))
   })
 
+  it('keeps an uncertain save visible without resending after a lost response', async () => {
+    const wrapper = await mountView()
+    mocks.api.updateConfig.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    vi.useFakeTimers()
+    try {
+      await wrapper.get('[data-testid="swd-clock"]').setValue('4000000')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      expect(mocks.api.updateConfig).toHaveBeenCalledTimes(1)
+      expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('保存未确认')
+      expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch'))
+      expect(wrapper.get('[data-testid="swd-clock"]').attributes('disabled')).toBeUndefined()
+
+      mocks.api.updateConfig.mockResolvedValueOnce({ swd_clock: '2000000' })
+      await wrapper.get('[data-testid="swd-clock"]').setValue('2000000')
+      await flushPromises()
+      expect(mocks.api.updateConfig).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('已自动保存')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('admits one save at a time and disables editable connection settings until it settles', async () => {
+    const wrapper = await mountView()
+    const pending = deferred<any>()
+    mocks.api.updateConfig.mockReturnValueOnce(pending.promise)
+    const clock = wrapper.get('[data-testid="swd-clock"]')
+    await clock.setValue('4000000')
+    expect(clock.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="local-port"]').attributes('disabled')).toBeDefined()
+    await clock.trigger('change')
+    expect(mocks.api.updateConfig).toHaveBeenCalledTimes(1)
+    pending.resolve({ swd_clock: '4000000' })
+    await flushPromises()
+    expect(clock.attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="local-port"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="local-auto-save"]').text()).toContain('已自动保存')
+    wrapper.unmount()
+  })
+
   it('rejects unnamed high clocks', async () => {
     const wrapper = await mountView()
     const input = wrapper.get('[data-testid="swd-clock"]')

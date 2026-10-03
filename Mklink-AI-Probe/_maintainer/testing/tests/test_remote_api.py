@@ -245,7 +245,7 @@ def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatc
         assert applied['state'] == 'applied' and not applied['pending']
         assert applied['sequence'] != event['sequence']
         await app.state.check_file_sources()
-        assert order == ['stop', 'parse']
+        assert order == ['parse']  # Shared reload never implicitly stops another acquisition.
         assert control.last_operation['path'] == 'reload-file-sources'
     with patch('mklink.remote.dashboards.stop_bridge_dashboards', side_effect=lambda **kw: order.append('stop') or []), patch.object(get_managers()['superwatch'], '_runtime', None), patch('mklink.project_config.ensure_rtt_config_updated', return_value={'rtt_addr': '0x20000020'}):
         asyncio.run(scenario())
@@ -522,6 +522,59 @@ def test_browser_symbol_upload_rejects_an_unsupported_suffix(tmp_path):
 
     assert response.status_code == 400
     assert not (tmp_path / ".mklink" / "uploads" / "file-sources").exists()
+
+
+@pytest.mark.parametrize('owner', ['user:dashboard:rtt', 'ai:capture'])
+def test_shared_native_target_lease_does_not_preempt_existing_owner(tmp_path, owner):
+    from mklink.remote.api import target_debug_lease
+    from mklink.remote.resource_manager import ResourceManager, ResourceGroup, ResourceError
+
+    resources = ResourceManager()
+    state = {'shared_runtime': True, 'resource_manager': resources}
+    lease = resources.acquire(ResourceGroup.TARGET_DEBUG, owner)
+    with pytest.raises(ResourceError):
+        with target_debug_lease(state, 'test-read'):
+            pytest.fail('Shared native operation preempted acquisition')
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is lease
+    resources.release(owner)
+    with target_debug_lease(state, 'test-read'):
+        assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG).owner == 'user:api:test-read'
+    assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is None
+
+
+@pytest.mark.parametrize('owner', ['user:dashboard:rtt', 'ai:capture'])
+@pytest.mark.parametrize('worker', ['running', 'stopping', 'lease-only'])
+def test_shared_config_clock_never_stops_or_preempts_acquisition(tmp_path, monkeypatch, owner, worker):
+    from unittest.mock import Mock
+    from mklink.project_config import save_config
+    from mklink.runtime_api import install_runtime
+    from mklink.remote.resource_manager import ResourceGroup
+
+    save_config(str(tmp_path), {'swd_clock': '10000000'})
+    config_path = tmp_path / '.mklink' / 'config.json'
+    original = config_path.read_bytes()
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    device._flash = SimpleNamespace(set_swd_clock=Mock())
+    state = app.state.mklink_state
+    state['device'] = device
+    manager = SimpleNamespace(running=worker == 'running', stop=Mock())
+    if worker == 'stopping':
+        manager._thread = SimpleNamespace(is_alive=lambda: True)
+    monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: {'rtt': manager})
+    stop = Mock(side_effect=AssertionError('Shared operation stopped acquisition'))
+    monkeypatch.setattr('mklink.remote.dashboards.stop_bridge_dashboards', stop)
+    resources = state['resource_manager']
+    lease = resources.acquire(ResourceGroup.TARGET_DEBUG, owner)
+    install_runtime(app, {'port':8765, 'token':'test-secret', 'instance_id':'test-instance'})
+    with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'test-secret'}) as client:
+        response = client.put('/api/config', json={'swd_clock':'4000000'})
+        assert response.status_code == 409, response.text
+        assert config_path.read_bytes() == original
+        assert resources.get_active_lease(ResourceGroup.TARGET_DEBUG) is lease
+        device._flash.set_swd_clock.assert_not_called()
+        stop.assert_not_called()
+        manager.stop.assert_not_called()
 
 
 def test_browser_map_upload_uses_the_map_only_endpoint(tmp_path):

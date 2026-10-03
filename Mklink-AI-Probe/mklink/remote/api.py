@@ -428,8 +428,8 @@ def target_debug_lease(state: dict[str, Any], operation: str):
             manager.acquire(
                 ResourceGroup.TARGET_DEBUG,
                 owner,
-                preempt=True,
-                preempt_user_dashboard=True,
+                preempt=not state.get("shared_runtime", False),
+                preempt_user_dashboard=not state.get("shared_runtime", False),
             )
         stack.append((manager, lease_owner, not nested))
         try:
@@ -485,8 +485,8 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
         manager.acquire(
             ResourceGroup.TARGET_DEBUG,
             owner,
-            preempt=True,
-            preempt_user_dashboard=True,
+            preempt=not state.get("shared_runtime", False),
+            preempt_user_dashboard=not state.get("shared_runtime", False),
         )
     except Exception:
         _NATIVE_TARGET_COORDINATOR.release()
@@ -2020,22 +2020,29 @@ def create_app(
     async def _exclusive_probe_control(operation: str):
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        from mklink.remote.dashboards import stop_bridge_dashboards
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES, stop_bridge_dashboards
 
         async with _dashboard_start_lock(_state):
-            try:
-                stopped = await run_in_threadpool(
-                    stop_bridge_dashboards,
-                    resource_manager=_state["resource_manager"],
-                )
-            except Exception as error:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "DASHBOARD_STOP_FAILED",
-                        "message": str(error),
-                    },
-                ) from error
+            if _state.get("shared_runtime"):
+                active = [name for name in BRIDGE_DASHBOARD_TYPES
+                          if _dashboard_worker_alive(get_managers().get(name))]
+                if active:
+                    raise HTTPException(409, {"busy": active, "hint": "Stop acquisition explicitly before changing probe configuration"})
+                stopped = []
+            else:
+                try:
+                    stopped = await run_in_threadpool(
+                        stop_bridge_dashboards,
+                        resource_manager=_state["resource_manager"],
+                    )
+                except Exception as error:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "DASHBOARD_STOP_FAILED",
+                            "message": str(error),
+                        },
+                    ) from error
             async with async_target_debug_lease(_state, operation):
                 yield _state["device"], stopped
 
