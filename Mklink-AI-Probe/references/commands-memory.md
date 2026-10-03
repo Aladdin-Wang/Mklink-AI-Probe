@@ -142,6 +142,22 @@ python -m mklink dump-memory 0x08000000:256 --frames 0 --duration 1 --save flash
 - 单次 `cmd.dump_memory()` 总长度默认 **512 KiB**（固件 V4.3.3 实测整片 Flash 稳定，256 个 B1 块全 `flags=0x0000`）。**老固件**（pre-V4.3.3，BUG-5：>64 KiB 末块截尾 512B）请传 ≤32 KiB 的 `ADDR:SIZE` region 规避。
 - 如果没有解析到任何帧，CLI 会打印设备返回的可见文本，常见原因是固件未暴露 `cmd.dump_memory` 或设备仍处于异常流模式。
 
+#### `python -m mklink dump-benchmark <ADDR:SIZE> ... [--probe ID] [--duration 3] [--period 0.000001] [--speed PROFILE]`
+
+通过共享后台测量完整 dump 样本的频率、有效载荷吞吐和采样间隔。
+活动 MCP 使用 `measure_dump_memory`，共享 SDK 使用同名 `call`；
+都复用既有采样会话和完整样本组装器。GUI 正在采集时返回忙，不抢停。
+
+- 1..15 个地址/大小区域，合计不超过 4096 字节；时长 0.5..30 秒，周期 1 微秒至 100 毫秒。
+- 首个完整样本最多等待 2 秒；之后开始计算时长，其中前 200 ms 为预热，
+  不计入统计。频率和分位数来自下载器时间戳，不代表主机界面刷新率。
+- B1 样本使用第一块的时间戳，所有块及区域完整后才计数；周期 `dump-memory`
+  也使用这一时间戳语义。CRC、区域、顺序或停止确认失败则整次请求失败，不重试。
+- 到时停止可能留下一个不完整样本，结果用 `incomplete_tail` 标记并排除该样本；
+  `integrity` 保留协议统计。`parser_dropped_bytes` 可包含命令回显，不能单独当作丢帧数。
+- 省略 `--speed` 保持后台当前时钟；显式指定会改变共享下载器的当前时钟，不写工程配置。
+  测量只保留间隔计数，不积累全部原始样本；完成后确认恢复命令模式再返回。
+
 #### `python -m mklink flush-memory <item> [<item> ...] [--probe ID] [--no-verify] [--repeat N] [--interval-ms MS]`
 
 通过所选下载器的共享后台写 RAM。CLI、活动 MCP 的 `flush_memory` 和

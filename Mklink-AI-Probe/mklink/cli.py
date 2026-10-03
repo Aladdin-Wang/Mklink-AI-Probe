@@ -2481,7 +2481,7 @@ def main():
     measure_parser.add_argument("regions", nargs="+")
     measure_parser.add_argument("--speed", choices=("low", "medium", "high", "ultra"), default=None)
     measure_parser.add_argument("--port", default=None)
-    measure_parser.add_argument("--project-root", default=".")
+    measure_parser.add_argument("--project-root", default=None)
     measure_parser.add_argument("--duration", type=float, default=3.0)
     measure_parser.add_argument("--period", type=float, default=0.000001)
     config_parser = subparsers.add_parser(
@@ -3240,7 +3240,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3278,15 +3278,7 @@ def main():
         _cli_test(args.port)
         return
 
-    if args.command == "dump-benchmark":
-        import json
-        from mklink.device import connect
-        from mklink.dump_benchmark import measure
-        regions = [_parse_dump_region(r) for r in args.regions]
-        with connect(port=args.port, project_root=args.project_root) as device:
-            result = measure(device, regions, duration=args.duration, period=args.period, speed_profile=args.speed)
-        print(json.dumps(result, ensure_ascii=False))
-    elif args.command == "test":
+    if args.command == "test":
         _cli_test(args.port)
     elif args.command == "discover":
         if args.list:

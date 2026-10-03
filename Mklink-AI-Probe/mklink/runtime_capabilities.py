@@ -13,6 +13,7 @@ CAPABILITIES = {
     'step': ('POST', '/api/device/step'),
     'resources': ('GET', '/api/resources/status'),
     'read_memory': ('POST', '/api/device/read-memory'),
+    'measure_dump_memory': ('POST', '/api/device/dump-memory/measure'),
     'capture_dump': ('POST', '/api/device/dump-memory/capture'),
     'flush_memory': ('POST', '/api/device/flush-memory'),
     'dump_memory': ('POST', '/api/device/dump-memory'),

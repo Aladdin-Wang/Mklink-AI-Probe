@@ -138,6 +138,13 @@ def breakpoints(device, body):
     return {'action': action, 'cleared': slots, 'verified': True}
 
 
+def memory_measure(device, body):
+    from mklink.dump_benchmark import measure, measurement_regions
+    _fields(body, {'regions', 'duration', 'period', 'speed_profile'})
+    return measure(device, measurement_regions(body.get('regions')), duration=body.get('duration', 3.0),
+                   period=body.get('period', 0.000001), speed_profile=body.get('speed_profile'))
+
+
 def memory_dump_stream(device, body):
     from mklink.dump_memory import capture_dump_stream
     _fields(body, {'regions', 'period', 'frames', 'duration', 'speed_profile'})
@@ -214,6 +221,7 @@ def create_debug_router(state, lease):
                     raise HTTPException(500, str(error)) from error
         router.add_api_route('/' + path, endpoint, methods=['POST'], name=path)
 
+    add('dump-memory/measure', memory_measure)
     add('dump-memory', memory_dump)
     add('dump-memory/capture', memory_dump_stream)
     add('read-memory-regions', memory_regions)

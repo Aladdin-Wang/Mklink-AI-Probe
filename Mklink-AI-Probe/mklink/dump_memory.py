@@ -614,7 +614,10 @@ def read_dump_memory_regions_once(
 class DumpSampleAssembler:
     """Validate and assemble exactly one OLD/B1 sample; never return partial bytes."""
 
-    def __init__(self, region_sizes):
+    def __init__(self, region_sizes, *, ordered=False):
+        self.ordered = ordered
+        self.timestamp_us = None
+        self._last_timestamp_us = None
         self.region_sizes = list(region_sizes)
         self.total_size = sum(region_sizes)
         self.blocks = {}
@@ -623,6 +626,19 @@ class DumpSampleAssembler:
         self.incomplete_region_count = 0
 
     def feed(self, frame):
+        if self.ordered:
+            timestamp = frame.get('timestamp_us')
+            if type(timestamp) is not int or timestamp < 0:
+                raise DumpMemoryReadError('Invalid sample timestamp', gap_fact='invalid_block_count')
+            if self._last_timestamp_us is not None and timestamp < self._last_timestamp_us:
+                raise DumpMemoryReadError('Dump block timestamp regressed', gap_fact='invalid_block_count')
+            if frame.get('format') == 'B1' and frame.get('block_index') != len(self.blocks):
+                raise DumpMemoryReadError('Periodic dump lost block sequence', gap_fact='missing_block_count')
+            if self.blocks and frame.get('format') != 'B1':
+                raise DumpMemoryReadError('Dump format changed within a sample', gap_fact='missing_block_count')
+            if self.timestamp_us is None:
+                self.timestamp_us = timestamp
+            self._last_timestamp_us = timestamp
         flags = int(frame.get("flags", 0))
         if flags:
             raise DumpMemoryReadError(
@@ -650,6 +666,8 @@ class DumpSampleAssembler:
 
         if frame.get("format") == "OLD":
             if len(by_region) != len(self.region_sizes):
+                if self.ordered:
+                    raise DumpMemoryReadError('Dump region coverage mismatch', gap_fact='region_gap_count')
                 self.incomplete_region_count = max(
                     self.incomplete_region_count,
                     len(self.region_sizes) - len(by_region),
@@ -660,6 +678,8 @@ class DumpSampleAssembler:
                 for index, size in enumerate(self.region_sizes)
             )
             if mismatched_regions:
+                if self.ordered:
+                    raise DumpMemoryReadError('Dump region size mismatch', gap_fact='region_gap_count')
                 self.incomplete_region_count = max(
                     self.incomplete_region_count,
                     mismatched_regions,
@@ -668,6 +688,8 @@ class DumpSampleAssembler:
             return tuple(by_region[index] for index in range(len(self.region_sizes)))
 
         if int(frame.get("total_size", 0)) != self.total_size:
+            if self.ordered:
+                raise DumpMemoryReadError('Dump sample size mismatch', gap_fact='region_gap_count')
             # The bridge may still contain a complete sample left by a
             # prior request; total size is the protocol's discriminator.
             return None
@@ -967,7 +989,7 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
     session = DumpMemoryStreamSession(device._bridge, pairs, period)
-    assembler = DumpSampleAssembler([size for _, size in pairs])
+    assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
     samples, result_bytes = [], 0
     deadline = time.monotonic() + 2.0
     stopped_by = 'duration'
@@ -978,21 +1000,19 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
             if session.parser.crc_errors:
                 raise DumpMemoryReadError('dump_memory frame CRC validation failed', gap_fact='crc_error_count')
             for frame in batch:
-                if frame.get('format') == 'B1' and frame.get('block_index') != len(assembler.blocks):
-                    raise DumpMemoryReadError('Periodic dump lost block sequence', gap_fact='missing_block_count')
                 payloads = assembler.feed(frame)
                 if payloads is None:
                     continue
                 if not samples:
                     deadline = time.monotonic() + (duration or 300)
-                sample = {'sample_index': len(samples), 'timestamp_us': frame.get('timestamp_us'),
+                sample = {'sample_index': len(samples), 'timestamp_us': assembler.timestamp_us,
                           'regions': [{'address': f'0x{address:08X}', 'size': len(data), 'data_hex': data.hex()}
                                       for (address, _), data in zip(pairs, payloads)]}
                 result_bytes += len(json.dumps(sample, separators=(',', ':')).encode('utf-8')) + 1
                 if result_bytes > MAX_DUMP_RESULT_JSON_BYTES:
                     raise ValueError('Dump result exceeds 16 MiB JSON limit; reduce frames, duration or regions')
                 samples.append(sample)
-                assembler = DumpSampleAssembler([size for _, size in pairs])
+                assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
                 if period == 0 or (frames and len(samples) >= frames):
                     stopped_by = 'frames'
                     break
@@ -1022,7 +1042,6 @@ class DumpMemoryStreamSession:
         region_pairs: list[tuple[int, int]],
         period: float,
         *,
-        stop_grace_s: float = 0.05,
         write_ranges: tuple[tuple[int, int], ...] = ARM_WRITE_RANGES,
     ):
         if not region_pairs:
@@ -1038,7 +1057,6 @@ class DumpMemoryStreamSession:
         self.bridge = bridge
         self.region_pairs = list(region_pairs)
         self.period = float(period)
-        self.stop_grace_s = max(0.0, float(stop_grace_s))
         self.write_ranges = tuple(write_ranges)
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
@@ -1126,26 +1144,9 @@ class DumpMemoryStreamSession:
         command = build_dump_mem_command(
             self.region_pairs, DUMP_MEMORY_STOP_PERIOD,
         )
-        synchronize = getattr(self.bridge, "_stop_stream_and_sync", None)
-        if callable(synchronize):
-            try:
-                # A fixed delay can leave the stop prompt queued, completing
-                # the next RAM write/read before its own reply arrives.
-                if not synchronize((command + "\n").encode("utf-8")):
-                    raise TimeoutError("dump-memory stop did not restore command mode")
-            finally:
-                self.started = False
-            return
         try:
-            self.bridge._write_raw((command + "\n").encode("utf-8"))
-            if self.stop_grace_s:
-                time.sleep(self.stop_grace_s)
-            try:
-                self.bridge.drain_stream_bytes()
-            except Exception:
-                pass
+            _stop_dump_read(self.bridge, command)
         finally:
-            self.bridge._exit_stream()
             self.started = False
 
     @property

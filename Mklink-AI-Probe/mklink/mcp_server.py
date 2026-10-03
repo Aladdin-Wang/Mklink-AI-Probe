@@ -1765,10 +1765,10 @@ def build_server() -> Any:
         integrity counters. speed_profile is low/medium/high/ultra (4/10/20/30 MHz).
         Omit it to retain the session's profile (new HPM session defaults to 10 MHz).
         """
-        from mklink.dump_benchmark import measure
-        if not isinstance(regions, list) or any(not isinstance(r, dict) or set(r) != {'address','size'} for r in regions):
-            raise ValueError('regions must be address/size objects')
-        return measure(_connected_device(), [(r['address'],r['size']) for r in regions],
+        from mklink.dump_benchmark import measure, measurement_regions, validate_measurement
+        pairs = measurement_regions(regions)
+        validate_measurement(pairs, duration, period, speed_profile)
+        return measure(_connected_device(), pairs,
                        duration=duration, period=period, speed_profile=speed_profile)
 
     # Phase 4: symbol search/typeinfo, SKILL.md methodology realignment,

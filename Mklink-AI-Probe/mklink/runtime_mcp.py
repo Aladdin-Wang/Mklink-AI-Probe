@@ -88,6 +88,20 @@ def build_server():
         return client().call('read_configuration', {'part_number': part_number, 'model': model})
 
     @server.tool()
+    def measure_dump_memory(regions: list[dict], duration: float = 3.0,
+                            period: float = 0.000001, speed_profile: str | None = None) -> dict:
+        """Measure complete dump samples through the selected shared backend.
+
+        1..15 regions, at most 4096 bytes, 0.5..30 seconds; first sample has
+        a 2s startup allowance, then duration includes 200ms warmup. Returns
+        rate/interval percentiles and integrity counters, not raw samples.
+        Requires idle CDC; never stops GUI capture or replays a failed run.
+        Omit speed_profile to retain the shared clock.
+        """
+        return client().call('measure_dump_memory', {'regions': regions, 'duration': duration,
+                            'period': period, 'speed_profile': speed_profile})
+
+    @server.tool()
     def dump_memory(regions: list[dict], sample_count: int = 1, timeout: float = 10.0,
                     speed_profile: str | None = None) -> dict:
         """Capture 1..64 complete one-shot samples through the shared backend.

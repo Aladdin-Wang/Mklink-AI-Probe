@@ -194,6 +194,10 @@ def test_running_manager_uses_probe_dump_stream_and_exposes_integrity_metrics():
         def _write_raw(self, data):
             self.writes.append(data)
 
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            return True
+
         def drain_stream_bytes(self, max_bytes=None):
             return self.chunks.pop(0) if self.chunks else b""
 

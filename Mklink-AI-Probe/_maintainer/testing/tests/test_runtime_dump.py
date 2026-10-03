@@ -145,6 +145,7 @@ def test_periodic_capture_assembles_each_sample_and_ignores_extra_queued_samples
     assert response.status_code==200,response.text
     result=response.json()
     assert result['sample_count']==2 and result['total_bytes']==8192 and result['stopped_by']=='frames'
+    assert [sample['timestamp_us'] for sample in result['samples']]==[1,3]
     assert [bytes.fromhex(s['regions'][0]['data_hex']) for s in result['samples']]==[b'A'*4096,b'B'*4096]
     assert device._bridge.calls[-1]==('exit',)
 

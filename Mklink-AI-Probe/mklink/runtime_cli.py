@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
+COMMANDS = {'dump-benchmark', 'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
 
 
 def run(args):
@@ -60,6 +60,16 @@ def run(args):
             dump_arguments = dict(regions=dump_regions, period=args.period, frames=args.frames,
                                   duration=args.duration, speed_profile=args.speed)
             validate_dump_stream(**dump_arguments)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+    if args.command == 'dump-benchmark':
+        from mklink.cli import _parse_dump_region
+        from mklink.dump_benchmark import validate_measurement
+        try:
+            pairs = list(map(_parse_dump_region, args.regions))
+            validate_measurement(pairs, args.duration, args.period, args.speed)
+            measure_arguments = {'regions': [{'address': a, 'size': n} for a, n in pairs],
+                                 'duration': args.duration, 'period': args.period, 'speed_profile': args.speed}
         except ValueError as error:
             raise SystemExit(str(error)) from error
     if args.command == 'flush-memory':
@@ -169,6 +179,8 @@ def run(args):
                 if args.save:
                     print(f'Saved to {args.save}')
             return
+        elif args.command == 'dump-benchmark':
+            result = client.call('measure_dump_memory', measure_arguments)
         elif args.command == 'flush-memory':
             for index in range(args.repeat):
                 result = client.call('flush_memory', {'writes': flush_writes, 'verify': args.verify})

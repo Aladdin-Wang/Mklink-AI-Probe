@@ -268,6 +268,10 @@ def test_standalone_superwatch_uses_explicit_dump_stop(monkeypatch):
         def _exit_stream(self):
             return None
 
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            return True
+
         def close(self):
             return None
 
@@ -317,7 +321,7 @@ def test_superwatch_poll_closes_on_read_error_and_keeps_custom_reader(monkeypatc
 def test_dump_session_reuses_parser_and_owns_exact_stream_lifecycle():
     bridge = FakeBridge([b"noise" + _old_frame(123, struct.pack("<f", 2.5))])
     session = DumpMemoryStreamSession(
-        bridge, [(0x20000000, 4)], 0.0001, stop_grace_s=0,
+        bridge, [(0x20000000, 4)], 0.0001,
     )
 
     session.start()
@@ -405,7 +409,7 @@ def test_dump_session_reports_crc_loss_and_firmware_drop_flags_separately():
     bridge = FakeBridge([
         bytes(corrupt) + _old_frame(2, b"efgh", flags=FLAG_SAMPLE_DROPPED),
     ])
-    session = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], 0.001, stop_grace_s=0)
+    session = DumpMemoryStreamSession(bridge, [(0x20000000, 4)], 0.001)
 
     session.start()
     frames = session.read_frames()

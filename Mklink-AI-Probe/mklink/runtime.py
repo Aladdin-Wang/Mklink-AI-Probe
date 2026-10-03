@@ -287,6 +287,12 @@ class RuntimeClient:
                 # Cover every explicit sample plus the bridge's confirmed-stop
                 # budget. A slow capture must not inherit the default 35s HTTP limit.
                 transport_options['timeout'] = max(35, args.get('sample_count', 1) * (args.get('timeout', 10.0) + 5) + 15)
+            if capability == 'measure_dump_memory':
+                from mklink.dump_benchmark import measurement_regions, validate_measurement
+                args = arguments or {}
+                validate_measurement(measurement_regions(args.get('regions')), args.get('duration', 3.0),
+                                     args.get('period', 0.000001), args.get('speed_profile'))
+                transport_options['timeout'] = max(35, args.get('duration', 3.0) + 20)
             if capability == 'capture_dump':
                 from mklink.dump_memory import validate_dump_stream
                 args = arguments or {}

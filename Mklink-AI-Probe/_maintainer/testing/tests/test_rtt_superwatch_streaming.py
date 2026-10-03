@@ -214,6 +214,10 @@ class _MutableWatchRuntime:
 
 
 class _SuperWatchDumpBridge:
+    def _stop_stream_and_sync(self, command):
+        self._write_raw(command)
+        return True
+
     def _enter_stream(self, _state):
         pass
 
@@ -1263,6 +1267,10 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
 
         def _write_raw(self, data):
             self.writes.append(data)
+
+        def _stop_stream_and_sync(self, command):
+            self._write_raw(command)
+            return True
 
         def drain_stream_bytes(self, max_bytes=None):
             return self.chunks.pop(0) if self.chunks else b""
