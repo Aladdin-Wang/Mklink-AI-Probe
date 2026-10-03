@@ -41,8 +41,7 @@ async function refreshHealth() {
     backendState.value = 'alive'
     firstCheckDone = true
   } else if (firstCheckDone || authenticationRequired.value) {
-    // Only show 'dead' after at least one successful check
-    // This prevents flashing red during initial startup
+    // Network startup failures get a grace period; a 401 needs action immediately.
     backendState.value = 'dead'
   }
   // If !firstCheckDone && !alive, keep 'starting'

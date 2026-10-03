@@ -3882,6 +3882,12 @@ def get_managers() -> dict[str, Any]:
     return _managers
 
 
+def active_bridge_dashboards() -> list[str]:
+    """Captures using the probe's CDC bridge, excluding independent UART/Modbus."""
+    managers = get_managers()
+    return [name for name in BRIDGE_DASHBOARD_TYPES if getattr(managers.get(name), 'running', False)]
+
+
 def stop_bridge_dashboards(
     exclude: str | None = None,
     resource_manager=None,

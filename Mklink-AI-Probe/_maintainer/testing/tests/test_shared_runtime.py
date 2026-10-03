@@ -270,3 +270,32 @@ def test_hotplug_never_retargets_a_window_to_another_probe(runtime, monkeypatch)
     assert client.get('/api/runtime/control/status').json()['status']=='port_changed'
     assert call(client, session, 'write_memory', {'address':'0','data_hex':'00'}).status_code == 409
     assert not calls
+
+
+@pytest.mark.parametrize('path', ['/_runtime/stop', '/api/runtime/control/stop-backend'])
+def test_all_stop_entries_preserve_capture_and_other_windows(runtime, path):
+    client, control, _, managers, _ = runtime
+    stopped = []
+    control.shutdown = lambda: stopped.append(True)
+    managers['rtt'].running = True
+    assert client.post(path, json={'confirm': True}).status_code == 409
+    managers['rtt'].running = False
+    control.views = {key: {'expires': float('inf')} for key in ('one', 'two')}
+    assert client.post(path, json={'confirm': True}).status_code == 409
+    assert not stopped and not control.stopping
+    control.views.pop('two')
+    assert client.post(path, json={'confirm': True}).status_code == 200
+    assert stopped == [True]
+
+
+def test_serial_and_modbus_do_not_block_target_reads(runtime):
+    client, _, calls, managers, _ = runtime
+    managers['serial'] = SimpleNamespace(running=True)
+    managers['modbus'] = SimpleNamespace(running=True)
+    session = attach(client)
+    assert call(client, session, 'read_memory', {'address': '0', 'size': 4}).status_code == 200
+    assert calls == ['read']
+    client.post('/_runtime/detach', json={'session_id': session})
+    assert client.post('/api/runtime/control/release-device', json={'confirm': True}).status_code == 200
+    assert calls == ['read', 'disconnect']
+    assert managers['serial'].running and managers['modbus'].running

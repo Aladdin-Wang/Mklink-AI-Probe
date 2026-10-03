@@ -149,10 +149,13 @@ const {
 const initialBackendReady = ref(false)
 const updateDismissed = ref(false)
 let statusPollingStarted = false
-let stopBrowserSessionLease: () => void = () => undefined
-let stopSharedView: (() => void) | undefined
-watch(() => sharedRuntime?.value, enabled => {
-  if (enabled && !stopSharedView) stopSharedView = startSharedRuntimeView()
+let stopWindowLease: () => void = () => undefined
+let windowLeaseMode: boolean | undefined
+watch(() => backendState.value === 'alive' ? sharedRuntime?.value === true : undefined, shared => {
+  if (shared === undefined || shared === windowLeaseMode) return
+  stopWindowLease()
+  windowLeaseMode = shared
+  stopWindowLease = shared ? startSharedRuntimeView() : startBrowserSessionLease(!isTauri)
 }, { immediate: true })
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__
@@ -183,15 +186,13 @@ watch(backendState, state => {
 }, { immediate: true })
 
 onMounted(() => {
-  stopBrowserSessionLease = startBrowserSessionLease(!isTauri)
   startHealthPolling(5000)
   void checkForUpdates()
 })
 onUnmounted(() => {
   if (statusPollingStarted) stopStatusPolling()
   stopHealthPolling()
-  stopBrowserSessionLease()
-  stopSharedView?.()
+  stopWindowLease()
 })
 </script>
 

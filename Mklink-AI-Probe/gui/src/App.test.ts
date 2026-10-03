@@ -11,6 +11,7 @@ const startStatusPolling = vi.fn()
 const restart = vi.fn()
 const refreshHealth = vi.fn()
 const authenticationRequired = ref(false)
+const sharedRuntime = ref(false)
 const checkForUpdates = vi.fn()
 const installAndRelaunch = vi.fn()
 const retryUpdate = vi.fn()
@@ -19,6 +20,7 @@ const nativeRuntime = ref(true)
 const { startBrowserSessionLease } = vi.hoisted(() => ({
   startBrowserSessionLease: vi.fn(() => vi.fn()),
 }))
+const { startSharedRuntimeView } = vi.hoisted(() => ({ startSharedRuntimeView: vi.fn(() => vi.fn()) }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -33,6 +35,7 @@ vi.mock('./composables/useBackendHealth', () => ({
   useBackendHealth: () => ({
     backendState,
     authenticationRequired,
+    sharedRuntime,
     startHealthPolling: vi.fn(),
     stopHealthPolling: vi.fn(),
     restart,
@@ -54,6 +57,7 @@ vi.mock('./composables/useAppUpdater', () => ({
 }))
 
 vi.mock('./lib/browserSessionLease', () => ({ startBrowserSessionLease }))
+vi.mock('./lib/sharedRuntimeView', () => ({ startSharedRuntimeView }))
 
 function mountApp() {
   return shallowMount(App, {
@@ -75,6 +79,9 @@ describe('App version footer', () => {
     nativeRuntime.value = true
     backendState.value = 'starting'
     authenticationRequired.value = false
+    sharedRuntime.value = false
+    startBrowserSessionLease.mockClear()
+    startSharedRuntimeView.mockClear()
     restart.mockClear()
     refreshHealth.mockClear()
   })
@@ -101,6 +108,7 @@ describe('App version footer', () => {
   it('leases the backend only for browser GUI windows', () => {
     startBrowserSessionLease.mockClear()
     nativeRuntime.value = false
+    backendState.value = 'alive'
     const wrapper = mountApp()
 
     expect(startBrowserSessionLease).toHaveBeenCalledWith(true)
@@ -218,6 +226,24 @@ describe('App version footer', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="backend-interrupted"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('waits for health and uses only shared presence across temporary disconnects', async () => {
+    nativeRuntime.value = false
+    const wrapper = mountApp()
+    expect(startBrowserSessionLease).not.toHaveBeenCalled()
+    sharedRuntime.value = true
+    backendState.value = 'alive'
+    await nextTick()
+    expect(startSharedRuntimeView).toHaveBeenCalledOnce()
+    backendState.value = 'dead'
+    await nextTick()
+    backendState.value = 'alive'
+    await nextTick()
+    expect(startSharedRuntimeView).toHaveBeenCalledOnce()
+    expect(startBrowserSessionLease).not.toHaveBeenCalled()
+    wrapper.unmount()
+    expect(startSharedRuntimeView.mock.results[0].value).toHaveBeenCalledOnce()
   })
 
   it('offers a health check rather than a process restart in a browser on initial failure', async () => {

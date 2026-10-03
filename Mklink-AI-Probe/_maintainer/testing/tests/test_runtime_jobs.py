@@ -20,6 +20,10 @@ def fixture(monkeypatch, tmp_path):
     monkeypatch.setattr('mklink.probes.inventory', lambda: [])
     calls = []
     release = asyncio.Event()
+    @app.post('/api/device/flash')
+    async def flash():
+        calls.append('flash')
+        return {'success': True}
     @app.post('/api/device/reset')
     async def reset():
         calls.append('reset')
@@ -98,3 +102,25 @@ def test_online_background_job_blocks_cdc_and_shared_jobs(fixture):
     assert client.post('/api/runtime/jobs/', json=body()).status_code == 409
     assert client.post('/_runtime/stop', json={'confirm':True}).status_code == 409
     assert calls == []
+
+
+@pytest.mark.parametrize('action', ['flash', 'erase', 'reset'])
+def test_legacy_write_routes_cannot_bypass_journal(fixture, action):
+    client, control, calls, _, release = fixture
+    client.portal.call(release.set)
+    response = client.post('/api/device/' + action, json={})
+    assert response.status_code == 409
+    assert 'jobs' in response.json()['detail']
+    assert not calls and not control.jobs.jobs
+
+
+def test_independent_serial_capture_does_not_reserve_target_job(fixture):
+    client, _, calls, managers, release = fixture
+    managers['serial'] = SimpleNamespace(running=True)
+    managers['modbus'] = SimpleNamespace(running=True)
+    client.portal.call(release.set)
+    result = client.post('/api/runtime/jobs/', json=body())
+    assert result.status_code == 202, result.text
+    assert terminal(client, result.json()['job_id'])['state'] == 'succeeded'
+    assert calls == ['reset']
+    assert managers['serial'].running and managers['modbus'].running

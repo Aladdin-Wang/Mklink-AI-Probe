@@ -67,8 +67,8 @@ class RuntimeJobs:
         c.require_identity()
         if self.active or c.operation_lock.locked() or c.attach_lock.locked() or c.online_job():
             raise HTTPException(409, 'Another operation is active; no job was queued')
-        from mklink.remote.dashboards import get_managers
-        if any(m.running for m in get_managers().values()):
+        from mklink.remote.dashboards import active_bridge_dashboards
+        if active_bridge_dashboards():
             raise HTTPException(409, 'Stop acquisition explicitly before an exclusive job')
         device = c.app.state.mklink_state.get('device')
         if not device or not device.connected:

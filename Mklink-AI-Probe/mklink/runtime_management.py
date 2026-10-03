@@ -7,19 +7,35 @@ from starlette.routing import Mount
 from mklink.runtime_capabilities import STREAMS
 
 
+def confirm_idle(control, body):
+    if body.get('confirm') is not True:
+        raise HTTPException(422, 'confirm=true required')
+    if control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
+        raise HTTPException(409, 'An operation is still running; wait for completion')
+    control.prune()
+
+
+def stop_backend(control, body):
+    """One shutdown policy for both CLI and GUI management adapters."""
+    confirm_idle(control, body)
+    if control.sessions or len(control.views) > 1:
+        raise HTTPException(409, 'Detach AI/CLI/SDK clients and close other GUI windows first')
+    from mklink.remote.dashboards import get_managers
+    active = [name for name, manager in get_managers().items() if manager.running]
+    if active:
+        raise HTTPException(409, {'reason': 'capture_active', 'streams': active})
+    control.stopping = True
+    if control.shutdown:
+        control.shutdown()
+    return {'status': 'stopping'}
+
+
 def install_management(app, control):
     api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-    def confirmed(body):
-        if body.get('confirm') is not True:
-            raise HTTPException(422, 'confirm=true required')
-        if control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
-            raise HTTPException(409, 'An operation is still running; wait for completion')
-        control.prune()
-
     def no_capture():
-        from mklink.remote.dashboards import get_managers
-        active = [name for name, manager in get_managers().items() if manager.running]
+        from mklink.remote.dashboards import active_bridge_dashboards
+        active = active_bridge_dashboards()
         if active:
             raise HTTPException(409, {'reason': 'capture_active', 'streams': active})
 
@@ -54,7 +70,7 @@ def install_management(app, control):
 
     @api.post('/detach-client')
     async def detach(body: dict):
-        confirmed(body)
+        confirm_idle(control, body)
         key = next((key for key, value in control.sessions.items() if value.public_id == body.get('client_id')), None)
         if key is None:
             raise HTTPException(404, 'Client already detached or expired')
@@ -63,7 +79,7 @@ def install_management(app, control):
 
     @api.post('/stop-acquisition')
     async def stop_acquisition(body: dict):
-        confirmed(body)
+        confirm_idle(control, body)
         stream = body.get('stream')
         if stream not in STREAMS:
             raise HTTPException(422, 'Select RTT, SuperWatch or SystemView')
@@ -73,21 +89,14 @@ def install_management(app, control):
 
     @api.post('/release-device')
     async def release_device(body: dict):
-        confirmed(body)
+        confirm_idle(control, body)
         if control.sessions:
             raise HTTPException(409, 'Detach AI/CLI/SDK clients before releasing the physical device')
         no_capture()
         return await control.invoke('POST', '/api/device/disconnect')
 
     @api.post('/stop-backend')
-    async def stop_backend(body: dict):
-        confirmed(body)
-        if control.sessions or len(control.views) > 1:
-            raise HTTPException(409, 'Detach AI/CLI/SDK clients and close other GUI windows first')
-        no_capture()
-        control.stopping = True
-        if control.shutdown:
-            control.shutdown()
-        return {'status': 'stopping'}
+    async def stop(body: dict):
+        return stop_backend(control, body)
 
     app.router.routes.insert(0, Mount('/api/runtime/control', app=api))

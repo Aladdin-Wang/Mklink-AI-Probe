@@ -195,8 +195,10 @@ class RuntimeGate:
         ) and not path.startswith(("/api/browser-session/", "/api/session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)
-        from mklink.runtime_jobs import executing_job
+        from mklink.runtime_jobs import PATHS, executing_job
         own_job = c.jobs and c.jobs.active and executing_job.get() == c.jobs.active['job_id']
+        if path in PATHS.values() and not own_job:
+            return await reject(409, 'Submit this operation through /api/runtime/jobs/ with confirm and request_id')
         online_stop = path.startswith('/api/online-flash/jobs/') and path.endswith('/stop')
         if c.job_busy() and not own_job and not online_stop:
             return await reject(409, 'An exclusive job is active; inspect its result before further hardware operations')
@@ -268,12 +270,12 @@ class RuntimeGate:
                 if others:
                     return await reject(409, "Other clients subscribe to this acquisition; detach them before stopping it")
         # Do not let a one-shot operation preempt the GUI's continuous capture.
-        from mklink.remote.dashboards import get_managers
-        active = [name for name, manager in get_managers().items() if manager.running]
+        from mklink.remote.dashboards import BRIDGE_DASHBOARD_TYPES, active_bridge_dashboards
+        active = active_bridge_dashboards()
         if active and (path.startswith('/api/offline-download/') or online_flash):
             return await reject(409, 'Stop acquisition explicitly before offline/online target operations')
-        if path in {f"/api/dash/{name}/start" for name in ("rtt", "superwatch", "systemview", "vofa")}:
-            if any(name in active for name in ("rtt", "superwatch", "systemview", "vofa")):
+        if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
+            if active:
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
         if (path.startswith("/api/device/") and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
             if active:
@@ -448,15 +450,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
 
     @api.post("/stop")
     async def stop(body: dict):
-        control.prune()
-        if control.sessions or control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
-            raise HTTPException(409, "Detach runtime clients and wait for hardware operations before stopping")
-        if body.get("confirm") is not True:
-            raise HTTPException(422, "Explicit confirm=true required")
-        control.stopping = True
-        if control.shutdown:
-            control.shutdown()
-        return {"status": "stopping"}
+        from mklink.runtime_management import stop_backend
+        return stop_backend(control, body)
 
     app.router.routes.insert(0, Mount("/_runtime", app=api))
     app.add_middleware(RuntimeGate, control=control)
