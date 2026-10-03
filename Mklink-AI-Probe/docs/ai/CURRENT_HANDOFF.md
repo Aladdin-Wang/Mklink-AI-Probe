@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T20:44:59+00:00`
+- 更新时间：`2026-10-03T20:59:36+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; active C layout unified across scalar access and catalog after 8993be3; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; stream disconnect lifecycle fixed after c4a951e; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。C布局统一变量读写、搜索/浏览/数组快照/SuperWatch添加，删除旧DWARF回退，复用编解码和分页；Flash只读与可写范围分离。1290通过/2可选跳过，真机WebGUI尾页及SDK/MCP新地址通过。发现前轮后台关闭卡住，已清理本任务遗留进程；优先复现关闭等待，再推进watch。
+- 当前任务：持续循环评审/验证。真实TCP reset复现后台退出卡住；stream_websocket原先仅发送不消费disconnect，改为框架任务组统一发送/断开生命周期，及时释放订阅。40项定向、1496扩展通过/2可选跳过；真机30个reset客户端后GUI RTT/两会话保持，两个后台及串口子进程实际退出。继续watch共享化/MAP边界与A7。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十批：定向204通过；扩展1290通过/2可选依赖跳过，最终符号42通过。CI集合846后台/79GUI。真机C布局新地址与裸读一致，旧路径拒绝，WebGUI覆盖数组第二页/末元素可展开，双下载器/GUI RTT/MCP/SDK共存；Boot/选项字节/VTOR/配置保持，tick推进。最终两个PID退出已实查；前轮停止响应不等于退出的过强结论已更正。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十一批：40项流接口/真实退出通过；扩展1496通过/2可选依赖跳过，CI集合886后台/79GUI。TCP reset/FIN/连接仍打开三种真实进程场景验证正常退出、endpoint删除和owner锁释放。双下载器/Edge/SDK/MCP真机：30个reset流客户端后RTT订阅1→1、两会话/采集保持；Boot/选项字节/VTOR/配置保持，tick推进，后台及串口子进程退出已实查。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。专用测试数组仅后台C描述覆盖，SDK/MCP新地址、WebGUI末页与RTT共存通过；第二探针仅版本查询，CDC/MSC独立。Boot20KiB/选项字节/VTOR/配置保持，tick推进。最终两个后台PID/串口子进程消失。未reset、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT/两会话期间30个TCP reset流客户端清理通过，原RTT订阅数恢复、GUI可再启停；第二探针仅版本查询，CDC/MSC独立。Boot20KiB/选项字节/VTOR/配置保持，tick推进。最终两个后台及串口子进程实际退出。未reset目标、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 优先复现并修复后台关闭卡住：第十九批HTTP已关但进程/串口未释放，Windows Proactor日志异常，旧本任务进程已清理；检查Uvicorn关闭连接/任务等待和现有StreamHub订阅退出，不加重复锁或强退兜底。之后继续watch共享迁移、MAP/C源边界、旧专用入口及A7双设备长稳/拔插/休眠/NSIS。不改下载器固件/WinUSB，不自动合并发布。
+1. 继续watch共享迁移：使用当前SymbolCatalog（含C布局和只读Flash描述）、受限批量读取与共享准入；明确MAP/C源推断范围及变化边界，删除旧逐变量开口路径。随后其他专用CLI/独立服务/旧MCP及A7双设备长稳/拔插/休眠/NSIS。已修复可复现WebSocket退出卡住，后续保持后台/串口子进程实际退出断言。不改下载器固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增846项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第十九批测试后台曾接受停止并关闭HTTP后仍保留主/串口子进程，日志停在Shutting down，之前有Windows Proactor连接丢失回调异常。第二十批清理本任务遗留进程并增强PID退出验证，正常重跑通过，但间歇关闭卡住尚未定位修复；必须优先处理，不能把停止响应等同进程退出。
+- A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增886项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
 - 0.3.0第七阶段：watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
