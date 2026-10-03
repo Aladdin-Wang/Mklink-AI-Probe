@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T14:49:53+00:00`
+- 更新时间：`2026-10-03T15:04:27+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; Python runtime diagnostic rotation after 0924181; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; native runtime diagnostic convergence after d7cd7d0; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审、修改和验证。Python后台日志已标准库轮转，删flash导入时的全局编码重配；下一轮收敛原生输出startup.log仍无运行期上限的边界，再继续剩余能力迁移。
+- 当前任务：持续循环评审、修改和验证。Python/CRT/Win32标准输出已共用轮转日志，Windows真实进程与GUI/AI共存验证通过；继续A6剩余CLI/MCP能力迁移，随后长稳和安装包验收。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-runtime-diagnostics.md：相关Python194项通过，其中CI同集134项。真实后台输出超过10MiB，4个运行日志卷有界，GUI/MCP RTT和SDK保持，Boot不变、VTOR正确、tick推进。初次flash导入副作用已删除并完整重跑。GUI沿用前轮资源，原生日志容量边界待收敛。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-runtime-diagnostics.md：日志真实进程等10项、CI同集139项通过。真实后台混合Python/CRT/Win32输出保持4个有界运行日志卷，startup.log保持0；GUI/MCP RTT和SDK保持，Boot不变、VTOR正确、tick推进，后台正常退出。GUI沿用前轮资源；Windows源码验证不能代替NSIS或跨平台。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,19 +35,19 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。后台10MiB以上诊断输出轮转期间GUI/MCP RTT和SDK保持；Boot20KiB不变、VTOR正确、tick推进。后台正常退出、端口锁释放。未reset、烧录、擦除、改时钟或VCC。第二只仅枚举，每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。后台混合Python/CRT/Win32诊断输出轮转期间GUI/MCP RTT和SDK保持；Boot20KiB不变、VTOR正确、tick推进。后台正常退出、端口锁释放。未reset、烧录、擦除、改时钟或VCC。第二只仅枚举，每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 持续评审/验证：先收敛startup.log原生输出仍无运行期上限的边界，再处理和A6剩余能力/专用CLI迁移，复用既有服务并删无调用方实现；随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。
+1. 持续评审/验证：继续A6剩余能力/专用CLI迁移，复用既有服务并删无调用方实现；随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- A5已收敛。A6活动MCP25工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增134项后台/28项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python日志已轮转；startup.log原生输出仍无运行期上限，不能宣称所有日志有界。
-- 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复/原生日志容量、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
+- A5已收敛。A6活动MCP25工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增139项后台/28项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
+- 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
