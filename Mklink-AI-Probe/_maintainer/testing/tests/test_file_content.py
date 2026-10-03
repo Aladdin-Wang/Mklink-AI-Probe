@@ -104,6 +104,33 @@ def test_source_monitor_first_check_detects_stale_loaded_catalog(tmp_path):
     assert monitor.changed(SimpleNamespace(_axf=str(path), symbol_catalog=catalog), {}) == [str(path)]
 
 
+def test_source_monitor_retains_pending_content_until_matching_ack(tmp_path):
+    path = tmp_path / 'app.axf'
+    path.write_bytes(b'old')
+    device = SimpleNamespace(_axf=str(path), symbol_catalog=None)
+    monitor = SourceMonitor()
+    monitor.changed(device, {})
+    path.write_bytes(b'first')
+    monitor.changed(device, {})
+    first = dict(monitor.pending)
+    assert monitor.changed(device, {}) == []
+    assert monitor.pending == first
+    path.write_bytes(b'second')
+    monitor.changed(device, {})
+    second = dict(monitor.pending)
+    monitor.acknowledge(device, first)
+    assert monitor.pending == second
+    monitor.acknowledge(object(), second)
+    assert monitor.pending == second
+    monitor.acknowledge(device, second)
+    assert monitor.pending == {}
+    path.unlink()
+    monitor.changed(device, {})
+    assert monitor.pending == {str(path): None}
+    monitor.changed(SimpleNamespace(_axf=str(path), symbol_catalog=None), {})
+    assert monitor.pending == {}
+
+
 def test_rtt_reload_uses_active_axf_and_drops_obsolete_address(tmp_path, monkeypatch):
     from mklink import project_config as config
     active = tmp_path / 'active.axf'

@@ -82,6 +82,59 @@ def test_detach_never_closes_gui_device(runtime):
     assert len(control.sessions) == 1
 
 
+@pytest.mark.parametrize('change', ['generation', 'fingerprint'])
+def test_session_rejects_same_path_symbol_revision_until_explicit_reattach(runtime, change):
+    client, control, calls, _, app = runtime
+    catalog = SimpleNamespace(generation=1, fingerprint=SimpleNamespace(sha256='old'))
+    app.state.mklink_state['device'].symbol_catalog = catalog
+    session = attach(client)
+    assert call(client, session, 'device_status').status_code == 200
+    if change == 'generation':
+        catalog.generation += 1
+    else:
+        catalog.fingerprint.sha256 = 'new'
+    for capability in ['device_status', 'read_memory']:
+        arguments = {'address': '0x20000000', 'size': 4} if capability == 'read_memory' else {}
+        response = call(client, session, capability, arguments)
+        assert response.status_code == 409 and 'Symbols changed' in response.text
+    response = client.post('/api/runtime/jobs/', json={
+        'action': 'reset', 'request_id': 'stale-session', 'confirm': True, 'session_id': session})
+    assert response.status_code == 409 and 'Symbols changed' in response.text
+    assert calls == [] and not control.jobs.jobs
+    response = client.post('/_runtime/attach', json={'session_id': session})
+    assert response.status_code == 200 and response.json()['session_id'] == session
+    assert call(client, session, 'read_memory', {'address': '0x20000000', 'size': 4}).status_code == 200
+
+
+def test_internal_operation_retains_http_and_attach_exclusion_after_cancel(runtime):
+    client, control, calls, _, _ = runtime
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def worker():
+        entered.set()
+        await release.wait()
+    async def begin():
+        task = asyncio.create_task(control.run_operation('reload-file-sources', worker, configuration=True))
+        await entered.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        return task
+    task = client.portal.call(begin)
+    try:
+        assert control.operation_lock.locked()
+        assert client.post('/_runtime/attach', json={}).status_code == 409
+        assert client.post('/api/device/read-memory', json={'address': '0x20000000', 'size': 4}).status_code == 409
+        assert calls == []
+    finally:
+        async def finish():
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        client.portal.call(finish)
+    assert not control.operation_lock.locked()
+    assert control.last_operation['path'] == 'reload-file-sources'
+    assert client.post('/_runtime/attach', json={}).status_code == 200
+
+
 def test_shared_capture_does_not_restart_or_steal(runtime):
     client, _, calls, managers, _ = runtime
     managers["rtt"].running = True  # started in GUI

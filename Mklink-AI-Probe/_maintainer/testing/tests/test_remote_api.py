@@ -107,6 +107,70 @@ def test_source_reload_stops_dependents_before_parsing(tmp_path):
     assert app.state.mklink_state["file_source_change"]["rtt_addr"] == "0x20000020"
 
 
+def test_shared_source_reload_defers_without_losing_changes(tmp_path, monkeypatch):
+    from mklink.runtime_api import install_runtime, Session
+    from mklink.remote.dashboards import get_managers
+    device, axf = _connected_symbol_device(tmp_path)
+    device._axf = str(axf)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    control = install_runtime(app, {'port': 8765, 'token': 'fixture', 'instance_id': 'fixture'})
+    active = ['rtt']
+    monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: list(active))
+    order = []
+    def parse(*args, **kwargs):
+        order.append('parse')
+        device.symbol_catalog = SymbolCatalog.from_dwarf(device._dwarf_info, axf_path=str(axf), ram_ranges=[])
+        return {'loaded': True}
+    device.parse_axf = parse
+    async def scenario():
+        control.sessions['ai'] = Session(str(tmp_path), str(axf))
+        axf.write_bytes(b'new')
+        await app.state.check_file_sources()
+        event = dict(app.state.mklink_state['file_source_change'])
+        assert event['state'] == 'deferred' and event['pending']
+        control.sessions.clear()
+        await app.state.check_file_sources()
+        assert app.state.mklink_state['file_source_change']['sequence'] == event['sequence']
+        active.clear()
+        # A job, an attaching client and a one-shot operation must also defer it.
+        control.jobs.jobs['busy'] = {'state': 'running', 'job_id': 'busy'}
+        await app.state.check_file_sources()
+        control.jobs.jobs.clear()
+        async with control.attach_lock:
+            await app.state.check_file_sources()
+        async with control.operation_lock:
+            await app.state.check_file_sources()
+        assert order == []
+        await app.state.check_file_sources()
+        applied = app.state.mklink_state['file_source_change']
+        assert applied['state'] == 'applied' and not applied['pending']
+        assert applied['sequence'] != event['sequence']
+        await app.state.check_file_sources()
+        assert order == ['stop', 'parse']
+        assert control.last_operation['path'] == 'reload-file-sources'
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', side_effect=lambda **kw: order.append('stop') or []), patch.object(get_managers()['superwatch'], '_runtime', None), patch('mklink.project_config.ensure_rtt_config_updated', return_value={'rtt_addr': '0x20000020'}):
+        asyncio.run(scenario())
+
+
+def test_failed_source_reload_requires_new_content_before_automatic_retry(tmp_path):
+    from unittest.mock import Mock
+    device, axf = _connected_symbol_device(tmp_path)
+    device._axf = str(axf)
+    device.parse_axf = Mock(side_effect=ValueError('incomplete build'))
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.mklink_state['device'] = device
+    axf.write_bytes(b'broken')
+    with patch('mklink.remote.dashboards.stop_bridge_dashboards', return_value=[]):
+        asyncio.run(app.state.check_file_sources())
+        asyncio.run(app.state.check_file_sources())
+        assert device.parse_axf.call_count == 1
+        assert app.state.mklink_state['file_source_change']['state'] == 'failed'
+        axf.write_bytes(b'new content')
+        asyncio.run(app.state.check_file_sources())
+        assert device.parse_axf.call_count == 2
+
+
 def _request(client, path, responses, key):
     try:
         responses[key] = client.get(path)

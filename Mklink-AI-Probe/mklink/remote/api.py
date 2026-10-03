@@ -909,6 +909,9 @@ def create_app(
         *,
         error_status: int = 500,
     ) -> dict:
+        runtime = getattr(app.state, 'shared_runtime', None)
+        if runtime is not None:
+            runtime.require_symbol_change()
         device = _state.get("device")
         if not device or not device.connected:
             raise HTTPException(status_code=400, detail="Device not connected")
@@ -1014,17 +1017,28 @@ def create_app(
             _state["file_source_change"] = None
         project = load_project_info(_state["project_root"]) or {}
         changed = await run_in_threadpool(source_monitor.changed, device, project)
-        if not changed or device is not _state.get("device"):
+        pending = dict(source_monitor.pending)
+        if not pending or device is not _state.get("device"):
             return
-        event = {"sequence": time.time_ns(), "files": [Path(path).name for path in changed]}
-        _state["file_source_change"] = event
-        try:
+        previous = _state['file_source_change'] or {}
+        # A failed parse is not retried every second against identical content.
+        # New content or a newly selected device permits another attempt.
+        if not changed and previous.get('state') == 'failed':
+            return
+        event = {'sequence': previous.get('sequence', time.time_ns()),
+                 'files': [Path(path).name for path in pending], 'pending': True}
+
+        async def reload_sources():
+            event['state'] = 'reloading'
             async with _exclusive_probe_control("reload-file-sources") as (active, stopped):
                 if active is not device:
                     return
                 event["stopped"] = stopped
                 if getattr(device, "_axf", None):
-                    await _reparse_active_symbols()
+                    catalog = getattr(device, 'symbol_catalog', None)
+                    # An explicit GUI parse may already have loaded the new content.
+                    if catalog is None or await run_in_threadpool(catalog.is_stale):
+                        await _reparse_active_symbols()
                 from mklink.project_config import ensure_rtt_config_updated
                 rtt = await run_in_threadpool(
                     ensure_rtt_config_updated, _state["project_root"],
@@ -1032,9 +1046,28 @@ def create_app(
                 )
                 event["rtt_addr"] = (rtt or {}).get("rtt_addr")
                 event["message"] = "AXF/MAP 内容已变化并重载；采集已停止，请确认目标固件后重新启动"
+                source_monitor.acknowledge(device, pending)
+                event.update(pending=False, state='applied')
+
+        try:
+            runtime = getattr(app.state, 'shared_runtime', None)
+            if runtime is not None:
+                await runtime.run_operation('reload-file-sources', reload_sources, configuration=True)
+            else:
+                await reload_sources()
+        except HTTPException as error:
+            if error.status_code != 409 or event.get('state') == 'reloading':
+                event.update(state='failed', error=str(error.detail))
+            else:
+                event.update(state='deferred', message='符号文件已变化，等待停止采集、结束客户端会话及当前任务后重载')
         except Exception as error:
-            event["error"] = str(error)
+            event.update(state='failed', error=str(error))
             logger.warning("File source reload failed: %s", error)
+        if device is not _state.get('device'):
+            return
+        if changed or previous.get('state') != event.get('state'):
+            event['sequence'] = time.time_ns()
+        _state['file_source_change'] = event
 
     app.state.check_file_sources = check_file_sources
 

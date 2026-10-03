@@ -153,6 +153,36 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it('keeps acquisition attached while a symbol reload waits and adopts the address only after applying', async () => {
+    vi.useFakeTimers()
+    mocks.status = { running: true, down_buffers: [], numeric_channels: [] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const stopped = mocks.terminalBinary.stop.mock.calls.length
+    mocks.status.file_source_change = { sequence: 1, pending: true, state: 'deferred', message: '等待停止采集后重载' }
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="rtt-address"]').element).toHaveProperty('value', '0x20000000')
+    expect(wrapper.get('[data-testid="rtt-source-notice"]').text()).toContain('等待停止采集')
+    expect(wrapper.get('.control-toolbar').text()).toContain('暂停')
+    expect(mocks.terminalBinary.stop.mock.calls.length).toBe(stopped)
+    mocks.status.running = false
+    mocks.status.file_source_change = { sequence: 2, pending: false, state: 'applied', rtt_addr: '0x20000040', message: '请确认目标固件后重新启动' }
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="rtt-address"]').element).toHaveProperty('value', '0x20000040')
+    expect(wrapper.get('[data-testid="rtt-source-notice"]').text()).toContain('请确认目标固件')
+    expect(wrapper.get('.control-toolbar').text()).toContain('开始')
+    expect(wrapper.get('.control-toolbar').text()).not.toContain('重试')
+    // A new viewer may see an earlier applied event while another client is running RTT.
+    wrapper.unmount()
+    mocks.status.running = true
+    const viewer = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    expect(viewer.get('.control-toolbar').text()).toContain('暂停')
+    viewer.unmount()
+  })
+
   it('keeps RTT setup available while disconnected but requires an explicit connection', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: false } })
 

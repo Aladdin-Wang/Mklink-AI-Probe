@@ -43,6 +43,7 @@ class Session:
     axf: str | None
     kind: str = 'mcp'
     name: str = 'AI client'
+    symbol_version: tuple | None = None
     public_id: str = field(default_factory=lambda: secrets.token_hex(8))
     joined: float = field(default_factory=time.monotonic)
     expires: float = field(default_factory=lambda: time.monotonic() + 120)
@@ -128,6 +129,62 @@ class RuntimeControl:
             raise HTTPException(409, "Session expired or detached; connect again")
         session.expires = time.monotonic() + 120
         return session
+
+    def symbol_version(self):
+        device = self.app.state.mklink_state.get('device')
+        catalog = getattr(device, 'symbol_catalog', None)
+        if catalog is None:
+            return None
+        return (catalog.generation, catalog.fingerprint.sha256)
+
+    def validate_session(self, session_id):
+        session = self.session(session_id)
+        state = self.app.state.mklink_state
+        if not same_path(session.project_root, state['project_root']):
+            raise HTTPException(409, 'Project changed; reconnect explicitly')
+        active_axf = (getattr(state.get('device'), 'axf_status', {}) or {}).get('axf_path')
+        if session.axf != active_axf or session.symbol_version != self.symbol_version():
+            raise HTTPException(409, 'Symbols changed; reconnect explicitly before reading the new target layout')
+        return session
+
+    def require_symbol_change(self):
+        from mklink.remote.dashboards import active_bridge_dashboards
+        self.prune()
+        self.require_identity()
+        if self.sessions:
+            raise HTTPException(409, 'Detach shared clients before changing symbols')
+        active = active_bridge_dashboards()
+        if active:
+            raise HTTPException(409, {'busy': active, 'hint': 'Stop acquisition explicitly before changing symbols'})
+
+    async def run_operation(self, name, operation, *, session_id=None, configuration=False, online_stop=False):
+        """Shared admission for HTTP adapters and internal application work.
+
+        Check and reserve without an await gap. Cancellation retains ownership
+        until the worker settles; no caller may bypass this by invoking a handler.
+        """
+        from mklink.runtime_jobs import executing_job
+        own_job = self.jobs and self.jobs.active and executing_job.get() == self.jobs.active['job_id']
+        if self.stopping:
+            raise HTTPException(503, 'Runtime is stopping')
+        if self.operation_lock.locked() or (self.job_busy() and not own_job and not online_stop):
+            raise HTTPException(409, 'Another shared operation or exclusive job is active')
+        self.prune()
+        if configuration:
+            if self.attach_lock.locked():
+                raise HTTPException(409, 'Wait for the attaching client before changing symbols')
+            self.require_symbol_change()
+        session = self.validate_session(session_id) if session_id else None
+        async with self.operation_lock:
+            started = time.monotonic()
+            record = {'path': name, 'client': session.name if session else 'GUI / API',
+                      'started_at': time.time(), 'http_status': None}
+            self.current_operation = record
+            try:
+                return await settle(asyncio.create_task(operation()))
+            finally:
+                self.last_operation = {**record, 'duration_seconds': time.monotonic() - started}
+                self.current_operation = None
 
     async def invoke(self, method, path, arguments=None, *, session_id=None):
         import httpx
@@ -280,27 +337,16 @@ class RuntimeGate:
         if (path.startswith("/api/device/") and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
             if active:
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
-        own_job = c.jobs and c.jobs.active and executing_job.get() == c.jobs.active['job_id']
-        if c.job_busy() and not own_job and not online_stop:
-            return await reject(409, 'An exclusive job became active while this request was being prepared')
-        if c.operation_lock.locked():
-            return await reject(409, "Another shared operation is in flight; wait for completion")
-        async with c.operation_lock:
-            started = time.monotonic()
-            session = c.sessions.get(session_id)
-            c.current_operation = {'path': path, 'client': session.name if session else 'GUI / API', 'started_at': time.time()}
-            status_code = None
-            async def observe(message):
-                nonlocal status_code
-                if message['type'] == 'http.response.start':
-                    status_code = message['status']
-                await send(message)
-            try:
-                await settle(asyncio.create_task(self.app(scope, receive, observe)))
-            finally:
-                c.last_operation = {**c.current_operation, 'duration_seconds': time.monotonic()-started,
-                                    'http_status': status_code}
-                c.current_operation = None
+        async def observe(message):
+            if message['type'] == 'http.response.start':
+                c.current_operation['http_status'] = message['status']
+            await send(message)
+        try:
+            await c.run_operation(path, lambda: self.app(scope, receive, observe), session_id=session_id,
+                                  configuration=path in {'/api/device/parse-axf', '/api/symbols/reparse', '/api/symbols/c-layout'},
+                                  online_stop=online_stop)
+        except HTTPException as exc:
+            return await reject(exc.status_code, exc.detail)
 
 
 def install_runtime(app, info):
@@ -346,6 +392,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     @api.post("/attach")
     async def attach(body: dict):
         async with control.attach_lock:
+            if control.operation_lock.locked() or control.job_busy():
+                raise HTTPException(409, 'Wait for the active operation before attaching a client')
             control.prune()
             if len(control.sessions) >= 128:
                 raise HTTPException(429, "Too many attached clients")
@@ -389,9 +437,12 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
             if session_id not in control.sessions:
                 session_id = secrets.token_urlsafe(24)
             if session_id not in control.sessions:
-                control.sessions[session_id] = Session(state["project_root"], (device_status.get("axf") or {}).get("axf_path"), kind=kind, name=name.strip())
+                control.sessions[session_id] = Session(state["project_root"], (device_status.get("axf") or {}).get("axf_path"), kind=kind, name=name.strip(), symbol_version=control.symbol_version())
             else:
-                control.session(session_id)
+                session = control.session(session_id)
+                session.project_root = state['project_root']
+                session.axf = (device_status.get('axf') or {}).get('axf_path')
+                session.symbol_version = control.symbol_version()
             return {**device_status, "session_id": session_id, "shared": True,
                     "instance_id": info["instance_id"], "probe_id": info.get("probe_id"), "capabilities": sorted(CAPABILITIES)}
 
@@ -410,12 +461,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     @api.post("/call")
     async def call(body: dict):
         session_id = body.get("session_id")
-        session = control.session(session_id)
-        if not same_path(session.project_root, state["project_root"]):
-            raise HTTPException(409, "Project changed; reconnect explicitly")
-        active_axf = (getattr(state.get("device"), "axf_status", {}) or {}).get("axf_path")
-        if session.axf != active_axf:
-            raise HTTPException(409, "Symbols changed; reconnect explicitly before reading the new target layout")
+        session = control.validate_session(session_id)
         capability = body.get("capability")
         if not isinstance(capability, str) or capability not in CAPABILITIES:
             raise HTTPException(422, "Unsupported shared capability; no direct CDC fallback")

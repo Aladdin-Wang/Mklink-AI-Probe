@@ -49,7 +49,7 @@ class RuntimeJobs:
         action, request_id = body.get('action'), body.get('request_id')
         arguments = body.get('arguments', {})
         if body.get('session_id') is not None:
-            self.control.session(body['session_id'])
+            self.control.validate_session(body['session_id'])
         if action not in PATHS or not isinstance(arguments, dict) or body.get('confirm') is not True:
             raise HTTPException(422, 'Select flash/erase/reset with arguments and confirm=true')
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:

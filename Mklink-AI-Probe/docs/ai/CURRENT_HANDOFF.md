@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T11:07:58+00:00`
+- 更新时间：`2026-10-03T11:40:13+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; post-stage-7 architecture audit and policy consolidation; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared symbol reload admission and session revision binding after audit d4b9655; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：完成七轮架构复审与首批收敛：关闭旧写路由绕日志入口、统一退出规则、复用CDC采集分类、去掉共享页旧窗口租约握手。下一步优先应用服务准入和符号版本，不再直接堆专用CLI。
+- 当前任务：完成架构复审A5：HTTP与文件监控共用执行准入，忙时保留符号变化，会话绑定generation及指纹。WebGUI/MCP真机共存验证通过；下一步继续A6旧MCP与能力契约收敛。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.0七轮后架构复审与收敛** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
+- **0.3.0共享符号重载与会话版本收敛** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-architecture-review.md：修改前6个失败回归复现，定向Python115通过；GUI全量776通过、类型/构建通过。真实Edge/MCP/SDK恢复和CLI拒绝退出运行中RTT通过，无旧租约握手，Boot未变；UART/Modbus资源分离为模拟回归。历史全量/双设备见前阶段报告。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-shared-symbol-reload.md：定向Python115通过；全量首轮2548通过/21失败/3跳过，补本地FLM环境后失败模块79项全部通过。GUI最终全量777通过，类型/构建通过。真实Edge/MCP/SDK：AXF副本变化不抢停RTT，空闲后仅重载一次；Boot未变。上一轮复审及各阶段证据保留。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。复审后WebGUI/MCP/SDK和采集退出保护通过；Boot20KiB不变、tick推进。已被动枚举新的第二只，未操作其目标。测试后台全退出，未写固件或改VCC。每轮须重新枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。符号内容变更时GUI RTT/MCP仍运行，显式停止后重载一次。Boot20KiB不变、VTOR正确、tick推进，已恢复原AXF；后台全部退出，未写固件或改VCC。第二只仅重新枚举。每轮须重新枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 先按架构复审A5提取公共准入，处理文件内容变化与任务/采集/会话交错，绑定符号版本并保留待处理变化；再统一能力契约、清理旧MCP/专用CLI和低层直连。稳定锁目录、bfcache、契约CI及长稳随后推进；WebGUI先于NSIS。保持Boot+0x08005000 App布局，不自动发布。
+1. 继续A6：提取中性stdio辅助函数，盘点旧MCP/专用CLI与共享能力差异，统一契约并逐项迁移后删除失去调用者的旧实现。随后稳定锁目录、bfcache、共享契约CI、双设备长稳及NSIS。保持CDC和Boot+0x08005000 App布局，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- 架构复审A5优先：SourceMonitor内部自动重载绕RuntimeGate，会停采集且会话仅绑定AXF路径；需统一应用服务准入及符号指纹版本。A6旧mcp_server/远程能力双轨，A7锁路径受TEMP影响、CI未覆盖共享契约；bfcache恢复待修。详细证据见v0.3.0-architecture-review.md。
+- 架构复审A5已收敛并真机验证，但其他资源策略仍部分位于RuntimeGate。A6旧mcp_server/远程能力双轨，A7锁路径受TEMP影响、CI未覆盖共享契约；bfcache恢复待修。见v0.3.0-architecture-review.md及v0.3.0-shared-symbol-reload.md。
 - 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复/日志轮转、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
