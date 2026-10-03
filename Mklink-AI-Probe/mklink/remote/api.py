@@ -1644,11 +1644,13 @@ def create_app(
                 if selected["probe_id"] != _state["shared_probe_id"]:
                     raise RuntimeErrorResponse("Select this probe in its own runtime window before connecting")
                 port = selected["port"]
-                restore_last = False  # a saved COM port cannot override physical identity
+                # The resolved port stays authoritative; only non-port settings may be restored.
             except RuntimeErrorResponse as exc:
                 raise HTTPException(409, str(exc)) from exc
             runtime.prune()
             current = _state.get("device")
+            if current and current.connected:
+                restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
             if current and runtime.sessions and not current.connected:
                 raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
             if current and current.connected and current.port.casefold() != port.casefold():

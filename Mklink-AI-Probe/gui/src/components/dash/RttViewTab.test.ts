@@ -320,6 +320,37 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it.each([false, true])('keeps the viewer and render pause=%s when shared stop is refused', async (paused) => {
+    mocks.status = { running: true, numeric_channels: [], down_buffers: [{ channel: 0, active: true }] }
+    mocks.dash.state.value = 'running'
+    let finishStop!: (value: boolean) => void
+    mocks.dash.stop.mockReturnValueOnce(new Promise(resolve => { finishStop = resolve }))
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const toolbar = wrapper.findComponent({ name: 'ControlToolbar' })
+    if (paused) toolbar.vm.$emit('pause')
+    await nextTick()
+    const before = mocks.terminalBinary.stop.mock.calls.length
+    toolbar.vm.$emit('stop')
+    toolbar.vm.$emit('stop')
+    await nextTick()
+    expect(mocks.dash.stop).toHaveBeenCalledOnce()
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before)
+    mocks.dash.error.value = 'Other clients subscribe to this acquisition'
+    finishStop(false)
+    await flushPromises()
+    expect(toolbar.props('state')).toBe(paused ? 'paused' : 'running')
+    expect(toolbar.text()).toContain('Other clients subscribe')
+    expect(toolbar.text()).not.toContain('重试')
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before)
+    mocks.dash.stop.mockResolvedValueOnce(true)
+    toolbar.vm.$emit('stop')
+    await flushPromises()
+    expect(toolbar.props('state')).toBe('idle')
+    expect(mocks.terminalBinary.stop).toHaveBeenCalledTimes(before + 1)
+    wrapper.unmount()
+  })
+
   it('persists the selected encoding and sends it when RTT starts', async () => {
     mocks.status = { running: false, numeric_channels: [], down_buffers: [] }
     mocks.dash.start.mockImplementationOnce(async () => {

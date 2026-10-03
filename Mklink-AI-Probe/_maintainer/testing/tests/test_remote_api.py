@@ -1331,3 +1331,42 @@ def test_built_web_asset_graph_uses_fresh_cache_namespace():
             response = client.get(path)
             assert response.status_code == 200, path
             assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.parametrize('selected_id', ['bound-probe', 'other-probe'])
+def test_shared_restore_last_keeps_symbols_but_never_restores_old_com(tmp_path, selected_id):
+    device, axf = _connected_symbol_device(tmp_path)
+    device.port = 'COM_NEW'
+    device.axf_status = {'loaded': True, 'axf_path': str(axf)}
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, sessions={})
+    state = app.state.mklink_state
+    state['shared_probe_id'] = 'bound-probe'
+    state['last_device_connection'] = {'port': 'COM_OLD', 'axf': str(axf), 'mcu': 'stm32f1', 'elf_backend': 'builtin'}
+    with patch('mklink.probes.select_probe', return_value={'probe_id': selected_id, 'port': 'COM_NEW'}), patch('mklink.connect', return_value=device) as connect, TestClient(app) as client:
+        response = client.post('/api/device/connect', json={'restore_last': True})
+    if selected_id != 'bound-probe':
+        assert response.status_code == 409
+        connect.assert_not_called()
+    else:
+        assert response.status_code == 200, response.text
+        args = connect.call_args.kwargs
+        assert args['port'] == 'COM_NEW' and args['preferred_port'] is None
+        assert args['axf'] == str(axf) and args['mcu'] == 'stm32f1' and args['elf_backend'] == 'builtin'
+
+
+def test_shared_restore_last_on_live_device_does_not_change_symbols(tmp_path):
+    from mklink.remote.dashboards import get_managers
+    device, axf = _connected_symbol_device(tmp_path)
+    device.port = 'COM_NEW'
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, sessions={'existing': object()})
+    state = app.state.mklink_state
+    state.update(device=device, shared_probe_id='bound-probe', last_device_connection={'port':'COM_OLD','axf':'old.axf'})
+    get_managers()['superwatch']._device = device
+    with patch('mklink.probes.select_probe', return_value={'probe_id':'bound-probe','port':'COM_NEW'}), patch.object(device, 'parse_axf') as parse, patch('mklink.connect') as connect, TestClient(app) as client:
+        response = client.post('/api/device/connect', json={'restore_last': True})
+    assert response.status_code == 200, response.text
+    assert response.json()['status'] == 'already_connected'
+    parse.assert_not_called()
+    connect.assert_not_called()

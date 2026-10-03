@@ -36,7 +36,7 @@
       <div class="rtt-view-toolbar">
         <div class="rtt-primary-tools">
           <ControlToolbar
-            :state="toolbarState" :error="runtimeError || dash.error.value"
+            :state="toolbarState" :error="runtimeError || actionError || dash.error.value"
             :device-connected="deviceConnected && !searching"
             @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
           />
@@ -217,6 +217,7 @@ const formatHelpOpen = ref(false)
 const hasChartData = ref(false)
 const renderPaused = ref(false)
 const runtimeError = ref<string | null>(null)
+const actionError = ref<string | null>(null)
 const RTT_CHANNEL = 0
 // Zero lets the host bound the default scan to the actual RAM map.
 const RTT_SEARCH_SIZE = 0
@@ -834,6 +835,7 @@ async function onStart(): Promise<void> {
     resetChartData()
     renderPaused.value = false
     runtimeError.value = null
+    actionError.value = null
     scheduler.start()
     logBinary.reset()
     terminalBinary.reset()
@@ -867,14 +869,22 @@ function onResumeRender(): void {
 }
 
 async function onStop(): Promise<void> {
+  if (stopping.value) return
   stopping.value = true
-  renderPaused.value = false
-  statusRunning.value = false
-  downBuffers.value = []
-  detachBinary()
+  actionError.value = null
   try {
     const stopped = await dash.stop()
-    runtimeError.value = stopped ? null : (dash.error.value || tr('RTT 停止未完成，请再次停止', 'RTT did not stop completely. Stop it again.'))
+    if (stopped) {
+      renderPaused.value = false
+      statusRunning.value = false
+      downBuffers.value = []
+      detachBinary()
+      runtimeError.value = null
+    } else {
+      // A shared subscriber can refuse stop while the producer remains healthy.
+      // Preserve this window's stream and render state until stop is accepted.
+      actionError.value = dash.error.value || tr('RTT 停止未完成，请再次停止', 'RTT did not stop completely. Stop it again.')
+    }
   } finally {
     stopping.value = false
   }

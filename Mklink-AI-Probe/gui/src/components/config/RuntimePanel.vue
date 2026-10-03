@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { tr } from '../../composables/useLanguage'
+import { useMklinkApi } from '../../composables/useMklinkApi'
 
 interface Client { id: string; name: string; kind: string; streams: string[]; expires_in: number }
 interface Runtime {
@@ -12,6 +13,7 @@ interface Runtime {
   operation: { path: string; client: string } | null
   last_operation: { path: string; http_status: number | null; duration_seconds: number } | null
 }
+const { refreshStatus: refreshDeviceStatus } = useMklinkApi()
 const state = ref<Runtime | null>(null)
 const error = ref('')
 const acting = ref(false)
@@ -74,7 +76,10 @@ async function act(action: string, parameters: Record<string, string> = {}) {
     const payload = await response.json()
     if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail))
     if (action === 'stop-backend') stopped.value = true
-    else await refresh()
+    else {
+      if (action === 'release-device') await refreshDeviceStatus()
+      await refresh()
+    }
   } catch (e: any) { error.value = e.message }
   finally { acting.value = false }
 }

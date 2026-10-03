@@ -2,7 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import RuntimePanel from './RuntimePanel.vue'
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+const refreshDeviceStatus = vi.hoisted(() => vi.fn().mockResolvedValue({ connected: false }))
+vi.mock('../../composables/useMklinkApi', () => ({ useMklinkApi: () => ({ refreshStatus: refreshDeviceStatus }) }))
+
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); refreshDeviceStatus.mockClear() })
 
 it('shows client ownership, blocks subscribed capture stop and ends only the chosen session', async () => {
   const payload = {
@@ -43,5 +46,21 @@ it('surfaces backend refusal without claiming that a release succeeded', async (
   await wrapper.get('[data-testid=runtime-release]').trigger('click')
   await flushPromises()
   expect(wrapper.get('[role=alert]').text()).toContain('Other clients')
+  expect(refreshDeviceStatus).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+it('updates shared device status immediately after releasing from the management panel', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+    probe_id: 'test', status: 'present', connected: false, busy: false, clients: [], streams: [],
+    project_root: '.', operation: null, probe: null,
+  }) })))
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  const wrapper = mount(RuntimePanel)
+  await flushPromises()
+  await wrapper.get('[data-testid=runtime-release]').trigger('click')
+  await flushPromises()
+  expect(refreshDeviceStatus).toHaveBeenCalledOnce()
+  expect(wrapper.get('[data-testid=runtime-presence]').text()).toContain('已释放')
   wrapper.unmount()
 })

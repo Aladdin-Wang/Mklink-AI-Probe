@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T09:34:31+00:00`
+- 更新时间：`2026-10-03T10:02:53+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; 0.3.0 stage 5, shared register/fault/breakpoint CLI; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; 0.3.0 stage 6 WebGUI verification and fixes; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：0.3.0第五阶段：read-reg/hardfault/break迁移，共享能力达18类CLI。GUI/MCP/SDK真机共存、采集互斥与新接入第二探针隔离通过，继续PR 30；未合并、发布或安装。
+- 当前任务：0.3.0第六阶段：按用户要求优先WebGUI。修复RTT停止被拒绝后的显示中断、释放后状态同步及共享重连丢AXF。双窗口/AI/SDK、RTT/SuperWatch、释放重连及新第二探针隔离通过；未验证安装包。
 - 状态：`complete`
 
 ## 里程碑
 
-- **0.3.0共享后台第五阶段** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
+- **0.3.0共享后台第六阶段（WebGUI）** — `development`。每探针独立后台；常用MCP、18类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-shared-runtime-stage5.md：Python2553通过/3跳过；目录寄存器、只读故障快照、共享断点及采集互斥真机通过，Boot区不变且tick推进。用户重新插入身份不同的第二探针，双后台/窗口/MSC隔离通过。GUI源码未变，复用上阶段生产资源进行真实浏览器验证。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-shared-runtime-stage6-webgui.md：GUI771通过，类型/生产构建通过；Python受影响范围92通过。真实Edge双窗口与MCP/SDK共存、RTT/SuperWatch采集互斥、释放后保留AXF重连、双物理探针隔离通过。Boot区不变且tick推进；历史全量Python2553/3跳过见第五阶段。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,18 +35,18 @@
 
 ## 真机环境
 
-- **state**：V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。第三阶段误改地址后已恢复校验，勿把App偏移判错。第五阶段未写Flash，临时断点已清除、CPU运行且tick推进，20KiB Boot区未变。新第二探针身份再次不同，双后台/窗口/磁盘隔离通过，仅连接和状态查询。未改工程、探针固件或VCC，测试后台已停止。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。第六阶段未写Flash，Boot区逐字节不变、tick推进，WebGUI重连保留AXF。用户更换第二只后按新USB身份完成双后台/窗口/磁盘隔离；第二只仅连接/状态/磁盘查询。测试后台均已停止，未改固件或VCC。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 查看PR 30及第五阶段报告。保留Boot+App布局；继续专用CLI与低层Device调用方迁移、全新连接erase准备和脱机部署，再做操作中拔插/休眠、NSIS安装升级及至少24小时双设备长稳；不要直接发布开发版。
+1. 先继续WebGUI异常恢复/持续运行及专用CLI迁移、全新连接erase准备和脱机部署；用户要求WebGUI验证先于桌面安装包。再做操作中拔插/休眠、NSIS安装升级与至少24小时双设备长稳。保留Boot+App布局，不直接发布开发版。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- 0.3.0第五阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、恢复/日志轮转、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
+- 0.3.0第六阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、恢复/日志轮转、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
