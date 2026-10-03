@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T10:05:03.9804479+08:00`
-- 分支：`codex/v023-site-agent-acl`
-- HEAD：`Release preparation based on main ae83a37.`
-- 远端 HEAD：`main 391918f; PR23 retains installation evidence.`
-- 工作树：Isolated task worktree; original main user firmware preserved.
-- 当前任务：正式Site Agent启动冒烟发现上传目录权限处理错误：已属当前用户却无WRITE_OWNER时重复设置owner被拒绝；修复只在需要时设置owner，补充真实ACL回归。websockets假设已排除，试改撤回。
-- 状态：`in_progress`
+- 更新时间：`2026-10-03T02:31:11.928688+00:00`
+- 分支：`codex/v023-release-record`
+- HEAD：`Release source/tag v0.2.3: b0e0f61e0c8f51f548718bb8e670eda729db3698; this branch adds publication records.`
+- 远端 HEAD：`main b0e0f61 after PR27; PR26 contains README and consolidated evidence.`
+- 工作树：Documentation-only release record; original user firmware preserved.
+- 当前任务：0.2.3已正式发布三个渠道，公开文件和更新索引校验通过；README改为AI操作指引，旧PR已处理，本地安装版和Skill已更新。
+- 状态：`complete`
 
 ## 里程碑
 
-- **正式发布** — `complete`。0.2.2 标准安装包、Skill、Site Agent 已同步新旧 GitHub 和 Gitee；四份探针固件已同步，UF2 三端索引通过。
+- **0.2.3正式发布** — `complete`。MicroKeen、旧GitHub和Gitee发布相同7个文件；更新索引最后切换；标签固定b0e0f61。详见docs/verification/v0.2.3-release-final.md。
 
 ## 验证证据
 
-- **0.2.3集成验收**：docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。
+- **0.2.3集成验收**：docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。 正式发布补充：Python2459通过/2跳过、GUI762及最终生产构建通过；Agent真实ACL及启停、签名、受限PATH覆盖安装、桌面/Web版本、内置后端和退出释放通过；三端发布及公开索引已验证。
 - **SuperWatch实时写入及回放**：superwatch-live-write-20261002.md、superwatch-live-write-v23-20261002.md、superwatch-live-write-hpm6e80-20261002.md和superwatch-replay-20261002.md记录各版本实机及浏览器验证。V4 HPM需DUMP_WRITE_HPM=1；本轮V2/V3未更新。
-- **SuperWatch界面及恢复**：PR22/main391918f已覆盖安装，安装记录保存在PR23。本轮改用Pointer Events修复Tauri拦截HTML5拖动；桌面真实鼠标移入普通组及折叠空组、浏览器合成信号拖动通过，GUI762项及生产/原生构建通过。详见superwatch-drag-groups-20261003.md；此修复尚未安装。
+- **SuperWatch界面及恢复**：PR24拖动修复已合并并覆盖安装，桌面真实鼠标移入普通组及折叠空组、Web同步通过。PR26保留此前安装证据。正式包0.2.3/b0e0f61已安装验证；详见superwatch-drag-groups-20261003.md及v0.2.3-release-final.md。
 - **0.2.2 发布、安装与固件**：docs/verification/v0.2.2-release-final.md：Python2306通过/2跳过，GUI720、Rust19通过；正式NSIS87.6MiB，覆盖安装、内置后端、7059型号/2224FLM哈希、退出释放、更新签名及三端公开索引通过。 HPMLinkV4.5.1、MicroLinkV4.5.1/V3.5.0/V2.8.0已公开下载校验；25项发布/升级测试通过。V2 RBL头/体CRC、长度及程序版本验证，打包头V1.0.0保留原件。此发布轮未刷机，不新增硬件认证。 PR #6同步四份固件至源码目录，合并前Python2306/2跳过、GUI720及生产构建通过。
 - **nRF54L15保护**：Python真机 APPROTECT/SECUREAPPROTECT 写入、复位保护状态3、AHB关闭、CTRL-AP恢复0.923秒、1560576字节全空检查、客户HEX恢复校验通过。原始证据保存在用户测试目录 .mklink/security_roundtrip_20260924.json。别名与算法目录回归19项通过。
 - **0.2.3在线烧录扇区几何修复**：docs/verification/v0.2.3-sector-geometry-20260924.md：审计7059型号，27个存在地址重叠且扇区声明冲突，STM32F767xG 双Bank/单Bank分别16/32KiB。按所选FLM绑定检查、映射和任务，未选择或冲突自定义FLM时拒绝；Pack优先使用FLM可变扇区范围，缺口和不完整尾部保持不可验证。Python全量2326通过/2跳过，最后冲突保护定向1项通过；GUI全量723、最后按钮门禁定向97项通过，生产Web构建与真实Chrome入口检查通过。未执行真机擦写。
@@ -32,19 +32,19 @@
 - 开发主仓库MicroKeen/main；后续修改从最新main创建codex分支，经PR及必需CI整合。审批人数0，发布和合并仍需明确授权；标签不可变。
 - 应用主索引MicroKeen/release，旧GitHub/updates兼容，Gitee/updates备用。固件三个firmware索引保持兼容，客户端URL仍可指向旧GitHub。
 - 现有自动固件更新仅支持UF2；V2 RBL作为手动升级附件，不写入严格UF2索引，避免破坏0.2.2解析。
-- 按维护者授权，Gitee应用发布页仅保留最新0.2.2，固件渠道独立保留；GitHub历史版本不删除。
+- 此前Gitee历史清理仅针对0.2.2发布轮；本轮新增0.2.3，不额外删除历史发布，固件渠道独立。
 - 保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。
 
 ## 真机环境
 
 - **state**：V4/F103已连接用于桌面信号分组验证，采样停止；本轮未写入目标内存或固件。
 - **backups**：本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。
-- **installer**：本地0.2.3/ae83a37已安装验证；正式签名候选待构建验收。
+- **installer**：正式0.2.3/b0e0f61已覆盖安装，公共Skill为同一提交；最终Agent本地启停通过。
 
 ## 下一动作
 
-1. 完成ACL修复门禁、合并后重建所有正式包。
-2. 真实验证Agent生命周期及正式安装后发布三个渠道。
+1. 按后续明确任务继续开发；0.2.3标签及已发布文件不可覆盖。
+2. 若补做nRF54L15 GUI或跨主机Agent验收，使用对应设备并单独记录，不外推现有证据。
 
 ## 已知限制
 

@@ -1,32 +1,32 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T10:05:03.9804479+08:00",
+  "updated_at": "2026-10-03T02:31:11.928688+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
-    "branch": "codex/v023-site-agent-acl",
-    "head": "Release preparation based on main ae83a37.",
-    "remote_head": "main 391918f; PR23 retains installation evidence.",
-    "working_tree": "Isolated task worktree; original main user firmware preserved."
+    "branch": "codex/v023-release-record",
+    "head": "Release source/tag v0.2.3: b0e0f61e0c8f51f548718bb8e670eda729db3698; this branch adds publication records.",
+    "remote_head": "main b0e0f61 after PR27; PR26 contains README and consolidated evidence.",
+    "working_tree": "Documentation-only release record; original user firmware preserved."
   },
   "mission": {
     "product": "维护 MKLink 烧录、调试、桌面/Web、Skill/CLI/MCP。"
   },
   "current_session": {
-    "status": "in_progress",
-    "current_task": "正式Site Agent启动冒烟发现上传目录权限处理错误：已属当前用户却无WRITE_OWNER时重复设置owner被拒绝；修复只在需要时设置owner，补充真实ACL回归。websockets假设已排除，试改撤回。"
+    "status": "complete",
+    "current_task": "0.2.3已正式发布三个渠道，公开文件和更新索引校验通过；README改为AI操作指引，旧PR已处理，本地安装版和Skill已更新。"
   },
   "milestones": [
     {
-      "name": "正式发布",
+      "name": "0.2.3正式发布",
       "status": "complete",
-      "notes": "0.2.2 标准安装包、Skill、Site Agent 已同步新旧 GitHub 和 Gitee；四份探针固件已同步，UF2 三端索引通过。"
+      "notes": "MicroKeen、旧GitHub和Gitee发布相同7个文件；更新索引最后切换；标签固定b0e0f61。详见docs/verification/v0.2.3-release-final.md。"
     }
   ],
   "verification": [
     {
       "area": "0.2.3集成验收",
-      "result": "docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。"
+      "result": "docs/verification/v0.2.3-integration-20261002.md：集成Python2446/GUI755/Rust19；打包修复Python2449通过/2跳过、GUI755及生产/NSIS构建通过。安装版HPM RAM128项、ROM烧录51244字节回读、RTT/SystemView、Web/桌面实时写入、2648行CLI日志回放一致；新Skill CLI2714样本通过。修复包覆盖安装、受限PATH、Web入口、7059型号/2224算法及退出释放通过。 正式发布补充：Python2459通过/2跳过、GUI762及最终生产构建通过；Agent真实ACL及启停、签名、受限PATH覆盖安装、桌面/Web版本、内置后端和退出释放通过；三端发布及公开索引已验证。"
     },
     {
       "area": "SuperWatch实时写入及回放",
@@ -34,7 +34,7 @@
     },
     {
       "area": "SuperWatch界面及恢复",
-      "result": "PR22/main391918f已覆盖安装，安装记录保存在PR23。本轮改用Pointer Events修复Tauri拦截HTML5拖动；桌面真实鼠标移入普通组及折叠空组、浏览器合成信号拖动通过，GUI762项及生产/原生构建通过。详见superwatch-drag-groups-20261003.md；此修复尚未安装。"
+      "result": "PR24拖动修复已合并并覆盖安装，桌面真实鼠标移入普通组及折叠空组、Web同步通过。PR26保留此前安装证据。正式包0.2.3/b0e0f61已安装验证；详见superwatch-drag-groups-20261003.md及v0.2.3-release-final.md。"
     },
     {
       "area": "0.2.2 发布、安装与固件",
@@ -61,13 +61,13 @@
     "开发主仓库MicroKeen/main；后续修改从最新main创建codex分支，经PR及必需CI整合。审批人数0，发布和合并仍需明确授权；标签不可变。",
     "应用主索引MicroKeen/release，旧GitHub/updates兼容，Gitee/updates备用。固件三个firmware索引保持兼容，客户端URL仍可指向旧GitHub。",
     "现有自动固件更新仅支持UF2；V2 RBL作为手动升级附件，不写入严格UF2索引，避免破坏0.2.2解析。",
-    "按维护者授权，Gitee应用发布页仅保留最新0.2.2，固件渠道独立保留；GitHub历史版本不删除。",
+    "此前Gitee历史清理仅针对0.2.2发布轮；本轮新增0.2.3，不额外删除历史发布，固件渠道独立。",
     "保留正式包、唯一备份、依赖缓存和必要HIL证据。原主工作区用户固件替换不得reset。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
     "state": "V4/F103已连接用于桌面信号分组验证，采样停止；本轮未写入目标内存或固件。",
     "backups": "本地.build/reports保留原始HIL证据；Gitee历史备份与清理记录在.build/artifacts/gitee-historical-backup-20260921。",
-    "installer": "本地0.2.3/ae83a37已安装验证；正式签名候选待构建验收。"
+    "installer": "正式0.2.3/b0e0f61已覆盖安装，公共Skill为同一提交；最终Agent本地启停通过。"
   },
   "known_limits": [
     "有限缓冲不保证无限暂停/物理断线无损；外设轮询可能漏短脉冲，多变量不是原子快照。 VCC遥测需要配套新固件；V3仅电压，V4功率为滤波电压电流乘积，未新增校准。135项测试和固件编译不能替代真实负载精度验证。Web静态资源遗漏已修复并覆盖验收。",
@@ -80,8 +80,8 @@
     "STM32F767xG等重叠FLM型号需用户核对实际Bank模式并选择对应算法；本轮仅验证元数据、API和真实浏览器，未连接STM32F767xG真机擦写。另有26个内置FLM无扇区表且当前解析器无法解析，扇区操作继续禁用，需可信Pack或厂商几何资料。"
   ],
   "next_actions": [
-    "完成ACL修复门禁、合并后重建所有正式包。",
-    "真实验证Agent生命周期及正式安装后发布三个渠道。"
+    "按后续明确任务继续开发；0.2.3标签及已发布文件不可覆盖。",
+    "若补做nRF54L15 GUI或跨主机Agent验收，使用对应设备并单独记录，不外推现有证据。"
   ],
   "continuation_protocol": [
     "先核对 Git、任务和设备状态；仅按需读相关验证报告，不加载历史流水账。"
