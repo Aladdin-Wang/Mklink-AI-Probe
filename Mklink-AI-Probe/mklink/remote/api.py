@@ -3342,6 +3342,8 @@ def create_app(
                 return {"name": name, "value": value}
             except SymbolSourceChangedError as e:
                 raise HTTPException(status_code=409, detail=str(e)) from e
+            except SymbolCatalogError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -3361,6 +3363,8 @@ def create_app(
                 return {"status": "ok", "name": name, "value": value}
             except SymbolSourceChangedError as e:
                 raise HTTPException(status_code=409, detail=str(e)) from e
+            except SymbolCatalogError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 

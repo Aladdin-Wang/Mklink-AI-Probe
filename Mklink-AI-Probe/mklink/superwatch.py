@@ -756,6 +756,8 @@ class SuperWatchRuntime:
                 ),
             )
         else:
+            if self.symbol_catalog is not None and self.symbol_catalog.is_overridden(name):
+                return {"error": f"Cannot resolve '{name}': unavailable in the active C layout"}
             try:
                 resolved = resolve_watch_items(
                     [name],

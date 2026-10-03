@@ -706,3 +706,138 @@ def test_device_rejects_c_layout_whose_size_differs_from_axf(tmp_path):
 
     assert device.symbol_catalog.items == ()
     assert [item.path for item in device.symbol_catalog.containers] == ["opaque"]
+
+@pytest.fixture
+def overridden_device(tmp_path):
+    axf = tmp_path / 'layout.axf'
+    axf.write_bytes(b'layout')
+    info = DwarfInfo(
+        base_types={1: ('uint32_t', 4)},
+        structs={'Pair': DwarfStruct('Pair', 2, 8, [
+            DwarfMember('a', 0, 1, 'uint32_t', 4),
+            DwarfMember('b', 4, 1, 'uint32_t', 4),
+        ])},
+        variables={'pair': DwarfVariable('pair', 3, 2, 0x20000000, 8, 'Pair'),
+                   'flash_pair': DwarfVariable('flash_pair', 4, 2, 0x08000000, 8, 'Pair')},
+    )
+    device = Device(axf=str(axf))
+    device._connected = True
+    device._bridge = object()
+    device._dwarf_info = info
+    device._symbol_catalog = SymbolCatalog.from_dwarf(info, axf_path=str(axf))
+    device.apply_c_definition('pair', 'typedef struct { uint32_t replacement; uint32_t a; } Pair;')
+    return device
+
+
+def test_variable_access_uses_active_c_layout(overridden_device):
+    device = overridden_device
+    reads, writes = [], []
+    device.read_memory = lambda address, size: (reads.append((address, size)) or b'\x07\0\0\0')
+    device.write_memory = lambda address, data: writes.append((address, data))
+    assert device.read_variable('pair.a') == 7
+    device.write_variable('pair.a', 9)
+    assert reads == [(0x20000004, 4)]
+    assert writes == [(0x20000004, b'\x09\0\0\0')]
+
+
+def test_removed_c_layout_fields_never_fall_back_to_dwarf(overridden_device):
+    from mklink.superwatch import SuperWatchRuntime
+
+    catalog = overridden_device.symbol_catalog
+    assert catalog.by_path('pair.b') is None
+    assert catalog.search('pair.b') == ()
+    with pytest.raises(SymbolCatalogError):
+        catalog.browse_children('pair.b')
+    runtime = SuperWatchRuntime(items=[], dwarf_info=overridden_device._dwarf_info,
+                                symbol_catalog=catalog)
+    assert 'error' in runtime.add('pair.b')
+    assert not runtime.items
+    assert 'error' not in runtime.add('pair.a')
+    assert runtime.items[0].address == 0x20000004
+    for operation in ('read', 'write'):
+        with pytest.raises((KeyError, SymbolCatalogError)):
+            if operation == 'read':
+                overridden_device.read_variable('pair.b')
+            else:
+                overridden_device.write_variable('pair.b', 1)
+
+
+def test_nested_c_layout_browse_and_snapshot_use_override(overridden_device):
+    device = overridden_device
+    device.apply_c_definition('pair', 'typedef struct { struct { int16_t values[2]; } nested; uint32_t a; } Pair;')
+    catalog = device.symbol_catalog
+    assert [node.path for node in catalog.browse_children('pair.nested')] == ['pair.nested.values']
+    assert catalog.browse_children('pair')[1].child_count == 1
+    assert [node.path for node in catalog.browse_children('pair.nested.values')] == [
+        'pair.nested.values[0]', 'pair.nested.values[1]']
+    rows = catalog.array_descriptors('pair.nested.values', start_index=1, count=1)
+    assert [(row.path, row.address, row.scalar_kind) for row in rows] == [
+        ('pair.nested.values[1]', 0x20000002, 'signed')]
+    assert [node.child_count for node in catalog.browse_roots() if node.path == 'pair'] == [2]
+
+
+def test_c_layout_cannot_enable_flash_writes(overridden_device):
+    device = overridden_device
+    original = device.symbol_catalog
+    with pytest.raises(SymbolCatalogError, match='writable'):
+        device.apply_c_definition('flash_pair', 'typedef struct { uint32_t a; uint32_t b; } Pair;')
+    assert device.symbol_catalog is original
+    with pytest.raises(SymbolCatalogError):
+        device.write_variable('flash_pair.a', 1)
+
+
+def test_readonly_descriptor_preserves_flash_read_without_write_access(overridden_device):
+    device = overridden_device
+    reads = []
+    device.read_memory = lambda address, size: (reads.append((address, size)) or b'\x05\0\0\0')
+    catalog = device.symbol_catalog
+    assert catalog.by_path('flash_pair.a') is None
+    descriptor = catalog.by_path('flash_pair.a', writable_only=False)
+    assert not descriptor.writable and descriptor.address == 0x08000000
+    assert device.read_variable('flash_pair.a') == 5
+    assert reads == [(0x08000000, 4)]
+
+
+def test_override_array_paging_does_not_restore_old_root_array(tmp_path):
+    axf = tmp_path / 'array.axf'
+    axf.write_bytes(b'array')
+    info = DwarfInfo(base_types={1: ('uint32_t', 4)},
+                     arrays={2: DwarfArray(2, element_type_offset=1, dimensions=(300,), size=1200)},
+                     variables={'values': DwarfVariable('values', 3, 2, 0x20000000, 1200, 'uint32_t[]')})
+    device = Device(axf=str(axf))
+    device._dwarf_info = info
+    device._symbol_catalog = SymbolCatalog.from_dwarf(info, axf_path=str(axf))
+    catalog, _ = device.apply_c_definition('values', 'typedef struct { uint32_t items[300]; } Words;')
+    assert catalog.by_path('values[2]') is None
+    assert not catalog.browse_roots()[0].snapshot_eligible
+    assert catalog.browse_roots()[0].child_count == 1
+    with pytest.raises(SymbolCatalogError):
+        catalog.array_descriptors('values', count=2)
+    assert [node.label for node in catalog.browse_children('values.items')] == ['[0..255]', '[256..299]']
+    tail = catalog.browse_children('values.items', offset=256)
+    assert len(tail) == 44 and tail[-1].descriptor.address == 0x20000000 + 299 * 4
+    assert catalog.array_descriptors('values.items', start_index=299, count=1)[0] == tail[-1].descriptor
+    with pytest.raises(SymbolCatalogError):
+        catalog.array_descriptors('values.items', start_index=299, count=2)
+
+
+@pytest.mark.parametrize('name,value,data', [
+    ('gain', -1.5, struct.pack('<f', -1.5)),
+    ('controller.samples[0]', -3, struct.pack('<h', -3)),
+    ('mode', 1, struct.pack('<I', 1)),
+    ('controller.enabled', True, b'\x01'),
+])
+def test_device_scalar_codec_matches_catalog(tmp_path, name, value, data):
+    axf = tmp_path / 'scalars.axf'
+    axf.write_bytes(b'scalars')
+    device = Device(axf=str(axf))
+    device._connected, device._bridge = True, object()
+    device._dwarf_info = _dwarf_fixture()
+    device._symbol_catalog = SymbolCatalog.from_dwarf(device._dwarf_info, axf_path=str(axf))
+    descriptor = device.symbol_catalog.by_path(name)
+    device.read_memory = lambda address, size: data
+    writes = []
+    device.write_memory = lambda address, payload: writes.append((address, payload))
+    assert device.read_variable(name) == value
+    device.write_variable(name, value)
+    assert writes == [(descriptor.address, data)]

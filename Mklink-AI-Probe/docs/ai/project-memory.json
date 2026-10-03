@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T20:22:16+00:00",
+  "updated_at": "2026-10-03T20:44:59+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; implicit variable-read symbol reload removed after f6e7751; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; active C layout unified across scalar access and catalog after 8993be3; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审/验证。移除变量读取隐式AXF重载；变量读写与目录共用文件指纹检查，源变化返回409并保持会话/目录。1278通过、2可选依赖跳过；双下载器/Edge/REST/SDK/MCP过期读取拒绝、延后重载及恢复读通过。继续watch共享迁移及A7。"
+    "current_task": "持续循环评审/验证。C布局统一变量读写、搜索/浏览/数组快照/SuperWatch添加，删除旧DWARF回退，复用编解码和分页；Flash只读与可写范围分离。1290通过/2可选跳过，真机WebGUI尾页及SDK/MCP新地址通过。发现前轮后台关闭卡住，已清理本任务遗留进程；优先复现关闭等待，再推进watch。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第十九批：定向141通过；扩展1278通过/2可选依赖跳过，CI集合804后台/79GUI。真机AXF副本变化：GUI RTT保持、手动解析拒绝；停止后REST/SDK/MCP过期变量读取409且两会话/代次保持，第二探针独立。全部退出后重载一次，恢复原AXF再附着可读；Boot/选项字节/VTOR/配置/原AXF保持，tick推进。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第二十批：定向204通过；扩展1290通过/2可选依赖跳过，最终符号42通过。CI集合846后台/79GUI。真机C布局新地址与裸读一致，旧路径拒绝，WebGUI覆盖数组第二页/末元素可展开，双下载器/GUI RTT/MCP/SDK共存；Boot/选项字节/VTOR/配置保持，tick推进。最终两个PID退出已实查；前轮停止响应不等于退出的过强结论已更正。"
     },
     {
       "area": "正式版与安装",
@@ -59,12 +59,12 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。AXF副本变更、GUI RTT延后重载、REST/SDK/MCP变量409及重新附着恢复通过；第二探针仅版本查询。Boot20KiB/选项字节/VTOR/配置/原AXF保持，tick推进，两个后台退出。未reset、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。",
+    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。专用测试数组仅后台C描述覆盖，SDK/MCP新地址、WebGUI末页与RTT共存通过；第二探针仅版本查询，CDC/MSC独立。Boot20KiB/选项字节/VTOR/配置保持，tick推进。最终两个后台PID/串口子进程消失。未reset、烧录、擦除、写RAM、改保护/OTP/VCC/时钟；每轮须重枚举。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增804项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
+    "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增846项后台（含实际API、探针、配置、外设、批量内存、dump、flush、吞吐/流停止及发现/开口身份绑定）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第十九批测试后台曾接受停止并关闭HTTP后仍保留主/串口子进程，日志停在Shutting down，之前有Windows Proactor连接丢失回调异常。第二十批清理本任务遗留进程并增强PID退出验证，正常重跑通过，但间歇关闭卡住尚未定位修复；必须优先处理，不能把停止响应等同进程退出。",
     "0.3.0第七阶段：watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "持续评审/验证：已移除Device变量读的隐式AXF重载；继续迁移watch，复用当前符号和C布局、只读Flash描述、受限批量读取及共享准入，明确MAP/C源变化边界；迁移后删除独占路径。随后其他专用CLI、独立服务和旧MCP。双设备长稳、实际拔插/休眠、原生bfcache补验和NSIS继续。不改下载器固件/WinUSB，不自动合并发布。",
+    "优先复现并修复后台关闭卡住：第十九批HTTP已关但进程/串口未释放，Windows Proactor日志异常，旧本任务进程已清理；检查Uvicorn关闭连接/任务等待和现有StreamHub订阅退出，不加重复锁或强退兜底。之后继续watch共享迁移、MAP/C源边界、旧专用入口及A7双设备长稳/拔插/休眠/NSIS。不改下载器固件/WinUSB，不自动合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

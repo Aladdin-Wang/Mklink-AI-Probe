@@ -2145,25 +2145,17 @@ class Device:
         self._require_connected()
         catalog = self.symbol_catalog
         if catalog is not None:
-            catalog.require_fresh_source()
-        if not self._dwarf_info:
-            return self._read_variable_from_map(name)
-        from mklink.watch import resolve_variable_path, decode_value
-        try:
-            addr, type_name, size, enum_values = resolve_variable_path(
-                self._dwarf_info, name
-            )
-        except KeyError:
-            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
-            if descriptor is None:
-                return self._read_variable_from_map(name)
-            from mklink.symbol_catalog import decode_descriptor
+            from mklink.symbol_catalog import SymbolCatalogError, decode_descriptor
 
-            return decode_descriptor(
-                descriptor, self.read_memory(descriptor.address, descriptor.size),
-            )
-        raw = self.read_memory(addr, size)
-        return decode_value(raw, type_name, enum_values, known_size=size)
+            catalog.require_fresh_source()
+            descriptor = catalog.by_path(name, writable_only=False)
+            if descriptor is not None:
+                return decode_descriptor(
+                    descriptor, self.read_memory(descriptor.address, descriptor.size),
+                )
+            if catalog.is_overridden(name) or not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name):
+                raise SymbolCatalogError(f"scalar symbol is unavailable: {name}")
+        return self._read_variable_from_map(name)
 
     def _read_variable_from_map(self, name: str) -> Any:
         source = self._symbol_source_path()
@@ -2184,31 +2176,14 @@ class Device:
     def write_variable(self, name: str, value: int) -> None:
         self._require_connected()
         catalog = self.symbol_catalog
-        if catalog is not None:
-            catalog.require_fresh_source()
-        if not self._dwarf_info:
+        if catalog is None:
             raise DeviceError(
-                "No AXF/ELF loaded. Pass axf= to connect() for variable access."
+                "No AXF symbol catalog loaded. Pass axf= to connect() for variable access."
             )
-        from mklink.watch import resolve_variable_path, TYPE_FORMATS
-        try:
-            addr, type_name, size, _ = resolve_variable_path(self._dwarf_info, name)
-        except KeyError:
-            descriptor = self.symbol_catalog.by_path(name) if self.symbol_catalog else None
-            if descriptor is None:
-                raise
-            from mklink.symbol_catalog import encode_descriptor
+        from mklink.symbol_catalog import encode_descriptor
 
-            self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
-            return
-        key = type_name.strip().lower()
-        fmt_entry = TYPE_FORMATS.get(key)
-        if fmt_entry:
-            fmt, _ = fmt_entry
-        else:
-            fmt = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}.get(size, "<I")
-        data = struct.pack(fmt, value)
-        self.write_memory(addr, data)
+        descriptor = catalog.require(name, catalog.generation)
+        self.write_memory(descriptor.address, encode_descriptor(descriptor, value))
 
     # ------------------------------------------------------------------
     # Registers
