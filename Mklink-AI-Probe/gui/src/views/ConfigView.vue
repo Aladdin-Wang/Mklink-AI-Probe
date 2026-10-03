@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Download, RefreshCw, RotateCcw, Tag, Unplug, Usb } from '@lucide/vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useMklinkApi } from '../composables/useMklinkApi'
@@ -17,7 +17,8 @@ import {
 import { pickSymbolFile, type PickedFile } from '../lib/filePicker'
 import { saveBlobFile } from '../lib/downloadTextFile'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
-import { IS_TAURI } from '../lib/runtimeEndpoint'
+import { API_BASE, IS_TAURI } from '../lib/runtimeEndpoint'
+import { sharedRuntime } from '../composables/useBackendHealth'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
 import FileSourcesPanel from '../components/config/FileSourcesPanel.vue'
@@ -45,6 +46,32 @@ const config = ref<ProjectConfig>({})
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
 const localPortExplicit = ref(false)
+const probePorts = ref<PortInfo[]>([])
+const probeAlias = ref('')
+const selectedProbe = computed(() => probePorts.value.find(port => port.device === localPort.value))
+watch(selectedProbe, probe => { probeAlias.value = probe?.alias || '' })
+
+async function saveProbeAlias() {
+  try {
+    const response = await fetch(`${API_BASE}/api/runtime/alias`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ probe: selectedProbe.value?.probe_id, alias: probeAlias.value }),
+    })
+    if (!response.ok) throw new Error((await response.json()).detail)
+    await refreshPorts()
+    toast.success(tr('本机别名已保存', 'Local alias saved'))
+  } catch (error: any) { toast.error(error.message) }
+}
+
+async function openProbeWindow() {
+  try {
+    const response = await fetch(`${API_BASE}/api/runtime/select`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ probe: selectedProbe.value?.probe_id, open_browser: true }),
+    })
+    if (!response.ok) throw new Error((await response.json()).detail)
+  } catch (error: any) { toast.error(error.message) }
+}
 const settings = ref<DesktopSettings>(loadDesktopSettings(window.localStorage))
 
 const portsLoading = ref(false)
@@ -82,8 +109,9 @@ async function refreshPorts() {
   portsLoading.value = true
   try {
     const ports: PortInfo[] = await listPorts()
+    probePorts.value = ports
     portOptions.value = ports.map(port => ({
-      label: `${port.device} — ${port.description} (${port.manufacturer})`,
+      label: `${port.alias ? port.alias + ' · ' : ''}${port.device} — ${port.description} (${port.manufacturer})`,
       value: port.device,
     }))
   } catch (error: any) {
@@ -144,6 +172,8 @@ async function saveLocalConfig() {
 
 async function selectLocalPort() {
   localPortExplicit.value = Boolean(localPort.value.trim())
+  probeAlias.value = selectedProbe.value?.alias || ''
+  if (sharedRuntime.value) return
   await saveLocalConfig()
 }
 
@@ -473,6 +503,16 @@ onUnmounted(() => {
           >
             <RefreshCw :size="14" aria-hidden="true" />
           </button>
+        </div>
+
+        <div v-if="sharedRuntime && selectedProbe?.probe_id" class="form-row">
+          <label class="form-label" for="probe-alias">{{ tr('本机别名', 'Local alias') }}</label>
+          <input id="probe-alias" v-model="probeAlias" class="form-input" data-testid="probe-alias" maxlength="64" :disabled="!selectedProbe.identity_stable" />
+          <button class="btn btn-sm" data-testid="save-probe-alias" :disabled="!selectedProbe.identity_stable" @click="saveProbeAlias">{{ tr('保存别名', 'Save alias') }}</button>
+          <button class="btn btn-sm" data-testid="open-probe-window" @click="openProbeWindow">{{ tr('打开独立窗口', 'Open separate window') }}</button>
+        </div>
+        <div v-if="sharedRuntime && selectedProbe?.probe_id" class="connection-detail" data-testid="selected-probe-id">
+          {{ selectedProbe.probe_id }} · {{ tr('别名保存在本机，不修改下载器固件', 'Alias is stored on this computer; probe firmware is unchanged') }}
         </div>
 
         <div class="form-row">

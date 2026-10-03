@@ -22,6 +22,7 @@ import type {
 import { toHexPayload } from '../lib/rttTransmit'
 import type { RttEncoding } from '../lib/desktopSettings'
 import { API_BASE } from '../lib/runtimeEndpoint'
+import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
 
@@ -161,6 +162,19 @@ export function useMklinkApi() {
   }
 
   async function connectDevice(req: ConnectRequest): Promise<DeviceStatus> {
+    if (sharedRuntime.value) {
+      const selection = await api<{ same_runtime: boolean; runtime_url?: string; reload?: boolean }>('/api/runtime/select', {
+        method: 'POST', body: JSON.stringify({ port: req.port }),
+      })
+      if (selection.runtime_url) {
+        window.location.assign(selection.runtime_url)
+        return deviceStatus.value
+      }
+      if (selection.reload) {
+        window.location.reload()
+        return deviceStatus.value
+      }
+    }
     const result = await api<DeviceStatus>('/api/device/connect', {
       method: 'POST',
       body: JSON.stringify(req),

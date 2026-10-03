@@ -3477,6 +3477,23 @@ def _cli_break(args):
 
 def _cli_gui(args):
     """启动 MKLink GUI（构建前端 + FastAPI 服务器 + 浏览器）。"""
+    if not getattr(args, "direct", False):
+        import webbrowser
+        from mklink.runtime import RuntimeClient, browser_url, ensure_runtime
+        if args.host != "127.0.0.1":
+            raise SystemExit("Shared GUI binds only 127.0.0.1; use --direct for the legacy server")
+        info = ensure_runtime(project_root=args.project_root, port=args.port, probe=args.probe,
+                              device_port=args.device_port, allow_lobby=True)
+        if args.device_port or args.axf:
+            client = RuntimeClient(info=info)
+            client.connect(project_root=args.project_root if args.project_root != "." else None, port=args.device_port, axf=args.axf)
+            client.close()
+        url = browser_url(info)
+        print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
+        print("[MKLink] Closing the GUI leaves the shared runtime running. Stop with: mklink runtime stop --confirm")
+        if not args.no_browser:
+            webbrowser.open(url)
+        return
     from mklink._deps import require_gui_dependencies
     require_gui_dependencies()
 
@@ -3588,6 +3605,10 @@ def _cli_serve(args):
     backend = getattr(args, "backend", "fastapi")
     if backend == "fastapi":
         require_gui_dependencies()
+        if getattr(args, "desktop_instance_id", None):
+            from mklink.runtime_proxy import serve_desktop_proxy
+            serve_desktop_proxy(args)
+            return
         from mklink.remote.api import create_app, run_server
         app = create_app(
             auth_token=args.token,
@@ -3621,8 +3642,41 @@ def _cli_mcp(args):
     编排方法论 = SKILL.md）。使用 stdio transport：严禁向 stdout 输出任何
     内容（该流承载 JSON-RPC 协议）；诊断信息走 stderr / logging。
     """
+    if not getattr(args, "direct", False):
+        from mklink.runtime_mcp import run
+        run()
+        return
     from mklink.mcp_server import run as run_mcp_server
     run_mcp_server()
+
+
+def _cli_runtime(args):
+    import json
+    from mklink.runtime import RuntimeClient, RuntimeErrorResponse, ensure_runtime, request, running_runtimes, selected_runtime, serve_runtime
+    try:
+        if args.runtime_command == "serve":
+            serve_runtime(project_root=args.project_root, port=args.port, probe_id=args.probe_id)
+            return
+        if args.runtime_command == "start":
+            info = ensure_runtime(project_root=args.project_root, port=args.port, probe=args.probe, device_port=args.device_port)
+            result = request(info, "GET", "/_runtime/status")
+        elif args.runtime_command == "status":
+            result = [request(info, "GET", "/_runtime/status") for info in running_runtimes()]
+        elif args.runtime_command == "stop":
+            if not args.confirm:
+                raise RuntimeErrorResponse("Stopping the shared backend requires --confirm")
+            info = selected_runtime(args.probe)
+            result = request(info, "POST", "/_runtime/stop", {"confirm": True}) if info else {"status": "not_running"}
+        else:
+            client = RuntimeClient(project_root=args.project_root or ".")
+            try:
+                client.connect(project_root=args.project_root, probe=args.probe, port=args.device_port, axf=args.axf)
+                result = client.call(args.capability, json.loads(args.arguments))
+            finally:
+                client.close()
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    except (RuntimeErrorResponse, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _print_mcu_detect_result(result: dict, *, json_output: bool = False) -> None:
@@ -4365,8 +4419,10 @@ def main():
     gui_parser.add_argument("--port", type=int, default=8765, help="绑定端口（默认 8765）")
     gui_parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     gui_parser.add_argument("--device-port", default=None, help="MKLink COM 端口（默认自动检测）")
+    gui_parser.add_argument("--probe", default=None, help="下载器稳定 ID 或本机别名")
     gui_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
     gui_parser.add_argument("--project-root", default=".", help="项目根目录")
+    gui_parser.add_argument("--direct", action="store_true", help="兼容模式：独立后台，独占 CDC")
     gui_parser.add_argument(
         "--browser-session-timeout", type=float, default=None,
         help=argparse.SUPPRESS,
@@ -4404,6 +4460,35 @@ def main():
         "mcp",
         help="启动 MCP (Model Context Protocol) server（stdio，供 Claude Code / 其他 MCP client 调用）",
     )
+    mcp_parser.add_argument("--direct", action="store_true", help="兼容模式：旧版完整工具集，独占 CDC")
+
+    runtime_parser = subparsers.add_parser("runtime", help="管理 0.3 共享 CDC 后台及调用 GUI 能力")
+    runtime_sub = runtime_parser.add_subparsers(dest="runtime_command", required=True)
+    for command in ("start", "serve"):
+        entry = runtime_sub.add_parser(command)
+        entry.add_argument("--project-root", default=".")
+        entry.add_argument("--port", type=int, default=8765)
+        entry.add_argument("--probe", default=None)
+        entry.add_argument("--device-port", default=None)
+        entry.add_argument("--probe-id", default="lobby", help=argparse.SUPPRESS)
+    runtime_sub.add_parser("status")
+    runtime_stop = runtime_sub.add_parser("stop")
+    runtime_stop.add_argument("--confirm", action="store_true")
+    runtime_stop.add_argument("--probe", default=None)
+    runtime_call = runtime_sub.add_parser("call", help="调用共享能力，不独立打开 CDC")
+    runtime_call.add_argument("capability")
+    runtime_call.add_argument("--arguments", default="{}", help="JSON 参数对象")
+    runtime_call.add_argument("--project-root", default=None)
+    runtime_call.add_argument("--device-port", default=None)
+    runtime_call.add_argument("--axf", default=None)
+    runtime_call.add_argument("--probe", default=None)
+
+    probes_parser = subparsers.add_parser("probes", help="被动列出下载器、设置本机别名")
+    probes_sub = probes_parser.add_subparsers(dest="probes_command", required=True)
+    probes_sub.add_parser("list")
+    alias_parser = probes_sub.add_parser("alias", help="设置本机别名；空字符串清除别名")
+    alias_parser.add_argument("probe", help="下载器稳定 ID、现有别名或 COM 端口")
+    alias_parser.add_argument("alias")
 
     security_parser = subparsers.add_parser(
         "security",
@@ -4467,6 +4552,19 @@ def main():
     parser.add_argument("--test", action="store_true", help="运行基本测试（兼容旧版）")
 
     args = parser.parse_args()
+
+    if args.command == "runtime":
+        _cli_runtime(args)
+        return
+    if args.command == "probes":
+        import json
+        from mklink.probes import inventory, set_alias
+        from mklink.runtime import RuntimeErrorResponse
+        try:
+            print(json.dumps(inventory() if args.probes_command == "list" else set_alias(args.probe, args.alias), ensure_ascii=False, indent=2))
+        except RuntimeErrorResponse as exc:
+            raise SystemExit(str(exc)) from exc
+        return
 
     # 兼容旧版 --test 模式
     if args.test and args.port:

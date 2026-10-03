@@ -1595,6 +1595,8 @@ class SuperWatchStreamManager:
             empty_channels_json,
             1,
         )
+        self._latest_sample: dict | None = None
+        self._latest_sample_sequence = 0
         self._metadata_publish_lock = threading.Lock()
         self._last_metadata_publish_monotonic = 0.0
         self._config_generation = 0
@@ -2544,6 +2546,16 @@ class SuperWatchStreamManager:
         times = self._pending_sample_times
         self._pending_sample_times = array("d")
         sample_count = self._pending_sample_count
+        channel_count = self._pending_channel_count
+        self._latest_sample_sequence += sample_count
+        self._latest_sample = {
+            "sequence": self._latest_sample_sequence,
+            "metadata_version": self._metadata_cache[2],
+            "channels": json.loads(self._metadata_cache[1]),
+            "values": [value if math.isfinite(value) else None for value in values[-channel_count:]],
+            "sample_time_ms": float(times[-1]) if times and math.isfinite(times[-1]) else None,
+            "received_monotonic": time.monotonic(),
+        }
         self._pending_sample_count = 0
         self._pending_channel_count = 0
         self._pending_started_at = None
@@ -2568,6 +2580,16 @@ class SuperWatchStreamManager:
             logger.warning("SuperWatch binary batch dropped: %s", exc)
             return False
         return True
+
+    def get_latest_sample(self) -> dict:
+        """Return the last acquisition row without starting another hardware read."""
+        with self._read_lock:
+            sample = self._latest_sample
+            if sample is None or sample["metadata_version"] != self._metadata_cache[2]:
+                return {"sample": None, "running": self.running}
+            return {"sample": {key: value for key, value in sample.items() if key != "received_monotonic"},
+                    "age_seconds": max(0.0, time.monotonic() - sample["received_monotonic"]),
+                    "running": self.running}
 
     def search(self, query: str) -> list[dict]:
         if self._runtime is None:

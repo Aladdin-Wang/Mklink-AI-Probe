@@ -5,9 +5,28 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import pytest
-
 from mklink import web_entry
 
+
+def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypatch):
+    from mklink import web_entry
+    opened = []
+    info = {'port': 8765, 'token': 'test-token'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **_: info)
+    result = web_entry.start_web_entry(browser_open=opened.append)
+    assert result['shared'] is True
+    assert result['owned'] is False
+    assert opened == ['http://127.0.0.1:8765/_runtime/open#test-token']
+
+
+def test_shared_web_stop_refuses_ambiguous_multi_probe_runtime(monkeypatch):
+    from mklink import web_entry
+    from mklink.runtime import RuntimeErrorResponse
+    def ambiguous():
+        raise RuntimeErrorResponse('Multiple runtimes are running; select a probe explicitly')
+    monkeypatch.setattr('mklink.runtime.discover', ambiguous)
+    with pytest.raises(web_entry.WebEntryError, match='Multiple runtimes'):
+        web_entry.stop_web_entry()
 
 def test_protocol_python_executable_keeps_venv_interpreter(tmp_path, monkeypatch):
     executable = tmp_path / ".venv" / "bin" / "python"
@@ -284,7 +303,7 @@ def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_p
     spawned = []
     opened = []
 
-    result = web_entry.start_web_entry(
+    result = web_entry.start_web_entry(shared=False,
         data_dir=tmp_path,
         probe=lambda port: "web" if port == 8765 else None,
         port_available=lambda _port: False,
@@ -301,7 +320,7 @@ def test_start_reuses_an_existing_web_server_without_spawning_or_owning_it(tmp_p
 def test_start_scans_the_port_range_before_starting_a_competing_backend(tmp_path):
     opened = []
 
-    result = web_entry.start_web_entry(
+    result = web_entry.start_web_entry(shared=False,
         data_dir=tmp_path,
         probe=lambda port: "web" if port == 8766 else None,
         port_available=lambda port: port == 8765,
@@ -322,7 +341,7 @@ def test_start_skips_a_running_api_without_web_assets_and_uses_next_port(tmp_pat
             return "api"
         return "web" if port == 8766 else None
 
-    result = web_entry.start_web_entry(
+    result = web_entry.start_web_entry(shared=False,
         data_dir=tmp_path,
         probe=probe,
         port_available=lambda port: port == 8766,
@@ -346,7 +365,7 @@ def test_start_spawns_web_gui_after_api_only_port(tmp_path):
         commands.append((args, kwargs))
         return SimpleNamespace(pid=4321)
 
-    result = web_entry.start_web_entry(
+    result = web_entry.start_web_entry(shared=False,
         data_dir=tmp_path,
         probe=probe,
         port_available=lambda port: port == 8766,
@@ -376,7 +395,7 @@ def test_start_spawns_one_owned_gui_and_stop_only_terminates_that_pid(tmp_path):
         commands.append(command)
         return SimpleNamespace(pid=4321)
 
-    result = web_entry.start_web_entry(
+    result = web_entry.start_web_entry(shared=False,
         data_dir=tmp_path,
         probe=probe,
         port_available=lambda port: port == 8765,
@@ -392,7 +411,7 @@ def test_start_spawns_one_owned_gui_and_stop_only_terminates_that_pid(tmp_path):
     state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
     assert state["pid"] == 4321 and state["owned"] is True
 
-    stopped = web_entry.stop_web_entry(
+    stopped = web_entry.stop_web_entry(shared=False,
         data_dir=tmp_path,
         terminate=terminated.append,
         process_identity=lambda pid: f"process-{pid}",
@@ -406,7 +425,7 @@ def test_start_timeout_terminates_the_owned_process_and_clears_state(tmp_path):
     terminated = []
 
     with pytest.raises(web_entry.WebEntryError, match="did not become ready"):
-        web_entry.start_web_entry(
+        web_entry.start_web_entry(shared=False,
             data_dir=tmp_path,
             probe=lambda _port: None,
             port_available=lambda port: port == 8765,
@@ -431,7 +450,7 @@ def test_stop_does_not_kill_a_reused_pid_from_stale_state(tmp_path):
         "process_identity": "old-process",
     }), encoding="utf-8")
 
-    result = web_entry.stop_web_entry(
+    result = web_entry.stop_web_entry(shared=False,
         data_dir=tmp_path,
         terminate=terminated.append,
         process_identity=lambda _pid: "new-process",
@@ -448,7 +467,7 @@ def test_stop_never_terminates_a_reused_or_missing_service(tmp_path):
         "pid": 999, "port": 8765, "owned": False,
     }), encoding="utf-8")
 
-    result = web_entry.stop_web_entry(
+    result = web_entry.stop_web_entry(shared=False,
         data_dir=tmp_path,
         terminate=terminated.append,
     )
@@ -465,7 +484,7 @@ def test_status_reports_an_exited_owned_backend_as_stopped(tmp_path):
         "process_identity": "exited-process",
     }), encoding="utf-8")
 
-    result = web_entry.web_entry_status(
+    result = web_entry.web_entry_status(shared=False,
         data_dir=tmp_path,
         process_identity=lambda _pid: None,
     )
@@ -485,7 +504,7 @@ def test_status_clears_an_owned_process_that_no_longer_serves_web(tmp_path, monk
     }), encoding="utf-8")
     monkeypatch.setattr(web_entry, "probe_server", lambda _port: None)
 
-    result = web_entry.web_entry_status(
+    result = web_entry.web_entry_status(shared=False,
         data_dir=tmp_path,
         process_identity=lambda _pid: "same-process",
     )

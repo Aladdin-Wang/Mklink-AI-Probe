@@ -126,7 +126,8 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait(timeout=5)
 
 
-def test_two_desktop_sidecars_get_independent_endpoints(tmp_path):
+def test_two_desktop_sidecars_get_independent_endpoints(tmp_path, monkeypatch):
+    monkeypatch.setenv("MKLINK_RUNTIME_DIR", str(tmp_path / "shared-runtimes"))
     probe, preferred_port = _blocking_listener()
     probe.close()
     if preferred_port > 65525:
@@ -172,3 +173,9 @@ def test_two_desktop_sidecars_get_independent_endpoints(tmp_path):
     finally:
         for process in reversed(processes):
             _stop_process(process)
+        from mklink.runtime import running_runtimes, request
+        for info in running_runtimes():
+            request(info, "POST", "/_runtime/stop", {"confirm": True})
+        deadline = time.monotonic() + 10
+        while running_runtimes() and time.monotonic() < deadline:
+            time.sleep(0.1)

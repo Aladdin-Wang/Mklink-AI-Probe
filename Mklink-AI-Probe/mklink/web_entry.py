@@ -466,6 +466,7 @@ def gui_server_command(
         "--host", "127.0.0.1",
         "--port", str(port),
         "--no-browser",
+        "--direct",
         "--browser-session-timeout", "15",
         "--project-root", str(project_root),
     ]
@@ -648,6 +649,7 @@ def get_process_identity(pid: int, *, system: str | None = None) -> str | None:
 
 def start_web_entry(
     *,
+    shared: bool = True,
     data_dir: Path | None = None,
     preferred_port: int = DEFAULT_PORT,
     probe: Callable[[int], str | None] = probe_server,
@@ -659,6 +661,14 @@ def start_web_entry(
     sleep: Callable[[float], None] = time.sleep,
     timeout: float = WEB_START_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
+    if shared:
+        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
+        try:
+            info = ensure_runtime(port=preferred_port, allow_lobby=True)
+            browser_open(browser_url(info))
+            return {"status": "reused", "port": info["port"], "owned": False, "shared": True}
+        except RuntimeErrorResponse as exc:
+            raise WebEntryError(str(exc)) from exc
     data_dir = Path(data_dir or platform_data_dir())
     state = _load_state(data_dir)
     if state and state.get("owned") is True:
@@ -746,10 +756,18 @@ def start_web_entry(
 
 def stop_web_entry(
     *,
+    shared: bool = True,
     data_dir: Path | None = None,
     terminate: Callable[[int], None] = terminate_owned_process,
     process_identity: Callable[[int], str | None] = get_process_identity,
 ) -> dict[str, Any]:
+    if shared:
+        from mklink.runtime import RuntimeErrorResponse, discover, request
+        try:
+            info = discover()
+            return request(info, "POST", "/_runtime/stop", {"confirm": True}) if info else {"status": "not_running"}
+        except RuntimeErrorResponse as exc:
+            raise WebEntryError(str(exc)) from exc
     data_dir = Path(data_dir or platform_data_dir())
     state = _load_state(data_dir)
     if not state:
@@ -770,9 +788,14 @@ def stop_web_entry(
 
 def web_entry_status(
     *,
+    shared: bool = True,
     data_dir: Path | None = None,
     process_identity: Callable[[int], str | None] = get_process_identity,
 ) -> dict[str, Any]:
+    if shared:
+        from mklink.runtime import discover
+        info = discover()
+        return {"status": "running", "port": info["port"], "owned": False, "shared": True} if info else {"status": "stopped", "owned": False}
     data_dir = Path(data_dir or platform_data_dir())
     state = _load_state(data_dir)
     if state and state.get("owned") is True:

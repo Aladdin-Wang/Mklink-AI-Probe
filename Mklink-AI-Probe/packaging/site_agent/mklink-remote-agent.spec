@@ -11,6 +11,11 @@ SPEC_DIR = Path(SPECPATH).resolve()
 EXCLUDED_PREFIXES = (
     "mklink.mcp_server",
     "mklink.web_entry",
+    "mklink.runtime",
+    "mklink.runtime_api",
+    "mklink.runtime_mcp",
+    "mklink.runtime_proxy",
+    "mklink.probes",
     "mklink.remote.api",
     "mklink.remote.dashboards",
     "mklink.remote.mcp",

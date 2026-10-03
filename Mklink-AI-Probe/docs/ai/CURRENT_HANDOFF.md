@@ -4,21 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T03:43:06.163989+00:00`
-- 分支：`codex/firmware-20261003`
-- HEAD：`Based on main b35a32d; firmware publication and handoff cleanup.`
+- 更新时间：`2026-10-03T07:00:00+00:00`
+- 分支：`codex/v0.3.0-shared-runtime`
+- HEAD：`Based on main d4e73bd; 0.3.0 shared CDC runtime, multi-probe identity and local aliases.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
-- 工作树：Latest user firmware copied and hash-checked; use Git status for live state.
-- 当前任务：发布四份用户更新固件；同步V4/V3/V2主工程main；清理过期候选包并压缩交接。外部Arm-2D/MicroBoot保持原状、不上传。
+- 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
+- 当前任务：0.3.0第一阶段共享CDC后台改造：GUI/MCP共存、多下载器独立后台、本机别名。源码与双探针验证，提交任务分支PR；未合并、发布或安装。
 - 状态：`complete`
 
 ## 里程碑
 
+- **0.3.0共享后台第一阶段** — `development`。GUI/MCP/runtime call共享每探针后台；多设备身份和本机别名，无固件改动。完整MCP/CLI迁移、安装版和长稳验收待后续。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-shared-runtime.md：双下载器分别连接、双浏览器、别名刷新、真实MCP复用SuperWatch、关闭窗口后继续采集、代理退出不影响后台。完整回归数字以报告为准。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -26,23 +28,25 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
+- 0.3先保留CDC：按USB序列号绑定后台，本机别名不写固件；多设备不能自动选第一台。共享模式禁用绕过准入的旧内嵌Agent；独占兼容入口保留。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
 
 ## 真机环境
 
-- **state**：本轮只做发布、主机模型测试和代码同步，没有刷写设备。
-- **installer**：本地0.2.3/b0e0f61；本次固件独立发布，不重建应用。
+- **state**：两台探针短时共存实测；一台V4+STM32F103完成符号、读内存与SuperWatch/MCP验证，另一台只验证探针连接与隔离；未刷写固件或改VCC。
+- **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 按新任务继续；先查Git/设备现状，仅阅读相关验证报告。
+1. 查看0.3.0任务PR与验证报告，继续完整能力迁移、后台管理界面和长稳/安装验证；不要直接发布开发版。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
+- 0.3.0第一阶段：旧CLI/SDK和完整MCP能力尚未迁移；共享模式内嵌Agent暂禁用，多探针MSC写操作拒绝；WinUSB、自动恢复、日志轮转、24/72小时长稳及实际安装升级未验收。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。

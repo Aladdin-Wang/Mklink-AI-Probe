@@ -9,6 +9,7 @@ import {
 
 /** 'starting' = backend not yet checked / currently booting */
 const backendState = ref<'starting' | 'alive' | 'dead'>('starting')
+export const sharedRuntime = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let refCount = 0
 let firstCheckDone = false
@@ -20,6 +21,7 @@ async function checkBackendHealth(): Promise<boolean> {
     const payload = await res.json().catch(() => null)
     if (payload && typeof payload === 'object') {
       applyReportedBackendPort((payload as { backend_port?: unknown }).backend_port)
+      sharedRuntime.value = (payload as { shared_runtime?: unknown }).shared_runtime === true
     }
     return true
   } catch {
@@ -46,7 +48,7 @@ async function refreshHealth() {
 async function checkViaTauri(): Promise<boolean> {
   try {
     const alive = await (window as any).__TAURI__.invoke('backend_alive')
-    return !!alive
+    return !!alive && await checkBackendHealth()
   } catch {
     return await checkBackendHealth()
   }
@@ -118,6 +120,7 @@ export function useBackendHealth() {
 
   return {
     backendState,
+    sharedRuntime,
     backendPort: runtimeBackendPort,
     isTauri: IS_TAURI,
     startHealthPolling,

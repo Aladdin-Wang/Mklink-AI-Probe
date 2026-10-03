@@ -1,4 +1,7 @@
 export interface PortInfo {
+  probe_id?: string
+  alias?: string
+  identity_stable?: boolean
   device: string
   description: string
   manufacturer: string

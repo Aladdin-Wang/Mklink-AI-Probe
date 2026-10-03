@@ -15,6 +15,7 @@ REQUIRED_PACKAGES: dict[str, str] = {
 }
 
 GUI_PACKAGES: dict[str, str] = {
+    "httpx": "httpx>=0.27,<1",
     "fastapi": "fastapi>=0.100",
     "uvicorn": "uvicorn>=0.20",
     "websockets": "websockets>=11.0",

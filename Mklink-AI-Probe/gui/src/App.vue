@@ -86,6 +86,10 @@
       </div>
     </div>
     <footer class="app-footer">
+      <span v-if="sharedRuntime" data-testid="shared-runtime-status"
+        :title="tr('关闭窗口后后台和采集继续运行；需要释放下载器时先停止采集并断开设备。', 'The backend and acquisition continue after closing this window. Stop acquisition and disconnect to release the probe.')">
+        {{ tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
+      </span>
       <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
     </footer>
     <ToastContainer />
@@ -113,7 +117,7 @@ const router = useRouter()
 const DashboardView = defineAsyncComponent(() => import('./views/DashboardView.vue'))
 const route = useRoute()
 const { startStatusPolling, stopStatusPolling } = useMklinkApi()
-const { backendState, startHealthPolling, stopHealthPolling, restart, isTauri } = useBackendHealth()
+const { backendState, sharedRuntime, startHealthPolling, stopHealthPolling, restart, isTauri } = useBackendHealth()
 const {
   state: updateState,
   version: updateVersion,

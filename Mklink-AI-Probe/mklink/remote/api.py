@@ -820,6 +820,12 @@ def create_app(
 
         previous = _state.get("last_device_connection") or {}
         port = config.device_port or previous.get("port")
+        if _state.get("shared_runtime"):
+            from mklink.probes import select_probe
+            selected = select_probe(_state["shared_probe_id"])
+            if config.device_port and config.device_port.casefold() != selected["port"].casefold():
+                raise ValueError("Remote reconnect must use this runtime's physical probe")
+            port = selected["port"]
         axf = config.axf or previous.get("axf")
         mcu = previous.get("mcu")
         elf_backend = previous.get("elf_backend")
@@ -1100,6 +1106,8 @@ def create_app(
         return JSONResponse(status_code=409, content={"detail": error.detail})
 
     async def dispatch_rpc(dispatcher, method: str, params: dict, req_id):
+        if _state.get("shared_runtime") and method not in {"idcode", "mcu_name"}:
+            return make_error(-32009, "Use shared runtime capabilities for hardware operations", req_id)
         loop = asyncio.get_event_loop()
         if method not in _TARGET_DEBUG_RPC_METHODS:
             return await loop.run_in_executor(
@@ -1203,7 +1211,14 @@ def create_app(
 
     @app.get("/api/config")
     async def get_config():
-        config = load_config(_state["project_root"])
+        config = load_config(_state["project_root"]) or {}
+        if _state.get("shared_runtime"):
+            from mklink.probes import select_probe
+            from mklink.runtime import RuntimeErrorResponse
+            try:
+                config["com_port"] = select_probe(_state.get("shared_probe_id"))["port"]
+            except RuntimeErrorResponse:
+                config["com_port"] = ""
         return config or {}
 
     @app.put("/api/config")
@@ -1479,10 +1494,54 @@ def create_app(
     @app.get("/api/ports")
     async def list_ports():
         from mklink.discovery import list_available_ports
+        if _state.get("shared_runtime"):
+            from mklink.probes import inventory
+            return [{**probe, "device": probe["port"], "manufacturer": "MicroKeen",
+                     "vid": 0x0D28, "pid": 0x0202} for probe in inventory()]
         return list_available_ports()
+
+    @app.post("/api/runtime/alias")
+    async def runtime_alias(body: dict):
+        from mklink.probes import set_alias
+        from mklink.runtime import RuntimeErrorResponse
+        if not isinstance(body.get("probe"), str) or not isinstance(body.get("alias"), str):
+            raise HTTPException(422, "probe and alias must be strings")
+        try:
+            return await run_in_threadpool(set_alias, body["probe"], body["alias"])
+        except RuntimeErrorResponse as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/runtime/select")
+    async def runtime_select(body: dict):
+        if not _state.get("shared_runtime"):
+            return {"same_runtime": True}
+        from mklink.probes import select_probe
+        from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
+        selector = body.get("probe") or body.get("port")
+        if selector is not None and not isinstance(selector, str):
+            raise HTTPException(422, "probe must be a string")
+        if not selector and _state.get("shared_probe_id") != "lobby":
+            return {"same_runtime": True}
+        try:
+            selected = select_probe(selector)
+            if selected["probe_id"] == _state.get("shared_probe_id") and not body.get("open_browser"):
+                return {"same_runtime": True}
+            target = await run_in_threadpool(ensure_runtime, project_root=_state["project_root"], probe=selected["probe_id"])
+            if body.get("open_browser") is True:
+                import webbrowser
+                await run_in_threadpool(webbrowser.open, browser_url(target))
+                return {"opened": True, "probe_id": selected["probe_id"]}
+            return {"same_runtime": False, "probe_id": selected["probe_id"], "runtime_url": browser_url(target)}
+        except RuntimeErrorResponse as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/ports/discover")
     async def discover_mklink_port():
+        if _state.get("shared_runtime"):
+            from mklink.probes import inventory
+            candidates = inventory()
+            return {"port": candidates[0]["port"] if len(candidates) == 1 else None,
+                    "selection_required": len(candidates) > 1}
         from mklink.discovery import find_mklink_cdc_port
         loop = asyncio.get_running_loop()
         port = await loop.run_in_executor(None, find_mklink_cdc_port)
@@ -1574,6 +1633,22 @@ def create_app(
         elf_backend: str | None = Body(default=None),
         restore_last: bool = Body(default=False),
     ):
+        runtime = getattr(app.state, "shared_runtime", None)
+        if runtime is not None:
+            from mklink.probes import select_probe
+            from mklink.runtime import RuntimeErrorResponse
+            try:
+                selected = select_probe(port or _state["shared_probe_id"])
+                if selected["probe_id"] != _state["shared_probe_id"]:
+                    raise RuntimeErrorResponse("Select this probe in its own runtime window before connecting")
+                port = selected["port"]
+                restore_last = False  # a saved COM port cannot override physical identity
+            except RuntimeErrorResponse as exc:
+                raise HTTPException(409, str(exc)) from exc
+            runtime.prune()
+            current = _state.get("device")
+            if runtime.sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
+                raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
         if restore_last:
             previous = _state.get("last_device_connection") or {}
@@ -2639,6 +2714,10 @@ def create_app(
         managers = get_managers()
         return await run_in_threadpool(managers["superwatch"].get_status)
 
+    @app.get("/api/dash/superwatch/latest")
+    async def superwatch_latest():
+        return await run_in_threadpool(get_managers()["superwatch"].get_latest_sample)
+
     # ===================================================================
     # Integrated Dashboard SSE — Serial Monitor
     # ===================================================================
@@ -3502,6 +3581,7 @@ def create_app(
         payload = {
             "status": "ok",
             "device_connected": dev.connected if dev else False,
+            "shared_runtime": bool(_state.get("shared_runtime")),
             **elf_status(project_root=_state["project_root"]),
         }
         backend_port = _state.get("backend_port")
@@ -3686,7 +3766,7 @@ def create_app(
     from fastapi.responses import FileResponse
     from pathlib import Path as _Path
 
-    _gui_dist = _Path(__file__).resolve().parent.parent.parent / "gui" / "dist"
+    _gui_dist = _Path(os.environ["MKLINK_GUI_DIST"]).resolve() if os.environ.get("MKLINK_GUI_DIST") else _Path(__file__).resolve().parent.parent.parent / "gui" / "dist"
 
     if _gui_dist.is_dir():
         import mimetypes

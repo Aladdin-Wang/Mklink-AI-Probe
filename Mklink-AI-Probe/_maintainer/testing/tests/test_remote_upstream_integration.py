@@ -166,7 +166,7 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
     scripts = project["scripts"]
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.2.3"
+    assert project["version"] == "0.3.0"
     assert {
         "pyelftools==0.32",
         "pycparser>=2.22,<4",
@@ -180,7 +180,7 @@ def test_current_metadata_preserves_core_remote_and_separate_optional_surfaces()
         "mklink-remote-mcp": "mklink.remote.mcp:main",
     }
     assert extras["remote"] == ["websockets>=11.0", "intelhex>=2.3"]
-    assert extras["mcp"] == ["fastmcp>=2.0", "pydantic<2.13"]
+    assert {"fastmcp>=2.0", "pydantic<2.13", "httpx>=0.27,<1", "fastapi>=0.100"}.issubset(extras["mcp"])
     assert {
         "build==1.5.0",
         "pyinstaller==6.18.0",

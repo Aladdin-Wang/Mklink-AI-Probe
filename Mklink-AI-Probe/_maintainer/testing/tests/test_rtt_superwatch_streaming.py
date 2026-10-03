@@ -908,6 +908,26 @@ def test_superwatch_preserves_device_sample_times_across_host_batch_jitter():
         assert struct.unpack_from("<2f", call.args[0], 16) == pytest.approx(tuple(t / 1000 for t in times))
 
 
+def test_shared_latest_row_uses_existing_capture_and_invalidates_on_layout_change():
+    manager = SuperWatchStreamManager(stream_hub=Mock(), batch_samples=1)
+    manager._runtime = _MutableWatchRuntime()
+    manager.publish_metadata()
+    assert manager.get_latest_sample()['sample'] is None
+    assert manager.publish_sample_points([{'_t': .025, 'a': 7.0}])
+    first = manager.get_latest_sample()
+    assert first['sample']['values'] == [7.0]
+    assert first['sample']['sample_time_ms'] == 25.0
+    assert first['age_seconds'] >= 0
+    # Repeated readers consume no samples and never invoke a target read.
+    assert manager.get_latest_sample()['sample'] == first['sample']
+    manager.add_watch('b')
+    assert manager.get_latest_sample()['sample'] is None
+    assert manager.publish_sample_points([{'_t': .026, 'a': 8.0, 'b': 9.0}])
+    second = manager.get_latest_sample()['sample']
+    assert second['sequence'] > first['sample']['sequence']
+    assert second['values'] == [8.0, 9.0]
+
+
 def test_superwatch_rejects_partial_and_nonfinite_samples_atomically():
     hub = StreamHub(max_batches_per_client=2)
     manager = SuperWatchStreamManager(stream_hub=hub, batch_samples=1)
