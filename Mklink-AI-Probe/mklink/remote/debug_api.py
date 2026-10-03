@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
+from mklink.symbol_catalog import SymbolSourceChangedError
 
 
 def _fields(body, allowed):
@@ -166,6 +167,11 @@ def memory_flush(device, body):
     return execute_flush(device, validate_writes(body.get('writes')), verify=body.get('verify', True))
 
 
+def watch_snapshot(device, body):
+    _fields(body, {'names'})
+    return {'rows': device.watch(body.get('names'))}
+
+
 def memory_regions(device, body):
     from mklink.memory_access import read_memory_regions
     _fields(body, {'regions'})
@@ -215,6 +221,8 @@ def create_debug_router(state, lease):
             async with lease(state, path):
                 try:
                     return await run_in_threadpool(operation, device, body)
+                except SymbolSourceChangedError as error:
+                    raise HTTPException(409, str(error)) from error
                 except (ValueError, KeyError) as error:
                     raise HTTPException(422, str(error)) from error
                 except Exception as error:
@@ -225,6 +233,7 @@ def create_debug_router(state, lease):
     add('dump-memory', memory_dump)
     add('dump-memory/capture', memory_dump_stream)
     add('read-memory-regions', memory_regions)
+    add('watch', watch_snapshot)
     add('flush-memory', memory_flush)
     add('register-snapshot', register_snapshot)
     add('fault-snapshot', fault_snapshot)

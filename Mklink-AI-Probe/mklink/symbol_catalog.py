@@ -179,6 +179,7 @@ class SymbolCatalog:
     containers: tuple[SymbolContainerDescriptor, ...] = ()
     _info: DwarfInfo | None = field(default=None, repr=False, compare=False)
     _ram_ranges: tuple[tuple[int, int], ...] = field(default=(), repr=False, compare=False)
+    _map_source: object = field(default=None, repr=False, compare=False)
 
     @cached_property
     def index(self) -> dict[str, SymbolDescriptor]:
@@ -200,6 +201,29 @@ class SymbolCatalog:
         if self.is_overridden(path):
             return None
         return self._resolve_descriptor(path, writable_only=writable_only)
+
+    def read_descriptor(self, path: str) -> SymbolDescriptor:
+        descriptor = self.by_path(path, writable_only=False)
+        if descriptor is not None:
+            return descriptor
+        # A known DWARF aggregate/pointer or an explicitly replaced layout must
+        # never be reinterpreted as a MAP scalar.
+        if (self.is_overridden(path) or (self._info and path in self._info.variables
+                and self._info.variables[path].type_name not in ('', 'unknown'))):
+            raise SymbolCatalogError(f'scalar symbol is unavailable: {path}')
+        try:
+            resolved = self._map_source.resolve(path) if self._map_source else None
+        except SymbolCatalogError:
+            raise
+        except ValueError as error:
+            raise SymbolCatalogError(str(error)) from error
+        if resolved is None:
+            raise SymbolCatalogError(f'scalar symbol is unavailable: {path}')
+        from mklink.watch import TYPE_FORMATS
+        address, type_name, size = resolved
+        fmt = TYPE_FORMATS[type_name][0][-1]
+        kind = 'float' if fmt in 'fd' else 'bool' if fmt == '?' else 'signed' if fmt in 'bhiq' else 'unsigned'
+        return SymbolDescriptor(path, address, type_name, kind, size, writable=False, source='map')
 
     def require(self, path: str, generation: int) -> SymbolDescriptor:
         self.require_fresh_source()
@@ -770,7 +794,10 @@ class SymbolCatalog:
         generation: int = 1,
         ram_ranges: Iterable[tuple[int, int]] = ((0x20000000, 0x40000000),),
         max_leaves_per_root: int = 256,
+        project_root: str | None = None,
     ) -> "SymbolCatalog":
+        from mklink.watch import MapSourceSnapshot
+        map_source = MapSourceSnapshot.load(axf_path, project_root)
         ranges = tuple((int(start), int(end)) for start, end in ram_ranges)
         descriptors: list[SymbolDescriptor] = []
         containers: list[SymbolContainerDescriptor] = []
@@ -943,6 +970,7 @@ class SymbolCatalog:
             containers=tuple(sorted(containers, key=lambda item: _natural_path_key(item.path))),
             _info=info,
             _ram_ranges=ranges,
+            _map_source=map_source,
         )
 
     def with_c_layout(
@@ -989,6 +1017,7 @@ class SymbolCatalog:
             containers=tuple(item for item in self.containers if item.path != root_path),
             _info=self._info,
             _ram_ranges=self._ram_ranges,
+            _map_source=self._map_source,
         )
 
 

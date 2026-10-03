@@ -1221,51 +1221,6 @@ def _cli_memmap(args):
     print(format_memmap_json(summary) if args.json else format_memmap(summary))
 
 
-def _cli_watch(args):
-    from mklink.watch import format_watch_rows, read_watch_values
-
-    source = args.source or _default_axf_from_project(args.project_root)
-    if not source:
-        print("[FAIL] 请指定 --source 或先运行 project-init")
-        return
-    names: list[str] = []
-    if args.variables:
-        for item in args.variables:
-            names.extend([p.strip() for p in item.split(",") if p.strip()])
-    if args.profile:
-        import json
-        with open(args.profile, "r", encoding="utf-8") as f:
-            profile = json.load(f)
-        names.extend(profile.get("variables", []))
-    if not names:
-        print("[FAIL] 请指定变量名或 --profile")
-        return
-    import time
-    try:
-        if args.period and args.period > 0:
-            while True:
-                print(format_watch_rows(read_watch_values(
-                    names,
-                    source=source,
-                    port=args.port,
-                    backend=getattr(args, "elf_backend", None),
-                    project_root=args.project_root,
-                ), as_json=args.json))
-                time.sleep(args.period)
-        else:
-            print(format_watch_rows(read_watch_values(
-                names,
-                source=source,
-                port=args.port,
-                backend=getattr(args, "elf_backend", None),
-                project_root=args.project_root,
-            ), as_json=args.json))
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        print(f"[FAIL] {e}")
-
-
 def _cli_vofa(
     port: str | None,
     variables: list[str],
@@ -2695,20 +2650,19 @@ def main():
 
     # watch 子命令
     watch_parser = subparsers.add_parser("watch", help="读取变量快照，支持 DWARF 类型解码")
-    watch_parser.add_argument("--project-root", default=".", help="项目根目录")
+    watch_parser.add_argument("--project-root", default=None, help="项目根目录")
     watch_parser.add_argument("variables", nargs="*", help="变量名，支持逗号分隔和 struct.field")
     watch_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     watch_parser.add_argument("--source", help="ELF/AXF 文件路径")
     watch_parser.add_argument("--period", type=float, default=0.0, help="周期刷新秒数；0 表示单次读取")
     watch_parser.add_argument("--profile", help="watch profile JSON，格式: {\"variables\": [...]}")
-    watch_parser.add_argument("--struct", action="store_true", help="预留：展开结构体字段")
     watch_parser.add_argument("--json", action="store_true", help="JSON 输出")
     _add_elf_backend_arg(watch_parser)
 
     # ---- Modbus RTU 子命令组 ----
     superwatch_parser = subparsers.add_parser("superwatch", help="SuperWatch dump_memory binary-stream viewer")
     superwatch_parser.add_argument("variables", nargs="*", help="variables, struct.field paths, or registers")
-    superwatch_parser.add_argument("--project-root", default=".", help="project root")
+    superwatch_parser.add_argument("--project-root", default=None, help="project root")
     superwatch_parser.add_argument("--port", help="COM port")
     superwatch_parser.add_argument("--source", help="ELF/AXF path for DWARF variable resolution")
     superwatch_parser.add_argument(
@@ -3123,7 +3077,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser, watch_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3235,8 +3189,6 @@ def main():
         _cli_typeinfo(args)
     elif args.command == "memmap":
         _cli_memmap(args)
-    elif args.command == "watch":
-        _cli_watch(args)
     elif args.command == "modbus":
         _cli_modbus_dispatch(args)
     elif args.command == "serial":

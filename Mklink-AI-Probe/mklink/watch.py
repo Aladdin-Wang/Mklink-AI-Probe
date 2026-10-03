@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 import struct
-import time
+import os
+import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 
-from mklink.dwarf_parser import DwarfInfo, DwarfStruct, load_dwarf_info
-from mklink.memory_access import read_memory
+from mklink.dwarf_parser import DwarfInfo
 
 
 TYPE_FORMATS = {
@@ -102,7 +103,7 @@ def _candidate_map_paths(source: str) -> list[Path]:
     return [c for i, c in enumerate(candidates) if c not in candidates[:i]]
 
 
-def _parse_map_symbol(map_path: Path, name: str) -> tuple[int, int, str | None] | None:
+def _parse_map_symbol(text: str, name: str) -> tuple[int, int, str | None] | None:
     name_re = re.escape(name)
     by_name = re.compile(
         rf"^\s*{name_re}\s+0x(?P<addr>[0-9a-fA-F]+)\s+\S+\s+(?P<size>\d+)\s+\d+\s+.*?(?P<object>\S+\.o)?\s*$"
@@ -116,18 +117,18 @@ def _parse_map_symbol(map_path: Path, name: str) -> tuple[int, int, str | None] 
     gcc_symbol = re.compile(
         rf"^\s*0x(?P<addr>[0-9a-fA-F]+)\s+{name_re}\s*$"
     )
-    try:
-        lines = map_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    except OSError:
-        return None
+    lines = text.splitlines()
+    matches = []
     previous_alloc: tuple[int, int, str | None] | None = None
     for line in lines:
         m = by_name.match(line)
         if m:
-            return int(m.group("addr"), 16), int(m.group("size")), m.group("object")
+            matches.append((int(m.group("addr"), 16), int(m.group("size")), m.group("object")))
+            continue
         m = by_range.match(line)
         if m:
-            return int(m.group("start"), 16), int(m.group("size")), m.group("object")
+            matches.append((int(m.group("start"), 16), int(m.group("size")), m.group("object")))
+            continue
         m = gcc_alloc.match(line)
         if m:
             previous_alloc = (
@@ -142,72 +143,148 @@ def _parse_map_symbol(map_path: Path, name: str) -> tuple[int, int, str | None] 
             if previous_alloc:
                 alloc_addr, alloc_size, object_name = previous_alloc
                 if alloc_addr <= address < alloc_addr + max(alloc_size, 1):
-                    return address, max(alloc_size - (address - alloc_addr), 0), object_name
-            return address, 0, None
-    return None
-
-
-def _iter_source_roots(source: str) -> list[Path]:
-    roots = []
-    p = Path(source).resolve()
-    for parent in [p.parent, *p.parents]:
-        roots.append(parent)
-    return roots
-
-
-def _find_declared_type(source: str, name: str, object_name: str | None) -> str | None:
-    source_names = []
-    if object_name:
-        obj = Path(object_name).name
-        if obj.endswith(".o"):
-            source_names.append(obj[:-2])
-        elif obj.endswith(".obj"):
-            source_names.append(obj[:-4])
-    source_names.extend(["*.c", "*.h"])
-
-    seen: set[Path] = set()
-    name_re = re.escape(name)
-    type_words = "|".join(sorted((re.escape(k) for k in _C_TYPE_ALIASES), key=len, reverse=True))
-    decl_re = re.compile(
-        rf"\b(?:static\s+|extern\s+|volatile\s+|const\s+)*"
-        rf"(?P<type>{type_words})\s+(?:\*+\s*)?{name_re}\b"
-    )
-    for root in _iter_source_roots(source):
-        if not root.exists() or root.is_file():
-            continue
-        for pattern in source_names:
-            for path in root.rglob(pattern):
-                if path in seen or path.suffix.lower() not in {".c", ".h"}:
+                    matches.append((address, alloc_size - (address - alloc_addr), object_name))
                     continue
-                seen.add(path)
-                try:
-                    text = path.read_text(encoding="utf-8", errors="ignore")
-                except OSError:
-                    continue
-                m = decl_re.search(text)
-                if m:
-                    return _C_TYPE_ALIASES.get(m.group("type").lower())
-    return None
+            matches.append((address, 0, None))
+    if len({(address, size) for address, size, _ in matches}) > 1:
+        raise ValueError("Ambiguous MAP symbol: " + name)
+    return matches[0] if matches else None
 
 
-def resolve_map_source_variable(source: str, name: str) -> tuple[int, str, int] | None:
-    """Resolve a simple global variable using a sibling MAP file and C source.
+# These limits bound fallback work even when a project root was chosen too broadly.
+_MAX_SOURCE_BYTES = 16 * 1024 * 1024
+_MAX_SOURCE_FILES = 4096
+_MAX_ENTRIES = 20000
 
-    This is a fallback for toolchains whose DWARF output is too sparse for the
-    lightweight parser. It intentionally supports only top-level basic globals.
+
+def _source_snapshot(path: Path, remaining: int):
+    from mklink.file_content import source_fingerprint
+    if path.stat().st_size > remaining:
+        raise ValueError("MAP/C fallback exceeds source byte limit")
+    fingerprint = source_fingerprint(path)
+    with path.open('rb') as stream:
+        data = stream.read(remaining + 1)
+    if len(data) > remaining or hashlib.sha256(data).hexdigest() != fingerprint['sha256']:
+        raise ValueError("MAP/C source changed while loading or exceeds byte limit")
+    return data.decode('utf-8', errors='replace'), fingerprint
+
+
+def _global_source(text):
+    # Only basic top-level declarations are supported; never infer from locals,
+    # comments, strings, struct members, pointer/array declarators or typedefs.
+    text = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', ' ', text, flags=re.S)
+    depth, result = 0, []
+    for char in text:
+        if char == '{':
+            depth += 1
+        if not depth:
+            result.append(char)
+        if char == '}':
+            depth = max(0, depth - 1)
+            if not depth:
+                result.append(';')
+    return ''.join(result)
+
+
+@dataclass(frozen=True)
+class MapSourceSnapshot:
+    """Bounded source evidence captured when a catalog is explicitly loaded.
+
+    New files/declarations become visible on the next explicit load. Resolved
+    MAP and declaration files are content-checked before and after each read.
+    An unavailable fallback never prevents using valid DWARF descriptors.
     """
-    if "." in name:
-        return None
-    for map_path in _candidate_map_paths(source):
-        symbol = _parse_map_symbol(map_path, name)
-        if not symbol:
-            continue
-        address, map_size, object_name = symbol
-        type_name = _find_declared_type(source, name, object_name) or "unknown"
-        fmt_size = TYPE_FORMATS.get(type_name.lower())
-        size = fmt_size[1] if fmt_size else map_size
+    maps: tuple = ()
+    sources: tuple = ()
+    error: str | None = None
+
+    @classmethod
+    def load(cls, source: str, project_root: str | None = None):
+        maps, sources = [], []
+        remaining = _MAX_SOURCE_BYTES
+        try:
+            for path in _candidate_map_paths(source):
+                if path.is_file():
+                    text, fp = _source_snapshot(path, remaining)
+                    remaining -= fp['size']
+                    maps.append((path.resolve(), text, fp))
+            if not maps:
+                return cls()
+            root = Path(project_root).resolve() if project_root else Path(source).resolve().parent
+            if not root.is_dir() or root == Path(root.anchor):
+                raise ValueError('MAP/C fallback requires a project directory, not a drive root')
+            entries = 0
+            def fail(error):
+                raise error
+            for directory, dirs, files in os.walk(root, followlinks=False, onerror=fail):
+                entries += len(dirs) + len(files)
+                if entries > _MAX_ENTRIES:
+                    raise ValueError('MAP/C fallback exceeds directory entry limit')
+                dirs[:] = sorted(d for d in dirs if d not in {'.git', '.build', 'node_modules', '.venv'}
+                                 and not Path(directory, d).is_symlink()
+                                 and not getattr(Path(directory, d), 'is_junction', lambda: False)())
+                for filename in sorted(files):
+                    path = Path(directory, filename)
+                    if path.suffix.lower() not in {'.c', '.h'}:
+                        continue
+                    if path.is_symlink() or not path.resolve().is_relative_to(root):
+                        raise ValueError('MAP/C source links are unsupported')
+                    if len(sources) >= _MAX_SOURCE_FILES:
+                        raise ValueError('MAP/C fallback exceeds source file limit')
+                    text, fp = _source_snapshot(path, remaining)
+                    remaining -= fp['size']
+                    sources.append((path.resolve(), _global_source(text), fp))
+            return cls(tuple(maps), tuple(sources))
+        except (OSError, ValueError) as error:
+            return cls(error=str(error))
+
+    def resolve(self, name: str):
+        if not re.fullmatch(r'[A-Za-z_$][A-Za-z0-9_$]*', name):
+            return None
+        if self.error:
+            raise ValueError(self.error)
+        from mklink.file_content import source_fingerprint
+        from mklink.symbol_catalog import SymbolSourceChangedError
+        def fresh(path, fp):
+            try:
+                if source_fingerprint(path) == fp:
+                    return
+            except OSError:
+                pass
+            raise SymbolSourceChangedError('MAP/C source changed; explicitly reparse symbols before variable access')
+        symbols = []
+        for path, text, fp in self.maps:
+            fresh(path, fp)
+            symbol = _parse_map_symbol(text, name)
+            if symbol:
+                symbols.append(symbol)
+        if not symbols:
+            return None
+        if len({row[:2] for row in symbols}) != 1:
+            raise ValueError('Ambiguous MAP sources for: ' + name)
+        words = '|'.join(sorted(map(re.escape, _C_TYPE_ALIASES), key=len, reverse=True))
+        declaration = re.compile(
+            rf'(?:^|(?<=;))\s*(?P<qualifiers>(?:static\s+|extern\s+|volatile\s+|const\s+)*)'
+            rf'(?P<type>{words})\s+(?P<declarator>[^;]*\b{re.escape(name)}\b[^;]*);', re.M)
+        types, definitions = [], 0
+        for path, text, fp in self.sources:
+            for match in declaration.finditer(text):
+                fresh(path, fp)
+                if re.search(r'^\s*#\s*(?:if|ifdef|ifndef|elif|else|endif|define|undef)\b', text, re.M):
+                    raise ValueError('MAP fallback cannot evaluate C preprocessor declarations: ' + name)
+                tail = match['declarator'].strip()
+                if not re.fullmatch(rf'{re.escape(name)}\s*(?:=[^,;]*)?', tail):
+                    raise ValueError('MAP fallback requires an unambiguous basic scalar: ' + name)
+                types.append(_C_TYPE_ALIASES[match['type']])
+                definitions += 'extern' not in match['qualifiers'].split()
+        if not types or len(set(types)) != 1 or definitions != 1:
+            raise ValueError('Missing or ambiguous C scalar type for: ' + name)
+        address, map_size, _ = symbols[0]
+        type_name = types[0]
+        size = TYPE_FORMATS[type_name][1]
+        if (map_size and size > map_size) or not 0 <= address <= 0x100000000 - size:
+            raise ValueError('MAP scalar exceeds symbol range: ' + name)
         return address, type_name, size
-    return None
 
 
 def resolve_variable_path(info: DwarfInfo, path: str) -> tuple[int, str, int, dict[int, str] | None]:
@@ -235,52 +312,42 @@ def resolve_variable_path(info: DwarfInfo, path: str) -> tuple[int, str, int, di
     return address, type_name, size, enum_values
 
 
-def read_watch_values(
-    names: list[str],
-    *,
-    source: str,
-    port: str | None = None,
-    backend: str | None = None,
-    project_root: str | None = None,
-) -> list[dict]:
-    info = load_dwarf_info(
-        source, backend=backend, project_root=project_root
-    )
-    from mklink.symbol_catalog import SymbolCatalog, decode_descriptor
+def validate_watch_names(names):
+    if (not isinstance(names, list) or not 1 <= len(names) <= 16
+            or any(not isinstance(name, str) or not name.strip() or len(name) > 256 for name in names)):
+        raise ValueError('Watch requires 1..16 scalar variable paths')
+    names = [name.strip() for name in names]
+    if len(set(names)) != len(names):
+        raise ValueError('Watch variable paths must be unique')
+    return names
 
-    # Snapshot reads also support Flash/HPM address spaces; only the scalar
-    # type resolution is shared with the RAM-only SuperWatch write catalog.
-    catalog = SymbolCatalog.from_dwarf(
-        info, axf_path=source, ram_ranges=[(0, 1 << 32)],
-    )
+
+def read_watch_values(device, names: list[str]) -> list[dict]:
+    from mklink.symbol_catalog import SymbolCatalogError, decode_descriptor
+    names = validate_watch_names(names)
+    catalog = device.symbol_catalog
+    if catalog is None:
+        raise SymbolCatalogError('Load an AXF/ELF catalog in the shared backend first')
+    catalog.require_fresh_source()
+    descriptors = [catalog.read_descriptor(name) for name in names]
+    payloads = device.read_memory_regions([(d.address, d.size) for d in descriptors])
+    if len(payloads) != len(descriptors) or any(not isinstance(data, bytes) or len(data) != d.size
+                                               for d, data in zip(descriptors, payloads)):
+        raise RuntimeError('Incomplete watch snapshot')
+    catalog.require_fresh_source()
+    # Do not publish values decoded against MAP/C evidence changed during I/O.
+    for d in descriptors:
+        if d.source == 'map':
+            catalog.read_descriptor(d.path)
     rows = []
-    for name in names:
-        descriptor = catalog.by_path(name)
-        if descriptor is not None:
-            data, raw = read_memory(port, descriptor.address, descriptor.size)
-            value = decode_descriptor(descriptor, data) if data else raw.strip()
-            if descriptor.scalar_kind == "enum" and data:
-                labels = {number: label for label, number in descriptor.enum_values.items()}
-                if value in labels:
-                    value = f"{value} ({labels[value]})"
-            rows.append({"name": name, "address": f"0x{descriptor.address:08X}",
-                         "type": descriptor.type_name, "size": descriptor.size, "value": value})
-            continue
-        try:
-            address, type_name, size, enum_values = resolve_variable_path(info, name)
-        except KeyError:
-            fallback = resolve_map_source_variable(source, name)
-            if not fallback:
-                raise
-            address, type_name, size = fallback
-            enum_values = None
-        if (not size or type_name == "unknown") and "." not in name:
-            fallback = resolve_map_source_variable(source, name)
-            if fallback:
-                address, type_name, size = fallback
-        data, raw = read_memory(port, address, size)
-        value = decode_value(data, type_name, enum_values, known_size=size) if data else raw.strip()
-        rows.append({"name": name, "address": f"0x{address:08X}", "type": type_name, "size": size, "value": value})
+    for descriptor, data in zip(descriptors, payloads):
+        value = decode_descriptor(descriptor, data)
+        if descriptor.scalar_kind == 'enum':
+            labels = {number: label for label, number in descriptor.enum_values.items()}
+            if value in labels:
+                value = f'{value} ({labels[value]})'
+        rows.append({'name': descriptor.path, 'address': f'0x{descriptor.address:08X}',
+                     'type': descriptor.type_name, 'size': descriptor.size, 'value': value})
     return rows
 
 
@@ -294,43 +361,3 @@ def format_watch_rows(rows: list[dict], *, as_json: bool = False) -> str:
     for r in rows:
         lines.append(f"{r['name']:<{name_w}} = {r['value']}  {r['type']} @ {r['address']}")
     return "\n".join(lines)
-
-
-def run_watch(
-    names: list[str],
-    *,
-    source: str,
-    port: str | None = None,
-    period: float | None = None,
-    as_json: bool = False,
-    backend: str | None = None,
-    project_root: str | None = None,
-) -> str:
-    if period is None or period <= 0:
-        return format_watch_rows(
-            read_watch_values(
-                names,
-                source=source,
-                port=port,
-                backend=backend,
-                project_root=project_root,
-            ),
-            as_json=as_json,
-        )
-    try:
-        while True:
-            print(
-                format_watch_rows(
-                    read_watch_values(
-                        names,
-                        source=source,
-                        port=port,
-                        backend=backend,
-                        project_root=project_root,
-                    ),
-                    as_json=as_json,
-                )
-            )
-            time.sleep(period)
-    except KeyboardInterrupt:
-        return ""

@@ -512,6 +512,7 @@ class Device:
             info,
             axf_path=candidate,
             generation=generation,
+            project_root=self._project_root,
             ram_ranges=writable_memory_ranges(
                 candidate,
                 backend=effective_backend,
@@ -1237,20 +1238,6 @@ class Device:
                 defaults["cpu_freq_source"] = "project_info"
 
         return defaults
-
-    def _symbol_source_path(self) -> str | None:
-        if self._axf and Path(self._axf).exists():
-            return self._axf
-        try:
-            from mklink.project_config import load_project_info
-            project = load_project_info(self._project_root) or {}
-        except Exception:
-            project = {}
-        for key in ("elf_path", "axf_path", "bin_path", "hex_path"):
-            path = project.get(key) if isinstance(project, dict) else None
-            if path and Path(path).exists():
-                return str(path)
-        return None
 
     def _read_cpu_clock_hint(self) -> tuple[int, str]:
         for name in ("SystemCoreClock", "hpm_core_clock"):
@@ -2143,35 +2130,22 @@ class Device:
     # ------------------------------------------------------------------
     def read_variable(self, name: str) -> Any:
         self._require_connected()
+        from mklink.symbol_catalog import SymbolCatalogError, decode_descriptor
         catalog = self.symbol_catalog
-        if catalog is not None:
-            from mklink.symbol_catalog import SymbolCatalogError, decode_descriptor
+        if catalog is None:
+            raise SymbolCatalogError('Load an AXF/ELF catalog before variable access')
+        catalog.require_fresh_source()
+        descriptor = catalog.read_descriptor(name)
+        data = self.read_memory(descriptor.address, descriptor.size)
+        catalog.require_fresh_source()
+        if descriptor.source == 'map':
+            catalog.read_descriptor(name)
+        return decode_descriptor(descriptor, data)
 
-            catalog.require_fresh_source()
-            descriptor = catalog.by_path(name, writable_only=False)
-            if descriptor is not None:
-                return decode_descriptor(
-                    descriptor, self.read_memory(descriptor.address, descriptor.size),
-                )
-            if catalog.is_overridden(name) or not re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name):
-                raise SymbolCatalogError(f"scalar symbol is unavailable: {name}")
-        return self._read_variable_from_map(name)
-
-    def _read_variable_from_map(self, name: str) -> Any:
-        source = self._symbol_source_path()
-        if not source:
-            raise DeviceError(
-                "No AXF/ELF/MAP source available. Pass axf= to connect() for variable access."
-            )
-        from mklink.watch import resolve_map_source_variable, decode_value
-        resolved = resolve_map_source_variable(source, name)
-        if not resolved:
-            raise KeyError(f"variable '{name}' not found or has no address")
-        addr, type_name, size = resolved
-        if not size:
-            size = 4
-        raw = self.read_memory(addr, size)
-        return decode_value(raw, type_name, None, known_size=size)
+    def watch(self, names: list[str]) -> list[dict]:
+        self._require_connected()
+        from mklink.watch import read_watch_values
+        return read_watch_values(self, names)
 
     def write_variable(self, name: str, value: int) -> None:
         self._require_connected()

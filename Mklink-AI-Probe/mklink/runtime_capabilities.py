@@ -25,6 +25,7 @@ CAPABILITIES = {
     'read_peripherals': ('POST', '/api/device/peripherals/read'),
     'capture_peripherals': ('POST', '/api/device/peripherals/capture'),
     'write_memory': ('POST', '/api/device/write-memory'),
+    'watch': ('POST', '/api/device/watch'),
     'read_variable': ('POST', '/api/device/read-variable'),
     'write_variable': ('POST', '/api/device/write-variable'),
     'register_snapshot': ('POST', '/api/device/register-snapshot'),

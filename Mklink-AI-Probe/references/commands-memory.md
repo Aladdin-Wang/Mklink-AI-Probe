@@ -391,12 +391,16 @@ python -m mklink symbols --source path/to/firmware.axf
 python -m mklink symbols --source path/to/firmware.axf --filter "counter|sensor"
 ```
 
-#### `python -m mklink watch <变量1,变量2> --source <firmware.axf> [--period 秒]`
-一次性读取变量快照，支持基础类型和 `struct.field`。周期模式用 Ctrl+C 停止。
+#### `python -m mklink watch <变量1,变量2> --probe <设备ID或别名> [--source <firmware.axf>] [--period 秒]`
+通过共享后台批量读取 1..16 个标量，支持 typedef、`struct.field`、数组元素和当前 C 布局。
+未指定工程和符号文件时使用后台当前配置；多下载器必须明确选择。周期模式用 Ctrl+C
+停止并只解除自己的会话。采集冲突或读取失败会退出报错，不抢停 GUI、不重试或转为直连。
+多变量读取不保证目标原子快照；高速曲线仍使用 SuperWatch。`--profile` 接受仅含
+`{"variables": ["变量路径"]}` 的 JSON；原未实现的 `--struct` 参数已删除。
 
 ```
-python -m mklink watch g_counter,g_sensor --source path/to/firmware.axf
-python -m mklink watch g_config.setpoint --source path/to/firmware.axf --period 1
+python -m mklink watch g_counter,g_sensor --probe "电机板"
+python -m mklink watch g_config.setpoint,samples[1] --probe "电机板" --period 1
 ```
 
 #### `python -m mklink superwatch <变量/字段/寄存器...> [--source <firmware.axf>] [--svd <device.svd>] [--visualize]`

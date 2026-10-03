@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'dump-benchmark', 'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
+COMMANDS = {'watch', 'dump-benchmark', 'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
 
 
 def run(args):
@@ -42,6 +42,26 @@ def run(args):
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
             or getattr(args, 'port_http', 0) != 0 or getattr(args, 'max_points', 500) != 500):
         raise SystemExit('Shared visualization uses the backend GUI; private host/port/chart overrides are unsupported')
+    if args.command == 'watch':
+        from mklink.watch import validate_watch_names, format_watch_rows
+        try:
+            if not math.isfinite(args.period) or args.period < 0:
+                raise ValueError('Watch period must be finite and nonnegative')
+            watch_names = [name.strip() for group in args.variables for name in group.split(',') if name.strip()]
+            if args.profile:
+                from pathlib import Path
+                path = Path(args.profile)
+                with path.open('rb') as stream:
+                    contents = stream.read(65537)
+                if len(contents) > 65536:
+                    raise ValueError('Watch profile exceeds 64 KiB')
+                profile = json.loads(contents)
+                if not isinstance(profile, dict) or set(profile) != {'variables'} or not isinstance(profile['variables'], list):
+                    raise ValueError('Watch profile must contain a variables list only')
+                watch_names.extend(profile['variables'])
+            watch_names = validate_watch_names(watch_names)
+        except (ValueError, OSError) as error:
+            raise SystemExit(str(error)) from error
     debug_arguments = None
     if args.command == 'peripherals':
         selectors = {key: getattr(args, key) for key in ('svd', 'chip', 'target_id') if getattr(args, key, None)}
@@ -123,6 +143,17 @@ def run(args):
                 result = client.job_status(result['job_id'])
             if result['state'] != 'succeeded':
                 raise RuntimeErrorResponse(json.dumps(result, ensure_ascii=False))
+        elif args.command == 'watch':
+            try:
+                while True:
+                    rows = client.call('watch', {'names': watch_names})['rows']
+                    print(format_watch_rows(rows, as_json=args.json), flush=True)
+                    if args.period == 0:
+                        break
+                    time.sleep(args.period)
+            except KeyboardInterrupt:
+                pass
+            return
         elif args.command == 'read-reg':
             result = client.call('register_snapshot', {'register': args.register, 'address': args.addr,
                                 'width': args.width, 'count': args.count, 'raw': args.raw})

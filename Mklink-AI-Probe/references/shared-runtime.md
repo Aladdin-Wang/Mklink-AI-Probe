@@ -134,12 +134,13 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）、`dump-memory`（别名 `dump`）均通过共享后台运行，共 24 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read`、`peripherals`（离线 targets 除外）、`dump-memory`（别名 `dump`）、`flush-memory`、`dump-benchmark`、`watch` 均通过共享后台运行，共 27 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
 python -m mklink device-status --probe "电机板"
 python -m mklink read-variable counter --probe "电机板"
+python -m mklink watch counter,samples[0] --probe "电机板" --period 1
 python -m mklink read-ram --addr 0x20000000 --size 16 --probe "电机板"
 python -m mklink superwatch --probe "电机板" --duration 10
 python -m mklink read-flash --addr 0x08005000 --size 16 --probe "电机板"
@@ -285,11 +286,28 @@ MCP 使用 `gui_call('capture_dump', {...})`，SDK 使用 `call('capture_dump', 
 SDK 会话在后台管理页标记为 `sdk`，适用相同的会话续期、订阅与结束会话规则。
 此阶段后台协议为 7，使用新源码前需要显式退出旧开发后台。
 
+## 变量快照
+
+`watch` 一次解析全部路径后复用后台批量读取，返回 `name/address/type/size/value`。
+SDK 使用 `device.watch(['counter', 'samples[0]'])`；MCP 使用
+`gui_call(capability='watch', arguments={'names': ['counter']})`。最多 16 个唯一标量，
+只读 Flash 标量可读，指针/结构体整体不可猜成整数；C 布局覆盖以当前目录为准。
+
+稀疏 DWARF 的 MAP 回退只支持基本 C 全局标量。加载目录时冻结同名 MAP（或旧工程的
+demo.map）及明确工程根目录内的 C/H 内容；未给工程根目录时只查符号文件所在目录，
+不逐级扫描父目录，不跟随源码目录链接。总内容上限 16 MiB、源码 4096 文件、遍历
+20000 项，超限只禁用 MAP 回退，已有 DWARF 仍可用。缺失类型、重复定义、冲突类型、
+指针、数组及宏生成的声明需要补充可靠 DWARF，不能猜测。MAP 回退描述始终只读。
+
+读取前后校验 AXF 以及实际使用的 MAP/C 内容，改变或删除返回 409。新增文件或原先
+不匹配的声明不会在已有目录中自动生效，需通过共享准入显式重解析；此规则冻结解析
+依据，不证明源码已与目标固件匹配。复杂预处理/ABI 推断不在此基本回退范围内。
+
 ## 兼容边界
 
 0.3.0 已删除 GUI、MCP 和已迁移 CLI 的 `--direct` 入口、重复的直连实现，以及
 Web 快捷入口的旧进程接管逻辑。这些入口统一通过共享后台使用 CDC。
-其余 CLI（包括独立 dump/watch/分析工作流）、独立远程 Agent 和低层 Python `Device`
+其余 CLI（包括 VOFA、串口/Modbus、分析工作流）、独立远程 Agent 和低层 Python `Device`
 仍有直接操作设备的实现，尚未迁移。使用它们之前必须显式释放对应后台，不能因为
 共享能力尚未覆盖就自动退回直连。底层 CDC 驱动仍供共享后台使用，不属于待删除的旧模式。
 

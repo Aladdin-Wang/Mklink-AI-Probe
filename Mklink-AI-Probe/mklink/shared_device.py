@@ -85,6 +85,11 @@ class SharedDevice:
             raise RuntimeErrorResponse('Invalid shared batch response; command was not retried') from exc
         return payloads
 
+    def watch(self, names: list[str]) -> list[dict]:
+        """Read 1..16 scalar paths using the backend's current symbol catalog."""
+        from mklink.watch import validate_watch_names
+        return self.call('watch', {'names': validate_watch_names(names)})['rows']
+
     def write_memory(self, address: int, data: bytes, *, verify: bool = True):
         if not isinstance(data, (bytes, bytearray)) or type(verify) is not bool:
             raise ValueError('data must be bytes and verify must be boolean')

@@ -102,6 +102,7 @@ def test_catalog_keeps_ram_scalars_and_expands_struct_members(tmp_path):
     ("controller.target", struct.pack("<f", -6.25), -6.25),
     ("controller.samples[1]", struct.pack("<h", -32768), -32768),
     ("flash_constant", struct.pack("<I", 4294967295), 4294967295),
+    ("mode", struct.pack("<I", 1), "1 (RUN)"),
 ])
 def test_cli_watch_uses_catalog_for_typedef_fields_and_arrays(tmp_path, monkeypatch, name, payload, expected):
     from mklink import watch
@@ -111,9 +112,11 @@ def test_cli_watch_uses_catalog_for_typedef_fields_and_arrays(tmp_path, monkeypa
     info.typedefs[50] = ("controller_t", 30)
     info.variables["controller"].type_offset = 50
     info.variables["controller"].type_name = "controller_t"
-    monkeypatch.setattr(watch, "load_dwarf_info", lambda *args, **kwargs: info)
-    monkeypatch.setattr(watch, "read_memory", lambda *args: (payload, ""))
-    rows = watch.read_watch_values([name], source=str(axf))
+    device = Device(axf=str(axf))
+    device._connected, device._bridge = True, object()
+    device._symbol_catalog = SymbolCatalog.from_dwarf(info, axf_path=str(axf))
+    monkeypatch.setattr(device, 'read_memory', lambda *args: payload)
+    rows = device.watch([name])
     assert rows[0]["value"] == expected
     assert rows[0]["size"] == len(payload)
 
@@ -738,6 +741,11 @@ def test_variable_access_uses_active_c_layout(overridden_device):
     device.write_variable('pair.a', 9)
     assert reads == [(0x20000004, 4)]
     assert writes == [(0x20000004, b'\x09\0\0\0')]
+    rows = device.watch(['pair.a'])
+    assert rows[0]['address'] == '0x20000004' and rows[0]['value'] == 7
+    assert reads[-1] == (0x20000004, 4)
+    with pytest.raises(SymbolCatalogError):
+        device.watch(['pair.b'])
 
 
 def test_removed_c_layout_fields_never_fall_back_to_dwarf(overridden_device):
