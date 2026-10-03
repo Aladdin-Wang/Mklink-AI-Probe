@@ -12,7 +12,7 @@ import re
 import shutil
 import tempfile
 import time
-from typing import Literal
+from typing import Callable, Literal
 import os
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -623,6 +623,11 @@ _PACKAGE_PARENT_OVERRIDE: Path | None = None
 def read_bridge_version(bridge: object, *, timeout: float = DEFAULT_VERSION_TIMEOUT) -> Version | None:
     """Read and parse the probe version from an already connected bridge."""
     resp = bridge.send_command("cmd.get_version()", timeout=timeout)
+    return parse_probe_version(resp)
+
+
+def parse_probe_version(resp: str) -> Version | None:
+    """Parse a response already obtained through the caller's bridge admission."""
     # Reuse the existing CLI parser (single source of truth for the format)
     from mklink.cli import _parse_version_response
     current_str, _ = _parse_version_response(resp)
@@ -754,7 +759,8 @@ def build_instructions(result: CheckResult) -> str:
 
 
 def check_probe_firmware(
-    port: str | None, firmware_root: Path
+    port: str | None, firmware_root: Path, *,
+    version_reader: Callable[[str], Version | None] | None = None,
 ) -> CheckResult:
     """Top-level check: list firmwares, read device version, decide status.
 
@@ -832,7 +838,7 @@ def check_probe_firmware(
                 instructions="",
             )
         try:
-            current = read_device_version(port)
+            current = (version_reader or read_device_version)(port)
             resolved_family = (
                 probe_firmware_family(disk, current) if disk else "microlink"
             )

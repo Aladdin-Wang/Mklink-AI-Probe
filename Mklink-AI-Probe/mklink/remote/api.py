@@ -1834,10 +1834,11 @@ def create_app(
             if dev is not None and getattr(dev, "port", None):
                 port = dev.port
             root = _fc._resolve_firmware_root()
-            loop = asyncio.get_event_loop()
-            check = await loop.run_in_executor(
-                None, _fc.check_probe_firmware, port, root
-            )
+            if _state.get('shared_runtime'):
+                from mklink.runtime_probe import check_firmware
+                check = await run_in_threadpool(check_firmware, _state, root)
+            else:
+                check = await run_in_threadpool(_fc.check_probe_firmware, port, root)
             return check.to_dict()
         except Exception as e:
             return {"status": "skipped", "error": str(e)}

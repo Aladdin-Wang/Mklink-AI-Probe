@@ -248,7 +248,7 @@ class RuntimeGate:
         hardware = path.startswith("/api/") and (
             method not in {"GET", "HEAD", "OPTIONS"}
             or path in {"/api/device/core-registers", "/api/device/hardfault", "/api/device/hardfault-detail",
-                        "/api/dash/superwatch/inspect"}
+                        "/api/dash/superwatch/inspect", "/api/probe/firmware-check"}
         ) and not path.startswith(("/api/browser-session/", "/api/session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)

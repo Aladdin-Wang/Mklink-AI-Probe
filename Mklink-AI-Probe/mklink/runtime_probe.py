@@ -40,6 +40,16 @@ def _query(state, capability):
             manager.release(owner)
 
 
+def check_firmware(state, firmware_root):
+    """Keep the existing disk/catalog policy; route only CDC fallback via admission."""
+    from mklink.firmware_check import check_probe_firmware, parse_probe_version
+    from mklink.probes import select_probe
+
+    selected = select_probe(state['shared_probe_id'])
+    return check_probe_firmware(selected['port'], firmware_root, version_reader=lambda port:
+                                parse_probe_version(_query(state, 'probe_version')['raw']))
+
+
 def create_probe_router(state):
     router = APIRouter()
 

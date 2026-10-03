@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T15:42:06+00:00",
+  "updated_at": "2026-10-03T15:51:44+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared probe-only queries after 980d622; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; shared firmware recheck admission after 7df3f11; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审、修改和验证。power-read/version CLI和MCP get_power已进入共享后台，无目标连接也可查询；复用既有准入/资源锁，禁止自动停止流恢复。双下载器/WebGUI隔离实测和270项回归通过；继续A6与长期稳定性收敛。"
+    "current_task": "持续循环评审、修改和验证。只读CLI/MCP迁移后，修复GUI固件检测GET绕过准入及独立CDC回退；复用既有版本判断/磁盘绑定/查询服务。双下载器WebGUI及405项扩大回归通过，继续A6剩余入口和长期稳定性收敛。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第四批：共享CI同集270项通过。真实CLI/MCP可在无目标连接时查询电压/版本，状态和工程不变；主GUI RTT时拒绝同探针查询，第二探针版本独立成功。停止后查询复用连接，两个会话保留，GUI可再启停。Boot不变、VTOR正确、tick推进；GUI沿用前轮资源，非长稳/安装包验收。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第五批：新增7项，修改前5项失败；配置本地FLM目录后扩大405项全通过，CI集合277项。真实主GUI RTT时固件重检拒绝，第二探针独立检测成功；停止后主窗口检测正常且会话/配置保留。Boot不变、VTOR正确、tick推进；MSC缺版本回退由契约验证，未做真机故障注入。"
     },
     {
       "area": "正式版与安装",
@@ -59,12 +59,12 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。主GUI RTT时CLI/MCP只读查询拒绝，第二只独立查询版本成功且未初始化目标。停止后复用原连接查询，SDK/AI会话保留，GUI可再启停。Boot20KiB不变、VTOR正确、tick推进，两个后台退出。未reset、烧录、擦除或改VCC，工程不变。每轮須重枚举。",
+    "state": "主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。主GUI RTT时CLI/MCP只读和浏览器固件检测拒绝；第二只独立检测成功且未初始化目标。停止后复用原连接查询，SDK/AI会话保留，GUI可再启停。Boot20KiB不变、VTOR正确、tick推进，两个后台退出。未reset、烧录、擦除或改VCC，工程不变。每轮须重枚举。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "A5已收敛。A6活动MCP26工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增270项后台（含实际API及探针只读查询）/28项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
+    "A5已收敛。A6活动MCP26工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增277项后台（含实际API、探针只读及固件检测）/28项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
     "0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",

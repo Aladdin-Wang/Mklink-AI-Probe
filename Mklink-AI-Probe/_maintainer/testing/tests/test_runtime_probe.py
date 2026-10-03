@@ -4,21 +4,20 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mklink._types import DeviceState
-from mklink.remote.resource_manager import ResourceGroup, ResourceManager
+from mklink.remote.resource_manager import ResourceGroup
 from mklink.runtime import RuntimeErrorResponse
 from mklink.runtime_api import install_runtime
+from mklink.remote.api import create_app
 from test_power_telemetry import Bridge, wire
 
 
 @pytest.fixture
 def probe(monkeypatch, tmp_path):
-    app = FastAPI()
-    state = {'device': None, 'project_root': str(tmp_path), 'resource_manager': ResourceManager()}
-    app.state.mklink_state = state
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    state = app.state.mklink_state
     selected = {'probe_id': 'test-probe', 'port': 'COM9'}
     monkeypatch.setattr('mklink.probes.inventory', lambda: [selected])
     monkeypatch.setattr('mklink.probes.select_probe', lambda selector: selected)
@@ -39,12 +38,55 @@ def probe(monkeypatch, tmp_path):
     monkeypatch.setattr('mklink.device.Device', forbidden)
     info = {'port': 8765, 'token': 'test-secret', 'instance_id': 'test-instance', 'probe_id': selected['probe_id']}
     control = install_runtime(app, info)
-    # install_runtime must insert routes before the GUI's SPA catch-all.
-    @app.get('/{path:path}')
-    async def spa(path):
-        return 'SPA'
     with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': info['token']}) as client:
         yield client, control, state, bridge, calls, managers, selected
+        state['device'] = None  # fake devices have no shutdown workers
+
+
+@pytest.mark.parametrize('existing', [False, True])
+@pytest.mark.parametrize('disk_version', [False, True])
+def test_firmware_recheck_reuses_probe_query_only_when_disk_version_is_unavailable(probe, monkeypatch, tmp_path, existing, disk_version):
+    from mklink import firmware_check as fc
+    client, control, state, bridge, calls, _, _ = probe
+    if existing:
+        state['device'] = SimpleNamespace(connected=True, port='COM9', _bridge=bridge)
+    bridge.response = 'V4.5.2\n>>> '
+    (tmp_path/'MicroLink_V4.5.2.uf2').write_bytes(b'test-index-entry')
+    disk = tmp_path/'disk'
+    disk.mkdir()
+    (disk/'readme.txt').write_text('V4.5.2\n', encoding='utf-8')
+    monkeypatch.setattr(fc, '_resolve_firmware_root', lambda: tmp_path)
+    monkeypatch.setattr(fc, '_remote_firmwares', lambda: None)
+    monkeypatch.setattr(fc, '_probe_disk', lambda: str(disk) if disk_version else None)
+    def forbidden(port):
+        raise AssertionError('Firmware recheck attempted an independent CDC connection')
+    monkeypatch.setattr(fc, 'read_device_version', forbidden)
+    response = client.get('/api/probe/firmware-check')
+    assert response.status_code == 200 and response.json()['status'] == 'ok', response.text
+    assert response.json()['current_version'] == 'V4.5.2'
+    assert bridge.commands == ([] if disk_version else ['cmd.get_version()'])
+    assert not control.sessions and not state['resource_manager'].get_status()
+    if disk_version:
+        assert not calls and not bridge.closed
+    else:
+        assert calls == ([] if existing else [('open','COM9'), ('connect', {'recover_stream': False})])
+        assert bridge.closed is (not existing)
+
+
+@pytest.mark.parametrize('failure', ['busy', 'missing', 'job'])
+def test_firmware_check_get_obeys_hardware_admission_before_catalog_or_disk_io(probe, monkeypatch, failure):
+    from mklink import firmware_check as fc
+    client, control, _, bridge, calls, managers, _ = probe
+    if failure == 'busy':
+        managers['rtt'].running = True
+    elif failure == 'missing':
+        monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    else:
+        monkeypatch.setattr(control, 'job_busy', lambda: True)
+    monkeypatch.setattr(fc, 'check_probe_firmware', lambda *a, **kw: calls.append('check'))
+    response = client.get('/api/probe/firmware-check')
+    assert response.status_code == 409, response.text
+    assert not calls and not bridge.commands
 
 
 @pytest.mark.parametrize('existing', [False, True])
