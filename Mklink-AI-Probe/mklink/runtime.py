@@ -196,32 +196,40 @@ def job_status(info, job_id=None):
 
 
 class RuntimeClient:
+    """One explicit session; serialize its requests against attach and detach.
+
+    This lock protects client lifecycle, not hardware admission. Other clients
+    and the renewal thread remain independent; the backend owns resource policy.
+    """
+
     def __init__(self, *, project_root=".", info=None, kind='mcp', name='AI client'):
         self.info = info
         self.project_root = project_root
         self.session_id = None
         self._stop = threading.Event()
         self._heartbeat = None
+        self._lock = threading.Lock()
         self.kind, self.name = kind, name
 
     def connect(self, *, project_root=None, port=None, probe=None, axf=None, mcu=None, elf_backend=None):
-        if self.info is None:
-            self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port)
-        elif probe or port:
-            from mklink.probes import select_probe
-            if select_probe(probe or port)["probe_id"] != self.info.get("probe_id"):
-                raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
-        result = request(self.info, "POST", "/_runtime/attach", {
-            "project_root": project_root, "port": port, "axf": axf,
-            "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
-            'kind': self.kind, 'name': self.name,
-        })
-        self.session_id = result["session_id"]
-        if self._heartbeat is None or not self._heartbeat.is_alive():
-            self._stop.clear()
-            self._heartbeat = threading.Thread(target=self._renew, daemon=True, name="runtime-session")
-            self._heartbeat.start()
-        return result
+        with self._lock:
+            if self.info is None:
+                self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port)
+            elif probe or port:
+                from mklink.probes import select_probe
+                if select_probe(probe or port)["probe_id"] != self.info.get("probe_id"):
+                    raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
+            result = request(self.info, "POST", "/_runtime/attach", {
+                "project_root": project_root, "port": port, "axf": axf,
+                "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
+                'kind': self.kind, 'name': self.name,
+            })
+            self.session_id = result["session_id"]
+            if self._heartbeat is None or not self._heartbeat.is_alive():
+                self._stop.clear()
+                self._heartbeat = threading.Thread(target=self._renew, daemon=True, name="runtime-session")
+                self._heartbeat.start()
+            return result
 
     def _renew(self):
         while not self._stop.wait(20):
@@ -235,30 +243,36 @@ class RuntimeClient:
                 return
 
     def call(self, capability: str, arguments=None):
-        if not self.session_id:
-            raise RuntimeErrorResponse("Call connect first")
-        return request(self.info, "POST", "/_runtime/call", {
-            "session_id": self.session_id, "capability": capability, "arguments": arguments or {},
-        })
+        with self._lock:
+            if not self.session_id:
+                raise RuntimeErrorResponse("Call connect first")
+            return request(self.info, "POST", "/_runtime/call", {
+                "session_id": self.session_id, "capability": capability, "arguments": arguments or {},
+            })
 
     def start_job(self, action, *, request_id, confirm=False, arguments=None):
         """Submit once with this session; the backend owns validation and deduplication."""
-        if self.info is None or not self.session_id:
-            raise RuntimeErrorResponse('Connect to the selected probe first')
-        return request(self.info, 'POST', '/api/runtime/jobs/', {
-            'action': action, 'request_id': request_id, 'confirm': confirm,
-            'arguments': arguments if arguments is not None else {}, 'session_id': self.session_id})
+        with self._lock:
+            if self.info is None or not self.session_id:
+                raise RuntimeErrorResponse('Connect to the selected probe first')
+            return request(self.info, 'POST', '/api/runtime/jobs/', {
+                'action': action, 'request_id': request_id, 'confirm': confirm,
+                'arguments': arguments if arguments is not None else {}, 'session_id': self.session_id})
 
     def job_status(self, job_id=None):
         return job_status(self.info, job_id)
 
     def close(self):
-        self._stop.set()
-        if self._heartbeat and self._heartbeat is not threading.current_thread():
-            self._heartbeat.join(timeout=6)
-        if self.session_id:
-            request(self.info, "POST", "/_runtime/detach", {"session_id": self.session_id})
+        with self._lock:
+            self._stop.set()
+            session_id = self.session_id
+            # A lost detach response must not leave this client able to send
+            # commands on a session it has already relinquished locally.
             self.session_id = None
+            if self._heartbeat and self._heartbeat is not threading.current_thread():
+                self._heartbeat.join(timeout=6)
+            if session_id:
+                request(self.info, "POST", "/_runtime/detach", {"session_id": session_id})
 
 
 def serve_runtime(*, project_root=".", port=8765, probe_id="lobby"):

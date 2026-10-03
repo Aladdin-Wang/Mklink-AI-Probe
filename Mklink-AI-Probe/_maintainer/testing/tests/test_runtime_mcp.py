@@ -12,6 +12,30 @@ from test_shared_device import shared
 from test_shared_runtime import runtime
 
 
+def test_tools_before_connect_do_not_create_implicit_client(monkeypatch):
+    created = []
+    class ProbeClient:
+        info = None
+        def __init__(self, **options):
+            created.append(options)
+        def call(self, *args):
+            raise RuntimeError('Call connect first')
+        def connect(self, **options):
+            return {'attached': True}
+        def close(self):
+            pass
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', ProbeClient)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            for tool in ['device_status', 'read_memory', 'rtt_history']:
+                args = {'address': 0, 'size': 4} if tool == 'read_memory' else {}
+                assert (await mcp.call_tool(tool, args, raise_on_error=False)).is_error
+            assert created == []
+            await mcp.call_tool('connect', {'project_root': 'chosen-project', 'client_name': 'chosen-name'})
+            assert created == [{'project_root': 'chosen-project', 'name': 'chosen-name'}]
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize('legacy', [False, True])
 def test_offline_analysis_available_without_connect_and_preserves_trace_gaps(monkeypatch, legacy):
     from mklink import mcp_server

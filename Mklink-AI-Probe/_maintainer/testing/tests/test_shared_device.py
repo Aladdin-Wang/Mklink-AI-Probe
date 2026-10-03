@@ -6,6 +6,69 @@ from mklink.runtime import RuntimeErrorResponse
 from test_shared_runtime import runtime
 
 
+def test_failed_detach_invalidates_local_session_without_retry(monkeypatch):
+    from mklink import runtime as transport
+    calls = []
+    def request(info, method, path, payload=None, **kwargs):
+        calls.append((path, payload))
+        raise RuntimeErrorResponse('detach response lost')
+    monkeypatch.setattr(transport, 'request', request)
+    client = transport.RuntimeClient(info={'port': 8765})
+    client.session_id = 'old-session'
+    with pytest.raises(RuntimeErrorResponse, match='response lost'):
+        client.close()
+    assert client.session_id is None
+    client.close()
+    with pytest.raises(RuntimeErrorResponse, match='connect first'):
+        client.call('write_memory')
+    with pytest.raises(RuntimeErrorResponse, match='Connect'):
+        client.start_job('reset', request_id='one', confirm=True)
+    assert calls == [('/_runtime/detach', {'session_id': 'old-session'})]
+
+
+@pytest.mark.parametrize('operation', ['call', 'start_job', 'connect'])
+def test_client_close_waits_for_admitted_operation(monkeypatch, operation):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from mklink import runtime as transport
+    entered, release, detaching, closing = (threading.Event() for _ in range(4))
+    calls = []
+    def request(info, method, path, payload=None, **kwargs):
+        calls.append(path)
+        if path == '/_runtime/detach':
+            detaching.set()
+        else:
+            entered.set()
+            assert release.wait(5)
+        return {'session_id': 'old-session'}
+    monkeypatch.setattr(transport, 'request', request)
+    client = transport.RuntimeClient(info={'port': 8765})
+    client.session_id = 'old-session'
+    def invoke():
+        if operation == 'call':
+            return client.call('read_memory')
+        if operation == 'start_job':
+            return client.start_job('reset', request_id='one', confirm=True)
+        return client.connect()
+    def close():
+        closing.set()
+        client.close()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        active = pool.submit(invoke)
+        assert entered.wait(5)
+        detached = pool.submit(close)
+        try:
+            assert closing.wait(5)
+            assert not detaching.wait(.15), 'detach overtook an admitted request'
+        finally:
+            release.set()
+        active.result(timeout=5)
+        detached.result(timeout=5)
+    assert calls[-1] == '/_runtime/detach'
+    assert client.session_id is None
+    assert client._heartbeat is None or not client._heartbeat.is_alive()
+
+
 @pytest.fixture
 def shared(runtime, monkeypatch):
     client, control, calls, managers, app = runtime

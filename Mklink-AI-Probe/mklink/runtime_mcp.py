@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import logging
 import threading
 
-from mklink.runtime import RuntimeClient, VERSION
+from mklink.runtime import RuntimeClient, RuntimeErrorResponse, VERSION
 
 
 def build_server():
@@ -38,9 +38,11 @@ def build_server():
     register_systemview_offline_tools(server)
 
     def client():
-        if "client" not in holder:
-            holder["client"] = RuntimeClient()
-        return holder["client"]
+        with lock:
+            current = holder.get('client')
+            if current is None:
+                raise RuntimeErrorResponse('Call connect first')
+            return current
 
     @server.tool()
     def ping(force_update_check: bool = False) -> dict:
@@ -74,7 +76,7 @@ def build_server():
         with lock:
             if "client" not in holder:
                 holder["client"] = RuntimeClient(project_root=project_root or ".", name=client_name)
-            return client().connect(port=port, probe=probe, axf=axf, mcu=mcu, project_root=project_root, elf_backend=elf_backend)
+            return holder['client'].connect(port=port, probe=probe, axf=axf, mcu=mcu, project_root=project_root, elf_backend=elf_backend)
 
     @server.tool()
     def disconnect() -> dict:
@@ -129,7 +131,7 @@ def build_server():
     @server.tool()
     def runtime_status() -> dict:
         """Inspect bound probe presence, GUI/AI/CLI clients, captures and current operation."""
-        from mklink.runtime import request, RuntimeErrorResponse
+        from mklink.runtime import request
         current = client()
         if current.info is None:
             raise RuntimeErrorResponse('Connect to a selected probe first')
