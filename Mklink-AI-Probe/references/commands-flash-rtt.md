@@ -27,15 +27,15 @@ python -m mklink probes list
 python -m mklink version --probe <probe-id>
 ```
 
-#### `python -m mklink test --port COM6`
-测试连接并获取 IDCODE。
+#### `python -m mklink device-status --probe <ID/别名>`
 
-```
-[*] 连接 COM6 ...
-[OK] 连接成功
-IDCODE 响应: idcode = 0X2BA01477
-[*] 已断开连接
-```
+通过所选共享后台连接目标并读取设备状态，包含端口、目标 IDCODE 和符号状态。
+后台尚未连接时会建立目标会话；目标初始化尚未完成或未接目标时 IDCODE 可为 0。
+CLI 退出仅解除自己的会话，不关闭 GUI 的连接，也不停止采集。
+仅检查下载器自身通信可用 `version --probe <ID/别名>`，不会建立目标调试会话。
+
+旧 `test`、顶层 `--test/--port/--baud` 兼容入口已删除。
+端口参数放在具体命令后，例如 `device-status --port COM6`。
 
 #### `python -m mklink version [--port COM6] [--all] [--raw]`
 读取烧录器自身固件版本（内部调用 PikaScript `cmd.get_version()`）。注意：

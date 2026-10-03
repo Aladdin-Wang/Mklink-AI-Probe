@@ -35,6 +35,17 @@ def test_cli_read_routes_to_shared_backend(adapter):
     assert ('read_memory',{'address':'0x20000000','size':4}) in adapter
 
 
+def test_device_status_cli_reuses_backend_and_only_detaches(adapter, monkeypatch, capsys):
+    import json, sys
+    from mklink import cli
+    monkeypatch.setattr('mklink.bridge.MKLinkSerialBridge', lambda *a, **kw: pytest.fail('Diagnostic opened CDC'))
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'device-status', '--probe', 'board'])
+    cli.main()
+    assert adapter[0][1]['probe'] == 'board'
+    assert adapter[1:] == [('device_status', None), ('detach', None)]
+    assert json.loads(capsys.readouterr().out) == {'state': 'running'}
+
+
 def test_configuration_read_cli_uses_shared_backend_and_adopts_project(adapter, monkeypatch, capsys):
     import sys
     from mklink import cli

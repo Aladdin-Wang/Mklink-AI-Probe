@@ -10,37 +10,6 @@ import argparse
 import sys
 
 from mklink._deps import require_dependencies
-from mklink._types import DEFAULT_BAUDRATE
-
-
-def _cli_test(port: str):
-    """基本 CLI 测试：连接、获取 IDCODE、断开。"""
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.discovery import list_available_ports
-
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-
-    if not bridge.connect():
-        print("[FAIL] 连接失败，请检查设备和端口")
-        available = list_available_ports()
-        if available:
-            print("可用端口:")
-            for p in available:
-                print(f"  {p['device']} — {p['description']}")
-        return
-
-    print("[OK] 连接成功")
-
-    # 读取 IDCODE
-    try:
-        resp = bridge.send_command("cmd.get_idcode()", timeout=5.0)
-        print(f"IDCODE 响应: {resp.strip()}")
-    except Exception as e:
-        print(f"[FAIL] 读取 IDCODE 失败: {e}")
-
-    bridge.close()
-    print("[*] 已断开连接")
 
 
 def _cli_security(args: argparse.Namespace) -> int:
@@ -311,26 +280,6 @@ def _cli_project_init(project_root: str):
     print(f"  固件: {info.get('bin_path') or info.get('hex_path') or '未配置'}")
     print("[OK] 已保存精简工程配置；已有连接、RTT 和工具链设置保持不变")
     print("[INFO] 连接时自动发现端口；烧录时按精确器件/地址选择算法，缺失或不明确时停止")
-
-
-def _format_systemview_event(ev: dict) -> str:
-    """把单个 SystemView 事件格式化成单行控制台输出。"""
-    kind = ev.get("kind", "?")
-    t = ev.get("t_ticks", 0)
-    tus = ev.get("t_us")
-    tstamp = f"{tus:,.0f}us" if tus is not None else f"{t}tk"
-    name = ev.get("task_name") or ev.get("isr_name") or ""
-    extras = []
-    if "task_id" in ev:
-        extras.append(f"id=0x{ev['task_id']:X}")
-    if "isr_id" in ev:
-        extras.append(f"#={ev['isr_id']}")
-    if "cause" in ev:
-        extras.append(f"cause={ev['cause']}")
-    if "user_id" in ev:
-        extras.append(f"user={ev['user_id']}")
-    tail = " ".join([n for n in [name] if n] + extras)
-    return f"[t={tstamp}] {kind:<18} {tail}".rstrip()
 
 
 def _cli_copy_flm(project_root: str):
@@ -914,23 +863,6 @@ def _resolve_port(port: str | None) -> str:
         return select_probe()['port']
     except RuntimeErrorResponse as error:
         raise SystemExit(str(error)) from error
-
-
-def _init_target_bridge(bridge, project_root: str = "."):
-    """对一个刚 bridge.connect() 的目标调试会话做 SWD DP 初始化 + IDCODE 读取。
-
-    用于 CLI 一次性目标操作（read-ram/write-ram/flush-memory/dump-memory/
-    halt/resume/step/break）：这些命令每次新建串口会话，原本靠探针固件在
-    串口重开时重跑 cmd.get_idcode() 完成 DP 初始化——这里显式做一次并把
-    idcode 写回 _ctx，不再隐式依赖固件行为。容错：无目标时 idcode 留 0，
-    不影响命令本身（与 mklink.device.initialize_target 语义一致）。
-
-    仅用于 *目标调试* 命令；version/firmware_check/端口探测/Modbus/serial
-    等 probe-only 命令不要调用。
-    """
-    from mklink.flash import MKLinkFlash
-    from mklink.device import initialize_target
-    initialize_target(bridge, MKLinkFlash(bridge), project_root=project_root)
 
 
 # ---------------------------------------------------------------------------
@@ -2467,11 +2399,6 @@ def main():
         help="manage and use direct VPN/LAN field sites",
     )
 
-    # test 子命令
-    test_parser = subparsers.add_parser("test", help="基本连接测试")
-    test_parser.add_argument("--port", required=True)
-    test_parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
-
     # rtt-find 子命令
     rtt_parser = subparsers.add_parser("rtt-find", help="从 map/elf 查找 RTT 地址")
     rtt_parser.add_argument("path", help=".map 或 .elf 文件路径")
@@ -3188,11 +3115,6 @@ def main():
         unlock=True,
     )
 
-    # 向后兼容：--test 标志
-    parser.add_argument("--port", help="COM 端口（兼容旧版）")
-    parser.add_argument("--baud", type=int, default=DEFAULT_BAUDRATE)
-    parser.add_argument("--test", action="store_true", help="运行基本测试（兼容旧版）")
-
     flash_parser.add_argument('--request-id', help='保留任务请求 ID；结果未知时查询已有任务，不重放')
     for name in ('erase', 'reset'):
         entry = subparsers.add_parser(name, help='通过共享后台执行独占目标任务')
@@ -3234,14 +3156,7 @@ def main():
             raise SystemExit(str(exc)) from exc
         return
 
-    # 兼容旧版 --test 模式
-    if args.test and args.port:
-        _cli_test(args.port)
-        return
-
-    if args.command == "test":
-        _cli_test(args.port)
-    elif args.command == "rtt-find":
+    if args.command == "rtt-find":
         result = diagnose_rtt_addr(args.path)
         if result.addr:
             source = f" ({result.source})" if result.source else ""

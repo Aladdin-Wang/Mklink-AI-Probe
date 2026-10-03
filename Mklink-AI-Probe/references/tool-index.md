@@ -71,7 +71,7 @@
 | `copy-flm` | 拷贝 profile/工程指定的 FLM 到 MICROKEEN 磁盘 |
 | `keil-parse` / `iar-parse` | 解析 Keil/IAR 工程文件 |
 | `probes list` | 被动枚举下载器身份、别名与当前端口 |
-| `test --port COM6` | 测试连接 |
+| `device-status --probe ID/别名` | 共享连接、目标 IDCODE 与符号状态 |
 | `modbus` | Modbus RTU 调试（scan/read/write/poll/monitor/dashboard/pointmap） |
 | `serial` | 通用 UART/RS485 串口调试；MKLink 仅隐藏 MI_04 命令口 |
 | `resources` / `resource` | 本地资源管理（释放 stale 串口/MKLink 锁；不需要 FastAPI） |

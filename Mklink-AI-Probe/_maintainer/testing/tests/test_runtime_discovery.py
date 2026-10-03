@@ -77,8 +77,12 @@ def test_cli_probe_list_no_config_change_or_target_initialization(devices,monkey
     assert all(p['identity_stable'] for p in rows)
 
 
-def test_old_discover_command_is_removed(devices,monkeypatch):
-    monkeypatch.setattr(sys,'argv',['mklink','discover'])
+@pytest.mark.parametrize('arguments', [
+    ['discover'], ['test', '--port', 'COM10'],
+    ['--test', '--port', 'COM10'], ['--port', 'COM10', '--test'],
+])
+def test_removed_diagnostic_commands_never_open_serial(devices,monkeypatch,arguments):
+    monkeypatch.setattr(sys,'argv',['mklink',*arguments])
     with pytest.raises(SystemExit) as error:cli.main()
     assert error.value.code==2
 
