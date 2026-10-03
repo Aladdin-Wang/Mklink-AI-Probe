@@ -1069,70 +1069,6 @@ def _print_probe_version(resp: str, all_history: bool = False, raw: bool = False
 # 静默写 RAM（flush_memory，多地址多字节）
 # ---------------------------------------------------------------------------
 
-# PikaScript 真实异常标记（应当判 FAIL）
-_FLUSH_HARD_FAIL_MARKERS = (
-    "typeerror", "nameerror", "syntaxerror", "valueerror",
-    "indexerror", "attributeerror", "keyerror",
-)
-
-
-def _parse_flush_response(resp: str) -> tuple[bool, str]:
-    """从 cmd.flush_memory() 响应判断成功/失败。
-
-    Returns:
-        (success, message)。message 在以下情况非空：
-          - success=False：失败原因
-          - success=True 且 message 以 "WARN:" 开头：固件返回了非空响应但写入可能成功
-
-    判定规则（按固件实测，2026-06）：
-      - 空响应                 → 成功（静默写）
-      - 仅命令回显（"cmd.flush_memory(...)" 单独一行）→ 成功（静默写，固件只 echo 命令）
-      - 真实异常（TypeError 等）→ 失败
-      - "flush fail: <原因>"    → 失败，msg=<原因>
-      - 裸 "flush fail"        → 视为成功+WARN（已知固件 bug：首次调用/某些情况下会
-                                  错误地打印 flush fail，但写入实际生效）
-      - 其他非空响应            → 视为成功+WARN（带原始响应）
-    """
-    body = resp.strip()
-    if not body:
-        return True, ""
-
-    # 去掉命令回显行（"cmd.flush_memory(...)" / "-> RUN ..."），剩下的才是真正的响应
-    lines = body.splitlines()
-    body_no_echo_lines = [
-        ln for ln in lines
-        if ln.strip() and not ln.strip().startswith("cmd.")
-        and not ln.strip().startswith("->")
-    ]
-    body_no_echo = "\n".join(body_no_echo_lines).strip()
-    if not body_no_echo:
-        return True, ""
-
-    lower = body_no_echo.lower()
-
-    # 真实异常（TypeError、NameError 等）
-    for marker in _FLUSH_HARD_FAIL_MARKERS:
-        if marker in lower:
-            return False, body_no_echo_lines[-1] if body_no_echo_lines else marker
-
-    # 显式原因（"flush fail: xxx"）
-    if "flush fail:" in lower:
-        for ln in body_no_echo_lines:
-            if "flush fail:" in ln.lower():
-                return False, ln.strip()
-        return False, "flush fail: <unknown>"
-
-    # 裸 "flush fail"：固件 bug，写入实际生效
-    if "flush fail" in lower:
-        return True, (
-            "WARN: 固件返回裸 'flush fail'，但已知该响应是首次调用的固件 bug，"
-            "写入通常仍生效——请用 read-ram 验证"
-        )
-
-    # 其他非空响应：当作成功但带 WARN（保留原始响应供排查）
-    return True, f"WARN: 非预期响应: {body_no_echo[:120]!r}"
-
-
 def _parse_flush_item(raw: str) -> tuple[int, list[int]]:
     """解析一项 'ADDR:BYTE,BYTE,...' 字符串。
 
@@ -1141,7 +1077,7 @@ def _parse_flush_item(raw: str) -> tuple[int, list[int]]:
       - 逗号分隔无前缀：      "0x20010000:11,22,33"
       - 空格分隔 + 0x 前缀：  "0x20010000:0x11 0x22 0x33"
       - 混合：                "0x20010000:0x11 0x22,0x33"
-      - 单字节重复（推荐大块/填充）： "0x20008000:0xAA*16300"
+      - 单字节重复（推荐大块/填充）： "0x20008000:0xAA*12288"
         * 绕开 Windows 命令行长度限制（实测逐字节展开 ≈16KB 即撞墙）；
         * 复用固件 bytes([0xVV])*N 短表达式，命令串极短，单次可写数 KB；
         * count 为十进制；byte 接受 0xAA / AA。
@@ -1164,7 +1100,7 @@ def _parse_flush_item(raw: str) -> tuple[int, list[int]]:
     if any("*" in t for t in tokens):
         if len(tokens) != 1 or tokens[0].count("*") != 1:
             raise ValueError(
-                "BYTE*N 形式必须是单一 'BYTE*COUNT'（如 0xAA*16300），"
+                "BYTE*N 形式必须是单一 'BYTE*COUNT'（如 0xAA*12288），"
                 "不能与逐字节列表混排"
             )
         byte_spec, _, count_spec = tokens[0].partition("*")
@@ -1175,160 +1111,11 @@ def _parse_flush_item(raw: str) -> tuple[int, list[int]]:
             raise ValueError(f"无法解析 BYTE*N: {tokens[0]!r}（byte 用 0x-AA，count 为十进制）")
         if not (0 <= byte_val <= 0xFF):
             raise ValueError(f"BYTE*N 的字节超出 0..0xFF: {byte_spec!r}")
-        if count < 1:
-            raise ValueError(f"BYTE*N 的 count 必须 ≥1: {count}")
+        if not 1 <= count <= 12288:
+            raise ValueError(f"BYTE*N count must be 1..12288: {count}")
         return addr_int, [byte_val] * count
     byte_list = [int(t, 16) for t in tokens]
     return addr_int, byte_list
-
-
-def _cli_flush_memory(
-    port: str | None,
-    items: list[str],
-    verify: bool = False,
-    repeat: int = 1,
-    interval_ms: int = 0,
-):
-    """静默写 RAM（cmd.flush_memory），支持多地址多字节。
-
-    调用的 PikaScript 签名：
-        cmd.flush_memory([(addr1, bytes([b1, b2, ...])),
-                          (addr2, bytes([b3, b4, ...])),
-                          ...])
-
-    与 write-ram 的关键区别：
-      - 成功时设备不输出 hexdump 预览（仅 echo 命令 + >>>）
-      - 成功时不输出 hexdump；仍须在 dump_memory 停止并释放连接后再调用
-      - 多地址一次提交，单笔 MCU-RTT 往返完成多块写入
-
-    Args:
-        port: COM 端口（None = 自动检测）
-        items: 写入项列表，每项格式 "ADDR:BYTE,BYTE,..."
-               例: "0x20010000:0x11,0x22,0x33" "0x20010100:0x44,0x55,0x66,0x77"
-        verify: 写完后回读校验（消耗额外时间）
-        repeat: 连续写 N 次（默认 1）
-        interval_ms: 每次写之间的间隔（毫秒）
-
-    ⚠️ 安全区选择：
-        写入前务必先用 `python -m mklink memmap --source <axf>` 核对目标地址
-        不在 .bss/.data/heap/stack 内。0x2000FA10..0x2001F800 是 .bss 之后的
-        静态未占区，但 RT-Thread 堆可向上增长，运行时未必仍空闲。
-    """
-    from mklink.bridge import MKLinkSerialBridge
-
-    if not items:
-        print("[FAIL] 未指定写入项。")
-        print("      用法: python -m mklink flush-memory 0x20010000:0x11,0x22 0x20010100:0x44,0x55")
-        print("      多地址多字节，一次提交。")
-        return
-
-    # 1) 解析所有项
-    parsed: list[tuple[int, list[int]]] = []
-    for raw in items:
-        try:
-            parsed.append(_parse_flush_item(raw))
-        except ValueError as e:
-            print(f"[FAIL] 无法解析项 {raw!r}: {e}")
-            return
-
-    # 2) 构造 PikaScript 命令字符串
-    # 实测 (2026-06) 死锁根因：命令字符串总长度超固件 PIKA_LINE_BUFF（实测 ~600 字符即触发），
-    # 触发 PikaScript SyntaxError → REPL 挂起 → 端口持久死锁（需物理复位）。
-    # varargs 旧协议 cmd.flush_memory(addr, b1, ...) 另有 ≤20 字节的参数个数上限。
-    # 修复策略（fail-safe，三层）：
-    #   1) 统一用 batch 协议 cmd.flush_memory([(addr, data), ...])（文档 2.3），避开 varargs 参数上限；
-    #   2) 全相同字节自动用短表达式 bytes([0xVV])*N（文档 2.5），命令串极短，可写 ≤12KB；
-    #   3) 非重复数据展开为 bytes([..]) 字面量，并对命令串总长度做校验，超限拒绝并提示分块。
-    MAX_FLUSH_CMD_LEN = 230  # 实测边界：32B展开(233字符)OK / 40B(281字符)触发瞬时CDC异常(自愈)
-    tuple_strs = []
-    for addr_int, byte_list in parsed:
-        if byte_list and all(b == byte_list[0] for b in byte_list):
-            # 全相同字节：短表达式，规避 PIKA_LINE_BUFF（可一次写 ≤12KB）
-            data_expr = f"bytes([0x{byte_list[0]:02X}])*{len(byte_list)}"
-        else:
-            byte_csv = ", ".join(f"0x{b:02X}" for b in byte_list)
-            data_expr = f"bytes([{byte_csv}])"
-        tuple_strs.append(f"(0x{addr_int:08X}, {data_expr})")
-    flush_cmd = f"cmd.flush_memory([{', '.join(tuple_strs)}])"
-
-    if len(flush_cmd) > MAX_FLUSH_CMD_LEN:
-        total_bytes = sum(len(bl) for _, bl in parsed)
-        print(f"[FAIL] 单次写入过大：命令串 {len(flush_cmd)} 字节 > 安全上限 {MAX_FLUSH_CMD_LEN}。")
-        print(f"       {len(parsed)} 个地址 / 共 {total_bytes} 字节（非重复数据展开为字面量）。")
-        print(f"       超长命令会触发固件 PIKA_LINE_BUFF 溢出 → REPL 挂起 → 端口死锁（需拔插复位）。")
-        print(f"       请分块：每块 ≤ 30 字节展开（实测 32B 安全）/ ≤8 地址项，每批等 REPL 返回 >>> 再发下一批；")
-        print(f"       全相同字节（清零/填 0xFF 等）请改用 ADDR:BYTE*N 紧凑语法（如 0x20008000:0xAA*16300），")
-        print(f"       CLI 自动转 bytes([0xVV])*N 短表达式，命令串极短、绕开 Windows 命令行长度限制，可一次写数 KB。")
-        return
-
-    # 3) 连接并执行
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return
-
-    try:
-        _init_target_bridge(bridge)
-        ok_count = 0
-        fail_count = 0
-        last_err = ""
-
-        import time as _time
-        for i in range(repeat):
-            if repeat > 1:
-                print(f"[*] [{i+1}/{repeat}] {flush_cmd}")
-            else:
-                print(f"[*] {flush_cmd}")
-
-            try:
-                resp = bridge.send_command(flush_cmd, timeout=10.0)
-            except Exception as e:
-                print(f"[FAIL] 写入异常: {e}")
-                fail_count += 1
-                continue
-
-            success, msg = _parse_flush_response(resp)
-            if success:
-                ok_count += 1
-                if msg:  # WARN
-                    print(f"  {msg}")
-                if repeat > 1:
-                    print(f"  [OK] #{i+1}")
-            else:
-                fail_count += 1
-                last_err = msg
-                print(f"[FAIL] #{i+1}: {msg}")
-                if "name" in msg.lower() and "not defined" in msg.lower():
-                    print("      提示: 烧录器固件未暴露 cmd.flush_memory，请改用 write-ram")
-                    break
-
-            if interval_ms > 0 and i < repeat - 1:
-                _time.sleep(interval_ms / 1000.0)
-
-        # 4) 汇总
-        print()
-        total_bytes = sum(len(bl) for _, bl in parsed)
-        total_addrs = len(parsed)
-        if repeat == 1:
-            if ok_count:
-                print(f"[OK] 已写入 {total_bytes} 字节到 {total_addrs} 个地址（静默）")
-            else:
-                print(f"[FAIL] 写入失败: {last_err}")
-        else:
-            print(f"[OK] 成功 {ok_count}/{repeat} 次，失败 {fail_count} 次")
-
-        # 5) 可选回读
-        if verify and ok_count > 0:
-            for addr_int, byte_list in parsed:
-                n = len(byte_list)
-                read_cmd = f"cmd.read_ram(0x{addr_int:08X}, {n})"
-                print(f"\n[*] 回读验证: {read_cmd}")
-                resp = bridge.send_command(read_cmd, timeout=5.0)
-                print(resp.strip())
-    finally:
-        bridge.close()
 
 
 def _parse_dump_region(raw: str) -> tuple[int, int]:
@@ -2899,7 +2686,6 @@ def main():
 
     # flush-memory 子命令（静默写 RAM，多地址多字节）
     # 调用的 PikaScript 函数: cmd.flush_memory([(addr, bytes([...])), ...])
-    # （旧名 cmd.flush_memroy 已重命名；旧 CLI 名 flush-memroy 作为别名保留，见下方）
     dump_memory_parser = subparsers.add_parser(
         "dump-memory",
         aliases=["dump"],
@@ -2937,9 +2723,9 @@ def main():
 
     flush_memory_parser = subparsers.add_parser(
         "flush-memory",
-        aliases=["flush-memroy"],  # 旧拼写向后兼容（但用法是新的）
         help="静默写 RAM（cmd.flush_memory，多地址多字节；不得与流式采集并发）",
     )
+    _add_project_root_arg(flush_memory_parser)
     flush_memory_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     flush_memory_parser.add_argument(
         "items", nargs="+",
@@ -2947,10 +2733,10 @@ def main():
              '  字节接受 0x11 / 11，逗号或空格分隔\n'
              '  例: 0x20010000:0x11,0x22,0x33  0x20010100:0x44,0x55,0x66,0x77\n'
              '  单字节重复（清零/填 0xFF/大块填充）用 ADDR:BYTE*N：\n'
-             '       0x20008000:0xAA*16300  （绕开 Windows 命令行长度限制）',
+             '       0x20008000:0xAA*12288  （绕开 Windows 命令行长度限制）',
     )
     flush_memory_parser.add_argument(
-        "--verify", action="store_true", help="写完后回读校验（消耗额外时间）"
+        "--verify", action=argparse.BooleanOptionalAction, default=True, help="默认逐批回读校验；--no-verify 仅确认固件响应"
     )
     flush_memory_parser.add_argument(
         "--repeat", type=int, default=1, help="连续写 N 次（默认 1）"
@@ -3454,7 +3240,7 @@ def main():
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
     for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
-                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser):
+                  read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -3573,16 +3359,6 @@ def main():
         _cli_systemview_report(
             _resolve_project_root(args), port=args.port, duration=args.duration,
             out_path=args.out, no_browser=args.no_browser,
-        )
-    elif args.command == "flush-memory":
-        # argparse aliases: 旧拼写 "flush-memroy" 仍可工作，但会归一化为
-        # 主名 "flush-memory"，故此处需要查 sys.argv 才能知道用户实际敲的。
-        import sys as _sys
-        if len(_sys.argv) > 1 and _sys.argv[1] == "flush-memroy":
-            print("[WARN] 'flush-memroy' 是旧拼写，已自动转发到 'flush-memory'，请改用新名")
-        _cli_flush_memory(
-            args.port, args.items,
-            verify=args.verify, repeat=args.repeat, interval_ms=args.interval_ms,
         )
     elif args.command in ("resources", "resource"):
         _cli_resources(args)

@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
+COMMANDS = {'flush-memory', 'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration', 'peripherals', 'dump-memory', 'dump'}
 
 
 def run(args):
@@ -60,6 +60,17 @@ def run(args):
             dump_arguments = dict(regions=dump_regions, period=args.period, frames=args.frames,
                                   duration=args.duration, speed_profile=args.speed)
             validate_dump_stream(**dump_arguments)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+    if args.command == 'flush-memory':
+        from mklink.cli import _parse_flush_item
+        from mklink.memory_write import validate_writes
+        try:
+            if not 1 <= args.repeat <= 100 or not 0 <= args.interval_ms <= 30000:
+                raise ValueError('repeat must be 1..100; interval-ms must be 0..30000')
+            flush_writes = [{'address': address, 'data_hex': bytes(data).hex()}
+                            for address, data in map(_parse_flush_item, args.items)]
+            validate_writes(flush_writes)
         except ValueError as error:
             raise SystemExit(str(error)) from error
     if args.command == 'break':
@@ -157,6 +168,15 @@ def run(args):
                 print(f"Collected {result['sample_count']} complete samples, {result['total_bytes']} bytes; stopped by {result['stopped_by']}")
                 if args.save:
                     print(f'Saved to {args.save}')
+            return
+        elif args.command == 'flush-memory':
+            for index in range(args.repeat):
+                result = client.call('flush_memory', {'writes': flush_writes, 'verify': args.verify})
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+                if not result.get('ok') or (args.verify and not result.get('verified')):
+                    raise RuntimeErrorResponse('Flush failed; remaining writes were not sent. Inspect target before another write')
+                if index + 1 < args.repeat:
+                    time.sleep(args.interval_ms / 1000)
             return
         elif args.command == 'device-status':
             result = client.call('device_status')

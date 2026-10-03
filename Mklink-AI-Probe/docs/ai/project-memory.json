@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T18:27:36+00:00",
+  "updated_at": "2026-10-03T18:48:22+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared periodic dump CLI and common sample assembly after 2aac177; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; shared flush CLI/MCP and common Device write engine after cfccd1c; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,13 +14,13 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审、修改和验证。周期dump CLI删除直连/原始分块循环，共享capture_dump复用既有会话和提取的完整样本组装器。839后台通过/2可选依赖跳过；双下载器CLI/GUI/MCP/SDK验证3个B1样本保存12300字节、250ms采样25帧、互斥及命令恢复。继续flush/吞吐/其他旧入口与A7。"
+    "current_task": "持续循环评审、修改和验证。flush CLI/MCP迁移共享后台，Device与旧MCP共用分包/响应执行；默认逐批回读，首错停止，删除旧直连/错误降级/拼写兼容。869后台通过、2可选依赖跳过；双下载器CLI/GUI/MCP/SDK完成96字节分包、8地址批写、4KiB填充并恢复测试数组。继续吞吐/其他旧入口与A7。"
   },
   "milestones": [
     {
       "name": "0.3.0 专用CLI共享迁移",
       "status": "development",
-      "notes": "每探针独立后台；常用MCP、24类CLI（配置说明/生成及外设索引仍离线）及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。"
+      "notes": "每探针独立后台；常用MCP、25类CLI（配置说明/生成及外设索引仍离线）及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。"
     },
     {
       "name": "0.2.3正式版",
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第十三批：CI后台485/GUI79；本地839通过、2跳过。真实CLI周期3个B1样本保存12300字节，MCP 250ms得到25个推进的tick样本；RTT时拒绝且原文件保持，第二探针独立；原SDK/MCP三样本、512KiB复验通过。Boot/选项字节/VTOR/配置保持，GUI可重启采集。GUI未改，沿用第九批资源。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第十四批：本地869通过、2跳过；CI集合515后台/79GUI。真实双下载器/Edge/CLI/MCP/SDK：RTT时写入拒绝、第二探针独立，停止后96字节4批、8地址2批、4KiB短表达式回读通过；专用数组恢复原值。GUI再启停、Boot/选项字节/VTOR/配置保持、tick推进。12KiB仅契约边界覆盖。GUI未改，沿用第九批资源。"
     },
     {
       "area": "正式版与安装",
@@ -64,8 +64,8 @@
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "A5已收敛。A6活动MCP35工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增485项后台（含实际API、探针、配置、外设、批量内存及dump）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
-    "0.3.0第七阶段：flush/吞吐/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
+    "A5已收敛。A6活动MCP36工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增515项后台（含实际API、探针、配置、外设、批量内存、dump及flush）/79项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。",
+    "0.3.0第七阶段：吞吐/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "持续评审/验证：继续A6 flush/吞吐/watch及其他专用CLI迁移，复用既有服务及准入；审核独立服务和旧MCP，迁移后删除重复路径。随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。",
+    "持续评审/验证：继续A6 吞吐/watch及其他专用CLI迁移，复用既有服务及准入；审核独立服务和旧MCP，迁移后删除重复路径。随后双设备长稳、拔插/休眠、原生bfcache补验和NSIS。不改下载器固件/WinUSB，不自动合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

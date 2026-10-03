@@ -1183,7 +1183,7 @@ def test_direct_mcp_dump_failure_emits_failed_lifecycle_and_stream_gap(monkeypat
 
 
 def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(monkeypatch):
-    from mklink import cli
+    from mklink import memory_write
 
     raw = _Producer()
     _install_observe(monkeypatch, raw)
@@ -1195,8 +1195,8 @@ def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(mon
         _bridge=bridge,
     ))
     monkeypatch.setattr(
-        cli,
-        "_parse_flush_response",
+        memory_write,
+        "parse_flush_response",
         lambda response: (response == "ok", response),
     )
     mcp = _Mcp()
@@ -1241,7 +1241,7 @@ def test_direct_mcp_flush_partial_result_is_failed_without_changing_response(mon
 
 
 def test_direct_mcp_flush_exception_after_success_reports_safe_batch_counts(monkeypatch):
-    from mklink import cli
+    from mklink import memory_write
 
     raw = _Producer()
     _install_observe(monkeypatch, raw)
@@ -1259,7 +1259,7 @@ def test_direct_mcp_flush_exception_after_success_reports_safe_batch_counts(monk
     monkeypatch.setattr(mcp_server, "_connected_device", lambda: SimpleNamespace(
         _bridge=SimpleNamespace(send_command=send_command),
     ))
-    monkeypatch.setattr(cli, "_parse_flush_response", lambda response: (True, response))
+    monkeypatch.setattr(memory_write, "parse_flush_response", lambda response: (True, response))
     mcp = _Mcp()
     mcp_server._register_flush_tools(mcp)
     writes = [

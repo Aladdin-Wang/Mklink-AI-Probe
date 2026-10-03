@@ -271,6 +271,14 @@ class RuntimeClient:
             if not self.session_id:
                 raise RuntimeErrorResponse("Call connect first")
             transport_options = {}
+            if capability == 'flush_memory':
+                from mklink.memory_write import validate_writes, plan_flush_batches
+                args = arguments or {}
+                batches = plan_flush_batches(validate_writes(args.get('writes')))
+                # Every command can consume its 10s budget; verified readbacks
+                # also need time. Timeout never causes a replay.
+                reads = sum((len(data) + 4095) // 4096 for batch in batches for _, data in batch)
+                transport_options['timeout'] = max(35, 10 * (len(batches) + reads) + 15)
             if capability == 'dump_memory':
                 from mklink.dump_memory import validate_dump_capture
                 args = arguments or {}

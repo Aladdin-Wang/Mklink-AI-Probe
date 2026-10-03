@@ -14,6 +14,7 @@ CAPABILITIES = {
     'resources': ('GET', '/api/resources/status'),
     'read_memory': ('POST', '/api/device/read-memory'),
     'capture_dump': ('POST', '/api/device/dump-memory/capture'),
+    'flush_memory': ('POST', '/api/device/flush-memory'),
     'dump_memory': ('POST', '/api/device/dump-memory'),
     'read_memory_regions': ('POST', '/api/device/read-memory-regions'),
     'read_configuration': ('POST', '/api/device/configuration/read'),

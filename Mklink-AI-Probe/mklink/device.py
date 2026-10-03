@@ -2192,23 +2192,11 @@ class Device:
         self._require_connected()
         if not data:
             return
-        # cmd.write_ram 的逐字节参数在当前探针固件不稳定（写入不生效，回读为空）；
-        # 改用 cmd.flush_memory 的 bytes 表达式（与 MCP flush_memory 一致）：
-        # 全相同字节折叠为短表达式（单条可达 12 KiB），非重复数据按 30B 分块，
-        # 保证命令串 < 230（PIKA_LINE_BUFF 上限）。详见 references/flush-memory.md。
-        CHUNK = 30
-        i = 0
-        while i < len(data):
-            rest = data[i:]
-            if all(b == rest[0] for b in rest):
-                seg, step = rest, len(rest)
-                expr = f"bytes([0x{seg[0]:02X}])*{len(seg)}"
-            else:
-                seg, step = rest[:CHUNK], CHUNK
-                expr = "bytes([" + ", ".join(f"0x{b:02X}" for b in seg) + "])"
-            cmd = f"cmd.flush_memory([(0x{address + i:08X}, {expr})])"
-            self._bridge.send_command(cmd, timeout=10.0)
-            i += step
+        from mklink.memory_write import execute_flush, validate_writes
+        parsed = validate_writes([{'address': address, 'data_hex': data.hex()}])
+        result = execute_flush(self, parsed)
+        if not result['ok']:
+            raise DeviceError('Memory write failed; no remaining batches sent: ' + result['results'][-1]['message'])
 
     # ------------------------------------------------------------------
     # Variables

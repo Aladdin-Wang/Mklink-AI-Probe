@@ -16,7 +16,7 @@ description: |
 `cmd.flush_memory` 是 MKLink 固件中的 PikaPython REPL API，**不是** `python -m mklink` 的 CLI 子命令。
 它通过 MKLink 设备的 Python shell/CDC 串口发送命令，向目标 RAM 写入数据。
 
-`python -m mklink flush-memory` CLI 是这个 REPL API 的封装者（`mklink/cli.py:_cli_flush_memory`）。
+`python -m mklink flush-memory` CLI 是这个 REPL API 的封装者（`mklink/runtime_cli.py` → 共享后台 → `mklink/memory_write.py`）。
 
 ## 2. 基本用法
 
@@ -162,32 +162,30 @@ flush_memory 同时受**三类独立边界**约束，排查时务必先分清撞
 - 等待 REPL 返回 >>> 后再发送下一批
 ```
 
-伪代码示例（仅参考；重复字节超过 12 KiB 时也必须分块，`ADDR:BYTE*N` 不能绕过总量限制）：
+共享 SDK 示例（每次至多 12 KiB；内部自动遵守 230 字符固件命令限制）：
 
 ```python
-# 大块连续数据分块
-chunk_size = 12 * 1024
-data = open("payload.bin", "rb").read()
-for i in range(0, len(data), chunk_size):
-    chunk = data[i:i+chunk_size]
-    send(f"cmd.flush_memory((0x{0x20002000+i:08X}, bytes([{','.join(f'0x{b:02X}' for b in chunk)}])))")
-    wait_for_prompt(">>>")
+from mklink import SharedDevice
+
+device = SharedDevice(probe=probe_id, project_root=project_root)
+device.connect()
+try:
+    for offset in range(0, len(data), 12288):
+        result = device.call('flush_memory', {'writes': [
+            {'address': confirmed_ram_address + offset, 'data_hex': data[offset:offset+12288].hex()}
+        ]})
+        if not result['ok'] or not result['verified']:
+            raise RuntimeError('Write failed; remaining chunks were not sent')
+finally:
+    device.close()
 ```
 
-## 6. 校验建议
+## 6. 校验
 
-写入后建议读取头部和尾部数据确认：
-
-```python
-cmd.read_ram(0x20002000, 16)
-cmd.read_ram(0x20002000 + N - 16, 16)
-```
-
-对于大块数据，建议额外读取中间位置：
-
-```python
-cmd.read_ram(0x20002000 + N // 2, 16)
-```
+共享 CLI/MCP/SDK 默认对每个批次的每个字节回读比较，单次回读最多 4096 字节。
+返回 `verified=true` 才表示本次所有批次通过校验。目标程序若同时修改该区域，
+可能出现不符；应选专用稳定区域，不能把未验证结果当作成功。
+`verify=false`/CLI `--no-verify` 只确认固件响应，不证明内存内容。
 
 ## 7. 注意事项
 
@@ -200,14 +198,12 @@ cmd.read_ram(0x20002000 + N // 2, 16)
 - 测试地址必须确认是目标 RAM 空闲区，避免覆盖目标程序栈、堆、RTOS 对象、DMA 缓冲或显示缓冲。
 - 边界与固件版本、`PIKA_LINE_BUFF_SIZE`、目标 RAM 布局、下载器状态有关，升级固件后应复测。
 
-## 8. 与 CLI `flush-memory` 的关系
+## 8. 共享入口
 
-`python -m mklink flush-memory` 是 `cmd.flush_memory` 的 CLI 封装。
+0.3.0 的 CLI `flush-memory`、活动 MCP 同名工具和共享 SDK 都复用后台写入实现。
+CLI 自动分包，1..8 个不重叠区域、每项及合计不超过 12288 字节；所有入口在 I/O 前
+拒绝无效请求。底层 Device 也复用此分包和响应判断，不再自行展开命令。
 
-**重要约束**：
-
-- CLI 对**非重复数据不自动分块**——超出 230B 命令串时直接 `FAIL` 并提示改用 `ADDR:BYTE*N` 或分块。重复字节用 `ADDR:BYTE*N`（§2.6），CLI 自动转短表达式，不受此限。
-- 多地址超出 8 项、或单地址非重复数据超长时，CLI 不会自动降级，会返回 `FAIL`。
-- MCP 额外硬限制每项 ≤12288B、每次总量 ≤12288B，并在设备发现或 I/O 前拒绝；大数据必须由调用方拆成多个串行 tool call。
-- 写入前请自行遵守本文档第 4 章「推荐实际使用边界」与第 5 章「超额分块策略」。
-- CLI 的响应解析规则（静默成功 / `flush fail` 兼容 / WARN 降级）见 [commands-memory.md](commands-memory.md) 的 `flush-memory` 章节。
+只接受静默完成或命令回显；包括裸 `flush fail` 在内的其他诊断均为失败，
+不会因历史固件曾误报而宣称成功。首个失败后停止剩余批次；不自动重试或回滚。
+GUI 采集期间返回忙，不抢停采集。详情见[命令说明](commands-memory.md)。

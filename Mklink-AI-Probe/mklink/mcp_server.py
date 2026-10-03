@@ -43,9 +43,11 @@ from mklink.memory_access import (
     BATCH_READ_MAX_TOTAL_BYTES as MCP_MAX_BATCH_TOTAL_BYTES,
 )
 MCP_MAX_WRITE_BYTES = 4096
-MCP_MAX_FLUSH_WRITES = 8
-MCP_MAX_FLUSH_ITEM_BYTES = 12 * 1024
-MCP_MAX_FLUSH_TOTAL_BYTES = 12 * 1024
+from mklink.memory_write import (
+    MAX_REGIONS as MCP_MAX_FLUSH_WRITES,
+    MAX_BYTES as MCP_MAX_FLUSH_ITEM_BYTES,
+    MAX_BYTES as MCP_MAX_FLUSH_TOTAL_BYTES,
+)
 MCP_MAX_CAPTURE_SECONDS = 30.0
 MCP_MAX_SEARCH_BYTES = 64 * 1024
 MCP_MAX_RTT_WRITE_BYTES = 256
@@ -1449,182 +1451,15 @@ def _register_hardfault_tools(mcp: Any) -> None:
 # ports (separate cross-process locks), NOT the MKLink SWD probe.
 # ==========================================================================
 
-# ---- flush_memory helpers (encode flush-memory.md boundary + PIKA_LINE_BUFF) ----
-_FLUSH_CMD_MAX = 230          # cli.py:1314 — PIKA_LINE_BUFF safe bound
-_FLUSH_NONREPEAT_CHUNK = 30   # ~180 chars expanded, headroom under 230
-
-
-def _flush_data_expr(data: bytes) -> tuple[str, bool]:
-    """Build the PikaScript data expression for one flush tuple.
-
-    All-same-byte payloads use the short ``bytes([0xVV])*N`` form (carries up
-    to 12 KiB in one command); anything else expands to a literal (caller
-    pre-splits these into ≤30B chunks). Returns (expression, is_short_form).
-    """
-    if data and all(b == data[0] for b in data):
-        return f"bytes([0x{data[0]:02X}])*{len(data)}", True
-    literal = ", ".join(f"0x{b:02X}" for b in data)
-    return f"bytes([{literal}])", False
-
-
-def _plan_flush_batches(
-    writes: list[tuple[int, bytes]],
-) -> list[list[tuple[int, bytes]]]:
-    """Split (addr, data) writes into batches whose command string stays
-    under _FLUSH_CMD_MAX. Non-repeat payloads >30B are pre-split into 30B
-    chunks; batches then greedily packed (≤8 items, ≤230 chars). Encodes the
-    chunking strategy from references/flush-memory.md §5.
-    """
-    from mklink.remote.stream_protocol import canonical_memory_address
-
-    items: list[tuple[int, bytes]] = []
-    for addr, data in writes:
-        if not data:
-            continue
-        _, is_short = _flush_data_expr(data)
-        if is_short:
-            items.append((addr, data))
-        else:
-            for off in range(0, len(data), _FLUSH_NONREPEAT_CHUNK):
-                items.append((addr + off, data[off:off + _FLUSH_NONREPEAT_CHUNK]))
-
-    batches: list[list[tuple[int, bytes]]] = []
-    cur: list[tuple[int, bytes]] = []
-    cur_len = len("cmd.flush_memory([])")
-    for addr, data in items:
-        tup = f"({canonical_memory_address(addr)}, {_flush_data_expr(data)[0]})"
-        add = len(tup) + (2 if cur else 0)
-        if cur and (cur_len + add > _FLUSH_CMD_MAX or len(cur) >= 8):
-            batches.append(cur)
-            cur = []
-            cur_len = len("cmd.flush_memory([])")
-            add = len(tup)
-        cur.append((addr, data))
-        cur_len += add
-    if cur:
-        batches.append(cur)
-    return batches
-
-
 def _register_flush_tools(mcp: Any) -> None:
-    from mklink.observe_bridge import memory_flush_facts, observe_operation
-    from mklink.remote.stream_protocol import canonical_memory_address
+    from mklink.memory_write import execute_flush, validate_writes
 
     @mcp.tool()
     @_exclusive_hardware_tool
     def flush_memory(writes: list[dict]) -> dict:
-        """Write multiple discontiguous RAM regions silently via cmd.flush_memory.
-
-        **Value-add over the CLI: auto-chunks.** The CLI rejects any single
-        command over 230 chars (PIKA_LINE_BUFF overflow → REPL deadlock);
-        this tool splits automatically:
-          - all-same-byte payloads (zero-fill, 0xFF fill) → short expression;
-          - non-repeat data → 30-byte chunks, ≤8 addresses/batch, ≤230 chars;
-          - sends batch-by-batch, waiting for the device prompt between each.
-
-        Host safety limits are enforced before device lookup or I/O: at most
-        8 input regions, at most 12288 bytes in any one region, and at most
-        12288 bytes total per tool call. Split larger writes into sequential
-        calls and wait for each call to finish before sending the next.
-
-        The command is silent, but it must not run concurrently with any
-        dump/RTT/SystemView stream on the same probe. Stop and release the
-        stream first, then issue the write in a normal command session.
-
-        Args:
-            writes: List of {"address": int, "data_hex": str}, e.g.
-                [{"address": 0x20002000, "data_hex": "DEADBEEF"}].
-        """
-        from mklink.cli import _parse_flush_response
-        if not isinstance(writes, list) or not writes:
-            raise ValueError("writes must be a non-empty list")
-        if len(writes) > MCP_MAX_FLUSH_WRITES:
-            raise ValueError(
-                f"writes must contain at most {MCP_MAX_FLUSH_WRITES} regions"
-            )
-        with observe_operation(
-            "memory.flush",
-            capability="target.memory",
-            action_class="emit",
-        ) as observation:
-            parsed: list[tuple[int, bytes]] = []
-            for i, w in enumerate(writes):
-                if not isinstance(w, dict) or "address" not in w or "data_hex" not in w:
-                    raise ValueError(f"writes[{i}] must contain address and data_hex")
-                try:
-                    if isinstance(w["address"], bool):
-                        raise ValueError
-                    address = int(w["address"])
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(f"writes[{i}].address must be an integer") from exc
-                data_hex = w["data_hex"]
-                if not isinstance(data_hex, str):
-                    raise ValueError(f"writes[{i}].data_hex must be a hex string")
-                try:
-                    data = _from_hex(data_hex)
-                except ValueError as exc:
-                    raise ValueError(
-                        f"writes[{i}].data_hex must be valid hex: {exc}"
-                    ) from exc
-                _validate_memory_range(
-                    address, len(data), max_size=MCP_MAX_FLUSH_ITEM_BYTES
-                )
-                parsed.append((address, data))
-            total = sum(len(data) for _, data in parsed)
-            if total > MCP_MAX_FLUSH_TOTAL_BYTES:
-                raise ValueError(
-                    "total write data must not exceed "
-                    f"{MCP_MAX_FLUSH_TOTAL_BYTES} bytes"
-                )
-            dev = _connected_device()
-            batches = _plan_flush_batches(parsed)
-            results = []
-            try:
-                for bi, batch in enumerate(batches):
-                    tuple_strs = [
-                        f"({canonical_memory_address(a)}, {_flush_data_expr(d)[0]})"
-                        for a, d in batch
-                    ]
-                    cmd = f"cmd.flush_memory([{', '.join(tuple_strs)}])"
-                    resp = dev._bridge.send_command(cmd, timeout=10.0)
-                    ok, msg = _parse_flush_response(resp)
-                    results.append({
-                        "batch": bi + 1, "items": len(batch),
-                        "bytes": sum(len(d) for _, d in batch),
-                        "ok": ok, "message": msg,
-                    })
-            except Exception:
-                successful_batches = sum(result["ok"] for result in results)
-                facts = memory_flush_facts(
-                    canonical_memory_address(parsed[0][0]) if parsed else None,
-                    total_bytes=total,
-                    region_count=len(parsed),
-                    batch_count=len(batches),
-                    successful_batches=successful_batches,
-                    failed_batches=len(batches) - successful_batches,
-                )
-                observation.fail("memory_flush_transport_failed", facts=facts)
-                raise
-            response = {
-                "ok": all(r["ok"] for r in results),
-                "batches": len(batches),
-                "total_bytes": total,
-                "results": results,
-            }
-            failed_batches = sum(not result["ok"] for result in results)
-            facts = memory_flush_facts(
-                canonical_memory_address(parsed[0][0]) if parsed else None,
-                total_bytes=total,
-                region_count=len(parsed),
-                batch_count=len(batches),
-                successful_batches=len(batches) - failed_batches,
-                failed_batches=failed_batches,
-            )
-            if response["ok"]:
-                observation.complete(facts=facts)
-            else:
-                observation.fail("memory_flush_failed", facts=facts)
-            return response
+        """Write 1..8 regions, at most 12 KiB, stopping at the first failed batch."""
+        parsed = validate_writes(writes)
+        return execute_flush(_connected_device(), parsed)
 
 
 # ---- Modbus RTU (independent serial port session) ----

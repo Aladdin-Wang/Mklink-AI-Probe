@@ -102,6 +102,16 @@ def build_server():
                                            'timeout': timeout, 'speed_profile': speed_profile})
 
     @server.tool()
+    def flush_memory(writes: list[dict], verify: bool = True) -> dict:
+        """Write 1..8 regions (12 KiB total) through the shared backend.
+
+        Reads each batch back by default. Stops on the first error, never
+        retries or interrupts GUI capture. Writes are ordered, not atomic;
+        earlier batches may remain written after failure.
+        """
+        return client().call('flush_memory', {'writes': writes, 'verify': verify})
+
+    @server.tool()
     def read_memory_regions(regions: list[dict]) -> dict:
         """Read 1..16 regions, at most 4096 bytes, through the shared backend.
 

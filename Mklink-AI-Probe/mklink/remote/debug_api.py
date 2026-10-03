@@ -153,6 +153,12 @@ def memory_dump(device, body):
                           timeout=body.get('timeout', 10.0), speed_profile=body.get('speed_profile'))
 
 
+def memory_flush(device, body):
+    from mklink.memory_write import execute_flush, validate_writes
+    _fields(body, {'writes', 'verify'})
+    return execute_flush(device, validate_writes(body.get('writes')), verify=body.get('verify', True))
+
+
 def memory_regions(device, body):
     from mklink.memory_access import read_memory_regions
     _fields(body, {'regions'})
@@ -211,6 +217,7 @@ def create_debug_router(state, lease):
     add('dump-memory', memory_dump)
     add('dump-memory/capture', memory_dump_stream)
     add('read-memory-regions', memory_regions)
+    add('flush-memory', memory_flush)
     add('register-snapshot', register_snapshot)
     add('fault-snapshot', fault_snapshot)
     add('breakpoints', breakpoints)
