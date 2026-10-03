@@ -58,7 +58,7 @@ async function refresh() {
 
 async function act(action: string, parameters: Record<string, string> = {}) {
   const prompts: Record<string, string> = {
-    'detach-client': tr('结束此 AI/CLI 会话？采集和设备连接将保留。', 'End this AI/CLI session? Acquisition and device connection will remain.'),
+    'detach-client': tr('结束此 AI/CLI/SDK 会话？采集和设备连接将保留。', 'End this AI/CLI/SDK session? Acquisition and device connection will remain.'),
     'stop-acquisition': tr('停止选定采集？有其他订阅者时会拒绝。', 'Stop this capture? Other subscribers will prevent it.'),
     'release-device': tr('释放此下载器的物理连接？其他设备不受影响。', 'Release this probe connection? Other devices are unaffected.'),
     'stop-backend': tr('退出此下载器后台？本窗口随后将离线。', 'Exit this probe backend? This window will go offline.'),
@@ -109,7 +109,7 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
       <h3>{{ tr('运行中的采集', 'Active captures') }}</h3>
       <p v-if="!state.streams.some(s => s.running)">{{ tr('暂无采集', 'No active capture') }}</p>
       <div v-for="stream in state.streams.filter(s => s.running)" :key="stream.name" class="runtime-row">
-        <span>{{ stream.name }} · {{ stream.subscribers }} {{ tr('个 AI/CLI 订阅', 'AI/CLI subscribers') }}</span>
+        <span>{{ stream.name }} · {{ stream.subscribers }} {{ tr('个 AI/CLI/SDK 订阅', 'AI/CLI/SDK subscribers') }}</span>
         <button v-if="['rtt', 'superwatch', 'systemview'].includes(stream.name)" class="btn btn-sm" :disabled="acting || state.busy || stream.subscribers > 0" @click="act('stop-acquisition', { stream: stream.name })">{{ tr('停止采集', 'Stop capture') }}</button>
       </div>
       <div class="runtime-actions">
@@ -124,7 +124,7 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
         </div>
         <p class="runtime-muted">{{ tr('关闭客户端不会取消任务。结果未知时请先核对目标，不要重新提交。后台最多保留 64 个任务。', 'Closing a client does not cancel its job. Inspect the target before submitting again after an unknown result. Up to 64 jobs are retained.') }}</p>
       </template>
-      <p class="runtime-muted">{{ tr('结束会话不会停止采集。释放设备前，请先结束 AI/CLI 会话并停止采集。GUI 窗口意外退出后，最多 45 秒从列表移除。', 'Ending a session keeps capture running. End AI/CLI sessions and stop capture before releasing the probe. Lost GUI windows expire after 45 seconds.') }}</p>
+      <p class="runtime-muted">{{ tr('结束会话不会停止采集。释放设备前，请先结束 AI/CLI/SDK 会话并停止采集。GUI 窗口意外退出后，最多 45 秒从列表移除。', 'Ending a session keeps capture running. End AI/CLI/SDK sessions and stop capture before releasing the probe. Lost GUI windows expire after 45 seconds.') }}</p>
     </template>
   </section>
 </template>

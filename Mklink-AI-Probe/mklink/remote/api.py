@@ -2063,16 +2063,24 @@ def create_app(
     async def halt_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "halt"):
-            s = _state["device"].halt()
+        async with async_target_debug_lease(_state, "halt"):
+            s = await run_in_threadpool(_state["device"].halt)
         return {"halted": s.halted}
 
     @app.post("/api/device/resume")
     async def resume_device():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "resume"):
-            s = _state["device"].resume()
+        async with async_target_debug_lease(_state, "resume"):
+            s = await run_in_threadpool(_state["device"].resume)
+        return {"halted": s.halted}
+
+    @app.post("/api/device/step")
+    async def step_device():
+        if not _state["device"] or not _state["device"].connected:
+            raise HTTPException(status_code=400, detail="Device not connected")
+        async with async_target_debug_lease(_state, "step"):
+            s = await run_in_threadpool(_state["device"].step)
         return {"halted": s.halted}
 
     @app.get("/api/device/hardfault")

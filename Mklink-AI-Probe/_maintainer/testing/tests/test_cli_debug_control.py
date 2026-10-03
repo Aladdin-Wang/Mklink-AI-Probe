@@ -50,14 +50,11 @@ def debug_cli(monkeypatch):
 @pytest.mark.parametrize(
     "invoke",
     [
-        lambda: cli._cli_halt(None),
-        lambda: cli._cli_resume(None),
-        lambda: cli._cli_step(None),
         lambda: cli._cli_break(SimpleNamespace(port=None, status=True)),
     ],
-    ids=("halt", "resume", "step", "break-status"),
+    ids=("break-status",),
 )
-def test_debug_cli_commands_use_shared_port_resolver(debug_cli, invoke):
+def test_unmigrated_break_command_uses_port_resolver(debug_cli, invoke):
     invoke()
 
     assert debug_cli == [None]

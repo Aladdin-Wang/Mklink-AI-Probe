@@ -9,7 +9,7 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash'}
 
 
 def run(args):
@@ -20,7 +20,7 @@ def run(args):
     if not math.isfinite(duration) or duration < 0:
         raise SystemExit('duration must be finite and nonnegative')
     if getattr(args, 'save', None):
-        raise SystemExit('Shared read-ram does not support --save to probe storage')
+        raise SystemExit('Shared memory reads do not support --save to probe storage')
     if any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
         raise SystemExit('Select the peripheral catalog in the shared GUI first')
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
@@ -52,7 +52,9 @@ def run(args):
                 raise RuntimeErrorResponse(json.dumps(result, ensure_ascii=False))
         elif args.command == 'device-status':
             result = client.call('device_status')
-        elif args.command == 'read-ram':
+        elif args.command in {'halt', 'resume', 'step'}:
+            result = client.call(args.command)
+        elif args.command in {'read-ram', 'read-flash'}:
             result = client.call('read_memory', {'address': args.addr, 'size': args.size})
         elif args.command == 'write-ram':
             payload = bytes(int(value, 0) for value in args.data)

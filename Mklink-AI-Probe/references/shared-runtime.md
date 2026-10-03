@@ -1,11 +1,11 @@
 # 0.3.0 共享 CDC 后台与多下载器
 
-本页对应 0.3.0 开发分支的第三阶段实现；现有正式安装版不会自动变成此版本。
+本页对应 0.3.0 开发分支的第四阶段实现；现有正式安装版不会自动变成此版本。
 底层仍使用原有 CDC，不需要更新下载器固件。
 
 ## 连接与选择
 
-每个物理下载器拥有一个后台进程，GUI、MCP 和已迁移的 CLI 命令复用它。
+每个物理下载器拥有一个后台进程，GUI、MCP、共享 Python SDK 和已迁移的 CLI 命令复用它。
 两台下载器使用不同后台、设备连接、采集管理器和工程上下文。
 同一下载器的多个窗口共享工程、符号和采集设置，不是独立硬件会话。
 建议不同目标选择不同工程目录，避免同时编辑同一份工程配置文件。
@@ -56,12 +56,12 @@ RTT 输入限制为 1..256 个 UTF-8 字节，拒绝保留的停止命令。
 
 停止采集要求拥有启动权且没有其他 AI 订阅者。AI `disconnect`、关闭 GUI、关闭
 桌面代理均不停止后台。断线会话在 120 秒后过期；过期不自动重放命令或停止采集。
-配置页的“后台管理”显示绑定设备、当前端口、工程、GUI/AI/CLI 客户端、采集订阅
+配置页的“后台管理”显示绑定设备、当前端口、工程、GUI/AI/CLI/SDK 客户端、采集订阅
 和当前操作。四种操作分开执行：
 
-- 结束会话：只撤销所选 AI/CLI 会话，保留设备与采集。
-- 停止采集：仍有 AI/CLI 订阅者时拒绝；先结束对应会话。
-- 释放下载器：必须先结束 AI/CLI 会话并停止所有采集；后台与窗口保留。
+- 结束会话：只撤销所选 AI/CLI/SDK 会话，保留设备与采集。
+- 停止采集：仍有 AI/CLI/SDK 订阅者时拒绝；先结束对应会话。
+- 释放下载器：必须先结束 AI/CLI/SDK 会话并停止所有采集；后台与窗口保留。
 - 退出后台：还要求没有其他 GUI 窗口。意外关闭的窗口最多 45 秒后从列表移除。
 
 设备消失或已连接设备的 COM 口变化时，拒绝新的硬件操作，不会选择另一台设备。
@@ -73,14 +73,15 @@ RTT 输入限制为 1..256 个 UTF-8 字节，拒绝保留的停止命令。
 python -m mklink runtime stop --probe "电机板" --confirm
 ```
 
-`runtime status` 的 clients 是 AI/CLI 会话数，不包含 GUI 窗口数。显式停止会关闭
+`runtime status` 的 clients 是 AI/CLI/SDK 会话数，不包含 GUI 窗口数。显式停止会关闭
 该下载器后台及其采集；不影响其他下载器。异常后的操作结果可能未知，不能把
 请求超时当成硬件命令已取消，也不能自动重试写操作。
 
 ## 常用 CLI
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
-`rtt`、`superwatch`、`systemview` 默认通过共享后台运行，支持 `--probe` 设备 ID
+`rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`，以及下文的
+`flash`、`erase`、`reset` 均通过共享后台运行，共 15 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -88,6 +89,10 @@ python -m mklink device-status --probe "电机板"
 python -m mklink read-variable counter --probe "电机板"
 python -m mklink read-ram --addr 0x20000000 --size 16 --probe "电机板"
 python -m mklink superwatch --probe "电机板" --duration 10
+python -m mklink read-flash --addr 0x08005000 --size 16 --probe "电机板"
+python -m mklink halt --probe "电机板"
+python -m mklink step --probe "电机板"
+python -m mklink resume --probe "电机板"
 ```
 
 未指定工程/符号时采用后台当前配置。`write-ram` 在同一次共享操作内写入并回读
@@ -99,11 +104,43 @@ python -m mklink superwatch --probe "电机板" --duration 10
 共享模式不接受 `--save` 探针文件写入、私有外设目录覆盖或非默认的独立可视化
 host/port/chart 参数。外设目录应先在 GUI 选择，图表使用共享 GUI 配置。
 
+`read-flash` 现在读取目标内存映射 Flash，每次 1..4096 字节，输出 JSON 中的
+`data_hex`/`data_base64`；不再加载 FLM 或把快照写到下载器磁盘。需要原生 Flash
+算法专用读取的非映射存储器不属于此入口。`halt/resume/step` 返回 `halted` 状态，
+会影响同一目标的执行；持续采集或独占任务进行时拒绝，不抢占采集。
+
+## Python 共享 SDK
+
+共享接口作为 `SharedDevice` / `connect_shared` 导出，客户端通过本机 HTTP 调用
+后台，自己不打开 CDC。运行环境需安装 GUI 后台依赖（例如 `pip install .[gui]`），
+或使用 MKLink 已配置好的运行环境。它不是低层 `Device` 的完整替代实现。
+
+```python
+from mklink import connect_shared
+
+with connect_shared(probe="电机板", name="测试脚本") as device:
+    print(device.call("device_status"))
+    print(device.read_register("SCB.CPUID"))
+    # GUI 已启动 RTT 时，此调用只订阅；退出 with 不停止其采集。
+    device.call("rtt_start")
+    history = device.call("rtt_history")
+```
+
+省略工程/AXF 时复用后台配置；显式冲突会被拒绝。调用应按顺序执行；后台忙时
+返回错误，没有自动重试或直连回退。`read_memory` 返回 bytes，`write_memory`
+默认同次操作内回读校验，失败会抛出异常。`halt/resume/step` 与 GUI 使用相同准入。
+
+`start_job(action, request_id=..., confirm=True, arguments=...)` 提交独占任务后立即
+返回记录，使用 `job_status(job_id)` 查询。SDK close 后仍可查询该后台的任务结果，
+但普通硬件调用需要重新显式 connect；close 不释放整个设备，也不取消任务。
+SDK 会话在后台管理页标记为 `sdk`，适用相同的会话续期、订阅与结束会话规则。
+此阶段后台协议为 5，使用新源码前需要显式退出旧开发后台。
+
 ## 兼容边界
 
 0.3.0 已删除 GUI、MCP 和已迁移 CLI 的 `--direct` 入口、重复的直连实现，以及
 Web 快捷入口的旧进程接管逻辑。这些入口统一通过共享后台使用 CDC。
-其余 CLI（包括独立 dump/watch/分析工作流）、独立远程 Agent 和 Python `Device`
+其余 CLI（包括独立 dump/watch/分析工作流）、独立远程 Agent 和低层 Python `Device`
 仍有直接操作设备的实现，尚未迁移。使用它们之前必须显式释放对应后台，不能因为
 共享能力尚未覆盖就自动退回直连。底层 CDC 驱动仍供共享后台使用，不属于待删除的旧模式。
 

@@ -349,8 +349,8 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                 raise HTTPException(429, "Too many attached clients")
             control.require_identity()
             kind, name = body.get('kind', 'mcp'), body.get('name', 'AI client')
-            if kind not in ('mcp', 'cli') or not isinstance(name, str) or not 1 <= len(name.strip()) <= 64:
-                raise HTTPException(422, 'Client kind must be mcp/cli and name must contain 1..64 characters')
+            if kind not in ('mcp', 'cli', 'sdk') or not isinstance(name, str) or not 1 <= len(name.strip()) <= 64:
+                raise HTTPException(422, 'Client kind must be mcp/cli/sdk and name must contain 1..64 characters')
             project = body.get("project_root")
             if any(body.get(key) is not None and not isinstance(body[key], str)
                    for key in ("project_root", "port", "axf", "mcu", "elf_backend", "session_id")):

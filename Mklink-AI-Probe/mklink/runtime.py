@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 4
+PROTOCOL = 5
 VERSION = "0.3.0"
 
 

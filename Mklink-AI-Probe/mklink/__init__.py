@@ -50,6 +50,9 @@ from mklink.utils import (
 # SDK API (lazy — depends on pyserial via Device internals)
 def __getattr__(name: str):
     """延迟加载 pyserial 依赖模块。"""
+    if name in {'SharedDevice', 'connect_shared'}:
+        from mklink import shared_device
+        return getattr(shared_device, name)
     if name == "Device":
         from mklink.device import Device
         return Device
@@ -96,7 +99,7 @@ def __getattr__(name: str):
 
 __all__ = [
     # SDK API (lazy)
-    "Device", "connect", "discover_all",
+    "Device", "connect", "discover_all", "SharedDevice", "connect_shared",
     "DeviceError", "DeviceNotConnectedError", "HardFaultReport",
     # Remote (lazy)
     "serve", "connect_remote",

@@ -35,6 +35,24 @@ def test_cli_read_routes_to_shared_backend(adapter):
     assert ('read_memory',{'address':'0x20000000','size':4}) in adapter
 
 
+@pytest.mark.parametrize('command', ['halt', 'resume', 'step', 'read-flash'])
+def test_debug_and_flash_read_cli_share_selected_backend(adapter, monkeypatch, command):
+    import sys
+    from mklink import cli
+    monkeypatch.setattr(sys, 'argv', ['mklink', command, '--probe', 'board'])
+    cli.main()
+    assert adapter[0][1]['probe'] == 'board'
+    assert adapter[1] == (('read_memory', {'address':'0x08000000', 'size':128})
+                          if command == 'read-flash' else (command, None))
+    assert adapter[-1] == ('detach', None)
+
+
+def test_flash_read_rejects_probe_file_write_before_connect(adapter):
+    with pytest.raises(SystemExit, match='--save'):
+        runtime_cli.run(SimpleNamespace(command='read-flash', save='flash.bin'))
+    assert adapter == []
+
+
 def test_cli_rejects_private_capture_overrides_and_invalid_duration(adapter):
     with pytest.raises(SystemExit):
         runtime_cli.run(SimpleNamespace(command='superwatch',variables=['new'],period=.001,duration=.001))

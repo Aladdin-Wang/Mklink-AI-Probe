@@ -75,7 +75,7 @@ def install_management(app, control):
     async def release_device(body: dict):
         confirmed(body)
         if control.sessions:
-            raise HTTPException(409, 'Detach AI/CLI clients before releasing the physical device')
+            raise HTTPException(409, 'Detach AI/CLI/SDK clients before releasing the physical device')
         no_capture()
         return await control.invoke('POST', '/api/device/disconnect')
 
@@ -83,7 +83,7 @@ def install_management(app, control):
     async def stop_backend(body: dict):
         confirmed(body)
         if control.sessions or len(control.views) > 1:
-            raise HTTPException(409, 'Detach AI/CLI clients and close other GUI windows first')
+            raise HTTPException(409, 'Detach AI/CLI/SDK clients and close other GUI windows first')
         no_capture()
         control.stopping = True
         if control.shutdown:

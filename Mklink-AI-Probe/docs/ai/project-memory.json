@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-03T08:41:59+00:00",
+  "updated_at": "2026-10-03T09:08:44+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; 0.3.0 stage 3, exclusive jobs, USB-bound MSC and retirement of migrated direct entry points; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; 0.3.0 stage 4, shared Python SDK and debug CLI; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,13 +14,13 @@
   },
   "current_session": {
     "status": "complete",
-    "current_task": "0.3.0第三阶段：共享flash/erase/reset任务、USB身份绑定MSC、删除已迁移GUI/MCP/CLI旧直连入口。双探针与Bootloader+App真机验证，继续PR 30；未合并、发布或安装。"
+    "current_task": "0.3.0第四阶段：共享Python SDK、halt/resume/step/read-flash迁移及异步调试控制。GUI/MCP/SDK共存和重新接入的新第二探针验证，继续PR 30；未合并、发布或安装。"
   },
   "milestones": [
     {
-      "name": "0.3.0共享后台第三阶段",
+      "name": "0.3.0共享后台第四阶段",
       "status": "development",
-      "notes": "每探针独立后台；常用MCP与11类CLI共享，flash/erase/reset有持久化任务和有界去重；Windows MSC绑定USB身份。其余专用CLI/SDK、独立Agent、安装版与长稳待后续。"
+      "notes": "每探针独立后台；常用MCP、15类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。"
     },
     {
       "name": "0.2.3正式版",
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-shared-runtime-stage3.md：任务排他/去重/退出后查询/重启保留、双MSC身份核对、真实MCP/CLI复位、烧录校验/擦除及Boot+App恢复、App更新保持完整Boot区域与RTOS tick推进。前两阶段报告保留；数字以报告为准。"
+      "result": "docs/verification/v0.3.0-shared-runtime-stage4.md：SDK与GUI/MCP订阅共存、SDK退出保留采集；CLI read-flash/halt/step/resume真机通过，Boot区不变且tick推进。用户接入新第二探针后，双窗口/后台/MSC隔离通过。历史三阶段报告保留，数字以报告为准。"
     },
     {
       "area": "正式版与安装",
@@ -53,18 +53,18 @@
   ],
   "decisions": [
     "应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。",
-    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不自动选第一台。丢失身份拒绝新操作，不重放。用户要求删除旧模式：GUI/MCP及已迁移CLI不再有--direct；剩余专用工具单独迁移，内嵌Agent暂禁用。",
+    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议5，内嵌Agent暂禁用。",
     "应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。",
     "V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。",
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "V4+STM32F103RET6为Bootloader(0x08000000)+App(0x08005000)，容量512KiB。曾误改App到基址并烧录/擦除，按用户纠正恢复两份固件并校验；之后App独立更新保持全部20KiB Boot区域不变，VTOR正确且RTOS tick推进。第二探针连接/磁盘未受影响。未改探针固件/VCC；勿再把App偏移判成错误。",
+    "state": "V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。第三阶段误改地址后已恢复校验，勿把App偏移判错。第四阶段未写Flash，read-flash/halt/step/resume后tick推进且20KiB Boot区未变。用户接入一只身份不同的新第二探针，双后台/窗口/磁盘隔离通过，第二目标未操作。未改探针固件/VCC。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
   "known_limits": [
-    "0.3.0第三阶段：剩余专用CLI/SDK/独立Agent未迁移；内嵌Agent暂禁用，Bootloader重枚举固件升级与非Windows共享MSC拒绝。脱机部署、全新连接erase算法准备、物理拔插/休眠、自动恢复、日志轮转、24/72小时长稳及实际安装升级未验收。共享SystemView无本轮RTOS真机证据。",
+    "0.3.0第四阶段：read-reg/hardfault/断点/dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、恢复/日志轮转、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -73,7 +73,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "查看PR 30及第三阶段报告。保留Boot+App布局，以App增量测试为主；补剩余CLI/SDK、全新连接erase准备与脱机部署，再做物理拔插/休眠、NSIS安装升级和至少24小时双设备长稳；不要直接发布开发版。",
+    "查看PR 30及第四阶段报告。保留Boot+App布局；继续专用CLI与低层Device调用方迁移、全新连接erase准备和脱机部署，再做操作中拔插/休眠、NSIS安装升级及至少24小时双设备长稳；不要直接发布开发版。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

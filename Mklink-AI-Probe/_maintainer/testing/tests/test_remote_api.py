@@ -24,6 +24,33 @@ def _route_endpoint(app, path):
     return find_route(app, path).endpoint
 
 
+@pytest.mark.parametrize('operation', ['halt', 'resume', 'step'])
+def test_debug_control_keeps_event_loop_responsive_until_worker_finishes(tmp_path, operation):
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    device, _ = _connected_symbol_device(tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    workers = []
+    def run():
+        workers.append(threading.get_ident())
+        entered.set()
+        release.wait(3)
+        return SimpleNamespace(halted=operation != 'resume')
+    setattr(device, operation, run)
+    app.state.mklink_state['device'] = device
+    async def scenario():
+        task = asyncio.create_task(_route_endpoint(app, '/api/device/'+operation)())
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            assert workers[0] != threading.get_ident()
+            assert not task.done()
+        finally:
+            release.set()
+            result = await task
+        assert result == {'halted':operation != 'resume'}
+        assert app.state.mklink_state['resource_manager'].get_status() == {}
+    asyncio.run(scenario())
+
+
 def test_debug_speed_four_profiles_persist_only_after_success(tmp_path):
     from unittest.mock import Mock
     from mklink.project_config import load_config

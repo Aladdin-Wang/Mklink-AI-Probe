@@ -1719,66 +1719,6 @@ def _cli_resources(args):
         print(f"  stopped: {', '.join(result['stopped'])}")
 
 
-def _cli_read_flash(port: str | None, addr: str, size: int, save: str | None, project_root: str):
-    """读取目标芯片 Flash 数据（自动加载 FLM）。"""
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.profiles import load_mcu_profiles
-    from mklink.project_config import load_config, load_keil_project
-
-    port = _resolve_port(port)
-    print(f"[*] 连接 {port} ...")
-    bridge = MKLinkSerialBridge(port)
-    if not bridge.connect():
-        print("[FAIL] 连接失败")
-        return
-
-    try:
-        # 自动加载 FLM（读 Flash 需要 FLM 算法）
-        config = load_config(project_root)
-        keil = load_keil_project(project_root)
-        mcu_key = config.get("mcu_key", "") if config else ""
-        profiles = load_mcu_profiles()
-        mcu = profiles.get(mcu_key, {})
-
-        flm_path = mcu.get("flm_path", "")
-        if keil and keil.get("flm_path_on_device"):
-            flm_path = keil["flm_path_on_device"]
-        if flm_path and not flm_path.startswith("/"):
-            flm_path = "/" + flm_path
-
-        flash_base = mcu.get("flash_base", "0x08000000")
-        ram_base = mcu.get("ram_base", "0x20000000")
-
-        if flm_path:
-            loaded = bridge.require_flm_loaded({
-                "flm_path": flm_path.lstrip("/"),
-                "flash_base": flash_base,
-                "ram_base": ram_base,
-                "name": mcu.get("name", mcu_key),
-            })
-            if loaded:
-                print("[OK] FLM 已加载")
-            else:
-                print("[WARN] FLM 加载失败，read_flash 可能不可用")
-        else:
-            print("[WARN] 未找到 FLM 配置，跳过 FLM 加载")
-
-        if save:
-            cmd = f'cmd.read_flash({addr}, {size}, "{save}")'
-        else:
-            cmd = f'cmd.read_flash({addr}, {size})'
-        print(f"[*] {cmd}")
-        resp = bridge.send_command(cmd, timeout=10.0)
-        print(resp.strip())
-        if save:
-            print(f"\n[OK] 数据已保存到设备文件: {save}")
-            print("     重启下载器后可在 U 盘中查看")
-    except Exception as e:
-        print(f"[FAIL] {e}")
-    finally:
-        bridge.close()
-
-
 def _cli_symbols(
     source: str,
     filter_pattern: str | None,
@@ -2868,59 +2808,6 @@ def _cli_serial_dispatch(args):
 
 # --- CPU Debug Control CLI handlers ---
 
-def _cli_halt(port: str | None):
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.debug_control import halt_cpu, read_debug_state
-    port = _resolve_port(port)
-    if not port:
-        return
-    bridge = MKLinkSerialBridge(port)
-    try:
-        bridge.connect()
-        _init_target_bridge(bridge)
-        state = halt_cpu(bridge)
-        if state.halted:
-            print(f"[OK] CPU 已停止 (DHCSR=0x{state.dhcsr_raw:08X})")
-        else:
-            print(f"[WARN] 写入 halt 命令但 S_HALT 未置位 (DHCSR=0x{state.dhcsr_raw:08X})")
-    finally:
-        bridge.close()
-
-
-def _cli_resume(port: str | None):
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.debug_control import resume_cpu
-    port = _resolve_port(port)
-    if not port:
-        return
-    bridge = MKLinkSerialBridge(port)
-    try:
-        bridge.connect()
-        _init_target_bridge(bridge)
-        state = resume_cpu(bridge)
-        if not state.halted:
-            print(f"[OK] CPU 已恢复运行 (DHCSR=0x{state.dhcsr_raw:08X})")
-        else:
-            print(f"[WARN] 写入 resume 命令但 CPU 仍处于 halt (DHCSR=0x{state.dhcsr_raw:08X})")
-    finally:
-        bridge.close()
-
-
-def _cli_step(port: str | None):
-    from mklink.bridge import MKLinkSerialBridge
-    from mklink.debug_control import step_cpu
-    port = _resolve_port(port)
-    if not port:
-        return
-    bridge = MKLinkSerialBridge(port)
-    try:
-        bridge.connect()
-        _init_target_bridge(bridge)
-        state = step_cpu(bridge)
-        print(f"[OK] 单步执行完成 (DHCSR=0x{state.dhcsr_raw:08X}, halted={state.halted})")
-    finally:
-        bridge.close()
-
 
 def _cli_break(args):
     from mklink.bridge import MKLinkSerialBridge
@@ -3575,12 +3462,12 @@ def main():
     )
 
     # read-flash 子命令
-    read_flash_parser = subparsers.add_parser("read-flash", help="读取目标芯片 Flash 数据（自动加载 FLM）")
+    read_flash_parser = subparsers.add_parser("read-flash", help="通过共享后台读取映射 Flash 快照（1..4096 字节）")
     _add_project_root_arg(read_flash_parser)
     read_flash_parser.add_argument("--port", help="COM 端口（默认自动检测）")
     read_flash_parser.add_argument("--addr", default="0x08000000", help="读取地址（默认 0x08000000）")
     read_flash_parser.add_argument("--size", type=int, default=128, help="读取字节数（默认 128）")
-    read_flash_parser.add_argument("--save", help="保存到设备文件（如 flash.bin）")
+    read_flash_parser.add_argument("--save", help="不再支持写下载器文件；使用共享 Python SDK 保存到主机")
 
     # vofa 子命令
     vofa_parser = subparsers.add_parser("vofa", help="VOFA+ 实时变量观测（启动/停止）")
@@ -4068,7 +3955,8 @@ def main():
         entry.add_argument('--port')
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
-    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser):
+    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
+                  read_flash_parser, halt_parser, resume_parser, step_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
         entry = subparsers.add_parser(name, help='通过共享后台访问设备')
@@ -4240,8 +4128,6 @@ def main():
         )
     elif args.command in ("resources", "resource"):
         _cli_resources(args)
-    elif args.command == "read-flash":
-        _cli_read_flash(args.port, args.addr, args.size, args.save, _resolve_project_root(args))
     elif args.command == "vofa":
         return _cli_vofa(
             args.port, args.variables, args.period, args.stop,
@@ -4289,12 +4175,6 @@ def main():
         _cli_modbus_dispatch(args)
     elif args.command == "serial":
         _cli_serial_dispatch(args)
-    elif args.command == "halt":
-        _cli_halt(args.port)
-    elif args.command == "resume":
-        _cli_resume(args.port)
-    elif args.command == "step":
-        _cli_step(args.port)
     elif args.command == "break":
         _cli_break(args)
     elif args.command == "serve":

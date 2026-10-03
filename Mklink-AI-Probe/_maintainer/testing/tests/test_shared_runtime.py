@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import threading
 from types import SimpleNamespace
 
@@ -32,12 +33,12 @@ def runtime(monkeypatch, tmp_path):
     @app.post("/api/device/read-memory")
     async def read(body: dict):
         calls.append("read")
-        return {"data_hex": "00" * body["size"]}
+        return {"data_hex": "00" * body["size"], 'data_base64': base64.b64encode(bytes(body['size'])).decode()}
 
     @app.post('/api/device/write-memory')
     async def write(body: dict):
         calls.append('write')
-        return {'bytes_written': len(bytes.fromhex(body['data_hex']))}
+        return {'bytes_written': len(bytes.fromhex(body['data_hex'])), 'verified': body.get('verify', False)}
 
     @app.post("/api/dash/rtt/start")
     async def start(body: dict):
