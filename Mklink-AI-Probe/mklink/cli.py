@@ -2900,7 +2900,8 @@ def main():
     config_parser.add_argument("--chip", required=True)
     config_parser.add_argument("--model", choices=("V2", "V3", "V4"), default="V4")
     config_parser.add_argument("--port")
-    config_parser.add_argument("--project-root", default=".")
+    config_parser.add_argument("--project-root", default=None)
+    config_parser.add_argument("--probe", help="共享后台下载器 ID 或别名")
 
     subparsers.add_parser(
         "remote",
@@ -3816,10 +3817,6 @@ def main():
         _cli_memmap(args)
     elif args.command == "watch":
         _cli_watch(args)
-    elif args.command == "configuration":
-        from mklink.device_configuration import run_cli
-
-        run_cli(args)
     elif args.command == "peripherals":
         from mklink.peripheral_cli import run
 

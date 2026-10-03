@@ -13,6 +13,7 @@ CAPABILITIES = {
     'step': ('POST', '/api/device/step'),
     'resources': ('GET', '/api/resources/status'),
     'read_memory': ('POST', '/api/device/read-memory'),
+    'read_configuration': ('POST', '/api/device/configuration/read'),
     'write_memory': ('POST', '/api/device/write-memory'),
     'read_variable': ('POST', '/api/device/read-variable'),
     'write_variable': ('POST', '/api/device/write-variable'),

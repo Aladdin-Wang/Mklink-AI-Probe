@@ -225,7 +225,7 @@ def configuration_script(part_number: str, changes: dict, model: str = "V4") -> 
     )
 
 
-def run_cli(args):
+def run_offline_cli(args):
     import json
 
     if args.action == "describe":
@@ -239,8 +239,5 @@ def run_cli(args):
             changes[name] = value
         result = configuration_script(args.chip, changes, args.model)
     else:
-        from .device import connect
-
-        with connect(port=args.port, project_root=args.project_root) as device:
-            result = read_configuration(device, args.chip, args.model)
+        raise ValueError('Offline configuration supports describe or generate only')
     print(json.dumps(result, ensure_ascii=False))

@@ -9,10 +9,13 @@ import webbrowser
 import uuid
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, browser_url
 
-COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version'}
+COMMANDS = {'read-ram', 'write-ram', 'read-variable', 'write-variable', 'device-status', 'rtt', 'superwatch', 'systemview', 'flash', 'erase', 'reset', 'halt', 'resume', 'step', 'read-flash', 'read-reg', 'hardfault', 'break', 'debug-speed', 'power-read', 'version', 'configuration'}
 
 
 def run(args):
+    if args.command == 'configuration' and args.action != 'read':
+        from mklink.device_configuration import run_offline_cli
+        return run_offline_cli(args)
     if args.command in {'power-read', 'version'}:
         from mklink.runtime import query_probe
         from mklink.cli import _print_power_read, _print_probe_version
@@ -31,7 +34,7 @@ def run(args):
         raise SystemExit('duration must be finite and nonnegative')
     if getattr(args, 'save', None):
         raise SystemExit('Shared memory reads do not support --save to probe storage')
-    if any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
+    if args.command != 'configuration' and any(getattr(args, key, None) for key in ('svd', 'chip', 'target_id')):
         raise SystemExit('Select the peripheral catalog in the shared GUI first')
     if (getattr(args, 'host', '127.0.0.1') != '127.0.0.1'
             or getattr(args, 'port_http', 0) != 0 or getattr(args, 'max_points', 500) != 500):
@@ -97,6 +100,8 @@ def run(args):
             return
         elif args.command == 'break':
             result = client.call('breakpoints', debug_arguments)
+        elif args.command == 'configuration':
+            result = client.call('read_configuration', {'part_number': args.chip, 'model': args.model})
         elif args.command == 'device-status':
             result = client.call('device_status')
         elif args.command == 'debug-speed':

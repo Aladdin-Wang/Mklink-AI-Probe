@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T16:02:24+00:00`
+- 更新时间：`2026-10-03T16:16:45+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; legacy AI resource-lease API removal after ce131ad; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared configuration CLI/MCP migration after 3a31296; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审、修改和验证。删除无产品调用方的旧session acquire/release及重复status，GUI改用已有resources状态；原ResourceManager及共享会话保留。后台494、GUI185、类型/生产构建及新WebGUI双探针实测通过，继续A6剩余能力与长稳/安装包验收。
+- 当前任务：持续循环评审、修改和验证。configuration read CLI/MCP复用既有后台读取，删除CLI直连；离线说明/脚本抽到新旧MCP共同注册，未新增写入入口。330项回归和F103真机快照一致/容量不符拒绝/选项字节不变验证通过，继续A6剩余工具与長稳验收。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP、21类CLI及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
+- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP、22类CLI（配置说明/生成仍离线）及SharedDevice/connect_shared SDK共享；独占任务持久化，MSC绑定USB身份。专用CLI、低层Device调用方、独立Agent、安装版和长稳待后续。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第六批：后台扩大494、GUI185、类型检查及生产构建通过；CI集合278后台/29GUI。新生产WebGUI仅轮询resources状态，RTT占用标识随启停更新，旧acquire/release拒绝且不改变租约。双探针隔离/GUI+AI共存、Boot/VTOR/tick和工程内容保持，非NSIS/长稳验收。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第七批：CI集合296后台/29GUI，相关Python330项通过。真实CLI/MCP未连接即可生成一致脚本且不执行；GUI RTT期间配置读拒绝，停止后CLI/MCP/SDK快照一致，错误容量型号拒绝。选项字节/Boot/VTOR和配置保持，tick推进；沿用前轮WebGUI，非安装包/长稳验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,7 +35,7 @@
 
 ## 真机环境
 
-- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。新WebGUI经resources接口显示/清除RTT资源占用；旧租约API已删除。主GUI RTT时CLI/MCP只读拒绝，第二只独立查询版本成功。停止后查询复用连接，SDK/AI会话保留、GUI可再启停。Boot20KiB不变、VTOR正确、tick推进，两个后台退出。未reset、烧录、擦除或改VCC，工程不变；每轮须重枚举。
+- **state**：主V4+STM32F103RET6：Bootloader(0x08000000)+App(0x08005000)，512KiB。GUI RTT时配置读取拒绝，离线配方可生成但未执行；停止后CLI/MCP/SDK配置字段一致，错用RCT6容量拒绝。选项字节/Boot20KiB/VTOR/工程配置不变，tick推进，GUI再启停正常；第二只独立查询版本，两个后台退出。未reset、烧录、擦除、改保护/OTP/VCC；每轮须重枚举。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
@@ -46,7 +46,7 @@
 
 ## 已知限制
 
-- A5已收敛。A6活动MCP26工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增278项后台（含实际API、探针只读及固件检测）/29项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
+- A5已收敛。A6活动MCP29工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；已新增296项后台（含实际API、探针与配置读取）/29项GUI及构建CI。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。
 - 0.3.0第七阶段：dump/watch/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 有限缓冲、断线或长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照；packed奇地址写不保证原子性。

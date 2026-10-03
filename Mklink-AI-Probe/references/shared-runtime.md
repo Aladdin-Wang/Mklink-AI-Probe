@@ -64,6 +64,11 @@ MCP 的 `systemview_decode(hex_bytes=...)` 和 `systemview_analyze_events(events
 分析已有共享跟踪数据时，将 `systemview(action="history")` 返回的 `points` 事件列表传给
 分析工具。离线解码使用调用方提供的字节，不启动或读取目标通道。
 
+`configuration_description(part_number=...)` 和 `configuration_script(part_number=..., changes=...)`
+离线生成字段说明和已支持的配置脚本，无需连接下载器，生成不会执行脚本。
+`read_configuration(part_number=..., model="V4")` 通过已连接的共享后台读取受限配置快照，
+须先停止 CDC 采集；保留芯片身份、容量与字段范围校验，不改变保护状态或写入 OTP。
+
 `set_debug_speed(profile="low")` 通过同一后台修改调试速度，支持
 low/medium/high/ultra；持续采集期间拒绝，需先显式停止采集。成功后保存工程配置，
 同一下载器的所有客户端共享该速度。`gui_call("debug_speed")` 读取后台缓存的时钟和
@@ -117,7 +122,7 @@ TEMP、工程目录或 `MKLINK_RUNTIME_DIR` 改变。`resources status --port CO
 
 `read-ram`、`write-ram`、`read-variable`、`write-variable`、`device-status`、
 `rtt`、`superwatch`、`systemview`、`halt`、`resume`、`step`、`read-flash`、`read-reg`、`hardfault`、`break`，以及下文的
-`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version` 均通过共享后台运行，共 21 类命令，支持 `--probe` 设备 ID
+`flash`、`erase`、`reset`、`debug-speed`、`power-read`、`version`、`configuration read` 均通过共享后台运行，共 22 类命令，支持 `--probe` 设备 ID
 或别名；多设备时必须明确选择。
 
 ```powershell
@@ -133,6 +138,7 @@ python -m mklink debug-speed low --probe "电机板"
 python -m mklink debug-speed medium --probe "电机板" --save
 python -m mklink power-read --probe "电机板" --json
 python -m mklink version --probe "电机板" --raw
+python -m mklink configuration read --chip STM32F103RET6 --probe "电机板"
 ```
 
 未指定工程/符号时采用后台当前配置。`write-ram` 在同一次共享操作内写入并回读

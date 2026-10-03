@@ -58,13 +58,34 @@ def test_tools_before_connect_do_not_create_implicit_client(monkeypatch):
     monkeypatch.setattr(runtime_mcp, 'RuntimeClient', ProbeClient)
     async def scenario():
         async with Client(runtime_mcp.build_server()) as mcp:
-            for tool in ['device_status', 'read_memory', 'rtt_history']:
-                args = {'address': 0, 'size': 4} if tool == 'read_memory' else {}
+            for tool in ['device_status', 'read_memory', 'rtt_history', 'read_configuration']:
+                args = ({'address': 0, 'size': 4} if tool == 'read_memory'
+                        else {'part_number': 'HPM5301'} if tool == 'read_configuration' else {})
                 assert (await mcp.call_tool(tool, args, raise_on_error=False)).is_error
             assert created == []
             await mcp.call_tool('connect', {'project_root': 'chosen-project', 'client_name': 'chosen-name'})
             assert created == [{'project_root': 'chosen-project', 'name': 'chosen-name'}]
     asyncio.run(scenario())
+
+
+def test_configuration_read_mcp_obeys_shared_capture_gate_without_retry(shared):
+    _, _, calls, managers, app = shared
+    from fastapi import HTTPException
+    @app.post('/api/device/configuration/read')
+    async def read(body: dict):
+        calls.append(body)
+        raise HTTPException(422, 'unknown read result')
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect', {'probe': 'test'})
+            managers['rtt'].running = True
+            assert (await mcp.call_tool('read_configuration', {'part_number': 'HPM5301'}, raise_on_error=False)).is_error
+            assert not calls and managers['rtt'].running
+            assert (await mcp.call_tool('configuration_description', {'part_number': 'HPM5301'})).data['read_supported']
+            managers['rtt'].running = False
+            assert (await mcp.call_tool('read_configuration', {'part_number': 'HPM5301'}, raise_on_error=False)).is_error
+    asyncio.run(scenario())
+    assert calls == [{'part_number': 'HPM5301', 'model': 'V4'}]
 
 
 @pytest.mark.parametrize('legacy', [False, True])
@@ -132,6 +153,7 @@ async def offline():
     async with Client(runtime_mcp.build_server()) as client:
         assert not (await client.call_tool('systemview_decode', {'hex_bytes': '1101'})).is_error
         assert not (await client.call_tool('systemview_analyze_events', {'events': []})).is_error
+        assert not (await client.call_tool('configuration_description', {'part_number': 'HPM5301'})).is_error
 asyncio.run(offline())
 assert 'mklink.mcp_server' not in sys.modules
 assert 'mklink.mcp_stream_bridge' not in sys.modules

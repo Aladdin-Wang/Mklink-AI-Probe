@@ -36,6 +36,8 @@ def build_server():
     server = FastMCP("mklink-shared-runtime", lifespan=lifespan)
     from mklink.mcp_analysis import register_systemview_offline_tools
     register_systemview_offline_tools(server)
+    from mklink.mcp_configuration import register_configuration_offline_tools
+    register_configuration_offline_tools(server)
 
     def client():
         with lock:
@@ -71,6 +73,15 @@ def build_server():
             current = holder.get('client')
             info = current.info if current and not probe else None
         return query_probe('power_read', info=info, probe=probe)
+
+    @server.tool()
+    def read_configuration(part_number: str, model: str = "V4") -> dict:
+        """Read bounded public option-byte/OTP fields via the connected shared backend.
+
+        Requires explicit connect and idle CDC. Validates the target identity;
+        never changes protection, writes OTP or stops another client's capture.
+        """
+        return client().call('read_configuration', {'part_number': part_number, 'model': model})
 
     @server.tool()
     def set_probe_alias(probe: str, alias: str) -> dict:

@@ -35,6 +35,29 @@ def test_cli_read_routes_to_shared_backend(adapter):
     assert ('read_memory',{'address':'0x20000000','size':4}) in adapter
 
 
+def test_configuration_read_cli_uses_shared_backend_and_adopts_project(adapter, monkeypatch, capsys):
+    import sys
+    from mklink import cli
+    def forbidden(**kwargs):
+        raise AssertionError('Configuration CLI opened target directly')
+    monkeypatch.setattr('mklink.device.connect', forbidden)
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'configuration', 'read', '--chip', 'STM32F103RET6', '--probe', 'board'])
+    cli.main()
+    assert adapter[0][1]['probe'] == 'board' and adapter[0][1]['project_root'] is None
+    assert adapter[1] == ('read_configuration', {'part_number': 'STM32F103RET6', 'model': 'V4'})
+    assert adapter[-1] == ('detach', None)
+    assert 'sample' in capsys.readouterr().out
+
+
+def test_configuration_description_cli_stays_offline(adapter, monkeypatch, capsys):
+    import json, sys
+    from mklink import cli
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'configuration', 'describe', '--chip', 'HPM5301'])
+    cli.main()
+    assert not adapter
+    assert json.loads(capsys.readouterr().out)['read_supported']
+
+
 @pytest.mark.parametrize('command', ['power-read', 'version'])
 def test_probe_queries_do_not_create_target_session_or_retry(adapter, monkeypatch, capsys, command):
     import sys
