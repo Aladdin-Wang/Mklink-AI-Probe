@@ -1107,6 +1107,78 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
+  it.each(['unknown', 'missing', 'running', 'unreachable'])('rechecks %s before ending tracking', async finalState => {
+    const key = 'mklink.onlineFlash.pending.mklink-1.acknowledge'
+    localStorage.setItem(key, 'acknowledge')
+    const fallback = viewFetch()
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        reads++
+        const state = reads === 1 ? 'unknown' : finalState
+        if (state === 'unreachable') throw new Error('unreachable')
+        return new Response(JSON.stringify({ jobs: state === 'missing' ? [] : [{request_id: 'acknowledge', action: 'online_flash', state}] }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="end-online-tracking"]').exists()).toBe(true))
+    await wrapper.get('[data-testid="end-online-tracking"]').trigger('click')
+    expect(localStorage.getItem(key)).toBe('acknowledge')
+    await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
+    await flushPromises()
+    expect(reads).toBe(2)
+    expect(localStorage.getItem(key)).toBe(finalState === 'unknown' || finalState === 'missing' ? null : 'acknowledge')
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('observes another window receipt without treating its removal as completion', async () => {
+    const fallback = viewFetch()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs: []}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await flushPromises()
+    const key = 'mklink.onlineFlash.pending.mklink-1.other-window'
+    localStorage.setItem(key, 'other-window')
+    window.dispatchEvent(new StorageEvent('storage', {key, newValue: 'other-window'}))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('other-window'))
+    localStorage.removeItem(key)
+    window.dispatchEvent(new StorageEvent('storage', {key, oldValue: 'other-window'}))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('ignores a stale failed query after the selected probe changes', async () => {
+    localStorage.setItem('mklink.onlineFlash.pending.mklink-1.old-query', 'old-query')
+    localStorage.setItem('mklink.onlineFlash.pending.other-probe.new-query', 'new-query')
+    const fallback = viewFetch()
+    let rejectOld!: (reason: Error) => void
+    const old = new Promise<Response>((_, reject) => { rejectOld = reject })
+    let reads = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        if (++reads === 1) return old
+        return new Response(JSON.stringify({jobs: [{request_id:'new-query', action:'online_flash',state:'unknown'}]}))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(reads).toBe(1))
+    wrapper.findComponent({name: 'ProbeSettingsPanel'}).vm.$emit('update:selected-id', 'other-probe')
+    await vi.waitFor(() => expect(reads).toBe(2))
+    rejectOld(new Error('old probe failure'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('new-query')
+    expect(wrapper.text()).not.toContain('old probe failure')
+    expect(wrapper.get('[data-testid="query-online-request"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('does not recover receipts belonging to another probe', async () => {
     localStorage.setItem('mklink.onlineFlash.pending.other-probe.other-request', 'other-request')
     const wrapper = mount(await onlineFlashView())

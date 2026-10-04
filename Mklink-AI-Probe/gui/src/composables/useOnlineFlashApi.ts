@@ -388,8 +388,7 @@ export function useOnlineFlashApi() {
       result: { job?: JobSnapshot } | null; error: string | null;
     }> }>('/jobs/', {}, '/api/runtime')
     const job = payload.jobs.find(item => item.request_id === requestId && item.action === 'online_flash')
-    if (!job) throw new Error(tr('未找到保留记录；这不代表未执行，请检查目标后再操作。', 'No retained record; this does not prove it did not run. Inspect the target before proceeding.'))
-    return job
+    return job ?? null
   }
 
   function getJob(jobId: string): Promise<JobSnapshot> {

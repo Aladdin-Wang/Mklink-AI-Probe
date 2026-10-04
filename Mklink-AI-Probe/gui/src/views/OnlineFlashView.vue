@@ -114,6 +114,8 @@ const creatingJob = ref(false)
 const pendingRequest = ref('')
 const recoveryBusy = ref(false)
 const recoveryMessage = ref('')
+const canEndTracking = ref(false)
+let recoveryGeneration = 0
 const recoveryBlocked = computed(() => !!pendingRequest.value || recoveryBusy.value || !!recoveryMessage.value)
 function pendingPrefix(probe = probeId.value): string {
   return `mklink.onlineFlash.pending.${encodeURIComponent(probe)}.`
@@ -137,9 +139,17 @@ async function recoverJob(): Promise<void> {
   const requestId = pendingRequest.value
   const probe = probeId.value
   recoveryBusy.value = true
+  canEndTracking.value = false
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && probe === probeId.value && requestId === pendingRequest.value
   try {
     const retained = await api.retainedJob(requestId)
-    if (disposed || probe !== probeId.value || requestId !== pendingRequest.value) return
+    if (!current()) return
+    if (!retained) {
+      canEndTracking.value = true
+      recoveryMessage.value = tr('未找到保留记录；这不代表未执行。请先检查目标状态。', 'No retained record; this does not prove it did not run. Inspect the target first.')
+      return
+    }
     const snapshot = retained.result?.job
     if (retained.state === 'succeeded' || retained.state === 'failed') {
       if (snapshot) {
@@ -156,22 +166,62 @@ async function recoverJob(): Promise<void> {
       recoveryMessage.value = ''
       loadPending()
     } else if (retained.state === 'running' && retained.online_job_id) {
-      const current = await api.getJob(retained.online_job_id)
-      if (disposed || probe !== probeId.value || requestId !== pendingRequest.value) return
-      const changed = jobId.value !== current.job_id
-      jobId.value = current.job_id; jobState.value = current.state
-      totalProgress.value = current.total_progress
+      const snapshot = await api.getJob(retained.online_job_id)
+      if (!current()) return
+      const changed = jobId.value !== snapshot.job_id
+      jobId.value = snapshot.job_id; jobState.value = snapshot.state
+      totalProgress.value = snapshot.total_progress
       if (changed) lastSequence.value = 0
-      if (!TERMINAL.has(current.state)) subscribe(lastSequence.value)
+      if (!TERMINAL.has(snapshot.state)) subscribe(lastSequence.value)
       recoveryMessage.value = tr('已关联原任务；完成后查询持久结果。', 'Original job attached; query its retained result after completion.')
     } else {
+      canEndTracking.value = retained.state === 'unknown'
       recoveryMessage.value = tr('任务结果尚未确认，请查询原任务并检查目标；不会自动重新提交。', 'Outcome is unconfirmed. Query the original job and inspect the target; no automatic resubmission.')
     }
   } catch (error) {
-    if (!disposed && probe === probeId.value) recoveryMessage.value = message(error)
-  } finally { recoveryBusy.value = false }
+    if (current()) recoveryMessage.value = message(error)
+  } finally { if (generation === recoveryGeneration) recoveryBusy.value = false }
+}
+async function endTracking(): Promise<void> {
+  if (!canEndTracking.value || recoveryBusy.value || creatingJob.value) return
+  const requestId = pendingRequest.value
+  const probe = probeId.value
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && probe === probeId.value && requestId === pendingRequest.value
+  if (!await confirmRisk(tr(
+    '请先人工检查目标板和后台任务，确认没有仍在执行的操作。结束跟踪只移除本地请求凭据，不会停止、撤销或重试原操作。已完成检查并结束跟踪？',
+    'Inspect the target and backend jobs first and confirm no operation is still running. Ending tracking only removes this local receipt; it does not stop, undo or retry the operation. Confirm inspection and end tracking?',
+  )) || !current()) return
+  recoveryBusy.value = true
+  try {
+    // Recheck after confirmation; an unreachable backend is not a missing record.
+    const retained = await api.retainedJob(requestId)
+    if (!current()) return
+    if (retained && retained.state !== 'unknown') {
+      recoveryMessage.value = tr('后台记录已变化，请重新查询原任务。', 'The backend record changed. Query the original job again.')
+      canEndTracking.value = false
+      return
+    }
+    localStorage.removeItem(pendingPrefix(probe) + requestId)
+    subscription?.close(); subscription = null
+    jobId.value = ''; jobState.value = null
+    canEndTracking.value = false
+    recoveryMessage.value = ''
+    appendLog(tr(`[JOB] 已人工核查并结束跟踪 ${requestId}`, `[JOB] Inspection acknowledged; tracking ended for ${requestId}`))
+    loadPending()
+  } catch (error) { if (current()) recoveryMessage.value = message(error) }
+  finally { if (generation === recoveryGeneration) recoveryBusy.value = false }
+}
+function receiptChanged(event: StorageEvent): void {
+  if (event.key !== null && !event.key.startsWith(pendingPrefix())) return
+  // A removed receipt does not itself prove a running operation has finished.
+  if (!pendingRequest.value) loadPending()
+  void recoverJob()
 }
 watch(probeId, () => {
+  recoveryGeneration += 1
+  recoveryBusy.value = false
+  canEndTracking.value = false
   subscription?.close(); subscription = null
   jobId.value = ''; jobState.value = null; lastSequence.value = 0
   recoveryMessage.value = ''
@@ -990,6 +1040,7 @@ function toggleSector(address: number): void {
 }
 
 onMounted(() => {
+  window.addEventListener('storage', receiptChanged)
   startSourcePolling()
   void Promise.all([refreshProbes(true), refreshPackStatus(), searchTargets(targetQuery.value), refreshDesiredTarget(), loadCustomFlms()])
     .catch(error => { if (!disposed) packError.value = message(error) })
@@ -1005,6 +1056,8 @@ onDeactivated(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  recoveryGeneration += 1
+  window.removeEventListener('storage', receiptChanged)
   stopSourcePolling()
   stopNativeDrops()
   if (autoInspectTimer !== null) clearTimeout(autoInspectTimer)
@@ -1033,6 +1086,7 @@ onBeforeUnmount(() => {
         <code>{{ pendingRequest }}</code>
         <p>{{ recoveryMessage }}</p>
         <button data-testid="query-online-request" :disabled="recoveryBusy || creatingJob || !pendingRequest" @click="recoverJob">{{ tr('查询原任务', 'Query original job') }}</button>
+        <button v-if="canEndTracking" data-testid="end-online-tracking" :disabled="recoveryBusy || creatingJob" @click="endTracking">{{ tr('人工核查后结束跟踪', 'End tracking after inspection') }}</button>
       </section>
       <FlashActionBar :actions="actions" :can-start="canStart" :active="active" :stopping="stopping" :state="jobState" :total-progress="progressValue" :progress-label="progressLabel" :progress-state="progressState" :unlock-enabled="security.unlock_supported" :lock-enabled="security.lock_supported" :security-reason="security.reason" :security-family="security.family" :unlock-erases-eeprom="security.unlock_erases_eeprom" :unlock-erases-backup-registers="security.unlock_erases_backup_registers" @actions="setActions" @start="startJob()" @stop="stopJob" />
     </main>
