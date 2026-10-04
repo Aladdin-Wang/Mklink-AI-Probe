@@ -1,4 +1,5 @@
 """Terminal input uses shared ownership and the same passive capture pipeline."""
+from functools import partial
 import json
 from types import SimpleNamespace
 import pytest
@@ -172,7 +173,7 @@ def test_capture_never_polls_sender_after_backend_stops():
             self.calls+=1
             return {'session':'one','next_seq':0,'latest_seq':0,'running':self.calls==1,
                     'ports':{'TEST':'open'},'entries':[],'dropped_batches':0}
-    capture=SerialCapture(Client(),{'TEST':None},ConsoleMonitor())
+    capture=SerialCapture(partial(Client().call, 'serial_history'),{'TEST':None},ConsoleMonitor())
     capture.run(0,on_poll=lambda:pytest.fail('sender polled after producer stopped'))
 
 

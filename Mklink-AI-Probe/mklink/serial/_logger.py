@@ -32,11 +32,11 @@ class FileLogger:
         self._csv_header_written = False
         self._rotation_index = 0
 
-    def start(self) -> None:
+    def start(self, *, exclusive: bool = False) -> None:
         with self._lock:
             if self._file is not None:
                 raise RuntimeError('Log is already open')
-            self._file = open(self._path, "w", encoding="utf-8", newline="")
+            self._file = open(self._path, "x" if exclusive else "w", encoding="utf-8", newline="")
             if self._format == "csv":
                 self._csv_header_written = False
 

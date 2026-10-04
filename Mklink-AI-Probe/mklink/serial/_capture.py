@@ -9,15 +9,15 @@ def _frame_records(frames):
 
 
 class SerialCapture:
-    def __init__(self, client, parsers, logger):
-        self.client, self.parsers, self.logger = client, dict(parsers), logger
-        tail = client.call('serial_history')
+    def __init__(self, read_history, parsers, logger):
+        self.read_history, self.parsers, self.logger = read_history, dict(parsers), logger
+        tail = read_history()
         self.session, self.cursor = tail['session'], tail['next_seq']
         if not tail['running'] or any(tail['ports'].get(port) != 'open' for port in self.parsers):
             raise RuntimeErrorResponse('Selected serial port is not open')
 
     def page(self, target=None):
-        page = self.client.call('serial_history', {'session': self.session, 'after': self.cursor, 'limit': 256})
+        page = self.read_history({'session': self.session, 'after': self.cursor, 'limit': 256})
         if page['dropped_batches']:
             raise RuntimeErrorResponse(f"Serial capture lost {page['dropped_batches']} batches; capture is incomplete")
         for entry in page['entries']:
@@ -37,7 +37,8 @@ class SerialCapture:
                     self.logger.log(entry['direction'], entry['port'], data,
                                     timestamp=entry['timestamp_ns'] / 1e9, frames=frames)
                     self.cursor = entry['seq']
-            self.cursor = entry['seq']
+            else:
+                self.cursor = entry['seq']
         if self.cursor >= page['latest_seq']:
             for port, parser in self.parsers.items():
                 if parser is None:

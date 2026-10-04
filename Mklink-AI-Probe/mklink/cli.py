@@ -1772,7 +1772,7 @@ def _cli_serial_capture(args, *, monitor, interactive=False):
                 _require_serial_connection(status, connection)
             if automation is not None and status.get('automation') != automation:
                 raise ValueError('Existing serial automation differs; stop it explicitly before changing rules/Profile')
-            capture = SerialCapture(client, parsers, sink)
+            capture = SerialCapture(lambda args=None: client.call('serial_history', args), parsers, sink)
             if logger is not None:
                 logger.start()
             if interactive:

@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 21  # Serial history preserves batch receive times for idle framing.
+PROTOCOL = 22  # Shared serial recording start/stop and status.
 VERSION = "0.3.0"
 
 

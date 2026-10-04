@@ -1,4 +1,5 @@
 """Idle framing follows receive gaps, never GUI/CLI consumer scheduling."""
+from functools import partial
 import csv
 import json
 import threading
@@ -96,7 +97,7 @@ def test_capture_backlog_uses_receive_gaps_and_idle_annotations_do_not_repeat_by
                     'running':True,'ports':{'A':'open'},'idle_cutoffs':{'A':1.3}}
     path = tmp_path/'idle.csv'
     with FileLogger(str(path), 'csv') as logger:
-        capture = SerialCapture(Client(), {'A':FrameParser(profile())}, logger)
+        capture = SerialCapture(partial(Client().call, 'serial_history'), {'A':FrameParser(profile())}, logger)
         history.append(b'\xaa\x01','RX','A',first_time=1,last_time=1)
         history.append(b'\xaa\x02','RX','A',first_time=1.1,last_time=1.1)
         capture.page(); capture.page()
@@ -139,7 +140,7 @@ def test_capture_does_not_idle_flush_while_history_pages_are_still_pending():
     class Sink:
         frames = []
         def log(self,*args,frames,**kw): self.frames.extend(frames)
-    sink = Sink(); capture = SerialCapture(Client(),{'A':FrameParser(profile())},sink)
+    sink = Sink(); capture = SerialCapture(partial(Client().call, 'serial_history'),{'A':FrameParser(profile())},sink)
     capture.page()
     assert sink.frames == []
     capture.page()
@@ -156,7 +157,7 @@ def test_per_port_completed_reader_cutoff_prevents_premature_idle_during_infligh
         frames = []
         def log(self,direction,port,data,*,frames,**kw):
             self.frames.extend((port,f['raw_hex']) for f in frames)
-    sink = Sink(); capture = SerialCapture(Client(),{p:FrameParser(profile()) for p in ('A','B')},sink)
+    sink = Sink(); capture = SerialCapture(partial(Client().call, 'serial_history'),{p:FrameParser(profile()) for p in ('A','B')},sink)
     for port in ('A','B'): history.append(b'\xaa\x01','RX',port,first_time=1,last_time=1)
     capture.page()
     assert sink.frames == [('B','aa01')]

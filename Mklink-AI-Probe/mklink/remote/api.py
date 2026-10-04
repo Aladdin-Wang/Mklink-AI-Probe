@@ -717,6 +717,13 @@ try:
         or_mask: StrictInt | None = None
         write_start: StrictInt | None = None
 
+    class SerialRecordingRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        path: str
+        format: str = 'txt'
+        max_size: StrictInt = 0
+        ports: list[str] | None = None
+
     class StreamHistoryRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         session: str | None = None
@@ -2996,6 +3003,24 @@ def create_app(
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/recording/start')
+    async def serial_recording_start(body: SerialRecordingRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_recording, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except (RuntimeError, FileExistsError) as error:
+            raise HTTPException(409, str(error)) from error
+        except OSError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post('/api/dash/serial/recording/stop')
+    async def serial_recording_stop():
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].stop_recording)
+        except (RuntimeError, TimeoutError) as error:
             raise HTTPException(409, str(error)) from error
 
     @app.get("/api/dash/serial/status")

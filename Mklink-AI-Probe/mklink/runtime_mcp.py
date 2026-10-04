@@ -311,6 +311,12 @@ def build_server():
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        serial_recording_start starts one shared backend file logger: path (new file on backend
+        machine), format txt/csv, max_size rotation bytes (0 disables), optional configured ports.
+        It survives client disconnects; serial_status.recording reports running/stopping/completed/failed
+        and error. serial_recording_stop drains a bounded history tail; serial_stop drains producer
+        shutdown bytes too. Existing files and concurrent recorders are rejected. Disk/ring overflow
+        errors mean incomplete recording, never success. Ordinary UART only, not YMODEM trace.
         serial_history reads raw ordinary UART batches from the existing producer, including
         unterminated data, without opening or sending on a port. {} opens at the tail;
         continue with session/after=next_seq and limit (1..256). Each entry contains seq,

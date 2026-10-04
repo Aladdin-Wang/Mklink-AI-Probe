@@ -1,4 +1,5 @@
 """Passive shared monitor: source isolation, bounded rendering and common lifetime."""
+from functools import partial
 import csv
 import json
 from types import SimpleNamespace
@@ -142,7 +143,7 @@ def test_profile_buffers_do_not_cross_ports(capsys):
             return dict(session='one',next_seq=0,running=True,ports={'A':'open','B':'open'},
                 latest_seq=len(chunks),dropped_batches=0,idle_cutoffs={'TEST':1.,'A':1.,'B':1.},entries=[dict(seq=i+1,port=p,direction='RX',hex=data,timestamp_ns=1,first_monotonic=1.,last_monotonic=1.)
                     for i,(p,data) in enumerate(chunks)])
-    capture=SerialCapture(Client(),{p:FrameParser(profile) for p in ('A','B')},ConsoleMonitor('hex'))
+    capture=SerialCapture(partial(Client().call, 'serial_history'),{p:FrameParser(profile) for p in ('A','B')},ConsoleMonitor('hex'))
     capture.page()
     text=capsys.readouterr().out
     assert 'RX A: decoded: {"raw_hex": "aa01ff"' in text

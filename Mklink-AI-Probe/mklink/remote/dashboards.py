@@ -2741,6 +2741,8 @@ class SerialStreamManager:
         self._latest_frames: dict[str, dict] = {}
         self._serial_session: str | None = None
         self._idle_cutoffs: dict[str, float] = {}
+        self._recorder = None
+        self._stopping = False
         self._rx_count = 0
         self._tx_count = 0
         self._rx_bytes = 0
@@ -2788,6 +2790,7 @@ class SerialStreamManager:
             (self._monitor is not None and self._monitor.worker_alive)
             or (self._byte_batcher is not None and self._byte_batcher.worker_alive)
             or (self._ymodem_thread is not None and self._ymodem_thread.is_alive())
+            or (self._recorder is not None and self._recorder.worker_alive)
         )
 
     @property
@@ -2801,6 +2804,8 @@ class SerialStreamManager:
 
     def _start_locked(self, ports: list[dict], profile: dict | None = None,
                       auto_reply_rules: list[dict] | None = None) -> None:
+        if self._stopping and self.worker_alive:
+            raise RuntimeError("Previous serial workers are still stopping; stop first")
         if self._running:
             return
         if self.worker_alive:
@@ -2847,6 +2852,7 @@ class SerialStreamManager:
         session = self._serial_session
         self._history.reset(session)
         self._idle_cutoffs = {}
+        self._stopping = False
 
         def publish_bytes(data: bytes, direction: str, port: str, first_time: float, last_time: float):
             self._history.append(data, direction, port, first_time=first_time, last_time=last_time)
@@ -2979,19 +2985,60 @@ class SerialStreamManager:
         self._running = True
         self._bridge.put({"event": "status", **self.get_status()})
 
+    def _read_history(self, monitor, batcher, session=None, after=None, limit=256):
+        # Capture the completed reader boundaries before flushing pending bytes.
+        cutoffs = monitor.observation_times if monitor else dict(self._idle_cutoffs)
+        if batcher is not None:
+            batcher.flush()
+        return {**self._history.read(session, after, limit), 'idle_cutoffs': cutoffs,
+                'running': self._running and not self._stopping,
+                'config': [dict(item) for item in self._port_config],
+                'ports': monitor.port_status if monitor else {item['port']: 'closed' for item in self._port_config}}
+
     def get_history(self, session: str | None = None, after: int | None = None,
                     limit: int = 256) -> dict:
         with self._lifecycle_lock:
-            cutoffs = self._monitor.observation_times if self._monitor else dict(self._idle_cutoffs)
-            if self._byte_batcher is not None:
-                self._byte_batcher.flush()
-            return {**self._history.read(session, after, limit),
-                    'idle_cutoffs': cutoffs,
-                    'running': self._running, 'config': [dict(item) for item in self._port_config],
-                    'ports': self._monitor.port_status if self._monitor else {item['port']: 'closed' for item in self._port_config}}
+            return self._read_history(self._monitor, self._byte_batcher, session, after, limit)
+
+    def start_recording(self, path, format='txt', max_size=0, ports=None):
+        from mklink.serial._recording import SerialRecorder
+        from mklink.serial._frame import FrameParser
+        from mklink.usb_interfaces import canonical_serial_port
+        with self._lifecycle_lock:
+            if not self._running or self._stopping:
+                raise RuntimeError('Start serial monitoring before recording')
+            if self._recorder is not None and self._recorder.worker_alive:
+                raise RuntimeError('Recording is already active; stop it first')
+            if not isinstance(path, str) or not path.strip() or len(path) > 4096:
+                raise ValueError('Recording path must contain 1..4096 characters')
+            if format not in ('txt', 'csv'):
+                raise ValueError('Recording format must be txt or csv')
+            if type(max_size) is not int or not 0 <= max_size <= 1024 ** 4:
+                raise ValueError('Recording max_size must be 0..1 TiB in bytes')
+            selected = [item['port'] for item in self._port_config] if ports is None else ports
+            if not isinstance(selected, list) or not 1 <= len(selected) <= 16 or any(not isinstance(p, str) or not p for p in selected):
+                raise ValueError('Select 1..16 serial ports')
+            selected = [canonical_serial_port(port) for port in selected]
+            configured = {item['port'] for item in self._port_config}
+            if len(set(selected)) != len(selected) or not set(selected) <= configured:
+                raise ValueError('Recording ports must be distinct configured ports')
+            monitor, batcher = self._monitor, self._byte_batcher
+            # Fixed producer references and no lifecycle lock in the consumer:
+            # stop holds that lock while joining it. Restart is blocked until it exits.
+            recorder = SerialRecorder(lambda args=None: self._read_history(monitor, batcher, **(args or {})),
+                {port: FrameParser(self._profile) if self._profile else None for port in selected},
+                path, format, max_size)
+            self._recorder = recorder
+            recorder.start()
+            return recorder.status()
+
+    def stop_recording(self):
+        with self._lifecycle_lock:
+            return self._recorder.stop() if self._recorder else {'state': 'idle', 'active': False}
 
     def stop(self) -> None:
         with self._lifecycle_lock:
+            self._stopping = True
             self._cancel_ymodem_locked(wait=False)
             monitor = self._monitor
             if monitor is not None:
@@ -3014,6 +3061,8 @@ class SerialStreamManager:
                 )
             self._monitor = None
             self._running = False
+            if self._recorder is not None:
+                self._recorder.stop()
             self._bridge.put({"event": "stopped"})
             self._bridge.stop()
 
@@ -3227,6 +3276,7 @@ class SerialStreamManager:
             },
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
             "ymodem": self.get_ymodem_status(),
+            "recording": self._recorder.status() if self._recorder else {"state": "idle", "active": False},
         }
 
     async def sse_generator(self):
