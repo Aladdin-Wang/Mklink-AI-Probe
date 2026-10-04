@@ -2057,17 +2057,13 @@ def create_app(
         async with _exclusive_probe_control("reload-symbol-source"):
             return await _reparse_active_symbols(axf, elf_backend)
 
-    class FlashRequest(BaseModel):
-        firmware: str
-        verify: bool = True
-        reset_after: bool = True
-
     @app.post("/api/device/flash")
-    async def flash_device(
-        firmware: str = Body(...),
-        verify: bool = Body(default=True),
-        reset_after: bool = Body(default=True),
-    ):
+    async def flash_device(body: dict = Body(...)):
+        from mklink.flash_request import validate_flash_request
+        try:
+            arguments = validate_flash_request(body)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         async with _exclusive_probe_control("flash") as (device, _stopped):
@@ -2075,9 +2071,7 @@ def create_app(
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
-                    lambda: device.flash(
-                        firmware, verify=verify, reset_after=reset_after
-                    ),
+                    lambda: device.flash(**arguments),
                 )
                 return result
             except Exception as e:

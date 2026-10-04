@@ -377,6 +377,10 @@ def build_server():
         Stop capture first. Disconnect does not cancel. Keep the returned job_id and query job_status;
         never retry an unknown hardware result. Deduplication retains only the latest 64 jobs.
         flash arguments: firmware (explicit local path), verify and reset_after (booleans).
+        Optional target_part, base_address (32-bit integer or integer string), board,
+        hpm_flash_cfg (four 32-bit hexadecimal strings) and swd_clock (integer Hz)
+        are passed to the existing flash backend. HPM uses ROM API, never FLM.
+        reset_after=false does not prevent the HPM ROM routine's own reset/resume.
         """
         return client().start_job(action, request_id=request_id, confirm=confirm, arguments=arguments)
 

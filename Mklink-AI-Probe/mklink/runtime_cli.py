@@ -33,6 +33,22 @@ def run(args):
         return (_print_power_read(result, args.json) if args.command == 'power-read'
                 else _print_probe_version(result['raw'], args.all, args.raw))
     project = getattr(args, 'project_root', None)
+    flash_arguments = None
+    if args.command == 'flash':
+        from pathlib import Path
+        from mklink.flash_request import validate_flash_request
+        if not args.hex:
+            raise SystemExit('Shared flash requires an explicit --firmware or --hex path')
+        flash_arguments = {'firmware': str(Path(args.hex).resolve()),
+                           'verify': not getattr(args, 'no_verify', False),
+                           'reset_after': not getattr(args, 'no_reset', False)}
+        for key in ('target_part', 'base_address', 'board', 'hpm_flash_cfg', 'swd_clock'):
+            if getattr(args, key, None) is not None:
+                flash_arguments[key] = getattr(args, key)
+        try:
+            flash_arguments = validate_flash_request(flash_arguments)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
     if project in (None, '.'):
         project = getattr(args, 'project_root_positional', None)
     duration = getattr(args, 'duration', 0)
@@ -143,10 +159,7 @@ def run(args):
         if args.command in {'flash', 'erase', 'reset'}:
             arguments = {}
             if args.command == 'flash':
-                if not args.hex:
-                    raise RuntimeErrorResponse('Shared flash requires an explicit --hex firmware path')
-                from pathlib import Path
-                arguments = {'firmware': str(Path(args.hex).resolve()), 'verify': True, 'reset_after': True}
+                arguments = flash_arguments
             request_id = getattr(args, 'request_id', None) or str(uuid.uuid4())
             print(json.dumps({'request_id': request_id, 'action': args.command}), flush=True)
             result = client.start_job(args.command, arguments=arguments, request_id=request_id, confirm=True)

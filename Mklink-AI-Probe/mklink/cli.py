@@ -2108,10 +2108,17 @@ def main():
     _add_project_root_arg(copy_flm_parser)
 
     # flash 子命令（一站式烧录）
-    flash_parser = subparsers.add_parser("flash", help="一站式烧录（自动连接 → IDCODE → FLM → 烧录）")
+    flash_parser = subparsers.add_parser("flash", help="通过共享后台烧录 HEX/BIN")
     _add_project_root_arg(flash_parser)
     flash_parser.add_argument("--port", help="COM 端口（默认自动检测）")
-    flash_parser.add_argument("--hex", help="HEX 文件路径（默认从 .mklink/ 配置读取）")
+    flash_parser.add_argument("--hex", "--firmware", dest="hex", help="显式 HEX/BIN 文件路径")
+    flash_parser.add_argument("--target-part", help="精确器件型号")
+    flash_parser.add_argument("--base-address", type=lambda value: int(value, 0), help="BIN 起始地址")
+    flash_parser.add_argument("--board", help="HPM 开发板型号")
+    flash_parser.add_argument("--hpm-flash-cfg", nargs=4, help="HPM ROM 的四字配置")
+    flash_parser.add_argument("--swd-clock", type=int, help="调试时钟 Hz")
+    flash_parser.add_argument("--no-verify", action="store_true", help="关闭烧录校验")
+    flash_parser.add_argument("--no-reset", action="store_true", help="不追加烧录后复位（不影响 HPM ROM 内部复位）")
 
     # rtt 子命令（一站式 RTT 捕获）
     rtt_cmd_parser = subparsers.add_parser("rtt", help="一站式 RTT 捕获（自动连接 → 启动 RTT → 读取输出）")

@@ -54,8 +54,13 @@ class RuntimeJobs:
             raise HTTPException(422, 'Select flash/erase/reset with arguments and confirm=true')
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise HTTPException(422, 'A stable request_id is required; reuse it to query an uncertain submission')
-        allowed = {'firmware', 'verify', 'reset_after'} if action == 'flash' else set()
-        if arguments.keys() - allowed:
+        if action == 'flash':
+            from mklink.flash_request import validate_flash_request
+            try:
+                arguments = validate_flash_request(arguments)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+        elif arguments:
             raise HTTPException(422, 'Unsupported job arguments')
         fingerprint = hashlib.sha256(json.dumps([action, arguments], sort_keys=True).encode()).hexdigest()
         previous = next((j for j in self.jobs.values() if j['request_id'] == request_id), None)
@@ -75,12 +80,8 @@ class RuntimeJobs:
             raise HTTPException(409, 'Connect the bound probe before submitting a job')
         if action == 'flash':
             firmware = arguments.get('firmware')
-            if not isinstance(firmware, str) or not firmware:
-                raise HTTPException(422, 'An explicit firmware file is required')
             if not Path(firmware).is_file():
                 raise HTTPException(422, 'Firmware file is unavailable')
-            if any(type(arguments[key]) is not bool for key in ('verify', 'reset_after') if key in arguments):
-                raise HTTPException(422, 'verify/reset_after must be booleans')
         job = {'job_id': secrets.token_hex(16), 'request_id': request_id, 'fingerprint': fingerprint,
                'action': action, 'probe_id': c.info.get('probe_id'), 'state': 'running', 'started': time.time(),
                'result': None, 'error': None, 'replay': False}

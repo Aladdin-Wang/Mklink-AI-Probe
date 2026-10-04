@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 29  # Shared serial exchange uses the existing bounded reader.
+PROTOCOL = 30  # Shared flash jobs preserve explicit target and board options.
 VERSION = "0.3.0"
 
 

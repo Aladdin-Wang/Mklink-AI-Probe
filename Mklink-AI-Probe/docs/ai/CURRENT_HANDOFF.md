@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T14:00:44.025604+00:00`
+- 更新时间：`2026-10-04T14:11:26.834447+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; dual ARM/HPM shared hardware verification after c2fb4ee7; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; complete shared flash request options after 77758552; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第72批完成双V4+STM32F103/HPM6E80真实目标检查、双WebGUI RTT与SDK借用隔离、HPM FreeRTOS SystemView共享采集。两目标main前64字节与各自ELF一致，RTT签名及符号变量可读；不是完整固件比对。停止STM32 RTT后HPM继续递增；HPM短采集4916事件、600MHz、任务/ISR名称及GUI时间轴正常，SDK游标首批500事件无缺口。全部后台/CDC子进程实际退出。本批仅实机验证与文档，不改产品或固件。 Agent剩余迁移及异常恢复/长稳/NSIS继续，不合并发布。
+- 当前任务：第73批补齐共享烧录任务的target_part/base_address/board/hpm_flash_cfg/swd_clock参数，API与任务受理共用校验，删除未使用FlashRequest。CLI支持显式BIN及HPM参数，MCP文档同步，协议30/UART25项。新增24项，相关164及129通过（集合重叠）；确认参数完整传递、未知字段拒绝、任务去重及无效CLI不连接。没有物理烧录，Agent目标连接尚未切换。 持续推进Agent完整共享迁移及恢复/长稳/NSIS，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第72节：第72批完成双V4+STM32F103/HPM6E80真实目标检查、双WebGUI RTT与SDK借用隔离、HPM FreeRTOS SystemView共享采集。两目标main前64字节与各自ELF一致，RTT签名及符号变量可读；不是完整固件比对。停止STM32 RTT后HPM继续递增；HPM短采集4916事件、600MHz、任务/ISR名称及GUI时间轴正常，SDK游标首批500事件无缺口。全部后台/CDC子进程实际退出。本批仅实机验证与文档，不改产品或固件。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第73节：第73批补齐共享烧录任务的target_part/base_address/board/hpm_flash_cfg/swd_clock参数，API与任务受理共用校验，删除未使用FlashRequest。CLI支持显式BIN及HPM参数，MCP文档同步，协议30/UART25项。新增24项，相关164及129通过（集合重叠）；确认参数完整传递、未知字段拒绝、任务去重及无效CLI不连接。没有物理烧录，Agent目标连接尚未切换。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议29，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议30，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批CI；按65节43项矩阵继续Agent目标/上传/流式/MSC共享迁移，Modbus三项及serial两项已完成。第72批双板RTT和HPM SystemView短时真机已通过，不重复只测连通性；推进实际协议对端、异常恢复、24/72小时长稳与NSIS安装。剩余正则执行上限和历史心跳延迟待查。不改下载器固件/WinUSB，不合并发布。
+1. 核对本批CI；继续Agent目标/上传/流式/MSC完整共享迁移，不能只换Device工厂：43项操作中Modbus与serial已共享，flash任务附加参数本批已补齐，erase_sector共享入口/擦除准备、流游标/任务名解析、符号上传与MSC仍需处理。保留未知结果不重放、逐客户端退出清理和固定probe身份。之后异常恢复/物理协议/长稳/NSIS。不改下载器固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
