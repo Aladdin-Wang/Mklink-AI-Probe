@@ -44,6 +44,16 @@ _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
 
 
+async def read_bounded_body(request, limit: int, detail: str) -> bytes:
+    """Accept raw chunks without invoking multipart parsing or disk spooling."""
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > limit:
+            raise HTTPException(413, detail)
+        content.extend(chunk)
+    return bytes(content)
+
+
 class BrowserSessionLease:
     """Track browser tabs and request shutdown after the last tab disappears."""
 
@@ -2957,35 +2967,25 @@ def create_app(
         raise HTTPException(status_code=500, detail=f"Failed to send to {port}")
 
     @app.post("/api/dash/serial/ymodem/start")
-    async def serial_ymodem_start(
-        port: str = Query(...),
-        file: UploadFile = File(...),
-    ):
-        """Upload one bounded file and transfer it over the already-open port."""
-        managers = get_managers()
-        sm = managers["serial"]
+    async def serial_ymodem_start(request: Request, port: str = Query(...), filename: str = Query(...)):
+        """Receive one bounded raw file before starting the shared transfer."""
+        from mklink.serial._ymodem import YMODEM_FILE_LIMIT, validate_transfer
+        if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/octet-stream':
+            raise HTTPException(415, 'YMODEM requires an application/octet-stream file body')
+        sm = get_managers()['serial']
+        if not sm.running:
+            raise HTTPException(400, 'Serial monitor not running')
+        if (await run_in_threadpool(sm.get_ymodem_status))['active']:
+            raise HTTPException(409, 'a YMODEM transfer is already active')
+        content = await read_bounded_body(request, YMODEM_FILE_LIMIT,
+                                          'YMODEM file exceeds the 32 MiB upload limit')
         try:
-            if not sm.running:
-                raise HTTPException(status_code=400, detail="Serial monitor not running")
-            if (await run_in_threadpool(sm.get_ymodem_status))["active"]:
-                raise HTTPException(
-                    status_code=409,
-                    detail="a YMODEM transfer is already active",
-                )
-            from mklink.serial._ymodem import YMODEM_FILE_LIMIT
-            content = await file.read(YMODEM_FILE_LIMIT + 1)
-        finally:
-            await file.close()
-        from mklink.serial._ymodem import validate_transfer, YModemFileTooLarge
-        try:
-            filename = validate_transfer(file.filename, len(content))
+            filename = validate_transfer(filename, len(content))
             return await run_in_threadpool(sm.start_ymodem, port, content, filename)
-        except YModemFileTooLarge as error:
-            raise HTTPException(413, str(error)) from error
         except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error))
+            raise HTTPException(400, str(error)) from error
         except RuntimeError as error:
-            raise HTTPException(status_code=409, detail=str(error))
+            raise HTTPException(409, str(error)) from error
 
     @app.post('/api/dash/serial/ymodem/file')
     async def serial_ymodem_file(body: SerialYModemFileRequest):
@@ -3042,13 +3042,9 @@ def create_app(
     @app.post('/api/dash/serial/file/upload')
     async def serial_file_upload(request: Request, port: str = Query(...), hex: bool = Query(False)):
         from mklink.serial._sequence import SERIAL_FILE_INPUT_BYTES
-        content = bytearray()
-        async for chunk in request.stream():
-            if len(content) + len(chunk) > SERIAL_FILE_INPUT_BYTES:
-                raise HTTPException(413, 'Input file exceeds 256 KiB')
-            content.extend(chunk)
+        content = await read_bounded_body(request, SERIAL_FILE_INPUT_BYTES, 'Input file exceeds 256 KiB')
         try:
-            return await asyncio.to_thread(get_managers()['serial'].start_file_data, port, bytes(content), hex)
+            return await asyncio.to_thread(get_managers()['serial'].start_file_data, port, content, hex)
         except (ValueError, OSError) as error:
             raise HTTPException(400, str(error)) from error
         except RuntimeError as error:

@@ -585,12 +585,10 @@ async function startYmodem(): Promise<void> {
     `\r\n[YMODEM] 准备发送 ${file.name}（${file.size} B）…\r\n`,
     `\r\n[YMODEM] Preparing ${file.name} (${file.size} B)…\r\n`,
   ))
-  const form = new FormData()
-  form.append('file', file, file.name)
   try {
     const status = await requestJson(
-      `/api/dash/serial/ymodem/start?port=${encodeURIComponent(portName.value)}`,
-      { method: 'POST', body: form },
+      `/api/dash/serial/ymodem/start?port=${encodeURIComponent(portName.value)}&filename=${encodeURIComponent(file.name)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file },
     )
     applyYmodemStatus(status)
     void pollYmodemStatus()

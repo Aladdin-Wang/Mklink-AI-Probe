@@ -416,9 +416,11 @@ describe('SerialMonitorTab', () => {
 
     const startCall = fetchMock.mock.calls.find(call => String(call[0]).includes('/ymodem/start'))
     expect(startCall?.[1]?.method).toBe('POST')
-    const form = startCall?.[1]?.body as FormData
-    expect((form.get('file') as File).name).toBe('rtthread.bin')
-    expect((form.get('file') as File).size).toBe(8)
+    const uploaded = startCall?.[1]?.body as File
+    expect(uploaded).toBeInstanceOf(File)
+    expect(new Uint8Array(await uploaded.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))
+    expect(startCall?.[1]?.headers).toEqual({ 'Content-Type': 'application/octet-stream' })
+    expect(String(startCall?.[0])).toContain('filename=rtthread.bin')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('100% · 8/8 B'))
     // Terminal writes flush on their own frame, after reactive progress renders.

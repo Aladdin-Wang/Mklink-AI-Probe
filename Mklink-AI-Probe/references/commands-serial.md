@@ -231,3 +231,8 @@ AI以`scope="uart"`连接并启动或借用`serial_start`后，通过`gui_call`�
 跟踪页中的`transfer_id`变化时应从`after=0`重新读取，不能跨传输复用游标。
 AI断开后传输继续。GUI或其他已认证客户端可以通过`serial_ymodem_cancel`取消
 当前传输；取消无法撤销接收端已收到的数据，结果未知时不要盲目再次提交。
+
+
+GUI的YMODEM上传接口使用原始`application/octet-stream`请求体，查询参数为
+`port`和URL编码的`filename`；累计文件内容上限32 MiB，完整收取前不会启动传输。
+旧multipart格式已删除。协议27后台需搭配当前GUI使用。

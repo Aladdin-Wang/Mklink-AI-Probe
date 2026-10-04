@@ -806,43 +806,22 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
     })
 
     with TestClient(app) as client:
-        empty = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"", "application/octet-stream")},
-        )
-        oversized = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"123456789", "application/octet-stream")},
-        )
-        long_name = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("\u6d4b" * 11 + ".bin", b"x", "application/octet-stream")},
-        )
-        boundary = b"ymodem-test-boundary"
-        control_name = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            content=(
-                b"--" + boundary + b"\r\n"
-                b'Content-Disposition: form-data; name="file"; '
-                b'filename="bad\x00name.bin"\r\n'
-                b"Content-Type: application/octet-stream\r\n\r\n"
-                b"x\r\n--" + boundary + b"--\r\n"
-            ),
-            headers={"Content-Type": "multipart/form-data; boundary=ymodem-test-boundary"},
-        )
-        accepted = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("folder/app.bin", b"firmware", "application/octet-stream")},
-        )
-        active["value"] = True
-        duplicate = client.post(
-            "/api/dash/serial/ymodem/start?port=TEST",
-            files={"file": ("app.bin", b"firmware", "application/octet-stream")},
-        )
-        locked_send = client.post(
-            "/api/dash/serial/send",
-            json={"port": "TEST", "data": "boot\\r", "hex": False},
-        )
+        def upload(name, data):
+            return client.post('/api/dash/serial/ymodem/start',
+                params={'port': 'TEST', 'filename': name}, content=data,
+                headers={'Content-Type': 'application/octet-stream'})
+        empty = upload('app.bin', b'')
+        oversized = upload('app.bin', b'123456789')
+        long_name = upload('测' * 11 + '.bin', b'x')
+        control_name = upload('bad\x01.bin', b'x')
+        obsolete = client.post('/api/dash/serial/ymodem/start?port=TEST&filename=app.bin',
+                               files={'file': ('app.bin', b'x')})
+        assert obsolete.status_code == 415
+        accepted = upload('folder/app.bin', b'firmware')
+        active['value'] = True
+        duplicate = upload('app.bin', b'firmware')
+        locked_send = client.post('/api/dash/serial/send',
+                                  json={'port': 'TEST', 'data': 'boot', 'hex': False})
         active["value"] = False
 
         def race_send(_port, _data):
@@ -875,6 +854,39 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
     assert raced_send.json()["detail"] == (
         "Serial input is locked by an active YMODEM transfer"
     )
+
+
+@pytest.mark.parametrize('end', ['oversize', 'disconnect', 'complete'])
+def test_ymodem_stream_without_length_never_starts_partial_file(monkeypatch, tmp_path, end):
+    from starlette.requests import ClientDisconnect
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    monkeypatch.setattr('mklink.serial._ymodem.YMODEM_FILE_LIMIT', 8)
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['dashboard_managers']['serial']
+    manager._running = True
+    starts, received = [], []
+    monkeypatch.setattr(manager, 'start_ymodem', lambda *args: starts.append(args) or {'active': True})
+    messages = [{'type': 'http.request', 'body': b'1234', 'more_body': True},
+                {'type': 'http.disconnect'} if end == 'disconnect' else
+                {'type': 'http.request', 'body': b'56789' if end == 'oversize' else b'5678', 'more_body': False}]
+    scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
+             'method': 'POST', 'scheme': 'http', 'path': '/api/dash/serial/ymodem/start',
+             'raw_path': b'/api/dash/serial/ymodem/start', 'query_string': b'port=TEST&filename=app.bin',
+             'headers': [(b'content-type', b'application/octet-stream')],
+             'client': ('127.0.0.1', 1), 'server': ('127.0.0.1', 80), 'root_path': ''}
+    async def receive():
+        assert messages, 'Unexpected extra request read'
+        return messages.pop(0)
+    async def send(message): received.append(message)
+    try:
+        if end == 'disconnect':
+            with pytest.raises(ClientDisconnect): asyncio.run(app(scope, receive, send))
+        else:
+            asyncio.run(app(scope, receive, send))
+            assert received[0]['status'] == (413 if end == 'oversize' else 200)
+        assert starts == ([('TEST', b'12345678', 'app.bin')] if end == 'complete' else [])
+    finally:
+        manager._running = False
 
 
 def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):

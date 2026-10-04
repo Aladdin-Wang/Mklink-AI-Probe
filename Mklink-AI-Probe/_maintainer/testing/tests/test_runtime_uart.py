@@ -339,7 +339,8 @@ def test_uart_lock_wait_does_not_block_other_client_heartbeat(monkeypatch, tmp_p
             session = (await http.post('/_runtime/attach', json={'scope': 'uart'})).json()['session_id']
             kwargs = {'json': body} if body is not None else {}
             if path == 'serial/ymodem/start':
-                kwargs = {'params': {'port': 'TEST'}, 'files': {'file': ('test.bin', b'one')}}
+                kwargs = {'params': {'port': 'TEST', 'filename': 'test.bin'}, 'content': b'one',
+                          'headers': {'Content-Type': 'application/octet-stream'}}
             timer.start()
             pending = asyncio.create_task(http.request(method, '/api/dash/' + path, **kwargs))
             try:

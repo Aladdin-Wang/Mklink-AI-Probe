@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 26  # Shared YMODEM file submission, status, trace and cancellation.
+PROTOCOL = 27  # Bounded raw GUI YMODEM uploads; no multipart entry point.
 VERSION = "0.3.0"
 
 
