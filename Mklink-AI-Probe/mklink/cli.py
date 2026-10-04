@@ -1284,40 +1284,25 @@ def _modbus_save_config(args):
 
 
 @contextmanager
-def _modbus_shared_client(args, *, scan=False):
-    """Borrow one runtime connection and release only what this CLI owns."""
+def _shared_uart_client(args, stream, settings):
+    """Subscribe to the existing UART owner; release only this CLI's ownership."""
     from mklink.runtime import RuntimeClient, RuntimeErrorResponse
-    from mklink.usb_interfaces import canonical_serial_port
-    if not _modbus_resolve_defaults(args):
-        raise ValueError('Modbus port is required')
-    connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
-                  'bytesize': 8, 'parity': args.parity, 'stopbits': args.stopbits}
-    if not scan:
-        for key in ('timeout', 'retries'):
-            value = getattr(args, key, None)
-            if value is not None:
-                connection[key] = value
-    client = RuntimeClient(kind='cli', name='Modbus CLI')
+    client = RuntimeClient(kind='cli', name=f'{stream.title()} CLI')
     created = False
     try:
         client.connect(scope='uart', probe=getattr(args, 'probe', None))
-        if client.call('modbus_status')['running']:
-            client.call('modbus_start', {})
+        if client.call(f'{stream}_status')['running']:
+            client.call(f'{stream}_start', {})
         else:
-            client.call('modbus_start', {'timeout': .15 if scan else 1.0, 'retries': 0,
-                                        **connection, 'registers': []})
+            client.call(f'{stream}_start', settings)
             created = True
-        # Validate after subscribing, while shared stop/reconfiguration is refused.
-        actual = client.call('modbus_status')['connection']
-        if any(actual.get(key) != value for key, value in connection.items()):
-            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before changing settings')
         yield client
     finally:
         operation_error = sys.exc_info()[1]
         cleanup_errors = []
         if created:
             try:
-                client.call('modbus_stop')
+                client.call(f'{stream}_stop')
             except RuntimeErrorResponse as exc:
                 if exc.status_code == 409:
                     print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
@@ -1330,10 +1315,30 @@ def _modbus_shared_client(args, *, scan=False):
         if cleanup_errors:
             if operation_error is None:
                 raise cleanup_errors[0]
-            # Keep the original operation/unknown-result error visible. Neither
-            # failed cleanup nor a lost detach response authorizes a replay.
             for error in cleanup_errors:
-                print(f'[WARN] Modbus 会话清理失败，请检查共享后台: {error}', file=sys.stderr)
+                print(f'[WARN] {stream.title()} 会话清理失败，请检查共享后台: {error}', file=sys.stderr)
+
+
+@contextmanager
+def _modbus_shared_client(args, *, scan=False):
+    from mklink.runtime import RuntimeErrorResponse
+    from mklink.usb_interfaces import canonical_serial_port
+    if not _modbus_resolve_defaults(args):
+        raise ValueError('Modbus port is required')
+    connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
+                  'bytesize': 8, 'parity': args.parity, 'stopbits': args.stopbits}
+    if not scan:
+        for key in ('timeout', 'retries'):
+            value = getattr(args, key, None)
+            if value is not None:
+                connection[key] = value
+    settings = {'timeout': .15 if scan else 1.0, 'retries': 0, **connection, 'registers': []}
+    with _shared_uart_client(args, 'modbus', settings) as client:
+        # Compare after subscribing, while shared stop/reconfiguration is refused.
+        actual = client.call('modbus_status')['connection']
+        if any(actual.get(key) != value for key, value in connection.items()):
+            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before changing settings')
+        yield client
 
 
 def _cli_modbus_scan(args):
@@ -1632,9 +1637,53 @@ def _parse_bool(s: str) -> bool:
     raise ValueError(f"Invalid coil value: {s!r}; use on/off, true/false, yes/no, 1/0 or 0xff00/0x0000")
 
 
+def _cli_serial_send(args):
+    import math
+    import time
+    from mklink.runtime import RuntimeErrorResponse
+    from mklink.usb_interfaces import canonical_serial_port
+
+    if type(args.count) is not int or args.count < 1:
+        raise ValueError('Send count must be a positive integer')
+    if (isinstance(args.delay, bool) or not isinstance(args.delay, (int, float))
+            or not math.isfinite(args.delay) or not 0 <= args.delay <= 3600):
+        raise ValueError('Send delay must be finite and in 0..3600 seconds')
+    if type(args.baud) is not int or not 1 <= args.baud <= 4000000:
+        raise ValueError('Baud rate must be an integer in 1..4000000')
+    if type(args.databits) is not int or args.databits not in (5, 6, 7, 8):
+        raise ValueError('Data bits must be 5, 6, 7 or 8')
+    if type(args.stop) is not int or args.stop not in (1, 2) or args.parity not in ('N', 'E', 'O'):
+        raise ValueError('Stop bits must be 1 or 2; parity must be N, E or O')
+    data = bytes.fromhex(args.send_data) if args.hex else args.send_data.encode('utf-8')
+    if not data:
+        raise ValueError('Send data must not be empty')
+    connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
+                  'databits': args.databits, 'stopbits': args.stop, 'parity': args.parity}
+    with _shared_uart_client(args, 'serial', {'ports': [connection]}) as client:
+        status = client.call('serial_status')
+        actual = next((item for item in status['config'] if item['port'] == connection['port']), None)
+        if actual is None or any(actual.get(key, default) != connection[key] for key, default in
+                                (('baudrate', 115200), ('databits', 8), ('stopbits', 1), ('parity', 'N'))):
+            raise RuntimeErrorResponse('Existing serial connection uses different port/settings; stop it explicitly before changing settings')
+        for index in range(args.count):
+            result = client.call('serial_send', {'port': connection['port'], 'data': data.hex(), 'hex': True})
+            if result.get('ok') is not True:
+                raise RuntimeErrorResponse('Serial send was not acknowledged; result unknown, do not retry')
+            print(f"[TX] #{index + 1}/{args.count}: {data.hex(' ') if args.hex else args.send_data}", flush=True)
+            if index + 1 < args.count:
+                time.sleep(args.delay)
+
+
 def _cli_serial_dispatch(args):
     """串口调试命令分发。"""
-    from mklink.serial._port import SerialPort, list_uart_ports, is_mklink_port
+    if getattr(args, 'serial_command', None) == 'send':
+        from mklink.runtime import RuntimeErrorResponse
+        try:
+            _cli_serial_send(args)
+        except (OSError, ValueError, RuntimeErrorResponse) as error:
+            raise SystemExit(str(error)) from error
+        return
+    from mklink.serial._port import list_uart_ports, is_mklink_port
     from mklink.serial._profile import load_profile, find_profile, ProfileError
     from mklink.serial._monitor import SerialMonitor
     from mklink.serial._logger import FileLogger
@@ -1735,29 +1784,6 @@ def _cli_serial_dispatch(args):
             monitor.stop()
             if logger:
                 logger.close()
-
-    elif cmd == "send":
-        port = SerialPort(args.port, baudrate=args.baud)
-        if not port.open():
-            print(f"[FAIL] 无法打开端口 {args.port}")
-            return
-        try:
-            if args.hex:
-                data = bytes.fromhex(args.send_data.replace(" ", ""))
-            else:
-                data = args.send_data.encode("utf-8")
-
-            import time
-            for i in range(args.count):
-                port.write(data)
-                if args.count > 1:
-                    print(f"[TX] #{i+1}/{args.count}: {data.hex(' ') if args.hex else args.send_data}")
-                    if i < args.count - 1:
-                        time.sleep(args.delay)
-                else:
-                    print(f"[TX] {data.hex(' ') if args.hex else args.send_data}")
-        finally:
-            port.close()
 
     elif cmd == "monitor":
         profile = None
@@ -2699,6 +2725,7 @@ def main():
     # serial send
     serial_send = serial_sub.add_parser("send", help="发送数据后退出")
     _add_serial_port_args(serial_send)
+    serial_send.add_argument("--probe", default=None, help="选择共享后台的探针身份或别名")
     serial_send.add_argument("send_data", help="要发送的数据")
     serial_send.add_argument("--hex", action="store_true", help="以 HEX 格式发送")
     serial_send.add_argument("--count", type=int, default=1, help="发送次数（默认 1）")

@@ -5,7 +5,8 @@
 
 ## 串口调试
 
-通用 UART 串口调试工具，独立于 MKLink 调试器，直接操作 COM 端口。
+通用 UART 串口调试工具，可独立于目标 MCU 使用。0.3.0 的 `send` 通过共享后台
+通信；其余终端、监听、日志和独立 Dashboard 命令仍在迁移中。
 
 日志示例中的 `<LOG_DIR>` 须替换为[已选工作根目录](work-files.md)下本次任务的
 日志目录绝对路径，并先创建该目录，不能直接写到当前目录。
@@ -38,12 +39,25 @@ python -m mklink serial open --port COM3 --baud 115200 --log "<LOG_DIR>/data.txt
 ### 单次发送
 
 ```bash
-# 发送 ASCII
-python -m mklink serial send --port COM3 --baud 115200 "AT+RST\r\n"
+# 发送 UTF-8 文本（不展开反斜杠转义）
+python -m mklink serial send --port COM3 --baud 115200 "AT"
+
+# 发送 AT 后跟实际 CR LF
+python -m mklink serial send --port COM3 --hex "41 54 0D 0A"
 
 # 发送 HEX，重复 5 次，间隔 0.5 秒
 python -m mklink serial send --port COM3 --hex --count 5 --delay 0.5 "AA550103"
 ```
+
+发送复用 GUI/AI 的共享串口连接。多探针用 `--probe` 选择后台；`--baud`、
+`--databits`、`--stop`、`--parity` 必须与指定端口的现有参数一致。多端口会话
+只向选定端口发送，其他端口保持不变。空闲时建立连接，完成后释放；借用 GUI/AI
+连接时只解除本客户端订阅，不关闭其他使用者的串口。
+
+发送数据不能为空，次数必须为正整数，间隔为 0–3600 秒的有限数，波特率为
+1–4000000 的整数。HEX 与参数在连接前验证。每次发送得到确认后打印 TX；失败
+非零退出并停止后续发送，不自动重试。响应丢失或短写可能已经发出部分数据，
+不能按“未打印 TX”推断从未发送。活动 YMODEM 传输期间拒绝普通发送。
 
 ### 多端口监听
 
