@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T18:04:49.321325+00:00",
+  "updated_at": "2026-10-04T18:13:40.974898+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; portable dual-probe hardware evidence after 95d7bd49; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; remote target metadata dependency fix after 384d7b80; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "第89批便携df844eb5实包在仅系统PATH环境下通过双V4/HPM/F103本机LAN真机验证：分别自动启动包内EXE后台、远程与本地SDK共存，停止监听保留本地客户端及相邻探针可访问，最终自建后台全部退出。两探针MSC卷身份只读核对通过；未写盘或烧录。 持续推进，不合并发布。"
+    "current_task": "第90批物理MSC部署验收未通过：旧便携包目标元数据查询500，remote依赖缺pyOCD。已补依赖及冻结动态模块/资源，干净环境3项通过（含目录和Flash范围）；新包尚待重建。F103RE不能用内置RC替代，仍需精确元数据。磁盘快照一致、自建后台全退出，无烧录/触发。 持续推进，不合并发布。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第89节：第89批便携df844eb5实包在仅系统PATH环境下通过双V4/HPM/F103本机LAN真机验证：分别自动启动包内EXE后台、远程与本地SDK共存，停止监听保留本地客户端及相邻探针可访问，最终自建后台全部退出。两探针MSC卷身份只读核对通过；未写盘或烧录。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第90节：第90批物理MSC部署验收未通过：旧便携包目标元数据查询500，remote依赖缺pyOCD。已补依赖及冻结动态模块/资源，干净环境3项通过（含目录和Flash范围）；新包尚待重建。F103RE不能用内置RC替代，仍需精确元数据。磁盘快照一致、自建后台全退出，无烧录/触发。"
     },
     {
       "area": "正式版与安装",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。第83批配置初始加载覆盖快速选择已修复并通过真实Edge受控延迟验证。 第81批普通serve/serve_fastapi/run_server已删除；第82批已修复正常关窗的presence残留，真实双桌面立即停止后台通过；崩溃或后台不可达仍依赖既有TTL，未声称强杀也可立即清理。远程RTT/SystemView版本2均已接入；旧独占入口已删除。"
   ],
   "next_actions": [
-    "第89批便携实包双板卡连接/监听退出隔离已通过；MSC只读确认两卷唯一身份与现有内容。下一步选择唯一测试文件名、F103已验证FLM与App 0x08005000工程固件，进行不触发执行的物理部署/哈希核验并清理本次新增文件；保留原盘内容。继续部署未知结果恢复、异常恢复/长稳。第88批Feedback成功，共享CI37222662303待复查；核对本批CI。UAC仍待答复。",
+    "第90批remote新增pyOCD依赖与spec模块资源，干净环境3项通过；下一步必须重建便携包并复验目标目录/Flash范围/归档审计。旧df844eb5包MSC验收未通过。F103RE需精确Pack/目标元数据，不改成RC绕过，完成后再用唯一文件名验证MSC并清理新增文件。部署未知结果恢复/异常恢复/长稳仍待完成。第89批共享CI成功，核对本批CI；UAC待答复。",
     "核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],

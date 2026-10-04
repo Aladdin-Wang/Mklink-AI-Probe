@@ -25,6 +25,7 @@ def include_module(name):
 hidden_imports = collect_submodules("mklink", filter=include_module)
 hidden_imports += collect_submodules("websockets")
 hidden_imports += collect_submodules("uvicorn")
+hidden_imports += collect_submodules("pyocd")
 hidden_imports += collect_submodules("serial")
 hidden_imports += collect_submodules("pymodbus")
 hidden_imports += collect_submodules("elftools")
@@ -32,6 +33,8 @@ hidden_imports += collect_submodules("pycparser")
 
 data_files = copy_metadata("mklink")
 data_files += copy_metadata("pycparser")
+data_files += copy_metadata("pyocd")
+data_files += collect_data_files("pyocd")
 data_files += collect_data_files(
     "mklink",
     includes=[

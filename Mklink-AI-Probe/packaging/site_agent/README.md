@@ -126,3 +126,8 @@ The listener being ready does not prove target connectivity, packaged algorithm
 coverage, physical deployment, or long-duration operation. Check the capability
 handshake and operation result. This package does not include FLM/Pack assets or
 target firmware; upload the algorithm and firmware needed for offline deployment.
+BIN deployment also requires exact target metadata to validate the Flash range;
+an uploaded FLM alone does not supply that catalog entry. Never substitute a
+similar part number to pass validation. The remote dependency set includes
+pyOCD for catalog and geometry queries, and the frozen package must include its
+dynamic modules and resources.

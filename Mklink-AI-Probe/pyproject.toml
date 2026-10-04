@@ -24,7 +24,7 @@ mklink-remote-mcp = "mklink.remote.mcp:main"
 
 [project.optional-dependencies]
 remote = [
-    "websockets>=11.0", "intelhex>=2.3", "httpx>=0.27,<1",
+    "websockets>=11.0", "intelhex>=2.3", "httpx>=0.27,<1", "pyocd>=0.44,<0.45",
     "fastapi>=0.100", "starlette>=0.40,<0.47", "uvicorn>=0.35",
     "python-multipart>=0.0.9",
 ]

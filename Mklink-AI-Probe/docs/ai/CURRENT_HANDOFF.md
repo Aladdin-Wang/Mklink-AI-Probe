@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T18:04:49.321325+00:00`
+- 更新时间：`2026-10-04T18:13:40.974898+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; portable dual-probe hardware evidence after 95d7bd49; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; remote target metadata dependency fix after 384d7b80; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第89批便携df844eb5实包在仅系统PATH环境下通过双V4/HPM/F103本机LAN真机验证：分别自动启动包内EXE后台、远程与本地SDK共存，停止监听保留本地客户端及相邻探针可访问，最终自建后台全部退出。两探针MSC卷身份只读核对通过；未写盘或烧录。 持续推进，不合并发布。
+- 当前任务：第90批物理MSC部署验收未通过：旧便携包目标元数据查询500，remote依赖缺pyOCD。已补依赖及冻结动态模块/资源，干净环境3项通过（含目录和Flash范围）；新包尚待重建。F103RE不能用内置RC替代，仍需精确元数据。磁盘快照一致、自建后台全退出，无烧录/触发。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第89节：第89批便携df844eb5实包在仅系统PATH环境下通过双V4/HPM/F103本机LAN真机验证：分别自动启动包内EXE后台、远程与本地SDK共存，停止监听保留本地客户端及相邻探针可访问，最终自建后台全部退出。两探针MSC卷身份只读核对通过；未写盘或烧录。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第90节：第90批物理MSC部署验收未通过：旧便携包目标元数据查询500，remote依赖缺pyOCD。已补依赖及冻结动态模块/资源，干净环境3项通过（含目录和Flash范围）；新包尚待重建。F103RE不能用内置RC替代，仍需精确元数据。磁盘快照一致、自建后台全退出，无烧录/触发。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 第89批便携实包双板卡连接/监听退出隔离已通过；MSC只读确认两卷唯一身份与现有内容。下一步选择唯一测试文件名、F103已验证FLM与App 0x08005000工程固件，进行不触发执行的物理部署/哈希核验并清理本次新增文件；保留原盘内容。继续部署未知结果恢复、异常恢复/长稳。第88批Feedback成功，共享CI37222662303待复查；核对本批CI。UAC仍待答复。
+1. 第90批remote新增pyOCD依赖与spec模块资源，干净环境3项通过；下一步必须重建便携包并复验目标目录/Flash范围/归档审计。旧df844eb5包MSC验收未通过。F103RE需精确Pack/目标元数据，不改成RC绕过，完成后再用唯一文件名验证MSC并清理新增文件。部署未知结果恢复/异常恢复/长稳仍待完成。第89批共享CI成功，核对本批CI；UAC待答复。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
