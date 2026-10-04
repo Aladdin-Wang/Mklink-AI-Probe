@@ -375,35 +375,25 @@ def _register_connection_tools(mcp: Any) -> None:
 
 def _register_project_tools(mcp: Any) -> None:
     @mcp.tool()
-    def detect_mcu_profile(
+    def inspect_mcu(
         project_root: str = ".",
         device: str | None = None,
         port: str | None = None,
         flm: str | None = None,
-        write_profile: bool = True,
-        copy_flm: bool = True,
         read_idcode: bool = False,
     ) -> dict:
-        """Detect or create an MCU profile and resolve its FLM.
-
-        Use before flashing a project whose MCU is not already present in
-        ``mcu_profiles.json``. If multiple internal FLM algorithms are found,
-        returns ``status=needs_selection`` with candidates; call again with
-        ``flm`` set to the selected algorithm path to persist it.
-        """
-        from mklink.mcu_detect import detect_mcu_profile as _detect
+        """Inspect an exact MCU's catalog algorithms; never save profiles or copy files."""
+        from mklink.mcu_detect import inspect_mcu as _detect
 
         arguments = {
             "project_root": project_root,
             "device": device,
             "port": port,
             "flm": flm,
-            "write_profile": write_profile,
-            "copy_flm": copy_flm,
             "read_idcode": read_idcode,
         }
         if read_idcode:
-            with _hardware_operation("detect_mcu_profile"):
+            with _hardware_operation("inspect_mcu"):
                 return _detect(**arguments)
         return _detect(**arguments)
 

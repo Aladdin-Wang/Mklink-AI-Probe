@@ -240,7 +240,7 @@ flash(
 )
 ```
 
-只支持 BIN；未提供工程配置时必须显式传 `base_address`。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得先调用 `detect_mcu_profile`、安装 Pack 或加载 FLM。
+只支持 BIN；未提供工程配置时必须显式传 `base_address`。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得安装 Pack 或加载 FLM。
 
 XPI 基址按芯片族选择：
 - `0xf3000000U`: HPM5300/HPM5301/HPM5E/HPM6E/HPM6P/HPM6800
@@ -248,24 +248,23 @@ XPI 基址按芯片族选择：
 
 ### MICROKEEN 磁盘管理
 
-#### `python -m mklink mcu-detect [--device STM32H723ZETx] [--flm CMSIS/Flash/xxx.FLM] [--json]`
-发现并固化未知 MCU 的 profile 与 FLM。适用于项目解析出的 MCU 不在 `mklink/mcu_profiles.json` 的情况。
+#### `python -m mklink mcu-detect [--device STM32H723ZETx] [--flm <算法ID或唯一文件名>] [--json]`
+只读检查工程或显式精确器件名对应的统一算法目录，与实际烧录复用同一个发现实现。
 
-行为：
-1. 从工程 `project_info.json` 或 `--device` 获取 MCU 型号。
-2. 搜索本地 Keil/Arm Pack 的 `.pdsc`，只保留内部 Flash 算法（`start=0x08000000`），忽略 QSPI/OSPI/FMC/NOR/MMC 等外部算法。
-3. 若内部 FLM 唯一，自动写入 `mklink/mcu_profiles.json`（先备份 `.bak`）并复制 FLM 到 MICROKEEN `/FLM`。
-4. 若有多个内部候选，交互终端会提示编号选择；MCP/API/非交互 CLI 返回 `needs_selection` 和候选列表，按[兼容性规则](firmware-download-priority.md#flm-兼容性)先核对工程或 Pack 映射，唯一兼容项可自动用 `--flm`/`flm` 指定后重试；仍有歧义再询问用户。
-5. 若本地只有 `.pdsc` 索引但没有 FLM 文件，停止并提示安装或解包对应 Keil/Arm Pack。
+- 不写包内或工程 profile，不复制 FLM，不修改下次烧录配置。已删除旧自动生成/固化流程；内置 profile 只作为既有默认值保留。
+- 返回算法 ID、来源、Flash/RAM 范围和目录提供的页/扇区信息；不填入猜测的几何参数或 SWD 时钟。
+- 多候选返回 `needs_selection`；`--flm` 可按算法 ID 唯一选择，同名多来源仍需选择 ID。交互选择只用于本次检查。
+- `--port` 可附加通过共享后台读取的 IDCODE，作为诊断信息；它不能证明精确器件或算法兼容性。
+- 缺少算法时，在应用统一目录安装对应 Pack 或配置自定义算法。HPM 返回 ROM API 提示，不搜索 FLM。
 
-**禁止兜底规则：** 非 HPM 项目识别出新 MCU 时，不要把 `.mklink/config.json` 改成 `custom` 直接烧录。必须先 `mcu-detect` 成功固化 profile。
+不要把未知芯片改成 `custom` 绕过匹配。实际烧录仍须给出工程精确器件/镜像，并由现有目录核对算法覆盖；需要部署目录中的算法时使用 GUI 脱机部署，需要单独复制本地文件时使用下方 `copy-flm`。
 
 #### `python -m mklink copy-flm --probe <ID或别名> [--flm <本地算法.FLM>] [--request-id <请求ID>]`
 通过选定探针的共享后台，将本地算法校验部署到身份绑定磁盘的 FLM 目录。省略 `--flm` 时从旧项目/profile 配置解析 Keil 算法；多探针必须指定 `--probe`。同名内容不同的目标由既有脱机事务备份后替换，失败时回滚；不会触发烧录。
 
 命令先输出请求 ID，结果记录在共享任务日志。响应丢失时用 `python -m mklink runtime jobs --probe <ID或别名>` 查询并匹配 `request_id`，不要重新提交未知结果。日志只保留最近64项，缺失不代表未执行。同一请求 ID 及相同内容不会重复复制；更改内容或目标文件名必须使用新 ID。
 
-如果项目 MCU 还没有 profile，先运行 `python -m mklink mcu-detect`。
+新工程无需生成 profile；可用 `mcu-detect` 检查目录，用 `--flm` 明确单独复制的本地文件。
 
 `project-init` 不再复制 FLM；烧录时优先按精确器件和镜像范围从统一算法目录选择并部署。
 

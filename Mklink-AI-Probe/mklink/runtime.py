@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 37  # FLM-only copies use the shared deployment journal.
+PROTOCOL = 38  # MCU inspection no longer accepts profile/disk write options.
 VERSION = "0.3.0"
 
 

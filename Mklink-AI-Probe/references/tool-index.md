@@ -14,7 +14,7 @@
 |---|---|---|
 | 健康 | `ping` | 无需连接，首调确认 server 活着 |
 | 供电测量（0.2.3） | `get_power` | 只读 VCC 快照；V3 仅电压，V4 电压/电流/计算功率；需配套新固件，详见 [供电测量](power-telemetry.md) |
-| 项目配置 | `detect_mcu_profile` | 新 MCU 发现、FLM 候选选择、profile 固化 |
+| 器件检查（0.3） | `inspect_mcu` | 只读检查精确器件和统一算法目录，不写 profile/设备文件 |
 | 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
 | 安全保护 | `security_status` · `security_lock` · `security_unlock` | 先查精确型号能力；加锁前强制校验固件，解锁强制确认永久数据丢失，操作后按明确电压断电复位 |
@@ -41,7 +41,7 @@
 | `mcp` | 启动 MCP server（stdio，供 Claude Code / 其他 MCP client 调用；本 plugin 自动拉起） |
 | `remote` | 工程师侧直连 VPN/局域网站点：注册/选择、状态、能力、重连、原子上传与高风险操作 |
 | `project-init` | 离线解析 IAR/Keil 工程并初始化配置；不枚举或连接下载器 |
-| `mcu-detect` | 发现/固化未知 MCU profile 与 FLM（多候选需选择） |
+| `mcu-detect` | 只读检查统一算法目录（多候选按算法 ID 选择） |
 | `project-info` | 显示项目配置状态 |
 | `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
 | `security lock/unlock` | 与 MCP/WebGUI 共用安全白名单；要求精确型号、明确恢复电压和确认参数；加锁还须固件，解锁还须数据丢失确认 |

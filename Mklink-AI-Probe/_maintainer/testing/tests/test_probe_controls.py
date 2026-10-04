@@ -817,25 +817,25 @@ def test_mcp_detect_profile_guards_only_idcode_hardware_path(monkeypatch):
             raise TimeoutError("fake IDCODE timeout")
         return {"status": "file-only"}
 
-    monkeypatch.setattr("mklink.mcu_detect.detect_mcu_profile", detect)
+    monkeypatch.setattr("mklink.mcu_detect.inspect_mcu", detect)
     monkeypatch.setitem(mcp_server._holder, "device", None)
     monkeypatch.setitem(mcp_server._holder, "kwargs", {})
     monkeypatch.setitem(mcp_server._holder, "quarantine", None)
     mcp = _Mcp()
     mcp_server._register_project_tools(mcp)
 
-    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+    assert mcp.tools["inspect_mcu"](read_idcode=False) == {
         "status": "file-only"
     }
     with pytest.raises(TimeoutError, match="IDCODE"):
-        mcp.tools["detect_mcu_profile"](read_idcode=True)
+        mcp.tools["inspect_mcu"](read_idcode=True)
     with pytest.raises(RuntimeError, match="quarantined"):
-        mcp.tools["detect_mcu_profile"](read_idcode=True)
+        mcp.tools["inspect_mcu"](read_idcode=True)
     assert calls == [False, True]
 
     # File-only project inspection remains available because it performs no
     # probe I/O, even while the hardware session awaits explicit recovery.
-    assert mcp.tools["detect_mcu_profile"](read_idcode=False) == {
+    assert mcp.tools["inspect_mcu"](read_idcode=False) == {
         "status": "file-only"
     }
     assert calls == [False, True, False]

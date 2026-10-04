@@ -287,3 +287,18 @@ def test_copy_flm_cli_selects_shared_backend_and_never_retries(tmp_path, monkeyp
     assert 'request_id=copy-once' in output
     if fail:
         assert '不要重新提交' in output
+
+@pytest.mark.parametrize('status,exit_code', [('detected', 0), ('unsupported', 1)])
+def test_mcu_detect_cli_uses_read_only_catalog_contract(monkeypatch, capsys, status, exit_code):
+    import sys, json
+    from mklink import cli
+    calls = []
+    def inspect(**kwargs):
+        calls.append(kwargs)
+        return {'status': status, 'device': 'TEST', 'backend': 'flm', 'profile_written': False, 'flm_copied': False}
+    monkeypatch.setattr('mklink.mcu_detect.inspect_mcu', inspect)
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'mcu-detect', '--device', 'TEST', '--flm', 'algorithm-id', '--json'])
+    assert cli.main() == exit_code
+    assert calls[0]['flm'] == 'algorithm-id' and calls[0]['read_idcode'] is False
+    assert 'write_profile' not in calls[0] and 'copy_flm' not in calls[0]
+    assert json.loads(capsys.readouterr().out)['profile_written'] is False

@@ -234,7 +234,7 @@ def test_mcu_discovery_rejects_conflict_before_discovery_or_writes(probe, monkey
         monkeypatch.setattr('mklink.probes.inventory', lambda: [])
     def forbidden(**kwargs):
         raise AssertionError('Discovery ran before admission')
-    monkeypatch.setattr('mklink.mcu_detect.detect_mcu_profile', forbidden)
+    monkeypatch.setattr('mklink.mcu_detect.inspect_mcu', forbidden)
     response = client.post('/api/mcu-detect', json={'port': 'COM8' if failure == 'wrong_port' else 'COM9'})
     assert response.status_code == 409, response.text
     assert not calls and not bridge.commands
@@ -249,43 +249,13 @@ def test_mcu_discovery_uses_internal_query_without_recursive_http(probe, monkeyp
     monkeypatch.setattr('mklink.runtime.query_probe', forbidden)
     def detect(**kwargs):
         return {'idcode': kwargs['idcode_reader'](kwargs['port'])}
-    monkeypatch.setattr('mklink.mcu_detect.detect_mcu_profile', detect)
+    monkeypatch.setattr('mklink.mcu_detect.inspect_mcu', detect)
     response = client.post('/api/mcu-detect', json={'port': 'COM9'})
     assert response.status_code == 200, response.text
     assert response.json() == {'idcode': 0x1ba01477}
     assert not calls and not bridge.closed
     assert not state['resource_manager'].get_status()
 
-
-def test_profile_idcode_failure_precedes_flm_and_profile_writes(monkeypatch, tmp_path):
-    from mklink import mcu_detect as md
-    profile = tmp_path / 'profiles.json'
-    profile.write_text('{"mcus": {}}', encoding='utf-8')
-    source = tmp_path / 'source.FLM'
-    source.write_bytes(b'algorithm')
-    destination = tmp_path / 'disk' / 'FLM'
-    algorithm = dict(name='source.FLM', start=0x08000000, size=65536, ram_start=0x20000000, ram_size=16384)
-    monkeypatch.setattr(md, '_discover_from_pdsc', lambda *a: dict(device_prefix='TEST', profile_key='test', algorithms=[algorithm]))
-    monkeypatch.setattr(md, '_find_flm_source', lambda *a: source)
-    calls = []
-    def query(capability, **kwargs):
-        calls.append((capability, kwargs))
-        raise RuntimeErrorResponse('acquisition busy')
-    monkeypatch.setattr('mklink.runtime.query_probe', query)
-    with pytest.raises(RuntimeErrorResponse, match='acquisition busy'):
-        md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
-                              microkeen_flm_dir=destination, port='COM9', read_idcode=True)
-    assert calls == [('probe_idcode', {'port': 'COM9'})]
-    assert profile.read_text(encoding='utf-8') == '{"mcus": {}}'
-    assert not destination.exists()
-    monkeypatch.setattr('mklink.runtime.query_probe', lambda *a, **kw: {'idcode': 0x1ba01477})
-    result = md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
-                                  microkeen_flm_dir=destination, port='COM9', read_idcode=True)
-    assert result['status'] == 'created'
-    assert result['profile']['idcode_pattern'] == '0x1BA01477'
-    assert (destination / 'source.FLM').read_bytes() == source.read_bytes()
-    import json
-    assert json.loads(profile.read_text(encoding='utf-8'))['mcus']['test']['idcode_pattern'] == '0x1BA01477'
 
 @pytest.mark.parametrize('existing', [False, True])
 def test_failed_idcode_keeps_borrowed_session_and_releases_query_lease(probe, monkeypatch, existing):
@@ -302,38 +272,51 @@ def test_failed_idcode_keeps_borrowed_session_and_releases_query_lease(probe, mo
     assert bridge.closed is (not existing)
     assert not state['resource_manager'].get_status()
 
-@pytest.mark.parametrize('scenario', ['same', 'different', 'missing_source', 'copy_failed'])
-def test_profile_creation_never_trusts_only_an_existing_flm_name(monkeypatch, tmp_path, scenario):
-    from mklink import mcu_detect as md
-    profile = tmp_path / 'profiles.json'
-    profile.write_text('{"mcus": {}}', encoding='utf-8')
-    source = tmp_path / 'source.FLM'
-    source.write_bytes(b'current algorithm')
-    destination = tmp_path / 'disk' / 'FLM'
-    destination.mkdir(parents=True)
-    target = destination / 'source.FLM'
-    target.write_bytes(b'old algorithm' if scenario == 'different' else source.read_bytes())
-    algorithm = dict(name='source.FLM', start=0x08000000, size=65536, ram_start=0x20000000, ram_size=16384)
-    monkeypatch.setattr(md, '_discover_from_pdsc', lambda *a: dict(device_prefix='TEST', profile_key='test', algorithms=[algorithm]))
-    monkeypatch.setattr(md, '_find_flm_source', lambda *a: None if scenario == 'missing_source' else source)
-    def detect():
-        return md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
-                                     microkeen_flm_dir=destination)
-    before = target.read_bytes()
-    if scenario == 'different':
-        result = detect()
-        assert result['status'] == 'error' and 'does not match' in result['message']
-    elif scenario == 'missing_source':
-        assert detect()['status'] == 'missing_flm'
-    elif scenario == 'copy_failed':
-        def fail(*args):
-            raise OSError('readback mismatch')
-        monkeypatch.setattr('mklink.file_content.copy_verified', fail)
-        with pytest.raises(OSError, match='readback mismatch'):
-            detect()
-    else:
-        result = detect()
-        assert result['status'] == 'created' and result['flm_copied'] is False
-    assert target.read_bytes() == before
-    if scenario != 'same':
-        assert profile.read_text(encoding='utf-8') == '{"mcus": {}}'
+
+@pytest.mark.parametrize('selector,expected', [(None, 'needs_selection'), ('same.FLM', 'needs_selection'),
+                                               ('second', 'detected'), ('absent', 'error')])
+def test_mcu_inspection_reuses_catalog_without_profile_or_disk_writes(tmp_path, monkeypatch, selector, expected):
+    from mklink.mcu_detect import inspect_mcu
+    from mklink.cmsis_dap.algorithm_catalog import FlashAlgorithm
+    algorithms = [FlashAlgorithm(key, 'TEST123', 'same.FLM', 0x08000000, size, 0x20000000,
+                                 32768, True, 'custom-flm', key, key, page_size=4096,
+                                 sector_sizes=((0, 8192),)) for key, size in [('first', 65536), ('second', 131072)]]
+    queries = []
+    def catalog(target, **kwargs):
+        queries.append(target)
+        return algorithms
+    monkeypatch.setattr('mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms', catalog)
+    monkeypatch.setattr('mklink.discovery.find_microkeen_disk', lambda: pytest.fail('Inspection touched probe disk'))
+    monkeypatch.setattr('mklink.runtime.query_probe', lambda *a, **kw: pytest.fail('Inspection opened CDC'))
+    result = inspect_mcu(project_root=str(tmp_path), device='TEST123', flm=selector)
+    assert queries == ['TEST123'] and result['status'] == expected
+    assert result['profile_written'] is False and result['flm_copied'] is False
+    assert not list(tmp_path.iterdir())
+    if selector == 'second':
+        assert result['selected_algorithm']['size'] == 131072
+        assert result['selected_algorithm']['page_size'] == 4096
+        assert result['selected_algorithm']['sector_sizes'] == [(0, 8192)]
+        assert 'swd_clock_default' not in result
+
+
+def test_hpm_inspection_uses_rom_without_flm_and_idcode_is_optional(monkeypatch):
+    from mklink.mcu_detect import inspect_mcu
+    monkeypatch.setattr('mklink.cmsis_dap.algorithm_catalog.discover_flash_algorithms', lambda *a, **k: pytest.fail('HPM looked for FLM'))
+    assert inspect_mcu(device='HPM6E80')['backend'] == 'hpm-rom'
+    assert inspect_mcu(device='HPM6E80', flm='wrong.FLM')['status'] == 'error'
+    calls = []
+    def query(capability, **kwargs):
+        calls.append((capability, kwargs))
+        return {'idcode': 0x1000563d}
+    monkeypatch.setattr('mklink.runtime.query_probe', query)
+    result = inspect_mcu(device='HPM6E80', port='COM9', read_idcode=True)
+    assert result['idcode'] == 0x1000563d
+    assert calls == [('probe_idcode', {'port': 'COM9'})]
+
+
+@pytest.mark.parametrize('field', ['write_profile', 'copy_flm', 'profiles_path'])
+def test_mcu_api_rejects_removed_write_options(probe, field):
+    client, _, _, bridge, calls, _, _ = probe
+    response = client.post('/api/mcu-detect', json={'device': 'HPM6E80', field: True})
+    assert response.status_code == 422
+    assert not calls and not bridge.commands

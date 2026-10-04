@@ -36,7 +36,7 @@
 | "烧录器版本" / "查看固件版本" / "MKLink 版本" / "MicroLink 版本" | `python -m mklink version`（默认仅当前版本；`--all` 看完整历史；`--raw` 看原始响应） |
 | "查看项目配置" | `python -m mklink project-info` |
 | "初始化项目" | `python -m mklink project-init` |
-| "新 MCU" / "未知 MCU" / "STM32H723" / "缺少 FLM" / "profile 不匹配" | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、用户自定义 FLM 自动解析；仍无精确匹配时执行 `python -m mklink mcu-detect`，多候选再让用户选择并用 `--flm` 固化 |
+| "新 MCU" / "未知 MCU" / "STM32H723" / "缺少 FLM" / "profile 不匹配" | 先按内置 Pack、内置 DAPLink FLM、已安装 Pack、用户自定义 FLM 自动解析；仍无精确匹配时执行 `python -m mklink mcu-detect`，多候选再用 `--flm <算法ID>` 查看；不生成 profile 或复制文件 |
 | "解析 IAR 工程" / "查看 IAR 配置" | `python -m mklink iar-parse` |
 | "解析 Keil 工程" / "查看 Keil 配置" | `python -m mklink keil-parse` |
 | "集成 RTT（Keil/IAR）" | `python -m mklink rtt-integrate --project-root .` |

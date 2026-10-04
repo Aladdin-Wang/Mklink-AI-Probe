@@ -1872,30 +1872,20 @@ def _print_mcu_detect_result(result: dict, *, json_output: bool = False) -> None
         return
 
     status = result.get("status")
-    if status in ("created", "matched"):
-        prefix = "[OK]" if status == "matched" else "[AUTO]"
-        print(f"{prefix} MCU profile: {result.get('profile_key')} ({result.get('device')})")
-        selected = result.get("selected_algorithm") or {}
+    if status == 'detected':
+        print(f"[OK] MCU: {result['device']} ({result['backend']})")
+        selected = result.get('selected_algorithm')
         if selected:
-            print(f"  FLM: {selected.get('name')}")
-        if result.get("flm_source"):
-            print(f"  FLM source: {result.get('flm_source')}")
-        if result.get("microkeen_flm"):
-            copied = " (已拷贝)" if result.get("flm_copied") else ""
-            print(f"  MICROKEEN: {result.get('microkeen_flm')}{copied}")
-        if result.get("profile_written"):
-            print(f"  profile: {result.get('profile_path')}")
-            if result.get("backup_path"):
-                print(f"  backup:  {result.get('backup_path')}")
+            print(f"  FLM: {selected['name']} (algorithm_id={selected['algorithm_id']})")
+            print(f"  Flash: 0x{selected['flash_base']:08X}, size={selected['size']}")
+        if result.get('idcode') is not None:
+            print(f"  IDCODE: 0x{result['idcode']:08X} (diagnostic only)")
         return
-
-    if status == "needs_selection":
-        print("[WARN] 发现多个内部 Flash 算法:")
-        for i, candidate in enumerate(result.get("candidates", []), 1):
-            print(f"  {i}. {candidate.get('name')} (size={candidate.get('size')})")
-        print("请用 --flm <CMSIS/Flash/xxx.FLM> 指定后重试。")
+    if status == 'needs_selection':
+        print('[WARN] 多个算法候选，使用 --flm <algorithm_id> 明确选择：')
+        for candidate in result['candidates']:
+            print(f"  {candidate['algorithm_id']}  {candidate['name']}  {candidate['source_name']}")
         return
-
     print(f"[FAIL] {result.get('message', status)}")
 
 
@@ -1906,16 +1896,14 @@ def _cli_mcu_detect(
     flm: str | None,
     json_output: bool,
 ):
-    """发现/固化 MCU profile 和 FLM。"""
-    from mklink.mcu_detect import detect_mcu_profile
+    """只读检查精确器件和统一算法目录。"""
+    from mklink.mcu_detect import inspect_mcu
 
-    result = detect_mcu_profile(
+    result = inspect_mcu(
         project_root=project_root,
         device=device,
         port=port,
         flm=flm,
-        write_profile=True,
-        copy_flm=True,
         read_idcode=bool(port),
     )
 
@@ -1924,26 +1912,28 @@ def _cli_mcu_detect(
         for i, candidate in enumerate(candidates, 1):
             print(f"  {i}. {candidate.get('name')} (size={candidate.get('size')})")
         try:
-            choice = input("选择 FLM 编号并固化（留空取消）: ").strip()
+            choice = input("选择算法编号查看详情（留空取消）: ").strip()
         except EOFError:
             choice = ""
         if choice:
             try:
-                selected = candidates[int(choice) - 1]["name"]
+                index = int(choice)
+                if not 1 <= index <= len(candidates):
+                    raise ValueError("invalid algorithm index")
+                selected = candidates[index - 1]["algorithm_id"]
             except (ValueError, IndexError, KeyError):
                 print("[FAIL] 无效选择")
-                return
-            result = detect_mcu_profile(
+                return 1
+            result = inspect_mcu(
                 project_root=project_root,
                 device=device,
                 port=port,
                 flm=selected,
-                write_profile=True,
-                copy_flm=True,
                 read_idcode=bool(port),
             )
 
     _print_mcu_detect_result(result, json_output=json_output)
+    return 0 if result.get("status") in {"detected", "needs_selection"} else 1
 
 
 def main():
@@ -2042,11 +2032,11 @@ def main():
     _add_project_root_arg(init_parser)
 
     # mcu-detect 子命令
-    mcu_detect_parser = subparsers.add_parser("mcu-detect", help="发现/固化未知 MCU profile 与 FLM")
+    mcu_detect_parser = subparsers.add_parser("mcu-detect", help="只读检查精确 MCU 与统一算法目录")
     _add_project_root_arg(mcu_detect_parser)
     mcu_detect_parser.add_argument("--device", default=None, help="MCU 型号，如 STM32H723ZETx")
     mcu_detect_parser.add_argument("--port", default=None, help="可选：连接目标读取 IDCODE")
-    mcu_detect_parser.add_argument("--flm", default=None, help="指定要固化的 PDSC 算法路径")
+    mcu_detect_parser.add_argument("--flm", default=None, help="选择算法 ID 或唯一文件名（只读）")
     mcu_detect_parser.add_argument("--json", action="store_true", help="输出 JSON")
 
     # project-info 子命令
@@ -2805,7 +2795,7 @@ def main():
     elif args.command == "project-init":
         _cli_project_init(_resolve_project_root(args))
     elif args.command == "mcu-detect":
-        _cli_mcu_detect(
+        return _cli_mcu_detect(
             _resolve_project_root(args),
             device=args.device,
             port=args.port,

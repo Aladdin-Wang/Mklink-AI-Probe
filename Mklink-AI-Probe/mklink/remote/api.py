@@ -1535,16 +1535,16 @@ def create_app(
 
     @app.post("/api/mcu-detect")
     async def mcu_detect(body: dict = Body(default={})):
-        """Detect/create an MCU profile and resolve/copy its FLM file."""
-        from mklink.mcu_detect import detect_mcu_profile
+        """Inspect catalog algorithms without changing profiles or copying files."""
+        from mklink.mcu_detect import inspect_mcu
 
         loop = asyncio.get_event_loop()
         project_root = _state["project_root"]
         device = body.get("device")
         flm = body.get("flm")
         port = body.get("port")
-        write_profile = bool(body.get("write_profile", True))
-        copy_flm = bool(body.get("copy_flm", True))
+        if set(body) - {'device', 'flm', 'port', 'read_idcode'}:
+            raise HTTPException(422, 'MCU inspection is read-only; use shared deployment for file copies')
         read_idcode = bool(body.get("read_idcode", bool(port)))
         shared_reader = None
         if read_idcode and _state.get('shared_runtime'):
@@ -1556,15 +1556,14 @@ def create_app(
             shared_reader = lambda _port: _query(_state, 'probe_idcode')['idcode']
 
         def _detect():
-            return detect_mcu_profile(
+            return inspect_mcu(
                 project_root=project_root,
                 device=device,
                 flm=flm,
                 port=port,
-                write_profile=write_profile,
-                copy_flm=copy_flm,
                 read_idcode=read_idcode,
                 idcode_reader=shared_reader,
+                paths=online_flash.paths,
             )
 
         if port and read_idcode and not _state.get('shared_runtime'):

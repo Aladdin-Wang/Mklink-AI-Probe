@@ -60,6 +60,16 @@ def build_server():
                 "guidance": "Call connect, then GUI capabilities. Read shared history while GUI captures. Disconnect detaches only this AI client."}
 
     @server.tool()
+    def inspect_mcu(project_root: str = ".", device: str | None = None, flm: str | None = None) -> dict:
+        """Read local catalog algorithms for an exact target; no profiles, disk copies or CDC I/O.
+
+        Pass an algorithm_id to select among candidates. This does not configure
+        the attached target. Actual flash jobs still require an exact target and image.
+        """
+        from mklink.mcu_detect import inspect_mcu as inspect
+        return inspect(project_root=project_root, device=device, flm=flm)
+
+    @server.tool()
     def discover_probes() -> list[dict]:
         """List physical probes, stable IDs, current COM ports and local aliases without opening CDC."""
         from mklink.probes import inventory

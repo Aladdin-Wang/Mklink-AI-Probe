@@ -1071,7 +1071,7 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
         )
         return {"detected": True}
 
-    with patch("mklink.mcu_detect.detect_mcu_profile", side_effect=detect):
+    with patch("mklink.mcu_detect.inspect_mcu", side_effect=detect):
         response = client.post("/api/mcu-detect", json={"port": "COM5"})
 
     assert response.status_code == 200
@@ -1084,7 +1084,7 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
     managers["rtt"].running = True
     with patch("mklink.remote.dashboards.get_managers", return_value=managers):
         with patch(
-            "mklink.mcu_detect.detect_mcu_profile",
+            "mklink.mcu_detect.inspect_mcu",
             return_value={"detected": True},
         ) as detect_mock:
             switched = client.post("/api/mcu-detect", json={"port": "COM5"})

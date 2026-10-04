@@ -55,7 +55,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
   超时原调用，也禁止循环发送 stop、`reboot_probe` 或 `reboot()`。
 - **AXF/ELF**：默认使用内置 pyelftools；`readelf_available:false` 不阻塞操作。
   只有用户明确指定 `elf_backend=external` 才调用外部 readelf/addr2line。
-- **未知 MCU / 共享算法**：原生或脱机路径先 `detect_mcu_profile` / `mcu-detect`；
+- **未知 MCU / 共享算法**：原生或脱机路径先 `inspect_mcu` / `mcu-detect` 只读检查统一目录；
   不能改成 `custom` 绕过匹配。缺少精确型号名称不等于没有兼容算法：先按
   [FLM 兼容性规则](references/firmware-download-priority.md#flm-兼容性)核对工程与 Pack。
   能确定唯一兼容项时显式指定；确有歧义再请用户选择，均不兼容或缺文件才停止。

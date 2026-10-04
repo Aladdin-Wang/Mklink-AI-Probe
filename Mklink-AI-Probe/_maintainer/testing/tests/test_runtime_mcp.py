@@ -276,3 +276,18 @@ def test_mcp_job_submission_uses_shared_session_and_can_query_after_disconnect(s
         assert not control.sessions
     asyncio.run(scenario())
     assert calls == ['reset']
+
+
+def test_mcp_inspects_catalog_without_attaching_hardware(monkeypatch):
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', lambda **kw: pytest.fail('Inspection attached hardware'))
+    calls = []
+    def inspect(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'detected', 'device': 'TEST', 'profile_written': False}
+    monkeypatch.setattr('mklink.mcu_detect.inspect_mcu', inspect)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            result = await mcp.call_tool('inspect_mcu', {'device': 'TEST', 'flm': 'algorithm'})
+            assert result.data['status'] == 'detected'
+    asyncio.run(scenario())
+    assert calls == [{'project_root': '.', 'device': 'TEST', 'flm': 'algorithm'}]
