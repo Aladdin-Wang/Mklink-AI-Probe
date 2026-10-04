@@ -260,3 +260,30 @@ def test_dump_cli_failure_preserves_file_and_detaches_without_retry(monkeypatch,
     with pytest.raises(SystemExit,match='Invalid shared dump'):
         cli.main()
     assert calls==['call','detach'] and target.read_bytes()==b'preserve'
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_copy_flm_cli_selects_shared_backend_and_never_retries(tmp_path, monkeypatch, capsys, fail):
+    import sys
+    from mklink import cli
+    source = tmp_path / 'test.FLM'; source.write_bytes(b'algorithm')
+    calls = []
+    def ensure(**kwargs):
+        calls.append(('select', kwargs))
+        return {'port': 8765, 'token': 'test'}
+    def request(info, method, path, body, **kwargs):
+        calls.append((method, path, body))
+        if fail:
+            raise RuntimeErrorResponse('response lost')
+        return {'files': ['FLM/test.FLM'], 'job_id': 'job'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', ensure)
+    monkeypatch.setattr('mklink.runtime.request', request)
+    monkeypatch.setattr('mklink.discovery.find_microkeen_disk', lambda: pytest.fail('CLI selected a disk directly'))
+    monkeypatch.setattr(sys, 'argv', ['mklink', 'copy-flm', '--probe', 'second', '--flm', str(source), '--request-id', 'copy-once'])
+    assert cli.main() == int(fail)
+    assert len(calls) == 2 and calls[0][1]['probe'] == 'second'
+    assert calls[1] == ('POST', '/api/offline-download/algorithm',
+                        {'source_path': str(source.resolve()), 'file_name': 'test.FLM', 'request_id': 'copy-once'})
+    output = capsys.readouterr().out
+    assert 'request_id=copy-once' in output
+    if fail:
+        assert '不要重新提交' in output

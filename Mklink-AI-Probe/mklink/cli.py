@@ -283,45 +283,46 @@ def _cli_project_init(project_root: str):
     print("[INFO] 连接时自动发现端口；烧录时按精确器件/地址选择算法，缺失或不明确时停止")
 
 
-def _cli_copy_flm(project_root: str):
-    """拷贝 FLM 文件到 MICROKEEN 磁盘。"""
+def _cli_copy_flm(project_root: str, *, probe=None, flm=None, request_id=None):
+    """Copy one algorithm through the selected backend's deployment journal."""
+    from pathlib import Path
+    import uuid
     from mklink.project_config import load_config, load_project_info
-    from mklink.discovery import check_flm_on_microkeen, copy_flm_to_microkeen
+    from mklink.discovery import resolve_keil_flm_path
     from mklink.profiles import load_mcu_profiles
+    from mklink.runtime import ensure_runtime, request, RuntimeErrorResponse
 
-    project = load_project_info(project_root)
-    if project is None:
-        print("[FAIL] 项目未配置，先运行 `python -m mklink project-init`")
-        return
-
-    flm_name = project.get("flm_name", "")
-    if not flm_name:
-        config = load_config(project_root) or {}
-        mcu_key = config.get("mcu_key", "")
-        profile = load_mcu_profiles().get(mcu_key, {})
-        flm_path = str(profile.get("flm_path", "")).replace("\\", "/")
-        if flm_path:
-            flm_name = flm_path.split("/")[-1]
-    if not flm_name:
-        print("[FAIL] 未找到 FLM 配置")
-        print("提示: 先运行 `python -m mklink mcu-detect` 固化 MCU profile")
-        return
-
-    # 检查是否已存在
-    exists, path = check_flm_on_microkeen(flm_name)
-    if exists:
-        print(f"[OK] FLM 已存在: {path}")
-        return
-
-    # 执行拷贝
-    success, dest = copy_flm_to_microkeen(flm_name)
-    if not success:
-        print(f"[FAIL] FLM '{flm_name}' 拷贝失败")
-        print("请确保：")
-        print("  1. [MICROKEEN] 磁盘已插入")
-        print("  2. Keil/Arm Pack 已安装且包含该芯片的 FLM")
-    else:
-        print(f"[OK] 已拷贝 FLM: {dest}")
+    source = flm
+    if not source:
+        project = load_project_info(project_root)
+        if project is None:
+            print("[FAIL] 项目未配置，先运行 project-init 或用 --flm 指定本地算法")
+            return 1
+        flm_name = project.get("flm_name", "")
+        if not flm_name:
+            config = load_config(project_root) or {}
+            profile = load_mcu_profiles().get(config.get("mcu_key", ""), {})
+            flm_name = str(profile.get("flm_path", "")).replace("\\", "/").split("/")[-1]
+        if not flm_name:
+            print("[FAIL] 未找到 FLM 配置；用 --flm 指定本地算法")
+            return 1
+        source = resolve_keil_flm_path(flm_name)
+    if not source or not Path(source).is_file() or Path(source).suffix.casefold() != '.flm':
+        print("[FAIL] 本地 FLM 文件不存在；请检查工程算法或 --flm 路径")
+        return 1
+    source = Path(source).resolve()
+    request_id = request_id or uuid.uuid4().hex
+    try:
+        info = ensure_runtime(project_root=project_root, probe=probe)
+        print(f"[*] request_id={request_id}", flush=True)
+        result = request(info, 'POST', '/api/offline-download/algorithm',
+                         {'source_path': str(source), 'file_name': source.name, 'request_id': request_id}, timeout=120)
+    except RuntimeErrorResponse as error:
+        print(f"[FAIL] {error}")
+        print(f"保留 request_id={request_id}，通过共享任务记录查询；结果未知时不要重新提交。")
+        return 1
+    print(f"[OK] FLM 已校验部署: {result['files'][0]} (job_id={result['job_id']})")
+    return 0
 
 
 def _cli_project_info(project_root: str):
@@ -2079,6 +2080,9 @@ def main():
     # copy-flm 子命令
     copy_flm_parser = subparsers.add_parser("copy-flm", help="拷贝 FLM 文件到 MICROKEEN 磁盘")
     _add_project_root_arg(copy_flm_parser)
+    copy_flm_parser.add_argument("--probe", default=None, help="下载器 ID、别名或命令端口，多设备时必须选择")
+    copy_flm_parser.add_argument("--flm", default=None, help="本地 FLM 文件；省略时使用工程算法")
+    copy_flm_parser.add_argument("--request-id", default=None, help="操作请求 ID，用于结果查询与去重")
 
     # flash 子命令（一站式烧录）
     flash_parser = subparsers.add_parser("flash", help="通过共享后台烧录 HEX/BIN")
@@ -2819,7 +2823,7 @@ def main():
     elif args.command == "systemview-integrate":
         _cli_systemview_integrate(_resolve_project_root(args), sv_dir=args.sv_dir)
     elif args.command == "copy-flm":
-        _cli_copy_flm(_resolve_project_root(args))
+        return _cli_copy_flm(_resolve_project_root(args), probe=args.probe, flm=args.flm, request_id=args.request_id)
     elif args.command in ("resources", "resource"):
         _cli_resources(args)
     elif args.command == "symbols":

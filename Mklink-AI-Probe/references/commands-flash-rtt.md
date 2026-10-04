@@ -260,8 +260,10 @@ XPI 基址按芯片族选择：
 
 **禁止兜底规则：** 非 HPM 项目识别出新 MCU 时，不要把 `.mklink/config.json` 改成 `custom` 直接烧录。必须先 `mcu-detect` 成功固化 profile。
 
-#### `python -m mklink copy-flm`
-自动将项目/profile 对应的 FLM 文件从 Keil 安装目录或 Arm Pack 拷贝到 MICROKEEN 磁盘的 FLM 目录。
+#### `python -m mklink copy-flm --probe <ID或别名> [--flm <本地算法.FLM>] [--request-id <请求ID>]`
+通过选定探针的共享后台，将本地算法校验部署到身份绑定磁盘的 FLM 目录。省略 `--flm` 时从旧项目/profile 配置解析 Keil 算法；多探针必须指定 `--probe`。同名内容不同的目标由既有脱机事务备份后替换，失败时回滚；不会触发烧录。
+
+命令先输出请求 ID，结果记录在共享任务日志。响应丢失时用 `python -m mklink runtime jobs --probe <ID或别名>` 查询并匹配 `request_id`，不要重新提交未知结果。日志只保留最近64项，缺失不代表未执行。同一请求 ID 及相同内容不会重复复制；更改内容或目标文件名必须使用新 ID。
 
 如果项目 MCU 还没有 profile，先运行 `python -m mklink mcu-detect`。
 

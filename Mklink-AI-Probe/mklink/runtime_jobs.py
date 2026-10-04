@@ -16,6 +16,8 @@ executing_job = ContextVar('mklink_executing_job', default=None)
 PATHS = {'flash': '/api/device/flash', 'erase': '/api/device/erase',
          'erase_sector': '/api/device/erase-sector', 'reset': '/api/device/reset'}
 TERMINAL = {'succeeded', 'failed', 'unknown'}
+DEPLOYMENT_PATHS = {'offline_deploy': '/api/offline-download/deploy',
+                    'flm_copy': '/api/offline-download/algorithm'}
 
 
 class RuntimeJobs:
@@ -101,14 +103,15 @@ class RuntimeJobs:
             raise HTTPException(409, 'request_id already belongs to a different operation')
         return previous
 
-    async def record_deployment(self, request_id, fingerprint, operation):
+    async def record_deployment(self, request_id, fingerprint, operation, *, action='offline_deploy'):
         """Journal a deployment inside its existing request/temporary-file lifetime."""
         from mklink.runtime_api import active_operation
         current = active_operation.get()
         c = self.control
         if (not current or current[0] is not c or not c.operation_lock.locked()
                 or not c.current_operation
-                or c.current_operation['path'] != '/api/offline-download/deploy'):
+                or action not in DEPLOYMENT_PATHS
+                or c.current_operation['path'] != DEPLOYMENT_PATHS[action]):
             raise HTTPException(409, 'Deployment requires shared runtime admission')
         previous = self._previous(request_id, fingerprint)
         if previous:
@@ -117,7 +120,7 @@ class RuntimeJobs:
             raise HTTPException(503, 'Deployment journal unavailable; no operation was started')
         if self.active:
             raise HTTPException(409, 'Another exclusive job is active')
-        job = self._accept('offline_deploy', request_id, fingerprint)
+        job = self._accept(action, request_id, fingerprint)
         async def recovery(directory):
             # Called on the owning event loop, before the worker modifies the disk.
             previous = job.pop('recovery_directory', None)
@@ -179,7 +182,7 @@ class RuntimeJobs:
             job['state'] = 'failed' if result.get('success') is False or result.get('status') == 'failed' else 'succeeded'
         except HTTPException as exc:
             job.update(state='failed' if exc.status_code < 500 else 'unknown', error=str(exc.detail)[:2048])
-            if (job['action'] == 'offline_deploy' and isinstance(exc.detail, dict)
+            if (job['action'] in DEPLOYMENT_PATHS and isinstance(exc.detail, dict)
                     and exc.detail.get('code') == 'OFFLINE_RECOVERY_REQUIRED'):
                 job['recovery_directory'] = str(exc.detail.get('recovery_directory', ''))[:2048]
         except BaseException as exc:

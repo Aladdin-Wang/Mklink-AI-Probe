@@ -55,7 +55,6 @@ def test_init_offline_minimal_and_preserves_custom_settings(tmp_path, monkeypatc
     def forbidden(*args, **kwargs):
         pytest.fail("project-init must not discover hardware or profiles")
     monkeypatch.setattr(discovery, "find_mklink_cdc_port", forbidden)
-    monkeypatch.setattr(discovery, "copy_flm_to_microkeen", forbidden)
     monkeypatch.setattr("mklink.mcu_detect.detect_mcu_profile", forbidden)
     _cli_project_init(str(tmp_path))
     assert load_config(str(tmp_path)) == {"swd_clock": 1000000}

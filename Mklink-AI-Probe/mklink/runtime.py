@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 36  # MCU discovery reads IDCODE through the shared probe query.
+PROTOCOL = 37  # FLM-only copies use the shared deployment journal.
 VERSION = "0.3.0"
 
 

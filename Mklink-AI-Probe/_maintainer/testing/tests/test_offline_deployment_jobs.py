@@ -324,3 +324,103 @@ with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'
     finally:
         if process.poll() is None: process.kill()
         process.communicate(timeout=10)
+
+@pytest.fixture
+def algorithm_copy(deployment, tmp_path):
+    client, control, disk, _, _ = deployment
+    source = tmp_path / 'local.FLM'
+    source.write_bytes(b'algorithm')
+    def submit(**changes):
+        body = dict(source_path=str(source), file_name='Device.FLM', request_id='algorithm-one')
+        body.update(changes)
+        return client.post('/api/offline-download/algorithm', json=body)
+    return client, control, disk, source, submit
+
+
+def test_algorithm_copy_is_journaled_deduplicated_and_content_bound(algorithm_copy, tmp_path, monkeypatch):
+    client, control, disk, source, submit = algorithm_copy
+    first = submit()
+    assert first.status_code == 200, first.text
+    result = first.json()
+    assert result['state'] == 'succeeded' and result['files'] == ['FLM/Device.FLM']
+    assert (disk / 'FLM/Device.FLM').read_bytes() == b'algorithm'
+    def forbidden(*args, **kwargs):
+        pytest.fail('Duplicate algorithm copy reached the disk')
+    monkeypatch.setattr('mklink.offline_download._transactional_copy', forbidden)
+    identical = tmp_path / 'different-source.FLM'; identical.write_bytes(source.read_bytes())
+    assert submit(source_path=str(identical)).json()['job_id'] == result['job_id']
+    source.write_bytes(b'changed')
+    assert submit().status_code == 409
+    assert submit(file_name='Other.FLM').status_code == 409
+    job = client.get('/api/runtime/jobs/' + result['job_id']).json()
+    assert job['action'] == 'flm_copy' and 'recovery_directory' not in job
+    assert RuntimeJobs(control).jobs[job['job_id']]['state'] == 'succeeded'
+
+
+@pytest.mark.parametrize('changes', [dict(file_name='../bad.FLM'), dict(file_name='not.exe'),
+                                    dict(source_path=''), dict(request_id=''), dict(unexpected=True)])
+def test_algorithm_invalid_inputs_never_accept_a_job(algorithm_copy, changes):
+    _, control, disk, _, submit = algorithm_copy
+    assert submit(**changes).status_code == 422
+    assert not control.jobs.jobs and not list(disk.rglob('*'))
+
+
+def test_algorithm_journal_failure_never_writes(algorithm_copy, monkeypatch):
+    _, control, disk, _, submit = algorithm_copy
+    def fail(): raise OSError('journal unavailable')
+    monkeypatch.setattr(control.jobs, 'save', fail)
+    assert submit().status_code == 503
+    assert not control.jobs.jobs and not list(disk.rglob('*'))
+
+
+def test_algorithm_frozen_input_and_changed_volume_rejection(algorithm_copy, monkeypatch, tmp_path):
+    from mklink.remote import offline_download_api as api
+    _, control, disk, source, submit = algorithm_copy
+    original = api._deployment_inputs
+    def freeze(*args):
+        fingerprint = original(*args)
+        source.write_bytes(b'changed after snapshot')
+        return fingerprint
+    monkeypatch.setattr(api, '_deployment_inputs', freeze)
+    assert submit().status_code == 200
+    assert (disk / 'FLM/Device.FLM').read_bytes() == b'algorithm'
+    other = tmp_path / 'different-volume'; other.mkdir()
+    def switch(*args):
+        fingerprint = original(*args)
+        monkeypatch.setattr('mklink.probe_volumes.resolve_volume', lambda _: {'root': str(other)})
+        return fingerprint
+    monkeypatch.setattr(api, '_deployment_inputs', switch)
+    response = submit(request_id='second-copy')
+    assert response.status_code == 409, response.text
+    assert response.json()['detail']['state'] == 'failed'
+    assert not list(other.rglob('*'))
+    assert (disk / 'FLM/Device.FLM').read_bytes() == b'algorithm'
+
+@pytest.mark.parametrize('conflict', ['capture', 'identity', 'job'])
+def test_algorithm_copy_obeys_shared_admission(algorithm_copy, monkeypatch, conflict):
+    _, control, disk, _, submit = algorithm_copy
+    if conflict == 'capture':
+        monkeypatch.setattr('mklink.remote.dashboards.active_bridge_dashboards', lambda: ['rtt'])
+    elif conflict == 'identity':
+        def missing(): raise HTTPException(409, 'probe missing')
+        monkeypatch.setattr(control, 'require_identity', missing)
+    else:
+        monkeypatch.setattr(control, 'job_busy', lambda: True)
+    assert submit().status_code == 409
+    assert not control.jobs.jobs and not list(disk.rglob('*'))
+
+
+def test_algorithm_failed_recovery_retains_queryable_directory(algorithm_copy, monkeypatch, tmp_path):
+    from mklink.offline_download import OfflineRecoveryError
+    client, control, _, _, submit = algorithm_copy
+    recovery = tmp_path / 'recovery'; recovery.mkdir()
+    def fail(*args):
+        raise OfflineRecoveryError(recovery)
+    monkeypatch.setattr('mklink.offline_download._transactional_copy', fail)
+    response = submit()
+    assert response.status_code == 500, response.text
+    detail = response.json()['detail']
+    assert detail['code'] == 'OFFLINE_RECOVERY_REQUIRED' and detail['state'] == 'unknown'
+    job = client.get('/api/runtime/jobs/' + detail['job_id']).json()
+    assert job['recovery_directory'] == str(recovery)
+    assert RuntimeJobs(control).jobs[job['job_id']]['action'] == 'flm_copy'

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T22:17:52.4538742Z`
+- 更新时间：`2026-10-04T22:26:53.3368161Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：130脱机事务目标写入/恢复统一复用copy_verified，119短测通过含损坏读回/恢复失败备份保留/子进程强杀；源码API真实三文件部署、双AI保持、双盘恢复和后台退出通过。完整独立CLI事务迁移仍待做，长期暂停。
+- 当前任务：131 copy-flm已完整接入共享后台/身份卷/RuntimeJobs，新增--probe/--flm/--request-id并删除旧直接复制函数；167短测、真实双V4 CLI复制/去重/双AI保持/双盘恢复通过。协议37；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议36，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议37，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对130提交CI；129三项已通过。现有offline_download事务已统一校验写入/恢复，继续复用它和RuntimeJobs收敛mcu-detect/copy-flm完整操作，避免平行事务实现；随后处理CLI security和旧MCP。NSIS UAC、物理中断和长期限制保留。
+2. 核对131提交CI；130三项已通过。copy-flm已复用完整部署的冻结输入/事务/日志，接下来收敛mcu-detect的配置保存和复制，再处理CLI security及旧MCP。旧后台协议不兼容须显式退出，不自动接管。NSIS UAC、物理中断和长期限制保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

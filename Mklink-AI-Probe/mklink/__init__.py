@@ -85,7 +85,7 @@ def __getattr__(name: str):
         return burn_hex_file
     if name in ("find_mklink_cdc_port", "list_available_ports",
                 "find_microkeen_disk", "get_microkeen_flm_path", "check_flm_on_microkeen",
-                "resolve_keil_flm_path", "copy_flm_to_microkeen"):
+                "resolve_keil_flm_path"):
         from mklink import discovery
         return getattr(discovery, name)
     if name == "connect_remote":
@@ -117,7 +117,7 @@ __all__ = [
     "find_mklink_cdc_port", "list_available_ports",
     # MICROKEEN 磁盘（lazy）
     "find_microkeen_disk", "get_microkeen_flm_path", "check_flm_on_microkeen",
-    "resolve_keil_flm_path", "copy_flm_to_microkeen",
+    "resolve_keil_flm_path",
     # RTT 工具
     "find_rtt_addr_from_map", "generate_autostart_config",
     # RTT 集成

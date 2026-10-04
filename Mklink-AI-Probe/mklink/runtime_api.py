@@ -334,7 +334,7 @@ class RuntimeGate:
                 return await reject(exc.status_code, exc.detail)
         if path == '/api/probe/firmware-upgrade':
             return await reject(409, 'Bootloader re-enumeration is not identity-bound yet; use an explicit maintenance session')
-        if path in {'/api/offline-download/deploy', '/api/offline-download/trigger'}:
+        if path in {'/api/offline-download/deploy', '/api/offline-download/trigger', '/api/offline-download/algorithm'}:
             try:
                 c.require_identity()
                 from mklink.probe_volumes import resolve_volume
