@@ -809,7 +809,10 @@ def create_offline_download_router(
                             algorithm.source_token or "",
                             temp / f"pack-{algorithm.id}.flm",
                         )
-                async def perform():
+                async def perform(recovery=None):
+                    loop = asyncio.get_running_loop()
+                    def record_recovery(directory):
+                        asyncio.run_coroutine_threadsafe(recovery(directory), loop).result()
                     try:
                         if runtime is not None:
                             from mklink.probe_volumes import resolve_volume
@@ -824,6 +827,7 @@ def create_offline_download_router(
                             deploy_offline_bundle, config, disk_root,
                             firmware_sources=firmware_sources,
                             algorithm_sources=algorithm_sources,
+                            recovery_callback=record_recovery if recovery is not None else None,
                         )
                     except OfflineRecoveryError as error:
                         raise HTTPException(500, detail={

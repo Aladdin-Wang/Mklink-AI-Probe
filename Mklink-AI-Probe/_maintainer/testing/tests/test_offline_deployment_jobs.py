@@ -46,6 +46,7 @@ def test_same_request_uses_content_not_temporary_path_and_never_writes_twice(dep
     assert submit(content=b'changed').status_code == 409
     job = client.get('/api/runtime/jobs/' + job_id).json()
     assert job['state'] == 'succeeded' and job['request_id'] == 'deployment-one'
+    assert 'recovery_directory' not in job
     assert RuntimeJobs(control).jobs[job_id]['state'] == 'succeeded'
     assert (disk / 'rt-thread.hex').read_bytes() == b':00000001FF\n'
 
@@ -58,6 +59,32 @@ def test_accept_save_failure_never_modifies_disk(deployment, monkeypatch):
     assert not list(disk.rglob('*')) and not control.jobs.jobs
 
 
+def test_recovery_registration_failure_never_modifies_disk(deployment, monkeypatch):
+    import threading
+    _, control, disk, _, submit = deployment
+    destination = disk / 'rt-thread.hex'
+    destination.write_bytes(b'original')
+    original = control.jobs.save
+    directories, threads = [], set()
+    def save():
+        threads.add(threading.get_ident())
+        job = next(iter(control.jobs.jobs.values()))
+        if job.get('recovery_directory'):
+            directories.append(Path(job['recovery_directory']))
+            raise OSError('recovery journal unavailable')
+        original()
+    monkeypatch.setattr(control.jobs, 'save', save)
+    response = submit()
+    assert response.status_code == 409, response.text
+    assert response.json()['detail']['state'] == 'failed'
+    assert destination.read_bytes() == b'original'
+    assert list(disk.iterdir()) == [destination]
+    assert len(directories) == 1 and not directories[0].exists()
+    assert len(threads) == 1  # Worker callbacks never mutate the journal concurrently.
+    job = RuntimeJobs(control).jobs[response.json()['detail']['job_id']]
+    assert 'recovery_directory' not in job
+
+
 def test_terminal_save_failure_retains_unknown_without_replay(deployment, monkeypatch):
     _, control, disk, _, submit = deployment
     original = control.jobs.save
@@ -65,7 +92,7 @@ def test_terminal_save_failure_retains_unknown_without_replay(deployment, monkey
     def fail_terminal():
         nonlocal count
         count += 1
-        if count > 1: raise OSError('terminal journal unavailable')
+        if control.jobs.active is None: raise OSError('terminal journal unavailable')
         original()
     monkeypatch.setattr(control.jobs, 'save', fail_terminal)
     response = submit()
@@ -74,7 +101,7 @@ def test_terminal_save_failure_retains_unknown_without_replay(deployment, monkey
     assert detail['state'] == 'unknown'
     assert RuntimeJobs(control).jobs[detail['job_id']]['state'] == 'unknown'
     assert submit().json()['detail']['job_id'] == detail['job_id']
-    assert count == 2
+    assert count == 4
 
 
 def test_recovery_directory_survives_reload(deployment, tmp_path, monkeypatch):
@@ -229,15 +256,18 @@ with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'
         assert marker.exists(), 'deployment did not reach destination write'
         accepted = json.loads(control.jobs.path.read_text())[0]
         assert accepted['state'] == 'running'
+        assert Path(accepted['recovery_directory']).is_dir()
         process.kill()
         process.wait(timeout=10)
         assert destination.read_bytes() == b':00000001FF\n'
         backups = list(staging.glob('mklink-offline-staging-*/backup/rt-thread.hex'))
         assert len(backups) == 1 and backups[0].read_bytes() == b'original'
+        assert backups[0] == Path(accepted['recovery_directory']) / 'backup' / 'rt-thread.hex'
         restored = RuntimeJobs(control)
         control.jobs.jobs.update(restored.jobs)
         job = client.get('/api/runtime/jobs/' + accepted['job_id']).json()
         assert job['state'] == 'unknown'
+        assert job['recovery_directory'] == accepted['recovery_directory']
         timestamp = destination.stat().st_mtime_ns
         result = submit()
         assert result.status_code == 500, result.text

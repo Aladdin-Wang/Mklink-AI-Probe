@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from typing import Mapping, Optional, Sequence, Union
+from typing import Callable, Mapping, Optional, Sequence, Union
 
 from mklink.offline_security import OfflineSecurityPlan, resolve_offline_security
 from mklink.hpm_offline_otp import OfflineOtp, resolve as resolve_hpm_otp, script_lines as otp_script_lines
@@ -657,6 +657,7 @@ def _same_file_content(first: Path, second: Path) -> bool:
 def _transactional_copy(
     disk_root: Path,
     files: Sequence[tuple[Path, Optional[Path], Optional[bytes]]],
+    recovery_callback: Optional[Callable[[Optional[Path]], None]] = None,
 ) -> list[str]:
     stage = Path(tempfile.mkdtemp(prefix="mklink-offline-staging-"))
     backup_root = stage / "backup"
@@ -675,6 +676,8 @@ def _transactional_copy(
                 else:
                     staged.write_bytes(content or b"")
 
+            if recovery_callback is not None:
+                recovery_callback(stage)
             for relative, _source, _content in files:
                 relative = _relative_destination(relative)
                 destination = disk_root / relative
@@ -736,6 +739,8 @@ def _transactional_copy(
                 else:
                     raise error[1]
             shutil.rmtree(stage, onerror=remove_readonly)
+            if recovery_callback is not None:
+                recovery_callback(None)
 
 
 def deploy_offline_bundle(
@@ -744,6 +749,7 @@ def deploy_offline_bundle(
     *,
     firmware_sources: SourceCollection,
     algorithm_sources: SourceCollection,
+    recovery_callback: Optional[Callable[[Optional[Path]], None]] = None,
 ) -> dict:
     disk = Path(disk_root).resolve()
     if not disk.is_dir():
@@ -840,7 +846,7 @@ def deploy_offline_bundle(
     plan.append(
         (script_relative, None, generate_offline_script(config).encode("utf-8"))
     )
-    deployed = _transactional_copy(disk, plan)
+    deployed = _transactional_copy(disk, plan, recovery_callback)
     return {
         "status": "deployed",
         "model": config.model,

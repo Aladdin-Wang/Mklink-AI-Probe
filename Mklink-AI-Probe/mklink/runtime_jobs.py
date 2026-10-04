@@ -118,7 +118,19 @@ class RuntimeJobs:
         if self.active:
             raise HTTPException(409, 'Another exclusive job is active')
         job = self._accept('offline_deploy', request_id, fingerprint)
-        await self._execute_operation(job, operation)
+        async def recovery(directory):
+            # Called on the owning event loop, before the worker modifies the disk.
+            previous = job.pop('recovery_directory', None)
+            if directory is not None:
+                job['recovery_directory'] = str(directory)
+            try:
+                self.save()
+            except OSError:
+                job.pop('recovery_directory', None)
+                if previous is not None:
+                    job['recovery_directory'] = previous
+                raise
+        await self._execute_operation(job, lambda: operation(recovery))
         return job
 
     def _accept(self, action, request_id, fingerprint):
