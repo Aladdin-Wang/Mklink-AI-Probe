@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T19:07:33.372737+00:00`
+- 更新时间：`2026-10-04T19:10:33.983936+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; journal admission rollback after fdf211e2; use Git for exact tip.`
+- HEAD：`Based on main d4e73bd; physical idle-backend kill verification of 2957343b; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第98批修复满64条任务日志在新任务保存失败时丢失旧去重记录；76项回归通过，真实子进程强杀后任务恢复unknown并且原request_id不重放。子进程使用模拟操作，不等于CDC/断电验收。 持续推进。
+- 当前任务：第99批2957343b源码双V4真机空闲后台强杀通过：F103后台强杀后HPM实例和访问保持，F103重启新令牌/实例，旧客户端拒绝，显式重连成功；自建进程和端点全清理。无烧录/复位/供电操作。 继续长稳和操作中异常验证。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第98节：第98批修复满64条任务日志在新任务保存失败时丢失旧去重记录；76项回归通过，真实子进程强杀后任务恢复unknown并且原request_id不重放。子进程使用模拟操作，不等于CDC/断电验收。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第99节：第99批2957343b源码双V4真机空闲后台强杀通过：F103后台强杀后HPM实例和访问保持，F103重启新令牌/实例，旧客户端拒绝，显式重连成功；自建进程和端点全清理。无烧录/复位/供电操作。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,13 +35,13 @@
 
 ## 真机环境
 
-- **state**：第94批基于33ff94c1便携包完整构建审计及双V4/F103/HPM本机LAN物理MSC部署通过：精简系统PATH、正常导入RE Pack，三个唯一测试文件哈希正确/App0x08005000，原盘与邻居不变；测试文件清理后两盘快照恢复，监听退出保留本地SDK，后台全退出。未触发脚本或烧录。 私有agent94-hil结果和部署响应保留.build；无复位、供电或下载器固件修改。
+- **state**：第99批2957343b源码双V4真机空闲后台强杀通过：F103后台强杀后HPM实例和访问保持，F103重启新令牌/实例，旧客户端拒绝，显式重连成功；自建进程和端点全清理。无烧录/复位/供电操作。 私有runtime99-hil/result.json保存结果。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 核对97/98批CI；97批Feedback已成功、Shared run37226845037仍运行。继续持久部署结果查询、真实后台硬杀生命周期与长稳；98批仅模拟操作子进程日志强杀通过。便携候选仍为94批，不含95至98修复。NSIS安装UAC待答复，不运行安装器。
+1. 核对98/99批CI：98批Feedback成功、Shared run37227074111仍运行；97批共享CI已被后继取消。99批源码双探针空闲后台强杀通过，尚需采集中/写操作中异常、长稳及部署持久查询。便携候选仍为94批，不含95至98修复。NSIS安装UAC待答复，不运行安装器。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
