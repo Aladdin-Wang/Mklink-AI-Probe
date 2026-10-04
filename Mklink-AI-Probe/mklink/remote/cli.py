@@ -502,21 +502,14 @@ def agent_main(argv: Sequence[str] | None = None) -> int:
         ),
     )
 
-    def device_factory(*, port: str | None = None, axf: str | None = None):
-        import mklink
-
-        return mklink.connect(
-            port=port,
-            axf=axf,
-            project_root=args.project_root,
-        )
 
     try:
         return run_agent(
             config,
-            device_factory=device_factory,
+            device_factory=dispatcher.connect_target,
             capability_provider=dispatcher.capabilities,
             request_dispatcher=dispatcher.dispatch,
+            client_closed=dispatcher.client_closed,
         )
     except KeyboardInterrupt:
         return 130

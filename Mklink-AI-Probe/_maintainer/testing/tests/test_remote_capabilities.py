@@ -110,7 +110,9 @@ def test_every_declared_operation_has_dispatch_mapping_or_explicit_group_router(
     string_operations = set(
         re.findall(r"[\"']([a-z_]+(?:\.[a-z_]+)+)[\"']", source)
     )
-    grouped = ("transfer.", "serial.", "modbus.")
+    from mklink.remote.shared_target import OPERATIONS
+    string_operations.update(OPERATIONS)
+    grouped = ("transfer.", "serial.", "modbus.", "rtt.", "systemview.")
 
     for operation in OPERATION_SCHEMAS:
         assert operation in string_operations or operation.startswith(grouped), operation

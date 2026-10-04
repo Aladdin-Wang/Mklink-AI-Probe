@@ -226,14 +226,6 @@ def _start(args: argparse.Namespace, token: str | None) -> int:
     dispatcher = OperationDispatcher(args.project_root, runtime_probe=args.device_port)
     transport = _stcp_session(args, token)
 
-    def device_factory(*, port: str | None = None, axf: str | None = None):
-        import mklink
-
-        return mklink.connect(
-            port=port,
-            axf=axf,
-            project_root=args.project_root,
-        )
 
     def on_ready(status: dict[str, Any]) -> None:
         tunnel = (
@@ -287,9 +279,10 @@ def _start(args: argparse.Namespace, token: str | None) -> int:
     )
     agent = SiteAgent(
         config,
-        device_factory,
+        dispatcher.connect_target,
         capability_provider=dispatcher.capabilities,
         request_dispatcher=dispatcher.dispatch,
+        client_closed=dispatcher.client_closed,
     )
     previous = _install_signal_handlers(agent)
     try:

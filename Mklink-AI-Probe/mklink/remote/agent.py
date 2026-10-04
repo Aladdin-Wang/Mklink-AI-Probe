@@ -607,15 +607,10 @@ class SiteAgent:
             self._target_lifecycle.leave_dispatch()
 
 
-def _default_device_factory(*, port: str | None = None, axf: str | None = None) -> Any:
-    import mklink
-    return mklink.connect(port=port, axf=axf)
-
-
 def run_agent(
     config: AgentConfig,
     *,
-    device_factory: Callable[..., Any] = _default_device_factory,
+    device_factory: Callable[..., Any],
     capability_provider: CapabilityProvider | None = None,
     request_dispatcher: RequestDispatcher | None = None,
     client_closed: Callable[[str], Any] | None = None,

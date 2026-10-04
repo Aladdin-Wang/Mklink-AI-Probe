@@ -3573,14 +3573,18 @@ def create_app(
                 raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/api/device/hardfault-detail")
-    async def hardfault_detail():
+    @app.post("/api/device/hardfault-detail")
+    async def hardfault_detail(fault_regs: dict | None = Body(None, embed=True)):
+        if fault_regs is not None and any(not isinstance(k, str) or type(v) is not int or not 0 <= v <= 0xFFFFFFFF for k, v in fault_regs.items()):
+            raise HTTPException(status_code=422, detail="Fault registers must be unsigned 32-bit integers")
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
         async with async_target_debug_lease(_state, "hardfault-detail"):
             try:
                 loop = asyncio.get_event_loop()
                 report = await loop.run_in_executor(
-                    None, _state["device"].decode_hardfault
+                    None, lambda: (_state["device"].decode_hardfault() if fault_regs is None
+                                   else _state["device"].decode_hardfault(fault_regs))
                 )
                 if report is None:
                     return {"fault": None, "summary": "No HardFault detected"}

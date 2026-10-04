@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 31  # Native erasure prepares an exact algorithm through persistent jobs.
+PROTOCOL = 32  # Shared Agent target catalog and fault capabilities.
 VERSION = "0.3.0"
 
 
