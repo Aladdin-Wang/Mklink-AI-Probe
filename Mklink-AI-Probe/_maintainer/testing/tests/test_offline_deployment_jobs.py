@@ -104,6 +104,49 @@ def test_terminal_save_failure_retains_unknown_without_replay(deployment, monkey
     assert count == 4
 
 
+@pytest.mark.parametrize('terminal_save_fails', [False, True])
+def test_cleared_recovery_journal_failure_never_replays_completed_copy(deployment, monkeypatch, terminal_save_fails):
+    _, control, disk, _, submit = deployment
+    original = control.jobs.save
+    saved_recovery = None
+    clear_failed = False
+    def save():
+        nonlocal saved_recovery, clear_failed
+        job = next(iter(control.jobs.jobs.values()))
+        if saved_recovery is not None and 'recovery_directory' not in job:
+            clear_failed = True
+            raise OSError('cleared recovery journal unavailable')
+        if clear_failed and terminal_save_fails:
+            raise OSError('terminal journal unavailable')
+        original()
+        if job.get('recovery_directory'):
+            saved_recovery = Path(job['recovery_directory'])
+    monkeypatch.setattr(control.jobs, 'save', save)
+    response = submit()
+    assert response.status_code == 500, response.text
+    detail = response.json()['detail']
+    assert detail['state'] == 'unknown'
+    assert clear_failed and saved_recovery is not None
+    assert detail['recovery_directory'] == str(saved_recovery)
+    assert not saved_recovery.exists()  # A recorded location is not proof of retained files.
+    snapshot = {str(path.relative_to(disk)): (path.read_bytes(), path.stat().st_mtime_ns)
+                for path in disk.rglob('*') if path.is_file()}
+    assert snapshot['rt-thread.hex'][0] == b':00000001FF\n'
+    assert len(snapshot) == 3
+    restored = RuntimeJobs(control)
+    assert restored.jobs[detail['job_id']]['state'] == 'unknown'
+    assert restored.jobs[detail['job_id']]['recovery_directory'] == str(saved_recovery)
+    control.jobs.jobs.update(restored.jobs)
+    def forbidden(*args, **kwargs):
+        pytest.fail('uncertain deployment replayed after journal reload')
+    monkeypatch.setattr('mklink.remote.offline_download_api.deploy_offline_bundle', forbidden)
+    duplicate = submit()
+    assert duplicate.status_code == 500, duplicate.text
+    assert duplicate.json()['detail']['job_id'] == detail['job_id']
+    assert snapshot == {str(path.relative_to(disk)): (path.read_bytes(), path.stat().st_mtime_ns)
+                        for path in disk.rglob('*') if path.is_file()}
+
+
 def test_recovery_directory_survives_reload(deployment, tmp_path, monkeypatch):
     from mklink.offline_download import OfflineRecoveryError
     _, control, _, _, submit = deployment

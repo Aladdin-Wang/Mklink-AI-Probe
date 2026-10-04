@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T21:07:59.0296194+00:00`
+- 更新时间：`2026-10-04T21:10:14.1292033+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：118批修复GUI成功查询后再次查询失败仍允许新部署的问题：查询开始进入不确定状态，仅成功记录解除。先复现后修复，GUI31项、类型/构建及真实Chrome受控查询通过。长期暂停。
+- 当前任务：119批补清理恢复目录日志失败及后续终态保存失败测试：已完成写盘仍unknown，重载和重复请求不重写，22项通过；无生产代码修改。118 GUI状态修复已通过浏览器受控验证。长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
