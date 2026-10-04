@@ -55,8 +55,7 @@ MCP_MAX_RTT_PATTERN_BYTES = 256
 
 
 # --------------------------------------------------------------------------
-# Lazy Device singleton (double-checked locking).
-# Mirrors controller-vtfp-builder vtfp_core/mcp/mcp_server_base.py:71-96.
+# Legacy session state, populated by the explicit connect tool.
 # --------------------------------------------------------------------------
 _lock = threading.Lock()
 _operation_lock = threading.RLock()
@@ -151,27 +150,6 @@ def _capabilities() -> dict[str, Any]:
             "device_status, then disconnect before reconnecting"
         ),
     }
-
-
-def configure_device(**kwargs: Any) -> None:
-    """Set Device constructor kwargs (port/axf/mcu/project_root)."""
-    with _lock:
-        _holder["kwargs"] = dict(kwargs)
-
-
-def _get_device() -> Any:
-    """Return the lazy Device singleton, constructing it if absent."""
-    d = _holder["device"]
-    if d is not None:
-        return d
-    with _lock:
-        d = _holder["device"]
-        if d is not None:
-            return d
-        from mklink.device import Device
-        d = Device(**_holder["kwargs"])
-        _holder["device"] = d
-        return d
 
 
 def _connected_device() -> Any:
@@ -1822,4 +1800,4 @@ def run() -> None:
                     pass
 
 
-__all__ = ["build_server", "run", "configure_device"]
+__all__ = ["build_server", "run"]

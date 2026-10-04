@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T21:48:55.6914448+00:00`
+- 更新时间：`2026-10-04T21:55:45.4596210Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：125真实Chrome确认124b包F103安全能力恢复显示，选项均未勾选，无部署/触发POST；双AI保持、双盘无变化、后台清理通过。124共享后台CI待核对，API暂时EOF；长期暂停。
+- 当前任务：126复核CLI/MCP调用链，删除旧MCP无调用的configure_device/_get_device，33短测通过。确认mcu-detect可选IDCODE和CLI security仍有独立连接链，需迁移；125三项CI通过，长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 124b新包内置算法能力已通过独立哈希、支持矩阵及125真实GUI显示验证。核对791bc382共享后台运行37237355741，最近GitHub查询EOF不是失败；继续整体架构收敛。NSIS UAC、物理中断/其他未验边界保留；长期任务不可自动恢复。
+2. 继续收敛mcu-detect可选IDCODE和CLI security独立调用链，复用共享后台门禁；旧MCP主体仍有测试依赖，逐项迁移覆盖后删除。124运行已cancelled，125三项CI通过；核对126提交检查。NSIS UAC、物理中断和长期限制保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
