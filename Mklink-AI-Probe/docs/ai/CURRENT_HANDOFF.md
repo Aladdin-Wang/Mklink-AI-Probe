@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T13:17:40.8611962+00:00`
+- 更新时间：`2026-10-04T13:26:15.0343106+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; bounded protocol receive after 74c3b676; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; common protocol exchange primitive after 672ec448; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第69批复审serial exchange前发现YMODEM无界接收Queue，现同一队列最多128×4096字节，非阻塞入队，溢出/reader失败明确中止并关闭该端口，其他端口保持。协议读写及完成检查传播错误，构造失败也释放占用，不新增reader/重连。新增8项，相关157通过；物理对端未验收。前批74c3b676两项CI通过。serial exchange尚未迁移，下一步复用现有协议准入/单reader实现共享应答窗口。
+- 当前任务：第70批提取SerialMonitor共用协议上下文，YMODEM与新低层exchange复用准入/单reader/取消/清理。exchange一次写，发送≤4096字节、接收窗口≤5秒、结果≤64KiB；原始RX可能含缓存/主动上报，不能声称协议应答关联。尾部交接失败也释放占用。新增10项、相关167通过。当前只完成低层，后台API/Agent及GUI历史可见性待接，远程serial exchange仍直连；继续推进，不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第69节：第69批复审serial exchange前发现YMODEM无界接收Queue，现同一队列最多128×4096字节，非阻塞入队，溢出/reader失败明确中止并关闭该端口，其他端口保持。协议读写及完成检查传播错误，构造失败也释放占用，不新增reader/重连。新增8项，相关157通过；物理对端未验收。前批74c3b676两项CI通过。serial exchange尚未迁移，下一步复用现有协议准入/单reader实现共享应答窗口。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第70节：第70批提取SerialMonitor共用协议上下文，YMODEM与新低层exchange复用准入/单reader/取消/清理。exchange一次写，发送≤4096字节、接收窗口≤5秒、结果≤64KiB；原始RX可能含缓存/主动上报，不能声称协议应答关联。尾部交接失败也释放占用。新增10项、相关167通过。当前只完成低层，后台API/Agent及GUI历史可见性待接，远程serial exchange仍直连；继续推进，不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；实现共享serial exchange应答窗口，复用SerialMonitor协议队列/准入，单reader独占物理读取，排除同端口其他发送和自动回复/序列干扰；有界接收已修复，不要另建reader或直连回退。再按65节矩阵完成目标/上传/流式/MSC。Agent Modbus三项已共享且68批便携包9通过。继续物理协议、取消恢复/24与72小时长稳、NSIS；不改固件/WinUSB、不合并发布。
+1. 核对672ec448及本批CI；把SerialMonitor.exchange接入SerialStreamManager/API和runtime能力（当前协议28/UART24项，增加需同步契约），再替换Agent serial.exchange直连及私有锁、serial.list复用uart_ports。注意exchange现走protocol_callback，须设计普通raw历史/GUI可见性且不触发auto-reply，不要直接套YMODEM trace让活动不可见。共用uart_session和既有请求settle/身份固定。之后按65节矩阵完成目标/上传/流式/MSC及物理协议/恢复长稳/NSIS。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

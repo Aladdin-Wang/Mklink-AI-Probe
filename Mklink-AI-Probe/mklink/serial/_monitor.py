@@ -8,6 +8,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
+from contextlib import contextmanager
 from typing import Callable
 
 from mklink.serial._autoreply import AutoReplyEngine
@@ -254,24 +255,9 @@ class SerialMonitor:
         with self._protocol_lock:
             sequence.finish_send()
 
-    def send_ymodem(
-        self,
-        port: str,
-        data: bytes,
-        filename: str,
-        *,
-        cancel_event: threading.Event | None = None,
-        progress_callback=None,
-    ) -> None:
-        """Send one in-memory file while exclusively consuming *port* RX bytes.
-
-        The normal reader thread keeps ownership of the open serial port.
-        Protocol RX/TX bytes use a separate trace callback instead of ordinary
-        terminal/log streams. Framing and auto-reply remain paused so control
-        bytes are consumed exactly once.
-        """
-        from mklink.serial._ymodem import YModemCancelled, YModemSender
-
+    @contextmanager
+    def _protocol_session(self, port, *, cancel_event=None, cancel_error=RuntimeError, tail=None):
+        """Reserve one monitored port; the existing reader remains its sole consumer."""
         port = canonical_serial_port(port)
         receive_queue = _ProtocolQueue()
         with self._protocol_lock:
@@ -297,7 +283,7 @@ class SerialMonitor:
             while True:
                 receive_queue.check()
                 if cancellation.is_set() or self._stop_event.is_set():
-                    raise YModemCancelled("YMODEM transfer cancelled")
+                    raise cancel_error("Serial protocol cancelled")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return b""
@@ -311,46 +297,76 @@ class SerialMonitor:
         def write_protocol(payload: bytes) -> None:
             receive_queue.check()
             if cancellation.is_set() or self._stop_event.is_set():
-                raise YModemCancelled("YMODEM transfer cancelled")
+                raise cancel_error("Serial protocol cancelled")
             with self._lock:
                 current = self._serial_ports.get(port)
                 if current is not serial_port or not current.is_open:
-                    raise RuntimeError(f"serial port {port} closed during YMODEM transfer")
+                    raise RuntimeError(f"serial port {port} closed during protocol transfer")
                 current.write(payload)
             self._emit_protocol_chunk(port, "TX", payload, time.time())
 
         completed = False
         try:
-            sender = YModemSender(
-                read_protocol,
-                write_protocol,
-                cancel_event=cancellation,
-                progress_callback=progress_callback,
-            )
-            sender.send(io.BytesIO(data), filename, len(data))
+            yield read_protocol, write_protocol
             receive_queue.check()
             completed = True
         finally:
             with self._protocol_lock:
                 if self._protocol_queues.get(port) is receive_queue:
-                    pending = bytearray()
-                    if completed and receive_queue.error is None:
-                        take_pending = getattr(sender, "take_pending_rx", None)
-                        if callable(take_pending):
-                            pending.extend(take_pending())
-                        # Reader queue writes also hold _protocol_lock, so once
-                        # this lock is acquired no late put can race the drain.
-                        while True:
-                            try:
-                                pending.extend(receive_queue.get_nowait())
-                            except queue.Empty:
-                                break
-                        if pending:
-                            self._protocol_handoffs.setdefault(
-                                port, bytearray(),
-                            ).extend(pending)
-                    self._protocol_queues.pop(port, None)
+                    try:
+                        pending = bytearray()
+                        if completed and receive_queue.error is None:
+                            if tail is not None:
+                                pending.extend(tail())
+                            # Reader queue writes also hold _protocol_lock, so once
+                            # this lock is acquired no late put can race the drain.
+                            while True:
+                                try:
+                                    pending.extend(receive_queue.get_nowait())
+                                except queue.Empty:
+                                    break
+                            if pending:
+                                self._protocol_handoffs.setdefault(
+                                    port, bytearray(),
+                                ).extend(pending)
+                    finally:
+                        self._protocol_queues.pop(port, None)
             receive_queue.check()
+
+    def send_ymodem(self, port, data, filename, *, cancel_event=None, progress_callback=None):
+        from mklink.serial._ymodem import YModemCancelled, YModemSender
+        sender = None
+        def tail():
+            pending = getattr(sender, 'take_pending_rx', None)
+            return pending() if callable(pending) else b''
+        with self._protocol_session(port, cancel_event=cancel_event,
+                                    cancel_error=YModemCancelled, tail=tail) as (read, write):
+            sender = YModemSender(read, write, cancel_event=cancel_event,
+                                 progress_callback=progress_callback)
+            sender.send(io.BytesIO(data), filename, len(data))
+
+    def exchange(self, port, data, timeout=.1):
+        """Write once and collect raw RX in a bounded exclusive protocol window.
+
+        RX starts at admission and may include unsolicited or already-buffered
+        device bytes; no protocol-level request/response correlation is inferred.
+        """
+        import math
+        if not isinstance(data, bytes) or len(data) > 4096:
+            raise ValueError('Exchange data must contain at most 4096 bytes')
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 <= timeout <= 5:
+            raise ValueError('Exchange timeout must be finite and in 0..5 seconds')
+        result = bytearray()
+        with self._protocol_session(port) as (read, write):
+            if data:
+                write(data)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                chunk = read(max(0, deadline - time.monotonic()))
+                if len(result) + len(chunk) > 65536:
+                    raise BufferError('Serial exchange response exceeds 64 KiB; result incomplete')
+                result.extend(chunk)
+        return bytes(result)
 
     def send_all(self, data: bytes) -> dict:
         results = {}
