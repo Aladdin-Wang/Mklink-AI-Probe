@@ -189,3 +189,23 @@ def test_generic_flash_call_returns_nonzero_for_completion_unknown(
 
     assert result == 2
     assert '"state": "completion-unknown"' in capsys.readouterr().out
+
+
+def test_packaged_entry_routes_only_runtime_serve_to_existing_backend(monkeypatch, tmp_path):
+    from mklink.remote import package_agent
+    calls = []
+    monkeypatch.setattr('mklink.runtime.serve_runtime', lambda **kwargs: calls.append(kwargs))
+    assert package_agent.main(['runtime', 'serve', '--project-root', str(tmp_path),
+                               '--port', '0', '--probe-id', 'lobby']) == 0
+    assert calls == [{'project_root': str(tmp_path), 'port': 0, 'probe_id': 'lobby'}]
+
+
+def test_packaged_runtime_entry_keeps_direct_secret_rejection(capsys):
+    import pytest
+    from mklink.remote import package_agent
+    with pytest.raises(SystemExit) as result:
+        package_agent.main(['runtime', 'serve', '--token', 'must-not-be-echoed'])
+    assert result.value.code == 2
+    captured = capsys.readouterr()
+    assert 'must-not-be-echoed' not in captured.out + captured.err
+    assert 'direct token values are not supported' in captured.err

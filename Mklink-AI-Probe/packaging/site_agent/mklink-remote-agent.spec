@@ -10,27 +10,8 @@ SPEC_DIR = Path(SPECPATH).resolve()
 
 EXCLUDED_PREFIXES = (
     "mklink.mcp_server",
-    "mklink.web_entry",
-    "mklink.runtime",
-    "mklink.runtime_api",
     "mklink.runtime_mcp",
-    "mklink.runtime_proxy",
-    "mklink.runtime_management",
-    "mklink.runtime_capabilities",
-    "mklink.runtime_cli",
-    "mklink.runtime_jobs",
-    "mklink.shared_device",
-    "mklink.probes",
-    "mklink.remote.api",
-    "mklink.remote.dashboards",
     "mklink.remote.mcp",
-    "mklink.remote.offline_download_api",
-    "mklink.remote.online_flash_api",
-    "mklink.remote.stream_api",
-    "mklink.remote.stream_hub",
-    "mklink.remote.stream_protocol",
-    "mklink.cmsis_dap.builtin_flm_bundle",
-    "mklink.cmsis_dap.builtin_pack_bundle",
 )
 
 
@@ -43,6 +24,7 @@ def include_module(name):
 
 hidden_imports = collect_submodules("mklink", filter=include_module)
 hidden_imports += collect_submodules("websockets")
+hidden_imports += collect_submodules("uvicorn")
 hidden_imports += collect_submodules("serial")
 hidden_imports += collect_submodules("pymodbus")
 hidden_imports += collect_submodules("elftools")
@@ -53,7 +35,8 @@ data_files += copy_metadata("pycparser")
 data_files += collect_data_files(
     "mklink",
     includes=[
-        "mcu_profiles.json",
+        "*.json",
+        "*.ps1",
         "modbus/profiles/*.json",
         "modbus/prompts/*.md",
         "serial/profiles/*.json",
@@ -70,10 +53,7 @@ analysis = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "fastapi",
         "fastmcp",
-        "starlette",
-        "uvicorn",
         "pytest",
         "build",
         "PyInstaller",

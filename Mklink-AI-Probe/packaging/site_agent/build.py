@@ -49,17 +49,10 @@ LOCAL_INSTALL_METADATA_NAMES = {
     "direct_url.json",
 }
 EXCLUDED_ARCHIVE_NAMES = {
-    "fastapi",
     "fastmcp",
-    "mklink.cmsis_dap.builtin_flm_bundle",
-    "mklink.cmsis_dap.builtin_pack_bundle",
     "mklink.mcp_server",
-    "mklink.remote.api",
     "mklink.remote.mcp",
-    "mklink.remote.stream_api",
     "pyinstaller",
-    "starlette",
-    "uvicorn",
 }
 PROHIBITED_TUNNEL_ARCHIVE_PARTS = {
     "frp",
@@ -270,8 +263,8 @@ def _wheel_contract(
     }
     if not {"pycparser", "websockets"}.issubset(core_names):
         raise RuntimeError("core runtime must include pycparser and websockets")
-    if not {"websockets", "intelhex"}.issubset(remote_names):
-        raise RuntimeError("remote extra must include websockets and intelhex")
+    if not {"websockets", "intelhex", "httpx", "fastapi", "starlette", "uvicorn", "python-multipart"}.issubset(remote_names):
+        raise RuntimeError("remote extra must include the shared backend dependencies")
     if "fastmcp" not in mcp_names:
         raise RuntimeError("mcp extra must remain explicitly separate")
     if not {"build", "pyinstaller", "setuptools", "wheel"}.issubset(build_names):
@@ -429,7 +422,21 @@ def _audit_content(
 
     if not scan_generic_paths:
         return
-    for printable in _printable_strings(data):
+    scan_data = data
+    if allow_pe_provenance_paths:
+        # Native instruction immediates are not strings (e.g. file:/// + REX.H).
+        # Exact current-build paths and credentials above still scan every byte.
+        import pefile
+        try:
+            image = pefile.PE(data=data, fast_load=True)
+            try:
+                scan_data = b"\0".join(section.get_data() for section in image.sections
+                                        if not section.Characteristics & 0x20000000)
+            finally:
+                image.close()
+        except pefile.PEFormatError as exc:
+            raise RuntimeError(f"Cannot inspect PE data sections in {label}") from exc
+    for printable in _printable_strings(scan_data):
         for match in ABSOLUTE_FILE_URL.finditer(printable):
             candidate = match.group()
             if not _local_path_from_file_url(candidate):
@@ -1345,7 +1352,7 @@ def build(
                 ],
                 "allow": [
                     "current Windows SystemRoot paths embedded by operating-system runtime files",
-                    "third-party PE compiler/debug provenance paths after exact current-build paths and file URLs are rejected",
+                    "PE compiler/debug provenance paths; generic file URLs are scanned in non-executable sections, exact current-build paths and credentials in all bytes",
                     "repository/runtime code string constants after exact current-build paths and file URLs are rejected",
                     "encoded PYZ/base-library containers only when every decompressed member is separately audited",
                 ],

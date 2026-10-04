@@ -350,7 +350,8 @@ installed = sorted({
 })
 roots = {name.split(".", 1)[0].casefold() for name in sys.modules}
 assert blocked.isdisjoint(roots)
-assert blocked.isdisjoint(installed)
+assert (blocked - {"fastapi"}).isdisjoint(installed)
+assert {"fastapi", "starlette", "uvicorn", "httpx", "python-multipart"} <= set(installed)
 requirements = importlib.metadata.distribution("mklink").requires or []
 websockets = [item for item in requirements if item.casefold().startswith("websockets")]
 normalized_websockets = [" ".join(item.split()) for item in websockets]

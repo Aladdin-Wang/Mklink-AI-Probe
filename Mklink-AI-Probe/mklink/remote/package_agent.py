@@ -389,7 +389,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(list(argv) if argv is not None else None)
+    values = list(sys.argv[1:] if argv is None else argv)
+    if values[:1] == ["runtime"]:
+        # ensure_runtime launches the current frozen executable with this contract.
+        parser = _SecretSafeArgumentParser(prog="mklink-remote-agent runtime", allow_abbrev=False)
+        parser.add_argument("command", choices=["serve"])
+        parser.add_argument("--project-root", default=".")
+        parser.add_argument("--port", type=int, default=8765)
+        parser.add_argument("--probe-id", default="lobby")
+        runtime_args = parser.parse_args(values[1:])
+        from mklink.runtime import serve_runtime
+        serve_runtime(project_root=runtime_args.project_root, port=runtime_args.port,
+                      probe_id=runtime_args.probe_id)
+        return 0
+    args = build_parser().parse_args(values)
     try:
         if args.timeout <= 0:
             raise ValueError("timeout must be positive")

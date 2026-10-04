@@ -94,6 +94,12 @@ visitor 进程退出即关闭本地入口；它只绑定回环地址，不提供
 
 普通 SDK/CLI 只需要 remote runtime；可选 MCP 单独安装：
 
+0.3.0 开发版的 `remote` extra 和现场便携包已包含共享后台的 HTTP 依赖
+（FastAPI、Uvicorn 等），普通远程客户端导入时仍按需加载，不需要 FastMCP
+或 Qt。便携入口支持后台内部使用的 `runtime serve` 启动契约；这只是部署
+前提，独立 Agent 的操作分发尚未全部迁移，不能据此认定它已能与 GUI
+共享同一下载器。包内包含算法加载代码，不包含 FLM、Pack 或目标固件。
+
 ```powershell
 python -m pip install -e ".[remote]"
 # 仅当工程师机需要 stdio MCP 时：

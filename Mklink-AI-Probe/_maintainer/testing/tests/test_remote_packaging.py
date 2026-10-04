@@ -324,11 +324,12 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
         manifest["audit"]["archive_names_sha256"]
     )
     prohibited = re.compile(
-        r"(?i)(?:^|[.:/\\])(?:fastmcp|pyinstaller|fastapi|starlette|uvicorn)"
+        r"(?i)(?:^|[.:/\\])(?:fastmcp|pyinstaller)"
         r"(?:$|[.:/\\])"
-        r"|mklink\.(?:mcp_server|remote\.(?:api|mcp|stream_api))"
-        r"|mklink\.cmsis_dap\.builtin_(?:flm|pack)_bundle"
+        r"|mklink\.(?:mcp_server|remote\.mcp)"
     )
+    assert any("mklink.runtime_api" in name for name in names)
+    assert any("uvicorn" in name for name in names)
     for name, data, code in entries:
         assert not prohibited.search(name), name
         assert "direct_url.json" not in name.casefold(), name
@@ -364,9 +365,9 @@ def test_dependency_isolation_fresh_wheel_and_installed_metadata(
     assert len(report_websockets) == len(EXPECTED_WEBSOCKETS_REQUIREMENTS)
     assert set(report_websockets) == EXPECTED_WEBSOCKETS_REQUIREMENTS
     installed = set(report["installed"])
+    assert {"fastapi", "starlette", "uvicorn", "httpx", "python-multipart"} <= installed
     assert installed.isdisjoint(
         {
-            "fastapi",
             "fastmcp",
             "pyinstaller",
             "pyside6",
@@ -404,7 +405,7 @@ def test_dependency_isolation_fresh_wheel_and_installed_metadata(
             item
             for item in requirements
             if item.casefold().startswith(
-                ("fastmcp", "fastapi", "pyinstaller", "pyqt", "pyside")
+                ("fastmcp", "pyinstaller", "pyqt", "pyside")
             )
         ]
         assert optional_forbidden

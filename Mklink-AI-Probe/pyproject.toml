@@ -23,7 +23,11 @@ mklink-site-agent = "mklink.remote.package_agent:main"
 mklink-remote-mcp = "mklink.remote.mcp:main"
 
 [project.optional-dependencies]
-remote = ["websockets>=11.0", "intelhex>=2.3"]
+remote = [
+    "websockets>=11.0", "intelhex>=2.3", "httpx>=0.27,<1",
+    "fastapi>=0.100", "starlette>=0.40,<0.47", "uvicorn>=0.35",
+    "python-multipart>=0.0.9",
+]
 gui = [
     "httpx>=0.27,<1",
     "fastapi>=0.100",
