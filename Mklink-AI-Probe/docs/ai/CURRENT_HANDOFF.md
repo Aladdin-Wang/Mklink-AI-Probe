@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T21:10:14.1292033+00:00`
+- 更新时间：`2026-10-04T21:16:24.6887050+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：119批补清理恢复目录日志失败及后续终态保存失败测试：已完成写盘仍unknown，重载和重复请求不重写，22项通过；无生产代码修改。118 GUI状态修复已通过浏览器受控验证。长期暂停。
+- 当前任务：120批从c46a6d25构建便携远程服务，构建/审计/归档清理及包内无Python双客户端、重启/邻居隔离两项测试通过。新包物理部署与GUI仍待验，长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 117恢复目录已接入任务日志；118查询失败GUI状态已收敛。补响应丢失、真实GUI完整部署与新包短时验收，115候选不含117/118。恢复目录仅供人工核查，可能已清理，不自动恢复。NSIS UAC待答复；长期任务不可自动恢复。
+2. agent120-c46a6d25最新便携包已构建并通过进程生命周期验收，包含117后台修复。补新包真机短时、响应丢失及真实GUI完整部署；118 GUI已受控浏览器验证。恢复目录仅供人工核查，可能已清理，不自动恢复。NSIS UAC待答复；长期任务不可自动恢复。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
