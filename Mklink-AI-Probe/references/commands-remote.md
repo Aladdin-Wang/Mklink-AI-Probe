@@ -337,7 +337,7 @@ python -m mklink remote --site field-a stop-agent --yes
 显式 timeout 须匹配。新连接默认超时1秒、重试0，扫描使用既有短探测事务。
 每次请求使用独立共享会话，退出不抢停 GUI 连接。写入失败可能结果未知，
 Agent 不自动重放；借用连接的底层重试配置仍由共享后台控制。
-串口 exchange、核心目标操作及下述 SystemView 已共享；RTT 与脱机部署仍待完成。
+串口 exchange、核心目标操作及下述 SystemView/RTT 已共享；脱机部署仍待完成。
 
 ### 0.3.0 共享 SystemView（能力版本 2）
 
@@ -371,3 +371,37 @@ with connect_remote("ws://<现场IP>:<端口>", token="<令牌>") as remote:
   退出后才能停采集，否则返回409并保留订阅。连接断开时清理自己的会话，拥有者
   尝试停止自己的采集一次；若其他订阅者仍在，采集保留供本地明确停止。
   停止响应丢失不会自动重放，后续退订的 `capture_stopped=null` 表示结果未知。
+
+### 0.3.0 共享 RTT（能力版本 2）
+
+RTT 与 SystemView 使用同一套拥有/借用与退出规则。RTT 订阅复用共享后台的
+`rtt-terminal` 二进制通道；独立缓冲和读取不会消费另一客户端的数据。后台协议
+为34，旧后台需要先正常退出再启动，不能借旧独占模式绕过升级。
+
+同一SDK连接内执行：
+
+```python
+remote.call("agent.reconnect")
+remote.rtt_start()                  # 无参数借用 GUI 已运行的 RTT
+page = remote.rtt_read(timeout=1)  # 最多等1秒，已有数据则立即返回
+print(page["text"], page["dropped_bytes"], page["missing_batches"])
+remote.rtt_write("hello\n")        # 1～256 UTF-8 字节，不自动拆分或重放
+result = remote.rtt_stop()         # 借用者只退订
+```
+
+- `rtt.start` 可传 `addr/channel/mode/search_size/encoding` 启动新采集；借用已有
+  采集时不传配置参数。返回 `session/reused`，采集换代后旧订阅明确报错。
+- `rtt.read` 只接受 `timeout`（0～5秒，默认1秒）；旧 `duration` 参数移除。
+  SDK现在返回字典，文本在 `text`，不再返回裸字符串。每客户端应用缓冲最多
+  64 KiB/128批，满时保留较新的批次；超出64 KiB的单批丢弃并计数。
+  WebSocket 库接收缓冲另受其队列和协议最大帧限制，这不是整个进程内存上限。
+- `dropped_bytes` 是该客户端应用缓冲累计丢失字节，`missing_batches` 是其已
+  观察到的数据序号缺口。`upstream` 是后台通道所有订阅者的累计指标，不能
+  当成当前客户端的丢失量。`capture` 提供运行/暂停/错误/编码；`error` 表示
+  二进制订阅断开或帧无效，需显式停止/重新订阅，不自动重连。
+- 超时而无数据返回空 `text`，不表示目标断开。UTF-8/ANSI按后台终端解码结果
+  原样转发，不从按行历史拼接；目标程序在多字节字符中间插入其他输出时，
+  不能靠客户端还原原文。慢读、断线与目标缓冲溢出都不保证无损。
+- `rtt.write` 通用RPC返回 `sent_bytes`，SDK布尔值按确认字节数判断。
+  `rtt.stop` 返回 `subscribed/capture_stopped`；SDK同样返回字典。
+  `wait_for_rtt` 遇到本客户端丢失/订阅错误会抛异常，收集上限为1 MiB。

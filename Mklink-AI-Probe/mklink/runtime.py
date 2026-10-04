@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 33  # Remote service lifecycle is independent of the shared backend.
+PROTOCOL = 34  # Shared RTT status identifies capture sessions for remote subscribers.
 VERSION = "0.3.0"
 
 

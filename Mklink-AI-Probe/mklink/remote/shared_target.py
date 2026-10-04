@@ -17,6 +17,7 @@ OPERATIONS = frozenset({
     'variable.read', 'variable.write', 'symbols.status', 'symbols.parse', 'symbols.list',
     'symbols.search', 'symbols.memory_map', 'hardfault.check', 'hardfault.decode',
     'systemview.start', 'systemview.read', 'systemview.stop', 'systemview.resolve_task_names',
+    'rtt.start', 'rtt.read', 'rtt.write', 'rtt.stop',
 })
 
 
@@ -29,7 +30,7 @@ class SharedTarget:
         self.info = None
         self.runtime_info = runtime_info
         self._clients = {}
-        self._systemview = {}
+        self._captures = {}
         self._lock = threading.Lock()
 
     @property
@@ -56,10 +57,16 @@ class SharedTarget:
     def client_closed(self, client_id):
         with self._lock:
             client = self._clients.pop(client_id, None)
-            stream = self._systemview.pop(client_id, None)
+            streams = [self._captures.pop(key) for key in list(self._captures) if key[0] == client_id]
         try:
-            if stream is not None:
-                stream.close()
+            error = None
+            for stream in sorted(streams, key=lambda value: value.owned):
+                try:
+                    stream.close()
+                except Exception as exc:
+                    error = error or exc
+            if error is not None:
+                raise error
         finally:
             if client is not None:
                 client.close()
@@ -67,7 +74,7 @@ class SharedTarget:
     def close(self):
         with self._lock:
             clients, self._clients = self._clients, {}
-            streams, self._systemview = self._systemview, {}
+            streams, self._captures = self._captures, {}
             self.info = None
         error = None
         # Detach this Agent's borrowers before its producer tries to stop.
@@ -101,15 +108,18 @@ class SharedTarget:
         request_id = None
         job = None
         try:
-            if operation.startswith('systemview.'):
+            if operation.startswith(('systemview.', 'rtt.')):
                 from mklink.remote.shared_systemview import SharedSystemView
+                from mklink.remote.shared_rtt import SharedRtt
                 if self.info is None or not client_id:
                     raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})
                 with self._lock:
-                    stream = self._systemview.get(client_id)
+                    kind = operation.split('.')[0]
+                    stream = self._captures.get((client_id, kind))
                     if stream is None:
-                        stream = SharedSystemView(self.info, self.project_root, client_id)
-                        self._systemview[client_id] = stream
+                        factory = SharedSystemView if kind == 'systemview' else SharedRtt
+                        stream = factory(self.info, self.project_root, client_id)
+                        self._captures[(client_id, kind)] = stream
                 return stream.dispatch(operation, params)
             client = self._client(client_id)
             call = client.call

@@ -273,6 +273,7 @@ class RttStreamManager:
         self._device = None
         self._start_info: dict = {}
         self._active_generation = None
+        self._capture_session = None
         self._write_lock = threading.RLock()
         self._lifecycle_lock = threading.RLock()
 
@@ -439,6 +440,7 @@ class RttStreamManager:
         generation = object()
         self._stop_event = stop_event
         self._generation = generation
+        self._capture_session = uuid.uuid4().hex
         self._paused.set()
         self._running = True
         self._history.clear()
@@ -637,6 +639,7 @@ class RttStreamManager:
             "numeric_channels": list(self._numeric_channels),
             "encoding": self._line_assembler.encoding,
             "down_buffers": down_buffers,
+            "session": self._capture_session,
             "control_block_addr": control_block_addr,
             "down_buffer_source": down_buffer_source,
             "down_buffer_probe_count": down_buffer_probe_count,

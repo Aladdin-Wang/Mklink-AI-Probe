@@ -134,7 +134,7 @@ def test_invalid_or_old_read_parameters_are_rejected(capture, params):
 def test_lost_stop_response_is_not_replayed_during_disconnect(capture, monkeypatch, status_code):
     router, _, _, calls, _, dispatch = capture
     dispatch('start')
-    stream = router._target._systemview['first']
+    stream = router._target._captures[('first', 'systemview')]
     original = stream.client.call
     def lose_response(capability, *args):
         result = original(capability, *args)

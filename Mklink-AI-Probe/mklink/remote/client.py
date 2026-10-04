@@ -423,15 +423,15 @@ class RemoteClient:
     def rtt_start(self, addr: str | None = None, **params: Any) -> dict[str, Any]:
         return self.call("rtt_start", addr=addr, **params)
 
-    def rtt_read(self, duration: float = 10.0) -> str:
-        return str(self.call("rtt_read", duration=duration))
+    def rtt_read(self, timeout: float = 1.0) -> dict[str, Any]:
+        return self.call("rtt_read", timeout=timeout)
 
     def rtt_write(self, data: bytes | str) -> bool:
-        text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
-        return bool(self.call("rtt_write", data=text))
+        text = data.decode("utf-8") if isinstance(data, bytes) else data
+        return self.call("rtt_write", data=text)['sent_bytes'] == len(text.encode('utf-8'))
 
-    def rtt_stop(self) -> str:
-        return str(self.call("rtt_stop"))
+    def rtt_stop(self) -> dict[str, Any]:
+        return self.call("rtt_stop")
 
     def wait_for_rtt(self, pattern: str | None = None, *, timeout: float = 10.0) -> str:
         import re
@@ -439,8 +439,12 @@ class RemoteClient:
         deadline = time.monotonic() + timeout
         collected = ""
         while time.monotonic() < deadline:
-            chunk = self.rtt_read(min(2.0, max(0.0, deadline - time.monotonic())))
-            collected += chunk
+            page = self.rtt_read(min(2.0, max(0.0, deadline - time.monotonic())))
+            if page.get('error') or page.get('dropped_bytes') or page.get('missing_batches'):
+                raise RemoteClientError('RTT data was lost or the subscription failed; inspect rtt_read diagnostics')
+            collected += page['text']
+            if len(collected.encode('utf-8')) > 1024 * 1024:
+                raise RemoteClientError('wait_for_rtt exceeded 1 MiB; use bounded rtt_read calls')
             if pattern and (pattern in collected or re.search(pattern, collected)):
                 break
         return collected

@@ -1,0 +1,111 @@
+import pytest
+from mklink.remote.protocol import AgentOperationError, RequestValidationError
+from test_remote_shared_target import target, context
+from test_shared_runtime import runtime
+
+
+@pytest.fixture
+def rtt(target, monkeypatch):
+    router, http, control, calls, managers = target
+    manager = managers['rtt']
+    manager.session = 'capture-one'
+    readers = []
+    class Reader:
+        def __init__(self, info):
+            self.closed = False
+            readers.append(self)
+        def read(self, timeout):
+            assert not self.closed
+            return {'text': 'hello\r', 'error': None, 'dropped_bytes': 0, 'missing_batches': 0}
+        def close(self):
+            self.closed = True
+    monkeypatch.setattr('mklink.remote.shared_rtt.RttSubscription', Reader)
+
+    @control.app.get('/api/dash/rtt/status')
+    async def status():
+        return {'running': manager.running, 'session': manager.session, 'encoding': 'utf-8'}
+
+    @control.app.post('/api/dash/rtt/write')
+    async def write(body: dict):
+        calls.append(body['data_hex'])
+        return {'sent_bytes': len(bytes.fromhex(body['data_hex']))}
+
+    def dispatch(action, params=None, name='first'):
+        return router.dispatch('rtt.'+action, params or {}, context(router, name))
+    return router, control, calls, manager, readers, dispatch
+
+
+def test_rtt_shared_owner_borrower_read_write_and_stop(rtt):
+    router, control, calls, manager, readers, dispatch = rtt
+    assert router.capabilities()['stream.rtt'].version == '2'
+    assert not dispatch('start')['reused']
+    assert dispatch('start', name='second')['reused']
+    assert dispatch('read', {'timeout': 0})['text'] == 'hello\r'
+    assert dispatch('write', {'data': '中\n'}) == {'sent_bytes': 4}
+    with pytest.raises(AgentOperationError) as error:
+        dispatch('stop')
+    assert error.value.data['status'] == 409 and manager.running
+    assert not dispatch('stop', name='second')['capture_stopped']
+    assert readers[1].closed and not readers[0].closed
+    assert dispatch('stop')['capture_stopped']
+    assert all(r.closed for r in readers) and not control.sessions
+    assert calls == ['start', '中\n'.encode().hex(), 'stop']
+
+
+def test_generation_change_and_reconfigure_do_not_silently_replace_subscription(rtt):
+    router, _, calls, manager, readers, dispatch = rtt
+    dispatch('start')
+    with pytest.raises(RequestValidationError):
+        dispatch('start', {'channel': 1})
+    assert not readers[0].closed
+    assert dispatch('read')['session'] == 'capture-one'
+    manager.session = 'another'
+    with pytest.raises(AgentOperationError):
+        dispatch('read')
+    assert calls == ['start']
+    router.client_closed('first')
+    assert readers[0].closed
+
+
+@pytest.mark.parametrize('params', [{'timeout': -1}, {'timeout': 6}, {'timeout': True}, {'timeout': float('nan')}, {'duration': 1}])
+def test_read_bounds_and_removed_duration(rtt, params):
+    *_, dispatch = rtt
+    dispatch('start')
+    with pytest.raises(RequestValidationError):
+        dispatch('read', params)
+
+
+@pytest.mark.parametrize('data', ['', '中'*86, 'RTTView.stop()', '\ud800'])
+def test_write_rejects_oversized_or_reserved_input_before_device(rtt, data):
+    _, _, calls, _, _, dispatch = rtt
+    dispatch('start')
+    with pytest.raises((RequestValidationError, AgentOperationError)):
+        dispatch('write', {'data': data})
+    assert calls == ['start']
+
+
+def test_remote_disconnect_does_not_stop_gui_capture(rtt):
+    router, control, calls, manager, readers, dispatch = rtt
+    manager.running = True
+    dispatch('start')
+    dispatch('start', name='second')
+    router.client_closed('first')
+    assert readers[0].closed and not readers[1].closed
+    assert dispatch('read', name='second')['capture']['running']
+    router.close()
+    assert manager.running and not calls and not control.sessions
+
+
+def test_sdk_helpers_preserve_diagnostics_and_use_confirmed_write_count():
+    from unittest.mock import Mock
+    from mklink.remote.client import RemoteClient, RemoteClientError
+    client = object.__new__(RemoteClient)
+    client.call = Mock(return_value={'text': 'hello', 'missing_batches': 1})
+    assert client.rtt_read(0)['missing_batches'] == 1
+    client.call.assert_called_once_with('rtt_read', timeout=0)
+    with pytest.raises(RemoteClientError, match='lost'):
+        client.wait_for_rtt('hello')
+    client.call = Mock(return_value={'sent_bytes': 3})
+    assert client.rtt_write('中')
+    client.call.return_value = {'sent_bytes': 1}
+    assert not client.rtt_write('中')

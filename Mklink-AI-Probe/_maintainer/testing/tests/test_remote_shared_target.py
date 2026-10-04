@@ -99,11 +99,11 @@ def test_unknown_job_keeps_identifiers_and_never_replays(target, monkeypatch, fa
     assert submit.call_count == 1 and poll.call_count == (failure == 'poll')
 
 
-@pytest.mark.parametrize('operation', ['rtt.start', 'rtt.read'])
-def test_pending_streams_are_explicitly_unavailable(target, operation):
+@pytest.mark.parametrize('operation', ['rtt.read', 'systemview.read'])
+def test_shared_streams_require_explicit_subscription(target, operation):
     router, _, control, _, _ = target
-    assert router.capabilities()['stream.'+operation.split('.')[0]].available is False
-    with pytest.raises(CapabilityUnavailableError):
+    assert router.capabilities()['stream.'+operation.split('.')[0]].available is True
+    with pytest.raises(RequestValidationError):
         router.dispatch(operation, {}, context(router))
     assert not control.sessions
 

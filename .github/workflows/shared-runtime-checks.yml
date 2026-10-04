@@ -38,6 +38,8 @@ jobs:
           $tests += 'test_remote_shared_serial'
           $tests += 'test_remote_shared_target'
           $tests += 'test_remote_shared_systemview'
+          $tests += 'test_remote_shared_rtt'
+          $tests += 'test_remote_rtt_subscription'
           $tests += 'test_desktop_presence'
           $tests += 'test_desktop_runtime'
           $tests += 'test_legacy_server_removed'

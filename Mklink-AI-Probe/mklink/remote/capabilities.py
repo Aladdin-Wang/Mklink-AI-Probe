@@ -96,7 +96,7 @@ _CAPABILITIES = {
     ),
     "stream.rtt": Capability(
         "stream.rtt",
-        1,
+        2,
         ("rtt.start", "rtt.read", "rtt.write", "rtt.stop"),
     ),
     "stream.systemview": Capability(

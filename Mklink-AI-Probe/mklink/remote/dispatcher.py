@@ -123,9 +123,8 @@ class OperationDispatcher:
 
     def capabilities(self):
         capabilities = protocol_capabilities()
-        for name in ('stream.rtt',):
-            capabilities[name] = replace(capabilities[name], available=False,
-                detail='Shared Agent stream migration pending; use local shared GUI/SDK')
+        capabilities['stream.rtt'] = replace(capabilities['stream.rtt'],
+            detail='Shared terminal; v2 bounded UTF-8 reads with per-client loss diagnostics')
         capabilities['stream.systemview'] = replace(capabilities['stream.systemview'],
             detail='Shared capture; v2 bounded cursor pages and cached task names; stop detaches borrowers')
         capabilities['target.memory'] = replace(capabilities['target.memory'],
