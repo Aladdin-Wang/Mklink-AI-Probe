@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T22:49:04.1161410Z`
+- 更新时间：`2026-10-04T22:53:45.8824754Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：133删除自动profile写入/直接复制和重复PDSC解析，CLI/API/MCP复用只读inspect_mcu统一目录；协议38。243短测、双V4真实CLI/共享IDCODE/AI保持及盘和profile不变通过。报告第133节；长期验证暂停。
+- 当前任务：134确认安全入口独立资源管理器/缺连接准备回调，现有RuntimeJobs要求target.connected不适合受保护目标解锁；无硬件复现见第134节。修复NaN/Infinity超时准入，54短测通过。通信归属尚未迁移，长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对133提交CI；132三项已通过。自动profile写入已删除，保留只读内置默认值；算法检查不持久化烧录选择，部署走已有共享事务。下一步审计CLI security独立服务并复用共享门禁/任务，再收敛旧MCP主体。NSIS UAC、物理中断等缺口待做；长期暂停。
+2. 核对133共享CI运行37241475172及134新CI；133反馈/GUI已成功。按第134节迁移security：复用后台在线services/准备回调，按探针身份而非target.connected准入，复用RuntimeJobs持久去重并等待真实在线作业终态；客户端超时不关闭后台。再清理旧MCP。NSIS UAC、物理中断等仍待验证。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

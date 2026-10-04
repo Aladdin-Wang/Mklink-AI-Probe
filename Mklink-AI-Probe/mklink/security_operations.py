@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 
@@ -55,8 +56,9 @@ def run_security_operation(
         or frequency > 10_000_000
     ):
         raise ValueError("frequency must be between 1 and 10000000 Hz")
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
-        raise ValueError("timeout must be positive")
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("timeout must be finite and positive")
 
     from mklink.cmsis_dap.errors import FlashError, FlashErrorCode
     from mklink.cmsis_dap.models import JobState

@@ -215,3 +215,15 @@ def test_backend_reconnects_full_session_after_ctrl_ap_recovery(monkeypatch):
         (recipe.CTRL_AP, 0),
     ]
     backend.disconnect()
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), float("-inf"), 0, -1, True])
+def test_security_rejects_unbounded_wait_before_creating_services(monkeypatch, timeout):
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid timeout reached online service construction")
+    monkeypatch.setattr(
+        "mklink.remote.online_flash_api.create_default_online_flash_services", forbidden)
+    with pytest.raises(ValueError, match="finite and positive"):
+        run_security_operation(
+            "unlock", "nrf54l", voltage_mv=None, confirm_user=True,
+            confirm_data_loss=True, timeout=timeout)
