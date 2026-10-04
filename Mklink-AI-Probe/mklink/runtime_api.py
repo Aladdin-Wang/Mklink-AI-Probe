@@ -424,13 +424,14 @@ def install_runtime(app, info):
     state = app.state.mklink_state
     state["shared_runtime"] = True
     state["shared_probe_id"] = info.get("probe_id")
-    # The legacy remote listener dispatches directly to Device. Until it uses
-    # the same admission/session model, it must not bypass shared arbitration.
     site_agent = getattr(app.state, "site_agent", None)
-    if site_agent is not None and site_agent.settings.enabled:
-        site_agent.settings = replace(site_agent.settings, enabled=False, configuration_error=
-            "Site Agent is not yet supported by the shared runtime; use an explicit exclusive session")
+    if site_agent is not None:
+        site_agent.runtime_info = info
     api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    if site_agent is not None:
+        from mklink.remote.service_api import create_remote_service_router
+        api.include_router(create_remote_service_router(site_agent, info))
 
     @api.get("/open", response_class=HTMLResponse)
     async def open_gui():

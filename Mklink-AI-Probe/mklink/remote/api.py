@@ -909,52 +909,18 @@ def create_app(
         EmbeddedSiteAgentController,
     )
 
-    def reconnect_shared_device(config):
-        """Reconnect the one GUI-owned device for a remote lifecycle request."""
-        import mklink
-
-        previous = _state.get("last_device_connection") or {}
-        port = config.device_port or previous.get("port")
-        if _state.get("shared_runtime"):
-            from mklink.probes import select_probe
-            selected = select_probe(_state["shared_probe_id"])
-            if config.device_port and config.device_port.casefold() != selected["port"].casefold():
-                raise ValueError("Remote reconnect must use this runtime's physical probe")
-            port = selected["port"]
-        axf = config.axf or previous.get("axf")
-        mcu = previous.get("mcu")
-        elf_backend = previous.get("elf_backend")
-        with target_debug_lease(_state, "site-agent-reconnect"):
-            current = _state.get("device")
-            if current is not None:
-                remember_device_connection(_state, current, mcu=mcu)
-                current.close()
-                _state["device"] = None
-                _state["dispatcher"] = None
-            device = mklink.connect(
-                port=port,
-                axf=axf,
-                mcu=mcu,
-                project_root=_state["project_root"],
-                elf_backend=elf_backend,
-            )
-            _state["device"] = device
-            _state["dispatcher"] = DeviceDispatcher(device)
-            remember_device_connection(_state, device, mcu=mcu)
-            return device
-
     site_agent = EmbeddedSiteAgentController(
         EmbeddedAgentSettings.from_environment(),
         project_root=project_root,
-        resource_manager=_state["resource_manager"],
-        device_getter=lambda: _state.get("device"),
-        device_reconnector=reconnect_shared_device,
     )
     app.state.site_agent = site_agent
 
     async def startup_site_agent() -> None:
         site_agent.project_root = _state["project_root"]
-        await site_agent.start()
+        try:
+            await site_agent.start()
+        except Exception:
+            await site_agent.stop()  # Listener failure must not kill the local backend.
 
     async def shutdown_site_agent() -> None:
         await site_agent.stop()

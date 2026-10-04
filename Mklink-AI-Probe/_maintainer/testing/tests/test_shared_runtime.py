@@ -259,14 +259,14 @@ def test_cancelled_worker_retains_admission():
     asyncio.run(scenario())
 
 
-def test_shared_runtime_disables_legacy_agent_that_bypasses_admission():
+def test_shared_runtime_binds_remote_controller_to_own_endpoint():
     from mklink.remote.embedded_agent import EmbeddedAgentSettings
     app = FastAPI()
     app.state.mklink_state = {'project_root': '.', 'device': None}
     app.state.site_agent = SimpleNamespace(settings=EmbeddedAgentSettings(enabled=True, token='test-secret'))
     install_runtime(app, {'port': 8765, 'token': 'test-secret', 'instance_id': 'test'})
-    assert app.state.site_agent.settings.enabled is False
-    assert 'not yet supported' in app.state.site_agent.settings.configuration_error
+    assert app.state.site_agent.settings.enabled is True
+    assert app.state.site_agent.runtime_info is app.state.shared_runtime.info
 
 
 def test_write_validation_and_capture_busy_never_reach_hardware(runtime):

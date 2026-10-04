@@ -8,17 +8,6 @@ from mklink.remote.embedded_agent import (
     EmbeddedAgentSettings,
     EmbeddedSiteAgentController,
 )
-from mklink.remote.resource_manager import ResourceManager
-
-
-class _Device:
-    connected = True
-
-    def __init__(self):
-        self.closed = False
-
-    def close(self):
-        self.closed = True
 
 
 def test_disabled_environment_does_not_require_or_expose_credentials():
@@ -64,34 +53,15 @@ def test_environment_rejects_ambiguous_boolean_values(value):
         )
 
 
-def test_embedded_controller_runs_with_shared_gui_device_and_resources(tmp_path):
+def test_controller_refuses_to_reopen_an_unshared_gui_device(tmp_path):
     async def scenario():
-        device = _Device()
-        shared = {"device": device}
-        resources = ResourceManager()
         controller = EmbeddedSiteAgentController(
-            EmbeddedAgentSettings(
-                enabled=True,
-                port=0,
-                token="site-secret",
-            ),
-            project_root=str(tmp_path),
-            resource_manager=resources,
-            device_getter=lambda: shared["device"],
-            device_reconnector=lambda _config: shared["device"],
-        )
-
+            EmbeddedAgentSettings(enabled=True, port=0, token='site-secret'),
+            project_root=str(tmp_path))
         await controller.start()
-        status = controller.status()
-        assert status["running"] is True
-        assert status["ready"] is True
-        assert status["probe_connected"] is True
-        assert "site-secret" not in repr(status)
-
+        assert controller.status()['ready'] is False
+        assert 'physical probe shared runtime' in controller.status()['last_error']
         await controller.stop()
-        assert device.closed is False
-        assert controller.status()["running"] is False
-
     asyncio.run(scenario())
 
 

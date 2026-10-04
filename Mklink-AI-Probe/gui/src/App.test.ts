@@ -91,18 +91,18 @@ describe('App version footer', () => {
     const wrapper = mountApp()
 
     expect(wrapper.get('.app-title').text()).toBe('MKLink')
-    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '现场 Agent'])
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['配置', '仪表盘', '脱机烧录', '在线烧录', '远程服务'])
     await wrapper.get('[data-testid="global-language-toggle"]').trigger('click')
-    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['Config', 'Dashboard', 'Offline Flash', 'Online Flash', 'Site Agent'])
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toEqual(['Config', 'Dashboard', 'Offline Flash', 'Online Flash', 'Remote Service'])
     expect(wrapper.get('[data-testid="global-language-toggle"]').text()).toContain('中文')
     wrapper.unmount()
   })
 
-  it('does not offer native Site Agent configuration in the browser GUI', () => {
+  it('offers remote service controls in the browser GUI', () => {
     nativeRuntime.value = false
     const wrapper = mountApp()
 
-    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).not.toContain('现场 Agent')
+    expect(wrapper.findAll('.nav-tab').map(tab => tab.text())).toContain('远程服务')
     wrapper.unmount()
   })
 

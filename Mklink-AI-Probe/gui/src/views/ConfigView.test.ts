@@ -151,10 +151,10 @@ describe('ConfigView', () => {
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
   })
 
-  it('renders one five-section workspace with Local Device selected by default', async () => {
+  it('renders one four-section workspace with Local Device selected by default', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.findAll('[data-testid="config-section"]')).toHaveLength(5)
+    expect(wrapper.findAll('[data-testid="config-section"]')).toHaveLength(4)
     expect(wrapper.get('[data-testid="config-section-local"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('[data-testid="local-device-panel"]').exists()).toBe(true)
 
@@ -653,21 +653,16 @@ describe('ConfigView', () => {
     await wrapper.get('[data-testid="connect-remote"]').trigger('click')
     expect(mocks.wsConnect).toHaveBeenCalledWith('secret', 'ws://10.0.0.5:8765')
 
-    await wrapper.get('[data-testid="config-section-serve"]').trigger('click')
-    await wrapper.get('[data-testid="serve-host"]').setValue('0.0.0.0')
-    await wrapper.get('[data-testid="serve-port"]').setValue('9000')
-    await wrapper.get('[data-testid="launch-server"]').trigger('click')
-    expect(window.open).toHaveBeenCalledWith('http://0.0.0.0:9000/docs', '_blank')
+    expect(wrapper.find('[data-testid="config-section-serve"]').exists()).toBe(false)
   })
 
-  it('keeps firmware update as a separate sidebar section after Start Service', async () => {
+  it('keeps firmware update as a separate sidebar section after Remote Connection', async () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('[data-testid="config-section"]')
 
     expect(sections.map(section => section.text())).toEqual([
-      '本地设备', '文件来源', '远程连接', '启动服务', '固件升级',
+      '本地设备', '文件来源', '远程连接', '固件升级',
     ])
-    await wrapper.get('[data-testid="config-section-serve"]').trigger('click')
     expect(wrapper.find('[data-testid="firmware-upgrade-panel"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="config-section-firmware"]').trigger('click')

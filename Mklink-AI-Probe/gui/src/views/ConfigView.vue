@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Download, RefreshCw, RotateCcw, Tag, Unplug, Usb } from '@lucide/vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useMklinkApi } from '../composables/useMklinkApi'
@@ -88,8 +88,6 @@ const localSaveState = ref<'idle' | 'saving' | 'saved' | 'unconfirmed'>('idle')
 const remoteUrl = ref('ws://127.0.0.1:8765')
 const remoteToken = ref('')
 const wsConnecting = ref(false)
-const serveConfig = reactive({ host: '127.0.0.1', port: 8765, token: '' })
-const launching = ref(false)
 
 const firmwareCheck = ref<ProbeFirmwareCheck | null>(null)
 const firmwareUpgrading = ref(false)
@@ -352,12 +350,6 @@ function connectRemote() {
   }
 }
 
-function launchServer() {
-  launching.value = true
-  window.open(`http://${serveConfig.host}:${serveConfig.port}/docs`, '_blank')
-  launching.value = false
-}
-
 async function recheckFirmware() {
   try {
     firmwareCheck.value = await probeFirmwareCheck()
@@ -610,26 +602,6 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section v-else-if="activeSection === 'serve'" class="card serve-panel">
-        <header class="panel-header"><h2>{{ tr('启动服务', 'Start Service') }}</h2></header>
-        <div class="alert alert-info">{{ tr('在本地启动 MKLink 远程服务，供其他客户端连接。', 'Start the MKLink remote service locally for other clients.') }}</div>
-        <div class="form-row">
-          <label class="form-label" for="serve-host">{{ tr('绑定地址', 'Bind Address') }}</label>
-          <input id="serve-host" v-model="serveConfig.host" class="form-input" data-testid="serve-host" />
-        </div>
-        <div class="form-row">
-          <label class="form-label" for="serve-port">{{ tr('端口', 'Port') }}</label>
-          <input id="serve-port" v-model.number="serveConfig.port" class="form-input" data-testid="serve-port" type="number" />
-        </div>
-        <div class="form-row">
-          <label class="form-label" for="serve-token">Token</label>
-          <input id="serve-token" v-model="serveConfig.token" class="form-input" data-testid="serve-token" type="password" :placeholder="tr('可选', 'Optional')" />
-        </div>
-        <div class="panel-actions">
-          <button class="btn btn-primary" type="button" data-testid="launch-server" :disabled="launching" @click="launchServer">{{ tr('启动服务', 'Start Service') }}</button>
-        </div>
-      </section>
-
       <section v-else class="card firmware-panel" data-testid="firmware-upgrade-panel">
         <header class="panel-header">
           <h2>{{ tr('固件升级', 'Firmware Update') }}</h2>
@@ -678,7 +650,6 @@ onUnmounted(() => {
 
 .local-panel,
 .remote-panel,
-.serve-panel,
 .firmware-panel {
   min-height: 270px;
 }

@@ -46,9 +46,9 @@ pub fn stcp_configured(root: &Path) -> bool {
 
 pub fn load(root: &Path) -> Result<String, String> {
     let encrypted = fs::read(token_path(root))
-        .map_err(|_| "The Site Agent access token is not configured".to_string())?;
+        .map_err(|_| "The Remote service access token is not configured".to_string())?;
     String::from_utf8(dpapi_unprotect(&encrypted)?)
-        .map_err(|_| "The Site Agent access token is invalid".to_string())
+        .map_err(|_| "The Remote service access token is invalid".to_string())
 }
 
 pub fn load_stcp(root: &Path) -> Result<StcpCredentials, String> {
@@ -100,7 +100,7 @@ pub fn store_stcp(root: &Path, auth_token: &str, secret_key: &str) -> Result<(),
         || auth_token == site_token
         || secret_key == site_token
     {
-        return Err("Site Agent, FRP authentication, and STCP credentials must be distinct".into());
+        return Err("Remote service, FRP authentication, and STCP credentials must be distinct".into());
     }
     let auth = dpapi_protect(auth_token.as_bytes())?;
     let secret = dpapi_protect(secret_key.as_bytes())?;
@@ -125,7 +125,7 @@ fn restore_ciphertext(
         None => match fs::remove_file(destination) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(_) => Err("Unable to restore the previous Site Agent credential".into()),
+            Err(_) => Err("Unable to restore the previous Remote service credential".into()),
         },
     }
 }
@@ -140,10 +140,10 @@ fn fingerprint(token: &str) -> String {
 
 fn write_ciphertext(root: &Path, destination: &Path, value: &[u8]) -> Result<(), String> {
     fs::create_dir_all(root)
-        .map_err(|_| "Unable to create the Site Agent credential directory".to_string())?;
+        .map_err(|_| "Unable to create the Remote service credential directory".to_string())?;
     let temporary = destination.with_extension(format!("tmp-{}", std::process::id()));
     fs::write(&temporary, value)
-        .map_err(|_| "Unable to stage the Site Agent credential".to_string())?;
+        .map_err(|_| "Unable to stage the Remote service credential".to_string())?;
     replace_secret(&temporary, destination)
 }
 
@@ -174,7 +174,7 @@ fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if ok == 0 {
-        return Err("Windows could not protect the Site Agent credential".into());
+        return Err("Windows could not protect the Remote service credential".into());
     }
     let result =
         unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
@@ -209,7 +209,7 @@ fn dpapi_unprotect(encrypted: &[u8]) -> Result<Vec<u8>, String> {
         )
     };
     if ok == 0 {
-        return Err("The Site Agent credential cannot be decrypted by this Windows user".into());
+        return Err("The Remote service credential cannot be decrypted by this Windows user".into());
     }
     let result =
         unsafe { std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
@@ -248,7 +248,7 @@ fn replace_secret(source: &Path, destination: &Path) -> Result<(), String> {
     } == 0
     {
         let _ = fs::remove_file(source);
-        return Err("Unable to save the Site Agent credential".into());
+        return Err("Unable to save the Remote service credential".into());
     }
     Ok(())
 }
@@ -257,10 +257,10 @@ fn replace_secret(source: &Path, destination: &Path) -> Result<(), String> {
 fn replace_secret(source: &Path, destination: &Path) -> Result<(), String> {
     if destination.exists() {
         fs::remove_file(destination)
-            .map_err(|_| "Unable to replace the Site Agent credential".to_string())?;
+            .map_err(|_| "Unable to replace the Remote service credential".to_string())?;
     }
     fs::rename(source, destination)
-        .map_err(|_| "Unable to save the Site Agent credential".to_string())
+        .map_err(|_| "Unable to save the Remote service credential".to_string())
 }
 
 #[cfg(windows)]

@@ -109,6 +109,7 @@ class OperationDispatcher:
         *,
         upload_manager: UploadManager | None = None,
         runtime_probe: str | None = None,
+        runtime_info: dict | None = None,
     ):
         self.project_root = Path(project_root).expanduser().resolve()
         self.runtime_probe = runtime_probe
@@ -118,7 +119,7 @@ class OperationDispatcher:
             self.project_root / ".mklink" / "remote-uploads",
         )
         from mklink.remote.shared_target import SharedTarget
-        self._target = SharedTarget(str(self.project_root), self._shared_probe)
+        self._target = SharedTarget(str(self.project_root), self._shared_probe, runtime_info=runtime_info)
 
     def capabilities(self):
         capabilities = protocol_capabilities()

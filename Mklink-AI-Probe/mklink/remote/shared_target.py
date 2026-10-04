@@ -22,10 +22,11 @@ OPERATIONS = frozenset({
 class SharedTarget:
     """Lifecycle handle for SiteAgent, not a replacement Device implementation."""
 
-    def __init__(self, project_root, select_probe):
+    def __init__(self, project_root, select_probe, *, runtime_info=None):
         self.project_root = project_root
         self.select_probe = select_probe
         self.info = None
+        self.runtime_info = runtime_info
         self._clients = {}
         self._lock = threading.Lock()
 
@@ -40,7 +41,8 @@ class SharedTarget:
         if probe == 'lobby':
             raise CapabilityUnavailableError(data={'reason': 'select-physical-probe'})
         self.close()
-        bootstrap = RuntimeClient(project_root=self.project_root, kind='sdk', name='Site Agent connection')
+        bootstrap = RuntimeClient(info=self.runtime_info, project_root=self.project_root,
+                                  kind='sdk', name='Remote service connection')
         try:
             bootstrap.connect(probe=probe, axf=axf)
             info = bootstrap.info

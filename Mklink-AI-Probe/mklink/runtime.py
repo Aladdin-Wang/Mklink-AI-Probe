@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 32  # Shared Agent target catalog and fault capabilities.
+PROTOCOL = 33  # Remote service lifecycle is independent of the shared backend.
 VERSION = "0.3.0"
 
 

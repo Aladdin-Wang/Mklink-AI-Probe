@@ -112,16 +112,21 @@ fn desktop_workspace_root(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("workspace")
 }
 
-fn configured_site_agent_root(state: &Sidecar) -> Result<PathBuf, String> {
+fn configured_site_agent_root(state: &Sidecar, probe_id: &str) -> Result<PathBuf, String> {
+    let suffix = probe_id.strip_prefix("usb-").or_else(|| probe_id.strip_prefix("local-"));
+    if !suffix.is_some_and(|v| v.len() == 24 && v.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())) {
+        return Err("Select a physical probe before configuring remote service".into());
+    }
     state
         .site_agent_root
         .lock()
         .map_err(|error| error.to_string())?
         .clone()
-        .ok_or_else(|| "Site Agent storage is not initialized".to_string())
+        .map(|root| root.join("probes").join(probe_id))
+        .ok_or_else(|| "Remote service storage is not initialized".to_string())
 }
 
-fn apply_site_agent_environment(command: &mut Command, root: Option<&Path>) {
+fn clear_inherited_remote_service_environment(command: &mut Command) {
     const VARIABLES: &[&str] = &[
         "MKLINK_SITE_AGENT_ENABLED",
         "MKLINK_SITE_AGENT_HOST",
@@ -141,93 +146,32 @@ fn apply_site_agent_environment(command: &mut Command, root: Option<&Path>) {
     for name in VARIABLES {
         command.env_remove(name);
     }
-    let Some(root) = root else {
-        command.env("MKLINK_SITE_AGENT_ENABLED", "0");
-        return;
-    };
-    let prepared = (|| {
-        let config = site_agent_config::load(root)?;
-        if !config.enabled {
-            return Ok::<_, String>((config, None, None));
-        }
-        let token = site_agent_secret::load(root)?;
-        let stcp = if config.transport == "lan-stcp" {
-            Some(site_agent_secret::load_stcp(root)?)
-        } else {
-            None
-        };
-        config.validate(true, stcp.is_some())?;
-        if !site_agent_network::is_local_bind(&config.bind_host) {
-            return Err("The configured Site Agent bind address is not active".into());
-        }
-        if let Some(credentials) = stcp.as_ref() {
-            if credentials.auth_token == token || credentials.secret_key == token {
-                return Err("Site Agent and STCP credentials must be distinct".into());
-            }
-        }
-        Ok((config, Some(token), stcp))
-    })();
-    let (config, token, stcp) = match prepared {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("[tauri] Site Agent configuration disabled: {error}");
-            command.env("MKLINK_SITE_AGENT_ENABLED", "0").env(
-                "MKLINK_SITE_AGENT_CONFIGURATION_ERROR",
-                "Site Agent configuration or credentials are invalid",
-            );
-            return;
-        }
-    };
-    if !config.enabled {
-        command.env("MKLINK_SITE_AGENT_ENABLED", "0");
-        return;
-    }
-    command
-        .env("MKLINK_SITE_AGENT_ENABLED", "1")
-        .env("MKLINK_SITE_AGENT_HOST", &config.bind_host)
-        .env("MKLINK_SITE_AGENT_PORT", config.port.to_string())
-        .env(
-            "MKLINK_SITE_AGENT_ALLOW_LAN",
-            if config.allow_lan { "1" } else { "0" },
-        )
-        .env("MKLINK_SITE_AGENT_TRANSPORT", &config.transport)
-        .env(
-            "MKLINK_REMOTE_TOKEN",
-            token.expect("enabled configuration has a token"),
-        );
-    if let Some(credentials) = stcp {
-        command
-            .env("MKLINK_STCP_SERVER_ADDR", &config.stcp_server_addr)
-            .env(
-                "MKLINK_STCP_SERVER_PORT",
-                config.stcp_server_port.to_string(),
-            )
-            .env("MKLINK_STCP_USER", &config.stcp_user)
-            .env("MKLINK_STCP_PROXY_NAME", &config.stcp_proxy_name)
-            .env("MKLINK_STCP_AUTH_TOKEN", credentials.auth_token)
-            .env("MKLINK_STCP_SECRET", credentials.secret_key);
-    }
+    // Remote services are explicitly started for the selected probe. Never
+    // copy a global listener configuration into every backend process.
+    command.env("MKLINK_SITE_AGENT_ENABLED", "0");
 }
 
 #[tauri::command]
 fn site_agent_config_get(
+    probe_id: String,
     state: State<Sidecar>,
 ) -> Result<site_agent_config::SiteAgentConfig, String> {
-    site_agent_config::load(&configured_site_agent_root(state.inner())?)
+    site_agent_config::load(&configured_site_agent_root(state.inner(), &probe_id)?)
 }
 
 #[tauri::command]
 fn site_agent_config_save(
+    probe_id: String,
     config: site_agent_config::SiteAgentConfig,
     state: State<Sidecar>,
 ) -> Result<bool, String> {
-    let root = configured_site_agent_root(state.inner())?;
+    let root = configured_site_agent_root(state.inner(), &probe_id)?;
     config.validate(
         site_agent_secret::configured(&root),
         site_agent_secret::stcp_configured(&root),
     )?;
     if config.enabled && !site_agent_network::is_local_bind(&config.bind_host) {
-        return Err("The selected Site Agent bind address is not active on this host".into());
+        return Err("The selected Remote service bind address is not active on this host".into());
     }
     let previous = site_agent_config::load(&root)?;
     let restart_required =
@@ -238,31 +182,55 @@ fn site_agent_config_save(
 
 #[tauri::command]
 fn site_agent_secret_state(
+    probe_id: String,
     state: State<Sidecar>,
 ) -> Result<site_agent_secret::SecretState, String> {
     Ok(site_agent_secret::state(&configured_site_agent_root(
-        state.inner(),
+        state.inner(), &probe_id,
     )?))
 }
 
 #[tauri::command]
 fn site_agent_generate_token_and_copy(
+    probe_id: String,
     state: State<Sidecar>,
 ) -> Result<site_agent_secret::TokenResult, String> {
-    site_agent_secret::generate_and_copy(&configured_site_agent_root(state.inner())?)
+    site_agent_secret::generate_and_copy(&configured_site_agent_root(state.inner(), &probe_id)?)
 }
 
 #[tauri::command]
 fn site_agent_stcp_credentials_configure(
+    probe_id: String,
     auth_token: String,
     secret_key: String,
     state: State<Sidecar>,
 ) -> Result<(), String> {
     site_agent_secret::store_stcp(
-        &configured_site_agent_root(state.inner())?,
+        &configured_site_agent_root(state.inner(), &probe_id)?,
         &auth_token,
         &secret_key,
     )
+}
+
+#[tauri::command]
+fn site_agent_runtime_settings(probe_id: String, state: State<Sidecar>) -> Result<serde_json::Value, String> {
+    let root = configured_site_agent_root(state.inner(), &probe_id)?;
+    let config = site_agent_config::load(&root)?;
+    let mut value = serde_json::json!({
+        "enabled": config.enabled, "host": config.bind_host, "port": config.port,
+        "allow_lan": config.allow_lan, "transport": config.transport,
+        "stcp_server_addr": config.stcp_server_addr, "stcp_server_port": config.stcp_server_port,
+        "stcp_user": config.stcp_user, "stcp_proxy_name": config.stcp_proxy_name
+    });
+    if config.enabled {
+        value["token"] = site_agent_secret::load(&root)?.into();
+        if config.transport == "lan-stcp" {
+            let credentials = site_agent_secret::load_stcp(&root)?;
+            value["stcp_auth_token"] = credentials.auth_token.into();
+            value["stcp_secret"] = credentials.secret_key.into();
+        }
+    }
+    Ok(value)
 }
 
 #[tauri::command]
@@ -427,7 +395,6 @@ fn spawn_sidecar(
     instance_id: &str,
     runtime_info_path: &Path,
     project_root: &str,
-    site_agent_root: Option<&Path>,
 ) -> Result<Child, String> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
@@ -460,7 +427,7 @@ fn spawn_sidecar(
             project_root,
         ])
         .env("MKLINK_PARENT_JOB_BREAKAWAY_OK", "1");
-    apply_site_agent_environment(&mut command, site_agent_root);
+    clear_inherited_remote_service_environment(&mut command);
     if let SidecarLaunch::Bundled(path) = launch {
         let stcp_library = path
             .parent()
@@ -503,18 +470,12 @@ fn spawn_registered_sidecar(
         *job_guard = Some(create_kill_on_close_job()?);
     }
     let job = job_guard.as_ref().expect("job was initialized");
-    let site_agent_root = state
-        .site_agent_root
-        .lock()
-        .map_err(|error| error.to_string())?
-        .clone();
     let child = spawn_sidecar(
         launch,
         port,
         &state.instance_id,
         &state.runtime_info_path,
         project_root,
-        site_agent_root.as_deref(),
     )?;
     retain_child_if_registered(
         child,
@@ -905,6 +866,7 @@ pub fn run() {
             backend_endpoint,
             backend_alive,
             site_agent_config_get,
+            site_agent_runtime_settings,
             site_agent_config_save,
             site_agent_secret_state,
             site_agent_generate_token_and_copy,
@@ -991,7 +953,7 @@ pub fn run() {
 
             // Closing the main window is a real application exit. The sidecar
             // owns the Device and its serial/HIL locks, so it must be stopped
-            // even when Site Agent is configured. Users can start the desktop
+            // even when Remote service is configured. Users can start the desktop
             // app again when they need the agent; a hidden window must never
             // leave a probe locked unexpectedly.
             let cleanup_handle = app.handle().clone();
@@ -1122,6 +1084,24 @@ mod tests {
             "HTTP/1.1 200 OK\r\n\r\n{\"status\":\"ok\"}",
             "instance-a"
         ));
+    }
+
+    #[test]
+    fn remote_credentials_are_scoped_to_valid_probe_identities() {
+        let state = Sidecar {
+            child: Mutex::new(None), port: Mutex::new(None), instance_id: "test".into(),
+            runtime_info_path: PathBuf::new(), project_root: Mutex::new(String::new()),
+            site_agent_root: Mutex::new(Some(PathBuf::from("storage"))),
+            #[cfg(target_os = "windows")]
+            job: Mutex::new(None),
+        };
+        let first = format!("usb-{}", "a".repeat(24));
+        let second = format!("usb-{}", "b".repeat(24));
+        assert_ne!(configured_site_agent_root(&state, &first).unwrap(), configured_site_agent_root(&state, &second).unwrap());
+        assert_eq!(configured_site_agent_root(&state, &first).unwrap(), PathBuf::from("storage").join("probes").join(&first));
+        for invalid in ["lobby", "../other", "usb-short", "usb-AAAAAAAAAAAAAAAAAAAAAAAA"] {
+            assert!(configured_site_agent_root(&state, invalid).is_err());
+        }
     }
 
     #[test]

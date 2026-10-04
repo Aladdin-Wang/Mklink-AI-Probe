@@ -169,8 +169,8 @@ const tabs = computed(() => [
   { key: 'dashboard', label: tr('仪表盘', 'Dashboard') },
   { key: 'offline-flash', label: tr('脱机烧录', 'Offline Flash') },
   { key: 'online-flash', label: tr('在线烧录', 'Online Flash') },
-  { key: 'site-agent', label: tr('现场 Agent', 'Site Agent') },
-].filter(entry => entry.key !== 'site-agent' || isTauri))
+  { key: 'remote-service', label: tr('远程服务', 'Remote Service') },
+])
 
 function navigate(key: string) {
   // The legacy waveform script owns document-wide IDs; leave its dedicated page

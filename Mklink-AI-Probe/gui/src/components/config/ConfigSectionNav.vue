@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { tr } from '../../composables/useLanguage'
 import { sharedRuntime } from '../../composables/useBackendHealth'
 
-export type ConfigSection = 'local' | 'files' | 'remote' | 'serve' | 'firmware' | 'runtime'
+export type ConfigSection = 'local' | 'files' | 'remote' | 'firmware' | 'runtime'
 
 defineProps<{ modelValue: ConfigSection }>()
 
@@ -17,7 +17,6 @@ const sections = computed(() => [
   ...(sharedRuntime.value ? [{ id: 'runtime' as const, label: tr('后台管理', 'Backend'), icon: Server }] : []),
   { id: 'files' as const, label: tr('文件来源', 'File Sources'), icon: FileCode },
   { id: 'remote' as const, label: tr('远程连接', 'Remote Connection'), icon: Radio },
-  { id: 'serve' as const, label: tr('启动服务', 'Start Service'), icon: Server },
   { id: 'firmware' as const, label: tr('固件升级', 'Firmware Update'), icon: Upload },
 ])
 </script>
