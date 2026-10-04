@@ -118,7 +118,8 @@ const ports = ref<PortInfo[]>([])
 const portsLoaded = ref(false), refreshingPorts = ref(false), connecting = ref(false), sending = ref(false)
 const stopping = ref(false), disconnecting = ref(false)
 const running = ref(false), loopRunning = ref(false), logPaused = ref(false)
-const loopStatus = ref<Record<string, number>>({ completed: 0, errors: 0 })
+interface LoopStatus { revision: number; running: boolean; completed: number; errors: number }
+const loopStatus = ref<LoopStatus>({ revision: -1, running: false, completed: 0, errors: 0 })
 const lastResult = ref<TransactionResult | null>(null)
 const logs = ref<LogEntry[]>([])
 const logPanel = ref<HTMLElement | null>(null)
@@ -138,11 +139,17 @@ async function api(path: string, body?: unknown) {
   return payload
 }
 async function refreshPorts() { refreshingPorts.value = true; try { ports.value = await fetchPorts(); if (!ports.value.some(item => item.device === settings.port)) settings.port = ports.value[0]?.device || '' } catch (error) { toast.error(String(error)) } finally { refreshingPorts.value = false; portsLoaded.value = true } }
+function applyLoopStatus(status: LoopStatus): void {
+  // HTTP replies and SSE share an order; completion can precede a start reply.
+  if (!running.value || !status || !Number.isSafeInteger(status.revision) || status.revision < loopStatus.value.revision) return
+  loopStatus.value = status
+  loopRunning.value = Boolean(status.running)
+}
 function applyStatus(status: any): void {
   running.value = Boolean(status.running)
   stopping.value = Boolean(status.stopping)
-  loopRunning.value = Boolean(status.loop?.running)
-  loopStatus.value = status.loop || { completed: 0, errors: 0 }
+  if (!running.value) loopRunning.value = false
+  applyLoopStatus(status.loop)
   if ((running.value || stopping.value) && status.connection) {
     const connection = status.connection
     Object.assign(settings, {
@@ -168,7 +175,7 @@ async function disconnect() {
     running.value = false
     stopping.value = false
     loopRunning.value = false
-    loopStatus.value = { completed: 0, errors: 0 }
+    loopStatus.value = { ...loopStatus.value, running: false, completed: 0, errors: 0 }
     toast.info(tr('Modbus 已断开', 'Modbus disconnected'))
   } catch (error) {
     toast.error(tr('停止未完成: ', 'Stop did not complete: ') + String(error))
@@ -179,18 +186,26 @@ async function disconnect() {
 }
 function requestPayload() { return buildTransaction(settings) }
 async function sendOnce() { sending.value = true; try { lastResult.value = await api('/api/dash/modbus/transaction', requestPayload()) } catch (error) { toast.error(tr('请求失败: ', 'Request failed: ') + String(error)) } finally { sending.value = false } }
-async function startLoop() { try { loopStatus.value = await api('/api/dash/modbus/loop/start', { ...requestPayload(), interval: settings.loopIntervalMs / 1000, count: settings.loopCount }); loopRunning.value = true } catch (error) { toast.error(tr('循环启动失败: ', 'Loop start failed: ') + String(error)) } }
+async function startLoop() {
+  try {
+    applyLoopStatus(await api('/api/dash/modbus/loop/start', {
+      ...requestPayload(), interval: settings.loopIntervalMs / 1000, count: settings.loopCount,
+    }))
+  } catch (error) {
+    toast.error(tr('循环启动失败: ', 'Loop start failed: ') + String(error))
+    await restoreStatus()
+  }
+}
 async function stopLoop() {
   try {
     const status = await api('/api/dash/modbus/loop/stop', {})
-    loopStatus.value = status
-    loopRunning.value = Boolean(status.running)
+    applyLoopStatus(status)
   } catch (error) {
     toast.error(tr('循环停止未完成: ', 'Loop stop did not complete: ') + String(error))
     await restoreStatus()
   }
 }
-function connectSSE() { stopEventSource(); es = new EventSource(`${API_BASE}/api/dash/modbus/stream`); es.onmessage = event => { try { const value = JSON.parse(event.data); if (value.event === 'status') applyStatus(value); if (value.event === 'transaction') lastResult.value = value; if (value.event === 'loop') { loopRunning.value = Boolean(value.running); loopStatus.value = value }; if (value.event === 'stopped') { running.value = false; stopping.value = false; loopRunning.value = false; stopEventSource() }; if (value.event === 'error') toast.error(value.message); if (value.event === 'history') { if (!logPaused.value) logs.value = [...logs.value, ...(value.points || []).filter((item: LogEntry) => ['frame', 'error'].includes(item.event))].slice(-500) } else if (!logPaused.value && ['frame', 'error'].includes(value.event)) logs.value = [...logs.value, value].slice(-500); nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight }) } catch { /* malformed event */ } } }
+function connectSSE() { stopEventSource(); es = new EventSource(`${API_BASE}/api/dash/modbus/stream`); es.onmessage = event => { try { const value = JSON.parse(event.data); if (value.event === 'status') applyStatus(value); if (value.event === 'transaction') lastResult.value = value; if (value.event === 'loop') applyLoopStatus(value); if (value.event === 'stopped') { running.value = false; stopping.value = false; loopRunning.value = false; stopEventSource() }; if (value.event === 'error') toast.error(value.message); if (value.event === 'history') { if (!logPaused.value) logs.value = [...logs.value, ...(value.points || []).filter((item: LogEntry) => ['frame', 'error'].includes(item.event))].slice(-500) } else if (!logPaused.value && ['frame', 'error'].includes(value.event)) logs.value = [...logs.value, value].slice(-500); nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight }) } catch { /* malformed event */ } } }
 function stopEventSource() { if (es) { es.close(); es = null } }
 function formatAddress(value: number) { return `${value} / 0x${value.toString(16).toUpperCase().padStart(4, '0')}` }
 function formatHex(value: number | boolean) { const n = typeof value === 'boolean' ? Number(value) : value; return `0x${n.toString(16).toUpperCase().padStart(4, '0')}` }

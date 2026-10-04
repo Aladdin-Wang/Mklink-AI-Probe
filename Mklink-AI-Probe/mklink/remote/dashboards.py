@@ -3204,6 +3204,7 @@ class ModbusStreamManager:
         self._loop_thread: threading.Thread | None = None
         self._loop_stop = threading.Event()
         self._loop_status: dict[str, Any] = {
+            "revision": 0,
             "running": False,
             "completed": 0,
             "requested": 0,
@@ -3289,7 +3290,10 @@ class ModbusStreamManager:
         self._stop_event.clear()
         self._loop_stop.clear()
         self._latest, self._history = {}, []
-        self._loop_status = {'running': False, 'completed': 0, 'requested': 0, 'errors': 0}
+        # Keep ordering across reconnects as well as individual loops: an old
+        # HTTP reply must not overwrite a newer SSE snapshot in another window.
+        self._loop_status = {'revision': self._loop_status['revision'] + 1,
+                             'running': False, 'completed': 0, 'requested': 0, 'errors': 0}
         self._thread = self._loop_thread = None
         self._client = ModbusClient(
             port=settings['port'], baudrate=settings['baudrate'], bytesize=settings['bytesize'],
@@ -3461,6 +3465,7 @@ class ModbusStreamManager:
 
         self._loop_stop.clear()
         self._loop_status = {
+            "revision": self._loop_status['revision'] + 1,
             "running": True,
             "completed": 0,
             "requested": int(count),
@@ -3492,20 +3497,30 @@ class ModbusStreamManager:
                         )
                     finally:
                         self._loop_status["completed"] += 1
+                    if count and self._loop_status["completed"] >= count:
+                        break
                     next_due += float(interval)
                     wait_time = max(0.0, next_due - time.monotonic())
                     if self._loop_stop.wait(wait_time):
                         break
             finally:
-                self._loop_status["running"] = False
-                self._record_event(
-                    {"event": "loop", "status": "stopped", **self._loop_status}
-                )
+                with self._lifecycle_lock:
+                    self._loop_status["running"] = False
+                    self._loop_status["revision"] += 1
+                    self._record_event(
+                        {"event": "loop", "status": "stopped", **self._loop_status}
+                    )
 
         self._loop_thread = threading.Thread(
             target=run_loop, name="mklink-modbus-loop", daemon=True
         )
-        self._loop_thread.start()
+        try:
+            self._loop_thread.start()
+        except Exception:
+            self._loop_thread = None
+            self._loop_status["running"] = False
+            self._loop_status["revision"] += 1
+            raise
         self._record_event({"event": "loop", "status": "started", **self._loop_status})
         return dict(self._loop_status)
 
@@ -3529,17 +3544,18 @@ class ModbusStreamManager:
         return self.transaction(fc, start, quantity=quantity)["values"]
 
     def get_status(self) -> dict:
-        return {
-            "running": self._running,
-            "stopping": self._stopping,
-            "slave": self._slave,
-            "interval": self._interval,
-            "register_count": len(self._specs),
-            "clients": self._bridge.client_count,
-            "latest": self._latest,
-            "connection": self._connection,
-            "loop": dict(self._loop_status),
-        }
+        with self._lifecycle_lock:
+            return {
+                "running": self._running,
+                "stopping": self._stopping,
+                "slave": self._slave,
+                "interval": self._interval,
+                "register_count": len(self._specs),
+                "clients": self._bridge.client_count,
+                "latest": self._latest,
+                "connection": self._connection,
+                "loop": dict(self._loop_status),
+            }
 
     async def sse_generator(self):
         q = self._bridge.add_client()

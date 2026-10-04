@@ -278,6 +278,46 @@ def test_poll_groups_do_not_drop_multiword_registers_at_the_protocol_limit(clien
     assert client.calls == [(0, 124, 1), (124, 3, 1)]
 
 
+def test_finite_loop_finishes_without_waiting_an_extra_interval(client_factory):
+    from mklink.remote.dashboards import ModbusStreamManager
+    manager = ModbusStreamManager()
+    manager.start({'port': 'TEST'}, 1, [])
+    try:
+        manager.start_loop(3, 0, quantity=1, count=1, interval=3600)
+        manager._loop_thread.join(timeout=1)
+        assert not manager._loop_thread.is_alive()
+        assert client_factory.instances[0].calls == [(0, 1, 1)]
+        events = [event for event in manager._history if event['event'] == 'loop']
+        assert [event['status'] for event in events] == ['started', 'stopped']
+        assert events[-1]['completed'] == 1
+        assert events[-1]['revision'] > events[0]['revision']
+        assert manager.get_status()['loop'] == {key: value for key, value in events[-1].items()
+                                               if key not in {'event', 'status'}}
+    finally:
+        manager.stop()
+
+
+def test_loop_thread_start_failure_restores_idle_state(client_factory, monkeypatch):
+    from mklink.remote.dashboards import ModbusStreamManager
+    manager = ModbusStreamManager()
+    manager.start({'port': 'TEST'}, 1, [])
+    original_start = threading.Thread.start
+    def fail_loop(thread):
+        if thread.name == 'mklink-modbus-loop':
+            raise RuntimeError('thread unavailable')
+        return original_start(thread)
+    monkeypatch.setattr(threading.Thread, 'start', fail_loop)
+    try:
+        with pytest.raises(RuntimeError, match='thread unavailable'):
+            manager.start_loop(3, 0, quantity=1, count=1)
+        assert not manager.get_status()['loop']['running']
+        assert manager._loop_thread is None
+        assert manager.running and manager.worker_alive
+        assert client_factory.instances[0].calls == []
+    finally:
+        manager.stop()
+
+
 def test_incomplete_poll_response_is_an_error(client_factory, monkeypatch):
     from mklink.modbus._format import RegisterSpec
     monkeypatch.setattr(client_factory, 'read_holding_registers', lambda *args: [])

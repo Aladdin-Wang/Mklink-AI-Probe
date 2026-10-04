@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-03T23:52:13+00:00`
+- 更新时间：`2026-10-04T00:24:16+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; accelerated waveform test isolation and GC checkpoints corrected after 7711f68; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; finite Modbus loop completion and revisioned HTTP/SSE state fixed after 6f12ed6; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。第二十六批处理7711f68远端VOFA内存门限失败：消除测试顺序依赖和画布mock历史留存，60秒加速循环加入固定GC检查点，在回收前采样，维持192MiB/128MiB门限。GUI788、波形96及独立压力测试、类型/外置构建通过；原Modbus后端远端CI通过，本批远端CI待核对。继续UART/Modbus共享能力、HTTP取消、循环事件顺序及A7。
+- 当前任务：持续循环评审/验证。第二十七批修复有限Modbus循环末次后额外等待、线程启动失败假运行、HTTP迟到响应覆盖SSE。复用既有生命周期锁及循环状态，加入单调revision跨重连排序，前端共用状态应用函数；共享协议8，旧后台须显式停止。后端1091、相关GUI34、类型/外置构建及真实Edge HTTP/SSE乱序验证通过；Modbus为模拟从站，未访问物理串口。6f12ed6远端三项全部通过，本批CI待精确核对。继续UART/Modbus共享CLI/MCP及独立端口准入。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十五/二十六批：前批1885通过/2可选跳过及双后台UART/Modbus真机验证保持。7711f68远端后端通过、GUI因VOFA堆峰值209418736B超过192MiB失败；本批仅修测试工具与隔离，GUI788、波形96、单独压力测试及类型/构建通过。加速60秒300帧/1800渲染、20万点环、无丢帧/错误，回收前峰值增量58093240B、结束ArrayBuffer增量73404B；不是实际60秒浏览器或长期稳定性验收。精确提交CI推送后核对。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十七批：后端契约1091通过，相关GUI34通过、类型/外置构建通过；先复现2项后端/2项前端失败后修复。Edge真实HTTP/SSE验证count=1/interval=3600立即结束、终止事件先于启动响应、另一客户端新循环先于旧停止响应；3次模拟读取，无物理串口、浏览器错误，worker及HTTP服务退出。前批6f12ed6远端后端1089、GUI209/构建及feedback全部通过，VOFA回收前峰值增量74833264B。前批双探针真机验证边界见第二十五批；本批不是物理Modbus或长稳验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 继续迁移UART/Modbus专用CLI与旧MCP能力，定义独立端口的共享订阅/发送归属，梳理lobby及目标任务期间的准入；审计HTTP断开时逐请求取消和GUI快速有限循环状态事件顺序。复用现有管理器与公共事务，不套用MCU独占规则。随后分析入口/独立Agent、A7双设备长稳、拔插/休眠和NSIS；保持实际进程退出断言，不改下载器固件/WinUSB，不自动合并发布。
+1. 继续迁移UART/Modbus专用CLI与旧MCP能力：复用RuntimeClient/Session/现有管理器，定义target与UART会话领域、按串口的共享订阅/发送归属，分离lobby及目标任务期间的UART准入；审计HTTP断开时逐请求取消。不得让独立UART附着隐式初始化MCU，也不新增后台或OS锁。随后分析入口/独立Agent、A7双设备长稳、拔插/休眠和NSIS；保持实际进程退出断言，不改下载器固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

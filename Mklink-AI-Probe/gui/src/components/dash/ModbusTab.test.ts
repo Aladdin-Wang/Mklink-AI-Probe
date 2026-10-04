@@ -23,7 +23,7 @@ describe('ModbusTab prerequisites', () => {
     vi.stubGlobal('EventSource', class { close() {} })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       running: false,
-      loop: { running: false, completed: 0, errors: 0 },
+      loop: { revision: 0, running: false, completed: 0, errors: 0 },
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -65,7 +65,7 @@ describe('ModbusTab prerequisites', () => {
         stopping = true
         return new Response(JSON.stringify({ detail: 'worker still active' }), { status: 409 })
       }
-      return new Response(JSON.stringify({ running: !stopping, stopping, loop: { running: false } }))
+      return new Response(JSON.stringify({ running: !stopping, stopping, loop: { revision: 0, running: false } }))
     })
     vi.stubGlobal('fetch', fetch)
     const wrapper = mount(ModbusTab)
@@ -85,7 +85,7 @@ describe('ModbusTab prerequisites', () => {
   it('does not claim the loop stopped when the backend times out', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/loop/stop')
       ? new Response(JSON.stringify({ detail: 'loop still active' }), { status: 409 })
-      : new Response(JSON.stringify({ running: true, loop: { running: true, completed: 1, errors: 0 } }))))
+      : new Response(JSON.stringify({ running: true, loop: { revision: 0, running: true, completed: 1, errors: 0 } }))))
     const wrapper = mount(ModbusTab)
     await flushPromises()
     await wrapper.findAll('button').find(button => button.text() === '停止循环')!.trigger('click')
@@ -99,13 +99,41 @@ describe('ModbusTab prerequisites', () => {
     mocks.listUartPorts.mockResolvedValue([{ device: 'UART_BACKEND', description: '' }])
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ running: true,
       slave: 7, connection: { port: 'UART_BACKEND', baudrate: 57600, bytesize: 8, parity: 'E',
-        stopbits: 2, timeout: 1, retries: 0, local_echo: false }, loop: { running: false } }))))
+        stopbits: 2, timeout: 1, retries: 0, local_echo: false }, loop: { revision: 0, running: false } }))))
     const wrapper = mount(ModbusTab)
     await flushPromises()
     expect(wrapper.find('.connection-summary').text()).toContain('UART_BACKEND')
     expect(wrapper.find('.connection-summary').text()).toContain('57600')
     expect(wrapper.find('.connection-summary').text()).toContain('8E2')
     wrapper.unmount()
+  })
+
+  it.each(['start', 'stop'] as const)('ignores a late loop %s response after a newer SSE state', async action => {
+    let stream: { onmessage?: (event: { data: string }) => void } = {}
+    vi.stubGlobal('EventSource', class {
+      constructor() { stream = this }
+      close() {}
+    })
+    let respond!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.endsWith(`/loop/${action}`)) return new Promise<Response>(resolve => { respond = resolve })
+      return Promise.resolve(new Response(JSON.stringify({ running: true,
+        loop: { revision: 1, running: action === 'stop', completed: 0, errors: 0 } })))
+    }))
+    const wrapper = mount(ModbusTab)
+    try {
+      await flushPromises()
+      await wrapper.findAll('button').find(button => button.text() === (action === 'start' ? '循环发送' : '停止循环'))!.trigger('click')
+      stream.onmessage!({ data: JSON.stringify({ event: 'loop', revision: 3,
+        running: action === 'stop', completed: 7, errors: 0 }) })
+      await flushPromises()
+      respond(new Response(JSON.stringify({ revision: 2, running: action === 'start', completed: 0, errors: 0 })))
+      await flushPromises()
+      expect(wrapper.findAll('button').some(button => button.text() === (action === 'start' ? '循环发送' : '停止循环'))).toBe(true)
+      expect(wrapper.find('.loop-summary').text()).toContain('7')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
 })
