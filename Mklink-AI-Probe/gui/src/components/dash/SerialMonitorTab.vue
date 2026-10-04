@@ -72,6 +72,9 @@
     <SerialRecordingPanel :status="recording" :running="running && !stopping" :port="portName"
       :busy="recordingBusy" :error="recordingError" @start="startRecording" @stop="stopRecording" />
 
+    <SerialSequencePanel :statuses="sequences" :port="portName" :running="running && !stopping"
+      :busy="sequenceBusy" :error="sequenceError" @start="startSequence" @stop="stopSequence" />
+
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
         <button
@@ -182,7 +185,10 @@ import SerialAutomationPanel, { type SerialAutomation, type SerialParsedFrame } 
 
 import SerialRecordingPanel, { type SerialRecordingStatus, type SerialRecordingRequest } from './SerialRecordingPanel.vue'
 
+import SerialSequencePanel, { type SerialSequenceStatus, type SerialSequenceRequest } from './SerialSequencePanel.vue'
+
 interface SerialStatus {
+  send_sequences?: Record<string, SerialSequenceStatus>
   recording?: SerialRecordingStatus
   running?: boolean
   ports?: Record<string, string>
@@ -274,6 +280,8 @@ const portStatuses = ref<Record<string, string>>({})
 const runtimeError = ref('')
 const recording = ref<SerialRecordingStatus>({ state: 'idle', active: false })
 const recordingBusy = ref(false), recordingError = ref('')
+const sequences = ref<Record<string, SerialSequenceStatus>>({})
+const sequenceBusy = ref(false), sequenceError = ref('')
 const automation = ref<SerialAutomation>({ profile: null, rules: [] })
 const automationEdited = ref(false)
 const latestFrames = ref<Record<string, SerialParsedFrame>>({})
@@ -384,6 +392,7 @@ function applyStatus(status: SerialStatus): void {
     observedSerialSession = status.session
     runtimeError.value = ''
   }
+  if (status.send_sequences) sequences.value = status.send_sequences
   if (status.recording) recording.value = status.recording
   running.value = status.running === true
   if (running.value || !automationEdited.value) {
@@ -619,6 +628,23 @@ async function changeRecording(action: 'start' | 'stop', request?: SerialRecordi
 }
 function startRecording(request: SerialRecordingRequest): Promise<void> { return changeRecording('start', request) }
 function stopRecording(): Promise<void> { return changeRecording('stop') }
+
+async function changeSequence(action: 'start' | 'stop', request: SerialSequenceRequest | {port: string}): Promise<void> {
+  if (sequenceBusy.value) return
+  sequenceBusy.value = true
+  sequenceError.value = ''
+  try {
+    await requestJson(`/api/dash/serial/sequence/${action}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) })
+  } catch (caught) {
+    sequenceError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    await refreshStatus()
+    sequenceBusy.value = false
+  }
+}
+function startSequence(request: SerialSequenceRequest): Promise<void> { return changeSequence('start', request) }
+function stopSequence(port: string): Promise<void> { return changeSequence('stop', { port }) }
 
 async function refreshStatus(): Promise<void> {
   try {

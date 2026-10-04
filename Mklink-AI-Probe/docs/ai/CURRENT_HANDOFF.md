@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T10:03:20+00:00`
+- 更新时间：`2026-10-04T10:12:59+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; reader-owned shared command sequences after 1b351ce; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared sequence GUI after ab0a6d4; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第五十三批共享命令序列复用现有reader/协议锁/普通写入/历史，无Timer或发送线程；每端口一份有界命令+截止时间，连续/有限重复不预展开、不追赶补发。重复启动拒绝，断开继续；停止/错误/YMODEM接管取消且不自动恢复。写入/写后历史故障可见且不重试。协议23/UART16项。新增22测试，扩大2446通过2跳过，补入写后历史故障后相关144通过；真实Edge双窗口/MCP/实际CLI+模拟OS通过，MCP断开后序列两次均由原reader写入，日志字节各一次、全释放。未做物理硬件测试。前批1b351ce精确CI后端1662/GUI227/类型构建/feedback通过，本批待核对。下一步GUI队列/广播/有界文件发送后删除旧Dashboard。不改固件/WinUSB，不合并发布。
+- 当前任务：持续循环评审验证。第五十四批主GUI共享命令队列面板完成：本窗口草稿与后台执行状态分开，按端口显示状态/发送计数，停止固定对应行端口，切换端口不隐式停止；复用现有轮询无浏览器定时发送。新增4GUI测试，相关21/完整814通过，类型与生产构建通过；真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI启动A/选中B的窗口停止A、AI启动B两窗同步/A窗按行停止B，既有日志/队列断开续行/原始字节各一次/全释放通过。前批ab0a6d4精确两个CI成功，日志下载EOF数量未填，本批待核对。下一步广播/有界文件发送并删除旧Dashboard和reader旧同步日志分支。不改固件/WinUSB，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第53节：第五十三批共享命令序列复用现有reader/协议锁/普通写入/历史，无Timer或发送线程；每端口一份有界命令+截止时间，连续/有限重复不预展开、不追赶补发。重复启动拒绝，断开继续；停止/错误/YMODEM接管取消且不自动恢复。写入/写后历史故障可见且不重试。协议23/UART16项。新增22测试，扩大2446通过2跳过，补入写后历史故障后相关144通过；真实Edge双窗口/MCP/实际CLI+模拟OS通过，MCP断开后序列两次均由原reader写入，日志字节各一次、全释放。未做物理硬件测试。前批1b351ce精确CI后端1662/GUI227/类型构建/feedback通过，本批待核对。下一步GUI队列/广播/有界文件发送后删除旧Dashboard。不改固件/WinUSB，不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第54节：第五十四批主GUI共享命令队列面板完成：本窗口草稿与后台执行状态分开，按端口显示状态/发送计数，停止固定对应行端口，切换端口不隐式停止；复用现有轮询无浏览器定时发送。新增4GUI测试，相关21/完整814通过，类型与生产构建通过；真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI启动A/选中B的窗口停止A、AI启动B两窗同步/A窗按行停止B，既有日志/队列断开续行/原始字节各一次/全释放通过。前批ab0a6d4精确两个CI成功，日志下载EOF数量未填，本批待核对。下一步广播/有界文件发送并删除旧Dashboard和reader旧同步日志分支。不改固件/WinUSB，不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；主GUI接入共享命令序列配置/状态，复用现有轮询，补广播/有界文件发送后将serial dashboard指向主GUI并删旧同步HTTP/SSE服务。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI；补广播/有界原始文件发送，将serial dashboard指向共享主GUI，删除旧同步HTTP/SSE服务、浏览器定时发送、SerialMonitor旧同步logger分支及无用导入/导出。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
