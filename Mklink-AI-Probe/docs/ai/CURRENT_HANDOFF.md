@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T20:18:52.513696+00:00`
+- 更新时间：`2026-10-04T20:21:46.708355+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：111批e9503bbb便携远程服务新包构建/内容审计及短时生命周期、Pack导入通过，包含106与109源码修复。未进行新包真机或长期验证。
+- 当前任务：112批111候选双V4 LAN/本地共享及物理MSC部署短时通过，另10秒HPM共享RTT本地/远程各2075字节、line_parser诊断正确。所有测试后台/端点及磁盘测试文件清理完成。长期验证仍暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第107节：soak104按用户要求提前停止，本地与LAN各160797字节，22个样本；仅短时观察，不能认定长稳通过。
+- **共享后台、多探针与AI共存**：第112节：111新候选包双V4本机LAN+本地共存及三文件MSC部署通过；10秒RTT共享同收2075字节，诊断透传正常，清理通过。不等于GUI渲染或长期验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,14 +35,14 @@
 
 ## 真机环境
 
-- **state**：用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 本轮两后台及控制进程已退出，端点清理完成，无清理错误。
+- **state**：112批双V4重新枚举后完成短时验证；HPM本地/LAN共享RTT及F103邻居查询通过，MSC测试文件已清理、两盘原内容保持，未触发烧录/复位/供电。后台和端点已清理；设备后续使用前重新枚举。长期验证按用户要求暂停。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 111候选agent111-e9503bbb已完成无Python生命周期与Pack导入，SHA256 84af0b892cad528eff71721518fd9ed21d3f7e7f58b35636857d928612c5b179；下一步新包短时双探针真机验证。脱机持久结果查询未完成，NSIS UAC待答复；长期测试等待用户通知。
+2. 111候选已完成112批双探针短时真机验证。继续实现脱机部署持久结果查询，沿用现有RuntimeJobs与单一准入，不新建队列；NSIS UAC待答复，长期测试等待用户通知。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
