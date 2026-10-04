@@ -48,6 +48,72 @@ def test_close_releases_file_when_flush_fails():
     assert broken.closed and logger._file is None
 
 
+@pytest.mark.parametrize('format', ['txt', 'csv'])
+def test_rapid_rotation_preserves_every_record_and_existing_archive(tmp_path, monkeypatch, format):
+    from datetime import datetime
+    import mklink.serial._logger as module
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls): return cls(2026, 10, 4, 12)
+    monkeypatch.setattr(module, 'datetime', FixedClock)
+    path = tmp_path / f'capture.{format}'
+    existing = tmp_path / f'capture_20261004_120000.{format}'
+    existing.write_text('keep', encoding='utf-8')
+    with FileLogger(str(path), format, max_size=1) as logger:
+        for value in range(20):
+            logger.log('RX', 'TEST', bytes([value]))
+    assert existing.read_text(encoding='utf-8') == 'keep'
+    archives = sorted(p for p in tmp_path.iterdir() if p not in (path, existing))
+    assert len(archives) == 20 and path.read_bytes() == b''
+    if format == 'csv':
+        records = []
+        for archive in archives:
+            with archive.open(encoding='utf-8', newline='') as stream:
+                rows = list(csv.DictReader(stream))
+            assert len(rows) == 1 and None not in rows[0]
+            records.append(rows[0]['raw_hex'])
+        assert sorted(records) == [f'{value:02X}' for value in range(20)]
+    else:
+        records = [p.read_text(encoding='utf-8').split('TEST: ')[1].split()[0] for p in archives]
+        assert sorted(records) == [f'{value:02X}' for value in range(20)]
+
+
+@pytest.mark.parametrize('failure', ['reserve', 'replace', 'reopen'])
+def test_rotation_failure_retains_data_and_closes_cleanly(tmp_path, monkeypatch, failure):
+    from pathlib import Path
+    import builtins
+    path = tmp_path / 'capture.txt'
+    logger = FileLogger(str(path), max_size=1)
+    logger.start()
+    stream = logger._file
+    if failure == 'reserve':
+        monkeypatch.setattr(Path, 'open', lambda *a, **kw: (_ for _ in ()).throw(OSError('reserve failed')))
+    elif failure == 'replace':
+        monkeypatch.setattr(Path, 'replace', lambda *a, **kw: (_ for _ in ()).throw(OSError('replace failed')))
+    else:
+        monkeypatch.setattr(builtins, 'open', lambda *a, **kw: (_ for _ in ()).throw(OSError('reopen failed')))
+    with pytest.raises(OSError, match=f'{failure} failed'):
+        logger.log('RX', 'TEST', b'abc')
+    assert stream.closed and logger._file is None
+    with pytest.raises(RuntimeError, match='not open'):
+        logger.log('RX', 'TEST', b'next')
+    logger.close()
+    logger.close()
+    monkeypatch.undo()
+    files = list(tmp_path.iterdir())
+    assert len(files) == 1 and '61 62 63' in files[0].read_text(encoding='utf-8')
+
+
+def test_repeated_start_does_not_truncate_active_log(tmp_path):
+    path = tmp_path / 'capture.txt'
+    with FileLogger(str(path)) as logger:
+        logger.log('RX', 'TEST', b'keep')
+        with pytest.raises(RuntimeError, match='already open'):
+            logger.start()
+        logger.log('RX', 'TEST', b'next')
+    assert 'keep' in path.read_text() and 'next' in path.read_text()
+
+
 @pytest.mark.parametrize('params', [dict(duration=-1), dict(duration=float('nan')),
     dict(duration=float('inf')), dict(duration=True), dict(baud=0), dict(databits=4),
     dict(parity='X'), dict(stop=3), dict(profile='missing.json'), dict(format='bad')])

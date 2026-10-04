@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T08:22:05+00:00`
+- 更新时间：`2026-10-04T08:33:32+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared GUI serial automation and parsed snapshots after 062ce57; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; fail-safe serial log rotation after b4c4687; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第四十七批主GUI增加Profile/应答导入、规则增删与运行锁定；复用后台解析器和每秒status，按端口保留一份最新帧，256字节预览、序号/CRC/字段、NaN字符串，停止保留/重启清空，协议20。Profile类型/大小/有限缩放预检、零缩放修复。后端14与GUI8新测试，扩大2370通过2跳过，补充边界后后端新文件14/GUI相关14通过；类型构建通过。真实Edge双窗口/MCP+模拟OS，GUI启用单份应答、AI同值、错误Profile零开口、11/22端口隔离、重启与旧错误清理、全释放，无物理发送。062ce57精确CI1594/GUI216全绿，本批CI待核对。旧Dashboard同步SSE阻塞仍未修复，须继续日志/队列迁移再删服务。
+- 当前任务：持续循环评审验证。第四十八批复用FileLogger修复同秒轮转撞名、失败遗留关闭句柄、重复start截断；独占预留归档及重建活动文件，保留已有归档/数据，失败显式拒绝后续写入，close可重复。新增6测试，相关72通过，扩大回归2377通过、2可选跳过。b4c4687精确CI后端1608/GUI224、类型构建和feedback全通过。新发现有效Profile零长度提取无进展及单字节帧头垃圾不释放，受控单步已复现待修。未改GUI/硬件/固件；旧Dashboard阻塞和吞日志错误仍未删除。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第47节：第四十七批主GUI增加Profile/应答导入、规则增删与运行锁定；复用后台解析器和每秒status，按端口保留一份最新帧，256字节预览、序号/CRC/字段、NaN字符串，停止保留/重启清空，协议20。Profile类型/大小/有限缩放预检、零缩放修复。后端14与GUI8新测试，扩大2370通过2跳过，补充边界后后端新文件14/GUI相关14通过；类型构建通过。真实Edge双窗口/MCP+模拟OS，GUI启用单份应答、AI同值、错误Profile零开口、11/22端口隔离、重启与旧错误清理、全释放，无物理发送。062ce57精确CI1594/GUI216全绿，本批CI待核对。旧Dashboard同步SSE阻塞仍未修复，须继续日志/队列迁移再删服务。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第48节：第四十八批复用FileLogger修复同秒轮转撞名、失败遗留关闭句柄、重复start截断；独占预留归档及重建活动文件，保留已有归档/数据，失败显式拒绝后续写入，close可重复。新增6测试，相关72通过，扩大回归2377通过、2可选跳过。b4c4687精确CI后端1608/GUI224、类型构建和feedback全通过。新发现有效Profile零长度提取无进展及单字节帧头垃圾不释放，受控单步已复现待修。未改GUI/硬件/固件；旧Dashboard阻塞和吞日志错误仍未删除。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI，继续serial dashboard持续日志/发送队列等缺口并迁入主GUI，再删除旧独占HTTP/SSE/private callback；同步检查日志轮转、Profile非定界帧、循环/YMODEM归属、请求取消、Agent、真机异常/长稳与NSIS。不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI，优先修复Profile零长度无进展/垃圾帧头与空闲定界；继续serial dashboard持续日志/发送队列迁入主GUI再删旧独占服务，复用字节历史、避免reader磁盘IO和生命周期锁反向等待。继续循环/YMODEM归属、请求取消、Agent、真机异常/长稳与NSIS。不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

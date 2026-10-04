@@ -30,9 +30,12 @@ class FileLogger:
         self._file: IO[str] | None = None
         self._lock = threading.Lock()
         self._csv_header_written = False
+        self._rotation_index = 0
 
     def start(self) -> None:
         with self._lock:
+            if self._file is not None:
+                raise RuntimeError('Log is already open')
             self._file = open(self._path, "w", encoding="utf-8", newline="")
             if self._format == "csv":
                 self._csv_header_written = False
@@ -41,7 +44,7 @@ class FileLogger:
             *, timestamp: float | None = None, frames: list[dict] | None = None) -> None:
         with self._lock:
             if self._file is None:
-                return
+                raise RuntimeError('Log is not open')
 
             now = datetime.now() if timestamp is None else datetime.fromtimestamp(timestamp)
             annotations = frames if frames is not None else ([{'fields': decoded}] if decoded else [])
@@ -115,14 +118,30 @@ class FileLogger:
         if size < self._max_size:
             return
 
-        self._file.close()
+        stream, self._file = self._file, None
+        stream.close()
 
-        now = datetime.now()
-        stem = self._path.stem
-        suffix = self._path.suffix
-        rotated_name = f"{stem}_{now.strftime('%Y%m%d_%H%M%S')}{suffix}"
-        rotated_path = self._path.parent / rotated_name
-        self._path.rename(rotated_path)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        while True:
+            index = self._rotation_index
+            self._rotation_index += 1
+            discriminator = f'_{index}' if index else ''
+            rotated_path = self._path.with_name(
+                f'{self._path.stem}_{stamp}{discriminator}{self._path.suffix}')
+            try:
+                # Reserve exclusively: replace must never overwrite an older log.
+                with rotated_path.open('x', encoding='utf-8'):
+                    pass
+                break
+            except FileExistsError:
+                continue
+        try:
+            self._path.replace(rotated_path)
+        except OSError:
+            rotated_path.unlink(missing_ok=True)
+            raise
 
-        self._file = open(self._path, "w", encoding="utf-8", newline="")
+        # A failed rotation leaves the logger closed and the error visible.
+        # Do not truncate a file created at the base path by another writer.
+        self._file = open(self._path, "x", encoding="utf-8", newline="")
         self._csv_header_written = False
