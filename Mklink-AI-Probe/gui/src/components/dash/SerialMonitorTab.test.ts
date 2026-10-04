@@ -374,6 +374,8 @@ describe('SerialMonitorTab', () => {
     expect((form.get('file') as File).size).toBe(8)
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('100% · 8/8 B'))
+    // Terminal writes flush on their own frame, after reactive progress renders.
+    await vi.waitFor(() => expect(mocks.terminalWrites.join('')).toContain('[YMODEM] 传输完成'))
     expect(mocks.terminalWrites.join('')).toContain('[YMODEM] \u51c6\u5907\u53d1\u9001 rtthread.bin\uff088 B\uff09')
     expect(mocks.terminalWrites.join('')).toContain('[YMODEM] \u6b63\u5728\u4f20\u8f93 50%\uff084/8 B\uff09')
     expect(mocks.terminalWrites.join('')).not.toContain('[YMODEM] \u6b63\u5728\u4f20\u8f93 55%')
