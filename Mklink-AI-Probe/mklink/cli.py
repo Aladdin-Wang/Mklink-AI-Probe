@@ -1300,23 +1300,25 @@ def _shared_uart_client(args, stream, settings, *, after_stop=None):
     finally:
         operation_error = sys.exc_info()[1]
         cleanup_errors = []
-        if created:
-            try:
-                client.call(f'{stream}_stop')
-            except RuntimeErrorResponse as exc:
-                if exc.status_code == 409:
-                    print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
-                else:
-                    cleanup_errors.append(exc)
-        if after_stop is not None and operation_error is None and not cleanup_errors:
-            try:
-                after_stop(client)
-            except Exception as exc:
-                cleanup_errors.append(exc)
         try:
-            client.close()
-        except RuntimeErrorResponse as exc:
-            cleanup_errors.append(exc)
+            if created:
+                try:
+                    client.call(f'{stream}_stop')
+                except BaseException as exc:
+                    if isinstance(exc, RuntimeErrorResponse) and exc.status_code == 409:
+                        print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
+                    else:
+                        cleanup_errors.append(exc)
+            if after_stop is not None and operation_error is None and not cleanup_errors:
+                try:
+                    after_stop(client)
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+        finally:
+            try:
+                client.close()
+            except BaseException as exc:
+                cleanup_errors.append(exc)
         if cleanup_errors:
             if operation_error is None:
                 raise cleanup_errors[0]
@@ -1695,7 +1697,11 @@ def _cli_serial_monitor(args):
     _cli_serial_capture(args, monitor=True)
 
 
-def _cli_serial_capture(args, *, monitor):
+def _cli_serial_open(args):
+    _cli_serial_capture(args, monitor=True, interactive=True)
+
+
+def _cli_serial_capture(args, *, monitor, interactive=False):
     import math
     from pathlib import Path
     from mklink.serial._profile import load_profile, ProfileError
@@ -1704,7 +1710,7 @@ def _cli_serial_capture(args, *, monitor):
     from mklink.serial._capture import SerialCapture
     from mklink.serial._console_monitor import ConsoleMonitor
 
-    selected = args.port if monitor else [args.port]
+    selected = args.port if monitor and not interactive else [args.port]
     connections = [_serial_connection(args, port=port) for port in selected]
     if not 1 <= len(connections) <= 16 or len({item['port'] for item in connections}) != len(connections):
         raise ValueError('Select 1..16 distinct UART ports')
@@ -1717,6 +1723,18 @@ def _cli_serial_capture(args, *, monitor):
                    for item in connections}
     except ProfileError as error:
         raise ValueError(str(error)) from error
+    automation = None
+    if interactive and args.auto_reply is not None:
+        import json
+        from dataclasses import asdict
+        from mklink.serial._autoreply import load_rules_from_file
+        rules = [asdict(rule) for rule in load_rules_from_file(args.auto_reply)]
+        automation = {'profile': profile, 'rules': rules}
+        settings = {'ports': connections, 'profile': profile, 'auto_reply_rules': rules}
+        if len(json.dumps(settings)) > 16384:
+            raise ValueError('Serial automation configuration exceeds the shared 16 KiB request limit')
+    else:
+        settings = {'ports': connections}
     output_name = args.log if monitor else args.output
     logger, output = None, None
     if output_name:
@@ -1725,11 +1743,22 @@ def _cli_serial_capture(args, *, monitor):
             raise ValueError('Log output must be a file in an existing directory')
         if args.profile and output == Path(args.profile).expanduser().resolve():
             raise ValueError('Log output must not overwrite its Profile')
+        if interactive and args.auto_reply and output == Path(args.auto_reply).expanduser().resolve():
+            raise ValueError('Log output must not overwrite auto-reply rules')
         log_format = getattr(args, 'format', None) or ('csv' if output.suffix.lower() == '.csv' else 'txt')
         logger = FileLogger(str(output), format=log_format)
     elif not monitor:
         raise ValueError('Log output is required')
     sink = ConsoleMonitor(args.mode, args.filter, logger) if monitor else logger
+    if interactive:
+        from mklink.serial._terminal import SerialTerminal
+        from mklink.runtime import RuntimeErrorResponse
+        def send(data):
+            result = client.call('serial_send', {'port': connections[0]['port'], 'data': data.hex(), 'hex': True})
+            if result.get('ok') is not True:
+                raise RuntimeErrorResponse('Serial send was not acknowledged; result unknown, do not retry')
+            print(f"[OK] 已发送 {len(data)} 字节到 {connections[0]['port']}", flush=True)
+        terminal = SerialTerminal(send, sink)
     capture = None
     def finish(client):
         if capture is not None:
@@ -1737,14 +1766,20 @@ def _cli_serial_capture(args, *, monitor):
             if monitor:
                 sink.finish()
     try:
-        with _shared_uart_client(args, 'serial', {'ports': connections}, after_stop=finish) as client:
+        with _shared_uart_client(args, 'serial', settings, after_stop=finish) as client:
             status = client.call('serial_status')
             for connection in connections:
                 _require_serial_connection(status, connection)
+            if automation is not None and status.get('automation') != automation:
+                raise ValueError('Existing serial automation differs; stop it explicitly before changing rules/Profile')
             capture = SerialCapture(client, parsers, sink)
             if logger is not None:
                 logger.start()
-            if monitor:
+            if interactive:
+                with terminal:
+                    print('[OK] 共享终端：Ctrl+C/Ctrl+Q 或 >quit 退出；>hex、>file、>mode、>filter', flush=True)
+                    capture.run(args.duration, on_poll=terminal.poll)
+            elif monitor:
                 print(f"[OK] 被动监听: {', '.join(parsers)} (Ctrl+C 停止)", flush=True)
                 capture.run(args.duration, on_poll=sink.tick)
             else:
@@ -1760,15 +1795,15 @@ def _cli_serial_capture(args, *, monitor):
     else:
         if logger is not None:
             logger.close()
-    print(f'[OK] 日志已保存: {output}' if output else '[OK] 监听已结束', flush=True)
+    print(f'[OK] 日志已保存: {output}' if output else '[OK] 终端已结束' if interactive else '[OK] 监听已结束', flush=True)
 
 
 def _cli_serial_dispatch(args):
     """串口调试命令分发。"""
-    if getattr(args, 'serial_command', None) in ('send', 'log', 'monitor'):
+    if getattr(args, 'serial_command', None) in ('send', 'log', 'monitor', 'open'):
         from mklink.runtime import RuntimeErrorResponse
         try:
-            {'send': _cli_serial_send, 'log': _cli_serial_log, 'monitor': _cli_serial_monitor}[args.serial_command](args)
+            {'send': _cli_serial_send, 'log': _cli_serial_log, 'monitor': _cli_serial_monitor, 'open': _cli_serial_open}[args.serial_command](args)
         except (OSError, ValueError, RuntimeErrorResponse) as error:
             raise SystemExit(str(error)) from error
         return
@@ -1776,10 +1811,8 @@ def _cli_serial_dispatch(args):
     from mklink.serial._profile import load_profile, find_profile, ProfileError
     from mklink.serial._monitor import SerialMonitor
     from mklink.serial._logger import FileLogger
-    from mklink.serial._cli_mode import CLIMode
     from mklink.serial._dashboard import SerialDashboardServer
     from mklink.serial._profile_from_c import generate_profile_from_c
-    from mklink.serial._autoreply import AutoReplyEngine, load_rules_from_file
 
     cmd = getattr(args, "serial_command", None)
     if not cmd:
@@ -1811,68 +1844,6 @@ def _cli_serial_dispatch(args):
         for p in ports:
             tag = " [MKLink]" if p.get("is_mklink") else ""
             print(f"  {p['device']} — {p['description']}{tag}")
-
-    elif cmd == "open":
-        # Load profile if specified
-        profile = None
-        if args.profile:
-            try:
-                profile = load_profile(args.profile)
-            except ProfileError as e:
-                print(f"[FAIL] Profile 加载失败: {e}")
-                return
-
-        # Build port config
-        port_config = [{
-            "port": args.port,
-            "baudrate": args.baud,
-            "databits": args.databits,
-            "stopbits": args.stop,
-            "parity": args.parity,
-        }]
-
-        # Auto-reply rules
-        auto_reply_rules = None
-        if args.auto_reply:
-            try:
-                rules = load_rules_from_file(args.auto_reply)
-                auto_reply_rules = [{"match_hex": r.match_hex, "match_regex": r.match_regex,
-                                     "match_contains": r.match_contains, "reply_hex": r.reply_hex,
-                                     "reply_ascii": r.reply_ascii, "delay": r.delay}
-                                    for r in rules]
-            except Exception as e:
-                raise SystemExit(f"自动应答规则加载失败: {e}") from e
-
-        # Logger
-        logger = None
-        if args.log:
-            log_format = "csv" if args.log.endswith(".csv") else "txt"
-            logger = FileLogger(args.log, format=log_format)
-            logger.start()
-
-        # Create monitor and run CLI mode
-        monitor = SerialMonitor(
-            ports=port_config,
-            profile=profile,
-            auto_reply_rules=auto_reply_rules,
-            logger=logger,
-        )
-
-        cli = CLIMode(
-            monitor=monitor,
-            mode=args.mode,
-            filter_pattern=args.filter,
-        )
-
-        try:
-            monitor.start()
-            cli.run()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            monitor.stop()
-            if logger:
-                logger.close()
 
     elif cmd == "dashboard":
         profile = None
@@ -2736,6 +2707,9 @@ def main():
     serial_open.add_argument("--filter", default=None, help="过滤正则表达式")
     serial_open.add_argument("--log", default=None, help="日志输出文件路径")
     serial_open.add_argument("--auto-reply", default=None, help="自动应答规则文件路径")
+
+    serial_open.add_argument('--probe', default=None, help='选择共享后台探针身份或别名')
+    serial_open.add_argument('--duration', type=float, default=0, help='终端秒数，0 为直到退出或输入 EOF')
 
     # serial send
     serial_send = serial_sub.add_parser("send", help="发送数据后退出")

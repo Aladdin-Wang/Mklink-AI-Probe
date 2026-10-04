@@ -42,6 +42,7 @@ jobs:
           $tests += 'test_shared_serial_send'
           $tests += 'test_shared_serial_log'
           $tests += 'test_shared_serial_monitor'
+          $tests += 'test_shared_serial_open'
           $tests += 'test_stream_delivery'
           $tests += 'test_stream_hub'
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")

@@ -8,7 +8,6 @@ from mklink.serial._profile import load_profile, save_profile, find_profile, val
 from mklink.serial._autoreply import AutoReplyEngine, AutoReplyRule
 from mklink.serial._logger import FileLogger
 from mklink.serial._monitor import SerialMonitor, SerialEvent
-from mklink.serial._cli_mode import CLIMode
 from mklink.serial._dashboard import SerialDashboardServer
 from mklink.serial._profile_from_c import generate_profile_from_c
 
@@ -19,7 +18,6 @@ __all__ = [
     "AutoReplyEngine", "AutoReplyRule",
     "FileLogger",
     "SerialMonitor", "SerialEvent",
-    "CLIMode",
     "SerialDashboardServer",
     "generate_profile_from_c",
 ]

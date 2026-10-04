@@ -6,7 +6,7 @@ import json
 import math
 import threading
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -162,3 +162,8 @@ class AutoReplyEngine:
 
 def load_rules_from_file(path: str) -> list[AutoReplyRule]:
     return _parse_rules(json.loads(Path(path).read_text(encoding='utf-8')))
+
+
+def normalize_rules(data: list[dict]) -> list[dict]:
+    """Canonical validated configuration for shared-owner comparisons."""
+    return [asdict(rule) for rule in _parse_rules(data)]

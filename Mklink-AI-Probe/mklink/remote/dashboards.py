@@ -21,6 +21,7 @@ import asyncio
 from array import array
 import base64
 import codecs
+import copy
 from collections import deque
 import json
 import logging
@@ -2817,8 +2818,9 @@ class SerialStreamManager:
         if any(not 1 <= len(cfg['port'].encode('utf-8')) <= 255 for cfg in ports):
             raise ValueError('UART port identity must contain 1..255 UTF-8 bytes')
         self._port_config = ports
-        self._profile = profile
-        self._auto_reply_rules = auto_reply_rules
+        self._profile = copy.deepcopy(profile)
+        from mklink.serial._autoreply import normalize_rules
+        self._auto_reply_rules = normalize_rules(auto_reply_rules or [])
         self._rx_count = 0
         self._tx_count = 0
         self._rx_bytes = 0
@@ -2927,8 +2929,8 @@ class SerialStreamManager:
 
         self._monitor = SerialMonitor(
             ports=ports,
-            profile=profile,
-            auto_reply_rules=auto_reply_rules,
+            profile=self._profile,
+            auto_reply_rules=self._auto_reply_rules,
             event_callback=_event_callback,
             chunk_callback=_chunk_callback,
             protocol_callback=_protocol_callback,
@@ -3171,6 +3173,7 @@ class SerialStreamManager:
             "running": self._running,
             "ports": ports,
             "config": [dict(config) for config in self._port_config],
+            "automation": copy.deepcopy({"profile": self._profile, "rules": self._auto_reply_rules or []}),
             "stats": {
                 "rx_count": self._rx_count,
                 "tx_count": self._tx_count,

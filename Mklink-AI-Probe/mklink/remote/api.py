@@ -2840,6 +2840,8 @@ def create_app(
         databits: int = Body(default=8),
         stopbits: int = Body(default=1),
         parity: str = Body(default="N"),
+        profile: dict | None = Body(default=None),
+        auto_reply_rules: list[dict] | None = Body(default=None),
     ):
         """Start serial monitoring on one or more ports.
 
@@ -2869,8 +2871,15 @@ def create_app(
             raise HTTPException(status_code=400, detail="No ports specified")
 
         try:
+            from mklink.serial._profile import validate_profile
+            from mklink.serial._autoreply import normalize_rules
+            if profile is not None:
+                errors = validate_profile(profile)
+                if errors:
+                    raise ValueError('; '.join(errors))
+            rules = normalize_rules(auto_reply_rules or [])
             status, _ = await start_dashboard_manager(
-                _state, "serial", sm, lambda: sm.start(port_configs),
+                _state, "serial", sm, lambda: sm.start(port_configs, profile=profile, auto_reply_rules=rules),
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

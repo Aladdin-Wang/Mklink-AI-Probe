@@ -292,7 +292,10 @@ def build_server():
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
         Acquisition start with {} subscribes if already running; new settings require an idle manager.
         Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
-        or Modbus port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
+        plus optional profile/auto_reply_rules, executed once by the backend. serial_status.automation
+        reports the validated profile/rules; borrowers subscribe with {} and compare explicit settings,
+        never replace them. Shared arguments including automation remain limited to 16 KiB.
+        Modbus start accepts port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
         accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
         slave). The override affects only this request. Unknown fields are rejected.
         FC07 accepts fc/slave only and returns status. FC22 accepts start/and_mask/or_mask;

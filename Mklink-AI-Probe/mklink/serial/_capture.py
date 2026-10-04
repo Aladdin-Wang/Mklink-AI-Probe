@@ -45,9 +45,9 @@ class SerialCapture:
         try:
             while deadline is None or time.monotonic() < deadline:
                 page = self.page()
-                if on_poll is not None:
-                    on_poll()
                 if not page['running']:
+                    return
+                if on_poll is not None and on_poll() is False:
                     return
                 if self.cursor < page['latest_seq']:
                     continue

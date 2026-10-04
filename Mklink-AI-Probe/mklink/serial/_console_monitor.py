@@ -33,10 +33,12 @@ class ConsoleMonitor:
             self._write(port, direction, timestamp, data.hex(' ').upper())
         else:
             key = (port, direction)
-            source = self._sources.setdefault(key, {
-                'decoder': codecs.getincrementaldecoder('utf-8')('replace'),
-                'text': '', 'timestamp': timestamp, 'updated': time.monotonic(),
-            })
+            source = self._sources.get(key)
+            if source is None:
+                source = self._sources[key] = {
+                    'decoder': codecs.getincrementaldecoder('utf-8')('replace'),
+                    'text': '', 'timestamp': timestamp, 'updated': time.monotonic(),
+                }
             if not source['text']:
                 source['timestamp'] = timestamp
             source['text'] += source['decoder'].decode(data)
@@ -59,6 +61,19 @@ class ConsoleMonitor:
             if source['text'] and now - source['updated'] >= .1:
                 self._write(port, direction, source['timestamp'], source['text'], partial=True)
                 source['text'] = ''
+
+    def set_mode(self, mode):
+        if mode not in ('ascii', 'hex'):
+            raise ValueError('Mode must be ascii or hex')
+        self.finish()
+        self._mode = mode
+
+    def set_filter(self, pattern):
+        try:
+            compiled = re.compile(pattern) if pattern else None
+        except re.error as error:
+            raise ValueError(f'Invalid monitor filter: {error}') from error
+        self._filter = compiled
 
     def finish(self):
         for (port, direction), source in self._sources.items():

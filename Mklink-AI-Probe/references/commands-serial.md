@@ -5,8 +5,8 @@
 
 ## 串口调试
 
-通用 UART 串口调试工具，可独立于目标 MCU 使用。0.3.0 的 `send`、`log` 和 `monitor` 通过共享后台
-通信；交互终端和独立 Dashboard 命令仍在迁移中。
+通用 UART 串口调试工具，可独立于目标 MCU 使用。0.3.0 的 `send`、`log`、`monitor` 和 `open`
+通过共享后台通信；独立 Dashboard 命令仍在迁移中。
 
 共享 MCP/SDK 可用 `gui_call("serial_history", {})` 从当前尾部开始读取；后续传
 `session`、`after=next_seq` 和可选 `limit`（1–256）。返回原始字节批次的 `hex`、
@@ -41,8 +41,24 @@ python -m mklink serial open --port COM3 --baud 115200 --mode hex --profile my_p
 python -m mklink serial open --port COM3 --baud 115200 --log "<LOG_DIR>/data.txt" --auto-reply rules.json
 ```
 
-终端快捷键：Ctrl+Q 退出、Ctrl+H 切换 HEX/ASCII、Ctrl+F 设置过滤、Ctrl+L 清屏。
-输入 `>hex AA55010300` 发送 HEX 数据。
+用 `--probe` 选择后台，端口参数必须匹配已有连接。空闲时创建连接，退出时停止；
+借用 GUI/AI 连接只解除订阅。普通文本保留首尾空格并追加 CR LF；输入可以来自
+键盘、UTF-8 管道或文件，EOF 发送最后一行后结束，`--duration` 可限制运行时间。
+默认 0 表示直到退出或 EOF。输入一行最多 8192 字符，实际发送最多 4096 字节。
+
+终端快捷键：Ctrl+C/Ctrl+Q 退出，Backspace 删除输入字符，Ctrl+F 设置过滤，
+Ctrl+L 清屏。输入 `>quit` 退出、`>mode hex` / `>mode ascii` 切换显示模式，
+`>filter 正则` 设置过滤，`>filter` 清除过滤。Ctrl+H 按退格处理。
+`>hex AA55010300` 发送 HEX，`>file 文件路径` 发送最多 4096 字节的文件；不会把
+大文件拆分重发。非法输入或发送未确认均非零退出，不自动重试。成功确认只表示
+后台完成写入，不表示目标设备已经执行。接收/日志语义与共享 monitor/log 相同。
+
+`--auto-reply` 指定的规则只在共享后台执行一份，不在每个终端各执行一次。新连接
+可同时用 `--profile` 定义后台帧匹配；已有连接必须匹配显式指定的规则及 Profile，
+否则在发送/日志开文件前拒绝。省略 `--auto-reply` 只借用现有配置，不关闭已有应答；
+单独使用 `--profile` 只在客户端被动解码。规则和 Profile 总请求不得超过共享接口
+16 KiB 限制。停止/重启或协议传输会取消待发旧应答。应答配置属于连接，终端借用者
+退出不清除它；需要变更时先显式停止该连接，再重新创建。
 
 ### 单次发送
 
