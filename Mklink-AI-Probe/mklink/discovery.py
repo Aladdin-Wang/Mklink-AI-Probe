@@ -180,69 +180,20 @@ def _find_posix_microkeen_disk() -> str | None:
 
 
 def find_microkeen_disk() -> str | None:
-    """查找 MICROKEEN 磁盘路径。
+    """Resolve the bound probe's volume; unbound Windows callers require one probe.
 
-    共享后台只解析绑定 USB 身份的稳定卷路径，未选择设备时拒绝访问。
-    独立进程保留 MICROKEEN 卷标发现，未找到返回 None。
+    Windows drive letters, volume labels and environment overrides are not
+    device identities. The legacy POSIX mount lookup remains independent.
     """
-    from mklink.probes import bound_probe
+    from mklink.probes import bound_probe, select_probe
+    from mklink.probe_volumes import resolve_volume
+
     probe_id = bound_probe()
-    if probe_id is not None:
-        from mklink.probe_volumes import resolve_volume
-        return resolve_volume(probe_id)['root']
-    if os.name != "nt":
-        return _find_posix_microkeen_disk()
-
-    # Service and scheduled-task sessions can enumerate removable volumes
-    # differently from an interactive shell.  An operator may provide a
-    # concrete root, but it is accepted only after the same MICROKEEN label
-    # verification used by automatic discovery.
-    configured_root = os.environ.get("MKLINK_MICROKEEN_DISK", "").strip()
-    if configured_root:
-        root = configured_root.rstrip("\\/") + "\\"
-        try:
-            if os.path.isdir(root) and (
-                (_windows_volume_label(root) or "").casefold()
-                == _MICROKEEN_DISK_NAME.casefold()
-            ):
-                return root
-        except Exception:
-            pass
-        return None
-
-    # 尝试通过 drivedddata 注册表查找
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                            r"SYSTEM\\MountedDevices") as key:
-            i = 0
-            while True:
-                try:
-                    name, value, _ = winreg.EnumValue(key, i)
-                    i += 1
-                    # 检查名称是否包含 MICROKEEN
-                    if isinstance(name, str) and "microkeen" in name.lower():
-                        # 从注册表值提取盘符（如 \\?\Volume{...}\ -> D:）
-                        if "\\??\\" in value:
-                            drive_letter = value.split("\\??\\")[1].split(":")[0]
-                            return f"{drive_letter}:\\"
-                except OSError:
-                    break
-    except Exception:
-        pass
-
-    # 后备方案：检查常见盘符
-    import string
-    for letter in string.ascii_uppercase:
-        path = f"{letter}:\\"
-        try:
-            if os.path.exists(path):
-                if (_windows_volume_label(path) or "").casefold() == _MICROKEEN_DISK_NAME.casefold():
-                    return path
-        except Exception:
-            continue
-
-    return None
+    if probe_id is None:
+        if os.name != "nt":
+            return _find_posix_microkeen_disk()
+        probe_id = select_probe()['probe_id']
+    return resolve_volume(probe_id)['root']
 
 
 def get_microkeen_flm_path() -> str | None:

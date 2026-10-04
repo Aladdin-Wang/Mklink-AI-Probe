@@ -212,35 +212,44 @@ def test_probe_port_terminates_a_partial_repl_line_before_identity(monkeypatch):
     ]
 
 
-def test_microkeen_disk_reads_volume_labels_without_console_process(monkeypatch):
+def test_unbound_windows_disk_uses_probe_identity_not_label_or_override(monkeypatch):
     monkeypatch.setattr(discovery.os, "name", "nt")
-    monkeypatch.setattr(
-        discovery.os.path,
-        "exists",
-        lambda path: path in {"C:\\", "G:\\"},
-    )
-    labels = []
-    monkeypatch.setattr(
-        discovery,
-        "_windows_volume_label",
-        lambda path: labels.append(path) or ("MICROKEEN" if path == "G:\\" else "System"),
-    )
+    monkeypatch.setattr('mklink.probes._bound_probe', None)
+    monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'E:')
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'selected'}])
+    resolved = []
+    def resolve(probe_id):
+        resolved.append(probe_id)
+        return {'root': 'verified-volume'}
+    monkeypatch.setattr('mklink.probe_volumes.resolve_volume', resolve)
+    def forbidden(*args):
+        raise AssertionError('Legacy label discovery ran')
+    monkeypatch.setattr(discovery, '_windows_volume_label', forbidden)
+    assert discovery.find_microkeen_disk() == 'verified-volume'
+    assert resolved == ['selected']
 
-    assert discovery.find_microkeen_disk() == "G:\\"
-    assert labels == ["C:\\", "G:\\"]
 
-
-def test_microkeen_disk_accepts_only_a_label_verified_configured_root(monkeypatch):
+def test_unbound_windows_disk_rejects_missing_or_multiple_probes_before_volume_io(monkeypatch):
+    import pytest
+    from mklink.runtime import RuntimeErrorResponse
     monkeypatch.setattr(discovery.os, "name", "nt")
-    monkeypatch.setenv("MKLINK_MICROKEEN_DISK", "E:")
-    monkeypatch.setattr(discovery.os.path, "isdir", lambda path: path == "E:\\")
-    monkeypatch.setattr(
-        discovery,
-        "_windows_volume_label",
-        lambda path: "MICROKEEN" if path == "E:\\" else None,
-    )
+    monkeypatch.setattr('mklink.probes._bound_probe', None)
+    monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'E:')
+    monkeypatch.setattr('mklink.probe_volumes.resolve_volume', lambda *a: pytest.fail('Ambiguous disk resolution'))
+    for devices, message in [([], 'No supported probe'), ([{}, {}], 'Multiple probes')]:
+        monkeypatch.setattr('mklink.probes.inventory', lambda: devices)
+        with pytest.raises(RuntimeErrorResponse, match=message):
+            discovery.find_microkeen_disk()
 
-    assert discovery.find_microkeen_disk() == "E:\\"
 
-    monkeypatch.setattr(discovery, "_windows_volume_label", lambda _path: "OTHER")
-    assert discovery.find_microkeen_disk() is None
+def test_unbound_windows_missing_volume_does_not_fall_back_to_label(monkeypatch):
+    import pytest
+    monkeypatch.setattr(discovery.os, "name", "nt")
+    monkeypatch.setattr('mklink.probes._bound_probe', None)
+    monkeypatch.setattr('mklink.probes.inventory', lambda: [{'probe_id': 'selected'}])
+    def missing(probe_id):
+        raise RuntimeError('identity missing')
+    monkeypatch.setattr('mklink.probe_volumes.resolve_volume', missing)
+    monkeypatch.setattr(discovery, '_windows_volume_label', lambda *a: pytest.fail('Label fallback'))
+    with pytest.raises(RuntimeError, match='identity missing'):
+        discovery.find_microkeen_disk()

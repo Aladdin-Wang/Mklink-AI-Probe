@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T22:02:21.1730794Z",
+  "updated_at": "2026-10-04T22:07:07.7476574Z",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "127将mcu-detect可选IDCODE接入共享probe查询，Web内部reader避免递归，读取失败先于复制/profile写入；最终探针40短测通过，双V4实际reader/AI会话保持和清理通过。协议36；长期暂停。"
+    "current_task": "128删除Windows未绑定进程的环境盘符/注册表/首卷回退，复用唯一探针及USB身份卷解析；48及146短测通过（扩大回归先缺算法资源21失败后修正环境），双V4只读映射验证通过。127三项CI通过；长期暂停。"
   },
   "milestones": [
     {
@@ -75,7 +75,7 @@
   ],
   "next_actions": [
     "用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。",
-    "核对127新提交CI；126三项已通过。继续将独立CLI mcu-detect/copy-flm的MSC选择和复制收敛到共享后台，再处理CLI security及旧MCP主体。127只迁移IDCODE通信，不代表整个profile/FLM流程已共享。NSIS UAC、物理中断和长期限制保留。",
+    "核对128提交CI；127三项已通过。独立Windows命令多探针已拒绝首盘回退，但仍需将mcu-detect/copy-flm完整复制流程纳入共享后台的设备选择和任务保护，再处理CLI security及旧MCP主体。POSIX旧挂载发现未改；NSIS UAC、物理中断和长期限制保留。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [
