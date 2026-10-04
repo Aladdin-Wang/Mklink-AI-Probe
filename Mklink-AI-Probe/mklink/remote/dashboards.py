@@ -202,7 +202,9 @@ class AsyncBridge:
 
 
 class _RttLineAssembler:
-    """Incrementally decode RTT text and split LF/CRLF without losing tails."""
+    """Bound line parsing independently of the unmodified terminal text stream."""
+
+    MAX_LINE_CHARS = 64 * 1024
 
     def __init__(self, encoding: str = "utf-8"):
         self.reset(encoding)
@@ -210,26 +212,46 @@ class _RttLineAssembler:
     def feed(self, chunk: bytes, *, final: bool = False) -> list[str]:
         if not isinstance(chunk, (bytes, bytearray, memoryview)):
             raise TypeError("RTT chunks must be bytes-like")
-        self._text += self._decoder.decode(bytes(chunk), final=final)
+        parts = self._decoder.decode(bytes(chunk), final=final).split("\n")
         lines = []
-        while True:
-            newline = self._text.find("\n")
-            if newline < 0:
-                break
-            line = self._text[:newline]
-            self._text = self._text[newline + 1:]
-            lines.append(line[:-1] if line.endswith("\r") else line)
+        for index, part in enumerate(parts):
+            complete = index < len(parts) - 1
+            if self._discarding:
+                self._dropped_chars += len(part)
+                if complete:
+                    self._discarding = False
+                continue
+            if len(self._text) + len(part) > self.MAX_LINE_CHARS:
+                self._dropped_lines += 1
+                self._dropped_chars += len(self._text) + len(part)
+                self._text = ""
+                self._discarding = not complete
+                continue
+            self._text += part
+            if complete:
+                lines.append(self._text[:-1] if self._text.endswith("\r") else self._text)
+                self._text = ""
         if final:
             if self._text:
                 lines.append(self._text[:-1] if self._text.endswith("\r") else self._text)
-            self.reset()
+            self._text = ""
+            self._discarding = False
+            self._decoder = codecs.getincrementaldecoder(self.encoding)(errors="replace")
         return lines
+
+    def status(self) -> dict:
+        return {"limit_chars": self.MAX_LINE_CHARS, "buffered_chars": len(self._text),
+                "discarding": self._discarding, "dropped_lines": self._dropped_lines,
+                "dropped_chars": self._dropped_chars}
 
     def reset(self, encoding: str | None = None) -> None:
         if encoding is not None:
-            self.encoding = normalize_rtt_encoding(encoding)
+            self.encoding = encoding
         self._decoder = codecs.getincrementaldecoder(self.encoding)(errors="replace")
         self._text = ""
+        self._discarding = False
+        self._dropped_lines = self._dropped_chars = 0
+
 
 class RttStreamManager:
     """Manages RTT streaming sessions with SSE output."""
@@ -638,6 +660,7 @@ class RttStreamManager:
             "history_size": len(self._history),
             "numeric_channels": list(self._numeric_channels),
             "encoding": self._line_assembler.encoding,
+            "line_parser": self._line_assembler.status(),
             "down_buffers": down_buffers,
             "session": self._capture_session,
             "control_block_addr": control_block_addr,

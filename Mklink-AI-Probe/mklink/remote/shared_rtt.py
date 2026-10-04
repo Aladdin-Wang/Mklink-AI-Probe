@@ -59,7 +59,7 @@ class SharedRtt(SharedCapture):
             result = self.reader.read(timeout)
             status = self._status()  # Reject mixed data if capture changed during the wait.
             return {**result, 'session': self.session,
-                    'capture': {k: status.get(k) for k in ('running', 'paused', 'error', 'encoding')}}
+                    'capture': {k: status.get(k) for k in ('running', 'paused', 'error', 'encoding', 'line_parser')}}
         data = params.get('data')
         try:
             encoded = data.encode('utf-8') if isinstance(data, str) else b''

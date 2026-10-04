@@ -23,7 +23,8 @@ def rtt(target, monkeypatch):
 
     @control.app.get('/api/dash/rtt/status')
     async def status():
-        return {'running': manager.running, 'session': manager.session, 'encoding': 'utf-8'}
+        return {'running': manager.running, 'session': manager.session, 'encoding': 'utf-8',
+                'line_parser': {'dropped_lines': 1, 'dropped_chars': 70000}}
 
     @control.app.post('/api/dash/rtt/write')
     async def write(body: dict):
@@ -40,7 +41,9 @@ def test_rtt_shared_owner_borrower_read_write_and_stop(rtt):
     assert router.capabilities()['stream.rtt'].version == '2'
     assert not dispatch('start')['reused']
     assert dispatch('start', name='second')['reused']
-    assert dispatch('read', {'timeout': 0})['text'] == 'hello\r'
+    reading = dispatch('read', {'timeout': 0})
+    assert reading['text'] == 'hello\r'
+    assert reading['capture']['line_parser'] == {'dropped_lines': 1, 'dropped_chars': 70000}
     assert dispatch('write', {'data': '中\n'}) == {'sent_bytes': 4}
     with pytest.raises(AgentOperationError) as error:
         dispatch('stop')

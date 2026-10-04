@@ -1770,3 +1770,52 @@ def test_restart_publishes_new_timeline_metadata_after_flushing_old_samples(monk
     assert old_sample < new_metadata
     assert decode_superwatch_metadata(batches[new_metadata].payload)["version"] > old_version
     manager.stop()
+
+
+def test_rtt_unterminated_line_is_bounded_without_losing_terminal_bytes():
+    terminal = _RecordingHub()
+    logs = _RecordingHub()
+    manager = RttStreamManager(stream_hub=logs)
+    manager.set_terminal_stream_hub(terminal)
+    chunk = b'x' * 8192
+    for _ in range(32):
+        manager.feed_rtt_bytes(chunk)
+        manager.flush_pending()
+        assert manager.get_status()['line_parser']['buffered_chars'] <= 65536
+    manager.feed_rtt_bytes(b'123\ntemp=7\n')
+    manager.flush_pending()
+    assert b''.join(batch.payload for batch in terminal.batches) == chunk * 32 + b'123\ntemp=7\n'
+    status = manager.get_status()['line_parser']
+    assert status == {'limit_chars':65536, 'buffered_chars':0, 'discarding':False,
+                      'dropped_lines':1, 'dropped_chars':len(chunk)*32+3}
+    assert manager.get_history()[-1]['temp'] == 7
+    assert [line.text for batch in logs.batches for line in decode_rtt_lines(batch.payload,batch.item_count)] == ['temp=7']
+
+
+def test_rtt_line_limit_counts_decoded_characters_across_utf8_boundaries():
+    from mklink.remote.dashboards import _RttLineAssembler
+    parser = _RttLineAssembler()
+    parser.MAX_LINE_CHARS = 4
+    for value in ('中'*5).encode('utf-8'):
+        assert parser.feed(bytes([value])) == []
+    assert parser.status()['dropped_chars'] == 5
+    assert parser.feed(b'\na=1\r\n') == ['a=1']
+    assert parser.status()['dropped_lines'] == 1
+    assert not parser.status()['discarding']
+
+
+@pytest.mark.parametrize('final', [False, True])
+def test_rtt_oversize_complete_line_and_final_tail_do_not_become_numeric_rows(final):
+    from mklink.remote.dashboards import _RttLineAssembler
+    parser = _RttLineAssembler()
+    parser.MAX_LINE_CHARS = 4
+    assert parser.feed(b'a=12345\na=1\nb=12345', final=final) == ['a=1']
+    assert parser.status()['dropped_lines'] == 2
+    assert parser.status()['dropped_chars'] == 14
+    assert parser.status()['buffered_chars'] == 0
+    if not final:
+        assert parser.feed(b'\n') == []
+    assert parser.feed(b'c=2', final=True) == ['c=2']
+    assert parser.status()['dropped_lines'] == 2
+    parser.reset()
+    assert parser.status()['dropped_lines'] == 0
