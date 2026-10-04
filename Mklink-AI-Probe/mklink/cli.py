@@ -1154,52 +1154,21 @@ def _modbus_save_config(args):
         save_config(".", config)
 
 
-@contextmanager
+def _uart_notice(level, message):
+    print(f"[{'WARN' if level == 'warning' else 'INFO'}] {message}",
+          file=sys.stderr if level == 'warning' else sys.stdout)
+
+
 def _shared_uart_client(args, stream, settings, *, after_stop=None):
-    """Subscribe to the existing UART owner; release only this CLI's ownership."""
-    from mklink.runtime import RuntimeClient, RuntimeErrorResponse
-    client = RuntimeClient(kind='cli', name=f'{stream.title()} CLI')
-    created = False
-    try:
-        client.connect(scope='uart', probe=getattr(args, 'probe', None))
-        if client.call(f'{stream}_status')['running']:
-            client.call(f'{stream}_start', {})
-        else:
-            client.call(f'{stream}_start', settings)
-            created = True
-        yield client
-    finally:
-        operation_error = sys.exc_info()[1]
-        cleanup_errors = []
-        try:
-            if created:
-                try:
-                    client.call(f'{stream}_stop')
-                except BaseException as exc:
-                    if isinstance(exc, RuntimeErrorResponse) and exc.status_code == 409:
-                        print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
-                    else:
-                        cleanup_errors.append(exc)
-            if after_stop is not None and operation_error is None and not cleanup_errors:
-                try:
-                    after_stop(client)
-                except BaseException as exc:
-                    cleanup_errors.append(exc)
-        finally:
-            try:
-                client.close()
-            except BaseException as exc:
-                cleanup_errors.append(exc)
-        if cleanup_errors:
-            if operation_error is None:
-                raise cleanup_errors[0]
-            for error in cleanup_errors:
-                print(f'[WARN] {stream.title()} 会话清理失败，请检查共享后台: {error}', file=sys.stderr)
+    from mklink.uart_session import uart_session
+    return uart_session(stream, settings, probe=getattr(args, 'probe', None),
+                        kind='cli', name=f'{stream.title()} CLI',
+                        after_stop=after_stop, notify=_uart_notice)
 
 
 @contextmanager
 def _modbus_shared_client(args, *, scan=False):
-    from mklink.runtime import RuntimeErrorResponse
+    from mklink.uart_session import modbus_session
     from mklink.usb_interfaces import canonical_serial_port
     if not _modbus_resolve_defaults(args):
         raise ValueError('Modbus port is required')
@@ -1210,12 +1179,8 @@ def _modbus_shared_client(args, *, scan=False):
             value = getattr(args, key, None)
             if value is not None:
                 connection[key] = value
-    settings = {'timeout': .15 if scan else 1.0, 'retries': 0, **connection, 'registers': []}
-    with _shared_uart_client(args, 'modbus', settings) as client:
-        # Compare after subscribing, while shared stop/reconfiguration is refused.
-        actual = client.call('modbus_status')['connection']
-        if any(actual.get(key) != value for key, value in connection.items()):
-            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before changing settings')
+    with modbus_session(connection, scan=scan, probe=getattr(args, 'probe', None),
+                        kind='cli', name='Modbus CLI', notify=_uart_notice) as client:
         yield client
 
 

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T12:40:19.3076989+00:00`
+- 更新时间：`2026-10-04T12:47:33.0175677+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; portable Agent shared backend prerequisites after 80146059; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; common UART session lifecycle after 13f08a2f; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第66批补齐便携Agent启动既有共享后台的部署前提：remote依赖与冻结入口、后台模块及USB卷脚本；保留算法加载代码但禁止算法/固件资产。修正PE机器指令路径误报，精确构建路径/凭据仍全文件审计。最终实包10通过，含无Python环境双UART客户端独立退出与后台正常退出；生产Agent通信分发仍未迁移。前批80146059两项CI通过。下一步复用CLI共享UART上下文迁移Modbus，再接其余矩阵；不改固件/WinUSB、不合并发布。
+- 当前任务：第67批将CLI已有UART订阅/借用/停止/清理及Modbus参数匹配抽入mklink.uart_session，CLI保留参数与显示，不复制连接管理。显式工程/探针/客户端参数供Agent使用现有sdk类型。原有回归330通过、新增双SDK借用隔离及参数传递2通过并加入CI。生产Agent分发尚未改动；下一步删除旧Modbus直连/私有资源锁路径，使用公共上下文与事务。便携后台已实包验证；不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第66节：第66批补齐便携Agent启动既有共享后台的部署前提：remote依赖与冻结入口、后台模块及USB卷脚本；保留算法加载代码但禁止算法/固件资产。修正PE机器指令路径误报，精确构建路径/凭据仍全文件审计。最终实包10通过，含无Python环境双UART客户端独立退出与后台正常退出；生产Agent通信分发仍未迁移。前批80146059两项CI通过。下一步复用CLI共享UART上下文迁移Modbus，再接其余矩阵；不改固件/WinUSB、不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第67节：第67批将CLI已有UART订阅/借用/停止/清理及Modbus参数匹配抽入mklink.uart_session，CLI保留参数与显示，不复制连接管理。显式工程/探针/客户端参数供Agent使用现有sdk类型。原有回归330通过、新增双SDK借用隔离及参数传递2通过并加入CI。生产Agent分发尚未改动；下一步删除旧Modbus直连/私有资源锁路径，使用公共上下文与事务。便携后台已实包验证；不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；便携包后台启动已实测，按报告65节43项矩阵先复用CLI共享UART生命周期接入Agent Modbus，再完成串口exchange应答窗口、目标/上传/流式与绑定MSC。逐WebSocket client_id/client_closed接缝已验证，实际生产Agent仍直连。继续取消、恢复/24与72小时长稳、NSIS及物理协议对端验证；不改固件/WinUSB、不合并发布。
+1. 核对本批及13f08a2f精确CI；直接将Agent的_dispatch_modbus替换为uart_session.modbus_session及既有transaction/probe，删除私有Modbus资源锁/直接ModbusClient，更新旧独占模式测试。构造器须传可信project_root及device_port探针选择，使用sdk类型；单请求上下文可由既有settle/finally清理。再按65节矩阵完成serial exchange、目标/上传/流式/MSC；生产Agent仍直连。不改固件/WinUSB、不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
