@@ -34,6 +34,18 @@ def run(args):
                 else _print_probe_version(result['raw'], args.all, args.raw))
     project = getattr(args, 'project_root', None)
     flash_arguments = None
+    erase_arguments = None
+    job_action = args.command
+    if args.command == 'erase':
+        from mklink.native_erase import validate_erase_request
+        erase_arguments = {key: getattr(args, key) for key in ('target_part', 'algorithm_id', 'address')
+                           if getattr(args, key, None) is not None}
+        if 'address' in erase_arguments:
+            job_action = 'erase_sector'
+        try:
+            erase_arguments = validate_erase_request(erase_arguments, sector=job_action == 'erase_sector')
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
     if args.command == 'flash':
         from pathlib import Path
         from mklink.flash_request import validate_flash_request
@@ -160,9 +172,11 @@ def run(args):
             arguments = {}
             if args.command == 'flash':
                 arguments = flash_arguments
+            elif args.command == 'erase':
+                arguments = erase_arguments
             request_id = getattr(args, 'request_id', None) or str(uuid.uuid4())
-            print(json.dumps({'request_id': request_id, 'action': args.command}), flush=True)
-            result = client.start_job(args.command, arguments=arguments, request_id=request_id, confirm=True)
+            print(json.dumps({'request_id': request_id, 'action': job_action}), flush=True)
+            result = client.start_job(job_action, arguments=arguments, request_id=request_id, confirm=True)
             print(json.dumps({'job_id': result['job_id'], 'state': result['state']}), flush=True)
             while result['state'] not in {'succeeded', 'failed', 'unknown'}:
                 time.sleep(.25)

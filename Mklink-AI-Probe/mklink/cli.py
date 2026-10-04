@@ -2765,11 +2765,16 @@ def main():
 
     flash_parser.add_argument('--request-id', help='保留任务请求 ID；结果未知时查询已有任务，不重放')
     for name in ('erase', 'reset'):
-        entry = subparsers.add_parser(name, help='通过共享后台执行独占目标任务')
+        entry = subparsers.add_parser(name, help=('擦除选定 FLM 区域或指定扇区（需精确型号）'
+                                                if name == 'erase' else '通过共享后台执行独占目标任务'))
         entry.add_argument('--probe')
         entry.add_argument('--port')
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
+        if name == 'erase':
+            entry.add_argument('--target-part', help='精确器件型号；默认读取工程 device')
+            entry.add_argument('--algorithm-id', help='明确选择算法及其擦除区域')
+            entry.add_argument('--address', type=lambda value: int(value, 0), help='仅擦除此扇区；须提供完整扇区起始地址')
     for entry in (sv_an_parser, sv_rep_parser, read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
                   read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser, watch_parser, vofa_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')

@@ -372,7 +372,7 @@ def build_server():
 
     @server.tool()
     def start_job(action: str, request_id: str, confirm: bool = False, arguments: dict | None = None) -> dict:
-        """Submit flash/erase/reset to this probe. Requires explicit confirm and a unique request_id.
+        """Submit flash/erase/erase_sector/reset. Requires explicit confirm and a unique request_id.
 
         Stop capture first. Disconnect does not cancel. Keep the returned job_id and query job_status;
         never retry an unknown hardware result. Deduplication retains only the latest 64 jobs.
@@ -381,6 +381,10 @@ def build_server():
         hpm_flash_cfg (four 32-bit hexadecimal strings) and swd_clock (integer Hz)
         are passed to the existing flash backend. HPM uses ROM API, never FLM.
         reset_after=false does not prevent the HPM ROM routine's own reset/resume.
+        erase and erase_sector accept target_part and algorithm_id; erase_sector requires address.
+        Erasure loads the exact target algorithm first; family IDCODE alone is insufficient.
+        erase affects the selected FLM's whole region; erase_sector requires a known sector boundary.
+        Ambiguous algorithms require explicit selection. HPM native FLM erasure is unsupported.
         """
         return client().start_job(action, request_id=request_id, confirm=confirm, arguments=arguments)
 

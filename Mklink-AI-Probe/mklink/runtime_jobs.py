@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException
 from starlette.routing import Mount
 
 executing_job = ContextVar('mklink_executing_job', default=None)
-PATHS = {'flash': '/api/device/flash', 'erase': '/api/device/erase', 'reset': '/api/device/reset'}
+PATHS = {'flash': '/api/device/flash', 'erase': '/api/device/erase',
+         'erase_sector': '/api/device/erase-sector', 'reset': '/api/device/reset'}
 TERMINAL = {'succeeded', 'failed', 'unknown'}
 
 
@@ -51,13 +52,19 @@ class RuntimeJobs:
         if body.get('session_id') is not None:
             self.control.validate_session(body['session_id'])
         if action not in PATHS or not isinstance(arguments, dict) or body.get('confirm') is not True:
-            raise HTTPException(422, 'Select flash/erase/reset with arguments and confirm=true')
+            raise HTTPException(422, 'Select flash/erase/erase_sector/reset with arguments and confirm=true')
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise HTTPException(422, 'A stable request_id is required; reuse it to query an uncertain submission')
         if action == 'flash':
             from mklink.flash_request import validate_flash_request
             try:
                 arguments = validate_flash_request(arguments)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+        elif action in ('erase', 'erase_sector'):
+            from mklink.native_erase import validate_erase_request
+            try:
+                arguments = validate_erase_request(arguments, sector=action == 'erase_sector')
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
         elif arguments:

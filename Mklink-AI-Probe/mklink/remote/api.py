@@ -2175,16 +2175,35 @@ def create_app(
                 _state["dispatcher"] = None
         return {"status": "rebooted", "connected": False, "stopped": stopped}
 
-    @app.post("/api/device/erase")
-    async def erase_device():
+    async def _erase_device(body, *, sector=False):
+        from mklink.native_erase import validate_erase_request
+        from mklink.device import DeviceError
+        try:
+            arguments = validate_erase_request(body, sector=sector)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "erase"):
+        async with _exclusive_probe_control("erase") as (device, _stopped):
             try:
-                ok = await run_in_threadpool(_state["device"].erase_chip)
+                if sector:
+                    address = arguments.pop('address')
+                    ok = await run_in_threadpool(device.erase_sector, address, **arguments)
+                else:
+                    ok = await run_in_threadpool(device.erase_chip, **arguments)
                 return {"success": ok}
+            except (ValueError, DeviceError) as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/device/erase")
+    async def erase_device(body: dict = Body(default={})):
+        return await _erase_device(body)
+
+    @app.post("/api/device/erase-sector")
+    async def erase_sector_device(body: dict = Body(...)):
+        return await _erase_device(body, sector=True)
 
     @app.post("/api/device/halt")
     async def halt_device():

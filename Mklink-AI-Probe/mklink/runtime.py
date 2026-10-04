@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 30  # Shared flash jobs preserve explicit target and board options.
+PROTOCOL = 31  # Native erasure prepares an exact algorithm through persistent jobs.
 VERSION = "0.3.0"
 
 

@@ -1052,16 +1052,18 @@ class Device:
                         f"Flash verify failed at 0x{address:08X}"
                     )
 
-    def erase_chip(self) -> bool:
+    def erase_chip(self, *, target_part=None, algorithm_id=None) -> bool:
         self._require_connected()
-        mcu_profile = self._get_mcu_profile()
-        flash_base = "0x08000000"
-        if mcu_profile:
-            flash_base = mcu_profile.get("flash_base", flash_base)
-        return self._flash.erase_chip(flash_base)
+        from mklink.native_erase import prepare_erase
+        base = prepare_erase(self, target_part=target_part, algorithm_id=algorithm_id)
+        return self._flash.erase_chip(f'0x{base:08X}')
 
-    def erase_sector(self, addr: int) -> bool:
+    def erase_sector(self, addr: int, *, target_part=None, algorithm_id=None) -> bool:
         self._require_connected()
+        if type(addr) is not int or not 0 <= addr <= 0xffffffff:
+            raise ValueError('Sector address must be a 32-bit integer')
+        from mklink.native_erase import prepare_erase
+        prepare_erase(self, address=addr, target_part=target_part, algorithm_id=algorithm_id)
         return self._flash.erase_sector(f"0x{addr:08X}")
 
     def reset(self) -> None:

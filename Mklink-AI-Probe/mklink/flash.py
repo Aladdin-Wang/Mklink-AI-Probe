@@ -241,7 +241,7 @@ class MKLinkFlash:
             True 成功，False 失败
         """
         resp = self._bridge.send_command(f"cmd.erase_sector_flash({addr})", echo=True)
-        return "0" in resp
+        return any(line.strip() == '0' for line in resp.splitlines())
 
     # ------------------------------------------------------------------
     # 文件烧录

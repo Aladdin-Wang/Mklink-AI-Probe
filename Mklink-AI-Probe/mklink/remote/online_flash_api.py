@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from mklink.cmsis_dap.algorithm_catalog import algorithm_regions
+
 import asyncio
 import base64
 import hashlib
@@ -672,32 +674,6 @@ def _flash_algorithm_payload(record: object) -> Dict[str, object]:
     return payload
 
 
-def _builtin_algorithm_regions(algorithm: object, name: str) -> List[MemoryRegion]:
-    """Use only complete, aligned FLM sector ranges; never invent a last sector."""
-    start = int(algorithm.flash_start)
-    size = int(algorithm.flash_size)
-    sectors = tuple(algorithm.sector_sizes)
-    if size <= 0 or not sectors or sectors[0][0] != 0:
-        return [MemoryRegion(name, start, size, True, True, None)]
-    regions = []
-    for index, (offset, sector_size) in enumerate(sectors):
-        next_offset = sectors[index + 1][0] if index + 1 < len(sectors) else size
-        if not 0 <= offset < next_offset <= size or sector_size <= 0:
-            return [MemoryRegion(name, start, size, True, True, None)]
-        complete_length = ((next_offset - offset) // sector_size) * sector_size
-        if complete_length:
-            regions.append(MemoryRegion(
-                "{}-{}".format(name, index), start + offset,
-                complete_length, True, True, sector_size,
-            ))
-        if complete_length < next_offset - offset:
-            regions.append(MemoryRegion(
-                "{}-{}-partial".format(name, index),
-                start + offset + complete_length,
-                next_offset - offset - complete_length, True, True, None,
-            ))
-    return regions
-
 
 def _builtin_geometry_is_ambiguous(part_number: str) -> bool:
     from mklink.cmsis_dap.builtin_flm_bundle import discover_builtin_flm_algorithms
@@ -747,7 +723,7 @@ def _target_flash_configuration(
         base_regions = tuple(
             region for region in base_regions
             if region.end <= chosen.flash_start or region.start >= end
-        ) + tuple(_builtin_algorithm_regions(chosen, "selected-flm"))
+        ) + tuple(algorithm_regions(chosen, "selected-flm"))
     if services.custom_flms is None:
         return base_regions, (), ()
     custom_regions = tuple(services.custom_flms.regions(part_number))
@@ -2000,7 +1976,7 @@ def default_target_memory_provider(
         algorithms = discover_builtin_flm_algorithms(part_number)
         regions = []
         for algorithm_index, algorithm in enumerate(algorithms):
-            regions.extend(_builtin_algorithm_regions(algorithm, "daplink-flm-{}".format(algorithm_index)))
+            regions.extend(algorithm_regions(algorithm, "daplink-flm-{}".format(algorithm_index)))
         if regions:
             return regions
     except (ImportError, OSError, TypeError, ValueError):

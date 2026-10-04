@@ -1,3 +1,4 @@
+from mklink.cmsis_dap.algorithm_catalog import algorithm_regions
 import asyncio
 import hashlib
 import json
@@ -29,7 +30,6 @@ from mklink.cmsis_dap.pack_catalog import PackCatalog
 from mklink.cmsis_dap.jobs import OnlineFlashJobManager
 from mklink.remote.online_flash_api import (
     OnlineFlashServices,
-    _builtin_algorithm_regions,
     _blocking,
     _captured_image_flash_regions,
     _pack_memory_regions,
@@ -2234,7 +2234,7 @@ def test_builtin_flm_does_not_claim_a_truncated_tail_as_a_sector():
         "flash_size": 0x2500,
         "sector_sizes": ((0, 0x1000),),
     })()
-    assert _builtin_algorithm_regions(algorithm, "flash") == [
+    assert algorithm_regions(algorithm, "flash") == [
         MemoryRegion("flash-0", 0x08000000, 0x2000, True, True, 0x1000),
         MemoryRegion("flash-0-partial", 0x08002000, 0x500, True, True, None),
     ]
