@@ -3247,6 +3247,7 @@ class ModbusStreamManager:
         from mklink.modbus._client import ModbusClient
         from mklink.modbus._format import RegisterSpec
         from mklink.modbus._session import ModbusWorker, validate_slave
+        from mklink.modbus._registers import validate_register_specs, validate_poll_interval
         from mklink.usb_interfaces import canonical_serial_port
 
         settings = dict(connection)
@@ -3271,8 +3272,7 @@ class ModbusStreamManager:
             raise ValueError("Stop bits must be 1 or 2")
         if not 0.05 <= float(settings['timeout']) <= 10.0:
             raise ValueError("Timeout must be in the range 0.05..10 seconds")
-        if not 0.02 <= float(interval) <= 3600.0:
-            raise ValueError("Polling interval must be in the range 0.02..3600 seconds")
+        interval = validate_poll_interval(interval)
         if registers is None:
             registers = [{'addr': i, 'name': f'R{i}'} for i in range(10)]
         if not isinstance(registers, list) or len(registers) > 1024:
@@ -3281,15 +3281,9 @@ class ModbusStreamManager:
         for item in registers:
             if not isinstance(item, dict) or type(item.get('addr')) is not int:
                 raise ValueError("Each poll register requires an integer addr")
-            dtype = item.get('type', 'uint16')
-            if dtype not in ('uint16', 'int16', 'uint32', 'int32', 'float'):
-                raise ValueError("Unsupported poll register type")
-            spec = RegisterSpec(addr=item['addr'], type=dtype, name=str(item.get('name', '')))
-            if not 0 <= spec.addr < 65536 or spec.addr + spec.reg_count > 65536:
-                raise ValueError("Poll register range exceeds 0..65535")
-            specs.append(spec)
-        if len({spec.addr for spec in specs}) != len(specs):
-            raise ValueError("Poll register addresses must be distinct")
+            specs.append(RegisterSpec(addr=item['addr'], type=item.get('type', 'uint16'),
+                name=str(item.get('name', '')), register_type=item.get('register_type', 'holding')))
+        validate_register_specs(specs)
 
         self._bridge = AsyncBridge()
         self._slave, self._interval, self._specs = slave, float(interval), specs

@@ -13,8 +13,8 @@ import queue
 import threading
 from typing import Any, Callable
 
-from mklink.modbus._format import RegisterSpec, registers_to_values
-from mklink.modbus._poller import _group_consecutive
+from mklink.modbus._format import RegisterSpec
+from mklink.modbus._registers import read_register_values
 
 
 READ_LIMITS = {1: 2000, 2: 2000, 3: 125, 4: 125}
@@ -280,18 +280,7 @@ class ModbusWorker:
                 task.future.set_result(result)
 
     def _batch_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
-        result: dict[int, int | float] = {}
-        for group in _group_consecutive(specs):
-            start = group[0].addr
-            count = group[-1].addr + group[-1].reg_count - start
-            read = (self._client.read_input_registers if group[0].register_type == 'input'
-                    else self._client.read_holding_registers)
-            registers = read(start, count, self._slave)
-            if len(registers) != count:
-                raise OSError("Modbus read returned an incomplete register group")
-            for spec in group:
-                offset = spec.addr - start
-                result[spec.addr] = registers_to_values(
-                    registers[offset:offset + spec.reg_count], spec.type,
-                )[0]
-        return result
+        def read(fc, address, count):
+            method = self._client.read_input_registers if fc == 4 else self._client.read_holding_registers
+            return method(address, count, self._slave)
+        return read_register_values(read, specs)

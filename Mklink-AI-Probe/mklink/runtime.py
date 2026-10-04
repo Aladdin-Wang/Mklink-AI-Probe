@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 12  # Serialized read-only Modbus probes; stop older runtimes explicitly.
+PROTOCOL = 13  # Modbus polling preserves register area; stop older runtimes explicitly.
 VERSION = "0.3.0"
 
 

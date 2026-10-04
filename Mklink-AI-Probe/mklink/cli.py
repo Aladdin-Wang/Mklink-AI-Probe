@@ -1412,20 +1412,20 @@ def _cli_modbus_write(args):
 
 
 def _cli_modbus_poll(args):
-    from mklink.modbus._poller import poll_registers
+    from mklink.modbus._poller import poll_registers, validate_poll
     from mklink.modbus._format import parse_register_spec
-
-    client = _modbus_open_client(args)
-    if not client:
-        return
-    try:
-        specs = parse_register_spec(args.registers)
+    from mklink.modbus._session import validate_slave
+    validate_slave(args.slave)
+    specs = parse_register_spec(args.registers)
+    for spec in specs:
+        spec.register_type = args.register_type
+    validate_poll(specs, args.interval, args.count)
+    with _modbus_shared_client(args) as client:
         poll_registers(
-            client, slave=args.slave, specs=specs,
-            interval=args.interval, fmt=args.format, count=args.count,
+            lambda fc, address, quantity: client.call('modbus_transaction',
+                {'fc': fc, 'start': address, 'quantity': quantity, 'slave': args.slave})['values'],
+            slave=args.slave, specs=specs, interval=args.interval, fmt=args.format, count=args.count,
         )
-    finally:
-        client.close()
 
 
 def _cli_modbus_monitor(args):
@@ -1603,7 +1603,7 @@ def _cli_modbus_dispatch(args):
         from mklink.runtime import RuntimeErrorResponse
         try:
             handler(args)
-        except (ValueError, RuntimeErrorResponse) as error:
+        except (OSError, ValueError, RuntimeErrorResponse) as error:
             raise SystemExit(str(error)) from error
     else:
         print("用法: python -m mklink modbus <scan|read|write|poll|monitor|diag|dashboard> [选项]")
@@ -2587,10 +2587,12 @@ def main():
 
     # modbus poll
     modbus_poll = modbus_sub.add_parser("poll", help="轮询寄存器（实时表格）")
-    _add_modbus_serial_args(modbus_poll)
+    _add_modbus_serial_args(modbus_poll, shared=True)
     modbus_poll.add_argument("--slave", type=int, required=True, help="从站地址 (1-247)")
     modbus_poll.add_argument("--registers", required=True,
                              help="寄存器列表: 地址:类型[:名称] 空格分隔（如 0:uint16:Temp 1:float）")
+    modbus_poll.add_argument("--register-type", choices=["holding", "input"], default="holding",
+                             help="寄存器区域：holding=FC03，input=FC04（默认 holding）")
     modbus_poll.add_argument("--interval", type=float, default=1.0, help="轮询间隔秒数（默认 1.0）")
     modbus_poll.add_argument("--format", choices=["dec", "hex", "bin", "float"], default="dec",
                              help="显示格式（默认 dec）")

@@ -23,8 +23,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from mklink.modbus._client import ModbusClient, ModbusError
-from mklink.modbus._format import RegisterSpec, registers_to_values
-from mklink.modbus._poller import _group_consecutive
+from mklink.modbus._format import RegisterSpec
+from mklink.modbus._registers import read_register_values
 from mklink.modbus._profile import (
     build_addr_index,
     find_command,
@@ -32,9 +32,6 @@ from mklink.modbus._profile import (
     resolve_command,
     validate_param,
 )
-
-MAX_BATCH = 125  # Modbus FC03 limit
-
 
 # ---------------------------------------------------------------------------
 # Modbus I/O Worker — serializes all serial operations
@@ -166,27 +163,10 @@ class _ModbusWorker:
                 pass  # errors handled in resp_holder
 
     def _batch_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
-        """Read registers in batches of max MAX_BATCH, return {addr: value}."""
-        result: dict[int, int | float] = {}
-        groups = _group_consecutive(specs)
-        for group in groups:
-            start_addr = group[0].addr
-            count = sum(s.reg_count for s in group)
-            # Split oversized batches
-            while count > 0:
-                n = min(count, MAX_BATCH)
-                regs = self._client.read_holding_registers(start_addr, n, self._slave)
-                for spec in group:
-                    offset = spec.addr - start_addr
-                    if offset < 0 or offset + spec.reg_count > len(regs):
-                        continue
-                    raw = regs[offset: offset + spec.reg_count]
-                    vals = registers_to_values(raw, spec.type)
-                    if vals:
-                        result[spec.addr] = vals[0]
-                start_addr += n
-                count -= n
-        return result
+        def read(fc, address, count):
+            method = self._client.read_input_registers if fc == 4 else self._client.read_holding_registers
+            return method(address, count, self._slave)
+        return read_register_values(read, specs)
 
 
 # ---------------------------------------------------------------------------

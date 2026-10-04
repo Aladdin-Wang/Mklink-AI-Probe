@@ -78,6 +78,8 @@ def parse_register_spec(spec_str: str) -> list[RegisterSpec]:
     specs = []
     for part in spec_str.strip().split():
         fields = part.split(":")
+        if len(fields) > 3:
+            raise ValueError('Register spec must be addr:type[:name]')
         addr = int(fields[0], 0)
         dtype = fields[1] if len(fields) > 1 else "uint16"
         name = fields[2] if len(fields) > 2 else ""
