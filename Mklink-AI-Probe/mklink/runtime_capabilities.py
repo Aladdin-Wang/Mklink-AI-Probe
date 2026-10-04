@@ -60,6 +60,7 @@ CAPABILITIES.update({
     'serial_send': ('POST', '/api/dash/serial/send'),
     'modbus_transaction': ('POST', '/api/dash/modbus/transaction'),
     'modbus_probe': ('POST', '/api/dash/modbus/probe'),
+    'modbus_history': ('POST', '/api/dash/modbus/history'),
 })
 LIFECYCLE_CAPABILITIES = {
     f'{stream}_{action}': (stream, action)

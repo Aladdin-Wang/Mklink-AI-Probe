@@ -29,6 +29,7 @@ import struct
 import sys
 import threading
 import time
+import uuid
 from typing import Any, Generator
 
 from mklink.remote.loop_delivery import LoopDelivery
@@ -3205,6 +3206,8 @@ class ModbusStreamManager:
         self._latest: dict = {}
         self._connection: dict[str, Any] = {}
         self._transaction_id = 0
+        self._history_session = uuid.uuid4().hex
+        self._history_seq = 0
         self._event_lock = threading.Lock()
         self._lifecycle_lock = threading.RLock()
         self._stopping = False
@@ -3290,7 +3293,11 @@ class ModbusStreamManager:
         self._connection = settings
         self._stop_event.clear()
         self._loop_stop.clear()
-        self._latest, self._history = {}, []
+        self._latest = {}
+        with self._event_lock:
+            self._history = []
+            self._history_session = uuid.uuid4().hex
+            self._history_seq = 0
         # Keep ordering across reconnects as well as individual loops: an old
         # HTTP reply must not overwrite a newer SSE snapshot in another window.
         self._loop_status = {'revision': self._loop_status['revision'] + 1,
@@ -3390,10 +3397,39 @@ class ModbusStreamManager:
 
     def _record_event(self, event: dict[str, Any]) -> None:
         with self._event_lock:
+            self._history_seq += 1
+            event = {**event, 'seq': self._history_seq, 'session': self._history_session}
             self._history.append(event)
             if len(self._history) > self._max_history:
                 del self._history[: len(self._history) - self._max_history]
         self._bridge.put(event)
+
+    def get_history(self, session: str | None = None, after: int | None = None,
+                    limit: int = 256) -> dict:
+        """Read the existing bounded event history, never start capture or replay I/O.
+
+        An empty request opens at the current tail. Continuations must name that
+        connection session, including across runtime restarts. Sequence gaps count
+        all events, not just frames. No per-consumer queue or retained cursor.
+        """
+        if type(limit) is not int or not 1 <= limit <= 256:
+            raise ValueError('History limit must be an integer in 1..256')
+        if (after is None) != (session is None):
+            raise ValueError('History continuation requires both session and after')
+        if after is not None and (type(after) is not int or after < 0):
+            raise ValueError('History after must be a nonnegative integer')
+        with self._lifecycle_lock, self._event_lock:
+            if session is not None and session != self._history_session:
+                raise RuntimeError('Modbus history session changed; reopen explicitly')
+            if after is not None and after > self._history_seq:
+                raise ValueError('History cursor is ahead of this session')
+            cursor = self._history_seq if after is None else after
+            oldest = self._history[0]['seq'] if self._history else self._history_seq + 1
+            entries = [item.copy() for item in self._history if item['seq'] > cursor][:limit]
+            return {'session': self._history_session, 'connection': dict(self._connection),
+                    'running': self._running, 'stopping': self._stopping,
+                    'entries': entries, 'next_seq': entries[-1]['seq'] if entries else cursor,
+                    'latest_seq': self._history_seq, 'dropped': max(0, oldest - cursor - 1)}
 
     def probe_slave(self, slave: int, register: int = 0) -> dict:
         with self._lifecycle_lock:
@@ -3582,8 +3618,10 @@ class ModbusStreamManager:
         q = bridge.add_client()
         try:
             yield _sse_json({"event": "status", **await asyncio.to_thread(self.get_status)})
-            if self._history:
-                yield _sse_json({"event": "history", "points": self._history[-100:]})
+            with self._event_lock:
+                history = self._history[-100:]
+            if history:
+                yield _sse_json({"event": "history", "points": history})
             while self.running:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)

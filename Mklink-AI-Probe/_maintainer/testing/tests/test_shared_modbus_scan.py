@@ -118,7 +118,6 @@ def scan_cli(uart_app, monkeypatch):
     monkeypatch.setattr(runtime, 'RuntimeClient', lambda **kwargs: real_client(info=control.info, **kwargs))
     monkeypatch.chdir(control.app.state.mklink_state['project_root'])
     monkeypatch.setattr(cli, '_modbus_save_config', lambda args: None)
-    monkeypatch.setattr(cli, '_modbus_open_client', lambda *_: pytest.fail('CLI opened another UART client'))
     args = SimpleNamespace(port='TEST', baud=9600, parity='N', stopbits=1, start=1, end=3, probe=None)
     return cli, args, http, control, managers['modbus'], calls
 

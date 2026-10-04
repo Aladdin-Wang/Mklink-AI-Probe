@@ -38,6 +38,7 @@ jobs:
           $tests += 'test_shared_modbus_poll'
           $tests += 'test_shared_modbus_dashboard'
           $tests += 'test_shared_modbus_diag'
+          $tests += 'test_shared_modbus_monitor'
           $tests += 'test_stream_delivery'
           $tests += 'test_stream_hub'
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")

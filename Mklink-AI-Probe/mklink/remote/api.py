@@ -717,6 +717,12 @@ try:
         or_mask: StrictInt | None = None
         write_start: StrictInt | None = None
 
+    class ModbusHistoryRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        session: str | None = None
+        after: StrictInt | None = None
+        limit: StrictInt = 256
+
     class ModbusProbeRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         slave: StrictInt
@@ -3070,6 +3076,15 @@ def create_app(
             return {"ok": True, "fc": fc, "start": start, "values": values}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post('/api/dash/modbus/history')
+    async def modbus_history(body: ModbusHistoryRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['modbus'].get_history, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
     @app.post('/api/dash/modbus/probe')
     async def modbus_probe(body: ModbusProbeRequest):

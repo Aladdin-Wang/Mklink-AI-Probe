@@ -292,7 +292,7 @@ def test_finite_loop_finishes_without_waiting_an_extra_interval(client_factory):
         assert events[-1]['completed'] == 1
         assert events[-1]['revision'] > events[0]['revision']
         assert manager.get_status()['loop'] == {key: value for key, value in events[-1].items()
-                                               if key not in {'event', 'status'}}
+                                               if key not in {'event', 'status', 'seq', 'session'}}
     finally:
         manager.stop()
 

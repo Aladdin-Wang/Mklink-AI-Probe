@@ -304,6 +304,12 @@ def build_server():
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        modbus_history reads the existing 500-event history without sending on the UART.
+        Call with {} to open at the current tail, then session/after=next_seq and optional
+        limit (1..256). Entries contain seq/session, frames contain actual hex/direction/CRC.
+        The response includes connection, running, latest_seq and dropped (all event types).
+        A changed session fails with 409; explicitly reopen, never carry a cursor to another
+        connection. This is bounded best-effort history, not lossless capture.
         modbus_probe accepts slave/address; it probes one FC03 register with a 150ms timeout,
         zero retries and restores the connection's timing after completion. The result distinguishes
         a response (including an exception code) from no response; transport errors abort the request.

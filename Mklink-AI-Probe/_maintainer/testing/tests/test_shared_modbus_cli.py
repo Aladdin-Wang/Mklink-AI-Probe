@@ -49,7 +49,6 @@ def test_read_write_share_one_worker_and_keep_gui_default(scan_cli, uart_app, mo
 def test_invalid_write_is_rejected_before_any_connection(monkeypatch, fc, values):
     from mklink import cli, runtime
     monkeypatch.setattr(runtime, 'RuntimeClient', lambda **_: pytest.fail('invalid write attached'))
-    monkeypatch.setattr(cli, '_modbus_open_client', lambda _: pytest.fail('invalid write opened direct port'))
     args = SimpleNamespace(fc=fc, slave=8, start=0, values=values)
     with pytest.raises(ValueError):
         cli._cli_modbus_write(args)
@@ -59,7 +58,6 @@ def test_invalid_write_is_rejected_before_any_connection(monkeypatch, fc, values
 def test_invalid_read_is_rejected_before_any_connection(monkeypatch, slave, start, quantity):
     from mklink import cli, runtime
     monkeypatch.setattr(runtime, 'RuntimeClient', lambda **_: pytest.fail('invalid read attached'))
-    monkeypatch.setattr(cli, '_modbus_open_client', lambda _: pytest.fail('invalid read opened direct port'))
     with pytest.raises(ValueError):
         cli._cli_modbus_read(SimpleNamespace(fc=3, slave=slave, start=start, quantity=quantity))
 

@@ -111,12 +111,29 @@ python -m mklink modbus poll --port COM7 --slave 1 --registers "0:uint16:Status"
 ### 监控通信流量
 
 ```bash
-# 解码模式（默认）
+# 主动探测（默认）：每轮 FC03 读地址 0 的 10 个保持寄存器
 python -m mklink modbus monitor --port COM7 --slave 1
 
-# 保存日志到文件
-python -m mklink modbus monitor --port COM7 --slave 1 --save modbus_log.txt
+# 只旁观共享连接的真实收发帧，不发送探测请求
+python -m mklink modbus monitor --port COM7 --passive --output-format both --save modbus_log.txt
+
+# 主动探测 10 轮后停止
+python -m mklink modbus monitor --port COM7 --slave 1 --count 10
 ```
+
+0.3.0 的监控复用共享后台，GUI、AI 和 CLI 使用同一连接与 worker。多探针用
+`--probe` 明确选择后台；串口参数必须与正在使用的连接一致。监控记录这条连接上
+所有从站的流量，`--slave` 只选择主动探测的从站，不筛选记录。
+
+`hex` 显示后台实际采集的帧字节，`decoded` 显示帧字段，`both` 同时显示。
+日志包含连接参数、会话标识、时间、序号和方向；`--save` 覆盖指定文件并逐条刷新，
+不在内存中累计整场日志。`--interval` 为探测/历史读取间隔（0.02–3600 秒），
+`--count` 为轮数，在旁观模式下表示历史读取轮数。按 `Ctrl+C` 退出。
+
+监控从当前时刻开始读取，后台仅保留最近 500 条事件；读取落后时明确报告丢失的
+事件数，不能当作无损逻辑分析仪。底层收帧回调会抑制尚未完整的累积片段。
+连接更换、停止或请求失败时退出，不自动重连或重放。退出只释放本 CLI 的订阅；
+仍被 GUI/AI 使用的连接保留。旁观模式在连接空闲时也可以建立串口连接，但不发送数据。
 
 ### 诊断功能
 

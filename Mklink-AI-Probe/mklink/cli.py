@@ -1283,24 +1283,6 @@ def _modbus_save_config(args):
         save_config(".", config)
 
 
-def _modbus_open_client(args):
-    """从 argparse args 创建并打开 ModbusClient。"""
-    if not _modbus_resolve_defaults(args):
-        return None
-    from mklink.modbus._client import ModbusClient
-    client = ModbusClient(
-        port=args.port,
-        baudrate=args.baud,
-        parity=args.parity,
-        stopbits=args.stopbits,
-        timeout=args.timeout,
-        retries=args.retries,
-    )
-    if not client.open():
-        return None
-    return client
-
-
 @contextmanager
 def _modbus_shared_client(args, *, scan=False):
     """Borrow one runtime connection and release only what this CLI owns."""
@@ -1429,19 +1411,17 @@ def _cli_modbus_poll(args):
 
 
 def _cli_modbus_monitor(args):
-    from mklink.modbus._monitor import monitor_traffic
-
-    client = _modbus_open_client(args)
-    if not client:
-        return
-    try:
-        monitor_traffic(
-            client, slave=args.slave,
-            interval=args.interval, output_format=args.output_format,
-            save_file=args.save,
-        )
-    finally:
-        client.close()
+    from contextlib import nullcontext
+    from mklink.modbus._monitor import monitor_traffic, validate_monitor
+    from mklink.modbus._session import validate_slave
+    validate_slave(args.slave)
+    validate_monitor(args.interval, args.output_format, args.count)
+    # Fail on an invalid log destination before attaching or opening a UART.
+    with (open(args.save, 'w', encoding='utf-8') if args.save else nullcontext()) as output:
+        with _modbus_shared_client(args) as client:
+            monitor_traffic(client.call, slave=args.slave, interval=args.interval,
+                            output_format=args.output_format, count=args.count,
+                            output=output, passive=args.passive)
 
 
 def _cli_modbus_diag(args):
@@ -2595,12 +2575,14 @@ def main():
 
     # modbus monitor
     modbus_monitor = modbus_sub.add_parser("monitor", help="监控 Modbus 通信流量")
-    _add_modbus_serial_args(modbus_monitor)
-    modbus_monitor.add_argument("--slave", type=int, default=1, help="监控的从站地址（默认 1）")
-    modbus_monitor.add_argument("--interval", type=float, default=2.0, help="探测间隔秒数（默认 2.0）")
+    _add_modbus_serial_args(modbus_monitor, shared=True)
+    modbus_monitor.add_argument("--slave", type=int, default=1, help="主动探测从站；记录共享连接全部流量（默认 1）")
+    modbus_monitor.add_argument("--interval", type=float, default=2.0, help="探测/读取历史间隔秒数（默认 2.0）")
     modbus_monitor.add_argument("--output-format", choices=["decoded", "hex", "both"], default="decoded",
                                 help="输出格式（默认 decoded）")
-    modbus_monitor.add_argument("--save", help="保存日志到文件")
+    modbus_monitor.add_argument("--save", help="逐条写入 UTF-8 日志（覆盖已有文件）")
+    modbus_monitor.add_argument("--passive", action="store_true", help="只观察共享流量，不发送 FC03 探测")
+    modbus_monitor.add_argument("--count", type=int, help="探测/历史读取轮数，默认持续监控")
 
     # modbus diag
     modbus_diag = modbus_sub.add_parser("diag", help="Modbus 诊断（FC07/22/23，共享后台）")
