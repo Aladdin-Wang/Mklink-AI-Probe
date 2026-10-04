@@ -434,7 +434,7 @@ def detect_mcu_profile(
 
     microkeen_path = Path(microkeen_flm_dir) / basename if microkeen_flm_dir else None
     copied = False
-    if not flm_source and not (microkeen_path and microkeen_path.is_file()):
+    if not flm_source:
         return {
             "status": "missing_flm",
             "device": device_name,
@@ -461,19 +461,22 @@ def detect_mcu_profile(
     idcode = (idcode_reader or _read_idcode)(port) if read_idcode else None
 
     if copy_flm and microkeen_path is not None:
+        from mklink.file_content import copy_verified, sha256_file
+
+        if microkeen_path.exists() and (
+            not microkeen_path.is_file()
+            or microkeen_path.is_symlink()
+            or sha256_file(microkeen_path) != sha256_file(flm_source)
+        ):
+            return {
+                'status': 'error', 'device': device_name,
+                'message': (
+                    'Existing probe FLM does not match the selected local algorithm; '
+                    'resolve the conflict through offline deployment before creating a profile'
+                ),
+            }
         microkeen_path.parent.mkdir(parents=True, exist_ok=True)
-        if not microkeen_path.exists():
-            if flm_source is None:
-                return {
-                    "status": "missing_flm",
-                    "device": device_name,
-                    "profile_key": discovered["profile_key"],
-                    "selected_algorithm": selected,
-                    "required_flm": basename,
-                    "message": f"FLM {basename} is not available locally for copying.",
-                }
-            shutil.copy2(flm_source, microkeen_path)
-            copied = True
+        copied = copy_verified(flm_source, microkeen_path)
 
     profile = _build_profile(discovered, selected, idcode=idcode)
     backup = None

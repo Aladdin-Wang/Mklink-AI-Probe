@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T22:07:07.7476574Z`
+- 更新时间：`2026-10-04T22:11:47.1150965Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：128删除Windows未绑定进程的环境盘符/注册表/首卷回退，复用唯一探针及USB身份卷解析；48及146短测通过（扩大回归先缺算法资源21失败后修正环境），双V4只读映射验证通过。127三项CI通过；长期暂停。
+- 当前任务：129修复mcu-detect按文件名信任旧FLM：必须有本地算法，已有文件哈希冲突拒绝，缺失文件复用copy_verified；92短测及真实唯一文件复制/同内容不重写/冲突拒绝/双盘恢复通过。完整MSC任务共享化仍待做，长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对128提交CI；127三项已通过。独立Windows命令多探针已拒绝首盘回退，但仍需将mcu-detect/copy-flm完整复制流程纳入共享后台的设备选择和任务保护，再处理CLI security及旧MCP主体。POSIX旧挂载发现未改；NSIS UAC、物理中断和长期限制保留。
+2. 核对129提交CI；128三项已通过。复用既有offline_download事务与RuntimeJobs来收敛mcu-detect/copy-flm完整流程，审核复制读回，避免平行事务实现。129只补文件内容校验，不是跨进程原子事务。随后处理CLI security和旧MCP。NSIS UAC、物理中断、长期限制保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

@@ -301,3 +301,39 @@ def test_failed_idcode_keeps_borrowed_session_and_releases_query_lease(probe, mo
     assert 'no valid IDCODE' in response.text
     assert bridge.closed is (not existing)
     assert not state['resource_manager'].get_status()
+
+@pytest.mark.parametrize('scenario', ['same', 'different', 'missing_source', 'copy_failed'])
+def test_profile_creation_never_trusts_only_an_existing_flm_name(monkeypatch, tmp_path, scenario):
+    from mklink import mcu_detect as md
+    profile = tmp_path / 'profiles.json'
+    profile.write_text('{"mcus": {}}', encoding='utf-8')
+    source = tmp_path / 'source.FLM'
+    source.write_bytes(b'current algorithm')
+    destination = tmp_path / 'disk' / 'FLM'
+    destination.mkdir(parents=True)
+    target = destination / 'source.FLM'
+    target.write_bytes(b'old algorithm' if scenario == 'different' else source.read_bytes())
+    algorithm = dict(name='source.FLM', start=0x08000000, size=65536, ram_start=0x20000000, ram_size=16384)
+    monkeypatch.setattr(md, '_discover_from_pdsc', lambda *a: dict(device_prefix='TEST', profile_key='test', algorithms=[algorithm]))
+    monkeypatch.setattr(md, '_find_flm_source', lambda *a: None if scenario == 'missing_source' else source)
+    def detect():
+        return md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
+                                     microkeen_flm_dir=destination)
+    before = target.read_bytes()
+    if scenario == 'different':
+        result = detect()
+        assert result['status'] == 'error' and 'does not match' in result['message']
+    elif scenario == 'missing_source':
+        assert detect()['status'] == 'missing_flm'
+    elif scenario == 'copy_failed':
+        def fail(*args):
+            raise OSError('readback mismatch')
+        monkeypatch.setattr('mklink.file_content.copy_verified', fail)
+        with pytest.raises(OSError, match='readback mismatch'):
+            detect()
+    else:
+        result = detect()
+        assert result['status'] == 'created' and result['flm_copied'] is False
+    assert target.read_bytes() == before
+    if scenario != 'same':
+        assert profile.read_text(encoding='utf-8') == '{"mcus": {}}'
