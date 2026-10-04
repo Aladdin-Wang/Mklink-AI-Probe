@@ -377,59 +377,64 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
 
 
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
-    class FakeMonitor:
-        worker_alive = False
+    async def scenario():
+        class FakeMonitor:
+            worker_alive = False
 
-        def __init__(self, **kwargs):
-            self.event_callback = kwargs["event_callback"]
-            self.chunk_callback = kwargs["chunk_callback"]
-            self.port_status = {"TEST": "open"}
+            def __init__(self, **kwargs):
+                self.event_callback = kwargs["event_callback"]
+                self.chunk_callback = kwargs["chunk_callback"]
+                self.port_status = {"TEST": "open"}
 
-        def start(self):
-            pass
+            def start(self):
+                pass
 
-        def stop(self):
-            pass
+            def stop(self):
+                pass
 
-        def send(self, _port, _data):
-            return True
+            def send(self, _port, _data):
+                return True
 
-        def send_all(self, _data):
-            pass
+            def send_all(self, _data):
+                pass
 
-    monkeypatch.setattr(monitor_module, "SerialMonitor", FakeMonitor)
-    manager = SerialStreamManager()
-    queue = manager._bridge.add_client()
-    config = [{"port": "TEST", "baudrate": 115200}]
-    manager.start(config)
-    monitor = manager._monitor
+        monkeypatch.setattr(monitor_module, "SerialMonitor", FakeMonitor)
+        manager = SerialStreamManager()
+        queue = manager._bridge.add_client()
+        config = [{"port": "TEST", "baudrate": 115200}]
+        manager.start(config)
+        monitor = manager._monitor
 
-    raw = b"\x1b[31mready> \xff"
-    monitor.chunk_callback("TEST", "RX", raw, 123.5)
-    monitor.event_callback(SerialEvent(123.5, "TEST", "RX", raw))
+        raw = b"\x1b[31mready> \xff"
+        monitor.chunk_callback("TEST", "RX", raw, 123.5)
+        monitor.event_callback(SerialEvent(123.5, "TEST", "RX", raw))
 
-    opening = queue.get_nowait()
-    terminal = queue.get_nowait()
-    log_event = queue.get_nowait()
-    assert opening["event"] == "status"
-    assert terminal == {
-        "event": "terminal",
-        "timestamp": 123.5,
-        "port": "TEST",
-        "direction": "RX",
-        "data_base64": base64.b64encode(raw).decode("ascii"),
-    }
-    assert log_event["event"] == "data"
-    assert manager.get_status()["config"] == config
-    assert manager.get_status()["stats"] == {
-        "rx_count": 1,
-        "tx_count": 0,
-        "rx_bytes": len(raw),
-        "tx_bytes": 0,
-        "bytes_per_sec": float(len(raw)),
-    }
-    manager.stop()
-    manager._bridge.remove_client(queue)
+        await asyncio.sleep(0)
+        opening = queue.get_nowait()
+        terminal = queue.get_nowait()
+        log_event = queue.get_nowait()
+        assert opening["event"] == "status"
+        assert terminal == {
+            "event": "terminal",
+            "timestamp": 123.5,
+            "port": "TEST",
+            "direction": "RX",
+            "data_base64": base64.b64encode(raw).decode("ascii"),
+        }
+        assert log_event["event"] == "data"
+        assert manager.get_status()["config"] == config
+        assert manager.get_status()["stats"] == {
+            "rx_count": 1,
+            "tx_count": 0,
+            "rx_bytes": len(raw),
+            "tx_bytes": 0,
+            "bytes_per_sec": float(len(raw)),
+        }
+        manager.stop()
+        manager._bridge.remove_client(queue)
+
+
+    asyncio.run(scenario())
 
 
 class _YModemMonitor:
@@ -560,25 +565,28 @@ def test_serial_stream_manager_pages_raw_ymodem_protocol_trace(monkeypatch):
 def test_serial_stream_manager_publishes_running_before_fast_ymodem_completion(
     monkeypatch,
 ):
-    manager = _ymodem_manager(monkeypatch, "complete")
-    queue = manager._bridge.add_client()
-    manager.start_ymodem("TEST", b"firmware", "app.bin")
-    _wait_until(lambda: manager.get_ymodem_status()["state"] == "completed")
+    async def scenario():
+        manager = _ymodem_manager(monkeypatch, "complete")
+        queue = manager._bridge.add_client()
+        manager.start_ymodem("TEST", b"firmware", "app.bin")
+        _wait_until(lambda: manager.get_ymodem_status()["state"] == "completed")
 
-    first = queue.get_nowait()
-    second = queue.get_nowait()
-    assert (first["state"], first["active"], first["phase"]) == (
-        "running", True, "waiting",
-    )
-    assert second["event"] == "ymodem"
-    assert second["phase"] in {"transferring", "completed"}
-    events = [second]
-    while not queue.empty():
-        events.append(queue.get_nowait())
-    assert events[-1]["state"] == "completed"
-    assert events[-1]["active"] is False
-    manager._bridge.remove_client(queue)
-    manager.stop()
+        await asyncio.sleep(0)
+        first = queue.get_nowait()
+        second = queue.get_nowait()
+        assert (first["state"], first["active"], first["phase"]) == (
+            "running", True, "waiting",
+        )
+        assert second["event"] == "ymodem"
+        assert second["phase"] in {"transferring", "completed"}
+        events = [second]
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        assert events[-1]["state"] == "completed"
+        assert events[-1]["active"] is False
+        manager._bridge.remove_client(queue)
+        manager.stop()
+    asyncio.run(scenario())
 
 
 def test_serial_stream_manager_resets_finished_ymodem_state_on_new_session(
@@ -612,26 +620,29 @@ def test_serial_stream_manager_rejects_send_and_cancels_active_ymodem(monkeypatc
 def test_serial_stream_manager_does_not_publish_late_progress_after_cancel(
     monkeypatch,
 ):
-    manager = _ymodem_manager(monkeypatch, "late-progress")
-    queue = manager._bridge.add_client()
-    manager.start_ymodem("TEST", b"firmware", "app.bin")
-    assert _YModemMonitor.entered.wait(1.0)
-    manager.cancel_ymodem(wait=True)
+    async def scenario():
+        manager = _ymodem_manager(monkeypatch, "late-progress")
+        queue = manager._bridge.add_client()
+        manager.start_ymodem("TEST", b"firmware", "app.bin")
+        assert _YModemMonitor.entered.wait(1.0)
+        manager.cancel_ymodem(wait=True)
 
-    events = []
-    while not queue.empty():
-        events.append(queue.get_nowait())
-    cancelling_index = next(
-        index for index, event in enumerate(events)
-        if event.get("phase") == "cancelling"
-    )
-    assert not any(
-        event.get("phase") == "transferring"
-        for event in events[cancelling_index + 1:]
-    )
-    assert events[-1]["state"] == "cancelled"
-    manager._bridge.remove_client(queue)
-    manager.stop()
+        await asyncio.sleep(0)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        cancelling_index = next(
+            index for index, event in enumerate(events)
+            if event.get("phase") == "cancelling"
+        )
+        assert not any(
+            event.get("phase") == "transferring"
+            for event in events[cancelling_index + 1:]
+        )
+        assert events[-1]["state"] == "cancelled"
+        manager._bridge.remove_client(queue)
+        manager.stop()
+    asyncio.run(scenario())
 
 
 def test_serial_stream_manager_records_ymodem_failure(monkeypatch):

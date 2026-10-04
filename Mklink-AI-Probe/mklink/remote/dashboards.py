@@ -31,6 +31,8 @@ import threading
 import time
 from typing import Any, Generator
 
+from mklink.remote.loop_delivery import LoopDelivery
+
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
     RTT_TERMINAL_UTF8,
@@ -117,62 +119,64 @@ def _sse_json(data: Any, event: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 
 class AsyncBridge:
-    """Bridges a synchronous polling thread to an async SSE generator.
-
-    Usage:
-        bridge = AsyncBridge()
-        # In a background thread:
-        bridge.put({"temp": 25.3})
-        # In an async SSE generator:
-        async for data in bridge:
-            yield data
-    """
+    """Bounded SSE fan-out; subscription and queue access belong to one loop."""
 
     def __init__(self, maxsize: int = 200):
-        self._queue: asyncio.Queue | None = None
+        if type(maxsize) is not int or maxsize <= 0:
+            raise ValueError('SSE queue capacity must be a positive integer')
         self._maxsize = maxsize
-        self._stopped = False
-        self._lock = threading.Lock()
-        self._clients: list[asyncio.Queue] = []
+        self._clients: set[asyncio.Queue] = set()
+        self._closing_clients: dict[asyncio.Queue, int] = {}
+        self._ended_clients: set[asyncio.Queue] = set()
+        self._sequence = 0
         self._clients_lock = threading.Lock()
-
-    def _get_queue(self) -> asyncio.Queue:
-        """Get or create a queue for the current async context."""
-        if self._queue is None:
-            self._queue = asyncio.Queue(maxsize=self._maxsize)
-        return self._queue
+        self._delivery: LoopDelivery | None = None
 
     def put(self, data: Any) -> None:
-        """Put data from a sync thread into all client queues."""
+        """Publish from any thread without touching asyncio queues there."""
         with self._clients_lock:
-            for q in self._clients:
-                try:
-                    q.put_nowait(data)
-                except asyncio.QueueFull:
-                    # Drop oldest to make room
-                    try:
-                        q.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                    try:
-                        q.put_nowait(data)
-                    except asyncio.QueueFull:
-                        pass
+            clients = tuple(self._clients - self._closing_clients.keys() - self._ended_clients)
+            if clients:
+                self._sequence += 1
+                self._delivery.submit((self._sequence, data, clients))
+
+    def _deliver(self, item) -> None:
+        sequence, data, clients = item
+        with self._clients_lock:
+            active = self._clients.copy()
+            closing = {queue for queue, end in self._closing_clients.items() if end <= sequence}
+            recipients = set(clients) & active - self._ended_clients - closing
+            self._ended_clients.update(closing)
+            for queue in closing:
+                self._closing_clients.pop(queue)
+        # A later record also carries earlier stops if overflow discarded their
+        # wakeup. Records accepted before stop still precede its terminal value.
+        for queue in recipients | closing:
+            if queue.full():
+                queue.get_nowait()
+                queue.task_done()
+            queue.put_nowait(None if queue in closing else data)
 
     def add_client(self) -> asyncio.Queue:
-        """Register a new SSE client and return its queue."""
+        """Register on the consuming loop, never from a producer thread."""
+        loop = asyncio.get_running_loop()
         q = asyncio.Queue(maxsize=self._maxsize)
         with self._clients_lock:
-            self._clients.append(q)
+            if self._clients and self._delivery.loop is not loop:
+                raise RuntimeError('SSE clients must use the owner event loop')
+            if self._delivery is None or self._delivery.loop is not loop:
+                self._delivery = LoopDelivery(
+                    loop, self._maxsize, self._deliver, lambda item: None,
+                )
+            self._clients.add(q)
         return q
 
     def remove_client(self, q: asyncio.Queue) -> None:
         """Unregister an SSE client."""
         with self._clients_lock:
-            try:
-                self._clients.remove(q)
-            except ValueError:
-                pass
+            self._clients.discard(q)
+            self._closing_clients.pop(q, None)
+            self._ended_clients.discard(q)
 
     @property
     def client_count(self) -> int:
@@ -180,13 +184,13 @@ class AsyncBridge:
             return len(self._clients)
 
     def stop(self) -> None:
-        self._stopped = True
+        """End existing subscriptions even when their queues are full."""
         with self._clients_lock:
-            for q in self._clients:
-                try:
-                    q.put_nowait(None)  # sentinel
-                except asyncio.QueueFull:
-                    pass
+            clients = tuple(self._clients - self._closing_clients.keys() - self._ended_clients)
+            if clients:
+                self._sequence += 1
+                self._closing_clients.update({queue: self._sequence for queue in clients})
+                self._delivery.submit((self._sequence, None, clients))
 
 
 # ---------------------------------------------------------------------------
