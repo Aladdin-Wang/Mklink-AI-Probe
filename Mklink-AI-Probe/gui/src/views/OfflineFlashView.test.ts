@@ -531,6 +531,14 @@ describe('OfflineFlashView', () => {
     expect(offlineMocks.deploymentStatus).toHaveBeenCalledExactlyOnceWith(id)
     expect(offlineMocks.deploy).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('已查询到部署成功记录')
+    offlineMocks.deploymentStatus.mockRejectedValueOnce(new Error('No retained deployment'))
+    await wrapper.get('[data-testid="deployment-request-id"]').setValue('missing-request')
+    await wrapper.get('[data-testid="deployment-query"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('No retained deployment')
+    expect(wrapper.text()).not.toContain('已查询到部署成功记录')
+    expect(wrapper.get('[data-testid="offline-deploy"]').attributes('disabled')).toBeDefined()
+    expect(offlineMocks.deploy).toHaveBeenCalledOnce()
   })
 
   it('confirms security choices immediately and sends the validated V3 recipe', async () => {

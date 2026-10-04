@@ -753,6 +753,7 @@ async function deploy(): Promise<void> {
 
 async function queryDeployment(): Promise<void> {
   operationBusy.value = true
+  deploymentUncertain.value = true
   notice.value = ''
   deployedScriptName.value = ''
   deployedModel.value = ''

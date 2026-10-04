@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T21:03:32.1855678+00:00`
+- 更新时间：`2026-10-04T21:07:59.0296194+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：117批写盘前登记恢复目录到既有任务日志；强杀后可查询备份位置，正常清理后移除。登记失败无目标修改，原事件循环更新日志。四文件151项通过；物理MSC中断/真实GUI/新包仍待验，长期暂停。
+- 当前任务：118批修复GUI成功查询后再次查询失败仍允许新部署的问题：查询开始进入不确定状态，仅成功记录解除。先复现后修复，GUI31项、类型/构建及真实Chrome受控查询通过。长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 117已修复强杀备份未关联任务路径，临时磁盘子进程验证及151项回归通过。补响应丢失、真实GUI完整部署与新包短时验收；115候选不含117修复。恢复目录仅供人工核查，可能已清理，不自动恢复。NSIS UAC待答复；长期任务不可自动恢复。
+2. 117恢复目录已接入任务日志；118查询失败GUI状态已收敛。补响应丢失、真实GUI完整部署与新包短时验收，115候选不含117/118。恢复目录仅供人工核查，可能已清理，不自动恢复。NSIS UAC待答复；长期任务不可自动恢复。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
