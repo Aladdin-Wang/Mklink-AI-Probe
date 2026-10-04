@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 19  # Serial owner exposes validated automation configuration.
+PROTOCOL = 20  # Serial status includes bounded per-port parsed snapshots.
 VERSION = "0.3.0"
 
 

@@ -64,6 +64,11 @@
       @primary="refreshPorts"
     />
 
+    <SerialAutomationPanel
+      :model-value="automation" :locked="running || starting || stopping"
+      :port="portName" :frame="latestFrames[portName]" @update:model-value="editAutomation"
+    />
+
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
         <button
@@ -170,6 +175,7 @@ import RttTransmitBar from './RttTransmitBar.vue'
 import SetupHint from './SetupHint.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
+import SerialAutomationPanel, { type SerialAutomation, type SerialParsedFrame } from './SerialAutomationPanel.vue'
 
 interface SerialStatus {
   running?: boolean
@@ -177,6 +183,9 @@ interface SerialStatus {
   config?: Array<Record<string, unknown>>
   stats?: typeof stats.value
   ymodem?: YmodemStatus
+  automation?: SerialAutomation
+  latest_frames?: Record<string, SerialParsedFrame>
+  session?: string | null
 }
 
 interface YmodemStatus {
@@ -257,6 +266,15 @@ const portsLoaded = ref(false)
 const stats = ref({ rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 })
 const portStatuses = ref<Record<string, string>>({})
 const runtimeError = ref('')
+const automation = ref<SerialAutomation>({ profile: null, rules: [] })
+const automationEdited = ref(false)
+const latestFrames = ref<Record<string, SerialParsedFrame>>({})
+function editAutomation(value: SerialAutomation): void {
+  if (running.value || starting.value || stopping.value) return
+  automation.value = value
+  automationEdited.value = true
+  latestFrames.value = {}
+}
 const viewMode = ref<'log' | 'terminal'>('terminal')
 const logDisplayMode = ref<LogDisplayMode>('text')
 const showLogTimestamp = ref(false)
@@ -280,6 +298,7 @@ let lastYmodemTerminalKey = ''
 let reportedYmodemFinal = 0
 let ymodemTraceCursor = 0
 let ymodemTraceTransferId = 0
+let observedSerialSession: string | null = null
 
 const currentPortStatus = computed(() => portStatuses.value[portName.value] || (running.value ? 'opening' : 'closed'))
 const validBaudrate = computed(() => {
@@ -353,7 +372,16 @@ async function refreshPorts(): Promise<void> {
 }
 
 function applyStatus(status: SerialStatus): void {
+  if (status.session && status.session !== observedSerialSession) {
+    observedSerialSession = status.session
+    runtimeError.value = ''
+  }
   running.value = status.running === true
+  if (running.value || !automationEdited.value) {
+    if (status.automation) automation.value = status.automation
+    latestFrames.value = status.latest_frames || {}
+    if (running.value) automationEdited.value = false
+  }
   if (status.stats) stats.value = status.stats
   portStatuses.value = status.ports || {}
   if (status.ymodem) {
@@ -585,6 +613,9 @@ async function doStart(): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...(automation.value.profile || automation.value.rules.length ? {
+          profile: automation.value.profile, auto_reply_rules: automation.value.rules,
+        } : {}),
         ports: [{
           port: portName.value,
           baudrate: validBaudrate.value,

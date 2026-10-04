@@ -2737,6 +2737,9 @@ class SerialStreamManager:
         self._port_config: list[dict] = []
         self._profile: dict | None = None
         self._auto_reply_rules: list[dict] | None = None
+        self._parsed_lock = threading.Lock()
+        self._latest_frames: dict[str, dict] = {}
+        self._serial_session: str | None = None
         self._rx_count = 0
         self._tx_count = 0
         self._rx_bytes = 0
@@ -2819,8 +2822,17 @@ class SerialStreamManager:
             raise ValueError('UART port identity must contain 1..255 UTF-8 bytes')
         self._port_config = ports
         self._profile = copy.deepcopy(profile)
+        from mklink.serial._profile import validate_profile
+        if profile is not None:
+            errors = validate_profile(profile)
+            if errors:
+                raise ValueError('; '.join(errors))
         from mklink.serial._autoreply import normalize_rules
         self._auto_reply_rules = normalize_rules(auto_reply_rules or [])
+        if len(json.dumps({'profile': self._profile, 'rules': self._auto_reply_rules}, allow_nan=False)) > 16384:
+            raise ValueError('Serial automation configuration exceeds 16 KiB')
+        with self._parsed_lock:
+            self._latest_frames.clear()
         self._rx_count = 0
         self._tx_count = 0
         self._rx_bytes = 0
@@ -2846,10 +2858,30 @@ class SerialStreamManager:
         self._byte_batcher = SerialByteBatcher(publish_bytes)
 
         def _event_callback(event):
+            if self._serial_session != session:
+                return
             if event.direction == "RX":
                 self._rx_count += 1
             else:
                 self._tx_count += 1
+            if event.direction == 'RX' and event.parsed is not None:
+                # One latest frame per configured port; ordinary byte history
+                # remains the sole history. Limit preview, preserve total size.
+                fields = copy.deepcopy(event.parsed.fields)
+                for name, value in fields.items():
+                    if not isinstance(value, dict):
+                        value = fields[name] = {'value': value, 'raw': value}
+                    for key in ('value', 'raw'):
+                        if isinstance(value.get(key), float) and not math.isfinite(value[key]):
+                            value[key] = str(value[key])
+                with self._parsed_lock:
+                    previous = self._latest_frames.get(event.port)
+                    self._latest_frames[event.port] = {
+                        'timestamp': event.timestamp, 'seq': previous['seq'] + 1 if previous else 1,
+                        'size': len(event.raw), 'hex_preview': event.raw[:256].hex().upper(),
+                        'truncated': len(event.raw) > 256, 'crc_valid': event.parsed.crc_valid,
+                        'fields': fields,
+                    }
             if self._bridge.client_count == 0:
                 return
             ts = time.strftime("%H:%M:%S", time.localtime(event.timestamp))
@@ -3169,11 +3201,15 @@ class SerialStreamManager:
         ports = {}
         if self._monitor:
             ports = self._monitor.port_status
+        with self._parsed_lock:
+            latest_frames = copy.deepcopy(self._latest_frames)
         return {
             "running": self._running,
             "ports": ports,
             "config": [dict(config) for config in self._port_config],
             "automation": copy.deepcopy({"profile": self._profile, "rules": self._auto_reply_rules or []}),
+            "session": self._serial_session,
+            "latest_frames": latest_frames,
             "stats": {
                 "rx_count": self._rx_count,
                 "tx_count": self._tx_count,

@@ -388,7 +388,7 @@ class FrameParser:
             if enum_map:
                 hex_key = f"0x{raw_value:02X}" if raw_value < 256 else f"0x{raw_value:04X}"
                 value = enum_map.get(hex_key, enum_map.get(str(raw_value), raw_value))
-            elif scale:
+            elif scale is not None:
                 value = round(raw_value * scale, 6)
             else:
                 value = raw_value

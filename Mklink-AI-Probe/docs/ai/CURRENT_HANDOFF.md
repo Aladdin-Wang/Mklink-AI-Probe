@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T07:47:30+00:00`
+- 更新时间：`2026-10-04T08:22:05+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared interactive serial open after 74bbf19; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared GUI serial automation and parsed snapshots after 062ce57; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第四十六批open复用共享捕获/生命周期/ConsoleMonitor，删除旧CLIMode独占开口、重复start/stop及错误send。后台API支持Profile/规则且status供借用核对，自动应答仅执行一份；协议19。输入同循环轮询、每轮一条命令，EOF/空管道定时、4KiB发送界限、空格保留，清理二次中断/输出错误仍尝试detach。18新测试；扩大2357通过2跳过；VOFA单次耗时超限保持阈值、单独60及完整复跑通过。Edge/MCP/六CLI真实串口栈+模拟OS验证两终端单份应答/GUI共存、冲突保留文件、非法UTF8拒发、自建尾部和全释放；真实WindowsTTY退格/HEX/退出通过。74bbf19精确CI1576/GUI216全绿，本批CI待核对。无物理发送。
+- 当前任务：持续循环评审验证。第四十七批主GUI增加Profile/应答导入、规则增删与运行锁定；复用后台解析器和每秒status，按端口保留一份最新帧，256字节预览、序号/CRC/字段、NaN字符串，停止保留/重启清空，协议20。Profile类型/大小/有限缩放预检、零缩放修复。后端14与GUI8新测试，扩大2370通过2跳过，补充边界后后端新文件14/GUI相关14通过；类型构建通过。真实Edge双窗口/MCP+模拟OS，GUI启用单份应答、AI同值、错误Profile零开口、11/22端口隔离、重启与旧错误清理、全释放，无物理发送。062ce57精确CI1594/GUI216全绿，本批CI待核对。旧Dashboard同步SSE阻塞仍未修复，须继续日志/队列迁移再删服务。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第46节：第四十六批open复用共享捕获/生命周期/ConsoleMonitor，删除旧CLIMode独占开口、重复start/stop及错误send。后台API支持Profile/规则且status供借用核对，自动应答仅执行一份；协议19。输入同循环轮询、每轮一条命令，EOF/空管道定时、4KiB发送界限、空格保留，清理二次中断/输出错误仍尝试detach。18新测试；扩大2357通过2跳过；VOFA单次耗时超限保持阈值、单独60及完整复跑通过。Edge/MCP/六CLI真实串口栈+模拟OS验证两终端单份应答/GUI共存、冲突保留文件、非法UTF8拒发、自建尾部和全释放；真实WindowsTTY退格/HEX/退出通过。74bbf19精确CI1576/GUI216全绿，本批CI待核对。无物理发送。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第47节：第四十七批主GUI增加Profile/应答导入、规则增删与运行锁定；复用后台解析器和每秒status，按端口保留一份最新帧，256字节预览、序号/CRC/字段、NaN字符串，停止保留/重启清空，协议20。Profile类型/大小/有限缩放预检、零缩放修复。后端14与GUI8新测试，扩大2370通过2跳过，补充边界后后端新文件14/GUI相关14通过；类型构建通过。真实Edge双窗口/MCP+模拟OS，GUI启用单份应答、AI同值、错误Profile零开口、11/22端口隔离、重启与旧错误清理、全释放，无物理发送。062ce57精确CI1594/GUI216全绿，本批CI待核对。旧Dashboard同步SSE阻塞仍未修复，须继续日志/队列迁移再删服务。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议19，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议20，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI，再收敛独立serial dashboard：先核对Profile字段、应答管理、日志和配置功能，复用现有GUI/API而非新服务。继续日志轮转、循环/YMODEM归属、逐请求取消、Agent、真机异常/长稳和NSIS，不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI，继续serial dashboard持续日志/发送队列等缺口并迁入主GUI，再删除旧独占HTTP/SSE/private callback；同步检查日志轮转、Profile非定界帧、循环/YMODEM归属、请求取消、Agent、真机异常/长稳与NSIS。不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

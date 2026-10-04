@@ -113,6 +113,20 @@ python -m mklink serial log --port COM3 --baud 115200 --output "<LOG_DIR>/data.c
 
 ### Web Dashboard
 
+共享 WebGUI 的“串口助手 → 协议与自动应答”可导入 Profile 和应答规则、添加/删除
+规则，并在打开串口时应用。运行期间显示后台实际配置，须先关闭连接再修改；
+导入 Profile 不会隐式启用其内嵌应答，只有规则列表中的应答执行。
+配置上限为 16 KiB，规则最多 64 条。类型与字节数不匹配或非有限缩放系数会被拒绝。
+
+解析字段显示所选端口的最新 RX 帧，约每秒刷新，可能跳过中间帧；含时间、序号、
+CRC、字段值/原始值/单位和最多 256 字节原始预览。切换端口不会混入其他端口字段。
+MCP/SDK 的 `serial_status` 返回同一份 `session` / `latest_frames`；重启更换会话并
+清空快照，停止保留最后一帧。设备非有限浮点显示为 `nan` / `inf` 等字符串。
+需要连续原始记录时使用共享 `serial log`，不能把最新帧快照当无损抓包。
+
+以下独立 `dashboard` 命令尚在迁移，仍直接占用串口，不能与共享连接同时打开；
+旧服务存在慢 SSE 客户端阻塞 reader 的已知问题。当前优先使用共享 WebGUI。
+
 ```bash
 python -m mklink serial dashboard --port COM3 --baud 115200 --profile protocol.json
 ```

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 import SerialMonitorTab from './SerialMonitorTab.vue'
+import SerialAutomationPanel from './SerialAutomationPanel.vue'
 
 const mocks = vi.hoisted(() => ({
   listUartPorts: vi.fn(),
@@ -122,6 +123,52 @@ function ymodemStatus(overrides: Record<string, unknown> = {}) {
 }
 
 describe('SerialMonitorTab', () => {
+  it('clears a failed start message when another client creates a new session', async () => {
+    let status: any = { running: false, ports: {}, config: [] }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (
+      String(input).endsWith('/api/dash/serial/start')
+        ? jsonResponse({ detail: 'invalid profile' }, 400) : jsonResponse(status)
+    )))
+    const wrapper = mount(SerialMonitorTab)
+    await vi.waitFor(() => expect(wrapper.get('select').findAll('option')).toHaveLength(1))
+    await wrapper.findAll('button').find(button => button.text() === '打开串口')!.trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('.runtime-error').text()).toBe('invalid profile'))
+    status = { ...runningStatus(), session: 'new-owner-session', automation: { profile: null, rules: [] }, latest_frames: {} }
+    await vi.waitFor(() => expect(wrapper.find('.runtime-error').exists()).toBe(false), { timeout: 2500 })
+    expect(wrapper.findComponent(SerialAutomationPanel).props('locked')).toBe(true)
+    wrapper.unmount()
+  })
+  it('starts the shared backend with the draft and renders only the selected port snapshot', async () => {
+    const automation = { profile: { name: 'P', version: '1' }, rules: [{ match_contains: 'Q', reply_hex: '52' }] }
+    const frames = {
+      TEST_UART: { seq: 1, timestamp: 1, size: 3, hex_preview: 'AA01FF', truncated: false, crc_valid: null, fields: { volts: { raw: 1, value: 1, unit: 'V' } } },
+      OTHER: { seq: 1, timestamp: 2, size: 3, hex_preview: 'AA02FF', truncated: false, crc_valid: null, fields: { other: { raw: 2, value: 2 } } },
+    }
+    let status: any = { running: false, ports: {}, config: [], automation: { profile: null, rules: [] } }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/dash/serial/start')) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ profile: automation.profile, auto_reply_rules: automation.rules })
+        status = { ...runningStatus(), automation, latest_frames: frames,
+          config: [...runningStatus().config, { port: 'OTHER', baudrate: 9600, databits: 8, stopbits: 1, parity: 'N' }],
+          ports: { TEST_UART: 'open', OTHER: 'open' } }
+        return jsonResponse({ status: 'started' })
+      }
+      return jsonResponse(status)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(SerialMonitorTab)
+    await vi.waitFor(() => expect(wrapper.get('select').findAll('option')).toHaveLength(1))
+    wrapper.findComponent(SerialAutomationPanel).vm.$emit('update:modelValue', automation)
+    await flushPromises()
+    const start = wrapper.findAll('button').find(button => button.text() === '打开串口')!
+    await start.trigger('click'); await flushPromises()
+    expect(wrapper.findComponent(SerialAutomationPanel).props('locked')).toBe(true)
+    expect(wrapper.get('[data-testid="serial-decoded"]').text()).toContain('volts')
+    await wrapper.get('select').setValue('OTHER')
+    expect(wrapper.get('[data-testid="serial-decoded"]').text()).toContain('other')
+    expect(wrapper.get('[data-testid="serial-decoded"]').text()).not.toContain('volts')
+    wrapper.unmount()
+  })
   it('selects one live port and rejects delayed messages from the previous selection', async () => {
     const status = { ...runningStatus(), ports: { TEST_UART: 'open', OTHER: 'open' },
       config: [...runningStatus().config, { port: 'OTHER', baudrate: 9600, databits: 7, stopbits: 2, parity: 'E' }] }

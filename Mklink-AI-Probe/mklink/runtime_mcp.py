@@ -295,6 +295,10 @@ def build_server():
         plus optional profile/auto_reply_rules, executed once by the backend. serial_status.automation
         reports the validated profile/rules; borrowers subscribe with {} and compare explicit settings,
         never replace them. Shared arguments including automation remain limited to 16 KiB.
+        serial_status also returns session/latest_frames, one parsed RX snapshot per port from
+        the backend parser: per-port seq, timestamp, size, a 256-byte hex_preview/truncated flag,
+        crc_valid and fields (value/raw/unit). This is latest state, not lossless frame history.
+        Restart changes session and clears snapshots. Nonfinite device floats are strings, not zero.
         Modbus start accepts port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
         accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
         slave). The override affects only this request. Unknown fields are rejected.
