@@ -686,6 +686,9 @@ class SystemViewStreamManager:
         self._paused.set()  # not paused
         self._stop_event = threading.Event()
         self._history: list[dict] = []
+        self._history_lock = threading.RLock()
+        self._history_session = uuid.uuid4().hex
+        self._history_seq = 0
         self._max_history = 100_000
         self._history_buffer_us = 60_000_000
         self._history_replay_limit = 500
@@ -769,7 +772,7 @@ class SystemViewStreamManager:
         self._generation = generation
         self._paused.set()
         self._running = True
-        self._history.clear()
+        self._reset_history()
         self._stats = {"events": 0, "bytes": 0}
         self._resolved_task_names.clear()
         self._name_resolution_attempted.clear()
@@ -875,7 +878,7 @@ class SystemViewStreamManager:
                                 # generation state so the GUI receives one clean
                                 # timeline after the bounded retry.
                                 self._parser = self._create_parser(device)
-                                self._history.clear()
+                                self._reset_history()
                                 self._stats = {"events": 0, "bytes": 0}
                                 self._resolved_task_names.clear()
                                 self._name_resolution_attempted.clear()
@@ -1024,8 +1027,11 @@ class SystemViewStreamManager:
         self._stats["events"] += len(events)
         # Durable recording is deliberately ahead of all bounded live paths.
         self._record_events(events)
-        self._history.extend(events)
-        self._trim_history()
+        with self._history_lock:
+            for event in events:
+                self._history_seq += 1
+                self._history.append({**event, "capture_seq": self._history_seq})
+            self._trim_history()
 
         if self._stream_hub is not None:
             for offset in range(0, len(events), self._live_batch_limit):
@@ -1103,7 +1109,8 @@ class SystemViewStreamManager:
             else:
                 p._cpu_freq = freq
             self._cpu_freq_source = source
-            self._ensure_event_time_fields(self._history)
+            with self._history_lock:
+                self._ensure_event_time_fields(self._history)
             return freq
 
         if p.cpu_freq:
@@ -1137,7 +1144,8 @@ class SystemViewStreamManager:
             else:
                 p._cpu_freq = freq
             self._cpu_freq_source = source
-            self._ensure_event_time_fields(self._history)
+            with self._history_lock:
+                self._ensure_event_time_fields(self._history)
         return freq
 
     def _profile_cpu_freq_default(self, device) -> int:
@@ -1389,10 +1397,11 @@ class SystemViewStreamManager:
             for tid, name in names.items():
                 if name:
                     p._task_names[int(tid)] = str(name)
-        for ev in self._history:
-            tid = ev.get("task_id")
-            if isinstance(tid, int) and tid in names and names[tid]:
-                ev["task_name"] = names[tid]
+        with self._history_lock:
+            for ev in self._history:
+                tid = ev.get("task_id")
+                if isinstance(tid, int) and tid in names and names[tid]:
+                    ev["task_name"] = names[tid]
         self._resolved_task_names.update({int(k): str(v) for k, v in names.items() if v})
         return names
 
@@ -1479,8 +1488,44 @@ class SystemViewStreamManager:
     def resume(self) -> None:
         self._paused.set()
 
+    def _reset_history(self) -> None:
+        with self._history_lock:
+            self._history.clear()
+            self._history_session = uuid.uuid4().hex
+            self._history_seq = 0
+
     def get_history(self) -> list[dict]:
-        return list(self._history)
+        with self._history_lock:
+            return [dict(event) for event in self._history]
+
+    def read_history(self, session=None, after=None, limit=500) -> dict:
+        """Read one bounded page without consuming another subscriber's events."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("History limit must be an integer in 1..500")
+        if (session is None) != (after is None):
+            raise ValueError("History continuation requires both session and after")
+        with self._history_lock:
+            if session is None:
+                cursor = self._history_seq
+            else:
+                if session != self._history_session:
+                    raise RuntimeError("SystemView capture changed; open a new history cursor")
+                if type(after) is not int or not 0 <= after <= self._history_seq:
+                    raise ValueError("Invalid SystemView history cursor")
+                cursor = after
+            points = []
+            for event in self._history:
+                if event["capture_seq"] > cursor:
+                    points.append(dict(event))
+                    if len(points) == limit:
+                        break
+            next_seq = points[-1]["capture_seq"] if points else self._history_seq
+            # Count all missing sequence numbers, including holes from time trimming.
+            dropped = next_seq - cursor - len(points)
+            return {"session": self._history_session, "points": points,
+                    "next_seq": next_seq, "latest_seq": self._history_seq,
+                    "dropped": dropped}
+
 
     def get_status(self) -> dict:
         return {

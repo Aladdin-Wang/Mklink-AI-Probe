@@ -402,3 +402,25 @@ MCP `start_job(action, request_id, confirm=true, arguments)` 接受 `flash`、`e
 提供去重保证，找不到旧任务不能解释为任务失败。CLI 的 Ctrl+C 只结束等待，任务
 可能仍在执行。当前任务记录覆盖原生 CDC flash/erase/reset；CMSIS-DAP 继续使用
 原有在线任务页面，脱机流式触发保持现有输出接口，不属于这份持久任务历史。
+
+
+## SystemView 分析与报告
+
+`systemview-analyze` 与 `systemview-report` 通过所选探针的共享后台采集，
+沿用后台当前工程、符号与任务名解析，不再单独打开 CDC 或切换符号文件。
+
+```powershell
+python -m mklink systemview-analyze --probe "电机板" --duration 6
+python -m mklink systemview-report --probe "电机板" --duration 6 --out report.html --no-browser
+```
+
+已有采集从订阅时的末尾开始读取，退出不停止其他客户端的采集。自己新建的采集
+结束时只请求一次停止；其他订阅者阻止停止时保留采集并提示。时长须为正有限秒数。
+暂停、停止、后台/会话变化或历史缺口会报错，不输出截断的新报告。
+目标自身丢包仍受原始跟踪协议和分析器能力限制，不保证无损。
+
+`gui_call("systemview_capture_history", {})` 建立当前末尾游标；之后传入
+`session`、`after=next_seq` 与可选 `limit`（1..500）增量读取 `points`。
+同一历史供多个读者独立读取，`dropped` 表示本页跨过的缺失事件数；会话更换返回409，
+不能把新采集接到旧报告中。该接口复用既有100000事件/60秒历史；CLI持续分页收集
+本次事件供本地分析，报告进程内存随实际收集量增长，不提供无限时长采集保证。

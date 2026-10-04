@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 27  # Bounded raw GUI YMODEM uploads; no multipart entry point.
+PROTOCOL = 28  # SystemView capture cursors detect reset and history loss.
 VERSION = "0.3.0"
 
 

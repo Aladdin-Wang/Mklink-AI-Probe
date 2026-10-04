@@ -46,6 +46,7 @@ CAPABILITIES = {
     'superwatch_remove': ('POST', '/api/dash/superwatch/remove'),
     'superwatch_write': ('POST', '/api/dash/superwatch/write'),
     'superwatch_interval': ('POST', '/api/dash/superwatch/interval'),
+    'systemview_capture_history': ('GET', '/api/dash/systemview/history/cursor'),
     'rtt_write': ('POST', '/api/dash/rtt/write'),
 }
 for stream in STREAMS:

@@ -462,122 +462,6 @@ def _find_and_save_rtt_addr(project_root: str) -> None:
         print("[!] 未找到 MAP 文件，无法自动获取 RTT 地址")
 
 
-def _cli_systemview_analyze(project_root: str, port: str | None, duration: float):
-    """采集 SystemView 跟踪并打印 RTOS 运行态分析报告。"""
-    import mklink
-    from mklink.project_config import ensure_rtt_config_updated
-    from mklink.systemview_analyzer import analyze_events, format_report
-
-    ensure_rtt_config_updated(project_root)
-    # 自动加载 axf（读 SystemCoreClock 做 µs 换算 + 任务名解析需要符号）
-    axf = _systemview_symbol_source(project_root)
-    print(f"[*] 连接 MKLink（端口: {port or '自动检测'}）…" + (f"  axf={axf}" if axf else "  [WARN] 未找到 axf，将无法换算 µs"))
-    try:
-        dev = mklink.connect(port=port, project_root=project_root, axf=axf)
-    except Exception as e:
-        print(f"[FAIL] 连接失败: {e}")
-        return
-    print("[OK] 连接成功")
-    try:
-        dev.systemview_start()
-    except Exception as e:
-        print(f"[FAIL] SystemView 启动失败: {e}")
-        dev.close()
-        return
-    print(f"[*] 采集 {duration}s 跟踪并分析…")
-    try:
-        result = dev.systemview_read(duration=duration)
-        dev.systemview_stop()
-        # 任务名解析：直接读 RT-Thread rt_thread.name 字段（不依赖开机 INIT 包）
-        ids = list({e["task_id"] for e in result.get("events", []) if "task_id" in e})
-        if ids:
-            try:
-                names = dev.systemview_resolve_task_names(ids)
-                if names:
-                    for e in result["events"]:
-                        if e.get("task_id") in names:
-                            e["task_name"] = names[e["task_id"]]
-            except Exception:
-                pass
-    finally:
-        try:
-            dev.systemview_stop()
-        except Exception:
-            pass
-        dev.close()
-    report = analyze_events(result.get("events", []))
-    print(format_report(report))
-
-
-def _cli_systemview_report(
-    project_root: str,
-    port: str | None,
-    duration: float,
-    out_path: str,
-    no_browser: bool,
-):
-    """采集 SystemView 并生成自包含 HTML 可视化分析报告。"""
-    import mklink
-    from pathlib import Path
-    from mklink.project_config import ensure_rtt_config_updated
-    from mklink.systemview_analyzer import analyze_events
-    from mklink.systemview_report import generate_html_report
-
-    ensure_rtt_config_updated(project_root)
-    axf = _systemview_symbol_source(project_root)
-    print(f"[*] 连接 MKLink（端口: {port or '自动检测'}）…")
-    try:
-        dev = mklink.connect(port=port, project_root=project_root, axf=axf)
-    except Exception as e:
-        print(f"[FAIL] 连接失败: {e}")
-        return
-    print("[OK] 连接成功")
-    try:
-        dev.systemview_start()
-    except Exception as e:
-        print(f"[FAIL] SystemView 启动失败: {e}")
-        dev.close()
-        return
-    print(f"[*] 采集 {duration}s 生成报告…")
-    events: list = []
-    try:
-        result = dev.systemview_read(duration=duration)
-        events = result.get("events", [])
-        dev.systemview_stop()
-        # 任务名解析
-        ids = list({e["task_id"] for e in events if "task_id" in e})
-        if ids:
-            try:
-                names = dev.systemview_resolve_task_names(ids)
-                for e in events:
-                    if e.get("task_id") in names:
-                        e["task_name"] = names[e["task_id"]]
-            except Exception:
-                pass
-    finally:
-        try:
-            dev.systemview_stop()
-        except Exception:
-            pass
-        dev.close()
-
-    report = analyze_events(events)
-    meta = {"cpu_freq": result.get("cpu_freq") if "result" in dir() else 0}
-    html_str = generate_html_report(
-        report, events, meta=meta, title=f"SystemView RTOS 报告 — {Path(project_root).name}"
-    )
-    out = Path(out_path).resolve()
-    out.write_text(html_str, encoding="utf-8")
-    print(f"\n[OK] 报告已生成: {out}  ({len(events)} 事件, {report['summary'].get('task_count',0)} 任务)")
-    if not no_browser:
-        try:
-            import webbrowser
-            webbrowser.open(out.as_uri())
-            print("[*] 已在浏览器打开")
-        except Exception:
-            pass
-
-
 def _cli_systemview_integrate(project_root: str, sv_dir: str = "segger_systemview"):
     """集成 SEGGER SystemView 到 RT-Thread 项目（克隆 rtt-integrate 思路）。
 
@@ -1140,19 +1024,6 @@ def _default_axf_from_project(project_root: str) -> str | None:
     if not project:
         return None
     return project.get("axf_path") or project.get("out_path")
-
-
-def _systemview_symbol_source(project_root: str) -> str | None:
-    from pathlib import Path
-
-    configured = _default_axf_from_project(project_root)
-    if configured and Path(configured).is_file():
-        return str(Path(configured))
-    for pattern in ("build/**/*.axf", "**/output/*.elf"):
-        candidate = next(Path(project_root).glob(pattern), None)
-        if candidate is not None:
-            return str(candidate)
-    return None
 
 
 def _project_root_from_args(args) -> str:
@@ -2932,7 +2803,7 @@ def main():
         entry.add_argument('--port')
         entry.add_argument('--project-root', default=None)
         entry.add_argument('--request-id')
-    for entry in (read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
+    for entry in (sv_an_parser, sv_rep_parser, read_ram_parser, write_ram_parser, rtt_cmd_parser, superwatch_parser, sv_parser, flash_parser,
                   read_flash_parser, halt_parser, resume_parser, step_parser, read_reg_parser, hardfault_parser, break_parser, speed_parser, power_parser, version_parser, dump_memory_parser, flush_memory_parser, measure_parser, watch_parser, vofa_parser):
         entry.add_argument('--probe', help='共享后台下载器 ID 或别名')
     for name in ('device-status', 'read-variable', 'write-variable'):
@@ -3009,15 +2880,6 @@ def main():
         _cli_systemview_integrate(_resolve_project_root(args), sv_dir=args.sv_dir)
     elif args.command == "copy-flm":
         _cli_copy_flm(_resolve_project_root(args))
-    elif args.command == "systemview-analyze":
-        _cli_systemview_analyze(
-            _resolve_project_root(args), port=args.port, duration=args.duration,
-        )
-    elif args.command == "systemview-report":
-        _cli_systemview_report(
-            _resolve_project_root(args), port=args.port, duration=args.duration,
-            out_path=args.out, no_browser=args.no_browser,
-        )
     elif args.command in ("resources", "resource"):
         _cli_resources(args)
     elif args.command == "symbols":

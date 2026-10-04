@@ -2555,6 +2555,18 @@ def create_app(
         managers = get_managers()
         return {"points": managers["systemview"].get_history()}
 
+    @app.get("/api/dash/systemview/history/cursor")
+    async def systemview_history_cursor(
+        session: str | None = Query(None), after: int | None = Query(None, ge=0),
+        limit: int = Query(500, ge=1, le=500),
+    ):
+        try:
+            return get_managers()["systemview"].read_history(session, after, limit)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.get("/api/dash/systemview/logs")
     async def systemview_logs():
         from mklink.systemview_logs import list_systemview_logs
