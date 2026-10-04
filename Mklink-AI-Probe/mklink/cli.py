@@ -19,6 +19,9 @@ def _cli_security(args: argparse.Namespace) -> int:
 
     from mklink.security_operations import run_security_operation
 
+    import uuid
+    request_id = args.request_id or uuid.uuid4().hex
+    print(f"Security request_id={request_id}; query runtime jobs after an uncertain result", file=sys.stderr)
     result = run_security_operation(
         args.security_command,
         args.target_part,
@@ -27,7 +30,9 @@ def _cli_security(args: argparse.Namespace) -> int:
         confirm_data_loss=getattr(args, "confirm_data_loss", False),
         firmware=getattr(args, "firmware", None),
         base_address=getattr(args, "base_address", None),
-        probe_id=args.probe_id,
+        probe_id=args.probe,
+        request_id=request_id,
+        project_root=args.project_root,
         frequency=args.frequency,
         timeout=args.timeout,
     )
@@ -2711,9 +2716,11 @@ def main():
                 default=None,
                 help="BIN 固件起始地址（例如 0x08000000）",
             )
-        command_parser.add_argument("--probe-id", default=None, help="可选探针 ID")
+        command_parser.add_argument("--probe", default=None, help="共享探针 ID、别名或命令端口")
+        command_parser.add_argument("--project-root", default=".")
+        command_parser.add_argument("--request-id", help="稳定请求 ID；未知结果先查询已有任务")
         command_parser.add_argument("--frequency", type=int, default=1_000_000)
-        command_parser.add_argument("--timeout", type=float, default=240.0)
+        command_parser.add_argument("--timeout", type=float, default=240.0, help="客户端等待秒数；超时不取消后台任务")
         command_parser.add_argument("--json", action="store_true")
 
     _add_security_arguments(

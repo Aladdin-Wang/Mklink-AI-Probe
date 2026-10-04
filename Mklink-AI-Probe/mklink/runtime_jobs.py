@@ -14,7 +14,8 @@ from starlette.routing import Mount
 
 executing_job = ContextVar('mklink_executing_job', default=None)
 PATHS = {'flash': '/api/device/flash', 'erase': '/api/device/erase',
-         'erase_sector': '/api/device/erase-sector', 'reset': '/api/device/reset'}
+         'erase_sector': '/api/device/erase-sector', 'reset': '/api/device/reset',
+         'security': '/api/device/security'}
 TERMINAL = {'succeeded', 'failed', 'unknown'}
 DEPLOYMENT_PATHS = {'offline_deploy': '/api/offline-download/deploy',
                     'flm_copy': '/api/offline-download/algorithm'}
@@ -54,7 +55,7 @@ class RuntimeJobs:
         if body.get('session_id') is not None:
             self.control.validate_session(body['session_id'])
         if action not in PATHS or not isinstance(arguments, dict) or body.get('confirm') is not True:
-            raise HTTPException(422, 'Select flash/erase/erase_sector/reset with arguments and confirm=true')
+            raise HTTPException(422, 'Select flash/erase/erase_sector/reset/security with arguments and confirm=true')
         if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
             raise HTTPException(422, 'A stable request_id is required; reuse it to query an uncertain submission')
         if action == 'flash':
@@ -67,6 +68,12 @@ class RuntimeJobs:
             from mklink.native_erase import validate_erase_request
             try:
                 arguments = validate_erase_request(arguments, sector=action == 'erase_sector')
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+        elif action == 'security':
+            from mklink.security_operations import validate_security_request
+            try:
+                arguments = validate_security_request(arguments)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
         elif arguments:
@@ -83,9 +90,11 @@ class RuntimeJobs:
         if active_bridge_dashboards():
             raise HTTPException(409, 'Stop acquisition explicitly before an exclusive job')
         device = c.app.state.mklink_state.get('device')
-        if not device or not device.connected:
+        if action != 'security' and (not device or not device.connected):
             raise HTTPException(409, 'Connect the bound probe before submitting a job')
-        if action == 'flash':
+        if action == 'security' and self.path is None:
+            raise HTTPException(503, 'Security journal unavailable; no operation was started')
+        if action == 'flash' or (action == 'security' and arguments['action'] == 'lock'):
             firmware = arguments.get('firmware')
             if not Path(firmware).is_file():
                 raise HTTPException(422, 'Firmware file is unavailable')

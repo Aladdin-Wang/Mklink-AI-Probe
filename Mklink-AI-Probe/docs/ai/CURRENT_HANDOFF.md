@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T22:53:45.8824754Z`
+- 更新时间：`2026-10-04T23:04:18.7143539Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：134确认安全入口独立资源管理器/缺连接准备回调，现有RuntimeJobs要求target.connected不适合受保护目标解锁；无硬件复现见第134节。修复NaN/Infinity超时准入，54短测通过。通信归属尚未迁移，长期暂停。
+- 当前任务：135完成CLI安全操作共享迁移：复用后台在线services和RuntimeJobs，允许未连接目标，客户端超时不取消/重发，协议39。234短测和双V4未确认请求拒绝/AI保持/清理通过；未执行真实安全操作。GUI在线任务持久化及活动MCP安全入口待继续；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP/CLI及共享SDK共享，MSC部署复用持久化任务。MCU检查已只读，copy-flm已共享。CLI security、旧MCP主体、安装版和其他验证缺口待继续；长期暂停。
+- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP/CLI及共享SDK共享，MSC部署复用持久化任务。MCU检查只读，copy-flm及CLI security已共享；GUI在线任务持久化、活动MCP安全入口、旧MCP主体、安装版和其他验证缺口待继续；长期暂停。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第133节：源码双V4真实CLI目录检查/共享IDCODE、AI保持、profile与双盘不变及端点清理通过；243相关短测通过。第131节真实FLM共享复制/去重已通过。不是最新安装包或长期验收。
+- **共享后台、多探针与AI共存**：第135节：234短测通过；源码双V4未确认安全请求/直接路由拒绝、任务空、AI保持、profile与双盘未变及端点清理通过。真实加锁/解锁未执行；不是安装包或长期验收。第131节真实FLM共享复制/去重已通过。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,21 +28,21 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议38，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议39，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
 
 ## 真机环境
 
-- **state**：133批双V4重新枚举后完成源码CLI只读检测及共享IDCODE，双AI保持、profile和双盘未变、后台退出清理通过。未烧录/复位/改压；下次使用先重新枚举，长期暂停。
+- **state**：135批双V4重新枚举，各保持AI会话，未确认安全请求返回422、直接路由409且任务列表为空；双盘/profile未变，AI状态及后台清理通过。未烧录/复位/改压；下次使用先重新枚举，长期暂停。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对133共享CI运行37241475172及134新CI；133反馈/GUI已成功。按第134节迁移security：复用后台在线services/准备回调，按探针身份而非target.connected准入，复用RuntimeJobs持久去重并等待真实在线作业终态；客户端超时不关闭后台。再清理旧MCP。NSIS UAC、物理中断等仍待验证。
+2. 核对135提交CI；134全部通过，133共享运行已cancelled。继续统一GUI在线作业持久request_id及活动MCP安全入口，复用已有共享services/RuntimeJobs，随后删除旧MCP主体。CLI security已共享，但真机只验证拒绝路径；安全执行、物理中断、NSIS UAC及跨主机仍有缺口。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

@@ -2044,6 +2044,16 @@ def create_app(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/api/device/security")
+    async def security_operation(body: dict = Body(...)):
+        if not _state.get('shared_runtime'):
+            raise HTTPException(409, 'Security requires the shared runtime job API')
+        from mklink.security_operations import execute_security_operation
+        from mklink.probes import select_probe
+        selected = select_probe(_state['shared_probe_id'])
+        return await online_flash_api._blocking(
+            execute_security_operation, online_flash, body, probe_id=selected['serial_number'])
+
     @app.post("/api/device/reset")
     async def reset_device():
         async with _exclusive_probe_control("reset") as (device, stopped):

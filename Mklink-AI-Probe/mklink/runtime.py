@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 38  # MCU inspection no longer accepts profile/disk write options.
+PROTOCOL = 39  # Security jobs use shared services and allow an unattached target.
 VERSION = "0.3.0"
 
 

@@ -44,7 +44,7 @@
 | `mcu-detect` | 只读检查统一算法目录（多候选按算法 ID 选择） |
 | `project-info` | 显示项目配置状态 |
 | `flash` | 用户显式要求原生 MKLink 串口/FLM 路径时使用；自动下载先走 IDE，再走 pyOCD，最后脱机 API |
-| `security lock/unlock` | 与 MCP/WebGUI 共用安全白名单；要求精确型号、明确恢复电压和确认参数；加锁还须固件，解锁还须数据丢失确认 |
+| `security lock/unlock` | 经共享后台持久任务执行；`--probe` 选 ID/别名/命令口，`--request-id` 保留查询凭据；精确型号、恢复电压和确认参数仍必需，加锁须固件，解锁须数据丢失确认 |
 | `rtt` | 一站式 RTT 捕获（支持 `--visualize`） |
 | `read-ram` | 读取 RAM 数据（十六进制 dump） |
 | `read-reg` | 读取内存映射寄存器 |
@@ -75,3 +75,15 @@
 | `modbus` | Modbus RTU 调试（scan/read/write/poll/monitor/dashboard/pointmap） |
 | `serial` | 通用 UART/RS485 串口调试；MKLink 仅隐藏 MI_04 命令口 |
 | `resources` / `resource` | 本地资源管理（释放 stale 串口/MKLink 锁；不需要 FastAPI） |
+
+### 0.3 安全操作的共享任务
+
+`security lock/unlock` 使用所选探针后台已有的在线烧录服务，无需先成功连接受保护目标。
+旧 `--probe-id` 参数已删除，使用 `--probe`（共享 USB ID、别名或命令端口），不传 CMSIS-DAP 序列号。
+操作仍须用户明确确认；加锁先校验固件，解锁会擦除受保护数据，非 nRF54L15 还须明确本次恢复电压。
+
+命令在提交前向标准错误输出 request_id；`--json` 标准输出保留 JSON。`--timeout` 只限制客户端观察，
+不停止后台作业，也不自动重发。响应丢失或超时后运行 `python -m mklink runtime jobs --probe <ID>`，
+按保存的 request_id 查原记录。unknown 或记录缺失均不能认定没有执行，不得据此重新操作。
+后台最多保留64条任务。安全操作可能关闭目标调试连接；加锁后不能假定已有 AI 会话仍能读取目标，
+也不会自动重连或解除保护。GUI 在线作业入口仍使用其原有查询方式，本次 CLI 迁移不代表该入口已获得持久去重。
