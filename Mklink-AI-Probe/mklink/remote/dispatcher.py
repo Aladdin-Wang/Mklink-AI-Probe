@@ -717,7 +717,7 @@ def _dispatch_modbus(
                         data={"field": "end"},
                     )
                 return scan_slaves(
-                    client,
+                    client.probe_slave,
                     start_addr=start,
                     end_addr=end,
                     probe_register=_integer(params.get("address", 0), "address"),

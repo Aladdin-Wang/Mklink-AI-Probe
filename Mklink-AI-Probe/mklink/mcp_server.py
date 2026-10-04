@@ -1603,7 +1603,7 @@ def _register_modbus_tools(mcp: Any) -> None:
         from mklink.modbus._scanner import scan_slaves
         c = _get_modbus()
         found = scan_slaves(
-            c, start_addr=start_addr, end_addr=end_addr,
+            c.probe_slave, start_addr=start_addr, end_addr=end_addr,
             probe_register=probe_register,
         )
         return {"found_slaves": found, "count": len(found)}

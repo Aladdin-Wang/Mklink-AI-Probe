@@ -3401,6 +3401,13 @@ class ModbusStreamManager:
                 del self._history[: len(self._history) - self._max_history]
         self._bridge.put(event)
 
+    def probe_slave(self, slave: int, register: int = 0) -> dict:
+        with self._lifecycle_lock:
+            if not self._worker or not self._running or self._stopping:
+                raise RuntimeError('Modbus not connected or stopping')
+            worker = self._worker
+        return worker.probe_slave(slave, register)
+
     def transaction(
         self,
         fc: int,

@@ -713,6 +713,11 @@ try:
         quantity: StrictInt | None = None
         values: list[StrictInt | StrictBool] | None = None
         slave: StrictInt | None = None
+
+    class ModbusProbeRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        slave: StrictInt
+        address: StrictInt = 0
 except ImportError:
     pass
 
@@ -3062,6 +3067,15 @@ def create_app(
             return {"ok": True, "fc": fc, "start": start, "values": values}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post('/api/dash/modbus/probe')
+    async def modbus_probe(body: ModbusProbeRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['modbus'].probe_slave, body.slave, body.address)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except Exception as error:
+            raise HTTPException(502, str(error)) from error
 
     @app.post("/api/dash/modbus/transaction")
     async def modbus_transaction(body: ModbusTransactionRequest):

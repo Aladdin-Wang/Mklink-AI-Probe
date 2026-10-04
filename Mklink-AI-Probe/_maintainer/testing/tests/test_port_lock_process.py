@@ -133,10 +133,18 @@ def test_stale_cleanup_preserves_inode_and_reacquisition(owner):
 
 def test_force_cleanup_terminates_only_the_test_owner_and_retains_lock(owner):
     process, info = owner
+    path = Path(info['path'])
+    inode = path.stat().st_ino
     result = release_serial_resources(port='COM901', force=True)
-    assert result['serial_locks'][0]['action'] == 'terminated_owner'
+    action = result['serial_locks'][0]['action']
+    assert action in {'terminated_owner', 'locked_or_unavailable'}
     process.wait(timeout=10)
-    assert Path(info['path']).exists()
+    if action == 'locked_or_unavailable':
+        # Termination can be observed before Windows releases all handles.
+        # Cleanup must refuse that lock, then allow an explicit non-force
+        # cleanup after the process wait has confirmed exit.
+        assert release_serial_resources(port='COM901')['serial_locks'][0]['action'] == 'cleared_stale_lock'
+    assert path.stat().st_ino == inode
     assert local_resource_status('COM901')['serial_locks'][0]['owner_pid'] == 0
 
 

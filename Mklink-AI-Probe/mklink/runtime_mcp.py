@@ -177,7 +177,8 @@ def build_server():
 
         Explicit conflicting project/probe/symbol settings fail without replacing the GUI session.
         scope='uart' attaches without MCU/CDC initialization, including the unselected lobby.
-        Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send and modbus_transaction.
+        Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send, modbus_transaction
+        and modbus_probe (one read-only address probe through the existing worker).
         Use probe to choose a backend; target port/AXF/MCU options require scope='target'.
         """
         with lock:
@@ -297,6 +298,9 @@ def build_server():
         timeout/retries are not supported. These explicit sends share the
         existing worker, may be issued by borrowers, and never retry an unknown result. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        modbus_probe accepts slave/address; it probes one FC03 register with a 150ms timeout,
+        zero retries and restores the connection's timing after completion. The result distinguishes
+        a response (including an exception code) from no response; transport errors abort the request.
         """
         return client().call(capability, arguments)
 

@@ -240,3 +240,48 @@ class ModbusClient:
     def raw_client(self) -> ModbusSerialClient:
         """直接访问底层 pymodbus 客户端（用于诊断等高级操作）。"""
         return self._client
+
+    def probe_slave(self, slave: int, register: int = 0) -> dict:
+        """One read-only probe; the caller must serialize access to this client."""
+        from pymodbus.exceptions import ModbusIOException
+        from mklink.modbus._session import validate_slave, validate_transaction
+        validate_slave(slave)
+        validate_transaction(3, register, quantity=1)
+        raw = self._client
+        if not raw.connect():
+            raise ModbusError('Modbus port is closed; reconnect explicitly before scanning')
+        # pymodbus copies retries into its transaction object at construction.
+        # Its serial receive loop and socket also have separate timeout values.
+        settings = [(raw.comm_params, 'timeout_connect', .15), (raw, 'retries', 0),
+                    (raw.transaction, 'retries', 0), (raw.socket, 'timeout', .15),
+                    (raw.socket, 'write_timeout', .15)]
+        previous = [(obj, key, getattr(obj, key)) for obj, key, _ in settings]
+        # Absent addresses during discovery must not consume the connected
+        # slave's failure budget used by subsequent GUI transactions.
+        previous.append((raw.transaction, 'count_until_disconnect', raw.transaction.count_until_disconnect))
+        try:
+            for obj, key, value in settings:
+                setattr(obj, key, value)
+            try:
+                self.read_holding_registers(register, 1, slave)
+            except ModbusSlaveError as exc:
+                return {'slave': slave, 'responded': True,
+                        'exception_code': exc.response.exception_code}
+            except ModbusIOException as exc:
+                return {'slave': slave, 'responded': False, 'error': str(exc)}
+            return {'slave': slave, 'responded': True}
+        finally:
+            restore_error = None
+            for obj, key, value in reversed(previous):
+                try:
+                    setattr(obj, key, value)
+                except Exception as exc:
+                    if restore_error is None:
+                        restore_error = exc
+            if restore_error is not None:
+                # Stop using a port whose timing could not be restored. Keep
+                # the outer client's ownership lock until explicit close/stop.
+                try:
+                    raw.close()
+                finally:
+                    raise restore_error

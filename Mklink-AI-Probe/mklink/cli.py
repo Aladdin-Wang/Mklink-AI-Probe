@@ -1304,11 +1304,27 @@ def _modbus_open_client(args):
 
 
 def _cli_modbus_scan(args):
-    from mklink.modbus._scanner import scan_slaves
-    client = _modbus_open_client(args)
-    if not client:
+    from mklink.modbus._scanner import scan_slaves, validate_scan_range
+    from mklink.runtime import RuntimeClient, RuntimeErrorResponse
+    from mklink.usb_interfaces import canonical_serial_port
+    validate_scan_range(args.start, args.end)
+    if not _modbus_resolve_defaults(args):
         return
+    connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
+                  'bytesize': 8, 'parity': args.parity, 'stopbits': args.stopbits}
+    client = RuntimeClient(kind='cli', name='Modbus scan')
+    created = False
     try:
+        client.connect(scope='uart', probe=getattr(args, 'probe', None))
+        if client.call('modbus_status')['running']:
+            client.call('modbus_start', {})
+        else:
+            client.call('modbus_start', {**connection, 'timeout': .15, 'retries': 0, 'registers': []})
+            created = True
+        # Validate after subscribing, while shared stop/reconfiguration is refused.
+        actual = client.call('modbus_status')['connection']
+        if any(actual.get(key) != value for key, value in connection.items()):
+            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before scanning')
         print(f"[*] Modbus 从站扫描: {args.port} @ {args.baud}bps (地址 {args.start}-{args.end})")
 
         def on_progress(current, total, msg):
@@ -1317,7 +1333,7 @@ def _cli_modbus_scan(args):
             print(f"\r  [{pct:3d}%] {current}/{total}{status}", end="", flush=True)
 
         found = scan_slaves(
-            client,
+            lambda slave, register: client.call('modbus_probe', {'slave': slave, 'address': register}),
             start_addr=args.start,
             end_addr=args.end,
             on_progress=on_progress,
@@ -1329,7 +1345,16 @@ def _cli_modbus_scan(args):
         else:
             print("[WARN] 未发现任何从站")
     finally:
-        client.close()
+        try:
+            if created:
+                try:
+                    client.call('modbus_stop')
+                except RuntimeErrorResponse as exc:
+                    if exc.status_code != 409:
+                        raise
+                    print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
+        finally:
+            client.close()
 
 
 def _cli_modbus_read(args):
@@ -2542,18 +2567,20 @@ def main():
     )
     modbus_sub = modbus_parser.add_subparsers(dest="modbus_command")
 
-    def _add_modbus_serial_args(p):
+    def _add_modbus_serial_args(p, *, scan=False):
         """添加 Modbus 共用串口参数。"""
         p.add_argument("--port", default=None, help="Modbus 串口（如 COM8）；未指定时从 config.json 读取 modbus_port")
         p.add_argument("--baud", type=int, default=9600, help="波特率（默认 9600）")
         p.add_argument("--parity", choices=["N", "E", "O"], default="N", help="校验位（N=无 E=偶 O=奇，默认 N）")
         p.add_argument("--stopbits", type=int, choices=[1, 2], default=1, help="停止位（默认 1）")
-        p.add_argument("--timeout", type=float, default=1.0, help="响应超时秒数（默认 1.0）")
-        p.add_argument("--retries", type=int, default=3, help="超时重试次数（默认 3）")
+        if not scan:
+            p.add_argument("--timeout", type=float, default=1.0, help="响应超时秒数（默认 1.0）")
+            p.add_argument("--retries", type=int, default=3, help="超时重试次数（默认 3）")
 
     # modbus scan
     modbus_scan = modbus_sub.add_parser("scan", help="扫描 Modbus 从站地址")
-    _add_modbus_serial_args(modbus_scan)
+    _add_modbus_serial_args(modbus_scan, scan=True)
+    modbus_scan.add_argument('--probe', help='共享后台的下载器身份/别名；每次探测固定150ms且不重试')
     modbus_scan.add_argument("--start", type=int, default=1, help="起始地址（默认 1）")
     modbus_scan.add_argument("--end", type=int, default=247, help="结束地址（默认 247）")
 

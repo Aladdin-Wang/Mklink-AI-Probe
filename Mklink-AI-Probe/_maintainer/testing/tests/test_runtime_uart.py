@@ -43,7 +43,7 @@ def test_uart_lobby_attach_ignores_target_locks_and_never_connects(runtime):
                 return response.json()
     result = client.portal.call(scenario)
     assert result['scope'] == 'uart' and result['attached']
-    assert result['capabilities'] == ['modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
+    assert result['capabilities'] == ['modbus_probe', 'modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
                                      'serial_send', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
     assert app.state.mklink_state['device'] is None and calls == []
     session = result['session_id']

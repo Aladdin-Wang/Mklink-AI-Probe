@@ -248,6 +248,11 @@ class ModbusWorker:
     def submit_read(self, specs: list[RegisterSpec]) -> dict[int, int | float]:
         return dict(self._submit(lambda: self._batch_read(specs)))
 
+    def probe_slave(self, slave: int, register: int = 0) -> dict:
+        validate_slave(slave)
+        validate_transaction(3, register, quantity=1)
+        return self._submit(lambda: self._client.probe_slave(slave, register))
+
     def submit_write(self, addr: int, value: int) -> None:
         self.execute(6, addr, values=[value])
 
