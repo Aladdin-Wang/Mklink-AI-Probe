@@ -27,7 +27,7 @@ def _run(coro):
 async def _agent(*, token=None, limits=None):
     agent = SiteAgent(
         AgentConfig(port=0, token=token, limits=limits or ProtocolLimits()),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
     )
     task = asyncio.create_task(agent.serve())
     try:

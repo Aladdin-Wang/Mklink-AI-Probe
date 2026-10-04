@@ -46,7 +46,7 @@ class _Device:
 
 def test_readiness_handshake_health_and_status_work_without_a_probe():
     async def scenario():
-        agent = SiteAgent(AgentConfig(port=0), device_factory=lambda: _Device())
+        agent = SiteAgent(AgentConfig(port=0), device_factory=lambda **_kwargs: _Device())
         async with _running(agent):
             assert agent.ready is True
             assert agent.port not in (None, 0)
@@ -88,11 +88,8 @@ def test_factory_failure_is_redacted_and_a_later_reconnect_recovers_without_list
     _run(scenario())
 
 
-@pytest.mark.parametrize("factory_form", ["keyword", "no-argument"])
-def test_system_exit_from_factory_is_contained_and_recovery_reuses_listener(
-    factory_form,
-):
-    """Both supported factory forms must contain process-style connect exits."""
+def test_system_exit_from_factory_is_contained_and_recovery_reuses_listener():
+    """Explicit reconnect can recover after a process-style connect exit."""
 
     first_device = _Device()
     recovered_device = _Device()
@@ -104,12 +101,8 @@ def test_system_exit_from_factory_is_contained_and_recovery_reuses_listener(
             raise result
         return result
 
-    if factory_form == "keyword":
-        def factory(**_kwargs):
-            return next_result()
-    else:
-        def factory():
-            return next_result()
+    def factory(**_kwargs):
+        return next_result()
 
     async def scenario():
         agent = SiteAgent(AgentConfig(port=0), device_factory=factory)
@@ -145,10 +138,7 @@ def test_system_exit_from_factory_is_contained_and_recovery_reuses_listener(
     _run(scenario())
 
 
-@pytest.mark.parametrize("factory_form", ["keyword", "no-argument"])
-def test_keyboard_interrupt_from_factory_is_not_mapped_to_connection_failure(
-    factory_form,
-):
+def test_keyboard_interrupt_from_factory_is_not_mapped_to_connection_failure():
     recovered_device = _Device()
     results = [KeyboardInterrupt(), recovered_device]
 
@@ -158,12 +148,8 @@ def test_keyboard_interrupt_from_factory_is_not_mapped_to_connection_failure(
             raise result
         return result
 
-    if factory_form == "keyword":
-        def factory(**_kwargs):
-            return next_result()
-    else:
-        def factory():
-            return next_result()
+    def factory(**_kwargs):
+        return next_result()
 
     async def scenario():
         agent = SiteAgent(AgentConfig(port=0), device_factory=factory)
@@ -186,6 +172,22 @@ def test_keyboard_interrupt_from_factory_is_not_mapped_to_connection_failure(
         assert recovered_device.closed.is_set()
 
     _run(scenario())
+
+
+def test_factory_type_error_after_side_effect_is_not_retried_without_arguments():
+    calls = []
+    def factory(**kwargs):
+        calls.append(kwargs)
+        if kwargs:
+            raise TypeError('internal error after opening transport')
+        return _Device()
+    agent = SiteAgent(AgentConfig(device_port='TEST', axf='test.axf'), device_factory=factory)
+    try:
+        assert agent.reconnect() == {'connected': False, 'error': 'Device connection failed'}
+        assert calls == [{'port': 'TEST', 'axf': 'test.axf'}]
+        assert agent.status()['device_state'] == 'disconnected'
+    finally:
+        agent.close()
 
 
 def test_same_device_reconnect_commands_are_serialized():
@@ -281,7 +283,7 @@ def test_embedded_agent_observes_shared_device_and_does_not_own_gui_resources():
     resources.acquire(ResourceGroup.TARGET_DEBUG, "user:gui-test")
     agent = SiteAgent(
         AgentConfig(),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         device_getter=lambda: shared["device"],
         resource_manager=resources,
     )
@@ -307,7 +309,7 @@ def test_embedded_agent_reconnect_replaces_the_shared_gui_device():
 
     agent = SiteAgent(
         AgentConfig(device_port="COM7", axf="firmware.axf"),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         device_getter=lambda: shared["device"],
         device_reconnector=reconnect,
         resource_manager=ResourceManager(),

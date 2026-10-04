@@ -90,7 +90,7 @@ from mklink.remote.client import connect_remote
 from mklink.remote.cli import build_agent_parser, build_parser
 import mklink.remote.mcp
 
-agent = SiteAgent(AgentConfig(port=0), device_factory=lambda: None)
+agent = SiteAgent(AgentConfig(port=0), device_factory=lambda **_kwargs: None)
 errors = []
 def serve():
     try:

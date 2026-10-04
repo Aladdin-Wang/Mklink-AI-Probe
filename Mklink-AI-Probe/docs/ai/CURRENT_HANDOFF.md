@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T11:22:00+00:00`
+- 更新时间：`2026-10-04T11:35:00+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; bounded raw YMODEM upload after 41be430; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; Agent single-call factory contract after 7fabce3; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第六十一批删除YMODEM multipart上传，GUI发送application/octet-stream原始File，后台逐块读取并在扩容前检查32MiB上限，普通串口文件上传复用同一有界函数；协议27。无Content-Length超限/断开不建传输，精确限额成功，旧格式415。Python103、GUI8、类型/生产构建通过；真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，新增中文文件名和二进制原样GUI上传、AI观察取消及全释放。前批41be430两项CI成功。下一步回到整体架构与请求取消/独立Agent/恢复长稳NSIS，物理协议对端未验收；不改固件/WinUSB、不合并发布。
+- 当前任务：第62批删除Agent工厂TypeError后的无参重试，统一port/axf关键字契约；回归确认内部错误仅调用一次。Agent相关70项及依赖/便携实包13项通过。整体入口复审见报告62节：SystemView analyze/report、独立Agent目标/UART及未绑定身份MSC仍直连；SharedDevice不能直接完整替换Device。前批7fabce3两项CI成功。继续迁移专用CLI与Agent，保留真实协议对端、恢复长稳及NSIS门槛；不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第61节：第六十一批删除YMODEM multipart上传，GUI发送application/octet-stream原始File，后台逐块读取并在扩容前检查32MiB上限，普通串口文件上传复用同一有界函数；协议27。无Content-Length超限/断开不建传输，精确限额成功，旧格式415。Python103、GUI8、类型/生产构建通过；真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，新增中文文件名和二进制原样GUI上传、AI观察取消及全释放。前批41be430两项CI成功。下一步回到整体架构与请求取消/独立Agent/恢复长稳NSIS，物理协议对端未验收；不改固件/WinUSB、不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第62节：第62批删除Agent工厂TypeError后的无参重试，统一port/axf关键字契约；回归确认内部错误仅调用一次。Agent相关70项及依赖/便携实包13项通过。整体入口复审见报告62节：SystemView analyze/report、独立Agent目标/UART及未绑定身份MSC仍直连；SharedDevice不能直接完整替换Device。前批7fabce3两项CI成功。继续迁移专用CLI与Agent，保留真实协议对端、恢复长稳及NSIS门槛；不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；整体架构复审，继续HTTP逐请求取消/客户端退出、独立Agent与低层Device调用方，再推进崩溃恢复/长稳/NSIS。YMODEM共享和有界raw GUI上传已收敛；当前Web构建v030-ymodem-upload-web。真实YMODEM/Modbus对端未验收，不以模拟替代；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
+1. 核对本批精确CI；优先将systemview-analyze/report复用共享采集与既有离线报告，再按完整操作/上传/会话身份契约迁移独立Agent。继续HTTP断开取消、崩溃恢复、24/72小时长稳及NSIS。实际YMODEM/Modbus对端未验收；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

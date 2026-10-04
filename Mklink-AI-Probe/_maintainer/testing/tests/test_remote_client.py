@@ -21,7 +21,7 @@ from mklink.remote.protocol import PROTOCOL_VERSION
 
 class _AgentServer:
     def __enter__(self):
-        self.agent = SiteAgent(AgentConfig(port=0), device_factory=lambda: None)
+        self.agent = SiteAgent(AgentConfig(port=0), device_factory=lambda **_kwargs: None)
         self.error = []
 
         def serve():

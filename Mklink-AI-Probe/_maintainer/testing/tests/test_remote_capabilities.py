@@ -51,7 +51,7 @@ def _request(method: str, params=None, request_id: int = 1) -> str:
 async def _running_agent(**kwargs):
     agent = SiteAgent(
         AgentConfig(port=0, token=kwargs.pop("token", None)),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         **kwargs,
     )
     task = asyncio.create_task(agent.serve())
@@ -552,7 +552,7 @@ def test_remote_fc03_timeout_is_bounded_and_cleanup_survives_provider_timeout(
 def test_agent_capability_merge_is_deterministic_and_cannot_override_lifecycle():
     agent = SiteAgent(
         AgentConfig(),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         capability_provider=lambda: {
             "z.custom": Capability(True, detail="z"),
             "agent.lifecycle": Capability(False, detail="must not replace"),
@@ -576,7 +576,7 @@ def test_agent_dispatch_seam_supports_sync_async_unsupported_and_redacted_failur
 
     sync_agent = SiteAgent(
         AgentConfig(),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         request_dispatcher=sync_dispatch,
     )
     assert asyncio.run(sync_agent._dispatch(request)) == {"value": 7}
@@ -587,13 +587,13 @@ def test_agent_dispatch_seam_supports_sync_async_unsupported_and_redacted_failur
 
     async_agent = SiteAgent(
         AgentConfig(),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         request_dispatcher=async_dispatch,
     )
     assert asyncio.run(async_agent._dispatch(request)) == {"async": True}
     assert [item[0] for item in seen] == ["sync", "async"]
 
-    unsupported_agent = SiteAgent(AgentConfig(), device_factory=lambda: None)
+    unsupported_agent = SiteAgent(AgentConfig(), device_factory=lambda **_kwargs: None)
     with pytest.raises(MethodNotFoundError) as unsupported:
         asyncio.run(unsupported_agent._dispatch(request))
     assert unsupported.value.data["reason"] == "unsupported"
@@ -603,7 +603,7 @@ def test_agent_dispatch_seam_supports_sync_async_unsupported_and_redacted_failur
 
     failing_agent = SiteAgent(
         AgentConfig(),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         request_dispatcher=failing_dispatch,
     )
     with pytest.raises(AgentOperationError) as redacted:

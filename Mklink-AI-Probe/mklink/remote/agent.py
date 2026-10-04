@@ -182,7 +182,8 @@ class SiteAgent:
 
     It is intentionally public so a package wrapper can request a cooperative
     stop without owning the asyncio loop.  Device creation is serialized, but
-    health and status never attempt a probe connection.
+    health and status never attempt a probe connection.  The device factory
+    accepts port and axf keyword arguments; a failed call is never retried.
     """
 
     def __init__(
@@ -344,14 +345,6 @@ class SiteAgent:
             try:
                 kwargs = {"port": self.config.device_port, "axf": self.config.axf}
                 self._device = self._device_factory(**kwargs)
-            except TypeError:
-                # Small injected test factories commonly take no configuration.
-                try:
-                    self._device = self._device_factory()
-                except (Exception, SystemExit):
-                    self._device = None
-                    self._last_error = "Device connection failed"
-                    return {"connected": False, "error": self._last_error}
             except (Exception, SystemExit):
                 self._device = None
                 self._last_error = "Device connection failed"

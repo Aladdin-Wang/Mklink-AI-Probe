@@ -128,7 +128,7 @@ def test_local_fastapi_and_site_agent_keep_resource_policies_isolated(tmp_path):
 
     agent = SiteAgent(
         AgentConfig(project_root=str(tmp_path)),
-        device_factory=lambda: None,
+        device_factory=lambda **_kwargs: None,
         request_dispatcher=dispatcher,
     )
 
