@@ -19,19 +19,13 @@ RTT、SystemView、VOFA 和 SuperWatch 的图表暂停或页面隐藏只减少�
 要释放探针或串口需明确停止对应会话；传输丢帧与设备端丢样分开报告，不把图表
 抽样显示当作原始数据丢失。
 
-### serve — FastAPI 服务
+### 共享后台
 
-```powershell
-python -m mklink serve --host 127.0.0.1 --port 8765
-# 启动 FastAPI 服务器，访问 http://127.0.0.1:8765/docs 查看 API 文档
-```
-
-旧原始 socket 服务及 `mklink.serve()` 已移除；不再支持 `--backend` 选项。
-GUI/AI 共用下载器使用 `mklink gui` / `mklink runtime`；局域网设备操作使用
-“远程服务”页面或独立 Agent，参见[直连远程调试](commands-remote.md)。
-
-选项：
-- `--project-root <dir>` — 指定项目根目录
+旧 `serve`、`mklink.serve()` 和 `mklink.remote.serve_fastapi()` 已移除。
+本机 GUI/AI 统一使用 `mklink gui` / `mklink runtime`，无需启动第二个服务器。
+只启动共享后台、不打开浏览器时使用 `python -m mklink gui --no-browser`。
+局域网设备操作使用“远程服务”页面或独立 Agent，参见[直连远程调试](commands-remote.md)。
+桌面内部 `desktop-proxy` 仅转发共享后台，不直接连接下载器。
 
 ### gui — 一键启动 Web GUI
 
@@ -46,7 +40,8 @@ python -m mklink gui --port 8765 --device-port COM6
 python -m mklink gui --no-browser
 ```
 
-GUI 启动后在浏览器中提供三个主页面：
+GUI 启动后在浏览器中提供以下主页面：
+- **远程服务页** (`/remote-service`) — LAN/VPN 监听、认证令牌、启动/停止及连接说明
 - **配置页** (`/config`) — COM 口选择、MCU 配置、项目初始化
 - **仪表盘页** (`/dashboard`) — RTT View、烧录、调试控制、串口、Modbus、SuperWatch
 - **在线烧录页** (`/online-flash`) — MKLink-only 探针、目标/Pack、HEX/BIN 检查与预览、烧录任务和 SSE 日志
@@ -78,7 +73,7 @@ File 是快照，编译后需要重新选择；自动加载新固件不会自动
 python -m mklink web-entry install --html "/path/to/usb/启动 Mklink Web.html"
 ```
 
-入口会复用现有 Web 服务；只停止自己启动的进程，不改变 `serve`、MCP 或 Tauri
+入口会复用现有 Web 服务；只停止自己启动的进程，不改变共享后台、MCP 或 Tauri
 sidecar 的所有权。平台安装位置、权限和故障排查见
 [跨平台 U 盘 Web 启动入口](web-entry.md)。
 

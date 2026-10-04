@@ -1813,31 +1813,13 @@ def _cli_web_entry(args):
     print(json.dumps(result, ensure_ascii=False))
 
 
-def _cli_serve(args):
-    """启动远程调试服务器。"""
+def _cli_desktop_proxy(args):
+    """Start the internal desktop proxy to the shared runtime."""
     from mklink._deps import require_gui_dependencies
     require_gui_dependencies()
-    if getattr(args, "desktop_instance_id", None):
-        from mklink.runtime_proxy import serve_desktop_proxy
-        serve_desktop_proxy(args)
-        return
-    from mklink.remote.api import create_app, run_server
-    app = create_app(
-        auth_token=args.token,
-        project_root=args.project_root,
-        desktop_instance_id=args.desktop_instance_id,
-    )
-    print(f"[MKLink] Starting FastAPI server on {args.host}:{args.port}")
-    print(f"[MKLink] Backend: fastapi | Auth: {'enabled' if args.token else 'disabled'}")
-    print(f"[MKLink] API docs: http://{args.host}:{args.port}/docs")
-    run_server(
-        app, host=args.host, port=args.port,
-        device_port=args.device_port, axf=args.axf,
-        project_root=args.project_root,
-        desktop_port_end=args.desktop_port_end,
-        desktop_runtime_info=args.desktop_runtime_info,
-        desktop_instance_id=args.desktop_instance_id,
-    )
+    from mklink.runtime_proxy import serve_desktop_proxy
+    serve_desktop_proxy(args)
+
 
 
 def _cli_mcp(args):
@@ -2610,17 +2592,14 @@ def main():
     break_parser.add_argument("--clear", nargs="?", const="all", help="清除断点：指定槽位号或 all")
     break_parser.add_argument("--status", action="store_true", help="显示 CPU 调试状态")
 
-    # serve 子命令
-    serve_parser = subparsers.add_parser("serve", help="启动远程调试服务器（REST API + WebSocket JSON-RPC）")
-    serve_parser.add_argument("--host", default="127.0.0.1", help="绑定地址（默认 127.0.0.1）")
-    serve_parser.add_argument("--port", type=int, default=8765, help="绑定端口（默认 8765）")
-    serve_parser.add_argument("--desktop-port-end", type=int, default=None, help=argparse.SUPPRESS)
-    serve_parser.add_argument("--desktop-runtime-info", default=None, help=argparse.SUPPRESS)
-    serve_parser.add_argument("--desktop-instance-id", default=None, help=argparse.SUPPRESS)
-    serve_parser.add_argument("--token", default=None, help="客户端认证 Token")
-    serve_parser.add_argument("--device-port", default=None, help="MKLink COM 端口（默认自动检测）")
-    serve_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
-    serve_parser.add_argument("--project-root", default=".", help="项目根目录")
+    # Internal desktop proxy; public startup uses gui/runtime.
+    desktop_proxy_parser = subparsers.add_parser("desktop-proxy", help="桌面内部共享后台代理")
+    desktop_proxy_parser.add_argument("--host", default="127.0.0.1", help="绑定地址（默认 127.0.0.1）")
+    desktop_proxy_parser.add_argument("--port", type=int, default=8765, help="绑定端口（默认 8765）")
+    desktop_proxy_parser.add_argument("--desktop-port-end", type=int, required=True, help=argparse.SUPPRESS)
+    desktop_proxy_parser.add_argument("--desktop-runtime-info", required=True, help=argparse.SUPPRESS)
+    desktop_proxy_parser.add_argument("--desktop-instance-id", required=True, help=argparse.SUPPRESS)
+    desktop_proxy_parser.add_argument("--project-root", default=".", help="项目根目录")
 
     # gui 子命令
     gui_parser = subparsers.add_parser("gui", help="启动 MKLink GUI（FastAPI + Vue 3 浏览器界面）")
@@ -2858,8 +2837,8 @@ def main():
         _cli_modbus_dispatch(args)
     elif args.command == "serial":
         _cli_serial_dispatch(args)
-    elif args.command == "serve":
-        _cli_serve(args)
+    elif args.command == "desktop-proxy":
+        _cli_desktop_proxy(args)
     elif args.command == "gui":
         _cli_gui(args)
     elif args.command == "web-entry":

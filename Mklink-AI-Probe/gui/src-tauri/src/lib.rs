@@ -412,7 +412,7 @@ fn spawn_sidecar(
 
     command
         .args([
-            "serve",
+            "desktop-proxy",
             "--host",
             "127.0.0.1",
             "--port",

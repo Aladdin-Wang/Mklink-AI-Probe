@@ -144,7 +144,7 @@ python -m mklink serial dashboard --probe my-probe --port COM3 --no-browser
 
 ### 本地资源释放（不需要 FastAPI）
 
-Agent 和命令行优先使用本地 `resources` 命令释放串口资源；不需要启动 `mklink serve` 或 FastAPI。
+Agent 和命令行优先使用本地 `resources` 命令释放串口资源；不需要另开 Web 服务器。
 
 ```bash
 # 查看本地 MKLink/串口锁状态

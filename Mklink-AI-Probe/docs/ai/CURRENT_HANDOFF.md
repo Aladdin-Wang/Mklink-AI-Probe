@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T16:31:42.115434+00:00`
+- 更新时间：`2026-10-04T16:47:46.544144+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; remove obsolete raw-socket server after 73b129d7; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; consolidate public server startup after 36be159d; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第80批流式入口审计发现仍公开的原始socket独占服务器，已按用户删除旧模式的授权移除：删除手写WebSocket服务、mklink.serve/remote.serve导出和--backend选项；后台实际使用的DeviceDispatcher及JSON响应辅助迁至device_rpc，未复制一套。相关148项及独立依赖环境3项通过，实际CLI帮助核对。裸FastAPI serve/serve_fastapi仍创建独立后台，是下一步收敛项；远程RTT/SystemView仍未启用，本批未宣称流迁移完成。 持续推进，不合并发布。
+- 当前任务：第81批删除普通CLI serve、Python serve_fastapi和重复run_server，保留共享runtime内部create_app；Tauri改用desktop-proxy，握手参数全部必填。本地统一gui/runtime启动，远程服务仍复用宿主后台。首轮132项中131通过，新增夹具端口0错误修复后代理4项通过；Rust20和原生构建通过。实际双原生窗口独立端口、正常退出、保留共享后台通过，但立即停止后台因GUI在线记录未释放返回409，45秒TTL后可清理，下一批优先修复。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第80节：第80批流式入口审计发现仍公开的原始socket独占服务器，已按用户删除旧模式的授权移除：删除手写WebSocket服务、mklink.serve/remote.serve导出和--backend选项；后台实际使用的DeviceDispatcher及JSON响应辅助迁至device_rpc，未复制一套。相关148项及独立依赖环境3项通过，实际CLI帮助核对。裸FastAPI serve/serve_fastapi仍创建独立后台，是下一步收敛项；远程RTT/SystemView仍未启用，本批未宣称流迁移完成。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第81节：第81批删除普通CLI serve、Python serve_fastapi和重复run_server，保留共享runtime内部create_app；Tauri改用desktop-proxy，握手参数全部必填。本地统一gui/runtime启动，远程服务仍复用宿主后台。首轮132项中131通过，新增夹具端口0错误修复后代理4项通过；Rust20和原生构建通过。实际双原生窗口独立端口、正常退出、保留共享后台通过，但立即停止后台因GUI在线记录未释放返回409，45秒TTL后可清理，下一批优先修复。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 第80批删除旧raw socket/公开serve导出，仍需首先收敛CLI非desktop serve和remote.serve_fastapi：当前它们直接create_app/run_server，绕开独立共享runtime；内部DesktopProxy已共享，不要误删后台内部create_app/Device能力。然后实现远程RTT/SystemView共享订阅、游标/二进制读取和逐客户端清理，不复制现有采集器。SystemView现有history/cursor、RTT现有/ws/streams/rtt-terminal可复用。安装/UAC问题仍待用户回复，继续独立审计，不以等待安装阻塞全目标。核对第80批CI。
+1. 优先修复第81批真实双原生窗口关闭后的GUI在线记录残留：桌面代理先退出，pagehide释放可能未送达，立即runtime stop返回409，45秒TTL后恢复。应复用现有view生命周期，按桌面代理所拥有的窗口记录释放，不删除其他GUI/SDK会话。然后继续远程RTT/SystemView共享订阅与游标迁移；旧serve/run_server已删，不恢复独占兼容。核对第81批CI。安装UAC仍待用户回复。
 2. 核对本批CI，继续完成Agent剩余RTT/SystemView八项及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
@@ -54,7 +54,7 @@
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
 - STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。
 - Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。
-- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。配置页异步加载与用户快速选择的时序也应继续审计。 第80批旧raw socket入口已删；CLI非desktop serve及serve_fastapi公共入口仍能直接创建FastAPI/Device后台，必须继续收敛。RTT/SystemView远程8项仍不可用，不以旧独占入口兜底。
+- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。配置页异步加载与用户快速选择的时序也应继续审计。 第81批普通serve/serve_fastapi/run_server已删除；实际原生关窗仍可能遗留GUI presence至45秒TTL，立即停止后台409，需修复定向释放。RTT/SystemView远程8项仍不可用，不以旧独占入口兜底。
 
 ## 延续协议
 

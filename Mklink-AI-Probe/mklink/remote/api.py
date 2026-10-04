@@ -4,15 +4,9 @@ Extends the existing DeviceDispatcher with a proper REST API for configuration,
 device discovery, and lifecycle management. Keeps WebSocket JSON-RPC for
 low-level device operations.
 
-Usage (CLI)::
-
-    mklink serve --port 8765 --token my-secret
-
-Usage (Python)::
-
-    from mklink.remote.api import create_app, run_server
-    app = create_app()
-    run_server(app, port=8765)
+Internal application factory installed by mklink.runtime. Start the shared
+backend using ``mklink gui`` or ``mklink runtime start``; LAN operations use
+the Remote Service page or the standalone Agent.
 """
 
 from __future__ import annotations
@@ -858,9 +852,8 @@ def create_app(
     _state["resource_manager"].on_preempt(
         lambda lease, _new_owner: release_resource_owner(_state, lease.owner)
     )
-    # Expose shared state on the app so out-of-closure callers (e.g.
-    # run_server(auto_connect=True)) can populate it without rebuilding the
-    # closure. Route handlers keep using the same ``_state`` dict directly.
+    # The runtime installs lifecycle and admission hooks on this shared state.
+    # Route handlers keep using the same ``_state`` dict directly.
     app.state.mklink_state = _state
 
     browser_sessions = (
@@ -3937,147 +3930,3 @@ def create_app(
             )
 
     return app
-
-
-def run_server(
-    app=None,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    auth_token: str | None = None,
-    device_port: str | None = None,
-    axf: str | None = None,
-    project_root: str = ".",
-    auto_connect: bool = False,
-    desktop_port_end: int | None = None,
-    desktop_runtime_info: str | None = None,
-    desktop_instance_id: str | None = None,
-):
-    """Start the FastAPI server.
-
-    Args:
-        app: Pre-created FastAPI app (created if not provided).
-        host: Bind address.
-        port: Bind port.
-        auth_token: Required token for authentication.
-        device_port: MKLink COM port (auto-detect if None).
-        axf: AXF/ELF file for symbol resolution.
-        project_root: Project root for .mklink/ config lookup.
-        auto_connect: Automatically connect to device on startup.
-        desktop_port_end: Last packaged-desktop fallback port.
-        desktop_runtime_info: Atomic runtime endpoint handshake file.
-        desktop_instance_id: Owning Tauri instance identifier.
-    """
-    import uvicorn
-
-    if app is None:
-        app = create_app(
-            auth_token=auth_token,
-            project_root=project_root,
-            desktop_instance_id=desktop_instance_id,
-            backend_port=port,
-        )
-
-    def set_backend_port(value: int) -> None:
-        state = getattr(app.state, "mklink_state", None)
-        if isinstance(state, dict):
-            state["backend_port"] = value
-
-    if auto_connect:
-        import mklink
-        from mklink.remote.resource_manager import ResourceManager
-
-        mks = getattr(app.state, "mklink_state", None)
-        if mks is None:
-            mks = {
-                "device": None,
-                "dispatcher": None,
-                "last_device_connection": None,
-                "resource_manager": ResourceManager(),
-            }
-            app.state.mklink_state = mks
-        elif "resource_manager" not in mks:
-            mks["resource_manager"] = ResourceManager()
-        try:
-            with target_debug_lease(mks, "auto-connect"):
-                device = mklink.connect(
-                    port=device_port,
-                    axf=axf,
-                    project_root=project_root,
-                )
-            # mklink.connect() now initializes idcode/MCU inside Device._connect,
-            # so device.idcode is valid here. Store the device in the app's shared
-            # state so the API endpoints actually serve it (previously this
-            # connected then orphaned the device via a dead loop).
-            from mklink.remote.device_rpc import DeviceDispatcher
-            mks["device"] = device
-            mks["dispatcher"] = DeviceDispatcher(device)
-            remember_device_connection(mks, device)
-            logger.info("Auto-connected device: MCU=%s IDCODE=0x%08X",
-                        device.mcu_name, device.idcode)
-        except Exception as e:
-            logger.warning("Auto-connect failed: %s", e)
-
-    from mklink.observe_bridge import configure_stream_observation
-
-    mklink_state = getattr(app.state, "mklink_state", {})
-    observation_token = (
-        auth_token
-        if auth_token is not None
-        else mklink_state.get("auth_token")
-    )
-    observation_correlation = (
-        desktop_instance_id
-        or mklink_state.get("desktop_instance_id")
-    )
-
-    # SansIO avoids legacy concurrent-drain failures between heartbeat and
-    # binary sends under backpressure. Keep heartbeat liveness checks enabled.
-    # Binary sample streams are already compact. Per-client deflate can block
-    # fanout at high sample rates and overflow otherwise healthy consumers.
-    if desktop_port_end is None:
-        configure_stream_observation(
-            app,
-            host=host,
-            port=port,
-            auth_token=observation_token,
-            private_correlation=observation_correlation,
-        )
-        set_backend_port(port)
-        browser_sessions = getattr(app.state, "browser_sessions", None)
-        if browser_sessions is None:
-            uvicorn.run(app, host=host, port=port, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-            return
-        config = uvicorn.Config(app, host=host, port=port, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-        server = uvicorn.Server(config)
-        app.state.request_browser_session_exit = lambda: setattr(
-            server, "should_exit", True
-        )
-        server.run()
-        return
-
-    if not desktop_runtime_info or not desktop_instance_id:
-        raise ValueError("desktop runtime info and instance id are required")
-    listener, selected_port = _bind_desktop_server_socket(
-        host, port, desktop_port_end,
-    )
-    try:
-        configure_stream_observation(
-            app,
-            host=host,
-            port=selected_port,
-            auth_token=observation_token,
-            private_correlation=observation_correlation,
-        )
-        set_backend_port(selected_port)
-        _write_desktop_runtime_info(
-            desktop_runtime_info,
-            port=selected_port,
-            instance_id=desktop_instance_id,
-        )
-        config = uvicorn.Config(app, log_level="info", ws_per_message_deflate=False, ws="websockets-sansio")
-        server = uvicorn.Server(config)
-        app.state.request_desktop_exit = lambda: setattr(server, "should_exit", True)
-        server.run(sockets=[listener])
-    finally:
-        listener.close()

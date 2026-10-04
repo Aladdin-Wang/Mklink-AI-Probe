@@ -1095,42 +1095,6 @@ def test_mcu_detect_with_idcode_uses_target_lease_and_preempts_dashboard():
     assert state["resource_manager"].get_status() == {}
 
 
-def test_run_server_auto_connect_uses_target_lease_and_preempts_dashboard():
-    from mklink.remote.api import create_app, run_server
-    from mklink.remote.resource_manager import ResourceGroup
-
-    app = create_app(auth_token=None, project_root=".")
-    state = app.state.mklink_state
-    owners_seen = []
-    device = MagicMock()
-    device.mcu_name = "HPM5301"
-    device.idcode = 0x1234
-
-    def connect(**_kwargs):
-        owners_seen.append(
-            state["resource_manager"].get_status()["target_debug"]["owner"]
-        )
-        return device
-
-    with patch("mklink.connect", side_effect=connect), patch("uvicorn.run"):
-        run_server(app, auto_connect=True)
-
-    assert owners_seen == ["user:api:auto-connect"]
-    assert state["device"] is device
-    assert state["resource_manager"].get_status() == {}
-
-    state["device"] = None
-    state["resource_manager"].acquire(
-        ResourceGroup.TARGET_DEBUG, "user:dashboard:rtt"
-    )
-    with patch("mklink.connect") as connect_mock, patch("uvicorn.run") as serve_mock:
-        run_server(app, auto_connect=True)
-
-    connect_mock.assert_called_once()
-    serve_mock.assert_called_once()
-    assert state["device"] is connect_mock.return_value
-    assert state["resource_manager"].get_status() == {}
-
 
 def test_dashboard_preempt_stop_failure_restores_old_lease():
     from mklink.remote.resource_manager import ResourceGroup
@@ -2081,11 +2045,3 @@ def test_rtt_start_failure_callback_runs_after_worker_cleanup():
     manager._thread.join(timeout=1)
     assert callback_observations == [(True, False)]
     assert resource_manager.get_status() == {}
-
-def test_run_server_uses_sansio_websocket_flow_control():
-    from mklink.remote.api import create_app, run_server
-    app = create_app(auth_token=None, project_root=".")
-    with patch("uvicorn.run") as serve:
-        run_server(app)
-    assert serve.call_args.kwargs["ws"] == "websockets-sansio"
-    assert serve.call_args.kwargs["ws_per_message_deflate"] is False

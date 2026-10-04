@@ -51,7 +51,7 @@ IAR 工程优先用 `IarBuild.exe <project.ewp> -build <configuration>` 编译�
 
 在线烧录使用 `/online-flash` 页面或 `/api/online-flash` REST 工作流，不要用原生串口 `python -m mklink flash` 冒充 pyOCD：
 
-1. 启动 `python -m mklink serve --host 127.0.0.1 --port 8765 --project-root <project>`。
+1. 启动 `python -m mklink gui --no-browser --host 127.0.0.1 --port 8765 --project-root <project>`。
 2. `GET /api/online-flash/probes` 选择 MKLink CMSIS-DAP 探针。
 3. `GET /api/online-flash/targets` 确认精确器件。
 4. `POST /api/online-flash/images/inspect` 上传并检查 HEX/BIN；BIN 必须给基址。

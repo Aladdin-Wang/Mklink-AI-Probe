@@ -103,7 +103,7 @@ python -m mklink web-entry uninstall
 - 新服务在 45 秒内未就绪时，入口终止自己启动的进程、清除状态并显示系统错误；
   快速启动页在 50 秒后显示对应排障提醒。
 - 若发现正在运行的 Mklink API 没有 Web 静态资源，入口报错并停止，不启动第二个竞争硬件的后端。
-- 现有 `mklink gui`、`mklink serve`、`mklink mcp` 和 Tauri sidecar 生命周期不变。
+- 现有 `mklink gui`、`mklink runtime`、`mklink mcp` 和 Tauri sidecar 生命周期不变。
 - 协议安装、HTML 文件和状态目录均为新增旁路，不修改 AI/MCP 配置或 Tauri 启动逻辑。
 
 ## 平台要求

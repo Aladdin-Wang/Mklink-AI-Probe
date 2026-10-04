@@ -144,7 +144,7 @@ def test_two_desktop_sidecars_get_independent_endpoints(tmp_path, monkeypatch):
                     sys.executable,
                     "-m",
                     "mklink",
-                    "serve",
+                    "desktop-proxy",
                     "--host",
                     "127.0.0.1",
                     "--port",

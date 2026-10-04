@@ -5,6 +5,41 @@ import httpx
 from mklink.runtime_proxy import create_proxy
 
 
+def test_proxy_server_reuses_runtime_and_sansio_without_device_connect(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from mklink import runtime, runtime_proxy
+    import mklink
+    import socket
+    import uvicorn
+    from mklink.remote import api
+    info = {'port': 8765, 'token': 'test'}
+    ensure = Mock(return_value=info)
+    monkeypatch.setattr(runtime, 'ensure_runtime', ensure)
+    connect = Mock(side_effect=AssertionError('proxy cannot open hardware'))
+    monkeypatch.setattr(mklink, 'connect', connect)
+    servers = []
+
+    def run(server, *, sockets):
+        assert len(sockets) == 1
+        assert sockets[0].getsockname()[0] == '127.0.0.1'
+        servers.append(server)
+
+    monkeypatch.setattr(uvicorn.Server, 'run', run)
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    port = listener.getsockname()[1]
+    monkeypatch.setattr(api, '_bind_desktop_server_socket', lambda *args: (listener, port))
+    args = SimpleNamespace(project_root=str(tmp_path), host='127.0.0.1', port=0,
+                           desktop_port_end=0, desktop_instance_id='test',
+                           desktop_runtime_info=str(tmp_path / 'endpoint.json'))
+    runtime_proxy.serve_desktop_proxy(args)
+    ensure.assert_called_once_with(project_root=str(tmp_path), port=0, allow_lobby=True)
+    assert servers[0].config.ws == 'websockets-sansio'
+    assert servers[0].config.ws_per_message_deflate is False
+    connect.assert_not_called()
+
+
 def test_desktop_proxy_auth_stream_and_shutdown_do_not_stop_runtime():
     upstream = FastAPI()
     seen = []
