@@ -19,15 +19,18 @@ RTT、SystemView、VOFA 和 SuperWatch 的图表暂停或页面隐藏只减少�
 要释放探针或串口需明确停止对应会话；传输丢帧与设备端丢样分开报告，不把图表
 抽样显示当作原始数据丢失。
 
-### serve — 远程调试服务器
+### serve — FastAPI 服务
 
 ```powershell
 python -m mklink serve --host 127.0.0.1 --port 8765
 # 启动 FastAPI 服务器，访问 http://127.0.0.1:8765/docs 查看 API 文档
 ```
 
+旧原始 socket 服务及 `mklink.serve()` 已移除；不再支持 `--backend` 选项。
+GUI/AI 共用下载器使用 `mklink gui` / `mklink runtime`；局域网设备操作使用
+“远程服务”页面或独立 Agent，参见[直连远程调试](commands-remote.md)。
+
 选项：
-- `--backend {legacy,fastapi}` — 选择后端（默认 fastapi）
 - `--project-root <dir>` — 指定项目根目录
 
 ### gui — 一键启动 Web GUI

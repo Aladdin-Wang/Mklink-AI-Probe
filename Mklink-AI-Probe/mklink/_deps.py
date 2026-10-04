@@ -107,7 +107,7 @@ def require_dependencies() -> None:
 def require_gui_dependencies() -> None:
     """检查 GUI/远程服务依赖，缺失则打印安装指引并退出。
 
-    应在使用 serve --backend fastapi 或启动 GUI 前调用。
+    应在使用 serve 或启动 GUI 前调用。
     """
     missing = check_gui_dependencies()
     if not missing:

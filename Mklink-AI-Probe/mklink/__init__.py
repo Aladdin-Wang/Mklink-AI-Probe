@@ -88,9 +88,6 @@ def __getattr__(name: str):
                 "resolve_keil_flm_path", "copy_flm_to_microkeen"):
         from mklink import discovery
         return getattr(discovery, name)
-    if name == "serve":
-        from mklink.remote.server import serve
-        return serve
     if name == "connect_remote":
         from mklink.remote.client import connect_remote
         return connect_remote
@@ -102,7 +99,7 @@ __all__ = [
     "Device", "connect", "discover_all", "SharedDevice", "connect_shared",
     "DeviceError", "DeviceNotConnectedError", "HardFaultReport",
     # Remote (lazy)
-    "serve", "connect_remote",
+    "connect_remote",
     # 依赖检查
     "check_dependencies", "require_dependencies",
     # 类型和常量

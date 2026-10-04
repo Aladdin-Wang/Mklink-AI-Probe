@@ -1816,37 +1816,28 @@ def _cli_web_entry(args):
 def _cli_serve(args):
     """启动远程调试服务器。"""
     from mklink._deps import require_gui_dependencies
-    backend = getattr(args, "backend", "fastapi")
-    if backend == "fastapi":
-        require_gui_dependencies()
-        if getattr(args, "desktop_instance_id", None):
-            from mklink.runtime_proxy import serve_desktop_proxy
-            serve_desktop_proxy(args)
-            return
-        from mklink.remote.api import create_app, run_server
-        app = create_app(
-            auth_token=args.token,
-            project_root=args.project_root,
-            desktop_instance_id=args.desktop_instance_id,
-        )
-        print(f"[MKLink] Starting FastAPI server on {args.host}:{args.port}")
-        print(f"[MKLink] Backend: fastapi | Auth: {'enabled' if args.token else 'disabled'}")
-        print(f"[MKLink] API docs: http://{args.host}:{args.port}/docs")
-        run_server(
-            app, host=args.host, port=args.port,
-            device_port=args.device_port, axf=args.axf,
-            project_root=args.project_root,
-            desktop_port_end=args.desktop_port_end,
-            desktop_runtime_info=args.desktop_runtime_info,
-            desktop_instance_id=args.desktop_instance_id,
-        )
-    else:
-        from mklink.remote.server import serve
-        serve(
-            host=args.host, port=args.port,
-            auth_token=args.token,
-            device_port=args.device_port, axf=args.axf,
-        )
+    require_gui_dependencies()
+    if getattr(args, "desktop_instance_id", None):
+        from mklink.runtime_proxy import serve_desktop_proxy
+        serve_desktop_proxy(args)
+        return
+    from mklink.remote.api import create_app, run_server
+    app = create_app(
+        auth_token=args.token,
+        project_root=args.project_root,
+        desktop_instance_id=args.desktop_instance_id,
+    )
+    print(f"[MKLink] Starting FastAPI server on {args.host}:{args.port}")
+    print(f"[MKLink] Backend: fastapi | Auth: {'enabled' if args.token else 'disabled'}")
+    print(f"[MKLink] API docs: http://{args.host}:{args.port}/docs")
+    run_server(
+        app, host=args.host, port=args.port,
+        device_port=args.device_port, axf=args.axf,
+        project_root=args.project_root,
+        desktop_port_end=args.desktop_port_end,
+        desktop_runtime_info=args.desktop_runtime_info,
+        desktop_instance_id=args.desktop_instance_id,
+    )
 
 
 def _cli_mcp(args):
@@ -2629,8 +2620,6 @@ def main():
     serve_parser.add_argument("--token", default=None, help="客户端认证 Token")
     serve_parser.add_argument("--device-port", default=None, help="MKLink COM 端口（默认自动检测）")
     serve_parser.add_argument("--axf", default=None, help="AXF/ELF 文件路径")
-    serve_parser.add_argument("--backend", choices=["legacy", "fastapi"], default="fastapi",
-                              help="服务器后端（默认 fastapi，legacy 使用原始 socket）")
     serve_parser.add_argument("--project-root", default=".", help="项目根目录")
 
     # gui 子命令

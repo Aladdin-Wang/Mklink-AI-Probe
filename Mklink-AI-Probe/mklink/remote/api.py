@@ -6,7 +6,7 @@ low-level device operations.
 
 Usage (CLI)::
 
-    mklink serve --port 8765 --token my-secret --backend fastapi
+    mklink serve --port 8765 --token my-secret
 
 Usage (Python)::
 
@@ -822,7 +822,7 @@ def create_app(
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, StrictInt
 
-    from mklink.remote.server import DeviceDispatcher, make_response, make_error
+    from mklink.remote.device_rpc import DeviceDispatcher, make_response, make_error
     from mklink.project_config import (
         load_config, save_config, check_project_config, format_config_status,
         load_project_info, load_rtt_config, save_rtt_config, save_project_info,
@@ -4009,7 +4009,7 @@ def run_server(
             # so device.idcode is valid here. Store the device in the app's shared
             # state so the API endpoints actually serve it (previously this
             # connected then orphaned the device via a dead loop).
-            from mklink.remote.server import DeviceDispatcher
+            from mklink.remote.device_rpc import DeviceDispatcher
             mks["device"] = device
             mks["dispatcher"] = DeviceDispatcher(device)
             remember_device_connection(mks, device)

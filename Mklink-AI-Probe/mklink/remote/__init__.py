@@ -1,6 +1,5 @@
 """MKLink Remote — remote debugging via WebSocket."""
 
-from mklink.remote.server import serve
 from mklink.remote.client import connect_remote
 
 
@@ -24,4 +23,4 @@ def serve_fastapi(
     )
 
 
-__all__ = ["serve", "serve_fastapi", "connect_remote"]
+__all__ = ["serve_fastapi", "connect_remote"]
