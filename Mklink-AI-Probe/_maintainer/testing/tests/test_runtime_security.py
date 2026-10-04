@@ -44,7 +44,7 @@ def security(monkeypatch, tmp_path):
     managers = {'rtt': SimpleNamespace(running=False)}
     monkeypatch.setattr('mklink.remote.dashboards.get_managers', lambda: managers)
     services.probe_provider = lambda: [SimpleNamespace(unique_id='SERIAL', product_name='MKLink')]
-    started, release = threading.Event(), threading.Event()
+    started, release, waiting = threading.Event(), threading.Event(), threading.Event()
     calls = []
     outcome = SimpleNamespace(state=JobState.SUCCEEDED, error_code=None, error_message=None)
     def start(current, body, target):
@@ -55,6 +55,7 @@ def security(monkeypatch, tmp_path):
         return 'online-test', outcome
     def wait(job_id):
         assert job_id == 'online-test'
+        waiting.set()
         assert release.wait(5), 'test worker not released'
         return outcome
     # Exercise production security recipe and route; substitute only hardware job execution/catalog.
@@ -67,7 +68,7 @@ def security(monkeypatch, tmp_path):
     with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'test'}) as client:
         try:
             yield SimpleNamespace(client=client, control=control, services=services, calls=calls,
-                managers=managers, inventory=inventory, release=release, started=started, outcome=outcome)
+                managers=managers, inventory=inventory, release=release, started=started, waiting=waiting, outcome=outcome)
         finally:
             release.set()
             for job in list(control.jobs.jobs.values()):
@@ -81,7 +82,7 @@ def test_unattached_security_is_journaled_deduplicated_and_held_until_terminal(s
     assert response.status_code == 202, response.text
     job = response.json()
     assert s.started.wait(2)
-    assert s.control.operation_lock.locked()
+    assert s.control.jobs.active is not None
     assert s.client.post('/api/runtime/jobs/', json=submission()).json()['job_id'] == job['job_id']
     assert s.client.post('/api/runtime/jobs/', json={**submission(), 'request_id':'second'}).status_code == 409
     assert s.client.post('/_runtime/stop', json={'confirm':True}).status_code == 409
@@ -128,7 +129,10 @@ def test_interrupted_security_record_loads_unknown_without_replay(security):
     s = security
     job = s.client.post('/api/runtime/jobs/', json=submission()).json()
     assert s.started.wait(2)
-    restored = RuntimeJobs(s.control)
+    # A recovered backend owns a snapshot, never a second writer to a live journal.
+    recovery = s.control.jobs.path.with_name('recovered.json')
+    recovery.write_bytes(s.control.jobs.path.read_bytes())
+    restored = RuntimeJobs(SimpleNamespace(info={'jobs_path':str(recovery)}))
     assert restored.submit(submission())['state'] == 'unknown'
     assert len(s.calls) == 1
     s.release.set()
@@ -189,7 +193,7 @@ def test_client_timeout_leaves_shared_job_running(security, monkeypatch):
             confirm_user=True,confirm_data_loss=True,request_id='timeout-job',timeout=.01)
     assert s.started.wait(2)
     job = s.client.get('/api/runtime/jobs/').json()['jobs'][0]
-    assert job['state'] == 'running' and s.control.operation_lock.locked()
+    assert job['state'] == 'running' and s.control.jobs.active is not None
     s.release.set()
     assert terminal(s.client,job['job_id'])['state'] == 'succeeded'
     assert len(s.calls) == 1
@@ -204,7 +208,7 @@ def test_cancelled_task_keeps_admission_until_worker_settles(security):
         next(iter(s.control.jobs.tasks)).cancel()
         await asyncio.sleep(.01)
     s.client.portal.call(cancel)
-    assert s.control.operation_lock.locked()
+    assert s.control.jobs.active is not None
     assert s.client.post('/api/probe/version').status_code == 409
     s.release.set()
     assert terminal(s.client,job['job_id'])['state'] == 'unknown'
@@ -297,7 +301,7 @@ def test_active_mcp_security_uses_real_journal_without_target_attach(security, m
             result=await mcp.call_tool('security_unlock',args,raise_on_error=False)
             assert result.is_error == lose_response
             assert s.started.wait(2)
-            assert not s.control.sessions and s.control.operation_lock.locked()
+            assert not s.control.sessions and s.control.jobs.active is not None
             if not lose_response:
                 duplicate=await mcp.call_tool('security_unlock',args)
                 assert duplicate.data['job_id']==result.data['job_id']
@@ -312,3 +316,45 @@ def test_active_mcp_security_uses_real_journal_without_target_attach(security, m
             assert status.data['state']=='succeeded'
     asyncio.run(scenario())
     assert len(posts)==(1 if lose_response else 2)
+
+
+def test_explicit_online_stop_remains_available_while_durable_job_is_running(security, monkeypatch):
+    s = security
+    stops = []
+    def stop(job_id):
+        stops.append(job_id)
+        s.outcome.state = JobState.STOPPED
+        s.release.set()
+        return {'job_id':job_id, 'state':'stopping'}
+    monkeypatch.setattr(s.services.job_manager, 'stop', stop, raising=False)
+    job = s.client.post('/api/runtime/jobs/', json=submission()).json()
+    assert s.waiting.wait(2)
+    assert not s.control.operation_lock.locked()
+    assert s.control.jobs.active is not None
+    linked = s.client.get('/api/runtime/jobs/' + job['job_id']).json()
+    assert linked['online_job_id'] == 'online-test'
+    assert json.loads(s.control.jobs.path.read_text())[0]['online_job_id'] == 'online-test'
+    assert s.client.post('/api/probe/version').status_code == 409
+    response = s.client.post('/api/online-flash/jobs/online-test/stop')
+    assert response.status_code == 200, response.text
+    assert stops == ['online-test']
+    result = terminal(s.client,job['job_id'])
+    assert result['state'] == 'failed' and result['result']['online_state'] == 'stopped'
+
+
+def test_link_journal_failure_retains_ownership_until_online_worker_finishes(security, monkeypatch):
+    s = security
+    save = s.control.jobs.save
+    def fail_link_only():
+        if s.control.jobs.active and s.control.jobs.active.get('online_job_id'):
+            raise OSError('link write failed')
+        save()
+    monkeypatch.setattr(s.control.jobs, 'save', fail_link_only)
+    job = s.client.post('/api/runtime/jobs/', json=submission()).json()
+    assert s.waiting.wait(2)
+    assert s.control.jobs.active is not None
+    assert s.client.post('/api/probe/version').status_code == 409
+    assert s.client.post('/_runtime/stop', json={'confirm':True}).status_code == 409
+    s.release.set()
+    assert terminal(s.client,job['job_id'])['state'] == 'unknown'
+    assert len(s.calls) == 1

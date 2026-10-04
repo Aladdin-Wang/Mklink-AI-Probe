@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 39  # Security jobs use shared services and allow an unattached target.
+PROTOCOL = 40  # Journaled online workers release HTTP admission so explicit stop can run.
 VERSION = "0.3.0"
 
 

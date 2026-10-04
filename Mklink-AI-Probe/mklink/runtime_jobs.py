@@ -176,9 +176,30 @@ class RuntimeJobs:
     async def execute(self, job, arguments):
         token = executing_job.set(job['job_id'])
         try:
-            await self._execute_operation(job, lambda: self.control.invoke('POST', PATHS[job['action']], arguments))
+            from mklink.runtime_api import settle
+            await self._execute_operation(job, lambda: settle(asyncio.create_task(
+                self._invoke_and_observe(job, arguments))))
         finally:
             executing_job.reset(token)
+
+    async def _invoke_and_observe(self, job, arguments):
+        result = await self.control.invoke('POST', PATHS[job['action']], arguments)
+        if job['action'] != 'security':
+            return result
+        # Startup has released HTTP admission. The running journal entry still
+        # excludes other hardware work, but the existing online stop route can run.
+        job['online_job_id'] = result['online_job_id']
+        link_saved = True
+        try:
+            self.save()
+        except OSError:
+            link_saved = False  # Already started: retain ownership until the worker settles.
+        from mklink.remote.online_flash_api import wait_online_job, _blocking
+        completed = await _blocking(
+            wait_online_job, self.control.app.state.online_flash, result['online_job_id'])
+        if not link_saved:
+            raise HTTPException(503, 'Online job link could not be journaled; inspect target before proceeding')
+        return {**result, **completed}
 
     async def _execute_operation(self, job, operation):
         try:

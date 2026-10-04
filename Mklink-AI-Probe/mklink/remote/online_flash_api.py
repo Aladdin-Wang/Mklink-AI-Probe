@@ -1339,6 +1339,18 @@ def _start_job_with_configuration(
         return job_id, services.job_manager.get(job_id)
 
 
+def wait_online_job(services: OnlineFlashServices, job_id: str) -> dict:
+    """Observe a real online worker to terminal state, without holding HTTP admission."""
+    snapshot = services.job_manager.wait(job_id)
+    messages = tuple(str(event.message)[:512] for event in services.job_manager.events(job_id)
+                     if event.event == 'log' and event.message)[-20:]
+    return {
+        'status': 'succeeded' if snapshot.state is JobState.SUCCEEDED else 'failed',
+        'online_job_id': job_id, 'online_state': snapshot.state.value, 'messages': messages,
+        'error_code': snapshot.error_code, 'error_message': snapshot.error_message,
+    }
+
+
 def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
     router = APIRouter(prefix="/api/online-flash", tags=["online-flash"])
 

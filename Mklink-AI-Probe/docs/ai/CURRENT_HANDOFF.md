@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T23:13:23.2785693Z`
+- 更新时间：`2026-10-04T23:22:13.8754965Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：136活动MCP安全工具接入共享持久任务并删除旧重复注册；StrictBool确认、预存request_id、断开/丢响应后查询。132短测和双V4活动MCP拒绝/AI保持通过。修135 CI配方测试可选FLM依赖，终态日志加载不重复写；新CI待查。GUI在线作业持久化待继续；长期暂停。
+- 当前任务：137拆分安全作业启动/观察，运行期释放HTTP操作锁但保留持久任务排他，既有在线stop可进入；关联日志失败等待worker结束后unknown，整体settle封住取消间隙，协议40。226回归及最终34补测通过。GUI任务仍无持久request_id/挂载恢复，下一步继续；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第136节：不设置本机FLM覆盖的132短测通过；双V4生产活动MCP连接/工具注册/未确认安全拒绝、任务空、原AI保持、profile和双盘不变及端点清理通过。真实安全操作、stdio全链路和安装包未由本次HIL覆盖。
+- **共享后台、多探针与AI共存**：第137节：226相关短测及最终online_state补充后34任务/安全回归通过，覆盖启动-观察取消、关联日志失败保留归属和在线stop。无本轮真实安全硬件操作；上轮双V4活动MCP拒绝/共存证据见136。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议39，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议40，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对136提交CI；135反馈/GUI成功，但共享检查2166通过/1个F103配方测试依赖可选FLM失败，本轮已隔离该测试依赖，未改生产白名单。继续统一GUI在线作业持久request_id/查询，清理旧MCP剩余能力。CLI/活动MCP安全已共享，真机安全操作、物理中断、NSIS UAC及跨主机缺口仍在。
+2. 核对137提交CI；136三项全通过。GUI OnlineFlashView无request_id、jobId仅内存且onMounted未调getActiveJob；下一步接入RuntimeJobs，复用137可停止的在线观察，保存按探针区分的查询凭据，丢响应仅查询。旧MCP主体、真机安全/物理中断、NSIS UAC及跨主机缺口继续保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

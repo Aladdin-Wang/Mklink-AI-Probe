@@ -116,13 +116,12 @@ def run_security_operation(action, target_part, *, voltage_mv, confirm_user,
         raise RuntimeErrorResponse(f'{error}. {hint}') from error
 
 
-def execute_security_operation(services, arguments, *, probe_id):
-    """Run within shared admission using its existing online services; never shut them down."""
+def start_security_operation(services, arguments, *, probe_id):
+    """Start within shared admission; the runtime journal observes completion separately."""
     values = validate_security_request(arguments)
     normalized_action, part = values['action'], values['target_part']
     voltage_mv, firmware = values['voltage_mv'], values['firmware']
     base_address, frequency = values['base_address'], values['frequency']
-    from mklink.cmsis_dap.models import JobState
     from mklink.remote.online_flash_api import (
         JobBody, _selected_probe, _resolved_target, _start_job_with_configuration,
         _target_flash_configuration)
@@ -170,15 +169,9 @@ def execute_security_operation(services, arguments, *, probe_id):
         reset_voltage_mv=None if nrf54l_ctrl_ap else voltage_mv,
     )
     job_id, _snapshot = _start_job_with_configuration(services, body, target)
-    snapshot = services.job_manager.wait(job_id)  # Backend lifetime is independent of client observation.
-    messages = tuple(str(event.message)[:512] for event in services.job_manager.events(job_id)
-                     if event.event == 'log' and event.message)[-20:]
     return {
-        'status': 'succeeded' if snapshot.state is JobState.SUCCEEDED else 'failed',
         'online_job_id': job_id, 'action': normalized_action, 'target_part': target.part_number,
         'voltage_mv': None if nrf54l_ctrl_ap else voltage_mv,
         'connect_mode': body.connect_mode, 'reset_mode': body.reset_mode,
-        'messages': messages, 'error_code': snapshot.error_code,
-        'error_message': snapshot.error_message,
         'verified_sha256': inspection.sha256 if inspection is not None else None,
     }
