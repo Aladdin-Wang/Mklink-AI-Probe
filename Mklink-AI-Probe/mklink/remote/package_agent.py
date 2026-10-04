@@ -1,8 +1,8 @@
 """Lifecycle entry point for the standalone Windows Site Agent package.
 
-The packaged ``start`` process is the Site Agent.  It deliberately does not
-spawn a supervisor or worker, which gives field operators a single foreground
-process with ordinary console and service-manager ownership semantics.
+The packaged ``start`` process is the foreground remote listener. It has no
+supervisor worker; target operations may attach to or start an independent
+shared runtime which outlives the listener and serves other GUI/AI clients.
 """
 
 from __future__ import annotations
