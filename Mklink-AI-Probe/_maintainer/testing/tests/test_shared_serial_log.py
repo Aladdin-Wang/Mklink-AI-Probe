@@ -195,9 +195,9 @@ def test_capture_profile_keeps_raw_chunks_and_multiple_frames(tmp_path):
         pages = 0
         def call(self, capability, args=None):
             self.pages += 1
-            entries = [] if self.pages == 1 else [dict(seq=1, port='TEST', direction='RX', hex='aa01ffaa02ffaa',timestamp_ns=1)]
+            entries = [] if self.pages == 1 else [dict(seq=1, port='TEST', direction='RX', hex='aa01ffaa02ffaa',timestamp_ns=1,first_monotonic=1.,last_monotonic=1.)]
             return dict(session='session', next_seq=0, entries=entries, running=True,
-                        ports={'TEST':'open'}, latest_seq=len(entries), dropped_batches=0)
+                        ports={'TEST':'open'}, latest_seq=len(entries), dropped_batches=0,idle_cutoffs={'TEST':1.,'A':1.,'B':1.})
     path = tmp_path/'out.csv'
     with FileLogger(str(path),'csv') as logger:
         capture = SerialCapture(Client(),{'TEST':parser},logger); capture.page()
@@ -213,9 +213,9 @@ def test_capture_keeps_faulting_raw_batch_once_before_reporting_parser_error(tmp
         'offset':1,'size':1,'includes_header':True}}}, max_buffer_bytes=32)
     class Client:
         def call(self, capability, args=None):
-            entries = [dict(seq=1,port='TEST',direction='RX',hex=bad_data,timestamp_ns=1)] if args and args['after']==0 else []
+            entries = [dict(seq=1,port='TEST',direction='RX',hex=bad_data,timestamp_ns=1,first_monotonic=1.,last_monotonic=1.)] if args and args['after']==0 else []
             return dict(session='one',next_seq=0,entries=entries,running=True,
-                        ports={'TEST':'open'},latest_seq=1,dropped_batches=0)
+                        ports={'TEST':'open'},latest_seq=1,dropped_batches=0,idle_cutoffs={'TEST':1.,'A':1.,'B':1.})
     path = tmp_path/'fault.csv'
     with FileLogger(str(path), 'csv') as logger:
         capture = SerialCapture(Client(), {'TEST':parser}, logger)

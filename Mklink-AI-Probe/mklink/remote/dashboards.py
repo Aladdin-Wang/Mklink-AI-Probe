@@ -2740,6 +2740,7 @@ class SerialStreamManager:
         self._parsed_lock = threading.Lock()
         self._latest_frames: dict[str, dict] = {}
         self._serial_session: str | None = None
+        self._idle_cutoffs: dict[str, float] = {}
         self._rx_count = 0
         self._tx_count = 0
         self._rx_bytes = 0
@@ -2845,9 +2846,10 @@ class SerialStreamManager:
         self._serial_session = uuid.uuid4().hex
         session = self._serial_session
         self._history.reset(session)
+        self._idle_cutoffs = {}
 
-        def publish_bytes(data: bytes, direction: str, port: str):
-            self._history.append(data, direction, port)
+        def publish_bytes(data: bytes, direction: str, port: str, first_time: float, last_time: float):
+            self._history.append(data, direction, port, first_time=first_time, last_time=last_time)
             if self._stream_hub is not None:
                 self._stream_hub.publish(
                     encode_serial_payload(session, port, data), item_count=len(data),
@@ -2919,12 +2921,13 @@ class SerialStreamManager:
             direction: str,
             data: bytes,
             timestamp: float,
+            monotonic_time: float,
         ):
             if direction == "RX":
                 self._rx_bytes += len(data)
             else:
                 self._tx_bytes += len(data)
-            self._byte_batcher.feed(data, direction, port)
+            self._byte_batcher.feed(data, direction, port, monotonic_time=monotonic_time)
             if self._bridge.client_count == 0:
                 return
             self._bridge.put({
@@ -2979,7 +2982,11 @@ class SerialStreamManager:
     def get_history(self, session: str | None = None, after: int | None = None,
                     limit: int = 256) -> dict:
         with self._lifecycle_lock:
+            cutoffs = self._monitor.observation_times if self._monitor else dict(self._idle_cutoffs)
+            if self._byte_batcher is not None:
+                self._byte_batcher.flush()
             return {**self._history.read(session, after, limit),
+                    'idle_cutoffs': cutoffs,
                     'running': self._running, 'config': [dict(item) for item in self._port_config],
                     'ports': self._monitor.port_status if self._monitor else {item['port']: 'closed' for item in self._port_config}}
 
@@ -2989,6 +2996,7 @@ class SerialStreamManager:
             monitor = self._monitor
             if monitor is not None:
                 monitor.stop()
+                self._idle_cutoffs = monitor.observation_times
             if self._byte_batcher is not None:
                 self._byte_batcher.close()
                 self._byte_batcher = None

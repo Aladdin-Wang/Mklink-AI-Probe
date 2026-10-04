@@ -425,6 +425,7 @@ def uart_app(client_factory, monkeypatch, tmp_path):
         sent = []
         def __init__(self, ports, **kwargs):
             self.port_status = {config['port']: 'open' for config in ports}
+            self.observation_times = {config['port']: time.monotonic() for config in ports}
         def start(self): pass
         def stop(self): pass
         def send(self, port, data):

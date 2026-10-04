@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T08:43:41+00:00`
+- 更新时间：`2026-10-04T09:19:01+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; serial frame progress and faulting raw capture after e14c0a4; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; serial receive-time idle framing after 2374ec5; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第四十九批修复零/过短长度帧提取不前进与单字节头垃圾不释放；错误reader可见关闭，原始历史保留、显式重启。Profile长度配置/空白HEX预检，合法空格HEX可用；SerialCapture解码失败仍保存原始批次并推进游标，不重复写入。新增18测试，初步相关130/扩大2393通过2跳过，最终补充后相关176通过。真实Edge双窗口/MCP+实际串口栈/模拟OS通过：坏帧端口关闭、另一端口继续、显式重启恢复、无重放/泄漏。空闲Profile150ms不输出、100ms隔帧合并已复现，下批修复。e14c0a4首次CI1613通过1心跳时延610ms超500ms失败，GUI/类型构建及feedback通过；原提交重跑同用例625ms再次失败，保持500ms门槛并增加阶段计时诊断；隔离匹配CI FastAPI/AnyIO后本地UART44通过。枚举假设受控排除，远端原因仍待定位。旧Dashboard、空闲定界/批次时间、持续日志/队列继续推进。无物理发送/固件修改。
+- 当前任务：持续循环评审验证。第五十批空闲帧按接收monotonic时间，先拆旧帧再添新字节，reader现有空循环检查，无新线程。批次历史增加首尾时间，各端口现有状态锁发布完成迭代边界，CLI处理完所有积压页才检查空闲，阻塞A不冻结B；停止保留边界。PARSED注释无原始字节，不重复日志；协议21。新增15测试，最终扩大2409通过2跳过；删除原始块回调吞错后相关264通过，错误可见关闭、不再默默丢弃。每端口完成边界后再次真实Edge双窗口/MCP/真实CLI+模拟OS通过，idle应答一份，CSV两帧及字节各一次，全释放。2374ec5精确CI1632/GUI224/类型构建/feedback通过，e14c0a4旧两次500ms门槛失败原因仍未定位，不能宣称已修复。下一步共享持续日志/队列并删旧Dashboard；无物理发送/固件修改。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第49节：第四十九批修复零/过短长度帧提取不前进与单字节头垃圾不释放；错误reader可见关闭，原始历史保留、显式重启。Profile长度配置/空白HEX预检，合法空格HEX可用；SerialCapture解码失败仍保存原始批次并推进游标，不重复写入。新增18测试，初步相关130/扩大2393通过2跳过，最终补充后相关176通过。真实Edge双窗口/MCP+实际串口栈/模拟OS通过：坏帧端口关闭、另一端口继续、显式重启恢复、无重放/泄漏。空闲Profile150ms不输出、100ms隔帧合并已复现，下批修复。e14c0a4首次CI1613通过1心跳时延610ms超500ms失败，GUI/类型构建及feedback通过；原提交重跑同用例625ms再次失败，保持500ms门槛并增加阶段计时诊断；隔离匹配CI FastAPI/AnyIO后本地UART44通过。枚举假设受控排除，远端原因仍待定位。旧Dashboard、空闲定界/批次时间、持续日志/队列继续推进。无物理发送/固件修改。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第50节：第五十批空闲帧按接收monotonic时间，先拆旧帧再添新字节，reader现有空循环检查，无新线程。批次历史增加首尾时间，各端口现有状态锁发布完成迭代边界，CLI处理完所有积压页才检查空闲，阻塞A不冻结B；停止保留边界。PARSED注释无原始字节，不重复日志；协议21。新增15测试，最终扩大2409通过2跳过；删除原始块回调吞错后相关264通过，错误可见关闭、不再默默丢弃。每端口完成边界后再次真实Edge双窗口/MCP/真实CLI+模拟OS通过，idle应答一份，CSV两帧及字节各一次，全释放。2374ec5精确CI1632/GUI224/类型构建/feedback通过，e14c0a4旧两次500ms门槛失败原因仍未定位，不能宣称已修复。下一步共享持续日志/队列并删旧Dashboard；无物理发送/固件修改。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议20，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议21，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI心跳阶段计时，定位e14c0a4两次500ms门槛失败（610/625ms），保持门槛；继续Profile空闲定界/CLI批次时间，以及共享持续日志/发送队列迁入主GUI后删除旧独占Dashboard。坚持复用字节历史、不在reader写磁盘、不反向等待生命周期锁。继续循环/YMODEM归属、请求取消、Agent、真机异常/长稳与NSIS。不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI；落实共享后台持续日志，复用SerialCapture/FileLogger/字节历史，磁盘IO不进入reader，停止排空且不反向获取生命周期锁；补发送队列后删除旧独占Dashboard。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛并观察旧CI时延问题。不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

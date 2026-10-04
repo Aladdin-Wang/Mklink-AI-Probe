@@ -9,7 +9,7 @@ from mklink.remote.stream_protocol import encode_serial_payload, decode_serial_p
 
 def test_source_changes_flush_without_mixing_ports_or_directions():
     batches = []
-    batcher = SerialByteBatcher(lambda data, direction, port: batches.append((port, direction, data)))
+    batcher = SerialByteBatcher(lambda data, direction, port, first, last: batches.append((port, direction, data)))
     batcher.feed(b'A', 'RX', 'ONE')
     batcher.feed(b'B', 'RX', 'TWO')
     batcher.feed(b'C', 'RX', 'ONE')
@@ -43,7 +43,7 @@ def test_serial_small_reads_survive_blocked_event_loop_without_byte_loss():
     async def scenario():
         hub = create_stream_registry()["serial"]
         queue = hub.subscribe()
-        batcher = SerialByteBatcher(lambda data, direction, port: hub.publish(data, len(data)))
+        batcher = SerialByteBatcher(lambda data, direction, port, first, last: hub.publish(data, len(data)))
         original = b"".join(f"uart={i:08d},DATA_1234\r\n".encode() for i in range(2000))
 
         def producer():
@@ -71,7 +71,7 @@ def test_serial_small_reads_survive_blocked_event_loop_without_byte_loss():
 
 def test_serial_batching_preserves_rx_tx_order_and_flushes_last_partial_on_close():
     batches = []
-    batcher = SerialByteBatcher(lambda data, direction, port: batches.append((direction, data)))
+    batcher = SerialByteBatcher(lambda data, direction, port, first, last: batches.append((direction, data)))
     batcher.feed(b"\x00\xff", "RX", "COM7")
     batcher.feed(b"\x80", "RX", "COM7")
     batcher.feed(b"AT\r\n", "TX", "COM7")
@@ -85,7 +85,7 @@ def test_serial_single_byte_is_delivered_without_waiting_for_more_input():
     delivered = threading.Event()
     batches = []
 
-    def publish(data, direction, port):
+    def publish(data, direction, port, first, last):
         batches.append((direction, data))
         delivered.set()
 

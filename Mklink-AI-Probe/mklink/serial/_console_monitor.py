@@ -29,7 +29,9 @@ class ConsoleMonitor:
         if self._logger is not None:
             self._logger.log(direction, port, data, timestamp=timestamp, frames=frames)
         timestamp = time.time() if timestamp is None else timestamp
-        if self._mode == 'hex':
+        if not data:
+            pass  # Idle-frame annotations carry no additional wire bytes.
+        elif self._mode == 'hex':
             self._write(port, direction, timestamp, data.hex(' ').upper())
         else:
             key = (port, direction)

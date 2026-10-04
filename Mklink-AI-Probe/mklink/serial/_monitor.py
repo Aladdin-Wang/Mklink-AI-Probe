@@ -34,7 +34,7 @@ class SerialMonitor:
         auto_reply_rules: list[dict] | None = None,
         logger: FileLogger | None = None,
         event_callback: Callable[[SerialEvent], None] | None = None,
-        chunk_callback: Callable[[str, str, bytes, float], None] | None = None,
+        chunk_callback: Callable[[str, str, bytes, float, float], None] | None = None,
         protocol_callback: Callable[[str, str, bytes, float], None] | None = None,
     ):
         self._port_configs = [dict(cfg, port=canonical_serial_port(cfg["port"])) for cfg in ports]
@@ -53,6 +53,7 @@ class SerialMonitor:
         self._threads: list[threading.Thread] = []
         self._serial_ports: dict[str, SerialPort] = {}
         self._port_statuses: dict[str, str] = {cfg["port"]: "closed" for cfg in ports}
+        self._observation_times: dict[str, float] = {}
         self._lock = threading.Lock()
         self._lifecycle_lock = threading.RLock()
         self._stop_timeout = 3.0
@@ -95,6 +96,8 @@ class SerialMonitor:
                     parser.reset()
             self._threads.clear()
             self._stop_event.clear()
+            with self._lock:
+                self._observation_times = {cfg['port']: time.monotonic() for cfg in self._port_configs}
             # Validate every selection before opening the first port. No retry or
             # automatic reattachment: COM numbers can be reused by another device.
             for cfg in self._port_configs:
@@ -159,7 +162,7 @@ class SerialMonitor:
 
     def _record_sent(self, port: str, data: bytes) -> None:
         timestamp = time.time()
-        self._emit_chunk(port, 'TX', data, timestamp)
+        self._emit_chunk(port, 'TX', data, timestamp, time.monotonic())
         self._emit_event(SerialEvent(timestamp=timestamp, port=port, direction='TX', raw=data))
 
     def send(self, port: str, data: bytes) -> bool:
@@ -271,6 +274,12 @@ class SerialMonitor:
         with self._lock:
             return dict(self._port_statuses)
 
+    @property
+    def observation_times(self) -> dict[str, float]:
+        """Completed reader iterations; consumers must not idle-flush past these."""
+        with self._lock:
+            return dict(self._observation_times)
+
     def __enter__(self) -> SerialMonitor:
         self.start()
         return self
@@ -299,13 +308,11 @@ class SerialMonitor:
         direction: str,
         data: bytes,
         timestamp: float,
+        monotonic_time: float,
     ) -> None:
         if not data or self._chunk_callback is None:
             return
-        try:
-            self._chunk_callback(port, direction, data, timestamp)
-        except Exception:
-            pass
+        self._chunk_callback(port, direction, data, timestamp, monotonic_time)
 
     def _emit_protocol_chunk(
         self,
@@ -369,7 +376,11 @@ class SerialMonitor:
                         port_name, data, parser, line_buffer, generation=generation,
                     )
                 elif not handoff:
+                    if parser is not None:
+                        self._process_rx_data(port_name, b'', parser, line_buffer, generation=generation)
                     self._stop_event.wait(0.01)
+                with self._lock:
+                    self._observation_times[port_name] = time.monotonic()
 
         except Exception as e:
             with self._lock:
@@ -393,10 +404,11 @@ class SerialMonitor:
         *, generation: int | None = None,
     ) -> None:
         """Publish one ordinary RX chunk from the sole reader thread."""
-        self._emit_chunk(port_name, "RX", data, time.time())
+        monotonic_time = time.monotonic()
+        self._emit_chunk(port_name, "RX", data, time.time(), monotonic_time)
 
         if parser:
-            frames = parser.feed(data)
+            frames = parser.feed(data, monotonic_time=monotonic_time)
             for frame in frames:
                 evt = SerialEvent(
                     timestamp=time.time(),

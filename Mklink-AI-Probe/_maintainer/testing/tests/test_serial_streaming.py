@@ -124,7 +124,7 @@ def test_serial_monitor_emits_partial_rx_chunk_before_line_event(monkeypatch):
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, timestamp: (
+        chunk_callback=lambda port, direction, data, timestamp, mono: (
             chunks.append((port, direction, data, timestamp)),
             chunk_ready.set(),
         ),
@@ -278,7 +278,7 @@ def test_serial_monitor_routes_protocol_rx_away_from_line_events(monkeypatch):
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, _timestamp: chunks.append(
+        chunk_callback=lambda port, direction, data, _timestamp, mono: chunks.append(
             (port, direction, data)
         ),
     )
@@ -354,7 +354,7 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
     monitor = SerialMonitor(
         ports=[{"port": "TEST"}],
         event_callback=events.append,
-        chunk_callback=lambda port, direction, data, _timestamp: (
+        chunk_callback=lambda port, direction, data, _timestamp, mono: (
             chunks.append((port, direction, data)),
             banner_seen.set() if data == b"boot ready\r\n" else None,
         ),
@@ -381,6 +381,7 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
     async def scenario():
         class FakeMonitor:
+            observation_times = {}
             worker_alive = False
 
             def __init__(self, **kwargs):
@@ -408,7 +409,7 @@ def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypat
         monitor = manager._monitor
 
         raw = b"\x1b[31mready> \xff"
-        monitor.chunk_callback("TEST", "RX", raw, 123.5)
+        monitor.chunk_callback("TEST", "RX", raw, 123.5, 1.0)
         monitor.event_callback(SerialEvent(123.5, "TEST", "RX", raw))
 
         await asyncio.sleep(0)
@@ -440,6 +441,7 @@ def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypat
 
 
 class _YModemMonitor:
+    observation_times = {}
     worker_alive = False
     mode = "complete"
     entered = threading.Event()
@@ -665,6 +667,7 @@ def test_serial_stream_manager_stop_retains_lifecycle_while_worker_is_alive(
     release = threading.Event()
 
     class StuckMonitor:
+        observation_times = {}
         worker_alive = False
 
         def __init__(self, **_kwargs):
@@ -841,6 +844,7 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
 
 def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):
     class FakeMonitor:
+        observation_times = {}
         worker_alive = False
 
         def __init__(self, **kwargs):
@@ -866,9 +870,9 @@ def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkey
 
     rx = b"\x00\x7f\x80\xff"
     tx = b"AT\r\n"
-    monitor.chunk_callback("TEST", "RX", rx, 1.0)
+    monitor.chunk_callback("TEST", "RX", rx, 1.0, 1.0)
     monitor.event_callback(SerialEvent(1.0, "TEST", "RX", rx))
-    monitor.chunk_callback("TEST", "TX", tx, 2.0)
+    monitor.chunk_callback("TEST", "TX", tx, 2.0, 2.0)
     monitor.event_callback(SerialEvent(2.0, "TEST", "TX", tx))
     manager._byte_batcher.flush()
 

@@ -13,6 +13,21 @@ def rule(**changes):
     return dict(dict(match_contains='Q',reply_ascii='R',delay=.02),**changes)
 
 
+def test_idle_frame_reply_runs_once_on_existing_reader_without_following_input(ports):
+    chunks = []
+    monitor = SerialMonitor([{'port':'TEST'}], profile={'frame':{'header':'AA'}},
+        auto_reply_rules=[{'match_hex':'AA2A','reply_ascii':'R','delay':0}],
+        chunk_callback=lambda p,d,b,t,mono:chunks.append((d,b)))
+    monitor.start(); port = ports.instances[-1]
+    try:
+        port.rx.put(b'\xaa\x2a')
+        wait_for(lambda: len(port.writes) == 1)
+        time.sleep(.08)
+        assert port.writes == [(b'R','serial-reader-TEST')]
+        assert chunks == [('RX',b'\xaa\x2a'),('TX',b'R')]
+    finally: monitor.stop()
+
+
 def wait_for(predicate):
     end=time.monotonic()+2
     while not predicate():
@@ -43,7 +58,7 @@ def ports(monkeypatch):
 @pytest.mark.parametrize('delay',[0,.02])
 def test_replies_run_on_existing_reader(ports,delay):
     chunks=[]
-    monitor=SerialMonitor([{'port':'TEST'}],auto_reply_rules=[rule(delay=delay)],chunk_callback=lambda p,d,b,t:chunks.append((d,b)))
+    monitor=SerialMonitor([{'port':'TEST'}],auto_reply_rules=[rule(delay=delay)],chunk_callback=lambda p,d,b,t,mono:chunks.append((d,b)))
     monitor.start();port=ports.instances[-1]
     try:
         port.rx.put(b'Q\n');wait_for(lambda:len(port.writes)==1)
@@ -210,7 +225,7 @@ def test_actual_serial_port_reply_and_short_write_release(monkeypatch, short_wri
     chunks = []
     monitor = SerialMonitor(
         [{'port': 'SIM_REPLY'}], auto_reply_rules=[rule(delay=0)],
-        chunk_callback=lambda p, d, b, t: chunks.append((d, b)),
+        chunk_callback=lambda p, d, b, t, mono: chunks.append((d, b)),
     )
     monitor.start()
     wire = Wire.instances[-1]

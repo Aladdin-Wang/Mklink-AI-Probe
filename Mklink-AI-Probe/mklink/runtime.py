@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 20  # Serial status includes bounded per-port parsed snapshots.
+PROTOCOL = 21  # Serial history preserves batch receive times for idle framing.
 VERSION = "0.3.0"
 
 

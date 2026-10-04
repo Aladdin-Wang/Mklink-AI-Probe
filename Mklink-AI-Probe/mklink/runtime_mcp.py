@@ -314,7 +314,9 @@ def build_server():
         serial_history reads raw ordinary UART batches from the existing producer, including
         unterminated data, without opening or sending on a port. {} opens at the tail;
         continue with session/after=next_seq and limit (1..256). Each entry contains seq,
-        port, direction, hex, size and batch-publication timestamp_ns. The response includes
+        port, direction, hex, size, batch-publication timestamp_ns and first_monotonic/last_monotonic
+        receive times (seconds on this host's monotonic clock). idle_cutoffs contains each port's
+        completed-reader time for idle parsing after all history pages have been consumed. The response includes
         config/running/ports/latest_seq and dropped_batches across all ports.
         ports reports each reader state; an error is not a successful end of capture. Retention is 512
         batches of at most 4096 bytes; callers filter ports after advancing the global cursor.

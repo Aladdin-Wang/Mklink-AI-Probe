@@ -140,7 +140,7 @@ def test_profile_buffers_do_not_cross_ports(capsys):
             self.count+=1
             chunks=[] if self.count==1 else [('A','aa01'),('B','ff'),('A','ff'),('B','aa02ff')]
             return dict(session='one',next_seq=0,running=True,ports={'A':'open','B':'open'},
-                latest_seq=len(chunks),dropped_batches=0,entries=[dict(seq=i+1,port=p,direction='RX',hex=data,timestamp_ns=1)
+                latest_seq=len(chunks),dropped_batches=0,idle_cutoffs={'TEST':1.,'A':1.,'B':1.},entries=[dict(seq=i+1,port=p,direction='RX',hex=data,timestamp_ns=1,first_monotonic=1.,last_monotonic=1.)
                     for i,(p,data) in enumerate(chunks)])
     capture=SerialCapture(Client(),{p:FrameParser(profile) for p in ('A','B')},ConsoleMonitor('hex'))
     capture.page()
