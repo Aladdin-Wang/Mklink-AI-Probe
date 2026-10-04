@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, readonly, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { sharedRuntime } from '../composables/useBackendHealth'
 
 const mocks = vi.hoisted(() => {
   const deviceStatus = {
@@ -99,7 +100,23 @@ async function mountView() {
 }
 
 describe('ConfigView', () => {
+  it('switches a shared probe while the current target remains connected', async () => {
+    sharedRuntime.value = true
+    Object.assign(mocks.deviceStatus, { connected: true, port: 'TEST_PORT_A' })
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-testid="connect-local"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="local-port"]').setValue('TEST_PORT_B')
+    expect(wrapper.get('[data-testid="connect-local"]').text()).toContain('切换下载器')
+    expect(wrapper.get('[data-testid="connect-local"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.connectDevice).toHaveBeenCalledWith(expect.objectContaining({ port: 'TEST_PORT_B' }))
+    expect(mocks.api.disconnectDevice).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
+    sharedRuntime.value = false
     vi.clearAllMocks()
     mocks.api.parseAxf.mockReset()
     mocks.api.findRtt.mockReset()

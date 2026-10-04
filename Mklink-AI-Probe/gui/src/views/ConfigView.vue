@@ -50,6 +50,8 @@ const localPortExplicit = ref(false)
 const probePorts = ref<PortInfo[]>([])
 const probeAlias = ref('')
 const selectedProbe = computed(() => probePorts.value.find(port => port.device === localPort.value))
+const switchingProbe = computed(() => sharedRuntime.value && localPortExplicit.value
+  && !!selectedProbe.value && localPort.value !== deviceStatus.value.port)
 watch(selectedProbe, probe => { probeAlias.value = probe?.alias || '' })
 
 async function saveProbeAlias() {
@@ -524,11 +526,11 @@ onUnmounted(() => {
             class="btn btn-primary icon-command"
             type="button"
             data-testid="connect-local"
-            :disabled="connecting || deviceStatus.connected"
+            :disabled="connecting || (deviceStatus.connected && !switchingProbe)"
             @click="connectLocal"
           >
             <Usb :size="15" aria-hidden="true" />
-            {{ connecting ? tr('连接中...', 'Connecting...') : tr('连接设备', 'Connect Device') }}
+            {{ connecting ? tr('连接中...', 'Connecting...') : switchingProbe && deviceStatus.connected ? tr('切换下载器', 'Switch Probe') : tr('连接设备', 'Connect Device') }}
           </button>
           <button
             class="btn icon-command"

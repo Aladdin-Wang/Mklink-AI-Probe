@@ -42,3 +42,31 @@ def test_desktop_proxy_cors_is_limited_to_native_origins():
         assert client.options('/api/device/connect', headers=headers).status_code == 200
         headers['Origin'] = 'https://evil.example'
         assert client.options('/api/device/connect', headers=headers).status_code == 403
+
+
+def test_remote_service_proxy_allowlist_preserves_internal_runtime_boundary():
+    upstream = FastAPI()
+    seen = []
+    @upstream.api_route('/{path:path}', methods=['GET','POST','DELETE'])
+    async def echo(request: Request, path: str):
+        seen.append((request.method, path, request.headers.get('x-auth-token'), request.headers.get('origin')))
+        return {'path':path}
+    app = create_proxy({'port':8765,'token':'backend-secret'},port=8766,instance_id='desktop',transport=httpx.ASGITransport(app=upstream))
+    with TestClient(app,base_url='http://127.0.0.1:8766') as client:
+        headers = {'Origin':'http://tauri.localhost'}
+        for method,path in [('GET','/_runtime/remote-service'),('POST','/_runtime/remote-service'),
+                            ('GET','/_runtime/remote-service/addresses'),('POST','/_runtime/remote-service/token'),
+                            ('POST','/_runtime/remote-service/stop')]:
+            response=client.request(method,path,json={},headers=headers)
+            assert response.status_code==200,response.text
+            assert response.headers['access-control-allow-origin']==headers['Origin']
+            assert seen[-1]==(method,path[1:],'backend-secret',None)
+        before=len(seen)
+        for method,path in [('POST','/_runtime/stop'),('GET','/_runtime/status'),('POST','/_runtime/call'),
+                            ('POST','/_runtime/attach'),('DELETE','/_runtime/remote-service'),
+                            ('POST','/_runtime/remote-service/extra'),('GET','/_runtime/remote-service/token')]:
+            assert client.request(method,path,json={},headers=headers).status_code==403
+        assert len(seen)==before
+        assert client.options('/_runtime/remote-service',headers={**headers,'Access-Control-Request-Method':'POST'}).status_code==200
+        assert client.options('/_runtime/stop',headers={**headers,'Access-Control-Request-Method':'POST'}).status_code==403
+        assert client.post('/_runtime/remote-service',json={},headers={'Origin':'https://untrusted.invalid'}).status_code==403

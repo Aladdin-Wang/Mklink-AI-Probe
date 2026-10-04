@@ -16,6 +16,13 @@ from starlette.middleware.cors import CORSMiddleware
 
 DESKTOP_ORIGINS = {"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 HOP_HEADERS = {"host", "connection", "transfer-encoding", "content-length", "keep-alive", "upgrade", "cookie", "origin", "x-auth-token"}
+REMOTE_SERVICE_METHODS = {
+    '/_runtime/remote-service': {'GET', 'POST'},
+    '/_runtime/remote-service/addresses': {'GET'},
+    '/_runtime/remote-service/token': {'POST'},
+    '/_runtime/remote-service/stop': {'POST'},
+}
+
 
 
 def create_proxy(info, *, port, instance_id, transport=None):
@@ -39,6 +46,9 @@ def create_proxy(info, *, port, instance_id, transport=None):
         ):
             return JSONResponse({"detail": "Local desktop origin required"}, status_code=403)
         if request.url.path.startswith("/_runtime/"):
+            method = request.headers.get('access-control-request-method', '') if request.method == 'OPTIONS' else request.method
+            if method in REMOTE_SERVICE_METHODS.get(request.url.path, set()):
+                return await call_next(request)
             return JSONResponse({"detail": "Use mklink runtime to manage the shared backend"}, status_code=403)
         return await call_next(request)
 

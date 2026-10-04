@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T15:25:51.485138+00:00`
+- 更新时间：`2026-10-04T15:49:30.949892+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; unified shared-runtime remote service controls after b1564766; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; desktop remote-service proxy and probe switching after acd522b1; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第76批合并GUI远程服务入口：删除配置页仅打开/docs的假启动；顶栏统一远程服务，Web/桌面共用实际监听控制API。内嵌Agent接入本批前的SharedTarget并绑定宿主端点，删除直接重连GUI设备和重启后台应用配置。桌面DPAPI凭据改为按探针隔离，旧全局配置不再自动套用；Web令牌仅本次后台有效。协议33。后端177、GUI145、Rust20通过，类型检查/生产构建通过；最终错误状态修复相关11通过、探针标识UI相关4通过。真实Edge双GUI通过本机LAN IP访问F103/HPM两服务，认证与单侧停止隔离通过，进程全部退出。桌面安装版实际交互及跨机防火墙未验。 持续推进，不合并发布。
+- 当前任务：第77批修复桌面远程服务两处真实断点：本地代理按路径/方法放行远程服务控制API，继续拒绝其他内部runtime接口；共享连接存在时可选择另一下载器并切换。后端代理/服务14项、配置/远程服务GUI36项通过，原生生产构建通过。真实Tauri窗口通过本机LAN IP连接F103/HPM两服务，错误令牌拒绝、独立DPAPI凭据/端口、切换和刷新保留服务、单侧停止保留另一服务及两台SDK通过。原生窗口关闭后主程序残留，关闭CDP后仍可复现；仅代理子进程退出，退出门禁未通过，已清理本轮进程。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第76节：第76批合并GUI远程服务入口：删除配置页仅打开/docs的假启动；顶栏统一远程服务，Web/桌面共用实际监听控制API。内嵌Agent接入本批前的SharedTarget并绑定宿主端点，删除直接重连GUI设备和重启后台应用配置。桌面DPAPI凭据改为按探针隔离，旧全局配置不再自动套用；Web令牌仅本次后台有效。协议33。后端177、GUI145、Rust20通过，类型检查/生产构建通过；最终错误状态修复相关11通过、探针标识UI相关4通过。真实Edge双GUI通过本机LAN IP访问F103/HPM两服务，认证与单侧停止隔离通过，进程全部退出。桌面安装版实际交互及跨机防火墙未验。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第77节：第77批修复桌面远程服务两处真实断点：本地代理按路径/方法放行远程服务控制API，继续拒绝其他内部runtime接口；共享连接存在时可选择另一下载器并切换。后端代理/服务14项、配置/远程服务GUI36项通过，原生生产构建通过。真实Tauri窗口通过本机LAN IP连接F103/HPM两服务，错误令牌拒绝、独立DPAPI凭据/端口、切换和刷新保留服务、单侧停止保留另一服务及两台SDK通过。原生窗口关闭后主程序残留，关闭CDP后仍可复现；仅代理子进程退出，退出门禁未通过，已清理本轮进程。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,13 +35,13 @@
 
 ## 真机环境
 
-- **state**：第76批双V4+F103/HPM：真实Edge两个远程服务页面，经本机网卡IP建立两个独立监听；错误令牌拒绝、正确令牌握手/reconnect/目标身份读取通过。GUI停止一台服务后另一台远程会话及两台本地SDK仍可用；全部浏览器、后台、CDC进程退出。最终别名/探针ID显示后重跑通过并查看截图。仅本机IP回连，不是另一电脑跨防火墙测试；没有烧录、复位、供电或工程修改。标识、LAN地址、日志、截图仅本地.build保存。
+- **state**：第77批实际Tauri原生窗口+两台V4/F103/HPM，经本机LAN IP认证读取目标身份；切换下载器与刷新后独立服务、DPAPI凭据和端口正确；停止F103服务保留HPM远程与两SDK连接。没有烧录、复位、供电或修改测试固件。原生主进程关闭超时，本轮由测试脚本清理；共享服务和后台亦清理。私有报告native77-hil.json、native77-close.json，不是安装版或跨机防火墙验证。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 优先完成远程服务桌面实面验证：源码已改按probe_id保存DPAPI凭据并使用新REST应用，不重启sidecar；当前仅Rust/GUI测试及真实Web GUI通过，必须检查原生窗口的共享后台端点/认证/切换与实际启动停止，再进入NSIS安装升级。审计不要仅依赖mock测试。第75批b1564766两项CI已通过，核对第76批精确CI。随后继续Agent远程RTT/SystemView及offline.deploy、未知任务远程查询、恢复/长稳；不改固件/WinUSB，不合并发布。
+1. 优先定位原生关闭窗口后主程序残留：第77批两板远程服务/切换/认证/隔离已实测；代理子进程已停止，但主进程在有/无CDP环境均超时，native77-close.json为无CDP独立复现。修复真实退出后再进入NSIS安装升级；不要把原生开发EXE等同安装版通过。第76批acd522b1 Shared/Feedback CI均通过，核对第77批精确CI。随后继续远程流/脱机部署/任务查询/恢复长稳，不改固件/WinUSB、不合并发布。
 2. 核对本批CI，继续完成Agent剩余RTT/SystemView八项及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
@@ -54,7 +54,7 @@
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
 - STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。
 - Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。
-- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。
+- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第77批原生窗口WM_CLOSE后桌面主进程残留，无CDP同样复现；代理子进程退出。原生退出与NSIS门禁未通过，需优先修复。配置页异步加载与用户快速选择的时序也应继续审计。
 
 ## 延续协议
 
