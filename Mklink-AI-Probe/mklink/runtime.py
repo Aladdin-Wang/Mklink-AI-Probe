@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 25  # Shared Modbus loop lifecycle through the existing worker.
+PROTOCOL = 26  # Shared YMODEM file submission, status, trace and cancellation.
 VERSION = "0.3.0"
 
 

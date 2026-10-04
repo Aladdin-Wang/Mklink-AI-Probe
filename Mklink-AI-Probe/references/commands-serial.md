@@ -81,7 +81,7 @@ python -m mklink serial send --port COM3 --hex --count 5 --delay 0.5 "AA550103"
 发送数据不能为空，次数必须为正整数，间隔为 0–3600 秒的有限数，波特率为
 1–4000000 的整数。HEX 与参数在连接前验证。每次发送得到确认后打印 TX；失败
 非零退出并停止后续发送，不自动重试。响应丢失或短写可能已经发出部分数据，
-不能按“未打印 TX”推断从未发送。活动 YMODEM 传输期间拒绝普通发送。
+不能按“未打印 TX”推断从未发送。活动 YMODEM 传输期间仅拒绝所属端口的普通发送。
 
 ### 多端口监听
 
@@ -222,3 +222,12 @@ python -m mklink serial profile show --profile .mklink/serial_profile.json
 共享GUI中的YMODEM传输仅占用所属串口的普通发送通道；其他已打开端口仍可
 选择和发送。切回传输端口时普通发送禁用，取消或结束后恢复。一个共享后台同时
 只允许一个YMODEM传输任务，切换界面所选端口不会迁移正在进行的传输。
+
+AI以`scope="uart"`连接并启动或借用`serial_start`后，通过`gui_call`调用
+`serial_ymodem_start`，参数为`port`和后台电脑上的普通文件`path`。文件须非空且
+不超过32 MiB，传输名称取文件名，UTF-8不超过31字节且不含控制字符。
+返回`transfer_id`表示任务已接纳，不能视为传输完成。用`serial_ymodem_status`
+查询最终状态，`serial_ymodem_trace`读取协议字节（`after`游标、`limit`最多256）；
+跟踪页中的`transfer_id`变化时应从`after=0`重新读取，不能跨传输复用游标。
+AI断开后传输继续。GUI或其他已认证客户端可以通过`serial_ymodem_cancel`取消
+当前传输；取消无法撤销接收端已收到的数据，结果未知时不要盲目再次提交。

@@ -42,8 +42,6 @@ logger = logging.getLogger(__name__)
 
 _FILE_SOURCE_UPLOAD_LIMIT = 256 * 1024 * 1024
 _FILE_SOURCE_UPLOAD_CHUNK = 1024 * 1024
-_YMODEM_UPLOAD_LIMIT = 32 * 1024 * 1024
-_YMODEM_FILENAME_LIMIT = 31
 
 
 class BrowserSessionLease:
@@ -704,7 +702,7 @@ try:
         HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
-    from pydantic import BaseModel, StrictInt, StrictBool  # noqa: F401
+    from pydantic import BaseModel, Field, StrictInt, StrictBool  # noqa: F401
 
     class ModbusTransactionRequest(BaseModel):
         model_config = {'extra': 'forbid'}
@@ -728,6 +726,11 @@ try:
         commands: list[SerialSequenceCommand]
         interval_ms: StrictInt = 1000
         repeat: StrictInt = 1
+
+    class SerialYModemFileRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        path: str = Field(min_length=1, max_length=4096)
 
     class SerialFileRequest(BaseModel):
         model_config = {'extra': 'forbid'}
@@ -2969,42 +2972,32 @@ def create_app(
                     status_code=409,
                     detail="a YMODEM transfer is already active",
                 )
-            filename = str(file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
-            if not filename:
-                raise HTTPException(status_code=400, detail="YMODEM filename is required")
-            if any(ord(character) < 0x20 or ord(character) == 0x7F for character in filename):
-                raise HTTPException(
-                    status_code=400,
-                    detail="YMODEM filename contains control characters",
-                )
-            content = await file.read(_YMODEM_UPLOAD_LIMIT + 1)
+            from mklink.serial._ymodem import YMODEM_FILE_LIMIT
+            content = await file.read(YMODEM_FILE_LIMIT + 1)
         finally:
             await file.close()
-        if not content:
-            raise HTTPException(status_code=400, detail="YMODEM file is empty")
-        if len(content) > _YMODEM_UPLOAD_LIMIT:
-            raise HTTPException(
-                status_code=413,
-                detail="YMODEM file exceeds the 32 MiB upload limit",
-            )
-        filename_size = len(filename.encode("utf-8"))
-        if filename_size > _YMODEM_FILENAME_LIMIT:
-            raise HTTPException(
-                status_code=400,
-                detail="YMODEM filename exceeds the safe 31-byte limit",
-            )
-        header_size = filename_size + 1 + len(str(len(content))) + 1
-        if header_size > 128:
-            raise HTTPException(
-                status_code=400,
-                detail="YMODEM filename is too long for the protocol header",
-            )
+        from mklink.serial._ymodem import validate_transfer, YModemFileTooLarge
         try:
+            filename = validate_transfer(file.filename, len(content))
             return await run_in_threadpool(sm.start_ymodem, port, content, filename)
+        except YModemFileTooLarge as error:
+            raise HTTPException(413, str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error))
+
+    @app.post('/api/dash/serial/ymodem/file')
+    async def serial_ymodem_file(body: SerialYModemFileRequest):
+        from mklink.serial._ymodem import YModemFileTooLarge
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_ymodem_file, body.port, body.path)
+        except YModemFileTooLarge as error:
+            raise HTTPException(413, str(error)) from error
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
     @app.get("/api/dash/serial/ymodem/status")
     def serial_ymodem_status():

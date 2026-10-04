@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T11:05:49+00:00`
+- 更新时间：`2026-10-04T11:15:01+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; per-port YMODEM send admission after 42fa6a6; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared YMODEM capabilities after b92fa30; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第五十九批统一YMODEM按端口发送隔离：manager/API仅拒绝传输所属端口，复用底层协议锁保留防混流；启动与判断统一COM名称。GUI允许切换其他端口发送，原端口仍禁用，取消后恢复。Python95、GUI8通过，类型与生产构建通过，真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，含YMODEM占A口、B口发送一次、A口409、取消恢复及全释放。前批42fa6a6两项CI成功。未验证物理YMODEM对端；继续共享YMODEM能力、任务归属/取消、Agent、恢复长稳安装，不改固件/WinUSB、不合并发布。
+- 当前任务：持续循环评审验证。第六十批AI共享YMODEM已接通：后台普通文件路径提交、状态、协议跟踪、取消4项复用GUI任务/monitor，协议26/UART24项；32MiB内容及31字节文件名校验共用函数，移除API重复校验/不可达头长判断。AI退出保留任务，其他客户端可取消，重复提交409，异常文件无worker。新增6用例，相关116通过；真实Edge双窗口/MCP/CLI+模拟OS完整回归通过，含MCP文件启动/状态/trace/断开后GUI取消及全释放。前批b92fa30两项CI成功。下一步将GUI multipart上传改为有界流式请求体并删除旧入口，继续取消/Agent/恢复长稳安装；物理YMODEM对端未验收。不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第59节：第五十九批统一YMODEM按端口发送隔离：manager/API仅拒绝传输所属端口，复用底层协议锁保留防混流；启动与判断统一COM名称。GUI允许切换其他端口发送，原端口仍禁用，取消后恢复。Python95、GUI8通过，类型与生产构建通过，真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，含YMODEM占A口、B口发送一次、A口409、取消恢复及全释放。前批42fa6a6两项CI成功。未验证物理YMODEM对端；继续共享YMODEM能力、任务归属/取消、Agent、恢复长稳安装，不改固件/WinUSB、不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第60节：第六十批AI共享YMODEM已接通：后台普通文件路径提交、状态、协议跟踪、取消4项复用GUI任务/monitor，协议26/UART24项；32MiB内容及31字节文件名校验共用函数，移除API重复校验/不可达头长判断。AI退出保留任务，其他客户端可取消，重复提交409，异常文件无worker。新增6用例，相关116通过；真实Edge双窗口/MCP/CLI+模拟OS完整回归通过，含MCP文件启动/状态/trace/断开后GUI取消及全释放。前批b92fa30两项CI成功。下一步将GUI multipart上传改为有界流式请求体并删除旧入口，继续取消/Agent/恢复长稳安装；物理YMODEM对端未验收。不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议25，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议26，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,13 +41,13 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；YMODEM普通发送已统一按端口隔离，继续补齐AI共享YMODEM能力与任务归属，审查上传限额/取消/剩余低层Device及独立Agent，再做恢复、长稳与NSIS。最新GUI构建为本机v030-ymodem-isolation-web。真实YMODEM接收端与Modbus从站仍未验收。保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
+1. 核对本批精确CI；优先将YMODEM GUI multipart上传改为有界流式请求体并删除旧入口，避免文件内容限额之前框架已暂存整个请求。共享YMODEM 4能力已接通，继续请求取消/独立Agent/恢复长稳NSIS。真实YMODEM/Modbus对端未验收；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
 - A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
-- 0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环20项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。
+- 0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环/YMODEM24项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 缓冲有界但不是无损通道：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。

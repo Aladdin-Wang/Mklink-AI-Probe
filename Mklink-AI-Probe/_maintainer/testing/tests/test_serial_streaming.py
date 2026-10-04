@@ -783,7 +783,7 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
     app = create_app(auth_token=None, project_root=str(tmp_path))
     manager = app.state.mklink_state["dashboard_managers"]["serial"]
     monkeypatch.setattr(manager, "_running", True)
-    monkeypatch.setattr("mklink.remote.api._YMODEM_UPLOAD_LIMIT", 8)
+    monkeypatch.setattr("mklink.serial._ymodem.YMODEM_FILE_LIMIT", 8)
     starts = []
     active = {"value": False}
 

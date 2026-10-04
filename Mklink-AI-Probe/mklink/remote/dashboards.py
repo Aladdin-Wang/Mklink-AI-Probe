@@ -3116,6 +3116,16 @@ class SerialStreamManager:
         with self._lifecycle_lock:
             return self._start_ymodem_locked(port, data, filename)
 
+    def start_ymodem_file(self, port: str, path: str) -> dict[str, Any]:
+        from pathlib import Path
+        from mklink.serial._ymodem import YMODEM_FILE_LIMIT
+        source = Path(path).expanduser()
+        if not source.is_file():
+            raise ValueError('File path must name a regular file on the backend computer')
+        with source.open('rb') as stream:
+            data = stream.read(YMODEM_FILE_LIMIT + 1)
+        return self.start_ymodem(port, data, source.name)
+
     def _start_ymodem_locked(
         self,
         port: str,
@@ -3127,8 +3137,8 @@ class SerialStreamManager:
         monitor = self._monitor
         if monitor is None or not self._running:
             raise RuntimeError("serial monitor not running")
-        if not data:
-            raise ValueError("YMODEM file is empty")
+        from mklink.serial._ymodem import validate_transfer
+        filename = validate_transfer(filename, len(data))
         if monitor.port_status.get(port) != "open":
             raise RuntimeError(f"serial port {port} is not open")
 

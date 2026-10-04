@@ -355,6 +355,13 @@ def build_server():
         is followed by the full interval; the first error stops the loop without closing the port.
         Disconnect keeps it running. Inspect modbus_status.loop, then explicitly call
         modbus_loop_stop with {} to stop the shared loop. An in-flight write cannot be undone.
+        serial_ymodem_start accepts port and path to a regular file on the backend computer
+        (1..32 MiB; UTF-8 basename at most 31 bytes, no control characters). It returns the
+        existing GUI transfer_id immediately; acceptance is not completed delivery. Disconnect
+        does not cancel. Query serial_ymodem_status and serial_ymodem_trace (after/limit) and
+        explicitly call serial_ymodem_cancel with {} to cancel the current shared transfer.
+        Cancellation cannot undo received data. Do not blindly resubmit after an uncertain reply.
+        Only one transfer runs per backend; other open ports remain usable.
         """
         return client().call(capability, arguments)
 

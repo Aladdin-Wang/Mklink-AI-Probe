@@ -44,7 +44,7 @@ def test_uart_lobby_attach_ignores_target_locks_and_never_connects(runtime):
     result = client.portal.call(scenario)
     assert result['scope'] == 'uart' and result['attached']
     assert result['capabilities'] == ['modbus_history', 'modbus_loop_start', 'modbus_loop_stop', 'modbus_probe', 'modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
-                                     'serial_broadcast', 'serial_history', 'serial_recording_start', 'serial_recording_stop', 'serial_send', 'serial_send_file', 'serial_sequence_start', 'serial_sequence_stop', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
+                                     'serial_broadcast', 'serial_history', 'serial_recording_start', 'serial_recording_stop', 'serial_send', 'serial_send_file', 'serial_sequence_start', 'serial_sequence_stop', 'serial_start', 'serial_status', 'serial_stop', 'serial_ymodem_cancel', 'serial_ymodem_start', 'serial_ymodem_status', 'serial_ymodem_trace', 'uart_ports']
     assert app.state.mklink_state['device'] is None and calls == []
     session = result['session_id']
     assert call(client, session, 'uart_ports').json() == [{'device': 'TEST_UART'}]
@@ -494,6 +494,51 @@ def test_shared_loop_invalid_request_does_not_create_work(uart_app):
         assert call(http, session, 'modbus_loop_start', arguments).status_code == 400
     assert managers['modbus']._loop_thread is None and factory.instances[0].calls == []
     assert call(http, session, 'modbus_loop_stop').status_code == 200
+    http.post('/_runtime/detach', json={'session_id': session})
+
+
+def test_shared_ymodem_file_survives_detach_and_peer_can_cancel(uart_app, monkeypatch, tmp_path):
+    from mklink.serial._ymodem import YModemCancelled
+    http, control, managers, _, monitor = uart_app
+    entered, sent = threading.Event(), []
+    def transfer(self, port, data, filename, *, cancel_event, progress_callback):
+        sent.append((port, data, filename))
+        entered.set()
+        assert cancel_event.wait(3)
+        raise YModemCancelled('cancelled')
+    monkeypatch.setattr(monitor, 'send_ymodem', transfer, raising=False)
+    source = tmp_path / 'data.bin'; source.write_bytes(b'file data')
+    owner = uart_attach(http)
+    assert call(http, owner, 'serial_start', {'ports': [{'port': 'TEST'}]}).status_code == 200
+    response = call(http, owner, 'serial_ymodem_start', {'port': 'TEST', 'path': str(source)})
+    assert response.status_code == 200 and response.json()['active']
+    assert entered.wait(1)
+    assert call(http, owner, 'serial_ymodem_start', {'port': 'TEST', 'path': str(source)}).status_code == 409
+    http.post('/_runtime/detach', json={'session_id': owner})
+    assert not control.sessions and managers['serial'].get_ymodem_status()['active']
+    peer = uart_attach(http)
+    assert call(http, peer, 'serial_ymodem_status').json()['transfer_id'] == response.json()['transfer_id']
+    assert call(http, peer, 'serial_ymodem_trace', {'after': 0, 'limit': 2}).status_code == 200
+    assert call(http, peer, 'serial_ymodem_cancel').status_code == 200
+    managers['serial']._ymodem_thread.join(1)
+    assert call(http, peer, 'serial_ymodem_status').json()['state'] == 'cancelled'
+    assert sent == [('TEST', b'file data', 'data.bin')]
+    assert managers['serial'].running and control.app.state.mklink_state['device'] is None
+    http.post('/_runtime/detach', json={'session_id': peer})
+
+
+@pytest.mark.parametrize('case', ['empty', 'large', 'directory', 'missing', 'name'])
+def test_shared_ymodem_file_invalid_input_creates_no_worker(uart_app, monkeypatch, tmp_path, case):
+    http, _, managers, _, _ = uart_app
+    monkeypatch.setattr('mklink.serial._ymodem.YMODEM_FILE_LIMIT', 8)
+    source = tmp_path / ('x' * 32 if case == 'name' else 'data.bin')
+    if case == 'directory': source.mkdir()
+    elif case != 'missing': source.write_bytes(b'' if case == 'empty' else b'x' * (9 if case == 'large' else 1))
+    session = uart_attach(http)
+    assert call(http, session, 'serial_start', {'ports': [{'port': 'TEST'}]}).status_code == 200
+    response = call(http, session, 'serial_ymodem_start', {'port': 'TEST', 'path': str(source)})
+    assert response.status_code == (413 if case == 'large' else 400), response.text
+    assert managers['serial']._ymodem_thread is None
     http.post('/_runtime/detach', json={'session_id': session})
 
 
