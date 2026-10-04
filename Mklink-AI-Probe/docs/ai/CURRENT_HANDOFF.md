@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T11:58:05+00:00`
+- 更新时间：`2026-10-04T12:07:14+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; remote offline identity gate after dcae3ef; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; per-client Agent lifecycle after 70d4b4f; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第64批删除Agent offline.deploy未绑定时按卷标/环境变量/首盘回退，改为仅用不可变probe绑定及既有USB→卷GUID解析；8项新测试、相关49项通过，含真实WebSocket拒绝与预览保持。当前独立Agent未接共享后台，部署明确暂拒，不能当作迁移完成。前批dcae3ef两项CI成功。继续Agent完整目标/UART/上传/会话迁移、取消和恢复长稳NSIS，不改固件/WinUSB、不合并发布。
+- 当前任务：第65批Agent新增逐WebSocket内部client_id与client_closed清理契约，复用既有底层settle；同步返回awaitable全程等待，删除双参数dispatcher兼容签名判断。6项新测试，最终远程154通过，含双真实WebSocket独立关闭、执行中断开/取消；重连也等待底层完成再清理。43项远程操作迁移矩阵见报告65节，生产Agent尚未接共享RuntimeClient，不能宣称已迁移。前批70d4b4f两项CI通过。继续按矩阵接入、不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第64节：第64批删除Agent offline.deploy未绑定时按卷标/环境变量/首盘回退，改为仅用不可变probe绑定及既有USB→卷GUID解析；8项新测试、相关49项通过，含真实WebSocket拒绝与预览保持。当前独立Agent未接共享后台，部署明确暂拒，不能当作迁移完成。前批dcae3ef两项CI成功。继续Agent完整目标/UART/上传/会话迁移、取消和恢复长稳NSIS，不改固件/WinUSB、不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第65节：第65批Agent新增逐WebSocket内部client_id与client_closed清理契约，复用既有底层settle；同步返回awaitable全程等待，删除双参数dispatcher兼容签名判断。6项新测试，最终远程154通过，含双真实WebSocket独立关闭、执行中断开/取消；重连也等待底层完成再清理。43项远程操作迁移矩阵见报告65节，生产Agent尚未接共享RuntimeClient，不能宣称已迁移。前批70d4b4f两项CI通过。继续按矩阵接入、不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；继续独立Agent目标/UART/上传/远程会话的共享迁移，以恢复身份绑定的远程MSC部署，不能将拒绝旧入口视作完成。继续HTTP断开取消、崩溃恢复、24/72小时长稳及NSIS。物理RTOS/YMODEM/Modbus对端未验收；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
+1. 核对本批精确CI；按报告65节43项矩阵接入逐远程连接的RuntimeClient（client_id/client_closed接缝已验证），补齐目标/UART/上传/流式读取和身份绑定MSC；当前独立Agent仍直连、offline.deploy未绑定时拒绝。继续取消、恢复/24与72小时长稳、NSIS及物理协议对端验证；不改固件/WinUSB、不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
