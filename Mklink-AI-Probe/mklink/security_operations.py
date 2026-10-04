@@ -63,6 +63,21 @@ def validate_security_request(arguments):
                 base_address=base_address, frequency=frequency)
 
 
+def submit_security_job(info, arguments, *, request_id):
+    """Submit once through the common runtime journal; never attach or wait for hardware."""
+    arguments = validate_security_request(arguments)
+    if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+        raise ValueError('request_id must contain 1..128 characters')
+    from mklink.runtime import request, RuntimeErrorResponse
+    try:
+        return request(info, 'POST', '/api/runtime/jobs/', dict(
+            action='security', arguments=arguments, confirm=True, request_id=request_id))
+    except RuntimeErrorResponse as error:
+        raise RuntimeErrorResponse(
+            f'{error}. Query runtime jobs for probe {info["probe_id"]}, '
+            f'request_id={request_id}; do not replay an uncertain operation') from error
+
+
 def run_security_operation(action, target_part, *, voltage_mv, confirm_user,
                            confirm_data_loss=False, firmware=None, base_address=None,
                            probe_id=None, frequency=1_000_000, timeout=240.0,
@@ -85,9 +100,8 @@ def run_security_operation(action, target_part, *, voltage_mv, confirm_user,
     from mklink.runtime import ensure_runtime, request, RuntimeErrorResponse
     info = ensure_runtime(project_root=project_root, probe=probe_id)
     hint = f'Query runtime jobs for probe {info["probe_id"]}, request_id={request_id}; do not replay an uncertain operation'
+    job = submit_security_job(info, arguments, request_id=request_id)
     try:
-        job = request(info, 'POST', '/api/runtime/jobs/', dict(
-            action='security', arguments=arguments, confirm=True, request_id=request_id))
         deadline = time.monotonic() + timeout
         while job['state'] not in {'succeeded', 'failed', 'unknown'}:
             remaining = deadline - time.monotonic()

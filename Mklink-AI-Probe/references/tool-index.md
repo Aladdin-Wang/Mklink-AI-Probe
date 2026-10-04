@@ -17,7 +17,7 @@
 | 器件检查（0.3） | `inspect_mcu` | 只读检查精确器件和统一算法目录，不写 profile/设备文件 |
 | 连接 | `discover_probes` · `connect` · `disconnect` · `device_status` | connect 传 `axf=` 才能读变量 |
 | Flash / 探针控制 | `flash` · `erase_chip` · `erase_sector` · `reset` · `set_power_on` · `reboot_probe` | `reset` 复位目标；VCC 任意电压均须逐次确认，5 V 另须耐压确认；`reboot_probe` 会断连 |
-| 安全保护 | `security_status` · `security_lock` · `security_unlock` | 先查精确型号能力；加锁前强制校验固件，解锁强制确认永久数据丢失，操作后按明确电压断电复位 |
+| 安全保护 | `security_status` · `security_lock` · `security_unlock` | 活动共享 MCP：先查精确型号；必须提供 request_id，返回后台任务后用 job_status 查询。加锁校验固件，解锁确认永久数据丢失，按明确电压复位；nRF54L15省略电压 |
 | 内存 | `read_memory` · `read_memory_regions` · `write_memory` · `flush_memory` | 快照 regions 最多 16 项/总计 4096B；flush 单批最多 12 KiB/8 项，超额由调用方串行分批 |
 | 变量/寄存器 | `read_variable` · `write_variable` · `read_register` | 变量需 AXF；外设字段使用项目所选目录，无需 AXF |
 | 外设目录/采集（0.2.1 开发） | `peripheral_targets` · `select_peripherals` · `list_peripherals` · `capture_peripherals` | 与 CLI/Web 共用项目选择，采集 ≤30 秒、≤15 区域 |
@@ -87,3 +87,10 @@
 按保存的 request_id 查原记录。unknown 或记录缺失均不能认定没有执行，不得据此重新操作。
 后台最多保留64条任务。安全操作可能关闭目标调试连接；加锁后不能假定已有 AI 会话仍能读取目标，
 也不会自动重连或解除保护。GUI 在线作业入口仍使用其原有查询方式，本次 CLI 迁移不代表该入口已获得持久去重。
+
+活动 MCP 的 `security_lock` / `security_unlock` 无需先调用 connect；用 `probe` 选择共享 ID、别名或命令端口。
+已连接时省略 probe 会使用当前探针，显式选择另一探针会被拒绝，须先 disconnect。
+`project_root` 仅用于启动新的后台，不切换已有后台工程。`request_id` 必填且调用前保存，
+返回的 running 仅代表任务已接收，必须用 `job_status` 确认终态。MCP退出或disconnect均不会取消任务；
+提交响应丢失后仍可查询原探针的任务列表，也可在新会话给 `job_status` 指定 probe。
+旧独占 MCP 的三个安全工具注册已移除，不保留第二套入口。

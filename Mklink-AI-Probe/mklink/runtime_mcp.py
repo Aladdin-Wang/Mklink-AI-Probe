@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 import logging
 import threading
 
+from pydantic import StrictBool, StrictInt
+
 from mklink.runtime import RuntimeClient, RuntimeErrorResponse, VERSION
 
 
@@ -68,6 +70,65 @@ def build_server():
         """
         from mklink.mcu_detect import inspect_mcu as inspect
         return inspect(project_root=project_root, device=device, flm=flm)
+
+    def security_job(arguments, *, request_id, probe, project_root):
+        from mklink.security_operations import validate_security_request, submit_security_job
+        from mklink.runtime import ensure_runtime
+        arguments = validate_security_request(arguments)
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise ValueError('request_id must contain 1..128 characters')
+        with lock:
+            current = holder.get('client')
+            info = current.info if current else None
+        if info is not None and probe:
+            from mklink.probes import select_probe
+            if select_probe(probe)['probe_id'] != info['probe_id']:
+                raise RuntimeErrorResponse('Attached to another probe; disconnect before selecting a different security target')
+        if info is None:
+            info = ensure_runtime(project_root=project_root, probe=probe)
+        with lock:
+            holder['last_info'] = info  # Also retain selection after a lost submission response.
+        return submit_security_job(info, arguments, request_id=request_id)
+
+    @server.tool()
+    def security_status(target_part: str) -> dict:
+        """Read the exact model's security capability; no connection or hardware changes."""
+        from mklink.cmsis_dap.security import security_capability
+        return security_capability(target_part).public()
+
+    @server.tool()
+    def security_lock(target_part: str, firmware: str, request_id: str,
+                      probe: str | None = None, voltage_mv: StrictInt | None = None,
+                      base_address: StrictInt | None = None, confirm_user: StrictBool = False,
+                      frequency: StrictInt = 1_000_000, project_root: str = '.') -> dict:
+        """Submit shared protection after image verification; returns a job, not completed protection.
+
+        Require explicit user approval and the exact restore voltage; nRF54L15 omits voltage.
+        Select a probe ID/alias/command port when unattached; no target connect is required.
+        Keep request_id BEFORE calling. Query job_status even after disconnect or response loss;
+        never replay an unknown result. Stop capture explicitly first. Protection may close
+        the shared target connection; never reconnect or unlock automatically.
+        """
+        return security_job(dict(action='lock', target_part=target_part, firmware=firmware,
+            voltage_mv=voltage_mv, base_address=base_address, confirm_user=confirm_user,
+            frequency=frequency), request_id=request_id, probe=probe, project_root=project_root)
+
+    @server.tool()
+    def security_unlock(target_part: str, request_id: str, probe: str | None = None,
+                        voltage_mv: StrictInt | None = None, confirm_user: StrictBool = False,
+                        confirm_data_loss: StrictBool = False, frequency: StrictInt = 1_000_000,
+                        project_root: str = '.') -> dict:
+        """Submit shared recovery with explicit operation and permanent data-loss approvals.
+
+        Read security_status first. Require the exact restore voltage, except nRF54L15
+        must omit voltage. Does not first connect a protected target. Returns a journaled
+        job: query job_status; disconnect never cancels, unknown/missing never permits replay.
+        Select a probe ID/alias/command port when unattached; attached clients cannot switch
+        security targets implicitly. Keep request_id BEFORE calling. Stop capture explicitly.
+        """
+        return security_job(dict(action='unlock', target_part=target_part, voltage_mv=voltage_mv,
+            confirm_user=confirm_user, confirm_data_loss=confirm_data_loss, frequency=frequency),
+            request_id=request_id, probe=probe, project_root=project_root)
 
     @server.tool()
     def discover_probes() -> list[dict]:

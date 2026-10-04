@@ -291,3 +291,105 @@ def test_mcp_inspects_catalog_without_attaching_hardware(monkeypatch):
             assert result.data['status'] == 'detected'
     asyncio.run(scenario())
     assert calls == [{'project_root': '.', 'device': 'TEST', 'flm': 'algorithm'}]
+
+
+@pytest.mark.parametrize('action', ['lock', 'unlock'])
+def test_active_mcp_security_requires_explicit_confirmations_before_backend(monkeypatch, action):
+    def forbidden(*a, **kw): pytest.fail('invalid request reached backend/client creation')
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', forbidden)
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', forbidden)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            status = await mcp.call_tool('security_status', {'target_part':'nrf54l15'})
+            assert status.data['supported']
+            body = {'target_part':'nrf54l15','request_id':'retained'}
+            if action == 'lock': body['firmware']='app.bin'
+            for update in ({}, {'confirm_user':'true'}, {'confirm_user':1},
+                           {'confirm_user':True, 'voltage_mv':3300}):
+                result = await mcp.call_tool('security_'+action, {**body,**update}, raise_on_error=False)
+                assert result.is_error
+            body['confirm_user']=True
+            if action == 'unlock':
+                for value in (False, 'true', 1):
+                    assert (await mcp.call_tool('security_unlock',
+                        {**body,'confirm_data_loss':value},raise_on_error=False)).is_error
+            else:
+                assert (await mcp.call_tool('security_lock',
+                    {**body,'request_id':''},raise_on_error=False)).is_error
+    asyncio.run(scenario())
+
+
+def test_active_mcp_security_submits_without_target_and_can_query_after_disconnect(monkeypatch, tmp_path):
+    calls = []
+    info = {'probe_id':'usb-test'}
+    def forbidden(*a, **kw): pytest.fail('security operation tried to attach a target')
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', forbidden)
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **kw: calls.append(('ensure',kw)) or info)
+    job = {'job_id':'1'*32,'request_id':'known-id','state':'running','action':'security'}
+    def request(endpoint, method, path, payload=None, **kw):
+        assert endpoint is info
+        calls.append((method,path,payload))
+        return job
+    monkeypatch.setattr('mklink.runtime.request', request)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            result = await mcp.call_tool('security_lock', dict(target_part='nrf54l15',
+                firmware=str(tmp_path/'app.bin'),request_id='known-id',probe='alias',confirm_user=True))
+            assert result.data['state']=='running'
+            assert (await mcp.call_tool('disconnect')).data['detached']
+            assert (await mcp.call_tool('job_status',{'job_id':'1'*32})).data['request_id']=='known-id'
+    asyncio.run(scenario())
+    assert calls[0] == ('ensure',{'project_root':'.','probe':'alias'})
+    posts = [call for call in calls if call[0]=='POST']
+    assert len(posts)==1 and posts[0][1]=='/api/runtime/jobs/'
+    assert posts[0][2]['arguments']['action']=='lock'
+    assert posts[0][2]['request_id']=='known-id'
+
+
+def test_active_mcp_security_keeps_selection_after_lost_response(monkeypatch):
+    calls=[]
+    info={'probe_id':'usb-test'}
+    monkeypatch.setattr('mklink.runtime.ensure_runtime',lambda **kw:info)
+    def request(endpoint,method,path,payload=None,**kw):
+        assert endpoint is info
+        calls.append(method)
+        if method=='POST': raise runtime_mcp.RuntimeErrorResponse('response lost')
+        return {'jobs':[{'request_id':'lost-request','state':'running'}]}
+    monkeypatch.setattr('mklink.runtime.request',request)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            result=await mcp.call_tool('security_unlock',dict(target_part='nrf54l15',
+                request_id='lost-request',probe='usb-test',confirm_user=True,confirm_data_loss=True),raise_on_error=False)
+            assert result.is_error and 'lost-request' in str(result)
+            await mcp.call_tool('disconnect')
+            assert (await mcp.call_tool('job_status')).data['jobs'][0]['request_id']=='lost-request'
+    asyncio.run(scenario())
+    assert calls==['POST','GET']
+
+
+def test_attached_mcp_security_cannot_silently_switch_probes(monkeypatch):
+    calls=[]
+    class Attached:
+        info={'probe_id':'first'}
+        def __init__(self,**kw): pass
+        def connect(self,**kw): return {'attached':True}
+        def close(self): calls.append('detach')
+    monkeypatch.setattr(runtime_mcp,'RuntimeClient',Attached)
+    monkeypatch.setattr('mklink.probes.select_probe',lambda selector:{'probe_id':selector})
+    def forbidden(*a,**kw): pytest.fail('attached security must reuse endpoint')
+    monkeypatch.setattr('mklink.runtime.ensure_runtime',forbidden)
+    def request(info,method,path,payload=None,**kw):
+        assert info is Attached.info
+        calls.append('submit')
+        return {'state':'running','request_id':payload['request_id']}
+    monkeypatch.setattr('mklink.runtime.request',request)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect',{'probe':'first'})
+            args=dict(target_part='nrf54l15',request_id='once',confirm_user=True,confirm_data_loss=True)
+            assert (await mcp.call_tool('security_unlock',{**args,'probe':'second'},raise_on_error=False)).is_error
+            assert calls==[]
+            assert (await mcp.call_tool('security_unlock',args)).data['state']=='running'
+            assert calls==['submit']
+    asyncio.run(scenario())
+    assert calls==['submit','detach']

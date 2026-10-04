@@ -211,7 +211,10 @@ def test_cancelled_task_keeps_admission_until_worker_settles(security):
     assert len(s.calls) == 1
 
 
-def test_non_nrf_security_preserves_explicit_voltage_and_reset_recipe(security):
+def test_non_nrf_security_preserves_explicit_voltage_and_reset_recipe(security, monkeypatch):
+    # This test checks request planning, not optional packaged FLM availability.
+    monkeypatch.setattr('mklink.cmsis_dap.security.require_security_capability',
+                        lambda part: SimpleNamespace(family='stm32f103-rdp1'))
     s = security
     body = submission()
     body['arguments'].update(target_part='STM32F103RE', voltage_mv=3300)
@@ -265,3 +268,47 @@ def test_reused_security_id_with_changed_operation_is_rejected(security):
     other['arguments']['frequency'] = 2_000_000
     assert s.client.post('/api/runtime/jobs/', json=other).status_code == 409
     assert len(s.calls) == 1
+
+
+@pytest.mark.parametrize('lose_response', [False, True])
+def test_active_mcp_security_uses_real_journal_without_target_attach(security, monkeypatch, lose_response):
+    import asyncio
+    from fastmcp import Client
+    from mklink import runtime_mcp
+    s = security
+    monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **kw: {'probe_id':'usb-test'})
+    def forbidden(*a,**kw): pytest.fail('MCP security implicitly attached a target')
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', forbidden)
+    posts = []
+    def request(info, method, path, payload=None, **kwargs):
+        response = s.client.request(method, path, json=payload)
+        if response.status_code >= 400:
+            raise RuntimeErrorResponse(response.text)
+        if method == 'POST':
+            posts.append(payload)
+            if lose_response:
+                raise RuntimeErrorResponse('response lost after acceptance')
+        return response.json()
+    monkeypatch.setattr('mklink.runtime.request', request)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            args=dict(target_part='nrf54l15',request_id='security-mcp',probe='usb-test',
+                      confirm_user=True,confirm_data_loss=True)
+            result=await mcp.call_tool('security_unlock',args,raise_on_error=False)
+            assert result.is_error == lose_response
+            assert s.started.wait(2)
+            assert not s.control.sessions and s.control.operation_lock.locked()
+            if not lose_response:
+                duplicate=await mcp.call_tool('security_unlock',args)
+                assert duplicate.data['job_id']==result.data['job_id']
+            await mcp.call_tool('disconnect')
+            listing=await mcp.call_tool('job_status')
+            job=listing.data['jobs'][0]
+            assert job['state']=='running' and job['request_id']=='security-mcp'
+            assert len(s.calls)==1
+            s.release.set()
+            assert terminal(s.client,job['job_id'])['state']=='succeeded'
+            status=await mcp.call_tool('job_status',{'job_id':job['job_id']})
+            assert status.data['state']=='succeeded'
+    asyncio.run(scenario())
+    assert len(posts)==(1 if lose_response else 2)

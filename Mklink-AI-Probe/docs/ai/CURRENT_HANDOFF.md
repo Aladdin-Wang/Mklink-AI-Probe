@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T23:04:18.7143539Z`
+- 更新时间：`2026-10-04T23:13:23.2785693Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：135完成CLI安全操作共享迁移：复用后台在线services和RuntimeJobs，允许未连接目标，客户端超时不取消/重发，协议39。234短测和双V4未确认请求拒绝/AI保持/清理通过；未执行真实安全操作。GUI在线任务持久化及活动MCP安全入口待继续；长期暂停。
+- 当前任务：136活动MCP安全工具接入共享持久任务并删除旧重复注册；StrictBool确认、预存request_id、断开/丢响应后查询。132短测和双V4活动MCP拒绝/AI保持通过。修135 CI配方测试可选FLM依赖，终态日志加载不重复写；新CI待查。GUI在线作业持久化待继续；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP/CLI及共享SDK共享，MSC部署复用持久化任务。MCU检查只读，copy-flm及CLI security已共享；GUI在线任务持久化、活动MCP安全入口、旧MCP主体、安装版和其他验证缺口待继续；长期暂停。
+- **0.3.0 专用CLI共享迁移** — `development`。每探针独立后台；常用MCP/CLI及共享SDK共享，MSC部署复用持久化任务。MCU检查只读，copy-flm及CLI/活动MCP security已共享；GUI在线任务持久化、旧MCP剩余主体、安装版和其他验证缺口待继续；长期暂停。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第135节：234短测通过；源码双V4未确认安全请求/直接路由拒绝、任务空、AI保持、profile与双盘未变及端点清理通过。真实加锁/解锁未执行；不是安装包或长期验收。第131节真实FLM共享复制/去重已通过。
+- **共享后台、多探针与AI共存**：第136节：不设置本机FLM覆盖的132短测通过；双V4生产活动MCP连接/工具注册/未确认安全拒绝、任务空、原AI保持、profile和双盘不变及端点清理通过。真实安全操作、stdio全链路和安装包未由本次HIL覆盖。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,14 +35,14 @@
 
 ## 真机环境
 
-- **state**：135批双V4重新枚举，各保持AI会话，未确认安全请求返回422、直接路由409且任务列表为空；双盘/profile未变，AI状态及后台清理通过。未烧录/复位/改压；下次使用先重新枚举，长期暂停。
+- **state**：136批双V4重新枚举并保留AI；活动MCP各连接对应后台，未确认安全请求拒绝，无新增任务；MCP断开后原AI仍可读IDCODE，双盘/profile不变、后台正常清理。未执行安全操作/复位/改压；下次先枚举，长期暂停。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对135提交CI；134全部通过，133共享运行已cancelled。继续统一GUI在线作业持久request_id及活动MCP安全入口，复用已有共享services/RuntimeJobs，随后删除旧MCP主体。CLI security已共享，但真机只验证拒绝路径；安全执行、物理中断、NSIS UAC及跨主机仍有缺口。
+2. 核对136提交CI；135反馈/GUI成功，但共享检查2166通过/1个F103配方测试依赖可选FLM失败，本轮已隔离该测试依赖，未改生产白名单。继续统一GUI在线作业持久request_id/查询，清理旧MCP剩余能力。CLI/活动MCP安全已共享，真机安全操作、物理中断、NSIS UAC及跨主机缺口仍在。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

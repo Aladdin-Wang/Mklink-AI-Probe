@@ -538,85 +538,6 @@ def _register_flash_tools(mcp: Any) -> None:
         return {"rebooted": True, "connected": False}
 
 
-def _register_security_tools(mcp: Any) -> None:
-    @mcp.tool()
-    def security_status(target_part: str) -> dict:
-        """Report fail-closed lock/unlock support for an exact MCU part number."""
-        from mklink.cmsis_dap.security import security_capability
-
-        return security_capability(target_part).public()
-
-    @mcp.tool()
-    @_exclusive_hardware_tool
-    def security_lock(
-        target_part: str,
-        firmware: str,
-        voltage_mv: StrictInt | None = None,
-        base_address: StrictInt | None = None,
-        confirm_user: bool = False,
-        probe_id: str | None = None,
-        frequency: StrictInt = 1_000_000,
-        timeout: float = 240.0,
-    ) -> dict:
-        """Enable validated protection after image verification.
-
-        ``confirm_user`` must be true only after the user explicitly confirms
-        this operation. Other targets also require the exact ``voltage_mv``;
-        nRF54L15 uses CTRL-AP reset and requires the voltage to be omitted.
-        """
-        from mklink.security_operations import run_security_operation
-
-        if confirm_user is not True:
-            raise ValueError("security lock requires explicit user confirmation")
-        _reset_device()
-        return run_security_operation(
-            "lock",
-            target_part,
-            voltage_mv=voltage_mv,
-            confirm_user=confirm_user,
-            firmware=firmware,
-            base_address=base_address,
-            probe_id=probe_id,
-            frequency=frequency,
-            timeout=timeout,
-        )
-
-    @mcp.tool()
-    @_exclusive_hardware_tool
-    def security_unlock(
-        target_part: str,
-        voltage_mv: StrictInt | None = None,
-        confirm_user: bool = False,
-        confirm_data_loss: bool = False,
-        probe_id: str | None = None,
-        frequency: StrictInt = 1_000_000,
-        timeout: float = 240.0,
-    ) -> dict:
-        """Disable validated protection and erase protected data.
-
-        Both confirmations must be true. The user must explicitly confirm the
-        permanent loss of protected nonvolatile data. Other targets require
-        an exact restore voltage; nRF54L15 uses CTRL-AP reset without VCC change.
-        """
-        from mklink.security_operations import run_security_operation
-
-        if confirm_user is not True or confirm_data_loss is not True:
-            raise ValueError(
-                "security unlock requires explicit operation and data-loss confirmations"
-            )
-        _reset_device()
-        return run_security_operation(
-            "unlock",
-            target_part,
-            voltage_mv=voltage_mv,
-            confirm_user=confirm_user,
-            confirm_data_loss=confirm_data_loss,
-            probe_id=probe_id,
-            frequency=frequency,
-            timeout=timeout,
-        )
-
-
 def _register_memory_tools(mcp: Any) -> None:
     from mklink.mcp_stream_bridge import (
         McpStreamSidecar,
@@ -1698,7 +1619,6 @@ def build_server() -> Any:
     _register_project_tools(mcp)
     _register_connection_tools(mcp)
     _register_flash_tools(mcp)
-    _register_security_tools(mcp)
     _register_memory_tools(mcp)
     _register_variable_tools(mcp)
     _register_debug_tools(mcp)

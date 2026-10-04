@@ -190,3 +190,17 @@ def test_failed_acceptance_preserves_full_deduplication_history(fixture, monkeyp
     assert list(control.jobs.jobs) == [str(index) for index in range(64)]
     assert client.post('/api/runtime/jobs/', json=body(request_id='old-0')).json()['job_id'] == '0'
     assert not calls and not control.jobs.tasks
+
+
+def test_loading_terminal_journal_does_not_rewrite_it(fixture):
+    import os
+    client, control, _, _, release = fixture
+    client.portal.call(release.set)
+    job = client.post('/api/runtime/jobs/', json=body()).json()
+    assert terminal(client, job['job_id'])['state'] == 'succeeded'
+    path = control.jobs.path
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    previous = (path.read_bytes(), path.stat().st_mtime_ns)
+    restored = RuntimeJobs(control)
+    assert restored.jobs[job['job_id']]['state'] == 'succeeded'
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == previous

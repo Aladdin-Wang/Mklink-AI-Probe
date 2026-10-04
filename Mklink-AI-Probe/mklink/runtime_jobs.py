@@ -30,11 +30,14 @@ class RuntimeJobs:
         if self.path and self.path.exists():
             try:
                 rows = json.loads(self.path.read_text(encoding='utf-8'))
+                changed = len(rows) > 64
                 for row in rows[-64:]:
                     if row['state'] not in TERMINAL:
+                        changed = True
                         row.update(state='unknown', error='Backend interrupted; inspect target before any new operation', finished=time.time())
                     self.jobs[row['job_id']] = row
-                self.save()
+                if changed:
+                    self.save()
             except (ValueError, KeyError, TypeError) as exc:
                 raise RuntimeError('Cannot read job journal; preserve it for inspection') from exc
 
