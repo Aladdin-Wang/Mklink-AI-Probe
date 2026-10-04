@@ -165,6 +165,9 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
                 environment = dict(os.environ)
                 if getattr(sys, "frozen", False):
                     environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+                    # The detached runtime must not hold the launching onefile
+                    # process's temporary extraction directory open on Windows.
+                    kwargs["cwd"] = str(root)
                 # A detached runtime must not inherit a build wrapper's short-lived TEMP.
                 scratch = root / "tmp"
                 scratch.mkdir(exist_ok=True)
