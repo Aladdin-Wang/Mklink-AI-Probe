@@ -383,6 +383,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     values = list(sys.argv[1:] if argv is None else argv)
+    from mklink.internal_process import dispatch_internal_process
+    internal_result = dispatch_internal_process(values)
+    if internal_result is not None:
+        return internal_result
     if values[:1] == ["runtime"]:
         # ensure_runtime launches the current frozen executable with this contract.
         parser = _SecretSafeArgumentParser(prog="mklink-remote-agent runtime", allow_abbrev=False)

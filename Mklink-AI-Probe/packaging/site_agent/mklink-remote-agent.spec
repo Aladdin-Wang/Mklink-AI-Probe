@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 
 SPEC_DIR = Path(SPECPATH).resolve()
@@ -46,10 +46,15 @@ data_files += collect_data_files(
     ],
 )
 
+# Match the desktop build: this dependency loads its DLL through cffi.
+pack_data, pack_binaries, pack_imports = collect_all('cmsis_pack_manager')
+data_files += pack_data
+hidden_imports += pack_imports
+
 analysis = Analysis(
     [str(SPEC_DIR / "entry.py")],
     pathex=[],
-    binaries=[],
+    binaries=pack_binaries,
     datas=data_files,
     hiddenimports=hidden_imports,
     hookspath=[],

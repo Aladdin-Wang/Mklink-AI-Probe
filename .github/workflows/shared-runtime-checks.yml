@@ -44,6 +44,7 @@ jobs:
           $tests += 'test_desktop_runtime'
           $tests += 'test_legacy_server_removed'
           $tests += 'test_runtime_spawn'
+          $tests += 'test_internal_process_entry'
           $tests += 'test_remote_service'
           $tests += 'test_remote_embedded_agent'
           $tests += 'test_remote_capabilities'

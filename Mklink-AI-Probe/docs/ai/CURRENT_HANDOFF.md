@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T18:20:23.465254+00:00`
+- 更新时间：`2026-10-04T18:28:15.185601+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; decompressed SVD resource audit after 1fc4b62d; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; common internal process entry and Pack DLL collection after 4defb9c8; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第91批重建含pyOCD便携包，冻结成功但SVD压缩资源被通用路径扫描误报，整包构建未通过。改为逐成员解压审计，验证名称/注释/内容及有界大小；5项测试和真实105成员约358MB资源审计通过。另发现便携入口缺内部Pack worker/guard转发，待修；RE对应2.4.1本机Pack已定位。 持续推进，不合并发布。
+- 当前任务：第92批主CLI/便携入口共用internal_process分发既有Pack worker和guard，12项回归通过。完整便携构建审计通过，但实包worker发现CFFI加载的cmsis_pack_manager.dll未收集；已复用桌面collect_all规则补齐，收集规则确认DLL目标目录正确，仍需重建并复验Pack导入。无硬件操作。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第91节：第91批重建含pyOCD便携包，冻结成功但SVD压缩资源被通用路径扫描误报，整包构建未通过。改为逐成员解压审计，验证名称/注释/内容及有界大小；5项测试和真实105成员约358MB资源审计通过。另发现便携入口缺内部Pack worker/guard转发，待修；RE对应2.4.1本机Pack已定位。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第92节：第92批主CLI/便携入口共用internal_process分发既有Pack worker和guard，12项回归通过。完整便携构建审计通过，但实包worker发现CFFI加载的cmsis_pack_manager.dll未收集；已复用桌面collect_all规则补齐，收集规则确认DLL目标目录正确，仍需重建并复验Pack导入。无硬件操作。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 第91批SVD解压审计5项和真实资源通过，整体新便携包仍未合格。下一步修复package_agent缺--internal-pack-worker/--internal-process-guard路由，复用共同入口而非复制worker；重建完整审计包并用现有Keil.STM32F1xx_DFP.2.4.1.pack正常导入、验证精确RE内存布局。不得改缓存或用RC绕过，再完成唯一文件名MSC部署/清理。第90批共享CI37223608794待复查；UAC待答复。
+1. 第92批内部worker/guard共用入口及cmsis DLL收集已修；必须重建完整包（现有agent92-worker-fix包缺DLL，不作合格运行候选），执行私有agent92_validate.py更新产物路径/新隔离目录，验证内部协议、正常Pack导入及精确RE布局，再物理MSC。既有Pack在D盘Arm/Packs/.Download中，仅作输入不修改。第91批共享CI37224062725两次查询EOF，复查同一任务，不重启。UAC待答复。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
