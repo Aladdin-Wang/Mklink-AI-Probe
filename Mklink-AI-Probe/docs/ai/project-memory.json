@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T19:34:23.940113+00:00",
+  "updated_at": "2026-10-04T19:42:08.535068+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; current portable physical verification after 16751fb4; use Git for exact tip.",
+    "head": "Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。 下一步固定新包进行24小时长稳。"
+    "current_task": "第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第103节：第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第104节：第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。"
     },
     {
       "area": "正式版与安装",
@@ -59,7 +59,7 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。 私有agent103-hil保存结果。",
+    "state": "第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。 两探针由本轮长稳占用，避免其他操作；私有soak104/progress.json和samples.jsonl保存证据。",
     "installer": "本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
@@ -74,8 +74,8 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。第83批配置初始加载覆盖快速选择已修复并通过真实Edge受控延迟验证。 第81批普通serve/serve_fastapi/run_server已删除；第82批已修复正常关窗的presence残留，真实双桌面立即停止后台通过；崩溃或后台不可达仍依赖既有TTL，未声称强杀也可立即清理。远程RTT/SystemView版本2均已接入；旧独占入口已删除。"
   ],
   "next_actions": [
-    "固定agent102b-05c5971f候选（完整SHA见报告102节），准备并启动24小时RTT双客户端/双探针长稳，记录单调时长、数据/丢失/异常及进程内存，不自动重试失败采集；103批新包短时实机及MSC通过，长稳尚未开始。继续部署持久查询、其他异常路径；NSIS安装UAC待答复，不运行安装器。",
-    "核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。",
+    "持续核对已启动soak104：exec会话73907；先确认真实进程存活及progress样本推进，不凭文件状态重启。目标86400秒，预计北京时间10月6日03:40结束；控制进程38432、包内后台33240/51832仅是初始定位线索，必须重验。原build_workspace仍运行持锁，不并行启动其他build/test或访问这两台探针。只读审计可继续。完成后检查result、清理、丢失/数据间断及内存趋势，未满时长不得宣称通过。",
+    "本轮是后台/传输长稳（本地GUI协议读端+LAN客户端），没有真实桌面页面持续渲染；GUI长稳、72小时及其他异常覆盖仍待验。103批Shared run37228984916与Feedback均成功。NSIS安装UAC待答复，不运行安装器。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T19:34:23.940113+00:00`
+- 更新时间：`2026-10-04T19:42:08.535068+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; current portable physical verification after 16751fb4; use Git for exact tip.`
+- HEAD：`Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。 下一步固定新包进行24小时长稳。
+- 当前任务：第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第103节：第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第104节：第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,14 +35,14 @@
 
 ## 真机环境
 
-- **state**：第103批新便携包双V4本机LAN真机通过：包内双后台、本地SDK共存、监听停止邻居隔离、F103三文件MSC哈希/App0x08005000及原盘保持；清理后两盘恢复、后台退出。未触发烧录。 私有agent103-hil保存结果。
+- **state**：第104批固定102b便携候选的24小时RTT长稳已启动：HPM本地共享读端与LAN客户端同读，F103邻居每分钟查询；首分钟各8297字节，未触发错误/丢失告警。进行中，未通过验收。 两探针由本轮长稳占用，避免其他操作；私有soak104/progress.json和samples.jsonl保存证据。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 固定agent102b-05c5971f候选（完整SHA见报告102节），准备并启动24小时RTT双客户端/双探针长稳，记录单调时长、数据/丢失/异常及进程内存，不自动重试失败采集；103批新包短时实机及MSC通过，长稳尚未开始。继续部署持久查询、其他异常路径；NSIS安装UAC待答复，不运行安装器。
-2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
+1. 持续核对已启动soak104：exec会话73907；先确认真实进程存活及progress样本推进，不凭文件状态重启。目标86400秒，预计北京时间10月6日03:40结束；控制进程38432、包内后台33240/51832仅是初始定位线索，必须重验。原build_workspace仍运行持锁，不并行启动其他build/test或访问这两台探针。只读审计可继续。完成后检查result、清理、丢失/数据间断及内存趋势，未满时长不得宣称通过。
+2. 本轮是后台/传输长稳（本地GUI协议读端+LAN客户端），没有真实桌面页面持续渲染；GUI长稳、72小时及其他异常覆盖仍待验。103批Shared run37228984916与Feedback均成功。NSIS安装UAC待答复，不运行安装器。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
