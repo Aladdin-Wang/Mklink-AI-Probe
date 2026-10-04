@@ -101,7 +101,7 @@ _CAPABILITIES = {
     ),
     "stream.systemview": Capability(
         "stream.systemview",
-        1,
+        2,
         (
             "systemview.start",
             "systemview.read",

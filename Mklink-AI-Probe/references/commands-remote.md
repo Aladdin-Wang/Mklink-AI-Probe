@@ -337,4 +337,37 @@ python -m mklink remote --site field-a stop-agent --yes
 显式 timeout 须匹配。新连接默认超时1秒、重试0，扫描使用既有短探测事务。
 每次请求使用独立共享会话，退出不抢停 GUI 连接。写入失败可能结果未知，
 Agent 不自动重放；借用连接的底层重试配置仍由共享后台控制。
-串口 exchange、目标操作和远程流式能力仍待迁移，不能推断全部 Agent 已共享。
+串口 exchange、核心目标操作及下述 SystemView 已共享；RTT 与脱机部署仍待完成。
+
+### 0.3.0 共享 SystemView（能力版本 2）
+
+`stream.systemview` 握手版本为 `2`。同一远程连接内先调用 `systemview.start`，
+然后分页读取；不要用多次独立 CLI 进程分别执行 start/read，因为断开会释放订阅。
+先加载目标匹配的 ELF/AXF，使用已知 RAM 中的 RTT 控制块地址；借用已有采集时
+start 必须不传配置参数，不会重启或改动当前采集器。
+
+```python
+from mklink.remote import connect_remote
+
+with connect_remote("ws://<现场IP>:<端口>", token="<令牌>") as remote:
+    remote.call("agent.reconnect")
+    cursor = remote.call("systemview.start")  # 已在 GUI 启动时借用同一采集
+    page = remote.call("systemview.read", session=cursor["session"],
+                       after=cursor["after"], limit=500)
+    print(page["points"], page["dropped"], page["capture"])
+    # 下一页继续使用 page["session"] 与 page["next_seq"]。
+    remote.call("systemview.stop")
+```
+
+- start 可传 `addr/channel/mode/search_size` 启动新采集；返回 `session/after/reused`。
+- read 返回 `points/session/next_seq/latest_seq/dropped/capture`，每页1～500条。
+  不传游标时使用该远程客户端自己的位置；显式游标可重读仍在历史窗口的数据。
+  `dropped` 是历史中已丢失的事件数；`capture` 提供运行、暂停、同步、进度错误
+  及解码/目标丢失指标。旧 `duration` 阻塞读取参数已移除；这些指标不是无损保证。
+  采集换代会拒绝旧游标，需结束原订阅后重新start，不能自动跟随另一采集。
+- `systemview.resolve_task_names(task_ids=[...])` 只查询采集缓存，最多256个ID；
+  返回 `source=capture_cache`、`task_names` 和 `unresolved`，不会额外读目标 RAM。
+- stop 对借用者仅退订，返回 `capture_stopped=false`；拥有者只有在其他订阅者
+  退出后才能停采集，否则返回409并保留订阅。连接断开时清理自己的会话，拥有者
+  尝试停止自己的采集一次；若其他订阅者仍在，采集保留供本地明确停止。
+  停止响应丢失不会自动重放，后续退订的 `capture_stopped=null` 表示结果未知。

@@ -16,6 +16,7 @@ OPERATIONS = frozenset({
     'breakpoint.clear_all', 'registers.core', 'memory.read', 'memory.write', 'register.read',
     'variable.read', 'variable.write', 'symbols.status', 'symbols.parse', 'symbols.list',
     'symbols.search', 'symbols.memory_map', 'hardfault.check', 'hardfault.decode',
+    'systemview.start', 'systemview.read', 'systemview.stop', 'systemview.resolve_task_names',
 })
 
 
@@ -28,6 +29,7 @@ class SharedTarget:
         self.info = None
         self.runtime_info = runtime_info
         self._clients = {}
+        self._systemview = {}
         self._lock = threading.Lock()
 
     @property
@@ -54,15 +56,22 @@ class SharedTarget:
     def client_closed(self, client_id):
         with self._lock:
             client = self._clients.pop(client_id, None)
-        if client is not None:
-            client.close()
+            stream = self._systemview.pop(client_id, None)
+        try:
+            if stream is not None:
+                stream.close()
+        finally:
+            if client is not None:
+                client.close()
 
     def close(self):
         with self._lock:
             clients, self._clients = self._clients, {}
+            streams, self._systemview = self._systemview, {}
             self.info = None
         error = None
-        for client in clients.values():
+        # Detach this Agent's borrowers before its producer tries to stop.
+        for client in [*sorted(streams.values(), key=lambda stream: stream.owned), *clients.values()]:
             try:
                 client.close()
             except Exception as exc:
@@ -92,6 +101,16 @@ class SharedTarget:
         request_id = None
         job = None
         try:
+            if operation.startswith('systemview.'):
+                from mklink.remote.shared_systemview import SharedSystemView
+                if self.info is None or not client_id:
+                    raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})
+                with self._lock:
+                    stream = self._systemview.get(client_id)
+                    if stream is None:
+                        stream = SharedSystemView(self.info, self.project_root, client_id)
+                        self._systemview[client_id] = stream
+                return stream.dispatch(operation, params)
             client = self._client(client_id)
             call = client.call
             if operation == 'probe.info':
