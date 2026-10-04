@@ -246,7 +246,7 @@ class RuntimeClient:
                 self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port, **options)
             elif probe or port:
                 from mklink.probes import select_probe
-                if select_probe(probe or port)["probe_id"] != self.info.get("probe_id"):
+                if select_probe(probe or port, allow_lobby=scope == 'uart')["probe_id"] != self.info.get("probe_id"):
                     raise RuntimeErrorResponse("This client is bound to another probe; disconnect and create a new client")
             result = request(self.info, "POST", "/_runtime/attach", {
                 "project_root": project_root, "port": port, "axf": axf,

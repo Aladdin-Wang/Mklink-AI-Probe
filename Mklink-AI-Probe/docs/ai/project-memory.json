@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T12:47:33.0175677+00:00",
+  "updated_at": "2026-10-04T13:08:21.4644731+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; common UART session lifecycle after 13f08a2f; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; Agent shared Modbus after d40b2999; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "第67批将CLI已有UART订阅/借用/停止/清理及Modbus参数匹配抽入mklink.uart_session，CLI保留参数与显示，不复制连接管理。显式工程/探针/客户端参数供Agent使用现有sdk类型。原有回归330通过、新增双SDK借用隔离及参数传递2通过并加入CI。生产Agent分发尚未改动；下一步删除旧Modbus直连/私有资源锁路径，使用公共上下文与事务。便携后台已实包验证；不改固件/WinUSB、不合并发布。"
+    "current_task": "第68批Agent Modbus read/write/scan实际接共享UART会话及后台事务/探测，删除直接ModbusClient与私有租约/整段串口锁；请求结束独立detach，借用不抢停。首次请求固定稳定探针ID，COM复用不改选，UART lobby显式绑定且目标拒绝。新增37项，远程/CLI194通过，身份相关116、核心119及最终远程/文档47通过（集合重叠）。真实双WebSocket及执行中断开验证，底层为模拟传输。前批d40b2999两项CI通过。余下串口exchange、目标/上传/流式/MSC、物理协议和恢复长稳/NSIS继续推进。 最终重建便携包/隔离/生命周期9通过，共享SDK27通过；实包未验证物理Modbus对端。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第67节：第67批将CLI已有UART订阅/借用/停止/清理及Modbus参数匹配抽入mklink.uart_session，CLI保留参数与显示，不复制连接管理。显式工程/探针/客户端参数供Agent使用现有sdk类型。原有回归330通过、新增双SDK借用隔离及参数传递2通过并加入CI。生产Agent分发尚未改动；下一步删除旧Modbus直连/私有资源锁路径，使用公共上下文与事务。便携后台已实包验证；不改固件/WinUSB、不合并发布。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第68节：第68批Agent Modbus read/write/scan实际接共享UART会话及后台事务/探测，删除直接ModbusClient与私有租约/整段串口锁；请求结束独立detach，借用不抢停。首次请求固定稳定探针ID，COM复用不改选，UART lobby显式绑定且目标拒绝。新增37项，远程/CLI194通过，身份相关116、核心119及最终远程/文档47通过（集合重叠）。真实双WebSocket及执行中断开验证，底层为模拟传输。前批d40b2999两项CI通过。余下串口exchange、目标/上传/流式/MSC、物理协议和恢复长稳/NSIS继续推进。 最终重建便携包/隔离/生命周期9通过，共享SDK27通过；实包未验证物理Modbus对端。"
     },
     {
       "area": "正式版与安装",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "核对本批及13f08a2f精确CI；直接将Agent的_dispatch_modbus替换为uart_session.modbus_session及既有transaction/probe，删除私有Modbus资源锁/直接ModbusClient，更新旧独占模式测试。构造器须传可信project_root及device_port探针选择，使用sdk类型；单请求上下文可由既有settle/finally清理。再按65节矩阵完成serial exchange、目标/上传/流式/MSC；生产Agent仍直连。不改固件/WinUSB、不合并发布。",
+    "核对本批精确CI；Agent Modbus三项已共享且便携包9通过。下一步审查serial exchange应答窗口与共享原始历史/发送，在不另开端口条件下处理并发，再按65节矩阵完成目标/上传/流式/MSC；无需保留旧独占回退。共享探针身份由OperationDispatcher首次绑定，切换须重启Agent。继续物理Modbus/YMODEM/SystemView、取消恢复和24/72小时长稳、NSIS。不改固件/WinUSB、不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

@@ -130,7 +130,7 @@ def shared(runtime, monkeypatch):
             raise RuntimeErrorResponse(f'{result.status_code}: {result.text}')
         return result.json()
     monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **kwargs: control.info)
-    monkeypatch.setattr('mklink.probes.select_probe', lambda _: {'probe_id': control.info.get('probe_id')})
+    monkeypatch.setattr('mklink.probes.select_probe', lambda _, **kwargs: {'probe_id': control.info.get('probe_id')})
     monkeypatch.setattr('mklink.runtime.request', request)
     # The SDK may not accidentally use the low-level hardware implementation.
     def forbidden(*args, **kwargs): raise AssertionError('Direct CDC must never be opened by SDK')

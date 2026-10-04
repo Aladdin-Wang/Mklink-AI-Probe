@@ -480,7 +480,7 @@ def agent_main(argv: Sequence[str] | None = None) -> int:
     from mklink.remote.agent import AgentConfig, run_agent
     from mklink.remote.dispatcher import OperationDispatcher
 
-    dispatcher = OperationDispatcher(args.project_root)
+    dispatcher = OperationDispatcher(args.project_root, runtime_probe=args.device_port)
     config = AgentConfig(
         host=args.host,
         port=args.port,

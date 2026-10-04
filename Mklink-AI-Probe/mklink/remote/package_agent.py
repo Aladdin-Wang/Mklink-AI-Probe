@@ -223,7 +223,7 @@ def _start(args: argparse.Namespace, token: str | None) -> int:
     from mklink.remote.dispatcher import OperationDispatcher
 
     ready_file = args.ready_file
-    dispatcher = OperationDispatcher(args.project_root)
+    dispatcher = OperationDispatcher(args.project_root, runtime_probe=args.device_port)
     transport = _stcp_session(args, token)
 
     def device_factory(*, port: str | None = None, axf: str | None = None):

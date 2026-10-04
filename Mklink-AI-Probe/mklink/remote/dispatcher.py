@@ -130,8 +130,12 @@ class OperationDispatcher:
         project_root: str | Path = ".",
         *,
         upload_manager: UploadManager | None = None,
+        runtime_probe: str | None = None,
     ):
         self.project_root = Path(project_root).expanduser().resolve()
+        self.runtime_probe = runtime_probe
+        self._bound_runtime_probe = None
+        self._runtime_probe_lock = threading.Lock()
         self._uploads = upload_manager or UploadManager(
             self.project_root / ".mklink" / "remote-uploads",
         )
@@ -144,6 +148,23 @@ class OperationDispatcher:
 
     def close(self) -> None:
         self._uploads.close()
+
+    def _shared_probe(self):
+        from mklink.probes import select_probe
+        from mklink.runtime import RuntimeErrorResponse
+        # Only identity initialization is serialized, never UART I/O or target work.
+        with self._runtime_probe_lock:
+            if self._bound_runtime_probe is None:
+                try:
+                    selected = select_probe(self.runtime_probe, allow_lobby=True)
+                except RuntimeErrorResponse:
+                    raise CapabilityUnavailableError(data={'capability': 'modbus',
+                        'reason': 'probe-identity-unavailable'}) from None
+                if selected['probe_id'] != 'lobby' and not selected['identity_stable']:
+                    raise CapabilityUnavailableError(data={'capability': 'modbus',
+                        'reason': 'stable-probe-identity-required'})
+                self._bound_runtime_probe = selected['probe_id']
+            return self._bound_runtime_probe
 
     def __call__(
         self,
@@ -167,6 +188,9 @@ class OperationDispatcher:
             target_lock=self._target_lock,
             serial_lock=self._serial_lock,
             stream_owners=self._stream_owners,
+            project_root=self.project_root,
+            runtime_probe=self._shared_probe() if operation in (
+                'modbus.read', 'modbus.write', 'modbus.scan') else None,
         )
 
 
@@ -179,6 +203,8 @@ def dispatch_capability(
     target_lock: threading.RLock | None = None,
     serial_lock: threading.RLock | None = None,
     stream_owners: dict[str, str] | None = None,
+    project_root: str | Path = ".",
+    runtime_probe: str | None = None,
 ) -> Any:
     """Dispatch one declared operation through existing public domain APIs."""
 
@@ -307,12 +333,8 @@ def dispatch_capability(
             serial_lock or threading.RLock(),
         )
     if operation.startswith("modbus."):
-        return _dispatch_modbus(
-            operation,
-            params,
-            context,
-            serial_lock or threading.RLock(),
-        )
+        return _dispatch_modbus(operation, params, context,
+                                project_root=project_root, probe=runtime_probe)
 
     device = context.device if context is not None else None
     if device is None:
@@ -624,151 +646,97 @@ def _dispatch_serial(
                     manager.release(owner)
 
 
-def _dispatch_modbus(
-    operation: str,
-    params: Mapping[str, Any],
-    context: AgentDispatchContext | None,
-    lock: threading.RLock,
-) -> Any:
+def _dispatch_modbus(operation, params, context, *, project_root, probe):
     import math
+    from mklink.modbus._scanner import scan_slaves, validate_scan_range
+    from mklink.modbus._session import validate_slave, validate_transaction
+    from mklink.uart_session import modbus_session
+    from mklink.usb_interfaces import canonical_serial_port
+    from mklink.runtime import RuntimeErrorResponse
 
-    from mklink.modbus import ModbusClient, scan_slaves
+    def invalid(field):
+        raise RequestValidationError("Invalid operation parameters", data={"field": field})
 
-    manager = context.resource_manager if context is not None else None
-    owner = f"ai:remote:modbus:{uuid.uuid4().hex}"
-    with lock:
-        if manager is not None:
-            try:
-                manager.acquire(ResourceGroup.MODBUS_PORT, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "modbus", "reason": "resource-busy"},
-                ) from None
-        client = None
+    port = _text(params.get('port'), 'port').strip()
+    if not port:
+        invalid('port')
+    connection = {'port': canonical_serial_port(port),
+                  'baudrate': _integer(params.get('baudrate', 9600), 'baudrate', minimum=1),
+                  'bytesize': 8, 'parity': 'N', 'stopbits': 1}
+    # Omitted timing borrows the current worker unchanged. Explicit timing must match.
+    if 'timeout' in params:
+        value = params['timeout']
+        if isinstance(value, bool):
+            invalid('timeout')
         try:
-            port = _text(params.get("port"), "port")
-            if not port.strip():
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "port"},
-                )
-            baudrate = _integer(
-                params.get("baudrate", 9600),
-                "baudrate",
-                minimum=1,
-            )
-            if operation == "modbus.read":
-                raw_timeout = params.get("timeout", 1.0)
-                if isinstance(raw_timeout, bool):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    )
-                try:
-                    timeout = float(raw_timeout)
-                except (TypeError, ValueError):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    ) from None
-                if not math.isfinite(timeout):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "timeout"},
-                    )
-                timeout = min(max(timeout, 0.05), 10.0)
-
-                kind = _text(params.get("kind"), "kind")
-                if kind != "holding":
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "kind"},
-                    )
-                address = _integer(params.get("address"), "address")
-                count = _integer(params.get("count", 1), "count", minimum=1)
-                slave = _integer(params.get("slave", 1), "slave", minimum=1)
-                if address > 0xFFFF:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "address"},
-                    )
-                if count > 125 or address + count > 0x10000:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "count"},
-                    )
-                if slave > 247:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "slave"},
-                    )
-            else:
-                timeout = min(
-                    max(float(params.get("timeout", 1.0)), 0.05),
-                    10.0,
-                )
-
-            client = ModbusClient(
-                port,
-                baudrate=baudrate,
-                timeout=timeout,
-            )
-            if not client.open():
-                raise CapabilityUnavailableError(
-                    data={"capability": "modbus", "reason": "port-unavailable"},
-                )
-            if operation == "modbus.scan":
-                start = _integer(params.get("start", 1), "start", minimum=1)
-                end = _integer(params.get("end", 247), "end", minimum=start)
-                if end > 247:
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "end"},
-                    )
-                return scan_slaves(
-                    client.probe_slave,
-                    start_addr=start,
-                    end_addr=end,
-                    probe_register=_integer(params.get("address", 0), "address"),
-                )
-            if operation == "modbus.read":
-                return client.read_holding_registers(address, count, slave)
-            kind = _text(params.get("kind"), "kind")
-            address = _integer(params.get("address"), "address")
-            slave = _integer(params.get("slave", 1), "slave", minimum=1)
-            value = params.get("value")
-            if kind == "register":
-                client.write_register(address, _integer(value, "value"), slave)
-            elif kind == "registers" and isinstance(value, list):
-                client.write_registers(
-                    address,
-                    [_integer(item, "value") for item in value],
-                    slave,
-                )
-            elif kind == "coil":
-                if not isinstance(value, bool):
-                    raise RequestValidationError(
-                        "Invalid operation parameters",
-                        data={"field": "value"},
-                    )
-                client.write_coil(address, value, slave)
-            elif kind == "coils" and isinstance(value, list) and all(
-                isinstance(item, bool) for item in value
-            ):
-                client.write_coils(address, value, slave)
-            else:
-                raise RequestValidationError(
-                    "Invalid operation parameters",
-                    data={"field": "kind"},
-                )
-            return {"written": True}
-        finally:
+            value = float(value)
+        except (TypeError, ValueError):
+            invalid('timeout')
+        if not math.isfinite(value):
+            invalid('timeout')
+        connection['timeout'] = min(max(value, .05), 10.0)
+    address = _integer(params.get('address', 0) if operation == 'modbus.scan'
+                       else params.get('address'), 'address')
+    if address > 65535:
+        invalid('address')
+    if operation == 'modbus.scan':
+        start = _integer(params.get('start', 1), 'start', minimum=1)
+        end = _integer(params.get('end', 247), 'end', minimum=start)
+        try:
+            validate_scan_range(start, end, address)
+        except ValueError:
+            invalid('range')
+    else:
+        slave = _integer(params.get('slave', 1), 'slave', minimum=1)
+        try:
+            validate_slave(slave)
+        except ValueError:
+            invalid('slave')
+        kind = _text(params.get('kind'), 'kind')
+        transaction = {'slave': slave, 'start': address}
+        if operation == 'modbus.read':
+            if kind != 'holding':
+                invalid('kind')
+            count = _integer(params.get('count', 1), 'count', minimum=1)
             try:
-                if client is not None:
-                    client.close()
-            finally:
-                if manager is not None:
-                    manager.release(owner)
+                validate_transaction(3, address, quantity=count)
+            except ValueError:
+                invalid('count')
+            transaction.update(fc=3, quantity=count)
+        else:
+            fc = {'register': 6, 'registers': 16, 'coil': 5, 'coils': 15}.get(kind)
+            if fc is None:
+                invalid('kind')
+            value = params.get('value')
+            values = value if fc in (15, 16) else [value]
+            if not isinstance(values, list):
+                invalid('value')
+            if fc in (5, 15):
+                if any(type(item) is not bool for item in values):
+                    invalid('value')
+            else:
+                values = [_integer(item, 'value') for item in values]
+            try:
+                _, _, _, values = validate_transaction(fc, address, values=values)
+            except ValueError:
+                invalid('value')
+            transaction.update(fc=fc, values=values)
+    name = f"Agent Modbus {(context.client_id or 'local') if context else 'local'}"
+    try:
+        with modbus_session(connection, scan=operation == 'modbus.scan',
+                            project_root=project_root, probe=probe, kind='sdk', name=name) as client:
+            if operation == 'modbus.scan':
+                return scan_slaves(lambda slave, register: client.call('modbus_probe',
+                    {'slave': slave, 'address': register}), start_addr=start,
+                    end_addr=end, probe_register=address)
+            result = client.call('modbus_transaction', transaction)
+            return result['values'] if operation == 'modbus.read' else {'written': True}
+    except RuntimeErrorResponse as exc:
+        message = 'Shared Modbus request failed'
+        if operation == 'modbus.write':
+            message += '; write result may be unknown'
+        raise AgentOperationError(message + '; do not retry automatically',
+                                  data={'capability': 'modbus', 'status': exc.status_code}) from None
 
 
 __all__ = ["OperationDispatcher", "dispatch_capability"]

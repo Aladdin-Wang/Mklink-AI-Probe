@@ -306,3 +306,17 @@ python -m mklink remote --site field-a stop-agent --yes
 会返回 `probe-identity-required`，即使指定了旧 `--device-port` 也不构成身份绑定。
 这项限制不会通过重新提交或更改卷标解除。不要把握手中的 `flash.offline` 可用
 理解为部署已经就绪：该组仍提供预览，握手 detail 明确标出部署的绑定要求。
+
+### 0.3.0 共享 Modbus
+
+`modbus.read/write/scan` 已通过现场共享后台执行，不再由 Agent 直接打开串口。
+多下载器环境要在启动 Agent 时通过 `--device-port` 选择命令接口，以接入该
+下载器对应的 GUI 后台；首次 Modbus 操作会固定稳定探针 ID，COM 重用不改选。
+更换这个选择需要重新启动 Agent，目标 `reconnect` 不会改变已固定的 UART 后台。
+未指定探针且不能唯一选择时使用独立 UART lobby，它不代表任何物理下载器。
+
+借用已有连接时，端口、波特率及 8N1 必须匹配；未传 timeout 保留已有时序，
+显式 timeout 须匹配。新连接默认超时1秒、重试0，扫描使用既有短探测事务。
+每次请求使用独立共享会话，退出不抢停 GUI 连接。写入失败可能结果未知，
+Agent 不自动重放；借用连接的底层重试配置仍由共享后台控制。
+串口 exchange、目标操作和远程流式能力仍待迁移，不能推断全部 Agent 已共享。

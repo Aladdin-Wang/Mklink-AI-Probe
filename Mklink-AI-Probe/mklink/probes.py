@@ -59,6 +59,8 @@ def inventory() -> list[dict]:
 
 def select_probe(selector=None, *, allow_lobby=False) -> dict:
     from mklink.runtime import RuntimeErrorResponse
+    if allow_lobby and str(selector).strip().casefold() == 'lobby':
+        return {"probe_id": "lobby", "port": None, "identity_stable": False, "alias": ""}
     probes = inventory()
     if selector:
         key = str(selector).strip().casefold()

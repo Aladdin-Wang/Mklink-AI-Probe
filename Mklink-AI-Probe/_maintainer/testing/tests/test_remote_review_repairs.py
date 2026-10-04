@@ -533,10 +533,9 @@ def test_repeated_cancellation_holds_lifecycle_until_one_worker_finishes(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("provider", ["serial", "modbus"])
 @pytest.mark.parametrize("failure", ["conversion", "constructor", "open", "close"])
-def test_serial_and_modbus_failures_release_lease_and_close_only_owned_object(
-    monkeypatch, provider, failure
+def test_serial_failures_release_lease_and_close_only_owned_object(
+    monkeypatch, failure
 ):
     manager = ResourceManager()
     context = AgentDispatchContext(device=None, resource_manager=manager)
@@ -575,36 +574,19 @@ def test_serial_and_modbus_failures_release_lease_and_close_only_owned_object(
     monkeypatch.setattr(
         "mklink.remote.dispatcher.capability_available", lambda _name: True
     )
-    if provider == "serial":
-        module = types.ModuleType("mklink.serial")
-        module.SerialPort = Provider
-        module.list_uart_ports = lambda: []
-        monkeypatch.setitem(sys.modules, "mklink.serial", module)
-        operation = "serial.exchange"
-        params = {
-            "port": None if failure == "conversion" else "test-port",
-            "baudrate": 115200,
-            "timeout": 0,
-            "data_b64": "",
-            "confirm": True,
-        }
-        resource = ResourceGroup.SERIAL_PORT
-    else:
-        module = types.ModuleType("mklink.modbus")
-        module.ModbusClient = Provider
-        module.scan_slaves = lambda *_args, **_kwargs: []
-        monkeypatch.setitem(sys.modules, "mklink.modbus", module)
-        operation = "modbus.read"
-        params = {
-            "port": None if failure == "conversion" else "test-port",
-            "baudrate": 9600,
-            "timeout": 0.1,
-            "kind": "holding",
-            "address": 0,
-            "count": 1,
-            "slave": 1,
-        }
-        resource = ResourceGroup.MODBUS_PORT
+    module = types.ModuleType("mklink.serial")
+    module.SerialPort = Provider
+    module.list_uart_ports = lambda: []
+    monkeypatch.setitem(sys.modules, "mklink.serial", module)
+    operation = "serial.exchange"
+    params = {
+        "port": None if failure == "conversion" else "test-port",
+        "baudrate": 115200,
+        "timeout": 0,
+        "data_b64": "",
+        "confirm": True,
+    }
+    resource = ResourceGroup.SERIAL_PORT
 
     with pytest.raises(Exception):
         dispatch_capability(
