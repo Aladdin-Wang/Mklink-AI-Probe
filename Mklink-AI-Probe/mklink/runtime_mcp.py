@@ -294,8 +294,12 @@ def build_server():
         Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
         or Modbus port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
         accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
-        slave). The override affects only this request. Unknown fields are rejected; per-request
-        timeout/retries are not supported. These explicit sends share the
+        slave). The override affects only this request. Unknown fields are rejected.
+        FC07 accepts fc/slave only and returns status. FC22 accepts start/and_mask/or_mask;
+        it acknowledges masks without claiming a resulting register value. FC23 accepts
+        start/quantity for reading and write_start/values for writing (at most 125 reads and
+        121 writes), in one RTU transaction; returned values are the read result.
+        Per-request timeout/retries are not supported. These explicit sends share the
         existing worker and may be issued by borrowers. The runtime never replays an unknown
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect

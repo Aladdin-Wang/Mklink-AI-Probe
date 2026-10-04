@@ -17,9 +17,9 @@ from mklink.modbus._format import RegisterSpec
 from mklink.modbus._registers import read_register_values
 
 
-READ_LIMITS = {1: 2000, 2: 2000, 3: 125, 4: 125}
-WRITE_LIMITS = {5: 1, 6: 1, 15: 1968, 16: 123}
-SUPPORTED_FUNCTIONS = frozenset(READ_LIMITS | WRITE_LIMITS)
+READ_LIMITS = {1: 2000, 2: 2000, 3: 125, 4: 125, 23: 125}
+WRITE_LIMITS = {5: 1, 6: 1, 15: 1968, 16: 123, 23: 121}
+SUPPORTED_FUNCTIONS = frozenset(READ_LIMITS.keys() | WRITE_LIMITS.keys() | {7, 22})
 
 
 def validate_slave(slave: int) -> int:
@@ -36,16 +36,35 @@ class _Task:
 
 def validate_transaction(
     fc: int,
-    start: int,
+    start: int | None = None,
     *,
     quantity: int | None = None,
     values: list[int | bool] | None = None,
-) -> tuple[int, int, int | None, list[int | bool] | None]:
+    and_mask: int | None = None,
+    or_mask: int | None = None,
+    write_start: int | None = None,
+) -> tuple[int, int | None, int | None, list[int | bool] | None]:
     """Validate and normalize a public Modbus transaction request."""
     if type(fc) is not int or fc not in SUPPORTED_FUNCTIONS:
-        raise ValueError("Function code must be one of 1, 2, 3, 4, 5, 6, 15, 16")
+        raise ValueError("Function code must be one of 1, 2, 3, 4, 5, 6, 7, 15, 16, 22, 23")
+    if fc != 22 and (and_mask is not None or or_mask is not None):
+        raise ValueError('Only FC22 accepts and_mask/or_mask')
+    if fc != 23 and write_start is not None:
+        raise ValueError('Only FC23 accepts write_start')
+    if fc == 7:
+        if any(value is not None for value in (start, quantity, values)):
+            raise ValueError('FC07 accepts only fc and slave; it has no register address or values')
+        return fc, None, None, None
     if type(start) is not int or not 0 <= start <= 0xFFFF:
         raise ValueError("Start address must be in the range 0..65535")
+
+    if fc == 22:
+        if quantity is not None or values is not None:
+            raise ValueError('FC22 accepts start/and_mask/or_mask, not quantity/values')
+        for name, mask in (('and_mask', and_mask), ('or_mask', or_mask)):
+            if type(mask) is not int or not 0 <= mask <= 0xFFFF:
+                raise ValueError(f'{name} must be an integer in the range 0..65535')
+        return fc, start, None, None
 
     if fc in READ_LIMITS:
         if type(quantity) is not int:
@@ -54,7 +73,17 @@ def validate_transaction(
             raise ValueError(f"FC{fc:02d} quantity must be in the range 1..{READ_LIMITS[fc]}")
         if start + quantity > 0x10000:
             raise ValueError("Requested address range exceeds 65535")
-        return fc, start, quantity, None
+        if fc != 23:
+            if values is not None:
+                raise ValueError('Read operations do not accept values')
+            return fc, start, quantity, None
+    elif quantity is not None:
+        raise ValueError('Write operations do not accept quantity')
+
+    if fc == 23 and (type(write_start) is not int or not 0 <= write_start <= 0xFFFF):
+        raise ValueError('FC23 requires write_start in the range 0..65535')
+    if values is not None and not isinstance(values, list):
+        raise ValueError('Write values must be a list')
 
     normalized = list(values or [])
     limit = WRITE_LIMITS[fc]
@@ -64,7 +93,7 @@ def validate_transaction(
         raise ValueError(f"FC{fc:02d} requires exactly one value")
     if len(normalized) > limit:
         raise ValueError(f"FC{fc:02d} accepts at most {limit} values")
-    if start + len(normalized) > 0x10000:
+    if (write_start if fc == 23 else start) + len(normalized) > 0x10000:
         raise ValueError("Requested address range exceeds 65535")
     if fc in (5, 15):
         bits: list[bool] = []
@@ -80,7 +109,7 @@ def validate_transaction(
                 raise ValueError("Register values must be in the range 0..65535")
             ints.append(value)
         normalized = ints
-    return fc, start, None, normalized
+    return fc, start, quantity, normalized
 
 
 def modbus_crc16(payload: bytes) -> int:
@@ -108,13 +137,19 @@ def rtu_frame_length(sending: bool, frame: bytes) -> int | None:
     fc = frame[1]
     if fc & 0x80:
         return 5
+    if fc == 7:
+        return 4 if sending else 5
+    if fc == 22:
+        return 10
     if sending:
         if fc in (1, 2, 3, 4, 5, 6):
             return 8
         if fc in (15, 16) and len(frame) >= 7:
             return 9 + frame[6]
+        if fc == 23 and len(frame) >= 11:
+            return 13 + frame[10]
         return None
-    if fc in (1, 2, 3, 4) and len(frame) >= 3:
+    if fc in (1, 2, 3, 4, 23) and len(frame) >= 3:
         return 5 + frame[2]
     if fc in (5, 6, 15, 16):
         return 8
@@ -211,18 +246,32 @@ class ModbusWorker:
     def execute(
         self,
         fc: int,
-        start: int,
+        start: int | None = None,
         *,
         quantity: int | None = None,
         values: list[int | bool] | None = None,
         slave: int | None = None,
+        and_mask: int | None = None,
+        or_mask: int | None = None,
+        write_start: int | None = None,
     ) -> list[int | bool]:
         fc, start, quantity, values = validate_transaction(
-            fc, start, quantity=quantity, values=values
+            fc, start, quantity=quantity, values=values,
+            and_mask=and_mask, or_mask=or_mask, write_start=write_start,
         )
         target = validate_slave(self._slave if slave is None else slave)
 
         def operation() -> list[int | bool]:
+            if fc == 7:
+                return [self._client.read_exception_status(target)]
+            if fc == 22:
+                self._client.mask_write_register(start, and_mask, or_mask, target)
+                return []  # The acknowledgement does not contain the resulting register value.
+            if fc == 23:
+                result = self._client.read_write_registers(start, quantity, write_start, values, target)
+                if len(result) != quantity:
+                    raise OSError('FC23 returned an incomplete read; write result unknown, do not retry')
+                return result
             if fc == 1:
                 return self._client.read_coils(start, quantity, target)
             if fc == 2:

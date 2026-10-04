@@ -33,6 +33,40 @@ describe('ModbusTab prerequisites', () => {
     }])
   })
 
+  it.each([7, 22, 23])('renders a shared FC%d diagnostic without inventing a register value', async fc => {
+    let stream: { onmessage?: (event: { data: string }) => void } = {}
+    vi.stubGlobal('EventSource', class {
+      constructor() { stream = this }
+      close() {}
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      running: true, loop: { revision: 0, running: false },
+    }))))
+    const wrapper = mount(ModbusTab)
+    await flushPromises()
+    stream.onmessage?.({ data: JSON.stringify({ event: 'transaction', id: 1, fc, slave: 8,
+      start: fc === 7 ? null : 4, values: fc === 22 ? [] : [165], duration_ms: 1,
+      and_mask: 65280, or_mask: 85, write_start: 20,
+    }) })
+    await flushPromises()
+    expect(wrapper.text()).toContain(`FC${String(fc).padStart(2, '0')}`)
+    expect(wrapper.text()).not.toContain('NaN')
+    expect(wrapper.text()).not.toContain('等待响应数据')
+    expect(wrapper.find('.result-meta').text()).toContain('从站 8')
+    if (fc === 7) {
+      expect(wrapper.find('.result-table').text()).toContain('异常状态')
+      expect(wrapper.find('.result-meta').text()).not.toContain('地址')
+    } else if (fc === 22) {
+      expect(wrapper.find('.mask-result').text()).toContain('掩码写入已确认')
+      expect(wrapper.find('.mask-result').text()).toContain('FF00')
+      expect(wrapper.find('.result-table').exists()).toBe(false)
+    } else {
+      expect(wrapper.find('.result-meta').text()).toContain('写地址 20')
+      expect(wrapper.find('.result-table').text()).toContain('165')
+    }
+    wrapper.unmount()
+  })
+
   it('shows serial controls without an MKLink Device prerequisite', async () => {
     const wrapper = mount(ModbusTab)
     await flushPromises()

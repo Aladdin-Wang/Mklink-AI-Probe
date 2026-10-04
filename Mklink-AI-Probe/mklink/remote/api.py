@@ -709,10 +709,13 @@ try:
     class ModbusTransactionRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         fc: StrictInt
-        start: StrictInt
+        start: StrictInt | None = None
         quantity: StrictInt | None = None
         values: list[StrictInt | StrictBool] | None = None
         slave: StrictInt | None = None
+        and_mask: StrictInt | None = None
+        or_mask: StrictInt | None = None
+        write_start: StrictInt | None = None
 
     class ModbusProbeRequest(BaseModel):
         model_config = {'extra': 'forbid'}

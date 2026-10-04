@@ -3405,11 +3405,14 @@ class ModbusStreamManager:
     def transaction(
         self,
         fc: int,
-        start: int,
+        start: int | None = None,
         *,
         quantity: int | None = None,
         values: list[int | bool] | None = None,
         slave: int | None = None,
+        and_mask: int | None = None,
+        or_mask: int | None = None,
+        write_start: int | None = None,
     ) -> dict[str, Any]:
         with self._lifecycle_lock:
             if not self._worker or not self._running or self._stopping:
@@ -3418,7 +3421,8 @@ class ModbusStreamManager:
             target = self._slave if slave is None else slave
         started = time.perf_counter()
         result_values = worker.execute(
-            fc, start, quantity=quantity, values=values, slave=target
+            fc, start, quantity=quantity, values=values, slave=target,
+            and_mask=and_mask, or_mask=or_mask, write_start=write_start,
         )
         with self._event_lock:
             self._transaction_id += 1
@@ -3435,6 +3439,12 @@ class ModbusStreamManager:
             "duration_ms": round((time.perf_counter() - started) * 1000, 3),
             "ok": True,
         }
+        if fc == 7:
+            result['status'] = result_values[0]
+        elif fc == 22:
+            result.update(quantity=1, and_mask=and_mask, or_mask=or_mask)
+        elif fc == 23:
+            result.update(write_start=write_start, write_values=list(values))
         with self._lifecycle_lock:
             if self._worker is worker and self._running:
                 self._latest = result

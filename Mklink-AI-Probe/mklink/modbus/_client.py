@@ -196,7 +196,7 @@ class ModbusClient:
     ) -> None:
         self._check(
             self._client.mask_write_register(
-                address, and_mask=and_mask, or_mask=or_mask, device_id=slave
+                address=address, and_mask=and_mask, or_mask=or_mask, device_id=slave
             ),
             slave, 0x16,
         )

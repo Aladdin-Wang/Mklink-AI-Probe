@@ -1445,39 +1445,43 @@ def _cli_modbus_monitor(args):
 
 
 def _cli_modbus_diag(args):
-    from mklink.modbus._client import ModbusError
-    from pymodbus import ModbusException as PymodbusException
+    from mklink.modbus._session import validate_slave, validate_transaction
 
-    client = _modbus_open_client(args)
-    if not client:
-        return
-    try:
-        try:
-            if args.subfunc == "exception-status":
-                status = client.read_exception_status(args.slave)
-                print(f"[OK] FC07 异常状态 (从站 {args.slave}): 0x{status:02X} (二进制: {status:08b})")
-            elif args.subfunc == "mask-write":
-                client.mask_write_register(
-                    args.addr, args.and_mask, args.or_mask, args.slave,
-                )
-                print(f"[OK] FC22 掩码写寄存器 (从站 {args.slave}, 地址 {args.addr}):")
-                print(f"  AND=0x{args.and_mask:04X}, OR=0x{args.or_mask:04X}")
-            elif args.subfunc == "read-write":
-                write_vals = args.write_values or []
-                regs = client.read_write_registers(
-                    read_address=args.addr, read_count=args.read_count,
-                    write_address=args.addr, write_values=write_vals,
-                    slave=args.slave,
-                )
-                print(f"[OK] FC23 读写多寄存器 (从站 {args.slave}, 读地址 {args.addr}, {args.read_count} 个):")
-                for i, v in enumerate(regs):
-                    print(f"  {args.addr + i:>6}: {v} (0x{v:04X})")
-        except ModbusError as e:
-            print(f"[FAIL] {e}")
-        except PymodbusException as e:
-            print(f"[FAIL] Modbus 通信错误: {e}")
-    finally:
-        client.close()
+    slave = validate_slave(args.slave)
+    supplied = {name: getattr(args, name, None) for name in
+                ('addr', 'and_mask', 'or_mask', 'write_addr', 'write_values', 'read_count')}
+    allowed = {'exception-status': set(), 'mask-write': {'addr', 'and_mask', 'or_mask'},
+               'read-write': {'addr', 'write_addr', 'write_values', 'read_count'}}
+    if args.subfunc not in allowed:
+        raise ValueError('Unsupported Modbus diagnostic function')
+    unused = [name for name, value in supplied.items() if value is not None and name not in allowed[args.subfunc]]
+    if unused:
+        raise ValueError('Arguments not used by this diagnostic function: ' + ', '.join(unused))
+    address = supplied['addr'] if supplied['addr'] is not None else 0
+    if args.subfunc == 'exception-status':
+        params = {'fc': 7}
+    elif args.subfunc == 'mask-write':
+        params = {'fc': 22, 'start': address,
+                  'and_mask': supplied['and_mask'] if supplied['and_mask'] is not None else 0xFFFF,
+                  'or_mask': supplied['or_mask'] if supplied['or_mask'] is not None else 0}
+    else:
+        params = {'fc': 23, 'start': address,
+                  'write_start': supplied['write_addr'] if supplied['write_addr'] is not None else address,
+                  'quantity': supplied['read_count'] if supplied['read_count'] is not None else 10,
+                  'values': supplied['write_values']}
+    validate_transaction(**params)
+    with _modbus_shared_client(args) as client:
+        result = client.call('modbus_transaction', {'slave': slave, **params})
+    if params['fc'] == 7:
+        status = result['status']
+        print(f"[OK] FC07 异常状态 (从站 {slave}): 0x{status:02X} (二进制: {status:08b})")
+    elif params['fc'] == 22:
+        print(f"[OK] FC22 掩码写寄存器 (从站 {slave}, 地址 {address}):")
+        print(f"  AND=0x{params['and_mask']:04X}, OR=0x{params['or_mask']:04X}")
+    else:
+        print(f"[OK] FC23 读写多寄存器 (从站 {slave}, 读地址 {address}, 写地址 {params['write_start']}):")
+        for i, value in enumerate(result['values']):
+            print(f"  {address + i:>6}: {value} (0x{value:04X})")
 
 
 def _cli_modbus_dashboard(args):
@@ -2599,17 +2603,18 @@ def main():
     modbus_monitor.add_argument("--save", help="保存日志到文件")
 
     # modbus diag
-    modbus_diag = modbus_sub.add_parser("diag", help="Modbus 诊断（FC07/08/22/23）")
-    _add_modbus_serial_args(modbus_diag)
+    modbus_diag = modbus_sub.add_parser("diag", help="Modbus 诊断（FC07/22/23，共享后台）")
+    _add_modbus_serial_args(modbus_diag, shared=True)
     modbus_diag.add_argument("--slave", type=int, required=True, help="从站地址 (1-247)")
     modbus_diag.add_argument("--subfunc", choices=["exception-status", "mask-write", "read-write"],
                              default="exception-status", help="诊断功能（默认 exception-status）")
-    modbus_diag.add_argument("--addr", type=int, default=0, help="寄存器地址（mask-write/read-write 用）")
-    modbus_diag.add_argument("--and-mask", type=lambda x: int(x, 0), default=0xFFFF, help="AND 掩码（默认 0xFFFF）")
-    modbus_diag.add_argument("--or-mask", type=lambda x: int(x, 0), default=0x0000, help="OR 掩码（默认 0x0000）")
+    modbus_diag.add_argument("--addr", type=int, default=None, help="寄存器/读地址（mask-write/read-write 用，默认 0）")
+    modbus_diag.add_argument("--and-mask", type=lambda x: int(x, 0), default=None, help="AND 掩码（默认 0xFFFF）")
+    modbus_diag.add_argument("--or-mask", type=lambda x: int(x, 0), default=None, help="OR 掩码（默认 0x0000）")
+    modbus_diag.add_argument("--write-addr", type=int, default=None, help="FC23 写地址（默认与 --addr 相同）")
     modbus_diag.add_argument("--write-values", type=lambda x: [int(v.strip(), 0) for v in x.split(",")],
                              default=None, help="写入值，逗号分隔（read-write 用）")
-    modbus_diag.add_argument("--read-count", type=int, default=10, help="读取数量（read-write 用，默认 10）")
+    modbus_diag.add_argument("--read-count", type=int, default=None, help="读取数量（read-write 用，默认 10）")
 
     # modbus dashboard
     modbus_dashboard = modbus_sub.add_parser("dashboard", help="Web 可视化仪表盘（实时图表 + 交互控制）")

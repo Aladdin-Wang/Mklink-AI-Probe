@@ -84,8 +84,9 @@
           <div class="title-stack"><span class="step-index">03</span><div><strong>{{ tr('响应数据', 'Response data') }}</strong><small>{{ tr('寄存器值与类型转换', 'Register values and type conversion') }}</small></div></div>
           <span v-if="lastResult" class="duration-badge"><b>{{ lastResult.duration_ms }}</b> ms</span>
         </div>
-        <div v-if="lastResult" class="result-meta mono"><span>ID {{ lastResult.id }}</span><span>FC{{ String(lastResult.fc).padStart(2, '0') }}</span><span>{{ tr('地址', 'address') }} {{ formatAddress(lastResult.start) }}</span></div>
-        <div v-if="lastResult?.values?.length" class="result-table-wrap"><table class="result-table"><thead><tr><th>{{ tr('地址', 'Address') }}</th><th>HEX</th><th>DEC</th><th>{{ isResultBit ? tr('状态', 'State') : 'INT16' }}</th></tr></thead><tbody><tr v-for="(value, index) in lastResult.values" :key="index"><td>{{ formatAddress(lastResult.start + index) }}</td><td class="mono">{{ formatHex(value) }}</td><td>{{ formatDecimal(value) }}</td><td>{{ formatSigned(value) }}</td></tr></tbody></table></div>
+        <div v-if="lastResult" class="result-meta mono"><span>ID {{ lastResult.id }}</span><span v-if="lastResult.slave != null">{{ tr('从站', 'Slave') }} {{ lastResult.slave }}</span><span>FC{{ String(lastResult.fc).padStart(2, '0') }}</span><span v-if="lastResult.start != null">{{ tr('地址', 'address') }} {{ formatAddress(lastResult.start) }}</span><span v-if="lastResult.fc === 23">{{ tr('写地址', 'write address') }} {{ formatAddress(lastResult.write_start) }}</span></div>
+        <div v-if="lastResult?.fc === 22" class="mask-result result-meta mono"><span>{{ tr('掩码写入已确认', 'Mask write acknowledged') }}</span><span>AND {{ lastResult.and_mask == null ? '—' : formatHex(lastResult.and_mask) }}</span><span>OR {{ lastResult.or_mask == null ? '—' : formatHex(lastResult.or_mask) }}</span></div>
+        <div v-else-if="lastResult?.values?.length" class="result-table-wrap"><table class="result-table"><thead><tr><th>{{ lastResult.fc === 7 ? tr('异常状态', 'Exception status') : tr('地址', 'Address') }}</th><th>HEX</th><th>DEC</th><th>{{ isResultBit ? tr('状态', 'State') : 'INT16' }}</th></tr></thead><tbody><tr v-for="(value, index) in lastResult.values" :key="index"><td>{{ formatAddress(lastResult.start == null ? null : lastResult.start + index) }}</td><td class="mono">{{ formatHex(value) }}</td><td>{{ formatDecimal(value) }}</td><td>{{ formatSigned(value) }}</td></tr></tbody></table></div>
         <div v-else class="empty-state response-empty"><span class="empty-glyph mono">01 03</span><strong>{{ tr('等待响应数据', 'Waiting for response') }}</strong><small>{{ tr('连接串口并发送请求后，解析结果会显示在这里。', 'Open the port and send a request to inspect parsed values.') }}</small></div>
       </section>
     </div>
@@ -107,7 +108,7 @@ import SetupHint from './SetupHint.vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import { BIT_FUNCTIONS, buildTransaction, DEFAULT_MODBUS_SETTINGS, FUNCTION_OPTIONS, loadModbusSettings, MODBUS_SETTINGS_KEY, READ_FUNCTIONS } from '../../lib/modbusWorkbench'
 
-interface TransactionResult { id: number; fc: number; start: number; values: Array<number | boolean>; duration_ms: number }
+interface TransactionResult { id: number; fc: number; slave?: number; start: number | null; values: Array<number | boolean>; duration_ms: number; and_mask?: number; or_mask?: number; write_start?: number }
 interface LogEntry { event: string; timestamp: number; direction?: string; hex?: string; crc_ok?: boolean | null; message?: string; [key: string]: unknown }
 
 const toast = useToast()
@@ -207,7 +208,7 @@ async function stopLoop() {
 }
 function connectSSE() { stopEventSource(); es = new EventSource(`${API_BASE}/api/dash/modbus/stream`); es.onmessage = event => { try { const value = JSON.parse(event.data); if (value.event === 'status') applyStatus(value); if (value.event === 'transaction') lastResult.value = value; if (value.event === 'loop') applyLoopStatus(value); if (value.event === 'stopped') { running.value = false; stopping.value = false; loopRunning.value = false; stopEventSource() }; if (value.event === 'error') toast.error(value.message); if (value.event === 'history') { if (!logPaused.value) logs.value = [...logs.value, ...(value.points || []).filter((item: LogEntry) => ['frame', 'error'].includes(item.event))].slice(-500) } else if (!logPaused.value && ['frame', 'error'].includes(value.event)) logs.value = [...logs.value, value].slice(-500); nextTick(() => { if (logPanel.value) logPanel.value.scrollTop = logPanel.value.scrollHeight }) } catch { /* malformed event */ } } }
 function stopEventSource() { if (es) { es.close(); es = null } }
-function formatAddress(value: number) { return `${value} / 0x${value.toString(16).toUpperCase().padStart(4, '0')}` }
+function formatAddress(value: number | null | undefined) { return value == null ? '—' : `${value} / 0x${value.toString(16).toUpperCase().padStart(4, '0')}` }
 function formatHex(value: number | boolean) { const n = typeof value === 'boolean' ? Number(value) : value; return `0x${n.toString(16).toUpperCase().padStart(4, '0')}` }
 function formatDecimal(value: number | boolean) { return typeof value === 'boolean' ? (value ? '1' : '0') : String(value) }
 function formatSigned(value: number | boolean) { if (typeof value === 'boolean') return value ? 'ON' : 'OFF'; return String(value >= 0x8000 ? value - 0x10000 : value) }
