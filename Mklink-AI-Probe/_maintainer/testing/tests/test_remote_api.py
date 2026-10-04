@@ -1618,7 +1618,7 @@ def test_shared_restore_last_keeps_symbols_but_never_restores_old_com(tmp_path, 
     device.port = 'COM_NEW'
     device.axf_status = {'loaded': True, 'axf_path': str(axf)}
     app = create_app(auth_token=None, project_root=str(tmp_path))
-    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, sessions={})
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, target_sessions={})
     state = app.state.mklink_state
     state['shared_probe_id'] = 'bound-probe'
     state['last_device_connection'] = {'port': 'COM_OLD', 'axf': str(axf), 'mcu': 'stm32f1', 'elf_backend': 'builtin'}
@@ -1639,7 +1639,7 @@ def test_shared_restore_last_on_live_device_does_not_change_symbols(tmp_path):
     device, axf = _connected_symbol_device(tmp_path)
     device.port = 'COM_NEW'
     app = create_app(auth_token=None, project_root=str(tmp_path))
-    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, sessions={'existing': object()})
+    app.state.shared_runtime = SimpleNamespace(prune=lambda: None, target_sessions={'existing': object()})
     state = app.state.mklink_state
     state.update(device=device, shared_probe_id='bound-probe', last_device_connection={'port':'COM_OLD','axf':'old.axf'})
     get_managers()['superwatch']._device = device

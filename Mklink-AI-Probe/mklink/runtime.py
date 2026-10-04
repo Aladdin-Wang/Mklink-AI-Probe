@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 8  # Revisioned Modbus loop state; stop older runtimes explicitly.
+PROTOCOL = 9  # Explicit UART-only sessions; stop older runtimes explicitly.
 VERSION = "0.3.0"
 
 
@@ -235,10 +235,15 @@ class RuntimeClient:
         self._lock = threading.Lock()
         self.kind, self.name = kind, name
 
-    def connect(self, *, project_root=None, port=None, probe=None, axf=None, mcu=None, elf_backend=None):
+    def connect(self, *, project_root=None, port=None, probe=None, axf=None, mcu=None, elf_backend=None, scope='target'):
+        if scope not in ('target', 'uart'):
+            raise ValueError('Session scope must be target or uart')
+        if scope == 'uart' and any(value is not None for value in (port, axf, mcu, elf_backend)):
+            raise ValueError('UART-only attachment accepts a probe selector, not target connection settings')
         with self._lock:
             if self.info is None:
-                self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port)
+                options = {'allow_lobby': True} if scope == 'uart' else {}
+                self.info = ensure_runtime(project_root=project_root or self.project_root, probe=probe, device_port=port, **options)
             elif probe or port:
                 from mklink.probes import select_probe
                 if select_probe(probe or port)["probe_id"] != self.info.get("probe_id"):
@@ -246,7 +251,7 @@ class RuntimeClient:
             result = request(self.info, "POST", "/_runtime/attach", {
                 "project_root": project_root, "port": port, "axf": axf,
                 "mcu": mcu, "elf_backend": elf_backend, "session_id": self.session_id,
-                'kind': self.kind, 'name': self.name,
+                'kind': self.kind, 'name': self.name, 'scope': scope,
             })
             self.session_id = result["session_id"]
             self._stop_heartbeat()

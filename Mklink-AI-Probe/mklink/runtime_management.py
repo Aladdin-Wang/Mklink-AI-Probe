@@ -18,10 +18,13 @@ def confirm_idle(control, body):
 def stop_backend(control, body):
     """One shutdown policy for both CLI and GUI management adapters."""
     confirm_idle(control, body)
+    if control.uart_operations:
+        raise HTTPException(409, 'Independent UART operations are still running; wait for completion')
     if control.sessions or len(control.views) > 1:
         raise HTTPException(409, 'Detach AI/CLI/SDK clients and close other GUI windows first')
     from mklink.remote.dashboards import get_managers
-    active = [name for name, manager in get_managers().items() if manager.running]
+    from mklink.remote.api import _dashboard_worker_alive
+    active = [name for name, manager in get_managers().items() if _dashboard_worker_alive(manager)]
     if active:
         raise HTTPException(409, {'reason': 'capture_active', 'streams': active})
     control.stopping = True
@@ -90,7 +93,7 @@ def install_management(app, control):
     @api.post('/release-device')
     async def release_device(body: dict):
         confirm_idle(control, body)
-        if control.sessions:
+        if control.target_sessions:
             raise HTTPException(409, 'Detach AI/CLI/SDK clients before releasing the physical device')
         no_capture()
         return await control.invoke('POST', '/api/device/disconnect')

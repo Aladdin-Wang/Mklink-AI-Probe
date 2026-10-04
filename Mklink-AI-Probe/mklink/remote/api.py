@@ -526,18 +526,21 @@ def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[s
     return []
 
 
-def _dashboard_start_lock(state: dict[str, Any]) -> asyncio.Lock:
-    lock = state.get("_dashboard_start_lock")
+def _dashboard_start_lock(state: dict[str, Any], dashboard: str | None = None) -> asyncio.Lock:
+    # CDC dashboards share a bridge; UART managers own independent ports.
+    group = dashboard if dashboard in ('serial', 'modbus') else 'bridge'
+    locks = state.setdefault('_dashboard_start_locks', {})
+    lock = locks.get(group)
     if lock is None:
         lock = asyncio.Lock()
-        state["_dashboard_start_lock"] = lock
+        locks[group] = lock
     return lock
 
 
 async def start_dashboard_manager(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
-    async with _dashboard_start_lock(state):
+    async with _dashboard_start_lock(state, dashboard):
         return await _start_dashboard_manager_transaction(
             state, dashboard, manager, start_call,
         )
@@ -672,7 +675,7 @@ async def stop_dashboard_manager_transaction(
     state: dict[str, Any], dashboard: str, manager,
 ) -> None:
     """Serialize stop with start and keep blocking joins off the event loop."""
-    async with _dashboard_start_lock(state):
+    async with _dashboard_start_lock(state, dashboard):
         await asyncio.to_thread(
             stop_dashboard_manager, state, dashboard, manager,
         )
@@ -1683,11 +1686,11 @@ def create_app(
             current = _state.get("device")
             if current and current.connected:
                 restore_last = False  # Reuse live symbols; never reparse on an implicit reconnect.
-            if current and runtime.sessions and not current.connected:
+            if current and runtime.target_sessions and not current.connected:
                 raise HTTPException(409, 'Detach stale clients before explicitly reconnecting the probe')
             if current and current.connected and current.port.casefold() != port.casefold():
                 raise HTTPException(409, 'Probe port changed; release the old connection first')
-            if runtime.sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
+            if runtime.target_sessions and current and current.connected and any(value is not None for value in (axf, mcu, elf_backend)):
                 raise HTTPException(status_code=409, detail="Detach shared clients before changing device configuration or symbols")
         preferred_port = None
         if restore_last:
@@ -3102,7 +3105,8 @@ def create_app(
     @app.get("/api/dash/modbus/status")
     async def modbus_status():
         managers = get_managers()
-        return managers["modbus"].get_status()
+        # Startup/stop holds the manager's lifecycle lock in an I/O thread.
+        return await asyncio.to_thread(managers["modbus"].get_status)
 
     # ===================================================================
     # Integrated Dashboard — shared VOFA waveform

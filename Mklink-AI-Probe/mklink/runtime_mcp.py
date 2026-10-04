@@ -172,15 +172,18 @@ def build_server():
     @server.tool()
     def connect(port: str | None = None, axf: str | None = None, mcu: str | None = None,
                 project_root: str | None = None, elf_backend: str | None = None, probe: str | None = None,
-                client_name: str = 'AI client') -> dict:
-        """Attach to the GUI's CDC session. Omitted configuration adopts its project/symbols.
+                client_name: str = 'AI client', scope: str = 'target') -> dict:
+        """Attach to the shared backend: target (default) or independent UART scope.
 
         Explicit conflicting project/probe/symbol settings fail without replacing the GUI session.
+        scope='uart' attaches without MCU/CDC initialization, including the unselected lobby.
+        It exposes uart_ports, serial_status and modbus_status; UART writes/CLI migration is pending.
+        Use probe to choose a backend; target port/AXF/MCU options require scope='target'.
         """
         with lock:
             if "client" not in holder:
                 holder["client"] = RuntimeClient(project_root=project_root or ".", name=client_name)
-            return holder['client'].connect(port=port, probe=probe, axf=axf, mcu=mcu, project_root=project_root, elf_backend=elf_backend)
+            return holder['client'].connect(port=port, probe=probe, axf=axf, mcu=mcu, project_root=project_root, elf_backend=elf_backend, scope=scope)
 
     @server.tool()
     def disconnect() -> dict:
@@ -282,7 +285,7 @@ def build_server():
         return client().call('systemview_'+action, arguments)
 
     @server.tool()
-    def gui_call(capability: str, arguments: dict | None = None) -> dict:
+    def gui_call(capability: str, arguments: dict | None = None) -> dict | list[dict]:
         """Invoke an advertised GUI capability on the shared backend.
 
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.

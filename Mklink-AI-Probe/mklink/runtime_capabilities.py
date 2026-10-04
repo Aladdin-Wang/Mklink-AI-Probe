@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 STREAMS = ('rtt', 'superwatch', 'systemview', 'vofa')
 CAPABILITIES = {
+    'uart_ports': ('GET', '/api/ports/uart'),
     'device_status': ('GET', '/api/device/status'),
     'debug_speed': ('GET', '/api/device/debug-speed'),
     'set_debug_speed': ('POST', '/api/device/debug-speed'),
@@ -58,6 +59,14 @@ for stream in ('serial', 'modbus'):
 
 PROBE_QUERIES = {'power_read': '/api/probe/power-read', 'probe_version': '/api/probe/version'}
 CAPABILITIES.update({name: ('POST', path) for name, path in PROBE_QUERIES.items()})
+
+
+def is_uart_path(path: str) -> bool:
+    """Independent UART routes never reserve the target's command bridge."""
+    return path == '/api/ports/uart' or path.startswith(('/api/dash/serial/', '/api/dash/modbus/'))
+
+
+UART_CAPABILITIES = frozenset(name for name, (_, path) in CAPABILITIES.items() if is_uart_path(path))
 
 
 def validate_arguments(capability, arguments):

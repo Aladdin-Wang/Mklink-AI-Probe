@@ -14,7 +14,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount
 
 from mklink.runtime import PROTOCOL, VERSION
-from mklink.runtime_capabilities import CAPABILITIES, STREAMS, validate_arguments
+from mklink.runtime_capabilities import CAPABILITIES, STREAMS, UART_CAPABILITIES, is_uart_path, validate_arguments
+
+RESOURCE_RELEASE_PATHS = frozenset({'/api/resources/release-all', '/api/resources/release'})
 
 
 async def settle(task):
@@ -48,6 +50,7 @@ class Session:
     joined: float = field(default_factory=time.monotonic)
     expires: float = field(default_factory=lambda: time.monotonic() + 120)
     streams: set = field(default_factory=set)
+    scope: str = 'target'
 
 
 class RuntimeControl:
@@ -62,8 +65,13 @@ class RuntimeControl:
         self.views = {}
         self.current_operation = None
         self.last_operation = None
+        self.uart_operations: dict[asyncio.Task, str] = {}
         self.started = time.monotonic()
         self.jobs = None
+
+    @property
+    def target_sessions(self):
+        return {key: session for key, session in self.sessions.items() if session.scope == 'target'}
 
     def online_job(self):
         services = getattr(self.app.state, 'online_flash', None)
@@ -103,7 +111,7 @@ class RuntimeControl:
         from mklink.remote.dashboards import get_managers
         self.prune()
         now = time.monotonic()
-        clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'streams': sorted(s.streams),
+        clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'scope': s.scope, 'streams': sorted(s.streams),
                     'age_seconds': now-s.joined, 'expires_in': max(0, s.expires-now)} for s in self.sessions.values()]
         clients += [{'id': key, 'kind': 'gui', 'name': view['name'], 'streams': [],
                      'age_seconds': now-view['joined'], 'expires_in': max(0, view['expires']-now)} for key, view in self.views.items()]
@@ -114,6 +122,7 @@ class RuntimeControl:
                 'uptime_seconds': now-self.started, 'clients': clients, 'busy': self.operation_lock.locked() or self.job_busy(),
                 'jobs': list(reversed(list(self.jobs.jobs.values())))[:8] if self.jobs else [], 'online_job': self.online_job(),
                 'operation': self.current_operation, 'last_operation': self.last_operation,
+                'uart_operations': list(self.uart_operations.values()),
                 'connected': bool(device and device.connected),
                 'streams': [{'name': name, 'running': manager.running,
                              'subscribers': sum(name in s.streams for s in self.sessions.values())}
@@ -137,11 +146,15 @@ class RuntimeControl:
             return None
         return (catalog.generation, catalog.fingerprint.sha256)
 
-    def validate_session(self, session_id):
+    def validate_session(self, session_id, *, target=True):
         session = self.session(session_id)
+        if target and session.scope != 'target':
+            raise HTTPException(409, 'UART-only session cannot access the target; detach and attach a target session explicitly')
         state = self.app.state.mklink_state
         if not same_path(session.project_root, state['project_root']):
             raise HTTPException(409, 'Project changed; reconnect explicitly')
+        if not target:
+            return session
         active_axf = (getattr(state.get('device'), 'axf_status', {}) or {}).get('axf_path')
         if session.axf != active_axf or session.symbol_version != self.symbol_version():
             raise HTTPException(409, 'Symbols changed; reconnect explicitly before reading the new target layout')
@@ -151,7 +164,7 @@ class RuntimeControl:
         from mklink.remote.dashboards import active_bridge_dashboards
         self.prune()
         self.require_identity()
-        if self.sessions:
+        if self.target_sessions:
             raise HTTPException(409, 'Detach shared clients before changing symbols')
         active = active_bridge_dashboards()
         if active:
@@ -167,6 +180,21 @@ class RuntimeControl:
         own_job = self.jobs and self.jobs.active and executing_job.get() == self.jobs.active['job_id']
         if self.stopping:
             raise HTTPException(503, 'Runtime is stopping')
+        if is_uart_path(name):
+            if self.current_operation and self.current_operation['path'] in RESOURCE_RELEASE_PATHS:
+                raise HTTPException(409, 'Resource release is in progress; wait before using UART')
+            if session_id:
+                self.validate_session(session_id, target=False)
+            if len(self.uart_operations) >= 64:
+                raise HTTPException(429, 'Too many independent UART operations in flight')
+            # Managers retain their existing port/worker admission. Track these
+            # requests only for bounded ingress and safe backend shutdown.
+            task = asyncio.create_task(operation())
+            self.uart_operations[task] = name
+            try:
+                return await settle(task)
+            finally:
+                self.uart_operations.pop(task, None)
         if self.operation_lock.locked() or (self.job_busy() and not own_job and not online_stop):
             raise HTTPException(409, 'Another shared operation or exclusive job is active')
         self.prune()
@@ -252,6 +280,12 @@ class RuntimeGate:
         ) and not path.startswith(("/api/browser-session/", "/api/runtime/"))
         if not hardware:
             return await self.app(scope, receive, send)
+        session_id = headers.get(b"x-mklink-session", b"").decode()
+        if is_uart_path(path):
+            try:
+                return await c.run_operation(path, lambda: self.app(scope, receive, send), session_id=session_id)
+            except HTTPException as exc:
+                return await reject(exc.status_code, exc.detail)
         from mklink.runtime_jobs import PATHS, executing_job
         own_job = c.jobs and c.jobs.active and executing_job.get() == c.jobs.active['job_id']
         if path in PATHS.values() and not own_job:
@@ -317,13 +351,14 @@ class RuntimeGate:
                 return await original_receive()
             receive = replay
         c.prune()
-        session_id = headers.get(b"x-mklink-session", b"").decode()
         if path == '/api/dash/superwatch/peripherals/select' and (
-                c.attach_lock.locked() or any(key != session_id for key in c.sessions)):
+                c.attach_lock.locked() or any(key != session_id for key in c.target_sessions)):
             return await reject(409, 'Detach other shared clients before changing the peripheral catalog')
-        if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout", "/api/resources/release-all",
-                    "/api/resources/release", "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.sessions or c.attach_lock.locked()):
+        if path in {"/api/device/disconnect", "/api/symbols/reparse", "/api/symbols/c-layout",
+                    "/api/device/reboot", "/api/probe/firmware-upgrade"} and (c.target_sessions or c.attach_lock.locked()):
             return await reject(409, "Other runtime clients are attached; detach them before changing the shared device/project")
+        if path in RESOURCE_RELEASE_PATHS and (c.sessions or c.attach_lock.locked() or c.uart_operations):
+            return await reject(409, 'Detach clients and finish independent UART operations before releasing resources')
         for stream in STREAMS:
             if path in {f"/api/dash/{stream}/stop", f"/api/dash/{stream}/pause"} or (stream == "vofa" and path == "/api/dash/vofa/interval"):
                 others = [key for key, s in c.sessions.items() if stream in s.streams and key != session_id]
@@ -393,24 +428,54 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                 "probe_id": info.get("probe_id"), "clients": len(control.sessions), "busy": control.operation_lock.locked(),
                 "capabilities": sorted(CAPABILITIES)}
 
+    def attached(body, scope, device_status):
+        session_id = body.get('session_id')
+        session = control.sessions.get(session_id)
+        axf = (device_status.get('axf') or {}).get('axf_path')
+        symbol_version = control.symbol_version() if scope == 'target' else None
+        if session is None:
+            if len(control.sessions) >= 128:
+                raise HTTPException(429, 'Too many attached clients')
+            session_id = secrets.token_urlsafe(24)
+            control.sessions[session_id] = Session(state['project_root'], axf,
+                kind=body.get('kind', 'mcp'), name=body.get('name', 'AI client').strip(),
+                symbol_version=symbol_version, scope=scope)
+        else:
+            session = control.session(session_id)
+            session.project_root, session.axf, session.symbol_version = state['project_root'], axf, symbol_version
+        capabilities = UART_CAPABILITIES if scope == 'uart' else CAPABILITIES
+        return {**device_status, 'session_id': session_id, 'shared': True, 'scope': scope,
+                'instance_id': info['instance_id'], 'probe_id': info.get('probe_id'),
+                'capabilities': sorted(capabilities)}
+
     @api.post("/attach")
     async def attach(body: dict):
+        scope = body.get('scope', 'target')
+        if scope not in ('target', 'uart'):
+            raise HTTPException(422, 'Session scope must be target or uart')
+        kind, name = body.get('kind', 'mcp'), body.get('name', 'AI client')
+        if kind not in ('mcp', 'cli', 'sdk') or not isinstance(name, str) or not 1 <= len(name.strip()) <= 64:
+            raise HTTPException(422, 'Client kind must be mcp/cli/sdk and name must contain 1..64 characters')
+        if any(body.get(key) is not None and not isinstance(body[key], str)
+               for key in ('project_root', 'port', 'axf', 'mcu', 'elf_backend', 'session_id')):
+            raise HTTPException(422, 'Connection parameters must be strings or null')
+        project = body.get('project_root')
+        if project and not same_path(project, state['project_root']):
+            raise HTTPException(409, "Runtime has a different project; detach clients, stop this probe's backend explicitly, then start it with the requested project")
+        control.prune()
+        session = control.sessions.get(body.get('session_id'))
+        if session and session.scope != scope:
+            raise HTTPException(409, 'Detach before changing the session scope')
+        if session is None and len(control.sessions) >= 128:
+            raise HTTPException(429, 'Too many attached clients')
+        if scope == 'uart':
+            if any(body.get(key) is not None for key in ('port', 'axf', 'mcu', 'elf_backend')):
+                raise HTTPException(422, 'UART-only attachment does not accept target connection settings')
+            return attached(body, scope, {'attached': True})
         async with control.attach_lock:
             if control.operation_lock.locked() or control.job_busy():
                 raise HTTPException(409, 'Wait for the active operation before attaching a client')
-            control.prune()
-            if len(control.sessions) >= 128:
-                raise HTTPException(429, "Too many attached clients")
             control.require_identity()
-            kind, name = body.get('kind', 'mcp'), body.get('name', 'AI client')
-            if kind not in ('mcp', 'cli', 'sdk') or not isinstance(name, str) or not 1 <= len(name.strip()) <= 64:
-                raise HTTPException(422, 'Client kind must be mcp/cli/sdk and name must contain 1..64 characters')
-            project = body.get("project_root")
-            if any(body.get(key) is not None and not isinstance(body[key], str)
-                   for key in ("project_root", "port", "axf", "mcu", "elf_backend", "session_id")):
-                raise HTTPException(422, "Connection parameters must be strings or null")
-            if project and not same_path(project, state["project_root"]):
-                raise HTTPException(409, "Runtime has a different project; detach clients, stop this probe's backend explicitly, then start it with the requested project")
             dev = state.get("device")
             if dev and dev.connected:
                 if body.get("port") and body["port"].casefold() != dev.port.casefold():
@@ -437,18 +502,7 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
                     arguments["port"] = selected["port"]
                 await settle(asyncio.create_task(control.invoke("POST", "/api/device/connect", arguments)))
             device_status = await control.invoke("GET", "/api/device/status")
-            session_id = body.get("session_id")
-            if session_id not in control.sessions:
-                session_id = secrets.token_urlsafe(24)
-            if session_id not in control.sessions:
-                control.sessions[session_id] = Session(state["project_root"], (device_status.get("axf") or {}).get("axf_path"), kind=kind, name=name.strip(), symbol_version=control.symbol_version())
-            else:
-                session = control.session(session_id)
-                session.project_root = state['project_root']
-                session.axf = (device_status.get('axf') or {}).get('axf_path')
-                session.symbol_version = control.symbol_version()
-            return {**device_status, "session_id": session_id, "shared": True,
-                    "instance_id": info["instance_id"], "probe_id": info.get("probe_id"), "capabilities": sorted(CAPABILITIES)}
+            return attached(body, scope, device_status)
 
     @api.post("/heartbeat")
     async def heartbeat(body: dict):
@@ -465,10 +519,10 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     @api.post("/call")
     async def call(body: dict):
         session_id = body.get("session_id")
-        session = control.validate_session(session_id)
         capability = body.get("capability")
         if not isinstance(capability, str) or capability not in CAPABILITIES:
             raise HTTPException(422, "Unsupported shared capability; no direct CDC fallback")
+        session = control.validate_session(session_id, target=capability not in UART_CAPABILITIES)
         arguments = body.get("arguments", {})
         if not isinstance(arguments, dict) or len(json.dumps(arguments)) > 16384:
             raise HTTPException(422, "Arguments must be an object of at most 16 KiB")
