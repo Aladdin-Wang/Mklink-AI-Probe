@@ -3,7 +3,7 @@
     <div class="serial-config-row">
       <label>
         <span>{{ tr('端口', 'Port') }}</span>
-        <select v-model="portName" :disabled="starting || stopping || ymodemActive || ymodemStarting">
+        <select v-model="portName" :disabled="starting || stopping || ymodemStarting">
           <option v-for="port in selectablePorts" :key="port.device" :value="port.device">
             {{ port.device }}{{ port.description ? ` · ${port.description}` : '' }}
           </option>
@@ -342,7 +342,7 @@ const localizedPortStatus = computed(() => {
 const ymodemActive = computed(() => ymodemStatus.value.active)
 const transmitEnabled = computed(() => (
   running.value && currentPortStatus.value === 'open'
-  && !ymodemActive.value && !ymodemStarting.value
+  && !(ymodemActive.value && ymodemStatus.value.port === portName.value) && !ymodemStarting.value
 ))
 const activeTelemetry = computed(() => (
   viewMode.value === 'log' ? logBinary.telemetry.value : terminalBinary.telemetry.value

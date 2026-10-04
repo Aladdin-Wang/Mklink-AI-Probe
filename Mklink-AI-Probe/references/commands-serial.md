@@ -217,3 +217,8 @@ python -m mklink serial profile show --profile .mklink/serial_profile.json
 
 支持 CRC 算法：`crc8`, `crc16_modbus`, `crc16_ccitt`, `crc32`, `checksum8`, `checksum16`
 
+
+
+共享GUI中的YMODEM传输仅占用所属串口的普通发送通道；其他已打开端口仍可
+选择和发送。切回传输端口时普通发送禁用，取消或结束后恢复。一个共享后台同时
+只允许一个YMODEM传输任务，切换界面所选端口不会迁移正在进行的传输。

@@ -17,6 +17,7 @@ from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, Stre
 from mklink.serial import _monitor as monitor_module
 from mklink.serial._monitor import SerialEvent, SerialMonitor
 from mklink.serial._port import _PortLock
+from test_serial_autoreply import ports
 
 
 class _RecordingHub:
@@ -623,6 +624,36 @@ def test_serial_stream_manager_rejects_send_and_cancels_active_ymodem(monkeypatc
     manager.stop()
 
 
+def test_ymodem_locks_only_selected_port_through_manager_and_api(ports, monkeypatch, tmp_path):
+    from mklink.serial._ymodem import YModemCancelled
+    entered, release = threading.Event(), threading.Event()
+    def transfer(*args):
+        entered.set()
+        assert release.wait(3)
+        raise YModemCancelled('test transfer ended')
+    monkeypatch.setattr('mklink.serial._ymodem.YModemSender.send', transfer)
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    app = create_app(auth_token=None, project_root=str(tmp_path))
+    manager = app.state.mklink_state['dashboard_managers']['serial']
+    manager.start([{'port': 'COM7'}, {'port': 'COM8'}])
+    a, b = ports.instances[-2:]
+    try:
+        manager.start_ymodem('com7', b'data', 'data.bin')
+        assert entered.wait(1)
+        assert manager.get_ymodem_status()['port'] == 'COM7'
+        assert manager.send('com7', b'blocked') is False
+        assert manager.send('com8', b'peer') is True
+        with TestClient(app) as client:
+            assert client.post('/api/dash/serial/send', json={'port': 'com7', 'data': 'blocked'}).status_code == 409
+            assert client.post('/api/dash/serial/send', json={'port': 'com8', 'data': 'peer-api'}).status_code == 200
+        assert a.writes == [] and [data for data, _ in b.writes] == [b'peer', b'peer-api']
+        assert len(ports.instances) == 2
+    finally:
+        release.set()
+        manager.cancel_ymodem(wait=True)
+        manager.stop()
+
+
 def test_serial_stream_manager_does_not_publish_late_progress_after_cancel(
     monkeypatch,
 ):
@@ -770,6 +801,7 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
         "transfer_id": 1,
         "state": "running",
         "active": active["value"],
+        "port": "TEST",
         "phase": "waiting",
     })
 

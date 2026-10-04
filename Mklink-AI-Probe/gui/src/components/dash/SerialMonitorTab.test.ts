@@ -441,7 +441,10 @@ describe('SerialMonitorTab', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/dash/serial/status')) {
-        return jsonResponse({ ...runningStatus(), ymodem: current })
+        return jsonResponse({ ...runningStatus(), ymodem: current,
+          ports: { TEST_UART: 'open', OTHER: 'open' },
+          config: [...runningStatus().config, { port: 'OTHER', baudrate: 9600, databits: 8, stopbits: 1, parity: 'N' }],
+        })
       }
       if (url.endsWith('/api/dash/serial/ymodem/cancel')) {
         expect(init?.method).toBe('POST')
@@ -469,6 +472,13 @@ describe('SerialMonitorTab', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('25% · 1024/4096 B'))
     expect(wrapper.get('[data-testid="serial-ymodem-file"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="serial-log-mode"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).props('inputEnabled')).toBe(false)
+
+    const selector = wrapper.findAll('select')[0]!
+    expect(selector.attributes('disabled')).toBeUndefined()
+    await selector.setValue('OTHER')
+    expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).props('inputEnabled')).toBe(true)
+    await selector.setValue('TEST_UART')
     expect(wrapper.findComponent({ name: 'RttTerminalPanel' }).props('inputEnabled')).toBe(false)
 
     await wrapper.get('[data-testid="serial-ymodem-cancel"]').trigger('click')

@@ -108,6 +108,7 @@ def test_protocol_transfer_refuses_send_without_io(scan_cli, uart_app):
     http.post('/api/dash/serial/start', json={'ports': [{'port':'TEST'}]})
     manager = uart_app[2]['serial']
     manager._ymodem_status['active'] = True
+    manager._ymodem_status['port'] = 'TEST'
     try:
         with pytest.raises(SystemExit, match='YMODEM'):
             cli._cli_serial_dispatch(arguments(baud=115200, databits=8, stop=1, parity='N'))

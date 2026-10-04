@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T10:57:45+00:00`
+- 更新时间：`2026-10-04T11:05:49+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared Modbus loop capabilities after 7397714; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; per-port YMODEM send admission after 42fa6a6; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第五十八批补齐AI共享Modbus循环能力：modbus_loop_start/stop直接复用GUI路由、现有循环及worker，协议25/UART20项；MCP退出循环保留，另一客户端查看/停止，重复启动冲突、停止循环保留连接，无第二句柄或MCU初始化。新增2项MCP/共享API回归，相关90通过，扩大2474通过/2跳过。前批7397714两项CI成功。下一步收敛YMODEM上层全局发送限制与底层按端口隔离不一致，再继续任务归属/取消、Agent、异常恢复/长稳/安装。不改固件/WinUSB，不合并发布。
+- 当前任务：持续循环评审验证。第五十九批统一YMODEM按端口发送隔离：manager/API仅拒绝传输所属端口，复用底层协议锁保留防混流；启动与判断统一COM名称。GUI允许切换其他端口发送，原端口仍禁用，取消后恢复。Python95、GUI8通过，类型与生产构建通过，真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，含YMODEM占A口、B口发送一次、A口409、取消恢复及全释放。前批42fa6a6两项CI成功。未验证物理YMODEM对端；继续共享YMODEM能力、任务归属/取消、Agent、恢复长稳安装，不改固件/WinUSB、不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第58节：第五十八批补齐AI共享Modbus循环能力：modbus_loop_start/stop直接复用GUI路由、现有循环及worker，协议25/UART20项；MCP退出循环保留，另一客户端查看/停止，重复启动冲突、停止循环保留连接，无第二句柄或MCU初始化。新增2项MCP/共享API回归，相关90通过，扩大2474通过/2跳过。前批7397714两项CI成功。下一步收敛YMODEM上层全局发送限制与底层按端口隔离不一致，再继续任务归属/取消、Agent、异常恢复/长稳/安装。不改固件/WinUSB，不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第59节：第五十九批统一YMODEM按端口发送隔离：manager/API仅拒绝传输所属端口，复用底层协议锁保留防混流；启动与判断统一COM名称。GUI允许切换其他端口发送，原端口仍禁用，取消后恢复。Python95、GUI8通过，类型与生产构建通过，真实Edge双窗口/MCP/CLI+模拟OS完整联测通过，含YMODEM占A口、B口发送一次、A口409、取消恢复及全释放。前批42fa6a6两项CI成功。未验证物理YMODEM对端；继续共享YMODEM能力、任务归属/取消、Agent、恢复长稳安装，不改固件/WinUSB、不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；收敛YMODEM上层send全局限制与底层按端口隔离不一致，复用底层协议准入并覆盖API/多端口竞态。随后继续YMODEM共享能力、HTTP取消、独立Agent、异常恢复/长稳/NSIS。Modbus循环共享已接通，尚无物理Modbus从站；双探针真机共存见第56节。保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
+1. 核对本批精确CI；YMODEM普通发送已统一按端口隔离，继续补齐AI共享YMODEM能力与任务归属，审查上传限额/取消/剩余低层Device及独立Agent，再做恢复、长稳与NSIS。最新GUI构建为本机v030-ymodem-isolation-web。真实YMODEM接收端与Modbus从站仍未验收。保持500ms心跳门槛，不改固件/WinUSB、不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

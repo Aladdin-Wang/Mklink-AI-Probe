@@ -3079,10 +3079,14 @@ class SerialStreamManager:
             monitor = self._monitor
             if monitor is None or not self._running:
                 return False
-            with self._ymodem_lock:
-                if self._ymodem_status["active"]:
-                    return False
-                return monitor.send(port, data)
+            if self.ymodem_owns_port(port):
+                return False
+            return monitor.send(port, data)
+
+    def ymodem_owns_port(self, port: str) -> bool:
+        from mklink.usb_interfaces import canonical_serial_port
+        status = self.get_ymodem_status()
+        return bool(status['active'] and status['port'] == canonical_serial_port(port))
 
     def send_all(self, data: bytes) -> dict:
         if not isinstance(data, bytes) or not 1 <= len(data) <= 4096:
@@ -3118,6 +3122,8 @@ class SerialStreamManager:
         data: bytes,
         filename: str,
     ) -> dict[str, Any]:
+        from mklink.usb_interfaces import canonical_serial_port
+        port = canonical_serial_port(port)
         monitor = self._monitor
         if monitor is None or not self._running:
             raise RuntimeError("serial monitor not running")

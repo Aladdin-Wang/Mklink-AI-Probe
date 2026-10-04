@@ -2931,7 +2931,7 @@ def create_app(
         sm = managers["serial"]
         if not sm.running:
             raise HTTPException(status_code=400, detail="Serial monitor not running")
-        if sm.get_ymodem_status()["active"]:
+        if sm.ymodem_owns_port(port):
             raise HTTPException(
                 status_code=409,
                 detail="Serial input is locked by an active YMODEM transfer",
@@ -2946,7 +2946,7 @@ def create_app(
         success = sm.send(port, data_bytes)
         if success:
             return {"ok": True}
-        if sm.get_ymodem_status()["active"]:
+        if sm.ymodem_owns_port(port):
             raise HTTPException(
                 status_code=409,
                 detail="Serial input is locked by an active YMODEM transfer",
