@@ -134,7 +134,7 @@ def test_capture_profile_keeps_raw_chunks_and_multiple_frames(tmp_path):
                         ports={'TEST':'open'}, latest_seq=len(entries), dropped_batches=0)
     path = tmp_path/'out.csv'
     with FileLogger(str(path),'csv') as logger:
-        capture = SerialCapture(Client(),'TEST',logger,parser); capture.page()
+        capture = SerialCapture(Client(),{'TEST':parser},logger); capture.page()
     row = next(csv.DictReader(path.open(encoding='utf-8',newline='')))
     assert row['raw_hex'] == 'AA01FFAA02FFAA'
     assert [f['raw_hex'] for f in json.loads(row['decoded_json'])] == ['aa01ff','aa02ff']
