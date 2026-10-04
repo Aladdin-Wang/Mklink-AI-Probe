@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T20:03:28.145720+00:00`
+- 更新时间：`2026-10-04T20:08:05.355840+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第108批完成RTT解析边界及远程共享短时回归：100项通过（2.07秒）。长期验证按用户要求暂缓，等待明确通知；未访问硬件。
+- 当前任务：109批修复脱机部署Windows只读文件回滚与暂存清理：复用_remove_probe_file，新增3项实文件测试；短时109项通过，21项既有白名单失败需调查。长期测试继续暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 106批4963ff33共享/GUI CI及反馈通过；108批在5cee3b1a源码上本地RTT/远程共享100项通过。固定便携包不含106修复，新包短时验证与NSIS安装UAC仍待验；长期测试不可自动恢复。
+2. 优先调查脱机安全算法白名单：修改前dba9935c同样21项失败，不能豁免或改白名单绕过。109批只读文件修复本地109项通过/22项未选，待CI。脱机部署持久查询尚未实现，新包短时验证和NSIS UAC仍待验。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

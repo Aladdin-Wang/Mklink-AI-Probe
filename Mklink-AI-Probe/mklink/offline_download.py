@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -698,7 +699,7 @@ def _transactional_copy(
             for destination in reversed(installed):
                 try:
                     if destination.exists():
-                        destination.unlink()
+                        _remove_probe_file(destination)
                 except OSError:
                     failures.append('remove: ' + str(destination.relative_to(disk_root)))
             for destination, backup in reversed(backups):
@@ -729,7 +730,12 @@ def _transactional_copy(
             raise
     finally:
         if not preserve:
-            shutil.rmtree(stage)
+            def remove_readonly(function, path, error):
+                if function is os.unlink and isinstance(error[1], PermissionError):
+                    _remove_probe_file(Path(path))
+                else:
+                    raise error[1]
+            shutil.rmtree(stage, onerror=remove_readonly)
 
 
 def deploy_offline_bundle(

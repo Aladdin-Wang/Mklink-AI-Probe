@@ -1541,3 +1541,60 @@ def test_deploy_retains_backups_only_when_rollback_is_incomplete(tmp_path, monke
             manifest = json.loads((stage/'recovery.json').read_text())
             assert manifest['rollback_errors'] == ['restore: app.bin']
             assert manifest['backups'] == ['backup/app.bin'] or manifest['backups'] == ['backup\\app.bin']
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_rollback_removes_copied_readonly_file(tmp_path, monkeypatch, existing):
+    import os
+    import shutil
+    import mklink.offline_download as offline
+    if os.name != "nt":
+        pytest.skip("Windows read-only file deletion semantics")
+    disk = tmp_path / "disk"
+    disk.mkdir()
+    source = tmp_path / "app.bin"
+    source.write_bytes(b"replacement")
+    source.chmod(0o444)
+    destination = disk / "app.bin"
+    if existing:
+        destination.write_bytes(b"original")
+    original_copy = shutil.copy2
+    def copy_with_later_failure(src, dst, *args, **kwargs):
+        if Path(dst) == disk / "script.py":
+            raise OSError("later deployment failure")
+        return original_copy(src, dst, *args, **kwargs)
+    monkeypatch.setattr(offline.shutil, "copy2", copy_with_later_failure)
+    try:
+        with pytest.raises(offline.OfflineDownloadError) as error:
+            offline._transactional_copy(disk, [
+                (Path("app.bin"), source, None),
+                (Path("script.py"), None, b"script"),
+            ])
+        assert not isinstance(error.value, offline.OfflineRecoveryError)
+        if existing:
+            assert destination.read_bytes() == b"original"
+        else:
+            assert not destination.exists()
+    finally:
+        source.chmod(0o666)
+        if destination.exists():
+            destination.chmod(0o666)
+
+
+def test_successful_deploy_cleans_readonly_staged_files(tmp_path):
+    import os
+    import mklink.offline_download as offline
+    if os.name != "nt":
+        pytest.skip("Windows read-only file deletion semantics")
+    disk = tmp_path / "disk"
+    disk.mkdir()
+    source = tmp_path / "app.bin"
+    source.write_bytes(b"firmware")
+    source.chmod(0o444)
+    try:
+        assert offline._transactional_copy(disk, [(Path("app.bin"), source, None)]) == ["app.bin"]
+        assert (disk / "app.bin").read_bytes() == b"firmware"
+    finally:
+        source.chmod(0o666)
+        if (disk / "app.bin").exists():
+            (disk / "app.bin").chmod(0o666)
