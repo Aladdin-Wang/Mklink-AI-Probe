@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T19:03:59.964003+00:00`
+- 更新时间：`2026-10-04T19:07:33.372737+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; remote deployment recovery diagnostics after ef3af1c6; use Git for exact tip.`
+- HEAD：`Based on main d4e73bd; journal admission rollback after fdf211e2; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第97批远程部署错误保留结构化恢复信息：回滚不完整返回recovery_required及服务端备份目录，丢失响应/普通500返回unknown且不重放。166项Python及28项GUI回归通过。 持续推进异常恢复和长稳。
+- 当前任务：第98批修复满64条任务日志在新任务保存失败时丢失旧去重记录；76项回归通过，真实子进程强杀后任务恢复unknown并且原request_id不重放。子进程使用模拟操作，不等于CDC/断电验收。 持续推进。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第97节：第97批远程部署错误保留结构化恢复信息：回滚不完整返回recovery_required及服务端备份目录，丢失响应/普通500返回unknown且不重放。166项Python及28项GUI回归通过。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第98节：第98批修复满64条任务日志在新任务保存失败时丢失旧去重记录；76项回归通过，真实子进程强杀后任务恢复unknown并且原request_id不重放。子进程使用模拟操作，不等于CDC/断电验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对97批CI；部署仍没有持久任务ID，继续结果查询/恢复与硬杀生命周期审计，并推进长稳和最新整包。96批两个CI成功。便携候选仍为第94批，不含95至97修复；NSIS安装UAC仍待答复，不运行安装器。
+1. 核对97/98批CI；97批Feedback已成功、Shared run37226845037仍运行。继续持久部署结果查询、真实后台硬杀生命周期与长稳；98批仅模拟操作子进程日志强杀通过。便携候选仍为94批，不含95至98修复。NSIS安装UAC待答复，不运行安装器。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 

@@ -87,12 +87,57 @@ def test_failed_transport_is_unknown_and_never_replayed(fixture):
     assert calls == ['erase']
 
 
-def test_interrupted_journal_is_unknown_without_hardware_replay(fixture):
+def test_killed_process_journal_is_unknown_without_replay(fixture, tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
     _, control, calls, _, _ = fixture
-    control.jobs.path.write_text(json.dumps([{'job_id':'old', 'state':'running'}]), encoding='utf-8')
-    restored = RuntimeJobs(control)
-    assert restored.jobs['old']['state'] == 'unknown'
-    assert calls == []
+    marker = tmp_path / 'worker-started'
+    child = tmp_path / 'job_child.py'
+    child.write_text("""
+import asyncio, sys
+from pathlib import Path
+from types import SimpleNamespace
+from mklink.runtime_jobs import RuntimeJobs
+import mklink.remote.dashboards as dashboards
+dashboards.active_bridge_dashboards = lambda: []
+async def main():
+    async def invoke(*args):
+        Path(sys.argv[2]).write_text('one simulated operation', encoding='utf-8')
+        await asyncio.Event().wait()
+    control = SimpleNamespace(info={'jobs_path': sys.argv[1]},
+        operation_lock=asyncio.Lock(), attach_lock=asyncio.Lock(),
+        require_identity=lambda: None, online_job=lambda: None, invoke=invoke,
+        app=SimpleNamespace(state=SimpleNamespace(mklink_state={
+            'device': SimpleNamespace(connected=True)})))
+    jobs = RuntimeJobs(control)
+    jobs.submit({'action':'reset','request_id':'killed-request','confirm':True})
+    await asyncio.Event().wait()
+asyncio.run(main())
+""", encoding='utf-8')
+    env = dict(os.environ, PYTHONPATH=str(Path.cwd()))
+    process = subprocess.Popen([sys.executable, str(child), str(control.jobs.path), str(marker)],
+                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 20
+        while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert marker.exists(), 'Simulated worker did not start'
+        accepted = json.loads(control.jobs.path.read_text(encoding='utf-8'))[0]
+        assert accepted['state'] == 'running'
+        process.kill()
+        process.wait(timeout=10)
+        restored = RuntimeJobs(control)
+        job = restored.submit({'action':'reset','request_id':'killed-request','confirm':True})
+        assert job['job_id'] == accepted['job_id'] and job['state'] == 'unknown'
+        assert not restored.tasks and not calls
+        assert marker.read_text(encoding='utf-8') == 'one simulated operation'
+        assert RuntimeJobs(control).jobs[job['job_id']]['state'] == 'unknown'
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
 
 
 def test_online_background_job_blocks_cdc_and_shared_jobs(fixture):
@@ -124,3 +169,24 @@ def test_independent_serial_capture_does_not_reserve_target_job(fixture):
     assert terminal(client, result.json()['job_id'])['state'] == 'succeeded'
     assert calls == ['reset']
     assert managers['serial'].running and managers['modbus'].running
+
+
+def test_failed_acceptance_preserves_full_deduplication_history(fixture, monkeypatch):
+    import hashlib
+    client, control, calls, _, _ = fixture
+    fingerprint = hashlib.sha256(json.dumps(['reset', {}], sort_keys=True).encode()).hexdigest()
+    control.jobs.jobs.update({str(index): {'job_id': str(index), 'request_id': f'old-{index}',
+        'fingerprint': fingerprint, 'state': 'succeeded', 'result': {'status': 'ok'}}
+        for index in range(64)})
+    control.jobs.save()
+    before = control.jobs.path.read_bytes()
+    def failed_save():
+        raise OSError('journal storage unavailable')
+    with monkeypatch.context() as patcher:
+        patcher.setattr(control.jobs, 'save', failed_save)
+        response = client.post('/api/runtime/jobs/', json=body(request_id='new-request'))
+    assert response.status_code == 503
+    assert control.jobs.path.read_bytes() == before
+    assert list(control.jobs.jobs) == [str(index) for index in range(64)]
+    assert client.post('/api/runtime/jobs/', json=body(request_id='old-0')).json()['job_id'] == '0'
+    assert not calls and not control.jobs.tasks

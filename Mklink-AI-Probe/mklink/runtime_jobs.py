@@ -92,13 +92,15 @@ class RuntimeJobs:
         job = {'job_id': secrets.token_hex(16), 'request_id': request_id, 'fingerprint': fingerprint,
                'action': action, 'probe_id': c.info.get('probe_id'), 'state': 'running', 'started': time.time(),
                'result': None, 'error': None, 'replay': False}
+        previous_jobs = self.jobs.copy()
         while len(self.jobs) >= 64:
             self.jobs.pop(next(iter(self.jobs)))
         self.jobs[job['job_id']] = job
         try:
             self.save()  # Persist acceptance before hardware can run.
         except OSError:
-            self.jobs.pop(job['job_id'])
+            self.jobs.clear()
+            self.jobs.update(previous_jobs)
             raise HTTPException(503, 'Job journal unavailable; no operation was started')
         task = asyncio.create_task(self.execute(job, dict(arguments)))
         self.tasks.add(task)
