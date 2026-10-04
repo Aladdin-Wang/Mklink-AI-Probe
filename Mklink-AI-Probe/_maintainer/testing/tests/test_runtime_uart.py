@@ -43,7 +43,8 @@ def test_uart_lobby_attach_ignores_target_locks_and_never_connects(runtime):
                 return response.json()
     result = client.portal.call(scenario)
     assert result['scope'] == 'uart' and result['attached']
-    assert result['capabilities'] == ['modbus_status', 'serial_status', 'uart_ports']
+    assert result['capabilities'] == ['modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
+                                     'serial_send', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
     assert app.state.mklink_state['device'] is None and calls == []
     session = result['session_id']
     assert call(client, session, 'uart_ports').json() == [{'device': 'TEST_UART'}]
@@ -404,3 +405,222 @@ def test_uart_sse_initial_status_wait_is_async_and_subscription_is_released(kind
         timer.cancel()
         holder.join(2)
     assert not holder.is_alive()
+
+
+@pytest.fixture
+def uart_app(client_factory, monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from mklink.remote.api import create_app
+    from mklink.remote import dashboards
+    from mklink.serial import _monitor
+    monkeypatch.setattr(dashboards, '_managers', {})
+    class Monitor:
+        worker_alive = False
+        sent = []
+        def __init__(self, ports, **kwargs):
+            self.port_status = {config['port']: 'open' for config in ports}
+        def start(self): pass
+        def stop(self): pass
+        def send(self, port, data):
+            self.sent.append((port, data))
+            return True
+    monkeypatch.setattr(_monitor, 'SerialMonitor', Monitor)
+    monkeypatch.setattr(client_factory, 'write_register', lambda self, addr, value, slave:
+                        self.calls.append(('write', addr, value, slave)), raising=False)
+    app = create_app(project_root=str(tmp_path))
+    control = install_runtime(app, {'probe_id': 'lobby', 'port': 8765, 'token': 'test-secret', 'instance_id': 'uart'})
+    with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as client:
+        yield client, control, dashboards.get_managers(), client_factory, Monitor
+        control.sessions.clear()
+        for name in ('serial', 'modbus'):
+            if dashboards.get_managers()[name].running:
+                assert client.post(f'/api/dash/{name}/stop').status_code == 200
+
+
+def uart_attach(client):
+    response = client.post('/_runtime/attach', json={'scope': 'uart'})
+    assert response.status_code == 200, response.text
+    return response.json()['session_id']
+
+
+@pytest.mark.parametrize('stream,settings', [('serial', {'ports': [{'port': 'TEST'}]}),
+                                           ('modbus', {'port': 'TEST', 'slave': 7, 'registers': []})])
+def test_uart_shared_creator_borrower_and_gui_permissions(uart_app, stream, settings):
+    client, control, managers, factory, monitor = uart_app
+    owner, peer = uart_attach(client), uart_attach(client)
+    control.jobs.jobs['target'] = {'job_id': 'target', 'state': 'running'}
+    assert call(client, owner, stream + '_start', settings).status_code == 200
+    assert control.created_streams[stream] == owner
+    assert call(client, peer, stream + '_start', settings).status_code == 409
+    assert call(client, peer, stream + '_start').json()['reused']
+    assert call(client, peer, stream + '_stop').status_code == 409
+    assert client.post(f'/api/dash/{stream}/stop', headers={'X-MKLink-Session': peer}).status_code == 409
+    assert call(client, owner, stream + '_stop').status_code == 409
+    assert client.post(f'/api/dash/{stream}/stop').status_code == 409
+    if stream == 'serial':
+        assert call(client, peer, 'serial_send', {'port': 'TEST', 'data': 'A'}).json() == {'ok': True}
+        assert monitor.sent == [('TEST', b'A')]
+    else:
+        response = call(client, peer, 'modbus_transaction', {'fc': 6, 'start': 2, 'values': [17]})
+        assert response.status_code == 200, response.text
+        assert factory.instances[0].calls == [('write', 2, 17, 7)]
+    client.post('/_runtime/detach', json={'session_id': peer})
+    assert call(client, owner, stream + '_stop').status_code == 200
+    assert stream not in control.created_streams and not control.sessions[owner].streams
+    assert not managers[stream].worker_alive
+
+
+def test_concurrent_uart_start_only_registers_the_actual_creator(uart_app, monkeypatch):
+    client, control, managers, factory, _ = uart_app
+    owner, peer = uart_attach(client), uart_attach(client)
+    entered, release = threading.Event(), threading.Event()
+    def opening(self):
+        entered.set()
+        assert release.wait(3)
+        return True
+    monkeypatch.setattr(factory, 'open', opening)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=control.app),
+                base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as http:
+            body = {'capability': 'modbus_start', 'arguments': {'port': 'TEST', 'registers': []}}
+            first = asyncio.create_task(http.post('/_runtime/call', json={**body, 'session_id': owner}))
+            assert await asyncio.to_thread(entered.wait, 1)
+            second = asyncio.create_task(http.post('/_runtime/call', json={**body, 'session_id': peer}))
+            try:
+                assert (await asyncio.wait_for(second, .5)).status_code == 409
+            finally:
+                release.set()
+                responses = await asyncio.gather(first, second)
+            assert [r.status_code for r in responses] == [200, 409]
+    client.portal.call(scenario)
+    assert len(factory.instances) == 1 and control.created_streams == {'modbus': owner}
+    assert control.sessions[owner].streams == {'modbus'} and not control.sessions[peer].streams
+
+
+def test_delayed_uart_start_response_cannot_claim_a_later_gui_session(uart_app, monkeypatch):
+    client, control, managers, factory, _ = uart_app
+    owner = uart_attach(client)
+    original = control.invoke
+    async def scenario():
+        reached, release = asyncio.Event(), asyncio.Event()
+        async def delayed(method, path, *args, **kwargs):
+            result = await original(method, path, *args, **kwargs)
+            if path == '/api/dash/modbus/start' and kwargs.get('session_id') == owner:
+                reached.set()
+                await release.wait()
+            return result
+        monkeypatch.setattr(control, 'invoke', delayed)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=control.app),
+                base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as http:
+            request = asyncio.create_task(http.post('/_runtime/call', json={'session_id': owner,
+                'capability': 'modbus_start', 'arguments': {'port': 'TEST', 'slave': 1, 'registers': []}}))
+            await asyncio.wait_for(reached.wait(), 1)
+            try:
+                assert control.created_streams == {'modbus': owner}
+                assert (await http.post('/api/dash/modbus/stop')).status_code == 409
+                await http.post('/_runtime/detach', json={'session_id': owner})
+                assert (await http.post('/api/dash/modbus/stop')).status_code == 200
+                assert (await http.post('/api/dash/modbus/start', json={'port': 'TEST', 'slave': 2, 'registers': []})).status_code == 200
+                assert not control.created_streams
+            finally:
+                release.set()
+                assert (await request).status_code == 200
+            assert not control.created_streams and managers['modbus'].get_status()['slave'] == 2
+    client.portal.call(scenario)
+
+
+def test_uart_stop_failure_keeps_ownership(uart_app, monkeypatch):
+    client, control, managers, _, _ = uart_app
+    owner = uart_attach(client)
+    assert call(client, owner, 'modbus_start', {'port': 'TEST', 'registers': []}).status_code == 200
+    original = managers['modbus'].stop
+    def failing(): raise TimeoutError('still executing')
+    monkeypatch.setattr(managers['modbus'], 'stop', failing)
+    assert call(client, owner, 'modbus_stop').status_code == 409
+    assert control.created_streams == {'modbus': owner}
+    assert control.sessions[owner].streams == {'modbus'}
+    monkeypatch.setattr(managers['modbus'], 'stop', original)
+    assert call(client, owner, 'modbus_stop').status_code == 200
+
+
+@pytest.mark.parametrize('stream,settings', [('serial', {'ports': [{'port': 'TEST'}]}),
+                                           ('modbus', {'port': 'TEST', 'registers': []})])
+def test_uart_operator_stop_reuses_ownership_guard_during_target_job(uart_app, stream, settings):
+    client, control, managers, _, _ = uart_app
+    owner = uart_attach(client)
+    assert call(client, owner, stream + '_start', settings).status_code == 200
+    control.jobs.jobs['target'] = {'job_id': 'target', 'state': 'running'}
+    path = '/api/runtime/control/stop-acquisition'
+    body = {'stream': stream, 'confirm': True}
+    assert client.post(path, json={'stream': stream}).status_code == 422
+    assert client.post(path, json=body).status_code == 409
+    assert managers[stream].running
+    client.post('/_runtime/detach', json={'session_id': owner})
+    assert client.post(path, json=body).status_code == 200
+    assert not managers[stream].worker_alive and not control.created_streams
+
+
+def test_uart_mcp_shared_writes_use_existing_workers(uart_app, monkeypatch):
+    from mklink import runtime as runtime_module, runtime_mcp
+    client, control, managers, factory, monitor = uart_app
+    def request(info, method, path, payload=None, **kwargs):
+        response = client.request(method, path, json=payload)
+        response.raise_for_status()
+        return response.json()
+    monkeypatch.setattr(runtime_module, 'request', request)
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', lambda **kwargs: RuntimeClient(info=control.info, **kwargs))
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            assert (await mcp.call_tool('connect', {'scope': 'uart'})).data['scope'] == 'uart'
+            for capability, arguments in [
+                ('serial_start', {'ports': [{'port': 'TEST_SERIAL'}]}),
+                ('serial_send', {'port': 'TEST_SERIAL', 'data': '0041ff', 'hex': True}),
+                ('modbus_start', {'port': 'TEST_MODBUS', 'slave': 7, 'registers': []}),
+                ('modbus_transaction', {'fc': 6, 'start': 2, 'values': [17]}),
+                ('serial_stop', {}), ('modbus_stop', {})]:
+                result = await mcp.call_tool('gui_call', {'capability': capability, 'arguments': arguments})
+                assert not result.is_error, result
+            await mcp.call_tool('disconnect', {})
+    asyncio.run(scenario())
+    assert monitor.sent == [('TEST_SERIAL', b'\x00A\xff')]
+    assert len(factory.instances) == 1 and factory.instances[0].calls == [('write', 2, 17, 7)]
+    assert not control.sessions and not control.created_streams
+    assert all(not managers[name].worker_alive for name in ('serial', 'modbus'))
+    assert control.app.state.mklink_state['device'] is None
+
+
+def test_detach_during_uart_open_does_not_create_a_ghost_session(uart_app, monkeypatch):
+    client, control, managers, factory, _ = uart_app
+    owner = uart_attach(client)
+    entered, release = threading.Event(), threading.Event()
+    def opening(self):
+        entered.set()
+        assert release.wait(3)
+        return True
+    monkeypatch.setattr(factory, 'open', opening)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=control.app),
+                base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as http:
+            starting = asyncio.create_task(http.post('/_runtime/call', json={'session_id': owner,
+                'capability': 'modbus_start', 'arguments': {'port': 'TEST', 'registers': []}}))
+            try:
+                assert await asyncio.to_thread(entered.wait, 1)
+                assert (await http.post('/_runtime/detach', json={'session_id': owner})).status_code == 200
+            finally:
+                release.set()
+                assert (await starting).status_code == 200
+    client.portal.call(scenario)
+    assert not control.sessions and managers['modbus'].running
+    assert call(client, owner, 'modbus_stop').status_code == 409
+    assert client.post('/api/runtime/control/stop-acquisition', json={'stream': 'modbus', 'confirm': True}).status_code == 200
+    assert not control.created_streams and not managers['modbus'].worker_alive
+
+
+def test_failed_uart_start_never_registers_an_owner(uart_app, monkeypatch):
+    client, control, managers, factory, _ = uart_app
+    owner = uart_attach(client)
+    monkeypatch.setattr(factory, 'open', lambda self: False)
+    response = call(client, owner, 'modbus_start', {'port': 'TEST', 'registers': []})
+    assert response.status_code == 409, response.text
+    assert not control.created_streams and not control.sessions[owner].streams
+    assert not managers['modbus'].worker_alive

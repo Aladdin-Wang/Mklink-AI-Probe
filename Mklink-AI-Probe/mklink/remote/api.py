@@ -541,9 +541,18 @@ async def start_dashboard_manager(
     state: dict[str, Any], dashboard: str, manager, start_call
 ) -> tuple[str, list[str]]:
     async with _dashboard_start_lock(state, dashboard):
-        return await _start_dashboard_manager_transaction(
+        from mklink.runtime_api import active_operation
+        shared = active_operation.get()
+        if shared and shared[1]:
+            shared[0].validate_session(shared[1], target=dashboard not in ('serial', 'modbus'))
+            if manager.running:
+                raise HTTPException(409, 'Acquisition already runs; subscribe without reconfiguring it')
+        result = await _start_dashboard_manager_transaction(
             state, dashboard, manager, start_call,
         )
+        if shared and result[0] == 'started':
+            shared[0].acquisition_started(dashboard, shared[1])
+        return result
 
 
 async def _start_dashboard_manager_transaction(
@@ -676,9 +685,15 @@ async def stop_dashboard_manager_transaction(
 ) -> None:
     """Serialize stop with start and keep blocking joins off the event loop."""
     async with _dashboard_start_lock(state, dashboard):
+        from mklink.runtime_api import active_operation
+        shared = active_operation.get()
+        if shared:
+            shared[0].require_acquisition_control(dashboard, shared[1])
         await asyncio.to_thread(
             stop_dashboard_manager, state, dashboard, manager,
         )
+        if shared:
+            shared[0].acquisition_stopped(dashboard)
 
 # Eager-import FastAPI types so that typing.get_type_hints() can resolve
 # annotations in closures (e.g. the /ws handler).  The module can still be

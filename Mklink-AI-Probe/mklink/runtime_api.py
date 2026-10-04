@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 import hmac
 import json
@@ -14,9 +15,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount
 
 from mklink.runtime import PROTOCOL, VERSION
-from mklink.runtime_capabilities import CAPABILITIES, STREAMS, UART_CAPABILITIES, is_uart_path, validate_arguments
+from mklink.runtime_capabilities import CAPABILITIES, STREAMS, LIFECYCLE_CAPABILITIES, UART_CAPABILITIES, is_uart_path, validate_arguments
 
 RESOURCE_RELEASE_PATHS = frozenset({'/api/resources/release-all', '/api/resources/release'})
+active_operation = ContextVar('mklink_runtime_operation', default=None)
 
 
 async def settle(task):
@@ -72,6 +74,30 @@ class RuntimeControl:
     @property
     def target_sessions(self):
         return {key: session for key, session in self.sessions.items() if session.scope == 'target'}
+
+    def require_acquisition_control(self, stream, session_id):
+        self.prune()
+        if session_id:
+            self.validate_session(session_id, target=stream in STREAMS)
+            if self.created_streams.get(stream) != session_id:
+                raise HTTPException(409, 'This acquisition was started by another client; detach instead')
+        if any(stream in session.streams for key, session in self.sessions.items() if key != session_id):
+            raise HTTPException(409, 'Other clients subscribe to this acquisition; detach them before stopping it')
+
+    def acquisition_stopped(self, stream):
+        self.created_streams.pop(stream, None)
+        for session in self.sessions.values():
+            session.streams.discard(stream)
+
+    def acquisition_started(self, stream, session_id):
+        # Called inside the existing manager start transaction, before unlock or
+        # HTTP response delivery. A new producer cannot inherit old subscribers.
+        self.acquisition_stopped(stream)
+        if session_id:
+            self.created_streams[stream] = session_id
+            session = self.sessions.get(session_id)
+            if session is not None:
+                session.streams.add(stream)
 
     def online_job(self):
         services = getattr(self.app.state, 'online_flash', None)
@@ -180,6 +206,12 @@ class RuntimeControl:
         own_job = self.jobs and self.jobs.active and executing_job.get() == self.jobs.active['job_id']
         if self.stopping:
             raise HTTPException(503, 'Runtime is stopping')
+        async def execute():
+            token = active_operation.set((self, session_id))
+            try:
+                return await operation()
+            finally:
+                active_operation.reset(token)
         if is_uart_path(name):
             if self.current_operation and self.current_operation['path'] in RESOURCE_RELEASE_PATHS:
                 raise HTTPException(409, 'Resource release is in progress; wait before using UART')
@@ -189,7 +221,7 @@ class RuntimeControl:
                 raise HTTPException(429, 'Too many independent UART operations in flight')
             # Managers retain their existing port/worker admission. Track these
             # requests only for bounded ingress and safe backend shutdown.
-            task = asyncio.create_task(operation())
+            task = asyncio.create_task(execute())
             self.uart_operations[task] = name
             try:
                 return await settle(task)
@@ -209,7 +241,7 @@ class RuntimeControl:
                       'started_at': time.time(), 'http_status': None}
             self.current_operation = record
             try:
-                return await settle(asyncio.create_task(operation()))
+                return await settle(asyncio.create_task(execute()))
             finally:
                 self.last_operation = {**record, 'duration_seconds': time.monotonic() - started}
                 self.current_operation = None
@@ -360,7 +392,7 @@ class RuntimeGate:
         if path in RESOURCE_RELEASE_PATHS and (c.sessions or c.attach_lock.locked() or c.uart_operations):
             return await reject(409, 'Detach clients and finish independent UART operations before releasing resources')
         for stream in STREAMS:
-            if path in {f"/api/dash/{stream}/stop", f"/api/dash/{stream}/pause"} or (stream == "vofa" and path == "/api/dash/vofa/interval"):
+            if path == f"/api/dash/{stream}/pause" or (stream == "vofa" and path == "/api/dash/vofa/interval"):
                 others = [key for key, s in c.sessions.items() if stream in s.streams and key != session_id]
                 if others:
                     return await reject(409, "Other clients subscribe to this acquisition; detach them before stopping it")
@@ -527,30 +559,26 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
         if not isinstance(arguments, dict) or len(json.dumps(arguments)) > 16384:
             raise HTTPException(422, "Arguments must be an object of at most 16 KiB")
         arguments = validate_arguments(capability, arguments)
-        stream = capability.split("_")[0]
-        if capability.endswith("_start"):
-            if control.operation_lock.locked():
+        stream, action = LIFECYCLE_CAPABILITIES.get(capability, (None, None))
+        if action == 'start':
+            if stream in STREAMS and control.operation_lock.locked():
                 raise HTTPException(409, "Acquisition is changing; wait for the current operation before subscribing")
             from mklink.remote.dashboards import get_managers
-            if get_managers()[stream].running:
-                if arguments:
-                    raise HTTPException(409, "Acquisition already runs; subscribe without reconfiguring it")
-                session.streams.add(stream)
-                return {"status": "subscribed", "reused": True}
-        if capability.endswith(("_stop", "_pause", "_resume")):
-            if control.created_streams.get(stream) != session_id:
-                raise HTTPException(409, "This acquisition was started by another client; detach instead")
+            from mklink.remote.api import _dashboard_start_lock
+            start_lock = _dashboard_start_lock(state, stream)
+            if start_lock.locked():
+                raise HTTPException(409, 'Acquisition is changing; wait before starting or subscribing')
+            async with start_lock:
+                session = control.validate_session(session_id, target=stream in STREAMS)
+                if get_managers()[stream].running:
+                    if arguments:
+                        raise HTTPException(409, "Acquisition already runs; subscribe without reconfiguring it")
+                    session.streams.add(stream)
+                    return {"status": "subscribed", "reused": True}
+        if action in ('pause', 'resume'):
+            control.require_acquisition_control(stream, session_id)
         method, path = CAPABILITIES[capability]
-        async def execute():
-            result = await control.invoke(method, path, arguments, session_id=session_id)
-            if capability.endswith("_start"):
-                session.streams.add(stream)
-                control.created_streams[stream] = session_id
-            elif capability.endswith("_stop"):
-                session.streams.discard(stream)
-                control.created_streams.pop(stream, None)
-            return result
-        return await settle(asyncio.create_task(execute()))
+        return await settle(asyncio.create_task(control.invoke(method, path, arguments, session_id=session_id)))
 
     @api.post("/stop")
     async def stop(body: dict):

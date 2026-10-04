@@ -54,7 +54,18 @@ for stream in STREAMS:
 for stream in ('rtt', 'systemview', 'vofa'):
     CAPABILITIES[f'{stream}_history'] = ('GET', f'/api/dash/{stream}/history')
 for stream in ('serial', 'modbus'):
-    CAPABILITIES[f'{stream}_status'] = ('GET', f'/api/dash/{stream}/status')
+    for action in ('status', 'start', 'stop'):
+        CAPABILITIES[f'{stream}_{action}'] = ('GET' if action == 'status' else 'POST', f'/api/dash/{stream}/{action}')
+CAPABILITIES.update({
+    'serial_send': ('POST', '/api/dash/serial/send'),
+    'modbus_transaction': ('POST', '/api/dash/modbus/transaction'),
+})
+LIFECYCLE_CAPABILITIES = {
+    f'{stream}_{action}': (stream, action)
+    for stream in (*STREAMS, 'serial', 'modbus')
+    for action in ('start', 'stop', 'pause', 'resume')
+    if f'{stream}_{action}' in CAPABILITIES
+}
 
 
 PROBE_QUERIES = {'power_read': '/api/probe/power-read', 'probe_version': '/api/probe/version'}

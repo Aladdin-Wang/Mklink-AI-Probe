@@ -4,13 +4,13 @@ from __future__ import annotations
 import time
 from fastapi import FastAPI, HTTPException
 from starlette.routing import Mount
-from mklink.runtime_capabilities import STREAMS
+from mklink.runtime_capabilities import STREAMS, LIFECYCLE_CAPABILITIES, CAPABILITIES
 
 
-def confirm_idle(control, body):
+def confirm_idle(control, body, *, target=True):
     if body.get('confirm') is not True:
         raise HTTPException(422, 'confirm=true required')
-    if control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy():
+    if target and (control.operation_lock.locked() or control.attach_lock.locked() or control.job_busy()):
         raise HTTPException(409, 'An operation is still running; wait for completion')
     control.prune()
 
@@ -82,13 +82,13 @@ def install_management(app, control):
 
     @api.post('/stop-acquisition')
     async def stop_acquisition(body: dict):
-        confirm_idle(control, body)
         stream = body.get('stream')
-        if stream not in STREAMS:
-            raise HTTPException(422, 'Select RTT, SuperWatch or SystemView')
-        result = await control.invoke('POST', f'/api/dash/{stream}/stop')
-        control.created_streams.pop(stream, None)
-        return result
+        capability = f'{stream}_stop'
+        if capability not in LIFECYCLE_CAPABILITIES:
+            raise HTTPException(422, 'Select a supported acquisition')
+        confirm_idle(control, body, target=stream in STREAMS)
+        method, path = CAPABILITIES[capability]
+        return await control.invoke(method, path)
 
     @api.post('/release-device')
     async def release_device(body: dict):

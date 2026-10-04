@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 9  # Explicit UART-only sessions; stop older runtimes explicitly.
+PROTOCOL = 10  # Atomic acquisition ownership and shared UART writes; stop older runtimes explicitly.
 VERSION = "0.3.0"
 
 

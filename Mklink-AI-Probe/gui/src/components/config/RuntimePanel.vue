@@ -115,7 +115,7 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
       <p v-if="!state.streams.some(s => s.running)">{{ tr('暂无采集', 'No active capture') }}</p>
       <div v-for="stream in state.streams.filter(s => s.running)" :key="stream.name" class="runtime-row">
         <span>{{ stream.name }} · {{ stream.subscribers }} {{ tr('个 AI/CLI/SDK 订阅', 'AI/CLI/SDK subscribers') }}</span>
-        <button v-if="['rtt', 'superwatch', 'systemview'].includes(stream.name)" class="btn btn-sm" :disabled="acting || state.busy || stream.subscribers > 0" @click="act('stop-acquisition', { stream: stream.name })">{{ tr('停止采集', 'Stop capture') }}</button>
+        <button v-if="['rtt', 'superwatch', 'systemview', 'vofa', 'serial', 'modbus'].includes(stream.name)" class="btn btn-sm" :disabled="acting || (state.busy && !['serial', 'modbus'].includes(stream.name)) || stream.subscribers > 0" @click="act('stop-acquisition', { stream: stream.name })">{{ tr('停止采集', 'Stop capture') }}</button>
       </div>
       <div class="runtime-actions">
         <button class="btn" :disabled="acting" @click="checkVolume">{{ tr('核对下载器磁盘', 'Check probe volume') }}</button><span>{{ volume }}</span>

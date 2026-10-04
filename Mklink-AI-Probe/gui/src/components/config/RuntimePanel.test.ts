@@ -7,6 +7,31 @@ vi.mock('../../composables/useMklinkApi', () => ({ useMklinkApi: () => ({ refres
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); refreshDeviceStatus.mockClear() })
 
+it('keeps UART stop available during a target job and preserves subscriber protection', async () => {
+  const payload = {
+    probe_id: 'test', status: 'present', connected: true, busy: true, project_root: '.',
+    probe: null, clients: [], operation: null, last_operation: null,
+    streams: [
+      { name: 'vofa', running: true, subscribers: 0 },
+      { name: 'serial', running: true, subscribers: 0 },
+      { name: 'modbus', running: true, subscribers: 1 },
+    ],
+  }
+  const fetch = vi.fn(async () => ({ ok: true, json: async () => payload }))
+  vi.stubGlobal('fetch', fetch)
+  vi.stubGlobal('confirm', vi.fn(() => true))
+  const wrapper = mount(RuntimePanel)
+  await flushPromises()
+  const stops = wrapper.findAll('button').filter(button => button.text().includes('停止采集'))
+  expect(stops).toHaveLength(3)
+  expect(stops.map(button => button.attributes('disabled') !== undefined)).toEqual([true, false, true])
+  await stops[1]!.trigger('click')
+  await flushPromises()
+  const mutation = vi.mocked(globalThis.fetch).mock.calls.find(([url]) => String(url).endsWith('/stop-acquisition'))!
+  expect(JSON.parse(mutation[1]!.body as string)).toEqual({ stream: 'serial', confirm: true })
+  wrapper.unmount()
+})
+
 it('shows client ownership, blocks subscribed capture stop and ends only the chosen session', async () => {
   const payload = {
     probe_id: 'test-probe', status: 'present', connected: true, busy: false, project_root: 'test-project',

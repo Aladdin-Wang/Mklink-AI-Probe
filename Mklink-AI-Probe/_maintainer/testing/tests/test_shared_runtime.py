@@ -9,13 +9,16 @@ import httpx
 import pytest
 
 from mklink.runtime_api import install_runtime
+from mklink.remote.api import start_dashboard_manager, stop_dashboard_manager_transaction
+from mklink.remote.resource_manager import ResourceManager
 
 
 @pytest.fixture
 def runtime(monkeypatch, tmp_path):
     app = FastAPI()
     device = SimpleNamespace(connected=True, port="COM9", axf_status={"axf_path": str(tmp_path / "test.axf")})
-    app.state.mklink_state = {"device": device, "project_root": str(tmp_path), "last_device_connection": {}}
+    app.state.mklink_state = {"device": device, "project_root": str(tmp_path), "last_device_connection": {},
+                             "resource_manager": ResourceManager()}
     calls = []
     managers = {name: SimpleNamespace(running=False) for name in ("rtt", "superwatch", "systemview")}
     monkeypatch.setattr("mklink.remote.dashboards.get_managers", lambda: managers)
@@ -42,14 +45,20 @@ def runtime(monkeypatch, tmp_path):
 
     @app.post("/api/dash/rtt/start")
     async def start(body: dict):
-        calls.append("start")
-        managers["rtt"].running = True
-        return {"status": "started"}
+        def start_manager():
+            calls.append("start")
+            managers['rtt'].running = True
+        status, _ = await start_dashboard_manager(app.state.mklink_state, 'rtt', managers['rtt'],
+                                                start_manager)
+        return {"status": status}
 
     @app.post("/api/dash/rtt/stop")
     async def stop():
-        calls.append("stop")
-        managers["rtt"].running = False
+        def stop_manager():
+            calls.append("stop")
+            managers['rtt'].running = False
+        managers['rtt'].stop = stop_manager
+        await stop_dashboard_manager_transaction(app.state.mklink_state, 'rtt', managers['rtt'])
         return {"status": "stopped"}
 
     @app.get("/api/dash/rtt/history")

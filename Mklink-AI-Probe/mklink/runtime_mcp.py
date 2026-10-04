@@ -177,7 +177,7 @@ def build_server():
 
         Explicit conflicting project/probe/symbol settings fail without replacing the GUI session.
         scope='uart' attaches without MCU/CDC initialization, including the unselected lobby.
-        It exposes uart_ports, serial_status and modbus_status; UART writes/CLI migration is pending.
+        Use gui_call for uart_ports, serial/modbus start/status/stop, serial_send and modbus_transaction.
         Use probe to choose a backend; target port/AXF/MCU options require scope='target'.
         """
         with lock:
@@ -289,8 +289,12 @@ def build_server():
         """Invoke an advertised GUI capability on the shared backend.
 
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
-        rtt_start or superwatch_start with {} subscribes if already running. Stop requires ownership
-        and no other subscriber. Unsupported capabilities fail without a direct serial fallback.
+        Acquisition start with {} subscribes if already running; new settings require an idle manager.
+        Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
+        or Modbus port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
+        accepts fc/start/quantity/values and uses the connected slave. These explicit sends share the
+        existing worker, may be issued by borrowers, and never retry an unknown result. Disconnect
+        only detaches. Unsupported capabilities fail without a direct serial fallback.
         """
         return client().call(capability, arguments)
 
