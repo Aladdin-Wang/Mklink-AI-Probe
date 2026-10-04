@@ -729,6 +729,12 @@ try:
         interval_ms: StrictInt = 1000
         repeat: StrictInt = 1
 
+    class SerialFileRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        path: str
+        hex: StrictBool = False
+
     class SerialSequenceStopRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         port: str
@@ -3017,6 +3023,40 @@ def create_app(
         try:
             return await asyncio.to_thread(get_managers()['serial'].get_history, **body.model_dump())
         except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/broadcast')
+    async def serial_broadcast(body: SerialSequenceCommand):
+        try:
+            data = bytes.fromhex(body.data) if body.hex else body.data.encode('utf-8')
+            return await asyncio.to_thread(get_managers()['serial'].send_all, data)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/file')
+    async def serial_file(body: SerialFileRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].send_file, **body.model_dump())
+        except (ValueError, OSError) as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/file/upload')
+    async def serial_file_upload(request: Request, port: str = Query(...), hex: bool = Query(False)):
+        from mklink.serial._sequence import SERIAL_FILE_INPUT_BYTES
+        content = bytearray()
+        async for chunk in request.stream():
+            if len(content) + len(chunk) > SERIAL_FILE_INPUT_BYTES:
+                raise HTTPException(413, 'Input file exceeds 256 KiB')
+            content.extend(chunk)
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_file_data, port, bytes(content), hex)
+        except (ValueError, OSError) as error:
             raise HTTPException(400, str(error)) from error
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error

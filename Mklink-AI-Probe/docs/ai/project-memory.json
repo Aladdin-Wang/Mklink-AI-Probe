@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T10:12:59+00:00",
+  "updated_at": "2026-10-04T10:34:02+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared sequence GUI after ab0a6d4; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; removed independent serial dashboard after 812318d; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审验证。第五十四批主GUI共享命令队列面板完成：本窗口草稿与后台执行状态分开，按端口显示状态/发送计数，停止固定对应行端口，切换端口不隐式停止；复用现有轮询无浏览器定时发送。新增4GUI测试，相关21/完整814通过，类型与生产构建通过；真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI启动A/选中B的窗口停止A、AI启动B两窗同步/A窗按行停止B，既有日志/队列断开续行/原始字节各一次/全释放通过。前批ab0a6d4精确两个CI成功，日志下载EOF数量未填，本批待核对。下一步广播/有界文件发送并删除旧Dashboard和reader旧同步日志分支。不改固件/WinUSB，不合并发布。"
+    "current_task": "持续循环评审验证。第五十五批旧独立串口Dashboard完全删除：CLI改共享后台认证直达串口页，命令退出保留连接，--probe选设备；旧服务/HTML/演示1184行及reader同步FileLogger/吞错分支删除。共享广播逐端口结果；GUI流式原始上传/MCP后台普通文件限256KiB输入/64KiB载荷，复用4KiB/20ms命令序列，无新线程。协议24/UART18项。新增Python13/GUI3，相关171、扩大2460通过2跳过、GUI817通过，最终滚动可达调整后类型/构建和完整真实Edge/MCP/CLI+模拟OS联测通过：CLI无新句柄/认证串口页/退出续行、9000字节GUI文件/MCP文件准确、广播各一次、队列日志与全释放。前批812318d精确CI两项成功，本批待核对。下一步整体复审与双探针真机共存验证，继续任务归属/取消/Agent/长稳/NSIS。不改固件/WinUSB，不合并发布。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第54节：第五十四批主GUI共享命令队列面板完成：本窗口草稿与后台执行状态分开，按端口显示状态/发送计数，停止固定对应行端口，切换端口不隐式停止；复用现有轮询无浏览器定时发送。新增4GUI测试，相关21/完整814通过，类型与生产构建通过；真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI启动A/选中B的窗口停止A、AI启动B两窗同步/A窗按行停止B，既有日志/队列断开续行/原始字节各一次/全释放通过。前批ab0a6d4精确两个CI成功，日志下载EOF数量未填，本批待核对。下一步广播/有界文件发送并删除旧Dashboard和reader旧同步日志分支。不改固件/WinUSB，不合并发布。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第55节：第五十五批旧独立串口Dashboard完全删除：CLI改共享后台认证直达串口页，命令退出保留连接，--probe选设备；旧服务/HTML/演示1184行及reader同步FileLogger/吞错分支删除。共享广播逐端口结果；GUI流式原始上传/MCP后台普通文件限256KiB输入/64KiB载荷，复用4KiB/20ms命令序列，无新线程。协议24/UART18项。新增Python13/GUI3，相关171、扩大2460通过2跳过、GUI817通过，最终滚动可达调整后类型/构建和完整真实Edge/MCP/CLI+模拟OS联测通过：CLI无新句柄/认证串口页/退出续行、9000字节GUI文件/MCP文件准确、广播各一次、队列日志与全释放。前批812318d精确CI两项成功，本批待核对。下一步整体复审与双探针真机共存验证，继续任务归属/取消/Agent/长稳/NSIS。不改固件/WinUSB，不合并发布。"
     },
     {
       "area": "正式版与安装",
@@ -53,7 +53,7 @@
   ],
   "decisions": [
     "应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。",
-    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议23，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。",
+    "0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议24，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。",
     "应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。",
     "V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。",
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
@@ -65,7 +65,7 @@
   },
   "known_limits": [
     "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
-    "0.3.0第七阶段：串口/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列16项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard、嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。",
+    "0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件18项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "缓冲有界但不是无损通道：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "核对本批精确CI；补广播/有界原始文件发送，将serial dashboard指向共享主GUI，删除旧同步HTTP/SSE服务、浏览器定时发送、SerialMonitor旧同步logger分支及无用导入/导出。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。",
+    "核对本批精确CI；重新复审整体共享UART/任务归属，先被动枚举并推进新版本双探针真机Web/MCP/CLI/SDK共存回归，遵守设备操作Skill。继续循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、操作中拔插/休眠/崩溃/长稳与NSIS。共享日志/队列/广播/文件与旧Dashboard删除已完成，不能用模拟OS替代真机验收。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

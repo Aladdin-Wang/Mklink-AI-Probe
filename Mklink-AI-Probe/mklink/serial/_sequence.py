@@ -48,3 +48,18 @@ class SendSequence:
         return dict(state=self.state, active=self.active, sent=self.sent,
                     command_count=len(self.commands), interval_ms=self.interval_ms,
                     repeat=self.repeat, error=self.error)
+
+
+SERIAL_FILE_BYTES = 65536
+SERIAL_FILE_INPUT_BYTES = SERIAL_FILE_BYTES * 4
+
+
+def file_commands(content, is_hex=False):
+    if type(is_hex) is not bool or not isinstance(content, bytes):
+        raise ValueError('File content must be bytes and hex must be boolean')
+    if len(content) > SERIAL_FILE_INPUT_BYTES:
+        raise ValueError('Input file exceeds 256 KiB')
+    payload = bytes.fromhex(content.decode('ascii')) if is_hex else content
+    if not 1 <= len(payload) <= SERIAL_FILE_BYTES:
+        raise ValueError('Raw file payload must contain 1..65536 bytes')
+    return [{'data': payload[i:i+4096].hex(), 'hex': True} for i in range(0, len(payload), 4096)], len(payload)

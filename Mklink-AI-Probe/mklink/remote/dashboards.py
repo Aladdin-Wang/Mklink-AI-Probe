@@ -3092,15 +3092,28 @@ class SerialStreamManager:
                     return False
                 return monitor.send(port, data)
 
-    def send_all(self, data: bytes) -> None:
+    def send_all(self, data: bytes) -> dict:
+        if not isinstance(data, bytes) or not 1 <= len(data) <= 4096:
+            raise ValueError('Broadcast requires 1..4096 bytes')
         with self._lifecycle_lock:
-            monitor = self._monitor
-            if monitor is None or not self._running:
-                return
-            with self._ymodem_lock:
-                if self._ymodem_status["active"]:
-                    return
-                monitor.send_all(data)
+            if self._monitor is None or not self._running or self._stopping:
+                raise RuntimeError('Serial monitor is not running')
+            return self._monitor.send_all(data)
+
+    def start_file_data(self, port, content, hex=False):
+        from mklink.serial._sequence import file_commands
+        commands, size = file_commands(content, hex)
+        return dict(self.start_sequence(port, commands, interval_ms=20, repeat=1), bytes=size)
+
+    def send_file(self, port, path, hex=False):
+        from pathlib import Path
+        from mklink.serial._sequence import SERIAL_FILE_INPUT_BYTES
+        source = Path(path).expanduser()
+        if not source.is_file():
+            raise ValueError('File path must name a regular file on the backend computer')
+        with source.open('rb') as stream:
+            content = stream.read(SERIAL_FILE_INPUT_BYTES + 1)
+        return self.start_file_data(port, content, hex)
 
     def start_ymodem(self, port: str, data: bytes, filename: str) -> dict[str, Any]:
         """Start one asynchronous YMODEM transfer on the monitored port."""

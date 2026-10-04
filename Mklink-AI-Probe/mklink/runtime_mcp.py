@@ -311,6 +311,12 @@ def build_server():
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        serial_broadcast accepts data and optional hex and sends once to every configured port,
+        returning per-port results. Partial/unknown writes must not be retried automatically.
+        serial_send_file accepts port, path (regular file on the backend computer), optional hex
+        (ASCII hex file). Decoded payload is 1..65536 bytes; input file at most 256 KiB. It starts
+        the existing per-port sequence in 4096-byte chunks, 20 ms apart, with no acknowledgement
+        from the target. Monitor/cancel via serial_status.send_sequences/serial_sequence_stop.
         serial_sequence_start accepts port, commands [{data, hex?}], interval_ms 20..3600000,
         repeat 1..1000000 (0 runs until stopped). At most 64 commands, each 1..4096 bytes,
         total 64 KiB and the normal RPC body limit. The existing reader sends in order;

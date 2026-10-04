@@ -1798,20 +1798,48 @@ def _cli_serial_capture(args, *, monitor, interactive=False):
     print(f'[OK] 日志已保存: {output}' if output else '[OK] 终端已结束' if interactive else '[OK] 监听已结束', flush=True)
 
 
+def _cli_serial_dashboard(args):
+    import webbrowser
+    from mklink.runtime import RuntimeClient, browser_url
+    from mklink.serial._profile import load_profile, ProfileError
+    connections = [_serial_connection(args, port=port) for port in args.port]
+    if not 1 <= len(connections) <= 16 or len({c['port'] for c in connections}) != len(connections):
+        raise ValueError('Select 1..16 distinct UART ports')
+    try:
+        profile = load_profile(args.profile) if args.profile else None
+    except ProfileError as error:
+        raise ValueError(str(error)) from error
+    client = RuntimeClient(kind='cli', name='Serial dashboard')
+    try:
+        client.connect(scope='uart', probe=getattr(args, 'probe', None))
+        status = client.call('serial_status')
+        if status['running']:
+            for connection in connections:
+                _require_serial_connection(status, connection)
+            if profile is not None and status.get('automation', {}).get('profile') != profile:
+                raise ValueError('Existing serial Profile differs; stop it explicitly before changing settings')
+            client.call('serial_start', {})
+        else:
+            client.call('serial_start', {'ports': connections, 'profile': profile})
+        print(f"[OK] 共享串口界面: http://127.0.0.1:{client.info['port']}/#/dashboard?tab=serial")
+        print('[INFO] 退出命令或关闭页面不停止后台；请在串口界面中显式关闭连接。')
+        if not args.no_browser:
+            webbrowser.open(browser_url(client.info, page='serial'))
+    finally:
+        client.close()
+
+
 def _cli_serial_dispatch(args):
     """串口调试命令分发。"""
-    if getattr(args, 'serial_command', None) in ('send', 'log', 'monitor', 'open'):
+    if getattr(args, 'serial_command', None) in ('send', 'log', 'monitor', 'open', 'dashboard'):
         from mklink.runtime import RuntimeErrorResponse
         try:
-            {'send': _cli_serial_send, 'log': _cli_serial_log, 'monitor': _cli_serial_monitor, 'open': _cli_serial_open}[args.serial_command](args)
+            {'send': _cli_serial_send, 'log': _cli_serial_log, 'monitor': _cli_serial_monitor, 'open': _cli_serial_open, 'dashboard': _cli_serial_dashboard}[args.serial_command](args)
         except (OSError, ValueError, RuntimeErrorResponse) as error:
             raise SystemExit(str(error)) from error
         return
-    from mklink.serial._port import list_uart_ports, is_mklink_port
+    from mklink.serial._port import list_uart_ports
     from mklink.serial._profile import load_profile, find_profile, ProfileError
-    from mklink.serial._monitor import SerialMonitor
-    from mklink.serial._logger import FileLogger
-    from mklink.serial._dashboard import SerialDashboardServer
     from mklink.serial._profile_from_c import generate_profile_from_c
 
     cmd = getattr(args, "serial_command", None)
@@ -1844,36 +1872,6 @@ def _cli_serial_dispatch(args):
         for p in ports:
             tag = " [MKLink]" if p.get("is_mklink") else ""
             print(f"  {p['device']} — {p['description']}{tag}")
-
-    elif cmd == "dashboard":
-        profile = None
-        if args.profile:
-            try:
-                profile = load_profile(args.profile)
-            except ProfileError as e:
-                print(f"[FAIL] Profile 加载失败: {e}")
-                return
-
-        port_configs = [{"port": p, "baudrate": args.baud, "databits": args.databits,
-                         "stopbits": args.stop, "parity": args.parity} for p in args.port]
-
-        monitor = SerialMonitor(ports=port_configs, profile=profile)
-
-        dashboard = SerialDashboardServer(
-            monitor=monitor,
-            host=args.host,
-            port=args.port_http,
-            open_browser=not args.no_browser,
-        )
-
-        try:
-            monitor.start()
-            dashboard.run_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            dashboard.stop()
-            monitor.stop()
 
     elif cmd == "profile":
         pcmd = getattr(args, "profile_command", None)
@@ -2743,8 +2741,7 @@ def main():
     serial_dashboard = serial_sub.add_parser("dashboard", help="Web 可视化 Dashboard")
     _add_serial_port_args(serial_dashboard, multi=True)
     serial_dashboard.add_argument("--profile", default=None, help="协议 Profile 文件路径")
-    serial_dashboard.add_argument("--host", default="127.0.0.1", help="HTTP 绑定地址")
-    serial_dashboard.add_argument("--port-http", type=int, default=0, help="HTTP 端口（默认随机）")
+    serial_dashboard.add_argument("--probe", default=None, help="共享后台的探针 ID/别名")
     serial_dashboard.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
     # serial profile (nested subcommands)

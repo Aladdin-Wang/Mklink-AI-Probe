@@ -57,6 +57,8 @@ for stream in ('serial', 'modbus'):
     for action in ('status', 'start', 'stop'):
         CAPABILITIES[f'{stream}_{action}'] = ('GET' if action == 'status' else 'POST', f'/api/dash/{stream}/{action}')
 CAPABILITIES.update({
+    'serial_broadcast': ('POST', '/api/dash/serial/broadcast'),
+    'serial_send_file': ('POST', '/api/dash/serial/file'),
     'serial_sequence_start': ('POST', '/api/dash/serial/sequence/start'),
     'serial_sequence_stop': ('POST', '/api/dash/serial/sequence/stop'),
     'serial_recording_start': ('POST', '/api/dash/serial/recording/start'),

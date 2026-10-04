@@ -7,12 +7,11 @@ import io
 import queue
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from mklink.serial._autoreply import AutoReplyEngine
 from mklink.serial._frame import FrameParser, ParsedFrame
-from mklink.serial._logger import FileLogger
 from mklink.serial._port import SerialPort
 from mklink.usb_interfaces import canonical_serial_port, require_uart_port
 
@@ -32,7 +31,6 @@ class SerialMonitor:
         ports: list[dict],
         profile: dict | None = None,
         auto_reply_rules: list[dict] | None = None,
-        logger: FileLogger | None = None,
         event_callback: Callable[[SerialEvent], None] | None = None,
         chunk_callback: Callable[[str, str, bytes, float, float], None] | None = None,
         protocol_callback: Callable[[str, str, bytes, float], None] | None = None,
@@ -43,7 +41,6 @@ class SerialMonitor:
             raise ValueError("Select 1..16 distinct UART ports")
         self._profile = profile
         self._auto_reply_rules = auto_reply_rules
-        self._logger = logger
         self._event_callback = event_callback
         self._chunk_callback = chunk_callback
         self._protocol_callback = protocol_callback
@@ -322,9 +319,17 @@ class SerialMonitor:
                             ).extend(pending)
                     self._protocol_queues.pop(port, None)
 
-    def send_all(self, data: bytes) -> None:
+    def send_all(self, data: bytes) -> dict:
+        results = {}
         for cfg in self._port_configs:
-            self.send(cfg["port"], data)
+            port = cfg['port']
+            try:
+                ok = self.send(port, data)
+                results[port] = {'ok': ok, **({'bytes': len(data)} if ok else {
+                    'error': 'Write refused or failed; result may be partial, no retry'})}
+            except Exception as error:
+                results[port] = {'ok': False, 'error': f'{error}; result may already be sent, no retry'}
+        return {'ok': all(item['ok'] for item in results.values()), 'results': results}
 
     def is_running(self) -> bool:
         return self._running and self.worker_alive
@@ -351,14 +356,6 @@ class SerialMonitor:
         if self._event_callback:
             try:
                 self._event_callback(evt)
-            except Exception:
-                pass
-        if self._logger:
-            decoded = None
-            if evt.parsed and evt.parsed.fields:
-                decoded = evt.parsed.fields
-            try:
-                self._logger.log(evt.direction, evt.port, evt.raw, decoded)
             except Exception:
                 pass
 

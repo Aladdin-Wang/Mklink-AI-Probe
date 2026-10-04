@@ -124,14 +124,23 @@ MCP/SDK 的 `serial_status` 返回同一份 `session` / `latest_frames`；重启
 清空快照，停止保留最后一帧。设备非有限浮点显示为 `nan` / `inf` 等字符串。
 需要连续原始记录时使用共享 `serial log`，不能把最新帧快照当无损抓包。
 
-以下独立 `dashboard` 命令尚在迁移，仍直接占用串口，不能与共享连接同时打开；
-旧服务存在慢 SSE 客户端阻塞 reader 的已知问题。当前优先使用共享 WebGUI。
+`serial dashboard` 现在复用所选探针的共享后台，直接打开主 GUI 串口助手；不另开
+串口或独立 HTTP/SSE 服务。已有连接参数/Profile 不匹配时拒绝改写，需要先显式停止。
+命令退出或页面关闭仍保留后台连接，使用 GUI 的关闭串口操作结束。支持 `--probe`，
+旧 `--host`/`--port-http` 参数已删除。
 
 ```bash
 python -m mklink serial dashboard --port COM3 --baud 115200 --profile protocol.json
+python -m mklink serial dashboard --probe my-probe --port COM3 --no-browser
 ```
 
-浏览器自动打开，提供实时数据流、发送面板、命令队列、过滤器和帧解析视图。
+主 GUI 支持协议解析/自动应答、持续 TXT/CSV 日志、后台命令队列、广播和原始文件。
+日志与队列在 GUI/AI 断开后继续，可由其他客户端显式停止。
+广播返回每个配置端口的写入结果；失败可能已经部分发送，不自动重试。
+原始文件最多 64 KiB（HEX 文本输入最多 256 KiB），复用后台命令队列以 4096 字节分段、
+20 ms 间隔发送；这不表示目标确认接收。GUI 从本机选择文件，MCP `serial_send_file`
+的 `path` 指向后台电脑文件；状态与取消使用 `serial_status.send_sequences` 和
+`serial_sequence_stop`。需要目标确认的文件协议时使用 YMODEM。
 
 ### 本地资源释放（不需要 FastAPI）
 

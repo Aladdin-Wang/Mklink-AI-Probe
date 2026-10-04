@@ -109,19 +109,13 @@ Pack 索引、已安装 Pack 和临时上传均位于用户数据根目录，Win
 
 ## Dashboard 生命周期
 
-GUI 仪表盘中 RTT / Serial / Modbus / SuperWatch 均以独立子进程启动，通过 iframe 嵌入：
+主 GUI 的 RTT / Serial / Modbus / SuperWatch 通过所选共享后台的 manager 运行，
+不为每个面板另开 CDC 或固定 808x 端口。串口助手使用 `mklink serial dashboard`
+打开主 GUI 对应页面，命令退出/关页面保留连接；在面板中显式停止。
 
-| Dashboard | 端口 | CLI 命令 |
-|-----------|------|----------|
-| RTT View | 8081 | `mklink rtt --visualize` |
-| Serial | 8084 | `mklink serial dashboard` |
-| Modbus | 8085 | `mklink modbus dashboard` |
-| SuperWatch | 8086 | `mklink superwatch --visualize` |
-
-API 端点：
-- `POST /api/dashboard/start` — 启动 Dashboard（body: `{"type": "rtt|serial|modbus|superwatch"}`）
-- `POST /api/dashboard/stop` — 停止 Dashboard
-- `GET /api/dashboard/status` — 查询所有 Dashboard 运行状态
+串口启停/状态为 `/api/dash/serial/start`、`stop`、`status`；记录与命令序列共用该
+后台，GUI/CLI/MCP 查看同源状态。广播给出逐端口结果，文件发送受大小限制并复用
+命令序列。API 必须使用当前共享后台认证，不应向旧独立 Dashboard 路径发送请求。
 
 ## 资源管理 API
 

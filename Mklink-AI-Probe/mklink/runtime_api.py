@@ -436,7 +436,8 @@ def install_runtime(app, info):
     async def open_gui():
         return HTMLResponse("""<!doctype html><meta charset="utf-8"><title>MKLink Runtime</title>
 <p id="status">正在连接共享后台…</p><script>
-const page = new URLSearchParams(location.search).get('page') === 'vofa' ? 'vofa' : 'config';
+const requested = new URLSearchParams(location.search).get('page');
+const page = requested === 'vofa' ? 'vofa' : requested === 'serial' ? 'dashboard?tab=serial' : 'config';
 const token = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token})})
 .then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace('/#/' + page)})

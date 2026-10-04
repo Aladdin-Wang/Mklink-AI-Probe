@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 23  # Reader-owned serial command sequences.
+PROTOCOL = 24  # Shared serial dashboard, broadcast and bounded file send.
 VERSION = "0.3.0"
 
 
@@ -190,9 +190,9 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
 
 
 def browser_url(info: dict, *, page: str = "config") -> str:
-    if page not in {"config", "vofa"}:
+    if page not in {"config", "vofa", "serial"}:
         raise ValueError("Unsupported runtime browser page")
-    query = "?page=vofa" if page == "vofa" else ""
+    query = f"?page={page}" if page != "config" else ""
     # Fragment is not sent in HTTP requests or access logs; login clears it.
     return f"http://127.0.0.1:{info['port']}/_runtime/open{query}#{info['token']}"
 

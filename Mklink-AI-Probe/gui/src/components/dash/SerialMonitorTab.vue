@@ -75,6 +75,10 @@
     <SerialSequencePanel :statuses="sequences" :port="portName" :running="running && !stopping"
       :busy="sequenceBusy" :error="sequenceError" @start="startSequence" @stop="stopSequence" />
 
+    <SerialSendExtras :port="portName" :ports="activeConfigs.map(item => String(item.port))"
+      :running="running && !stopping" :file-active="sequences[portName]?.active === true" :busy="extrasBusy"
+      :error="extrasError" :notice="extrasNotice" :results="broadcastResults" @broadcast="broadcast" @file="sendRawFile" />
+
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
         <button
@@ -187,6 +191,8 @@ import SerialRecordingPanel, { type SerialRecordingStatus, type SerialRecordingR
 
 import SerialSequencePanel, { type SerialSequenceStatus, type SerialSequenceRequest } from './SerialSequencePanel.vue'
 
+import SerialSendExtras, { type BroadcastResult } from './SerialSendExtras.vue'
+
 interface SerialStatus {
   send_sequences?: Record<string, SerialSequenceStatus>
   recording?: SerialRecordingStatus
@@ -282,6 +288,8 @@ const recording = ref<SerialRecordingStatus>({ state: 'idle', active: false })
 const recordingBusy = ref(false), recordingError = ref('')
 const sequences = ref<Record<string, SerialSequenceStatus>>({})
 const sequenceBusy = ref(false), sequenceError = ref('')
+const extrasBusy = ref(false), extrasError = ref(''), extrasNotice = ref('')
+const broadcastResults = ref<Record<string, BroadcastResult> | null>(null)
 const automation = ref<SerialAutomation>({ profile: null, rules: [] })
 const automationEdited = ref(false)
 const latestFrames = ref<Record<string, SerialParsedFrame>>({})
@@ -646,6 +654,23 @@ async function changeSequence(action: 'start' | 'stop', request: SerialSequenceR
 function startSequence(request: SerialSequenceRequest): Promise<void> { return changeSequence('start', request) }
 function stopSequence(port: string): Promise<void> { return changeSequence('stop', { port }) }
 
+async function submitExtra(path: string, init: RequestInit, isFile: boolean): Promise<void> {
+  if (extrasBusy.value) return
+  extrasBusy.value = true; extrasError.value = ''; extrasNotice.value = ''; broadcastResults.value = null
+  try {
+    const result = await requestJson(path, init)
+    if (isFile) extrasNotice.value = tr(`已提交 ${result.bytes} B，请查看命令队列状态。`, `Queued ${result.bytes} B; see command sequence status.`)
+    else broadcastResults.value = result.results
+  } catch (caught) { extrasError.value = caught instanceof Error ? caught.message : String(caught) }
+  finally { await refreshStatus(); extrasBusy.value = false }
+}
+function broadcast(request: {data: string; hex: boolean}): Promise<void> {
+  return submitExtra('/api/dash/serial/broadcast', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(request)}, false)
+}
+function sendRawFile(file: File, hex: boolean, port: string): Promise<void> {
+  return submitExtra(`/api/dash/serial/file/upload?port=${encodeURIComponent(port)}&hex=${hex}`, {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file}, true)
+}
+
 async function refreshStatus(): Promise<void> {
   try {
     applyStatus(await requestJson('/api/dash/serial/status'))
@@ -850,7 +875,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.serial-assistant { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
+.serial-assistant { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; overflow-y: auto; }
 .serial-config-row { display: flex; flex-wrap: wrap; align-items: end; gap: 7px; }
 .serial-config-row label { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
 .serial-config-row select, .serial-config-row input { height: 30px; min-width: 64px; max-width: 220px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; }
