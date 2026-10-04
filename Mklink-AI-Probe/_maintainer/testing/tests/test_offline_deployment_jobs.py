@@ -274,14 +274,15 @@ app.state.mklink_state = {'device': SimpleNamespace(connected=True, port='COM9')
                          'project_root': str(disk), 'resource_manager': ResourceManager()}
 control = install_runtime(app, {'port':8765, 'token':'fixture', 'instance_id':'child', 'jobs_path':str(journal)})
 app.include_router(create_offline_download_router(SimpleNamespace(), app.state.mklink_state['resource_manager']))
-original_copy = shutil.copy2
+import mklink.offline_download as offline
+original_copy = offline.copy_verified
 def copy_and_block(source, target, *args, **kwargs):
     result = original_copy(source, target, *args, **kwargs)
     if Path(target) == disk/'rt-thread.hex':
         marker.write_text('one completed destination write', encoding='utf-8')
         threading.Event().wait()
     return result
-shutil.copy2 = copy_and_block
+offline.copy_verified = copy_and_block
 with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'fixture'}) as client:
     client.post('/api/offline-download/deploy',
         data={'request_id':'deployment-one', 'config_json':payload.read_text()},

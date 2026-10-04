@@ -684,7 +684,7 @@ def test_deploy_never_creates_a_staging_directory_on_the_probe_disk(tmp_path, mo
         path.write_bytes(bytes([index]))
         algorithm_sources.append(path)
 
-    real_copy2 = __import__("shutil").copy2
+    from mklink.file_content import copy_verified as real_copy2
 
     def assert_clean_probe_disk(source, destination):
         assert not any(
@@ -693,7 +693,7 @@ def test_deploy_never_creates_a_staging_directory_on_the_probe_disk(tmp_path, mo
         )
         return real_copy2(source, destination)
 
-    monkeypatch.setattr("mklink.offline_download.shutil.copy2", assert_clean_probe_disk)
+    monkeypatch.setattr("mklink.offline_download.copy_verified", assert_clean_probe_disk)
     deploy_offline_bundle(
         config,
         disk,
@@ -719,7 +719,7 @@ def test_deploy_removes_existing_probe_files_before_copying_replacements(tmp_pat
         path.write_bytes(bytes([index]))
         algorithm_sources.append(path)
 
-    real_copy2 = __import__("shutil").copy2
+    from mklink.file_content import copy_verified as real_copy2
 
     def reject_in_place_overwrite(source, destination):
         destination = Path(destination)
@@ -727,7 +727,7 @@ def test_deploy_removes_existing_probe_files_before_copying_replacements(tmp_pat
             raise PermissionError("probe file must be removed before replacement")
         return real_copy2(source, destination)
 
-    monkeypatch.setattr("mklink.offline_download.shutil.copy2", reject_in_place_overwrite)
+    monkeypatch.setattr("mklink.offline_download.copy_verified", reject_in_place_overwrite)
     deploy_offline_bundle(
         config,
         disk,
@@ -1514,7 +1514,7 @@ def test_deploy_retains_backups_only_when_rollback_is_incomplete(tmp_path, monke
     stage = tmp_path / 'stage'; stage.mkdir()
     (disk/'app.bin').write_bytes(b'original')
     monkeypatch.setattr(offline.tempfile, 'mkdtemp', lambda **_: str(stage))
-    copy = offline.shutil.copy2
+    copy = offline.copy_verified
     writes = []
     def failing_copy(source, destination):
         source, destination = Path(source), Path(destination)
@@ -1526,7 +1526,7 @@ def test_deploy_retains_backups_only_when_rollback_is_incomplete(tmp_path, monke
             if rollback_error is not None:
                 raise rollback_error('rollback interrupted')
         return copy(source, destination)
-    monkeypatch.setattr(offline.shutil, 'copy2', failing_copy)
+    monkeypatch.setattr(offline, 'copy_verified', failing_copy)
     expected = (offline.OfflineDownloadError if rollback_error is None else
                 offline.OfflineRecoveryError if rollback_error is OSError else KeyboardInterrupt)
     with pytest.raises(expected):
@@ -1558,12 +1558,16 @@ def test_rollback_removes_copied_readonly_file(tmp_path, monkeypatch, existing):
     destination = disk / "app.bin"
     if existing:
         destination.write_bytes(b"original")
-    original_copy = shutil.copy2
+    original_copy = offline.copy_verified
     def copy_with_later_failure(src, dst, *args, **kwargs):
         if Path(dst) == disk / "script.py":
             raise OSError("later deployment failure")
-        return original_copy(src, dst, *args, **kwargs)
-    monkeypatch.setattr(offline.shutil, "copy2", copy_with_later_failure)
+        result = original_copy(src, dst, *args, **kwargs)
+        # Model a probe exposing a read-only file before a later operation fails.
+        if Path(dst) == disk / "app.bin":
+            Path(dst).chmod(0o444)
+        return result
+    monkeypatch.setattr(offline, "copy_verified", copy_with_later_failure)
     try:
         with pytest.raises(offline.OfflineDownloadError) as error:
             offline._transactional_copy(disk, [
@@ -1598,3 +1602,33 @@ def test_successful_deploy_cleans_readonly_staged_files(tmp_path):
         source.chmod(0o666)
         if (disk / "app.bin").exists():
             (disk / "app.bin").chmod(0o666)
+
+@pytest.mark.parametrize('corrupt_restore', [False, True])
+def test_transaction_readback_failure_rolls_back_or_preserves_recovery(tmp_path, monkeypatch, corrupt_restore):
+    from mklink import offline_download as offline, file_content
+    disk = tmp_path / 'disk'; disk.mkdir()
+    destination = disk / 'app.bin'
+    destination.write_bytes(b'original')
+    stage = tmp_path / 'stage'; stage.mkdir()
+    monkeypatch.setattr(offline.tempfile, 'mkdtemp', lambda **_: str(stage))
+    sync = file_content.sync_file
+    writes = []
+    def corrupt_after_write(stream):
+        sync(stream)
+        if Path(stream.name) == destination:
+            writes.append(destination.read_bytes())
+            if len(writes) == 1 or corrupt_restore:
+                stream.seek(0)
+                stream.write(b'corrupt!')
+                sync(stream)
+    monkeypatch.setattr(file_content, 'sync_file', corrupt_after_write)
+    expected = offline.OfflineRecoveryError if corrupt_restore else offline.OfflineDownloadError
+    with pytest.raises(expected):
+        offline._transactional_copy(disk, [(Path('app.bin'), None, b'replacement')])
+    assert writes == [b'replacement', b'original']
+    if corrupt_restore:
+        assert (stage / 'backup/app.bin').read_bytes() == b'original'
+        assert json.loads((stage / 'recovery.json').read_text())['rollback_errors'] == ['restore: app.bin']
+    else:
+        assert destination.read_bytes() == b'original'
+        assert not stage.exists()

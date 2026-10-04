@@ -12,6 +12,7 @@ import shutil
 import tempfile
 from typing import Callable, Mapping, Optional, Sequence, Union
 
+from mklink.file_content import copy_verified
 from mklink.offline_security import OfflineSecurityPlan, resolve_offline_security
 from mklink.hpm_offline_otp import OfflineOtp, resolve as resolve_hpm_otp, script_lines as otp_script_lines
 from mklink.stm32f1_options import (
@@ -693,7 +694,7 @@ def _transactional_copy(
                     backups.append((destination, backup))
                     _remove_probe_file(destination)
                 installed.append(destination)
-                shutil.copy2(staged, destination)
+                copy_verified(staged, destination)
             return [relative.as_posix() for relative, _source, _content in files]
         except BaseException as error:
             # Keep backups if rollback itself is interrupted.
@@ -712,7 +713,7 @@ def _transactional_copy(
                     if destination.exists() and _same_file_content(destination, backup):
                         continue
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(backup, destination)
+                    copy_verified(backup, destination)
                 except OSError:
                     failures.append('restore: ' + str(destination.relative_to(disk_root)))
             if failures:
