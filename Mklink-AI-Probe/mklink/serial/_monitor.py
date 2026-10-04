@@ -16,6 +16,33 @@ from mklink.serial._port import SerialPort
 from mklink.usb_interfaces import canonical_serial_port, require_uart_port
 
 
+class _ProtocolQueue(queue.Queue):
+    """Bound protocol RX without blocking the sole reader under admission."""
+    CHUNK_BYTES = 4096
+    MAX_CHUNKS = 128
+
+    def __init__(self):
+        super().__init__(maxsize=self.MAX_CHUNKS)
+        self.error = None
+
+    def fail(self, error):
+        if self.error is None:
+            self.error = error
+
+    def check(self):
+        if self.error is not None:
+            raise self.error
+
+    def feed(self, data):
+        self.check()
+        try:
+            for offset in range(0, len(data), self.CHUNK_BYTES):
+                self.put_nowait(data[offset:offset + self.CHUNK_BYTES])
+        except queue.Full:
+            self.fail(BufferError('Serial protocol receive buffer overflow; transfer aborted'))
+            self.check()
+
+
 @dataclass
 class SerialEvent:
     timestamp: float
@@ -55,7 +82,7 @@ class SerialMonitor:
         self._lifecycle_lock = threading.RLock()
         self._stop_timeout = 3.0
         self._protocol_lock = threading.Lock()
-        self._protocol_queues: dict[str, queue.Queue[bytes]] = {}
+        self._protocol_queues: dict[str, _ProtocolQueue] = {}
         # Completed protocols hand unread terminal bytes back to the normal
         # reader here.  Only the reader thread emits them, preserving parser,
         # event and callback ordering without a second serial consumer.
@@ -246,7 +273,7 @@ class SerialMonitor:
         from mklink.serial._ymodem import YModemCancelled, YModemSender
 
         port = canonical_serial_port(port)
-        receive_queue: queue.Queue[bytes] = queue.Queue()
+        receive_queue = _ProtocolQueue()
         with self._protocol_lock:
             if self._stop_event.is_set():
                 raise RuntimeError("Serial monitor is stopping")
@@ -268,17 +295,21 @@ class SerialMonitor:
         def read_protocol(timeout: float) -> bytes:
             deadline = time.monotonic() + timeout
             while True:
+                receive_queue.check()
                 if cancellation.is_set() or self._stop_event.is_set():
                     raise YModemCancelled("YMODEM transfer cancelled")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return b""
                 try:
-                    return receive_queue.get(timeout=min(remaining, 0.1))
+                    data = receive_queue.get(timeout=min(remaining, 0.1))
+                    receive_queue.check()
+                    return data
                 except queue.Empty:
                     continue
 
         def write_protocol(payload: bytes) -> None:
+            receive_queue.check()
             if cancellation.is_set() or self._stop_event.is_set():
                 raise YModemCancelled("YMODEM transfer cancelled")
             with self._lock:
@@ -288,21 +319,22 @@ class SerialMonitor:
                 current.write(payload)
             self._emit_protocol_chunk(port, "TX", payload, time.time())
 
-        sender = YModemSender(
-            read_protocol,
-            write_protocol,
-            cancel_event=cancellation,
-            progress_callback=progress_callback,
-        )
         completed = False
         try:
+            sender = YModemSender(
+                read_protocol,
+                write_protocol,
+                cancel_event=cancellation,
+                progress_callback=progress_callback,
+            )
             sender.send(io.BytesIO(data), filename, len(data))
+            receive_queue.check()
             completed = True
         finally:
             with self._protocol_lock:
                 if self._protocol_queues.get(port) is receive_queue:
                     pending = bytearray()
-                    if completed:
+                    if completed and receive_queue.error is None:
                         take_pending = getattr(sender, "take_pending_rx", None)
                         if callable(take_pending):
                             pending.extend(take_pending())
@@ -318,6 +350,7 @@ class SerialMonitor:
                                 port, bytearray(),
                             ).extend(pending)
                     self._protocol_queues.pop(port, None)
+            receive_queue.check()
 
     def send_all(self, data: bytes) -> dict:
         results = {}
@@ -408,7 +441,7 @@ class SerialMonitor:
                             )
                             # Keep the put inside the lock.  Transfer
                             # teardown can now remove+drain atomically.
-                            protocol_queue.put(data)
+                            protocol_queue.feed(data)
                         handoff = b""
                     else:
                         handoff = bytes(
@@ -443,6 +476,10 @@ class SerialMonitor:
 
         except Exception as e:
             reader_error = str(e) or type(e).__name__
+            with self._protocol_lock:
+                protocol_queue = self._protocol_queues.get(port_name)
+                if protocol_queue is not None:
+                    protocol_queue.fail(RuntimeError(f'Serial reader failed: {reader_error}'))
             with self._lock:
                 self._port_statuses[port_name] = f"error: {e}"
         finally:

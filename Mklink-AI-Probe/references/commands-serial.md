@@ -223,6 +223,10 @@ python -m mklink serial profile show --profile .mklink/serial_profile.json
 选择和发送。切回传输端口时普通发送禁用，取消或结束后恢复。一个共享后台同时
 只允许一个YMODEM传输任务，切换界面所选端口不会迁移正在进行的传输。
 
+协议接收队列最多保留512 KiB。接收溢出或串口reader失败时传输明确失败，
+对应端口关闭，其他端口继续工作；不会丢弃部分协议字节后假装传输成功。
+修复对端或连接后需显式重新启动串口监控，不会自动重连或重放文件。
+
 AI以`scope="uart"`连接并启动或借用`serial_start`后，通过`gui_call`调用
 `serial_ymodem_start`，参数为`port`和后台电脑上的普通文件`path`。文件须非空且
 不超过32 MiB，传输名称取文件名，UTF-8不超过31字节且不含控制字符。
