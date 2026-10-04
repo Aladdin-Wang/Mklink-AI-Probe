@@ -7,6 +7,7 @@ MKLink Serial Bridge — CLI 入口。
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import sys
 
 from mklink._deps import require_dependencies
@@ -1300,28 +1301,63 @@ def _modbus_open_client(args):
     return client
 
 
-def _cli_modbus_scan(args):
-    from mklink.modbus._scanner import scan_slaves, validate_scan_range
+@contextmanager
+def _modbus_shared_client(args, *, scan=False):
+    """Borrow one runtime connection and release only what this CLI owns."""
     from mklink.runtime import RuntimeClient, RuntimeErrorResponse
     from mklink.usb_interfaces import canonical_serial_port
-    validate_scan_range(args.start, args.end)
     if not _modbus_resolve_defaults(args):
-        return
+        raise ValueError('Modbus port is required')
     connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
                   'bytesize': 8, 'parity': args.parity, 'stopbits': args.stopbits}
-    client = RuntimeClient(kind='cli', name='Modbus scan')
+    if not scan:
+        for key in ('timeout', 'retries'):
+            value = getattr(args, key, None)
+            if value is not None:
+                connection[key] = value
+    client = RuntimeClient(kind='cli', name='Modbus CLI')
     created = False
     try:
         client.connect(scope='uart', probe=getattr(args, 'probe', None))
         if client.call('modbus_status')['running']:
             client.call('modbus_start', {})
         else:
-            client.call('modbus_start', {**connection, 'timeout': .15, 'retries': 0, 'registers': []})
+            client.call('modbus_start', {'timeout': .15 if scan else 1.0, 'retries': 0,
+                                        **connection, 'registers': []})
             created = True
         # Validate after subscribing, while shared stop/reconfiguration is refused.
         actual = client.call('modbus_status')['connection']
         if any(actual.get(key) != value for key, value in connection.items()):
-            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before scanning')
+            raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before changing settings')
+        yield client
+    finally:
+        operation_error = sys.exc_info()[1]
+        cleanup_errors = []
+        if created:
+            try:
+                client.call('modbus_stop')
+            except RuntimeErrorResponse as exc:
+                if exc.status_code == 409:
+                    print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
+                else:
+                    cleanup_errors.append(exc)
+        try:
+            client.close()
+        except RuntimeErrorResponse as exc:
+            cleanup_errors.append(exc)
+        if cleanup_errors:
+            if operation_error is None:
+                raise cleanup_errors[0]
+            # Keep the original operation/unknown-result error visible. Neither
+            # failed cleanup nor a lost detach response authorizes a replay.
+            for error in cleanup_errors:
+                print(f'[WARN] Modbus 会话清理失败，请检查共享后台: {error}', file=sys.stderr)
+
+
+def _cli_modbus_scan(args):
+    from mklink.modbus._scanner import scan_slaves, validate_scan_range
+    validate_scan_range(args.start, args.end)
+    with _modbus_shared_client(args, scan=True) as client:
         print(f"[*] Modbus 从站扫描: {args.port} @ {args.baud}bps (地址 {args.start}-{args.end})")
 
         def on_progress(current, total, msg):
@@ -1331,112 +1367,48 @@ def _cli_modbus_scan(args):
 
         found = scan_slaves(
             lambda slave, register: client.call('modbus_probe', {'slave': slave, 'address': register}),
-            start_addr=args.start,
-            end_addr=args.end,
-            on_progress=on_progress,
+            start_addr=args.start, end_addr=args.end, on_progress=on_progress,
         )
-        print()  # 换行
+        print()
         if found:
             print(f"[OK] 发现 {len(found)} 个从站: {', '.join(str(a) for a in found)}")
             _modbus_save_config(args)
         else:
             print("[WARN] 未发现任何从站")
-    finally:
-        try:
-            if created:
-                try:
-                    client.call('modbus_stop')
-                except RuntimeErrorResponse as exc:
-                    if exc.status_code != 409:
-                        raise
-                    print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
-        finally:
-            client.close()
 
 
 def _cli_modbus_read(args):
-    from mklink.modbus._format import format_registers, registers_to_values
-    from mklink.modbus._client import ModbusError
-    from pymodbus import ModbusException as PymodbusException
-
-    client = _modbus_open_client(args)
-    if not client:
-        return
-    try:
-        fc = args.fc
-        slave = args.slave
-        start = args.start
-        qty = args.quantity
-        fmt = args.format
-
-        try:
-            if fc == 1:
-                bits = client.read_coils(start, qty, slave)
-                print(f"[OK] FC01 读 {qty} 个线圈 (从站 {slave}, 地址 {start}):")
-                for i, b in enumerate(bits):
-                    print(f"  {start + i:>6}: {_fmt_on_off(b, fmt)}")
-            elif fc == 2:
-                bits = client.read_discrete_inputs(start, qty, slave)
-                print(f"[OK] FC02 读 {qty} 个离散输入 (从站 {slave}, 地址 {start}):")
-                for i, b in enumerate(bits):
-                    print(f"  {start + i:>6}: {_fmt_on_off(b, fmt)}")
-            elif fc == 3:
-                regs = client.read_holding_registers(start, qty, slave)
-                print(f"[OK] FC03 读 {qty} 个保持寄存器 (从站 {slave}, 地址 {start}):")
-                for i, v in enumerate(regs):
-                    print(f"  {start + i:>6}: {_fmt_val(v, fmt)}")
-                _modbus_save_config(args)
-            elif fc == 4:
-                regs = client.read_input_registers(start, qty, slave)
-                print(f"[OK] FC04 读 {qty} 个输入寄存器 (从站 {slave}, 地址 {start}):")
-                for i, v in enumerate(regs):
-                    print(f"  {start + i:>6}: {_fmt_val(v, fmt)}")
-                _modbus_save_config(args)
-        except ModbusError as e:
-            print(f"[FAIL] {e}")
-        except PymodbusException as e:
-            print(f"[FAIL] Modbus 通信错误: {e}")
-    finally:
-        client.close()
+    from mklink.modbus._session import validate_slave, validate_transaction
+    validate_slave(args.slave)
+    validate_transaction(args.fc, args.start, quantity=args.quantity)
+    with _modbus_shared_client(args) as client:
+        result = client.call('modbus_transaction', {'fc': args.fc, 'start': args.start,
+                             'quantity': args.quantity, 'slave': args.slave})
+        label = {1: '线圈', 2: '离散输入', 3: '保持寄存器', 4: '输入寄存器'}[args.fc]
+        print(f"[OK] FC{args.fc:02d} 读 {args.quantity} 个{label} (从站 {args.slave}, 地址 {args.start}):")
+        formatter = _fmt_on_off if args.fc in (1, 2) else _fmt_val
+        for i, value in enumerate(result['values']):
+            print(f"  {args.start + i:>6}: {formatter(value, args.format)}")
+        _modbus_save_config(args)
 
 
 def _cli_modbus_write(args):
-    from mklink.modbus._client import ModbusError
-    from pymodbus import ModbusException as PymodbusException
-
-    client = _modbus_open_client(args)
-    if not client:
-        return
-    try:
-        fc = args.fc
-        slave = args.slave
-        start = args.start
-        values = args.values
-
-        try:
-            if fc == 5:
-                v = _parse_bool(values[0])
-                client.write_coil(start, v, slave)
-                print(f"[OK] FC05 写单个线圈 (从站 {slave}, 地址 {start}): {'ON' if v else 'OFF'}")
-            elif fc == 6:
-                v = int(values[0], 0)
-                client.write_register(start, v, slave)
-                print(f"[OK] FC06 写单个寄存器 (从站 {slave}, 地址 {start}): {v} (0x{v:04X})")
-            elif fc == 15:
-                bits = [_parse_bool(v) for v in values]
-                client.write_coils(start, bits, slave)
-                print(f"[OK] FC15 写 {len(bits)} 个线圈 (从站 {slave}, 地址 {start})")
-            elif fc == 16:
-                regs = [int(v, 0) for v in values]
-                client.write_registers(start, regs, slave)
-                print(f"[OK] FC16 写 {len(regs)} 个寄存器 (从站 {slave}, 地址 {start})")
-            _modbus_save_config(args)
-        except ModbusError as e:
-            print(f"[FAIL] {e}")
-        except PymodbusException as e:
-            print(f"[FAIL] Modbus 通信错误: {e}")
-    finally:
-        client.close()
+    from mklink.modbus._session import validate_slave, validate_transaction
+    validate_slave(args.slave)
+    parse = _parse_bool if args.fc in (5, 15) else lambda value: int(value, 0)
+    values = [parse(value) for value in args.values]
+    validate_transaction(args.fc, args.start, values=values)
+    with _modbus_shared_client(args) as client:
+        client.call('modbus_transaction', {'fc': args.fc, 'start': args.start,
+                    'values': values, 'slave': args.slave})
+        if args.fc == 5:
+            print(f"[OK] FC05 写单个线圈 (从站 {args.slave}, 地址 {args.start}): {'ON' if values[0] else 'OFF'}")
+        elif args.fc == 6:
+            print(f"[OK] FC06 写单个寄存器 (从站 {args.slave}, 地址 {args.start}): {values[0]} (0x{values[0]:04X})")
+        else:
+            label = '线圈' if args.fc == 15 else '寄存器'
+            print(f"[OK] FC{args.fc:02d} 写 {len(values)} 个{label} (从站 {args.slave}, 地址 {args.start})")
+        _modbus_save_config(args)
 
 
 def _cli_modbus_poll(args):
@@ -1628,7 +1600,11 @@ def _cli_modbus_dispatch(args):
     }
     handler = dispatch.get(args.modbus_command)
     if handler:
-        handler(args)
+        from mklink.runtime import RuntimeErrorResponse
+        try:
+            handler(args)
+        except (ValueError, RuntimeErrorResponse) as error:
+            raise SystemExit(str(error)) from error
     else:
         print("用法: python -m mklink modbus <scan|read|write|poll|monitor|diag|dashboard> [选项]")
 
@@ -1673,7 +1649,12 @@ def _fmt_on_off(b: bool, fmt: str) -> str:
 
 def _parse_bool(s: str) -> bool:
     """解析布尔值字符串。"""
-    return s.lower() in ("1", "on", "true", "yes", "0xff00")
+    value = s.strip().lower()
+    if value in ("1", "on", "true", "yes", "0xff00"):
+        return True
+    if value in ("0", "off", "false", "no", "0x0000"):
+        return False
+    raise ValueError(f"Invalid coil value: {s!r}; use on/off, true/false, yes/no, 1/0 or 0xff00/0x0000")
 
 
 def _cli_serial_dispatch(args):
@@ -2564,26 +2545,29 @@ def main():
     )
     modbus_sub = modbus_parser.add_subparsers(dest="modbus_command")
 
-    def _add_modbus_serial_args(p, *, scan=False):
+    def _add_modbus_serial_args(p, *, scan=False, shared=False):
         """添加 Modbus 共用串口参数。"""
         p.add_argument("--port", default=None, help="Modbus 串口（如 COM8）；未指定时从 config.json 读取 modbus_port")
         p.add_argument("--baud", type=int, default=None, help="波特率（使用保存端口时读取配置，否则默认 9600）")
         p.add_argument("--parity", choices=["N", "E", "O"], default=None, help="校验位（使用保存端口时读取配置，否则默认 N）")
         p.add_argument("--stopbits", type=int, choices=[1, 2], default=None, help="停止位（使用保存端口时读取配置，否则默认 1）")
+        if scan or shared:
+            p.add_argument('--probe', help='共享后台的下载器身份/别名')
         if not scan:
-            p.add_argument("--timeout", type=float, default=1.0, help="响应超时秒数（默认 1.0）")
-            p.add_argument("--retries", type=int, default=3, help="超时重试次数（默认 3）")
+            p.add_argument("--timeout", type=float, default=None if shared else 1.0,
+                           help="响应超时秒数（共享时沿用连接，新连接默认 1.0）" if shared else "响应超时秒数（默认 1.0）")
+            p.add_argument("--retries", type=int, default=None if shared else 3,
+                           help="协议重试次数（共享时沿用连接，新连接默认 0；写入可能重复发送）" if shared else "超时重试次数（默认 3）")
 
     # modbus scan
     modbus_scan = modbus_sub.add_parser("scan", help="扫描 Modbus 从站地址")
     _add_modbus_serial_args(modbus_scan, scan=True)
-    modbus_scan.add_argument('--probe', help='共享后台的下载器身份/别名；每次探测固定150ms且不重试')
     modbus_scan.add_argument("--start", type=int, default=1, help="起始地址（默认 1）")
     modbus_scan.add_argument("--end", type=int, default=247, help="结束地址（默认 247）")
 
     # modbus read
     modbus_read = modbus_sub.add_parser("read", help="读取寄存器/线圈")
-    _add_modbus_serial_args(modbus_read)
+    _add_modbus_serial_args(modbus_read, shared=True)
     modbus_read.add_argument("--slave", type=int, required=True, help="从站地址 (1-247)")
     modbus_read.add_argument("--fc", type=int, required=True, choices=[1, 2, 3, 4],
                              help="功能码: 1=线圈 2=离散输入 3=保持寄存器 4=输入寄存器")
@@ -2594,7 +2578,7 @@ def main():
 
     # modbus write
     modbus_write = modbus_sub.add_parser("write", help="写入寄存器/线圈")
-    _add_modbus_serial_args(modbus_write)
+    _add_modbus_serial_args(modbus_write, shared=True)
     modbus_write.add_argument("--slave", type=int, required=True, help="从站地址 (1-247)")
     modbus_write.add_argument("--fc", type=int, required=True, choices=[5, 6, 15, 16],
                               help="功能码: 5=单线圈 6=单寄存器 15=多线圈 16=多寄存器")

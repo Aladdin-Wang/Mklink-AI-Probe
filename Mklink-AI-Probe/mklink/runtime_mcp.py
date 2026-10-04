@@ -296,7 +296,9 @@ def build_server():
         accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
         slave). The override affects only this request. Unknown fields are rejected; per-request
         timeout/retries are not supported. These explicit sends share the
-        existing worker, may be issued by borrowers, and never retry an unknown result. Disconnect
+        existing worker and may be issued by borrowers. The runtime never replays an unknown
+        HTTP result; Modbus still honors the connection's configured protocol retries, which
+        can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
         modbus_probe accepts slave/address; it probes one FC03 register with a 150ms timeout,
         zero retries and restores the connection's timing after completion. The result distinguishes
