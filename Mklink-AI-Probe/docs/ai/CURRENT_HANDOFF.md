@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T21:20:58.7686443+00:00`
+- 更新时间：`2026-10-04T21:29:03.1328918+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：122批真实MSC部署后，在客户端解码前丢弃服务响应并关闭连接，生产客户端保留request_id；重连只查询即可获得成功，部署发送一次、时间戳不变。双探针/本地连接保持及清理通过。非物理断网/断电，长期暂停。
+- 当前任务：123真实Chrome连接120包内后台+118生产GUI，完成精确选型/上传/预览/三文件部署/查询，双AI连接及磁盘恢复/端点清理通过。发现包内安全算法白名单提示，下一步核查内置资源；未触发烧录，长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. agent120新包已通过生命周期、121真机及122客户端接收环节丢结果查询。下一步补真实GUI完整部署；网络中断/物理MSC中断仍未验，不能用接收包装器外推。恢复目录可能已清理，不自动恢复。NSIS UAC待答复；长期任务不可自动恢复。
+2. 123真实Web GUI普通部署/查询及双AI共存已通过，下一步检查120候选内置选项字节算法资源，GUI安全能力当前禁用；不得放宽白名单。网络中断/物理MSC中断仍未验。NSIS UAC待答复；长期任务不可自动恢复。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
