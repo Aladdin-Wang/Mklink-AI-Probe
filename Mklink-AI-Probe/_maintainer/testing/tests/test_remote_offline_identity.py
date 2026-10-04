@@ -1,93 +1,133 @@
-"""Remote offline deployment must never guess a MICROKEEN drive by label."""
+"""Remote deployment must pass shared identity and operation admission."""
+import json
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
+from fastapi import Form
+from mklink import runtime as sdk
 from mklink.remote.dispatcher import dispatch_capability
-from mklink.remote.capabilities import CapabilityUnavailableError, protocol_capabilities
+from mklink.remote.protocol import AgentOperationError, RequestValidationError
+from mklink.remote.capabilities import CapabilityUnavailableError
+from mklink.remote.shared_offline import deployment_form
+from test_shared_runtime import runtime
+from test_remote_shared_target import target, context
 from test_remote_upstream_integration import _offline_config
 
 
 @pytest.fixture
-def deployment(monkeypatch):
-    calls = []
-    monkeypatch.setattr('mklink.remote.dispatcher.capability_available', lambda _: True)
-    monkeypatch.setattr('mklink.discovery.find_microkeen_disk', lambda: pytest.fail('label fallback'))
-    monkeypatch.setenv('MKLINK_MICROKEEN_DISK', 'Z:\\')
-    monkeypatch.setattr('mklink.offline_download.deploy_offline_bundle',
-                        lambda config, disk, **kwargs: calls.append((disk, kwargs)) or {'deployed': True})
-    uploads = SimpleNamespace(resolve=lambda reference: calls.append(reference) or Path(reference))
+def deployment(tmp_path):
+    refs = {}
+    for name in ('boot.bin', 'app.bin', 'Internal.FLM'):
+        p = tmp_path/name
+        p.write_bytes(b'fixture')
+        refs[name] = p
+    uploads = SimpleNamespace(resolve=lambda reference: refs[reference])
     params = {'confirm': True, 'config': _offline_config(),
-              'firmware_files': {'boot': 'opaque-boot', 'app': 'opaque-app'},
-              'algorithm_files': {'internal': 'opaque-algorithm'}}
-    return params, uploads, calls
+              'firmware_files': {'boot': 'boot.bin', 'app': 'app.bin'},
+              'algorithm_files': {'internal': 'Internal.FLM'}}
+    return params, uploads
 
 
-@pytest.mark.parametrize('binding,reason', [(None, 'probe-identity-required'), ('lobby', 'probe-identity-unavailable')])
-def test_unbound_or_lobby_agent_cannot_resolve_uploads_or_touch_disk(monkeypatch, deployment, binding, reason):
-    params, uploads, calls = deployment
-    monkeypatch.setattr('mklink.probes._bound_probe', binding)
-    monkeypatch.setattr('mklink.probe_volumes.volume_inventory', lambda: pytest.fail('disk enumeration'))
-    with pytest.raises(CapabilityUnavailableError) as error:
-        dispatch_capability('offline.deploy', params, upload_manager=uploads)
-    assert error.value.data['reason'] == reason and calls == []
-
-
-@pytest.mark.parametrize('failure', ['missing', 'duplicate', 'unstable', 'drive-letter'])
-def test_identity_failure_never_falls_back_or_deploys(monkeypatch, deployment, failure):
-    params, uploads, calls = deployment
+def test_unattached_agent_has_no_direct_deployment_fallback(monkeypatch, deployment):
+    params, uploads = deployment
     monkeypatch.setattr('mklink.probes._bound_probe', 'selected')
-    probe = {'identity_stable': failure != 'unstable', 'vid': 1, 'pid': 2, 'serial_number': 'selected'}
-    monkeypatch.setattr('mklink.probes.select_probe', lambda _: probe)
-    row = {'usb_identity': (1, 2, 'selected'), 'root': '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\', 'drive': 'H:'}
-    rows = [] if failure == 'missing' else [row, row] if failure == 'duplicate' else [row]
-    if failure == 'drive-letter': row['root'] = 'H:\\'
-    monkeypatch.setattr('mklink.probe_volumes.volume_inventory', lambda: rows)
-    with pytest.raises(CapabilityUnavailableError) as error:
+    monkeypatch.setattr('mklink.offline_download.deploy_offline_bundle', lambda *a, **k: pytest.fail('direct disk access'))
+    with pytest.raises(CapabilityUnavailableError):
         dispatch_capability('offline.deploy', params, upload_manager=uploads)
-    assert error.value.data['reason'] == 'probe-identity-unavailable' and calls == []
 
 
-def test_selected_identity_wins_over_first_drive_and_preserves_opaque_uploads(monkeypatch, deployment):
-    params, uploads, calls = deployment
-    monkeypatch.setattr('mklink.probes._bound_probe', 'selected')
-    def select(probe_id):
-        assert probe_id == 'selected'
-        return {'identity_stable': True, 'vid': 1, 'pid': 2, 'serial_number': 'SELECTED'}
-    monkeypatch.setattr('mklink.probes.select_probe', select)
-    root = '\\\\?\\Volume{11111111-1111-1111-1111-111111111111}\\'
-    monkeypatch.setattr('mklink.probe_volumes.volume_inventory', lambda: [
-        {'usb_identity': (1, 2, 'neighbor'), 'root': 'wrong', 'drive': 'G:'},
-        {'usb_identity': (1, 2, 'selected'), 'root': root, 'drive': 'H:'}])
-    assert dispatch_capability('offline.deploy', params, upload_manager=uploads) == {'deployed': True}
-    assert calls[:3] == ['opaque-boot', 'opaque-app', 'opaque-algorithm']
-    assert calls[-1][0] == root
-    assert calls[-1][1]['firmware_sources']['app'] == Path('opaque-app')
-    assert 'identity-bound' in protocol_capabilities()['flash.offline'].detail
+def test_form_uses_only_resolved_uploads_and_does_not_mutate_request(deployment):
+    params, uploads = deployment
+    original = json.dumps(params)
+    config = json.loads(deployment_form(params, uploads)['config_json'])
+    for row in config['firmwares'] + config['algorithms']:
+        assert Path(row['source_path']).is_file() and 'upload_index' not in row
+    assert json.dumps(params) == original
 
 
-def test_authenticated_socket_receives_identity_refusal_and_preview_still_works(monkeypatch, deployment):
-    import asyncio
-    import json
-    import websockets
-    from test_remote_capabilities import _running_agent, _request
-    from mklink.remote.protocol import PROTOCOL_VERSION
-    params, uploads, calls = deployment
-    monkeypatch.setattr('mklink.probes._bound_probe', None)
-    async def scenario():
-        async with _running_agent(
-            capability_provider=protocol_capabilities,
-            request_dispatcher=lambda op, args, context: dispatch_capability(
-                op, args, context, upload_manager=uploads),
-        ) as agent:
-            async with websockets.connect(f'ws://127.0.0.1:{agent.port}') as socket:
-                await socket.send(_request('system.handshake', {'protocol_version': PROTOCOL_VERSION}))
-                handshake = json.loads(await socket.recv())['result']
-                assert 'identity-bound' in handshake['capabilities']['flash.offline']['detail']
-                await socket.send(_request('offline.deploy', params, request_id=2))
-                error = json.loads(await socket.recv())['error']
-                assert error['code'] == -32004 and error['data']['reason'] == 'probe-identity-required'
-                await socket.send(_request('offline.preview', {'config': params['config']}, request_id=3))
-                assert json.loads(await socket.recv())['result']['model'] == 'V4'
-        assert not agent.ready
-    asyncio.run(scenario())
-    assert calls == []
+@pytest.mark.parametrize('kind', ['firmware-path', 'algorithm-path', 'profile', 'token', 'missing', 'extra'])
+def test_remote_paths_and_mismatched_refs_rejected(deployment, kind):
+    params, uploads = deployment
+    if kind == 'firmware-path': params['config']['firmwares'][0]['source_path'] = 'private.bin'
+    if kind == 'algorithm-path': params['config']['algorithms'][0]['source_path'] = 'private.flm'
+    if kind == 'profile': params['config']['algorithms'][0]['source_kind'] = 'profile'
+    if kind == 'token': params['config']['algorithms'][0]['source_token'] = 'private'
+    if kind == 'missing': params['firmware_files'].pop('app')
+    if kind == 'extra': params['firmware_files']['extra'] = 'app.bin'
+    with pytest.raises(RequestValidationError): deployment_form(params, uploads)
+
+
+@pytest.mark.parametrize('blocked', [None, 'identity', 'capture', 'job'])
+def test_shared_deploy_obeys_backend_admission(target, deployment, monkeypatch, blocked):
+    router, http, control, calls, managers = target
+    params, uploads = deployment
+    received = []
+    @control.app.post('/api/offline-download/deploy')
+    async def deploy(config_json: str = Form(...)):
+        received.append(json.loads(config_json))
+        return {'deployed': True}
+    def request(info, method, path, payload=None, **kwargs):
+        assert kwargs.get('form') is True
+        response = http.request(method, path, data=payload)
+        if response.status_code >= 400:
+            raise sdk.RuntimeErrorResponse(response.text, status_code=response.status_code)
+        return response.json()
+    monkeypatch.setattr(sdk, 'request', request)
+    monkeypatch.setattr('mklink.probe_volumes.resolve_volume', lambda _: {'root': 'identity-fixture'})
+    if blocked == 'identity':
+        from fastapi import HTTPException
+        monkeypatch.setattr(control, 'require_identity', lambda: (_ for _ in ()).throw(HTTPException(409, 'missing')))
+    if blocked == 'capture': managers['rtt'].running = True
+    if blocked == 'job': control.jobs.jobs['active'] = {'job_id': 'active', 'state': 'running'}
+    try:
+        if blocked:
+            with pytest.raises(AgentOperationError) as error:
+                dispatch_capability('offline.deploy', params, context(router), upload_manager=uploads, shared_target=router._target)
+            assert error.value.data['status'] == 409 and not received
+        else:
+            assert dispatch_capability('offline.deploy', params, context(router), upload_manager=uploads, shared_target=router._target) == {'deployed': True}
+            assert len(received) == 1
+        assert not calls and not control.sessions
+    finally:
+        control.jobs.jobs.clear()
+
+
+def test_form_transport_is_local_authenticated_and_never_retried(monkeypatch):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from urllib.parse import parse_qs
+    requests = []
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append((self.path, self.headers.get('X-Auth-Token'),
+                             self.headers.get('Content-Type'),
+                             self.rfile.read(int(self.headers['Content-Length'])).decode()))
+            if len(requests) == 1:
+                body = b'{"deployed":true}'
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.close_connection = True  # Accepted body, lost response; no replay.
+        def log_message(self, *args): pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever)
+    thread.start()
+    monkeypatch.setenv('HTTP_PROXY', 'http://127.0.0.1:1')
+    info = {'port': server.server_port, 'token': 'local-fixture'}
+    payload = {'config_json': json.dumps({'name': '测试 + & %'}, ensure_ascii=False)}
+    try:
+        assert sdk.request(info, 'POST', '/api/offline-download/deploy', payload, form=True) == {'deployed': True}
+        with pytest.raises(sdk.RuntimeErrorResponse):
+            sdk.request(info, 'POST', '/api/offline-download/deploy', payload, form=True)
+        assert len(requests) == 2
+        for path, token, content_type, body in requests:
+            assert path == '/api/offline-download/deploy' and token == 'local-fixture'
+            assert content_type == 'application/x-www-form-urlencoded'
+            assert parse_qs(body) == {k: [v] for k, v in payload.items()}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+        assert not thread.is_alive()

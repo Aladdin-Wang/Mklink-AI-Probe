@@ -11,7 +11,7 @@ from mklink.remote.protocol import AgentOperationError, RequestValidationError
 
 
 OPERATIONS = frozenset({
-    'jobs.status', 'probe.info', 'flash.program', 'flash.erase_chip', 'flash.erase_sector', 'target.reset',
+    'offline.deploy', 'jobs.status', 'probe.info', 'flash.program', 'flash.erase_chip', 'flash.erase_sector', 'target.reset',
     'target.halt', 'target.resume', 'target.step', 'breakpoint.set', 'breakpoint.clear',
     'breakpoint.clear_all', 'registers.core', 'memory.read', 'memory.write', 'register.read',
     'variable.read', 'variable.write', 'symbols.status', 'symbols.parse', 'symbols.list',
@@ -108,6 +108,14 @@ class SharedTarget:
         request_id = None
         job = None
         try:
+            if operation == 'offline.deploy':
+                if self.info is None or not client_id:
+                    raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})
+                if uploads is None:
+                    raise CapabilityUnavailableError(data={'reason': 'uploads-required'})
+                from mklink.remote.shared_offline import deployment_form
+                return request(self.info, 'POST', '/api/offline-download/deploy',
+                               deployment_form(params, uploads), form=True, timeout=120)
             if operation == 'jobs.status':
                 if self.info is None or not client_id:
                     raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})

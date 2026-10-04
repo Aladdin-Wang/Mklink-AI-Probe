@@ -74,12 +74,17 @@ def runtime_lock(name: str, probe_id=None):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def request(info: dict, method: str, path: str, payload=None, *, timeout=35):
+def request(info: dict, method: str, path: str, payload=None, *, timeout=35, form=False):
     port = info.get("port")
     if type(port) is not int or not 1 <= port <= 65535:
         raise RuntimeErrorResponse("Invalid runtime endpoint")
-    headers = {"X-Auth-Token": info["token"], "Content-Type": "application/json"}
-    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    if form:
+        from urllib.parse import urlencode
+        data = urlencode(payload).encode('utf-8')
+    else:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {"X-Auth-Token": info["token"], "Content-Type":
+               "application/x-www-form-urlencoded" if form else "application/json"}
     req = Request(f"http://127.0.0.1:{port}{path}", data=data, headers=headers, method=method)
     # Local IPC must never travel through environment-configured HTTP proxies.
     try:

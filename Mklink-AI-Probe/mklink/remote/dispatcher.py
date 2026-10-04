@@ -272,49 +272,6 @@ def dispatch_capability(
             "script": generate_offline_script(config),
         }
 
-    if operation == "offline.deploy":
-        if upload_manager is None:
-            raise CapabilityUnavailableError(
-                data={"capability": "transfer.upload", "reason": "not-configured"},
-            )
-        from mklink.probes import bound_probe
-        from mklink.probe_volumes import resolve_volume
-        from mklink.offline_download import deploy_offline_bundle, parse_offline_config
-
-        # Remote upload references do not authorize choosing an arbitrary disk.
-        # Only an identity-bound backend can deploy; never fall back to labels.
-        try:
-            probe_id = bound_probe()
-            if probe_id is None:
-                raise CapabilityUnavailableError(
-                    data={"capability": "flash.offline", "reason": "probe-identity-required"},
-                )
-            disk = resolve_volume(probe_id)["root"]
-        except (RuntimeError, OSError):
-            raise CapabilityUnavailableError(
-                data={"capability": "flash.offline", "reason": "probe-identity-unavailable"},
-            ) from None
-        config = parse_offline_config(_remote_offline_config(params.get("config")))
-        firmware_refs = _mapping(params.get("firmware_files"), "firmware_files")
-        algorithm_refs = _mapping(
-            params.get("algorithm_files", {}),
-            "algorithm_files",
-        )
-        firmware_sources = {
-            str(key): upload_manager.resolve(_text(value, "firmware_files"))
-            for key, value in firmware_refs.items()
-        }
-        algorithm_sources = {
-            str(key): upload_manager.resolve(_text(value, "algorithm_files"))
-            for key, value in algorithm_refs.items()
-        }
-        return deploy_offline_bundle(
-            config,
-            disk,
-            firmware_sources=firmware_sources,
-            algorithm_sources=algorithm_sources,
-        )
-
     if operation.startswith("serial."):
         return _dispatch_serial(operation, params, context,
                                 project_root=project_root, probe=runtime_probe)

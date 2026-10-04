@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T17:48:01.954348+00:00`
+- 更新时间：`2026-10-04T17:54:34.211088+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; remote retained task queries after 2d0259c5; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared offline deployment adapter after ae917002; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第86批增加runtime.jobs能力和只读jobs.status，按job_id或request_id查询原后台保留记录；复用现有任务日志，不新增目标会话/CDC连接、不提交或重放操作。87项相关回归通过，含真实WebSocket和共享后台无新增会话/硬件调用断言；无本批硬件操作。 持续推进，不合并发布。
+- 当前任务：第87批删除远程offline.deploy直接磁盘路径，opaque上传引用适配到共享后台已有表单接口，统一USB身份、范围校验及互斥。151项扩展回归通过，完整分发入口补验13项通过；真实本机HTTP验证认证/中文编码/代理绕过及丢失响应不重发。未执行物理MSC写入，独立实包和部署持久任务仍待验收。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第86节：第86批增加runtime.jobs能力和只读jobs.status，按job_id或request_id查询原后台保留记录；复用现有任务日志，不新增目标会话/CDC连接、不提交或重放操作。87项相关回归通过，含真实WebSocket和共享后台无新增会话/硬件调用断言；无本批硬件操作。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第87节：第87批删除远程offline.deploy直接磁盘路径，opaque上传引用适配到共享后台已有表单接口，统一USB身份、范围校验及互斥。151项扩展回归通过，完整分发入口补验13项通过；真实本机HTTP验证认证/中文编码/代理绕过及丢失响应不重发。未执行物理MSC写入，独立实包和部署持久任务仍待验收。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,14 +41,14 @@
 
 ## 下一动作
 
-1. 第86批未知任务只读查询已接入，下一步共享offline.deploy适配和独立Agent当前实包依赖，再推进异常恢复及长稳。第85批Feedback成功，共享CI仍在运行（37221642645），复查同一任务；核对第86批CI。系统级安装UAC仍待用户回复，不运行安装器。
+1. 第87批远程脱机部署已接入共享后台，下一步独立Agent当前实包依赖、物理MSC部署验证及结果未知恢复方案，再推进异常恢复/长稳。第86批Feedback成功，共享CI仍在运行（37221894169），复查同一任务；核对第87批CI。UAC仍待用户回复，不运行安装器。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
 
 - A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
-- 0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌远程服务核心已接入共享；Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、原生擦除准备已实现但物理擦除/恢复、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。HPM FreeRTOS共享SystemView已短时真机验证，长稳及其他RTOS组合待验。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM工程wave_tick符号读取已真机通过，稀疏类型及MAP/C回退覆盖仍待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环/YMODEM/exchange25项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。 独立Agent未绑定进程的offline.deploy现明确拒绝，preview保留；第75批24项目标能力已共享；Agent RTT/SystemView版本2均已共享并完成短时本机LAN真机验证；MSC部署适配和独立Agent当前实包仍待验证。
+- 0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌远程服务核心已接入共享；Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、原生擦除准备已实现但物理擦除/恢复、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。HPM FreeRTOS共享SystemView已短时真机验证，长稳及其他RTOS组合待验。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM工程wave_tick符号读取已真机通过，稀疏类型及MAP/C回退覆盖仍待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环/YMODEM/exchange25项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。 远程offline.deploy已复用共享后台表单部署接口，preview可离线；未连接拒绝，物理MSC及独立Agent实包待验；第75批24项目标能力已共享；Agent RTT/SystemView版本2均已共享并完成短时本机LAN真机验证；MSC部署适配回归已通过，物理MSC与独立Agent当前实包仍待验证；部署尚不属于持久任务日志，丢失响应需核查磁盘且不重放。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
 - 缓冲有界但不是无损通道：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。

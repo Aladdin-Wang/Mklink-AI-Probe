@@ -116,7 +116,7 @@ visitor 进程退出即关闭本地入口；它只绑定回环地址，不提供
 （FastAPI、Uvicorn 等），普通远程客户端导入时仍按需加载，不需要 FastMCP
 或 Qt。便携入口支持后台内部使用的 `runtime serve` 启动契约；这只是部署
 前提。0.3.0独立Agent核心目标、串口及Modbus已走共享后台；远程RTT/SystemView
-及offline.deploy尚未完整接入，必须检查握手能力，不能把核心共享外推为完整迁移。包内包含算法加载代码，不包含 FLM、Pack 或目标固件。
+及offline.deploy已接入共享后台；独立便携实包仍需验证，必须检查握手能力。包内包含算法加载代码，不包含 FLM、Pack 或目标固件。
 
 ```powershell
 python -m pip install -e ".[remote]"
@@ -320,10 +320,15 @@ python -m mklink remote --site field-a stop-agent --yes
 身份绑定的后台执行，并通过 USB 身份匹配唯一卷 GUID；不会按 MICROKEEN 卷标、
 盘符、环境变量或列表首项选盘。身份缺失、设备不在或磁盘映射不唯一时拒绝部署。
 
-独立 Site Agent 的共享后台迁移尚未完成，因此当前源码/便携 Agent 的未绑定进程
-会返回 `probe-identity-required`，即使指定了旧 `--device-port` 也不构成身份绑定。
-这项限制不会通过重新提交或更改卷标解除。不要把握手中的 `flash.offline` 可用
-理解为部署已经就绪：该组仍提供预览，握手 detail 明确标出部署的绑定要求。
+远程服务先通过 `agent.reconnect` 接入所选物理探针后台，再消费上传完成的
+opaque reference。`firmware_files` / `algorithm_files` 必须分别按配置ID完整映射；
+远程参数不能携带本机路径、profile/pack源或source_token。算法须先上传为引用。
+只有服务端解析后的路径进入本机表单，复用现有部署接口的范围校验、USB身份检查
+及共享互斥；活动采集或独占任务期间拒绝部署。不会在Agent进程直接写磁盘。
+
+`offline.preview` 无需连接；部署未连接时明确拒绝。HTTP失败后不自动重放；部署
+目前不属于持久任务日志，`jobs.status` 不能查询它，响应丢失须先核查磁盘内容。
+当前便携独立远程服务实包及物理MSC部署仍待验收，不能以接口回归代替。
 
 ### 0.3.0 共享 Modbus
 
@@ -337,7 +342,7 @@ python -m mklink remote --site field-a stop-agent --yes
 显式 timeout 须匹配。新连接默认超时1秒、重试0，扫描使用既有短探测事务。
 每次请求使用独立共享会话，退出不抢停 GUI 连接。写入失败可能结果未知，
 Agent 不自动重放；借用连接的底层重试配置仍由共享后台控制。
-串口 exchange、核心目标操作及下述 SystemView/RTT 已共享；脱机部署仍待完成。
+串口 exchange、核心目标操作及下述 SystemView/RTT 已共享；脱机部署也复用共享后台接口。
 
 ### 0.3.0 共享 SystemView（能力版本 2）
 
