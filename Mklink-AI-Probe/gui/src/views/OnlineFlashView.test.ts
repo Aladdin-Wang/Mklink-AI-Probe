@@ -330,6 +330,16 @@ describe('useOnlineFlashApi', () => {
     expectTypeOf<JobRequest['actions'][number]>().toEqualTypeOf<JobAction>()
   })
 
+  it('submits online jobs once with a retained ID after response loss', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('response lost'))
+    const api = await onlineFlashApi()
+    await expect(api.createJob({ actions: ['connect', 'disconnect'], probe_id: 'selected' }, 'retained-id'))
+      .rejects.toThrow('request_id=retained-id')
+    expect(fetch).toHaveBeenCalledTimes(1)
+    const headers = new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers)
+    expect(headers.get('X-MKLink-Request-Id')).toBe('retained-id')
+  })
+
   it('preserves structured API conflict details', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
       detail: { code: 'PROBE_BUSY', owner: 'ai-session', resource: 'TARGET_DEBUG' },

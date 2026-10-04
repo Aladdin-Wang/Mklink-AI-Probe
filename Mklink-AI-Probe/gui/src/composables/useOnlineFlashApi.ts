@@ -369,8 +369,13 @@ export function useOnlineFlashApi() {
     }, onProgress)
   }
 
-  function createJob(job: JobRequest): Promise<JobCreateResult> {
-    return request('/jobs', { method: 'POST', body: JSON.stringify(job) })
+  async function createJob(job: JobRequest, requestId: string = crypto.randomUUID()): Promise<JobCreateResult> {
+    try {
+      return await request('/jobs', { method: 'POST', body: JSON.stringify(job),
+        headers: { 'X-MKLink-Request-Id': requestId } })
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; request_id=${requestId}`)
+    }
   }
 
   function getActiveJob(): Promise<JobSnapshot | null> {

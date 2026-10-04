@@ -186,6 +186,9 @@ class RuntimeJobs:
         result = await self.control.invoke('POST', PATHS[job['action']], arguments)
         if job['action'] != 'security':
             return result
+        return await self._observe_online(job, result)
+
+    async def _observe_online(self, job, result):
         # Startup has released HTTP admission. The running journal entry still
         # excludes other hardware work, but the existing online stop route can run.
         job['online_job_id'] = result['online_job_id']
@@ -200,6 +203,44 @@ class RuntimeJobs:
         if not link_saved:
             raise HTTPException(503, 'Online job link could not be journaled; inspect target before proceeding')
         return {**result, **completed}
+
+    async def record_online_start(self, request_id, arguments, start):
+        """Journal GUI online starts inside their existing shared HTTP admission."""
+        from mklink.runtime_api import active_operation
+        c = self.control
+        current = active_operation.get()
+        if (not current or current[0] is not c or not c.operation_lock.locked()
+                or not c.current_operation or c.current_operation['path'] != '/api/online-flash/jobs'):
+            raise HTTPException(409, 'Online start requires shared runtime admission')
+        fingerprint = hashlib.sha256(json.dumps(['online_flash', arguments], sort_keys=True).encode()).hexdigest()
+        previous = self._previous(request_id, fingerprint)
+        if previous:
+            result = previous.get('result') or {}
+            if previous['state'] in {'succeeded', 'failed'} and result.get('job'):
+                return {'job_id': result['online_job_id'], 'job': result['job'],
+                        'runtime_job_id': previous['job_id'], 'request_id': request_id}
+            raise HTTPException(409, {'message':'Query the original runtime job; do not replay',
+                                     'runtime_job_id':previous['job_id'], 'request_id':request_id})
+        if self.path is None:
+            raise HTTPException(503, 'Online journal unavailable; no operation was started')
+        if self.active:
+            raise HTTPException(409, 'Another exclusive job is active')
+        job = self._accept('online_flash', request_id, fingerprint)
+        started = asyncio.get_running_loop().create_future()
+        async def operation():
+            try:
+                response = await start()
+                started.set_result({**response, 'runtime_job_id':job['job_id'], 'request_id':request_id})
+                return await self._observe_online(job, {'online_job_id':response['job_id']})
+            except BaseException as error:
+                if not started.done():
+                    started.set_exception(error)
+                raise
+        from mklink.runtime_api import settle
+        task = asyncio.create_task(self._execute_operation(job, lambda: settle(asyncio.create_task(operation()))))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return await asyncio.shield(started)
 
     async def _execute_operation(self, job, operation):
         try:

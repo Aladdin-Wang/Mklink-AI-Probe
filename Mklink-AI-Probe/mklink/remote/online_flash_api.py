@@ -1347,6 +1347,7 @@ def wait_online_job(services: OnlineFlashServices, job_id: str) -> dict:
     return {
         'status': 'succeeded' if snapshot.state is JobState.SUCCEEDED else 'failed',
         'online_job_id': job_id, 'online_state': snapshot.state.value, 'messages': messages,
+        'job': _safe_job_snapshot(snapshot),
         'error_code': snapshot.error_code, 'error_message': snapshot.error_message,
     }
 
@@ -1893,18 +1894,20 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         }
 
     @router.post("/jobs")
-    async def job_start(body: JobBody) -> object:
-        if not body.probe_id or not body.target_part:
-            raise HTTPException(status_code=422, detail="probe_id and target_part are required")
-        await _blocking(_selected_probe, services.probe_provider, body.probe_id)
-        target = await _blocking(_resolved_target, services.catalog, body.target_part)
-        job_id, snapshot = await _blocking(
-            _start_job_with_configuration,
-            services,
-            body,
-            target,
-        )
-        return {"job_id": job_id, "job": _safe_job_snapshot(snapshot)}
+    async def job_start(body: JobBody, request: Request) -> object:
+        async def start():
+            if not body.probe_id or not body.target_part:
+                raise HTTPException(status_code=422, detail="probe_id and target_part are required")
+            await _blocking(_selected_probe, services.probe_provider, body.probe_id)
+            target = await _blocking(_resolved_target, services.catalog, body.target_part)
+            job_id, snapshot = await _blocking(
+                _start_job_with_configuration, services, body, target)
+            return {"job_id": job_id, "job": _safe_job_snapshot(snapshot)}
+        control = getattr(request.app.state, 'shared_runtime', None)
+        if control is not None:
+            return await control.jobs.record_online_start(
+                request.headers.get('X-MKLink-Request-Id'), body.model_dump(), start)
+        return await start()
 
     @router.get("/jobs/active")
     async def job_active() -> object:

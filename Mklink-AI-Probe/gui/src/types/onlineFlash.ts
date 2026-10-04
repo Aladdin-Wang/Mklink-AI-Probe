@@ -268,6 +268,8 @@ export interface PackRemoveResult {
 }
 
 export interface JobCreateResult {
+  runtime_job_id?: string
+  request_id?: string
   job_id: string
   job: JobSnapshot
 }

@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 40  # Journaled online workers release HTTP admission so explicit stop can run.
+PROTOCOL = 41  # Shared online submissions require a stable request ID.
 VERSION = "0.3.0"
 
 

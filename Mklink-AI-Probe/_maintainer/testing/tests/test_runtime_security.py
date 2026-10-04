@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from types import SimpleNamespace
+from dataclasses import dataclass
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,7 +47,13 @@ def security(monkeypatch, tmp_path):
     services.probe_provider = lambda: [SimpleNamespace(unique_id='SERIAL', product_name='MKLink')]
     started, release, waiting = threading.Event(), threading.Event(), threading.Event()
     calls = []
-    outcome = SimpleNamespace(state=JobState.SUCCEEDED, error_code=None, error_message=None)
+    @dataclass
+    class Outcome:
+        job_id: str = 'online-test'
+        state: JobState = JobState.SUCCEEDED
+        error_code: str | None = None
+        error_message: str | None = None
+    outcome = Outcome()
     def start(current, body, target):
         assert current is services
         assert json.loads((tmp_path/'jobs.json').read_text())[0]['state'] == 'running'
@@ -357,4 +364,80 @@ def test_link_journal_failure_retains_ownership_until_online_worker_finishes(sec
     assert s.client.post('/_runtime/stop', json={'confirm':True}).status_code == 409
     s.release.set()
     assert terminal(s.client,job['job_id'])['state'] == 'unknown'
+    assert len(s.calls) == 1
+
+
+def test_gui_online_start_is_journaled_and_duplicates_return_original_result(security):
+    s = security
+    body = dict(actions=['connect','disconnect'], probe_id='SERIAL', target_part='nrf54l15')
+    assert s.client.post('/api/online-flash/jobs',json=body).status_code == 422
+    headers={'X-MKLink-Request-Id':'gui-online'}
+    response=s.client.post('/api/online-flash/jobs',json=body,headers=headers)
+    assert response.status_code==200, response.text
+    created=response.json()
+    assert created['request_id']=='gui-online' and created['job_id']=='online-test'
+    assert s.waiting.wait(2)
+    assert s.client.post('/api/probe/version').status_code==409
+    s.release.set()
+    result=terminal(s.client,created['runtime_job_id'])
+    assert result['action']=='online_flash' and result['state']=='succeeded'
+    duplicate=s.client.post('/api/online-flash/jobs',json=body,headers=headers)
+    assert duplicate.status_code==200, duplicate.text
+    assert duplicate.json()['runtime_job_id']==created['runtime_job_id']
+    assert len(s.calls)==1
+    assert s.client.post('/api/online-flash/jobs',json={**body,'frequency':2_000_000},headers=headers).status_code==409
+
+
+def test_gui_online_journal_failure_prevents_start(security,monkeypatch):
+    s=security
+    def fail():raise OSError('unavailable')
+    monkeypatch.setattr(s.control.jobs,'save',fail)
+    response=s.client.post('/api/online-flash/jobs',json=dict(actions=['connect','disconnect'],
+        probe_id='SERIAL',target_part='nrf54l15'),headers={'X-MKLink-Request-Id':'gui-refused'})
+    assert response.status_code==503
+    assert not s.calls and not s.control.jobs.jobs
+
+
+def test_gui_start_validation_failure_is_retained_without_replay(security):
+    s=security
+    body=dict(actions=['connect','disconnect'],probe_id='SERIAL',target_part='')
+    headers={'X-MKLink-Request-Id':'invalid-gui'}
+    response=s.client.post('/api/online-flash/jobs',json=body,headers=headers)
+    assert response.status_code==422
+    jobs=s.client.get('/api/runtime/jobs/').json()['jobs']
+    assert len(jobs)==1 and jobs[0]['state']=='failed'
+    assert s.client.post('/api/online-flash/jobs',json=body,headers=headers).status_code==409
+    assert not s.calls
+
+
+@pytest.mark.parametrize('ending', ['cancel-observer', 'stop'])
+def test_gui_job_retains_ownership_and_existing_stop_path(security, monkeypatch, ending):
+    import asyncio
+    s = security
+    body = dict(actions=['connect', 'disconnect'], probe_id='SERIAL', target_part='nrf54l15')
+    headers = {'X-MKLink-Request-Id': 'gui-lifecycle'}
+    created = s.client.post('/api/online-flash/jobs', json=body, headers=headers).json()
+    assert s.waiting.wait(2)
+    assert not s.control.operation_lock.locked()
+    assert s.client.post('/api/online-flash/jobs', json=body, headers=headers).status_code == 409
+    if ending == 'cancel-observer':
+        async def cancel():
+            next(iter(s.control.jobs.tasks)).cancel()
+            await asyncio.sleep(.01)
+        s.client.portal.call(cancel)
+        assert s.control.jobs.active is not None
+        assert s.client.post('/api/probe/version').status_code == 409
+        assert s.client.post('/_runtime/stop', json={'confirm': True}).status_code == 409
+        s.release.set()
+        assert terminal(s.client, created['runtime_job_id'])['state'] == 'unknown'
+    else:
+        def stop(job_id):
+            assert job_id == created['job_id']
+            s.outcome.state = JobState.STOPPED
+            s.release.set()
+            return {'job_id': job_id, 'state': 'stopping'}
+        monkeypatch.setattr(s.services.job_manager, 'stop', stop, raising=False)
+        assert s.client.post('/api/online-flash/jobs/online-test/stop').status_code == 200
+        result = terminal(s.client, created['runtime_job_id'])
+        assert result['state'] == 'failed' and result['result']['online_state'] == 'stopped'
     assert len(s.calls) == 1
