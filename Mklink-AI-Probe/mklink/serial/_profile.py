@@ -27,11 +27,10 @@ def _finite_number(value) -> bool:
 
 
 def _is_hex_string(s: str) -> bool:
-    if not isinstance(s, str) or len(s) == 0 or len(s) % 2 != 0:
+    if not isinstance(s, str) or not s:
         return False
     try:
-        bytes.fromhex(s)
-        return True
+        return bool(bytes.fromhex(s))
     except ValueError:
         return False
 
@@ -55,9 +54,9 @@ def _validate_frame(frame: dict) -> list[str]:
         if not isinstance(lf, dict):
             errors.append("frame.length_field must be a dict")
         else:
-            if "offset" not in lf or not isinstance(lf["offset"], int):
-                errors.append("frame.length_field.offset must be an int")
-            if "size" not in lf or lf.get("size") not in (1, 2):
+            if type(lf.get('offset')) is not int or lf['offset'] < 0:
+                errors.append("frame.length_field.offset must be an int >= 0")
+            if type(lf.get('size')) is not int or lf['size'] not in (1, 2):
                 errors.append("frame.length_field.size must be 1 or 2")
             if "includes_header" not in lf or not isinstance(lf["includes_header"], bool):
                 errors.append("frame.length_field.includes_header must be a bool")

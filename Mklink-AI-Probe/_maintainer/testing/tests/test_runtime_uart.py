@@ -175,8 +175,14 @@ def test_modbus_open_and_status_do_not_block_runtime_heartbeat(client_factory, m
             start = time.monotonic()
             try:
                 await asyncio.sleep(.01)
+                heartbeat_started = time.monotonic()
                 assert (await http.get('/_runtime/status')).status_code == 200
-                assert time.monotonic() - start < .5
+                elapsed = time.monotonic() - start
+                assert elapsed < .5, (
+                    f'elapsed={elapsed:.3f}s, scheduling={heartbeat_started-start:.3f}s, '
+                    f'heartbeat={time.monotonic()-heartbeat_started:.3f}s, '
+                    f'status_done={pending_status.done()}, released={release.is_set()}'
+                )
                 assert not pending_status.done()
             finally:
                 release.set()

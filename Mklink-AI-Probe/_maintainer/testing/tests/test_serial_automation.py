@@ -103,3 +103,77 @@ def test_configuration_size_limit_applies_to_direct_rest(uart_app):
 def test_zero_scale_is_applied():
     parser=FrameParser(profile(scale=0))
     assert parser.feed(b'\xaa\x7f\xff')[0].fields['value']=={'raw':127,'value':0,'unit':'V'}
+
+
+@pytest.mark.parametrize('length', [0, 1])
+@pytest.mark.parametrize('crc', [False, True])
+def test_corrupt_length_cannot_extract_empty_or_partial_header(length, crc):
+    frame = {'header':'AA', 'length_field':{'offset':1,'size':1,'includes_header':True}}
+    if crc: frame['crc'] = {'algorithm':'checksum8','offset':-1,'scope':'all'}
+    parser = FrameParser({'frame':frame})
+    parser._buffer.extend(bytes([0xAA, length, 0, 0]))
+    # Single extraction keeps this regression safe even with the old infinite loop.
+    with pytest.raises(ValueError, match='frame length'):
+        parser._try_extract_frame(1)
+
+
+@pytest.mark.parametrize('header', ['AA', 'AA BB', 'AA BB CC'])
+def test_noise_discard_keeps_split_headers_and_all_valid_frames(header):
+    parser = FrameParser({'frame':{'header':header,'tail':'FF'}}, max_buffer_bytes=64)
+    prefix = bytes.fromhex(header)
+    for _ in range(100):
+        assert parser.feed(b'x'*32) == []
+        assert len(parser._buffer) <= len(prefix)-1
+    result = parser.feed(prefix[:-1])
+    result += parser.feed(prefix[-1:]+b'\x01\xff'+prefix+b'\x02\xff')
+    assert [f.raw for f in result] == [prefix+b'\x01\xff', prefix+b'\x02\xff']
+
+
+@pytest.mark.parametrize('includes_header', [False, True])
+def test_valid_lengths_split_and_multiple_frames(includes_header):
+    cfg = {'header':'AA', 'length_field':{'offset':1,'size':1,'includes_header':includes_header}}
+    parser = FrameParser({'frame':cfg})
+    frame = bytes([0xAA, 3 if includes_header else 2, 0x42])
+    assert parser.feed(frame[:2]) == []
+    assert [f.raw for f in parser.feed(frame[2:]+frame)] == [frame, frame]
+
+
+@pytest.mark.parametrize('change', [{'header':'  '}, {'tail':'\t\t'},
+    {'length_field':{'offset':-1,'size':1,'includes_header':True}},
+    {'length_field':{'offset':True,'size':1,'includes_header':True}},
+    {'length_field':{'offset':1,'size':True,'includes_header':True}}])
+def test_invalid_framing_rejected_before_open(uart_app, monkeypatch, change):
+    http, _, managers, _, monitor = uart_app
+    monkeypatch.setattr(monitor, 'start', lambda *a: pytest.fail('invalid profile opened port'))
+    cfg = profile(); cfg['frame'].update(change)
+    response = http.post('/api/dash/serial/start', json={'ports':[{'port':'TEST'}],'profile':cfg})
+    assert response.status_code == 400 and not managers['serial'].running
+
+
+def test_spaced_hex_profile_is_valid():
+    cfg = profile(); cfg['frame'] = {'header':'AA BB', 'tail':'CC DD'}
+    assert validate_profile(cfg) == []
+
+
+def test_corrupt_wire_length_stops_reader_visibly_and_preserves_raw_history(ports):
+    cfg = profile(); cfg['frame'] = {'header':'AA','length_field':{
+        'offset':1,'size':1,'includes_header':True}}
+    manager = SerialStreamManager(); manager.start([{'port':'A'}], profile=cfg)
+    initial = manager.get_history()
+    try:
+        ports.instances[-1].rx.put(b'\xaa\x00')
+        wait_for(lambda: manager.get_history()['ports']['A'].startswith('error:'))
+        wait_for(lambda: not ports.instances[-1].is_open)
+        assert 'frame length' in manager.get_history()['ports']['A']
+        assert not ports.instances[-1].is_open
+        assert manager.get_status()['latest_frames'] == {}
+        manager.stop()
+        history = manager.get_history(initial['session'], initial['next_seq'])
+        assert ''.join(e['hex'] for e in history['entries']) == 'aa00'
+        assert not manager.worker_alive
+        manager.start([{'port':'A'}], profile=cfg)
+        ports.instances[-1].rx.put(b'\xaa\x03\x42')
+        wait_for(lambda: bool(manager.get_status()['latest_frames']))
+        assert manager.get_status()['latest_frames']['A']['hex_preview'] == 'AA0342'
+    finally:
+        manager.stop()

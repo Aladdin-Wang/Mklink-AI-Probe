@@ -22,11 +22,16 @@ class SerialCapture:
                 data = bytes.fromhex(entry['hex'])
                 frames = []
                 parser = self.parsers[entry['port']]
-                if parser is not None and entry['direction'] == 'RX':
-                    frames = [{'raw_hex': frame.raw.hex(), 'crc_valid': frame.crc_valid, 'fields': frame.fields}
-                              for frame in parser.feed(data)]
-                self.logger.log(entry['direction'], entry['port'], data,
-                                timestamp=entry['timestamp_ns'] / 1e9, frames=frames)
+                try:
+                    if parser is not None and entry['direction'] == 'RX':
+                        frames = [{'raw_hex': frame.raw.hex(), 'crc_valid': frame.crc_valid, 'fields': frame.fields}
+                                  for frame in parser.feed(data)]
+                finally:
+                    # Preserve the offending raw batch even when decoding fails.
+                    # Advance only after a successful write so it is not repeated.
+                    self.logger.log(entry['direction'], entry['port'], data,
+                                    timestamp=entry['timestamp_ns'] / 1e9, frames=frames)
+                    self.cursor = entry['seq']
             self.cursor = entry['seq']
         for port in self.parsers:
             status = page['ports'].get(port, 'closed')

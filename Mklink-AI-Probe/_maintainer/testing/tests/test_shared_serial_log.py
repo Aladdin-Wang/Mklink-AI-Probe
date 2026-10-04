@@ -207,6 +207,26 @@ def test_capture_profile_keeps_raw_chunks_and_multiple_frames(tmp_path):
     with pytest.raises(ValueError, match='buffer limit'): parser.feed(b'A'*1024)
 
 
+@pytest.mark.parametrize('bad_data', ['aa00', 'aa02'+'00'*64])
+def test_capture_keeps_faulting_raw_batch_once_before_reporting_parser_error(tmp_path, bad_data):
+    parser = FrameParser({'frame':{'header':'AA','length_field':{
+        'offset':1,'size':1,'includes_header':True}}}, max_buffer_bytes=32)
+    class Client:
+        def call(self, capability, args=None):
+            entries = [dict(seq=1,port='TEST',direction='RX',hex=bad_data,timestamp_ns=1)] if args and args['after']==0 else []
+            return dict(session='one',next_seq=0,entries=entries,running=True,
+                        ports={'TEST':'open'},latest_seq=1,dropped_batches=0)
+    path = tmp_path/'fault.csv'
+    with FileLogger(str(path), 'csv') as logger:
+        capture = SerialCapture(Client(), {'TEST':parser}, logger)
+        with pytest.raises(ValueError): capture.page()
+        assert capture.cursor == 1
+        capture.drain()
+    with path.open(encoding='utf-8', newline='') as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1 and rows[0]['raw_hex'] == bad_data.upper()
+
+
 def test_final_drain_write_failure_closes_owner_and_file(scan_cli, uart_app, monkeypatch, tmp_path, capsys):
     cli, _, _, control, _, _ = scan_cli
     manager = uart_app[2]['serial']

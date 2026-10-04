@@ -219,8 +219,11 @@ class FrameParser:
         header_idx = self._buffer.find(self._header)
         if header_idx == -1:
             # Discard bytes before any potential partial header
-            if len(self._buffer) > len(self._header):
-                self._buffer = self._buffer[-(len(self._header) - 1):]
+            keep = len(self._header) - 1
+            if keep:
+                self._buffer = self._buffer[-keep:]
+            else:
+                self._buffer.clear()
             return None
 
         # Discard garbage before header
@@ -255,6 +258,11 @@ class FrameParser:
             total_len = frame_len
         else:
             total_len = frame_len + header_len
+
+        # A length that cannot contain its own header/length field is corrupt.
+        # In particular, an empty extraction never advances the parser loop.
+        if total_len < max(header_len, offset + size):
+            raise ValueError('Serial Profile frame length is smaller than its header/length field')
 
         # Account for CRC bytes at end if configured
         if self._crc_cfg:
