@@ -288,3 +288,15 @@ python -m mklink remote --site field-a stop-agent --yes
 维护者授权：先确认目标站点和维护窗口，停止并验证旧前台进程已退出，由现场维护者
 校验官方 ZIP 的来源与摘要、保留回滚包、替换文件，再按 readiness/health 流程启动。
 不得把任意工程师上传 reference 当作 Agent 更新包自动激活。
+
+
+### 0.3.0 脱机部署的设备身份限制
+
+`offline.preview` 仍可在无探针时生成脚本。`offline.deploy` 仅允许具有不可变探针
+身份绑定的后台执行，并通过 USB 身份匹配唯一卷 GUID；不会按 MICROKEEN 卷标、
+盘符、环境变量或列表首项选盘。身份缺失、设备不在或磁盘映射不唯一时拒绝部署。
+
+独立 Site Agent 的共享后台迁移尚未完成，因此当前源码/便携 Agent 的未绑定进程
+会返回 `probe-identity-required`，即使指定了旧 `--device-port` 也不构成身份绑定。
+这项限制不会通过重新提交或更改卷标解除。不要把握手中的 `flash.offline` 可用
+理解为部署已经就绪：该组仍提供预览，握手 detail 明确标出部署的绑定要求。

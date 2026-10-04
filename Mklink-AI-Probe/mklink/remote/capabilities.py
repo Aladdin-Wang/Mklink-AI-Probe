@@ -291,7 +291,10 @@ def protocol_capabilities() -> dict[str, ProtocolCapability]:
         name: ProtocolCapability(
             capability_available(name),
             version=str(spec.version),
-            detail=", ".join(spec.operations),
+            detail=", ".join(spec.operations) + (
+                "; offline.deploy requires an identity-bound runtime"
+                if name == "flash.offline" else ""
+            ),
         )
         for name, spec in CAPABILITIES.items()
     }

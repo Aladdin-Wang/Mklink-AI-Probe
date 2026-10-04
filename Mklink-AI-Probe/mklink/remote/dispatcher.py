@@ -261,15 +261,24 @@ def dispatch_capability(
             raise CapabilityUnavailableError(
                 data={"capability": "transfer.upload", "reason": "not-configured"},
             )
-        from mklink.discovery import find_microkeen_disk
+        from mklink.probes import bound_probe
+        from mklink.probe_volumes import resolve_volume
         from mklink.offline_download import deploy_offline_bundle, parse_offline_config
 
-        config = parse_offline_config(_remote_offline_config(params.get("config")))
-        disk = find_microkeen_disk()
-        if not disk:
+        # Remote upload references do not authorize choosing an arbitrary disk.
+        # Only an identity-bound backend can deploy; never fall back to labels.
+        try:
+            probe_id = bound_probe()
+            if probe_id is None:
+                raise CapabilityUnavailableError(
+                    data={"capability": "flash.offline", "reason": "probe-identity-required"},
+                )
+            disk = resolve_volume(probe_id)["root"]
+        except (RuntimeError, OSError):
             raise CapabilityUnavailableError(
-                data={"capability": "flash.offline", "reason": "probe-disk-unavailable"},
-            )
+                data={"capability": "flash.offline", "reason": "probe-identity-unavailable"},
+            ) from None
+        config = parse_offline_config(_remote_offline_config(params.get("config")))
         firmware_refs = _mapping(params.get("firmware_files"), "firmware_files")
         algorithm_refs = _mapping(
             params.get("algorithm_files", {}),

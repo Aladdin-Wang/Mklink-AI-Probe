@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T11:50:58+00:00",
+  "updated_at": "2026-10-04T11:58:05+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared SystemView reports after 948de26; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; remote offline identity gate after dcae3ef; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "第63批将SystemView analyze/report迁到共享后台并删除直连/专用符号搜索，采用原分析器与HTML生成器。既有历史增加会话/序号分页及缺口检测，协议28，自己创建才请求一次停止，借用不抢停。相关188、扩大2501/2跳过、最终收紧断言33通过；真实TCP与独立CLI子进程+合成事件联测通过，全部会话/服务退出。前批948de26双CI成功。下一步独立Agent、请求取消、恢复长稳/NSIS；物理RTOS及YMODEM/Modbus对端仍未验收，不改固件/WinUSB、不合并发布。"
+    "current_task": "第64批删除Agent offline.deploy未绑定时按卷标/环境变量/首盘回退，改为仅用不可变probe绑定及既有USB→卷GUID解析；8项新测试、相关49项通过，含真实WebSocket拒绝与预览保持。当前独立Agent未接共享后台，部署明确暂拒，不能当作迁移完成。前批dcae3ef两项CI成功。继续Agent完整目标/UART/上传/会话迁移、取消和恢复长稳NSIS，不改固件/WinUSB、不合并发布。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第63节：第63批将SystemView analyze/report迁到共享后台并删除直连/专用符号搜索，采用原分析器与HTML生成器。既有历史增加会话/序号分页及缺口检测，协议28，自己创建才请求一次停止，借用不抢停。相关188、扩大2501/2跳过、最终收紧断言33通过；真实TCP与独立CLI子进程+合成事件联测通过，全部会话/服务退出。前批948de26双CI成功。下一步独立Agent、请求取消、恢复长稳/NSIS；物理RTOS及YMODEM/Modbus对端仍未验收，不改固件/WinUSB、不合并发布。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第64节：第64批删除Agent offline.deploy未绑定时按卷标/环境变量/首盘回退，改为仅用不可变probe绑定及既有USB→卷GUID解析；8项新测试、相关49项通过，含真实WebSocket拒绝与预览保持。当前独立Agent未接共享后台，部署明确暂拒，不能当作迁移完成。前批dcae3ef两项CI成功。继续Agent完整目标/UART/上传/会话迁移、取消和恢复长稳NSIS，不改固件/WinUSB、不合并发布。"
     },
     {
       "area": "正式版与安装",
@@ -65,7 +65,7 @@
   },
   "known_limits": [
     "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
-    "0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环/YMODEM24项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。",
+    "0.3.0第七阶段：剩余专用CLI、低层Device调用方与独立Agent未全部迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务、单地址扫描及有界历史/共享日志/命令序列/广播文件及Modbus循环/YMODEM24项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard/diag/monitor CLI已共享且共用连接上下文；FC07/22/23复用既有transaction，FC23保持一次读写且独立写地址，扫描临时参数限单worker任务并恢复；monitor已有500事件会话游标并逐条写日志；serial send已共享且共用UART生命周期；serial dashboard已迁主GUI并删除旧服务；嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。 独立Agent未绑定进程的offline.deploy现明确拒绝，preview保留；共享身份与完整能力接入仍待完成。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "缓冲有界但不是无损通道：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "核对本批精确CI；SystemView analyze/report已共享，继续独立Agent目标/UART/身份绑定MSC与上传/远程会话契约迁移。继续HTTP断开取消、崩溃恢复、24/72小时长稳及NSIS。物理RTOS、YMODEM/Modbus对端未验收；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。",
+    "核对本批精确CI；继续独立Agent目标/UART/上传/远程会话的共享迁移，以恢复身份绑定的远程MSC部署，不能将拒绝旧入口视作完成。继续HTTP断开取消、崩溃恢复、24/72小时长稳及NSIS。物理RTOS/YMODEM/Modbus对端未验收；保持500ms心跳门槛，不改固件/WinUSB、不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [
