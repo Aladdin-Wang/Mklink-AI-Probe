@@ -36,3 +36,7 @@
 桌面构建使用维护者 builder；默认标准 NSIS，不使用 ad hoc PyInstaller
 命令、不默认生成 MSI。正式发布只在获得明确授权后读取
 `skills/maintaining-mklink-ai-probe/references/releasing.md`。
+
+### Built-in algorithm test resources
+
+Tests covering offline security require the maintained built-in FLM bundle, which is not tracked in a fresh worktree. Before running these checks, verify the local bundle manifest and pinned algorithm hashes, then set `MKLINK_BUILTIN_FLM_ROOT` for that build_workspace invocation. Missing resources cause fail-closed capability checks; do not change the security whitelist or skip those tests to obtain a passing result. Keep resource paths local and do not commit FLM binaries.
