@@ -7,6 +7,7 @@ import base64
 import csv
 import hashlib
 import io
+import importlib.util
 import json
 import marshal
 import os
@@ -102,7 +103,7 @@ def _source_input_records(
     root: Path,
     script_dir: Path,
 ) -> tuple[list[dict[str, object]], str]:
-    inputs = [root / "pyproject.toml"]
+    inputs = [root / "pyproject.toml", root / "skills/tauri-gui-builder/scripts/builtin_flm_assets.py"]
     inputs.extend(_files(root / "mklink"))
     # The GUI wrapper consumes the completed core ZIP and pins its hash.
     # Excluding that downstream packager avoids a circular core hash.
@@ -412,6 +413,7 @@ def _audit_content(
     scan_generic_paths: bool = True,
     allow_static_drive_paths: bool = False,
     allow_pe_provenance_paths: bool = False,
+    allow_builtin_flm_debug_paths: bool = False,
 ) -> None:
     lowered_data = data.lower()
     for marker in policy["markers"]:
@@ -423,6 +425,16 @@ def _audit_content(
     if not scan_generic_paths:
         return
     scan_data = data
+    if allow_builtin_flm_debug_paths:
+        from elftools.elf.elffile import ELFFile
+        from elftools.common.exceptions import ELFError
+        try:
+            elf = ELFFile(io.BytesIO(data))
+            scan_data = b"\0".join(section.data() for section in elf.iter_sections()
+                if not (not section["sh_flags"] & 2
+                        and (section.name.startswith(".debug") or section.name == ".comment")))
+        except ELFError as exc:
+            raise RuntimeError(f"Cannot inspect built-in FLM sections in {label}") from exc
     if allow_pe_provenance_paths:
         # Native instruction immediates are not strings (e.g. file:/// + REX.H).
         # Exact current-build paths and credentials above still scan every byte.
@@ -515,7 +527,24 @@ def _try_audit_marshaled_code(
     return False
 
 
-def _audit_name(relative: str) -> None:
+def _builtin_flm_assets():
+    path = Path(__file__).resolve().parents[2] / "skills/tauri-gui-builder/scripts/builtin_flm_assets.py"
+    spec = importlib.util.spec_from_file_location("site_agent_builtin_flm_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _validated_builtin_flm_paths(bundle: Path) -> set[str]:
+    root = bundle / "_internal/mklink/builtin_flm"
+    if not root.exists():
+        return set()
+    manifest = _builtin_flm_assets().validate_bundle(root)
+    return {(root / blob["file"]).relative_to(bundle).as_posix()
+            for blob in manifest["blobs"]}
+
+
+def _audit_name(relative: str, *, allowed_flm=()) -> None:
     normalized = relative.replace("\\", "/")
     parts = [part.casefold() for part in normalized.split("/") if part]
     if (
@@ -525,7 +554,8 @@ def _audit_name(relative: str) -> None:
         or any(part == ".." for part in parts)
     ):
         raise RuntimeError(f"PROHIBITED package path: {relative}")
-    if Path(normalized).suffix.casefold() in PROHIBITED_SUFFIXES:
+    if (Path(normalized).suffix.casefold() in PROHIBITED_SUFFIXES
+            and not (Path(normalized).suffix.casefold() == ".flm" and normalized in allowed_flm)):
         raise RuntimeError(f"PROHIBITED package suffix: {relative}")
     if any(name in parts for name in LOCAL_INSTALL_METADATA_NAMES):
         raise RuntimeError(f"PROHIBITED local install metadata: {relative}")
@@ -751,10 +781,11 @@ def _audit_bundle(
 ) -> list[dict[str, object]]:
 
     _audit_distribution_records(bundle)
+    allowed_flm = _validated_builtin_flm_paths(bundle)
     records: list[dict[str, object]] = []
     for path in _files(bundle):
         relative = path.relative_to(bundle).as_posix()
-        _audit_name(relative)
+        _audit_name(relative, allowed_flm=allowed_flm)
         data = path.read_bytes()
         svd_archive = relative.casefold().endswith("/pyocd/debug/svd/svd_data.zip")
         if svd_archive:
@@ -763,6 +794,7 @@ def _audit_bundle(
             f"bundle file {relative}",
             data,
             policy,
+            allow_builtin_flm_debug_paths=relative in allowed_flm,
             scan_generic_paths=not svd_archive and not relative.casefold().endswith(
                 "base_library.zip"
             ),
@@ -967,6 +999,10 @@ def _audit_zip(
         f"{bundle_name}/{record['path']}": record
         for record in records
     }
+    # Records originate from _audit_bundle, including full built-in manifest/hash validation.
+    allowed_flm = {name for name in expected
+                   if name.startswith(f"{bundle_name}/_internal/mklink/builtin_flm/blobs/")
+                   and name.endswith(".flm")}
     with zipfile.ZipFile(artifact) as archive:
         infos = archive.infolist()
         names = [info.filename for info in infos if not info.is_dir()]
@@ -975,7 +1011,7 @@ def _audit_zip(
         for info in infos:
             if info.is_dir():
                 continue
-            _audit_name(info.filename)
+            _audit_name(info.filename, allowed_flm=allowed_flm)
             if info.date_time != FIXED_ZIP_TIME:
                 raise RuntimeError(f"non-deterministic ZIP timestamp: {info.filename}")
             if info.external_attr >> 16 != FIXED_FILE_MODE:
@@ -988,6 +1024,7 @@ def _audit_zip(
                 f"ZIP member {info.filename}",
                 data,
                 policy,
+                allow_builtin_flm_debug_paths=info.filename in allowed_flm,
                 scan_generic_paths=not svd_archive and not info.filename.casefold().endswith(
                     "base_library.zip"
                 ),
@@ -1058,6 +1095,8 @@ def build(
 
     script_dir = Path(__file__).resolve().parent
     root = script_dir.parents[1]
+    assets = _builtin_flm_assets()
+    flm_root = assets.default_bundle_root(root)
     worktree_root = _resolve_worktree_root(root)
     product_version = _project_version(root)
     provenance = _load_provenance(
@@ -1078,6 +1117,7 @@ def build(
     # replacement build is in progress or has failed.
     artifact.unlink(missing_ok=True)
     manifest.unlink(missing_ok=True)
+    assets.validate_bundle(flm_root)
     stage = output / ".site-agent-build"
     _validated_cleanup(stage, output)
     stage.mkdir()
@@ -1203,6 +1243,7 @@ def build(
     )
 
     bundle = pyinstaller_dist / "mklink-remote-agent"
+    assets.install_bundle(flm_root, bundle / "_internal/mklink/builtin_flm")
     executable = bundle / "mklink-remote-agent.exe"
     if not executable.is_file():
         raise RuntimeError("standalone executable was not produced")
@@ -1380,6 +1421,7 @@ def build(
                 "allow": [
                     "current Windows SystemRoot paths embedded by operating-system runtime files",
                     "PE compiler/debug provenance paths; generic file URLs are scanned in non-executable sections, exact current-build paths and credentials in all bytes",
+                    "verified built-in FLM non-allocated debug/comment provenance only; current-build paths and credentials remain checked in all bytes",
                     "repository/runtime code string constants after exact current-build paths and file URLs are rejected",
                     "encoded PYZ/base-library/SVD containers only when every decompressed member is separately audited",
                 ],

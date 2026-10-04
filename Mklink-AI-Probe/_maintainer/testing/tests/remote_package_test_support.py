@@ -89,6 +89,10 @@ def copy_clean_product_source(destination: Path) -> Path:
     for path in destination.rglob("*"):
         assert not forbidden_parts.intersection(path.relative_to(destination).parts)
         assert not path.name.endswith((".egg-info", ".pyc", ".pyo"))
+    # Shared build-time validator only; no skills enter the product wheel or artifact.
+    validator = Path("skills/tauri-gui-builder/scripts/builtin_flm_assets.py")
+    (destination / validator).parent.mkdir(parents=True)
+    shutil.copy2(ROOT / validator, destination / validator)
     return destination
 
 

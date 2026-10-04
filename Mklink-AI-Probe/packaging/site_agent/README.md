@@ -1,5 +1,12 @@
 # MKLink 0.3.0 standalone remote service
 
+Builds require the same complete, integrity-checked built-in FLM bundle as the
+desktop package. Set `MKLINK_BUILTIN_FLM_ROOT` to that local asset directory
+when it isn't installed in the checkout. The existing desktop asset validator
+checks the catalog and every blob before building and again in the final bundle.
+Only manifest-listed built-in FLMs are allowed; unrelated firmware, Packs and
+FLMs remain prohibited. These assets are package inputs, not committed binaries.
+
 This ZIP is the standalone Windows field-side Site Agent. It includes the
 Python runtime and remote-agent dependencies; the field machine does not need
 Python, Node.js, Rust, Codex, an engineer Skill, or a source checkout.

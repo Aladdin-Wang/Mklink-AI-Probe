@@ -270,6 +270,16 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     expected = {record["path"]: record for record in manifest["files"]}
     with zipfile.ZipFile(artifact) as archive:
         assert archive.testzip() is None
+        builtin_root = "mklink-remote-agent/_internal/mklink/builtin_flm/"
+        builtin_manifest = json.loads(archive.read(builtin_root + "manifest.json"))
+        assert builtin_manifest['target_count'] == 7059
+        assert builtin_manifest['blob_count'] == 2224
+        builtin_blobs = {builtin_root + row['file']: row for row in builtin_manifest['blobs']}
+        assert len(builtin_blobs) == 2224
+        for name, blob in builtin_blobs.items():
+            payload = archive.read(name)
+            assert len(payload) == blob['size']
+            assert hashlib.sha256(payload).hexdigest() == blob['sha256']
         infos = [info for info in archive.infolist() if not info.is_dir()]
         assert len(infos) == surfaces["zip_members"]
         assert len(infos) == surfaces["bundle_files"]
@@ -293,7 +303,6 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
                 ".axf",
                 ".bin",
                 ".elf",
-                ".flm",
                 ".hex",
                 ".jpg",
                 ".jpeg",
@@ -302,6 +311,8 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
                 ".png",
                 ".screenshot",
             }
+            if Path(relative).suffix.casefold() == ".flm":
+                assert info.filename in builtin_blobs
             data = archive.read(info)
             assert info.CRC == (zlib.crc32(data) & 0xFFFFFFFF)
             record = expected[relative]

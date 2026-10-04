@@ -812,6 +812,14 @@ def test_packaged_shared_backend_runs_without_python_and_detaches_clients(clean_
             assert second.call('serial_status')['running'] is False
             second.close()
             assert request(info, 'GET', '/api/device/status')['connected'] is False
+            for model, part in (('V4', 'STM32F103RE'), ('V4', 'GD32F303RE'),
+                                ('V3', 'STM32G474RET6'), ('V3', 'PY32F030K28T6')):
+                capability = request(info, 'GET',
+                    f'/api/offline-download/security?model={model}&part_number={part}')
+                assert capability['supported'] and capability['unlock_supported'] and capability['lock_supported']
+            for part in ('STM32G474RE', 'PY32F030x8', 'STM32G474RET6', 'PY32F030K28T6'):
+                assert request(info, 'GET',
+                    f'/api/offline-download/security?model=V4&part_number={part}')['supported'] is False
             assert request(info, 'POST', '/_runtime/stop', {'confirm': True})['status'] == 'stopping'
             assert process.wait(timeout=15) == 0
             assert not endpoint.exists()
