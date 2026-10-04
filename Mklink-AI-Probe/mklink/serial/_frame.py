@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import binascii
+import copy
+import math
 import struct
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def json_fields(fields: dict) -> dict:
+    """Copy decoded fields for JSON, retaining non-finite readings as strings."""
+    result = copy.deepcopy(fields)
+    for name, value in result.items():
+        if not isinstance(value, dict):
+            value = result[name] = {'value': value, 'raw': value}
+        for key in ('value', 'raw'):
+            if isinstance(value.get(key), float) and not math.isfinite(value[key]):
+                value[key] = str(value[key])
+    return result
 
 
 # ---------------------------------------------------------------------------

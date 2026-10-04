@@ -1,10 +1,11 @@
 """Shared raw serial capture; no serial reader or auto-reply in this process."""
 import time
 from mklink.runtime import RuntimeErrorResponse
+from ._frame import json_fields
 
 
 def _frame_records(frames):
-    return [{'raw_hex': frame.raw.hex(), 'crc_valid': frame.crc_valid, 'fields': frame.fields}
+    return [{'raw_hex': frame.raw.hex(), 'crc_valid': frame.crc_valid, 'fields': json_fields(frame.fields)}
             for frame in frames]
 
 

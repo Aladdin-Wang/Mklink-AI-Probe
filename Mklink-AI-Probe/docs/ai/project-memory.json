@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T10:34:02+00:00",
+  "updated_at": "2026-10-04T10:46:00+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; removed independent serial dashboard after 812318d; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; shared serial JSON consistency and dual-probe HIL after d181ddf; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审验证。第五十五批旧独立串口Dashboard完全删除：CLI改共享后台认证直达串口页，命令退出保留连接，--probe选设备；旧服务/HTML/演示1184行及reader同步FileLogger/吞错分支删除。共享广播逐端口结果；GUI流式原始上传/MCP后台普通文件限256KiB输入/64KiB载荷，复用4KiB/20ms命令序列，无新线程。协议24/UART18项。新增Python13/GUI3，相关171、扩大2460通过2跳过、GUI817通过，最终滚动可达调整后类型/构建和完整真实Edge/MCP/CLI+模拟OS联测通过：CLI无新句柄/认证串口页/退出续行、9000字节GUI文件/MCP文件准确、广播各一次、队列日志与全释放。前批812318d精确CI两项成功，本批待核对。下一步整体复审与双探针真机共存验证，继续任务归属/取消/Agent/长稳/NSIS。不改固件/WinUSB，不合并发布。"
+    "current_task": "持续循环评审验证。第五十六批重新枚举双下载器并用协议24源码与当前Web构建完成真机GUI/MCP/SDK+RTT/UART共存回归，确认借用保护、多后台隔离、错误端口拒绝、无幽灵会话及所有后台进程退出；Boot/选项/配置不变，VTOR=0x08005000且tick前进。未发送UART/Modbus数据、未刷固件或改供电。统一串口字段JSON转换，状态/SSE/CLI/日志的NaN及正负无穷保持字符串，原始字节与解析值不变；相关124测试通过。前批d181ddf两项CI成功，本批待核对。继续任务归属/取消、独立Agent、异常恢复、长稳和NSIS，不改固件/WinUSB、不合并发布。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第55节：第五十五批旧独立串口Dashboard完全删除：CLI改共享后台认证直达串口页，命令退出保留连接，--probe选设备；旧服务/HTML/演示1184行及reader同步FileLogger/吞错分支删除。共享广播逐端口结果；GUI流式原始上传/MCP后台普通文件限256KiB输入/64KiB载荷，复用4KiB/20ms命令序列，无新线程。协议24/UART18项。新增Python13/GUI3，相关171、扩大2460通过2跳过、GUI817通过，最终滚动可达调整后类型/构建和完整真实Edge/MCP/CLI+模拟OS联测通过：CLI无新句柄/认证串口页/退出续行、9000字节GUI文件/MCP文件准确、广播各一次、队列日志与全释放。前批812318d精确CI两项成功，本批待核对。下一步整体复审与双探针真机共存验证，继续任务归属/取消/Agent/长稳/NSIS。不改固件/WinUSB，不合并发布。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第56节：第五十六批重新枚举双下载器并用协议24源码与当前Web构建完成真机GUI/MCP/SDK+RTT/UART共存回归，确认借用保护、多后台隔离、错误端口拒绝、无幽灵会话及所有后台进程退出；Boot/选项/配置不变，VTOR=0x08005000且tick前进。未发送UART/Modbus数据、未刷固件或改供电。统一串口字段JSON转换，状态/SSE/CLI/日志的NaN及正负无穷保持字符串，原始字节与解析值不变；相关124测试通过。前批d181ddf两项CI成功，本批待核对。继续任务归属/取消、独立Agent、异常恢复、长稳和NSIS，不改固件/WinUSB、不合并发布。"
     },
     {
       "area": "正式版与安装",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "核对本批精确CI；重新复审整体共享UART/任务归属，先被动枚举并推进新版本双探针真机Web/MCP/CLI/SDK共存回归，遵守设备操作Skill。继续循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、操作中拔插/休眠/崩溃/长稳与NSIS。共享日志/队列/广播/文件与旧Dashboard删除已完成，不能用模拟OS替代真机验收。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。",
+    "核对本批精确CI；继续整体架构审查，优先检查loop/YMODEM任务归属、HTTP请求取消、低层Device调用方与独立Agent，再推进异常恢复、长稳和NSIS。双探针GUI/MCP/SDK+RTT/UART真机共存已回归；尚未验证新UART文件/广播/队列的物理接收端，不可外推。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

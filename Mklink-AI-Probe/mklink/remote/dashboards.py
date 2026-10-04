@@ -34,6 +34,7 @@ import uuid
 from typing import Any, Generator
 
 from mklink.remote.loop_delivery import LoopDelivery
+from mklink.serial._frame import json_fields
 
 from mklink.remote.stream_protocol import (
     RTT_RAW_UTF8_LINES,
@@ -2877,13 +2878,7 @@ class SerialStreamManager:
             if event.direction == 'RX' and event.parsed is not None:
                 # One latest frame per configured port; ordinary byte history
                 # remains the sole history. Limit preview, preserve total size.
-                fields = copy.deepcopy(event.parsed.fields)
-                for name, value in fields.items():
-                    if not isinstance(value, dict):
-                        value = fields[name] = {'value': value, 'raw': value}
-                    for key in ('value', 'raw'):
-                        if isinstance(value.get(key), float) and not math.isfinite(value[key]):
-                            value[key] = str(value[key])
+                fields = json_fields(event.parsed.fields)
                 with self._parsed_lock:
                     previous = self._latest_frames.get(event.port)
                     self._latest_frames[event.port] = {
@@ -2907,11 +2902,8 @@ class SerialStreamManager:
             if event.parsed:
                 crc_valid = event.parsed.crc_valid
                 if event.parsed.fields:
-                    for k, v in event.parsed.fields.items():
-                        if isinstance(v, dict):
-                            fields[k] = {"value": v.get("value", ""), "unit": v.get("unit", "")}
-                        else:
-                            fields[k] = {"value": str(v), "unit": ""}
+                    for k, v in json_fields(event.parsed.fields).items():
+                        fields[k] = {"value": v.get("value", ""), "unit": v.get("unit", "")}
 
             self._bridge.put({
                 "event": "data",

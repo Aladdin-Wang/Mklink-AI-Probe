@@ -55,7 +55,7 @@ class ConsoleMonitor:
                 self._write(port, direction, source['timestamp'], text[:-1] if complete else text, partial=not complete)
                 source['timestamp'] = timestamp
         for frame in frames or []:
-            self._write(port, direction, timestamp, 'decoded: ' + json.dumps(frame, ensure_ascii=False))
+            self._write(port, direction, timestamp, 'decoded: ' + json.dumps(frame, ensure_ascii=False, allow_nan=False))
 
     def tick(self):
         now = time.monotonic()

@@ -38,6 +38,39 @@ def test_text_preserves_trailing_bytes_and_timestamp(tmp_path):
     assert '61 0D 0A' in text and "'a\\r\\n'" in text and '1970-' in text
 
 
+@pytest.mark.parametrize('reading', ['nan', 'inf', '-inf'])
+@pytest.mark.parametrize('format', ['csv', 'txt'])
+def test_nonfinite_frame_annotations_match_gui_without_losing_raw(tmp_path, capsys, reading, format):
+    import math
+    import struct
+    from mklink.serial._capture import _frame_records
+    from mklink.serial._console_monitor import ConsoleMonitor
+    parser = FrameParser({'frame': {'header': 'AA', 'tail': '55'},
+        'fields': [{'name': 'value', 'offset': 1, 'size': 4, 'type': 'float32'}]})
+    raw = b'\xaa' + struct.pack('<f', float(reading)) + b'\x55'
+    parsed = parser.feed(raw)
+    assert len(parsed) == 1
+    annotations = _frame_records(parsed)
+    assert not math.isfinite(parsed[0].fields['value']['raw'])
+    assert annotations[0]['fields']['value']['raw'] == reading
+    assert annotations[0]['fields']['value']['value'] == reading
+    path = tmp_path / f'capture.{format}'
+    with FileLogger(str(path), format) as logger:
+        ConsoleMonitor(mode='hex', logger=logger).log('RX', 'TEST', raw, frames=annotations)
+    output = capsys.readouterr().out
+    assert reading in output and raw.hex(' ').upper() in output
+    text = path.read_text(encoding='utf-8')
+    if format == 'csv':
+        row = next(csv.DictReader(text.splitlines()))
+        assert row['raw_hex'] == raw.hex().upper()
+        encoded = row['decoded_json']
+    else:
+        assert raw.hex(' ').upper() in text
+        encoded = '[' + text.split('  decoded: ')[1].strip() + ']'
+    decoded = json.loads(encoded, parse_constant=lambda value: pytest.fail(f'Invalid JSON: {value}'))
+    assert decoded == annotations
+
+
 def test_close_releases_file_when_flush_fails():
     class Broken:
         closed = False

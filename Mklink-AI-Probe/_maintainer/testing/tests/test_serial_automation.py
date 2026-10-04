@@ -77,6 +77,31 @@ def test_nonfinite_device_float_is_visible_json_safe_not_faked_zero(ports):
     finally:manager.stop()
 
 
+@pytest.mark.parametrize('reading', ['nan', 'inf', '-inf'])
+def test_nonfinite_serial_sse_matches_snapshot(ports, reading):
+    import asyncio
+    async def run():
+        manager = SerialStreamManager()
+        manager.start([{'port': 'A'}], profile=profile(type='float32', size=4))
+        subscription = manager._bridge.add_client()
+        try:
+            # A different tail avoids -inf's FF byte terminating the frame early.
+            parser = FrameParser({'frame': {'header': 'AA', 'tail': '55'},
+                'fields': profile(type='float32', size=4)['fields']})
+            raw = b'\xaa' + struct.pack('<f', float(reading)) + b'\x55'
+            manager._monitor._process_rx_data('A', raw, parser, bytearray())
+            event = await asyncio.wait_for(subscription.get(), 2)
+            if event['event'] == 'terminal':
+                event = await asyncio.wait_for(subscription.get(), 2)
+            json.dumps(event, allow_nan=False)
+            assert event['fields']['value']['value'] == reading
+            assert manager.get_status()['latest_frames']['A']['fields']['value']['value'] == reading
+        finally:
+            manager._bridge.remove_client(subscription)
+            manager.stop()
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize('field',[{'size':1,'type':'float32'},{'scale':float('nan')},
     {'scale':float('inf')},{'scale':True},{'type':'float32','size':4,'enum':{'0x00':'zero'}},
     {'enum':{'0x00':{'nested':'not scalar'}}}, {'size':[]}, {'type':{}}, {'endian':[]}, {'scale':10**400}])

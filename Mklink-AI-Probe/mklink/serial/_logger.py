@@ -10,6 +10,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import IO
+from ._frame import json_fields
 
 
 def _is_printable_ascii(data: bytes) -> bool:
@@ -47,7 +48,7 @@ class FileLogger:
                 raise RuntimeError('Log is not open')
 
             now = datetime.now() if timestamp is None else datetime.fromtimestamp(timestamp)
-            annotations = frames if frames is not None else ([{'fields': decoded}] if decoded else [])
+            annotations = frames if frames is not None else ([{'fields': json_fields(decoded)}] if decoded else [])
 
             if self._format == "txt":
                 self._write_txt(now, direction, port, data, annotations)
@@ -93,7 +94,7 @@ class FileLogger:
         self._file.write(line)  # type: ignore[union-attr]
 
         for frame in frames:
-            self._file.write('  decoded: ' + json.dumps(frame, ensure_ascii=False) + '\n')
+            self._file.write('  decoded: ' + json.dumps(frame, ensure_ascii=False, allow_nan=False) + '\n')
 
     def _write_csv(self, now: datetime, direction: str, port: str,
                    data: bytes, frames: list[dict]) -> None:
@@ -103,7 +104,7 @@ class FileLogger:
             self._csv_header_written = True
         writer.writerow([_format_timestamp(now), direction, port, data.hex().upper(),
                          data.decode('ascii') if _is_printable_ascii(data) else '',
-                         json.dumps(frames, ensure_ascii=False) if frames else ''])
+                         json.dumps(frames, ensure_ascii=False, allow_nan=False) if frames else ''])
 
     def _maybe_rotate(self) -> None:
         if self._max_size <= 0 or self._file is None:
