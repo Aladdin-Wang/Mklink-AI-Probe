@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 34  # Shared RTT status identifies capture sessions for remote subscribers.
+PROTOCOL = 35  # Offline deployment requires a journaled request_id.
 VERSION = "0.3.0"
 
 

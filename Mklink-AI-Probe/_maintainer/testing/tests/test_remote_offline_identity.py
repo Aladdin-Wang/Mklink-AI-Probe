@@ -23,7 +23,7 @@ def deployment(tmp_path):
         p.write_bytes(b'fixture')
         refs[name] = p
     uploads = SimpleNamespace(resolve=lambda reference: refs[reference])
-    params = {'confirm': True, 'config': _offline_config(),
+    params = {'confirm': True, 'request_id': 'offline-fixture', 'config': _offline_config(),
               'firmware_files': {'boot': 'boot.bin', 'app': 'app.bin'},
               'algorithm_files': {'internal': 'Internal.FLM'}}
     return params, uploads

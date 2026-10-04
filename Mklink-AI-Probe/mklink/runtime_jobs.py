@@ -70,10 +70,8 @@ class RuntimeJobs:
         elif arguments:
             raise HTTPException(422, 'Unsupported job arguments')
         fingerprint = hashlib.sha256(json.dumps([action, arguments], sort_keys=True).encode()).hexdigest()
-        previous = next((j for j in self.jobs.values() if j['request_id'] == request_id), None)
+        previous = self._previous(request_id, fingerprint)
         if previous:
-            if previous['fingerprint'] != fingerprint:
-                raise HTTPException(409, 'request_id already belongs to a different operation')
             return previous
         c = self.control
         c.require_identity()
@@ -93,6 +91,34 @@ class RuntimeJobs:
         task = asyncio.create_task(self.execute(job, dict(arguments)))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+        return job
+
+    def _previous(self, request_id, fingerprint):
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise HTTPException(422, 'A stable request_id is required; reuse it to query an uncertain submission')
+        previous = next((j for j in self.jobs.values() if j['request_id'] == request_id), None)
+        if previous and previous['fingerprint'] != fingerprint:
+            raise HTTPException(409, 'request_id already belongs to a different operation')
+        return previous
+
+    async def record_deployment(self, request_id, fingerprint, operation):
+        """Journal a deployment inside its existing request/temporary-file lifetime."""
+        from mklink.runtime_api import active_operation
+        current = active_operation.get()
+        c = self.control
+        if (not current or current[0] is not c or not c.operation_lock.locked()
+                or not c.current_operation
+                or c.current_operation['path'] != '/api/offline-download/deploy'):
+            raise HTTPException(409, 'Deployment requires shared runtime admission')
+        previous = self._previous(request_id, fingerprint)
+        if previous:
+            return previous
+        if self.path is None:
+            raise HTTPException(503, 'Deployment journal unavailable; no operation was started')
+        if self.active:
+            raise HTTPException(409, 'Another exclusive job is active')
+        job = self._accept('offline_deploy', request_id, fingerprint)
+        await self._execute_operation(job, operation)
         return job
 
     def _accept(self, action, request_id, fingerprint):
@@ -123,18 +149,32 @@ class RuntimeJobs:
     async def execute(self, job, arguments):
         token = executing_job.set(job['job_id'])
         try:
-            result = await self.control.invoke('POST', PATHS[job['action']], arguments)
+            await self._execute_operation(job, lambda: self.control.invoke('POST', PATHS[job['action']], arguments))
+        finally:
+            executing_job.reset(token)
+
+    async def _execute_operation(self, job, operation):
+        try:
+            result = await operation()
             encoded = json.dumps(result, ensure_ascii=False)
-            job['result'] = result if len(encoded) <= 16384 else {'summary': encoded[:16384], 'truncated': True}
+            if len(encoded) <= 16384:
+                job['result'] = result
+            elif job['action'] == 'offline_deploy':
+                job['result'] = {key: result[key] for key in ('status', 'model', 'script_name')}
+                job['result'].update(files=[], file_count=len(result['files']), truncated=True)
+            else:
+                job['result'] = {'summary': encoded[:16384], 'truncated': True}
             job['state'] = 'failed' if result.get('success') is False or result.get('status') == 'failed' else 'succeeded'
         except HTTPException as exc:
             job.update(state='failed' if exc.status_code < 500 else 'unknown', error=str(exc.detail)[:2048])
+            if (job['action'] == 'offline_deploy' and isinstance(exc.detail, dict)
+                    and exc.detail.get('code') == 'OFFLINE_RECOVERY_REQUIRED'):
+                job['recovery_directory'] = str(exc.detail.get('recovery_directory', ''))[:2048]
         except BaseException as exc:
             job.update(state='unknown', error=str(exc)[:2048] or 'Execution interrupted; result unknown')
             if isinstance(exc, asyncio.CancelledError):
                 raise
         finally:
-            executing_job.reset(token)
             self._finish(job)
 
 

@@ -6,8 +6,11 @@ from mklink.remote.protocol import RequestValidationError
 def deployment_form(params, uploads):
     from mklink.remote.dispatcher import _remote_offline_config, _mapping, _text
     from mklink.offline_download import parse_offline_config
-    if params.keys() - {'config', 'firmware_files', 'algorithm_files', 'confirm'}:
+    if params.keys() - {'config', 'firmware_files', 'algorithm_files', 'confirm', 'request_id'}:
         raise RequestValidationError('Unsupported offline deployment parameters')
+    request_id = params.get('request_id')
+    if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+        raise RequestValidationError('A stable request_id is required for deployment')
     config = _remote_offline_config(params.get('config'))
     # Never permit a remote request to supply field-machine paths or profile tokens.
     algorithms = []
@@ -28,4 +31,4 @@ def deployment_form(params, uploads):
         for item, row in zip(entries, rows):
             row.pop('upload_index', None)
             row['source_path'] = str(uploads.resolve(_text(refs[item.id], field)))
-    return {'config_json': json.dumps(config, ensure_ascii=False)}
+    return {'config_json': json.dumps(config, ensure_ascii=False), 'request_id': request_id}

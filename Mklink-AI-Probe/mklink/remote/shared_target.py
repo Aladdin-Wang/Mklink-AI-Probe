@@ -114,8 +114,10 @@ class SharedTarget:
                 if uploads is None:
                     raise CapabilityUnavailableError(data={'reason': 'uploads-required'})
                 from mklink.remote.shared_offline import deployment_form
+                form = deployment_form(params, uploads)
+                request_id = form['request_id']
                 return request(self.info, 'POST', '/api/offline-download/deploy',
-                               deployment_form(params, uploads), form=True, timeout=120)
+                               form, form=True, timeout=120)
             if operation == 'jobs.status':
                 if self.info is None or not client_id:
                     raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})
@@ -245,6 +247,9 @@ class SharedTarget:
         except RuntimeErrorResponse as exc:
             if operation == 'offline.deploy':
                 detail = exc.detail
+                if isinstance(detail, dict) and detail.get('code') == 'OFFLINE_JOB_RESULT':
+                    raise AgentOperationError('Query the retained deployment; do not replay',
+                        data={key: detail[key] for key in ('job_id', 'request_id', 'state') if key in detail}) from None
                 if (exc.status_code == 500 and isinstance(detail, dict)
                         and detail.get('code') == 'OFFLINE_RECOVERY_REQUIRED'
                         and isinstance(detail.get('recovery_directory'), str)
@@ -252,11 +257,12 @@ class SharedTarget:
                     raise AgentOperationError(
                         'Offline rollback incomplete; inspect the bound disk and retained backups before retrying',
                         data={'status': 500, 'state': 'recovery_required',
-                              'recovery_directory': detail['recovery_directory']}) from None
+                              'recovery_directory': detail['recovery_directory'], 'request_id': request_id,
+                              'job_id': detail.get('job_id')}) from None
                 if exc.status_code is None or exc.status_code >= 500:
                     raise AgentOperationError(
                         'Offline deployment result is unknown; inspect the bound disk before retrying',
-                        data={'status': exc.status_code, 'state': 'unknown'}) from None
+                        data={'status': exc.status_code, 'state': 'unknown', 'request_id': request_id}) from None
             raise AgentOperationError('Shared target operation failed; no direct fallback or replay',
                                       data={'status': exc.status_code, **({'request_id': request_id,
                         'job_id': job.get('job_id') if job else None, 'state': 'unknown'}

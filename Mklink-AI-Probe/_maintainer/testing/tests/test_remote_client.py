@@ -282,3 +282,29 @@ def test_non_flash_rpc_keeps_generic_receive_timeout(monkeypatch):
     assert websocket.recv_timeouts[-1] == ("agent.health", generic_timeout)
     assert websocket.closed is True
     assert client.connected is False
+
+
+def test_offline_deploy_lost_response_keeps_request_identity(monkeypatch):
+    client, websocket = _connect_fake(monkeypatch, {'offline.deploy': {'recv_error': OSError('lost response')}})
+    with pytest.raises(RemoteConnectionError) as error:
+        client.call('offline.deploy', confirm=True, request_id='deployment-original')
+    assert error.value.request_id == 'deployment-original'
+    assert 'deployment-original' in str(error.value)
+    sent = [item for item in websocket.attempted_requests if item['method'] == 'offline.deploy']
+    assert len(sent) == 1 and sent[0]['params']['request_id'] == 'deployment-original'
+
+
+@pytest.mark.parametrize('version', ['1', '2'])
+def test_offline_deploy_checks_negotiated_string_capability_version(monkeypatch, version):
+    from mklink.remote.protocol import Capability
+    client, websocket = _connect_fake(monkeypatch, {'offline.deploy': {'result': {'state': 'succeeded'}}})
+    client.handshake().capabilities['flash.offline'] = Capability(available=True, version=version)
+    if version == '1':
+        with pytest.raises(RemoteConnectionError, match='journaled deployment'):
+            client.call('offline.deploy', confirm=True)
+        assert not any(item['method'] == 'offline.deploy' for item in websocket.attempted_requests)
+    else:
+        assert client.call('offline.deploy', confirm=True)['state'] == 'succeeded'
+        sent = [item for item in websocket.attempted_requests if item['method'] == 'offline.deploy']
+        assert len(sent) == 1 and len(sent[0]['params']['request_id']) == 32
+    client.close()

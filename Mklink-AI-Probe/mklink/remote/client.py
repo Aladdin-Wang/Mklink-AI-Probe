@@ -10,6 +10,7 @@ import math
 import re
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Mapping, TypedDict
 from urllib.parse import urlsplit
@@ -278,7 +279,21 @@ class RemoteClient:
         with self._lock:
             if self._negotiated is None or self._websocket is None:
                 raise RemoteConnectionError("Remote client isn't connected")
-            return self._exchange_locked(method, params)
+            if method == 'offline.deploy':
+                descriptor = self._negotiated.capabilities.get('flash.offline')
+                if descriptor is not None and str(descriptor.version) != '2':
+                    raise RemoteConnectionError('Remote service does not support journaled deployment; update it before deploying')
+                params = dict(params)
+                params.setdefault('request_id', uuid.uuid4().hex)
+            try:
+                return self._exchange_locked(method, params)
+            except RemoteClientError as error:
+                if method == 'offline.deploy':
+                    error.request_id = params['request_id']
+                    if isinstance(error, RemoteProtocolError):
+                        error.data.setdefault('request_id', params['request_id'])
+                    error.args = (str(error) + '; query request_id=' + str(params['request_id']) + '; do not replay',)
+                raise
 
     def job_status(self, *, job_id=None, request_id=None):
         """Read a retained task without submitting or replaying target work."""

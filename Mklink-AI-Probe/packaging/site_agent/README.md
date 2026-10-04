@@ -119,13 +119,15 @@ RTT and SystemView use shared subscriptions with version-2 read contracts.
 Stopping a borrowed subscription does not stop another client's acquisition.
 Offline deployment resolves uploaded references and passes through the shared
 backend's identity and operation admission checks. `jobs.status` queries retained
-flash/erase/reset jobs; it cannot query offline deployment. A lost deployment
-response returns `state=unknown` and requires inspection of the target disk,
-never automatic replay. An incomplete rollback returns `state=recovery_required`
-and `recovery_directory` on the service computer. Keep that directory, verify
-which probe and volume were affected, and inspect/restore the retained originals
-before retrying. This is a recovery diagnostic, not an automatic recovery task;
-`jobs.status` cannot resolve it.
+flash/erase/reset and version-2 offline deployment jobs. Deployment requires a
+stable `request_id`; keep it before sending and query `jobs.status` with that ID
+on the same probe after a lost response. The Python client generates an ID if
+omitted and exposes it as `error.request_id` on failure. Direct RPC requests
+must supply it explicitly. Querying never resubmits. At most 64 records remain;
+a missing record does not prove that an operation did not execute. Incomplete
+rollback retains its backup path in the job record for manual inspection.
+The GUI provides the same request ID and result-query controls. This journals
+file deployment only; it does not turn deployment into a flash trigger.
 
 The listener being ready does not prove target connectivity, packaged algorithm
 coverage, physical deployment, or long-duration operation. Check the capability

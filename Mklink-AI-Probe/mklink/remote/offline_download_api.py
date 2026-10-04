@@ -503,6 +503,31 @@ def _copy_upload(upload: UploadFile, destination: Path, total: list[int]) -> Pat
     return destination
 
 
+def _deployment_inputs(payload, firmware_sources, algorithm_sources, temp):
+    """Freeze submitted bytes and fingerprint content, never transient paths."""
+    from types import SimpleNamespace
+    stable = json.loads(json.dumps(payload))
+    total = [0]
+    hashes = {}
+    for field, sources in (('firmwares', firmware_sources), ('algorithms', algorithm_sources)):
+        for index, (key, source) in enumerate(list(sources.items())):
+            snapshot = temp / f'journal-{field}-{index}'
+            with source.open('rb') as stream:
+                _copy_upload(SimpleNamespace(file=stream), snapshot, total)
+            if snapshot.stat().st_size == 0:
+                raise OfflineDownloadError('offline source became empty while preparing deployment')
+            sources[key] = snapshot
+            digest = hashlib.sha256()
+            with snapshot.open('rb') as stream:
+                for chunk in iter(lambda: stream.read(_UPLOAD_CHUNK), b''):
+                    digest.update(chunk)
+            hashes[f'{field}:{key}'] = digest.hexdigest()
+        for row in stable.get(field, []):
+            for locator in ('source_path', 'source_token', 'upload_index'):
+                row.pop(locator, None)
+    return hashlib.sha256(json.dumps(['offline_deploy', stable, hashes], sort_keys=True).encode()).hexdigest()
+
+
 def _format_trigger_line(raw: str) -> str:
     # Debug-port IDCODE identifies a device type, not an individual unit.
     # Keep it visible so operators can distinguish successful identification
@@ -698,7 +723,9 @@ def create_offline_download_router(
 
     @router.post("/deploy")
     async def deploy(
+        request: Request,
         config_json: str = Form(...),
+        request_id: Optional[str] = Form(None),
         firmware_files: List[UploadFile] = File(default=[]),
         flm_files: List[UploadFile] = File(default=[]),
     ) -> object:
@@ -742,12 +769,6 @@ def create_offline_download_router(
                         raise OfflineDownloadError(
                             f"missing firmware source: {firmware.file_name}"
                         )
-                await asyncio.to_thread(
-                    _validate_bin_firmware_ranges,
-                    config,
-                    online_services,
-                    firmware_sources,
-                )
                 uploaded_flms = []
                 for index, upload in enumerate(flm_files):
                     uploaded_flms.append(
@@ -788,13 +809,48 @@ def create_offline_download_router(
                             algorithm.source_token or "",
                             temp / f"pack-{algorithm.id}.flm",
                         )
-                return await asyncio.to_thread(
-                    deploy_offline_bundle,
-                    config,
-                    disk_root,
-                    firmware_sources=firmware_sources,
-                    algorithm_sources=algorithm_sources,
+                async def perform():
+                    try:
+                        if runtime is not None:
+                            from mklink.probe_volumes import resolve_volume
+                            await asyncio.to_thread(runtime.require_identity)
+                            try:
+                                current = await asyncio.to_thread(resolve_volume, runtime.info.get('probe_id'))
+                            except RuntimeError as error:
+                                raise HTTPException(409, 'Bound deployment disk is unavailable') from error
+                            if Path(current['root']).resolve() != disk_root.resolve():
+                                raise HTTPException(409, 'Bound deployment disk changed while preparing inputs')
+                        return await asyncio.to_thread(
+                            deploy_offline_bundle, config, disk_root,
+                            firmware_sources=firmware_sources,
+                            algorithm_sources=algorithm_sources,
+                        )
+                    except OfflineRecoveryError as error:
+                        raise HTTPException(500, detail={
+                            'code': 'OFFLINE_RECOVERY_REQUIRED', 'message': str(error),
+                            'recovery_directory': error.recovery_directory,
+                        }) from error
+                    except OfflineDownloadError as error:
+                        raise HTTPException(422, detail=str(error)) from error
+                runtime = getattr(request.app.state, 'shared_runtime', None)
+                if runtime is None:
+                    await asyncio.to_thread(_validate_bin_firmware_ranges, config, online_services, firmware_sources)
+                    return await perform()
+                fingerprint = await asyncio.to_thread(
+                    _deployment_inputs, payload, firmware_sources, algorithm_sources, temp,
                 )
+                # Validate the frozen bytes, not a source file that can change while preparing.
+                await asyncio.to_thread(_validate_bin_firmware_ranges, config, online_services, firmware_sources)
+                job = await runtime.jobs.record_deployment(request_id, fingerprint, perform)
+                identity = {key: job[key] for key in ('job_id', 'request_id', 'state')}
+                if job['state'] == 'succeeded':
+                    return {**job['result'], **identity}
+                detail = {'code': 'OFFLINE_JOB_RESULT', **identity,
+                          'message': job.get('error') or 'Deployment is still running; query this request, do not replay'}
+                if job.get('recovery_directory'):
+                    detail['code'] = 'OFFLINE_RECOVERY_REQUIRED'
+                    detail['recovery_directory'] = job['recovery_directory']
+                raise HTTPException(500 if job['state'] == 'unknown' else 409, detail=detail)
         except OfflineRecoveryError as error:
             raise HTTPException(status_code=500, detail={
                 "code": "OFFLINE_RECOVERY_REQUIRED", "message": str(error),

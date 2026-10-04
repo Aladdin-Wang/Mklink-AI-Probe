@@ -56,7 +56,7 @@ _CAPABILITIES = {
     ),
     "flash.offline": Capability(
         "flash.offline",
-        1,
+        2,
         ("offline.preview", "offline.deploy"),
     ),
     "target.debug": Capability(
@@ -158,7 +158,7 @@ _SCHEMAS = {
     "offline.preview": OperationSchema("flash.offline", ("config",)),
     "offline.deploy": OperationSchema(
         "flash.offline",
-        ("config", "firmware_files", "algorithm_files", "confirm"),
+        ("config", "firmware_files", "algorithm_files", "request_id", "confirm"),
         high_risk=True,
     ),
     "target.reset": OperationSchema("target.debug", ("request_id", "confirm"), high_risk=True),

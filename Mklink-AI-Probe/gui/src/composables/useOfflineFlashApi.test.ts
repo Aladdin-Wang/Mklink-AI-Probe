@@ -74,3 +74,23 @@ describe('useOfflineFlashApi', () => {
     )
   })
 })
+
+
+describe('deployment journal client', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('keeps the caller identifier on a lost response and never retries', async () => {
+    const send = vi.fn().mockRejectedValue(new Error('response lost'))
+    vi.stubGlobal('fetch', send)
+    await expect(useOfflineFlashApi().deploy({} as never, [], [], 'original-request'))
+      .rejects.toThrow('request_id=original-request')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect((send.mock.calls[0][1].body as FormData).get('request_id')).toBe('original-request')
+  })
+  it('queries retained jobs without a deployment POST', async () => {
+    const job = { action: 'offline_deploy', request_id: 'original-request', state: 'unknown' }
+    const send = vi.fn().mockResolvedValue(new Response(JSON.stringify({ jobs: [job] })))
+    vi.stubGlobal('fetch', send)
+    expect(await useOfflineFlashApi().deploymentStatus('original-request')).toEqual(job)
+    expect(send).toHaveBeenCalledExactlyOnceWith('/api/runtime/jobs/')
+  })
+})

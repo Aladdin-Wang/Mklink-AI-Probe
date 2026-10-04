@@ -52,6 +52,7 @@ jobs:
           $tests += 'test_serial_protocol_buffer'
           $tests += 'test_serial_exchange'
           $tests += 'test_remote_offline_identity'
+          $tests += 'test_offline_deployment_jobs'
           $tests += 'test_systemview_history'
           $tests += 'test_cli_systemview'
           $tests += 'test_systemview_streaming'
