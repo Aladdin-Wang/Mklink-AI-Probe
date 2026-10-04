@@ -47,7 +47,7 @@ data_files += collect_data_files(
 )
 
 # Match the desktop build: this dependency loads its DLL through cffi.
-pack_data, pack_binaries, pack_imports = collect_all('cmsis_pack_manager')
+pack_data, pack_binaries, pack_imports = collect_all('cmsis_pack_manager', include_py_files=False)
 data_files += pack_data
 hidden_imports += pack_imports
 
