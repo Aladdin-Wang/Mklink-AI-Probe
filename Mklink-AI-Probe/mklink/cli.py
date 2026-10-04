@@ -1284,7 +1284,7 @@ def _modbus_save_config(args):
 
 
 @contextmanager
-def _shared_uart_client(args, stream, settings):
+def _shared_uart_client(args, stream, settings, *, after_stop=None):
     """Subscribe to the existing UART owner; release only this CLI's ownership."""
     from mklink.runtime import RuntimeClient, RuntimeErrorResponse
     client = RuntimeClient(kind='cli', name=f'{stream.title()} CLI')
@@ -1308,6 +1308,11 @@ def _shared_uart_client(args, stream, settings):
                     print('[INFO] 未取得停止权限，保留连接；可在后台管理中显式停止。')
                 else:
                     cleanup_errors.append(exc)
+        if after_stop is not None and operation_error is None and not cleanup_errors:
+            try:
+                after_stop(client)
+            except Exception as exc:
+                cleanup_errors.append(exc)
         try:
             client.close()
         except RuntimeErrorResponse as exc:
@@ -1637,34 +1642,43 @@ def _parse_bool(s: str) -> bool:
     raise ValueError(f"Invalid coil value: {s!r}; use on/off, true/false, yes/no, 1/0 or 0xff00/0x0000")
 
 
-def _cli_serial_send(args):
-    import math
-    import time
-    from mklink.runtime import RuntimeErrorResponse
+def _serial_connection(args):
     from mklink.usb_interfaces import canonical_serial_port
-
-    if type(args.count) is not int or args.count < 1:
-        raise ValueError('Send count must be a positive integer')
-    if (isinstance(args.delay, bool) or not isinstance(args.delay, (int, float))
-            or not math.isfinite(args.delay) or not 0 <= args.delay <= 3600):
-        raise ValueError('Send delay must be finite and in 0..3600 seconds')
     if type(args.baud) is not int or not 1 <= args.baud <= 4000000:
         raise ValueError('Baud rate must be an integer in 1..4000000')
     if type(args.databits) is not int or args.databits not in (5, 6, 7, 8):
         raise ValueError('Data bits must be 5, 6, 7 or 8')
     if type(args.stop) is not int or args.stop not in (1, 2) or args.parity not in ('N', 'E', 'O'):
         raise ValueError('Stop bits must be 1 or 2; parity must be N, E or O')
+    return {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
+                  'databits': args.databits, 'stopbits': args.stop, 'parity': args.parity}
+
+
+def _require_serial_connection(client, connection):
+    from mklink.runtime import RuntimeErrorResponse
+    status = client.call('serial_status')
+    actual = next((item for item in status['config'] if item['port'] == connection['port']), None)
+    if actual is None or any(actual.get(key, default) != connection[key] for key, default in
+                            (('baudrate', 115200), ('databits', 8), ('stopbits', 1), ('parity', 'N'))):
+        raise RuntimeErrorResponse('Existing serial connection uses different port/settings; stop it explicitly before changing settings')
+
+
+def _cli_serial_send(args):
+    import math
+    import time
+    from mklink.runtime import RuntimeErrorResponse
+
+    if type(args.count) is not int or args.count < 1:
+        raise ValueError('Send count must be a positive integer')
+    if (isinstance(args.delay, bool) or not isinstance(args.delay, (int, float))
+            or not math.isfinite(args.delay) or not 0 <= args.delay <= 3600):
+        raise ValueError('Send delay must be finite and in 0..3600 seconds')
+    connection = _serial_connection(args)
     data = bytes.fromhex(args.send_data) if args.hex else args.send_data.encode('utf-8')
     if not data:
         raise ValueError('Send data must not be empty')
-    connection = {'port': canonical_serial_port(args.port), 'baudrate': args.baud,
-                  'databits': args.databits, 'stopbits': args.stop, 'parity': args.parity}
     with _shared_uart_client(args, 'serial', {'ports': [connection]}) as client:
-        status = client.call('serial_status')
-        actual = next((item for item in status['config'] if item['port'] == connection['port']), None)
-        if actual is None or any(actual.get(key, default) != connection[key] for key, default in
-                                (('baudrate', 115200), ('databits', 8), ('stopbits', 1), ('parity', 'N'))):
-            raise RuntimeErrorResponse('Existing serial connection uses different port/settings; stop it explicitly before changing settings')
+        _require_serial_connection(client, connection)
         for index in range(args.count):
             result = client.call('serial_send', {'port': connection['port'], 'data': data.hex(), 'hex': True})
             if result.get('ok') is not True:
@@ -1674,12 +1688,59 @@ def _cli_serial_send(args):
                 time.sleep(args.delay)
 
 
+def _cli_serial_log(args):
+    import math
+    from pathlib import Path
+    from mklink.serial._profile import load_profile, ProfileError
+    from mklink.serial._frame import FrameParser
+    from mklink.serial._logger import FileLogger
+    from mklink.serial._capture import SerialCapture
+
+    connection = _serial_connection(args)
+    if (isinstance(args.duration, bool) or not isinstance(args.duration, (int, float))
+            or not math.isfinite(args.duration) or args.duration < 0):
+        raise ValueError('Log duration must be finite and nonnegative; zero means until interrupted')
+    try:
+        profile = load_profile(args.profile) if args.profile else None
+        parser = FrameParser(profile, max_buffer_bytes=1024 * 1024) if profile else None
+    except ProfileError as error:
+        raise ValueError(str(error)) from error
+    output = Path(args.output).expanduser().resolve()
+    if not output.parent.is_dir() or (output.exists() and not output.is_file()):
+        raise ValueError('Log output must be a file in an existing directory')
+    if args.profile and output == Path(args.profile).expanduser().resolve():
+        raise ValueError('Log output must not overwrite its Profile')
+    log_format = args.format or ('csv' if output.suffix.lower() == '.csv' else 'txt')
+    logger = FileLogger(str(output), format=log_format)
+    capture = None
+    def finish(client):
+        if capture is not None:
+            capture.drain()
+    # Keep the file open until owned stop has flushed the backend's final batch.
+    try:
+        with _shared_uart_client(args, 'serial', {'ports': [connection]}, after_stop=finish) as client:
+            _require_serial_connection(client, connection)
+            capture = SerialCapture(client, connection['port'], logger, parser)
+            logger.start()
+            print(f'[OK] 日志记录中: {output} (Ctrl+C 停止)', flush=True)
+            capture.run(args.duration)
+    except BaseException:
+        try:
+            logger.close()
+        except OSError as error:
+            print(f'[WARN] Log close failed: {error}', file=sys.stderr)
+        raise
+    else:
+        logger.close()
+    print(f'[OK] 日志已保存: {output}', flush=True)
+
+
 def _cli_serial_dispatch(args):
     """串口调试命令分发。"""
-    if getattr(args, 'serial_command', None) == 'send':
+    if getattr(args, 'serial_command', None) in ('send', 'log'):
         from mklink.runtime import RuntimeErrorResponse
         try:
-            _cli_serial_send(args)
+            (_cli_serial_send if args.serial_command == 'send' else _cli_serial_log)(args)
         except (OSError, ValueError, RuntimeErrorResponse) as error:
             raise SystemExit(str(error)) from error
         return
@@ -1824,40 +1885,6 @@ def _cli_serial_dispatch(args):
             monitor.stop()
             if logger:
                 logger.close()
-
-    elif cmd == "log":
-        port_config = [{"port": args.port, "baudrate": args.baud,
-                        "databits": args.databits, "stopbits": args.stop, "parity": args.parity}]
-
-        log_format = args.format if args.format else ("csv" if args.output.endswith(".csv") else "txt")
-        logger = FileLogger(args.output, format=log_format)
-        logger.start()
-
-        profile = None
-        if args.profile:
-            try:
-                profile = load_profile(args.profile)
-            except ProfileError as e:
-                print(f"[FAIL] Profile 加载失败: {e}")
-                return
-
-        monitor = SerialMonitor(ports=port_config, profile=profile, logger=logger)
-
-        import time
-        try:
-            monitor.start()
-            print(f"[OK] 日志记录中: {args.output} (Ctrl+C 停止)")
-            if args.duration > 0:
-                time.sleep(args.duration)
-            else:
-                while True:
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            monitor.stop()
-            logger.close()
-            print(f"[OK] 日志已保存: {args.output}")
 
     elif cmd == "dashboard":
         profile = None
@@ -2742,6 +2769,7 @@ def main():
     # serial log
     serial_log = serial_sub.add_parser("log", help="无头模式日志记录")
     _add_serial_port_args(serial_log)
+    serial_log.add_argument('--probe', default=None, help='共享后台探针 ID/序列号/别名')
     serial_log.add_argument("--output", required=True, help="输出文件路径")
     serial_log.add_argument("--format", choices=["txt", "csv"], default=None, help="日志格式（默认按扩展名）")
     serial_log.add_argument("--profile", default=None, help="协议 Profile 文件路径")

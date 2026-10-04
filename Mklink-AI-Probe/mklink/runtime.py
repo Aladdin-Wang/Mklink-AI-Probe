@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 17  # Shared serial raw-history capability; stop older runtimes.
+PROTOCOL = 18  # Serial capture observes reader failure status; stop older runtimes.
 VERSION = "0.3.0"
 
 

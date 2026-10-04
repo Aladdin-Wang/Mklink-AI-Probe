@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T06:09:28+00:00`
+- 更新时间：`2026-10-04T06:34:05+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared serial raw history after 4eadcf3; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared serial log after 4e795a8; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第四十二批删除SerialMonitor无人消费的10000条deque/get_events，复用既有batcher发布提供serial_history，512批x4096字节上限、独立游标、会话/覆盖语义，停止保留/重启409；协议17/UART12能力。22新测试、相关163通过；真实Edge双窗口+MCP+独立RuntimeClient/真实串口栈+模拟transport验证双游标/无换行尾部/重启409及显示导出隔离，全退出。4eadcf3精确CI1478/GUI216/构建/feedback通过。扩大2263通过2跳过，本批精确CI随后核对，再迁serial log/monitor/open/dashboard。
+- 当前任务：持续循环评审验证。第四十三批serial log迁共享UART生命周期及serial_history，删除直接Monitor分支，与send共用参数核对；原始批次逐条刷新，CSV固定六列/json解码附注，TXT保留HEX尾部，Profile被动解码限1MiB不自动应答。协议18/history含ports，覆盖/会话/拔口/文件失败非零无假保存；owned停止后drain，borrow保留，Ctrl+C与最终写入失败释放。26新测试，首轮相关130通过。Edge/MCP/7CLI/真实串口栈+模拟transport并发日志、CSV/多帧/残片、非法保留文件、拔口和自建释放通过。4e795a8精确CI1500/GUI216全绿，扩大2289通过2跳过，本批精确CI继续核对。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第四十二批：删除无调用者旧队列，非破坏性有界raw历史；22新测试/相关163通过；Edge双窗口/MCP/SDK/真实串口栈+模拟transport验证游标独立、尾部原始字节、重启拒绝、显示导出隔离与全退出，无pageerror。4eadcf3精确CI1478/GUI216/构建/feedback全绿。扩大2263通过2跳过，本批精确CI继续核对。未做物理发送。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第四十三批：CSV错列/晚解析字段遗漏复现；serial log共享迁移、26测试通过，初轮相关130通过；Edge/MCP/7CLI+真实串口栈/模拟transport验证两日志同流、另一端口过滤、原始残片/多帧、运行中落盘、无效参数与配置保留文件、拔口非零、自建释放，全端口/reader/服务退出、无pageerror。4e795a8精确CI1500/GUI216/构建/feedback通过。扩大2289通过2跳过，本批精确CI待核对。无物理发送。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI，然后迁移serial log/monitor/open/dashboard。优先修复log先打开文件再验证Profile、duration无效变无限、日志异常吞掉；复用_shared_uart_client与serial_history，不新建串口reader。明确Profile解析输出且避免自动应答重复执行。继续YMODEM/循环、逐请求取消、Agent、真机异常/长稳和NSIS；不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI，再迁serial monitor/open/dashboard；复用_shared_uart_client、SerialCapture和原始历史，保留被动Profile解码且不重复自动应答。继续审查旧Profile缓存/日志轮转、循环/YMODEM、逐请求取消、Agent、真机异常/长稳和NSIS；不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

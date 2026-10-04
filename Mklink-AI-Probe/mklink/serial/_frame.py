@@ -104,10 +104,11 @@ class ParsedFrame:
 
 
 class FrameParser:
-    def __init__(self, profile: dict | None = None):
+    def __init__(self, profile: dict | None = None, *, max_buffer_bytes: int | None = None):
         """Initialize with optional profile dict (the 'frame' and 'fields' sections).
         If profile is None, operates in line-based mode (split on \\n or timeout).
         """
+        self._max_buffer_bytes = max_buffer_bytes
         self._profile = profile
         self._buffer = bytearray()
         self._last_feed_time: float = 0.0
@@ -131,6 +132,8 @@ class FrameParser:
 
     def feed(self, data: bytes) -> list[ParsedFrame]:
         """Feed raw bytes, return list of complete parsed frames (may be empty)."""
+        if self._max_buffer_bytes is not None and len(self._buffer) + len(data) > self._max_buffer_bytes:
+            raise ValueError("Serial Profile frame exceeds the capture buffer limit")
         now = time.time()
         frames: list[ParsedFrame] = []
 

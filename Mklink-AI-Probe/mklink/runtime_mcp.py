@@ -308,7 +308,8 @@ def build_server():
         unterminated data, without opening or sending on a port. {} opens at the tail;
         continue with session/after=next_seq and limit (1..256). Each entry contains seq,
         port, direction, hex, size and batch-publication timestamp_ns. The response includes
-        config/running/latest_seq and dropped_batches across all ports. Retention is 512
+        config/running/ports/latest_seq and dropped_batches across all ports.
+        ports reports each reader state; an error is not a successful end of capture. Retention is 512
         batches of at most 4096 bytes; callers filter ports after advancing the global cursor.
         Stop retains final batches; restart changes session and old cursors fail with 409.
         This excludes YMODEM trace and parsed profile fields; it is not lossless capture.

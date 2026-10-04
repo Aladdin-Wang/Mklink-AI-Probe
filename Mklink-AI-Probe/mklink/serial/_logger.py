@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import csv
+import json
 import os
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -20,46 +23,57 @@ def _format_timestamp(dt: datetime) -> str:
 class FileLogger:
     def __init__(self, path: str, format: str = "txt", max_size: int = 0) -> None:
         self._path = Path(path)
+        if format not in ('txt', 'csv'):
+            raise ValueError('Log format must be txt or csv')
         self._format = format
         self._max_size = max_size
         self._file: IO[str] | None = None
         self._lock = threading.Lock()
-        self._csv_fields: list[str] | None = None
+        self._csv_header_written = False
 
     def start(self) -> None:
         with self._lock:
             self._file = open(self._path, "w", encoding="utf-8", newline="")
             if self._format == "csv":
-                self._csv_fields = None
+                self._csv_header_written = False
 
-    def log(self, direction: str, port: str, data: bytes, decoded: dict | None = None) -> None:
+    def log(self, direction: str, port: str, data: bytes, decoded: dict | None = None,
+            *, timestamp: float | None = None, frames: list[dict] | None = None) -> None:
         with self._lock:
             if self._file is None:
                 return
 
-            now = datetime.now()
+            now = datetime.now() if timestamp is None else datetime.fromtimestamp(timestamp)
+            annotations = frames if frames is not None else ([{'fields': decoded}] if decoded else [])
 
             if self._format == "txt":
-                self._write_txt(now, direction, port, data, decoded)
+                self._write_txt(now, direction, port, data, annotations)
             else:
-                self._write_csv(now, direction, port, data, decoded)
+                self._write_csv(now, direction, port, data, annotations)
 
             self._file.flush()
             self._maybe_rotate()
 
     def close(self) -> None:
         with self._lock:
-            if self._file is not None:
-                self._file.flush()
-                self._file.close()
-                self._file = None
+            stream, self._file = self._file, None
+            if stream is not None:
+                try:
+                    stream.flush()
+                finally:
+                    stream.close()
 
     def __enter__(self) -> FileLogger:
         self.start()
         return self
 
-    def __exit__(self, *args: object) -> None:
-        self.close()
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        try:
+            self.close()
+        except OSError as error:
+            if exc_type is None:
+                raise
+            print(f'[WARN] Log close failed: {error}', file=sys.stderr)
 
     def _write_txt(
         self,
@@ -67,60 +81,26 @@ class FileLogger:
         direction: str,
         port: str,
         data: bytes,
-        decoded: dict | None,
+        frames: list[dict],
     ) -> None:
         ts = _format_timestamp(now)
-        if _is_printable_ascii(data):
-            text = data.decode("ascii").rstrip("\r\n")
-            line = f"[{ts}] {direction} {port}: {text} (ASCII)\n"
-        else:
-            hex_str = " ".join(f"{b:02X}" for b in data)
-            line = f"[{ts}] {direction} {port}: {hex_str}\n"
+        text = repr(data.decode('ascii')) if _is_printable_ascii(data) else ''
+        line = f"[{ts}] {direction} {port}: {data.hex(' ').upper()} {text}\n"
 
         self._file.write(line)  # type: ignore[union-attr]
 
-        if decoded:
-            parts = []
-            for key, info in decoded.items():
-                val = info.get("value", "")
-                unit = info.get("unit", "")
-                parts.append(f"{key}={val}{unit}")
-            self._file.write(f"  → {', '.join(parts)}\n")  # type: ignore[union-attr]
+        for frame in frames:
+            self._file.write('  decoded: ' + json.dumps(frame, ensure_ascii=False) + '\n')
 
-    def _write_csv(
-        self,
-        now: datetime,
-        direction: str,
-        port: str,
-        data: bytes,
-        decoded: dict | None,
-    ) -> None:
-        if self._csv_fields is None:
-            if decoded:
-                self._csv_fields = list(decoded.keys())
-            else:
-                self._csv_fields = []
-            header = "timestamp,direction,port,raw_hex,ascii"
-            if self._csv_fields:
-                header += "," + ",".join(self._csv_fields)
-            self._file.write(header + "\n")  # type: ignore[union-attr]
-
-        ts = _format_timestamp(now)
-        raw_hex = data.hex().upper()
-        ascii_val = data.decode("ascii") if _is_printable_ascii(data) else ""
-
-        row = f"{ts},{direction},{port},{raw_hex},{ascii_val}"
-
-        if self._csv_fields:
-            for field in self._csv_fields:
-                if decoded and field in decoded:
-                    val = decoded[field].get("value", "")
-                    unit = decoded[field].get("unit", "")
-                    row += f",{val}{unit}"
-                else:
-                    row += ","
-
-        self._file.write(row + "\n")  # type: ignore[union-attr]
+    def _write_csv(self, now: datetime, direction: str, port: str,
+                   data: bytes, frames: list[dict]) -> None:
+        writer = csv.writer(self._file, lineterminator='\r\n')
+        if not self._csv_header_written:
+            writer.writerow(['timestamp', 'direction', 'port', 'raw_hex', 'ascii', 'decoded_json'])
+            self._csv_header_written = True
+        writer.writerow([_format_timestamp(now), direction, port, data.hex().upper(),
+                         data.decode('ascii') if _is_printable_ascii(data) else '',
+                         json.dumps(frames, ensure_ascii=False) if frames else ''])
 
     def _maybe_rotate(self) -> None:
         if self._max_size <= 0 or self._file is None:
@@ -145,8 +125,4 @@ class FileLogger:
         self._path.rename(rotated_path)
 
         self._file = open(self._path, "w", encoding="utf-8", newline="")
-        if self._format == "csv" and self._csv_fields is not None:
-            header = "timestamp,direction,port,raw_hex,ascii"
-            if self._csv_fields:
-                header += "," + ",".join(self._csv_fields)
-            self._file.write(header + "\n")
+        self._csv_header_written = False

@@ -2946,7 +2946,8 @@ class SerialStreamManager:
                     limit: int = 256) -> dict:
         with self._lifecycle_lock:
             return {**self._history.read(session, after, limit),
-                    'running': self._running, 'config': [dict(item) for item in self._port_config]}
+                    'running': self._running, 'config': [dict(item) for item in self._port_config],
+                    'ports': self._monitor.port_status if self._monitor else {item['port']: 'closed' for item in self._port_config}}
 
     def stop(self) -> None:
         with self._lifecycle_lock:
