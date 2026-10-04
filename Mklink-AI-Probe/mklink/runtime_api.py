@@ -327,7 +327,7 @@ class RuntimeGate:
             return await reject(409, 'An exclusive job is active; inspect its result before further hardware operations')
         from mklink.probes import select_probe
         from mklink.runtime import RuntimeErrorResponse
-        if path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) and not path.endswith(('/stop', '/disconnect')):
+        if (path.startswith(('/api/device/', '/api/dash/', '/api/probe/')) or path == '/api/mcu-detect') and not path.endswith(('/stop', '/disconnect')):
             try:
                 c.require_identity()
             except HTTPException as exc:
@@ -404,7 +404,7 @@ class RuntimeGate:
         if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
             if active:
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
-        if (path.startswith(("/api/device/", "/api/probe/")) and path != "/api/device/connect") or path == '/api/dash/superwatch/inspect':
+        if (path.startswith(("/api/device/", "/api/probe/")) and path != "/api/device/connect") or path in {'/api/dash/superwatch/inspect', '/api/mcu-detect'}:
             if active:
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
         async def observe(message):

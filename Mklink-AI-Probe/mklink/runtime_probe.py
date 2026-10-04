@@ -31,6 +31,12 @@ def _query(state, capability):
             raise HTTPException(409, 'Stop the active acquisition explicitly before querying the probe')
         if capability == 'power_read':
             return read_power(bridge)
+        if capability == 'probe_idcode':
+            from mklink.flash import IDCODEError, MKLinkFlash
+            try:
+                return {'idcode': MKLinkFlash(bridge).get_idcode()}
+            except IDCODEError as error:
+                raise HTTPException(400, str(error)) from error
         return {'raw': bridge.send_command('cmd.get_version()', timeout=5.0)}
     finally:
         try:
@@ -70,5 +76,9 @@ def create_probe_router(state):
     @router.post(PROBE_QUERIES['probe_version'])
     async def probe_version():
         return await execute('probe_version')
+
+    @router.post(PROBE_QUERIES['probe_idcode'])
+    async def probe_idcode():
+        return await execute('probe_idcode')
 
     return router

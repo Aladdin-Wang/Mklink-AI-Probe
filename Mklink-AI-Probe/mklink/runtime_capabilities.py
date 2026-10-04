@@ -88,7 +88,8 @@ LIFECYCLE_CAPABILITIES = {
 }
 
 
-PROBE_QUERIES = {'power_read': '/api/probe/power-read', 'probe_version': '/api/probe/version'}
+PROBE_QUERIES = {'power_read': '/api/probe/power-read', 'probe_version': '/api/probe/version',
+                 'probe_idcode': '/api/probe/idcode'}
 CAPABILITIES.update({name: ('POST', path) for name, path in PROBE_QUERIES.items()})
 
 

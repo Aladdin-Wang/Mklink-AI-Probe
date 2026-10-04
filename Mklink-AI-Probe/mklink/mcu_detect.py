@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 _EXTERNAL_FLASH_MARKERS = (
@@ -333,16 +333,8 @@ def _build_profile(discovered: dict, algorithm: dict, idcode: int | None = None)
 def _read_idcode(port: str | None) -> int | None:
     if not port:
         return None
-    try:
-        from mklink.flash import MKLinkFlash
-
-        flash = MKLinkFlash.connect(port)
-        try:
-            return flash.get_idcode()
-        finally:
-            flash.close()
-    except Exception:
-        return None
+    from mklink.runtime import query_probe
+    return query_probe('probe_idcode', port=port)['idcode']
 
 
 def detect_mcu_profile(
@@ -359,6 +351,7 @@ def detect_mcu_profile(
     write_profile: bool = True,
     copy_flm: bool = True,
     read_idcode: bool = False,
+    idcode_reader: Callable[[str | None], int | None] | None = None,
 ) -> dict[str, Any]:
     """Detect or create an MCU profile for a project/device.
 
@@ -464,6 +457,9 @@ def detect_mcu_profile(
             "message": "MICROKEEN FLM directory was not found.",
         }
 
+    # Admission/read failures must occur before either disk or profile writes.
+    idcode = (idcode_reader or _read_idcode)(port) if read_idcode else None
+
     if copy_flm and microkeen_path is not None:
         microkeen_path.parent.mkdir(parents=True, exist_ok=True)
         if not microkeen_path.exists():
@@ -479,7 +475,6 @@ def detect_mcu_profile(
             shutil.copy2(flm_source, microkeen_path)
             copied = True
 
-    idcode = _read_idcode(port) if read_idcode else None
     profile = _build_profile(discovered, selected, idcode=idcode)
     backup = None
     if write_profile:

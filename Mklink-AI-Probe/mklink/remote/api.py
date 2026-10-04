@@ -1546,6 +1546,14 @@ def create_app(
         write_profile = bool(body.get("write_profile", True))
         copy_flm = bool(body.get("copy_flm", True))
         read_idcode = bool(body.get("read_idcode", bool(port)))
+        shared_reader = None
+        if read_idcode and _state.get('shared_runtime'):
+            from mklink.probes import select_probe
+            from mklink.runtime_probe import _query
+            selected = select_probe(_state['shared_probe_id'])
+            if port and str(port).casefold() != selected['port'].casefold():
+                raise HTTPException(409, 'MCU discovery port does not match this backend probe')
+            shared_reader = lambda _port: _query(_state, 'probe_idcode')['idcode']
 
         def _detect():
             return detect_mcu_profile(
@@ -1556,9 +1564,10 @@ def create_app(
                 write_profile=write_profile,
                 copy_flm=copy_flm,
                 read_idcode=read_idcode,
+                idcode_reader=shared_reader,
             )
 
-        if port and read_idcode:
+        if port and read_idcode and not _state.get('shared_runtime'):
             async with async_target_debug_lease(_state, "mcu-detect"):
                 return await loop.run_in_executor(None, _detect)
         return await loop.run_in_executor(None, _detect)

@@ -109,7 +109,8 @@ def test_probe_query_uses_only_selected_bridge_and_releases_own_resources(probe,
 
 
 @pytest.mark.parametrize('failure', ['busy', 'init', 'missing', 'stale', 'port_changed', 'job', 'unauthenticated'])
-def test_conflicts_fail_before_opening_or_interrupting_probe(probe, monkeypatch, failure):
+@pytest.mark.parametrize('capability', ['power-read', 'idcode'])
+def test_conflicts_fail_before_opening_or_interrupting_probe(probe, monkeypatch, failure, capability):
     client, control, state, bridge, calls, managers, selected = probe
     headers = {}
     if failure == 'busy':
@@ -125,7 +126,7 @@ def test_conflicts_fail_before_opening_or_interrupting_probe(probe, monkeypatch,
     else:
         headers = {'X-Auth-Token': 'wrong'}
     before = state['resource_manager'].get_status()
-    response = client.post('/api/probe/power-read', headers=headers)
+    response = client.post('/api/probe/' + capability, headers=headers)
     assert response.status_code == (401 if failure == 'unauthenticated' else 409), response.text
     assert calls == bridge.commands == [] and not bridge.closed
     assert state['resource_manager'].get_status() == before
@@ -205,3 +206,98 @@ def test_cancelled_request_keeps_admission_until_worker_closes_bridge(probe):
         asyncio.run(scenario())
     finally:
         finish.set()
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_idcode_query_borrows_only_selected_bridge(probe, existing):
+    client, control, state, bridge, calls, _, _ = probe
+    if existing:
+        state['device'] = SimpleNamespace(connected=True, port='COM9', _bridge=bridge)
+    def read(command, **kwargs):
+        bridge.commands.append(command)
+        return 'idcode = 0X1BA01477\n>>> '
+    bridge.send_command = read
+    response = client.post('/api/probe/idcode')
+    assert response.status_code == 200, response.text
+    assert response.json() == {'idcode': 0x1ba01477}
+    assert bridge.commands == ['cmd.get_idcode()']
+    assert calls == ([] if existing else [('open', 'COM9'), ('connect', {'recover_stream': False})])
+    assert bridge.closed is (not existing)
+    assert not control.sessions and not state['resource_manager'].get_status()
+
+
+@pytest.mark.parametrize('failure', ['busy', 'missing', 'wrong_port'])
+def test_mcu_discovery_rejects_conflict_before_discovery_or_writes(probe, monkeypatch, failure):
+    client, control, state, bridge, calls, managers, _ = probe
+    if failure == 'busy':
+        managers['rtt'].running = True
+    elif failure == 'missing':
+        monkeypatch.setattr('mklink.probes.inventory', lambda: [])
+    def forbidden(**kwargs):
+        raise AssertionError('Discovery ran before admission')
+    monkeypatch.setattr('mklink.mcu_detect.detect_mcu_profile', forbidden)
+    response = client.post('/api/mcu-detect', json={'port': 'COM8' if failure == 'wrong_port' else 'COM9'})
+    assert response.status_code == 409, response.text
+    assert not calls and not bridge.commands
+
+
+def test_mcu_discovery_uses_internal_query_without_recursive_http(probe, monkeypatch):
+    client, _, state, bridge, calls, _, _ = probe
+    state['device'] = SimpleNamespace(connected=True, port='COM9', _bridge=bridge)
+    bridge.send_command = lambda *args, **kwargs: 'idcode = 0X1BA01477\n'
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Backend called its own HTTP query')
+    monkeypatch.setattr('mklink.runtime.query_probe', forbidden)
+    def detect(**kwargs):
+        return {'idcode': kwargs['idcode_reader'](kwargs['port'])}
+    monkeypatch.setattr('mklink.mcu_detect.detect_mcu_profile', detect)
+    response = client.post('/api/mcu-detect', json={'port': 'COM9'})
+    assert response.status_code == 200, response.text
+    assert response.json() == {'idcode': 0x1ba01477}
+    assert not calls and not bridge.closed
+    assert not state['resource_manager'].get_status()
+
+
+def test_profile_idcode_failure_precedes_flm_and_profile_writes(monkeypatch, tmp_path):
+    from mklink import mcu_detect as md
+    profile = tmp_path / 'profiles.json'
+    profile.write_text('{"mcus": {}}', encoding='utf-8')
+    source = tmp_path / 'source.FLM'
+    source.write_bytes(b'algorithm')
+    destination = tmp_path / 'disk' / 'FLM'
+    algorithm = dict(name='source.FLM', start=0x08000000, size=65536, ram_start=0x20000000, ram_size=16384)
+    monkeypatch.setattr(md, '_discover_from_pdsc', lambda *a: dict(device_prefix='TEST', profile_key='test', algorithms=[algorithm]))
+    monkeypatch.setattr(md, '_find_flm_source', lambda *a: source)
+    calls = []
+    def query(capability, **kwargs):
+        calls.append((capability, kwargs))
+        raise RuntimeErrorResponse('acquisition busy')
+    monkeypatch.setattr('mklink.runtime.query_probe', query)
+    with pytest.raises(RuntimeErrorResponse, match='acquisition busy'):
+        md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
+                              microkeen_flm_dir=destination, port='COM9', read_idcode=True)
+    assert calls == [('probe_idcode', {'port': 'COM9'})]
+    assert profile.read_text(encoding='utf-8') == '{"mcus": {}}'
+    assert not destination.exists()
+    monkeypatch.setattr('mklink.runtime.query_probe', lambda *a, **kw: {'idcode': 0x1ba01477})
+    result = md.detect_mcu_profile(device='TEST', project_info={}, profiles_path=profile,
+                                  microkeen_flm_dir=destination, port='COM9', read_idcode=True)
+    assert result['status'] == 'created'
+    assert result['profile']['idcode_pattern'] == '0x1BA01477'
+    assert (destination / 'source.FLM').read_bytes() == source.read_bytes()
+    import json
+    assert json.loads(profile.read_text(encoding='utf-8'))['mcus']['test']['idcode_pattern'] == '0x1BA01477'
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_failed_idcode_keeps_borrowed_session_and_releases_query_lease(probe, monkeypatch, existing):
+    from mklink.flash import IDCODEError
+    client, _, state, bridge, _, _, _ = probe
+    if existing:
+        state['device'] = SimpleNamespace(connected=True, port='COM9', _bridge=bridge)
+    def fail(self):
+        raise IDCODEError('no valid IDCODE')
+    monkeypatch.setattr('mklink.flash.MKLinkFlash.get_idcode', fail)
+    response = client.post('/api/probe/idcode')
+    assert response.status_code == 400, response.text
+    assert 'no valid IDCODE' in response.text
+    assert bridge.closed is (not existing)
+    assert not state['resource_manager'].get_status()
