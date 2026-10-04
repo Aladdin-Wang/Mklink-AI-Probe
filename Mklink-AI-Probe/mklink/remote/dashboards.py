@@ -2726,6 +2726,9 @@ class SerialStreamManager:
     """Manages serial port monitoring with SSE output."""
 
     def __init__(self, stream_hub=None):
+        from mklink.remote.serial_stream import SerialHistory
+
+        self._history = SerialHistory()
         self._bridge = AsyncBridge()
         self._monitor = None
         self._byte_batcher = None
@@ -2827,8 +2830,10 @@ class SerialStreamManager:
         from mklink.remote.stream_protocol import encode_serial_payload
         self._serial_session = uuid.uuid4().hex
         session = self._serial_session
+        self._history.reset(session)
 
         def publish_bytes(data: bytes, direction: str, port: str):
+            self._history.append(data, direction, port)
             if self._stream_hub is not None:
                 self._stream_hub.publish(
                     encode_serial_payload(session, port, data), item_count=len(data),
@@ -2936,6 +2941,12 @@ class SerialStreamManager:
             raise
         self._running = True
         self._bridge.put({"event": "status", **self.get_status()})
+
+    def get_history(self, session: str | None = None, after: int | None = None,
+                    limit: int = 256) -> dict:
+        with self._lifecycle_lock:
+            return {**self._history.read(session, after, limit),
+                    'running': self._running, 'config': [dict(item) for item in self._port_config]}
 
     def stop(self) -> None:
         with self._lifecycle_lock:

@@ -717,7 +717,7 @@ try:
         or_mask: StrictInt | None = None
         write_start: StrictInt | None = None
 
-    class ModbusHistoryRequest(BaseModel):
+    class StreamHistoryRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         session: str | None = None
         after: StrictInt | None = None
@@ -2980,6 +2980,15 @@ def create_app(
     def serial_ymodem_cancel():
         return get_managers()["serial"].cancel_ymodem()
 
+    @app.post('/api/dash/serial/history')
+    async def serial_history(body: StreamHistoryRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].get_history, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
     @app.get("/api/dash/serial/status")
     def serial_status():
         managers = get_managers()
@@ -3078,7 +3087,7 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.post('/api/dash/modbus/history')
-    async def modbus_history(body: ModbusHistoryRequest):
+    async def modbus_history(body: StreamHistoryRequest):
         try:
             return await asyncio.to_thread(get_managers()['modbus'].get_history, **body.model_dump())
         except ValueError as error:

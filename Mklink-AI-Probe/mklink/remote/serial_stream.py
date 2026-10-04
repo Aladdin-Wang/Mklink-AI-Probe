@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import threading
+import time
+import uuid
+from collections import deque
 from collections.abc import Callable
 
 SERIAL_BATCH_BYTES = 4096
@@ -70,3 +73,53 @@ class SerialByteBatcher:
         with self._lock:
             self._closed = True
             self._flush_locked()
+
+
+class SerialHistory:
+    """One bounded raw-batch history; readers own cursors, never consume entries.
+
+    The existing batcher bounds each payload to 4096 bytes, so 512 retained
+    batches use at most 2 MiB of raw data. Protocol-transfer bytes stay separate.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._entries = deque(maxlen=512)
+        self._session = uuid.uuid4().hex
+        self._sequence = 0
+
+    def reset(self, session: str) -> None:
+        with self._lock:
+            self._session = session
+            self._sequence = 0
+            self._entries.clear()
+
+    def append(self, data: bytes, direction: str, port: str) -> None:
+        if not 1 <= len(data) <= SERIAL_BATCH_BYTES:
+            raise ValueError('Serial history requires 1..4096 bytes per batch')
+        with self._lock:
+            self._sequence += 1
+            self._entries.append((self._sequence, time.time_ns(), port, direction, bytes(data)))
+
+    def read(self, session: str | None = None, after: int | None = None,
+             limit: int = 256) -> dict:
+        if type(limit) is not int or not 1 <= limit <= 256:
+            raise ValueError('History limit must be an integer in 1..256')
+        if (after is None) != (session is None):
+            raise ValueError('History continuation requires both session and after')
+        if after is not None and (type(after) is not int or after < 0):
+            raise ValueError('History after must be a nonnegative integer')
+        with self._lock:
+            if session is not None and session != self._session:
+                raise RuntimeError('Serial history session changed; reopen explicitly')
+            if after is not None and after > self._sequence:
+                raise ValueError('History cursor is ahead of this session')
+            cursor = self._sequence if after is None else after
+            oldest = self._entries[0][0] if self._entries else self._sequence + 1
+            entries = [entry for entry in self._entries if entry[0] > cursor][:limit]
+            return {'session': self._session, 'latest_seq': self._sequence,
+                    'next_seq': entries[-1][0] if entries else cursor,
+                    'dropped_batches': max(0, oldest - cursor - 1),
+                    'entries': [{'seq': seq, 'timestamp_ns': timestamp, 'port': port,
+                                 'direction': direction, 'size': len(data), 'hex': data.hex()}
+                                for seq, timestamp, port, direction, data in entries]}

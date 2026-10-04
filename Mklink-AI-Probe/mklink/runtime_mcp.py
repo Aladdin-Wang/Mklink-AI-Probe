@@ -304,6 +304,14 @@ def build_server():
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        serial_history reads raw ordinary UART batches from the existing producer, including
+        unterminated data, without opening or sending on a port. {} opens at the tail;
+        continue with session/after=next_seq and limit (1..256). Each entry contains seq,
+        port, direction, hex, size and batch-publication timestamp_ns. The response includes
+        config/running/latest_seq and dropped_batches across all ports. Retention is 512
+        batches of at most 4096 bytes; callers filter ports after advancing the global cursor.
+        Stop retains final batches; restart changes session and old cursors fail with 409.
+        This excludes YMODEM trace and parsed profile fields; it is not lossless capture.
         modbus_history reads the existing 500-event history without sending on the UART.
         Call with {} to open at the current tail, then session/after=next_seq and optional
         limit (1..256). Entries contain seq/session, frames contain actual hex/direction/CRC.

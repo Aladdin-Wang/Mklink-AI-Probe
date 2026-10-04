@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import collections
 import io
 import queue
 import threading
@@ -48,7 +47,6 @@ class SerialMonitor:
         self._chunk_callback = chunk_callback
         self._protocol_callback = protocol_callback
 
-        self._events: collections.deque[SerialEvent] = collections.deque(maxlen=10000)
         self._stop_event = threading.Event()
         self._running = False
         self._threads: list[threading.Thread] = []
@@ -248,15 +246,6 @@ class SerialMonitor:
         for cfg in self._port_configs:
             self.send(cfg["port"], data)
 
-    def get_events(self, max_count: int = 100) -> list[SerialEvent]:
-        results: list[SerialEvent] = []
-        for _ in range(max_count):
-            try:
-                results.append(self._events.popleft())
-            except IndexError:
-                break
-        return results
-
     def is_running(self) -> bool:
         return self._running and self.worker_alive
 
@@ -273,7 +262,6 @@ class SerialMonitor:
         self.stop()
 
     def _emit_event(self, evt: SerialEvent) -> None:
-        self._events.append(evt)
         if self._event_callback:
             try:
                 self._event_callback(evt)
