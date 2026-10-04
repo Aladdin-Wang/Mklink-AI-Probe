@@ -285,3 +285,122 @@ def test_sdk_uart_selection_allows_lobby_but_preserves_explicit_probe(monkeypatc
             client.close()
     assert starts == [dict(project_root='project', probe=probe, device_port=None, allow_lobby=True)
                       for probe in (None, 'selected-second')]
+
+
+@pytest.mark.parametrize('path,lock_name,method,body', [
+    ('serial/send', '_lifecycle_lock', 'POST', {'port': 'TEST', 'data': 'one'}),
+    ('serial/status', '_ymodem_lock', 'GET', None),
+    ('serial/ymodem/status', '_ymodem_lock', 'GET', None),
+    ('serial/ymodem/cancel', '_lifecycle_lock', 'POST', {}),
+    ('serial/ymodem/start', '_lifecycle_lock', 'POST', None),
+    ('modbus/loop/start', '_lifecycle_lock', 'POST', {'fc': 3, 'start': 0, 'quantity': 1, 'count': 1}),
+])
+def test_uart_lock_wait_does_not_block_other_client_heartbeat(monkeypatch, tmp_path, path, lock_name, method, body):
+    from mklink.remote.api import create_app
+    from mklink.remote import dashboards
+    monkeypatch.setattr(dashboards, '_managers', {})
+    app = create_app(project_root=str(tmp_path))
+    install_runtime(app, {'probe_id': 'lobby', 'port': 8765, 'token': 'test-secret', 'instance_id': 'uart'})
+    manager = dashboards.get_managers()[path.split('/')[0]]
+    manager._running = True
+    if path.startswith('serial/'):
+        manager._monitor = SimpleNamespace(port_status={}, send=lambda *args: True)
+    called = threading.Event()
+    method_name = {'serial/send': 'send', 'serial/status': 'get_status',
+                   'serial/ymodem/status': 'get_ymodem_status', 'serial/ymodem/cancel': 'cancel_ymodem',
+                   'serial/ymodem/start': 'start_ymodem', 'modbus/loop/start': 'start_loop'}[path]
+    original = getattr(manager, method_name)
+    def entering(*args, **kwargs):
+        called.set()
+        return original(*args, **kwargs)
+    monkeypatch.setattr(manager, method_name, entering)
+    entered, release = threading.Event(), threading.Event()
+    def hold_io_lock():
+        with getattr(manager, lock_name):
+            entered.set()
+            assert release.wait(3)
+            if path == 'modbus/loop/start':
+                # A concurrent close finishes before the waiting loop request.
+                manager._running = False
+    holder = threading.Thread(target=hold_io_lock)
+    holder.start()
+    assert entered.wait(1)
+    timer = threading.Timer(1, release.set)
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as http:
+            session = (await http.post('/_runtime/attach', json={'scope': 'uart'})).json()['session_id']
+            kwargs = {'json': body} if body is not None else {}
+            if path == 'serial/ymodem/start':
+                kwargs = {'params': {'port': 'TEST'}, 'files': {'file': ('test.bin', b'one')}}
+            timer.start()
+            pending = asyncio.create_task(http.request(method, '/api/dash/' + path, **kwargs))
+            started = time.monotonic()
+            try:
+                assert await asyncio.to_thread(called.wait, .5)
+                await asyncio.sleep(.02)
+                assert (await http.post('/_runtime/heartbeat', json={'session_id': session})).status_code == 200
+                assert time.monotonic() - started < .5
+                assert not pending.done()
+            finally:
+                release.set()
+                response = await pending
+                expected = 409 if path in ('serial/ymodem/start', 'modbus/loop/start') else 200
+                assert response.status_code == expected, response.text
+                await http.post('/_runtime/detach', json={'session_id': session})
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+        timer.cancel()
+        holder.join(2)
+        manager._running = False
+        if path.startswith('serial/'):
+            manager._monitor = None
+    assert not holder.is_alive()
+
+
+@pytest.mark.parametrize('kind', ['serial', 'modbus'])
+@pytest.mark.parametrize('cancel', [False, True])
+def test_uart_sse_initial_status_wait_is_async_and_subscription_is_released(kind, cancel):
+    from mklink.remote.dashboards import SerialStreamManager, ModbusStreamManager
+    manager = SerialStreamManager() if kind == 'serial' else ModbusStreamManager()
+    entered, release = threading.Event(), threading.Event()
+    lock = manager._ymodem_lock if kind == 'serial' else manager._lifecycle_lock
+    def hold_io_lock():
+        with lock:
+            entered.set()
+            assert release.wait(3)
+    holder = threading.Thread(target=hold_io_lock)
+    holder.start()
+    assert entered.wait(1)
+    timer = threading.Timer(1, release.set)
+    async def scenario():
+        stream = manager.sse_generator()
+        pending = asyncio.create_task(anext(stream))
+        timer.start()
+        started = time.monotonic()
+        try:
+            await asyncio.sleep(.02)
+            assert time.monotonic() - started < .5
+            assert not pending.done() and manager._bridge.client_count == 1
+            if cancel:
+                pending.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await pending
+                assert manager._bridge.client_count == 0
+            else:
+                release.set()
+                assert 'running' in await pending
+        finally:
+            release.set()
+            await asyncio.gather(pending, return_exceptions=True)
+            await stream.aclose()
+        assert manager._bridge.client_count == 0
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+        timer.cancel()
+        holder.join(2)
+    assert not holder.is_alive()

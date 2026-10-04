@@ -2847,7 +2847,7 @@ def create_app(
         return {"status": "stopped"}
 
     @app.post("/api/dash/serial/send")
-    async def serial_send(
+    def serial_send(
         port: str = Body(...),
         data: str = Body(...),
         hex: bool = Body(default=False),
@@ -2889,7 +2889,7 @@ def create_app(
         try:
             if not sm.running:
                 raise HTTPException(status_code=400, detail="Serial monitor not running")
-            if sm.get_ymodem_status()["active"]:
+            if (await run_in_threadpool(sm.get_ymodem_status))["active"]:
                 raise HTTPException(
                     status_code=409,
                     detail="a YMODEM transfer is already active",
@@ -2925,26 +2925,26 @@ def create_app(
                 detail="YMODEM filename is too long for the protocol header",
             )
         try:
-            return sm.start_ymodem(port, content, filename)
+            return await run_in_threadpool(sm.start_ymodem, port, content, filename)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
         except RuntimeError as error:
             raise HTTPException(status_code=409, detail=str(error))
 
     @app.get("/api/dash/serial/ymodem/status")
-    async def serial_ymodem_status():
+    def serial_ymodem_status():
         return get_managers()["serial"].get_ymodem_status()
 
     @app.get("/api/dash/serial/ymodem/trace")
-    async def serial_ymodem_trace(after: int = 0, limit: int = 128):
+    def serial_ymodem_trace(after: int = 0, limit: int = 128):
         return get_managers()["serial"].get_ymodem_trace(after, limit)
 
     @app.post("/api/dash/serial/ymodem/cancel")
-    async def serial_ymodem_cancel():
+    def serial_ymodem_cancel():
         return get_managers()["serial"].cancel_ymodem()
 
     @app.get("/api/dash/serial/status")
-    async def serial_status():
+    def serial_status():
         managers = get_managers()
         return managers["serial"].get_status()
 
@@ -3064,7 +3064,7 @@ def create_app(
             raise HTTPException(status_code=502, detail=str(error))
 
     @app.post("/api/dash/modbus/loop/start")
-    async def modbus_loop_start(
+    def modbus_loop_start(
         fc: int = Body(...),
         start: int = Body(...),
         quantity: int | None = Body(default=None),

@@ -638,14 +638,15 @@ class RttStreamManager:
 
     async def sse_generator(self):
         """Async SSE generator for FastAPI StreamingResponse."""
-        q = self._bridge.add_client()
-        # Send initial state
-        yield _sse_json({"event": "status", **self.get_status()})
-        # Send history replay
-        if self._history:
-            yield _sse_json({"event": "history", "points": self._history[-100:]})
-
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            # Send initial state
+            yield _sse_json({"event": "status", **self.get_status()})
+            # Send history replay
+            if self._history:
+                yield _sse_json({"event": "history", "points": self._history[-100:]})
+
             while self.running or self.paused:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -658,7 +659,7 @@ class RttStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 class SystemViewStreamManager:
@@ -1487,9 +1488,10 @@ class SystemViewStreamManager:
 
     async def sse_generator(self):
         """Async SSE generator for FastAPI StreamingResponse."""
-        q = self._bridge.add_client()
-        yield _sse_json({"event": "status", **self.get_status()})
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            yield _sse_json({"event": "status", **self.get_status()})
             while self.running or self.paused:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -1502,7 +1504,7 @@ class SystemViewStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 # ---------------------------------------------------------------------------
@@ -2681,20 +2683,21 @@ class SuperWatchStreamManager:
             return None
 
     async def sse_generator(self):
-        q = self._bridge.add_client()
-        # Send initial channel metadata for already-added variables
-        items = self.list_watches()
-        if items:
-            meta = {
-                item["name"]: {
-                    key: value for key, value in item.items() if key != "name"
-                }
-                for item in items
-            }
-            yield _sse_json({"event": "channel_metadata", "channels": meta})
-        state = "running" if self._collecting.is_set() else ("paused" if self._running else "stopped")
-        yield _sse_json({"event": "state_change", "state": state, "items": self.list_watches()})
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            # Send initial channel metadata for already-added variables
+            items = self.list_watches()
+            if items:
+                meta = {
+                    item["name"]: {
+                        key: value for key, value in item.items() if key != "name"
+                    }
+                    for item in items
+                }
+                yield _sse_json({"event": "channel_metadata", "channels": meta})
+            state = "running" if self._collecting.is_set() else ("paused" if self._running else "stopped")
+            yield _sse_json({"event": "state_change", "state": state, "items": items})
             while True:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -2707,7 +2710,7 @@ class SuperWatchStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 # ---------------------------------------------------------------------------
@@ -3157,9 +3160,10 @@ class SerialStreamManager:
         }
 
     async def sse_generator(self):
-        q = self._bridge.add_client()
-        yield _sse_json({"event": "status", **self.get_status()})
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            yield _sse_json({"event": "status", **await asyncio.to_thread(self.get_status)})
             while self.running:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -3172,7 +3176,7 @@ class SerialStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 # ---------------------------------------------------------------------------
@@ -3558,11 +3562,12 @@ class ModbusStreamManager:
             }
 
     async def sse_generator(self):
-        q = self._bridge.add_client()
-        yield _sse_json({"event": "status", **self.get_status()})
-        if self._history:
-            yield _sse_json({"event": "history", "points": self._history[-100:]})
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            yield _sse_json({"event": "status", **await asyncio.to_thread(self.get_status)})
+            if self._history:
+                yield _sse_json({"event": "history", "points": self._history[-100:]})
             while self.running:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -3575,7 +3580,7 @@ class ModbusStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 # ---------------------------------------------------------------------------
@@ -3892,11 +3897,12 @@ class VofaStreamManager:
         }
 
     async def sse_generator(self):
-        q = self._bridge.add_client()
-        yield _sse_json({"event": "status", **self.get_status()})
-        if self._history:
-            yield _sse_json({"event": "history", "points": self._history[-100:]})
+        bridge = self._bridge
+        q = bridge.add_client()
         try:
+            yield _sse_json({"event": "status", **self.get_status()})
+            if self._history:
+                yield _sse_json({"event": "history", "points": self._history[-100:]})
             while self.running or self.paused:
                 try:
                     data = await asyncio.wait_for(q.get(), timeout=30.0)
@@ -3909,7 +3915,7 @@ class VofaStreamManager:
                 if data.get("event") == "stopped":
                     break
         finally:
-            self._bridge.remove_client(q)
+            bridge.remove_client(q)
 
 
 # ---------------------------------------------------------------------------

@@ -885,3 +885,40 @@ def test_serial_sse_reconnect_starts_with_current_status():
     payload = asyncio.run(first_event())
     assert '"event": "status"' in payload
     assert '"running": false' in payload
+
+
+@pytest.mark.parametrize('kind', ['rtt', 'systemview', 'superwatch', 'serial', 'modbus', 'vofa'])
+@pytest.mark.parametrize('outcome', ['close', 'snapshot_error'])
+def test_sse_initial_snapshot_always_releases_its_subscription(monkeypatch, kind, outcome):
+    monkeypatch.setattr(dashboard_module, '_managers', {})
+    manager = dashboard_module.get_managers()[kind]
+    bridge = manager._bridge
+    def failing():
+        raise RuntimeError('snapshot unavailable')
+    if outcome == 'snapshot_error':
+        monkeypatch.setattr(manager, 'list_watches' if kind == 'superwatch' else 'get_status', failing)
+    async def scenario():
+        stream = manager.sse_generator()
+        try:
+            if outcome == 'snapshot_error':
+                with pytest.raises(RuntimeError, match='snapshot unavailable'):
+                    await anext(stream)
+            else:
+                await anext(stream)
+                assert bridge.client_count == 1
+        finally:
+            await stream.aclose()
+        assert bridge.client_count == 0
+    asyncio.run(scenario())
+
+
+def test_modbus_sse_unregisters_from_the_original_bridge_after_restart():
+    manager = dashboard_module.ModbusStreamManager()
+    original = manager._bridge
+    async def scenario():
+        stream = manager.sse_generator()
+        await anext(stream)
+        manager._bridge = dashboard_module.AsyncBridge()
+        await stream.aclose()
+        assert original.client_count == manager._bridge.client_count == 0
+    asyncio.run(scenario())

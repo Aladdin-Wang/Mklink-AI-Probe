@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T00:59:18+00:00`
+- 更新时间：`2026-10-04T01:11:35+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; UART-only shared sessions and independent admission implemented after c40cece; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; UART event-loop waits and SSE initial-subscription cleanup fixed after 35495c3; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。第二十八批新增UART独立会话，复用RuntimeClient/Session及既有管理器；lobby和目标任务期间可操作独立UART，不初始化MCU。现有启停事务按bridge/serial/modbus资源组隔离；后台退出检查在途UART及实际worker。共享协议9，旧后台须显式停止。后端扩展1903通过、2可选依赖跳过；双探针+lobby、真实Edge/MCP stdio/SDK端口启停和冲突验证通过，所有后台PID退出。当前仅UART列表及串口/Modbus状态三项共享能力；写入/CLI归属继续推进。c40cece远端三项全部通过，本批CI推送后核对。
+- 当前任务：持续循环评审/验证。第二十九批将UART同步发送、状态、YMODEM及Modbus循环启动等待交给框架线程池；串口/Modbus SSE初始状态异步等待。六类SSE初包/历史纳入既有finally，捕获原bridge避免Modbus重启后注销错对象；SuperWatch复用同份初始元数据。先复现阻塞10场景及订阅泄漏9场景，后相关364、扩展1926通过/2跳过；真实TCP+模拟串口慢写、心跳1–4ms、首包断开、写入断开保留执行及worker/服务退出通过。未访问物理设备。35495c3精确远端后端1107、GUI211/构建及feedback通过；本批CI推送后核对。继续审计AsyncBridge跨线程投递与StreamHub调度边界，再推进UART共享写入/CLI。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十八批：扩展1903通过、2跳过。先修复MCP列表输出注解和旧测试fixture；首次扩展21项离线安全算法失败由工作树缺少本地FLM资源引起，设置已有资源根后全套通过，未改白名单。双探针后台与lobby共三后台，实际WebGUI/MCP/SDK共享UART状态；同端口竞争409、命令口400、关闭页面不停止生产者，无MCU初始化/UART发送/Modbus请求；浏览器零异常/5xx，后台及子进程实际退出。GUI复用前批生产构建，本批无GUI源代码变动。前批c40cece精确CI后端1091、GUI211/构建及feedback通过。本批非真实从站/长稳验收。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第二十九批：相关364、扩展1926通过/2跳过。10项慢锁/初始状态场景、六类SSE初包清理及Modbus重启原订阅注销均覆盖；新增23项已在现有CI测试文件。真实TCP/FastAPI/SerialMonitor管理器与模拟串口：两次慢写，10次心跳1–4ms，初始SSE断开立即清理，写请求断开仍保留在途记录直到完成，不重放；worker、模拟端口和服务退出。无物理设备I/O，GUI未改。前批35495c3精确CI后端1107、GUI211/类型/构建及feedback全部通过，双探针+lobby真机证据见第二十八批。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 继续UART/Modbus共享迁移：先复现并修复串口发送/状态和Modbus循环/SSE中的同步等待阻塞事件循环；再复用Session/现有管理器定义订阅/发送归属，审计并发start拥有者登记、HTTP断开逐请求取消。不要按_start后缀把modbus_loop_start误当整个采集启动；不要隐式初始化MCU或新增后台/OS锁。随后分析入口/独立Agent、A7双设备长稳、拔插/休眠和NSIS；保持实际进程退出断言，不改下载器固件/WinUSB，不自动合并发布。
+1. 继续架构循环：优先复现并审计AsyncBridge从生产线程直接put asyncio.Queue的唤醒安全、满队列停止及旧字段；同时检查StreamHub逐批call_soon_threadsafe的待调度积压，优先复用已有分发机制、避免另造一套。随后UART/Modbus共享写入/CLI、Session订阅/发送归属、并发start拥有者登记及HTTP断开逐请求取消。不要按_start后缀误判modbus_loop_start；不隐式初始化MCU，不新增后台/OS锁。后续Agent/A7长稳/拔插休眠/NSIS；实际退出断言，不改固件/WinUSB，不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
