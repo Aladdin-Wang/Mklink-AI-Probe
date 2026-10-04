@@ -280,6 +280,13 @@ class RemoteClient:
                 raise RemoteConnectionError("Remote client isn't connected")
             return self._exchange_locked(method, params)
 
+    def job_status(self, *, job_id=None, request_id=None):
+        """Read a retained task without submitting or replaying target work."""
+        if (job_id is None) == (request_id is None):
+            raise ValueError('Supply exactly one job_id or request_id')
+        return self.call('jobs.status', **({'job_id': job_id} if job_id is not None
+                                          else {'request_id': request_id}))
+
     def call_raw(self, method: str, **params: Any) -> Any:
         """Compatibility alias that remains fully public."""
 

@@ -11,7 +11,7 @@ from mklink.remote.protocol import AgentOperationError, RequestValidationError
 
 
 OPERATIONS = frozenset({
-    'probe.info', 'flash.program', 'flash.erase_chip', 'flash.erase_sector', 'target.reset',
+    'jobs.status', 'probe.info', 'flash.program', 'flash.erase_chip', 'flash.erase_sector', 'target.reset',
     'target.halt', 'target.resume', 'target.step', 'breakpoint.set', 'breakpoint.clear',
     'breakpoint.clear_all', 'registers.core', 'memory.read', 'memory.write', 'register.read',
     'variable.read', 'variable.write', 'symbols.status', 'symbols.parse', 'symbols.list',
@@ -103,11 +103,30 @@ class SharedTarget:
         return client
 
     def dispatch(self, requested, operation, params, client_id, uploads):
-        from mklink.runtime import RuntimeErrorResponse, request
+        from mklink.runtime import RuntimeErrorResponse, request, job_status
         from mklink.remote.dispatcher import _integer, _text, _mapping, _bytes_result
         request_id = None
         job = None
         try:
+            if operation == 'jobs.status':
+                if self.info is None or not client_id:
+                    raise CapabilityUnavailableError(data={'reason': 'remote-client-attachment-required'})
+                if params.keys() - {'job_id', 'request_id'} or len(params) != 1:
+                    raise RequestValidationError('Supply exactly one job_id or request_id')
+                if 'job_id' in params:
+                    value = params['job_id']
+                    if not isinstance(value, str) or len(value) != 32 or any(c not in '0123456789abcdef' for c in value):
+                        raise RequestValidationError('Invalid job_id')
+                    return job_status(self.info, value)
+                value = params['request_id']
+                if not isinstance(value, str) or not 1 <= len(value) <= 128:
+                    raise RequestValidationError('Invalid request_id')
+                rows = job_status(self.info)['jobs']
+                found = next((row for row in rows if row.get('request_id') == value), None)
+                if found is None:
+                    raise AgentOperationError('Task not retained; absence does not prove it was never executed',
+                                              data={'request_id': value, 'state': 'not_found'})
+                return found
             if operation.startswith(('systemview.', 'rtt.')):
                 from mklink.remote.shared_systemview import SharedSystemView
                 from mklink.remote.shared_rtt import SharedRtt

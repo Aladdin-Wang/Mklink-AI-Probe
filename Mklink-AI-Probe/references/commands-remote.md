@@ -405,3 +405,15 @@ result = remote.rtt_stop()         # 借用者只退订
 - `rtt.write` 通用RPC返回 `sent_bytes`，SDK布尔值按确认字节数判断。
   `rtt.stop` 返回 `subscribed/capture_stopped`；SDK同样返回字典。
   `wait_for_rtt` 遇到本客户端丢失/订阅错误会抛异常，收集上限为1 MiB。
+
+
+### 结果未知时查询任务
+
+协商能力 `runtime.jobs` 提供只读 `jobs.status`。恰好传一个 `job_id` 或
+`request_id`；Python 使用 `remote.job_status(request_id="此前提交的ID")`。
+该查询读取所选探针后台现有记录，不创建目标会话、不连接CDC、不提交新任务。
+远程服务必须仍绑定原后台；换探针后不能用另一后台的查询结果判断原任务。
+
+返回后台保留的状态及结果，`unknown` 仍需检查目标。后台最多保留64条，记录
+不存在（request_id为not_found，job_id为404）不能证明操作未执行，禁止据此自动
+重放烧录/擦除/复位。任务请求ID应在首次提交前保存，远程重连后可继续查询。

@@ -43,6 +43,7 @@ class CapabilityUnavailableError(ProtocolError):
 
 
 _CAPABILITIES = {
+    "runtime.jobs": Capability("runtime.jobs", 1, ("jobs.status",)),
     "probe.diagnostics": Capability(
         "probe.diagnostics",
         1,
@@ -136,6 +137,7 @@ _CAPABILITIES = {
 CAPABILITIES: Mapping[str, Capability] = MappingProxyType(_CAPABILITIES)
 
 _SCHEMAS = {
+    "jobs.status": OperationSchema("runtime.jobs", ("job_id", "request_id")),
     "probe.info": OperationSchema("probe.diagnostics"),
     "flash.program": OperationSchema(
         "flash.online",

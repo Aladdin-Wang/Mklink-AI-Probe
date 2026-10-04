@@ -125,6 +125,11 @@ def test_actual_agent_sockets_share_target_and_disconnect_independently(target):
                 await handshake(second)
                 await first.send(_request('agent.reconnect'))
                 assert 'result' in json.loads(await first.recv())
+                retained = {'job_id': 'b'*32, 'request_id': 'socket-lost', 'state': 'unknown'}
+                control.jobs.jobs[retained['job_id']] = retained
+                await second.send(_request('jobs.status', {'request_id': 'socket-lost'}, request_id=10))
+                assert json.loads(await second.recv())['result'] == retained
+                assert list(control.sessions) == [gui] and not calls
                 for socket in (first, second):
                     await socket.send(_request('memory.read', {'address': 0, 'size': 4}, request_id=2))
                     assert json.loads(await socket.recv())['result'] == {'__bytes__': 'AAAAAA=='}
@@ -247,3 +252,29 @@ def test_symbol_parse_detaches_only_caller_and_preserves_other_clients(target, m
     assert not control.sessions and calls == ['parse']
     router.dispatch('probe.info', {}, context(router, 'first'))
     assert len(control.sessions) == 1
+
+
+def test_job_query_uses_retained_records_without_target_attach(target, monkeypatch):
+    router, http, control, calls, _ = target
+    job = {'job_id': 'a'*32, 'request_id': 'lost-response', 'state': 'unknown',
+           'probe_id': control.info.get('probe_id'), 'result': None}
+    control.jobs.jobs[job['job_id']] = job
+    monkeypatch.setattr(router._target, '_client', Mock(side_effect=AssertionError('must not attach')))
+    for params in ({'job_id': job['job_id']}, {'request_id': job['request_id']}):
+        assert router.dispatch('jobs.status', params, context(router)) == job
+    assert not control.sessions and not calls
+    assert len(control.jobs.jobs) == 1 and not control.jobs.tasks
+    with pytest.raises(AgentOperationError) as error:
+        router.dispatch('jobs.status', {'request_id': 'absent'}, context(router))
+    assert error.value.data['state'] == 'not_found'
+    assert not calls
+
+
+@pytest.mark.parametrize('params', [{}, {'job_id': '../'}, {'request_id': ''},
+    {'request_id': True}, {'request_id': 'x'*129}, {'request_id': 'x', 'job_id': 'a'*32},
+    {'request_id': 'x', 'confirm': True}])
+def test_job_query_rejects_bad_selectors_without_io(target, params):
+    router, _, control, calls, _ = target
+    with pytest.raises(RequestValidationError):
+        router.dispatch('jobs.status', params, context(router))
+    assert not control.sessions and not calls

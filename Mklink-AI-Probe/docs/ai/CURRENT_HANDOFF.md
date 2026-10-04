@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T17:43:49.595319+00:00`
+- 更新时间：`2026-10-04T17:48:01.954348+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared RTT v2 and capture lifecycle after ff8b186f; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; remote retained task queries after 2d0259c5; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第85批远程RTT版本2四项接入共享后台二进制终端流，逐客户端64KiB/128批消费、会话身份和显式丢失诊断；与SystemView共用采集生命周期，无新增CDC连接。186项扩展回归及websockets11.0.3最低依赖5项通过。本机LAN双远程与本地SDK共享HPM RTT、4字节中文回显、拥有/借用停止保护及另一F103隔离通过；SystemView真机回归通过，全部测试后台退出。 持续推进，不合并发布。
+- 当前任务：第86批增加runtime.jobs能力和只读jobs.status，按job_id或request_id查询原后台保留记录；复用现有任务日志，不新增目标会话/CDC连接、不提交或重放操作。87项相关回归通过，含真实WebSocket和共享后台无新增会话/硬件调用断言；无本批硬件操作。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第85节：第85批远程RTT版本2四项接入共享后台二进制终端流，逐客户端64KiB/128批消费、会话身份和显式丢失诊断；与SystemView共用采集生命周期，无新增CDC连接。186项扩展回归及websockets11.0.3最低依赖5项通过。本机LAN双远程与本地SDK共享HPM RTT、4字节中文回显、拥有/借用停止保护及另一F103隔离通过；SystemView真机回归通过，全部测试后台退出。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第86节：第86批增加runtime.jobs能力和只读jobs.status，按job_id或request_id查询原后台保留记录；复用现有任务日志，不新增目标会话/CDC连接、不提交或重放操作。87项相关回归通过，含真实WebSocket和共享后台无新增会话/硬件调用断言；无本批硬件操作。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 第85批RTT/SystemView均接入共享后台并完成短时本机LAN真机验证。接着审计offline.deploy共享部署适配、结果未知任务的显式查询、独立Agent实包依赖，然后异常恢复/长稳。核对本批CI；第84批两CI成功。系统级安装UAC仍待用户回复，不运行安装器。
+1. 第86批未知任务只读查询已接入，下一步共享offline.deploy适配和独立Agent当前实包依赖，再推进异常恢复及长稳。第85批Feedback成功，共享CI仍在运行（37221642645），复查同一任务；核对第86批CI。系统级安装UAC仍待用户回复，不运行安装器。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
