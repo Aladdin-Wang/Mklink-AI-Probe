@@ -32,3 +32,29 @@ def test_pe_audit_checks_data_sections_but_all_bytes_for_sensitive_markers(build
     # Ordinary files do not receive the native-code interpretation.
     with pytest.raises(RuntimeError, match='local file URL'):
         builder._audit_content('metadata', code, policy)
+
+
+@pytest.mark.parametrize('location', ['body', 'name', 'comment'])
+def test_svd_archive_audits_decompressed_paths(builder, location):
+    import io, zipfile
+    policy = {'markers': [], 'system_roots': []}
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('E:/private/device.svd' if location == 'name' else 'device.svd',
+                         b'E:/private/source' if location == 'body' else b'<device/>')
+        if location == 'comment': archive.comment = b'E:/private/comment'
+    with pytest.raises(RuntimeError): builder._audit_svd_archive(data.getvalue(), policy)
+
+
+def test_svd_archive_checks_members_and_sensitive_markers(builder):
+    import io, zipfile
+    policy = {'markers': [b'private-build-root'], 'system_roots': []}
+    def blob(name, content):
+        data=io.BytesIO()
+        with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(name,content)
+        return data.getvalue()
+    builder._audit_svd_archive(blob('device.svd',b'<device/>'),policy)
+    builder._audit_svd_archive(blob('device.xml',b'<device/>'),policy)
+    for name,content in [('device.svd',b'private-build-root'),('payload.bin',b'x'),('../device.svd',b'x')]:
+        with pytest.raises(RuntimeError): builder._audit_svd_archive(blob(name,content),policy)

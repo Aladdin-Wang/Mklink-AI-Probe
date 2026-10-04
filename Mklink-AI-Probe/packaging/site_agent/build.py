@@ -723,6 +723,27 @@ def _audit_distribution_records(bundle: Path) -> None:
             raise RuntimeError(f"non-canonical normalized RECORD: {record}")
 
 
+def _audit_svd_archive(data: bytes, policy: dict[str, object]) -> None:
+    """Audit text resources after decompression, never reinterpret compressed bytes."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        _audit_content('SVD archive comment', archive.comment, policy)
+        seen = set()
+        total = 0
+        for info in archive.infolist():
+            _audit_name(info.filename)
+            _audit_content('SVD member name', info.filename.encode('utf-8'), policy)
+            _audit_content('SVD member comment', info.comment, policy)
+            if info.is_dir():
+                continue
+            if info.filename.casefold() in seen or Path(info.filename).suffix.casefold() not in {'.svd', '.xml'}:
+                raise RuntimeError('Unexpected or duplicate SVD archive member')
+            seen.add(info.filename.casefold())
+            total += info.file_size
+            if total > 512 * 1024 * 1024 or info.file_size > 64 * 1024 * 1024:
+                raise RuntimeError('SVD archive exceeds audit bounds')
+            _audit_content('SVD member '+info.filename, archive.read(info), policy)
+
+
 def _audit_bundle(
     bundle: Path,
     *,
@@ -735,11 +756,14 @@ def _audit_bundle(
         relative = path.relative_to(bundle).as_posix()
         _audit_name(relative)
         data = path.read_bytes()
+        svd_archive = relative.casefold().endswith("/pyocd/debug/svd/svd_data.zip")
+        if svd_archive:
+            _audit_svd_archive(data, policy)
         _audit_content(
             f"bundle file {relative}",
             data,
             policy,
-            scan_generic_paths=not relative.casefold().endswith(
+            scan_generic_paths=not svd_archive and not relative.casefold().endswith(
                 "base_library.zip"
             ),
             allow_pe_provenance_paths=(
@@ -957,11 +981,14 @@ def _audit_zip(
             if info.external_attr >> 16 != FIXED_FILE_MODE:
                 raise RuntimeError(f"non-deterministic ZIP mode: {info.filename}")
             data = archive.read(info)
+            svd_archive = info.filename.casefold().endswith("/pyocd/debug/svd/svd_data.zip")
+            if svd_archive:
+                _audit_svd_archive(data, policy)
             _audit_content(
                 f"ZIP member {info.filename}",
                 data,
                 policy,
-                scan_generic_paths=not info.filename.casefold().endswith(
+                scan_generic_paths=not svd_archive and not info.filename.casefold().endswith(
                     "base_library.zip"
                 ),
                 allow_pe_provenance_paths=(
@@ -1354,7 +1381,7 @@ def build(
                     "current Windows SystemRoot paths embedded by operating-system runtime files",
                     "PE compiler/debug provenance paths; generic file URLs are scanned in non-executable sections, exact current-build paths and credentials in all bytes",
                     "repository/runtime code string constants after exact current-build paths and file URLs are rejected",
-                    "encoded PYZ/base-library containers only when every decompressed member is separately audited",
+                    "encoded PYZ/base-library/SVD containers only when every decompressed member is separately audited",
                 ],
                 "worktree_resolution": (
                     "git top-level only when it is an existing absolute ancestor "
