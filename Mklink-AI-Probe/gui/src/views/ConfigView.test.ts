@@ -100,6 +100,41 @@ async function mountView() {
 }
 
 describe('ConfigView', () => {
+  it.each(['TEST_PORT_B', ''])('keeps user selection %s when initial config arrives late', async selected => {
+    sharedRuntime.value = true
+    const pending = deferred<any>()
+    mocks.api.getConfig.mockReturnValueOnce(pending.promise)
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="local-port"]').setValue(selected)
+    pending.resolve({ com_port: 'TEST_PORT_A', swd_clock: '2000000' })
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe(selected)
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+    expect(mocks.api.connectDevice).toHaveBeenCalledWith(expect.objectContaining(
+      selected ? { port: selected } : { restore_last: true },
+    ))
+    wrapper.unmount()
+  })
+
+  it('keeps a connection result and an edited clock when initial config arrives late', async () => {
+    sharedRuntime.value = true
+    const pending = deferred<any>()
+    mocks.api.getConfig.mockReturnValueOnce(pending.promise)
+    mocks.api.connectDevice.mockResolvedValueOnce({ port: 'TEST_PORT_B' })
+    const wrapper = await mountView()
+    const clock = wrapper.get<HTMLInputElement>('[data-testid="swd-clock"]')
+    clock.element.value = '1000000'
+    await clock.trigger('input')
+    await wrapper.get('[data-testid="connect-local"]').trigger('click')
+    await flushPromises()
+    pending.resolve({ com_port: 'TEST_PORT_A', swd_clock: '2000000' })
+    await flushPromises()
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="local-port"]').element.value).toBe('TEST_PORT_B')
+    expect(clock.element.value).toBe('1000000')
+    wrapper.unmount()
+  })
+
   it('switches a shared probe while the current target remains connected', async () => {
     sharedRuntime.value = true
     Object.assign(mocks.deviceStatus, { connected: true, port: 'TEST_PORT_A' })

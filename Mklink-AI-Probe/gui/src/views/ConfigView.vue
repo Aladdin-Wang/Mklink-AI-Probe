@@ -47,6 +47,7 @@ const config = ref<ProjectConfig>({})
 const localPort = ref('')
 const portOptions = ref<{ label: string; value: string }[]>([])
 const localPortExplicit = ref(false)
+let localPortTouched = false
 const probePorts = ref<PortInfo[]>([])
 const probeAlias = ref('')
 const selectedProbe = computed(() => probePorts.value.find(port => port.device === localPort.value))
@@ -124,9 +125,14 @@ async function refreshPorts() {
 
 async function loadConfig() {
   try {
-    config.value = await getConfig()
-    localPort.value = config.value.com_port || ''
-    localPortExplicit.value = false
+    const loaded = await getConfig()
+    if (disposed) return
+    // Initial loading must not overwrite edits made while the request was pending.
+    config.value = { ...loaded, ...config.value }
+    if (!localPortTouched) {
+      localPort.value = loaded.com_port || ''
+      localPortExplicit.value = false
+    }
   } catch (error: any) {
     toast.error(tr('读取配置失败: ', 'Failed to load configuration: ') + error.message)
   }
@@ -162,6 +168,7 @@ async function saveLocalConfig() {
 }
 
 async function selectLocalPort() {
+  localPortTouched = true
   localPortExplicit.value = Boolean(localPort.value.trim())
   probeAlias.value = selectedProbe.value?.alias || ''
   if (sharedRuntime.value) return
@@ -169,6 +176,7 @@ async function selectLocalPort() {
 }
 
 async function connectLocal() {
+  localPortTouched = true
   connecting.value = true
   try {
     const selectedPort = localPort.value.trim()
@@ -438,7 +446,7 @@ onMounted(async () => {
   // immediately responsive.
   await Promise.all([refreshPorts(), loadConfig()])
   const restoredPort = localPort.value.trim()
-  if (restoredPort && !portOptions.value.some(option => option.value === restoredPort)) {
+  if (!localPortTouched && restoredPort && !portOptions.value.some(option => option.value === restoredPort)) {
     localPort.value = ''
   }
 })
