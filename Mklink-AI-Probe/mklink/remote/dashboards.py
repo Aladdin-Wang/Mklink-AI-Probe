@@ -3651,6 +3651,9 @@ class ModbusStreamManager:
             raise RuntimeError("Modbus not connected")
         if self._loop_thread is not None and self._loop_thread.is_alive():
             raise RuntimeError("A Modbus loop is already running")
+        from mklink.modbus._session import validate_transaction
+        fc, start, quantity, values = validate_transaction(fc, start, quantity=quantity, values=values)
+        values = list(values) if values is not None else None
         if not 0.02 <= float(interval) <= 3600.0:
             raise ValueError("Loop interval must be in the range 0.02..3600 seconds")
         if isinstance(count, bool) or not 0 <= int(count) <= 100000:
@@ -3664,12 +3667,12 @@ class ModbusStreamManager:
             "requested": int(count),
             "errors": 0,
             "interval": float(interval),
+            "error": "",
             "fc": int(fc),
             "start": int(start),
         }
 
         def run_loop() -> None:
-            next_due = time.monotonic()
             try:
                 while not self._loop_stop.is_set():
                     if count and self._loop_status["completed"] >= count:
@@ -3680,6 +3683,7 @@ class ModbusStreamManager:
                         )
                     except Exception as error:
                         self._loop_status["errors"] += 1
+                        self._loop_status["error"] = str(error)
                         self._record_event(
                             {
                                 "event": "error",
@@ -3688,13 +3692,14 @@ class ModbusStreamManager:
                                 "message": str(error),
                             }
                         )
+                        # A failed write may already have reached the target.
+                        # Require a new explicit start instead of replaying it.
+                        break
                     finally:
                         self._loop_status["completed"] += 1
                     if count and self._loop_status["completed"] >= count:
                         break
-                    next_due += float(interval)
-                    wait_time = max(0.0, next_due - time.monotonic())
-                    if self._loop_stop.wait(wait_time):
+                    if self._loop_stop.wait(float(interval)):
                         break
             finally:
                 with self._lifecycle_lock:

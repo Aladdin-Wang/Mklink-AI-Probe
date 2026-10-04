@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T10:46:00+00:00`
+- 更新时间：`2026-10-04T10:51:30+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared serial JSON consistency and dual-probe HIL after d181ddf; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; fail-stop Modbus loop after 219af61; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第五十六批重新枚举双下载器并用协议24源码与当前Web构建完成真机GUI/MCP/SDK+RTT/UART共存回归，确认借用保护、多后台隔离、错误端口拒绝、无幽灵会话及所有后台进程退出；Boot/选项/配置不变，VTOR=0x08005000且tick前进。未发送UART/Modbus数据、未刷固件或改供电。统一串口字段JSON转换，状态/SSE/CLI/日志的NaN及正负无穷保持字符串，原始字节与解析值不变；相关124测试通过。前批d181ddf两项CI成功，本批待核对。继续任务归属/取消、独立Agent、异常恢复、长稳和NSIS，不改固件/WinUSB、不合并发布。
+- 当前任务：持续循环评审验证。第五十七批修复Modbus循环在失败后再次写入及慢事务追赶突发问题：首个事务错误即停止循环，保留loop.error，连接不自动关闭；成功后等待完整interval，复制已校验values。事务校验收敛到管理器，删除HTTP重复分支。新增3项回归，相关151通过；最后删除重复校验后API/UART62通过。无新硬件操作，无物理Modbus从站验收。前批219af61两项CI均成功。继续任务归属、请求取消、Agent、异常恢复/长稳/NSIS；不改固件/WinUSB，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第56节：第五十六批重新枚举双下载器并用协议24源码与当前Web构建完成真机GUI/MCP/SDK+RTT/UART共存回归，确认借用保护、多后台隔离、错误端口拒绝、无幽灵会话及所有后台进程退出；Boot/选项/配置不变，VTOR=0x08005000且tick前进。未发送UART/Modbus数据、未刷固件或改供电。统一串口字段JSON转换，状态/SSE/CLI/日志的NaN及正负无穷保持字符串，原始字节与解析值不变；相关124测试通过。前批d181ddf两项CI成功，本批待核对。继续任务归属/取消、独立Agent、异常恢复、长稳和NSIS，不改固件/WinUSB、不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第57节：第五十七批修复Modbus循环在失败后再次写入及慢事务追赶突发问题：首个事务错误即停止循环，保留loop.error，连接不自动关闭；成功后等待完整interval，复制已校验values。事务校验收敛到管理器，删除HTTP重复分支。新增3项回归，相关151通过；最后删除重复校验后API/UART62通过。无新硬件操作，无物理Modbus从站验收。前批219af61两项CI均成功。继续任务归属、请求取消、Agent、异常恢复/长稳/NSIS；不改固件/WinUSB，不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。

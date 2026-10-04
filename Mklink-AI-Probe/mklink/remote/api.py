@@ -3236,12 +3236,6 @@ def create_app(
         if not mm.running:
             raise HTTPException(status_code=400, detail="Modbus not connected")
         try:
-            # Validate before starting the background loop so callers get an
-            # immediate 400 response instead of a delayed SSE error.
-            from mklink.modbus._session import validate_transaction
-            validate_transaction(
-                fc, start, quantity=quantity, values=values
-            )
             return mm.start_loop(
                 fc,
                 start,

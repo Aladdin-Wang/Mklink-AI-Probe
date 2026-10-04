@@ -318,6 +318,66 @@ def test_loop_thread_start_failure_restores_idle_state(client_factory, monkeypat
         manager.stop()
 
 
+def test_loop_unknown_write_result_stops_without_replaying(client_factory, monkeypatch):
+    from mklink.remote.dashboards import ModbusStreamManager
+    writes = []
+    def write(self, address, value, slave):
+        writes.append((address, value, slave))
+        raise TimeoutError('response lost; result unknown')
+    monkeypatch.setattr(client_factory, 'write_register', write, raising=False)
+    manager = ModbusStreamManager()
+    manager.start({'port': 'TEST'}, 1, [])
+    try:
+        manager.start_loop(6, 0, values=[123], count=3, interval=.02)
+        manager._loop_thread.join(1)
+        assert not manager._loop_thread.is_alive()
+        assert writes == [(0, 123, 1)]
+        status = manager.get_status()['loop']
+        assert not status['running'] and status['completed'] == status['errors'] == 1
+        assert 'result unknown' in status['error']
+        assert manager.running  # Only the failed loop stops; the connection remains.
+    finally:
+        manager.stop()
+
+
+def test_loop_waits_full_interval_and_captures_write_values(client_factory, monkeypatch):
+    from mklink.remote.dashboards import ModbusStreamManager
+    manager = ModbusStreamManager()
+    manager.start({'port': 'TEST'}, 1, [])
+    waits, writes = [], []
+    values = [123]
+    def transaction(*args, **kwargs):
+        writes.append(list(kwargs['values']))
+        values[0] = 456
+        time.sleep(.03)  # An operation slower than the configured interval.
+    def wait(interval):
+        waits.append(interval)
+        return False
+    monkeypatch.setattr(manager, 'transaction', transaction)
+    monkeypatch.setattr(manager._loop_stop, 'wait', wait)
+    try:
+        manager.start_loop(6, 0, values=values, count=2, interval=.02)
+        manager._loop_thread.join(1)
+        assert not manager._loop_thread.is_alive()
+        assert waits == [.02] and writes == [[123], [123]]
+        assert manager.get_status()['loop']['error'] == ''
+    finally:
+        manager.stop()
+
+
+def test_loop_invalid_transaction_rejected_before_thread_creation(client_factory):
+    from mklink.remote.dashboards import ModbusStreamManager
+    manager = ModbusStreamManager()
+    manager.start({'port': 'TEST'}, 1, [])
+    try:
+        with pytest.raises(ValueError):
+            manager.start_loop(6, 0, values=[-1])
+        assert manager._loop_thread is None
+        assert client_factory.instances[0].calls == []
+    finally:
+        manager.stop()
+
+
 def test_incomplete_poll_response_is_an_error(client_factory, monkeypatch):
     from mklink.modbus._format import RegisterSpec
     monkeypatch.setattr(client_factory, 'read_holding_registers', lambda *args: [])
