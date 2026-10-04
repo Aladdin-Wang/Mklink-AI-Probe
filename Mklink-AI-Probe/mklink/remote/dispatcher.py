@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import threading
-import time
 import uuid
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -140,7 +139,6 @@ class OperationDispatcher:
             self.project_root / ".mklink" / "remote-uploads",
         )
         self._target_lock = threading.RLock()
-        self._serial_lock = threading.RLock()
         self._stream_owners: dict[str, str] = {}
 
     def capabilities(self):
@@ -158,10 +156,10 @@ class OperationDispatcher:
                 try:
                     selected = select_probe(self.runtime_probe, allow_lobby=True)
                 except RuntimeErrorResponse:
-                    raise CapabilityUnavailableError(data={'capability': 'modbus',
+                    raise CapabilityUnavailableError(data={'capability': 'uart',
                         'reason': 'probe-identity-unavailable'}) from None
                 if selected['probe_id'] != 'lobby' and not selected['identity_stable']:
-                    raise CapabilityUnavailableError(data={'capability': 'modbus',
+                    raise CapabilityUnavailableError(data={'capability': 'uart',
                         'reason': 'stable-probe-identity-required'})
                 self._bound_runtime_probe = selected['probe_id']
             return self._bound_runtime_probe
@@ -186,11 +184,10 @@ class OperationDispatcher:
             context=context,
             upload_manager=self._uploads,
             target_lock=self._target_lock,
-            serial_lock=self._serial_lock,
             stream_owners=self._stream_owners,
             project_root=self.project_root,
             runtime_probe=self._shared_probe() if operation in (
-                'modbus.read', 'modbus.write', 'modbus.scan') else None,
+                'modbus.read', 'modbus.write', 'modbus.scan', 'serial.list', 'serial.exchange') else None,
         )
 
 
@@ -201,7 +198,6 @@ def dispatch_capability(
     *,
     upload_manager: UploadManager | None = None,
     target_lock: threading.RLock | None = None,
-    serial_lock: threading.RLock | None = None,
     stream_owners: dict[str, str] | None = None,
     project_root: str | Path = ".",
     runtime_probe: str | None = None,
@@ -326,12 +322,8 @@ def dispatch_capability(
         )
 
     if operation.startswith("serial."):
-        return _dispatch_serial(
-            operation,
-            params,
-            context,
-            serial_lock or threading.RLock(),
-        )
+        return _dispatch_serial(operation, params, context,
+                                project_root=project_root, probe=runtime_probe)
     if operation.startswith("modbus."):
         return _dispatch_modbus(operation, params, context,
                                 project_root=project_root, probe=runtime_probe)
@@ -587,63 +579,49 @@ def _dispatch_device(
                 manager.release(owner)
 
 
-def _dispatch_serial(
-    operation: str,
-    params: Mapping[str, Any],
-    context: AgentDispatchContext | None,
-    lock: threading.RLock,
-) -> Any:
-    if operation == "serial.list":
-        from mklink.serial import list_uart_ports
-
-        return list_uart_ports()
-    from mklink.serial import SerialPort
-
-    encoded = _text(params.get("data_b64"), "data_b64", allow_empty=True)
-    try:
-        data = base64.b64decode(encoded, validate=True)
-    except (ValueError, TypeError):
-        raise RequestValidationError(
-            "Invalid operation parameters",
-            data={"field": "data_b64"},
-        ) from None
-    timeout = min(max(float(params.get("timeout", 0.1)), 0.0), 5.0)
-    manager = context.resource_manager if context is not None else None
-    owner = f"ai:remote:serial:{uuid.uuid4().hex}"
-    with lock:
-        if manager is not None:
-            try:
-                manager.acquire(ResourceGroup.SERIAL_PORT, owner)
-            except ResourceError:
-                raise CapabilityUnavailableError(
-                    data={"capability": "serial", "reason": "resource-busy"},
-                ) from None
-        port = None
+def _dispatch_serial(operation, params, context, *, project_root, probe):
+    import math
+    from mklink.runtime import RuntimeClient, RuntimeErrorResponse
+    from mklink.uart_session import uart_session, require_serial_connection
+    from mklink.usb_interfaces import canonical_serial_port
+    name = f"Agent Serial {(context.client_id or 'local') if context else 'local'}"
+    if operation == 'serial.list':
+        client = RuntimeClient(project_root=project_root, kind='sdk', name=name)
         try:
-            port = SerialPort(
-                _text(params.get("port"), "port"),
-                baudrate=_integer(
-                    params.get("baudrate", 115200),
-                    "baudrate",
-                    minimum=1,
-                ),
-                timeout=timeout,
-            )
-            if not port.open():
-                raise CapabilityUnavailableError(
-                    data={"capability": "serial", "reason": "port-unavailable"},
-                )
-            port.write(data)
-            if timeout:
-                time.sleep(timeout)
-            return _bytes_result(port.read_available())
+            client.connect(scope='uart', probe=probe)
+            return client.call('uart_ports')
         finally:
-            try:
-                if port is not None:
-                    port.close()
-            finally:
-                if manager is not None:
-                    manager.release(owner)
+            client.close()
+    encoded = _text(params.get('data_b64'), 'data_b64', allow_empty=True)
+    try:
+        if len(encoded) > 5464:
+            raise ValueError('payload too large')
+        data = base64.b64decode(encoded, validate=True)
+        if len(data) > 4096:
+            raise ValueError('payload too large')
+    except (ValueError, TypeError):
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'data_b64'}) from None
+    timeout = params.get('timeout', .1)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 <= timeout <= 5:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'timeout'})
+    port = _text(params.get('port'), 'port').strip()
+    if not port:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'port'})
+    baud = _integer(params.get('baudrate', 115200), 'baudrate', minimum=1)
+    if baud > 4000000:
+        raise RequestValidationError('Invalid operation parameters', data={'field': 'baudrate'})
+    connection = {'port': canonical_serial_port(port), 'baudrate': baud,
+                  'databits': 8, 'stopbits': 1, 'parity': 'N'}
+    try:
+        with uart_session('serial', {'ports': [connection]}, project_root=project_root,
+                          probe=probe, kind='sdk', name=name) as client:
+            require_serial_connection(client.call('serial_status'), connection)
+            result = client.call('serial_exchange', {'port': connection['port'],
+                                 'data': data.hex(), 'timeout': timeout})
+            return _bytes_result(bytes.fromhex(result['data']))
+    except RuntimeErrorResponse as error:
+        raise AgentOperationError('Shared serial exchange failed; write result may be unknown; do not retry automatically',
+                                  data={'capability': 'serial', 'status': error.status_code}) from None
 
 
 def _dispatch_modbus(operation, params, context, *, project_root, probe):

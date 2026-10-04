@@ -1492,12 +1492,7 @@ def _serial_connection(args, *, port=None):
                   'databits': args.databits, 'stopbits': args.stop, 'parity': args.parity}
 
 
-def _require_serial_connection(status, connection):
-    from mklink.runtime import RuntimeErrorResponse
-    actual = next((item for item in status['config'] if item['port'] == connection['port']), None)
-    if actual is None or any(actual.get(key, default) != connection[key] for key, default in
-                            (('baudrate', 115200), ('databits', 8), ('stopbits', 1), ('parity', 'N'))):
-        raise RuntimeErrorResponse('Existing serial connection uses different port/settings; stop it explicitly before changing settings')
+from mklink.uart_session import require_serial_connection as _require_serial_connection
 
 
 def _cli_serial_send(args):

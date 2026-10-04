@@ -22,7 +22,8 @@ class _ProtocolQueue(queue.Queue):
     CHUNK_BYTES = 4096
     MAX_CHUNKS = 128
 
-    def __init__(self):
+    def __init__(self, *, raw_trace=False):
+        self.raw_trace = raw_trace
         super().__init__(maxsize=self.MAX_CHUNKS)
         self.error = None
 
@@ -256,10 +257,10 @@ class SerialMonitor:
             sequence.finish_send()
 
     @contextmanager
-    def _protocol_session(self, port, *, cancel_event=None, cancel_error=RuntimeError, tail=None):
+    def _protocol_session(self, port, *, cancel_event=None, cancel_error=RuntimeError, tail=None, raw_trace=False):
         """Reserve one monitored port; the existing reader remains its sole consumer."""
         port = canonical_serial_port(port)
-        receive_queue = _ProtocolQueue()
+        receive_queue = _ProtocolQueue(raw_trace=raw_trace)
         with self._protocol_lock:
             if self._stop_event.is_set():
                 raise RuntimeError("Serial monitor is stopping")
@@ -303,7 +304,10 @@ class SerialMonitor:
                 if current is not serial_port or not current.is_open:
                     raise RuntimeError(f"serial port {port} closed during protocol transfer")
                 current.write(payload)
-            self._emit_protocol_chunk(port, "TX", payload, time.time())
+            if raw_trace:
+                self._record_sent(port, payload)
+            else:
+                self._emit_protocol_chunk(port, "TX", payload, time.time())
 
         completed = False
         try:
@@ -315,7 +319,7 @@ class SerialMonitor:
                 if self._protocol_queues.get(port) is receive_queue:
                     try:
                         pending = bytearray()
-                        if completed and receive_queue.error is None:
+                        if completed and receive_queue.error is None and not raw_trace:
                             if tail is not None:
                                 pending.extend(tail())
                             # Reader queue writes also hold _protocol_lock, so once
@@ -357,7 +361,7 @@ class SerialMonitor:
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 <= timeout <= 5:
             raise ValueError('Exchange timeout must be finite and in 0..5 seconds')
         result = bytearray()
-        with self._protocol_session(port) as (read, write):
+        with self._protocol_session(port, raw_trace=True) as (read, write):
             if data:
                 write(data)
             deadline = time.monotonic() + timeout
@@ -452,9 +456,8 @@ class SerialMonitor:
                     protocol_queue = self._protocol_queues.get(port_name)
                     if protocol_queue is not None:
                         if data:
-                            self._emit_protocol_chunk(
-                                port_name, "RX", data, time.time(),
-                            )
+                            if not protocol_queue.raw_trace:
+                                self._emit_protocol_chunk(port_name, "RX", data, time.time())
                             # Keep the put inside the lock.  Transfer
                             # teardown can now remove+drain atomically.
                             protocol_queue.feed(data)
@@ -469,8 +472,14 @@ class SerialMonitor:
                         parser.reset()
                     observed_generation = generation
                 if protocol_queue is not None:
+                    if data and protocol_queue.raw_trace:
+                        # Raw GUI/history observation, without framing or auto replies.
+                        self._emit_chunk(port_name, "RX", data, time.time(), time.monotonic())
                     if not data:
                         self._stop_event.wait(0.01)
+                    if protocol_queue.raw_trace:
+                        with self._lock:
+                            self._observation_times[port_name] = time.monotonic()
                     continue
                 if handoff:
                     # A protocol may start and finish between reader

@@ -299,6 +299,11 @@ def build_server():
         the backend parser: per-port seq, timestamp, size, a 256-byte hex_preview/truncated flag,
         crc_valid and fields (value/raw/unit). This is latest state, not lossless frame history.
         Restart changes session and clears snapshots. Nonfinite device floats are strings, not zero.
+        serial_exchange accepts port, data (hexadecimal, at most 4096 decoded bytes), timeout 0..5 seconds.
+        It writes once and returns data (hex) and bytes (at most 65536). Zero timeout does not wait for RX.
+        Same-port sends, auto replies and sequences cannot interleave; other ports remain usable.
+        RX may include buffered or unsolicited device bytes, not a proven protocol response.
+        Its raw RX/TX is visible in the ordinary GUI/history/recording channel, without auto replies.
         Modbus start accepts port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
         accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
         slave). The override affects only this request. Unknown fields are rejected.

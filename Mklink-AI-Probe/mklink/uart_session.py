@@ -65,3 +65,11 @@ def modbus_session(connection, *, scan=False, **options):
         if any(actual.get(key) != value for key, value in connection.items()):
             raise RuntimeErrorResponse('Existing Modbus connection uses different port/settings; stop it explicitly before changing settings')
         yield client
+
+
+def require_serial_connection(status, connection):
+    from mklink.runtime import RuntimeErrorResponse
+    actual = next((item for item in status['config'] if item['port'] == connection['port']), None)
+    if actual is None or any(actual.get(key, default) != connection[key] for key, default in
+                            (('baudrate', 115200), ('databits', 8), ('stopbits', 1), ('parity', 'N'))):
+        raise RuntimeErrorResponse('Existing serial connection uses different port/settings; stop it explicitly before changing settings')

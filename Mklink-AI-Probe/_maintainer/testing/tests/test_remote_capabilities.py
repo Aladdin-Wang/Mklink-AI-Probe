@@ -124,48 +124,6 @@ def test_every_declared_operation_has_dispatch_mapping_or_explicit_group_router(
     }
 
 
-def test_serial_dispatch_uses_public_domain_api(monkeypatch):
-    serial_events = []
-
-    class SerialPort:
-        def __init__(self, port, *, baudrate, timeout):
-            serial_events.append(("init", port, baudrate, timeout))
-
-        def open(self):
-            serial_events.append(("open",))
-            return True
-
-        def write(self, data):
-            serial_events.append(("write", data))
-
-        def read_available(self):
-            return b"\x10\x20"
-
-        def close(self):
-            serial_events.append(("close",))
-
-    serial_module = types.ModuleType("mklink.serial")
-    serial_module.SerialPort = SerialPort
-    serial_module.list_uart_ports = lambda: [{"device": "test-port"}]
-    monkeypatch.setitem(sys.modules, "mklink.serial", serial_module)
-    monkeypatch.setattr(
-        "mklink.remote.dispatcher.capability_available", lambda _name: True
-    )
-
-    assert dispatch_capability("serial.list", {}) == [{"device": "test-port"}]
-    assert dispatch_capability(
-        "serial.exchange",
-        {
-            "port": "test-port",
-            "baudrate": 115200,
-            "timeout": 0,
-            "data_b64": "AQI=",
-            "confirm": True,
-        },
-    ) == {"__bytes__": "ECA="}
-    assert ("write", b"\x01\x02") in serial_events
-    assert serial_events[-1] == ("close",)
-
 def test_agent_capability_merge_is_deterministic_and_cannot_override_lifecycle():
     agent = SiteAgent(
         AgentConfig(),

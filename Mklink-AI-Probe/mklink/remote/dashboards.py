@@ -3128,6 +3128,14 @@ class SerialStreamManager:
                 return False
             return monitor.send(port, data)
 
+    def exchange(self, port, data, timeout=.1):
+        with self._lifecycle_lock:
+            monitor = self._monitor
+            if monitor is None or not self._running or self._stopping:
+                raise RuntimeError('Serial monitor is not running')
+        # The monitor owns protocol admission; do not hold lifecycle during RX wait.
+        return monitor.exchange(port, data, timeout)
+
     def ymodem_owns_port(self, port: str) -> bool:
         from mklink.usb_interfaces import canonical_serial_port
         status = self.get_ymodem_status()

@@ -35,6 +35,7 @@ jobs:
           $tests += 'test_remote_cli'
           $tests += 'test_uart_session'
           $tests += 'test_remote_shared_modbus'
+          $tests += 'test_remote_shared_serial'
           $tests += 'test_serial_protocol_buffer'
           $tests += 'test_serial_exchange'
           $tests += 'test_remote_offline_identity'

@@ -69,6 +69,7 @@ CAPABILITIES.update({
     'serial_ymodem_status': ('GET', '/api/dash/serial/ymodem/status'),
     'serial_ymodem_trace': ('GET', '/api/dash/serial/ymodem/trace'),
     'serial_ymodem_cancel': ('POST', '/api/dash/serial/ymodem/cancel'),
+    'serial_exchange': ('POST', '/api/dash/serial/exchange'),
     'serial_send': ('POST', '/api/dash/serial/send'),
     'modbus_transaction': ('POST', '/api/dash/modbus/transaction'),
     'modbus_probe': ('POST', '/api/dash/modbus/probe'),

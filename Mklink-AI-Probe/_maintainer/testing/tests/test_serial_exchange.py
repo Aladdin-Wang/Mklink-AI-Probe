@@ -9,7 +9,7 @@ from test_serial_autoreply import ports, wait_for
 def test_exchange_blocks_same_port_and_preserves_neighbor(ports):
     trace = []
     monitor = SerialMonitor([{'port': 'A'}, {'port': 'B'}],
-        protocol_callback=lambda p, d, data, t: trace.append((p, d, data)))
+        chunk_callback=lambda p, d, data, t, mono: trace.append((p, d, data)))
     monitor.start()
     first, second = ports.instances
     result = []

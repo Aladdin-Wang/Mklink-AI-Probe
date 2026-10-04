@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 28  # SystemView capture cursors detect reset and history loss.
+PROTOCOL = 29  # Shared serial exchange uses the existing bounded reader.
 VERSION = "0.3.0"
 
 

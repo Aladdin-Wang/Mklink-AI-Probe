@@ -742,6 +742,12 @@ try:
         port: str
         path: str = Field(min_length=1, max_length=4096)
 
+    class SerialExchangeRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str = Field(min_length=1, max_length=255)
+        data: str = Field(max_length=8192)
+        timeout: float = Field(default=.1, ge=0, le=5, strict=True, allow_inf_nan=False)
+
     class SerialFileRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         port: str
@@ -2977,6 +2983,20 @@ def create_app(
                 detail="Serial input is locked by an active YMODEM transfer",
             )
         raise HTTPException(status_code=500, detail=f"Failed to send to {port}")
+
+    @app.post('/api/dash/serial/exchange')
+    async def serial_exchange(body: SerialExchangeRequest):
+        try:
+            data = bytes.fromhex(body.data)
+            result = await asyncio.to_thread(get_managers()['serial'].exchange,
+                                             body.port, data, body.timeout)
+            return {'data': result.hex(), 'bytes': len(result)}
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except (OSError, BufferError) as error:
+            raise HTTPException(502, f'{error}; write result may be unknown, no retry') from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
     @app.post("/api/dash/serial/ymodem/start")
     async def serial_ymodem_start(request: Request, port: str = Query(...), filename: str = Query(...)):
