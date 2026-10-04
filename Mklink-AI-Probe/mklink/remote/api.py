@@ -704,7 +704,15 @@ try:
         HTTPException, Query, Body, Request, File, UploadFile,
     )
     from fastapi.middleware.cors import CORSMiddleware  # noqa: F401
-    from pydantic import BaseModel, StrictInt         # noqa: F401
+    from pydantic import BaseModel, StrictInt, StrictBool  # noqa: F401
+
+    class ModbusTransactionRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        fc: StrictInt
+        start: StrictInt
+        quantity: StrictInt | None = None
+        values: list[StrictInt | StrictBool] | None = None
+        slave: StrictInt | None = None
 except ImportError:
     pass
 
@@ -3056,12 +3064,7 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(e))
 
     @app.post("/api/dash/modbus/transaction")
-    async def modbus_transaction(
-        fc: int = Body(...),
-        start: int = Body(...),
-        quantity: int | None = Body(default=None),
-        values: list[int | bool] | None = Body(default=None),
-    ):
+    async def modbus_transaction(body: ModbusTransactionRequest):
         mm = get_managers()["modbus"]
         if not mm.running:
             raise HTTPException(status_code=400, detail="Modbus not connected")
@@ -3069,9 +3072,7 @@ def create_app(
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(
                 None,
-                lambda: mm.transaction(
-                    fc, start, quantity=quantity, values=values
-                ),
+                lambda: mm.transaction(**body.model_dump()),
             )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))

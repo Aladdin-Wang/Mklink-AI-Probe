@@ -60,6 +60,38 @@ def test_worker_serializes_concurrent_callers_on_one_io_thread():
     assert len(client.thread_ids) == 1
 
 
+def test_queued_slave_override_is_local_to_each_worker_task():
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    class Client:
+        def read_holding_registers(self, address, count, slave):
+            calls.append((address, slave, threading.get_ident()))
+            if address == 0:
+                entered.set()
+                assert release.wait(3)
+            return [slave]
+    worker = ModbusWorker(Client(), slave=7)
+    worker.start()
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            first = pool.submit(worker.execute, 3, 0, quantity=1, slave=8)
+            try:
+                assert entered.wait(1)
+                second = pool.submit(worker.execute, 3, 1, quantity=1, slave=9)
+                default = pool.submit(worker.execute, 3, 2, quantity=1)
+                assert worker.slave == 7
+            finally:
+                release.set()
+            assert [first.result(), second.result(), default.result()] == [[8], [9], [7]]
+    finally:
+        release.set()
+        worker.stop()
+    assert {(address, slave) for address, slave, _ in calls} == {(0, 8), (1, 9), (2, 7)}
+    assert len({thread for _, _, thread in calls}) == 1
+    assert not worker.worker_alive
+
+
 @pytest.mark.parametrize(
     ("fc", "quantity", "values", "message"),
     [

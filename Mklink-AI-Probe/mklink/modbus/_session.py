@@ -22,6 +22,12 @@ WRITE_LIMITS = {5: 1, 6: 1, 15: 1968, 16: 123}
 SUPPORTED_FUNCTIONS = frozenset(READ_LIMITS | WRITE_LIMITS)
 
 
+def validate_slave(slave: int) -> int:
+    if type(slave) is not int or not 1 <= slave <= 247:
+        raise ValueError('Slave address must be in the range 1..247')
+    return slave
+
+
 @dataclass(slots=True)
 class _Task:
     operation: Callable[[], Any]
@@ -211,28 +217,30 @@ class ModbusWorker:
         *,
         quantity: int | None = None,
         values: list[int | bool] | None = None,
+        slave: int | None = None,
     ) -> list[int | bool]:
         fc, start, quantity, values = validate_transaction(
             fc, start, quantity=quantity, values=values
         )
+        target = validate_slave(self._slave if slave is None else slave)
 
         def operation() -> list[int | bool]:
             if fc == 1:
-                return self._client.read_coils(start, quantity, self._slave)
+                return self._client.read_coils(start, quantity, target)
             if fc == 2:
-                return self._client.read_discrete_inputs(start, quantity, self._slave)
+                return self._client.read_discrete_inputs(start, quantity, target)
             if fc == 3:
-                return self._client.read_holding_registers(start, quantity, self._slave)
+                return self._client.read_holding_registers(start, quantity, target)
             if fc == 4:
-                return self._client.read_input_registers(start, quantity, self._slave)
+                return self._client.read_input_registers(start, quantity, target)
             if fc == 5:
-                self._client.write_coil(start, values[0], self._slave)
+                self._client.write_coil(start, values[0], target)
             elif fc == 6:
-                self._client.write_register(start, values[0], self._slave)
+                self._client.write_register(start, values[0], target)
             elif fc == 15:
-                self._client.write_coils(start, values, self._slave)
+                self._client.write_coils(start, values, target)
             else:
-                self._client.write_registers(start, values, self._slave)
+                self._client.write_registers(start, values, target)
             return list(values)
 
         return list(self._submit(operation))

@@ -292,7 +292,9 @@ def build_server():
         Acquisition start with {} subscribes if already running; new settings require an idle manager.
         Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
         or Modbus port/slave/registers settings. serial_send accepts port/data/hex; modbus_transaction
-        accepts fc/start/quantity/values and uses the connected slave. These explicit sends share the
+        accepts fc/start/quantity/values and optional slave (integer 1..247, defaults to the connected
+        slave). The override affects only this request. Unknown fields are rejected; per-request
+        timeout/retries are not supported. These explicit sends share the
         existing worker, may be issued by borrowers, and never retry an unknown result. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
         """

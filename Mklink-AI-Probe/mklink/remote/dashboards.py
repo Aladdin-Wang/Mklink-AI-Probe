@@ -3246,14 +3246,13 @@ class ModbusStreamManager:
             raise RuntimeError("Previous Modbus session is still active; stop first")
         from mklink.modbus._client import ModbusClient
         from mklink.modbus._format import RegisterSpec
-        from mklink.modbus._session import ModbusWorker
+        from mklink.modbus._session import ModbusWorker, validate_slave
         from mklink.usb_interfaces import canonical_serial_port
 
         settings = dict(connection)
         settings['port'] = canonical_serial_port(settings['port'])
         settings['parity'] = str(settings.get('parity', 'N')).upper()
-        if isinstance(slave, bool) or not isinstance(slave, int) or not 1 <= slave <= 247:
-            raise ValueError("Slave address must be in the range 1..247")
+        validate_slave(slave)
         limits = {'baudrate': (9600, 300, 4000000), 'retries': (0, 0, 5)}
         for key, (default, low, high) in limits.items():
             value = settings.get(key, default)
@@ -3409,14 +3408,16 @@ class ModbusStreamManager:
         *,
         quantity: int | None = None,
         values: list[int | bool] | None = None,
+        slave: int | None = None,
     ) -> dict[str, Any]:
         with self._lifecycle_lock:
             if not self._worker or not self._running or self._stopping:
                 raise RuntimeError("Modbus not connected or stopping")
-            worker, slave = self._worker, self._slave
+            worker = self._worker
+            target = self._slave if slave is None else slave
         started = time.perf_counter()
         result_values = worker.execute(
-            fc, start, quantity=quantity, values=values
+            fc, start, quantity=quantity, values=values, slave=target
         )
         with self._event_lock:
             self._transaction_id += 1
@@ -3425,7 +3426,7 @@ class ModbusStreamManager:
             "event": "transaction",
             "id": transaction_id,
             "timestamp": time.time(),
-            "slave": slave,
+            "slave": target,
             "fc": fc,
             "start": start,
             "quantity": quantity if quantity is not None else len(result_values),

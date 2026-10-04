@@ -319,14 +319,14 @@ def test_uart_lock_wait_does_not_block_other_client_heartbeat(monkeypatch, tmp_p
     def hold_io_lock():
         with getattr(manager, lock_name):
             entered.set()
-            assert release.wait(3)
+            assert release.wait(10)
             if path == 'modbus/loop/start':
                 # A concurrent close finishes before the waiting loop request.
                 manager._running = False
     holder = threading.Thread(target=hold_io_lock)
     holder.start()
     assert entered.wait(1)
-    timer = threading.Timer(1, release.set)
+    timer = threading.Timer(5, release.set)
     async def scenario():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                 base_url='http://127.0.0.1:8765', headers={'X-Auth-Token': 'test-secret'}) as http:
@@ -336,12 +336,12 @@ def test_uart_lock_wait_does_not_block_other_client_heartbeat(monkeypatch, tmp_p
                 kwargs = {'params': {'port': 'TEST'}, 'files': {'file': ('test.bin', b'one')}}
             timer.start()
             pending = asyncio.create_task(http.request(method, '/api/dash/' + path, **kwargs))
-            started = time.monotonic()
             try:
-                assert await asyncio.to_thread(called.wait, .5)
-                await asyncio.sleep(.02)
+                assert await asyncio.to_thread(called.wait, 3)
                 assert (await http.post('/_runtime/heartbeat', json={'session_id': session})).status_code == 200
-                assert time.monotonic() - started < .5
+                # Prove progress while the manager lock is still held. The
+                # watchdog only breaks a deadlock; CI scheduling is not a SLA.
+                assert not release.is_set()
                 assert not pending.done()
             finally:
                 release.set()
@@ -624,3 +624,30 @@ def test_failed_uart_start_never_registers_an_owner(uart_app, monkeypatch):
     assert response.status_code == 409, response.text
     assert not control.created_streams and not control.sessions[owner].streams
     assert not managers['modbus'].worker_alive
+
+
+def test_modbus_per_request_slave_does_not_change_the_shared_connection(uart_app):
+    client, control, managers, factory, _ = uart_app
+    owner = uart_attach(client)
+    assert call(client, owner, 'modbus_start', {'port': 'TEST', 'slave': 7, 'registers': []}).status_code == 200
+    for slave in (8, None, 9, None):
+        arguments = {'fc': 6, 'start': 2, 'values': [17]}
+        if slave is not None:
+            arguments['slave'] = slave
+        result = call(client, owner, 'modbus_transaction', arguments)
+        assert result.status_code == 200, result.text
+        assert result.json()['slave'] == (slave or 7)
+    assert factory.instances[0].calls == [('write', 2, 17, slave) for slave in (8, 7, 9, 7)]
+    assert managers['modbus'].get_status()['slave'] == 7
+
+
+@pytest.mark.parametrize('extra', [{'slvae': 8}, {'timeout': .15}, {'retries': 0},
+                                 {'slave': True}, {'slave': 0}, {'slave': 248}, {'slave': '8'}])
+def test_modbus_transaction_rejects_unsupported_or_invalid_settings_before_io(uart_app, extra):
+    client, _, _, factory, _ = uart_app
+    owner = uart_attach(client)
+    assert call(client, owner, 'modbus_start', {'port': 'TEST', 'registers': []}).status_code == 200
+    arguments = {'fc': 6, 'start': 2, 'values': [17], **extra}
+    assert call(client, owner, 'modbus_transaction', arguments).status_code in (400, 422)
+    assert client.post('/api/dash/modbus/transaction', json=arguments).status_code in (400, 422)
+    assert factory.instances[0].calls == []
