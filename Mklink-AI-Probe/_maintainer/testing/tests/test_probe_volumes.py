@@ -56,3 +56,21 @@ def test_lobby_never_resolves_a_disk_even_with_a_matching_alias(monkeypatch, tmp
     monkeypatch.setattr(volumes, 'volume_inventory', lambda: pytest.fail('Lobby inspected hardware volumes'))
     with pytest.raises(ConnectionError, match='Select a physical probe'):
         find_microkeen_disk()
+
+
+@pytest.mark.skipif(__import__('os').name != 'nt', reason='Windows volume inventory')
+def test_minimal_path_uses_system_powershell_without_selecting_a_drive(monkeypatch):
+    import subprocess
+    from pathlib import Path
+    from types import SimpleNamespace
+    monkeypatch.setattr(volumes.shutil, 'which', lambda _: None)
+    monkeypatch.setenv('SystemRoot', 'X:/Windows')
+    calls = []
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout='[]')
+    monkeypatch.setattr(subprocess, 'run', run)
+    assert volumes.volume_inventory() == []
+    assert Path(calls[0][0][0]) == Path('X:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')
+    assert calls[0][1]['creationflags'] == subprocess.CREATE_NO_WINDOW
+    assert calls[0][1]['encoding'] == 'utf-8-sig'

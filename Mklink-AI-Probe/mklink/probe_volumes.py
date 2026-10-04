@@ -37,8 +37,14 @@ def volume_inventory():
     if os.name != 'nt':
         raise RuntimeError('Identity-bound MSC discovery is currently supported on Windows only')
     script = Path(__file__).with_name('windows_probe_volumes.ps1')
+    powershell = shutil.which('pwsh') or shutil.which('powershell.exe')
+    if not powershell:
+        system_root = os.environ.get('SystemRoot') or os.environ.get('WINDIR')
+        if not system_root:
+            raise RuntimeError('Windows system directory unavailable; no disk selected')
+        powershell = str(Path(system_root) / 'System32' / 'WindowsPowerShell' / 'v1.0' / 'powershell.exe')
     try:
-        result = subprocess.run([shutil.which('pwsh') or 'powershell.exe', '-NoProfile', '-NonInteractive',
+        result = subprocess.run([powershell, '-NoProfile', '-NonInteractive',
                                  '-ExecutionPolicy', 'Bypass', '-File', str(script)],
                                 capture_output=True, encoding='utf-8-sig', errors='replace', timeout=20,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
