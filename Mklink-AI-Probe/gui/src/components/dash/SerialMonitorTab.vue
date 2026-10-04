@@ -69,6 +69,9 @@
       :port="portName" :frame="latestFrames[portName]" @update:model-value="editAutomation"
     />
 
+    <SerialRecordingPanel :status="recording" :running="running && !stopping" :port="portName"
+      :busy="recordingBusy" :error="recordingError" @start="startRecording" @stop="stopRecording" />
+
     <div class="serial-toolbar">
       <div class="view-mode-switch" role="group" :aria-label="tr('显示模式', 'Display mode')">
         <button
@@ -177,7 +180,10 @@ import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 import { API_BASE } from '../../lib/runtimeEndpoint'
 import SerialAutomationPanel, { type SerialAutomation, type SerialParsedFrame } from './SerialAutomationPanel.vue'
 
+import SerialRecordingPanel, { type SerialRecordingStatus, type SerialRecordingRequest } from './SerialRecordingPanel.vue'
+
 interface SerialStatus {
+  recording?: SerialRecordingStatus
   running?: boolean
   ports?: Record<string, string>
   config?: Array<Record<string, unknown>>
@@ -266,6 +272,8 @@ const portsLoaded = ref(false)
 const stats = ref({ rx_count: 0, tx_count: 0, rx_bytes: 0, tx_bytes: 0, bytes_per_sec: 0 })
 const portStatuses = ref<Record<string, string>>({})
 const runtimeError = ref('')
+const recording = ref<SerialRecordingStatus>({ state: 'idle', active: false })
+const recordingBusy = ref(false), recordingError = ref('')
 const automation = ref<SerialAutomation>({ profile: null, rules: [] })
 const automationEdited = ref(false)
 const latestFrames = ref<Record<string, SerialParsedFrame>>({})
@@ -376,6 +384,7 @@ function applyStatus(status: SerialStatus): void {
     observedSerialSession = status.session
     runtimeError.value = ''
   }
+  if (status.recording) recording.value = status.recording
   running.value = status.running === true
   if (running.value || !automationEdited.value) {
     if (status.automation) automation.value = status.automation
@@ -592,6 +601,24 @@ async function cancelYmodem(): Promise<void> {
     toast.error(tr('取消 YMODEM 失败：', 'Failed to cancel YMODEM: ') + runtimeError.value)
   }
 }
+
+async function changeRecording(action: 'start' | 'stop', request?: SerialRecordingRequest): Promise<void> {
+  if (recordingBusy.value) return
+  recordingBusy.value = true
+  recordingError.value = ''
+  try {
+    recording.value = await requestJson(`/api/dash/serial/recording/${action}`, {
+      method: 'POST', ...(request ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) } : {}),
+    })
+  } catch (caught) {
+    recordingError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    await refreshStatus()
+    recordingBusy.value = false
+  }
+}
+function startRecording(request: SerialRecordingRequest): Promise<void> { return changeRecording('start', request) }
+function stopRecording(): Promise<void> { return changeRecording('stop') }
 
 async function refreshStatus(): Promise<void> {
   try {

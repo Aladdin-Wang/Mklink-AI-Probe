@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T09:44:22+00:00`
+- 更新时间：`2026-10-04T09:52:54+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared continuous serial recording after e0ea239; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; shared recording GUI after ad91fa3; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第五十一批共享持续日志后台已接入：复用SerialCapture回调/FileLogger/现有字节历史，单文件消费者无额外串口读取，磁盘失败及历史溢出可见；停止先停producer并刷新再排空，超时保留worker禁止替换，终态不被退出竞争覆写。多客户端重复启动与已有路径拒绝，MCP断开继续记录，协议22/UART14项。扩大2424通过2跳过，退出竞争修复后相关177通过。真实Edge双窗口/MCP/实际CLI+模拟OS通过，AI断开后AA2C仍记录，原始字节各一次，所有句柄释放。未改GUI源码，沿用此前Web构建；主GUI日志控制面板下一批接入，再补发送队列并删除旧Dashboard。e0ea239精确CI1647/GUI224/类型构建/feedback通过，本批精确CI待核对。旧500ms心跳CI时延原因未定位。不改固件/WinUSB，不合并发布。
+- 当前任务：持续循环评审验证。第五十二批主GUI共享日志面板接入既有状态轮询，无新轮询/浏览器日志队列。支持后台新文件TXT/CSV、全部/当前端口、MiB轮转、停止保存，显示共享状态和错误。新增3GUI回归，相关17通过、完整810通过；最终主题变量调整后类型/生产构建通过。真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI开始/另一窗口停止、AI开始同步两窗口、AI断开继续记录、原始字节各一次/全释放、已有文件GUI报错且不变。ad91fa3精确CI后端1662/GUI224/类型构建/feedback通过，本批待核对。下一步共享发送队列/广播/原始文件发送后删除旧Dashboard；继续未完成架构与实机验收，不改固件/WinUSB，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第51节：第五十一批共享持续日志后台已接入：复用SerialCapture回调/FileLogger/现有字节历史，单文件消费者无额外串口读取，磁盘失败及历史溢出可见；停止先停producer并刷新再排空，超时保留worker禁止替换，终态不被退出竞争覆写。多客户端重复启动与已有路径拒绝，MCP断开继续记录，协议22/UART14项。扩大2424通过2跳过，退出竞争修复后相关177通过。真实Edge双窗口/MCP/实际CLI+模拟OS通过，AI断开后AA2C仍记录，原始字节各一次，所有句柄释放。未改GUI源码，沿用此前Web构建；主GUI日志控制面板下一批接入，再补发送队列并删除旧Dashboard。e0ea239精确CI1647/GUI224/类型构建/feedback通过，本批精确CI待核对。旧500ms心跳CI时延原因未定位。不改固件/WinUSB，不合并发布。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第52节：第五十二批主GUI共享日志面板接入既有状态轮询，无新轮询/浏览器日志队列。支持后台新文件TXT/CSV、全部/当前端口、MiB轮转、停止保存，显示共享状态和错误。新增3GUI回归，相关17通过、完整810通过；最终主题变量调整后类型/生产构建通过。真实Edge双窗口/MCP/实际CLI+模拟OS验证GUI开始/另一窗口停止、AI开始同步两窗口、AI断开继续记录、原始字节各一次/全释放、已有文件GUI报错且不变。ad91fa3精确CI后端1662/GUI224/类型构建/feedback通过，本批待核对。下一步共享发送队列/广播/原始文件发送后删除旧Dashboard；继续未完成架构与实机验收，不改固件/WinUSB，不合并发布。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI；主GUI接入共享日志开始/停止/状态，复用现有轮询，无第二日志/reader；多窗口MCP联测。补共享发送队列后删除旧独占Dashboard。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛并观察旧CI时延问题。不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI；推进共享发送队列，优先复用reader现有自动应答调度，无另起定时器/发送线程，补广播/原始文件发送后将serial dashboard指向主GUI并删旧同步HTTP/SSE服务。继续协议切换/循环/YMODEM归属、请求取消、Agent、日志注释非有限值一致性、真机异常/长稳与NSIS。保持500ms心跳门槛及诊断。不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
