@@ -64,6 +64,7 @@ class SerialMonitor:
         # event and callback ordering without a second serial consumer.
         self._protocol_handoffs: dict[str, bytearray] = {}
         self._pending_replies: dict[str, list[tuple[float, int, bytes]]] = {}
+        self._send_sequences = {}
         self._reply_sequence = 0
         self._reply_generation = {cfg['port']: 0 for cfg in ports}
 
@@ -89,6 +90,7 @@ class SerialMonitor:
                 if self._protocol_queues:
                     raise RuntimeError('Previous serial protocol is still active')
                 self._pending_replies.clear()
+                self._send_sequences.clear()
                 self._protocol_handoffs.clear()
                 for port in self._reply_generation:
                     self._reply_generation[port] += 1
@@ -173,6 +175,61 @@ class SerialMonitor:
         self._record_sent(port, data)
         return True
 
+    def start_sequence(self, port, commands, interval_ms=1000, repeat=1):
+        from mklink.serial._sequence import SendSequence
+        sequence = SendSequence(commands, interval_ms, repeat)
+        port = canonical_serial_port(port)
+        with self._protocol_lock:
+            if self._stop_event.is_set() or port in self._protocol_queues:
+                raise RuntimeError('Serial port is stopping or transferring a protocol')
+            with self._lock:
+                sp = self._serial_ports.get(port)
+                if sp is None or not sp.is_open:
+                    raise RuntimeError('Serial port is not open')
+            previous = self._send_sequences.get(port)
+            if previous is not None and previous.active:
+                raise RuntimeError('Send sequence is already active on this port')
+            self._send_sequences[port] = sequence
+            return sequence.status()
+
+    def stop_sequence(self, port):
+        port = canonical_serial_port(port)
+        with self._protocol_lock:
+            sequence = self._send_sequences.get(port)
+            if sequence is None:
+                return {'state': 'idle', 'active': False}
+            sequence.cancel('Stopped by client')
+            return sequence.status()
+
+    def sequence_status(self):
+        with self._protocol_lock:
+            return {port: sequence.status() for port, sequence in self._send_sequences.items()}
+
+    def _advance_sequence(self, port):
+        with self._protocol_lock:
+            sequence = self._send_sequences.get(port)
+            if sequence is None or not sequence.active:
+                return
+            if self._stop_event.is_set() or port in self._protocol_queues:
+                sequence.cancel('Serial stopped or protocol started')
+                return
+            if sequence.due > time.monotonic():
+                return
+            data = sequence.commands[sequence.sent % len(sequence.commands)]
+            if not self._write_ordinary_locked(port, data):
+                sequence.cancel('Write failed; result may be partial, no retry', failed=True)
+                raise OSError(sequence.error)
+            sequence.sent += 1
+        # As for auto replies, raw history callbacks run outside protocol admission.
+        try:
+            self._record_sent(port, data)
+        except Exception as error:
+            with self._protocol_lock:
+                sequence.cancel(str(error) or type(error).__name__, failed=True)
+            raise
+        with self._protocol_lock:
+            sequence.finish_send()
+
     def send_ymodem(
         self,
         port: str,
@@ -203,6 +260,9 @@ class SerialMonitor:
                 if serial_port is None or not serial_port.is_open:
                     raise RuntimeError(f"serial port {port} is not open")
             self._pending_replies.pop(port, None)
+            sequence = self._send_sequences.get(port)
+            if sequence is not None:
+                sequence.cancel('Protocol transfer started')
             self._reply_generation[port] += 1
             self._protocol_queues[port] = receive_queue
 
@@ -334,10 +394,12 @@ class SerialMonitor:
         parser = self._parsers.get(port_name)
         line_buffer = bytearray()
         observed_generation = self._reply_generation[port_name]
+        reader_error = ''
 
         try:
             while not self._stop_event.is_set():
                 self._drain_auto_replies(port_name)
+                self._advance_sequence(port_name)
                 data = sp.read_available()
                 with self._protocol_lock:
                     generation = self._reply_generation[port_name]
@@ -383,11 +445,15 @@ class SerialMonitor:
                     self._observation_times[port_name] = time.monotonic()
 
         except Exception as e:
+            reader_error = str(e) or type(e).__name__
             with self._lock:
                 self._port_statuses[port_name] = f"error: {e}"
         finally:
             with self._protocol_lock:
                 self._pending_replies.pop(port_name, None)
+                sequence = self._send_sequences.get(port_name)
+                if sequence is not None:
+                    sequence.cancel(reader_error or 'Serial stopped', failed=bool(reader_error))
             sp.close()
             with self._lock:
                 self._serial_ports.pop(port_name, None)

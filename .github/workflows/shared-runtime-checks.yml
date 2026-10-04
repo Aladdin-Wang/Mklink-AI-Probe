@@ -46,6 +46,7 @@ jobs:
           $tests += 'test_serial_automation'
           $tests += 'test_serial_idle'
           $tests += 'test_serial_recording'
+          $tests += 'test_serial_sequence'
           $tests += 'test_stream_delivery'
           $tests += 'test_stream_hub'
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")

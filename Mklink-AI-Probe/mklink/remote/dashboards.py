@@ -2741,6 +2741,7 @@ class SerialStreamManager:
         self._latest_frames: dict[str, dict] = {}
         self._serial_session: str | None = None
         self._idle_cutoffs: dict[str, float] = {}
+        self._send_sequences = {}
         self._recorder = None
         self._stopping = False
         self._rx_count = 0
@@ -2852,6 +2853,7 @@ class SerialStreamManager:
         session = self._serial_session
         self._history.reset(session)
         self._idle_cutoffs = {}
+        self._send_sequences = {}
         self._stopping = False
 
         def publish_bytes(data: bytes, direction: str, port: str, first_time: float, last_time: float):
@@ -3044,6 +3046,7 @@ class SerialStreamManager:
             if monitor is not None:
                 monitor.stop()
                 self._idle_cutoffs = monitor.observation_times
+                self._send_sequences = monitor.sequence_status()
             if self._byte_batcher is not None:
                 self._byte_batcher.close()
                 self._byte_batcher = None
@@ -3065,6 +3068,19 @@ class SerialStreamManager:
                 self._recorder.stop()
             self._bridge.put({"event": "stopped"})
             self._bridge.stop()
+
+    def start_sequence(self, port, commands, interval_ms=1000, repeat=1):
+        with self._lifecycle_lock:
+            if not self._running or self._stopping or self._monitor is None:
+                raise RuntimeError('Serial monitor is not running')
+            return self._monitor.start_sequence(port, commands, interval_ms, repeat)
+
+    def stop_sequence(self, port):
+        from mklink.usb_interfaces import canonical_serial_port
+        with self._lifecycle_lock:
+            if self._monitor is not None:
+                return self._monitor.stop_sequence(port)
+            return dict(self._send_sequences.get(canonical_serial_port(port), {'state': 'idle', 'active': False}))
 
     def send(self, port: str, data: bytes) -> bool:
         with self._lifecycle_lock:
@@ -3276,6 +3292,7 @@ class SerialStreamManager:
             },
             "stream": self._stream_hub.stats().__dict__ if self._stream_hub else None,
             "ymodem": self.get_ymodem_status(),
+            "send_sequences": self._monitor.sequence_status() if self._monitor else copy.deepcopy(self._send_sequences),
             "recording": self._recorder.status() if self._recorder else {"state": "idle", "active": False},
         }
 

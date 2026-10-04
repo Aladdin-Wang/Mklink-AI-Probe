@@ -44,7 +44,7 @@ def test_uart_lobby_attach_ignores_target_locks_and_never_connects(runtime):
     result = client.portal.call(scenario)
     assert result['scope'] == 'uart' and result['attached']
     assert result['capabilities'] == ['modbus_history', 'modbus_probe', 'modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
-                                     'serial_history', 'serial_recording_start', 'serial_recording_stop', 'serial_send', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
+                                     'serial_history', 'serial_recording_start', 'serial_recording_stop', 'serial_send', 'serial_sequence_start', 'serial_sequence_stop', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
     assert app.state.mklink_state['device'] is None and calls == []
     session = result['session_id']
     assert call(client, session, 'uart_ports').json() == [{'device': 'TEST_UART'}]
@@ -311,7 +311,7 @@ def test_uart_lock_wait_does_not_block_other_client_heartbeat(monkeypatch, tmp_p
     manager = dashboards.get_managers()[path.split('/')[0]]
     manager._running = True
     if path.startswith('serial/'):
-        manager._monitor = SimpleNamespace(port_status={}, send=lambda *args: True)
+        manager._monitor = SimpleNamespace(port_status={}, send=lambda *args: True, sequence_status=lambda: {})
     called = threading.Event()
     method_name = {'serial/send': 'send', 'serial/status': 'get_status',
                    'serial/ymodem/status': 'get_ymodem_status', 'serial/ymodem/cancel': 'cancel_ymodem',
@@ -426,6 +426,7 @@ def uart_app(client_factory, monkeypatch, tmp_path):
         def __init__(self, ports, **kwargs):
             self.port_status = {config['port']: 'open' for config in ports}
             self.observation_times = {config['port']: time.monotonic() for config in ports}
+        def sequence_status(self): return {}
         def start(self): pass
         def stop(self): pass
         def send(self, port, data):

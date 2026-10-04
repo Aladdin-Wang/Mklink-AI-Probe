@@ -311,6 +311,12 @@ def build_server():
         HTTP result; Modbus still honors the connection's configured protocol retries, which
         can retransmit a write when its response is lost. Disconnect
         only detaches. Unsupported capabilities fail without a direct serial fallback.
+        serial_sequence_start accepts port, commands [{data, hex?}], interval_ms 20..3600000,
+        repeat 1..1000000 (0 runs until stopped). At most 64 commands, each 1..4096 bytes,
+        total 64 KiB and the normal RPC body limit. The existing reader sends in order;
+        serial_status.send_sequences reports per-port sent counts and state. One sequence
+        per port; serial_sequence_stop accepts port. Client disconnect keeps it running.
+        Stop/protocol handoff cancels it. Failed/possibly partial writes are never retried.
         serial_recording_start starts one shared backend file logger: path (new file on backend
         machine), format txt/csv, max_size rotation bytes (0 disables), optional configured ports.
         It survives client disconnects; serial_status.recording reports running/stopping/completed/failed

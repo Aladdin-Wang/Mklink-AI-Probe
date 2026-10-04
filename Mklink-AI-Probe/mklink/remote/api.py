@@ -717,6 +717,22 @@ try:
         or_mask: StrictInt | None = None
         write_start: StrictInt | None = None
 
+    class SerialSequenceCommand(BaseModel):
+        model_config = {'extra': 'forbid'}
+        data: str
+        hex: StrictBool = False
+
+    class SerialSequenceRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+        commands: list[SerialSequenceCommand]
+        interval_ms: StrictInt = 1000
+        repeat: StrictInt = 1
+
+    class SerialSequenceStopRequest(BaseModel):
+        model_config = {'extra': 'forbid'}
+        port: str
+
     class SerialRecordingRequest(BaseModel):
         model_config = {'extra': 'forbid'}
         path: str
@@ -3004,6 +3020,19 @@ def create_app(
             raise HTTPException(400, str(error)) from error
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/sequence/start')
+    async def serial_sequence_start(body: SerialSequenceRequest):
+        try:
+            return await asyncio.to_thread(get_managers()['serial'].start_sequence, **body.model_dump())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post('/api/dash/serial/sequence/stop')
+    async def serial_sequence_stop(body: SerialSequenceStopRequest):
+        return await asyncio.to_thread(get_managers()['serial'].stop_sequence, body.port)
 
     @app.post('/api/dash/serial/recording/start')
     async def serial_recording_start(body: SerialRecordingRequest):

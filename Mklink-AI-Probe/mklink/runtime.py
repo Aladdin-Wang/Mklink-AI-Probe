@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 22  # Shared serial recording start/stop and status.
+PROTOCOL = 23  # Reader-owned serial command sequences.
 VERSION = "0.3.0"
 
 

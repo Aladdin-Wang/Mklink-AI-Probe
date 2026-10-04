@@ -381,6 +381,7 @@ def test_serial_monitor_returns_final_ymodem_chunk_banner_to_terminal(monkeypatc
 def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypatch):
     async def scenario():
         class FakeMonitor:
+            def sequence_status(self): return {}
             observation_times = {}
             worker_alive = False
 
@@ -441,6 +442,7 @@ def test_serial_stream_manager_publishes_exact_chunks_and_counts_bytes(monkeypat
 
 
 class _YModemMonitor:
+    def sequence_status(self): return {}
     observation_times = {}
     worker_alive = False
     mode = "complete"
@@ -667,6 +669,7 @@ def test_serial_stream_manager_stop_retains_lifecycle_while_worker_is_alive(
     release = threading.Event()
 
     class StuckMonitor:
+        def sequence_status(self): return {}
         observation_times = {}
         worker_alive = False
 
@@ -844,6 +847,7 @@ def test_serial_ymodem_api_enforces_upload_boundaries_and_send_lock(
 
 def test_serial_binary_stream_skips_legacy_formatting_without_sse_clients(monkeypatch):
     class FakeMonitor:
+        def sequence_status(self): return {}
         observation_times = {}
         worker_alive = False
 
