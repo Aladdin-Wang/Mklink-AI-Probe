@@ -168,3 +168,85 @@ def test_large_deployment_result_preserves_queryable_summary(deployment, monkeyp
     assert value['status'] == 'deployed' and value['file_count'] == 100
     assert value['files'] == [] and value['truncated']
     assert len(control.jobs.path.read_bytes()) < 16384
+
+
+def test_killed_deployment_is_unknown_and_duplicate_does_not_rewrite(deployment, tmp_path):
+    import os
+    import subprocess
+    import sys
+    import time
+    client, control, disk, config, submit = deployment
+    destination = disk / 'rt-thread.hex'
+    destination.write_bytes(b'original')
+    payload = tmp_path / 'config.json'
+    payload.write_text(json.dumps(config), encoding='utf-8')
+    marker = tmp_path / 'disk-write-completed'
+    staging = tmp_path / 'child-temp'
+    staging.mkdir()
+    child = tmp_path / 'deploy_child.py'
+    child.write_text("""
+import json, sys, threading, shutil
+from pathlib import Path
+from types import SimpleNamespace
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from mklink.runtime_api import install_runtime
+from mklink.remote.resource_manager import ResourceManager
+from mklink.remote.offline_download_api import create_offline_download_router
+import mklink.probes, mklink.probe_volumes, mklink.discovery, mklink.remote.dashboards
+journal, disk, payload, marker = map(Path, sys.argv[1:])
+mklink.probes.inventory = lambda: []
+mklink.probe_volumes.resolve_volume = lambda _: {'root': str(disk)}
+mklink.discovery.find_microkeen_disk = lambda: str(disk)
+mklink.remote.dashboards.get_managers = lambda: {}
+app = FastAPI()
+app.state.mklink_state = {'device': SimpleNamespace(connected=True, port='COM9'),
+                         'project_root': str(disk), 'resource_manager': ResourceManager()}
+control = install_runtime(app, {'port':8765, 'token':'fixture', 'instance_id':'child', 'jobs_path':str(journal)})
+app.include_router(create_offline_download_router(SimpleNamespace(), app.state.mklink_state['resource_manager']))
+original_copy = shutil.copy2
+def copy_and_block(source, target, *args, **kwargs):
+    result = original_copy(source, target, *args, **kwargs)
+    if Path(target) == disk/'rt-thread.hex':
+        marker.write_text('one completed destination write', encoding='utf-8')
+        threading.Event().wait()
+    return result
+shutil.copy2 = copy_and_block
+with TestClient(app, base_url='http://127.0.0.1:8765', headers={'X-Auth-Token':'fixture'}) as client:
+    client.post('/api/offline-download/deploy',
+        data={'request_id':'deployment-one', 'config_json':payload.read_text()},
+        files=[('firmware_files', ('app.hex', b':00000001FF\\n')),
+               ('flm_files', ('algo.flm', b'algorithm'))])
+""", encoding='utf-8')
+    env = dict(os.environ, PYTHONPATH=str(Path.cwd()), TEMP=str(staging), TMP=str(staging), TMPDIR=str(staging))
+    process = subprocess.Popen([sys.executable, str(child), str(control.jobs.path), str(disk), str(payload), str(marker)],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    try:
+        deadline = time.monotonic() + 20
+        while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert marker.exists(), 'deployment did not reach destination write'
+        accepted = json.loads(control.jobs.path.read_text())[0]
+        assert accepted['state'] == 'running'
+        process.kill()
+        process.wait(timeout=10)
+        assert destination.read_bytes() == b':00000001FF\n'
+        backups = list(staging.glob('mklink-offline-staging-*/backup/rt-thread.hex'))
+        assert len(backups) == 1 and backups[0].read_bytes() == b'original'
+        restored = RuntimeJobs(control)
+        control.jobs.jobs.update(restored.jobs)
+        job = client.get('/api/runtime/jobs/' + accepted['job_id']).json()
+        assert job['state'] == 'unknown'
+        timestamp = destination.stat().st_mtime_ns
+        result = submit()
+        assert result.status_code == 500, result.text
+        assert result.json()['detail']['job_id'] == accepted['job_id']
+        assert result.json()['detail']['state'] == 'unknown'
+        assert destination.stat().st_mtime_ns == timestamp
+        assert not (disk / 'Python').exists()
+        assert not control.jobs.tasks
+        assert RuntimeJobs(control).jobs[accepted['job_id']]['state'] == 'unknown'
+    finally:
+        if process.poll() is None: process.kill()
+        process.communicate(timeout=10)
