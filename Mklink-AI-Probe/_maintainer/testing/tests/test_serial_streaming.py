@@ -13,7 +13,7 @@ from mklink.local_resources import local_resource_status, serial_lock_path
 from mklink.remote import dashboards as dashboard_module
 from mklink.remote.api import create_app
 from mklink.remote.dashboards import SerialStreamManager
-from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, StreamType
+from mklink.remote.stream_protocol import SERIAL_RX_BYTES, SERIAL_TX_BYTES, StreamType, decode_serial_payload
 from mklink.serial import _monitor as monitor_module
 from mklink.serial._monitor import SerialEvent, SerialMonitor
 from mklink.serial._port import _PortLock
@@ -24,7 +24,9 @@ class _RecordingHub:
         self.batches = []
 
     def publish(self, payload, *, item_count, flags=0, stream_type=None):
-        self.batches.append((bytes(payload), item_count, flags, stream_type))
+        session, port, data = decode_serial_payload(bytes(payload))
+        assert len(session) == 32 and port
+        self.batches.append((data, item_count, flags, stream_type))
         return len(self.batches)
 
     def stats(self):

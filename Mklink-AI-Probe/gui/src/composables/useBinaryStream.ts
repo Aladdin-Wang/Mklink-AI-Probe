@@ -13,6 +13,7 @@ export interface BinaryStreamClient {
   reset(): void
   configure(capacity: number, channelCount: number): void
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
+  selectSerialPort?(port: string): void
   setWaveformDetail?(enabled: boolean): void
   requestHistorySnapshot?(requestId: number): void
   dispose(): void
@@ -147,10 +148,10 @@ export function useBinaryStream(
         superwatchMetadata.value = message
         break
       case 'serial-lines':
-        serialLines.value = message
+        if (message.port === selectedSerialPort) serialLines.value = message
         break
       case 'serial-terminal':
-        serialTerminal.value = message
+        if (message.port === selectedSerialPort) serialTerminal.value = message
         break
       case 'error':
         error.value = message.message
@@ -158,6 +159,7 @@ export function useBinaryStream(
     }
   }
 
+  let selectedSerialPort = ''
   const createClient = options.createClient ?? (clientOptions => new StreamClient(clientOptions))
   const client = createClient({
     url: streamUrl(stream),
@@ -170,6 +172,13 @@ export function useBinaryStream(
     onState,
     onWorkerMessage,
   })
+
+  function selectSerialPort(port: string): void {
+    selectedSerialPort = port
+    serialLines.value = null
+    serialTerminal.value = null
+    client.selectSerialPort?.(port)
+  }
 
   function start(): void {
     error.value = null
@@ -255,6 +264,7 @@ export function useBinaryStream(
     stop,
     reset,
     configure,
+    selectSerialPort,
     requestVisibleRange,
     setWaveformDetail,
     requestHistorySnapshot,

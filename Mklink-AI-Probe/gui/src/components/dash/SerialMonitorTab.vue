@@ -3,8 +3,8 @@
     <div class="serial-config-row">
       <label>
         <span>{{ tr('端口', 'Port') }}</span>
-        <select v-model="portName" :disabled="running || starting || stopping || ymodemActive || ymodemStarting">
-          <option v-for="port in ports" :key="port.device" :value="port.device">
+        <select v-model="portName" :disabled="starting || stopping || ymodemActive || ymodemStarting">
+          <option v-for="port in selectablePorts" :key="port.device" :value="port.device">
             {{ port.device }}{{ port.description ? ` · ${port.description}` : '' }}
           </option>
         </select>
@@ -227,6 +227,24 @@ const terminalBinary = useBinaryStream('serial', {
 })
 const ports = ref<PortInfo[]>([])
 const portName = ref('')
+const activeConfigs = ref<Array<Record<string, unknown>>>([])
+const selectablePorts = computed(() => running.value
+  ? activeConfigs.value.map(item => ({ device: String(item.port), description: '' })) : ports.value)
+let displayedSource = ''
+watch(portName, port => {
+  logBinary.selectSerialPort(port)
+  terminalBinary.selectSerialPort(port)
+  displayedSource = ''
+  logPanel.value?.clear()
+  terminalPanel.value?.clear()
+  const config = activeConfigs.value.find(item => item.port === port)
+  if (config) {
+    baudrate.value = Number(config.baudrate)
+    databits.value = Number(config.databits)
+    stopbits.value = Number(config.stopbits)
+    parity.value = String(config.parity)
+  }
+}, { flush: 'sync' })
 const baudrate = ref(115200)
 const databits = ref(8)
 const stopbits = ref(1)
@@ -323,7 +341,7 @@ async function refreshPorts(): Promise<void> {
   refreshingPorts.value = true
   try {
     ports.value = await fetchPorts()
-    if (!portName.value || !ports.value.some(port => port.device === portName.value)) {
+    if (!running.value && (!portName.value || !ports.value.some(port => port.device === portName.value))) {
       portName.value = ports.value[0]?.device || ''
     }
   } catch (caught) {
@@ -344,7 +362,8 @@ function applyStatus(status: SerialStatus): void {
       ymodemTimer = setTimeout(pollYmodemStatus, 0)
     }
   }
-  const config = status.config?.[0]
+  activeConfigs.value = status.config || []
+  const config = activeConfigs.value.find(item => item.port === portName.value) || activeConfigs.value[0]
   if (running.value && config) {
     if (typeof config.port === 'string') portName.value = config.port
     if (typeof config.baudrate === 'number') baudrate.value = config.baudrate
@@ -629,12 +648,23 @@ function detachBinaryStreams(): void {
   attachedMode = null
 }
 
+function acceptSerialSource(source: { port: string; session: string }): boolean {
+  if (source.port !== portName.value) return false
+  const key = `${source.session}:${source.port}`
+  if (displayedSource !== key) {
+    displayedSource = key
+    logPanel.value?.clear()
+    terminalPanel.value?.clear()
+  }
+  return true
+}
+
 watch(() => terminalBinary.serialTerminal.value, chunk => {
-  if (viewMode.value === 'terminal' && chunk?.text) terminalPanel.value?.write(chunk.text)
+  if (viewMode.value === 'terminal' && chunk?.text && acceptSerialSource(chunk)) terminalPanel.value?.write(chunk.text)
 })
 
 watch(() => logBinary.serialLines.value, batch => {
-  if (viewMode.value !== 'log' || !batch) return
+  if (viewMode.value !== 'log' || !batch || !acceptSerialSource(batch)) return
   logPanel.value?.append(batch.lines.map(line => ({
     time: line.timestampNs,
     level: line.direction === 'RX' ? 'data' : 'warning',

@@ -12,11 +12,12 @@ SERIAL_BATCH_INTERVAL = 0.02
 class SerialByteBatcher:
     """Preserve byte/direction order while avoiding one WS frame per USB read."""
 
-    def __init__(self, publish: Callable[[bytes, str], None]):
+    def __init__(self, publish: Callable[[bytes, str, str], None]):
         self._publish = publish
         self._lock = threading.Lock()
         self._pending = bytearray()
         self._direction = "RX"
+        self._port = ""
         self._stop = threading.Event()
         self._closed = False
         self._thread = threading.Thread(
@@ -30,13 +31,13 @@ class SerialByteBatcher:
     def start(self) -> None:
         self._thread.start()
 
-    def feed(self, data: bytes, direction: str) -> None:
+    def feed(self, data: bytes, direction: str, port: str) -> None:
         with self._lock:
             if self._closed:
                 return
-            if direction != self._direction:
+            if direction != self._direction or port != self._port:
                 self._flush_locked()
-                self._direction = direction
+                self._direction, self._port = direction, port
             offset = 0
             while offset < len(data):
                 count = min(SERIAL_BATCH_BYTES - len(self._pending), len(data) - offset)
@@ -53,7 +54,7 @@ class SerialByteBatcher:
         if self._pending:
             payload = bytes(self._pending)
             self._pending.clear()
-            self._publish(payload, self._direction)
+            self._publish(payload, self._direction, self._port)
 
     def _run(self) -> None:
         while not self._stop.wait(SERIAL_BATCH_INTERVAL):

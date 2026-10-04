@@ -82,7 +82,7 @@ function binaryClient(kind: 'log' | 'terminal') {
     serialTerminal: shallowRef(kind === 'terminal' ? null : undefined),
     telemetry: shallowRef(null),
     error: shallowRef(null),
-    start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
+    selectSerialPort: vi.fn(), start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
     requestVisibleRange: vi.fn(),
   }
 }
@@ -122,6 +122,24 @@ function ymodemStatus(overrides: Record<string, unknown> = {}) {
 }
 
 describe('SerialMonitorTab', () => {
+  it('selects one live port and rejects delayed messages from the previous selection', async () => {
+    const status = { ...runningStatus(), ports: { TEST_UART: 'open', OTHER: 'open' },
+      config: [...runningStatus().config, { port: 'OTHER', baudrate: 9600, databits: 7, stopbits: 2, parity: 'E' }] }
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(status)))
+    const wrapper = mount(SerialMonitorTab)
+    await vi.waitFor(() => expect(wrapper.get('select').findAll('option')).toHaveLength(2))
+    expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
+    await wrapper.get('select').setValue('OTHER')
+    expect(mocks.terminalBinary.selectSerialPort).toHaveBeenLastCalledWith('OTHER')
+    expect((wrapper.get('[data-testid="serial-baudrate"]').element as HTMLInputElement).value).toBe('9600')
+    mocks.terminalBinary.serialTerminal.value = { type: 'serial-terminal', port: 'TEST_UART', session: 'old', text: 'WRONG' }
+    await flushPromises()
+    expect(mocks.terminalWrites.join('')).not.toContain('WRONG')
+    mocks.terminalBinary.serialTerminal.value = { type: 'serial-terminal', port: 'OTHER', session: 'new', text: 'RIGHT' }
+    await vi.waitFor(() => expect(mocks.terminalWrites.join('')).toContain('RIGHT'))
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.stubGlobal('localStorage', new MemoryStorage())
     mocks.logBinary = binaryClient('log')
@@ -173,7 +191,7 @@ describe('SerialMonitorTab', () => {
     expect(mocks.logBinary.start).not.toHaveBeenCalled()
 
     mocks.terminalBinary.serialTerminal.value = {
-      type: 'serial-terminal', sequence: 1n, text: '\u001b[31mprompt> ',
+      type: 'serial-terminal', port: 'TEST_UART', session: '11'.repeat(16), sequence: 1n, text: '\u001b[31mprompt> ',
     }
     await vi.waitFor(() => expect(mocks.terminalWrites.join('')).toContain('\u001b[31mprompt> '))
 
@@ -193,7 +211,7 @@ describe('SerialMonitorTab', () => {
     expect(wrapper.find('[data-testid="serial-save-log"]').exists()).toBe(true)
 
     mocks.logBinary.serialLines.value = {
-      type: 'serial-lines', sequence: 2n,
+      type: 'serial-lines', port: 'TEST_UART', session: '11'.repeat(16), sequence: 2n,
       lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
     }
     await vi.waitFor(() => expect(wrapper.find('[data-testid="serial-save-log"]').attributes('disabled')).toBeUndefined())
@@ -274,7 +292,7 @@ describe('SerialMonitorTab', () => {
 
     await wrapper.get('[data-testid="serial-log-mode"]').trigger('click')
     mocks.logBinary.serialLines.value = {
-      type: 'serial-lines', sequence: 1n,
+      type: 'serial-lines', port: 'TEST_UART', session: '11'.repeat(16), sequence: 1n,
       lines: [{ timestampNs: 1_000_000n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
     }
     await vi.waitFor(() => expect(

@@ -17,7 +17,17 @@ function frame(
   streamType = StreamType.WAVEFORM,
   timestampNs = 1_000_000_000n,
   flags = 0,
+  port = 'COM7', session = '11'.repeat(16),
 ): ArrayBuffer {
+  if (streamType === StreamType.SERIAL) {
+    const name = new TextEncoder().encode(port)
+    const wrapped = new Uint8Array(17 + name.length + payload.length)
+    wrapped.set(session.match(/../g)!.map(value => parseInt(value, 16)))
+    wrapped[16] = name.length
+    wrapped.set(name, 17)
+    wrapped.set(payload, 17 + name.length)
+    payload = wrapped
+  }
   const buffer = new ArrayBuffer(36 + payload.byteLength)
   const bytes = new Uint8Array(buffer)
   bytes.set([0x4d, 0x4b, 0x53, 0x54])
@@ -110,12 +120,59 @@ function setup() {
 }
 
 describe('StreamDecoder worker controller', () => {
+  it('filters serial ports before decoding without treating other ports as loss', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-terminal' })
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    const input = new TextEncoder().encode('温')
+    const chunks = [input.slice(0, 1), new TextEncoder().encode('WRONG'), input.slice(1)]
+    chunks.forEach((data, index) => decoder.handle({ type: 'frame', buffer: frame(
+      BigInt(index + 1), data.length, data, StreamType.SERIAL, 1n, SERIAL_RX_BYTES,
+      index === 1 ? 'B' : 'A'), connectionGeneration: 1, frameTicket: index + 1 }))
+    expect(messages.filter(m => m.type === 'serial-terminal')).toEqual([
+      { type: 'serial-terminal', sequence: 3n, text: '温', port: 'A', session: '11'.repeat(16) },
+    ])
+    expect(messages.at(-1)).toMatchObject({ transportDroppedBatches: 0, bufferedSamples: 3 })
+  })
+
+  it.each(['port', 'session'])('discards partial serial bytes across a %s change', change => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-terminal' })
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, Uint8Array.of(0xe6), StreamType.SERIAL,
+      1n, SERIAL_RX_BYTES, 'A'), connectionGeneration: 1, frameTicket: 1 })
+    if (change === 'port') decoder.handle({ type: 'serial-port', port: 'B' })
+    decoder.handle({ type: 'frame', buffer: frame(2n, 2, new TextEncoder().encode('OK'), StreamType.SERIAL,
+      1n, SERIAL_RX_BYTES, change === 'port' ? 'B' : 'A', '22'.repeat(16)), connectionGeneration: 1, frameTicket: 2 })
+    expect(messages.filter(m => m.type === 'serial-terminal')).toEqual([
+      { type: 'serial-terminal', sequence: 2n, text: 'OK', port: change === 'port' ? 'B' : 'A', session: '22'.repeat(16) },
+    ])
+  })
+
+  it('does not concatenate old session line fragments or decode before selecting a port', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 100, channelCount: 1, decoderMode: 'serial-log' })
+    const send = (seq: number, text: string, session: string) => {
+      const data = new TextEncoder().encode(text)
+      decoder.handle({ type: 'frame', buffer: frame(BigInt(seq), data.length, data, StreamType.SERIAL,
+        1n, SERIAL_RX_BYTES, 'A', session), connectionGeneration: 1, frameTicket: seq })
+    }
+    send(1, 'HIDDEN\n', '11'.repeat(16))
+    decoder.handle({ type: 'serial-port', port: 'A' })
+    send(2, 'old fragment', '11'.repeat(16))
+    send(3, 'NEW\n', '22'.repeat(16))
+    const lines = messages.filter(m => m.type === 'serial-lines')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toMatchObject({ port: 'A', session: '22'.repeat(16), lines: [{ ascii: 'NEW\n' }] })
+  })
+
   it('incrementally decodes serial RX in terminal mode without TX echo or log output', () => {
     const { decoder, messages } = setup()
     const encoded = new TextEncoder().encode('温度')
     decoder.handle({
       type: 'configure', capacity: 8, channelCount: 1, decoderMode: 'serial-terminal',
     })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
     decoder.handle({
       type: 'frame', buffer: frame(
         1n, 2, encoded.slice(0, 2), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
@@ -133,7 +190,7 @@ describe('StreamDecoder worker controller', () => {
     })
 
     expect(messages.filter(message => message.type === 'serial-terminal'))
-      .toEqual([{ type: 'serial-terminal', sequence: 2n, text: '温度' }])
+      .toEqual([{ type: 'serial-terminal', sequence: 2n, text: '温度', port: 'COM7', session: '11'.repeat(16) }])
     expect(messages.some(message => message.type === 'serial-lines')).toBe(false)
     expect(messages.at(-1)).toMatchObject({
       type: 'telemetry', bufferedSamples: 8, acceptedFrames: 3,
@@ -146,6 +203,7 @@ describe('StreamDecoder worker controller', () => {
     decoder.handle({
       type: 'configure', capacity: 1, channelCount: 1, decoderMode: 'serial-log',
     })
+    decoder.handle({ type: 'serial-port', port: 'COM7' })
     decoder.handle({
       type: 'frame', buffer: frame(
         1n, 2, encoder.encode('OK'), StreamType.SERIAL, 10n, SERIAL_RX_BYTES,
@@ -165,11 +223,11 @@ describe('StreamDecoder worker controller', () => {
     const batches = messages.filter(message => message.type === 'serial-lines')
     expect(batches).toEqual([
       {
-        type: 'serial-lines', sequence: 2n,
+        type: 'serial-lines', sequence: 2n, port: 'COM7', session: '11'.repeat(16),
         lines: [{ timestampNs: 10n, direction: 'RX', rawHex: '4F4B0A', ascii: 'OK\n' }],
       },
       {
-        type: 'serial-lines', sequence: 3n,
+        type: 'serial-lines', sequence: 3n, port: 'COM7', session: '11'.repeat(16),
         lines: [{ timestampNs: 30n, direction: 'TX', rawHex: 'ABCD', ascii: '��' }],
       },
     ])

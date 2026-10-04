@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL_SECONDS = 1.0
 AUTH_TIMEOUT_SECONDS = 5.0
 MAX_BATCHES_PER_CLIENT = 64
-# Serial batches are capped at 4096 bytes: at most 1 MiB per subscriber.
+# Serial batches: <=4096 data bytes + <=272 source bytes; <=1.067 MiB per subscriber.
 SERIAL_BATCHES_PER_CLIENT = 256
 
 STREAM_TYPES: Mapping[str, StreamType] = {

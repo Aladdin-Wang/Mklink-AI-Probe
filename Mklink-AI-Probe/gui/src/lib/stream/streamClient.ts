@@ -146,6 +146,10 @@ export class StreamClient {
     this.emitState({ phase: 'stopped' })
   }
 
+  selectSerialPort(port: string): void {
+    if (!this.disposed) this.worker.postMessage({ type: 'serial-port', port } satisfies WorkerInput)
+  }
+
   reset(): void {
     if (this.disposed) return
     this.worker.postMessage({ type: 'reset' } satisfies WorkerInput)

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T05:31:22+00:00`
+- 更新时间：`2026-10-04T05:54:30+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; serial send shares existing UART lifecycle after 51ae86d; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; serial source isolation after d1e4cbb; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。第四十批serial send迁共享start/status/send/stop；从Modbus提取共用UART上下文，无第二套清理/锁/队列。先验证次数/延时/HEX及全部串口参数，多端口只借匹配端口，确认后TX，失败非零不重放；--probe可选。新增38测试，扩展2227通过2跳过。真实Edge/MCP/11CLI/真实串口管理栈+模拟transport，GUI19200/7/E/2，交错发送、UTF8/HEX、非法零I/O、短写/异常各一次、借用保留、自建释放与服务退出通过。51ae86d精确CI1426/GUI215/构建/feedback通过，本批推送后核对。下一步串口有来源接收及monitor/log迁移。
+- 当前任务：持续循环评审验证。第四十一批修复多端口二进制混流：复用单batcher/hub，来源会话+port包头，端口/方向边界提交；协议16无旧包回退。GUI按端口解码，切换/重连清理半字符半行，双窗口独立选择。扩大2241通过2跳过，GUI84及构建通过；真实Edge两窗口/MCP/真实串口栈+模拟transport隔离显示、导出、切换、重连与退出通过。d1e4cbb精确CI1464/GUI215全绿。本批推送后核对，再继续非破坏性原始串口接收游标与CLI迁移。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第四十批：旧send忽略参数、开口失败正常返回、零count仍开口、HEX后验证、负delay先写再报错均隔离复现；共享迁移后38新测试，扩展2227通过2跳过。真实Edge+MCP+11CLI+真实串口管理栈/模拟transport，首对象9写、自建对象1写，非法参数无I/O、短写/异常各一次，GUI保持、reader与服务退出，无pageerror。51ae86d精确CI1426/GUI215/构建/feedback通过。无物理发送。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第四十一批：旧跨端口batch混流复现；新增14后端及5GUI测试，扩大2241通过2跳过、GUI84及构建通过。真实Edge双窗口/MCP/实际串口栈+模拟transport，端口交错隔离、日志导出、选择切换及会话半行隔离通过；所有服务/reader/端口退出、无pageerror。未做物理发送。d1e4cbb精确CI1464/GUI215全通过。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI，再评审serial monitor/log/open/dashboard接收共享。SerialMonitor已有带来源事件deque但get_events破坏性读取；优先复用生产者建立连接会话/port/方向/序号/丢失语义，不能多个客户端争抢或另建读取线程。继续循环/YMODEM归属、逐请求HTTP取消、Agent、硬件异常/长稳与NSIS。不改下载器固件/WinUSB，不合并发布。
+1. 核对本批精确CI；继续串口非破坏性有界原始接收游标，再迁移monitor/log/open/dashboard。现有get_events破坏性读取，line event缺无换行尾部，不能直接共享争抢。复用生产者，不增串口读取线程。继续YMODEM/循环、HTTP取消、Agent、真机异常/长稳和NSIS；不改下载器固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

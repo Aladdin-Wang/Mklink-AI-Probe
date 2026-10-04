@@ -2811,6 +2811,8 @@ class SerialStreamManager:
         from mklink.usb_interfaces import canonical_serial_port
 
         ports = [dict(cfg, port=canonical_serial_port(cfg["port"])) for cfg in ports]
+        if any(not 1 <= len(cfg['port'].encode('utf-8')) <= 255 for cfg in ports):
+            raise ValueError('UART port identity must contain 1..255 UTF-8 bytes')
         self._port_config = ports
         self._profile = profile
         self._auto_reply_rules = auto_reply_rules
@@ -2822,10 +2824,14 @@ class SerialStreamManager:
 
         from mklink.remote.serial_stream import SerialByteBatcher
 
-        def publish_bytes(data: bytes, direction: str):
+        from mklink.remote.stream_protocol import encode_serial_payload
+        self._serial_session = uuid.uuid4().hex
+        session = self._serial_session
+
+        def publish_bytes(data: bytes, direction: str, port: str):
             if self._stream_hub is not None:
                 self._stream_hub.publish(
-                    data, item_count=len(data),
+                    encode_serial_payload(session, port, data), item_count=len(data),
                     flags=(SERIAL_RX_BYTES if direction == "RX" else SERIAL_TX_BYTES),
                     stream_type=StreamType.SERIAL,
                 )
@@ -2879,7 +2885,7 @@ class SerialStreamManager:
                 self._rx_bytes += len(data)
             else:
                 self._tx_bytes += len(data)
-            self._byte_batcher.feed(data, direction)
+            self._byte_batcher.feed(data, direction, port)
             if self._bridge.client_count == 0:
                 return
             self._bridge.put({

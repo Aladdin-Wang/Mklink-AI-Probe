@@ -30,6 +30,7 @@ export type WorkerInput =
   | { type: 'visible-range'; requestId: number; start: number; end: number; pixelWidth: number }
   | { type: 'waveform-detail'; enabled: boolean }
   | { type: 'history-snapshot'; requestId: number }
+  | { type: 'serial-port'; port: string }
   | { type: 'reset' }
 
 export interface StreamTelemetry {
@@ -131,6 +132,8 @@ export type WorkerOutput =
   | { type: 'rtt-terminal'; sequence: bigint; text: string }
   | {
       type: 'serial-lines'
+      port: string
+      session: string
       sequence: bigint
       lines: Array<{
         timestampNs: bigint
@@ -139,7 +142,7 @@ export type WorkerOutput =
         ascii: string
       }>
     }
-  | { type: 'serial-terminal'; sequence: bigint; text: string }
+  | { type: 'serial-terminal'; sequence: bigint; text: string; port: string; session: string }
 
 export interface SystemViewContextSummary {
   id: number
@@ -264,6 +267,8 @@ export class StreamDecoder {
   private decoderMode: DecoderMode = 'default'
   private configuredCapacity = 0
   private waveformSummaryOnly = false
+  private serialPort = ''
+  private serialSource = ''
   private serialDecoder = new TextDecoder('utf-8')
   private serialLineBytes: number[] = []
   private serialLineTimestampNs = 0n
@@ -298,6 +303,15 @@ export class StreamDecoder {
         break
       case 'history-snapshot':
         this.historySnapshot(message.requestId)
+        break
+      case 'serial-port':
+        if (this.serialPort !== message.port) {
+          this.serialPort = message.port
+          this.serialSource = ''
+          this.serialDecoder = new TextDecoder('utf-8')
+          this.serialLineBytes = []
+          this.serialBufferedItems = 0
+        }
         break
       case 'reset':
         this.reset()
@@ -454,12 +468,24 @@ export class StreamDecoder {
     if (decoded.flags !== SERIAL_RX_BYTES && decoded.flags !== SERIAL_TX_BYTES) {
       throw new RangeError('Serial payload has unsupported flags')
     }
-    if (decoded.itemCount !== decoded.payload.byteLength || decoded.itemCount <= 0) {
-      throw new RangeError('Serial item count must match its non-empty byte payload')
+    const payload = new Uint8Array(decoded.payload)
+    const end = 17 + (payload[16] ?? 0)
+    if (payload.length < 18 || !payload[16] || decoded.itemCount !== payload.length - end
+        || decoded.itemCount <= 0 || decoded.itemCount > 4096) {
+      throw new RangeError('Serial source and byte count are invalid')
     }
+    const port = new TextDecoder('utf-8', { fatal: true }).decode(payload.subarray(17, end))
+    const session = Array.from(payload.subarray(0, 16), value => value.toString(16).padStart(2, '0')).join('')
     const direction = decoded.flags === SERIAL_RX_BYTES ? 'RX' : 'TX'
-    const bytes = new Uint8Array(decoded.payload)
+    const bytes = payload.subarray(end)
     this.commitSequence(decoded.sequence)
+    if (port !== this.serialPort) return
+    if (session !== this.serialSource) {
+      this.serialSource = session
+      this.serialDecoder = new TextDecoder('utf-8')
+      this.serialLineBytes = []
+      this.serialBufferedItems = 0
+    }
 
     if (this.decoderMode === 'serial-terminal') {
       this.serialBufferedItems = Math.min(
@@ -468,7 +494,7 @@ export class StreamDecoder {
       )
       if (direction === 'RX') {
         const text = this.serialDecoder.decode(bytes, { stream: true })
-        if (text) this.post({ type: 'serial-terminal', sequence: decoded.sequence, text })
+        if (text) this.post({ type: 'serial-terminal', sequence: decoded.sequence, text, port, session })
       }
       return
     }
@@ -504,7 +530,7 @@ export class StreamDecoder {
         this.configuredCapacity,
         this.serialBufferedItems + lines.length,
       )
-      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines })
+      this.post({ type: 'serial-lines', sequence: decoded.sequence, lines, port, session })
     }
   }
 

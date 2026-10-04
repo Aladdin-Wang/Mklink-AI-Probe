@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 15  # Bounded Modbus history cursors; stop older runtimes explicitly.
+PROTOCOL = 16  # Serial binary batches carry connection/port source; stop older runtimes.
 VERSION = "0.3.0"
 
 

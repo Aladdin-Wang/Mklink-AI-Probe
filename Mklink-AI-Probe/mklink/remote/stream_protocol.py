@@ -637,3 +637,21 @@ def decode_systemview_events(payload: bytes) -> list[dict]:
             event["cause"] = int(aux0)
         events.append(event)
     return events
+
+
+def encode_serial_payload(session: str, port: str, data: bytes) -> bytes:
+    """Serial v2: 16-byte session UUID, 1-byte UTF-8 port length, port, raw bytes."""
+    identity = bytes.fromhex(session)
+    name = port.encode('utf-8')
+    if len(identity) != 16 or not 1 <= len(name) <= 255 or not 1 <= len(data) <= 4096:
+        raise ValueError('Invalid serial source or chunk length')
+    return identity + bytes([len(name)]) + name + data
+
+
+def decode_serial_payload(payload: bytes) -> tuple[str, str, bytes]:
+    if len(payload) < 18:
+        raise ValueError('Truncated serial source')
+    end = 17 + payload[16]
+    if payload[16] == 0 or not 1 <= len(payload) - end <= 4096:
+        raise ValueError('Invalid serial source or chunk length')
+    return payload[:16].hex(), payload[17:end].decode('utf-8'), payload[end:]
