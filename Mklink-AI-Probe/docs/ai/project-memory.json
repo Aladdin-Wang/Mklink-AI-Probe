@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T03:40:30+00:00",
+  "updated_at": "2026-10-04T04:19:59+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; shared Modbus polling and common register reads implemented after 9c7171e; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; independent Modbus dashboard shares runtime and legacy worker removed after 0d5f72e; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "持续循环评审/验证。第三十六批poll迁到公共CLI连接上下文/transaction；_registers统一CLI、共享worker、旧仪表盘的分组/类型转换/完整响应及规格校验，删除错误补零及底层对CLI显示模块依赖。FC03/04、125寄存器不拆宽值、严格规格/间隔/次数；后台保留register_type，协议13。新增21项，最终扩展2035通过/2跳过。真实Edge/MCP及17个CLI子进程模拟从站，轮询与GUI交错，共28次I/O一个客户端/worker、失败不补零、服务退出。旧独立仪表盘模拟内置28寄存器显示及线程退出通过，但关闭浏览器仍有10053服务端日志；下一步优先迁移dashboard并删重复worker。前批9c7171e精确CI1251/GUI212/构建/feedback通过，本批推送后核对。"
+    "current_task": "持续循环评审/验证。第三十七批独立Modbus dashboard迁到公共CLI连接上下文/RuntimeClient，删除旧worker/poller、HTTP/SSE队列、atexit及原始client关闭；复用FastAPI/StreamingResponse/AsyncBridge/_registers。停止等待在途读写与HTTP线程退出再detach；快慢组快照合并、严格参数/命令/CSRF/固定目录、未知结果不重放。新增仪表盘46项及公共事务严格数值9项；扩展2088通过/2跳过，最终收尾67项通过。真实Edge+CLI子进程+MCP模拟从站，60寄存器/图表/调试/命令/语言/刷新/停止，286次I/O一个客户端/worker，stderr空、GUI/AI连接保留、最终服务退出。0d5f72e精确CI1272/GUI212/构建/feedback通过，本批推送后核对。下一步diag FC07/22/23与monitor，继续循环。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第三十六批：新增21项、扩展2035通过/2跳过；15项先在旧入口失败并实际复现错误补零。边界125/宽值、FC03/04、短响应、输入区域保留、中断detach通过。真实Edge/MCP/TCP及17个CLI子进程模拟Modbus：轮询解码-1/1.0/17，与GUI交错，错误非零退出不补零，28次I/O同一客户端/worker、最终退出。旧独立仪表盘内置28寄存器/浏览器显示与线程退出通过，但关闭后HTTP10053日志仍待收敛。9c7171e远端1251/GUI212/构建/feedback通过。前批RTU编解码与双探针真机证据保留；此批无物理Modbus发送，GUI源码未变。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第三十七批：旧队列已复现5秒返回后迟到写入及3秒stop返回线程仍活；现删除。新增55项，删除旧worker测试分支；隐式数值转换12项中11项先失败再修公共校验。扩展2088通过/2跳过，最终67项通过。真实Edge/CLI/MCP/TCP模拟Modbus：60寄存器、图表、语言、调试、参数命令、刷新、停止通过；286次I/O同一客户端/worker，CLI stderr空且退出，GUI/AI保留，最终服务退出。首轮关闭测试遇端点文件短暂PermissionError，已改用现有discover，非产品重试。0d5f72e远端1272/GUI212/构建/feedback通过。无物理Modbus发送或固件修改。"
     },
     {
       "area": "正式版与安装",
@@ -65,7 +65,7 @@
   },
   "known_limits": [
     "A5已收敛。A6活动MCP37工具，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。",
-    "0.3.0第七阶段：串口/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务及单地址扫描10项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll CLI已共享且共用连接上下文，扫描临时参数限单worker任务并恢复；其余专用CLI、接收游标、嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。",
+    "0.3.0第七阶段：串口/分析等专用CLI、低层Device调用方与独立Agent未迁移；共享SDK不是完整Device替代；新增共享断点仅FPBv1，未制造真实HardFault。内嵌Agent、Bootloader重枚举升级及非Windows共享MSC仍受限。脱机部署、全新连接erase准备、操作中拔插/休眠、崩溃恢复、24/72小时长稳及安装升级未验收。共享SystemView缺RTOS事件实测。 MAP/C回退仅受限基本全局标量，新增源文件/声明须显式重载，不等于源码与固件匹配；HPM稀疏DWARF真机待验证。 VOFA Web页复用旧全局绘图脚本，独立文档隔离，无网页通道编辑器；原生桌面不提供浏览器专用链接，集成待验。Float32图形不保留大整数低位，历史最多500点。 UART开口前后校验与COM别名规范化已统一；监控不自动重连，读错误须显式停止/重启。UART及Modbus REST均复用公共异步启停事务；Modbus排队超时/停止取消与执行中结果未知已明确。独立UART在lobby及目标任务期间准入已实现，共享scope=uart已支持端口列表、两类启停/状态、串口发送、Modbus事务及单地址扫描10项；启停拥有者与借用者已统一，显式发送共享现有worker；单事务slave已支持且不改连接默认值；scan/read/write/poll/dashboard CLI已共享且共用连接上下文，扫描临时参数限单worker任务并恢复；其余专用CLI、接收游标、嵌套循环任务归属、逐请求HTTP断开取消仍待迁移；尚无真实Modbus从站/拔插/OS开口阻塞验收。",
     "nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。",
     "缓冲有界但不是无损通道：SSE及二进制流共用合并唤醒的有界投递，每次待投递批次和正在排空批次各不超过配置条数，客户端队列另有独立上限；这是记录数边界，不是任意载荷的总字节承诺。溢出保留最新数据，二进制丢弃计数包含进入客户端前的损失；SSE停止与初始元数据有专门边界。断线/长暂停不保证无损；外设轮询可漏短脉冲，多变量不是原子快照，packed奇地址写不保证原子性。",
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
@@ -74,7 +74,7 @@
     "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。"
   ],
   "next_actions": [
-    "优先迁移独立Modbus dashboard：run_modbus_dashboard仓库内仅CLI调用，_dashboard._ModbusWorker仍复制队列/等待超时/启停；改用共享能力并删除这套worker，保留profile写约束、自定义HTML、图表、调试、语言和CSRF能力。复用_registers与CLI连接上下文，验证HTTP/SSE/采集线程退出，处理已复现关闭浏览器10053日志，不仅替换类名。随后diag的FC07/22/23、monitor原始帧/日志和其他UART CLI；串口有来源的有限接收游标、循环/YMODEM归属、逐请求断开取消、Agent、拔插休眠/长稳/NSIS继续。不改固件/WinUSB、不自动合并发布。",
+    "先核对本批精确CI，再评审迁移diag FC07/22/23及monitor：diag仍直连且错误只打印导致零退出；monitor实际上主动FC03轮询、hex不是原始帧且日志积累到退出，需复用共享worker及已有原始帧能力，不能只改类名。独立仪表盘已迁移并删除旧队列；继续其他UART CLI、有限且带来源的接收游标、循环/YMODEM归属、逐请求HTTP断开取消、Agent、拔插休眠/长稳及NSIS。不改下载器固件/WinUSB，不自动合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
   "continuation_protocol": [

@@ -106,6 +106,16 @@ def test_transaction_limits(fc, quantity, values, message):
         validate_transaction(fc, 0, quantity=quantity, values=values)
 
 
+@pytest.mark.parametrize('fc,start,quantity,values', [
+    (3.0, 0, 1, None), (3, .5, 1, None), (3, '0', 1, None),
+    (3, 0, 1.5, None), (3, 0, '1', None), (6, 0, None, [1.5]),
+    (6, 0, None, ['1']), (5, 0, None, [1.0]), (15, 0, None, ['0']),
+])
+def test_transaction_rejects_implicit_numeric_conversion(fc, start, quantity, values):
+    with pytest.raises(ValueError):
+        validate_transaction(fc, start, quantity=quantity, values=values)
+
+
 def test_modbus_crc_matches_standard_read_request():
     payload = bytes.fromhex("01 03 00 00 00 0A")
     crc = modbus_crc16(payload)

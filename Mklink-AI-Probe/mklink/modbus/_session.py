@@ -42,16 +42,14 @@ def validate_transaction(
     values: list[int | bool] | None = None,
 ) -> tuple[int, int, int | None, list[int | bool] | None]:
     """Validate and normalize a public Modbus transaction request."""
-    if isinstance(fc, bool) or fc not in SUPPORTED_FUNCTIONS:
+    if type(fc) is not int or fc not in SUPPORTED_FUNCTIONS:
         raise ValueError("Function code must be one of 1, 2, 3, 4, 5, 6, 15, 16")
-    if isinstance(start, bool) or not 0 <= int(start) <= 0xFFFF:
+    if type(start) is not int or not 0 <= start <= 0xFFFF:
         raise ValueError("Start address must be in the range 0..65535")
-    start = int(start)
 
     if fc in READ_LIMITS:
-        if quantity is None or isinstance(quantity, bool):
+        if type(quantity) is not int:
             raise ValueError("Read operations require a quantity")
-        quantity = int(quantity)
         if not 1 <= quantity <= READ_LIMITS[fc]:
             raise ValueError(f"FC{fc:02d} quantity must be in the range 1..{READ_LIMITS[fc]}")
         if start + quantity > 0x10000:
@@ -71,16 +69,16 @@ def validate_transaction(
     if fc in (5, 15):
         bits: list[bool] = []
         for value in normalized:
-            if not isinstance(value, bool) and value not in (0, 1):
+            if type(value) not in (bool, int) or value not in (0, 1):
                 raise ValueError("Coil values must be true/false or 0/1")
             bits.append(bool(value))
         normalized = bits
     else:
         ints: list[int] = []
         for value in normalized:
-            if isinstance(value, bool) or not 0 <= int(value) <= 0xFFFF:
+            if type(value) is not int or not 0 <= value <= 0xFFFF:
                 raise ValueError("Register values must be in the range 0..65535")
-            ints.append(int(value))
+            ints.append(value)
         normalized = ints
     return fc, start, None, normalized
 

@@ -74,12 +74,14 @@ def validate_param(profile: dict, addr: int, value: int) -> tuple[bool, str]:
             return False, f"Register {addr} ({index[addr].get('name', '?')}) is read-only"
         return False, f"Register {addr} not found in profile"
 
-    reg = index[addr]
+    reg = index.get(addr)
+    if reg is None:
+        return False, f"Register {addr} is command-only; use its named command"
 
     # Check value range
-    if "min" in reg and "max" in reg:
-        min_v = reg["min"]
-        max_v = reg["max"]
+    if "min" in reg or "max" in reg:
+        min_v = reg.get("min", 0)
+        max_v = reg.get("max", 65535)
         if value < min_v or value > max_v:
             return False, f"Value {value} out of range [{min_v}, {max_v}] for {reg.get('label', reg.get('name', addr))}"
 

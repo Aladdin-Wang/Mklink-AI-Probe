@@ -1485,18 +1485,14 @@ def _cli_modbus_dashboard(args):
     from mklink.modbus._profile import load_profile
     from mklink.modbus._dashboard import run_modbus_dashboard
 
-    client = _modbus_open_client(args)
-    if not client:
-        return
+    from mklink.modbus._session import validate_slave
+    from mklink.modbus._registers import validate_poll_interval
 
-    try:
-        profile = load_profile(getattr(args, "profile", None))
-        slave = getattr(args, "slave", 1)
-
-        # Use profile baudrate if not overridden
-        fast_interval = profile.get("poll_groups", {}).get("fast", {}).get("interval", 1.0)
-        slow_interval = profile.get("poll_groups", {}).get("slow", {}).get("interval", 5.0)
-
+    profile = load_profile(getattr(args, "profile", None))
+    slave = validate_slave(getattr(args, "slave", 1))
+    fast_interval = validate_poll_interval(profile.get("poll_groups", {}).get("fast", {}).get("interval", 1.0))
+    slow_interval = validate_poll_interval(profile.get("poll_groups", {}).get("slow", {}).get("interval", 5.0))
+    with _modbus_shared_client(args) as client:
         run_modbus_dashboard(
             client=client,
             slave=slave,
@@ -1511,11 +1507,6 @@ def _cli_modbus_dashboard(args):
             html_path=getattr(args, "html", None),
             allow_arbitrary_writes=getattr(args, "allow_arbitrary_writes", False),
         )
-    except FileNotFoundError as e:
-        print(f"[FAIL] {e}")
-    except Exception as e:
-        print(f"[FAIL] 启动仪表盘失败: {e}")
-        client.close()
 
 
 def _cli_modbus_pointmap_detect(args):
@@ -2622,7 +2613,7 @@ def main():
 
     # modbus dashboard
     modbus_dashboard = modbus_sub.add_parser("dashboard", help="Web 可视化仪表盘（实时图表 + 交互控制）")
-    _add_modbus_serial_args(modbus_dashboard)
+    _add_modbus_serial_args(modbus_dashboard, shared=True)
     modbus_dashboard.add_argument("--slave", type=int, default=1, help="从站地址（默认 1）")
     modbus_dashboard.add_argument("--profile", default=None, help="寄存器配置文件路径（默认自动加载）")
     modbus_dashboard.add_argument("--host", default="127.0.0.1", help="HTTP 绑定地址（默认 127.0.0.1）")

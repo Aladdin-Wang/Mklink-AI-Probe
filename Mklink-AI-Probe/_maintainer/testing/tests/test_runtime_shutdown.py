@@ -1,5 +1,4 @@
 """Real backend shutdown after broken binary-stream clients; no probe I/O."""
-import json
 import os
 from pathlib import Path
 import socket
@@ -10,7 +9,7 @@ import time
 
 import pytest
 
-from mklink.runtime import request, runtime_lock
+from mklink.runtime import discover, request, runtime_lock
 
 
 @pytest.mark.parametrize('disconnect', ['reset', 'fin', 'open'])
@@ -31,15 +30,9 @@ def test_backend_exits_and_releases_owner_after_stream_clients(tmp_path, monkeyp
             deadline = time.monotonic() + 20
             info = None
             while process.poll() is None and time.monotonic() < deadline:
-                if endpoint.exists():
-                    candidate = json.loads(endpoint.read_text(encoding='utf-8'))
-                    try:
-                        request(candidate, 'GET', '/_runtime/status', timeout=1)
-                    except RuntimeError:
-                        pass
-                    else:
-                        info = candidate
-                        break
+                info = discover('lobby')
+                if info is not None:
+                    break
                 time.sleep(.02)
             assert info is not None, 'Backend never became ready'
             for _ in range(30):

@@ -87,17 +87,15 @@ def test_shared_grouping_keeps_wide_values_whole_and_splits_function_codes():
     assert (result[123], result[124], result[126], result[128]) == (123, 0x12345678, -2, 1.0)
 
 
-@pytest.mark.parametrize('legacy', [False, True])
-def test_worker_batch_paths_use_the_same_input_register_and_partial_response_rules(legacy):
+def test_worker_batch_uses_input_register_and_partial_response_rules():
     from mklink.modbus._session import ModbusWorker
-    from mklink.modbus._dashboard import _ModbusWorker
     calls = []
     class Client:
         def read_input_registers(self, address, count, slave):
             calls.append((address, count, slave))
             return [0x3f80, 0] if address == 0 else [17]
         def read_holding_registers(self, *_): pytest.fail('input spec sent FC03')
-    worker = (_ModbusWorker if legacy else ModbusWorker)(Client(), 8)
+    worker = ModbusWorker(Client(), 8)
     assert worker._batch_read([RegisterSpec(0, 'float', register_type='input')]) == {0: 1.0}
     with pytest.raises(OSError, match='incomplete register group'):
         worker._batch_read([RegisterSpec(4, 'float', register_type='input')])

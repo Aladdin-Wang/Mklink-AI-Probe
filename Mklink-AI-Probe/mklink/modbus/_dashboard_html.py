@@ -26,14 +26,14 @@ _MARKER_MAX_PTS = "__MAX_POINTS__"
 _MARKER_LANG = "__LANG__"
 
 
-def _find_template() -> str:
+def _find_template(project_root='.') -> str:
     """Find the best template file path.
 
     Priority:
       1. Project-level .mklink/modbus_dashboard_template.html
       2. Built-in _dashboard_template.html (next to this .py file)
     """
-    project_template = os.path.join(".mklink", "modbus_dashboard_template.html")
+    project_template = os.path.join(project_root, ".mklink", "modbus_dashboard_template.html")
     if os.path.isfile(project_template):
         return project_template
     if os.path.isfile(_BUILTIN_TEMPLATE):
@@ -45,9 +45,9 @@ def _find_template() -> str:
     )
 
 
-def _load_lang_preference() -> str:
+def _load_lang_preference(project_root='.') -> str:
     """Load language preference from .mklink/lang.json, default 'zh'."""
-    lang_file = os.path.join(".mklink", "lang.json")
+    lang_file = os.path.join(project_root, ".mklink", "lang.json")
     if os.path.isfile(lang_file):
         try:
             with open(lang_file, "r", encoding="utf-8") as f:
@@ -58,14 +58,14 @@ def _load_lang_preference() -> str:
     return "zh"
 
 
-def build_html(max_points: int, profile_json: str, csrf_token: str) -> str:
+def build_html(max_points: int, profile_json: str, csrf_token: str, *, project_root='.') -> str:
     """Build dashboard HTML by filling placeholders in the template."""
-    template_path = _find_template()
+    template_path = _find_template(project_root)
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
 
     html = html.replace(_MARKER_PROFILE, profile_json)
     html = html.replace(_MARKER_CSRF, csrf_token)
     html = html.replace(_MARKER_MAX_PTS, str(max_points))
-    html = html.replace(_MARKER_LANG, _load_lang_preference())
+    html = html.replace(_MARKER_LANG, _load_lang_preference(project_root))
     return html

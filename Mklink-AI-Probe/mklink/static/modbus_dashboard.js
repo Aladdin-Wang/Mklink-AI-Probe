@@ -42,7 +42,7 @@ function mbSetLang(lang) {
   mbLang = lang;
   mbApplyI18n();
   try { localStorage.setItem('mklink_lang', lang); } catch(e) {}
-  fetch('/api/lang', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lang:lang}) }).catch(function(){});
+  fetch('/api/lang', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lang:lang,token:CSRF}) }).catch(function(){});
 }
 document.addEventListener('DOMContentLoaded', function() {
   mbApplyI18n();
@@ -134,6 +134,10 @@ function processData(data) {
   }
 }
 function handleEvent(data) {
+  if (data._event === 'poll_error') {
+    showFooter('轮询停止: ' + data.error, false);
+    return;
+  }
   if (data._event === 'shutdown') {
     es.close();
     document.getElementById('shutdown-overlay').classList.add('visible');
