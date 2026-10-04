@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T20:11:26.868057+00:00`
+- 更新时间：`2026-10-04T20:18:52.513696+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：110批定位21项白名单失败为隔离工作树缺少内置FLM资源；指定已有哈希匹配资源目录后，脱机部署与远程共享目标完整组合131项通过（7.40秒），无筛选/跳过。长期验证暂停。
+- 当前任务：111批e9503bbb便携远程服务新包构建/内容审计及短时生命周期、Pack导入通过，包含106与109源码修复。未进行新包真机或长期验证。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 109批923da54d本机完整脱机/远程组合131项通过；安全白名单未修改。后续涉及内置FLM测试需显式指定经白名单核对的MKLINK_BUILTIN_FLM_ROOT（资源不入Git）。优先继续脱机持久结果查询/新包短时验证，NSIS UAC及长期测试保持待授权状态。
+2. 111候选agent111-e9503bbb已完成无Python生命周期与Pack导入，SHA256 84af0b892cad528eff71721518fd9ed21d3f7e7f58b35636857d928612c5b179；下一步新包短时双探针真机验证。脱机持久结果查询未完成，NSIS UAC待答复；长期测试等待用户通知。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
