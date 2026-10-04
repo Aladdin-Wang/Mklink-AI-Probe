@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T22:26:53.3368161Z`
+- 更新时间：`2026-10-04T22:33:43.2135222Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：131 copy-flm已完整接入共享后台/身份卷/RuntimeJobs，新增--probe/--flm/--request-id并删除旧直接复制函数；167短测、真实双V4 CLI复制/去重/双AI保持/双盘恢复通过。协议37；长期暂停。
+- 当前任务：132复现mcu-detect默认写包内profile及旧快照覆盖；未迁移该全局写入。已修公共型号匹配为唯一最长前缀/唯一IDCODE，192回归及16补测、双V4短读/AI保持/清理通过。统一目录可复用，profile仍供调试默认值，需拆分发现和保存；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对131提交CI；130三项已通过。copy-flm已复用完整部署的冻结输入/事务/日志，接下来收敛mcu-detect的配置保存和复制，再处理CLI security及旧MCP。旧后台协议不兼容须显式退出，不自动接管。NSIS UAC、物理中断和长期限制保留。
+2. 核对132提交CI；131三项已通过。mcu-detect默认写包内目录存在并发丢更新，不能原样包入每探针后台；先拆分发现/保存并禁止写安装包，复用统一算法目录/工程精确器件，再接入已完成的共享FLM事务。保留只读内置profile供必要旧默认值。CLI security/旧MCP、NSIS UAC、物理中断仍待做；长期暂停。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

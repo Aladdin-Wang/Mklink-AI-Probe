@@ -122,3 +122,37 @@ def test_macos_only_mounted_volume_and_ambiguous_fail_closed(monkeypatch):
 def test_linux_per_user_mount(monkeypatch):
     mock_volumes(monkeypatch, platform="linux", directories={"/run/media": ["/run/media/user"], "/run/media/user": ["/run/media/user/MICROKEEN"]}, mounts={"/run/media/user/MICROKEEN"})
     assert discovery._find_posix_microkeen_disk() == "/run/media/user/MICROKEEN"
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_profile_resolution_uses_specificity_and_rejects_ambiguous_idcode(reverse):
+    from mklink.profiles import match_mcu_by_device, match_mcu_by_idcode
+    profiles = {
+        'family': {'device_prefix': 'CHIP', 'idcode_pattern': '0x12345678'},
+        'part': {'device_prefix': 'CHIP123', 'idcode_pattern': '0X12345678'},
+        'neighbor': {'device_prefix': 'OTHER', 'idcode_pattern': '0x87654321'},
+        'unidentified': {'idcode_pattern': None},
+    }
+    if reverse:
+        profiles = dict(reversed(list(profiles.items())))
+    assert match_mcu_by_device('chip123re', profiles) == 'part'
+    assert match_mcu_by_device('CHIP999', profiles) == 'family'
+    assert match_mcu_by_device('missing', profiles) is None
+    assert match_mcu_by_idcode(0x12345678, profiles) is None
+    assert match_mcu_by_idcode(0x87654321, profiles) == 'neighbor'
+    profiles['duplicate'] = {'device_prefix': 'chip123'}
+    assert match_mcu_by_device('CHIP123RE', profiles) is None
+
+
+def test_device_profile_falls_back_to_specific_model_when_idcode_is_ambiguous(monkeypatch):
+    from mklink.device import Device
+    from types import SimpleNamespace
+    profiles = {
+        'family': {'device_prefix': 'CHIP', 'idcode_pattern': '0x12345678'},
+        'part': {'device_prefix': 'CHIP123', 'idcode_pattern': '0x12345678'},
+    }
+    monkeypatch.setattr('mklink.profiles.load_mcu_profiles', lambda: profiles)
+    device = object.__new__(Device)
+    device._bridge = SimpleNamespace(idcode=0x12345678, current_mcu='CHIP123RE')
+    assert device._get_mcu_profile() is profiles['part']
+    device._bridge.current_mcu = ''
+    assert device._get_mcu_profile() is None
