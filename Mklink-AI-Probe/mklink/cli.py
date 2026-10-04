@@ -1841,7 +1841,7 @@ def _cli_serial_dispatch(args):
                                      "reply_ascii": r.reply_ascii, "delay": r.delay}
                                     for r in rules]
             except Exception as e:
-                print(f"[WARN] 自动应答规则加载失败: {e}")
+                raise SystemExit(f"自动应答规则加载失败: {e}") from e
 
         # Logger
         logger = None

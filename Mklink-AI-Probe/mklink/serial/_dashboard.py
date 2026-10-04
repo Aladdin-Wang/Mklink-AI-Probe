@@ -328,13 +328,11 @@ class SerialDashboardServer:
                     server_ref._monitor._auto_reply_engine = engine
 
                 if action == "add":
-                    from mklink.serial._autoreply import AutoReplyRule
-                    rule_data = payload.get("rule", {})
-                    rule = AutoReplyRule(**{
-                        k: v for k, v in rule_data.items()
-                        if k in AutoReplyRule.__dataclass_fields__
-                    })
-                    engine.add_rule(rule)
+                    try:
+                        engine.load_rules([payload.get('rule', {})])
+                    except ValueError as error:
+                        self._json_response(400, {'error': str(error)})
+                        return
                     self._json_response(200, {"ok": True, "count": len(engine.rules)})
                 elif action == "remove":
                     idx = payload.get("index", -1)

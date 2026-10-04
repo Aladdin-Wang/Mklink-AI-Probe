@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import io
 import queue
 import threading
@@ -61,6 +62,9 @@ class SerialMonitor:
         # reader here.  Only the reader thread emits them, preserving parser,
         # event and callback ordering without a second serial consumer.
         self._protocol_handoffs: dict[str, bytearray] = {}
+        self._pending_replies: dict[str, list[tuple[float, int, bytes]]] = {}
+        self._reply_sequence = 0
+        self._reply_generation = {cfg['port']: 0 for cfg in ports}
 
         self._auto_reply_engine: AutoReplyEngine | None = None
         if auto_reply_rules:
@@ -70,7 +74,7 @@ class SerialMonitor:
         self._parsers: dict[str, FrameParser] = {}
         if profile:
             for cfg in ports:
-                self._parsers[cfg["port"]] = FrameParser(profile)
+                self._parsers[cfg["port"]] = FrameParser(profile, max_buffer_bytes=1024 * 1024)
 
     def start(self) -> None:
         with self._lifecycle_lock:
@@ -80,6 +84,15 @@ class SerialMonitor:
                 self.stop()
             if self.worker_alive:
                 raise RuntimeError('Previous serial reader is still active')
+            with self._protocol_lock:
+                if self._protocol_queues:
+                    raise RuntimeError('Previous serial protocol is still active')
+                self._pending_replies.clear()
+                self._protocol_handoffs.clear()
+                for port in self._reply_generation:
+                    self._reply_generation[port] += 1
+                for parser in self._parsers.values():
+                    parser.reset()
             self._threads.clear()
             self._stop_event.clear()
             # Validate every selection before opening the first port. No retry or
@@ -121,6 +134,8 @@ class SerialMonitor:
             if self.worker_alive:
                 raise TimeoutError('Serial reader is still active; port ownership retained')
             self._threads.clear()
+            with self._protocol_lock:
+                self._pending_replies.clear()
             with self._lock:
                 for name, sp in self._serial_ports.items():
                     sp.close()
@@ -128,31 +143,31 @@ class SerialMonitor:
                 self._serial_ports.clear()
             self._running = False
 
+    def _write_ordinary_locked(self, port: str, data: bytes) -> bool:
+        # Caller holds the protocol admission lock through the physical write.
+        if self._stop_event.is_set() or port in self._protocol_queues:
+            return False
+        with self._lock:
+            sp = self._serial_ports.get(port)
+            if sp is None or not sp.is_open:
+                return False
+            try:
+                sp.write(data)
+            except Exception:
+                return False
+        return True
+
+    def _record_sent(self, port: str, data: bytes) -> None:
+        timestamp = time.time()
+        self._emit_chunk(port, 'TX', data, timestamp)
+        self._emit_event(SerialEvent(timestamp=timestamp, port=port, direction='TX', raw=data))
+
     def send(self, port: str, data: bytes) -> bool:
         port = canonical_serial_port(port)
         with self._protocol_lock:
-            if self._stop_event.is_set():
+            if not self._write_ordinary_locked(port, data):
                 return False
-            if port in self._protocol_queues:
-                return False
-            with self._lock:
-                sp = self._serial_ports.get(port)
-                if sp is None or not sp.is_open:
-                    return False
-                try:
-                    sp.write(data)
-                except Exception:
-                    return False
-
-        timestamp = time.time()
-        self._emit_chunk(port, "TX", data, timestamp)
-        evt = SerialEvent(
-            timestamp=timestamp,
-            port=port,
-            direction="TX",
-            raw=data,
-        )
-        self._emit_event(evt)
+        self._record_sent(port, data)
         return True
 
     def send_ymodem(
@@ -184,6 +199,8 @@ class SerialMonitor:
                 serial_port = self._serial_ports.get(port)
                 if serial_port is None or not serial_port.is_open:
                     raise RuntimeError(f"serial port {port} is not open")
+            self._pending_replies.pop(port, None)
+            self._reply_generation[port] += 1
             self._protocol_queues[port] = receive_queue
 
         cancellation = cancel_event or threading.Event()
@@ -309,12 +326,14 @@ class SerialMonitor:
         sp = self._serial_ports[port_name]
         parser = self._parsers.get(port_name)
         line_buffer = bytearray()
-        protocol_was_active = False
+        observed_generation = self._reply_generation[port_name]
 
         try:
             while not self._stop_event.is_set():
+                self._drain_auto_replies(port_name)
                 data = sp.read_available()
                 with self._protocol_lock:
+                    generation = self._reply_generation[port_name]
                     protocol_queue = self._protocol_queues.get(port_name)
                     if protocol_queue is not None:
                         if data:
@@ -329,26 +348,25 @@ class SerialMonitor:
                         handoff = bytes(
                             self._protocol_handoffs.pop(port_name, b""),
                         )
+                if generation != observed_generation:
+                    line_buffer.clear()
+                    if parser is not None:
+                        parser.reset()
+                    observed_generation = generation
                 if protocol_queue is not None:
-                    if not protocol_was_active:
-                        line_buffer.clear()
-                    protocol_was_active = True
                     if not data:
                         self._stop_event.wait(0.01)
                     continue
-                if protocol_was_active:
-                    line_buffer.clear()
-                    protocol_was_active = False
                 if handoff:
                     # A protocol may start and finish between reader
                     # iterations, so the handoff itself is also a boundary.
                     line_buffer.clear()
                     self._process_rx_data(
-                        port_name, handoff, parser, line_buffer,
+                        port_name, handoff, parser, line_buffer, generation=generation,
                     )
                 if data:
                     self._process_rx_data(
-                        port_name, data, parser, line_buffer,
+                        port_name, data, parser, line_buffer, generation=generation,
                     )
                 elif not handoff:
                     self._stop_event.wait(0.01)
@@ -357,6 +375,8 @@ class SerialMonitor:
             with self._lock:
                 self._port_statuses[port_name] = f"error: {e}"
         finally:
+            with self._protocol_lock:
+                self._pending_replies.pop(port_name, None)
             sp.close()
             with self._lock:
                 self._serial_ports.pop(port_name, None)
@@ -370,6 +390,7 @@ class SerialMonitor:
         data: bytes,
         parser: FrameParser | None,
         line_buffer: bytearray,
+        *, generation: int | None = None,
     ) -> None:
         """Publish one ordinary RX chunk from the sole reader thread."""
         self._emit_chunk(port_name, "RX", data, time.time())
@@ -385,7 +406,7 @@ class SerialMonitor:
                     parsed=frame,
                 )
                 self._emit_event(evt)
-                self._handle_auto_reply(port_name, frame.raw)
+                self._handle_auto_reply(port_name, frame.raw, generation)
             return
 
         line_buffer.extend(data)
@@ -400,7 +421,7 @@ class SerialMonitor:
                 raw=line,
             )
             self._emit_event(evt)
-            self._handle_auto_reply(port_name, line)
+            self._handle_auto_reply(port_name, line, generation)
 
         if len(line_buffer) > 4096:
             raw = bytes(line_buffer)
@@ -411,41 +432,46 @@ class SerialMonitor:
                 raw=raw,
             )
             self._emit_event(evt)
-            self._handle_auto_reply(port_name, raw)
+            self._handle_auto_reply(port_name, raw, generation)
             line_buffer.clear()
 
-    def _handle_auto_reply(self, port_name: str, data: bytes) -> None:
+    def _handle_auto_reply(self, port_name: str, data: bytes, generation: int | None = None) -> None:
         if not self._auto_reply_engine:
             return
+        if generation is None:
+            with self._protocol_lock:
+                generation = self._reply_generation[port_name]
         replies = self._auto_reply_engine.check(data)
-        for reply_data, delay in replies:
-            if delay > 0:
-                timer = threading.Timer(
-                    delay,
-                    self._send_auto_reply,
-                    args=(port_name, reply_data),
-                )
-                timer.daemon = True
-                timer.start()
-            else:
-                self._send_auto_reply(port_name, reply_data)
-
-    def _send_auto_reply(self, port_name: str, data: bytes) -> None:
-        with self._lock:
-            sp = self._serial_ports.get(port_name)
-            if sp is None or not sp.is_open:
+        if not replies:
+            return
+        with self._protocol_lock:
+            if (self._stop_event.is_set() or port_name in self._protocol_queues
+                    or generation != self._reply_generation[port_name]):
                 return
-            try:
-                sp.write(data)
-            except Exception:
-                return
+            pending = self._pending_replies.setdefault(port_name, [])
+            if len(pending) + len(replies) > 128:
+                raise RuntimeError('Automatic reply queue exceeded 128 entries; port stopped')
+            now = time.monotonic()
+            for reply_data, delay in replies:
+                self._reply_sequence += 1
+                heapq.heappush(pending, (now + delay, self._reply_sequence, reply_data))
 
-        timestamp = time.time()
-        self._emit_chunk(port_name, "TX", data, timestamp)
-        evt = SerialEvent(
-            timestamp=timestamp,
-            port=port_name,
-            direction="TX",
-            raw=data,
-        )
-        self._emit_event(evt)
+    def _drain_auto_replies(self, port_name: str) -> None:
+        # Only the existing reader executes scheduled replies. No timers survive
+        # its exit, and protocol admission cancels that port's pending replies.
+        while True:
+            with self._protocol_lock:
+                if self._stop_event.is_set() or port_name in self._protocol_queues:
+                    self._pending_replies.pop(port_name, None)
+                    return
+                pending = self._pending_replies.get(port_name)
+                if not pending or pending[0][0] > time.monotonic():
+                    return
+                _, _, data = heapq.heappop(pending)
+                if not self._write_ordinary_locked(port_name, data):
+                    if self._stop_event.is_set():
+                        self._pending_replies.pop(port_name, None)
+                        return
+                    raise OSError('Automatic reply write failed; data was not retried')
+            # External callbacks must never run under protocol admission.
+            self._record_sent(port_name, data)

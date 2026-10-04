@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
+import threading
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass
+@dataclass(frozen=True)
 class AutoReplyRule:
     match_hex: str | None = None
     match_regex: str | None = None
@@ -17,6 +19,36 @@ class AutoReplyRule:
     reply_ascii: str | None = None
     delay: float = 0.0
     description: str = ""
+
+
+    def __post_init__(self):
+        if (isinstance(self.delay, bool) or not isinstance(self.delay, (int, float))
+                or not math.isfinite(self.delay) or not 0 <= self.delay <= 3600):
+            raise ValueError('Auto-reply delay must be finite and in 0..3600 seconds')
+        matchers = (self.match_hex, self.match_regex, self.match_contains)
+        if not any(value is not None for value in matchers):
+            raise ValueError('Auto-reply requires a match condition')
+        for value in matchers:
+            if value is not None and (not isinstance(value, str) or not 1 <= len(value.encode('utf-8')) <= 4096):
+                raise ValueError('Auto-reply match must contain 1..4096 UTF-8 bytes')
+        if self.match_hex is not None:
+            object.__setattr__(self, 'match_hex', bytes.fromhex(self.match_hex).hex().upper())
+            if not self.match_hex:
+                raise ValueError('Auto-reply HEX match is empty')
+        if self.match_regex is not None:
+            try:
+                re.compile(self.match_regex)
+            except re.error as error:
+                raise ValueError(f'Invalid auto-reply regex: {error}') from error
+        if (self.reply_hex is None) == (self.reply_ascii is None):
+            raise ValueError('Auto-reply requires exactly one reply_hex or reply_ascii')
+        source = self.reply_hex if self.reply_hex is not None else self.reply_ascii
+        if not isinstance(source, str) or len(source) > 16384:
+            raise ValueError('Auto-reply encoded text exceeds 16384 characters')
+        if not 1 <= len(_build_reply(self)) <= 4096:
+            raise ValueError('Auto-reply payload must contain 1..4096 bytes')
+        if not isinstance(self.description, str) or len(self.description) > 1024:
+            raise ValueError('Auto-reply description exceeds 1024 characters')
 
 
 def _bytes_to_ascii_safe(data: bytes) -> str:
@@ -45,10 +77,10 @@ def _process_escape_sequences(s: str) -> bytes:
                 result.append(0x5C)
                 i += 2
             else:
-                result.append(ord(s[i]))
+                result.extend(s[i].encode("utf-8"))
                 i += 1
         else:
-            result.append(ord(s[i]))
+            result.extend(s[i].encode("utf-8"))
             i += 1
     return bytes(result)
 
@@ -80,42 +112,53 @@ def _matches(rule: AutoReplyRule, data: bytes) -> bool:
     return False
 
 
+def _parse_rules(data) -> list[AutoReplyRule]:
+    if not isinstance(data, list) or len(data) > 64:
+        raise ValueError('Select at most 64 auto-reply rules')
+    rules = []
+    for item in data:
+        if not isinstance(item, dict) or item.keys() - AutoReplyRule.__dataclass_fields__.keys():
+            raise ValueError('Invalid or unknown auto-reply rule fields')
+        rules.append(AutoReplyRule(**item))
+    return rules
+
+
 class AutoReplyEngine:
-    def __init__(self, rules: list[AutoReplyRule] | None = None) -> None:
-        self._rules: list[AutoReplyRule] = list(rules) if rules else []
+    def __init__(self, rules: list[AutoReplyRule] | None = None):
+        self._lock = threading.Lock()
+        self._rules = []
+        for rule in rules or []:
+            self.add_rule(rule)
 
     def add_rule(self, rule: AutoReplyRule) -> None:
-        self._rules.append(rule)
+        if not isinstance(rule, AutoReplyRule):
+            raise ValueError('Expected a validated auto-reply rule')
+        with self._lock:
+            if len(self._rules) >= 64:
+                raise ValueError('Select at most 64 auto-reply rules')
+            self._rules.append(rule)
 
     def remove_rule(self, index: int) -> None:
-        del self._rules[index]
+        with self._lock:
+            del self._rules[index]
 
     def load_rules(self, rules_data: list[dict]) -> None:
-        for item in rules_data:
-            self._rules.append(AutoReplyRule(**{
-                k: v for k, v in item.items() if k in AutoReplyRule.__dataclass_fields__
-            }))
+        rules = _parse_rules(rules_data)
+        with self._lock:
+            if len(self._rules) + len(rules) > 64:
+                raise ValueError('Select at most 64 auto-reply rules')
+            self._rules.extend(rules)
 
     def check(self, data: bytes) -> list[tuple[bytes, float]]:
-        results: list[tuple[bytes, float]] = []
-        for rule in self._rules:
-            if _matches(rule, data):
-                reply = _build_reply(rule)
-                if reply is not None:
-                    results.append((reply, rule.delay))
-        return results
+        with self._lock:
+            rules = tuple(self._rules)
+        return [(_build_reply(rule), rule.delay) for rule in rules if _matches(rule, data)]
 
     @property
     def rules(self) -> list[AutoReplyRule]:
-        return list(self._rules)
+        with self._lock:
+            return list(self._rules)
 
 
 def load_rules_from_file(path: str) -> list[AutoReplyRule]:
-    """Load rules from a JSON file. The file should contain a list of rule dicts."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    rules: list[AutoReplyRule] = []
-    for item in data:
-        rules.append(AutoReplyRule(**{
-            k: v for k, v in item.items() if k in AutoReplyRule.__dataclass_fields__
-        }))
-    return rules
+    return _parse_rules(json.loads(Path(path).read_text(encoding='utf-8')))

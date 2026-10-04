@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T06:53:56+00:00`
+- 更新时间：`2026-10-04T07:20:16+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared passive serial monitor after 920337e; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; auto-reply lifecycle repair after 47b479a; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审验证。第四十四批monitor删除直接Monitor/CLIMode分支，真正被动且支持无TTY；与log合并_capture CLI生命周期/校验/收尾，单SerialCapture全局游标支持多端口独立parser。ConsoleMonitor按端口/方向增量UTF8，4096字符/100ms/退出刷新，HEX/过滤/转义不影响原始日志。22新测试、相关86通过；真实Edge/MCP/7CLI+真实串口栈/模拟transport验证双监听多端口/中文半字符/Profile半帧、显示过滤完整落盘、监听零发送、参数冲突保留文件、第二口错误、自建双口尾部及全释放。920337e精确CI1526/GUI216全绿，扩大2311通过2跳过，本批精确CI待核对。
+- 当前任务：持续循环评审验证。第四十五批删除自动应答Timer/独立写路径，由现有reader有界队列执行，复用普通发送准入；停止/重启/YMODEM取消旧应答，代次拒绝在途旧匹配，双端口隔离。规则预校验、冻结与原子加载，UTF8回复，后台Profile缓存1MiB。28新测试；扩大2336通过2跳过，补充实际SerialPort/模拟OS短写和锁释放、Profile超限后相关62通过。47b479a精确CI1548/GUI216及构建feedback全绿，本批精确CI待核对。无浏览器重验或物理发送。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第四十四批：被动monitor共享迁移，log/monitor共用捕获与生命周期，22新测试、相关86通过。Edge/MCP/7CLI/真实串口栈+模拟transport，两个监听无TTY共用多端口，UTF8/Profile独立，过滤不改日志；监听零发送，3类非法保留旧文件，第二端口错误非零，owned双口尾部与全退出，无pageerror。920337e精确CI1526/GUI216/构建/feedback通过，扩大2311通过2跳过，本批精确CI待核对，无物理发送。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第45节：第四十五批删除自动应答Timer/独立写路径，由现有reader有界队列执行，复用普通发送准入；停止/重启/YMODEM取消旧应答，代次拒绝在途旧匹配，双端口隔离。规则预校验、冻结与原子加载，UTF8回复，后台Profile缓存1MiB。28新测试；扩大2336通过2跳过，补充实际SerialPort/模拟OS短写和锁释放、Profile超限后相关62通过。47b479a精确CI1548/GUI216及构建feedback全绿，本批精确CI待核对。无浏览器重验或物理发送。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -28,7 +28,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议15，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议18，内嵌Agent暂禁用。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 核对本批精确CI，再迁serial open输入/发送：复用SerialCapture/ConsoleMonitor，清除旧CLIMode重复start/stop和私有callback；dashboard收敛到共享GUI前核对Profile显示功能。继续旧Profile缓存/轮转、循环/YMODEM、逐请求取消、Agent、真机异常/长稳和NSIS，不改固件/WinUSB，不合并发布。
+1. 核对本批精确CI，再迁serial open输入/发送与后台自动应答配置契约，复用SerialCapture/ConsoleMonitor，删除旧CLIMode重复生命周期/私有callback及缺端口参数发送路径。dashboard收敛前核对Profile显示；日志轮转、循环/YMODEM、请求取消、Agent、真机异常/长稳与NSIS继续，不改固件/WinUSB，不合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
