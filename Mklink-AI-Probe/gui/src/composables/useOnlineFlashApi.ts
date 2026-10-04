@@ -100,13 +100,13 @@ export class OnlineFlashApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, base = ONLINE_FLASH_BASE): Promise<T> {
   const isMultipart = options.body instanceof FormData
   const headers = new Headers(options.headers)
   if (!isMultipart && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(`${API_BASE}${ONLINE_FLASH_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${base}${path}`, {
     ...options,
     headers,
   })
@@ -382,6 +382,16 @@ export function useOnlineFlashApi() {
     return request('/jobs/active')
   }
 
+  async function retainedJob(requestId: string) {
+    const payload = await request<{ jobs: Array<{
+      request_id: string; action: string; state: string; online_job_id?: string;
+      result: { job?: JobSnapshot } | null; error: string | null;
+    }> }>('/jobs/', {}, '/api/runtime')
+    const job = payload.jobs.find(item => item.request_id === requestId && item.action === 'online_flash')
+    if (!job) throw new Error(tr('未找到保留记录；这不代表未执行，请检查目标后再操作。', 'No retained record; this does not prove it did not run. Inspect the target before proceeding.'))
+    return job
+  }
+
   function getJob(jobId: string): Promise<JobSnapshot> {
     return request(`/jobs/${encoded(jobId)}`)
   }
@@ -484,6 +494,7 @@ export function useOnlineFlashApi() {
     readMemoryStream,
     createJob,
     getActiveJob,
+    retainedJob,
     getJob,
     stopJob,
     subscribeJob,

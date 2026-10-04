@@ -4,23 +4,23 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T23:40:58.1678439Z`
+- 更新时间：`2026-10-04T23:51:15.9271640Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：138将GUI在线POST接入同一RuntimeJobs，写前记录、在线ID/终态快照、同ID去重，前端API保留请求ID，协议41。145后端及98前端短测、生产构建、真实Chrome受控丢响应/去重查询通过；页面刷新恢复与未明结果禁止重提尚未实现，继续推进。长期暂停。
+- 当前任务：139在线页面写前按探针/请求独立存凭据，挂载查询原持久任务，运行恢复SSE/stop，未明禁止新提交，终态清理。104GUI短测和最终构建通过；完整Chrome受控刷新/禁重提/成功清理通过，无真实SSE或硬件作业。人工核查结束跟踪与多窗口验证待补；长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针独立共享后台；GUI在线POST已接入持久任务，页面刷新恢复/未知重提限制仍待补齐。MCU检查只读，copy-flm及CLI/活动MCP security已共享；旧MCP剩余主体、安装版和其他验证缺口待继续；长期暂停。
+- **0.3.0 专用CLI共享迁移** — `development`。每探针独立共享后台；GUI在线持久提交和基本页面刷新恢复/未明禁重提已实现，人工核查后结束跟踪与多窗口验证仍待补。旧MCP剩余主体、安装版和其他验证缺口待继续；长期暂停。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第138节：145后端回归、98前端回归及生产构建通过。真实Chrome受控页面加载生产API模块，3次提交仅2次启动，丢响应凭原ID查到终态；测试服务自身正常退出、端口释放。非完整GUI恢复/真机/局域网验收。137三项CI全通过。
+- **共享后台、多探针与AI共存**：第139节：104GUI短测及生产构建通过；完整Chrome页面受控恢复原任务，刷新保留阻止，无在线POST，成功后清除对应凭据，服务/端口已退出。不是实际SSE/硬件/安装验收；138三项CI全通过。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对138提交CI；137三项全通过。优先补OnlineFlashView按探针保存待确认请求，刷新或丢响应后只查询原任务、结果未明不得重新提交，保留SSE与原stop接口；避免新增状态管理器/队列。旧MCP、真机安全/物理中断、NSIS UAC及跨主机缺口继续保留。
+2. 核对139提交CI；138三项全通过。补在线unknown/缺失及提交拒绝后人工核查结束跟踪，避免只能清存储；继续检验并发窗口/探针切换/查询竞态/存储失败和真实双探针恢复。跨窗口提示尚无storage订阅，提交前会重扫。旧MCP、真机安全/物理中断、NSIS UAC及跨主机缺口保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

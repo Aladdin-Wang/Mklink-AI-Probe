@@ -986,6 +986,8 @@ describe('online flash task workspace behavior', () => {
       ['mklink.onlineFlash.settings', JSON.stringify({ targetPart: savedPart })],
     ])
     vi.stubGlobal('localStorage', {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
@@ -1033,6 +1035,8 @@ describe('online flash task workspace behavior', () => {
     FakeEventSource.instances = []
     const storage = new Map<string, string>()
     vi.stubGlobal('localStorage', {
+      get length() { return storage.size },
+      key: (index: number) => [...storage.keys()][index] ?? null,
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => storage.set(key, value),
       removeItem: (key: string) => storage.delete(key),
@@ -1048,6 +1052,70 @@ describe('online flash task workspace behavior', () => {
     vi.doUnmock('@tauri-apps/plugin-dialog')
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it.each([true, false])('persists and restores the original job (terminal snapshot: %s)', async withSnapshot => {
+    const fallback = viewFetch()
+    let requestId = ''
+    let finished = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBe(requestId)
+      }
+      if (url.endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({ jobs: [{
+        request_id: requestId, action: 'online_flash', state: finished ? 'succeeded' : 'running',
+        online_job_id: 'job-1', result: finished && withSnapshot ? { job: { job_id: 'job-1', state: 'succeeded', total_progress: 1 } } : null,
+      }] }))
+      if (url.endsWith('/jobs/job-1')) return new Response(JSON.stringify({ job_id: 'job-1', state: 'programming', total_progress: .5 }))
+      return fallback(input, options)
+    }))
+    const first = mount(await onlineFlashView())
+    await readyAndStart(first)
+    first.unmount()
+    const restored = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
+    expect(restored.text()).toContain(requestId)
+    expect(restored.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    finished = true
+    await restored.get('[data-testid="query-online-request"]').trigger('click')
+    await vi.waitFor(() => expect(restored.find('[data-testid="online-recovery"]').exists()).toBe(false))
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBeNull()
+    expect(restored.get('[data-testid="job-state"]').text()).toContain('烧录完成')
+    restored.unmount()
+  })
+
+  it.each(['missing', 'unknown', 'unreachable'])('keeps %s outcomes blocked without replay', async mode => {
+    localStorage.setItem('mklink.onlineFlash.pending.mklink-1.saved-request', 'saved-request')
+    const fallback = viewFetch()
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/api/runtime/jobs/')) {
+        if (mode === 'unreachable') throw new Error('backend unavailable')
+        return new Response(JSON.stringify({ jobs: mode === 'missing' ? [] : [{request_id: 'saved-request', action: 'online_flash', state: 'unknown'}] }))
+      }
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(true))
+    await flushPromises()
+    expect(wrapper.text()).toContain('saved-request')
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem('mklink.onlineFlash.pending.mklink-1.saved-request')).toBe('saved-request')
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not recover receipts belonging to another probe', async () => {
+    localStorage.setItem('mklink.onlineFlash.pending.other-probe.other-request', 'other-request')
+    const wrapper = mount(await onlineFlashView())
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="probe-select"]').exists()).toBe(true))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/api/runtime/jobs/'))).toBe(false)
+    expect(localStorage.getItem('mklink.onlineFlash.pending.other-probe.other-request')).toBe('other-request')
+    wrapper.unmount()
   })
 
   it('adds and displays a target-scoped custom FLM', async () => {
@@ -2084,6 +2152,8 @@ describe('online flash task workspace behavior', () => {
     resolveJob(new Response(JSON.stringify({ job_id: 'job-1', job: { state: 'queued' } }), { status: 200 }))
     wrapper.unmount()
 
+    // Separate latch scenario; remount recovery is exercised above.
+    localStorage.clear()
     let resolveErase!: (response: Response) => void
     const pendingErase = new Promise<Response>(resolve => { resolveErase = resolve })
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, options?: RequestInit) => (
