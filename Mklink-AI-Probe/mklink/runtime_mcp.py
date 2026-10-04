@@ -349,6 +349,12 @@ def build_server():
         modbus_probe accepts slave/address; it probes one FC03 register with a 150ms timeout,
         zero retries and restores the connection's timing after completion. The result distinguishes
         a response (including an exception code) from no response; transport errors abort the request.
+        modbus_loop_start uses the open connection's default slave and accepts fc/start,
+        quantity or values, interval (0.02..3600 seconds), and count (0..100000; zero continuous).
+        It shares the GUI loop: a second active loop is rejected. Each successful transaction
+        is followed by the full interval; the first error stops the loop without closing the port.
+        Disconnect keeps it running. Inspect modbus_status.loop, then explicitly call
+        modbus_loop_stop with {} to stop the shared loop. An in-flight write cannot be undone.
         """
         return client().call(capability, arguments)
 

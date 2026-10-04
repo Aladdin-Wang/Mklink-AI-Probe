@@ -43,7 +43,7 @@ def test_uart_lobby_attach_ignores_target_locks_and_never_connects(runtime):
                 return response.json()
     result = client.portal.call(scenario)
     assert result['scope'] == 'uart' and result['attached']
-    assert result['capabilities'] == ['modbus_history', 'modbus_probe', 'modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
+    assert result['capabilities'] == ['modbus_history', 'modbus_loop_start', 'modbus_loop_stop', 'modbus_probe', 'modbus_start', 'modbus_status', 'modbus_stop', 'modbus_transaction',
                                      'serial_broadcast', 'serial_history', 'serial_recording_start', 'serial_recording_stop', 'serial_send', 'serial_send_file', 'serial_sequence_start', 'serial_sequence_stop', 'serial_start', 'serial_status', 'serial_stop', 'uart_ports']
     assert app.state.mklink_state['device'] is None and calls == []
     session = result['session_id']
@@ -449,6 +449,52 @@ def uart_attach(client):
     response = client.post('/_runtime/attach', json={'scope': 'uart'})
     assert response.status_code == 200, response.text
     return response.json()['session_id']
+
+
+def test_mcp_loop_survives_detach_and_peer_stops_same_worker(uart_app, monkeypatch):
+    from mklink import runtime as runtime_module, runtime_mcp
+    http, control, managers, factory, _ = uart_app
+    def request(info, method, path, payload=None, **kwargs):
+        response = http.request(method, path, json=payload)
+        response.raise_for_status()
+        return response.json()
+    monkeypatch.setattr(runtime_module, 'request', request)
+    monkeypatch.setattr(runtime_mcp, 'RuntimeClient', lambda **kwargs: RuntimeClient(info=control.info, **kwargs))
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool('connect', {'scope': 'uart'})
+            opened = await mcp.call_tool('gui_call', {'capability': 'modbus_start',
+                'arguments': {'port': 'TEST', 'slave': 7, 'registers': []}})
+            assert not opened.is_error
+            result = await mcp.call_tool('gui_call', {'capability': 'modbus_loop_start',
+                'arguments': {'fc': 3, 'start': 8, 'quantity': 1, 'interval': 3600}})
+            assert not result.is_error and result.data['running']
+            await mcp.call_tool('disconnect', {})
+    asyncio.run(scenario())
+    manager = managers['modbus']
+    assert not control.sessions and manager.running and manager.get_status()['loop']['running']
+    assert len(factory.instances) == 1
+    peer = uart_attach(http)
+    assert call(http, peer, 'modbus_start').json()['reused']
+    assert call(http, peer, 'modbus_status').json()['loop']['running']
+    assert call(http, peer, 'modbus_loop_start', {'fc': 3, 'start': 9, 'quantity': 1}).status_code == 409
+    assert not call(http, peer, 'modbus_loop_stop').json()['running']
+    assert manager.running and manager.worker_alive and len(factory.instances) == 1
+    assert factory.instances[0].calls == [(8, 1, 7)]
+    assert control.app.state.mklink_state['device'] is None
+    http.post('/_runtime/detach', json={'session_id': peer})
+
+
+def test_shared_loop_invalid_request_does_not_create_work(uart_app):
+    http, _, managers, factory, _ = uart_app
+    session = uart_attach(http)
+    assert call(http, session, 'modbus_start', {'port': 'TEST', 'registers': []}).status_code == 200
+    for arguments in ({'fc': 6, 'start': 0, 'values': [-1]},
+                      {'fc': 3, 'start': 0, 'quantity': 1, 'interval': 0}):
+        assert call(http, session, 'modbus_loop_start', arguments).status_code == 400
+    assert managers['modbus']._loop_thread is None and factory.instances[0].calls == []
+    assert call(http, session, 'modbus_loop_stop').status_code == 200
+    http.post('/_runtime/detach', json={'session_id': session})
 
 
 @pytest.mark.parametrize('stream,settings', [('serial', {'ports': [{'port': 'TEST'}]}),

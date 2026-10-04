@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 24  # Shared serial dashboard, broadcast and bounded file send.
+PROTOCOL = 25  # Shared Modbus loop lifecycle through the existing worker.
 VERSION = "0.3.0"
 
 

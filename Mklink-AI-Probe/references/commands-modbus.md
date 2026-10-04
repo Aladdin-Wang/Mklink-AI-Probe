@@ -237,3 +237,12 @@ cp <mklink安装目录>/mklink/modbus/_dashboard_template.html .mklink/modbus_da
 任何事务错误都会停止该循环；状态中的 `loop.error` 保留原因，连接继续保留。
 超时可能意味着写入已执行但响应丢失，检查从站状态后再决定是否显式重新启动。
 这与连接配置的底层 `retries` 是不同层级；循环停止不会撤销已发出的请求。
+
+AI 先以 `scope="uart"` 连接共享后台，并启动或借用 `modbus_start`。随后可通过
+`gui_call` 调用 `modbus_loop_start`，例如参数
+`{"fc":3,"start":0,"quantity":1,"interval":1,"count":10}`。
+循环使用当前连接的默认从站地址；`count=0` 表示持续运行。通过
+`modbus_status.loop` 查看状态，调用 `modbus_loop_stop`（空参数）显式停止。
+GUI 和 AI 操作的是同一个后台循环，重复启动返回冲突。AI 断开不会停止循环；
+其他已连接客户端可以查看和停止它。停止循环保留连接，关闭连接仍遵循创建者与
+借用者保护；这些能力不初始化目标 MCU，也不占用目标调试操作锁。
