@@ -243,6 +243,20 @@ class SharedTarget:
                 return job['result']
             raise CapabilityUnavailableError(data={'operation': operation})
         except RuntimeErrorResponse as exc:
+            if operation == 'offline.deploy':
+                detail = exc.detail
+                if (exc.status_code == 500 and isinstance(detail, dict)
+                        and detail.get('code') == 'OFFLINE_RECOVERY_REQUIRED'
+                        and isinstance(detail.get('recovery_directory'), str)
+                        and detail['recovery_directory']):
+                    raise AgentOperationError(
+                        'Offline rollback incomplete; inspect the bound disk and retained backups before retrying',
+                        data={'status': 500, 'state': 'recovery_required',
+                              'recovery_directory': detail['recovery_directory']}) from None
+                if exc.status_code is None or exc.status_code >= 500:
+                    raise AgentOperationError(
+                        'Offline deployment result is unknown; inspect the bound disk before retrying',
+                        data={'status': exc.status_code, 'state': 'unknown'}) from None
             raise AgentOperationError('Shared target operation failed; no direct fallback or replay',
                                       data={'status': exc.status_code, **({'request_id': request_id,
                         'job_id': job.get('job_id') if job else None, 'state': 'unknown'}

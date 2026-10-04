@@ -120,7 +120,12 @@ Stopping a borrowed subscription does not stop another client's acquisition.
 Offline deployment resolves uploaded references and passes through the shared
 backend's identity and operation admission checks. `jobs.status` queries retained
 flash/erase/reset jobs; it cannot query offline deployment. A lost deployment
-response requires inspection of the target disk, never automatic replay.
+response returns `state=unknown` and requires inspection of the target disk,
+never automatic replay. An incomplete rollback returns `state=recovery_required`
+and `recovery_directory` on the service computer. Keep that directory, verify
+which probe and volume were affected, and inspect/restore the retained originals
+before retrying. This is a recovery diagnostic, not an automatic recovery task;
+`jobs.status` cannot resolve it.
 
 The listener being ready does not prove target connectivity, packaged algorithm
 coverage, physical deployment, or long-duration operation. Check the capability

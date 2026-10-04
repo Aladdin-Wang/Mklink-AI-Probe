@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi import Form
 from mklink import runtime as sdk
+from mklink.runtime import request as runtime_request
 from mklink.remote.dispatcher import dispatch_capability
 from mklink.remote.protocol import AgentOperationError, RequestValidationError
 from mklink.remote.capabilities import CapabilityUnavailableError
@@ -130,4 +131,47 @@ def test_form_transport_is_local_authenticated_and_never_retried(monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join(2)
+        assert not thread.is_alive()
+
+@pytest.mark.parametrize('failure', ['recovery', 'generic', 'malformed', 'lost'])
+def test_remote_deploy_reports_recovery_or_unknown_without_replay(target, deployment, failure, monkeypatch):
+    monkeypatch.setattr(sdk, "request", runtime_request)
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    router, _, _, _, _ = target
+    params, uploads = deployment
+    received = []
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            received.append(self.rfile.read(int(self.headers['Content-Length'])))
+            if failure == 'lost':
+                self.close_connection = True
+                return
+            detail = {'code': 'OFFLINE_RECOVERY_REQUIRED',
+                      'recovery_directory': 'retained-fixture/backup',
+                      'message': 'not-forwarded-private-diagnostic'} if failure == 'recovery' else 'private-diagnostic'
+            body = json.dumps({'detail': detail}).encode() if failure != 'malformed' else b'<html>private-diagnostic</html>'
+            self.send_response(500)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *args): pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever)
+    thread.start()
+    original = router._target.info
+    router._target.info = {'port': server.server_port, 'token': 'local-fixture'}
+    try:
+        with pytest.raises(AgentOperationError) as error:
+            dispatch_capability('offline.deploy', params, context(router), upload_manager=uploads, shared_target=router._target)
+        assert len(received) == 1
+        assert error.value.data['state'] == ('recovery_required' if failure == 'recovery' else 'unknown')
+        if failure == 'recovery':
+            assert error.value.data['recovery_directory'] == 'retained-fixture/backup'
+        else:
+            assert 'recovery_directory' not in error.value.data
+        assert 'private-diagnostic' not in str(error.value) + str(error.value.data)
+    finally:
+        router._target.info = original
+        server.shutdown(); server.server_close(); thread.join(2)
         assert not thread.is_alive()

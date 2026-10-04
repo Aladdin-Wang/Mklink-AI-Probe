@@ -21,6 +21,15 @@ describe('useOfflineFlashApi', () => {
     expect(error.message).toBe('探针正被 SuperWatch 占用，请先停止该功能后重试。')
   })
 
+  it('keeps the recovery location visible without replaying deployment', async () => {
+    const message = 'Offline rollback incomplete. Recovery files retained at: retained-fixture/backup'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: 'OFFLINE_RECOVERY_REQUIRED', message, recovery_directory: 'retained-fixture/backup' },
+    }), { status: 500 })))
+    await expect(useOfflineFlashApi().deploy({} as never, [], [])).rejects.toThrow(message)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('delivers offline trigger lines before resolving the final result', async () => {
     const encoder = new TextEncoder()
     let finish: (() => void) | undefined

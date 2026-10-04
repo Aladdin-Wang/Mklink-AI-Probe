@@ -1422,8 +1422,9 @@ def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch, re
 
     if recovery_failure:
         assert response.status_code == 500
-        assert "Recovery files retained at:" in response.json()["detail"]
-        assert "retained-backup" in response.json()["detail"]
+        assert response.json()["detail"]["code"] == "OFFLINE_RECOVERY_REQUIRED"
+        assert "Recovery files retained at:" in response.json()["detail"]["message"]
+        assert "retained-backup" in response.json()["detail"]["recovery_directory"]
         return
     assert response.status_code == 200, response.text
     assert (disk / "boot.bin").read_bytes() == b"current-0"

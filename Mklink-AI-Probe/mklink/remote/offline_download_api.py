@@ -796,7 +796,10 @@ def create_offline_download_router(
                     algorithm_sources=algorithm_sources,
                 )
         except OfflineRecoveryError as error:
-            raise HTTPException(status_code=500, detail=str(error)) from error
+            raise HTTPException(status_code=500, detail={
+                "code": "OFFLINE_RECOVERY_REQUIRED", "message": str(error),
+                "recovery_directory": error.recovery_directory,
+            }) from error
         except (OfflineDownloadError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=422, detail=str(error))
         finally:

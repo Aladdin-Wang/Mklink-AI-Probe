@@ -19,9 +19,10 @@ VERSION = "0.3.0"
 
 
 class RuntimeErrorResponse(RuntimeError):
-    def __init__(self, message, *, status_code=None):
+    def __init__(self, message, *, status_code=None, detail=None):
         super().__init__(message)
         self.status_code = status_code
+        self.detail = detail
 
 
 def runtime_dir(probe_id=None) -> Path:
@@ -92,7 +93,13 @@ def request(info: dict, method: str, path: str, payload=None, *, timeout=35, for
             return json.load(response)
     except HTTPError as exc:
         detail = exc.read(65536).decode("utf-8", "replace")
-        raise RuntimeErrorResponse(f"Runtime HTTP {exc.code}: {detail}", status_code=exc.code) from exc
+        try:
+            body = json.loads(detail)
+            structured_detail = body.get("detail") if isinstance(body, dict) else None
+        except ValueError:
+            structured_detail = None
+        raise RuntimeErrorResponse(f"Runtime HTTP {exc.code}: {detail}",
+                                   status_code=exc.code, detail=structured_detail) from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise RuntimeErrorResponse("Shared runtime is unavailable; no direct CDC fallback was attempted") from exc
 
