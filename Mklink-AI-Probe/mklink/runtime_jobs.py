@@ -89,8 +89,16 @@ class RuntimeJobs:
             firmware = arguments.get('firmware')
             if not Path(firmware).is_file():
                 raise HTTPException(422, 'Firmware file is unavailable')
+        job = self._accept(action, request_id, fingerprint)
+        task = asyncio.create_task(self.execute(job, dict(arguments)))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return job
+
+    def _accept(self, action, request_id, fingerprint):
+        """Persist acceptance after the caller's existing admission boundary."""
         job = {'job_id': secrets.token_hex(16), 'request_id': request_id, 'fingerprint': fingerprint,
-               'action': action, 'probe_id': c.info.get('probe_id'), 'state': 'running', 'started': time.time(),
+               'action': action, 'probe_id': self.control.info.get('probe_id'), 'state': 'running', 'started': time.time(),
                'result': None, 'error': None, 'replay': False}
         previous_jobs = self.jobs.copy()
         while len(self.jobs) >= 64:
@@ -102,10 +110,15 @@ class RuntimeJobs:
             self.jobs.clear()
             self.jobs.update(previous_jobs)
             raise HTTPException(503, 'Job journal unavailable; no operation was started')
-        task = asyncio.create_task(self.execute(job, dict(arguments)))
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
         return job
+
+    def _finish(self, job):
+        """Persist a terminal result, retaining unknown on journal failure."""
+        job['finished'] = time.time()
+        try:
+            self.save()
+        except OSError:
+            job.update(state='unknown', error='Result journal failed; inspect target before proceeding')
 
     async def execute(self, job, arguments):
         token = executing_job.set(job['job_id'])
@@ -121,12 +134,8 @@ class RuntimeJobs:
             if isinstance(exc, asyncio.CancelledError):
                 raise
         finally:
-            job['finished'] = time.time()
             executing_job.reset(token)
-            try:
-                self.save()
-            except OSError:
-                job.update(state='unknown', error='Result journal failed; inspect target before proceeding')
+            self._finish(job)
 
 
 def install_jobs(app, control):

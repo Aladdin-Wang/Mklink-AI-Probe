@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T20:21:46.708355+00:00`
+- 更新时间：`2026-10-04T20:25:45.359080+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; 24h portable runtime soak started after b2508240; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：112批111候选双V4 LAN/本地共享及物理MSC部署短时通过，另10秒HPM共享RTT本地/远程各2075字节、line_parser诊断正确。所有测试后台/端点及磁盘测试文件清理完成。长期验证仍暂停。
+- 当前任务：113批部署持久查询前置收敛：RuntimeJobs提取现有_accept/_finish并由原提交/执行路径调用，55项回归通过。脱机接口尚未接入日志，不可宣称已支持结果查询。长期验证暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 111候选已完成112批双探针短时真机验证。继续实现脱机部署持久结果查询，沿用现有RuntimeJobs与单一准入，不新建队列；NSIS UAC待答复，长期测试等待用户通知。
+2. 接续113：部署在RuntimeGate已有operation_lock与settle范围内使用RuntimeJobs记录，不通过submit重新争锁或异步移交临时路径。下一步实现有准入校验的记录入口、输入内容指纹和request_id，贯穿GUI/远程与jobs.status；先日志接受成功才写盘。部署持久查询仍未实现。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制
