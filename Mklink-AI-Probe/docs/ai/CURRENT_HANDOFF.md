@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T02:53:03+00:00`
+- 更新时间：`2026-10-04T03:02:19+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; shared Modbus scan and worker-local timing implemented after 8d45a21; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; Modbus CLI explicit-option priority fixed after 5cd7771; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：持续循环评审/验证。第三十三批将modbus scan CLI迁入RuntimeClient UART会话；逐地址probe复用原worker，150ms/零重试只限单任务并恢复串口、事务及失败计数。恢复失败尝试全部字段后关闭底层串口，外层锁保留至显式stop。借用后核对连接参数；CLI仅停止自己创建且无其他订阅者的连接。扫描循环改回调，无双客户端/队列/锁或旧签名兼容。协议12、UART10项。扩展1971通过/2跳过；真实RTU编解码模拟串口和真实Edge/MCP/CLI子进程七次交错I/O通过，未发送物理Modbus。前批8d45a21精确CI后端1193、GUI212及构建/feedback通过；本批推送后核对。继续配置显式参数优先级复现及其他专用CLI迁移。
+- 当前任务：持续循环评审/验证。第三十四批复现7个Modbus子命令在读取保存端口时覆盖显式9600/N/1；共用argparse用None标记未指定，配置仅补缺项，显式端口仍不继承另一端口配置，删除无效_baud_explicit标志。12项新测（7项先失败）、定向86、扩展1983通过/2跳过。真实Edge/MCP/CLI子进程用显式115200/N/1覆盖保存9600/E/2并借用GUI，扫描/GUI七次交错I/O同worker、服务退出，模拟从站未物理发送。协议12、UART10项保持。前批5cd7771精确CI后端1208、GUI212、构建/feedback通过。本批CI推送后核对；下一步read/write复用scan生命周期，避免复制，保留后续诊断/日志能力。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第三十三批：扩展1971通过/2跳过，新扫描15项。真实pymodbus RTU编解码验证正常/异常/无响应/端口错误/恢复失败，每次一帧；恢复失败关闭句柄、保持占用锁且后续不I/O。真实Edge/FastMCP/TCP与CLI子进程配合模拟从站：AI写7/8，扫描1..4中穿插GUI读默认1，七次I/O同一worker，CLI找到正常及异常响应，detach不停止GUI，全部服务退出。强制清理测试一次保守拒绝锁；等待测试进程退出后显式非强制清理，保留inode，定向25及扩展通过，生产锁未改。前批8d45a21远端1193/GUI212/构建/feedback通过；第三十一批双探针真机证据保留。本批未物理Modbus发送，GUI源码未变。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第三十四批：显式Modbus串口参数被配置覆盖先在7入口复现；修复后新增12、定向86、扩展1983通过/2跳过。真实CLI从测试配置只取端口，显式覆盖baud/parity/stopbits后与Edge/FastMCP/TCP共用模拟Modbus，七次I/O同worker、CLI不停止GUI、最终服务退出。第三十三批真实RTU编解码探测/参数恢复错误测试保持；5cd7771远端1208/GUI212/构建/feedback通过。第三十一批双探针真机及Boot/VTOR保持证据保留；本批无物理Modbus发送，GUI源码未变。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 继续专用CLI共享迁移：scan已完成，下一步先复现_modbus_resolve_defaults在缺省port时覆盖显式baud/parity/stopbits的问题，尚未确认或修复。然后迁移read/write/poll/diag/monitor/dashboard，保留FC07/22/23、轮询、原始监控及日志，不新增串口客户端或锁。复审其他写接口未知字段/类型强转。串口多端口接收需有来源标记的有限游标/订阅；循环/YMODEM归属、HTTP断开逐请求取消继续。后续Agent、拔插休眠/长稳/NSIS；不隐式初始化MCU、不改固件/WinUSB、不自动合并发布。
+1. 继续专用CLI共享迁移：scan及配置优先级已完成，下一步read/write复用scan借用连接、订阅后核对参数、按归属停止/退出的公共上下文，避免复制生命周期。保留FC01..06/15/16输出及校验，再迁移poll/diag/monitor/dashboard；FC07/22/23、原始监控及日志先补现有worker能力，不新增串口客户端/队列/锁。明确协议层配置重试与HTTP未知结果不重放的区别。串口有来源的有限接收游标、循环/YMODEM归属、HTTP断开逐请求取消继续。后续Agent、拔插休眠/长稳/NSIS；不隐式初始化MCU、不改固件/WinUSB、不自动合并发布。
 2. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

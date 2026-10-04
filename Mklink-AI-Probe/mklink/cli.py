@@ -1238,29 +1238,26 @@ def _enable_utf8_console():
 # ---------------------------------------------------------------------------
 
 def _modbus_resolve_defaults(args) -> bool:
-    """用 config.json 中的 Modbus 默认值填充未指定的参数。
+    """Fill omitted options from the saved port profile, then builtin defaults.
 
-    --port 未指定时从 config 读取 modbus_port。
-    --baud 未指定时（仍为默认 9600）从 config 读取 modbus_baud。
-    --parity/--stopbits 同理。
-
-    Returns:
-        True 表示 port 已解析（来自参数或配置），False 表示无法解析。
+    An explicit port does not inherit another port's saved settings. Explicit
+    options always win, including values equal to the builtin defaults.
     """
-    if args.port:
-        return True
-
-    from mklink.project_config import load_config
-    config = load_config(".")
-    if config and config.get("modbus_port"):
-        args.port = config["modbus_port"]
-        if not hasattr(args, "_baud_explicit") and config.get("modbus_baud"):
-            args.baud = config["modbus_baud"]
-        if config.get("modbus_parity"):
-            args.parity = config["modbus_parity"]
-        if config.get("modbus_stopbits"):
-            args.stopbits = config["modbus_stopbits"]
+    config = {}
+    saved_port = not args.port
+    if saved_port:
+        from mklink.project_config import load_config
+        config = load_config(".") or {}
+        args.port = config.get("modbus_port")
+        if not args.port:
+            config = {}
+    for name, default in [('baud', 9600), ('parity', 'N'), ('stopbits', 1)]:
+        if getattr(args, name) is None:
+            value = config.get('modbus_' + name)
+            setattr(args, name, default if value is None else value)
+    if args.port and saved_port:
         print(f"[AUTO] 从配置读取 Modbus 串口: {args.port} @ {args.baud}bps")
+    if args.port:
         return True
 
     print("[FAIL] 未指定 --port 且 config.json 中无 modbus_port 配置")
@@ -2570,9 +2567,9 @@ def main():
     def _add_modbus_serial_args(p, *, scan=False):
         """添加 Modbus 共用串口参数。"""
         p.add_argument("--port", default=None, help="Modbus 串口（如 COM8）；未指定时从 config.json 读取 modbus_port")
-        p.add_argument("--baud", type=int, default=9600, help="波特率（默认 9600）")
-        p.add_argument("--parity", choices=["N", "E", "O"], default="N", help="校验位（N=无 E=偶 O=奇，默认 N）")
-        p.add_argument("--stopbits", type=int, choices=[1, 2], default=1, help="停止位（默认 1）")
+        p.add_argument("--baud", type=int, default=None, help="波特率（使用保存端口时读取配置，否则默认 9600）")
+        p.add_argument("--parity", choices=["N", "E", "O"], default=None, help="校验位（使用保存端口时读取配置，否则默认 N）")
+        p.add_argument("--stopbits", type=int, choices=[1, 2], default=None, help="停止位（使用保存端口时读取配置，否则默认 1）")
         if not scan:
             p.add_argument("--timeout", type=float, default=1.0, help="响应超时秒数（默认 1.0）")
             p.add_argument("--retries", type=int, default=3, help="超时重试次数（默认 3）")
