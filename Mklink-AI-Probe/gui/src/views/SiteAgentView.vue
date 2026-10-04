@@ -108,7 +108,7 @@
               <li>{{ tr('远程客户端使用 MKLink Skill、CLI 或 MCP：先握手认证，再连接目标并调用能力。此地址是 WebSocket 服务，不能直接作为网页打开。', 'Use MKLink Skill, CLI, or MCP: authenticate, connect the target, then call its capabilities. This WebSocket address is not a browser page.') }}</li>
               <li>{{ tr('停止服务会等待正在执行的请求结束，再断开远程客户端；本地 GUI、其他下载器和后台保持运行。局域网不通时检查网络与 Windows 防火墙，不要把地址改为 0.0.0.0。', 'Stopping waits for active requests, then disconnects remote clients. Local GUI, other probes, and the backend stay running. If LAN access fails, check the network and Windows Firewall.') }}</li>
             </ol>
-            <p>{{ tr('当前远程 RTT / SystemView 尚未启用，请使用本地共享仪表盘。', 'Remote RTT / SystemView is not enabled yet; use the local shared dashboards.') }}</p>
+            <p>{{ tr('远程 RTT / SystemView 与本地仪表盘共用采集。连接后先查询服务能力；数据可能因断线或缓冲溢出而丢失，请检查返回的丢失提示。', 'Remote RTT / SystemView shares capture with local dashboards. Query service capabilities after connecting. Disconnections or buffer overflow can lose data; check the returned loss indicators.') }}</p>
             <p v-if="config.transport === 'lan-stcp'">{{ tr('STCP 还需要工程师端配置配套访问端；本地监听地址不能直接用于跨机访问。', 'STCP also requires a matching visitor on the engineer computer. The local listener address is not a cross-machine endpoint.') }}</p>
             <code>{{ endpoint }}</code>
           </article>
