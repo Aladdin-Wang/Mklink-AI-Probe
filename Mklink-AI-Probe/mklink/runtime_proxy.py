@@ -6,6 +6,8 @@ Device. Native windows can keep their existing API URLs and stream protocols.
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -27,12 +29,36 @@ REMOTE_SERVICE_METHODS = {
 
 def create_proxy(info, *, port, instance_id, transport=None):
     base = f"http://127.0.0.1:{info['port']}"
+    # One native window owns one presence record, independent of page reloads.
+    view_id = f"desktop-{uuid.uuid4()}"
+    view_lock = asyncio.Lock()
+    view_registered = False
+    closing = False
+
+    async def release_view():
+        nonlocal view_registered
+        if not view_registered:
+            return
+        try:
+            response = await app.state.client.post(
+                f"http://127.0.0.1:{info['port']}/api/runtime/control/view",
+                headers={"X-Auth-Token": info['token']},
+                json={'client_id': view_id, 'release': True}, timeout=0.5,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            logging.getLogger(__name__).warning('Desktop presence release failed; runtime TTL will expire it')
+        view_registered = False
 
     @asynccontextmanager
     async def lifespan(app):
         async with httpx.AsyncClient(base_url=base, transport=transport, timeout=None, trust_env=False) as client:
             app.state.client = client
-            yield
+            try:
+                yield
+            finally:
+                async with view_lock:
+                    await release_view()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.shutdown = None
@@ -54,11 +80,38 @@ def create_proxy(info, *, port, instance_id, transport=None):
 
     @app.post("/api/desktop/shutdown")
     async def shutdown(body: dict):
+        nonlocal closing
         if body.get("instance_id") != instance_id:
             return JSONResponse({"detail": "Desktop instance does not match"}, status_code=403)
+        closing = True
+        async with view_lock:
+            await release_view()
         if app.state.shutdown:
             app.state.shutdown()
         return {"status": "shutting_down", "shared_runtime_stopped": False}
+
+    @app.post('/api/runtime/control/view')
+    async def desktop_view(body: dict):
+        nonlocal view_registered
+        key = body.get('client_id')
+        if not isinstance(key, str) or not 1 <= len(key) <= 128:
+            return JSONResponse({'detail': 'Invalid window identity'}, status_code=422)
+        async with view_lock:
+            if closing:
+                return JSONResponse({'detail': 'Desktop is closing'}, status_code=409)
+            # A native window survives navigation/pagehide; shutdown owns release.
+            if body.get('release') is True:
+                return {'registered': view_registered, 'device_closed': False}
+            view_registered = True  # Also clean up a registration with a lost response.
+            try:
+                response = await app.state.client.post(
+                    f"http://127.0.0.1:{info['port']}/api/runtime/control/view",
+                    headers={"X-Auth-Token": info['token']},
+                    json={'client_id': view_id}, timeout=0.5,
+                )
+                return JSONResponse(response.json(), status_code=response.status_code)
+            except httpx.HTTPError:
+                return JSONResponse({'detail': 'Shared runtime unavailable'}, status_code=503)
 
     @app.get("/api/health")
     async def health():
@@ -88,8 +141,12 @@ def create_proxy(info, *, port, instance_id, transport=None):
                 selected = await asyncio.to_thread(discover, selection["probe_id"])
                 if not selected:
                     return JSONResponse({"detail": "Selected runtime unavailable"}, status_code=503)
-                info.clear()
-                info.update(selected)
+                async with view_lock:
+                    if closing:
+                        return JSONResponse({'detail': 'Desktop is closing'}, status_code=409)
+                    await release_view()
+                    info.clear()
+                    info.update(selected)
                 return {"same_runtime": False, "reload": True, "probe_id": selected["probe_id"]}
             return selection
         headers = {key: value for key, value in response.headers.items()

@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-04T16:47:46.544144+00:00",
+  "updated_at": "2026-10-04T16:58:24.126012+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
     "branch": "codex/v0.3.0-shared-runtime",
-    "head": "Based on main d4e73bd; consolidate public server startup after 36be159d; see PR 30 and Git for exact tip.",
+    "head": "Based on main d4e73bd; fix native proxy presence ownership after 835b72dc; see PR 30 and Git for exact tip.",
     "remote_head": "Application release v0.2.3 fixed at b0e0f61; verify current main with Git.",
     "working_tree": "Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status."
   },
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "第81批删除普通CLI serve、Python serve_fastapi和重复run_server，保留共享runtime内部create_app；Tauri改用desktop-proxy，握手参数全部必填。本地统一gui/runtime启动，远程服务仍复用宿主后台。首轮132项中131通过，新增夹具端口0错误修复后代理4项通过；Rust20和原生构建通过。实际双原生窗口独立端口、正常退出、保留共享后台通过，但立即停止后台因GUI在线记录未释放返回409，45秒TTL后可清理，下一批优先修复。 持续推进，不合并发布。"
+    "current_task": "第82批修复原生窗口关闭后GUI在线记录残留：桌面代理持有唯一随机view_id，复用原有view接口；页面刷新/迟到pagehide不删除原生窗口记录，正常关闭、生命周期退出和切换后台定向释放。心跳与关闭/切换串行，关闭后拒绝新增心跳；后台不可达时有界超时并警告，保留原TTL回收。25项相关及补充5项通过（重叠4项，共26项）。真实双原生窗口关闭第一台后只剩另一条记录，全部关闭记录立即清空、后台健康并可立即停止；未等待TTL或手工删记录。 持续推进，不合并发布。"
   },
   "milestones": [
     {
@@ -36,7 +36,7 @@
   "verification": [
     {
       "area": "共享后台、多探针与AI共存",
-      "result": "docs/verification/v0.3.0-mcp-consolidation.md第81节：第81批删除普通CLI serve、Python serve_fastapi和重复run_server，保留共享runtime内部create_app；Tauri改用desktop-proxy，握手参数全部必填。本地统一gui/runtime启动，远程服务仍复用宿主后台。首轮132项中131通过，新增夹具端口0错误修复后代理4项通过；Rust20和原生构建通过。实际双原生窗口独立端口、正常退出、保留共享后台通过，但立即停止后台因GUI在线记录未释放返回409，45秒TTL后可清理，下一批优先修复。"
+      "result": "docs/verification/v0.3.0-mcp-consolidation.md第82节：第82批修复原生窗口关闭后GUI在线记录残留：桌面代理持有唯一随机view_id，复用原有view接口；页面刷新/迟到pagehide不删除原生窗口记录，正常关闭、生命周期退出和切换后台定向释放。心跳与关闭/切换串行，关闭后拒绝新增心跳；后台不可达时有界超时并警告，保留原TTL回收。25项相关及补充5项通过（重叠4项，共26项）。真实双原生窗口关闭第一台后只剩另一条记录，全部关闭记录立即清空、后台健康并可立即停止；未等待TTL或手工删记录。"
     },
     {
       "area": "正式版与安装",
@@ -71,10 +71,10 @@
     "HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。",
     "STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。",
     "Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。",
-    "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。配置页异步加载与用户快速选择的时序也应继续审计。 第81批普通serve/serve_fastapi/run_server已删除；实际原生关窗仍可能遗留GUI presence至45秒TTL，立即停止后台409，需修复定向释放。RTT/SystemView远程8项仍不可用，不以旧独占入口兜底。"
+    "Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS候选已构建且负载自包含验证通过；perMachine安装/升级仍需Windows管理员/UAC配合，尚未执行。配置页异步加载与用户快速选择的时序也应继续审计。 第81批普通serve/serve_fastapi/run_server已删除；第82批已修复正常关窗的presence残留，真实双桌面立即停止后台通过；崩溃或后台不可达仍依赖既有TTL，未声称强杀也可立即清理。RTT/SystemView远程8项仍不可用，不以旧独占入口兜底。"
   ],
   "next_actions": [
-    "优先修复第81批真实双原生窗口关闭后的GUI在线记录残留：桌面代理先退出，pagehide释放可能未送达，立即runtime stop返回409，45秒TTL后恢复。应复用现有view生命周期，按桌面代理所拥有的窗口记录释放，不删除其他GUI/SDK会话。然后继续远程RTT/SystemView共享订阅与游标迁移；旧serve/run_server已删，不恢复独占兼容。核对第81批CI。安装UAC仍待用户回复。",
+    "第82批已修复并真实双桌面验证GUI presence定向释放，下一步继续远程RTT/SystemView共享订阅、游标和二进制读取；复用既有采集器，确保拥有/借用规则和逐客户端清理。配置页异步加载覆盖快速选择仍需审计。第81批两项CI已通过，PR描述重试已成功；核对第82批CI。安装UAC仍待用户回复，不阻塞独立审计。",
     "核对本批CI，继续完成Agent剩余RTT/SystemView八项及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。",
     "需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。"
   ],
