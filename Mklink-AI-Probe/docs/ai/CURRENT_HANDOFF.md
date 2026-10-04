@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T15:49:30.949892+00:00`
+- 更新时间：`2026-10-04T16:04:04.760561+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; desktop remote-service proxy and probe switching after acd522b1; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; asynchronous unified desktop exit after 1b246a42; see PR 30 and Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第77批修复桌面远程服务两处真实断点：本地代理按路径/方法放行远程服务控制API，继续拒绝其他内部runtime接口；共享连接存在时可选择另一下载器并切换。后端代理/服务14项、配置/远程服务GUI36项通过，原生生产构建通过。真实Tauri窗口通过本机LAN IP连接F103/HPM两服务，错误令牌拒绝、独立DPAPI凭据/端口、切换和刷新保留服务、单侧停止保留另一服务及两台SDK通过。原生窗口关闭后主程序残留，关闭CDP后仍可复现；仅代理子进程退出，退出门禁未通过，已清理本轮进程。 持续推进，不合并发布。
+- 当前任务：第78批修复原生退出残留：关窗/托盘退出统一调用单次异步清理，HTTP及进程等待移出原生事件线程，清理桌面代理后请求应用退出，保留共享后台。无CDP真实关窗返回0；双V4/F103/HPM原生LAN完整复测通过，关窗后远程和两SDK仍正常、桌面子进程全部退出。现有多实例冒烟改为默认正常关窗，保留CrashFirst选项；两个客户端独立关闭与代理端口释放通过。Rust20项与生产构建通过。安装包独立运行、升级、跨机网络和长稳仍待验。 持续推进，不合并发布。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第77节：第77批修复桌面远程服务两处真实断点：本地代理按路径/方法放行远程服务控制API，继续拒绝其他内部runtime接口；共享连接存在时可选择另一下载器并切换。后端代理/服务14项、配置/远程服务GUI36项通过，原生生产构建通过。真实Tauri窗口通过本机LAN IP连接F103/HPM两服务，错误令牌拒绝、独立DPAPI凭据/端口、切换和刷新保留服务、单侧停止保留另一服务及两台SDK通过。原生窗口关闭后主程序残留，关闭CDP后仍可复现；仅代理子进程退出，退出门禁未通过，已清理本轮进程。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第78节：第78批修复原生退出残留：关窗/托盘退出统一调用单次异步清理，HTTP及进程等待移出原生事件线程，清理桌面代理后请求应用退出，保留共享后台。无CDP真实关窗返回0；双V4/F103/HPM原生LAN完整复测通过，关窗后远程和两SDK仍正常、桌面子进程全部退出。现有多实例冒烟改为默认正常关窗，保留CrashFirst选项；两个客户端独立关闭与代理端口释放通过。Rust20项与生产构建通过。安装包独立运行、升级、跨机网络和长稳仍待验。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -35,13 +35,13 @@
 
 ## 真机环境
 
-- **state**：第77批实际Tauri原生窗口+两台V4/F103/HPM，经本机LAN IP认证读取目标身份；切换下载器与刷新后独立服务、DPAPI凭据和端口正确；停止F103服务保留HPM远程与两SDK连接。没有烧录、复位、供电或修改测试固件。原生主进程关闭超时，本轮由测试脚本清理；共享服务和后台亦清理。私有报告native77-hil.json、native77-close.json，不是安装版或跨机防火墙验证。
+- **state**：第78批实际Tauri两板LAN服务完整复测通过：独立DPAPI凭据和监听、刷新与切换、错误令牌拒绝、单侧停止隔离；桌面正常关窗后HPM远程和两台本地SDK状态可读，桌面子进程全部退出。私有native78-hil.json、native78-close.json和两张已查看截图。测试结束清理自建共享后台；没有烧录、复位、供电、修改固件；不是NSIS或跨机网络验收。
 - **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 优先定位原生关闭窗口后主程序残留：第77批两板远程服务/切换/认证/隔离已实测；代理子进程已停止，但主进程在有/无CDP环境均超时，native77-close.json为无CDP独立复现。修复真实退出后再进入NSIS安装升级；不要把原生开发EXE等同安装版通过。第76批acd522b1 Shared/Feedback CI均通过，核对第77批精确CI。随后继续远程流/脱机部署/任务查询/恢复长稳，不改固件/WinUSB、不合并发布。
+1. 第78批原生退出残留已修复并经无CDP/双板/双客户端正常关闭实测。下一步按tauri-gui-builder技能验证本地无签名NSIS及安装后的自包含sidecar、真实远程服务和退出；不自动覆盖正式资产、签名或发布。注意SKILL要求builtin FLM/STCP桥，开发EXE证据不等于安装版。第77批1b246a42两项CI通过，核对第78批CI。随后继续远程流/脱机部署/任务查询/恢复长稳；配置异步加载与快速选择时序仍需审计。
 2. 核对本批CI，继续完成Agent剩余RTT/SystemView八项及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
@@ -54,7 +54,7 @@
 - HPM实时通道仅V4配套固件；HPM5301 OTP组18/19已永久锁定，禁止重放配方。VCC每次变更需确认，电源遥测未完成外部精度校准。
 - STM32F767等重叠算法需匹配Bank模式；26个无可靠扇区表的FLM继续禁用扇区操作。
 - Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。
-- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第77批原生窗口WM_CLOSE后桌面主进程残留，无CDP同样复现；代理子进程退出。原生退出与NSIS门禁未通过，需优先修复。配置页异步加载与用户快速选择的时序也应继续审计。
+- Windows安装器无Authenticode签名，更新签名已验证；标准包不含离线WebView2。 第78批原生主程序退出残留已修复并实测；NSIS安装/升级仍未验证。配置页异步加载与用户快速选择的时序也应继续审计。
 
 ## 延续协议
 

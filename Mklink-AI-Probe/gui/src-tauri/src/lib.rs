@@ -564,6 +564,21 @@ fn terminate_sidecar_tree(state: &Sidecar) -> Result<(), String> {
     Ok(())
 }
 
+fn request_desktop_exit(app: tauri::AppHandle, shutdown: std::sync::Arc<AtomicBool>) {
+    if shutdown.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    // Proxy shutdown can wait for HTTP and process termination. Keep the
+    // native event loop available while those operations settle.
+    std::thread::spawn(move || {
+        let state: State<Sidecar> = app.state();
+        if let Err(error) = terminate_sidecar_tree(state.inner()) {
+            eprintln!("[tauri] proxy shutdown failed: {error}");
+        }
+        app.exit(0);
+    });
+}
+
 /// Minimal owned-backend health check using raw TCP — no external deps needed.
 fn check_health(port: u16, instance_id: &str) -> bool {
     use std::io::{Read, Write};
@@ -928,10 +943,7 @@ pub fn run() {
                         }
                     }
                     "exit" => {
-                        tray_shutdown.store(true, Ordering::Relaxed);
-                        let state: State<Sidecar> = app.state();
-                        let _ = terminate_sidecar_tree(state.inner());
-                        app.exit(0);
+                        request_desktop_exit(app.clone(), tray_shutdown.clone());
                     }
                     _ => {}
                 })
@@ -951,30 +963,18 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Closing the main window is a real application exit. The sidecar
-            // owns the Device and its serial/HIL locks, so it must be stopped
-            // even when Remote service is configured. Users can start the desktop
-            // app again when they need the agent; a hidden window must never
-            // leave a probe locked unexpectedly.
+            // Closing the main window exits the desktop and its local proxy.
+            // Shared CDC runtimes and their remote services have independent
+            // lifetimes and must remain available to other clients.
             let cleanup_handle = app.handle().clone();
             let cleanup_shutdown = shutdown.clone();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api: _, .. } = event {
-                        let state: State<Sidecar> = cleanup_handle.state();
-                        // The close request is allowed to continue after the
-                        // owned sidecar has been asked to shut down. This
-                        // keeps the serial release on the same synchronous
-                        // path as tray Exit and process shutdown.
-                        eprintln!("[tauri] window closing, cleaning up sidecar...");
-                        cleanup_shutdown.store(true, Ordering::Relaxed);
-                        if terminate_sidecar_tree(state.inner()).is_ok() {
-                            eprintln!("[tauri] sidecar killed");
-                        }
-                        // A tray icon can keep the desktop event loop alive
-                        // after the last window closes. Match the tray Exit
-                        // action so an invisible process cannot block upgrades.
-                        cleanup_handle.exit(0);
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        // Use the application exit path for window destruction,
+                        // rather than starting it again as this event returns.
+                        api.prevent_close();
+                        request_desktop_exit(cleanup_handle.clone(), cleanup_shutdown.clone());
                     }
                 });
             }
