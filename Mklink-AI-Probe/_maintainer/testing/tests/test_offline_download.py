@@ -1381,7 +1381,8 @@ def test_deploy_rejects_uploaded_bin_outside_target_flash(tmp_path, monkeypatch)
     assert list(disk.iterdir()) == []
 
 
-def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
+@pytest.mark.parametrize("recovery_failure", [False, True])
+def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch, recovery_failure):
     disk = tmp_path / "MICROKEEN"
     disk.mkdir()
     payload = _config()
@@ -1406,6 +1407,12 @@ def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
         ("flm_files", ("external.flm", b"external", "application/octet-stream")),
     ]
 
+    if recovery_failure:
+        from mklink.offline_download import OfflineRecoveryError
+        def incomplete_rollback(*args, **kwargs):
+            raise OfflineRecoveryError(tmp_path / "retained-backup")
+        monkeypatch.setattr("mklink.remote.offline_download_api.deploy_offline_bundle", incomplete_rollback)
+
     with patch("mklink.discovery.find_microkeen_disk", return_value=str(disk)), TestClient(app) as client:
         response = client.post(
             "/api/offline-download/deploy",
@@ -1413,6 +1420,11 @@ def test_deploy_api_reads_current_local_firmware_paths(tmp_path, monkeypatch):
             files=files,
         )
 
+    if recovery_failure:
+        assert response.status_code == 500
+        assert "Recovery files retained at:" in response.json()["detail"]
+        assert "retained-backup" in response.json()["detail"]
+        return
     assert response.status_code == 200, response.text
     assert (disk / "boot.bin").read_bytes() == b"current-0"
     assert (disk / "rt-thread.hex").read_bytes() == b"current-1"
@@ -1492,3 +1504,39 @@ def test_locked_changed_file_reports_name_and_rolls_back_earlier_changes(tmp_pat
     assert (disk / 'app.hex').read_bytes() == b'old-app'
     assert (disk / 'Device.FLM').read_bytes() == b'old-flm'
     assert not (disk / 'script.py').exists()
+
+
+@pytest.mark.parametrize('rollback_error', [None, OSError, KeyboardInterrupt])
+def test_deploy_retains_backups_only_when_rollback_is_incomplete(tmp_path, monkeypatch, rollback_error):
+    from mklink import offline_download as offline
+    disk = tmp_path / 'disk'; disk.mkdir()
+    stage = tmp_path / 'stage'; stage.mkdir()
+    (disk/'app.bin').write_bytes(b'original')
+    monkeypatch.setattr(offline.tempfile, 'mkdtemp', lambda **_: str(stage))
+    copy = offline.shutil.copy2
+    writes = []
+    def failing_copy(source, destination):
+        source, destination = Path(source), Path(destination)
+        if destination == disk/'app.bin':
+            writes.append(source)
+            if source.parent.name == 'files':
+                destination.write_bytes(b'partial')
+                raise OSError('disk disconnected during write')
+            if rollback_error is not None:
+                raise rollback_error('rollback interrupted')
+        return copy(source, destination)
+    monkeypatch.setattr(offline.shutil, 'copy2', failing_copy)
+    expected = (offline.OfflineDownloadError if rollback_error is None else
+                offline.OfflineRecoveryError if rollback_error is OSError else KeyboardInterrupt)
+    with pytest.raises(expected):
+        offline._transactional_copy(disk, [(Path('app.bin'), None, b'replacement')])
+    assert len(writes) == 2  # Initial write and one restore, never deployment replay.
+    if rollback_error is None:
+        assert (disk/'app.bin').read_bytes() == b'original'
+        assert not stage.exists()
+    else:
+        assert (stage/'backup/app.bin').read_bytes() == b'original'
+        if rollback_error is OSError:
+            manifest = json.loads((stage/'recovery.json').read_text())
+            assert manifest['rollback_errors'] == ['restore: app.bin']
+            assert manifest['backups'] == ['backup/app.bin'] or manifest['backups'] == ['backup\\app.bin']

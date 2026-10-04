@@ -20,6 +20,7 @@ from mklink.offline_download import (
     OfflineAlgorithm,
     OfflineDownloadConfig,
     OfflineDownloadError,
+    OfflineRecoveryError,
     deploy_offline_bundle,
     generate_offline_script,
     offline_trigger_command,
@@ -794,6 +795,8 @@ def create_offline_download_router(
                     firmware_sources=firmware_sources,
                     algorithm_sources=algorithm_sources,
                 )
+        except OfflineRecoveryError as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
         except (OfflineDownloadError, json.JSONDecodeError) as error:
             raise HTTPException(status_code=422, detail=str(error))
         finally:

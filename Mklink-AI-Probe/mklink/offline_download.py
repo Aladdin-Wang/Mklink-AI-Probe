@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 from pathlib import Path
 import re
 import shutil
@@ -26,6 +27,15 @@ _SOURCE_KINDS = frozenset(("upload", "pack", "profile", "existing"))
 
 class OfflineDownloadError(ValueError):
     """Invalid offline configuration or deployment state."""
+
+
+class OfflineRecoveryError(OfflineDownloadError):
+    """Deployment rollback was incomplete; backups must remain available."""
+
+    def __init__(self, directory):
+        self.recovery_directory = str(directory)
+        super().__init__('Offline rollback incomplete; inspect the bound disk before retrying. '
+                         'Recovery files retained at: ' + self.recovery_directory)
 
 
 @dataclass(frozen=True)
@@ -647,12 +657,13 @@ def _transactional_copy(
     disk_root: Path,
     files: Sequence[tuple[Path, Optional[Path], Optional[bytes]]],
 ) -> list[str]:
-    with tempfile.TemporaryDirectory(prefix="mklink-offline-staging-") as raw_stage:
-        stage = Path(raw_stage)
-        backup_root = stage / "backup"
-        staged_root = stage / "files"
-        installed = []
-        backups = []
+    stage = Path(tempfile.mkdtemp(prefix="mklink-offline-staging-"))
+    backup_root = stage / "backup"
+    staged_root = stage / "files"
+    installed = []
+    backups = []
+    preserve = False
+    try:
         try:
             for relative, source, content in files:
                 relative = _relative_destination(relative)
@@ -669,39 +680,56 @@ def _transactional_copy(
                 staged = staged_root / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
-                    # A browser may still hold the selected USB file open. Reuse
-                    # identical content instead of deleting or rewriting it.
                     if _same_file_content(destination, staged):
                         continue
                     backup = backup_root / relative
                     backup.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(destination, backup)
-                    _remove_probe_file(destination)
+                    # Track the backup before any destructive operation.
                     backups.append((destination, backup))
+                    _remove_probe_file(destination)
                 installed.append(destination)
                 shutil.copy2(staged, destination)
-            return [
-                relative.as_posix() for relative, _source, _content in files
-            ]
+            return [relative.as_posix() for relative, _source, _content in files]
         except BaseException as error:
+            # Keep backups if rollback itself is interrupted.
+            preserve = True
+            failures = []
             for destination in reversed(installed):
                 try:
                     if destination.exists():
                         destination.unlink()
                 except OSError:
-                    pass
+                    failures.append('remove: ' + str(destination.relative_to(disk_root)))
             for destination, backup in reversed(backups):
                 try:
-                    if backup.exists():
-                        destination.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(backup, destination)
+                    if not backup.is_file():
+                        raise OSError('Backup unavailable')
+                    if destination.exists() and _same_file_content(destination, backup):
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(backup, destination)
                 except OSError:
-                    pass
+                    failures.append('restore: ' + str(destination.relative_to(disk_root)))
+            if failures:
+                preserve = True
+                # Diagnostic only: no automatic replay or cross-volume restoration.
+                manifest = {'disk_root': str(disk_root), 'rollback_errors': failures,
+                            'backups': [str(b.relative_to(stage)) for _, b in backups]}
+                try:
+                    (stage / 'recovery.json').write_text(json.dumps(manifest), encoding='utf-8')
+                except OSError:
+                    pass  # Backup preservation must not depend on metadata writes.
+                raise OfflineRecoveryError(stage) from error
+            preserve = False
             if isinstance(error, OSError):
                 raise OfflineDownloadError(
                     f"offline file operation failed: {relative.as_posix()}: {error}"
                 ) from error
             raise
+    finally:
+        if not preserve:
+            shutil.rmtree(stage)
 
 
 def deploy_offline_bundle(

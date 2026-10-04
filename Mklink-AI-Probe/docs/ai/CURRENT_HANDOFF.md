@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T18:43:07.768470+00:00`
+- 更新时间：`2026-10-04T18:52:28.362611+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
-- HEAD：`Based on main d4e73bd; portable physical MSC verification after 33ff94c1; see PR 30 and Git for exact tip.`
+- HEAD：`Based on main d4e73bd; rollback backup preservation after 47f309a7; use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：第94批基于33ff94c1便携包完整构建审计及双V4/F103/HPM本机LAN物理MSC部署通过：精简系统PATH、正常导入RE Pack，三个唯一测试文件哈希正确/App0x08005000，原盘与邻居不变；测试文件清理后两盘快照恢复，监听退出保留本地SDK，后台全退出。未触发脚本或烧录。 持续推进，不合并发布。
+- 当前任务：第95批修复MSC部署回滚失败或中断时临时目录删除旧文件备份的问题；96项相关测试通过，API返回500并保留恢复路径，不重放部署。物理断电/拔插和硬杀恢复尚未验证。 持续推进远程服务GUI说明与实际能力一致性审计。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第94节：第94批基于33ff94c1便携包完整构建审计及双V4/F103/HPM本机LAN物理MSC部署通过：精简系统PATH、正常导入RE Pack，三个唯一测试文件哈希正确/App0x08005000，原盘与邻居不变；测试文件清理后两盘快照恢复，监听退出保留本地SDK，后台全退出。未触发脚本或烧录。
+- **共享后台、多探针与AI共存**：docs/verification/v0.3.0-mcp-consolidation.md第95节：第95批修复MSC部署回滚失败或中断时临时目录删除旧文件备份的问题；96项相关测试通过，API返回500并保留恢复路径，不重放部署。物理断电/拔插和硬杀恢复尚未验证。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,7 +41,7 @@
 
 ## 下一动作
 
-1. 第94批便携包物理MSC部署/双探针隔离已通过。下一步审计部署结果未知的查询/恢复及后台崩溃恢复，避免重放；继续GUI实际操作/流长稳及最新桌面包门禁。NSIS安装UAC仍待用户答复，不运行安装器。核对第93批共享CI37225158744及本批CI。当前可验证便携候选agent94-33ff94c1，报告含精确哈希。
+1. 审计远程服务页面说明：发现RTT/SystemView尚未启用提示已落后于第84/85批实现，待修正并验证GUI。继续未知部署查询/恢复、崩溃恢复与长稳；便携候选仍为第94批，未包含95修复。NSIS安装UAC仍待答复，不运行安装器。第94批两个CI均success。
 2. 核对本批CI，继续完成Agent脱机部署适配及offline.deploy共享适配：复用现有二进制订阅/游标和部署入口，拥有/借用规则一致，禁止恢复旧Device直连。未知任务已返回request_id/job_id，远程状态查询入口仍待明确；目标halt/resume/step现返回共享API的halted结果，内存单次4KiB。之后实际协议、擦除恢复、异常恢复/长稳/NSIS；不改下载器固件/WinUSB，不合并发布。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
