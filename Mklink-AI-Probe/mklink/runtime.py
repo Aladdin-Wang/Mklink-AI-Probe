@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 42  # Online probe discovery is scoped to the bound runtime identity.
+PROTOCOL = 43  # Adds isolated GUI sessions over negotiated remote services.
 VERSION = "0.3.0"
 
 

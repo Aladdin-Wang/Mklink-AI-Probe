@@ -154,7 +154,7 @@ class SharedTarget:
             call = client.call
             if operation == 'probe.info':
                 status = call('device_status')
-                info = {'connected': status['connected'], 'idcode': int(status.get('idcode') or '0', 0),
+                info = {'probe_id': self.info.get('probe_id'), 'connected': status['connected'], 'idcode': int(status.get('idcode') or '0', 0),
                         'mcu_name': status.get('mcu') or ''}
                 return info.get(requested, info)
             if operation in ('target.halt', 'target.resume', 'target.step'):

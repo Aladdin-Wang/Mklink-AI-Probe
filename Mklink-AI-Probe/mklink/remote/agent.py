@@ -248,7 +248,7 @@ class SiteAgent:
         capabilities = {
             "agent.lifecycle": Capability(
                 True,
-                detail="health/status/ports/reconnect/stop",
+                detail="health/status/ports/connect/reconnect/stop",
             ),
             "probe.connection": Capability(
                 True,
@@ -338,9 +338,18 @@ class SiteAgent:
     def reconnect(self) -> dict[str, Any]:
         """Open/reopen a probe without interrupting the listener."""
 
+        return self._connect_target(force=True)
+
+    def connect(self) -> dict[str, Any]:
+        """Attach if needed without replacing another client's live target."""
+        return self._connect_target(force=False)
+
+    def _connect_target(self, *, force: bool) -> dict[str, Any]:
         with self._target_lifecycle.lifecycle():
             if self._target_lifecycle.closing:
                 return {"connected": False, "error": "Agent is stopping"}
+            if not force and self._device_connected():
+                return {"connected": True, "reused": True}
             if self._device_reconnector is not None:
                 try:
                     self._device_reconnector(self.config)
@@ -573,8 +582,8 @@ class SiteAgent:
             "agent.ports": self.ports,
             "agent.stop": self.request_stop,
         }
-        if request.method == "agent.reconnect":
-            return await self._invoke_lower_level(self.reconnect)
+        if request.method in {"agent.connect", "agent.reconnect"}:
+            return await self._invoke_lower_level(self.connect if request.method == "agent.connect" else self.reconnect)
         handler = handlers.get(request.method)
         if handler is not None:
             result = handler()

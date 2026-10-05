@@ -320,3 +320,21 @@ def test_embedded_agent_reconnect_replaces_the_shared_gui_device():
     assert first.closed.is_set()
     agent.close()
     assert not second.closed.is_set()
+
+
+def test_connect_reuses_live_target_without_closing_other_clients():
+    class Target:
+        connected = True
+        closed = False
+        def close(self): self.closed = True
+    target = Target()
+    calls = []
+    def factory(**kwargs):
+        calls.append(kwargs)
+        return target
+    agent = SiteAgent(AgentConfig(), device_factory=factory)
+    try:
+        assert agent.connect()['connected']
+        assert agent.connect() == {'connected': True, 'reused': True}
+        assert len(calls) == 1 and not target.closed
+    finally: agent.close()

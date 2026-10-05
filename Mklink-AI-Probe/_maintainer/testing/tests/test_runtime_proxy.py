@@ -91,7 +91,10 @@ def test_remote_service_proxy_allowlist_preserves_internal_runtime_boundary():
         headers = {'Origin':'http://tauri.localhost'}
         for method,path in [('GET','/_runtime/remote-service'),('POST','/_runtime/remote-service'),
                             ('GET','/_runtime/remote-service/addresses'),('POST','/_runtime/remote-service/token'),
-                            ('POST','/_runtime/remote-service/stop')]:
+                            ('POST','/_runtime/remote-service/stop'),
+                            ('POST','/_runtime/remote-windows'),
+                            ('GET','/_runtime/remote-windows/'+'a'*32),
+                            *[('POST','/_runtime/remote-windows/'+'a'*32+'/'+action) for action in ('call','close','open')]]:
             response=client.request(method,path,json={},headers=headers)
             assert response.status_code==200,response.text
             assert response.headers['access-control-allow-origin']==headers['Origin']
@@ -99,9 +102,14 @@ def test_remote_service_proxy_allowlist_preserves_internal_runtime_boundary():
         before=len(seen)
         for method,path in [('POST','/_runtime/stop'),('GET','/_runtime/status'),('POST','/_runtime/call'),
                             ('POST','/_runtime/attach'),('DELETE','/_runtime/remote-service'),
-                            ('POST','/_runtime/remote-service/extra'),('GET','/_runtime/remote-service/token')]:
+                            ('POST','/_runtime/remote-service/extra'),('GET','/_runtime/remote-service/token'),
+                            ('GET','/_runtime/remote-windows'),('POST','/_runtime/remote-windows/'+'a'*32),
+                            ('POST','/_runtime/remote-windows/'+'a'*31+'/call'),
+                            ('POST','/_runtime/remote-windows/'+'a'*32+'/stop')]:
             assert client.request(method,path,json={},headers=headers).status_code==403
         assert len(seen)==before
         assert client.options('/_runtime/remote-service',headers={**headers,'Access-Control-Request-Method':'POST'}).status_code==200
+        assert client.options('/_runtime/remote-windows',headers={**headers,'Access-Control-Request-Method':'POST'}).status_code==200
+        assert client.options('/_runtime/remote-windows/'+'a'*32+'/call',headers={**headers,'Access-Control-Request-Method':'DELETE'}).status_code==403
         assert client.options('/_runtime/stop',headers={**headers,'Access-Control-Request-Method':'POST'}).status_code==403
         assert client.post('/_runtime/remote-service',json={},headers={'Origin':'https://untrusted.invalid'}).status_code==403

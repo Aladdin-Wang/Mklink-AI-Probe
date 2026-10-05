@@ -11,11 +11,7 @@
       </div>
     </section>
 
-    <section class="panel" data-testid="remote-roles">
-      <h3>{{ tr('在本机提供服务，在远端接入', 'Host here, connect from another computer') }}</h3>
-      <p>{{ tr('下载器接在本机：在下方启动服务，将地址和令牌交给远端使用者。', 'Probe attached here: start the service below and give its address and token to the remote user.') }}</p>
-      <p>{{ tr('下载器接在另一台电脑：使用远程 Skill、CLI 或 MCP，连接那台电脑提供的服务地址。当前 GUI 的仪表盘仍操作本地下载器，不会切换到远端。', 'Probe attached to another computer: connect to its service using the remote Skill, CLI or MCP. This GUI dashboard continues to control the local probe; it does not switch to the remote target.') }}</p>
-    </section>
+    <RemoteConnectPanel />
 
     <div v-if="loading" class="panel loading-state">{{ tr('正在读取远程服务配置…', 'Loading remote service configuration…') }}</div>
     <template v-else>
@@ -128,6 +124,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { API_BASE, IS_TAURI } from '../lib/runtimeEndpoint'
+import RemoteConnectPanel from '../components/config/RemoteConnectPanel.vue'
 import { tr } from '../composables/useLanguage'
 import { useToast } from '../composables/useToast'
 

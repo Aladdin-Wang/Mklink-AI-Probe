@@ -3,6 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/remote-dashboard/:windowId', name: 'remote-dashboard', component: () => import('./views/RemoteDashboardView.vue') },
     {
       path: '/',
       redirect: '/config',

@@ -2,7 +2,7 @@
   <div class="app-root">
     <header class="app-header">
       <h1 class="app-title">MKLink</h1>
-      <nav class="app-nav">
+      <nav v-if="currentTab !== 'remote-dashboard'" class="app-nav">
         <button
           v-for="tab in tabs" :key="tab.key"
           :class="['nav-tab', { active: currentTab === tab.key }]"
@@ -56,7 +56,7 @@
           <Languages :size="15" aria-hidden="true" />
           <span>{{ language === 'zh' ? 'EN' : '中文' }}</span>
         </button>
-        <StatusBar />
+        <StatusBar v-if="currentTab !== 'remote-dashboard'" />
       </div>
     </header>
     <AppUpdateBanner
@@ -78,7 +78,7 @@
       <button class="btn" data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
     </div>
     <div class="app-main">
-      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa'" v-show="currentTab === 'dashboard'" />
+      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa' && currentTab !== 'remote-dashboard'" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
@@ -100,7 +100,7 @@
     <footer class="app-footer">
       <span v-if="sharedRuntime" data-testid="shared-runtime-status"
         :title="tr('关闭窗口后后台和采集继续运行；需要释放下载器时先停止采集并断开设备。', 'The backend and acquisition continue after closing this window. Stop acquisition and disconnect to release the probe.')">
-        {{ tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
+        {{ currentTab === 'remote-dashboard' ? tr('远程会话 · 固定目标 · 不回退本地', 'Remote session · Fixed target · No local fallback') : tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
       </span>
       <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
     </footer>
@@ -188,7 +188,7 @@ watch(backendState, state => {
   initialBackendReady.value = true
   if (!statusPollingStarted) {
     statusPollingStarted = true
-    startStatusPolling(3000)
+    if (currentTab.value !== 'remote-dashboard') startStatusPolling(3000)
   }
 }, { immediate: true })
 

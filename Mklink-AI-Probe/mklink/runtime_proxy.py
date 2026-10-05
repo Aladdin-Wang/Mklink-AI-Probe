@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 
@@ -19,11 +20,19 @@ from starlette.middleware.cors import CORSMiddleware
 DESKTOP_ORIGINS = {"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 HOP_HEADERS = {"host", "connection", "transfer-encoding", "content-length", "keep-alive", "upgrade", "cookie", "origin", "x-auth-token"}
 REMOTE_SERVICE_METHODS = {
+    '/_runtime/remote-windows': {'POST'},
     '/_runtime/remote-service': {'GET', 'POST'},
     '/_runtime/remote-service/addresses': {'GET'},
     '/_runtime/remote-service/token': {'POST'},
     '/_runtime/remote-service/stop': {'POST'},
 }
+
+
+def _remote_management_allowed(path, method):
+    if method in REMOTE_SERVICE_METHODS.get(path, set()):
+        return True
+    match = re.fullmatch(r'/_runtime/remote-windows/[A-Za-z0-9_-]{32}(/call|/close|/open)?', path)
+    return bool(match and method == ('POST' if match.group(1) else 'GET'))
 
 
 
@@ -73,7 +82,7 @@ def create_proxy(info, *, port, instance_id, transport=None):
             return JSONResponse({"detail": "Local desktop origin required"}, status_code=403)
         if request.url.path.startswith("/_runtime/"):
             method = request.headers.get('access-control-request-method', '') if request.method == 'OPTIONS' else request.method
-            if method in REMOTE_SERVICE_METHODS.get(request.url.path, set()):
+            if _remote_management_allowed(request.url.path, method):
                 return await call_next(request)
             return JSONResponse({"detail": "Use mklink runtime to manage the shared backend"}, status_code=403)
         return await call_next(request)
