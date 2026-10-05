@@ -592,6 +592,31 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('keeps displayed capacity until worker confirmation and rolls back rejected input', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 8; i++) await Promise.resolve()
+      const previous = (window as any).MAX_POINTS
+      const input = document.getElementById('buffer-input') as HTMLInputElement
+      const button = document.getElementById('btn-apply-buffer') as HTMLButtonElement
+      requester.mockRejectedValueOnce(new Error('allocation failed'))
+      input.value = '2'
+      button.click()
+      expect(button.disabled).toBe(true)
+      expect((window as any).MAX_POINTS).toBe(previous)
+      for (let i = 0; i < 8; i++) await Promise.resolve()
+      expect(button.disabled).toBe(false)
+      expect(input.value).toBe(String(previous))
+      expect(document.getElementById('conn-status')?.textContent).toBe('allocation failed')
+      input.value = '2'
+      button.click()
+      for (let i = 0; i < 8; i++) await Promise.resolve()
+      expect((window as any).MAX_POINTS).toBe(2)
+    } finally { runtime.cleanup() }
+  })
+
   it('does not accumulate global listeners when resizing waveform history', async () => {
     const runtime = await loadRttViewerRuntime()
     const listener = vi.spyOn(window, 'addEventListener')

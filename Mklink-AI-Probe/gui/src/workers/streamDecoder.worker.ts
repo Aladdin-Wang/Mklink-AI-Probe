@@ -29,7 +29,7 @@ export type WorkerInput =
     }
   | { type: 'visible-range'; requestId: number; start: number; end: number; pixelWidth: number }
   | { type: 'waveform-detail'; enabled: boolean }
-  | { type: 'waveform-capacity'; capacity: number }
+  | { type: 'waveform-capacity'; capacity: number; requestId?: number }
   | { type: 'history-snapshot'; requestId: number }
   | { type: 'serial-port'; port: string }
   | { type: 'reset' }
@@ -48,6 +48,7 @@ export interface StreamTelemetry {
 }
 
 export type WorkerOutput =
+  | { type: 'waveform-capacity-result'; requestId: number; capacity: number; error?: string }
   | { type: 'channels'; channelCount: number }
   | StreamTelemetry
   | {
@@ -318,8 +319,10 @@ export class StreamDecoder {
             this.configuredCapacity = message.capacity
           }
           this.post(this.telemetry())
+          if (message.requestId !== undefined) this.post({ type: 'waveform-capacity-result', requestId: message.requestId, capacity: this.ring.capacity })
         } catch (error) {
-          this.error('INVALID_CONFIG', error)
+          if (message.requestId !== undefined) this.post({ type: 'waveform-capacity-result', requestId: message.requestId, capacity: this.ring?.capacity ?? 0, error: error instanceof Error ? error.message : String(error) })
+          else this.error('INVALID_CONFIG', error)
         }
         break
       case 'history-snapshot':

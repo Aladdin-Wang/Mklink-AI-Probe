@@ -745,3 +745,12 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 79项Worker/SystemView ring测试通过，扩充跟踪configure未分配、首次帧正常、reset释放/后续帧恢复；注入Int32Array分配失败，旧通道/样本42仍可导出。生产构建通过（原有chunk提示）。真实Chrome+STM32新版dist footer bfb175516ff4，两通道正常、缩容后2 pts/buffer2、drops0，关闭页面/SDK后后台退出。证据reports/vofa-lazy-browser.json、vofa-gui-0715.py。本轮未做SystemView实体复测，不将构造跟踪帧当实体证据。
 
 按结构计算，未进入SystemView的每个Worker避免29*capacity字节typed arrays（事件ticks8、区间id4/type1/start8/end8），另省capacity个事件引用槽；不是浏览器总堆/RSS实测。界面容量请求仍缺成功确认/失败回退，需下一轮处理；不要将本轮Worker内部原子提交描述成整个GUI事务已完成。默认容量、历史resize、主线程重复历史的更大优化及全矩阵继续，安装仍未更新。
+
+
+### 波形容量确认与 Worker 拒绝回退
+
+基线f5f6876c后，waveform-capacity附requestId，Worker明确回复实际容量及错误。composable仅在对应确认后更新configuredCapacity；等待期间的通道configure合并为最后一次并在确认后执行，因此失败沿用旧容量。界面等待时禁用应用，成功才提交显示端容量；Worker拒绝则恢复原输入/估算并显示错误，不清空现有显示历史。卸载拒绝未完成请求，迟到结果不写已销毁视图；未增加后台或下载器协议。
+
+四组191项先通过；新增Worker确认与界面回退测试后三组182项通过（与前者重叠，不相加）。覆盖成功确认、非法容量回复实际旧值、确认前不提交、失败后重试、通道重配等待并沿用实际容量。生产构建通过。
+
+真实Chrome+STM32，dist footer f5f6876cfdeb：通过临时拦截一条Worker容量消息把capacity改为0，实际Worker返回非法参数，输入恢复10000、按钮恢复可用，原2114点曲线及buffer2116继续、错误可见。拦截自动恢复后再正常提交2，页面2 pts/buffer2、drops0。关闭网页/SDK后后台退出。证据reports/vofa-capacity-rejected.json、vofa-capacity-confirmed.json、vofa-gui-0720.py。这是实际Worker拒绝链路，不是物理OOM；已有单测模拟分配失败，但浏览器Worker崩溃/整进程OOM及无响应超时仍未验。主线程自身resize分配异常的跨线程一致性也需继续审计，不把Worker成功确认等同于完整跨线程原子事务。

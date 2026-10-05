@@ -9,25 +9,35 @@ import type { StreamClientOptions, StreamClientState } from '../lib/stream/strea
 import type { WorkerOutput } from '../workers/streamDecoder.worker'
 
 describe('useBinaryStream', () => {
-  it('resizes without resetting presentation and retains capacity across channel changes', () => {
+  it('confirms resize before queued channel changes and preserves capacity after rejection', async () => {
     const client = { start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
       resizeWaveform: vi.fn(), requestVisibleRange: vi.fn(), dispose: vi.fn() }
     let api: ReturnType<typeof useBinaryStream> | undefined
+    let options: StreamClientOptions | undefined
     const wrapper = mount(defineComponent({
       setup() {
-        api = useBinaryStream('vofa', { capacity: 10000, channelCount: 2, createClient: () => client })
+        api = useBinaryStream('vofa', { capacity: 10000, channelCount: 2, createClient: next => { options = next; return client } })
         return () => null
       },
     }))
     try {
-      api!.resizeWaveform(16)
-      expect(client.resizeWaveform).toHaveBeenCalledWith(16)
+      const resized = api!.resizeWaveform(16)
+      expect(client.resizeWaveform).toHaveBeenCalledWith(16, 1)
       expect(client.reset).not.toHaveBeenCalled()
       expect(client.configure).not.toHaveBeenCalled()
       api!.configure(3)
+      expect(client.configure).not.toHaveBeenCalled()
+      options!.onWorkerMessage!({ type: 'waveform-capacity-result', requestId: 1, capacity: 16 })
+      await resized
       expect(client.configure).toHaveBeenCalledWith(16, 3)
       expect(() => api!.resizeWaveform(2.5)).toThrow()
       expect(client.resizeWaveform).toHaveBeenCalledTimes(1)
+      const failed = api!.resizeWaveform(32)
+      const rejection = expect(failed).rejects.toThrow('allocation failed')
+      api!.configure(4)
+      options!.onWorkerMessage!({ type: 'waveform-capacity-result', requestId: 2, capacity: 16, error: 'allocation failed' })
+      await rejection
+      expect(client.configure).toHaveBeenLastCalledWith(16, 4)
     } finally { wrapper.unmount() }
   })
 

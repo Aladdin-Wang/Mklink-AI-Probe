@@ -2279,15 +2279,38 @@ function captureSuperwatchTimelineSpanIfReady() {
 }
 
 var binaryCapacityRequester = null;
+var binaryCapacityPending = false;
 function setBinaryCapacityRequester(requester) {
   binaryCapacityRequester = requester;
-  if (requester) requester(RING_BUFFER_CAPACITY);
+  if (requester) setBufferCapacity(RING_BUFFER_CAPACITY);
 }
 
-function setBufferCapacity(newCapacity) {
+function setBufferCapacity(newCapacity, confirmed) {
   newCapacity = Math.floor(Number(newCapacity));
   if (!Number.isFinite(newCapacity)) return false;
   newCapacity = Math.max(MIN_POINTS, Math.min(MAX_BUFFER_POINTS, newCapacity));
+  if (binaryCapacityRequester && !confirmed) {
+    if (binaryCapacityPending) return false;
+    binaryCapacityPending = true;
+    var button = document.getElementById('btn-apply-buffer');
+    if (button) button.disabled = true;
+    Promise.resolve().then(function() { return binaryCapacityRequester(newCapacity); })
+      .then(function() {
+        if (!viewerAbortController.signal.aborted) setBufferCapacity(newCapacity, true);
+      })
+      .catch(function(error) {
+        if (viewerAbortController.signal.aborted) return;
+        var input = document.getElementById('buffer-input');
+        if (input) input.value = String(RING_BUFFER_CAPACITY);
+        updateBufferMemoryEstimate();
+        showControlError(error && error.message ? error.message : String(error));
+      })
+      .finally(function() {
+        binaryCapacityPending = false;
+        if (button) button.disabled = false;
+      });
+    return true;
+  }
   var visibleSpanBeforeResize = null;
   if (IS_SUPERWATCH_MODE) {
     var visibleBeforeResize = getVisibleTimeRange();
@@ -2301,7 +2324,6 @@ function setBufferCapacity(newCapacity) {
   MAX_POINTS = newCapacity;
   window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
   window.MAX_POINTS = MAX_POINTS;
-  if (binaryCapacityRequester) binaryCapacityRequester(newCapacity);
   var input = document.getElementById('buffer-input');
   if (input) input.value = String(newCapacity);
   for (var name in FIELDS) {

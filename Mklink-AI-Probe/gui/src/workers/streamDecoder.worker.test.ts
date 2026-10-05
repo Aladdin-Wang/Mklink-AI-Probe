@@ -1231,6 +1231,15 @@ describe('StreamDecoder worker controller', () => {
     expect((decoder as any).systemViewIntervals).toBeNull()
   })
 
+  it('acknowledges requested capacities with actual retained capacity on failure', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    decoder.handle({ type: 'waveform-capacity', requestId: 4, capacity: 16 })
+    expect(messages.at(-1)).toEqual({ type: 'waveform-capacity-result', requestId: 4, capacity: 16 })
+    decoder.handle({ type: 'waveform-capacity', requestId: 5, capacity: 0 })
+    expect(messages.at(-1)).toMatchObject({ type: 'waveform-capacity-result', requestId: 5, capacity: 16, error: expect.any(String) })
+  })
+
   it('rejects invalid configuration and numeric frame layouts as worker errors', () => {
     const { decoder, messages } = setup()
     decoder.handle({ type: 'configure', capacity: 0, channelCount: 2 })

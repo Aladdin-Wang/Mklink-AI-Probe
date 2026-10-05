@@ -166,10 +166,10 @@ export class StreamClient {
     } satisfies WorkerInput)
   }
 
-  resizeWaveform(capacity: number): void {
+  resizeWaveform(capacity: number, requestId?: number): void {
     if (this.disposed) return
     requirePositiveInteger('capacity', capacity)
-    this.worker.postMessage({ type: 'waveform-capacity', capacity } satisfies WorkerInput)
+    this.worker.postMessage({ type: 'waveform-capacity', capacity, requestId } satisfies WorkerInput)
   }
 
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void {

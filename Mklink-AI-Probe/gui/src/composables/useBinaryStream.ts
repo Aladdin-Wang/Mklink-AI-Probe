@@ -12,7 +12,7 @@ export interface BinaryStreamClient {
   stop(): void
   reset(): void
   configure(capacity: number, channelCount: number): void
-  resizeWaveform?(capacity: number): void
+  resizeWaveform?(capacity: number, requestId?: number): void
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
   selectSerialPort?(port: string): void
   setWaveformDetail?(enabled: boolean): void
@@ -71,6 +71,10 @@ export function useBinaryStream(
   const serialLines = shallowRef<SerialLines | null>(null)
   const serialTerminal = shallowRef<SerialTerminal | null>(null)
   const error = ref<string | null>(null)
+  let configuredCapacity = options.capacity
+  let capacityRequestId = 0
+  let pendingCapacity: { id: number; resolve: () => void; reject: (error: Error) => void } | null = null
+  let deferredChannelCount: number | null = null
 
   function onState(next: StreamClientState): void {
     state.value = next
@@ -118,6 +122,20 @@ export function useBinaryStream(
       if (message.type === 'channels' || message.type === 'superwatch-metadata') flushPresentation()
     }
     switch (message.type) {
+      case 'waveform-capacity-result': {
+        if (pendingCapacity?.id !== message.requestId) break
+        const pending = pendingCapacity
+        pendingCapacity = null
+        configuredCapacity = message.capacity
+        if (message.error) pending.reject(new Error(message.error))
+        else pending.resolve()
+        if (deferredChannelCount !== null) {
+          const count = deferredChannelCount
+          deferredChannelCount = null
+          configure(count)
+        }
+        break
+      }
       case 'telemetry':
         telemetry.value = message
         break
@@ -208,14 +226,20 @@ export function useBinaryStream(
     client.reset()
   }
 
-  let configuredCapacity = options.capacity
-  function resizeWaveform(capacity: number): void {
+  function resizeWaveform(capacity: number): Promise<void> {
     if (!Number.isInteger(capacity) || capacity < 2 || capacity > 1_000_000) throw new RangeError('Invalid waveform capacity')
-    client.resizeWaveform?.(capacity)
-    configuredCapacity = capacity
+    if (pendingCapacity) return Promise.reject(new Error('A capacity change is pending'))
+    if (!client.resizeWaveform) return Promise.reject(new Error('Capacity changes are unavailable'))
+    return new Promise((resolve, reject) => {
+      const id = ++capacityRequestId
+      pendingCapacity = { id, resolve, reject }
+      try { client.resizeWaveform!(capacity, id) }
+      catch (error) { pendingCapacity = null; reject(error) }
+    })
   }
 
   function configure(nextChannelCount: number): void {
+    if (pendingCapacity) { deferredChannelCount = nextChannelCount; return }
     clearPresentation()
     channelCount.value = nextChannelCount
     telemetry.value = null
@@ -250,7 +274,11 @@ export function useBinaryStream(
 
   if (options.autoStart) start()
 
-  onUnmounted(() => { clearPresentation(); client.dispose() })
+  onUnmounted(() => {
+    pendingCapacity?.reject(new Error('Viewer closed'))
+    pendingCapacity = null
+    clearPresentation(); client.dispose()
+  })
 
   return {
     state: readonly(state),
