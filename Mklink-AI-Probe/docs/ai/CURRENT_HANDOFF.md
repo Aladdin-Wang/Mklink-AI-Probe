@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T19:34:31.1080639+00:00`
+- 更新时间：`2026-10-05T19:40:46.2966534+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：真实HardFault补验CLI/stdio MCP通过：CLI寄存器/指定SP源码行/非法SP退出，MCP详细报告与SDK栈一致，客户端退出后SDK仍可读现场。首次脚本漏result包装失败保留；修正后完整复验通过。DAP恢复/boot不变/八路RTT约1.349秒恢复/后台退出。无生产修改。
+- 当前任务：修复Dump两处MUX接入遗漏：传统B1快照先确认退出空闲MUX；样本组装器接纳MUX完整区域帧并复用覆盖校验。174项回归通过，STM32八区域快照/5帧采集/CLI243字节磁盘导出/短吞吐/RTT冲突与八路恢复实体通过。首次配置错误及两处生产失败证据保留。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双V4仍1a4bd0c，STM32 APP仍0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e。CLI/MCP真实故障测试结束已清除故障并显式启动APP，boot20KiB不变，八路RTT恢复后停止，后台退出。必须从当前AXF解析RAM地址。长期验证暂停。
+- **state**：双V4仍1a4bd0c，STM32 APP仍0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e。Dump全流程仅只读目标，RTT8恢复后已停止、后台退出。使用当前AXF解析地址。长期验证暂停。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 核对主机CI（上次查询API EOF，不代表工作流失败）；继续HardFault GUI/缺符号边界、原生保存、MSC并发及HPM调试共存和剩余矩阵，最终安装/Skill。CLI/stdio MCP真实异常路径本轮已通过。不自动合并发布。
+1. 跟进主机CI；继续Dump容量/取消/文件失败和Flush、GUI与其他剩余矩阵，最终安装/Skill。此次174项及Dump实体通过不等同全功能完成。不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

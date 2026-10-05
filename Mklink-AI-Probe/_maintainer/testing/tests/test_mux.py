@@ -203,3 +203,21 @@ def test_shared_admission_allows_mux_memory_but_keeps_unsafe_boundaries(runtime)
     assert client.post('/api/device/halt').status_code == 409
     assert client.post('/api/dash/systemview/start', json={}).status_code == 409
     assert calls == ['read']
+
+@pytest.mark.parametrize('ordered',[False,True])
+def test_mux_watch_complete_frames_reuse_dump_coverage_validation(ordered):
+    from mklink.dump_memory import DumpSampleAssembler,DumpMemoryReadError
+    transport,_=peer();transport.handshake()
+    watch=MuxWatchSession(transport,[(0x20000001,130),(0x20000203,4)],.01)
+    watch.start()
+    for index,payload in enumerate([b'a'*128,b'bc',b'defg']):
+        transport.feed(packet(0x41,17,1,struct.pack('<BBI',index,0,123)+payload))
+    frame=watch.read_frames()[0]
+    assert DumpSampleAssembler([130,4],ordered=ordered).feed(frame)==(b'a'*128+b'bc',b'defg')
+    for regions in [[(0,b'a'*130)],[(0,b'a'*129),(1,b'defg')]]:
+        assembler=DumpSampleAssembler([130,4],ordered=ordered)
+        invalid={**frame,'regions':regions}
+        if ordered:
+            with pytest.raises(DumpMemoryReadError):assembler.feed(invalid)
+        else:assert assembler.feed(invalid) is None
+    watch.stop()

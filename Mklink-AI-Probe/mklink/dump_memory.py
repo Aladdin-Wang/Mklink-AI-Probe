@@ -150,6 +150,14 @@ def _enter_dump_stream(bridge) -> None:
     """Atomically claim DUMP_STREAM, with a safe fallback for narrow adapters."""
     from mklink._types import DeviceState
 
+    # This one-shot B1 path sends a textual command directly. A stopped MUX
+    # capture still leaves the framed decoder active; use the bridge's normal
+    # acknowledged exit before claiming the legacy stream. Active sampling
+    # and failed transitions are rejected by the bridge, without replay.
+    leave_multiplex = getattr(bridge, "_leave_multiplex", None)
+    if callable(leave_multiplex):
+        leave_multiplex()
+
     try_enter = getattr(bridge, "_try_enter_stream", None)
     if callable(try_enter):
         if try_enter(DeviceState.DUMP_STREAM):
@@ -664,7 +672,7 @@ class DumpSampleAssembler:
                 gap_fact="region_gap_count",
             )
 
-        if frame.get("format") == "OLD":
+        if frame.get("format") in ("OLD", "mux"):
             if len(by_region) != len(self.region_sizes):
                 if self.ordered:
                     raise DumpMemoryReadError('Dump region coverage mismatch', gap_fact='region_gap_count')

@@ -200,3 +200,29 @@ def test_periodic_transport_budget_covers_count_only_request(monkeypatch):
     client=RuntimeClient(info={'port':8765});client.session_id='one'
     client.call('capture_dump',{'regions':[{'address':0,'size':4}],'period':.001,'frames':10,'duration':0})
     assert call.call_args.kwargs['timeout']==320
+
+@pytest.mark.parametrize('failure', [None, 'active sampling', 'exit response lost'])
+def test_legacy_snapshot_leaves_mux_before_claiming_or_writing(failure):
+    bridge=FakeBridge([_old_regions_frame(1,[(0,b'abcd')])])
+    events=[]
+    original_enter=bridge._enter_stream
+    original_write=bridge._write_raw
+    def leave():
+        events.append('leave_mux')
+        if failure:raise RuntimeError(failure)
+    bridge._leave_multiplex=leave
+    def enter(state):
+        events.append('claim_legacy')
+        original_enter(state)
+    def write(data):
+        events.append('write')
+        original_write(data)
+    bridge._enter_stream=enter
+    bridge._write_raw=write
+    if failure:
+        with pytest.raises(RuntimeError,match=failure):
+            dump_memory.read_dump_memory_regions_once(bridge,[(0,4)])
+        assert events==['leave_mux']
+    else:
+        assert dump_memory.read_dump_memory_regions_once(bridge,[(0,4)])==(b'abcd',)
+        assert events[:3]==['leave_mux','claim_legacy','write']
