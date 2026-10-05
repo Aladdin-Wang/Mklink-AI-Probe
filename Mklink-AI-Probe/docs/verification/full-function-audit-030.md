@@ -614,3 +614,11 @@ E盘约685MiB。检查上一轮依赖测试创建的remote-mcp虚拟环境：172
 remote-cli-rtt-current-hil使用实际python -m mklink remote rtt与STM32八通道。拥有者2秒采集每路720–1188字节，退出后采集停止；本地SDK启动八路后CLI借用1秒，每路628–1044字节，退出后本地仍running且session不变。所有输出页按通道验证cursor=前cursor+字节数，lost_bytes=0。最终本地stop、隔离站点移除、远程服务停止、后台退出。此为有限真机测试，不是长期稳定性或实际Ctrl+C/网络中断验收；异常路径当前为自动化证据。无Flash/电压/固件变化。
 
 E盘低空间仍未解决；上一轮临时venv删除被自动审批拒绝，本轮未重试或绕过。安装包及本地Skill尚待最终构建更新，继续其余矩阵。
+
+### 远程 CLI 强制退出的拥有者与借用者实体清理
+
+0758804d候选，remote-cli-rtt-kill-hil通过真实python -m mklink remote rtt请求30秒采集，但每次仅等待八个通道都输出数据后即终止本测试子进程；不是30秒soak。拥有者路径通过--start启动，强杀后约0.2865秒采集running=false、后台仅剩本地SDK。借用者路径先由本地SDK启动，强杀CLI后约0.2776秒仅剩本地SDK，采集仍running且session不变。两次读取APP前128字节均与原基线一致；最后本地stop、站点移除、服务停止，后台自行退出。
+
+这两个耗时包含本地状态及读取验证，是本次观测值，不是网络故障下的硬释放期限。测试使用子进程句柄terminate，退出码1，不冒充Ctrl+C/130路径；实际Ctrl+C、TCP半开、远程GUI关闭仍需各自证据。没有停止其他用户进程、修改Flash/电压或升级固件。py/json/jsonl证据保存在本地，未重复正常收发和既有自动化。
+
+最新0758804d Feedback checks成功，Shared runtime checks仍在运行；E盘717385728字节可用，此前清理拒绝仍未绕过。其余全功能矩阵及安装/Skill继续。

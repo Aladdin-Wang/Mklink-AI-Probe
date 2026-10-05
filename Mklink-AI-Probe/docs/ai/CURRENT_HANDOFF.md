@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:58:30.1039442+00:00`
+- 更新时间：`2026-10-05T22:00:43.3382587+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：补齐remote rtt单连接持续读取八通道CLI，JSONL原始页/独立游标、有限duration和退出清理；68项相关测试、10项最终文档检查通过。真实CLI拥有者2秒/借用者1秒八路数据与连续游标通过，借用退出不误停本地，最终后台退出。报告remote-cli-rtt-current-hil。E盘低空间/安装仍待处理，原清理拒绝未绕过。
+- 当前任务：远程RTT CLI强杀真机通过：八路收到数据后终止本测试子进程，拥有者约0.2865秒停止采集；借用者约0.2776秒退出且本地session/running保持，APP读取基线正确，最终后台退出。报告remote-cli-rtt-kill-hil；不是Ctrl+C或TCP半开证据。E盘约684MiB，清理拒绝未绕过；其余矩阵和安装继续。
 - 状态：`active`
 
 ## 里程碑
