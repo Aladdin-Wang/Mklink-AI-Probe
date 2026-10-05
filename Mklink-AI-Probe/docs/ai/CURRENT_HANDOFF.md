@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T14:17:23.682252+00:00`
+- 更新时间：`2026-10-05T14:38:47.9838633+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：固件e69b96b完成HEX ROM/SD绑定及实际算法ABI核查；解析、调度、geometry C测试和SES/SWD布局通过。候选尚未刷机，未声明HPM_HEX能力；主机在线/脱机仍有BIN限制，继续接入并真机。
+- 当前任务：固件6cfdc45已升级HPM探针：16MiB/4KiB geometry、51244字节HEX烧录校验复位4.34秒、BIN回归822ms通过。独立program_hex拒绝旧固件，SD故障编译测试及SES/SWD布局通过。HEX改用同步ROM写解决BIN流水线final标记误用。主机公共HEX入口仍未开放，持续全功能目标仍活跃。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 下一步候选固件SD绑定回归/内存检查，添加HPM_HEX能力门禁并接入主机在线/脱机prepare_hpm_hex（禁止旧固件把HEX当BIN）。ROM getter当前1196byte blob 0x336单指针两u32已反汇编确认；需HPM6E实机验证geometry、同扇区稀疏HEX/异常拒绝、BIN回归。HPM探针稳定ID usb-b758747ac7f3c3c2c30133d4 COM1227/serial F46F374EC984512C，升级前重新核对。当前无后台/测试进程，两探针未随本轮升级。
+1. 继续HPM稀疏未覆盖扇区/错误输入真机、MSC并发修改防护、内存检查；接入主机在线/脱机prepare_hpm_hex并用独立hpm.program_hex，禁止旧固件把HEX当BIN。HPM探针已运行6cfdc45，STM32保持ba0a1cf；端口全释放。证据见full-function-audit-030.md及本地reports/hpm-hex-first-hil.json、hpm-bin-regression-hil.json。初次无诊断打开失败原因未确证，勿算缓存一致性通过。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

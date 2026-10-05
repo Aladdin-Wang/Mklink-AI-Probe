@@ -120,3 +120,11 @@ Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加�
 固件e69b96b已接入hpm.program对HEX扩展名的大小写无关识别。BIN/HEX复用目标初始化，HEX固定1KiB文件缓存、严格完整语法预检后查询实际ROM geometry，再校验最高地址，之后擦除/写入/校验，成功才reset。地址参数要求0x80000000，实际数据地址来自HEX。
 
 对当前1196字节algo_hpm5300.inc实际反汇编确认0x336为单输出指针ABI，返回容量/扇区两个u32；新flash_get_geometry校验当前blob形状并调用该接口。生产函数编译测试覆盖寄存器参数、错误和结果范围，HEX解析/调度测试通过。SES候选构建和SWD布局通过；未刷HPM探针，实际geometry/SD/性能/内存/BIN回归以及主机双路径仍未验收，未声明HPM_HEX能力。
+
+### HPM HEX 首轮真机闭环
+
+固件6cfdc45已升级到HPM下载器；STM32下载器保持ba0a1cf。独立`hpm.program_hex(filename)`及Pika生成绑定避免旧固件把HEX当BIN，尚未开放主机公共入口。SD读取边界/EOF/读错/seek错/IRQ恢复及独立入口编译测试通过，SES构建和SWD布局通过。
+
+真机确认geometry为16MiB/4KiB。HEX逐记录误用BIN流水线的final标记导致第二条记录失败，已改用既有同步flash_program；最终51,244字节hello-world HEX烧录、逐段校验与复位成功，用时4.34秒。同程序BIN回归成功，固件报告822ms。初次无诊断失败发生在擦写前，新增allocation/open诊断；文件更新后进入烧录，尚未确证初次失败根因，不能据此宣称MSC/固件缓存一致性已通过。
+
+证据在本地构建根reports/hpm-hex-upgrade.json、hpm-hex-first-hil.json、hpm-bin-regression-hil.json。仍待稀疏未覆盖扇区/负面输入真机、MSC并发修改防护、内存/性能、主机在线脱机及GUI/CLI/MCP。未进行长稳，未更新安装包和Skill。
