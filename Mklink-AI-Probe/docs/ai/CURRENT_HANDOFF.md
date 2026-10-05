@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:35:38.0786747+00:00`
+- 更新时间：`2026-10-05T22:38:54.3825436+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：VOFA基线18618231两组90项通过；STM32三符号通道稳定值匹配内存/tick推进，514采样保留500点且淘汰旧记录；第二SDK借用/stop409，RTT冲突409不抢占，暂停计数稳定/恢复543点，停止后APP基线和RTT8恢复，后台退出。证据vofa-current-hil。A25仍待二进制/GUI/CLI/MCP入口等；无生产修改。继续全矩阵，安装未做，长期测试暂停。
+- 当前任务：VOFA双真实WebSocket/STM32二进制通过：反地址配置通道，小端sample-major Float32逐字节正确，16777217舍入16777216且JSON保留原值，两订阅同批及序号推进。关闭首订阅后第二方收到超过关闭前生产序号的数据seq6，全部关闭active_clients0，测试数组8B原值恢复读回/后台退出。证据vofa-binary-current-hil。继续VOFA GUI导出和CLI/MCP及全矩阵；无生产修改，最终安装未做，长稳暂停。
 - 状态：`active`
 
 ## 里程碑
