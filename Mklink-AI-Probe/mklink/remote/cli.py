@@ -151,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("health", help="probe-independent agent health")
     commands.add_parser("ports", help="list probe ports at the field site")
     commands.add_parser("capabilities", help="show negotiated capability descriptors")
+    commands.add_parser("connect", help="connect the field probe or reuse its existing connection")
     commands.add_parser("reconnect", help="connect or reconnect the field probe")
 
     call = commands.add_parser("call", help="invoke a declared capability operation")
@@ -325,8 +326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = _client(args).call(f"agent.{args.command}")
             _emit(result)
             return 0
-        if args.command == "reconnect":
-            _emit(_client(args).call("agent.reconnect"))
+        if args.command in {"connect", "reconnect"}:
+            _emit(_client(args).call("agent." + args.command))
             return 0
         if args.command == "stop-agent":
             _emit(_client(args).call("agent.stop"))

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T21:49:48.6697324+00:00",
+  "updated_at": "2026-10-05T21:54:15.4869844+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "远程27文件扩大回归471通过，新增换代读拒绝；随后修复握手操作说明及MCP首次目标连接缺口，相关55项通过。真实stdio MCP首次remote_connect、八路读取与本地一致、再次connect复用不换代、MCP退出不误停本地、最后后台退出。报告remote-mcp-current-hil；GUI/跨主机/安装仍继续。"
+    "current_task": "新增远程CLI非强制connect，20项回归通过，真实python -m CLI首次连接/八路RTT期间复用不换代通过，临时站点移除、后台退出。报告remote-cli-connect-current-hil。独立remote call不构成持续RTT会话，需补CLI持续入口；E盘约685MiB，删除已核验临时venv被自动审批拒绝，未删且未绕过。"
   },
   "milestones": [
     {

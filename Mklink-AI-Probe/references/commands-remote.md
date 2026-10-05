@@ -9,7 +9,7 @@
 本机连接使用127.0.0.1；局域网选择本机网卡IP并勾选允许LAN。生成访问令牌，
 为每台下载器指定不同端口，点击“启动/应用设置”，确认运行中后再把地址和
 令牌配置到工程师客户端。地址是WebSocket入口，不能当作HTTP网页打开；
-首次远程目标操作前执行reconnect。以下注册/health/status示例可直接使用。
+首次远程目标操作前执行connect；只有明确需要强制重连时才使用reconnect。以下注册/health/status示例可直接使用。
 
 停止服务会等待正在执行的请求结束，再关闭远程会话；不会停止共享后台、
 本地GUI或其他下载器。应用设置同样会断开现有远程连接，轮换令牌须先停止。
@@ -157,6 +157,7 @@ python -m mklink remote --site field-a ports
 - `capabilities` 是本次握手协商出的 availability/version/operation detail；不要
   调用未发布能力，也不要猜 operation 或参数。
 - `ports` 列出现场探针端口，但文档、日志和回答不得记录真实端口或硬件标识。
+- `python -m mklink remote --site field-a connect` 首次连接目标，已有连接则复用，不中断其他客户端的采集。
 - `python -m mklink remote --site field-a reconnect` 重连的是现场探针，不是
   VPN/局域网链路。传输连接失败时先检查网络和现场 Agent，再重试工程师命令。
 

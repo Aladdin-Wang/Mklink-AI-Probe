@@ -596,3 +596,11 @@ remote-rtt8-current-hil通过真实远程WebSocket启动STM32 RTT0–7，本地S
 remote-mcp-current-hil通过真实stdio FastMCP子进程和真实WebSocket访问STM32。首次remote_connect成功，握手详情包含rtt.read_channel；remote_call启动八路，逐路读取512–864字节，与本地缓存相同游标前缀一致且lost_bytes=0。采集期间再次remote_connect返回reused且session不变。MCP退出后本地仍运行，最终本地退出/服务停止/后台自行退出。临时registry仅存在子进程内，令牌通过子进程环境传入、不落配置或报告；无Flash、电压及固件变化。报告remote-mcp-current-hil.py/json和stdio辅助脚本保存在本地。
 
 本轮不是GUI或跨主机验证。最近1e2f5e05反馈CI已成功，共享检查查询仍运行；新改动的CI待核对，安装与Skill仍待最终推进。
+
+### 远程 CLI 非强制连接与构建空间检查
+
+CLI此前仅提供agent.reconnect，缺少与GUI/MCP一致的非强制连接。增加remote connect子命令，复用agent.connect；reconnect保留明确强制语义，不增加连接实现或自动重试。两个语义分离测试与CLI/文档共20项通过。
+
+remote-cli-connect-current-hil以实际python -m mklink remote子进程运行。仅该子进程使用报告目录内隔离的LOCALAPPDATA站点配置，令牌经环境传入；sites add后首次connect成功。本地SDK开启RTT0–7，再次CLI connect返回reused=true，采集session不变且八路读取612–1080字节。最后本地拥有者stop、CLI sites remove清除临时站点、远程服务停止、后台退出。未更改用户正常站点配置，无Flash/电压变化。此证据是CLI连接与共存，不是CLI持续RTT采集通过；独立remote call进程每次退出都会释放订阅，持续多通道CLI入口仍需设计和验证，不能将多条独立call假定为同一会话。
+
+E盘约685MiB。检查上一轮依赖测试创建的remote-mcp虚拟环境：172345138字节、无reparse链接、无使用进程；拟删除该单一临时目录，但工具自动审批返回blocked by policy，未执行删除，也未更换方式绕过。含链接运行目录、报告、固件与安装包均保留。后续大额构建前仍须处理空间，当前不因此停止其他可验证工作。

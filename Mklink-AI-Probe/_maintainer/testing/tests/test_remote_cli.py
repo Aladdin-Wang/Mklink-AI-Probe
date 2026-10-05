@@ -209,3 +209,11 @@ def test_packaged_runtime_entry_keeps_direct_secret_rejection(capsys):
     captured = capsys.readouterr()
     assert 'must-not-be-echoed' not in captured.out + captured.err
     assert 'direct token values are not supported' in captured.err
+
+@pytest.mark.parametrize('command', ['connect', 'reconnect'])
+def test_explicit_connect_and_reconnect_keep_distinct_semantics(monkeypatch, command):
+    registry = _Registry()
+    monkeypatch.setattr('mklink.remote.sites.default_registry', lambda: registry)
+    monkeypatch.setattr('mklink.remote.sites.close_all', lambda: None)
+    assert cli.main(['--site', 'field-bench', command]) == 0
+    assert registry.client_instance.calls == [('agent.' + command, {})]

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:49:48.6697324+00:00`
+- 更新时间：`2026-10-05T21:54:15.4869844+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：远程27文件扩大回归471通过，新增换代读拒绝；随后修复握手操作说明及MCP首次目标连接缺口，相关55项通过。真实stdio MCP首次remote_connect、八路读取与本地一致、再次connect复用不换代、MCP退出不误停本地、最后后台退出。报告remote-mcp-current-hil；GUI/跨主机/安装仍继续。
+- 当前任务：新增远程CLI非强制connect，20项回归通过，真实python -m CLI首次连接/八路RTT期间复用不换代通过，临时站点移除、后台退出。报告remote-cli-connect-current-hil。独立remote call不构成持续RTT会话，需补CLI持续入口；E盘约685MiB，删除已核验临时venv被自动审批拒绝，未删且未绕过。
 - 状态：`active`
 
 ## 里程碑
