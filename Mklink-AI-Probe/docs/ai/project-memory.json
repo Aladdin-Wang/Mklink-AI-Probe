@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T16:08:20.619595+00:00",
+  "updated_at": "2026-10-05T16:11:59.153394+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "真实IAB STM32八路日志/HEX/终端、曲线、0暂停/1收起恢复、八路GUI发送rx+8及7发送历史通过，页面采集已停止/标签关闭/viewport恢复。五分钟伴随会话exec48290需确认退出。尚需多字节编码/全通道交互组合、数组快照、GUI启动等待、脱机GUI及完整剩余矩阵。"
+    "current_task": "STM32真机inactive通道7失败后资源为空，恢复描述符无需stop直接重试八路通过；八路UTF8上行中文及每路10字节中文/emoji下行哈希通过，全部RAM原值恢复。上一轮浏览器伴随会话已终止且后台退出。接续GUI编码/半字符、数组快照、启动等待、HPM脱机GUI及完整剩余矩阵。"
   },
   "milestones": [
     {

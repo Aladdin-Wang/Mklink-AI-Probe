@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:08:20.619595+00:00`
+- 更新时间：`2026-10-05T16:11:59.153394+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：真实IAB STM32八路日志/HEX/终端、曲线、0暂停/1收起恢复、八路GUI发送rx+8及7发送历史通过，页面采集已停止/标签关闭/viewport恢复。五分钟伴随会话exec48290需确认退出。尚需多字节编码/全通道交互组合、数组快照、GUI启动等待、脱机GUI及完整剩余矩阵。
+- 当前任务：STM32真机inactive通道7失败后资源为空，恢复描述符无需stop直接重试八路通过；八路UTF8上行中文及每路10字节中文/emoji下行哈希通过，全部RAM原值恢复。上一轮浏览器伴随会话已终止且后台退出。接续GUI编码/半字符、数组快照、启动等待、HPM脱机GUI及完整剩余矩阵。
 - 状态：`active`
 
 ## 里程碑
