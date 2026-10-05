@@ -426,13 +426,13 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 本次事件供本地分析，报告进程内存随实际收集量增长，不提供无限时长采集保证。
 
 
-## 多通道 RTT 与 SuperWatch（协议 47 开发版）
+## 多通道 RTT 与 SuperWatch（协议 48 开发版）
 
 配套 V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
 仍然只有后台打开串口和读取 USB，客户端读取后台缓存。外部串口助手的旧 RTT
 映射仍保留；它与后台不能同时打开命令口。
 
-- GUI 的 RTT 页填写 `0,1` 等通道列表，首个作为日志/终端/曲线主通道；多通道
+- GUI 的 RTT 页填写 `0,1` 等通道列表，所有通道同等支持日志、终端、HEX、曲线与发送；多通道
   查看区可独立选通道并切换 HEX/文本，下行可选择已订阅且实际活动的 DownBuffer。
 - MCP `rtt_start(addr=..., channels=[0,1], channel=0)` 创建采集；已运行时用不带参数
   的 `rtt_start()` 订阅，不能替其他客户端重新配置。
@@ -456,4 +456,4 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 本轮验证为本机 STM32 短测。HPM、八个实体 RTT 通道、跨主机远程链路和长时间采集
 未据此验收；已安装的旧程序需更新配套主机版本才会出现新界面。
 
-GUI RTT 按采集通道并排显示，主通道保留日志/终端/曲线；其他通道独立 HEX/文本及发送。收起面板不停止读取，附加通道保留最近64KiB，并显示接收丢失与历史淘汰计数。
+GUI RTT 按采集通道并排显示，每路复用相同的日志/终端/HEX/曲线/发送组件。收起或切换显示模式不销毁历史，暂停仅作用于当前面板。日志最多5000行，HEX保留64KiB，曲线Worker每路最多25000样本；缓冲有界，不保证无限无损。

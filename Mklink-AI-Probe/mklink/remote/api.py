@@ -966,6 +966,9 @@ def create_app(
     )
     if callable(rtt_terminal_setter):
         rtt_terminal_setter(stream_registry["rtt-terminal"])
+    channel_setter = getattr(dashboard_managers["rtt"], "set_channel_stream_hubs", None)
+    if callable(channel_setter):
+        channel_setter(stream_registry)
     app.include_router(stream_api.create_stream_router(
         stream_registry, stream_types, auth_token,
     ))
@@ -2403,10 +2406,10 @@ def create_app(
         return {"status": status, "stopped": stopped}
 
     @app.post("/api/dash/rtt/encoding")
-    async def rtt_encoding(encoding: str = Body(..., embed=True)):
+    async def rtt_encoding(encoding: str = Body(..., embed=True), channel: int | None = Body(None, ge=0, le=7)):
         managers = get_managers()
         try:
-            selected = managers["rtt"].set_encoding(encoding)
+            selected = managers["rtt"].set_encoding(encoding, channel=channel) if channel is not None else managers["rtt"].set_encoding(encoding)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"encoding": selected}

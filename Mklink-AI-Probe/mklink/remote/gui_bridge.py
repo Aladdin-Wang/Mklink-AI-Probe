@@ -17,7 +17,7 @@ DEVICE_PATHS = {
     'read-memory', 'write-memory', 'halt', 'resume', 'step', 'core-registers',
     'hardfault', 'hardfault-detail', 'debug-speed', 'symbols', 'symbol-catalog',
 }
-STREAMS = {'rtt', 'rtt-terminal', 'superwatch', 'systemview'}
+STREAMS = {'rtt', 'rtt-terminal', 'superwatch', 'systemview'} | {f'{prefix}-{ch}' for prefix in ('rtt', 'rtt-terminal') for ch in range(8)}
 
 
 def allowed(path, method, *, socket=False):

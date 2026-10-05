@@ -5,7 +5,7 @@ import type { StreamTelemetry, WorkerOutput } from '../workers/streamDecoder.wor
 import type { DecoderMode } from '../workers/streamDecoder.worker'
 import { API_BASE } from '../lib/runtimeEndpoint'
 
-export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'rtt-terminal' | 'serial' | 'superwatch'
+export type BinaryStreamName = 'systemview' | 'vofa' | 'rtt' | 'rtt-terminal' | `rtt-${number}` | `rtt-terminal-${number}` | 'serial' | 'superwatch'
 
 export interface BinaryStreamClient {
   start(): void

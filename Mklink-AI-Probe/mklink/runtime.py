@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 47  # Multiplex RTT channels and concurrent SuperWatch.
+PROTOCOL = 48  # Equal per-channel RTT log, terminal and waveform streams.
 VERSION = "0.3.0"
 
 

@@ -253,86 +253,39 @@ class _RttLineAssembler:
         self._dropped_lines = self._dropped_chars = 0
 
 
-class RttStreamManager:
-    """Manages RTT streaming sessions with SSE output."""
+class RttChannelDecoder:
+    """One bounded parser/terminal state per RTT channel, no device or worker."""
 
-    def __init__(
-        self, stream_hub=None, *, raw_batch_lines: int = 512,
-        waveform_batch_samples: int = 256,
-    ):
-        self._bridge = AsyncBridge()
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self._paused = threading.Event()
-        self._paused.set()  # not paused
-        self._stop_event = threading.Event()
-        self._history: list[dict] = []
-        self._max_history = 500
-        from mklink.rtt_cache import RttChannelCache
-        self._channel_cache = RttChannelCache()
+    def __init__(self, stream_hub=None, *, raw_batch_lines=512, waveform_batch_samples=256):
         from mklink.rtt_viewer import RttLineParser
+        self._stream_hub = stream_hub
+        self._terminal_stream_hub = stream_hub
+        self._raw_batch_lines = raw_batch_lines
+        self._waveform_batch_samples = waveform_batch_samples
+        self._decode_lock = threading.RLock()
+        self._line_assembler = _RttLineAssembler()
+        self._terminal_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._history = []
+        self._max_history = 500
         self._parser = RttLineParser("kv")
         self._parser_auto_detect_done = False
         self._parser_auto_detect_attempts = 0
-        self._parser_auto_detect_samples: list[str] = []
-        self._interval = 0.0
+        self._parser_auto_detect_samples = []
         self._stats = {"parsed_lines": 0, "raw_lines": 0}
-        self._error: str | None = None
-        self._start_failure_callback = None
-        self._stream_hub = stream_hub
-        self._terminal_stream_hub = stream_hub
-        self._raw_batch_lines = max(1, int(raw_batch_lines))
-        self._waveform_batch_samples = max(1, int(waveform_batch_samples))
-        self._line_assembler = _RttLineAssembler()
-        self._terminal_decoder = codecs.getincrementaldecoder("utf-8")(
-            errors="replace"
-        )
-        self._decode_lock = threading.RLock()
-        self._pending_raw: list[RttLine] = []
-        self._pending_terminal: list[str] = []
-        self._pending_numeric: list[tuple[float, ...]] = []
-        self._numeric_channels: tuple[str, ...] = ()
-        self._numeric_candidate_channels: tuple[str, ...] = ()
-        self._numeric_candidate_rows: list[tuple[float, ...]] = []
-        self._device = None
-        self._start_info: dict = {}
-        self._active_generation = None
-        self._capture_session = None
-        self._write_lock = threading.RLock()
-        self._lifecycle_lock = threading.RLock()
+        self._pending_raw = []
+        self._pending_terminal = []
+        self._pending_numeric = []
+        self._numeric_channels = ()
+        self._numeric_candidate_channels = ()
+        self._numeric_candidate_rows = []
 
-    @property
-    def running(self) -> bool:
-        return self._running and not self._stop_event.is_set()
-
-    @property
-    def paused(self) -> bool:
-        return not self._paused.is_set()
-
-    def set_start_failure_callback(self, callback) -> None:
-        self._start_failure_callback = callback
-
-    def set_stream_hub(self, stream_hub) -> None:
-        self._stream_hub = stream_hub
-
-    def set_terminal_stream_hub(self, stream_hub) -> None:
-        self._terminal_stream_hub = stream_hub
-
-    def detach_stream_hub(self, stream_hub) -> None:
-        if self._stream_hub is stream_hub:
-            self._stream_hub = None
-
-    def detach_terminal_stream_hub(self, stream_hub) -> None:
-        if self._terminal_stream_hub is stream_hub:
-            self._terminal_stream_hub = None
-
-    def _clear_active_session(self, generation=None) -> None:
-        with self._write_lock:
-            if generation is not None and self._active_generation is not generation:
-                return
-            self._device = None
-            self._start_info = {}
-            self._active_generation = None
+    def set_encoding(self, encoding):
+        normalized = normalize_rtt_encoding(encoding)
+        with self._decode_lock:
+            self._line_assembler.reset(normalized)
+            self._terminal_decoder = codecs.getincrementaldecoder(normalized)(errors="replace")
+        self._pending_terminal.clear()
+        return normalized
 
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
         with self._decode_lock:
@@ -436,6 +389,69 @@ class RttStreamManager:
         self._flush_numeric_batch()
         self._flush_terminal_batch()
 
+
+class RttStreamManager(RttChannelDecoder):
+    """Manages RTT streaming sessions with SSE output."""
+
+    def __init__(
+        self, stream_hub=None, *, raw_batch_lines: int = 512,
+        waveform_batch_samples: int = 256,
+    ):
+        self._bridge = AsyncBridge()
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._paused = threading.Event()
+        self._paused.set()  # not paused
+        self._stop_event = threading.Event()
+        super().__init__(stream_hub, raw_batch_lines=max(1, int(raw_batch_lines)),
+                         waveform_batch_samples=max(1, int(waveform_batch_samples)))
+        from mklink.rtt_cache import RttChannelCache
+        self._channel_cache = RttChannelCache()
+        self._channel_decoders = {}
+        self._channel_hubs = {}
+        self._interval = 0.0
+        self._error = None
+        self._start_failure_callback = None
+        self._device = None
+        self._start_info: dict = {}
+        self._active_generation = None
+        self._capture_session = None
+        self._write_lock = threading.RLock()
+        self._lifecycle_lock = threading.RLock()
+
+    @property
+    def running(self) -> bool:
+        return self._running and not self._stop_event.is_set()
+
+    @property
+    def paused(self) -> bool:
+        return not self._paused.is_set()
+
+    def set_start_failure_callback(self, callback) -> None:
+        self._start_failure_callback = callback
+
+    def set_stream_hub(self, stream_hub) -> None:
+        self._stream_hub = stream_hub
+
+    def set_terminal_stream_hub(self, stream_hub) -> None:
+        self._terminal_stream_hub = stream_hub
+
+    def detach_stream_hub(self, stream_hub) -> None:
+        if self._stream_hub is stream_hub:
+            self._stream_hub = None
+
+    def detach_terminal_stream_hub(self, stream_hub) -> None:
+        if self._terminal_stream_hub is stream_hub:
+            self._terminal_stream_hub = None
+
+    def _clear_active_session(self, generation=None) -> None:
+        with self._write_lock:
+            if generation is not None and self._active_generation is not generation:
+                return
+            self._device = None
+            self._start_info = {}
+            self._active_generation = None
+
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 0,
               duration: float = 86400, encoding: str = "utf-8",
@@ -492,6 +508,14 @@ class RttStreamManager:
         self._parser_auto_detect_done = False
         self._parser_auto_detect_attempts = 0
         self._parser_auto_detect_samples.clear()
+        self._channel_decoders = {}
+        for source in channels or [channel]:
+            decoder = RttChannelDecoder(raw_batch_lines=self._raw_batch_lines,
+                                        waveform_batch_samples=self._waveform_batch_samples)
+            decoder.set_encoding(encoding)
+            if source in self._channel_hubs:
+                decoder._stream_hub, decoder._terminal_stream_hub = self._channel_hubs[source]
+            self._channel_decoders[source] = decoder
         failure_callback = self._start_failure_callback
 
         def _poll():
@@ -528,6 +552,7 @@ class RttStreamManager:
                             chunks = device.rtt_read_channels(duration=_RTT_DELIVERY_INTERVAL)
                             for source, data in chunks.items():
                                 self._channel_cache.append(source, data)
+                                self.feed_channel_bytes(source, data)
                             text = chunks.get(channel, b"")
                         else:
                             read_bytes = getattr(device, "rtt_read_bytes", None)
@@ -535,7 +560,9 @@ class RttStreamManager:
                                 text = read_bytes(duration=_RTT_DELIVERY_INTERVAL)
                             else:
                                 text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
-                            self._channel_cache.append(channel, text.encode("utf-8") if isinstance(text, str) else text or b"")
+                            chunk = text.encode("utf-8") if isinstance(text, str) else text or b""
+                            self._channel_cache.append(channel, chunk)
+                            self.feed_channel_bytes(channel, chunk)
                     except Exception as exc:
                         if _device_in_error_state(device) or self._start_info.get("transport") == "cdc-mux":
                             terminal_failure = exc
@@ -574,6 +601,8 @@ class RttStreamManager:
                         self._start_info = {}
                         self._active_generation = None
                 self.flush_pending(final=True)
+                for decoder in self._channel_decoders.values():
+                    decoder.flush_pending(final=True)
                 try:
                     if getattr(self, "_generation", None) is generation:
                         self._running = False
@@ -615,15 +644,22 @@ class RttStreamManager:
     def resume(self) -> None:
         self._paused.set()
 
-    def set_encoding(self, encoding: str) -> str:
-        normalized = normalize_rtt_encoding(encoding)
-        with self._decode_lock:
-            self._line_assembler.reset(normalized)
-            self._terminal_decoder = codecs.getincrementaldecoder(normalized)(
-                errors="replace"
-            )
-        self._pending_terminal.clear()
-        return normalized
+    def set_channel_stream_hubs(self, registry):
+        self._channel_hubs = {ch: (registry[f"rtt-{ch}"], registry[f"rtt-terminal-{ch}"]) for ch in range(8)}
+
+    def feed_channel_bytes(self, channel, chunk):
+        decoder = self._channel_decoders.get(channel)
+        if decoder is not None:
+            decoder.feed_rtt_bytes(chunk)
+            decoder.flush_pending()
+
+    def set_encoding(self, encoding: str, channel=None) -> str:
+        if channel is None:
+            return super().set_encoding(encoding)
+        decoder = self._channel_decoders.get(channel)
+        if decoder is None:
+            raise ValueError("RTT channel is not active")
+        return decoder.set_encoding(encoding)
 
     def get_history(self) -> list[dict]:
         return list(self._history)
@@ -683,7 +719,9 @@ class RttStreamManager:
             "error": self._error,
             "history_size": len(self._history),
             "channels": self._channel_cache.channels,
-            "primary_channel": self._start_info.get("channel", 0),
+            "channel_status": {str(ch): {"numeric_channels": list(d._numeric_channels),
+                "encoding": d._line_assembler.encoding, "stats": dict(d._stats),
+                "line_parser": d._line_assembler.status()} for ch, d in self._channel_decoders.items()},
             "transport_stats": transport_stats,
             "transport": self._start_info.get("transport", "legacy"),
             "numeric_channels": list(self._numeric_channels),

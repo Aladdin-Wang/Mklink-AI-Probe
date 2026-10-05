@@ -29,6 +29,8 @@ STREAM_TYPES: Mapping[str, StreamType] = {
     "vofa": StreamType.WAVEFORM,
     "rtt": StreamType.RTT_RAW,
     "rtt-terminal": StreamType.RTT_RAW,
+    **{f"rtt-{ch}": StreamType.RTT_RAW for ch in range(8)},
+    **{f"rtt-terminal-{ch}": StreamType.RTT_RAW for ch in range(8)},
     "serial": StreamType.SERIAL,
     "superwatch": StreamType.SUPERWATCH,
 }

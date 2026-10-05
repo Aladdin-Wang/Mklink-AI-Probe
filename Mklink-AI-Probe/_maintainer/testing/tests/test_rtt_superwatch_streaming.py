@@ -1819,3 +1819,35 @@ def test_rtt_oversize_complete_line_and_final_tail_do_not_become_numeric_rows(fi
     assert parser.status()['dropped_lines'] == 2
     parser.reset()
     assert parser.status()['dropped_lines'] == 0
+
+
+def test_rtt_channels_isolate_partial_lines_numeric_schema_and_encoding():
+    from mklink.remote.dashboards import RttChannelDecoder
+    first, second = RttChannelDecoder(), RttChannelDecoder()
+    first.feed_rtt_bytes(b"left=1\nleft=")
+    second.feed_rtt_bytes(b"right=9\nright=10\n")
+    first.feed_rtt_bytes(b"2\n")
+    assert first._numeric_channels == ("left",)
+    assert second._numeric_channels == ("right",)
+    assert [p["left"] for p in first._history] == [1, 2]
+    assert [p["right"] for p in second._history] == [9, 10]
+    first.set_encoding("gbk")
+    assert first._line_assembler.encoding == "gbk"
+    assert second._line_assembler.encoding == "utf-8"
+    assert second._numeric_channels == ("right",)
+
+
+def test_rtt_each_channel_publishes_its_own_log_terminal_and_waveform():
+    from mklink.remote.dashboards import RttChannelDecoder
+    decoders = [RttChannelDecoder() for _ in range(2)]
+    for ch, decoder in enumerate(decoders):
+        decoder._stream_hub = Mock()
+        decoder._terminal_stream_hub = Mock()
+        decoder.feed_rtt_bytes(f"value={ch}\nvalue={ch + 1}\n".encode())
+        decoder.flush_pending()
+        calls = decoder._stream_hub.publish.call_args_list
+        assert {c.kwargs["stream_type"] for c in calls} == {StreamType.RTT_RAW, StreamType.WAVEFORM}
+        raw = next(c for c in calls if c.kwargs["stream_type"] == StreamType.RTT_RAW)
+        assert f"value={ch}" in str(decode_rtt_lines(raw.args[0], raw.kwargs["item_count"]))
+        assert decoder._terminal_stream_hub.publish.call_args.args[0] == f"value={ch}\nvalue={ch + 1}\n".encode()
+    assert decoders[0]._history is not decoders[1]._history

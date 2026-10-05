@@ -13,7 +13,7 @@
       <button class="btn btn-danger" @click="$emit('stop')">⏹ {{ tr('停止', 'Stop') }}</button>
     </template>
     <template v-else-if="state === 'running'">
-      <button class="btn" @click="$emit('pause')">⏸ {{ tr('暂停', 'Pause') }}</button>
+      <button v-if="!hidePause" class="btn" @click="$emit('pause')">⏸ {{ tr('暂停', 'Pause') }}</button>
       <button class="btn btn-danger" @click="$emit('stop')">⏹ {{ tr('停止', 'Stop') }}</button>
     </template>
     <template v-else-if="state === 'paused'">
@@ -34,6 +34,7 @@ defineProps<{
   state: 'idle' | 'starting' | 'running' | 'paused' | 'error'
   error?: string | null
   deviceConnected: boolean
+  hidePause?: boolean
   pointCount?: number
 }>()
 

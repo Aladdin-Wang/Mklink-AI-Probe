@@ -39,12 +39,13 @@ def test_create_app_has_an_independent_typed_stream_registry():
     assert first.state.stream_registry is not second.state.stream_registry
     assert set(first.state.stream_registry) == {
         "systemview", "vofa", "rtt", "rtt-terminal", "serial", "superwatch",
-    }
+    } | {f"{prefix}-{ch}" for prefix in ("rtt", "rtt-terminal") for ch in range(8)}
     assert first.state.stream_types == {
         "systemview": StreamType.SYSTEMVIEW,
         "vofa": StreamType.WAVEFORM,
         "rtt": StreamType.RTT_RAW,
         "rtt-terminal": StreamType.RTT_RAW,
+        **{f"{prefix}-{ch}": StreamType.RTT_RAW for prefix in ("rtt", "rtt-terminal") for ch in range(8)},
         "serial": StreamType.SERIAL,
         "superwatch": StreamType.SUPERWATCH,
     }
@@ -63,6 +64,8 @@ def test_create_app_has_an_independent_typed_stream_registry():
         ("vofa", StreamType.WAVEFORM),
         ("rtt", StreamType.RTT_RAW),
         ("rtt-terminal", StreamType.RTT_RAW),
+        ("rtt-1", StreamType.RTT_RAW),
+        ("rtt-terminal-7", StreamType.RTT_RAW),
         ("serial", StreamType.SERIAL),
         ("superwatch", StreamType.SUPERWATCH),
     ],
