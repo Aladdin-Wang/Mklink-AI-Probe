@@ -341,6 +341,35 @@ def test_rtt_rejects_unsupported_text_encoding():
         manager.set_encoding("shift-jis")
 
 
+@pytest.mark.parametrize("selected_channel", range(8))
+@pytest.mark.parametrize("encoding,text", [
+    ("gb2312", "中文"), ("gbk", "中文"),
+    ("gb18030", "扩展𠀀"), ("big5", "測試"),
+])
+def test_rtt_encoding_switch_keeps_queued_terminal_and_other_channel_fragments(
+    selected_channel, encoding, text,
+):
+    from mklink.remote.dashboards import RttChannelDecoder
+    decoders = [RttChannelDecoder() for _ in range(8)]
+    for channel, decoder in enumerate(decoders):
+        decoder._terminal_stream_hub = Mock()
+        decoder.feed_rtt_bytes(f"ch={channel},旧编码\n".encode("utf-8"))
+        # A split multibyte character in every other channel must survive.
+        decoder.feed_rtt_bytes("测".encode("utf-8")[:1])
+    decoders[selected_channel].set_encoding(encoding)
+    for channel, decoder in enumerate(decoders):
+        if channel == selected_channel:
+            for byte in (text + "\n").encode(encoding):
+                decoder.feed_rtt_bytes(bytes([byte]))
+            tail = text + "\n"
+        else:
+            decoder.feed_rtt_bytes("测".encode("utf-8")[1:] + b"\n")
+            tail = "测\n"
+        decoder.flush_pending(final=True)
+        terminal = b"".join(call.args[0] for call in decoder._terminal_stream_hub.publish.call_args_list)
+        assert terminal.decode("utf-8") == f"ch={channel},旧编码\n" + tail
+
+
 def test_rtt_invalid_utf8_is_replaced_and_empty_final_tail_is_not_emitted():
     async def scenario():
         hub = StreamHub(max_batches_per_client=4)

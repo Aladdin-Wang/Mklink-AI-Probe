@@ -284,7 +284,9 @@ class RttChannelDecoder:
         with self._decode_lock:
             self._line_assembler.reset(normalized)
             self._terminal_decoder = codecs.getincrementaldecoder(normalized)(errors="replace")
-        self._pending_terminal.clear()
+        # Already-decoded text is independent of the new byte encoding.
+        # Keep it queued so switching between acquisition and delivery cannot
+        # drop terminal output while the corresponding log lines survive.
         return normalized
 
     def feed_rtt_bytes(self, chunk: bytes, *, final: bool = False) -> None:
