@@ -88,3 +88,11 @@ STM32 测试 APP 改为八个相同的 RTT 上/下行通道，暂停目标端 RT
 实体首测八路上行均有数据，每路下行256字节（含00/FF）全部接收且逐路滚动哈希一致；同时取得211组Watch样本。这是底层适配器真机证据，尚不覆盖GUI、CLI、MCP或全部边界。第一次下行通道1被目标SystemView钩子消费；测试程序去掉冲突消费者后通过。去钩子时曾误用启用HOOKLIST的初始化接口导致目标HardFault，已修复并重新编译/下载验证，不是固件协议问题。
 
 真实DAP并发测试中，暂停/单步/继续、CDC ECHO可用、MUX目标请求返回busy、RTT/Watch明确失效均通过；断开DAP后直接重启采集返回status5，**恢复尚未通过**。当前仲裁只使AP缓存失效，DAP断开后物理SWD连接可能需重新attach，下一步定位并补恢复路径。详细本地证据：rtt8-app-flash.json、rtt8-first-hil.json、rtt8-dap-debug-hil.py。后者失败，未生成成功JSON。
+
+### DAP 恢复与实际下载并发补验
+
+明确一次无复位SWD attach可恢复后，固件ba0a1cf在目标epoch改变后、首次新目标IO之前恢复SWD连接；失败不执行目标读写，旧RTT游标不重放。四组C模拟回归、SES构建及SWD布局通过，新固件已升级STM32下载器。升级时磁盘返回超过脚本20秒观察窗口，随后按实际序列号及CDC行为确认已返回，没有重复升级。
+
+原始失败脚本无需额外attach即通过：八路256字节哈希、275组Watch、真实DAP暂停/单步/继续、目标busy拒绝与流失效通知；显式重启采集后八路均有数据、141组Watch。强制扇区擦写（smart_flash=false）并发测试也通过：APP完整读回，前20KiB Bootloader未变；包含下载/校验的DAP阶段约8.54秒，重启采集后八路及143组Watch恢复。证据为本地rtt8-dap-debug-hil.json及rtt8-dap-flash-hil.json。未据此宣称GUI/CLI/MCP全边界、HPM或硬实时延迟完成。
+
+Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加入reset_and_halt后通过并恢复APP。产品backend已有_prepare_algorithm_execution，但目前按_algorithm_reset_required条件执行；下一轮检查内置目标是否也需要该保护，避免只覆盖Pack/自定义FLM。

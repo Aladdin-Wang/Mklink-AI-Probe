@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T13:19:07.876378+00:00`
+- 更新时间：`2026-10-05T13:36:33.782178+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：八路实体RTT上行/逐路256字节下行哈希与Watch共存通过。STM32测试APP已在0x08005000下载/读回，boot前20KiB不变。DAP并发调试/忙拒绝/失效通知通过，但DAP断开后直接RTT重启status5，恢复未通过。下一步修复物理debug连接恢复，之后实际下载并发、八路全部GUI/边界和HPM HEX。
+- 当前任务：固件ba0a1cf已升级STM32；八路RTT/Watch与DAP调试及强制扇区下载、APP完整读回、boot保持、采集显式重启实机通过。完整GUI/CLI/MCP边界、HPM HEX及全功能矩阵尚待。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 无测试进程或共享后台运行。STM32目前运行八路测试APP，HPM未改。优先解决rtt8-dap-debug-hil.py的DAP断开后status5；检查swd_attach_debug及MUX epoch恢复，不能将失效通知通过当作完整恢复通过。
+1. 无活跃测试进程或后台。下一步核查backend _algorithm_reset_required对builtin目标的覆盖（任意暂停态直接Flash算法可能HardFault），之后八路GUI/AI边界及HPM HEX。STM32八路APP运行，boot前20KiB保持；HPM下载器尚未升级。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
