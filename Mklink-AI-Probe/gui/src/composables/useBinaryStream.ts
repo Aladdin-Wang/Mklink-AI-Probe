@@ -75,10 +75,29 @@ export function useBinaryStream(
   let capacityRequestId = 0
   let pendingCapacity: { id: number; resolve: () => void; reject: (error: Error) => void } | null = null
   let deferredChannelCount: number | null = null
+  let capacityTimer: ReturnType<typeof setTimeout> | null = null
+  let workerFailed = false
+
+  function clearCapacityTimer(): void {
+    if (capacityTimer !== null) clearTimeout(capacityTimer)
+    capacityTimer = null
+  }
+
+  function rejectPendingCapacity(reason: string): void {
+    clearCapacityTimer()
+    const pending = pendingCapacity
+    pendingCapacity = null
+    deferredChannelCount = null
+    pending?.reject(new Error(reason))
+  }
 
   function onState(next: StreamClientState): void {
     state.value = next
     if (next.error) error.value = next.error
+    if (next.fatal) {
+      workerFailed = true
+      rejectPendingCapacity(next.error ?? 'Stream worker failed; reload this view')
+    }
   }
 
   // Full samples remain in the Worker. Only coalesce UI summaries, preserving
@@ -126,6 +145,7 @@ export function useBinaryStream(
         if (pendingCapacity?.id !== message.requestId) break
         const pending = pendingCapacity
         pendingCapacity = null
+        clearCapacityTimer()
         configuredCapacity = message.capacity
         if (message.error) pending.reject(new Error(message.error))
         else pending.resolve()
@@ -229,16 +249,24 @@ export function useBinaryStream(
   function resizeWaveform(capacity: number): Promise<void> {
     if (!Number.isInteger(capacity) || capacity < 2 || capacity > 1_000_000) throw new RangeError('Invalid waveform capacity')
     if (pendingCapacity) return Promise.reject(new Error('A capacity change is pending'))
+    if (workerFailed) return Promise.reject(new Error('Stream worker unavailable; reload this view'))
     if (!client.resizeWaveform) return Promise.reject(new Error('Capacity changes are unavailable'))
     return new Promise((resolve, reject) => {
       const id = ++capacityRequestId
       pendingCapacity = { id, resolve, reject }
+      capacityTimer = setTimeout(() => {
+        // The resize may have executed without a reply. Retire this display
+        // worker rather than continue with an unknown capacity or replay it.
+        client.dispose()
+        onState({ phase: 'error', fatal: true, error: 'Capacity confirmation timed out; reload this view' })
+      }, 5000)
       try { client.resizeWaveform!(capacity, id) }
-      catch (error) { pendingCapacity = null; reject(error) }
+      catch (error) { clearCapacityTimer(); pendingCapacity = null; reject(error) }
     })
   }
 
   function configure(nextChannelCount: number): void {
+    if (workerFailed) return
     if (pendingCapacity) { deferredChannelCount = nextChannelCount; return }
     clearPresentation()
     channelCount.value = nextChannelCount
@@ -275,8 +303,7 @@ export function useBinaryStream(
   if (options.autoStart) start()
 
   onUnmounted(() => {
-    pendingCapacity?.reject(new Error('Viewer closed'))
-    pendingCapacity = null
+    rejectPendingCapacity('Viewer closed')
     clearPresentation(); client.dispose()
   })
 

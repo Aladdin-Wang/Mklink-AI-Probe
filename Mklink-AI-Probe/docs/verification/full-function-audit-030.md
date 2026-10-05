@@ -754,3 +754,12 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 四组191项先通过；新增Worker确认与界面回退测试后三组182项通过（与前者重叠，不相加）。覆盖成功确认、非法容量回复实际旧值、确认前不提交、失败后重试、通道重配等待并沿用实际容量。生产构建通过。
 
 真实Chrome+STM32，dist footer f5f6876cfdeb：通过临时拦截一条Worker容量消息把capacity改为0，实际Worker返回非法参数，输入恢复10000、按钮恢复可用，原2114点曲线及buffer2116继续、错误可见。拦截自动恢复后再正常提交2，页面2 pts/buffer2、drops0。关闭网页/SDK后后台退出。证据reports/vofa-capacity-rejected.json、vofa-capacity-confirmed.json、vofa-gui-0720.py。这是实际Worker拒绝链路，不是物理OOM；已有单测模拟分配失败，但浏览器Worker崩溃/整进程OOM及无响应超时仍未验。主线程自身resize分配异常的跨线程一致性也需继续审计，不把Worker成功确认等同于完整跨线程原子事务。
+
+
+### Worker 无响应与故障的有界等待
+
+基线ee18888d后，容量确认限时5秒。超时意味着执行结果可能未知，因此关闭本页面StreamClient的socket/worker，拒绝pending promise与后续容量请求，丢弃排队通道重配，要求刷新视图；不自动重放，不调用后台采集stop。Worker.onerror同样释放本页面资源并报告fatal错误。正常确认/同步发送异常/卸载都会清理定时器，迟到容量回复不恢复已失效的Worker。
+
+117项先通过；真实Chrome+STM32临时丢弃一条容量消息，5秒后输入恢复10000、按钮可用、transport error出现；刷新后tick10439051→10464687，采集继续。浏览器关闭与SDK退出后后台退出。证据reports/vofa-worker-timeout.json、vofa-gui-0725.py。发现通用conn-status错误被后台轮询覆盖，因此最终将error原因追加到独立transport状态文本，并新增运行状态轮询后错误仍可见测试；最终118项通过、生产构建通过。最终文本追加有组件回归，未再次重复真机注入。Worker致命事件为自动化注入证据，未主动制造物理OOM。
+
+主线程多通道resize仍逐个分配/赋值，失败可能部分提交；尚未修复，下一轮需处理分配事务及与已确认Worker的协调。不能将本轮超时封闭处理描述成该主线程问题已完成。全矩阵/最终安装未完成，长期测试继续暂停。

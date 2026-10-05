@@ -3379,7 +3379,8 @@ function updateBinaryHealth(health) {
   var phase = String(health.phase || 'stopped');
   if (stateBadge) {
     stateBadge.textContent = 'transport ' + phase +
-      (health.reconnectDelayMs ? ' (' + health.reconnectDelayMs + ' ms)' : '');
+      (health.reconnectDelayMs ? ' (' + health.reconnectDelayMs + ' ms)' : '') +
+      (health.error ? ': ' + String(health.error) : '');
     stateBadge.className = 'badge ' + (
       phase === 'connected' ? 'badge-ok' :
       phase === 'error' ? 'badge-err' :

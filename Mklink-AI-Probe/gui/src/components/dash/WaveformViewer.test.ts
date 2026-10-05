@@ -617,6 +617,15 @@ describe('WaveformViewer VOFA binary transport', () => {
     } finally { runtime.cleanup() }
   })
 
+  it('keeps the transport failure reason visible while backend status remains running', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      runtime.viewer.updateBinaryHealth({ phase: 'error', error: 'Capacity confirmation timed out; reload this view' })
+      runtime.probe.syncStatus({ running: true, interval: .01, channels: [] })
+      expect(document.getElementById('transport-state-badge')?.textContent).toContain('reload this view')
+    } finally { runtime.cleanup() }
+  })
+
   it('does not accumulate global listeners when resizing waveform history', async () => {
     const runtime = await loadRttViewerRuntime()
     const listener = vi.spyOn(window, 'addEventListener')

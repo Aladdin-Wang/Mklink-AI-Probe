@@ -40,6 +40,7 @@ function setup(token?: string, serializeWorkerFrames = false) {
     postMessage: vi.fn(),
     terminate: vi.fn(),
     onmessage: null as ((event: MessageEvent) => void) | null,
+    onerror: null as (() => void) | null,
   }
   const states: StreamClientState[] = []
   const outputs: unknown[] = []
@@ -66,6 +67,21 @@ function setup(token?: string, serializeWorkerFrames = false) {
 afterEach(() => vi.useRealTimers())
 
 describe('StreamClient', () => {
+  it('closes its socket and worker on a fatal worker error without reconnecting', () => {
+    vi.useFakeTimers()
+    const { client, sockets, worker, states } = setup()
+    client.start()
+    sockets[0].open()
+    worker.onerror!()
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(sockets[0].closeCalls).toBe(1)
+    expect(states.at(-1)).toMatchObject({ phase: 'error', fatal: true })
+    vi.advanceTimersByTime(10000)
+    expect(sockets).toHaveLength(1)
+    expect(worker.onmessage).toBeNull()
+    expect(() => client.start()).toThrow('disposed')
+  })
+
   it('uses arraybuffer frames, transfers ownership to the worker, and authenticates first', () => {
     const { client, sockets, worker } = setup('secret')
     client.start()

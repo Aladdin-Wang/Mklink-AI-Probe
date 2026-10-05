@@ -6,6 +6,7 @@ export interface StreamClientState {
   readonly phase: StreamClientPhase
   readonly reconnectDelayMs?: number
   readonly error?: string
+  readonly fatal?: boolean
 }
 
 export interface StreamClientOptions {
@@ -112,6 +113,10 @@ export class StreamClient {
       }
       options.onWorkerMessage?.(message)
     }
+    this.worker.onerror = () => {
+      this.dispose()
+      this.emitState({ phase: 'error', fatal: true, error: 'Stream worker failed; reload this view' })
+    }
     this.worker.postMessage({
       type: 'configure',
       capacity: options.capacity,
@@ -194,6 +199,7 @@ export class StreamClient {
     this.stop()
     this.disposed = true
     this.worker.onmessage = null
+    this.worker.onerror = null
     this.worker.terminate()
   }
 
