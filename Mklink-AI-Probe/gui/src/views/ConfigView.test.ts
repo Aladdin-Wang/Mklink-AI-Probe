@@ -50,7 +50,9 @@ vi.mock('../composables/useToast', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 
-vi.mock('../lib/runtimeEndpoint', () => ({ IS_TAURI: true }))
+vi.mock('../lib/runtimeEndpoint', () => ({
+  REMOTE_WINDOW_ID: null,
+  IS_REMOTE: false, IS_TAURI: true }))
 
 vi.mock('../lib/desktopSettings', async importOriginal => ({
   ...await importOriginal<typeof import('../lib/desktopSettings')>(),
