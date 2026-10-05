@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T08:43:55.384907+00:00`
+- 更新时间：`2026-10-05T09:26:17.426708+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：CDC多路复用主机接入完成：协议47，GUI/AI/CLI/MCP与共享SDK支持多通道RTT、SuperWatch及内存读写共存；STM32、真实Web与stdio MCP短测通过。配套固件58c47a9已完成应用层调度，见firmware PR1。主机PR30保持草稿；本轮未打安装包/覆盖Skill，长期仍暂停。
+- 当前任务：协议47多路复用已完成安装交付：应用f17e4047本地NSIS覆盖安装、本地Skill同步，真实Web双RTT+SuperWatch+stdio MCP以及原生桌面/CLI共存短测通过。配套固件58c47a9已在设备。PR保留草稿，长期验证暂停。
 - 状态：`active`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **CDC多路复用主机接入**：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。
+- **CDC多路复用主机接入**：docs/verification/cdc-multiplex-host.md：1362后端通过/2跳过，最终Bridge补测69通过；GUI整套851通过、最终相关52通过，生产构建及真实Edge/stdio MCP短测通过。双RTT+Watch+内存读写校验恢复、CLI多通道采集、会话恢复通过。全仓离线安全算法资源及联网wheel测试未通过/未完成。 Skill旧通道上限断言已修正，反馈契约66项通过。 MUX及RTT GUI回归已加入现有CI测试清单。 见cdc-multiplex-host.md安装补验：f17e4047三项CI通过，本地NSIS安装退出0，三负载哈希匹配；sidecar与Skill算法7059/2224验证。安装版Web双RTT+Watch+本地Skill stdio MCP通过，正常关闭6.16秒释放COM；原生桌面及CLI双通道共存、正常退出通过。
 - **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md：最终安装版GUI退出6.05秒、AI强杀5.40秒释放COM；真实双网页退出通过，网络排空上限回归4项通过，5508bd06三项CI及固件4ab77c2两项CI通过。
 - **统一远程GUI**：148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。
 - **远程GUI第一阶段**：147源码cd32f7e6：99后端+20GUI测试、生产构建、三个CI通过；同主机LAN真实F103内存读取/暂停运行/寄存器/RTT、双远程会话/AI共存及断线禁用通过。跨物理主机、内存写入、RTT发送、单步和新版安装仍待验收。 用户重新授权后安装及代理/包内Web短测已补验通过，详见147安装补验。
@@ -40,19 +40,19 @@
 ## 真机环境
 
 - **state**：单V4/STM32，已写MUX_FRAME=1/MUX_TARGET=1固件58c47a9；双RTT通道/Watch/内存并行及重连短测通过。未烧录目标或改压/复位；测试预留RAM写入已恢复。HPM未接，长期暂停。
-- **installer**：149应用5508bd06本地0.3.0 NSIS覆盖安装退出0，三项包内负载哈希一致；Skill及生产前端同步。协议46、真实Web短测通过，原生窗口本轮未打开。 本轮协议47源码及生产Web验证完成；桌面安装包和已部署Skill尚未更新到本轮。
+- **installer**：f17e4047本地0.3.0 NSIS覆盖安装与用户Skill同步，协议47，三负载哈希匹配，7059/2224资产校验通过。安装态Web/MCP/CLI/原生桌面短测通过，详见cdc-multiplex-host.md。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 本轮接入已通过有限验收，报告cdc-multiplex-host.md。后续可按用户安排生成配套桌面安装包、更新本地Skill并验收安装态；HPM/JTAG、跨主机和八实体通道仍需独立验证。
+1. 本轮安装交付已完成，报告cdc-multiplex-host.md。HPM/JTAG、跨主机和八实体通道仍需独立验证，等待用户安排；长期保持暂停。
 2. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
 
 ## 已知限制
 
-- 新MUX主机协议47需配套V4 MUX_TARGET=1固件；实体只验STM32两个Up/一个Down。SuperWatch最多15个128B区域，最短2ms，非原子快照；调试/烧录/时钟仍需停流，未知写入不重放。本轮未更新桌面安装包/已部署Skill，全仓测试未完全通过。
+- 新MUX主机协议47需配套V4 MUX_TARGET=1固件；实体只验STM32两个Up/一个Down。SuperWatch最多15个128B区域，最短2ms，非原子快照；调试/烧录/时钟仍需停流，未知写入不重放。配套桌面安装包及本地Skill已更新，全仓测试未完全通过。
 - 149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
 - 0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA仍用独立文档内旧绘图脚本，无网页通道编辑器，原生集成待验；Float32不保留大整数低位，历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
