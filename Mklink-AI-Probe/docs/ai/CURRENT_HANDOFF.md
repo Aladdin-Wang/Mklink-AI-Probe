@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T20:07:50.3549593+00:00`
+- 更新时间：`2026-10-05T20:11:41.6170869+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：双V4已升级03d72f5，HPM BIN/HEX边界与完整恢复读回通过。发现并修复主机MUX无条件SWD附着导致HPM JTAG拒绝：读固件debug_port再选择。151自动化通过，HPM1920MUX/1921-4096B1及STM32实体DAP打断/重采集恢复通过，后台退出。
+- 当前任务：已修Dump CLI保存先截断旧文件：同目录临时文件/逐段写入及同步后原子替换、失败清理。66相关测试通过；实体STM32采集+Windows占用文件WinError5保留旧内容，普通读取/MUX恢复及解除占用后8192字节保存正确，后台退出。取消路径仍待验。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 核对主机/固件CI（上次仍queued），推进Dump取消/文件失败、Flush及完整功能矩阵和最终安装/Skill。HPM MUX附着选择已修，普通Watch继续MUX并行语义；HPM测量clock_hz=0为未取得值，未完成尾帧不计完整样本。
+1. 核对CI，验证有限Dump的CLI中断/失联取消：线程池采集目前无取消令牌，检查操作锁与租约清理且不影响其他客户端。继续Flush/全矩阵及最终安装Skill。文件失败已修并真机验证，不代表取消通过。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

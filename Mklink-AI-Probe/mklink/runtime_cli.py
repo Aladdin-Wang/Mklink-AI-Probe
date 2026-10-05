@@ -241,8 +241,8 @@ def run(args):
             except (KeyError, TypeError, ValueError) as error:
                 raise RuntimeErrorResponse('Invalid shared dump response; no file written or command retried') from error
             if args.save:
-                from pathlib import Path
-                Path(args.save).write_bytes(b''.join(payloads))
+                from mklink.file_content import write_atomic_chunks
+                write_atomic_chunks(args.save, payloads)
             if args.json:
                 print(json.dumps(result, ensure_ascii=False))
             else:
