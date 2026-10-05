@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:30:10.4252977+00:00`
+- 更新时间：`2026-10-05T21:33:27.6752152+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：当前STM32 AXF副本变更/缺失时共享变量读/观察/写均409、活动客户端阻止重载；恢复原文件后读正常，退出客户端再显式重载generation1→2，tick推进、后台退出。实体报告symbol-source-current-hil，无生产改动；上一轮完整回归唯一测试契约失败已修，109复测通过。
+- 当前任务：STM32损坏AXF重载事务409且不替换旧目录，stale阻止读取，恢复后generation1→2；数组0/255/256/3071、末页分页、float/结构成员解码及三项无效符号拒绝实体通过。动态温度首轮非同步比较失败已保留，改停核稳定比较后恢复；后台退出，无生产改动。报告symbol-malformed-current-hil与symbol-types-current-hil。
 - 状态：`active`
 
 ## 里程碑

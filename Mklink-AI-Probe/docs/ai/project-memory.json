@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T21:30:10.4252977+00:00",
+  "updated_at": "2026-10-05T21:33:27.6752152+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "当前STM32 AXF副本变更/缺失时共享变量读/观察/写均409、活动客户端阻止重载；恢复原文件后读正常，退出客户端再显式重载generation1→2，tick推进、后台退出。实体报告symbol-source-current-hil，无生产改动；上一轮完整回归唯一测试契约失败已修，109复测通过。"
+    "current_task": "STM32损坏AXF重载事务409且不替换旧目录，stale阻止读取，恢复后generation1→2；数组0/255/256/3071、末页分页、float/结构成员解码及三项无效符号拒绝实体通过。动态温度首轮非同步比较失败已保留，改停核稳定比较后恢复；后台退出，无生产改动。报告symbol-malformed-current-hil与symbol-types-current-hil。"
   },
   "milestones": [
     {
