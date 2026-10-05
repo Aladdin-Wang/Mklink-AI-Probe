@@ -1991,6 +1991,14 @@ class SuperWatchStreamManager:
                 return
             raise RuntimeError("SuperWatch worker thread is still active")
         self.prepare(device)
+        with self._read_lock:
+            try:
+                self._validate_sampling_layout_locked(self._array_snapshot)
+            except ValueError as exc:
+                self._error = str(exc)
+                self._running = False
+                self._collecting.clear()
+                raise
         from mklink.dump_memory import ARM_WRITE_RANGES, HPM_WRITE_RANGES
         bridge = getattr(device, "_bridge", None)
         is_hpm = getattr(getattr(bridge, "_ctx", None), "idcode", None) == 0x1000563D

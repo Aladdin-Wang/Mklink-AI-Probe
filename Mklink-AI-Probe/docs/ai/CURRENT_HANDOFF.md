@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:14:45.7541209+00:00`
+- 更新时间：`2026-10-05T22:17:06.7602025+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：SuperWatch增删容量事务已接入与数组选择共用校验；拒绝不发布items/blocks/version及metadata，保留无数组采样缓存。257相关回归通过，含删除内部变量导致区域分裂超限。STM32满容量新增rt_tick拒绝且采样继续，缩小数组后新增/删除及恢复480元素、RTT8/后台退出通过，证据superwatch-scalar-capacity-hil。继续符号重绑定容量事务及GUI/全矩阵；最终安装未做，长期测试暂停。
+- 当前任务：SuperWatch start创建线程前统一容量校验，修复符号重绑定后先成功再异步停流。构造目录32→64位数组测试验证同步restore错误/停止、保留新目录/类型、无MUX启动IO及可缩小；258相关回归通过。启动修改后STM32 scalar-capacity HIL重跑通过，后台已退出。下一步GUI实际反馈及全矩阵，重绑定类型变化只算自动化不算实体；最终安装未做，长期测试暂停。
 - 状态：`active`
 
 ## 里程碑

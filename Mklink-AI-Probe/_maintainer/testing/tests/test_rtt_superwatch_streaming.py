@@ -1373,20 +1373,13 @@ def test_superwatch_rejects_more_than_safe_dump_region_limit():
         WatchItem(f"value_{index}", 0x20000000 + index * 0x100, "float", 4)
         for index in range(16)
     ])
-    events = Mock()
-    manager._bridge = events
-
-    manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
-    manager._thread.join(timeout=1.0)
-
+    with pytest.raises(ValueError, match="at most 15 regions"):
+        manager.start(SimpleNamespace(_bridge=_SuperWatchDumpBridge()))
+    assert manager._thread is None
     assert not manager.running
-    assert any(
-        call.args[0].get("event") == "error"
-        and "more than 15 dump_memory regions" in call.args[0].get("message", "")
-        for call in events.put.call_args_list
-    )
     assert manager.get_status()["state"] == "stopped"
-    assert "more than 15 dump_memory regions" in manager.get_status()["error"]
+    assert "at most 15 regions" in manager.get_status()["error"]
+    assert not manager._collecting.is_set()
 
 
 def _symbol_write_device(tmp_path, *, write_error=None):
@@ -1989,3 +1982,50 @@ def test_removing_last_scalar_allows_empty_sampling_layout():
     manager._runtime = SuperWatchRuntime(items=[WatchItem("a", 0x20000000, "uint32_t", 4)])
     assert manager.remove_watch("a")["item"]["removed"]
     assert manager._runtime.items == []
+
+
+def test_reparse_capacity_failure_is_synchronous_and_keeps_new_catalog(tmp_path):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+    from mklink.remote.dashboards import SuperWatchTransactionError
+
+    catalogs = []
+    infos = []
+    for generation, (type_name, width) in enumerate((("uint32_t", 4), ("uint64_t", 8)), 1):
+        axf = tmp_path / f"{generation}.axf"
+        axf.write_bytes(str(generation).encode())
+        info = DwarfInfo(
+            base_types={1: (type_name, width)}, arrays={2: (1, width*480)},
+            variables={"samples": DwarfVariable(
+                "samples", 10, 2, 0x20000000, width*480, type_name+"[]",
+            )},
+        )
+        infos.append(info)
+        catalogs.append(SymbolCatalog.from_dwarf(
+            info, axf_path=str(axf), generation=generation,
+            ram_ranges=[(0x20000000, 0x20010000)],
+        ))
+    bridge = SimpleNamespace(_mux_supported=True, enable_multiplex=Mock())
+    device = SimpleNamespace(symbol_catalog=catalogs[0], _dwarf_info=infos[0],
+                             _project_root=str(tmp_path), _port=None, _bridge=bridge)
+    def load(axf_path=None):
+        device.symbol_catalog = catalogs[1]
+        device._dwarf_info = infos[1]
+        return catalogs[1]
+    device.reparse_axf_atomically = load
+    manager = SuperWatchStreamManager()
+    manager.prepare(device)
+    manager.select_array_snapshot("samples", start_index=0, count=480)
+    manager._running = True
+    manager._collecting.set()
+    with pytest.raises(SuperWatchTransactionError, match="15 regions") as failed:
+        manager.reparse_symbols(device=device)
+    assert failed.value.phase == "restore"
+    assert device.symbol_catalog is catalogs[1]
+    assert manager._runtime.symbol_catalog is catalogs[1]
+    assert manager.get_array_snapshot()["snapshot"]["element_size"] == 8
+    assert not manager.running and not manager._collecting.is_set()
+    assert manager._thread is None
+    bridge.enable_multiplex.assert_not_called()
+    # The user can shrink the new layout; do not silently reuse old addresses/types.
+    assert manager.select_array_snapshot("samples", start_index=0, count=240)["snapshot"]["count"] == 240
