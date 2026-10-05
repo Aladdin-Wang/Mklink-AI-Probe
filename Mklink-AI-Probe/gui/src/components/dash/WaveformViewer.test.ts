@@ -592,6 +592,20 @@ describe('WaveformViewer VOFA binary transport', () => {
     }
   })
 
+  it('does not accumulate global listeners when resizing waveform history', async () => {
+    const runtime = await loadRttViewerRuntime()
+    const listener = vi.spyOn(window, 'addEventListener')
+    try {
+      for (let size = 10; size <= 100; size += 10) {
+        expect(runtime.probe.setBufferCapacity(size)).toBe(true)
+      }
+      expect(listener.mock.calls.filter(([event]) => event === 'mklink-theme-change')).toHaveLength(0)
+    } finally {
+      listener.mockRestore()
+      runtime.cleanup()
+    }
+  })
+
   it('estimates Worker history memory from the requested capacity and channel count', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {

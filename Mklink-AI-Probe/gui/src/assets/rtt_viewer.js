@@ -2294,11 +2294,7 @@ function setBufferCapacity(newCapacity) {
   RING_BUFFER_CAPACITY = newCapacity;
   MAX_POINTS = newCapacity;
   window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
-  addViewerGlobalListener(window, 'mklink-theme-change', function() {
-  syncViewerTheme(); drawChart(); drawMinimap();
-});
-
-window.MAX_POINTS = MAX_POINTS;
+  window.MAX_POINTS = MAX_POINTS;
   var input = document.getElementById('buffer-input');
   if (input) input.value = String(newCapacity);
   for (var name in FIELDS) {

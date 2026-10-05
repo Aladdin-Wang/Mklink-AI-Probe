@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T23:02:27.165790+00:00`
+- 更新时间：`2026-10-05T23:06:35.921665+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：波形buffer/pretrigger整数边界已修复：step1，拒绝buffer小数/空/越界，pretrigger输入10–50000整数、导入非法回退1000，统一校验。98组件测试/生产构建通过；真实Chrome默认有效、2pts应用和1001预触发有效，恢复默认/后台退出。dist已更新footer02c9884468ff。后续核对VOFA Worker容量与可见点数语义、继续全矩阵/安装；长稳暂停。
+- 当前任务：删除波形resize重复theme监听器；99组件测试/生产构建、真实Chrome10次resize新增监听0/浅色绘图通过，恢复默认/后台退出。dist footer ea54f3d9dedf。重要待办：Worker仍固定200000容量，UI resize只缩显示端；configure会清历史，不可直接复用。下一轮实现保留最新数据/序号的Worker resize并串联viewer/composable/client，检查SystemView多余分配及暂停/导出/通道变化。全矩阵/最终安装仍待做，长稳暂停。
 - 状态：`active`
 
 ## 里程碑

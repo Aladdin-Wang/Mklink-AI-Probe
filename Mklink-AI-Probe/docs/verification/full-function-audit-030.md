@@ -714,3 +714,12 @@ STM32实体：真实CLI启动VOFA，SDK订阅后在原owner存活时pause仍409�
 基线02c98844后，buffer/pretrigger输入step统一为1，使默认10000/1000及范围内整数符合浏览器约束。buffer应用改用valueAsNumber与Number.isInteger，拒绝空值、小数和越界，不再parseInt截断。pretrigger输入仅在10–50000整数时更新采集显示配置，非法输入保留上次合法设置；配置导入的非法/缺失preTrigger使用默认1000。两入口复用同一校验函数。
 
 WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲空/小数/越界、预触发上下边界/非整百值、非法输入保留及非法项目配置恢复。vue-tsc与生产构建通过（既有大chunk提示）。真实Chrome加载新版dist footer02c9884468ff，两个默认输入invalid=false；实际buffer设为2并应用后显示2 pts，pretrigger1001有效；恢复默认后关闭网页，停止SDK，后台退出。证据reports/vofa-boundary-browser.json及vofa-gui-0700.py。未进行原生安装，本次未重跑全GUI套件，不将输入验证当作全部触发算法/所有内存容量验证。观察transport buffer计数不随可见2 pts立即变2，下一轮核对VOFA前端与Worker容量语义。
+
+
+### 波形容量调整的监听器累积修复与剩余内存问题
+
+基线ea54f3d9后，删除setBufferCapacity每次调用时重复注册mklink-theme-change的代码，保留初始化时唯一监听器及原dispose。此前调整N次容量会新增N个回调，主题切换重复drawChart/drawMinimap并保留闭包直至卸载。
+
+99项WaveformViewer测试通过，新增连续10次resize不新增主题监听器验证；生产构建通过（原有chunk提示）。真实Chrome+STM32新版dist footer ea54f3d9dedf，DOM输入/应用连续10次容量，监测新增主题监听器为0；实际切换浅色后截图vofa-theme-light.png显示两路正常曲线，已查看；恢复10000/暗色、关闭浏览器并停止SDK，后台退出。未宣称完整浏览器堆内存测量或长稳。
+
+容量问题仍未完成：WaveformViewer调用useBinaryStream固定capacity200000，setBufferCapacity目前只调整显示端；现有configure会重建Worker环并清空历史/统计。下一步需提供保留最新历史且保持序号/元数据的resize路径，并串联viewer/composable/client/worker，验证缩容淘汰、扩容不恢复已淘汰数据、通道变更/暂停/导出一致性，避免用configure重置掩盖容量问题。Worker configure还预分配SystemView相关结构，需按实际类型核对内存开销。
