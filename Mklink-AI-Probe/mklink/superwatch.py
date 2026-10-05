@@ -769,10 +769,20 @@ class SuperWatchRuntime:
             if not resolved:
                 return {"error": f"Cannot resolve '{name}': skipped (address outside SRAM or not found)"}
             item = resolved[0]
-        self.items.append(item)
-        self.blocks = build_read_blocks(
-            self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
-        )
+        # Validate before publishing a new sampling layout: an invalid item must
+        # not stop the worker or displace the existing valid channels.
+        if item.scalar_kind in {"array", "struct", "union"}:
+            return {"error": f"Cannot watch '{name}' as a scalar; select a member or use an array snapshot"}
+        candidate_items = [*self.items, item]
+        try:
+            candidate_blocks = build_read_blocks(
+                candidate_items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
+            )
+            compile_frame_decoder(candidate_items, candidate_blocks)
+        except ValueError as exc:
+            return {"error": f"Cannot watch '{name}': {exc}; select a scalar member or use an array snapshot"}
+        self.items = candidate_items
+        self.blocks = candidate_blocks
         self.blocks_version += 1
         return {"name": item.name, **make_channel_metadata([item])[item.name]}
 

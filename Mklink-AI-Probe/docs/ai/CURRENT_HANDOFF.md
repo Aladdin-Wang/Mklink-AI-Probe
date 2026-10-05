@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T15:52:56.146834+00:00`
+- 更新时间：`2026-10-05T16:01:20.568400+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：Python全套4091通过/1失败/3跳过；FLM原子替换WinError5单独未复现，补充事务失败保护后相关114通过。GUI全套85文件858项通过。两个测试进程均已结束。接续GUI启动等待、脱机GUI、RTT8跨客户端及全矩阵真机验证；安装包/本地Skill未最终更新。
+- 当前任务：RTT八路双SharedDevice历史/256字节Down哈希/借用者权限/独立关闭真机通过；发现整数组标量监视异步拖停SuperWatch，已改为候选布局预检后提交，167回归及并发真机复验通过1971样本。所有本轮会话已关闭。接续GUI八路、数组快照、启动等待、脱机GUI及剩余矩阵；最终安装未做。
 - 状态：`active`
 
 ## 里程碑

@@ -177,3 +177,10 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 主机a9badd2a整套运行完成：4091 passed、1 failed、3 skipped，796.79秒，证据reports/full-python-a9badd2a.xml。唯一失败为test_custom_flm_remove_deletes_unreferenced_payload的Windows WinError5原子registry替换拒绝；单独完整文件复跑5项通过，尚未证明外部占用来源，不称整套绿色。代码读取/写入路径均关闭文件句柄，未添加猜测性自动重试。新增添加/删除时替换拒绝的事务回归：旧registry及算法保持、无残余新算法或临时文件；自定义FLM及在线API共114项通过。
 
 三项跳过分别为仓库本地算法包路径检查，以及两项依赖未安装hil_core.observe的真实观察桥测试；本轮通过MKLINK_BUILTIN_FLM_ROOT使用外部现有算法包，不能把该路径检查跳过写为通过。随后GUI整套回归完成：85个文件、858项全部通过，76.91秒；存在既有Node localStorage及Vue生命周期测试警告，未据此宣称浏览器实机覆盖。
+
+
+### RTT八路共享SDK与SuperWatch并行真机
+
+两个SharedDevice客户端通过同一共享后台运行：非法通道8被拒绝后可正常启动0–7；第二客户端无参数订阅，不创建第二串口读取器；逐通道从cursor0读取同一历史前缀，均lost_bytes=0。借用客户端逐路发送256字节（覆盖00/FF）后，目标八路计数与滚动哈希全部匹配；借用者停止被拒绝，关闭借用者后原采集继续运行。证据reports/rtt8-shared-sdk-hil.json。此项不等于GUI八路格式与暂停已验收。
+
+实机发现SuperWatch标量入口接受32字节整数组后，异步解码报unsupported scalar layout并停止线程。修复SuperWatchRuntime.add：先构建并编译候选采样布局，再提交items/blocks/version；不支持的布局返回错误、提示选择成员或数组快照，保持已运行布局。显式聚合类型也拒绝按标量加入。相关167项回归通过。复验使用数组元素标量与八路RTT并行，1971组完整采样、无报告CRC/解析丢帧；运行中再次添加整数组被拒绝，原采样无错误且仍运行。初始失败证据单独保存在reports/rtt8-shared-array-failure.json。数组快照自身、多种格式和其他边界仍待验证。

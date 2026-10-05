@@ -1856,3 +1856,20 @@ def test_rtt_each_channel_publishes_its_own_log_terminal_and_waveform():
         assert f"value={ch}" in str(decode_rtt_lines(raw.args[0], raw.kwargs["item_count"]))
         assert decoder._terminal_stream_hub.publish.call_args.args[0] == f"value={ch}\nvalue={ch + 1}\n".encode()
     assert decoders[0]._history is not decoders[1]._history
+
+
+@pytest.mark.parametrize("kind,size", [("array", 4), ("array", 32), ("struct", 4), (None, 32)])
+def test_unsupported_watch_add_preserves_valid_sampling_layout(kind, size):
+    original = WatchItem("counter", 0x20000000, "uint32_t", 4, "ram")
+    candidate = WatchItem("aggregate", 0x20000100, "opaque", size, "ram", scalar_kind=kind)
+    runtime = SuperWatchRuntime(items=[original], peripheral_items={"aggregate": candidate})
+    blocks, version = runtime.blocks, runtime.blocks_version
+
+    result = runtime.add("aggregate")
+
+    assert "error" in result
+    assert "array snapshot" in result["error"]
+    assert runtime.items == [original]
+    assert runtime.blocks is blocks
+    assert runtime.blocks_version == version
+    compile_frame_decoder(runtime.items, runtime.blocks)
