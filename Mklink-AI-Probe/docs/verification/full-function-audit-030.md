@@ -357,3 +357,11 @@ RT堆used/peak仍10680/12200；传统路径RTT栈未触及前缀436/1024，DAP�
 SES构建与SWD布局通过。STM32侧单次复制UF2 ce5c3b4544b0644039940f58548a9d37e375ffc8cc2dab57d7ab8b83ec282624；45秒等待运行盘超时，未重复刷写。随后正常USB枚举和新停止回执确认恢复，此限制保留。HPM仍f89a562。
 
 实体DAP保持连接并暂停目标，传统RTT送入1024字节，约0.0519秒收到unsent512/dropped512停止回执；DAP读取/单步继续正常，退出后命令及MUX恢复。八路传统268字节收发哈希/邻路隔离/模式恢复通过；MUX八路256字节哈希+Watch+DAP让出/恢复通过，Watch211/恢复142样本。堆峰值10680/12200，RTT栈前缀436/1024、DAP596，有限水位无全功能峰值承诺。报告legacy-full-stop-dap-hil.json、legacy-rtt-eight-full-stop-hil.json、rtt8-dap-full-stop-hil.json。全部句柄关闭。后续转向HPM侧候选升级及其余矩阵，仍未更新安装/Skill。
+
+### HPM 同版本升级及完整固件 CI 回归
+
+HPM侧已单次升级1a4bd0c候选（UF2 ce5c3b4544b0644039940f58548a9d37e375ffc8cc2dab57d7ab8b83ec282624），运行盘45秒内返回；两个V4现在同一应用固件。BIN烧录51244字节通过，HEX末尾校验错误和实际16MiB容量越界拒绝后首64字节未改变；稀疏奇数长度记录读回一致，跳过4KiB扇区未改变。恢复hello BIN后全51244字节逐块读回，SHA256与源文件同为57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。堆used/peak10680/12200，两个console栈未触及前缀1736/3780，main4264；这是有限负载观测，不证明HPM RTT/DAP并发或最坏栈峰值。
+
+本地证据hpm-full-stop-upgrade.json、hpm-bin-1a4bd0c-hil.json、hpm-hex-boundaries-1a4bd0c-hil.json、hpm-final-readback-1a4bd0c.json、hpm-1a4bd0c-memory-snapshot.json。全部串口句柄已关闭。
+
+固件1a4bd0c远端CI失败暴露REPL测试桩未同步新拆分的目标flush；完整执行工作流又发现旧USB DAP恢复测试桩缺少会话状态定义。固件eabccc6只修正测试及文档，无新生产代码、无需重复刷机。REPL测试增加解析/目标I/O分开计数、锁持有断言、DAP/脱机/锁占用期间仅解析停止、REPL输出期间两者均禁止，以及SystemView单独运行。16项工作流命令现已本地全部通过，包括249087个USB发送和576个DMA模型用例。不能将之前局部测试通过等同于完整CI通过；远端推送后的结果另核对。安装包/本地Skill仍待最终资格验证，不增加WinUSB。
