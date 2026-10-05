@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T17:40:41.3090604+00:00`
+- 更新时间：`2026-10-05T17:47:21.1158140+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：固件f89a562全量/增量构建及SWD布局检查通过，STM32侧单次升级后新诊断接口真机通过；初始运行盘等待20秒超时，后续恢复，无重复刷写。RT堆12200/10680/10680、13线程水位已记录，仅启动后。HPM侧仍f74af2a；接下来八路RTT/Watch/DAP负载后测水位。
+- 当前任务：f89a562真机八路RTT+Watch+DAP抢占恢复及六硬件断点耗尽/实际命中通过；RT堆保持10680/12200、DAP栈前缀596。修复低层断点负槽位可能写FP_REMAP及无效请求先启用FPB，19新增/相关90测试通过。更多负载、HPM及全入口矩阵仍待验。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 在STM32侧f89a562上继续八路RTT/Watch/DAP负载和负载后堆/栈诊断，留意运行盘恢复延迟；随后HPM候选及剩余GUI/远程/多客户端矩阵。最终安装和Skill仍待更新，不自动合并发布。
+1. 继续f89a562负载：实际APP重烧录及其后堆/栈水位、HPM固件候选/HEX回归；RTT GUI逐路保存/发送历史、远程和多客户端矩阵仍未完成。安装/Skill仍需最终更新，不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
