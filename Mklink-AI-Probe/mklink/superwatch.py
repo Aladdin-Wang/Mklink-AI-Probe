@@ -734,7 +734,7 @@ class SuperWatchRuntime:
                 break
         return results
 
-    def add(self, name: str) -> dict:
+    def add(self, name: str, *, validate_layout=None) -> dict:
         existing = next((item for item in self.items if item.name == name), None)
         if existing is not None:
             return {"name": existing.name, **make_channel_metadata([existing])[existing.name]}
@@ -781,16 +781,26 @@ class SuperWatchRuntime:
             compile_frame_decoder(candidate_items, candidate_blocks)
         except ValueError as exc:
             return {"error": f"Cannot watch '{name}': {exc}; select a scalar member or use an array snapshot"}
+        try:
+            if validate_layout is not None:
+                validate_layout(candidate_items)
+        except ValueError as exc:
+            return {"error": f"Cannot watch '{name}': {exc}"}
         self.items = candidate_items
         self.blocks = candidate_blocks
         self.blocks_version += 1
         return {"name": item.name, **make_channel_metadata([item])[item.name]}
 
-    def remove(self, name: str) -> dict:
-        before = len(self.items)
-        self.items = [item for item in self.items if item.name != name]
-        if len(self.items) == before:
+    def remove(self, name: str, *, validate_layout=None) -> dict:
+        candidate_items = [item for item in self.items if item.name != name]
+        if len(candidate_items) == len(self.items):
             return {"removed": False, "name": name}
+        try:
+            if validate_layout is not None:
+                validate_layout(candidate_items)
+        except ValueError as exc:
+            return {"error": str(exc), "removed": False, "name": name}
+        self.items = candidate_items
         self.blocks = build_read_blocks(
             self.items, max_gap=SUPERWATCH_DUMP_MERGE_GAP,
         )

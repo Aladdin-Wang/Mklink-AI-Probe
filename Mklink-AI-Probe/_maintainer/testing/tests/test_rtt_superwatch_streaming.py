@@ -201,14 +201,21 @@ class _MutableWatchRuntime:
             items=list(self.items),
         )] if self.items else []
 
-    def add(self, name):
-        if name == "b" and all(item.name != name for item in self.items):
-            self.items.append(_watch_item("b", 0x20000004))
+    def add(self, name, *, validate_layout=None):
+        candidate = list(self.items)
+        if name == "b" and all(item.name != name for item in candidate):
+            candidate.append(_watch_item("b", 0x20000004))
+        if validate_layout is not None:
+            validate_layout(candidate)
+        self.items = candidate
         self._rebuild_blocks()
         return {"name": name}
 
-    def remove(self, name):
-        self.items = [item for item in self.items if item.name != name]
+    def remove(self, name, *, validate_layout=None):
+        candidate = [item for item in self.items if item.name != name]
+        if validate_layout is not None:
+            validate_layout(candidate)
+        self.items = candidate
         self._rebuild_blocks()
         return {"removed": True, "name": name}
 
@@ -1943,3 +1950,42 @@ def test_array_snapshot_capacity_rejection_preserves_live_selection(tmp_path, sc
     assert not manager._dump_restart.is_set()
     # A valid replacement remains possible immediately after rejection.
     assert manager.select_array_snapshot("samples", start_index=511, count=1)["snapshot"]["count"] == 1
+
+
+def test_scalar_add_capacity_rejection_keeps_layout_and_metadata():
+    items = [WatchItem(str(i), 0x20000000 + 256*i, "uint32_t", 4) for i in range(16)]
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=items[:15], peripheral_items={"last": items[15]})
+    before = manager._runtime.items
+    metadata = manager._metadata_version
+    result = manager.add_watch("last")
+    assert "15" in result["item"]["error"]
+    assert manager._runtime.items is before
+    assert manager._runtime.blocks_version == 0
+    assert manager._metadata_version == metadata
+    assert manager.remove_watch("0")["item"]["removed"]
+    assert "error" not in manager.add_watch("last")["item"]
+
+
+def test_scalar_remove_cannot_split_full_mux_layout_and_stop_capture():
+    items = [WatchItem(str(i), 0x20000000 + 4*i, "uint32_t", 4) for i in range(480)]
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=items)
+    before = manager._runtime.items
+    result = manager.remove_watch("1")
+    assert "15 regions" in result["item"]["error"]
+    assert not result["item"]["removed"]
+    assert manager._runtime.items is before
+    assert manager._runtime.blocks_version == 0
+    # Removing an endpoint shrinks the existing region without fragmentation.
+    assert manager.remove_watch("479")["item"]["removed"]
+
+
+def test_removing_last_scalar_allows_empty_sampling_layout():
+    manager = SuperWatchStreamManager()
+    manager._device = SimpleNamespace(_bridge=SimpleNamespace(_mux_supported=True))
+    manager._runtime = SuperWatchRuntime(items=[WatchItem("a", 0x20000000, "uint32_t", 4)])
+    assert manager.remove_watch("a")["item"]["removed"]
+    assert manager._runtime.items == []
