@@ -57,7 +57,9 @@ def test_user_skill_publishes_probe_safety_boundaries():
     assert "VOFA 最多 **64 路**" in entry
     assert "**511 UTF-8 字节**" in entry
     assert "单批总数据最多 **12 KiB**、最多 **8 个地址项**" in entry
-    assert "V4 通道为 **0~2**，搜索窗口为 **0~65536 字节**" in entry
+    assert "旧固件/SystemView 通道为 **0~2**" in entry
+    assert "`MUX_TARGET=1` 的 V4 RTT 可订阅 **0~7**" in entry
+    assert "搜索窗口为 **0~65536 字节**" in entry
     assert "不得拼接 Pika 表达式" in entry
     assert "MCP `rtt_write` 单次最多 **256" in entry
     assert "超限不得自动拆分" in entry
