@@ -8,7 +8,7 @@ interface Client { id: string; name: string; kind: string; streams: string[]; ex
 interface Runtime {
   jobs?: { job_id: string; request_id: string; action: string; state: string; error: string | null }[]
   probe_id: string; status: string; connected: boolean; busy: boolean; project_root: string
-  probe: { alias: string; port: string } | null
+  probe: { alias: string; port: string; identity_stable?: boolean } | null
   clients: Client[]; streams: { name: string; running: boolean; subscribers: number }[]
   operation: { path: string; client: string } | null
   last_operation: { path: string; http_status: number | null; duration_seconds: number } | null
@@ -19,6 +19,10 @@ const error = ref('')
 const acting = ref(false)
 const stopped = ref(false)
 const volume = ref('')
+const probeAlias = ref('')
+const aliasEdited = ref(false)
+const aliasSaving = ref(false)
+const aliasSaved = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 let refreshing = false
@@ -53,9 +57,33 @@ async function refresh() {
     const response = await fetch(`${API_BASE}/api/runtime/control/status`)
     if (!response.ok) throw new Error(tr('读取后台状态失败', 'Could not read runtime status'))
     const value = await response.json()
-    if (!disposed) state.value = value
+    if (!disposed) {
+      if (state.value?.probe_id !== value.probe_id || !aliasEdited.value) {
+        probeAlias.value = value.probe?.alias || ''
+        aliasEdited.value = false
+      }
+      state.value = value
+    }
   } catch (e: any) { if (!disposed) error.value = e.message }
   finally { refreshing = false }
+}
+
+async function saveProbeAlias() {
+  if (aliasSaving.value || !state.value?.probe?.identity_stable) return
+  aliasSaving.value = true
+  aliasSaved.value = false
+  error.value = ''
+  try {
+    const response = await fetch(`${API_BASE}/api/runtime/alias`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ probe: state.value.probe_id, alias: probeAlias.value }),
+    })
+    if (!response.ok) throw new Error(String((await response.json()).detail))
+    aliasEdited.value = false
+    aliasSaved.value = true
+    await refresh()
+  } catch (e: any) { if (!disposed) error.value = e.message }
+  finally { aliasSaving.value = false }
 }
 
 async function act(action: string, parameters: Record<string, string> = {}) {
@@ -104,6 +132,13 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
         <dt>{{ tr('当前操作', 'Current operation') }}</dt><dd data-testid="runtime-operation">{{ state.operation ? `${state.operation.client} · ${state.operation.path}` : tr('空闲', 'Idle') }}</dd>
       </dl>
       <p v-if="state.status !== 'present'" class="runtime-error">{{ tr('原设备未就绪。请结束旧会话、停止采集并释放连接，然后按原设备身份重新连接。不会自动选择其他下载器。', 'Bound probe is not ready. End old sessions, stop capture, release the connection, then reconnect the same identity.') }}</p>
+      <div v-if="state.probe?.identity_stable" class="runtime-alias">
+        <label for="probe-alias">{{ tr('本机别名', 'Local alias') }}</label>
+        <input id="probe-alias" v-model="probeAlias" class="form-input" data-testid="probe-alias" maxlength="64" :disabled="aliasSaving" @input="aliasEdited = true; aliasSaved = false" />
+        <button class="btn btn-sm" data-testid="save-probe-alias" :disabled="aliasSaving || !aliasEdited" @click="saveProbeAlias">{{ tr('保存别名', 'Save alias') }}</button>
+        <span v-if="aliasSaved" role="status">{{ tr('别名已保存', 'Alias saved') }}</span>
+        <p class="runtime-muted">{{ tr('别名仅保存在本机，用于区分下载器，不修改下载器固件。', 'Aliases identify probes on this computer only; probe firmware is unchanged.') }}</p>
+      </div>
       <h3>{{ tr('客户端', 'Clients') }} · {{ state.clients.length }}</h3>
       <p v-if="!state.clients.length">{{ tr('暂无客户端', 'No clients') }}</p>
       <div v-for="client in state.clients" :key="client.id" class="runtime-row" data-testid="runtime-client">
@@ -135,6 +170,9 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
 </template>
 
 <style scoped>
+.runtime-alias { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.runtime-alias input { flex: 1; min-width: 120px; }
+.runtime-alias p { flex-basis: 100%; }
 .runtime-panel { display: flex; flex-direction: column; gap: 16px; }
 .runtime-heading, .runtime-row, .runtime-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .runtime-heading h2, h3, p { margin: 0; }

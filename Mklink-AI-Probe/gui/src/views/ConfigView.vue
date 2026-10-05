@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Download, RefreshCw, RotateCcw, Tag, Unplug, Usb } from '@lucide/vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useMklinkApi } from '../composables/useMklinkApi'
-import { useMklinkWs } from '../composables/useMklinkWs'
 import { useToast } from '../composables/useToast'
 import { useSymbolCatalog } from '../composables/useSymbolCatalog'
 import { tr } from '../composables/useLanguage'
@@ -38,7 +37,6 @@ const {
   upgradeProbeFirmware,
   downloadProbeFirmware,
 } = useMklinkApi()
-const { wsConnected, connect: wsConnect, disconnect: wsDisconnect } = useMklinkWs()
 const toast = useToast()
 const symbolCatalog = useSymbolCatalog()
 
@@ -49,24 +47,9 @@ const portOptions = ref<{ label: string; value: string }[]>([])
 const localPortExplicit = ref(false)
 let localPortTouched = false
 const probePorts = ref<PortInfo[]>([])
-const probeAlias = ref('')
 const selectedProbe = computed(() => probePorts.value.find(port => port.device === localPort.value))
 const switchingProbe = computed(() => sharedRuntime.value && localPortExplicit.value
   && !!selectedProbe.value && localPort.value !== deviceStatus.value.port)
-watch(selectedProbe, probe => { probeAlias.value = probe?.alias || '' })
-
-async function saveProbeAlias() {
-  try {
-    const response = await fetch(`${API_BASE}/api/runtime/alias`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ probe: selectedProbe.value?.probe_id, alias: probeAlias.value }),
-    })
-    if (!response.ok) throw new Error((await response.json()).detail)
-    await refreshPorts()
-    toast.success(tr('本机别名已保存', 'Local alias saved'))
-  } catch (error: any) { toast.error(error.message) }
-}
-
 async function openProbeWindow() {
   try {
     const response = await fetch(`${API_BASE}/api/runtime/select`, {
@@ -87,10 +70,6 @@ const parsingSymbols = ref(false)
 let symbolParseGeneration = 0
 let disposed = false
 const localSaveState = ref<'idle' | 'saving' | 'saved' | 'unconfirmed'>('idle')
-
-const remoteUrl = ref('ws://127.0.0.1:8765')
-const remoteToken = ref('')
-const wsConnecting = ref(false)
 
 const firmwareCheck = ref<ProbeFirmwareCheck | null>(null)
 const firmwareUpgrading = ref(false)
@@ -170,7 +149,6 @@ async function saveLocalConfig() {
 async function selectLocalPort() {
   localPortTouched = true
   localPortExplicit.value = Boolean(localPort.value.trim())
-  probeAlias.value = selectedProbe.value?.alias || ''
   if (sharedRuntime.value) return
   await saveLocalConfig()
 }
@@ -351,15 +329,6 @@ function isActiveSymbolParse(generation: number, requestedPath: string): boolean
     && isSameFileSourcePath(requestedPath, settings.value.symbolPath)
 }
 
-function connectRemote() {
-  wsConnecting.value = true
-  try {
-    wsConnect(remoteToken.value || undefined, remoteUrl.value || undefined)
-  } finally {
-    wsConnecting.value = false
-  }
-}
-
 async function recheckFirmware() {
   try {
     firmwareCheck.value = await probeFirmwareCheck()
@@ -500,13 +469,10 @@ onUnmounted(() => {
         </div>
 
         <div v-if="sharedRuntime && selectedProbe?.probe_id" class="form-row">
-          <label class="form-label" for="probe-alias">{{ tr('本机别名', 'Local alias') }}</label>
-          <input id="probe-alias" v-model="probeAlias" class="form-input" data-testid="probe-alias" maxlength="64" :disabled="!selectedProbe.identity_stable" />
-          <button class="btn btn-sm" data-testid="save-probe-alias" :disabled="!selectedProbe.identity_stable" @click="saveProbeAlias">{{ tr('保存别名', 'Save alias') }}</button>
           <button class="btn btn-sm" data-testid="open-probe-window" @click="openProbeWindow">{{ tr('打开独立窗口', 'Open separate window') }}</button>
         </div>
         <div v-if="sharedRuntime && selectedProbe?.probe_id" class="connection-detail" data-testid="selected-probe-id">
-          {{ selectedProbe.probe_id }} · {{ tr('别名保存在本机，不修改下载器固件', 'Alias is stored on this computer; probe firmware is unchanged') }}
+          {{ selectedProbe.probe_id }}
         </div>
 
         <div class="form-row">
@@ -591,27 +557,6 @@ onUnmounted(() => {
         @parse="parseSymbols"
       />
 
-      <section v-else-if="activeSection === 'remote'" class="card remote-panel">
-        <header class="panel-header">
-          <h2>{{ tr('远程连接', 'Remote Connection') }}</h2>
-          <span :class="['badge', wsConnected ? 'badge-ok' : 'badge-err']">
-            {{ wsConnected ? tr('已连接', 'Connected') : tr('未连接', 'Disconnected') }}
-          </span>
-        </header>
-        <div class="form-row">
-          <label class="form-label" for="remote-url">{{ tr('服务器地址', 'Server Address') }}</label>
-          <input id="remote-url" v-model="remoteUrl" class="form-input" data-testid="remote-url" placeholder="ws://192.168.1.100:8765" />
-        </div>
-        <div class="form-row">
-          <label class="form-label" for="remote-token">{{ tr('认证 Token', 'Authentication Token') }}</label>
-          <input id="remote-token" v-model="remoteToken" class="form-input" data-testid="remote-token" type="password" :placeholder="tr('可选', 'Optional')" />
-        </div>
-        <div class="panel-actions">
-          <button class="btn btn-primary" type="button" data-testid="connect-remote" :disabled="wsConnecting" @click="connectRemote">{{ tr('连接', 'Connect') }}</button>
-          <button class="btn" type="button" data-testid="disconnect-remote" :disabled="!wsConnected" @click="wsDisconnect">{{ tr('断开', 'Disconnect') }}</button>
-        </div>
-      </section>
-
       <section v-else class="card firmware-panel" data-testid="firmware-upgrade-panel">
         <header class="panel-header">
           <h2>{{ tr('固件升级', 'Firmware Update') }}</h2>
@@ -659,7 +604,6 @@ onUnmounted(() => {
 }
 
 .local-panel,
-.remote-panel,
 .firmware-panel {
   min-height: 270px;
 }

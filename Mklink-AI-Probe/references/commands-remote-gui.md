@@ -27,6 +27,10 @@ RTT、SystemView、VOFA 和 SuperWatch 的图表暂停或页面隐藏只减少�
 局域网设备操作使用“远程服务”页面或独立 Agent，参见[直连远程调试](commands-remote.md)。
 桌面内部 `desktop-proxy` 仅转发共享后台，不直接连接下载器。
 
+配置页依次为本地设备、文件来源、固件升级和后台管理；本机别名在后台管理中修改，仅影响本机，不写下载器固件。
+远程功能统一在顶部“远程服务”：本机提供服务，远端通过 Skill、CLI 或 MCP 接入。
+当前 GUI 仪表盘不切换到远端设备；旧配置页仅建立 WebSocket 的“远程连接”框已移除。
+
 ### gui — 一键启动 Web GUI
 
 ```powershell

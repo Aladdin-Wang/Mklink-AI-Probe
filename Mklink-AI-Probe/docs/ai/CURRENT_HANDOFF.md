@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T01:23:09.703872+00:00`
+- 更新时间：`2026-10-05T01:39:54.912721+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：145用户授权的有限安装验收已完成：源1aca5414本地NSIS覆盖安装及Skill升级0.3.0；实际NSIS三文件哈希一致，安装版桌面/Web/Skill三个会话共享一台V4成功，AI/桌面退出后Web保留。持续目标仍暂停，长期未恢复。收益评估见报告145。
+- 当前任务：146按用户调整配置：别名移到后台管理、管理置底；删除无仪表盘操作链路的旧WS连接框与composable，远程职责集中说明。45项测试/类型/生产构建与真实Chrome别名保存恢复通过。正在更新本机安装包；持续目标/长期验证仍暂停。
 - 状态：`paused`
 
 ## 里程碑

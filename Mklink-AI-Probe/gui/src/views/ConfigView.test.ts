@@ -28,8 +28,6 @@ const mocks = vi.hoisted(() => {
       upgradeProbeFirmware: vi.fn(),
       downloadProbeFirmware: vi.fn(),
     },
-    wsConnect: vi.fn(),
-    wsDisconnect: vi.fn(),
     toastError: vi.fn(),
     toastSuccess: vi.fn(),
     toastWarn: vi.fn(),
@@ -44,14 +42,6 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('../composables/useMklinkApi', () => ({
   useMklinkApi: () => ({ deviceStatus: readonly(ref(mocks.deviceStatus)), ...mocks.api }),
-}))
-
-vi.mock('../composables/useMklinkWs', () => ({
-  useMklinkWs: () => ({
-    wsConnected: ref(false),
-    connect: mocks.wsConnect,
-    disconnect: mocks.wsDisconnect,
-  }),
 }))
 
 vi.mock('../composables/useToast', () => ({
@@ -206,7 +196,7 @@ describe('ConfigView', () => {
   it('renders one four-section workspace with Local Device selected by default', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.findAll('[data-testid="config-section"]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-testid="config-section"]')).toHaveLength(3)
     expect(wrapper.get('[data-testid="config-section-local"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('[data-testid="local-device-panel"]').exists()).toBe(true)
 
@@ -696,24 +686,23 @@ describe('ConfigView', () => {
     expect(wrapper.get('[data-testid="parse-symbols"]').attributes('disabled')).toBeDefined()
   })
 
-  it('keeps remote connection and service launch controls reachable', async () => {
+  it('places backend management last and removes the legacy remote connector', async () => {
+    sharedRuntime.value = true
     const wrapper = await mountView()
-
-    await wrapper.get('[data-testid="config-section-remote"]').trigger('click')
-    await wrapper.get('[data-testid="remote-url"]').setValue('ws://10.0.0.5:8765')
-    await wrapper.get('[data-testid="remote-token"]').setValue('secret')
-    await wrapper.get('[data-testid="connect-remote"]').trigger('click')
-    expect(mocks.wsConnect).toHaveBeenCalledWith('secret', 'ws://10.0.0.5:8765')
-
-    expect(wrapper.find('[data-testid="config-section-serve"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="config-section"]').map(item => item.text())).toEqual([
+      '本地设备', '文件来源', '固件升级', '后台管理',
+    ])
+    expect(wrapper.find('[data-testid="probe-alias"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-section-remote"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
-  it('keeps firmware update as a separate sidebar section after Remote Connection', async () => {
+  it('keeps firmware update as a separate sidebar section alongside local settings', async () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('[data-testid="config-section"]')
 
     expect(sections.map(section => section.text())).toEqual([
-      '本地设备', '文件来源', '远程连接', '固件升级',
+      '本地设备', '文件来源', '固件升级',
     ])
     expect(wrapper.find('[data-testid="firmware-upgrade-panel"]').exists()).toBe(false)
 

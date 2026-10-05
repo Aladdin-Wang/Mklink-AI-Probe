@@ -89,3 +89,27 @@ it('updates shared device status immediately after releasing from the management
   expect(wrapper.get('[data-testid=runtime-presence]').text()).toContain('已释放')
   wrapper.unmount()
 })
+
+
+it('saves the bound probe alias and keeps edits through status refresh', async () => {
+  const payload = { probe_id: 'bound-probe', status: 'present', connected: false, busy: false,
+    probe: { alias: 'Old name', port: 'COM10', identity_stable: true },
+    clients: [], streams: [], project_root: '.', operation: null }
+  const fetch = vi.fn(async (url, options) => {
+    if (String(url).endsWith('/alias')) payload.probe.alias = JSON.parse(options.body).alias
+    return { ok: true, json: async () => structuredClone(payload) }
+  })
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(RuntimePanel)
+  await flushPromises()
+  await wrapper.get('[data-testid="probe-alias"]').setValue('My board')
+  await wrapper.findAll('button').find(button => button.text() === '刷新')!.trigger('click')
+  await flushPromises()
+  expect((wrapper.get('[data-testid="probe-alias"]').element as HTMLInputElement).value).toBe('My board')
+  await wrapper.get('[data-testid="save-probe-alias"]').trigger('click')
+  await flushPromises()
+  const mutation = fetch.mock.calls.find(([url]) => String(url).endsWith('/alias'))!
+  expect(JSON.parse(mutation[1].body)).toEqual({ probe: 'bound-probe', alias: 'My board' })
+  expect(wrapper.text()).toContain('别名已保存')
+  wrapper.unmount()
+})

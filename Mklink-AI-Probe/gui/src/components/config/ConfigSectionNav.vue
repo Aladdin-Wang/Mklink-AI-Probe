@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Cable, FileCode, Radio, Server, Upload } from '@lucide/vue'
+import { Cable, FileCode, Server, Upload } from '@lucide/vue'
 import { computed } from 'vue'
 import { tr } from '../../composables/useLanguage'
 import { sharedRuntime } from '../../composables/useBackendHealth'
 
-export type ConfigSection = 'local' | 'files' | 'remote' | 'firmware' | 'runtime'
+export type ConfigSection = 'local' | 'files' | 'firmware' | 'runtime'
 
 defineProps<{ modelValue: ConfigSection }>()
 
@@ -14,10 +14,9 @@ const emit = defineEmits<{
 
 const sections = computed(() => [
   { id: 'local' as const, label: tr('本地设备', 'Local Device'), icon: Cable },
-  ...(sharedRuntime.value ? [{ id: 'runtime' as const, label: tr('后台管理', 'Backend'), icon: Server }] : []),
   { id: 'files' as const, label: tr('文件来源', 'File Sources'), icon: FileCode },
-  { id: 'remote' as const, label: tr('远程连接', 'Remote Connection'), icon: Radio },
   { id: 'firmware' as const, label: tr('固件升级', 'Firmware Update'), icon: Upload },
+  ...(sharedRuntime.value ? [{ id: 'runtime' as const, label: tr('后台管理', 'Backend'), icon: Server }] : []),
 ])
 </script>
 
