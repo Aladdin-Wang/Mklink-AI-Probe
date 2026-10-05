@@ -212,3 +212,9 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 修复mklink gui/--no-browser在页面尚未打开前5秒退出的问题：启动器复用已有RuntimeClient的无目标UART scope租约，最多等待60秒，GUI窗口注册后立即返回；超时/异常/中断统一finally释放。不增加后台全局宽限、额外保活协议或硬件初始化。指定device-port/AXF时仍按原请求连接目标。54项CLI/空闲回归通过，包含交接、超时及异常释放。
 
 真实启动CLI --no-browser，超过5秒后经IAB打开，页面显示后台正常且目标未连接；CLI退出0，后台status只剩GUI window、connected=false。关页后观察后台PID已退出。此轮未精确测量从关页到退出的总时长，不能引用观察命令的短耗时作为5秒实测值；60秒超时路径当前为自动化证据。WebEntry/桌面各自启动路径仍按矩阵继续验收。
+
+### HPM HEX 完整脱机 GUI 真机闭环
+
+主机 fc413b7e、已构建前端 fdef5b0f7a00，通过真实 IAB 选择 V4/HPM6E80/hpm6e00evk、1 MHz，载入 HEX，生成独立测试脚本、部署两文件并点击触发测试。预览使用 hpm.program_hex() 能力检查及独立 HEX 入口，不需要 BIN 基地址。设备返回 16 MiB/4096 字节几何、loaded successfully 和 auto download finished，页面显示脱机下载执行完成。
+
+按原 request_id 查询部署结果显示成功且未重新写入。U 盘文件经过规范化后文本哈希不同，但解码后的全部地址段与源文件逐项一致：51244 字节，与原 BIN 的 SHA256 一致。此项为 GUI 经 CDC 触发脱机脚本的真机验证，不是实体按键触发或物理 MSC 中断验证。关闭测试页面后后台 PID 已自然退出，无强杀。证据 reports/hpm-offline-gui-hil.json；截图经 CUA 查看，未保存图像文件。

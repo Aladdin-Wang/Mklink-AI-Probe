@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:20:24.041291+00:00`
+- 更新时间：`2026-10-05T16:29:41.9187220+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：修复CLI GUI启动过早空闲退出：复用普通无目标租约，最多60秒交接，异常/超时均释放；54回归通过。真实延迟开页成功、启动器退出仅留GUI且CDC未连接，关页后台已退出。所有本轮进程/标签结束。接续GUI编码、HPM脱机GUI、WebEntry/桌面启动及全矩阵。
+- 当前任务：HPM HEX 脱机真实 GUI 预览、部署、触发及查询全部通过；解码后 U 盘镜像与源文件一致。关闭页面后后台自然退出。继续 RTT GUI 编码和逐通道边界、WebEntry/桌面生命周期及全功能矩阵；长期验证暂停。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：单V4/STM32，已写MUX_FRAME=1/MUX_TARGET=1固件58c47a9；双RTT通道/Watch/内存并行及重连短测通过。未烧录目标或改压/复位；测试预留RAM写入已恢复。HPM未接，长期暂停。
+- **state**：双 V4 分别连接 STM32F103 和 HPM6E80；STM32 运行 ba0a1cf、HPM 运行 f74af2a 应用固件。STM32 八路 RTT 上下行、SuperWatch、DAP 抢占及 APP 烧录保持 bootloader 已短测；HPM BIN/HEX 在线、CLI、MCP、脱机 GUI 已短测。目标测试 RAM 已恢复，长期验证暂停。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 下一步修复cmsis_dap/jobs.py PROGRAM/VERIFY按image.size(HEX文本大小)报字节数，应按有效segment字节；GUI --no-browser启动5秒空闲回收衔接及旧提示需收敛。然后脱机GUI完整操作、真实stdio MCP HEX及后续RTT8/全功能矩阵。Web真实在线任务成功已有页面观察证据；CLI证据reports/hpm-cli-hex-hil.log。生产gui/dist已随源码构建。HPM后台浏览器已关、限时伴随CLI已退出，应只读确认空闲释放。
+1. 继续 RTT 八通道 GUI 编码、跨帧半字符、逐路暂停/清除/保存/发送历史和慢客户端边界；随后 WebEntry/桌面启动与其余全功能矩阵。HEX 进度、CLI GUI 交接、真实 stdio MCP 和 HPM 脱机 GUI 已完成对应短测，详细证据见 full-function-audit-030.md。安装包与本地 Skill 仍待最终收敛更新。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
