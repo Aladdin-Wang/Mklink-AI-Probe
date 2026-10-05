@@ -9,6 +9,27 @@ export interface ReleaseHistoryEntry {
 
 export const releaseHistory: ReleaseHistoryEntry[] = [
   {
+    version: '0.3.0', date: '2026-10-05',
+    summary: '开发版：共享后台与多通道 RTT',
+    summaryEn: 'Development build: shared runtime and multichannel RTT',
+    changes: [
+      'GUI、AI、CLI 与 MCP 共用每台下载器的后台连接；支持多下载器独立运行和本机别名。',
+      '远程服务复用现有仪表盘操作远端下载器，连接断开后禁止继续操作。',
+      '配套新版 V4 固件支持 CDC 多路复用，多通道 RTT、SuperWatch 与内存访问可并行。',
+      'RTT 按通道并排显示，独立保留历史、显示格式和发送入口，移除主通道重复显示。',
+      '全部客户端退出且无在途任务后约 5 秒启动后台清理，释放下载器端口。',
+      '当前完成 STM32 短测；长期、跨物理主机及八实体通道仍待验证。',
+    ],
+    changesEn: [
+      'GUI, AI, CLI and MCP share a backend per probe, with independent probes and local aliases.',
+      'Remote service uses the existing dashboard and blocks device operations after disconnection.',
+      'Companion V4 firmware multiplexes multichannel RTT, SuperWatch and memory access over CDC.',
+      'Side-by-side RTT panels retain independent history, display formats and send controls without duplicating the primary channel.',
+      'About five seconds after the last client leaves and pending work completes, backend cleanup releases the probe.',
+      'STM32 short tests completed; long runs, separate remote hosts and eight physical channels remain unverified.',
+    ],
+  },
+  {
     version: '0.2.3', date: '2026-10-03',
     summary: '优化 SuperWatch，完善烧录与采集稳定性',
     summaryEn: 'Improve SuperWatch, flashing and capture reliability',

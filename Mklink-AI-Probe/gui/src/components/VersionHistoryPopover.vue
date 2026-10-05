@@ -39,7 +39,7 @@
         <span class="current-version">v{{ version }}</span>
       </header>
 
-      <div class="release-heading">{{ tr('稳定版记录', 'Stable releases') }}</div>
+      <div class="release-heading">{{ tr('版本记录', 'Version history') }}</div>
       <ol class="release-list">
         <li
           v-for="entry in releaseHistory"

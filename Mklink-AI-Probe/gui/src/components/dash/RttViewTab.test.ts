@@ -143,6 +143,21 @@ describe('RttViewTab binary migration', () => {
     }
   }
 
+  it('renders each channel once with a fixed send destination', async () => {
+    mocks.status = { running: true, channels: [2, 5], down_buffers: [{ channel: 2, active: true }, { channel: 5, active: true }] }
+    mocks.api.writeRtt.mockResolvedValue({})
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-channel="2"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-channel="5"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="rtt-view-channel"]').exists()).toBe(false)
+    const panel = wrapper.findComponent({ name: 'RttChannelMonitor' })
+    const payload = new Uint8Array([10])
+    await panel.props('send')(payload)
+    expect(mocks.api.writeRtt).toHaveBeenCalledWith(payload, 5)
+    wrapper.unmount()
+  })
+
   it('constructs separate RTT transports and mounts only the terminal view by default', () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     expect(mocks.useBinaryStream).toHaveBeenCalledWith('rtt', expect.any(Object))
@@ -255,12 +270,12 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
-  it('groups RTT setup and stream controls into two compact rows', async () => {
+  it('keeps shared capture controls outside per-channel display controls', async () => {
     const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
     await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
 
     expect(wrapper.find('.rtt-address-row').exists()).toBe(true)
-    expect(wrapper.find('.rtt-primary-tools .control-toolbar').exists()).toBe(true)
+    expect(wrapper.find('.rtt-view-tab > .control-toolbar').exists()).toBe(true)
     expect(wrapper.find('.rtt-primary-tools .encoding-control').exists()).toBe(true)
     expect(wrapper.find('.rtt-primary-tools .stream-metrics').exists()).toBe(true)
     expect(wrapper.find('.rtt-secondary-tools [data-testid="rtt-chart-toggle"]').exists()).toBe(true)

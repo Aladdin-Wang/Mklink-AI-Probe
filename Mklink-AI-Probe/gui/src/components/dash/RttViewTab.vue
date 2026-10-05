@@ -40,14 +40,16 @@
         <span>{{ tr('逗号分隔 0–7；多通道需要新版固件。首个为日志和曲线主通道。', 'Comma-separated 0–7; multiple channels require new firmware. The first channel supplies logs and charts.') }}</span>
         <span v-if="multiplex">{{ tr('多路复用 · 可与 SuperWatch 并行', 'Multiplex · concurrent with SuperWatch') }}</span>
       </div>
-      <RttChannelMonitor v-if="activeChannels.length > 1" :channels="activeChannels" :running="statusRunning" />
+      <ControlToolbar
+        :state="toolbarState" :error="runtimeError || actionError || dash.error.value"
+        :device-connected="deviceConnected && !searching"
+        @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
+      />
+      <div class="rtt-channel-grid" :class="{ multiple: activeChannels.length > 1 }">
+      <section class="rtt-primary-channel" :data-channel="activeChannels[0] ?? 0">
+      <h3>RTT {{ activeChannels[0] ?? 0 }} · {{ tr('主通道', 'Primary channel') }}</h3>
       <div class="rtt-view-toolbar">
         <div class="rtt-primary-tools">
-          <ControlToolbar
-            :state="toolbarState" :error="runtimeError || actionError || dash.error.value"
-            :device-connected="deviceConnected && !searching"
-            @start="onStart" @pause="onPauseRender" @resume="onResumeRender" @stop="onStop"
-          />
           <label class="encoding-control" for="rtt-encoding">
             <span>{{ tr('编码', 'Encoding') }}</span>
             <select
@@ -149,15 +151,17 @@
           @input="queueTerminalInput"
         />
       </div>
-      <label v-if="activeChannels.length > 1">{{ tr('发送通道', 'Send channel') }}
-        <select v-model.number="transmitChannel" data-testid="rtt-send-channel">
-          <option v-for="ch in activeChannels" :key="ch" :value="ch">RTT {{ ch }}</option>
-        </select>
-      </label>
       <RttTransmitBar
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
       />
+      </section>
+      <RttChannelMonitor v-for="ch in activeChannels.slice(1)" :key="ch"
+        :channel="ch" :running="statusRunning" :paused="renderPaused"
+        :send-enabled="statusRunning && !stopping && !runtimeError && downBuffers.some(b => b.channel === ch && b.active)"
+        :settings="settings" :send="payload => writeRtt(payload, ch).then(() => undefined)"
+      />
+      </div>
   </div>
 </template>
 
@@ -235,7 +239,7 @@ const sourceChangeNotice = ref<string | null>(null)
 const actionError = ref<string | null>(null)
 const captureChannels = ref('0')
 const activeChannels = ref<number[]>([0])
-const transmitChannel = ref(0)
+const transmitChannel = computed(() => activeChannels.value[0] ?? 0)
 const multiplex = ref(false)
 // Zero lets the host bound the default scan to the actual RAM map.
 const RTT_SEARCH_SIZE = 0
@@ -775,7 +779,6 @@ async function refreshStatus(): Promise<Record<string, any> | null> {
       multiplex.value = status.transport === 'cdc-mux'
       activeChannels.value = Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
       if (statusRunning.value && status.control_block_addr) captureChannels.value = activeChannels.value.join(',')
-      if (!activeChannels.value.includes(transmitChannel.value)) transmitChannel.value = activeChannels.value[0] ?? 0
       downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       const channels = Array.isArray(status.numeric_channels)
         ? status.numeric_channels.map((name: unknown) => String(name))
@@ -964,6 +967,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.rtt-channel-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; flex: 1; min-height: 0; overflow: auto; padding-top: 8px; }
+.rtt-channel-grid.multiple { grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); align-content: start; }
+.rtt-primary-channel { display: flex; flex-direction: column; min-width: 0; min-height: 360px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+.multiple .rtt-primary-channel { height: 520px; }
+.rtt-primary-channel h3 { margin: 0 0 8px; font-size: 14px; }
 .rtt-view-tab { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .alert-warn { color: var(--warn); padding: 8px; border: 1px solid var(--warn); border-radius: 4px; }
 .rtt-address-row { display: grid; grid-template-columns: auto minmax(180px, 320px) auto minmax(0, 1fr); align-items: center; gap: 10px; min-height: 38px; padding: 2px 0 7px; border-bottom: 1px solid var(--border-subtle); }
