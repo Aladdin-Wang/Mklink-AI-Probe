@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T02:21:20.289857+00:00`
+- 更新时间：`2026-10-05T02:28:51.247843+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：147用户授权远程GUI第一阶段：独立窗口固定远端身份，内存/调试/RTT复用远程共享协议，协议43。99后端+20GUI测试通过，同机LAN真实F103双远程会话/本地AI共存及断线禁用通过。待本地NSIS/Skill同步；持续审计与长期验证仍暂停。
+- 当前任务：147远程GUI第一阶段源码cd32f7e6完成，99后端+20GUI、本机LAN真机、三个CI通过。NSIS构建/Skill同步完成；覆盖安装UAC被用户取消，旧后台因两个GUI窗口返回409未停止，已请求用户关闭窗口。待重新授权提权安装并验证新版桌面代理/包内Web GUI。持续审计与长期验证仍暂停。
 - 状态：`paused`
 
 ## 里程碑
@@ -20,6 +20,7 @@
 
 ## 验证证据
 
+- **远程GUI第一阶段**：147源码cd32f7e6：99后端+20GUI测试、生产构建、三个CI通过；同主机LAN真实F103内存读取/暂停运行/寄存器/RTT、双远程会话/AI共存及断线禁用通过。跨物理主机、内存写入、RTT发送、单步和新版安装仍待验收。
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
@@ -35,8 +36,8 @@
 
 ## 真机环境
 
-- **state**：145仅枚举到一台V4；安装版后台使用用户F103工程，AI读回身份前后一致。桌面proxy/AI验收进程已退出，默认浏览器Web GUI及共享后台按用户要求保留。无烧录/改压，长期暂停。
-- **installer**：本机0.3.0开发版已更新至154123ca，NSIS退出0，三文件与包内负载哈希一致，Skill与GUI同步；安装版新导航真实Chrome验证通过。非全面发布认证。
+- **state**：147单V4/F103本机LAN双远程会话与本地AI共存短测通过，停止服务后远程按钮禁用；RTT已停止，MCU确认运行。源码协议43后台及两个GUI窗口仍存活，停止被窗口保护拒绝，未强杀。无烧录/改压。
+- **installer**：桌面仍为146源154123ca；147源cd32f7e6本地NSIS已生成，但UAC被用户取消未安装。Skill已同步cd32f7e6及新前端。待新版安装验收。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
