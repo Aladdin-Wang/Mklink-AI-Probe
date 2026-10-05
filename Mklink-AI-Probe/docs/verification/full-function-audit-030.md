@@ -232,3 +232,9 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 新增八通道×GB2312/GBK/GB18030/Big5 共32项回归，逐字节喂入新编码并检查旧终端文本保留及其他七路UTF-8半字符完整。完整RTT/SuperWatch流测试125项通过。此证据是生产解码器的自动化验证，不声称已触发实机编码切换的竞争时间窗。
 
 STM32八路短测初次因固定等待1秒只读到目标RTT已有数字日志而失败，RAM已恢复；失败保存在 reports/rtt8-encoding-audit-initial.json（旧rtt8-inactive-utf8-hil.json被本轮运行写入此失败结果，历史通过记录仅为历史证据）。改用沿返回游标、最多5秒等待新标记，不重启/重放命令；reports/rtt8-encoding-audit-hil.json通过八路中文上行、每路10字节下行哈希、inactive失败释放与直接恢复，最终RAM恢复确认。启动受理不等于新模式数据已抵达，验收需观察有效数据而不是固定延时。
+
+### Web 入口启动交接与 CLI 复用
+
+WebEntry 原本在打开浏览器后立即返回，没有客户端租约，存在页面接入前约5秒被空闲回收的空窗。把 CLI 已验证的交接逻辑提取为 runtime.handoff_gui，CLI/WebEntry共同使用普通无目标UART scope会话，准备/开页后最多等待60秒，GUI注册即交接，超时/异常/中断finally释放。WebEntry超时明确报错；不延长后台全局空闲时间，不新增硬件或保活协议。
+
+WebEntry与CLI共67项自动化通过，含开浏览器前已持有租约、超时与异常释放。实际调用start_web_entry，延迟超过5秒再以IAB打开认证页面：后台正常、未连接目标；入口进程退出0，后台状态仅一个GUI客户端。关页后PID自然退出。未改写操作系统协议注册，故不把此证据当作Windows外壳、macOS/Linux协议入口或桌面安装验收。公开Web入口文档同步共享停止/启动会话语义，删除旧owned进程管理说法。

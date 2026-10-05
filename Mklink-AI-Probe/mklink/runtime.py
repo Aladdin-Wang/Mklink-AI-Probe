@@ -212,6 +212,23 @@ def browser_url(info: dict, *, page: str = "config") -> str:
     return f"http://127.0.0.1:{info['port']}/_runtime/open{query}#{info['token']}"
 
 
+def handoff_gui(info, prepare, *, timeout=60):
+    """Keep a normal, hardware-free lease while prepare opens a GUI window."""
+    client = RuntimeClient(info=info, kind='cli', name='GUI launcher')
+    try:
+        client.connect(scope='uart')
+        prepare(client)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            status = request(info, 'GET', '/api/runtime/control/status')
+            if any(item.get('kind') == 'gui' for item in status.get('clients', [])):
+                return True
+            time.sleep(0.5)
+        return False
+    finally:
+        client.close()
+
+
 def query_probe(capability, *, info=None, probe=None, port=None):
     """One probe-only query; never attach/initialize a target or retry a command."""
     from mklink.runtime_capabilities import PROBE_QUERIES

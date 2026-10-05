@@ -13,10 +13,39 @@ def test_default_web_entry_reuses_shared_backend_without_owning_process(monkeypa
     opened = []
     info = {'port': 8765, 'token': 'test-token'}
     monkeypatch.setattr('mklink.runtime.ensure_runtime', lambda **_: info)
+    monkeypatch.setattr('mklink.runtime.handoff_gui', lambda info, prepare: (prepare(None), True)[1])
     result = web_entry.start_web_entry(browser_open=opened.append)
     assert result['shared'] is True
     assert result['owned'] is False
     assert opened == ['http://127.0.0.1:8765/_runtime/open#test-token']
+
+
+@pytest.mark.parametrize('outcome', ['connected', 'timeout', 'browser_error'])
+def test_web_entry_holds_lease_before_open_and_releases_on_all_outcomes(monkeypatch, outcome):
+    from mklink import runtime
+    calls, clock = [], [0]
+    class Client:
+        def __init__(self, **kwargs): pass
+        def connect(self, **kwargs): calls.append(('connect', kwargs))
+        def close(self): calls.append(('close', {}))
+    monkeypatch.setattr(runtime, 'RuntimeClient', Client)
+    monkeypatch.setattr(runtime, 'ensure_runtime', lambda **kwargs: {'port':8765, 'token':'test'})
+    monkeypatch.setattr(runtime.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(runtime.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0]+30))
+    monkeypatch.setattr(runtime, 'request', lambda *args: {'clients':[{'kind':'gui'}]} if outcome=='connected' else {'clients':[]})
+    def opened(url):
+        assert calls == [('connect', {'scope':'uart'})]
+        calls.append(('opened', {}))
+        if outcome == 'browser_error': raise OSError('browser failed')
+    if outcome == 'timeout':
+        with pytest.raises(web_entry.WebEntryError, match='60 seconds'):
+            web_entry.start_web_entry(browser_open=opened)
+    elif outcome == 'browser_error':
+        with pytest.raises(OSError, match='browser failed'):
+            web_entry.start_web_entry(browser_open=opened)
+    else:
+        assert web_entry.start_web_entry(browser_open=opened)['shared']
+    assert calls[-1] == ('close', {})
 
 
 def test_shared_web_stop_refuses_ambiguous_multi_probe_runtime(monkeypatch):

@@ -555,10 +555,11 @@ def get_process_identity(pid: int, *, system: str | None = None) -> str | None:
 
 
 def start_web_entry(*, preferred_port: int = DEFAULT_PORT, browser_open=webbrowser.open) -> dict[str, Any]:
-    from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime
+    from mklink.runtime import RuntimeErrorResponse, browser_url, ensure_runtime, handoff_gui
     try:
         info = ensure_runtime(port=preferred_port, allow_lobby=True)
-        browser_open(browser_url(info))
+        if not handoff_gui(info, lambda client: browser_open(browser_url(info))):
+            raise WebEntryError("No GUI window connected within 60 seconds; launcher released. Open the Web entry again.")
         return {"status": "reused", "port": info["port"], "owned": False, "shared": True}
     except RuntimeErrorResponse as exc:
         raise WebEntryError(str(exc)) from exc

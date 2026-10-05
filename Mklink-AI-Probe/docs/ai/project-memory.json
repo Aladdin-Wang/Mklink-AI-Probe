@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T16:42:42.5214600+00:00",
+  "updated_at": "2026-10-05T16:47:55.7343552+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "修复编码切换清空已解码终端队列丢文本；八路×4编码边界新增32项，流测试共125通过。八路UTF8/inactive真机复验通过，验收改为有限游标等待新数据，首次固定延时失败保留；RAM恢复。接续GUI批量点击状态根因、保存日志、半字符实机、WebEntry及全矩阵。"
+    "current_task": "WebEntry与CLI共用handoff_gui，修复页面接入前空闲退出；67项入口/CLI回归通过。实际WebEntry延迟开页、仅GUI租约、未连接目标、关页后台自然退出通过。OS协议外壳与桌面仍待验；继续RTT保存/交互及全矩阵。"
   },
   "milestones": [
     {
