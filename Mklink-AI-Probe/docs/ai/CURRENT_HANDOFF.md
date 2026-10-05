@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:47:55.7343552+00:00`
+- 更新时间：`2026-10-05T16:52:16.2994506+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：WebEntry与CLI共用handoff_gui，修复页面接入前空闲退出；67项入口/CLI回归通过。实际WebEntry延迟开页、仅GUI租约、未连接目标、关页后台自然退出通过。OS协议外壳与桌面仍待验；继续RTT保存/交互及全矩阵。
+- 当前任务：UART/Modbus/YMODEM分组747后端、39GUI组件通过；补六项YMODEM边界后协议文件14项通过。矩阵A27-29已区分模拟/网络/实体，未改生产代码。接续物理串口与全矩阵、RTT交互；缺硬件项保持待验证。
 - 状态：`active`
 
 ## 里程碑
