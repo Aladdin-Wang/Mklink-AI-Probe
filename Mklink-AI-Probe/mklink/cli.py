@@ -1754,23 +1754,36 @@ def _cli_serial_dispatch(args):
 
 
 def _cli_gui(args):
-    """Open the selected shared CDC backend."""
+    """Hand the selected backend to a GUI without extending its idle policy."""
+    import time
     import webbrowser
-    from mklink.runtime import RuntimeClient, browser_url, ensure_runtime
+    from mklink.runtime import RuntimeClient, browser_url, ensure_runtime, request
     if args.host != "127.0.0.1":
         raise SystemExit("Shared GUI binds only 127.0.0.1")
     info = ensure_runtime(project_root=args.project_root, port=args.port, probe=args.probe,
                           device_port=args.device_port, allow_lobby=True)
-    if args.device_port or args.axf:
-        client = RuntimeClient(info=info)
-        client.connect(project_root=args.project_root if args.project_root != "." else None, port=args.device_port, axf=args.axf)
+    client = RuntimeClient(info=info, kind='cli', name='GUI launcher')
+    try:
+        # Reuse the normal renewable client lease without initializing the MCU.
+        # Browser startup/manual opening may take longer than the 5s idle limit.
+        client.connect(scope='uart')
+        if args.device_port or args.axf:
+            client.connect(project_root=args.project_root if args.project_root != "." else None,
+                           port=args.device_port, axf=args.axf)
+        print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
+        print("[MKLink] Waiting up to 60 seconds for a GUI window. Ctrl+C cancels this launcher.")
+        print("[MKLink] After handoff, the runtime exits after about 5 seconds without clients or active jobs.")
+        if not args.no_browser:
+            webbrowser.open(browser_url(info))
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            status = request(info, 'GET', '/api/runtime/control/status')
+            if any(item.get('kind') == 'gui' for item in status.get('clients', [])):
+                return
+            time.sleep(0.5)
+        print("[MKLink] No GUI window connected; launcher released. Run mklink gui again to open it.")
+    finally:
         client.close()
-    url = browser_url(info)
-    print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
-    print("[MKLink] The shared runtime exits after about 5 seconds without clients or active jobs.")
-    if not args.no_browser:
-        webbrowser.open(url)
-    return
 
 
 def _cli_web_entry(args):

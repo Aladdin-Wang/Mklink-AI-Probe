@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:16:17.083773+00:00`
+- 更新时间：`2026-10-05T16:20:24.041291+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：补齐共享superwatch_snapshot_select/clear及MCP action，复用GUI现有路由；68测试通过，真实stdio MCP八元素快照与RAM一致，越界拒绝且保留旧选择、清除/停止/断开通过。继续GUI编码/半字符、GUI启动等待、HPM脱机GUI及全功能矩阵，安装/本地Skill仍待统一更新。
+- 当前任务：修复CLI GUI启动过早空闲退出：复用普通无目标租约，最多60秒交接，异常/超时均释放；54回归通过。真实延迟开页成功、启动器退出仅留GUI且CDC未连接，关页后台已退出。所有本轮进程/标签结束。接续GUI编码、HPM脱机GUI、WebEntry/桌面启动及全矩阵。
 - 状态：`active`
 
 ## 里程碑

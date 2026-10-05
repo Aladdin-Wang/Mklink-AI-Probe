@@ -205,3 +205,10 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 审计发现共享客户端只有superwatch_snapshot读取，无法执行GUI已有的选择/清除。新增superwatch_snapshot_select/clear能力映射及MCP superwatch同名action，直接复用现有GUI路由、目录解析和有界采样；未新增硬件读取器。共享参考文档同步，68项MCP/共享后台/SDK回归通过。
 
 真实stdio MCP在STM32选择rtt_test_rx_bytes的8元素快照并启动采样，8值与一次目标RAM读取完全一致；选择start7/count2被拒绝，原start0/count8仍保持；clear后snapshot=null，随后正常停止/断开。证据reports/superwatch-array-mcp-hil.json。此项不证明所有数组类型、256元素上限或GUI快照交互已验收。
+
+
+### CLI GUI启动交接收敛
+
+修复mklink gui/--no-browser在页面尚未打开前5秒退出的问题：启动器复用已有RuntimeClient的无目标UART scope租约，最多等待60秒，GUI窗口注册后立即返回；超时/异常/中断统一finally释放。不增加后台全局宽限、额外保活协议或硬件初始化。指定device-port/AXF时仍按原请求连接目标。54项CLI/空闲回归通过，包含交接、超时及异常释放。
+
+真实启动CLI --no-browser，超过5秒后经IAB打开，页面显示后台正常且目标未连接；CLI退出0，后台status只剩GUI window、connected=false。关页后观察后台PID已退出。此轮未精确测量从关页到退出的总时长，不能引用观察命令的短耗时作为5秒实测值；60秒超时路径当前为自动化证据。WebEntry/桌面各自启动路径仍按矩阵继续验收。

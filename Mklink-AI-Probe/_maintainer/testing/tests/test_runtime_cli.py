@@ -302,3 +302,33 @@ def test_mcu_detect_cli_uses_read_only_catalog_contract(monkeypatch, capsys, sta
     assert calls[0]['flm'] == 'algorithm-id' and calls[0]['read_idcode'] is False
     assert 'write_profile' not in calls[0] and 'copy_flm' not in calls[0]
     assert json.loads(capsys.readouterr().out)['profile_written'] is False
+
+
+@pytest.mark.parametrize("outcome", ["connected", "timeout", "error"])
+def test_gui_launcher_holds_existing_lease_until_handoff_and_always_releases(monkeypatch, outcome):
+    import time
+    from types import SimpleNamespace
+    from mklink import cli, runtime
+    calls, clock = [], [0]
+    class Client:
+        def __init__(self, **kwargs): calls.append(("client", kwargs))
+        def connect(self, **kwargs): calls.append(("connect", kwargs))
+        def close(self): calls.append(("close", {}))
+    monkeypatch.setattr(runtime, "RuntimeClient", Client)
+    monkeypatch.setattr(runtime, "ensure_runtime", lambda **kwargs: {"port": 8765})
+    def status(*args):
+        calls.append(("status", {}))
+        if outcome == "error": raise RuntimeError("backend lost")
+        return {"clients": [{"kind": "gui"}]} if outcome == "connected" else {"clients": []}
+    monkeypatch.setattr(runtime, "request", status)
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + 30))
+    args = SimpleNamespace(host="127.0.0.1", project_root=".", port=8765, probe=None,
+                           device_port=None, axf=None, no_browser=True)
+    if outcome == "error":
+        with pytest.raises(RuntimeError, match="backend lost"): cli._cli_gui(args)
+    else:
+        cli._cli_gui(args)
+    assert calls[1] == ("connect", {"scope": "uart"})
+    assert calls[-1] == ("close", {})
+    assert sum(name == "status" for name, _ in calls) == (2 if outcome == "timeout" else 1)
