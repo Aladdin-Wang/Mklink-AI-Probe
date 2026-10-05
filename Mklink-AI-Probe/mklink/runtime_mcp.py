@@ -58,7 +58,9 @@ def build_server():
         return {"ok": True, "version": VERSION, "mode": "shared-cdc", "capabilities": sorted(CAPABILITIES),
                 "update": check_for_update(force=force_update_check),
                 "limits": {"direct_read_max_bytes": 4096, "batch_read_max_regions": BATCH_READ_MAX_REGIONS,
-                           "batch_read_max_total_bytes": BATCH_READ_MAX_TOTAL_BYTES},
+                           "batch_read_max_total_bytes": BATCH_READ_MAX_TOTAL_BYTES,
+                           "rtt_mux_channels": 8, "rtt_channel_cache_bytes": 65536,
+                           "mux_watch_regions": 15, "mux_watch_region_bytes": 128},
                 "guidance": "Call connect, then GUI capabilities. Read shared history while GUI captures. Disconnect detaches only this AI client."}
 
     @server.tool()
@@ -202,7 +204,7 @@ def build_server():
 
         Each region has integer address and size. Results preserve order;
         adjacent/overlapping ranges share a read, gaps are never read.
-        Separate reads are not atomic. Requires idle CDC; never stops GUI
+        Separate reads are not atomic. Works during multiplex RTT/SuperWatch; never stops GUI
         capture or retries a failed/partial response.
         """
         return client().call('read_memory_regions', {'regions': regions})
@@ -318,14 +320,15 @@ def build_server():
 
     @server.tool()
     def rtt_start(addr: str | None = None, channel: int | None = None, mode: int | None = None,
-                  search_size: int | None = None, encoding: str | None = None) -> dict:
+                  search_size: int | None = None, encoding: str | None = None,
+                  channels: list[int] | None = None) -> dict:
         """Start RTT or subscribe to existing RTT when all options are omitted."""
-        options = {'addr': addr, 'channel': channel, 'mode': mode, 'search_size': search_size, 'encoding': encoding}
+        options = {'addr': addr, 'channel': channel, 'mode': mode, 'search_size': search_size, 'encoding': encoding, 'channels': channels}
         return client().call('rtt_start', {k: v for k, v in options.items() if v is not None})
 
     @server.tool()
     def rtt_stop() -> dict:
-        """Stop only RTT owned by this session with no other subscribers; otherwise detach."""
+        """Stop only RTT owned by this session with no other subscribers; borrowers must disconnect instead."""
         return client().call('rtt_stop')
 
     @server.tool()
@@ -334,9 +337,19 @@ def build_server():
         return client().call('rtt_history')
 
     @server.tool()
-    def rtt_write(text: str) -> dict:
+    def rtt_read_channel(channel: int = 0, cursor: int = 0, session: str | None = None) -> dict:
+        """Read independent bounded RTT bytes as hex; reuse returned cursor/session, inspect lost_bytes."""
+        return client().call('rtt_read_channel', {'channel': channel, 'cursor': cursor, **({'session': session} if session else {})})
+
+    @server.tool()
+    def rtt_write(text: str, channel: int | None = None) -> dict:
         """Send at most 256 UTF-8 bytes through active RTT; reserved stop sequences are rejected."""
-        return client().call('rtt_write', {'data_hex': text.encode('utf-8').hex()})
+        return client().call('rtt_write', {'data_hex': text.encode('utf-8').hex(), **({'channel': channel} if channel is not None else {})})
+
+    @server.tool()
+    def rtt_write_hex(data_hex: str, channel: int = 0) -> dict:
+        """Send 1..256 binary bytes to a subscribed RTT down channel; unknown writes are never replayed."""
+        return client().call('rtt_write', {'data_hex': data_hex, 'channel': channel})
 
     @server.tool()
     def superwatch(action: str = 'status', arguments: dict | None = None) -> dict:

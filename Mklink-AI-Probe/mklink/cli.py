@@ -2096,6 +2096,8 @@ def main():
     rtt_cmd_parser = subparsers.add_parser("rtt", help="一站式 RTT 捕获（自动连接 → 启动 RTT → 读取输出）")
     _add_project_root_arg(rtt_cmd_parser)
     rtt_cmd_parser.add_argument("--port", help="COM 端口（默认自动检测）")
+    rtt_cmd_parser.add_argument("--channels", type=int, nargs="+", help="RTT Up channels 0..7 (multiplex firmware); first is primary")
+    rtt_cmd_parser.add_argument("--addr", help="RTT control block address")
     rtt_cmd_parser.add_argument("--duration", type=float, default=10.0, help="读取时长（秒，默认 10）")
     # --visualize 及相关选项
     rtt_cmd_parser.add_argument("--visualize", action="store_true", help="启用 Web RAW 终端模式")

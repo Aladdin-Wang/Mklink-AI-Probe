@@ -78,8 +78,8 @@ def test_read_bounds_and_removed_duration(rtt, params):
         dispatch('read', params)
 
 
-@pytest.mark.parametrize('data', ['', '中'*86, 'RTTView.stop()', '\ud800'])
-def test_write_rejects_oversized_or_reserved_input_before_device(rtt, data):
+@pytest.mark.parametrize('data', ['', '中'*86, '\ud800'])
+def test_write_rejects_oversized_or_invalid_text_before_device(rtt, data):
     _, _, calls, _, _, dispatch = rtt
     dispatch('start')
     with pytest.raises((RequestValidationError, AgentOperationError)):

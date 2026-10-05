@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 46  # Graceful idle exit after the final local/remote client leaves.
+PROTOCOL = 47  # Multiplex RTT channels and concurrent SuperWatch.
 VERSION = "0.3.0"
 
 

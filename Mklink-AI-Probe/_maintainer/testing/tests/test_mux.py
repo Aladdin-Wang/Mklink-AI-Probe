@@ -1,0 +1,146 @@
+import struct
+import threading
+from concurrent.futures import Future
+
+import pytest
+
+from mklink.mux import MuxTransport, MuxError, packet
+from mklink.mux_watch import MuxWatchSession
+from mklink.rtt_cache import RttChannelCache
+from test_shared_runtime import runtime, attach, call
+
+
+def peer():
+    calls = []
+    def write(wire):
+        _, _, op, size, epoch, req = struct.unpack_from('<4sBBHII', wire)
+        payload = wire[16:16+size]
+        calls.append((op, payload))
+        answer = {1: struct.pack('<IHH', 3, 256, 1), 4: payload}.get(op, b'')
+        raw = packet(op | 0x80, 17, req, b'\0'+answer)
+        transport.feed(raw[:9])
+        transport.feed(raw[9:])
+        return len(wire)
+    transport = MuxTransport(write)
+    return transport, calls
+
+
+def test_framing_claim_event_isolation_and_heartbeat():
+    transport, calls = peer()
+    transport.handshake()
+    assert transport.epoch == 17 and transport.ready
+    transport.feed(packet(0x40, 17, 1, struct.pack('<BBI', 1, 0, 3)+b'\xff'))
+    transport.request(0x12, b'data')
+    assert calls[-1][1] == transport.nonce+b'data'
+    assert transport.drain(0x40, 0) == []
+    assert transport.drain(0x40, 1)[0][6:] == b'\xff'
+    transport._last_command -= 2
+    transport.tick()
+    assert calls[-1][0] == 2 and transport._pending is None
+    transport.close()
+    assert not transport.ready
+
+
+def test_unknown_write_is_never_replayed_or_followed_by_commands():
+    writes = []
+    transport = MuxTransport(writes.append)
+    def expire():
+        while transport._pending is None:
+            threading.Event().wait(.001)
+        transport.fail('response lost')
+    thread = threading.Thread(target=expire)
+    thread.start()
+    with pytest.raises(MuxError, match='response lost'):
+        transport.write_memory(0x20000000, b'abc')
+    thread.join()
+    with pytest.raises(MuxError):
+        transport.request(0x11)
+    transport.close()
+    assert len(writes) == 1
+
+
+def test_crc_and_expired_epoch_poison_stream():
+    transport, _ = peer()
+    transport.handshake()
+    raw = bytearray(packet(0x40, 17, 1, b'\0'*6))
+    raw[-1] ^= 1
+    transport.feed(raw)
+    with pytest.raises(MuxError, match='CRC'):
+        transport.drain(0x40, 0)
+    transport, _ = peer()
+    transport.handshake()
+    transport.feed(packet(0x40, 18, 1, b'\0'*6))
+    with pytest.raises(MuxError):
+        transport.request(2)
+
+
+def test_channel_cache_clients_do_not_consume_each_other_and_report_loss():
+    cache = RttChannelCache()
+    cache.reset('one', [0, 1])
+    cache.append(1, b'x'*(cache.LIMIT+7))
+    first = cache.read(1)
+    assert first == cache.read(1)
+    assert first['lost_bytes'] == 7
+    assert len(bytes.fromhex(first['data_hex'])) == cache.READ_LIMIT
+    assert cache.read(0)['data_hex'] == ''
+    cache.reset('two', [0, 1])
+    result = cache.read(1, first['cursor'], 'one')
+    assert result['reset'] and result['cursor'] == 0
+
+
+def test_watch_split_and_gaps_do_not_mix_rounds():
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 130), (0x20000200, 4)], .001)
+    watch.start()
+    assert len(watch.parts) == 3 and transport.watch_running
+    def event(index, data, timestamp=100):
+        transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', index, 0, timestamp)+data))
+    event(0, b'a'*128)
+    event(2, b'd'*4)
+    assert watch.read_frames() == []
+    event(0, b'b'*128)
+    event(1, b'cc')
+    event(2, b'eeee')
+    frames = watch.read_frames()
+    assert frames[0]['regions'] == [(0, b'b'*128+b'cc'), (1, b'eeee')]
+    assert watch.gaps > 0 and frames[0]['timestamp_us'] == 100000
+    watch.stop()
+    assert not transport.watch_running
+
+
+def test_watch_bound_and_memory_write_no_retry_after_verification_mismatch():
+    transport, _ = peer()
+    with pytest.raises(ValueError, match='15 regions'):
+        MuxWatchSession(transport, [(0x20000000, 2048)], .1)
+    watch = MuxWatchSession(transport, [(0x20000000, 4)], .1)
+    calls = []
+    transport.write_memory = lambda address, data: calls.append((address, data))
+    transport.read_memory = lambda address, size: b'bad!'
+    future = Future()
+    with pytest.raises(RuntimeError, match='mismatch'):
+        watch.write(0x20000000, b'good', future)
+    assert future.exception() and len(calls) == 1
+
+
+def test_shared_admission_allows_mux_memory_but_keeps_unsafe_boundaries(runtime):
+    from types import SimpleNamespace
+    from mklink.remote.api import acquire_dashboard_resources, target_debug_lease
+    from mklink.remote.resource_manager import ResourceError
+    client, _, calls, managers, app = runtime
+    state = app.state.mklink_state
+    state['device']._bridge = SimpleNamespace(_mux_supported=True, supports_multiplex=lambda: True)
+    state['shared_runtime'] = True
+    session = attach(client)
+    acquire_dashboard_resources(state, 'rtt')
+    acquire_dashboard_resources(state, 'superwatch')
+    managers['rtt'].running = managers['superwatch'].running = True
+    assert call(client, session, 'read_memory', {'address': '0x20000000', 'size': 4}).status_code == 200
+    with target_debug_lease(state, 'read-memory'):
+        pass
+    with pytest.raises(ResourceError):
+        with target_debug_lease(state, 'halt'):
+            pytest.fail('Unsafe command admitted')
+    assert client.post('/api/device/halt').status_code == 409
+    assert client.post('/api/dash/systemview/start', json={}).status_code == 409
+    assert calls == ['read']

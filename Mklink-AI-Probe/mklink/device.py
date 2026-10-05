@@ -65,7 +65,7 @@ _RTT_SCAN_CHUNK = 1024
 _RTT_DEFAULT_SEARCH_SIZE = 1024
 _RTT_MAX_SEARCH_SIZE = 64 * 1024
 _RTT_DESCRIPTOR_SIZE = 24
-_RTT_FIRMWARE_MAX_CHANNELS = 3
+_RTT_FIRMWARE_MAX_CHANNELS = 8
 _RTT_MAX_TARGET_BUFFERS = 16
 _RTT_MAX_BUFFER_SIZE = 1024 * 1024
 _RTT_RESERVED_STOP = b"RTTView.stop()"
@@ -110,7 +110,7 @@ def _resolve_rtt_stream_parameters(
     if type(mode) is not int or mode not in (0, 1):
         raise ValueError(f"rtt_storage_mode must be 0 or 1, got {mode!r}")
     if type(channel) is not int or not 0 <= channel < _RTT_FIRMWARE_MAX_CHANNELS:
-        raise ValueError("channel must be between 0 and 2 for V4 probe firmware")
+        raise ValueError("channel must be between 0 and 7; channels above 2 require multiplex firmware")
     if (
         type(search_size) is not int
         or not 0 <= search_size <= _RTT_MAX_SEARCH_SIZE
@@ -1585,13 +1585,9 @@ class Device:
         *,
         require_down: bool = False,
     ) -> dict[str, Any] | None:
-        if info["max_up_buffers"] > _RTT_FIRMWARE_MAX_CHANNELS:
-            raise DeviceError(
-                "Target RTT MaxNumUpBuffers exceeds the V4 probe firmware limit of 3"
-            )
         if channel >= _RTT_FIRMWARE_MAX_CHANNELS:
             raise DeviceError(
-                "V4 probe firmware only supports RTT channels 0..2"
+                "Multiplex firmware supports RTT channels 0..7"
             )
         up_buffers = info["up_buffers"]
         if channel >= len(up_buffers):
@@ -1622,6 +1618,7 @@ class Device:
         addr: str | int | None = None,
         *,
         channel: int = 0,
+        channels: list[int] | None = None,
         search_size: int = 0,
         mode: int | None = None,
     ) -> dict:
@@ -1642,6 +1639,14 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        multiplex = self._bridge.supports_multiplex() is True if hasattr(self._bridge, 'supports_multiplex') else False
+        selected = list(channels) if channels is not None else [channel]
+        if not selected or len(selected)>8 or len(set(selected))!=len(selected) or any(type(ch) is not int or not 0<=ch<8 for ch in selected) or channel not in selected:
+            raise ValueError('channels must be unique integers 0..7 and include channel')
+        if not multiplex and (selected != [channel] or channel > 2):
+            raise DeviceError('Multiple RTT channels require updated multiplex firmware')
+        if multiplex:
+            self._bridge.enable_multiplex()
         if self._rtt_session and self._rtt_session._running:
             self._rtt_session.stop()
         self._rtt_session = None
@@ -1662,12 +1667,19 @@ class Device:
         else:
             control_block_addr = requested_addr
         control_info = self._read_rtt_control_block(control_block_addr)
-        self._validate_rtt_channel(control_info, channel)
+        if not multiplex and control_info['max_up_buffers'] > 3:
+            raise DeviceError('RTT up descriptor count exceeds legacy firmware limit of 3')
+        for selected_channel in selected:
+            self._validate_rtt_channel(control_info, selected_channel)
         session_addr = f"0x{control_block_addr:08X}"
         session_search_size = 4 if mode == 0 else search_size
 
         from mklink.rtt import RTTSession
-        session = RTTSession(self._bridge, channel=channel)
+        if multiplex:
+            from mklink.mux_rtt import MuxRTTSession
+            session = MuxRTTSession(self._bridge._mux, control_info, channel, selected)
+        else:
+            session = RTTSession(self._bridge, channel=channel)
         self._rtt_session = session
         try:
             result = session.start(
@@ -1742,7 +1754,13 @@ class Device:
             raise DeviceError("RTT not started. Call rtt_start() first.")
         return self._rtt_session.read_output_bytes(duration=duration)
 
-    def rtt_write(self, data: bytes | str) -> bool:
+    def rtt_read_channels(self, duration=.01):
+        session = self._rtt_session
+        if session is not None and hasattr(session, 'read_channels'):
+            return session.read_channels(duration)
+        return {getattr(session, '_channel', 0): self.rtt_read_bytes(duration)}
+
+    def rtt_write(self, data: bytes | str, channel: int | None = None) -> bool:
         self._require_connected()
         if not self._rtt_session or not self._rtt_session._running:
             raise DeviceError("RTT not started. Call rtt_start() first.")
@@ -1754,8 +1772,12 @@ class Device:
         if not info:
             raise DeviceError("RTT control-block metadata is unavailable")
         self._validate_rtt_channel(
-            info, self._rtt_session._channel, require_down=True,
+            info, self._rtt_session._channel if channel is None else channel, require_down=True,
         )
+        if hasattr(self._rtt_session, 'transport'):
+            return self._rtt_session.send_input(data, channel=channel)
+        if channel is not None and channel != self._rtt_session._channel:
+            raise DeviceError('Selected RTT channel is not active')
         guarded = self._rtt_write_guard_tail + data
         if _RTT_RESERVED_STOP in guarded:
             raise DeviceError(
@@ -1842,6 +1864,8 @@ class Device:
             self._project_root,
             source_path=self._axf,
         )
+        if channel > 2:
+            raise DeviceError('Legacy SystemView supports channels 0..2')
         old_systemview_session = self._systemview_session
         if old_systemview_session is not None:
             try:
@@ -2063,6 +2087,10 @@ class Device:
     # ------------------------------------------------------------------
     def read_memory(self, address: int, size: int) -> bytes:
         self._require_connected()
+        from mklink.mux import MuxTransport
+        mux = getattr(self._bridge, '_mux', None)
+        if isinstance(mux, MuxTransport):
+            return mux.read_memory(address, size)
         from mklink.memory_access import parse_read_ram_response
         cmd = f"cmd.read_ram(0x{address:08X}, {size})"
         raw = self._bridge.send_command(cmd, timeout=10.0)
@@ -2120,6 +2148,11 @@ class Device:
     def write_memory(self, address: int, data: bytes) -> None:
         self._require_connected()
         if not data:
+            return
+        from mklink.mux import MuxTransport
+        mux = getattr(self._bridge, '_mux', None)
+        if isinstance(mux, MuxTransport):
+            mux.write_memory(address, data)
             return
         from mklink.memory_write import execute_flush, validate_writes
         parsed = validate_writes([{'address': address, 'data_hex': data.hex()}])

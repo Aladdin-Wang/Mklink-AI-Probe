@@ -380,6 +380,7 @@ def test_dump_stop_consumes_delayed_prompt_before_next_memory_command():
             except queue.Empty:
                 return b""
 
+    bridge._mux_supported = False  # This fixture emulates the legacy wire protocol.
     bridge._serial = SerialPort()
     bridge._ctx.state = DeviceState.READY
     bridge._running = True
@@ -595,7 +596,7 @@ def test_multi_region_one_shot_serializes_concurrent_dump_captures():
 
 def test_real_bridge_atomically_arbitrates_rtt_enter_against_dump_claim():
     for _attempt in range(25):
-        bridge = object.__new__(MKLinkSerialBridge)
+        bridge = MKLinkSerialBridge("TEST-LEGACY")
         bridge._ctx = DeviceContext(state=DeviceState.READY)
         bridge._buffer_lock = threading.Lock()
         bridge._response_buffer = [b"stale"]
@@ -638,7 +639,7 @@ def test_real_bridge_atomically_arbitrates_rtt_enter_against_dump_claim():
 
 
 def test_real_bridge_failed_dump_claim_preserves_active_rtt_buffer_and_state():
-    bridge = object.__new__(MKLinkSerialBridge)
+    bridge = MKLinkSerialBridge("TEST-LEGACY")
     bridge._ctx = DeviceContext(state=DeviceState.RTT_STREAM)
     bridge._buffer_lock = threading.Lock()
     bridge._response_buffer = [b"live-rtt-bytes"]

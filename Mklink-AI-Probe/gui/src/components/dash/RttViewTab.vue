@@ -34,6 +34,13 @@
         @primary="loadSymbolFile"
       />
       <p v-if="sourceChangeNotice" data-testid="rtt-source-notice" role="status">{{ sourceChangeNotice }}</p>
+      <div class="rtt-address-row">
+        <label for="rtt-channels">{{ tr('采集通道', 'Capture channels') }}</label>
+        <input id="rtt-channels" v-model="captureChannels" :disabled="effectiveRunning || starting" placeholder="0,1" size="12">
+        <span>{{ tr('逗号分隔 0–7；多通道需要新版固件。首个为日志和曲线主通道。', 'Comma-separated 0–7; multiple channels require new firmware. The first channel supplies logs and charts.') }}</span>
+        <span v-if="multiplex">{{ tr('多路复用 · 可与 SuperWatch 并行', 'Multiplex · concurrent with SuperWatch') }}</span>
+      </div>
+      <RttChannelMonitor v-if="activeChannels.length > 1" :channels="activeChannels" :running="statusRunning" />
       <div class="rtt-view-toolbar">
         <div class="rtt-primary-tools">
           <ControlToolbar
@@ -142,6 +149,11 @@
           @input="queueTerminalInput"
         />
       </div>
+      <label v-if="activeChannels.length > 1">{{ tr('发送通道', 'Send channel') }}
+        <select v-model.number="transmitChannel" data-testid="rtt-send-channel">
+          <option v-for="ch in activeChannels" :key="ch" :value="ch">RTT {{ ch }}</option>
+        </select>
+      </label>
       <RttTransmitBar
         :enabled="transmitEnabled" :settings="settings" :send="sendRtt"
         @settings-change="persistSettings"
@@ -171,6 +183,7 @@ import { saveBlobFile, timestampedLogName } from '../../lib/downloadTextFile'
 import ControlToolbar from './ControlToolbar.vue'
 import LogDisplayControls, { type LogDisplayMode } from './LogDisplayControls.vue'
 import RttTransmitBar from './RttTransmitBar.vue'
+import RttChannelMonitor from './RttChannelMonitor.vue'
 import RttTerminalPanel from './RttTerminalPanel.vue'
 import VirtualLogPanel, { type VirtualLogInput } from './VirtualLogPanel.vue'
 import SetupHint from './SetupHint.vue'
@@ -220,7 +233,10 @@ const renderPaused = ref(false)
 const runtimeError = ref<string | null>(null)
 const sourceChangeNotice = ref<string | null>(null)
 const actionError = ref<string | null>(null)
-const RTT_CHANNEL = 0
+const captureChannels = ref('0')
+const activeChannels = ref<number[]>([0])
+const transmitChannel = ref(0)
+const multiplex = ref(false)
 // Zero lets the host bound the default scan to the actual RAM map.
 const RTT_SEARCH_SIZE = 0
 const effectiveRunning = computed(() => (
@@ -231,7 +247,7 @@ const transmitEnabled = computed(() => (
   && !stopping.value
   && !runtimeError.value
   && downBuffers.value.some(buffer => (
-    buffer.channel === RTT_CHANNEL && buffer.active === true
+    buffer.channel === transmitChannel.value && buffer.active === true
   ))
 ))
 const toolbarState = computed(() => (
@@ -348,7 +364,7 @@ async function searchRttAddress(): Promise<void> {
 }
 
 async function sendRtt(payload: Uint8Array): Promise<void> {
-  await writeRtt(payload)
+  await writeRtt(payload, transmitChannel.value)
 }
 
 async function onEncodingChange(): Promise<void> {
@@ -756,6 +772,10 @@ async function refreshStatus(): Promise<Record<string, any> | null> {
           persistSettings({ ...settings.value, rttEncoding: encoding })
         }
       }
+      multiplex.value = status.transport === 'cdc-mux'
+      activeChannels.value = Array.isArray(status.channels) && status.channels.length ? status.channels : [0]
+      if (statusRunning.value && status.control_block_addr) captureChannels.value = activeChannels.value.join(',')
+      if (!activeChannels.value.includes(transmitChannel.value)) transmitChannel.value = activeChannels.value[0] ?? 0
       downBuffers.value = Array.isArray(status.down_buffers) ? status.down_buffers : []
       const channels = Array.isArray(status.numeric_channels)
         ? status.numeric_channels.map((name: unknown) => String(name))
@@ -840,7 +860,15 @@ async function onStart(): Promise<void> {
     scheduler.start()
     logBinary.reset()
     terminalBinary.reset()
+    const channels = captureChannels.value.split(',').map(value => /^[0-7]$/.test(value.trim()) ? Number(value.trim()) : NaN)
+    if (channels.length > 8 || new Set(channels).size !== channels.length
+        || channels.some(ch => !Number.isInteger(ch) || ch < 0 || ch > 7)) {
+      actionError.value = tr('通道必须为不重复的 0–7', 'Channels must be unique 0–7')
+      return
+    }
     const started = await dash.start({
+      ...(channels.length > 1 ? { channels } : {}),
+      ...(channels[0] !== 0 ? { channel: channels[0] } : {}),
       addr: address,
       mode: 0,
       search_size: RTT_SEARCH_SIZE,

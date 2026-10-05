@@ -430,8 +430,8 @@ def target_debug_lease(state: dict[str, Any], operation: str):
         nested = bool(stack and stack[-1][0] is manager)
         lease_owner = stack[-1][1] if nested else owner
         if not nested:
-            manager.acquire(
-                ResourceGroup.TARGET_DEBUG,
+            manager.acquire_many(
+                _target_resources(operation),
                 owner,
                 preempt=not state.get("shared_runtime", False),
                 preempt_user_dashboard=not state.get("shared_runtime", False),
@@ -487,8 +487,8 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
         acquired_async_lock = True
     _NATIVE_TARGET_COORDINATOR.acquire()
     try:
-        manager.acquire(
-            ResourceGroup.TARGET_DEBUG,
+        manager.acquire_many(
+            _target_resources(operation),
             owner,
             preempt=not state.get("shared_runtime", False),
             preempt_user_dashboard=not state.get("shared_runtime", False),
@@ -510,16 +510,34 @@ async def async_target_debug_lease(state: dict[str, Any], operation: str):
             async_lock.release()
 
 
+def _multiplex_device(state):
+    bridge = getattr(state.get('device'), '_bridge', None)
+    support = getattr(bridge, 'supports_multiplex', None)
+    return callable(support) and support() is True
+
+
+def _target_resources(operation):
+    from mklink.remote.resource_manager import ResourceGroup
+    resources = [ResourceGroup.TARGET_DEBUG]
+    from mklink.runtime_capabilities import MUX_MEMORY_CAPABILITIES
+    if operation.replace('-', '_') not in MUX_MEMORY_CAPABILITIES:
+        resources += [ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
+    return resources
+
+
 def acquire_dashboard_resources(state: dict[str, Any], dashboard: str) -> list[str]:
     """Lease a stream without implicitly stopping another user's capture."""
     from mklink.remote.resource_manager import ResourceGroup
 
     owner = f"user:dashboard:{dashboard}"
     manager = state["resource_manager"]
+    multiplex = dashboard in ('rtt', 'superwatch') and _multiplex_device(state)
     resources = {
+        "rtt": [ResourceGroup.MUX_RTT] if multiplex else [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
+        "superwatch": [ResourceGroup.MUX_WATCH] if multiplex else [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
         "serial": [ResourceGroup.SERIAL_PORT],
         "modbus": [ResourceGroup.MODBUS_PORT],
-    }.get(dashboard, [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG])
+    }.get(dashboard, [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH])
     manager.acquire_many(
         resources,
         owner,
@@ -2302,7 +2320,9 @@ def create_app(
             n for n in BRIDGE_DASHBOARD_TYPES
             if n != type and managers.get(n) and managers[n].running
         ]
-        return {"conflicts": running, "running": running}
+        from mklink.runtime_capabilities import multiplex_enabled
+        conflicts = [name for name in running if not (multiplex_enabled(_state) and {type, name} <= {'rtt', 'superwatch'})]
+        return {"conflicts": conflicts, "running": running}
 
     @app.get("/api/dash/rtt/stream")
     async def rtt_sse_stream():
@@ -2322,12 +2342,16 @@ def create_app(
     async def rtt_start(
         addr: str | None = Body(default=None),
         channel: Annotated[StrictInt, Body()] = 0,
+        channels: list[StrictInt] | None = Body(default=None),
         mode: Annotated[StrictInt, Body()] = 0,
         search_size: Annotated[StrictInt, Body()] = 0,
         encoding: str = Body(default="utf-8"),
     ):
         from mklink.remote.dashboards import normalize_rtt_encoding
 
+        if channels is not None and (not channels or len(channels) > 8 or len(set(channels)) != len(channels)
+                                     or any(c < 0 or c > 7 for c in channels) or channel not in channels):
+            raise HTTPException(422, "channels must be unique 0..7 and include the primary channel")
         if mode not in (0, 1):
             raise HTTPException(
                 status_code=400,
@@ -2373,6 +2397,7 @@ def create_app(
                 mode=mode,
                 search_size=search_size,
                 encoding=encoding,
+                channels=channels,
             ),
         )
         return {"status": status, "stopped": stopped}
@@ -2397,6 +2422,7 @@ def create_app(
     @app.post("/api/dash/rtt/write")
     async def rtt_write(
         data_hex: str = Body(..., embed=True),
+        channel: StrictInt | None = Body(default=None),
     ):
         if len(data_hex) > 65536 * 2:
             raise HTTPException(
@@ -2415,7 +2441,7 @@ def create_app(
         data = bytes.fromhex(data_hex)
         managers = get_managers()
         try:
-            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data)
+            sent_bytes = await asyncio.to_thread(managers["rtt"].write, data, channel=channel)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"sent_bytes": sent_bytes}
@@ -2436,6 +2462,13 @@ def create_app(
     async def rtt_status():
         managers = get_managers()
         return {**managers["rtt"].get_status(), "file_source_change": _state["file_source_change"]}
+
+    @app.get("/api/dash/rtt/channels/read")
+    async def rtt_read_channel(channel: int = 0, cursor: int = 0, session: str | None = None):
+        try:
+            return get_managers()["rtt"].read_channel(channel, cursor, session)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/dash/rtt/history")
     async def rtt_history():

@@ -1060,6 +1060,7 @@ class DumpMemoryStreamSession:
         self.write_ranges = tuple(write_ranges)
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
+        self._mux_watch = None
         self._write_pending = None
         self._protocol_frames = 0
         self._complete_samples = 0
@@ -1068,6 +1069,13 @@ class DumpMemoryStreamSession:
 
     def start(self) -> None:
         if self.started:
+            return
+        capability = getattr(self.bridge, 'supports_multiplex', None)
+        if callable(capability) and capability() is True:
+            from mklink.mux_watch import MuxWatchSession
+            self._mux_watch = MuxWatchSession(self.bridge.enable_multiplex(), self.region_pairs, self.period)
+            self._mux_watch.start()
+            self.started = True
             return
         from mklink._types import DeviceState
 
@@ -1089,6 +1097,9 @@ class DumpMemoryStreamSession:
             for start, end in self.write_ranges
         ):
             raise ValueError("Live writes require supported target RAM scalars of 1/2/4/8 bytes")
+        if self._mux_watch is not None:
+            self._mux_watch.write(address, data, future)
+            return
         request_id = secrets.randbits(32) or 1
         packet = struct.pack('<4sIIB3x8s', b'SW01', request_id, address, len(data), data)
         packet += struct.pack('<I', binascii.crc32(packet) & 0xffffffff)
@@ -1112,6 +1123,8 @@ class DumpMemoryStreamSession:
     def read_frames(self, max_bytes: int | None = None) -> list[dict]:
         if not self.started:
             raise RuntimeError("dump-memory stream is not started")
+        if self._mux_watch is not None:
+            return self._mux_watch.read_frames()
         raw = self.bridge.drain_stream_bytes(max_bytes=max_bytes)
         frames = self.parser.feed(raw) if raw else []
         samples = []
@@ -1141,6 +1154,12 @@ class DumpMemoryStreamSession:
                 future.set_exception(RuntimeError("Stream stopped before write acknowledgement; result unknown"))
         if not self.started:
             return
+        if self._mux_watch is not None:
+            try:
+                self._mux_watch.stop()
+            finally:
+                self.started = False
+            return
         command = build_dump_mem_command(
             self.region_pairs, DUMP_MEMORY_STOP_PERIOD,
         )
@@ -1151,6 +1170,11 @@ class DumpMemoryStreamSession:
 
     @property
     def stats(self) -> dict[str, int]:
+        if self._mux_watch is not None:
+            return {'protocol_frames': self._mux_watch.samples, 'complete_samples': self._mux_watch.samples,
+                    'parser_dropped_bytes': self._mux_watch.transport.stats()['watch_dropped_bytes'],
+                    'parser_dropped_frames': self._mux_watch.gaps,
+                    'parser_crc_errors': 0, 'firmware_flagged_frames': 0, 'firmware_sample_drop_flags': 0}
         return {
             "protocol_frames": self._protocol_frames,
             "complete_samples": self._complete_samples,

@@ -50,8 +50,21 @@ CAPABILITIES = {
     'superwatch_write': ('POST', '/api/dash/superwatch/write'),
     'superwatch_interval': ('POST', '/api/dash/superwatch/interval'),
     'systemview_capture_history': ('GET', '/api/dash/systemview/history/cursor'),
+    'rtt_read_channel': ('GET', '/api/dash/rtt/channels/read'),
     'rtt_write': ('POST', '/api/dash/rtt/write'),
 }
+# These operations only use Device's framed memory path. Configuration, flash,
+# debug control and legacy acquisition retain their explicit stop boundary.
+MUX_MEMORY_CAPABILITIES = frozenset({'read_memory', 'write_memory', 'read_variable',
+                                    'write_variable', 'read_register', 'read_memory_regions'})
+MUX_MEMORY_PATHS = frozenset(CAPABILITIES[name][1] for name in MUX_MEMORY_CAPABILITIES)
+
+
+def multiplex_enabled(state):
+    """Cached negotiation only: safe on the HTTP event loop, never serial I/O."""
+    return getattr(getattr(state.get('device'), '_bridge', None), '_mux_supported', None) is True
+
+
 for stream in STREAMS:
     for action in ('status', 'start', 'stop', 'pause', 'resume'):
         CAPABILITIES[f'{stream}_{action}'] = ('GET' if action == 'status' else 'POST', f'/api/dash/{stream}/{action}')
@@ -137,9 +150,9 @@ def validate_arguments(capability, arguments):
             data = bytes.fromhex(raw)
             if not 1 <= len(data) <= 256:
                 raise ValueError()
-            data.decode('utf-8')
-            if b'RTTView.stop()' in data:
+            channel = arguments.get('channel')
+            if channel is not None and (type(channel) is not int or not 0 <= channel < 8):
                 raise ValueError()
         except (KeyError, ValueError, UnicodeError):
-            raise HTTPException(422, 'RTT input must contain 1..256 UTF-8 bytes encoded as hexadecimal')
+            raise HTTPException(422, 'RTT input must contain 1..256 bytes encoded as hexadecimal; channel must be 0..7')
     return arguments

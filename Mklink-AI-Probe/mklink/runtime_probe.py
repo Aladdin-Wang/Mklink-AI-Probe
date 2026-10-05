@@ -20,7 +20,7 @@ def _query(state, capability):
         raise HTTPException(409, 'Release the stale connection explicitly before querying this probe')
     manager = state['resource_manager']
     owner = 'user:api:' + capability
-    manager.acquire_many((ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG), owner)
+    manager.acquire_many((ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH), owner)
     bridge = None
     owned = device is None
     try:

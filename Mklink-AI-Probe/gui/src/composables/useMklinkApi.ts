@@ -325,10 +325,10 @@ export function useMklinkApi() {
     })
   }
 
-  async function writeRtt(data: Uint8Array): Promise<RttWriteResponse> {
+  async function writeRtt(data: Uint8Array, channel?: number): Promise<RttWriteResponse> {
     return api('/api/dash/rtt/write', {
       method: 'POST',
-      body: JSON.stringify({ data_hex: toHexPayload(data) }),
+      body: JSON.stringify({ data_hex: toHexPayload(data), ...(channel === undefined ? {} : { channel }) }),
     })
   }
 

@@ -661,7 +661,7 @@ describe('RttViewTab binary migration', () => {
     await bar.get('[data-testid="rtt-input"]').setValue('OK')
     await bar.get('[data-testid="rtt-send"]').trigger('click')
     await flushPromises()
-    expect(mocks.api.writeRtt).toHaveBeenCalledWith(Uint8Array.of(0x4f, 0x4b))
+    expect(mocks.api.writeRtt).toHaveBeenCalledWith(Uint8Array.of(0x4f, 0x4b), 0)
 
     mocks.status = { running: true, numeric_channels: [], down_buffers: [] }
     vi.advanceTimersByTime(1_000)

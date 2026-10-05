@@ -274,7 +274,9 @@ def test_write_validation_and_capture_busy_never_reach_hardware(runtime):
     session = attach(client)
     assert client.post('/api/device/write-memory', json={'address':'0','data_hex':'zz'}).status_code == 422
     assert client.post('/api/dash/rtt/write', json={'data_hex':('a'*257).encode().hex()}).status_code == 422
-    assert client.post('/api/dash/rtt/write', json={'data_hex':b'RTTView.stop()'.hex()}).status_code == 422
+    # Reserved text is now rejected only by the legacy Device path; mux is binary-transparent.
+    from mklink.runtime_capabilities import validate_arguments
+    assert validate_arguments('rtt_write', {'data_hex': '00ff', 'channel': 1})['data_hex'] == '00ff'
     for arguments in ({'address': '0xffffffff', 'data_hex': '0000'}, {'address': '0', 'data_hex': '0g'},
                       {'address': '0', 'data_hex': '0'}, {'address': '0', 'data_hex': ''}):
         assert call(client, session, 'write_memory', arguments).status_code == 422

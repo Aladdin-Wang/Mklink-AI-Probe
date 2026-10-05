@@ -417,11 +417,13 @@ class RuntimeGate:
         active = active_bridge_dashboards()
         if active and (path.startswith('/api/offline-download/') or online_flash):
             return await reject(409, 'Stop acquisition explicitly before offline/online target operations')
+        from mklink.runtime_capabilities import multiplex_enabled, MUX_MEMORY_PATHS
+        mux_active = multiplex_enabled(c.app.state.mklink_state) and set(active) <= {'rtt', 'superwatch'}
         if path in {f"/api/dash/{name}/start" for name in BRIDGE_DASHBOARD_TYPES}:
-            if active:
+            if active and not (mux_active and path in {'/api/dash/rtt/start', '/api/dash/superwatch/start'}):
                 return await reject(409, "A CDC acquisition is already running; subscribe to its cached data or stop it explicitly")
         if (path.startswith(("/api/device/", "/api/probe/")) and path != "/api/device/connect") or path in {'/api/dash/superwatch/inspect', '/api/mcu-detect'}:
-            if active:
+            if active and not (mux_active and path in MUX_MEMORY_PATHS):
                 return await reject(409, {"busy": active, "hint": "Read a shared dashboard snapshot or explicitly stop acquisition first"})
         async def observe(message):
             if message['type'] == 'http.response.start':

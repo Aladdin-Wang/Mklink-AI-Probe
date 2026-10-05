@@ -188,7 +188,7 @@ class OnlineFlashJobManager:
         acquired = False
         try:
             acquired = True
-            resources = [ResourceGroup.TARGET_DEBUG]
+            resources = [ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
             if hpm_target:
                 resources.append(ResourceGroup.MKLINK_BRIDGE)
             self._resource_manager.acquire_many(
@@ -355,7 +355,7 @@ class OnlineFlashJobManager:
                 acquire_attempted = True
                 from mklink.hpm_config import is_hpm_target
 
-                resources = [ResourceGroup.TARGET_DEBUG]
+                resources = [ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH]
                 if (
                     is_hpm_target(job.request.target_part)
                     or job.request.reset_mode == "power-cycle"
@@ -368,8 +368,8 @@ class OnlineFlashJobManager:
                         preempt_user_dashboard=True,
                     )
                 else:
-                    self._resource_manager.acquire(
-                        ResourceGroup.TARGET_DEBUG,
+                    self._resource_manager.acquire_many(
+                        resources,
                         owner,
                         preempt=job.request.preempt_ai,
                         preempt_user_dashboard=True,

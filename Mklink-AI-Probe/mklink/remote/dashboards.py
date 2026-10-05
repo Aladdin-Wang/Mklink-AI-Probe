@@ -268,6 +268,8 @@ class RttStreamManager:
         self._stop_event = threading.Event()
         self._history: list[dict] = []
         self._max_history = 500
+        from mklink.rtt_cache import RttChannelCache
+        self._channel_cache = RttChannelCache()
         from mklink.rtt_viewer import RttLineParser
         self._parser = RttLineParser("kv")
         self._parser_auto_detect_done = False
@@ -436,7 +438,8 @@ class RttStreamManager:
 
     def start(self, device, *, addr: str | None = None, channel: int = 0,
               mode: int = 0, search_size: int = 0,
-              duration: float = 86400, encoding: str = "utf-8") -> None:
+              duration: float = 86400, encoding: str = "utf-8",
+              channels: list[int] | None = None) -> None:
         with self._lifecycle_lock:
             self._start_locked(
                 device,
@@ -446,11 +449,13 @@ class RttStreamManager:
                 search_size=search_size,
                 duration=duration,
                 encoding=encoding,
+                channels=channels,
             )
 
     def _start_locked(self, device, *, addr: str | None = None, channel: int = 0,
                       mode: int = 0, search_size: int = 0,
-                      duration: float = 86400, encoding: str = "utf-8") -> None:
+                      duration: float = 86400, encoding: str = "utf-8",
+              channels: list[int] | None = None) -> None:
         """Start RTT polling in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             if self.running:
@@ -463,6 +468,7 @@ class RttStreamManager:
         self._stop_event = stop_event
         self._generation = generation
         self._capture_session = uuid.uuid4().hex
+        self._channel_cache.reset(self._capture_session, channels or [channel])
         self._paused.set()
         self._running = True
         self._history.clear()
@@ -495,6 +501,7 @@ class RttStreamManager:
             try:
                 start_info = device.rtt_start(
                     addr, channel=channel, mode=mode, search_size=search_size,
+                    **({"channels": channels} if channels is not None else {}),
                 )
                 initialized = True
                 with self._write_lock:
@@ -517,13 +524,20 @@ class RttStreamManager:
                         continue
 
                     try:
-                        read_bytes = getattr(device, "rtt_read_bytes", None)
-                        if callable(read_bytes):
-                            text = read_bytes(duration=_RTT_DELIVERY_INTERVAL)
+                        if self._start_info.get("transport") == "cdc-mux":
+                            chunks = device.rtt_read_channels(duration=_RTT_DELIVERY_INTERVAL)
+                            for source, data in chunks.items():
+                                self._channel_cache.append(source, data)
+                            text = chunks.get(channel, b"")
                         else:
-                            text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
+                            read_bytes = getattr(device, "rtt_read_bytes", None)
+                            if callable(read_bytes):
+                                text = read_bytes(duration=_RTT_DELIVERY_INTERVAL)
+                            else:
+                                text = device.rtt_read(duration=_RTT_DELIVERY_INTERVAL)
+                            self._channel_cache.append(channel, text.encode("utf-8") if isinstance(text, str) else text or b"")
                     except Exception as exc:
-                        if _device_in_error_state(device):
+                        if _device_in_error_state(device) or self._start_info.get("transport") == "cdc-mux":
                             terminal_failure = exc
                             break
                         time.sleep(0.1)
@@ -614,7 +628,10 @@ class RttStreamManager:
     def get_history(self) -> list[dict]:
         return list(self._history)
 
-    def write(self, data: bytes) -> int:
+    def read_channel(self, channel=0, cursor=0, session=None):
+        return self._channel_cache.read(channel, cursor, session)
+
+    def write(self, data: bytes, channel: int | None = None) -> int:
         with self._write_lock:
             if (
                 not self.running
@@ -623,7 +640,9 @@ class RttStreamManager:
             ):
                 raise RuntimeError("RTT is not running")
             down_buffers = self._start_info.get("down_buffers", [])
-            channel = int(self._start_info.get("channel", 0))
+            channel = int(self._start_info.get("channel", 0)) if channel is None else channel
+            if self._start_info.get("transport") != "cdc-mux" and channel != int(self._start_info.get("channel", 0)):
+                raise RuntimeError("Legacy RTT only supports its active channel")
             if not any(
                 isinstance(item, dict)
                 and item.get("channel") == channel
@@ -632,7 +651,9 @@ class RttStreamManager:
             ):
                 raise RuntimeError("RTT DownBuffer is unavailable")
             try:
-                written = self._device.rtt_write(data)
+                written = (self._device.rtt_write(data, channel=channel)
+                           if self._start_info.get("transport") == "cdc-mux"
+                           else self._device.rtt_write(data))
             except Exception as exc:
                 raise RuntimeError(f"RTT write failed: {exc}") from exc
             if not written:
@@ -651,6 +672,9 @@ class RttStreamManager:
             down_buffer_probe_count = self._start_info.get(
                 "down_buffer_probe_count", 0
             )
+            from mklink.mux import MuxTransport
+            transport = getattr(getattr(self._device, '_bridge', None), '_mux', None)
+            transport_stats = transport.stats() if isinstance(transport, MuxTransport) else None
         return {
             "running": self.running,
             "paused": self.paused,
@@ -658,6 +682,10 @@ class RttStreamManager:
             "stats": self._stats,
             "error": self._error,
             "history_size": len(self._history),
+            "channels": self._channel_cache.channels,
+            "primary_channel": self._start_info.get("channel", 0),
+            "transport_stats": transport_stats,
+            "transport": self._start_info.get("transport", "legacy"),
             "numeric_channels": list(self._numeric_channels),
             "encoding": self._line_assembler.encoding,
             "line_parser": self._line_assembler.status(),
@@ -1989,6 +2017,8 @@ class SuperWatchStreamManager:
                         completed_integrity = dict(self._stream_integrity)
                         try:
                             session.start()
+                            if getattr(session, '_mux_watch', None) is not None:
+                                self._acquisition_mode = "cdc-mux"
                             while (
                                 not stop_event.is_set()
                                 and config_generation == self._config_generation
@@ -2003,7 +2033,8 @@ class SuperWatchStreamManager:
                                             try:
                                                 session.request_write(address, payload, future)
                                             except Exception as exc:
-                                                future.set_exception(exc)
+                                                if not future.done():
+                                                    future.set_exception(exc)
                                                 raise
                                         else:
                                             # Legacy firmware needs command mode, but the logical
@@ -2025,7 +2056,8 @@ class SuperWatchStreamManager:
                                                 else:
                                                     future.set_result({"data": data, "mode": "legacy-gap", "timestamp_us": None})
                                             except Exception as exc:
-                                                future.set_exception(exc)
+                                                if not future.done():
+                                                    future.set_exception(exc)
                                                 raise
                                 frames = session.read_frames(max_bytes=1024 * 1024)
                                 self._stream_integrity = _sum_counter_snapshots(

@@ -655,7 +655,7 @@ def create_offline_download_router(
             async def run() -> None:
                 try:
                     resource_manager.acquire_many(
-                        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+                        [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
                         owner,
                         preempt=False,
                         preempt_user_dashboard=True,
@@ -949,7 +949,7 @@ def create_offline_download_router(
         owner = f"user:offline-download:trigger:{uuid.uuid4().hex}"
         try:
             resource_manager.acquire_many(
-                [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG],
+                [ResourceGroup.MKLINK_BRIDGE, ResourceGroup.TARGET_DEBUG, ResourceGroup.MUX_RTT, ResourceGroup.MUX_WATCH],
                 owner,
                 preempt=False,
                 preempt_user_dashboard=True,

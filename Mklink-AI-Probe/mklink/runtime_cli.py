@@ -284,6 +284,13 @@ def run(args):
             status = client.call(stream+'_status')
             running = bool(status.get('running')) or status.get('state') in {'running', 'paused'}
             options = {}
+            if stream == 'rtt':
+                selected = getattr(args, 'channels', None)
+                address = getattr(args, 'addr', None)
+                if selected:
+                    options.update(channels=selected, channel=selected[0])
+                if address:
+                    options['addr'] = address
             if stream == 'vofa':
                 if running and (vofa_channels is not None or args.period is not None):
                     raise RuntimeErrorResponse('Capture already running; omit channels/period to subscribe')
@@ -321,6 +328,8 @@ def run(args):
             except KeyboardInterrupt:
                 pass
             result = client.call(stream+('_values' if stream == 'superwatch' else '_history'))
+            if stream == 'rtt' and getattr(args, 'channels', None):
+                result = {'channels': [client.call('rtt_read_channel', {'channel': ch}) for ch in args.channels]}
             if stream == 'vofa':
                 if result.get('error') or not result.get('completed_samples'):
                     raise RuntimeErrorResponse(result.get('error') or 'VOFA returned no complete samples')

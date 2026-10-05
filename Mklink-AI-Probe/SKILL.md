@@ -33,7 +33,7 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 ## 不可绕过的设备边界
 
 - **单探针串行**：先读 `ping.limits`。同一下载器、命令口或目标串口同一时刻只
-  执行一个硬件操作；共享模式可同时读取后台已采集的缓存。多下载器先 `discover_probes`，明确选择 ID 或别名，
+  执行一个命令；新固件的 RTT/SuperWatch 由统一调度并行采集，内存读写仍按单请求串行，旧固件采集继续独占。共享模式可同时读取后台已采集的缓存。多下载器先 `discover_probes`，明确选择 ID 或别名，
   不选择枚举列表的第一项。共享 `disconnect` 只退出本客户端；不要为了读变量停止
   其他客户端的采集。独立工具复用连接、不并行设备调用，停止流后再断开。
 - **VOFA 与 dump**：`read_memory`/`read_ram` 只做快照；连续曲线用
@@ -44,11 +44,11 @@ description: 使用 MKLink/MicroLink 操作目标 MCU：固件烧录、内存与
 - **flush**：单批总数据最多 **12 KiB**、最多 **8 个地址项**。超额时按批串行，
   每批等待提示符；不得与 dump、VOFA、RTT 或 SystemView 并发。
 - **RTT/SystemView**：地址只允许省略或传目标已知可写 RAM 内的 4 字节对齐地址，
-  不得拼接 Pika 表达式；V4 通道为 **0~2**，搜索窗口为 **0~65536 字节**且不得
+  不得拼接 Pika 表达式；旧固件/SystemView 通道为 **0~2**；支持 `MUX_TARGET=1` 的 V4 RTT 可订阅 **0~7**，以目标实际活动通道为准。搜索窗口为 **0~65536 字节**且不得
   越出已知目标 RAM。让工具拒绝越界参数，不得改用
   原始命令绕过，也不得对失败的启动循环重试。MCP `rtt_write` 单次最多 **256
-  UTF-8 字节**，超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分
-  绕过；输入不得包含或跨调用拼接探针保留串 `RTTView.stop()`。`capture_rtt` 的
+  字节**（文本 `rtt_write` 或二进制 `rtt_write_hex`），超限不得自动拆分；文件或日志走 YMODEM/串口专用传输，禁止拆分
+  绕过；旧串口映射模式的输入不得包含或跨调用拼接探针保留串 `RTTView.stop()`；多路复用模式按二进制传输。`capture_rtt` 的
   `pattern` 是 1~256 UTF-8 字节的字面子串，不是正则表达式。
 - **MCP Timeout**：超时后只调用一次 `device_status`，随后结束旧会话并只执行一次
   `disconnect` → `connect` 恢复。任一步失败就停止并请用户重新拔插；禁止自动重试

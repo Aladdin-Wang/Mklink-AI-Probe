@@ -1,7 +1,7 @@
 # 0.3.0 共享 CDC 后台与多下载器
 
 本页对应 0.3.0 开发分支的第六阶段实现；现有正式安装版不会自动变成此版本。
-底层仍使用原有 CDC，不需要更新下载器固件。
+底层仍使用 CDC。单通道兼容旧固件；多通道 RTT 与 SuperWatch 并行需配套 `MUX_TARGET=1` 的 V4 开发固件。
 
 ## 连接与选择
 
@@ -69,7 +69,7 @@ GUI 已在采集时，AI 使用以下能力：
 偶数位十六进制字符串；`write_variable` 只接受整数。采集期间需要修改变量时，
 使用已有的类型化 `superwatch(action="write")`：参数为 `path`、`value` 和
 从 `gui_call("symbol_status")` 取得的 `generation`，执行实时写入及校验。
-RTT 输入限制为 1..256 个 UTF-8 字节，拒绝保留的停止命令。
+RTT 输入限制为 1..256 字节；旧映射模式拒绝保留的停止命令，新多路复用模式支持二进制。
 
 MCP 的 `systemview_decode(hex_bytes=...)` 和 `systemview_analyze_events(events=...)`
 可离线调用，无需 `connect` 或选择下载器；运行中的 GUI 采集也不会被打断。
@@ -424,3 +424,34 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 同一历史供多个读者独立读取，`dropped` 表示本页跨过的缺失事件数；会话更换返回409，
 不能把新采集接到旧报告中。该接口复用既有100000事件/60秒历史；CLI持续分页收集
 本次事件供本地分析，报告进程内存随实际收集量增长，不提供无限时长采集保证。
+
+
+## 多通道 RTT 与 SuperWatch（协议 47 开发版）
+
+配套 V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
+仍然只有后台打开串口和读取 USB，客户端读取后台缓存。外部串口助手的旧 RTT
+映射仍保留；它与后台不能同时打开命令口。
+
+- GUI 的 RTT 页填写 `0,1` 等通道列表，首个作为日志/终端/曲线主通道；多通道
+  查看区可独立选通道并切换 HEX/文本，下行可选择已订阅且实际活动的 DownBuffer。
+- MCP `rtt_start(addr=..., channels=[0,1], channel=0)` 创建采集；已运行时用不带参数
+  的 `rtt_start()` 订阅，不能替其他客户端重新配置。
+- `rtt_read_channel(channel=1, cursor=0)` 返回原始 `data_hex`、`session`、`cursor`、
+  `lost_bytes`。后续传回 session/cursor；`reset=true` 表示已换采集会话。
+  每通道保留 64 KiB、每次最多返回 16 KiB，各客户端游标独立，不会互相取走数据。
+  查看 `rtt_status.transport_stats` 区分传输队列丢失与客户端缓存覆盖。
+- MCP `rtt_write(text, channel=0)` 或 `rtt_write_hex(data_hex, channel=0)` 一次最多
+  256 字节，失败或结果未知时不得整条重发。已被 RTT 环形缓冲接受不等于目标应用
+  已处理，目标协议仍应自行确认。
+- CLI `python -m mklink rtt --probe <设备> --channels 0 1 --addr <RTT地址> --duration 3`
+  创建有限采集；读取已有采集可用 `runtime call rtt_read_channel --probe <设备>
+  --arguments '{"channel":1}'`。共享 Python SDK 使用相同的 `call()` 能力。
+- 多路复用 RTT、SuperWatch 可并行；内存/变量及外设寄存器读写、批量内存读取可
+  同时发命令。烧录、复位、调试控制、修改时钟、独立 SystemView/VOFA 仍需先停流。
+- SuperWatch 最多 15 个物理区域、每区 128 字节；大区域会拆分并计入 15 区预算。
+  最短固件采样周期为 2 ms。多区域依次读取，不是原子快照。
+- 任一超时/CRC/会话错误关闭本次协议会话，不重放未知写入，也不自动降级原始命令。
+  后台异常退出后，显式重连可恢复本机记录的帧模式。
+
+本轮验证为本机 STM32 短测。HPM、八个实体 RTT 通道、跨主机远程链路和长时间采集
+未据此验收；已安装的旧程序需更新配套主机版本才会出现新界面。

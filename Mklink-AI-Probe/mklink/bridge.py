@@ -12,6 +12,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 import serial
 from mklink._isolated_serial import IsolatedSerial
@@ -73,6 +74,7 @@ class MKLinkSerialBridge:
         self._port = port
         self._baudrate = baudrate
         self._port_lock = _PortLock(port)
+        self._mux_marker = Path(self._port_lock._path + ".mux")
         self._serial: serial.Serial | IsolatedSerial | None = None
         self._ctx = DeviceContext()
         self._reader_thread: threading.Thread | None = None
@@ -87,7 +89,9 @@ class MKLinkSerialBridge:
         self._utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._prompt_event = threading.Event()
         self._buffer_lock = threading.Lock()
-        self._cmd_lock = threading.Lock()  # 命令级互斥，防止并发操作
+        self._cmd_lock = threading.RLock()  # Includes explicit framed/legacy transitions.
+        self._mux = None
+        self._mux_supported = None
         self._echo_enabled = False
         self._echo_prefix = "[SERIAL] "
         self._echo_offset = 0
@@ -99,6 +103,8 @@ class MKLinkSerialBridge:
     # 连接管理
     # ------------------------------------------------------------------
     def supports_dump_write(self) -> bool:
+        if self._mux_supported is True:
+            return True
         response = self.send_command("cmd.get_version()", timeout=3.0)
         return any(line.strip() == "DUMP_WRITE=1" for line in response.splitlines())
 
@@ -120,6 +126,7 @@ class MKLinkSerialBridge:
         """打开串口并同步设备状态（等待 >>> 提示符）。"""
         from mklink.probes import require_runtime_port
         self._transport_error = None
+        self._mux_supported = None  # Re-negotiate after reconnect/firmware changes.
         # 进程级互斥：获取文件锁
         if not self._port_lock.acquire():
             print(f"[FAIL] 串口 {self._port} 正被其他进程使用")
@@ -134,6 +141,8 @@ class MKLinkSerialBridge:
                         and getattr(serial.Serial, '__module__', '') == 'serial.serialwin32')
             constructor = IsolatedSerial if isolated else serial.Serial
             self._serial = constructor(self._port, self._baudrate, timeout=0.01)
+            if not isolated:
+                self._serial.write_timeout = 3
             # Opening the Windows worker/serial handle can take time. Recheck
             # before clearing buffers, starting a reader or sending sync/stop.
             require_runtime_port(self._port)
@@ -175,6 +184,7 @@ class MKLinkSerialBridge:
                     self.close()
                     return False
                 self._ctx.state = DeviceState.READY
+                self._mux_marker.unlink(missing_ok=True)
                 if self._is_known_command_port() or self._verify_identity():
                     return True
                 self.close()
@@ -184,6 +194,25 @@ class MKLinkSerialBridge:
             self._serial.reset_input_buffer()
             with self._buffer_lock:
                 self._response_buffer.clear()
+
+        # A durable mode marker survives a killed backend. Only a session we
+        # previously put into framed mode is probed with binary recovery; never
+        # guess binary framing on an arbitrary serial assistant/legacy stream.
+        if recover_stream and self._mux_marker.exists():
+            from mklink.mux import MuxTransport
+            transport = self._mux = MuxTransport(self._serial.write, self._cmd_lock)
+            try:
+                transport.request(1)  # Fresh epoch, no claim or target operation.
+                transport.close()    # Explicit EXIT, never replay the old request.
+                self._mux = None
+                self._mux_marker.unlink(missing_ok=True)
+                self._ctx.state = DeviceState.READY
+                if self._verify_identity():
+                    return True
+            except Exception as exc:
+                transport.fail(exc)
+            self.close()
+            return False
 
         if not recover_stream:
             self.close()
@@ -281,6 +310,14 @@ class MKLinkSerialBridge:
 
     def close(self):
         """关闭串口连接并释放文件锁。"""
+        if self._mux is not None:
+            try:
+                self._mux.close()
+                if self._mux._error is None:
+                    self._mux_marker.unlink(missing_ok=True)
+            except Exception:
+                pass  # Never replay an unknown outcome during cleanup.
+            self._mux = None
         self._running = False
         self._prompt_event.set()  # 唤醒可能等待的线程
         if self._reader_thread and self._reader_thread.is_alive():
@@ -305,6 +342,43 @@ class MKLinkSerialBridge:
     # ------------------------------------------------------------------
     # 命令发送
     # ------------------------------------------------------------------
+    def supports_multiplex(self) -> bool:
+        if self._mux_supported is None:
+            response = self.send_command('cmd.get_version()', timeout=3)
+            self._mux_supported = any(line.strip() == 'MUX_TARGET=1' for line in response.splitlines())
+        return self._mux_supported
+
+    def enable_multiplex(self):
+        from mklink.mux import MuxTransport
+        with self._cmd_lock:
+            if self._mux is not None:
+                self._mux._check()
+                return self._mux
+            if not self.supports_multiplex():
+                return None
+            transport = MuxTransport(self._serial.write, self._cmd_lock)
+            self._mux = transport  # The existing reader changes decoder before entry.
+            try:
+                self._mux_marker.parent.mkdir(parents=True, exist_ok=True)
+                self._mux_marker.write_text('MLX1', encoding='ascii')
+                self._serial.write(b'~MKLINK-MUX1\n')
+                transport.handshake()
+                transport.request(0x13)  # Non-resetting SWD attach.
+            except Exception as exc:
+                transport.fail(exc)
+                raise  # No text-mode fallback after a failed protocol transition.
+            return transport
+
+    def _leave_multiplex(self):
+        if self._mux is None:
+            return
+        if self._mux.sampling:
+            raise RuntimeError('This command requires legacy mode; explicitly stop RTT and SuperWatch first')
+        with self._mux._commands:
+            self._mux.close()
+            self._mux = None
+            self._mux_marker.unlink(missing_ok=True)
+
     def send_command(
         self,
         cmd: str,
@@ -316,6 +390,7 @@ class MKLinkSerialBridge:
     ) -> str:
         """发送 PikaScript 命令，等待 >>> 提示符后返回完整响应。"""
         with self._cmd_lock:
+            self._leave_multiplex()
             if self._transport_error is not None:
                 self._ctx.state = DeviceState.ERROR
                 raise ConnectionError(
@@ -392,6 +467,7 @@ class MKLinkSerialBridge:
         immediately close the bridge and release its process/HIL locks.
         """
         with self._cmd_lock:
+            self._leave_multiplex()
             if self._ctx.state not in (DeviceState.READY, DeviceState.BUSY):
                 raise ConnectionError(
                     f"设备未就绪，当前状态: {self._ctx.state.value}。请先连接设备。"
@@ -498,6 +574,9 @@ class MKLinkSerialBridge:
     # ------------------------------------------------------------------
     @property
     def state(self) -> DeviceState:
+        mux = self._mux
+        if mux is not None and mux._error is not None:
+            self._ctx.state = DeviceState.ERROR
         return self._ctx.state
 
     @property
@@ -765,6 +844,8 @@ class MKLinkSerialBridge:
 
     def _write_raw(self, data: bytes) -> None:
         """直接写入串口（用于 RTT DownBuffer 等场景）。"""
+        if self._mux is not None:
+            raise RuntimeError('Raw writes are forbidden in multiplex mode')
         if self._transport_error is not None:
             self._ctx.state = DeviceState.ERROR
             raise ConnectionError("串口连接已失效，无法写入原始数据") from (
@@ -786,6 +867,9 @@ class MKLinkSerialBridge:
 
         while self._running:
             try:
+                mux = self._mux
+                if mux is not None:
+                    mux.tick()
                 # ``Serial.read(4096)`` waits for all 4096 bytes or the 10 ms
                 # timeout. Read exactly what the driver already has; when it
                 # is empty, block for one byte and drain the remainder on the
@@ -794,13 +878,21 @@ class MKLinkSerialBridge:
                 waiting = self._serial.in_waiting
                 read_size = min(65536, waiting) if isinstance(waiting, int) and waiting > 0 else 1
                 data = self._serial.read(read_size)
-            except serial.SerialException as error:
+            except (serial.SerialException, ConnectionError, OSError) as error:
                 if self._running:
+                    mux = self._mux
+                    if mux is not None:
+                        mux.fail(error)
                     self._transport_error = error
                     self._ctx.state = DeviceState.ERROR
                     self._prompt_event.set()  # 唤醒等待者
                 break
 
+            mux = self._mux
+            if mux is not None:
+                if data:
+                    mux.feed(data)
+                continue
             if not data:
                 continue
 
