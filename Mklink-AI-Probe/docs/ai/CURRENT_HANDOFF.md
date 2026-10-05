@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:17:06.7602025+00:00`
+- 更新时间：`2026-10-05T22:25:34.6729711+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：SuperWatch start创建线程前统一容量校验，修复符号重绑定后先成功再异步停流。构造目录32→64位数组测试验证同步restore错误/停止、保留新目录/类型、无MUX启动IO及可缩小；258相关回归通过。启动修改后STM32 scalar-capacity HIL重跑通过，后台已退出。下一步GUI实际反馈及全矩阵，重绑定类型变化只算自动化不算实体；最终安装未做，长期测试暂停。
+- 当前任务：Web GUI真实Chrome/STM32容量恢复通过：480元素开始采样，另数组1921B实际400且toast显示容量错误，原480pts仍在线；同弹窗改16B返回200继续采样，停止/关闭浏览器及keeper后后台退出。后端03cd79ba前端88de0f38002c。新发现搜索结果缺数组快照入口，下一步修复；无生产修改。本地watch-gui-audit.stop已存在，后续脚本应新建名字或显式处理，勿直接重跑旧keeper。BrowserAct会话已关闭。
 - 状态：`active`
 
 ## 里程碑
