@@ -80,3 +80,11 @@
 GUI 全套基线：85 文件、855 测试全部通过（静态脚本只统计 src 中的83文件，另有目录外测试）；这是自动化基线，不替代矩阵中的逐项浏览器/硬件验收。
 
 固件应用层首版 57ac0ba 已推送：统一目标仲裁尊重 DAP 排队请求、响应和显式会话，其他调用者等待时释放锁，DAP 等待采用优先级继承。SES 编译、SWD布局检查、生产仲裁C测试、MUX调度和八路缓冲区模拟测试通过。未刷入硬件；完整会话生命周期、下载后旧RTT偏移清理与实际DAP下载/仿真仍待完成。参见固件 docs/dap-priority-audit.md。SDK/Arm2D/MicroBoot没有随本轮修改。
+
+### 八通道目标程序与首轮实体测试
+
+STM32 测试 APP 改为八个相同的 RTT 上/下行通道，暂停目标端 RTT 控制台和 SystemView 钩子对通道的消费。Keil 编译通过；APP ELF 加载起址纠正为 0x08005000，通过 CMSIS-DAP 按扇区下载、逐字节读回。下载前后 20 KiB Bootloader 区内容完全一致。APP 使用显式 MSP/PC/VTOR 启动，尚不证明现存 Bootloader 自动跳转行为。
+
+实体首测八路上行均有数据，每路下行256字节（含00/FF）全部接收且逐路滚动哈希一致；同时取得211组Watch样本。这是底层适配器真机证据，尚不覆盖GUI、CLI、MCP或全部边界。第一次下行通道1被目标SystemView钩子消费；测试程序去掉冲突消费者后通过。去钩子时曾误用启用HOOKLIST的初始化接口导致目标HardFault，已修复并重新编译/下载验证，不是固件协议问题。
+
+真实DAP并发测试中，暂停/单步/继续、CDC ECHO可用、MUX目标请求返回busy、RTT/Watch明确失效均通过；断开DAP后直接重启采集返回status5，**恢复尚未通过**。当前仲裁只使AP缓存失效，DAP断开后物理SWD连接可能需重新attach，下一步定位并补恢复路径。详细本地证据：rtt8-app-flash.json、rtt8-first-hil.json、rtt8-dap-debug-hil.py。后者失败，未生成成功JSON。
