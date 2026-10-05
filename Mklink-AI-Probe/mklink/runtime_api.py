@@ -590,8 +590,11 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
             raise HTTPException(422, "Unsupported shared capability; no direct CDC fallback")
         session = control.validate_session(session_id, target=capability not in UART_CAPABILITIES)
         arguments = body.get("arguments", {})
-        if not isinstance(arguments, dict) or len(json.dumps(arguments)) > 16384:
-            raise HTTPException(422, "Arguments must be an object of at most 16 KiB")
+        # Flush carries up to 12 KiB as hex (optionally space-separated), plus
+        # eight region headers. Its decoded write bounds remain enforced below.
+        argument_limit = 48 * 1024 if capability == 'flush_memory' else 16 * 1024
+        if not isinstance(arguments, dict) or len(json.dumps(arguments)) > argument_limit:
+            raise HTTPException(422, f"Arguments must be an object of at most {argument_limit // 1024} KiB")
         arguments = validate_arguments(capability, arguments)
         stream, action = LIFECYCLE_CAPABILITIES.get(capability, (None, None))
         if action == 'start':

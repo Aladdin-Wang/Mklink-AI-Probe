@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T20:24:56.6118085+00:00`
+- 更新时间：`2026-10-05T20:30:15.5362750+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：已统一有限capture/measure的HTTP断连和会话租约合作取消，ASGI直接receive避免轮询漏断连。83回归通过；STM32真实无会话TCP断开capture0.123秒/measure0.134秒释放，测量CLI强退4.846秒释放，存活SDK恢复、后台退出。
+- 当前任务：已修Flush12KiB解码边界被共享16KiB JSON误拒绝：仅Flush参数48KiB，解码/区域/地址限制不变。56回归通过；STM32 SDK4KiB、真实MCP八区域、CLI96字节四批及非法请求无写入通过，专用数组全部恢复、后台退出。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 推进Flush当前双板候选与所有入口边界；继续快照/其他采样取消、浏览器/远程代理断连及完整矩阵，最终安装Skill。有限capture/measure真实TCP与CLI租约取消已通过，不能扩大为全部GUI和所有采样通过。核对CI。
+1. 继续HPM Flush、12KiB整块实体容量和GUI入口/传输异常矩阵；必要时扩大专用目标fixture并保持STM32 Boot边界。推进其余全功能矩阵及最终安装Skill。核对新提交CI，a776e784反馈成功/shared仍queued。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

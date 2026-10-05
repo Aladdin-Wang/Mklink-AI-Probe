@@ -381,7 +381,8 @@ def build_server():
         Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
         plus optional profile/auto_reply_rules, executed once by the backend. serial_status.automation
         reports the validated profile/rules; borrowers subscribe with {} and compare explicit settings,
-        never replace them. Shared arguments including automation remain limited to 16 KiB.
+        never replace them. Shared arguments including automation remain limited to 16 KiB;
+        flush_memory allows 48 KiB of JSON for at most 12 KiB of decoded writes.
         serial_status also returns session/latest_frames, one parsed RX snapshot per port from
         the backend parser: per-port seq, timestamp, size, a 256-byte hex_preview/truncated flag,
         crc_valid and fields (value/raw/unit). This is latest state, not lossless frame history.

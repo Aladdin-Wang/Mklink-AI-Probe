@@ -484,3 +484,13 @@ CLI原来直接Path.write_bytes，会先截断既有导出文件，随后磁盘�
 测量CLI异常退出测试首次误带不支持的--json，命令未进入采集，未计成功。纠正后measure-client-exit-valid-cli-hil：15秒测量期间终止本测试CLI，约4.846秒资源释放，存活SDK读取和小块MUX恢复、最后后台退出。既有有限Dump的租约路径仍通过相关回归。无目标Flash/电压及固件变化。
 
 范围仍明确：仅有限流capture/measure加入合作取消；传统多次快照及其他采样接口、浏览器交互和远程代理断连语义继续验收。取消不强杀工作线程，单次阻塞IO/stop仍有自身超时，不承诺任何故障下的硬释放上界。下一阶段推进Flush与其余完整功能矩阵。
+
+### Flush 共享参数容量修复与当前候选真机回归
+
+审计发现Flush解码上限12KiB与/_runtime/call通用16KiB JSON参数上限不一致：正常12KiB数据的HEX编码已超过24KiB，被共享入口提前拒绝。仅flush_memory允许48KiB JSON参数，以容纳12KiB含空格HEX及八区域头；其余能力仍16KiB。解码长度12288、区域数8、地址边界及禁止重叠的既有校验完全保留，不增加写入重试。MCP说明同步。
+
+五项新共享入口回归包括12KiB紧凑/空格HEX成功（三次4KiB校验）、12289字节拒绝、过大JSON拒绝、其他能力仍拒绝超16KiB；与Flush/共享运行时共56项通过。首次测试复用不完整设备fixture执行attach导致current_mcu缺失，未到容量入口；改为建立真实Session并测试完整call路由后通过，没有改生产attach。12KiB是当前自动化边界证据，尚不称整块真机通过。
+
+flush-current-candidate-hil在现有STM32专用mklink_benchmark_words符号解析出的4096字节数组内测试：SDK a5填充单批4096字节并完整读回，真实stdio MCP八个非对齐区域（二批，共40字节，含00/FF/80）逐区校验，真实CLI96个非重复字节按30/30/30/6四批正确写入。12289字节、九区域和重叠请求均拒绝，每次拒绝后数组完整4096字节与拒绝前一致。finally通过既有Flush分批恢复全部原值并校验，原始SHA256 61e1679eac869a152e6eccec16d4cf37ccfe137bf0253bc4cff5e1b8d9ac67bd，所有客户端关闭后后台退出。
+
+本轮未写Flash/Bootloader、电压或升级固件；HPM Flush、12KiB整块实体边界、GUI入口及现场传输异常仍待验证。已有失败即停止后续批次、未知结果不重放保持相关自动化覆盖。远端a776e784反馈检查已成功，共享运行时检查仍queued；不是本轮新提交CI结果。

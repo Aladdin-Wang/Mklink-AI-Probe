@@ -14,6 +14,45 @@ from mklink.runtime import RuntimeClient, RuntimeErrorResponse
 from test_runtime_memory import batch  # Existing real runtime/API fixture.
 
 
+
+def _flush_session(batch):
+    from mklink.runtime_api import Session
+    _,state,device,control,_=batch
+    control.sessions['flush']=Session(state['project_root'], device.axf_status.get('axf_path'),
+                                     symbol_version=control.symbol_version())
+    return 'flush'
+
+
+@pytest.mark.parametrize('spaced', [False, True])
+def test_shared_envelope_accepts_full_decoded_flush_capacity(batch, spaced):
+    from test_shared_runtime import call
+    client,_,device,_,_=batch
+    device._bridge.send_command=Mock(return_value='')
+    device.read_memory=Mock(side_effect=lambda address,size: b'\xa5'*size)
+    data=('a5 ' if spaced else 'a5')*12288
+    response=call(client,_flush_session(batch),'flush_memory',{'writes':[{'address':0x20000000,'data_hex':data}],'verify':True})
+    assert response.status_code==200,response.text
+    assert response.json()['ok'] and response.json()['verified']
+    assert response.json()['total_bytes']==12288
+    device._bridge.send_command.assert_called_once()
+    assert device.read_memory.call_count==3
+
+
+@pytest.mark.parametrize('capability,args', [
+    ('flush_memory', {'writes':[{'address':0,'data_hex':'aa'*12289}]}),
+    ('flush_memory', {'writes':[{'address':0,'data_hex':' '*50000}]}),
+    ('read_memory', {'address':0,'size':4,'padding':'x'*17000}),
+])
+def test_shared_envelope_rejects_excess_without_io(batch,capability,args):
+    from test_shared_runtime import call
+    client,_,device,_,_=batch
+    device._bridge.send_command=Mock()
+    response=call(client,_flush_session(batch),capability,args)
+    assert response.status_code==422,response.text
+    device._bridge.send_command.assert_not_called()
+    device.read_memory.assert_not_called()
+
+
 @pytest.mark.parametrize('writes', [None, [], [{'address':0, 'data_hex':'00'}]*9,
     [{'address':True,'data_hex':'00'}], [{'address':1.5,'data_hex':'00'}],
     [{'address':'1','data_hex':'00'}], [{'address':0xffffffff,'data_hex':'0011'}],
