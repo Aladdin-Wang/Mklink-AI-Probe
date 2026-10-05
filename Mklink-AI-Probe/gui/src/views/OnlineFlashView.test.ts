@@ -1533,12 +1533,12 @@ describe('online flash task workspace behavior', () => {
     wrapper.unmount()
   })
 
-  it('uses an HPM board and starts ROM programming without sector geometry', async () => {
+  it.each(['bin', 'hex'])('starts HPM %s ROM programming without sector geometry', async (format) => {
     const fallback = viewFetch([hpmTarget])
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
       if (String(input).endsWith('/images/inspect')) {
         return new Response(JSON.stringify({
-          image_id: 'hpm-image', file_name: 'firmware.bin', format: 'bin', size: 32,
+          image_id: 'hpm-image', file_name: `firmware.${format}`, format, size: 32,
           sha256: 'abc123', start: 0x80000400, end: 0x80000420,
           segments: [{ start: 0x80000400, end: 0x80000420 }], base_address: 0x80000400,
           sector_operations_available: false, sectors: [],
@@ -1552,9 +1552,13 @@ describe('online flash task workspace behavior', () => {
 
     expect(wrapper.get('[data-testid="hpm-board"]').element).toHaveProperty('value', 'hpm5300evk')
     expect(wrapper.text()).toContain('内置 ROM API')
-    await chooseFirmware(wrapper)
-    expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
-    await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    await chooseFirmware(wrapper, `firmware.${format}`)
+    if (format === 'bin') {
+      expect(wrapper.get<HTMLInputElement>('[data-testid="bin-address-dialog-input"]').element.value).toBe('0x80000400')
+      await wrapper.get('[data-testid="confirm-bin-address"]').trigger('click')
+    } else {
+      expect(wrapper.find('[data-testid="bin-address-dialog-input"]').exists()).toBe(false)
+    }
     await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
     await wrapper.get('[data-testid="start-job"]').trigger('click')
     await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/jobs'))).toBe(true))
@@ -1562,6 +1566,7 @@ describe('online flash task workspace behavior', () => {
     const body = JSON.parse(String(call?.[1]?.body))
     expect(body.board).toBe('hpm5300evk')
     expect(body.sector_addresses).toEqual([])
+    expect(body.base_address).toBe(format === 'bin' ? 0x80000400 : null)
     wrapper.unmount()
   })
 

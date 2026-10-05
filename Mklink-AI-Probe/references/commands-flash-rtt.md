@@ -94,7 +94,7 @@ Keil 工程默认先调用 `UV4.exe -b <project> -t <target>` 编译，再调用
 2. 已运行 `project-init`（或 `.mklink/` 配置已存在）
 3. HEX 文件已编译生成
 
-自动解析 FLM 时依次使用发布包内置 Pack、发布包内置 DAPLink FLM、已安装 Pack、已登记的自定义 FLM。用户在命令或界面显式选择的算法覆盖自动顺序。HPM 目标始终使用 ROM API/BIN，禁止加载 FLM。
+自动解析 FLM 时依次使用发布包内置 Pack、发布包内置 DAPLink FLM、已安装 Pack、已登记的自定义 FLM。用户在命令或界面显式选择的算法覆盖自动顺序。HPM 目标始终使用 ROM API，禁止加载 FLM。
 
 ### RTT 调试
 
@@ -219,7 +219,7 @@ python -m mklink rtt --visualize --parser csv --csv-headers "counter,adc,sensor"
 python -m mklink rtt --visualize --port-http 8888 --no-browser
 ```
 
-### HPMicro BIN 下载
+### HPMicro BIN / HEX 下载
 
 HPM SDK 工程会走设备端 `hpm.program()` 下载路径。HPM 型号不使用 FLM，也不需要 Pack；算法发现必须直接返回空。`project-init` 识别到 HPM board 后，会把 `hpm_flash_cfg` 写入 `project_info.json`；手动配置时必须使用 4 个参数：
 
@@ -240,7 +240,9 @@ flash(
 )
 ```
 
-只支持 BIN；未提供工程配置时必须显式传 `base_address`。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得安装 Pack 或加载 FLM。
+BIN 未提供工程配置时必须显式传 `base_address`。新版 V4 固件支持 HEX：把 `firmware` 改为 HEX 文件，省略 `base_address`，数据使用文件内绝对地址。工具复用解析器校验并规范化文件，使用独立 `hpm.program_hex` 入口；旧固件拒绝，不得改用原始 `hpm.program` 绕过检查。`board` 未知时改传四字 `hpm_flash_cfg`。成功结果包含 `algorithm_source: "hpm-rom-api"`，不得安装 Pack 或加载 FLM。
+
+HEX 保留未覆盖的完整扇区；被覆盖扇区内未指定的字节会被擦除，不承诺保留这些空隙。HPM BIN/HEX 烧录期间不要写入下载器 U 盘，固件会拒绝并发磁盘写入。脱机 HEX 同样要求新版 V4，脚本会在整组烧录前检查能力。
 
 XPI 基址按芯片族选择：
 - `0xf3000000U`: HPM5300/HPM5301/HPM5E/HPM6E/HPM6P/HPM6800

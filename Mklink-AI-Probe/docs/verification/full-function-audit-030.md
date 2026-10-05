@@ -148,3 +148,11 @@ MKLinkFlash.burn_hpm_hex复用prepare_hpm_hex，完整解析后探测无副作�
 HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边界，在线verify按真实稀疏地址分块读取，空洞不展开，进度以有效数据量计算。OfflineFlashView允许HEX且说明绝对地址、新V4固件要求及扇区空隙擦除语义。后端/API/HEX相关264项通过（API测试使用实际ImageInspector），在线/脱机GUI142项通过。
 
 生产HpmRomBackend在真实HPM6E完成51244字节HEX烧录约5.68秒、独立二进制回读校验约1.01秒。主机deploy_offline_bundle生成并复制规范HEX和真实Pika脚本，load.offline执行至loaded successfully及auto download finished，未走FLM或通用SWD复位。证据reports/hpm-online-backend-hex-hil.json及hpm-offline-hex-hil.json。这不是物理按键触发验收，也不是浏览器完整操作验收；真实浏览器、CLI/MCP/Skill、安装包及其他功能矩阵仍待推进。
+
+### HPM HEX CLI与真实Web在线验收
+
+真实CLI flash经共享后台返回success/verified=true，无重放，证据reports/hpm-cli-hex-hil.log。源码Skill及两份参考页更新HEX能力门禁、绝对地址、扇区空隙和烧录期间磁盘写入约束；Skill验证器及55项上下文边界测试通过，尚未替换本地安装版Skill。
+
+生产前端构建通过。真实IAB浏览器选择HPM6E80/hpm6e00evk、上传HEX发现原canStart仍强制isBin，已去除并将现有HPM用例参数化BIN/HEX，补检无BIN地址弹窗、可启动、请求base_address=null；116在线GUI测试通过。重新构建后真实浏览器完成HEX烧录/独立校验/复位/断开，显示100%及succeeded。前端HPM几何提示改为ROM容量检查，避免错误显示不能正常擦写。
+
+已知待修：任务日志PROGRAM/VERIFY字节数沿用HEX源文本大小107731，实际有效数据51244，比例正确但数量文案错误。GUI --no-browser未保持会话时可能在浏览器接入前5秒回收，旧提示仍称后台保持运行；验收以一个限时正常CLI伴随会话保持启动，关闭后已结束。脱机GUI完整操作、stdio MCP、安装及剩余矩阵未完成。

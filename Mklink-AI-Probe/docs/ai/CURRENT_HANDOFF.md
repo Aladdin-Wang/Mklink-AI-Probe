@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T15:07:09.2964687+00:00`
+- 更新时间：`2026-10-05T15:23:10.9032480+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：HPM在线后端/API和脱机GUI已接入HEX；共用decode_hpm_hex，稀疏verify按实际地址/有效数据进度。264后端/API及142GUI通过。生产HpmRomBackend烧录+独立回读真机、生成部署Pika脱机脚本真实执行通过。浏览器/CLI/MCP/Skill与安装仍待验收。
+- 当前任务：HPM HEX CLI共享烧录校验、真实IAB Web在线完整烧录/校验/复位/断开通过。修复OnlineFlashView canStart遗漏isBin限制，116GUI/55Skill边界测试和生产构建通过。公开Skill源码已同步但本地安装待整体更新。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 继续生产前端构建与真实浏览器HPM在线/脱机HEX验收；同步CLI/MCP/Skill BIN限定说明并逐入口验证。现在线上后端和load.offline真实脚本通过，证据reports/hpm-online-backend-hex-hil.json及hpm-offline-hex-hil.json；物理按键未测，不宣称浏览器通过。固件HPMf74af2a(文档tip233ee48)，STM32ba0a1cf，端口已释放。MSC并发拒绝、其他全功能矩阵继续推进。
+1. 下一步修复cmsis_dap/jobs.py PROGRAM/VERIFY按image.size(HEX文本大小)报字节数，应按有效segment字节；GUI --no-browser启动5秒空闲回收衔接及旧提示需收敛。然后脱机GUI完整操作、真实stdio MCP HEX及后续RTT8/全功能矩阵。Web真实在线任务成功已有页面观察证据；CLI证据reports/hpm-cli-hex-hil.log。生产gui/dist已随源码构建。HPM后台浏览器已关、限时伴随CLI已退出，应只读确认空闲释放。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

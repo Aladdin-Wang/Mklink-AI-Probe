@@ -930,6 +930,7 @@ function syncDashboardStatus(d) {
     nextState = d.running ? (renderPaused ? 'paused' : 'running') : 'stopped';
   }
   updateCollectionUI(nextState || 'stopped');
+  if (typeof d.error === 'string' && d.error) showControlError(d.error);
   if (IS_VOFA_MODE) updateSampleRateBadge(d.interval, d.actual_rate, false);
   else if (IS_SUPERWATCH_MODE && Number.isFinite(Number(d.actual_rate))) {
     var actualRate = Number(d.actual_rate);
