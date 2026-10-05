@@ -4,17 +4,17 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T00:15:21.2644586Z`
+- 更新时间：`2026-10-05T00:21:16.290384+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：142双实机预检发现在线枚举返回其他探针，修为按RuntimeControl绑定USB序列号过滤，缺失/lobby返回空，协议42。241相关回归通过；双V4真实connect/disconnect成功，完整双GUI恢复真实终态无POST，AI仍可读，HPM显式重新附加一次，双盘/profile不变且后台退出。长期暂停。
+- 当前任务：143收尾第一轮：删除旧MCP run/模块级服务器及旁路启动清理，只保留尚有能力测试引用的注册器和builder。活动MCP/stdio 20项通过。用户要求再2–3轮后暂停：下一轮短时综合回归与交接，必要时仅加一轮阻塞修复，然后暂停目标。
 - 状态：`in_progress`
 
 ## 里程碑
 
-- **0.3.0 专用CLI共享迁移** — `development`。每探针独立共享后台；GUI在线持久提交、页面恢复/未明禁重提和人工结束本地跟踪已实现，双窗口通知短测通过，真实双探针页面恢复仍待补。旧MCP剩余主体、安装版和其他验证缺口继续；长期暂停。
+- **0.3.0 专用CLI共享迁移** — `development`。每探针共享后台、GUI在线持久提交与双V4真实终态恢复已短测；旧MCP启动入口删除，注册器/测试迁移仍待收敛。按用户要求进入最后收尾，之后暂停；长期验证继续暂停。
 - **0.2.3正式版** — `complete`。三个发布渠道及更新索引通过；本地安装版和Skill为b0e0f61。
 - **2026-10-03固件** — `complete`。HPMLink/MicroLink V4.5.2、MicroLink V3.5.2、V2.8.1已三端发布；V2为RBL附件，不进入UF2自动更新索引。
 
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对142提交CI；141三项全通过。双探针真实终态GUI恢复已验证，运行中烧录/实际中断仍未覆盖。下一步继续旧MCP剩余主体及专用客户端迁移审查，避免无限叠加页面状态；保留真实安全/物理中断、NSIS UAC和跨主机缺口，长期暂停。
+2. 143后只剩一轮计划内收尾：相关短时回归、核对142/143及最终提交CI、工作区/进程清理并记录阶段报告；若本轮发现阻塞仅允许追加一轮。随后按用户要求将目标置paused并停止，等待通知。剩余旧MCP注册器及专用客户端、安全/物理中断、NSIS UAC、跨主机及长期验证保留待办，不无限扩展。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

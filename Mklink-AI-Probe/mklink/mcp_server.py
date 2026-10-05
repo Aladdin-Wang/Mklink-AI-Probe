@@ -7,7 +7,8 @@ Architecture
 Legacy exclusive implementation retained while its remaining capabilities
 are migrated. Holds a single ``Device`` singleton. This is NOT the
 ``mklink mcp`` entry point; that command uses ``runtime_mcp`` and the shared
-backend. Do not run this legacy implementation alongside a shared owner.
+backend. The obsolete stdio runner has been removed. Registration helpers
+and the test builder remain until their capability tests are migrated.
 
 This is the **能力/管道 (capability/plumbing)** layer of the mklink plugin:
 
@@ -30,8 +31,6 @@ from functools import wraps
 import logging
 import threading
 from typing import Any, Iterator
-
-from mklink.mcp_stdio import isolate_stdio_protocol
 
 from pydantic import StrictInt, StrictStr
 
@@ -1665,49 +1664,4 @@ def build_server() -> Any:
     return mcp
 
 
-# Module-level server instance for direct invocation.
-mcp: Any = None
-
-
-def run() -> None:
-    """Legacy exclusive runner, retained for migration tests and old embedders.
-
-    Uses stdio transport. MUST NOT print to stdout — that stream carries the
-    JSON-RPC protocol. Diagnostic output goes to stderr via ``logging``.
-    """
-    global mcp
-    if mcp is None:
-        mcp = build_server()
-    stop_mcp_stream_sidecar = None
-    try:
-        from mklink.mcp_stream_bridge import (
-            start_mcp_stream_sidecar,
-            stop_mcp_stream_sidecar,
-        )
-
-        start_mcp_stream_sidecar(wait_timeout=0.75)
-    except Exception:
-        # Observation is optional and must never prevent the MCP owner from
-        # serving device tools. Avoid logging on the stdio protocol channel.
-        pass
-    with isolate_stdio_protocol():
-        try:
-            mcp.run(transport="stdio")
-        finally:
-            try:
-                _reset_device()
-            finally:
-                if stop_mcp_stream_sidecar is not None:
-                    try:
-                        stop_mcp_stream_sidecar(timeout=0.5)
-                    except Exception:
-                        pass
-                try:
-                    from mklink.observe_bridge import shutdown_process_observation
-
-                    shutdown_process_observation(timeout=0.5)
-                except Exception:
-                    pass
-
-
-__all__ = ["build_server", "run"]
+__all__ = ["build_server"]
