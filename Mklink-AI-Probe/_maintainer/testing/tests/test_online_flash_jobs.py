@@ -420,8 +420,8 @@ class BlockingAcquireResourceManager(ResourceManager):
         self.acquire_started = threading.Event()
         self.allow_acquire_return = threading.Event()
 
-    def acquire(self, *args, **kwargs):
-        lease = super().acquire(*args, **kwargs)
+    def acquire_many(self, *args, **kwargs):
+        lease = super().acquire_many(*args, **kwargs)
         self.acquire_started.set()
         assert self.allow_acquire_return.wait(2)
         return lease
@@ -443,9 +443,9 @@ class CountingResourceManager(ResourceManager):
         super().__init__()
         self.acquire_calls = 0
 
-    def acquire(self, *args, **kwargs):
+    def acquire_many(self, *args, **kwargs):
         self.acquire_calls += 1
-        return super().acquire(*args, **kwargs)
+        return super().acquire_many(*args, **kwargs)
 
 
 class FailingSubmitExecutor:
@@ -830,6 +830,7 @@ def test_stop_after_worker_claim_releases_without_provider_or_backend_factory():
     manager.shutdown()
     assert provider_calls == []
     assert factory_calls == []
+    assert resources.get_status() == {}
 
 
 def test_stop_before_worker_claim_has_no_external_side_effects():

@@ -66,3 +66,9 @@
 基线执行终态：4019 passed、26 failed、4 errors、3 skipped，427.93 秒。26 失败中，21 项涉及脱机安全白名单/本地选项算法资源，2 项涉及烧录队列取消与资源管理器断言，2 项为 RTT 写入测试旧签名，1 项为远程文档占位符。4 个打包环境错误均在新复制源树中缺少 builtin_flm manifest，不能记为安装通过。
 
 首批修复 RTT 测试的 channel 参数契约，并增加 None 及 0–7 每路的精确二进制发送路由断言；统一远程文档主机占位符。两个完整相关测试文件共 121 passed。此证据证明 API 路由及文档契约，不证明实体八路收发。剩余 23 项失败及 4 个环境错误继续排查，不降低白名单约束。
+
+### 第三轮基线收敛
+
+烧录取消测试原本覆写 ResourceManager.acquire，但运行代码已使用原子 acquire_many。更新两个测试替身至真实调用点，并新增停止后的全部租约清空断言；同时合并 HPM/ARM 分支重复的 acquire_many 调用。完整 test_online_flash_jobs.py：64 passed。
+
+设置既有 MKLINK_BUILTIN_FLM_ROOT 后，完整 test_offline_download.py：88 passed，原 21 项失败消失；未改算法或白名单。构建存储文档已补充隔离 worktree 的资源前置条件，避免再次把资源缺失误报为产品回归。远程独立包四个环境错误正在以同一资源配置重新构建，尚无通过结论。

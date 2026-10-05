@@ -361,19 +361,12 @@ class OnlineFlashJobManager:
                     or job.request.reset_mode == "power-cycle"
                 ):
                     resources.append(ResourceGroup.MKLINK_BRIDGE)
-                    self._resource_manager.acquire_many(
-                        resources,
-                        owner,
-                        preempt=job.request.preempt_ai,
-                        preempt_user_dashboard=True,
-                    )
-                else:
-                    self._resource_manager.acquire_many(
-                        resources,
-                        owner,
-                        preempt=job.request.preempt_ai,
-                        preempt_user_dashboard=True,
-                    )
+                self._resource_manager.acquire_many(
+                    resources,
+                    owner,
+                    preempt=job.request.preempt_ai,
+                    preempt_user_dashboard=True,
+                )
                 with self._condition:
                     cancelled_after_acquire = job.cancel_requested
 
