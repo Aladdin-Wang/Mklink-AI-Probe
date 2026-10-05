@@ -1,4 +1,5 @@
-export const DESKTOP_SETTINGS_STORAGE_KEY = 'mklink.desktop.settings.v1'
+import { REMOTE_WINDOW_ID } from './runtimeEndpoint'
+export const DESKTOP_SETTINGS_STORAGE_KEY = 'mklink.desktop.settings.v1' + (REMOTE_WINDOW_ID ? '.remote.' + REMOTE_WINDOW_ID : '')
 export const DESKTOP_SETTINGS_CHANGED_EVENT = 'mklink:desktop-settings-changed'
 export const DESKTOP_SETTINGS_VERSION = 1 as const
 export const MAX_SEND_HISTORY = 20

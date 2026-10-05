@@ -203,8 +203,10 @@ class SiteAgent:
         device_getter: Callable[[], Any | None] | None = None,
         device_reconnector: Callable[[AgentConfig], Any | None] | None = None,
         resource_manager: ResourceManager | None = None,
+        gui_bridge=None,
     ):
         self.config = config
+        self._gui_bridge = gui_bridge
         self._device_factory = device_factory
         self._capability_provider = capability_provider
         self._request_dispatcher = request_dispatcher
@@ -275,6 +277,8 @@ class SiteAgent:
                 raise AgentOperationError(
                     "Capability provider failed",
                 ) from None
+        if self._gui_bridge is not None:
+            capabilities['gui.bridge'] = Capability(available=True, version='1')
         return Handshake(
             protocol_version=PROTOCOL_VERSION,
             mklink_version=str(mklink_version),
@@ -545,6 +549,9 @@ class SiteAgent:
                 else:
                     if not authenticated:
                         raise AuthenticationError()
+                    if request.method == 'gui.tunnel' and self._gui_bridge is not None:
+                        await self._gui_bridge(websocket, request)
+                        return
                     response = result_envelope(await self._dispatch(request, client_id=client_id), request_id)
                 await websocket.send(json.dumps(response, separators=(",", ":")))
             except asyncio.TimeoutError:

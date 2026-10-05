@@ -38,7 +38,7 @@
           v-if="catalog.stale.value"
           class="btn btn-secondary"
           type="button"
-          :disabled="catalog.reparsing.value"
+          :disabled="IS_REMOTE || catalog.reparsing.value"
           @click="reparseSymbols"
         >
           {{ catalog.reparsing.value ? tr('解析中', 'Parsing') : tr('重新解析', 'Reparse') }}
@@ -120,6 +120,7 @@
 </template>
 
 <script setup lang="ts">
+import { IS_REMOTE } from '../../lib/runtimeEndpoint'
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { ChevronDown, ChevronRight, LoaderCircle } from '@lucide/vue'
 import { useSymbolsApi } from '../../composables/useDashboard'

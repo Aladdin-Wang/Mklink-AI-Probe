@@ -1,0 +1,17 @@
+import { afterEach, expect, it, vi } from 'vitest'
+afterEach(() => { history.replaceState({}, '', '/'); vi.resetModules() })
+it('keeps every remote request under its session even for an invalid selector', async () => {
+  history.replaceState({}, '', '/?remote=probe-session#/dashboard')
+  vi.resetModules()
+  const endpoint = await import('./runtimeEndpoint')
+  expect(endpoint.API_BASE).toBe('/_runtime/remote-windows/probe-session')
+  endpoint.applyBackendEndpoint({ port: 8767, instanceId: 'desktop' })
+  expect(endpoint.API_BASE).toBe('http://127.0.0.1:8767/_runtime/remote-windows/probe-session')
+  const settings = await import('./desktopSettings')
+  expect(settings.DESKTOP_SETTINGS_STORAGE_KEY).toContain('.remote.probe-session')
+  history.replaceState({}, '', '/?remote=#/dashboard')
+  vi.resetModules()
+  const invalid = await import('./runtimeEndpoint')
+  expect(invalid.IS_REMOTE).toBe(true)
+  expect(invalid.API_BASE).toBe('/_runtime/remote-windows/invalid')
+})

@@ -57,7 +57,7 @@
         <button
           v-if="!offlineMode" data-testid="systemview-recording" type="button"
           class="btn-clear sv-tool-btn sv-record-btn" :class="{ active: meta.recording }"
-          :disabled="recordingBusy || dash.state.value !== 'running'" @click="toggleRecording"
+          :disabled="IS_REMOTE || recordingBusy || dash.state.value !== 'running'" @click="toggleRecording"
           :title="meta.recording ? tr('停止保存并完成当前 JSONL 文件', 'Stop and finalize the current JSONL file') : tr('将后续事件实时保存为 JSONL', 'Save subsequent events to JSONL in real time')"
         >
           <Square v-if="meta.recording" :size="13" />
@@ -65,8 +65,8 @@
           <span>{{ meta.recording ? tr('停止保存', 'Stop Saving') : tr('实时保存', 'Record') }}</span>
         </button>
         <button class="btn-clear sv-tool-btn" @click="triggerImport">{{ tr('导入 JSONL', 'Import JSONL') }}</button>
-        <button class="btn-clear sv-tool-btn" :disabled="!currentJsonlPath" @click="exportLog(currentJsonlPath)">{{ tr('导出 JSONL', 'Export JSONL') }}</button>
-        <button class="btn-clear sv-tool-btn" :disabled="!currentSummaryPath" @click="exportLog(currentSummaryPath)">{{ tr('导出摘要', 'Export Summary') }}</button>
+        <button class="btn-clear sv-tool-btn" :disabled="IS_REMOTE || !currentJsonlPath" @click="exportLog(currentJsonlPath)">{{ tr('导出 JSONL', 'Export JSONL') }}</button>
+        <button class="btn-clear sv-tool-btn" :disabled="IS_REMOTE || !currentSummaryPath" @click="exportLog(currentSummaryPath)">{{ tr('导出摘要', 'Export Summary') }}</button>
         <label class="sv-window">
           {{ tr('窗口', 'Window') }}
           <select v-model.number="windowUs">
@@ -318,7 +318,7 @@ import { importSystemViewJsonl } from '../../lib/systemViewImport'
 import ControlToolbar from './ControlToolbar.vue'
 import SetupHint from './SetupHint.vue'
 import { language, tr } from '../../composables/useLanguage'
-import { API_BASE } from '../../lib/runtimeEndpoint'
+import { API_BASE, IS_REMOTE } from '../../lib/runtimeEndpoint'
 
 const props = defineProps<{ deviceConnected: boolean }>()
 

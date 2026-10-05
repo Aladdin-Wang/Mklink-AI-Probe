@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 43  # Adds isolated GUI sessions over negotiated remote services.
+PROTOCOL = 44  # Unified remote GUI transport with fixed backend identity.
 VERSION = "0.3.0"
 
 

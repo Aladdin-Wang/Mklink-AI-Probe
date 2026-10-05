@@ -1,9 +1,9 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { IS_REMOTE } from './lib/runtimeEndpoint'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/remote-dashboard/:windowId', name: 'remote-dashboard', component: () => import('./views/RemoteDashboardView.vue') },
     {
       path: '/',
       redirect: '/config',
@@ -40,5 +40,7 @@ const router = createRouter({
     },
   ],
 })
+
+router.beforeEach(to => IS_REMOTE && to.name !== 'dashboard' ? { name: 'dashboard' } : true)
 
 export default router

@@ -1,8 +1,9 @@
 <template>
   <div class="app-root">
+    <RemoteSessionBar v-if="IS_REMOTE" />
     <header class="app-header">
       <h1 class="app-title">MKLink</h1>
-      <nav v-if="currentTab !== 'remote-dashboard'" class="app-nav">
+      <nav class="app-nav">
         <button
           v-for="tab in tabs" :key="tab.key"
           :class="['nav-tab', { active: currentTab === tab.key }]"
@@ -56,11 +57,11 @@
           <Languages :size="15" aria-hidden="true" />
           <span>{{ language === 'zh' ? 'EN' : '中文' }}</span>
         </button>
-        <StatusBar v-if="currentTab !== 'remote-dashboard'" />
+        <StatusBar />
       </div>
     </header>
     <AppUpdateBanner
-      v-if="!updateDismissed"
+      v-if="!IS_REMOTE && !updateDismissed"
       :state="updateState"
       :version="updateVersion"
       :progress="updateProgress"
@@ -77,8 +78,8 @@
       </div>
       <button class="btn" data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
     </div>
-    <div class="app-main">
-      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa' && currentTab !== 'remote-dashboard'" v-show="currentTab === 'dashboard'" />
+    <div class="app-main" :inert="IS_REMOTE && backendState !== 'alive'">
+      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa'" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
@@ -100,7 +101,7 @@
     <footer class="app-footer">
       <span v-if="sharedRuntime" data-testid="shared-runtime-status"
         :title="tr('关闭窗口后后台和采集继续运行；需要释放下载器时先停止采集并断开设备。', 'The backend and acquisition continue after closing this window. Stop acquisition and disconnect to release the probe.')">
-        {{ currentTab === 'remote-dashboard' ? tr('远程会话 · 固定目标 · 不回退本地', 'Remote session · Fixed target · No local fallback') : tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
+        {{ IS_REMOTE ? tr('远程会话 · 固定目标 · 不回退本地', 'Remote session · Fixed target · No local fallback') : tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
       </span>
       <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
     </footer>
@@ -112,6 +113,8 @@
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Languages } from '@lucide/vue'
+import { IS_REMOTE } from './lib/runtimeEndpoint'
+import RemoteSessionBar from './components/RemoteSessionBar.vue'
 import StatusBar from './components/StatusBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import AppUpdateBanner from './components/AppUpdateBanner.vue'
@@ -164,13 +167,13 @@ const currentTab = computed(() => route.name as string)
 const dashboardVisited = ref(false)
 watch(currentTab, name => { if (name === 'dashboard') dashboardVisited.value = true }, { immediate: true })
 
-const tabs = computed(() => [
+const tabs = computed(() => (IS_REMOTE ? [{ key: 'dashboard', label: tr('仪表盘', 'Dashboard') }] : [
   { key: 'config', label: tr('配置', 'Config') },
   { key: 'dashboard', label: tr('仪表盘', 'Dashboard') },
   { key: 'offline-flash', label: tr('脱机烧录', 'Offline Flash') },
   { key: 'online-flash', label: tr('在线烧录', 'Online Flash') },
   { key: 'remote-service', label: tr('远程服务', 'Remote Service') },
-])
+]))
 
 function navigate(key: string) {
   // The legacy waveform script owns document-wide IDs; leave its dedicated page
@@ -188,7 +191,7 @@ watch(backendState, state => {
   initialBackendReady.value = true
   if (!statusPollingStarted) {
     statusPollingStarted = true
-    if (currentTab.value !== 'remote-dashboard') startStatusPolling(3000)
+    startStatusPolling(3000)
   }
 }, { immediate: true })
 

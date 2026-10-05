@@ -441,10 +441,11 @@ def install_runtime(app, info):
         return HTMLResponse("""<!doctype html><meta charset="utf-8"><title>MKLink Runtime</title>
 <p id="status">正在连接共享后台…</p><script>
 const requested = new URLSearchParams(location.search).get('page');
-const page = /^remote[/][A-Za-z0-9_-]{32}$/.test(requested || '') ? 'remote-dashboard/' + requested.slice(7) : requested === 'vofa' ? 'vofa' : requested === 'serial' ? 'dashboard?tab=serial' : 'config';
+const remote = /^remote[/][A-Za-z0-9_-]{32}$/.test(requested || '') ? requested.slice(7) : null;
+const page = remote ? 'dashboard' : requested === 'vofa' ? 'vofa' : requested === 'serial' ? 'dashboard?tab=serial' : 'config';
 const token = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token})})
-.then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace('/#/' + page)})
+.then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace((remote ? '/?remote=' + remote : '/') + '#/' + page)})
 .catch(e => document.getElementById('status').textContent = e.message);
 </script>""", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 

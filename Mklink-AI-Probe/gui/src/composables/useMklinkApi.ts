@@ -21,7 +21,7 @@ import type {
 } from '../types/mklink'
 import { toHexPayload } from '../lib/rttTransmit'
 import type { RttEncoding } from '../lib/desktopSettings'
-import { API_BASE } from '../lib/runtimeEndpoint'
+import { API_BASE, IS_REMOTE } from '../lib/runtimeEndpoint'
 import { sharedRuntime } from './useBackendHealth'
 import { trackSymbolSource } from '../lib/trackedSymbolSource'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
@@ -220,6 +220,8 @@ export function useMklinkApi() {
       deviceStatus.value = s
       return s
     } catch {
+      // The remote window is made inert by backend health; keep the last snapshot visible.
+      if (IS_REMOTE) return deviceStatus.value
       deviceStatus.value = {
         connected: false,
         state: 'disconnected',

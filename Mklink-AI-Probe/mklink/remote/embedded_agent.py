@@ -217,12 +217,14 @@ class EmbeddedSiteAgentController:
             ),
             ready_callback=ready,
         )
+        from mklink.remote.gui_bridge import GuiBridge
         self._agent = SiteAgent(
             config,
             device_factory=self._dispatcher.connect_target,
             capability_provider=self._dispatcher.capabilities,
             request_dispatcher=self._dispatcher.dispatch,
             client_closed=self._dispatcher.client_closed,
+            gui_bridge=GuiBridge(self.runtime_info),
         )
         self._stopping = False
         self._last_error = None

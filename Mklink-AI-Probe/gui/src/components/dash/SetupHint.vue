@@ -4,12 +4,12 @@
     <FileCode2 v-else-if="kind === 'symbols'" :size="15" aria-hidden="true" />
     <CircleAlert v-else-if="kind === 'error'" :size="15" aria-hidden="true" />
     <Info v-else :size="15" aria-hidden="true" />
-    <span class="setup-message">{{ message }}</span>
+    <span class="setup-message">{{ IS_REMOTE && (kind === 'device' || kind === 'symbols') ? tr('请在目标电脑连接设备并加载符号文件，再使用远程仪表盘。', 'Connect the probe and load symbols on the remote computer before using this dashboard.') : message }}</span>
     <button
       v-if="primaryLabel"
       type="button"
       class="btn btn-sm setup-primary"
-      :disabled="busy"
+      :disabled="busy || IS_REMOTE"
       @click="$emit('primary')"
     >
       <LoaderCircle v-if="busy" class="spinning" :size="14" aria-hidden="true" />
@@ -19,7 +19,7 @@
       v-if="secondaryLabel"
       type="button"
       class="setup-secondary"
-      :disabled="busy"
+      :disabled="busy || IS_REMOTE"
       @click="$emit('secondary')"
     >
       {{ secondaryLabel }}
@@ -28,6 +28,8 @@
 </template>
 
 <script setup lang="ts">
+import { IS_REMOTE } from '../../lib/runtimeEndpoint'
+import { tr } from '../../composables/useLanguage'
 import { CircleAlert, FileCode2, Info, LoaderCircle, Usb } from '@lucide/vue'
 
 withDefaults(defineProps<{

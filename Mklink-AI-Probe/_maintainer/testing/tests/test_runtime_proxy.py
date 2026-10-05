@@ -94,7 +94,7 @@ def test_remote_service_proxy_allowlist_preserves_internal_runtime_boundary():
                             ('POST','/_runtime/remote-service/stop'),
                             ('POST','/_runtime/remote-windows'),
                             ('GET','/_runtime/remote-windows/'+'a'*32),
-                            *[('POST','/_runtime/remote-windows/'+'a'*32+'/'+action) for action in ('call','close','open')]]:
+                            *[('POST','/_runtime/remote-windows/'+'a'*32+'/'+action) for action in ('close','open')]]:
             response=client.request(method,path,json={},headers=headers)
             assert response.status_code==200,response.text
             assert response.headers['access-control-allow-origin']==headers['Origin']

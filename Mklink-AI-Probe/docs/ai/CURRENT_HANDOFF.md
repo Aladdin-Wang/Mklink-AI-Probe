@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T02:36:22.615064+00:00`
+- 更新时间：`2026-10-05T03:08:56.005175+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：147第一阶段cd32f7e6已覆盖安装成功并同步Skill；三文件包内哈希一致。安装版真实Chrome远程表单/内存/RTT和桌面代理会话创建验证通过。用户要求后续复用完整现有GUI而非独立简化页，已确认统一设备会话和通信/流适配方向，尚未实现。持续审计和长期验证仍暂停。
+- 当前任务：148已将远程会话接入同一Dashboard，删除简化页及专用RPC映射；gui.bridge固定实例转发原HTTP/SSE/二进制流，协议44。109后端+76GUI及源码真机RTT/Memory通过，断线保留快照修复待最终安装补验。准备本地NSIS/Skill更新；持续审计和长期验证仍暂停。
 - 状态：`paused`
 
 ## 里程碑
@@ -29,7 +29,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议43，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议44，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。
@@ -42,7 +42,7 @@
 
 ## 下一动作
 
-1. 按用户反馈将远程设备接入同一套GUI：统一每窗口设备会话、HTTP/持续流适配和能力禁用；复用现有仪表盘，完成后移除简化远程页。此改造尚未实现。
+1. 148统一GUI已实施；完成本地安装/真实页面补验后收尾。远程烧录、文件/主机管理与未验面板留后续，长期验证仍暂停。
 2. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
 3. 恢复后先核对Git/草稿PR最新CI，再按144待办推进：旧MCP注册器与专用客户端迁移、补齐CI专项列表、真实运行中恢复/物理中断、安全与跨主机、NSIS安装升级验收。不得自动合并发布或改下载器固件/WinUSB。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

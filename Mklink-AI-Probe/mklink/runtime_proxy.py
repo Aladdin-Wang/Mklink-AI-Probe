@@ -31,7 +31,10 @@ REMOTE_SERVICE_METHODS = {
 def _remote_management_allowed(path, method):
     if method in REMOTE_SERVICE_METHODS.get(path, set()):
         return True
-    match = re.fullmatch(r'/_runtime/remote-windows/[A-Za-z0-9_-]{32}(/call|/close|/open)?', path)
+    if re.fullmatch(r'/_runtime/remote-windows/[A-Za-z0-9_-]{32}/api/.*', path):
+        from mklink.remote.gui_bridge import allowed
+        return allowed('/api/' + path.split('/api/', 1)[1], method)
+    match = re.fullmatch(r'/_runtime/remote-windows/[A-Za-z0-9_-]{32}(/close|/open)?', path)
     return bool(match and method == ('POST' if match.group(1) else 'GET'))
 
 
