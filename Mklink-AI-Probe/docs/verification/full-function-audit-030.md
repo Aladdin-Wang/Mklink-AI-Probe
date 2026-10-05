@@ -292,3 +292,12 @@ STM32侧f89a562，两次有限负载均完成八路Up数据及每路256字节Dow
 HPM侧单次升级，运行盘及新诊断接口在45秒等待窗口内恢复，报告hpm-memory-diag-upgrade.json。随后BIN下载、HEX坏末尾校验/超16MiB容量拒绝、同扇区多记录及跨扇区稀疏读回、跳过4KiB扇区保持均通过，结束恢复hello_world BIN。独立全量读回51244字节，SHA256与源BIN均为57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。此为现有设备端烧录函数实测，不替代新固件上的GUI/CLI/MCP逐入口验收。
 
 HPM RT堆used/peak保持10680，HEX后Pika console栈前缀1664/4096、DAP676/1024、main4264/6144。BIN脚本的内联采样插入未生效，未将其当内存证据；实际内存来自独立hpm-bin-memory-snapshot.json和hpm-hex-memory-snapshot.json。功能报告hpm-bin-memory-hil.json、hpm-hex-boundaries-f89a562-hil.json及hpm-final-readback-f89a562.json均通过。全部测试关闭串口、恢复目标镜像，没有为测试永久修改电源配置。仍缺全部功能峰值、系统/中断栈、MSC并发写与其他待验证矩阵，不削减堆栈，不启用长期soak。
+
+
+### 02f92bb6 完整 Python 回归与资源前置条件复核
+
+首轮未设置隔离工作树的 MKLINK_BUILTIN_FLM_ROOT：4137 passed、21 failed、4 errors、3 skipped，407.72秒。21项失败均涉及内置选项算法安全白名单，4个远程包夹具错误均缺少算法manifest。原因是本次执行漏配既有文档规定的资源前置条件，不通过修改白名单或跳过检查处理。原始证据full-python-02f92bb6.xml保留。
+
+对既有主工作区资源执行完整性校验，7059目标/2224算法通过；显式设置资源路径并保持生产及测试代码不变，重新运行整个_maintainer/testing/tests，最终4162 passed、3 skipped、44 warnings，640.83秒，退出0。证据full-python-02f92bb6-assets.xml。三项跳过为仓库本地目录资源检查（本轮采用外部现有资源路径）以及两项缺少hil_core.observe的真实观察桥；不能记为通过。44条为websockets弃用警告。独立远程包构建和生命周期自动化已通过，不替代NSIS安装或跨物理主机验收。包含测试链接的运行目录由构建包装器安全保留，未强删。
+
+只读审计发现RttChannelPanel.saveLog对saveBlobFile使用void而未处理拒绝，文件写入失败可能无界面反馈。该问题本轮尚未修改；下一轮补充通道独立错误、取消、重试、重复点击和采集不受影响的验证，再进行真实浏览器验收。发送历史当前由各面板独立内存维护，重新加载后的行为仍待验收。此次没有操作硬件或更新安装版/Skill，也没有据此标记全功能审计完成。

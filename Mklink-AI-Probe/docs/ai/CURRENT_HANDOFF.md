@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T17:54:16.6520967+00:00`
+- 更新时间：`2026-10-05T18:15:40.506044+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：两台V4均升级f89a562（固件e1f761e仅证据）。STM32八RTT+Watch下DAP强制APP擦写读回/boot保持和恢复通过；HPM BIN/HEX边界及恢复hello全51244字节SHA匹配通过。RT堆used/peak10680/12200稳定；DAP592、HPM Pika1664栈前缀，仅有限负载。各串口已关闭，主机安装/Skill未更新。
+- 当前任务：02f92bb6 完整 Python 回归：4162 passed、3 skipped、44 warnings，640.83秒。首轮漏配算法资源导致21失败/4夹具错误，配置并校验既有7059目标/2224算法后全量通过，未修改生产代码。RTT日志保存异步拒绝缺少界面反馈已发现未修复，下一轮优先补齐八路保存边界及真实浏览器验收。双板均f89a562；安装/Skill仍474ef405。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双 V4 分别连接 STM32F103 和 HPM6E80；STM32 运行 ba0a1cf、HPM 运行 f74af2a 应用固件。STM32 八路 RTT 上下行、SuperWatch、DAP 抢占及 APP 烧录保持 bootloader 已短测；HPM BIN/HEX 在线、CLI、MCP、脱机 GUI 已短测。目标测试 RAM 已恢复，长期验证暂停。
+- **state**：双 V4 分别连接 STM32F103 和 HPM6E80，均已运行 f89a562 应用固件。STM32 八路 RTT/Watch 下实体 DAP 强制 APP 擦写读回及 boot 保持、恢复通过；HPM 新固件 BIN/HEX 边界和 hello 全量读回通过。各入口 GUI/CLI/MCP 的历史证据与本轮设备函数证据分开记录；本轮主机回归未操作硬件。长期验证暂停。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 继续新固件上的GUI/CLI/MCP/远程入口验收，以及RTT八路保存/发送历史/慢客户端与MSC并发写等剩余全功能矩阵。双板有限烧录/堆栈测试已记录，系统/中断栈和全功能峰值未覆盖；最终更新安装/Skill，不自动合并发布。
+1. 优先修复 RTT 日志保存异步失败无界面反馈：通道独立错误、取消静默、进行中防重复、失败可重试且保留日志；补齐八路组件和真实浏览器保存/历史/慢客户端验收。继续其余全功能矩阵、HPM新固件各入口与MSC并发；最终更新安装/Skill，不自动合并发布。完整测试须显式配置既有算法资源路径，避免重现缺失。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
