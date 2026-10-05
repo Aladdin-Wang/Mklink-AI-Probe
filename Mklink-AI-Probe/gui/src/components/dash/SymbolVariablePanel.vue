@@ -473,12 +473,16 @@ const snapshotCount = ref('128')
 let searchExpansionSnapshot: Set<string> | null = null
 let searchRequest = 0
 
+const browseNodes = computed(() => [
+  ...catalog.browseRoots.value,
+  ...[...catalog.browseChildren.value.values()].flat(),
+])
 const tree = computed(() => {
   if (query.value.trim()) {
-    return buildSymbolTree(searchItems.value, catalog.containers.value)
+    return buildSymbolTree(searchItems.value, catalog.containers.value, browseNodes.value)
   }
   if (selectedOnly.value) {
-    return buildSymbolTree([...selectedDescriptors.value.values()])
+    return buildSymbolTree([...selectedDescriptors.value.values()], [], browseNodes.value)
   }
   return buildBrowseTree(catalog.browseRoots.value, catalog.browseChildren.value)
 })

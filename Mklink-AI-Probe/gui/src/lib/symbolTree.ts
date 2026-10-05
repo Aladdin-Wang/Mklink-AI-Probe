@@ -106,6 +106,7 @@ export function buildBrowseTree(
 export function buildSymbolTree(
   items: readonly SymbolDescriptor[],
   containers: readonly SymbolContainerDescriptor[] = [],
+  browseNodes: readonly SymbolBrowseNode[] = [],
 ): SymbolTreeNode[] {
   const roots: MutableSymbolTreeNode[] = []
   const rootIndex = new Map<string, MutableSymbolTreeNode>()
@@ -154,6 +155,18 @@ export function buildSymbolTree(
     })
   }
 
+  // Search descriptors describe leaves only. Retain authoritative container
+  // capabilities without adding unloaded or nonmatching children to results.
+  const browseByKey = new Map(browseNodes.map(node => [node.key, node]))
+  function attachBrowse(node: MutableSymbolTreeNode): void {
+    const browse = browseByKey.get(node.key)
+    if (browse && node.kind === 'branch' && browse.kind === 'branch') {
+      node.browse = browse
+      node.childCount = browse.child_count
+    }
+    node.children.forEach(attachBrowse)
+  }
+  roots.forEach(attachBrowse)
   return roots.map(finalizeNode)
 }
 
