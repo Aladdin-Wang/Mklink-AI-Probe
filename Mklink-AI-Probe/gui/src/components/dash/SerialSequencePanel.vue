@@ -1,7 +1,7 @@
 <template>
   <details class="serial-sequence" data-testid="serial-sequence">
     <summary>{{ tr('命令队列', 'Command sequence') }} · {{ port || '--' }} · {{ label(statuses[port]?.state || 'idle') }}</summary>
-    <p class="hint">{{ tr('队列由后台执行，关闭页面或断开 AI 后继续。停止串口或进入 YMODEM 会取消对应端口的队列。', 'The backend executes the sequence, even after the page or AI disconnects. Closing serial or entering YMODEM cancels that port’s sequence.') }}</p>
+    <p class="hint">{{ tr('队列由后台执行。还有其他客户端时可继续；全部退出后后台自动关闭并取消剩余队列。停止串口或进入 YMODEM 也会取消对应队列。', 'The backend executes the sequence while clients remain. When all clients leave, automatic shutdown cancels the remaining queue. Closing serial or entering YMODEM also cancels it.') }}</p>
     <p class="hint">{{ tr('下方编辑本窗口的待发送草稿；各端口实际运行状态见表格。', 'Edit this window’s draft below; the table shows each port’s actual execution state.') }}</p>
     <div v-for="(command, index) in commands" :key="index" class="command-row">
       <span>{{ index + 1 }}</span>

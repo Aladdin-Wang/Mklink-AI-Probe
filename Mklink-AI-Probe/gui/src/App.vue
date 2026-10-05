@@ -100,7 +100,7 @@
     </div>
     <footer class="app-footer">
       <span v-if="sharedRuntime" data-testid="shared-runtime-status"
-        :title="tr('关闭窗口后后台和采集继续运行；需要释放下载器时先停止采集并断开设备。', 'The backend and acquisition continue after closing this window. Stop acquisition and disconnect to release the probe.')">
+        :title="tr('还有其他客户端时后台继续运行；全部退出且无在途任务后约5秒自动停止采集并释放下载器。', 'The backend stays alive for other clients. About 5 seconds after all clients leave and pending work completes, it stops capture and releases the probe.')">
         {{ IS_REMOTE ? tr('远程会话 · 固定目标 · 不回退本地', 'Remote session · Fixed target · No local fallback') : tr('共享后台 · CDC · GUI / AI 共用连接', 'Shared backend · CDC · GUI / AI connection') }}
       </span>
       <VersionHistoryPopover :version="appVersion" :build-commit="buildCommit" />
