@@ -102,3 +102,9 @@ Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加�
 检查发现PyOcdBackend以前仅为Pack/FLM、security_family=stm32f103-rdp1和少数nRF内置目标启用算法前reset-and-halt；直接指定stm32f103rc而不带security_family时会跳过。已统一该Cortex-M后端的破坏性Flash操作前置状态，保留连接/只读不复位和一次算法准备复位的行为，删除按型号重复判断。整个test_online_flash_backend.py：137通过。
 
 真实PyOcdBackend（非单独FileProgrammer）使用内置stm32f103rc，解析测试HEX、program、verify通过。计数确认program前一次reset-and-halt、verify无额外复位，boot前20KiB保持不变；随后显式启动测试APP。证据：本地rtt8-production-backend-hil.json。该结果不外推所有支持芯片真机认证。
+
+### HPM HEX 基础实现（尚未接入烧录）
+
+新增hpm_image.prepare_hpm_hex，复用ImageInspector解析，完整验证后在调用方暂存目录原子替换规范HEX；排序并保留稀疏地址，不展开大BIN，数据记录最多128字节并切开64KiB边界。8项测试通过，包含同扇区不连续记录、逆序输入、地址边界、重叠/校验/EOF错误以及失败不覆盖旧文件。
+
+固件应用层837104e新增固定内存的规范HEX reader，严格长度、校验、EOF、错误锁定、XPI地址、32MiB数据及记录数量限制的C编译测试通过。现有子模块解析器只读审查，未修改。该模块尚未纳入固件烧录绑定/构建，不声称HPM HEX已可用；下一步完整预检、先合并擦除后写入校验、在线/脱机接入及真机。约定详见固件docs/hpm-hex-upgrade.md。

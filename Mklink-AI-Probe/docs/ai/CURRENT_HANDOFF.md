@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T13:47:11.229810+00:00`
+- 更新时间：`2026-10-05T13:59:07.243303+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：八路RTT/Watch与DAP调试及强制下载恢复实机通过；进一步统一PyOcdBackend内置算法下载前reset-and-halt，137后端测试及真实内置stm32f103rc HEX program/verify、一次复位、boot保持通过。HPM HEX尚未实现，下一步优先推进在线/脱机共用路径。
+- 当前任务：HPM HEX基础：主机hpm_image.py复用ImageInspector输出排序稀疏规范HEX（8测试通过），固件837104e添加固定内存应用解析器（C边界测试通过）。尚未接入烧录/构建，也未刷HPM下载器，功能不可宣称完成。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 无运行中测试或后台；STM32八路APP运行，HPM未改。HPM HEX不能逐段调用program_bin_flash（同扇区后段会擦掉前段）。优先实现统一有界镜像/扇区处理及固件应用绑定，复用ImageInspector校验；其后继续八路GUI/AI边界和全功能矩阵。
+1. 下一步优先接入HPM HEX：固件docs/hpm-hex-upgrade.md列出完整预检→合并覆盖扇区擦除→写入/校验，禁止逐段program_bin_flash。复用应用绑定初始化与BIN路径，增加能力声明及主机在线/脱机规范化调用。再升级HPM并真实HEX/BIN验证。当前无运行中测试/后台，STM32八路APP与固件ba0a1cf运行。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
