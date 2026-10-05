@@ -1904,3 +1904,42 @@ def test_unsupported_watch_add_preserves_valid_sampling_layout(kind, size):
     assert runtime.blocks is blocks
     assert runtime.blocks_version == version
     compile_frame_decoder(runtime.items, runtime.blocks)
+
+
+@pytest.mark.parametrize("scalar", [False, True])
+def test_array_snapshot_capacity_rejection_preserves_live_selection(tmp_path, scalar):
+    from mklink.dwarf_parser import DwarfInfo, DwarfVariable
+    from mklink.symbol_catalog import SymbolCatalog
+
+    axf = tmp_path / "capacity.axf"
+    axf.write_bytes(b"axf")
+    info = DwarfInfo(
+        base_types={1: ("uint32_t", 4)}, arrays={2: (1, 2048)},
+        variables={"samples": DwarfVariable(
+            "samples", 10, 2, 0x20000000, 2048, "uint32_t[]",
+        )},
+    )
+    catalog = SymbolCatalog.from_dwarf(
+        info, axf_path=str(axf), ram_ranges=[(0x20000000, 0x20010000)],
+    )
+    device = SimpleNamespace(
+        _dwarf_info=info, symbol_catalog=catalog, _project_root=str(tmp_path),
+        _port=None, _bridge=SimpleNamespace(_mux_supported=True),
+    )
+    manager = SuperWatchStreamManager()
+    manager.prepare(device)
+    if scalar:
+        manager._runtime.items.append(WatchItem("other", 0x20003000, "uint32_t", 4))
+    limit = 448 if scalar else 480  # Reserve one region for the distant scalar.
+    selected = manager.select_array_snapshot("samples", start_index=0, count=limit)
+    assert selected["snapshot"]["count"] == limit
+    manager._dump_restart.clear()
+    before = manager._array_snapshot
+    generation = manager._config_generation
+    rejected = manager.select_array_snapshot("samples", start_index=0, count=limit + 1)
+    assert "15 regions" in rejected["error"]
+    assert manager._array_snapshot is before
+    assert manager._config_generation == generation
+    assert not manager._dump_restart.is_set()
+    # A valid replacement remains possible immediately after rejection.
+    assert manager.select_array_snapshot("samples", start_index=511, count=1)["snapshot"]["count"] == 1

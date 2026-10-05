@@ -1943,17 +1943,20 @@ class SuperWatchStreamManager:
             self._array_snapshot = None
 
     def _sampling_layout_locked(self):
+        return self._layout_for_snapshot_locked(self._array_snapshot)
+
+    def _layout_for_snapshot_locked(self, snapshot):
         from mklink.superwatch import (
             SUPERWATCH_DUMP_MERGE_GAP,
             build_read_blocks,
         )
 
         scalar_items = tuple(self._runtime.items) if self._runtime is not None else ()
-        if self._array_snapshot is None:
+        if snapshot is None:
             blocks = tuple(self._runtime.blocks) if self._runtime is not None else ()
             return scalar_items, scalar_items, blocks
         items_by_name = {item.name: item for item in scalar_items}
-        for item in self._array_snapshot["items"]:
+        for item in snapshot["items"]:
             items_by_name.setdefault(item.name, item)
         items = tuple(items_by_name.values())
         return (
@@ -2460,6 +2463,19 @@ class SuperWatchStreamManager:
                 start_index,
                 count,
             )
+            # Check the same combined layout the worker will sample, before
+            # publishing it or asking the worker to restart.
+            _, _, blocks = self._layout_for_snapshot_locked(snapshot)
+            regions = [(block.address, block.size) for block in blocks]
+            from mklink.dump_memory import build_dump_mem_command
+            try:
+                build_dump_mem_command(regions, self._interval)
+                bridge = getattr(self._device, "_bridge", None)
+                if getattr(bridge, "_mux_supported", None) is True:
+                    from mklink.mux_watch import MuxWatchSession
+                    MuxWatchSession(None, regions, self._interval)
+            except ValueError as exc:
+                return {"error": str(exc)}
             self._array_snapshot = snapshot
             self._config_generation += 1
             self._origin_us = None
