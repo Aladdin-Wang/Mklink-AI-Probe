@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T20:34:45.2455574+00:00`
+- 更新时间：`2026-10-05T20:42:46.2132637+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：STM32专用数组扩到12KiB，APP扇区下载/完整读回及20KiB Boot保持通过。SDK/CLI/真实MCP各12KiB单批、八区域合计12KiB两批全部写回一致；独立DAP恢复数组，RTT8/tick恢复，后台退出。新AXF地址已更新，主机无生产改动。
+- 当前任务：HPM Flush SDK4KiB/MCP八非对齐区域/CLI96字节及非法请求无写入、原值恢复通过。恢复检查发现HPM tick停滞，仅收到历史RTT；异常/断言标记0，原因待定位，不能归因Flush。后台已退出。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双V4仍03d72f5。STM32新APP AXF 976acece4cf1fcaa393ecb15ebc89c398aef8becf32f899220bb0491d16300b0，专用数组12288字节@0x20003558；tick0x20006800、modes0x20007060、rx_bytes0x20007080、rx_hash0x200070a0，RTT仍0x20000b88；每次应解析AXF。Boot20KiB未变，测试数组原值恢复、RTT8正常后停止、后台退出。HPM hello BIN未动，长期验证暂停。
+- **state**：双V4仍03d72f5。STM32新APP AXF 976acece4cf1fcaa393ecb15ebc89c398aef8becf32f899220bb0491d16300b0，专用数组12288字节@0x20003558；tick0x20006800、modes0x20007060、rx_bytes0x20007080、rx_hash0x200070a0，RTT仍0x20000b88；每次应解析AXF。Boot20KiB未变，测试数组原值恢复、RTT8正常后停止、后台退出。HPM hello BIN未动，长期验证暂停。 本轮HPM专用4KiB数组经Flush恢复，tick10324677停滞、boot_stage4、断言与trap标记0；RTT仅旧数据。未改Flash/电压，后台退出。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 继续HPM Flush、GUI入口/传输异常及全功能矩阵；STM3212KiB实体容量已由SDK/CLI/MCP完整验收，无需重复。注意扩大fixture后的新AXF和RAM地址。最后完整回归/安装Skill；核对CI（1b3060bd仍queued）。
+1. 优先定位HPM运行计数停滞：检查调试连接/调度状态及安全恢复后重验Flush前后tick。证据hpm-flush-current-candidate-hil、hpm-flush-recovery-stalled、hpm-state-after-flush。随后GUI及全矩阵、最终安装Skill；11a9d579 CI仍queued。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

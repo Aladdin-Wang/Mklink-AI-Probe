@@ -18,7 +18,7 @@
 | A06 | 工程和文件来源 | Keil/IAR/SEGGER/CMake，AXF/ELF/MAP/C 回退，文件变更、失效和重载 | 待验证 |
 | A07 | 符号、类型和变量 | 结构/数组/指针/位域/宽整数/浮点，分页与搜索，缺失符号，边界地址 | 待验证 |
 | A08 | 内存读写与导出 | 零长度/越界/非对齐/分片，读写校验、未知写入不重放，批量访问 | SDK实体4KiB/16区域/重叠乱序非对齐批读、变量写入校验恢复、14类拒绝及双客户端busy恢复通过；导出及各入口边界继续 |
-| A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | Dump模式切换/容量/文件失败及有限采集取消已修并有实体证据；STM32 Flush SDK/CLI/MCP12KiB及八区域合计12KiB写回通过、数组恢复；HPM Flush/GUI及其余故障边界继续 |
+| A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | Dump模式切换/容量/文件失败及有限采集取消已修并有实体证据；STM32 Flush SDK/CLI/MCP12KiB及八区域合计12KiB写回通过、数组恢复；HPM Flush 4KiB/八区域/CLI及拒绝边界通过；目标运行计数停滞待定位，GUI及其余故障边界继续 |
 | A10 | 调试、寄存器、断点 | 暂停/运行/单步/复位，FPB 资源耗尽，状态恢复，ARM/JTAG 差异 | STM32实体DAP六槽耗尽拒绝/释放/实际命中通过；低层负槽位写入已修、相关90项自动化通过；共享各入口/JTAG继续 |
 | A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
@@ -504,3 +504,10 @@ flush12k-hil：SDK写a5、真实stdio MCP以空格HEX写55、真实CLI写3c，�
 flush12k-recovery-hil再次比较完整专用数组与保存原值、20KiB Bootloader与基线一致；按当前AXF符号启动RTT0–7，八路各自数据均收到，tick从120370推进到122364，主动stop/close后后台退出。证据还包括flush12k-app-flash.json与本地Keil日志。本轮仅新增实体证据与目标fixture，无主机生产变化，不重复无关自动化。
 
 RAM符号因扩容发生变化：mklink_benchmark_words仍0x20003558（现在12288字节）；rt_tick变为0x20006800，rtt_test_modes0x20007060，rx_bytes0x20007080，rx_hash0x200070a0；RTT控制块仍0x20000b88。必须从当前AXF解析，旧硬编码脚本不可直接复用。双V4仍03d72f5，HPM目标未动。HPM Flush、GUI入口和真实传输中断边界继续，1b3060bd两个CI查询仍queued。
+### HPM Flush 三入口与运行恢复分项验收
+
+沿用现有HPM目标ELF的memory_test专用4KiB数组，在写入前确认全部1024个初始化值与源码公式一致，并保存原值。hpm-flush-current-candidate-hil：SDK 4096字节a5单批、真实stdio MCP八个非对齐5字节区域两批、真实CLI非重复96字节四批均verify及独立读回正确。12289字节、九区域、重叠请求均拒绝，每次拒绝后整块4KiB与基线一致。最后通过Flush恢复完整非重复原值并读回，SHA256 1ec2861ca0fdd6f30d15298e2d401cf11544515d9fb7858df415f66209d1ceaa；后台退出。本轮没有改Flash、电压或固件。
+
+恢复验证不能记为通过：第一次RTT等待2秒为空；第二次5秒收到866字节历史日志，但wave_tick前后均10324677。随后独立只读诊断hpm-state-after-flush确认build_id正确、boot_stage=4、assert_line/trap_cause/trap_pc/trap_value均0，tick相隔1秒仍不变，后台退出。测试开始前未记录tick推进，因此不能认定由Flush导致；现有证据只证明写入正确和数组恢复，不证明目标继续运行。保留hpm-flush-recovery-stalled失败记录，下一轮定位目标调试连接/调度状态，不用Cortex-M专用resume API控制HPM。未将HPM 4KiB结果外推为12KiB容量验证。
+
+此次主机11a9d579的Feedback与Shared runtime checks仍queued；前一提交检查显示cancelled，不记为通过。全矩阵及最终安装包/Skill验收继续。
