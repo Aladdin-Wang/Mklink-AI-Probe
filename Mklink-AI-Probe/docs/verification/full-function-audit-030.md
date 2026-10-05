@@ -707,3 +707,10 @@ STM32实体：真实CLI启动VOFA，SDK订阅后在原owner存活时pause仍409�
 实际点击CSV按钮，网页优先调用showSaveFilePicker，本轮未确认系统对话框落盘；随后仅在测试页禁用该浏览器能力以走产品已有下载回退。用document click监听捕获导出链接并阻止默认下载，以避免文件落到系统盘；读取按钮实际生成的Blob并保存到E盘报告目录。CSV恰好10000数据行，header为timestamp,gain,tick，全部gain=0.60，所有相邻时间戳与tick严格递增，首尾tick8427555→8558742。PNG按钮实际生成44870B、1088×658图像，已解码查看，含两路曲线及坐标轴。未把这种内容验证描述成系统保存对话框、原生桌面保存或默认浏览器下载落盘通过。
 
 证据reports/vofa-gui-0652.py、vofa-gui-csv.json、vofa-gui-export-capture.json、vofa-gui-export-verification.json、导出CSV/PNG及截图；均本地保留。无生产修改，无固件/Flash/电压修改，无长稳。观察到buffer默认10000和pretrigger默认1000的HTML step与min不对齐导致浏览器validity异常，后续核对并收敛；本轮按钮功能未因此中断。GUI原生保存、全参数边界与其他矩阵项继续。
+
+
+### 波形点数整数边界收敛
+
+基线02c98844后，buffer/pretrigger输入step统一为1，使默认10000/1000及范围内整数符合浏览器约束。buffer应用改用valueAsNumber与Number.isInteger，拒绝空值、小数和越界，不再parseInt截断。pretrigger输入仅在10–50000整数时更新采集显示配置，非法输入保留上次合法设置；配置导入的非法/缺失preTrigger使用默认1000。两入口复用同一校验函数。
+
+WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲空/小数/越界、预触发上下边界/非整百值、非法输入保留及非法项目配置恢复。vue-tsc与生产构建通过（既有大chunk提示）。真实Chrome加载新版dist footer02c9884468ff，两个默认输入invalid=false；实际buffer设为2并应用后显示2 pts，pretrigger1001有效；恢复默认后关闭网页，停止SDK，后台退出。证据reports/vofa-boundary-browser.json及vofa-gui-0700.py。未进行原生安装，本次未重跑全GUI套件，不将输入验证当作全部触发算法/所有内存容量验证。观察transport buffer计数不随可见2 pts立即变2，下一轮核对VOFA前端与Worker容量语义。

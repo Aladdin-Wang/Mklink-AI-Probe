@@ -1070,8 +1070,8 @@ var bufferInput = document.getElementById('buffer-input');
 bufferInput.addEventListener('input', updateBufferMemoryEstimate);
 updateBufferMemoryEstimate();
 document.getElementById('btn-apply-buffer').addEventListener('click', function() {
-  var val = parseInt(bufferInput.value, 10);
-  if (!Number.isFinite(val) || val < MIN_POINTS || val > MAX_BUFFER_POINTS) {
+  var val = bufferInput.valueAsNumber;
+  if (!Number.isInteger(val) || val < MIN_POINTS || val > MAX_BUFFER_POINTS) {
     alert('Buffer must be between ' + MIN_POINTS + ' and ' + MAX_BUFFER_POINTS + ' points per channel');
     return;
   }
@@ -2521,7 +2521,8 @@ function deserializeState(json) {
       triggerSettings.edge = state.triggerSettings.edge || 'rising';
       triggerSettings.level = (state.triggerSettings.level !== undefined) ? state.triggerSettings.level : 0;
       triggerSettings.mode = state.triggerSettings.mode || 'auto';
-      triggerSettings.preTriggerSamples = (state.triggerSettings.preTrigger !== undefined) ? state.triggerSettings.preTrigger : 1000;
+      var preTrigger = state.triggerSettings.preTrigger;
+      triggerSettings.preTriggerSamples = validPreTriggerSamples(preTrigger) ? preTrigger : 1000;
       var srcSel = document.getElementById('trigger-source');
       if (srcSel) srcSel.value = triggerSettings.source;
       var edgeSel = document.getElementById('trigger-edge');
@@ -5400,9 +5401,13 @@ function appendTriggerPoint(point) {
   });
 
   document.getElementById('trigger-pretrig').addEventListener('input', function() {
-    triggerSettings.preTriggerSamples = parseInt(this.value) || 1000;
+    if (validPreTriggerSamples(this.valueAsNumber)) triggerSettings.preTriggerSamples = this.valueAsNumber;
   });
 })();
+
+function validPreTriggerSamples(value) {
+  return Number.isInteger(value) && value >= 10 && value <= 50000;
+}
 
 // ============================================================
 // Cursor toggle (Task 5I)

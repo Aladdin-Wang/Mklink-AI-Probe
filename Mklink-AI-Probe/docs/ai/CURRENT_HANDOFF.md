@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:55:54.591880+00:00`
+- 更新时间：`2026-10-05T23:02:27.165790+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：VOFA真实Chrome双通道绘图/暂停恢复通过；按钮生成CSV10000行且gain一致/tick时间严格递增，PNG44870B1088x658已查看；只验证浏览器下载回退生成内容，系统picker/原生保存未验。后台退出，证据vofa-gui-export-verification。观察buffer/pretrigger默认值与HTML min/step不对齐，下一轮核对修复并继续全矩阵。无生产修改，最终安装待做，长稳暂停。
+- 当前任务：波形buffer/pretrigger整数边界已修复：step1，拒绝buffer小数/空/越界，pretrigger输入10–50000整数、导入非法回退1000，统一校验。98组件测试/生产构建通过；真实Chrome默认有效、2pts应用和1001预触发有效，恢复默认/后台退出。dist已更新footer02c9884468ff。后续核对VOFA Worker容量与可见点数语义、继续全矩阵/安装；长稳暂停。
 - 状态：`active`
 
 ## 里程碑

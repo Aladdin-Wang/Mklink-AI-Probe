@@ -518,7 +518,7 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(bufferInput.value).toBe('50000')
       expect(bufferInput.min).toBe('50000')
       expect(bufferInput.max).toBe('1000000')
-      expect(bufferInput.step).toBe('10000')
+      expect(bufferInput.step).toBe('1')
       expect(input.value).toBe('0.001')
       expect(input.min).toBe('0.000001')
       expect(input.step).toBe('0.000001')
@@ -552,6 +552,41 @@ describe('WaveformViewer VOFA binary transport', () => {
       expect(runtime.probe.currentInterval()).toBe(0.000001)
       expect(input.value).toBe('0.000001')
       expect(runtime.probe.collectionState().state).toBe('running')
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
+  it('accepts integer point boundaries without truncating fractional or invalid input', async () => {
+    const runtime = await loadRttViewerRuntime()
+    try {
+      const buffer = document.getElementById('buffer-input') as HTMLInputElement
+      const pretrigger = document.getElementById('trigger-pretrig') as HTMLInputElement
+      expect(buffer.checkValidity()).toBe(true)
+      expect(pretrigger.checkValidity()).toBe(true)
+      const alert = vi.fn()
+      vi.stubGlobal('alert', alert)
+      for (const value of ['', '2.5', '-1', '1000001']) {
+        buffer.value = value
+        document.getElementById('btn-apply-buffer')?.click()
+        expect(alert).toHaveBeenCalled()
+        alert.mockClear()
+      }
+      for (const value of ['10', '1001', '50000']) {
+        pretrigger.value = value
+        pretrigger.dispatchEvent(new Event('input'))
+        expect(pretrigger.checkValidity()).toBe(true)
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(Number(value))
+      }
+      for (const value of ['', '9', '1000.5', '50001', '-1']) {
+        pretrigger.value = value
+        pretrigger.dispatchEvent(new Event('input'))
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(50000)
+      }
+      for (const value of [-1, 50001, 10.5, '1000', null]) {
+        expect(runtime.probe.deserializeState({ channels: [], triggerSettings: { preTrigger: value } })).toBe(true)
+        expect(runtime.probe.trigger.preTriggerSamples).toBe(1000)
+      }
     } finally {
       runtime.cleanup()
     }

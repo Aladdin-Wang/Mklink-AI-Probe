@@ -410,7 +410,7 @@ function buildTemplate(mode: string): string {
   <span id="collection-status-badge" class="status-running" data-i18n="running">Running</span>
   <div class="ctrl-sep"></div>
   <label data-i18n="buffer">Buffer</label>
-  <input type="number" id="buffer-input" value="${maxPoints}" min="${minPoints}" max="1000000" step="10000">
+  <input type="number" id="buffer-input" value="${maxPoints}" min="${minPoints}" max="1000000" step="1">
   <span class="buffer-unit">pts/ch</span>
   <span id="buffer-memory-estimate" class="buffer-memory-estimate" data-i18n-title="buffer_memory_tip">~0 MB</span>
   <button id="btn-apply-buffer" class="ctrl-btn" data-i18n="apply">Apply</button>
@@ -448,7 +448,7 @@ function buildTemplate(mode: string): string {
   </select>
   <div class="trigger-sep"></div>
   <label data-i18n="pretrig">Pre-trig</label>
-  <input type="number" id="trigger-pretrig" value="1000" min="10" max="50000" step="100">
+  <input type="number" id="trigger-pretrig" value="1000" min="10" max="50000" step="1">
   <div class="trigger-sep"></div>
   <button id="trigger-force-btn" data-i18n="force_trigger">Force Trigger</button>
 </div>
