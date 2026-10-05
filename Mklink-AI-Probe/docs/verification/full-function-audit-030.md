@@ -20,7 +20,7 @@
 | A08 | 内存读写与导出 | 零长度/越界/非对齐/分片，读写校验、未知写入不重放，批量访问 | SDK实体4KiB/16区域/重叠乱序非对齐批读、变量写入校验恢复、14类拒绝及双客户端busy恢复通过；导出及各入口边界继续 |
 | A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | 待验证 |
 | A10 | 调试、寄存器、断点 | 暂停/运行/单步/复位，FPB 资源耗尽，状态恢复，ARM/JTAG 差异 | STM32实体DAP六槽耗尽拒绝/释放/实际命中通过；低层负槽位写入已修、相关90项自动化通过；共享各入口/JTAG继续 |
-| A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行和恢复八路RTT通过，GUI/缺符号等继续 |
+| A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
 | A13 | ARM 在线烧录 | BIN/HEX、多段、扇区/整片、FLM/Pack 选择、校验、失败恢复 | 新固件STM32 DAP强制APP扇区擦写/完整读回及boot边界通过；GUI/CLI及格式/算法矩阵继续 |
 | A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM真机BIN/HEX、稀疏同扇区/空洞保持、错误校验/容量拒绝、在线GUI/CLI/MCP通过；其余边界继续 |
@@ -394,3 +394,11 @@ HPM侧已单次升级1a4bd0c候选（UF2 ce5c3b4544b0644039940f58548a9d37e375ffc
 诊断后finally通过DAP复位并显式启动APP，Bootloader再次完整比较未变。首次脚本仅等0.7秒即检查RTT，通道0无数据导致失败；独立诊断确认tick递增、故障清除和八路数据。改为5秒上限轮询现有采集、不重复启动请求后，重做完整真实故障流程通过，八路恢复采集约1.483秒（各256至567字节）。最终故障已清除、触发变量归零、RTT停止且后台退出。失败hardfault-real-stack-hil.json、诊断hardfault-recovery-diagnostic.json及成功hardfault-real-stack-recovery-hil.json均保留。
 
 目标重编译改变部分RAM符号：rt_tick=0x20004800、rtt_test_modes=0x20005060、rx_bytes=0x20005080、rx_hash=0x200050a0；RTT控制块仍0x20000b88、周期仍0x20000524。后续脚本应解析当前AXF，不能直接复用旧硬编码地址。此轮未修改主机/探针生产代码，无需重复已有自动化；GUI/CLI/MCP故障入口及缺失符号/栈损坏边界仍继续。92ceb8fa远端反馈契约成功，共享运行时检查尚在执行。
+
+### HardFault CLI 与真实 stdio MCP 入口
+
+主机e1ffdf18代码（生产行为92ceb8fa）、相同目标APP，重新触发一次真实UDF异常。SDK持有共享后台现场，实际python -m mklink hardfault子进程不带SP时返回UNDEFINSTR/FORCED及只读说明；带解析出的异常frame_address时返回完整八寄存器及main.c:145；非对齐SP返回退出码1及422说明。CLI不负责自动找SP，该能力由详细诊断提供，不能把寄存器快照与自动堆栈诊断混淆。
+
+通过PythonStdioTransport启动真实runtime_mcp服务器，connect到同一后台后gui_call(hardfault)返回同样的故障函数、源码行和与SDK逐字段一致的异常栈。首次本地脚本按顶层fault_function取值失败：实际结构为单键result包装。第二版保留完整mcp_wire并按实际结构取值后通过，未修改产品协议。MCP disconnect及CLI退出均不关闭SDK拥有者，SDK仍可读取故障PC的00de指令。
+
+结束通过DAP复位与APP显式向量启动，20KiB Bootloader完整比较未变，故障/触发变量归零；八路RTT在约1.349秒内重新收到各自通道行，主动停止并关闭后后台退出。成功hardfault-cli-mcp-wire-hil.py/json、首次脚本解析失败hardfault-cli-mcp-hil.json保留。未改生产代码或目标固件，本轮没有新的无关自动化重复。GUI与缺失符号/损坏栈等仍待验证；远端CI查询曾因GitHub API EOF失败，不能据此判断运行失败或完成，后续继续核对。
