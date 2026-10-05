@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:29:41.9187220+00:00`
+- 更新时间：`2026-10-05T16:38:03.9561407+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：HPM HEX 脱机真实 GUI 预览、部署、触发及查询全部通过；解码后 U 盘镜像与源文件一致。关闭页面后后台自然退出。继续 RTT GUI 编码和逐通道边界、WebEntry/桌面生命周期及全功能矩阵；长期验证暂停。
+- 当前任务：修复 RTT 曲线整数刻度被删尾零：41项GUI回归、生产构建、93项流测试通过。真实八路UTF-8日志、暂停清空恢复补验，批量点击状态异常未宣称根因解决；目标模式已恢复、GUI已停并关闭。继续保存日志、逐通道交互组合、半字符与非UTF8 GUI、WebEntry和完整矩阵。
 - 状态：`active`
 
 ## 里程碑

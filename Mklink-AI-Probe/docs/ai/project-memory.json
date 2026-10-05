@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T16:29:41.9187220+00:00",
+  "updated_at": "2026-10-05T16:38:03.9561407+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "HPM HEX 脱机真实 GUI 预览、部署、触发及查询全部通过；解码后 U 盘镜像与源文件一致。关闭页面后后台自然退出。继续 RTT GUI 编码和逐通道边界、WebEntry/桌面生命周期及全功能矩阵；长期验证暂停。"
+    "current_task": "修复 RTT 曲线整数刻度被删尾零：41项GUI回归、生产构建、93项流测试通过。真实八路UTF-8日志、暂停清空恢复补验，批量点击状态异常未宣称根因解决；目标模式已恢复、GUI已停并关闭。继续保存日志、逐通道交互组合、半字符与非UTF8 GUI、WebEntry和完整矩阵。"
   },
   "milestones": [
     {

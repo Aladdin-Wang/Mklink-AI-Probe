@@ -789,6 +789,37 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it.each([
+    [0, 100, ['110', '86', '62', '38', '14', '-10']],
+    [-1000, 0, ['100', '-140', '-380', '-620', '-860', '-1100']],
+    [0, 1, ['1.1', '0.86', '0.62', '0.38', '0.14', '-0.1']],
+  ])('keeps chart axis magnitudes for %s..%s', async (minimum, maximum, labels) => {
+    const fillText = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      setTransform: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(),
+      lineTo: vi.fn(), stroke: vi.fn(), fillText, save: vi.fn(),
+      restore: vi.fn(), rect: vi.fn(), clip: vi.fn(), translate: vi.fn(),
+      rotate: vi.fn(), strokeStyle: '', fillStyle: '', font: '', textAlign: '',
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D)
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await wrapper.get('[data-testid="rtt-log-mode"]').trigger('click')
+    mocks.binary.waveformBatch.value = {
+      itemCount: 2, channelCount: 1, bufferStartMs: 1000, bufferEndMs: 2000,
+    }
+    await nextTick()
+    mocks.binary.envelope.value = {
+      requestId: 0, channelCount: 1,
+      values: Float32Array.of(minimum as number, maximum as number).buffer,
+      times: Float64Array.of(1000, 2000).buffer,
+      timeIndices: Uint32Array.of(0, 1).buffer,
+      channelOffsets: Uint32Array.of(0, 2).buffer,
+    }
+    await nextTick()
+    expect(fillText.mock.calls.filter(call => call[1] === 51).map(call => call[0])).toEqual(labels)
+    wrapper.unmount()
+  })
+
   it('zooms around the pointer and pans the retained RTT chart viewport', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       setTransform: vi.fn(), clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(),

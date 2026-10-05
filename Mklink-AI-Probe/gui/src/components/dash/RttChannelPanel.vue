@@ -384,7 +384,8 @@ function formatValueTick(value: number, span: number): string {
     return value.toExponential(2)
   }
   const decimals = span >= 100 ? 0 : span >= 10 ? 1 : span >= 1 ? 2 : 3
-  return value.toFixed(decimals).replace(/\.?0+$/, '') || '0'
+  const fixed = value.toFixed(decimals)
+  return decimals === 0 ? fixed : fixed.replace(/\.?0+$/, '')
 }
 
 function toggleChart(): void {
