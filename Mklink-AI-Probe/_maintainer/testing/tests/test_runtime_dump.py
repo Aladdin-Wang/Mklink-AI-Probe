@@ -176,6 +176,57 @@ def test_periodic_capture_duration_reports_only_complete_samples_and_partial_tai
     assert result['sample_count']==1 and result['incomplete_tail'] and result['stopped_by']=='duration'
 
 
+@pytest.mark.parametrize('before_start', [False, True])
+def test_capture_session_cancel_stops_without_returning_partial_result(before_start):
+    from types import SimpleNamespace
+    bridge = FakeBridge([_b1_frame(1,b'A'*2048,block_index=0,block_count=2,total_size=4096)])
+    checks = 0
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return before_start or checks >= 4
+    with pytest.raises(InterruptedError, match='owning session ended'):
+        dump_memory.capture_dump_stream(SimpleNamespace(_bridge=bridge), [{'address':0,'size':4096}],
+                                        period=.01, frames=0, duration=8, cancelled=cancelled)
+    if before_start:
+        assert not bridge.calls
+    else:
+        assert bridge.calls[-1] == ('exit',)
+        assert bridge.calls.count(('write', b'cmd.dump_memory(0x00000000, 4096, 0.01)\n')) == 1
+
+
+def test_capture_owner_lease_check_ignores_other_clients():
+    from types import SimpleNamespace
+    import time
+    from mklink.runtime_api import active_operation, operation_session_ended
+    owner=SimpleNamespace(expires=time.monotonic()+10)
+    control=SimpleNamespace(sessions={'owner':owner})
+    token=active_operation.set((control,'owner'))
+    try:
+        assert not operation_session_ended()
+        owner.expires=time.monotonic()-1
+        control.sessions['other']=SimpleNamespace(expires=time.monotonic()+10)
+        assert operation_session_ended()
+        owner.expires=time.monotonic()+10
+        assert not operation_session_ended()
+        del control.sessions['owner']
+        assert operation_session_ended()
+    finally:
+        active_operation.reset(token)
+    assert not operation_session_ended()
+
+
+def test_cancel_does_not_hide_failed_stop_confirmation():
+    from types import SimpleNamespace
+    bridge = FakeBridge([])
+    bridge._stop_stream_and_sync = Mock(return_value=False)
+    checks = iter([False, True])
+    with pytest.raises(TimeoutError, match='stop'):
+        dump_memory.capture_dump_stream(SimpleNamespace(_bridge=bridge), [{'address':0,'size':4096}],
+                                        period=.01, frames=0, duration=8, cancelled=lambda: next(checks))
+    bridge._stop_stream_and_sync.assert_called_once()
+
+
 def test_periodic_capture_startup_does_not_consume_collection_window(monkeypatch):
     from types import SimpleNamespace
     ticks=iter([0,.5,.5,.6,.9])

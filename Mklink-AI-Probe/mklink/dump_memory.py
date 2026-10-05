@@ -992,7 +992,7 @@ def validate_dump_stream(regions, period=0.0, frames=1, duration=2.0, speed_prof
     return pairs
 
 
-def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, speed_profile=None):
+def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, speed_profile=None, cancelled=None):
     """Collect complete samples using the existing session and shared assembler.
 
     First sample has a 2s startup allowance; duration starts at that sample.
@@ -1001,6 +1001,10 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
     """
     import json
     pairs = validate_dump_stream(regions, period, frames, duration, speed_profile)
+    def check_cancelled():
+        if cancelled is not None and cancelled():
+            raise InterruptedError('Dump capture cancelled: owning session ended')
+    check_cancelled()
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
     session = DumpMemoryStreamSession(device._bridge, pairs, period, allow_legacy_bulk=True)
@@ -1011,10 +1015,12 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
     try:
         session.start()
         while time.monotonic() < deadline:
+            check_cancelled()
             batch = session.read_frames(max_bytes=1024 * 1024)
             if session.parser.crc_errors:
                 raise DumpMemoryReadError('dump_memory frame CRC validation failed', gap_fact='crc_error_count')
             for frame in batch:
+                check_cancelled()
                 payloads = assembler.feed(frame)
                 if payloads is None:
                     continue

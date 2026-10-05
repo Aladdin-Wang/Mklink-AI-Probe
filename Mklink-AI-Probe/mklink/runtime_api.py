@@ -21,6 +21,16 @@ RESOURCE_RELEASE_PATHS = frozenset({'/api/resources/release-all', '/api/resource
 active_operation = ContextVar('mklink_runtime_operation', default=None)
 
 
+def operation_session_ended():
+    """Read-only worker check; admission stays held until cooperative cleanup."""
+    active = active_operation.get()
+    if not active or not active[1]:
+        return False
+    control, session_id = active
+    session = control.sessions.get(session_id)
+    return session is None or session.expires <= time.monotonic()
+
+
 async def settle(task):
     """Cancellation cannot release admission while a hardware worker runs."""
     cancelled = False

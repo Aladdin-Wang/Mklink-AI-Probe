@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T20:11:41.6170869+00:00",
+  "updated_at": "2026-10-05T20:17:15.1494212+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "已修Dump CLI保存先截断旧文件：同目录临时文件/逐段写入及同步后原子替换、失败清理。66相关测试通过；实体STM32采集+Windows占用文件WinError5保留旧内容，普通读取/MUX恢复及解除占用后8192字节保存正确，后台退出。取消路径仍待验。"
+    "current_task": "已修有限Dump发起会话退出/过期仍占用至时限：复用active_operation租约检查协作停止，115回归通过。CLI异常退出实体释放由8.56秒降至4.83秒，其他SDK读取/MUX恢复；正常续租7秒175样本716800字节完整正确，后台退出。无会话GUI/measure取消仍待验。"
   },
   "milestones": [
     {
@@ -90,7 +90,7 @@
     "Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。"
   ],
   "next_actions": [
-    "核对CI，验证有限Dump的CLI中断/失联取消：线程池采集目前无取消令牌，检查操作锁与租约清理且不影响其他客户端。继续Flush/全矩阵及最终安装Skill。文件失败已修并真机验证，不代表取消通过。",
+    "继续无会话GUI直接请求、measure及其他有限采集的断连/取消审查，完成Flush与全矩阵后更新安装Skill。带会话capture_dump已实测退出约4.83秒释放，但阻塞IO/停止超时不保证硬5秒。核对远端CI（此前queued）。",
     "用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。",
     "固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。",
     "含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。"

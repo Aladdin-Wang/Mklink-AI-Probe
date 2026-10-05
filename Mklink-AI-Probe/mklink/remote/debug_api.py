@@ -148,10 +148,11 @@ def memory_measure(device, body):
 
 def memory_dump_stream(device, body):
     from mklink.dump_memory import capture_dump_stream
+    from mklink.runtime_api import operation_session_ended
     _fields(body, {'regions', 'period', 'frames', 'duration', 'speed_profile'})
     return capture_dump_stream(device, body.get('regions'), period=body.get('period', 0.0),
                                frames=body.get('frames', 1), duration=body.get('duration', 2.0),
-                               speed_profile=body.get('speed_profile'))
+                               speed_profile=body.get('speed_profile'), cancelled=operation_session_ended)
 
 
 def memory_dump(device, body):
