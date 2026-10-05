@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T19:25:09.0247810+00:00`
+- 更新时间：`2026-10-05T19:31:03.4351347+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：修复HardFault显式零快照误halt/误报、显式快照HPM架构绕过和HPM检查HTTP500。73+109项回归通过，STM32不暂停/非法SP拒绝、HPM四路径422及后续Flash读双板真机通过。两个后台退出。真实故障栈/源码定位及其他矩阵继续，安装/Skill未更新。
+- 当前任务：STM32目标启用显式hfdemo任务，增量编译/APP烧录全读回及20KiB boot保持通过。真实UDF异常PSP帧定位main.c:145且现场指令00de，DAP复位后八路RTT约1.483秒恢复。首轮0.7秒观察不足失败保留；最终后台退出。目标符号已变化，后续必须解析当前AXF。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双V4仍为1a4bd0c应用固件。STM32实际CFSR/HFSR为0，零快照诊断后tick递增且S_HALT为0；HPM诊断拒绝后Flash可读。两后台已退出，STM32周期100。长期验证暂停。
+- **state**：双V4仍1a4bd0c应用候选。STM32新APP AXF哈希0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e；故障已清除、触发变量归零、RTT停止、后台退出。rt_tick=0x20004800/modes=0x20005060/rx_bytes=0x20005080/rx_hash=0x200050a0；RTT CB与周期地址未变。后续从AXF解析，不复用旧脚本地址。长期验证暂停。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 检查本轮主机CI；继续HardFault真实异常/符号定位、原生保存、MSC并发、HPM调试共存及剩余矩阵，最终安装/Skill。不要把零故障路径通过等同完整异常诊断验收。不自动合并发布。
+1. 检查92ceb8fa主机CI；继续HardFault GUI/CLI/MCP与缺符号边界、原生保存、MSC并发、HPM调试共存及剩余矩阵，最终安装/Skill。真实UDF源码定位和恢复已通过，不等同完整调用栈/异常类别认证。不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

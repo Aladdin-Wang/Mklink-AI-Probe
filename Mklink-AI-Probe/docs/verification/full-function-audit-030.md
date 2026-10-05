@@ -20,7 +20,7 @@
 | A08 | 内存读写与导出 | 零长度/越界/非对齐/分片，读写校验、未知写入不重放，批量访问 | SDK实体4KiB/16区域/重叠乱序非对齐批读、变量写入校验恢复、14类拒绝及双客户端busy恢复通过；导出及各入口边界继续 |
 | A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | 待验证 |
 | A10 | 调试、寄存器、断点 | 暂停/运行/单步/复位，FPB 资源耗尽，状态恢复，ARM/JTAG 差异 | STM32实体DAP六槽耗尽拒绝/释放/实际命中通过；低层负槽位写入已修、相关90项自动化通过；共享各入口/JTAG继续 |
-| A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；真实异常堆栈/源码定位和GUI继续 |
+| A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行和恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
 | A13 | ARM 在线烧录 | BIN/HEX、多段、扇区/整片、FLM/Pack 选择、校验、失败恢复 | 新固件STM32 DAP强制APP扇区擦写/完整读回及boot边界通过；GUI/CLI及格式/算法矩阵继续 |
 | A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM真机BIN/HEX、稀疏同扇区/空洞保持、错误校验/容量拒绝、在线GUI/CLI/MCP通过；其余边界继续 |
@@ -384,3 +384,13 @@ HPM侧已单次升级1a4bd0c候选（UF2 ce5c3b4544b0644039940f58548a9d37e375ffc
 最终实体报告hardfault-zero-guard-fixed-hil.py/json：STM32实际CFSR/HFSR均0，MMFAR/BFAR仍含非零旧地址；默认检查返回null，三类显式无故障快照均返回fault:null。四种非法SP（布尔、非对齐、32位越界、负数）拒绝；目标tick由1397032增至1397834且DHCSR的S_HALT为0。HPM的fault_snapshot、hardfault_check及显式零/非零hardfault_decode均返回422和Cortex-M说明，随后32字节Flash读取成功；STM32周期仍100。两后台最终退出，未刷Flash、未改变电压。首次HPM500失败证据hardfault-zero-guard-hil.json保留。
 
 此轮证明无故障和错误输入路径，不证明真实异常栈、缺符号时回退、源码定位、GUI操作或所有Cortex-M型号。安装/Skill仍待最终验证更新。非零故障详细诊断仍可能按既有行为暂停CPU，不应把本次修复理解为所有诊断均无暂停。
+
+### STM32 真实 HardFault 栈、源码与恢复
+
+预检查发现现有AXF不含g_hardfault_demo_arm：目标源码的hfdemo与关闭的背景压力测试共用启动条件，被链接裁剪。预检查失败发生在连接硬件前。目标main只增加背景测试关闭时启动已有hfdemo任务，保持显式魔数触发，不启用其他压力任务。Keil增量编译0错误0警告；APP AXF SHA256 0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e。CMSIS-DAP按扇区烧录，所有ELF载入段均限定0x08005000及之后，逐段完整读回；前20KiB Bootloader与原始基线相同（SHA256 d7f5ba1130c7f5a3f624285350a2ea347e70d0e10c7220d4ae0fc73e0835b29c）。通过MSP/PC/VTOR显式启动APP，不代表Bootloader自动跳转已认证。见rtt8-hardfault-app-flash.json和rtt8-hardfault-keil-build.log。
+
+主机92ceb8fa/探针1a4bd0c，SharedDevice写入明确触发变量，真实CFSR=0x00010000、HFSR=0x40000000，解码UNDEFINSTR/FORCED。报告定位mklink_hardfault_demo_entry及main.c:145，异常PC位于该函数ELF范围，现场读取其两字节为00de（udf #0）；PSP异常帧偏移36、EXC_RETURN=0xfffffffd，与RT-Thread保存布局一致。报告附带的LR候选不等同于完整精确调用栈，未扩大证明范围。
+
+诊断后finally通过DAP复位并显式启动APP，Bootloader再次完整比较未变。首次脚本仅等0.7秒即检查RTT，通道0无数据导致失败；独立诊断确认tick递增、故障清除和八路数据。改为5秒上限轮询现有采集、不重复启动请求后，重做完整真实故障流程通过，八路恢复采集约1.483秒（各256至567字节）。最终故障已清除、触发变量归零、RTT停止且后台退出。失败hardfault-real-stack-hil.json、诊断hardfault-recovery-diagnostic.json及成功hardfault-real-stack-recovery-hil.json均保留。
+
+目标重编译改变部分RAM符号：rt_tick=0x20004800、rtt_test_modes=0x20005060、rx_bytes=0x20005080、rx_hash=0x200050a0；RTT控制块仍0x20000b88、周期仍0x20000524。后续脚本应解析当前AXF，不能直接复用旧硬编码地址。此轮未修改主机/探针生产代码，无需重复已有自动化；GUI/CLI/MCP故障入口及缺失符号/栈损坏边界仍继续。92ceb8fa远端反馈契约成功，共享运行时检查尚在执行。
