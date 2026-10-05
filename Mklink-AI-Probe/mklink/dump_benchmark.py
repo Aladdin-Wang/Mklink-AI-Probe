@@ -38,14 +38,15 @@ def measurement_regions(regions):
 
 
 def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
-            period: float = 0.000001, speed_profile: str | None = None) -> dict:
+            period: float = 0.000001, speed_profile: str | None = None, cancelled=None) -> dict:
     """Measure complete samples, using the common assembler and stream lifecycle.
 
     Allow 2s for startup; duration begins at the first complete sample and
     includes the existing 200ms probe-timestamp warmup. No raw sample history.
     """
-    from mklink.dump_memory import DumpMemoryStreamSession, DumpSampleAssembler
+    from mklink.dump_memory import DumpMemoryStreamSession, DumpSampleAssembler, check_capture_cancelled
     size = validate_measurement(regions, duration, period, speed_profile)
+    check_capture_cancelled(cancelled)
     device._require_connected()
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
@@ -59,8 +60,10 @@ def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
         session.start()
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline:
+            check_capture_cancelled(cancelled)
             frames = session.read_frames(max_bytes=262144)
             for frame in frames:
+                check_capture_cancelled(cancelled)
                 payloads = assembler.feed(frame)
                 if payloads is None:
                     continue

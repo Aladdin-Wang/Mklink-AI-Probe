@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 from mklink.symbol_catalog import SymbolSourceChangedError
 
@@ -139,20 +139,49 @@ def breakpoints(device, body):
     return {'action': action, 'cleared': slots, 'verified': True}
 
 
-def memory_measure(device, body):
+def memory_measure(device, body, *, cancelled=None):
     from mklink.dump_benchmark import measure, measurement_regions
     _fields(body, {'regions', 'duration', 'period', 'speed_profile'})
     return measure(device, measurement_regions(body.get('regions')), duration=body.get('duration', 3.0),
-                   period=body.get('period', 0.000001), speed_profile=body.get('speed_profile'))
+                   period=body.get('period', 0.000001), speed_profile=body.get('speed_profile'), cancelled=cancelled)
 
 
-def memory_dump_stream(device, body):
+def memory_dump_stream(device, body, *, cancelled=None):
     from mklink.dump_memory import capture_dump_stream
-    from mklink.runtime_api import operation_session_ended
     _fields(body, {'regions', 'period', 'frames', 'duration', 'speed_profile'})
     return capture_dump_stream(device, body.get('regions'), period=body.get('period', 0.0),
                                frames=body.get('frames', 1), duration=body.get('duration', 2.0),
-                               speed_profile=body.get('speed_profile'), cancelled=operation_session_ended)
+                               speed_profile=body.get('speed_profile'), cancelled=cancelled)
+
+
+async def _run_cancellable_capture(operation, device, body, request):
+    import asyncio
+    import threading
+    from mklink.runtime_api import operation_session_ended
+    disconnected = threading.Event()
+
+    async def observe_disconnect():
+        while not disconnected.is_set():
+            # FastAPI has consumed the JSON body. Await the next ASGI message;
+            # polling is_disconnected can miss queued disconnects through
+            # middleware whose receive awaits a cancellation checkpoint first.
+            message = await request.receive()
+            if message['type'] == 'http.disconnect':
+                disconnected.set()
+                return
+
+    observer = asyncio.create_task(observe_disconnect())
+    try:
+        # The existing runtime admission encloses this await and worker cleanup.
+        return await run_in_threadpool(operation, device, body,
+                                      cancelled=lambda: disconnected.is_set() or operation_session_ended())
+    finally:
+        disconnected.set()
+        observer.cancel()
+        try:
+            await observer
+        except asyncio.CancelledError:
+            pass
 
 
 def memory_dump(device, body):
@@ -214,13 +243,15 @@ def peripheral_capture(device, body):
 def create_debug_router(state, lease):
     router = APIRouter(prefix='/api/device')
 
-    def add(path, operation):
-        async def endpoint(body: dict):
+    def add(path, operation, *, cancellable=False):
+        async def endpoint(body: dict, request: Request):
             device = state.get('device')
             if not device or not device.connected:
                 raise HTTPException(400, 'Device not connected')
             async with lease(state, path):
                 try:
+                    if cancellable:
+                        return await _run_cancellable_capture(operation, device, body, request)
                     return await run_in_threadpool(operation, device, body)
                 except SymbolSourceChangedError as error:
                     raise HTTPException(409, str(error)) from error
@@ -230,9 +261,9 @@ def create_debug_router(state, lease):
                     raise HTTPException(500, str(error)) from error
         router.add_api_route('/' + path, endpoint, methods=['POST'], name=path)
 
-    add('dump-memory/measure', memory_measure)
+    add('dump-memory/measure', memory_measure, cancellable=True)
     add('dump-memory', memory_dump)
-    add('dump-memory/capture', memory_dump_stream)
+    add('dump-memory/capture', memory_dump_stream, cancellable=True)
     add('read-memory-regions', memory_regions)
     add('watch', watch_snapshot)
     add('flush-memory', memory_flush)

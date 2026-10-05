@@ -43,3 +43,17 @@ def test_invalid_measurement_never_touches_device(kwargs):
     with pytest.raises(ValueError):measure(dev,[(0x90000,4)],**kwargs)
     dev._require_connected.assert_not_called()
     dev.set_debug_speed.assert_not_called()
+
+
+@pytest.mark.parametrize('before_start', [False, True])
+def test_measurement_cooperative_cancel_confirms_stop(monkeypatch, before_start):
+    dev, session = run_frames(monkeypatch, [], 4)
+    checks = iter([before_start, True])
+    with pytest.raises(InterruptedError, match='cancelled'):
+        measure(dev, [(0x90000,4)], duration=1, cancelled=lambda: next(checks))
+    if before_start:
+        session.start.assert_not_called()
+        session.stop.assert_not_called()
+        dev._require_connected.assert_not_called()
+    else:
+        session.stop.assert_called_once()

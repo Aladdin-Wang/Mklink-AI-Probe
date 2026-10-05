@@ -472,3 +472,15 @@ CLI原来直接Path.write_bytes，会先截断既有导出文件，随后磁盘�
 修复后的dump-client-exit-fixed-hil把请求延长到15秒，终止CLI后约4.83秒资源释放；仍在线SDK普通读取与小块MUX重采集正确，最后后台退出。dump-live-lease-hil正常客户端持续续租，实际7.496秒返回175个4KiB样本共716800字节，全字节匹配Flash基线，无不完整尾部，关闭后退出；传统解析丢弃46字节计数保留。这是有限测试，不是长期soak。
 
 范围限制：该合作取消依赖有效会话，只覆盖有限capture_dump。无会话GUI直接HTTP请求、measure及其他有限采集的断连/取消仍需继续审查；单次阻塞IO和stop同步有自身超时，4.83秒是本次实测，不是所有异常下5秒硬上界。未改固件、目标Flash/电压。主机CI查询仍queued。
+
+### 无会话 HTTP 断连和吞吐测量取消
+
+有限capture和measure两条路由共用一个断连观察器：FastAPI读完JSON正文后等待后续ASGI receive消息，用线程安全Event通知工作线程；会话调用同时复用现有发起者租约检查。Dump与measure共享check_capture_cancelled，均在开始前、循环及逐帧检查，finally确认stop后才返回。观察器在任何终态设置退出标志并取消/等待清理，不新增采集注册表或轮询硬件，不用于烧录及写入。
+
+首版Request.is_disconnected轮询没有可靠穿过当前中间件链：自动化正常终态观察器清理也曾卡住，停止了对应pytest进程；随后实体TCP断连仍超过4秒未释放，保留dump-http-disconnect-hil失败记录。最终使用直接await request.receive，不再轮询取消范围内的receive。重新完整执行83项相关测试通过，其中两路断连测试让工作线程停在cleanup阶段，明确验证操作锁/资源仍占用、RTT启动拒绝409；只有清理完成才释放。
+
+真实socket+STM32测试dump-http-disconnect-receive-hil：仅认证令牌、无session请求15秒采集/测量，确认资源已占用后断开TCP。capture约0.123秒、measure约0.134秒释放；存活SDK随后读取正确，正常0.5秒测量取得8个暖机后有效样本约25Hz，关闭后后台退出。该证据证明真实HTTP端点，不代替浏览器按钮/页面关闭验收。
+
+测量CLI异常退出测试首次误带不支持的--json，命令未进入采集，未计成功。纠正后measure-client-exit-valid-cli-hil：15秒测量期间终止本测试CLI，约4.846秒资源释放，存活SDK读取和小块MUX恢复、最后后台退出。既有有限Dump的租约路径仍通过相关回归。无目标Flash/电压及固件变化。
+
+范围仍明确：仅有限流capture/measure加入合作取消；传统多次快照及其他采样接口、浏览器交互和远程代理断连语义继续验收。取消不强杀工作线程，单次阻塞IO/stop仍有自身超时，不承诺任何故障下的硬释放上界。下一阶段推进Flush与其余完整功能矩阵。

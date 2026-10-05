@@ -227,6 +227,48 @@ def test_cancel_does_not_hide_failed_stop_confirmation():
     bridge._stop_stream_and_sync.assert_called_once()
 
 
+@pytest.mark.parametrize('path,implementation', [
+    ('capture','mklink.dump_memory.capture_dump_stream'),
+    ('measure','mklink.dump_benchmark.measure'),
+])
+def test_disconnected_capture_holds_admission_until_worker_cleanup(batch, monkeypatch, path, implementation):
+    import time
+    from starlette.requests import Request
+    client,state,device,control,_=batch
+    entered,disconnect,cleaning,release=(threading.Event() for _ in range(4))
+    async def receive_disconnect():
+        while not disconnect.is_set():
+            await asyncio.sleep(.005)
+        return {'type':'http.disconnect'}
+    monkeypatch.setattr(Request,'receive',property(lambda self: receive_disconnect))
+    def worker(*args,cancelled,**kwargs):
+        entered.set()
+        deadline=time.monotonic()+5
+        while not cancelled():
+            assert time.monotonic()<deadline
+            time.sleep(.005)
+        cleaning.set()
+        assert release.wait(5)
+        raise InterruptedError('cancelled after cleanup')
+    monkeypatch.setattr(implementation,worker)
+    with ThreadPoolExecutor() as pool:
+        result=pool.submit(client.post,'/api/device/dump-memory/'+path,
+                           json={'regions':[{'address':0,'size':4}]})
+        assert entered.wait(5)
+        try:
+            disconnect.set()
+            assert cleaning.wait(5)
+            assert control.operation_lock.locked()
+            assert state['resource_manager'].get_status()
+            assert client.post('/api/dash/rtt/start',json={}).status_code==409
+        finally:
+            release.set()
+        response=result.result(timeout=5)
+    assert response.status_code==500 and 'cancelled after cleanup' in response.text
+    assert not control.operation_lock.locked()
+    assert not state['resource_manager'].get_status()
+
+
 def test_periodic_capture_startup_does_not_consume_collection_window(monkeypatch):
     from types import SimpleNamespace
     ticks=iter([0,.5,.5,.6,.9])
