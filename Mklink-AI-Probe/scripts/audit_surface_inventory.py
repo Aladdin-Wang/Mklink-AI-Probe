@@ -18,6 +18,13 @@ def inventory():
     for path in sorted((ROOT / "mklink").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         relative = path.relative_to(ROOT).as_posix()
+        if path.name == "shared_device.py":
+            for cls in tree.body:
+                if isinstance(cls, ast.ClassDef) and not cls.name.startswith("_"):
+                    for method in cls.body:
+                        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) and not method.name.startswith("_"):
+                            entries.append(dict(kind="shared_sdk", name=cls.name + "." + method.name,
+                                                source=relative, line=method.lineno))
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for decorator in node.decorator_list:
@@ -42,7 +49,7 @@ def inventory():
                                 entries.append(dict(kind="remote_operation", name=operation.value, source=relative, line=node.lineno))
     tests = [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / "_maintainer/testing/tests").glob("test_*.py"))]
     gui_tests = [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / "gui/src").rglob("*.test.ts"))]
-    return {"scope": "Static registrations only; not coverage or execution evidence. SDK methods and dynamic registrations need manual audit.",
+    return {"scope": "Static registrations and declared shared SDK methods only; not coverage or execution evidence. Inherited methods and dynamic registrations need manual audit.",
             "entries": sorted(entries, key=lambda e: (e["kind"], e["source"], e["line"])),
             "python_test_files": tests, "gui_test_files": gui_tests}
 

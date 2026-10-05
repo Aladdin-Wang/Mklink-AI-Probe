@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T11:57:26.2939074Z`
+- 更新时间：`2026-10-05T12:04:15.9953173Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：新持续目标已开启：主机/Skill/下载器应用层全功能循环审计。36组矩阵见full-function-audit-030.md；静态入口497、Python测试文件190、GUI83，仅为清单。全套Python基线执行中。重点落实实体RTT八路、DAP最高优先级、HPM在线/脱机HEX；长期暂停，不增加WinUSB。
+- 当前任务：全功能审计推进中：36组矩阵、510个静态入口（含13个共享SDK方法）。发现DAP需显式会话仲裁，不能用共享debug_port推断；HPM逐HEX段转BIN会重复擦除共同扇区，需完整镜像策略。全套Python基线仍运行，等待最终失败摘要；长期暂停。
 - 状态：`active`
 
 ## 里程碑
