@@ -48,4 +48,3 @@ it('ignores responses after unmount and aborts its outstanding read', async () =
   finish({ ok: true, json: async () => ({ cursor: 2, session: 'old', data_hex: 'abcd', lost_bytes: 0 }) })
   await flushPromises()
 })
-

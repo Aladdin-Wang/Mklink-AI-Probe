@@ -59,4 +59,3 @@ onUnmounted(() => { disposed = true; controller?.abort(); if (timer) clearTimeou
 pre { flex: 1; overflow: auto; white-space: pre-wrap; word-break: break-all; font: 12px monospace; }
 small { color: var(--muted); }
 </style>
-
