@@ -426,7 +426,11 @@ python -m mklink systemview-report --probe "电机板" --duration 6 --out report
 本次事件供本地分析，报告进程内存随实际收集量增长，不提供无限时长采集保证。
 
 
-## 多通道 RTT 与 SuperWatch（协议 48 开发版）
+## 多通道 RTT 与 SuperWatch（协议 49 开发版）
+
+配套固件检测到 CMSIS-DAP 调试改变目标后，会停止原 RTT/SuperWatch 采集，
+丢弃旧的 RTT 游标写入并报告失效原因。调试结束后需要显式重新启动采集，
+不能把旧地址和待发送数据自动重放到新固件。此行为尚待真机验收。
 
 配套 V4 固件报告 `MUX_TARGET=1` 后，GUI/CLI/MCP 自动使用同一个 CDC 帧通道。
 仍然只有后台打开串口和读取 USB，客户端读取后台缓存。外部串口助手的旧 RTT

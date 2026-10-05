@@ -2236,6 +2236,21 @@ describe('VOFA viewer hot path source guard', () => {
     }
   })
 
+  it('shows capture invalidation from status and permits an explicit restart', async () => {
+    const runtime = await loadRttViewerRuntime('SuperWatch')
+    try {
+      runtime.probe.syncStatus({ state: 'running' })
+      const error = 'DAP changed the target; restart capture after debugging.'
+      runtime.probe.syncStatus({ state: 'stopped', error })
+      expect(runtime.probe.collectionState().state).toBe('stopped')
+      expect(document.getElementById('conn-status')!.textContent).toBe(error)
+      expect((document.getElementById('btn-start') as HTMLButtonElement).disabled).toBe(false)
+      expect((document.getElementById('btn-pause') as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      runtime.cleanup()
+    }
+  })
+
   it('freezes the SuperWatch viewport and envelope while render pause is active', async () => {
     const runtime = await loadRttViewerRuntime('SuperWatch', 8)
     try {
