@@ -134,3 +134,11 @@ Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加�
 同名文件覆盖测试重现FatFs旧缓存问题：第二份文件仍按上一份错误文件处理。固件f74af2a为HPM BIN/HEX增加统一文件读事务，打开前拒绝脏metadata并失效干净窗口，整个预检/擦写/校验期间与MSC写互斥；MSC独立线程使用双向原子占用，不在SPI写期间持续关闭IRQ。未修改FatFs/CherryUSB SDK；既有MSC回调错误沿SDK WRITEFAULT返回。
 
 新增生产C编译测试覆盖缓存/双向占用/拒绝与释放，五项相关C harness及SES/SWD布局通过。最终固件已刷HPM，真机通过同名连续覆盖、末尾校验错误在初始化前拒绝、16MiB容量越界在擦除前拒绝、奇数长度同扇区稀疏写入回读、中间未覆盖4KiB保持一致、恢复hello BIN。证据reports/hpm-hex-boundaries-hil.json。并发MSC写拒绝尚未实机，只能引用编译回调测试；其他文件消费者也未因此获得保护。公共在线/脱机入口、内存审计和最终安装仍待推进。
+
+### HPM HEX 主机底层与脱机准备接入
+
+MKLinkFlash.burn_hpm_hex复用prepare_hpm_hex，完整解析后探测无副作用的hpm.program_hex()，严格要求签名返回-1；旧固件在复制前拒绝。BIN/HEX共用配置/复制/结果解析，配置失败停止后续烧录，文件名沿用统一转义，HPM_HEX_FAIL/HPM_BIN_FAIL不能被先前成功文本掩盖。Device.flash按HEX绝对地址路由，不加载FLM或追加SWD复位。
+
+实际主机burn_hpm_hex已在HPM6E通过规范化、能力检查、绑定磁盘复制、配置和烧录校验；证据reports/hpm-host-hex-hil.json。Device路由及BIN回归28项通过。脱机配置允许V4 HPM HEX，整组烧录前检查独立入口，暂存阶段统一规范化所有HEX后才修改设备文件；脱机及HEX相关99项通过（指定本地FLM资源后）。首次缺FLM环境的21项失败不属于功能回归。
+
+这是底层与部署准备验收：HpmRomBackend、online_flash_api和GUI尚有BIN限制，尚未开放完整在线流程；脱机脚本尚未实机执行，AI/CLI/MCP和Skill尚未完成HEX集成验收。持续目标未完成。

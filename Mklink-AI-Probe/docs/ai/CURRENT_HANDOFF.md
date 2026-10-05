@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T14:50:08.7586353+00:00`
+- 更新时间：`2026-10-05T14:59:04.1117109+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：固件f74af2a已升级HPM探针：修复同名文件覆盖时FatFs旧缓存，HPM BIN/HEX文件事务与MSC写双向互斥。五项C harness、SES/SWD布局及最终真机边界通过：校验错、容量越界、奇数长度同扇区稀疏、未覆盖4KiB保留、BIN恢复。公共HEX入口仍待接入，完整审计目标活跃。
+- 当前任务：主机MKLinkFlash/Device新增HPM HEX底层路由，统一规范化/能力探测/安全复制，真实HPM烧录校验通过。V4脱机配置/整组旧固件guard/事务暂存HEX已接入，相关99项及Device/BIN28项通过。在线后端/API/GUI仍有BIN限制，脱机真实脚本执行和AI/CLI/MCP尚待。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 下一步接入主机在线/脱机prepare_hpm_hex并用独立hpm.program_hex，禁止旧固件把HEX当BIN；再GUI/CLI/MCP及技能。固件f74af2a的HPM文件事务保护仅覆盖HPM，其他文件消费者需审计；实际并发MSC拒绝尚未真机，只有生产回调编译测试。HPM已运行f74af2a，STM32保持ba0a1cf，端口已释放，HPM已恢复hello BIN。证据reports/hpm-hex-boundaries-hil.json。
+1. 继续HpmRomBackend._validated_bin/program/verify与online_flash_api的HEX路由和稀疏校验；OfflineFlashView取消BIN限定且说明绝对地址，公开Skill/CLI/MCP文案同步。先跑相关回归再真机在线/生成脱机脚本执行。底层真机证据reports/hpm-host-hex-hil.json，边界证据hpm-hex-boundaries-hil.json。HPM固件应用代码f74af2a（文档tip233ee48），STM32ba0a1cf；端口已关闭。MSC并发拒绝仍待实机。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

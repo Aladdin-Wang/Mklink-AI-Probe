@@ -303,12 +303,12 @@ def parse_offline_config(
         if not hpm_target and algorithm_id.casefold() not in seen_algorithm_ids:
             raise OfflineDownloadError("firmware references an unknown FLM algorithm")
         base_address = None
+        if hpm_target and image_format == "hex" and model != "V4":
+            raise OfflineDownloadError("HPM HEX requires V4 downloader firmware")
         if image_format == "bin":
             if raw.get("base_address") in (None, ""):
                 raise OfflineDownloadError("BIN firmware requires a base address")
             base_address = _parse_int(raw.get("base_address"), "BIN base address")
-        elif hpm_target:
-            raise OfflineDownloadError("HPM ROM API only supports BIN firmware")
         raw_upload_index = raw.get("upload_index")
         source_path = str(raw.get("source_path") or "").strip() or None
         upload_index = (
@@ -379,7 +379,10 @@ def _program_lines(config: OfflineDownloadConfig, indent: str) -> list[str]:
         ))
         for firmware in config.firmwares:
             method = "program_verified" if config.hpm_user_otp is not None else "program"
-            call = f'hpm.{method}("{firmware.file_name}", 0x{firmware.base_address:08X})'
+            call = (
+                f'hpm.program_hex("{firmware.file_name}")' if firmware.format == "hex" else
+                f'hpm.{method}("{firmware.file_name}", 0x{firmware.base_address:08X})'
+            )
             lines.extend((
                 f"{indent}if {call} != 0:",
                 f'{indent}    print("HPM program failed: {firmware.file_name}")',
@@ -538,6 +541,14 @@ def generate_offline_script(config: OfflineDownloadConfig) -> str:
         "        break",
         '    print("IDCODE: 0x%08X" % idcode)',
     ]
+    if config.is_hpm and any(f.format == "hex" for f in config.firmwares):
+        insert_at = lines.index("    elapsed = 0")
+        lines[insert_at:insert_at] = [
+            '    if hpm.program_hex() != -1:',
+            '        print("Upgrade downloader firmware: HPM HEX support required")',
+            '        abort = True',
+            '        break',
+        ]
     if config.security is not None:
         # Missing-file calls stop before target access and verify that the
         # generated Pika bindings preserve the signed security return code.
@@ -659,6 +670,7 @@ def _transactional_copy(
     disk_root: Path,
     files: Sequence[tuple[Path, Optional[Path], Optional[bytes]]],
     recovery_callback: Optional[Callable[[Optional[Path]], None]] = None,
+    *, hpm_hex_files: frozenset[str] = frozenset(),
 ) -> list[str]:
     stage = Path(tempfile.mkdtemp(prefix="mklink-offline-staging-"))
     backup_root = stage / "backup"
@@ -673,7 +685,11 @@ def _transactional_copy(
                 staged = staged_root / relative
                 staged.parent.mkdir(parents=True, exist_ok=True)
                 if source is not None:
-                    shutil.copy2(source, staged)
+                    if relative.as_posix().casefold() in hpm_hex_files:
+                        from mklink.hpm_image import prepare_hpm_hex
+                        prepare_hpm_hex(source, staged)
+                    else:
+                        shutil.copy2(source, staged)
                 else:
                     staged.write_bytes(content or b"")
 
@@ -847,7 +863,11 @@ def deploy_offline_bundle(
     plan.append(
         (script_relative, None, generate_offline_script(config).encode("utf-8"))
     )
-    deployed = _transactional_copy(disk, plan, recovery_callback)
+    if config.is_hpm and any(f.format == "hex" for f in config.firmwares):
+        deployed = _transactional_copy(disk, plan, recovery_callback,
+            hpm_hex_files=frozenset(f.file_name.casefold() for f in config.firmwares if f.format == "hex"))
+    else:
+        deployed = _transactional_copy(disk, plan, recovery_callback)
     return {
         "status": "deployed",
         "model": config.model,

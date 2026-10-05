@@ -822,9 +822,9 @@ class Device:
             board=resolved_board,
         ) or is_hpm_profile
         if hpm_target:
-            if ext != ".bin":
-                raise DeviceError("HPM ROM API only supports BIN firmware")
-            raw_address = base_address
+            if ext not in (".bin", ".hex"):
+                raise DeviceError("HPM ROM API supports BIN and HEX firmware")
+            raw_address = 0x80000000 if ext == ".hex" else base_address
             if raw_address is None:
                 raw_address = (
                     project_info.get("bin_base")
@@ -844,9 +844,11 @@ class Device:
             resolved_flash_cfg = hpm_flash_cfg or project_info.get("hpm_flash_cfg")
             if not resolved_board and not resolved_flash_cfg:
                 raise DeviceError("HPM target requires a board or flash configuration")
-            result = self._flash.burn_hpm_bin(
+            burn = self._flash.burn_hpm_hex if ext == ".hex" else self._flash.burn_hpm_bin
+            address_options = {} if ext == ".hex" else {"addr": _fmt_hex(address)}
+            result = burn(
                 firmware,
-                addr=_fmt_hex(address),
+                **address_options,
                 board=resolved_board or None,
                 flash_cfg=resolved_flash_cfg,
                 progress_callback=progress_callback,

@@ -95,6 +95,19 @@ def test_device_flash_verify_rejects_mismatched_hex(tmp_path: Path):
         device.flash(str(firmware), verify=True, reset_after=False)
 
 
+def test_hpm_hex_uses_addressed_rom_route_without_generic_reset(tmp_path: Path):
+    firmware = tmp_path / "hpm.hex"
+    _write_hex(firmware, b"data", 0x80000030)
+    calls = []
+    device = _device(lambda address, size: b"data" if (address, size) == (0x80000030, 4) else b"")
+    device._flash.burn_hpm_hex = lambda path, **options: calls.append((path, options)) or {"success": True}
+    device.reset = lambda: pytest.fail("HPM must not use generic SWD reset")
+    result = device.flash(str(firmware), target_part="HPM6E80", board="hpm6e00evk", verify=True)
+    assert result["verified"] and result["reset_handled_by_rom_api"]
+    assert "addr" not in calls[0][1]
+    assert device._flash.loaded == []
+
+
 def test_device_flash_can_skip_readback_when_verify_is_false(tmp_path: Path):
     firmware = tmp_path / "firmware.hex"
     _write_hex(firmware, b"expected")
