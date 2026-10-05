@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T18:29:53.158169+00:00`
+- 更新时间：`2026-10-05T18:42:20.089013+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：八路实体共享缓存饱和/快慢SDK读取通过：每路超过128KiB后慢读精确报告历史丢失，64KiB保留/16KiB页与快读字节一致，快读无历史损失；Watch并行、52次内存命令通过，目标周期已恢复100ms，后台退出。新增八路32个容量/分页/游标/会话边界，相关125项通过；TCP完全不读反压仍待验。生产代码/固件未改。
+- 当前任务：新增八路生产WebSocket路由实际loopback TCP反压测试：停止读慢端后明确产生服务端淘汰，快端逐帧完整；强制断慢TCP回收订阅，快端继续；所有连接和server线程退出。8新测试及相关85项通过，加入CI清单。测试数据非MCU源，无生产/固件变更。传统RTT串口兼容仍待验。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 继续网络接收端完全不读的实际WebSocket反压、传统RTT串口兼容及剩余全功能矩阵；保留原生磁盘保存/跨页历史、新固件GUI/CLI/MCP/远程入口与MSC并发待验。八路共享历史延迟读取已实体通过，不替代网络反压。最终更新安装/Skill，不自动合并发布。完整Python须显式配置既有算法资源路径。
+1. 继续传统RTT串口映射启停/退出到命令与MUX互切，先检查固件旧RTT对控制块通道数限制，勿把8通道目标直接视为兼容。其余全功能矩阵、原生磁盘保存/跨页历史、新固件各入口、MSC并发继续；最终更新安装/Skill。八路实际TCP反压自动化已通过，检查远端CI。不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

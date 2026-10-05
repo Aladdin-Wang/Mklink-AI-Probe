@@ -79,6 +79,7 @@ jobs:
           $tests += 'test_shared_serial_dashboard'
           $tests += 'test_stream_delivery'
           $tests += 'test_stream_hub'
+          $tests += 'test_stream_tcp_backpressure'
           $arguments = @('-m', 'pytest', '-q', '--tb=short', "--junitxml=$($paths.reports)/shared-runtime.xml")
           $arguments += $tests | ForEach-Object { "_maintainer/testing/tests/$_.py" }
           ./scripts/build_workspace.ps1 -Action run -Executable python -ArgumentList $arguments
