@@ -89,12 +89,19 @@ class RuntimeControl:
 
     def require_acquisition_control(self, stream, session_id):
         self.prune()
+        recover = False
         if session_id:
-            self.validate_session(session_id, target=stream in STREAMS)
-            if self.created_streams.get(stream) != session_id:
+            session = self.validate_session(session_id, target=stream in STREAMS)
+            owner = self.created_streams.get(stream)
+            # An explicit control command may recover an abandoned acquisition.
+            # No owner entry denotes GUI ownership, which must not be claimed.
+            recover = owner is not None and owner not in self.sessions and stream in session.streams
+            if owner != session_id and not recover:
                 raise HTTPException(409, 'This acquisition was started by another client; detach instead')
         if any(stream in session.streams for key, session in self.sessions.items() if key != session_id):
             raise HTTPException(409, 'Other clients subscribe to this acquisition; detach them before stopping it')
+        if recover:
+            self.created_streams[stream] = session_id
 
     def acquisition_stopped(self, stream):
         self.created_streams.pop(stream, None)

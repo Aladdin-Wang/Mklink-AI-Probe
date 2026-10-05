@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:47:01.437202+00:00`
+- 更新时间：`2026-10-05T22:50:23.598715+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：VOFA实际CLI/stdio MCP实体正常创建与借用通过；CLI强杀借用4.984秒/创建5.059秒释放会话，仍有SDK时保留采集，最终后台退出。证据vofa-cli-mcp-hil。新发现created_streams失主仍保留，其他AI重新订阅无法取得stop/pause权限；下一轮先核对既有管理能力并收敛显式接管。GUI导出/MCP强杀及全矩阵、安装仍待做；无生产修改，长稳暂停。
+- 当前任务：已收敛失主采集显式接管：require_acquisition_control复用原pause/resume/stop，仅已订阅、原owner失效且无其他订阅者时转移控制权；GUI采集保护不变。最终125项相关自动化通过，STM32真实CLI强杀4.904秒释放，双订阅拒绝、唯一订阅pause/resume/stop及APP基线/后台退出通过(vofa-recovery-hil)。后续继续VOFA GUI导出/MCP强杀与全矩阵，最终安装仍待做，长稳暂停。
 - 状态：`active`
 
 ## 里程碑

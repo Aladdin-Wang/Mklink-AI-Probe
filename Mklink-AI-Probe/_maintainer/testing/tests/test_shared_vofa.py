@@ -81,6 +81,32 @@ def test_owner_subscriber_and_gui_use_one_producer(vofa):
     device.read_memory.assert_not_called()
 
 
+@pytest.mark.parametrize('expired', [False, True])
+@pytest.mark.parametrize('pause_first', [False, True])
+def test_abandoned_capture_requires_sole_subscriber_for_recovery(vofa, expired, pause_first):
+    client, _, _, control, _, manager, behavior = vofa
+    owner, peer, other = attach(client), attach(client), attach(client)
+    assert call(client, owner, 'vofa_start', {'channels': [{'path': 'counter'}]}).status_code == 200
+    assert call(client, peer, 'vofa_start').json()['reused']
+    if expired:
+        control.sessions[owner].expires = time.monotonic() - 1
+    else:
+        client.post('/_runtime/detach', json={'session_id': owner})
+    # A connected observer cannot claim control without subscribing.
+    assert call(client, other, 'vofa_stop').status_code == 409
+    assert call(client, other, 'vofa_start').json()['reused']
+    assert call(client, peer, 'vofa_pause').status_code == 409
+    assert control.created_streams['vofa'] == owner
+    client.post('/_runtime/detach', json={'session_id': other})
+    if pause_first:
+        assert call(client, peer, 'vofa_pause').status_code == 200
+        assert control.created_streams['vofa'] == peer
+        assert call(client, peer, 'vofa_resume').status_code == 200
+    assert len(behavior.starts) == 1 and manager.running
+    assert call(client, peer, 'vofa_stop').status_code == 200
+    assert behavior.stops == 1 and not control.created_streams
+
+
 def test_gui_owned_capture_can_be_borrowed_but_not_stopped_by_ai(vofa):
     client, _, _, _, _, manager, behavior = vofa
     assert client.post('/api/dash/vofa/start', json={'channels': [{'path': 'counter'}]}).status_code == 200

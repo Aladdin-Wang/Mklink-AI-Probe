@@ -328,7 +328,7 @@ def build_server():
 
     @server.tool()
     def rtt_stop() -> dict:
-        """Stop only RTT owned by this session with no other subscribers; borrowers must disconnect instead."""
+        """Stop RTT with no other subscribers. A sole subscriber may recover control after its owner detaches/expires; otherwise borrowers must disconnect."""
         return client().call('rtt_stop')
 
     @server.tool()
@@ -378,7 +378,9 @@ def build_server():
 
         ping lists names. rtt_history/status and superwatch_snapshot/status reuse GUI acquisition.
         Acquisition start with {} subscribes if already running; new settings require an idle manager.
-        Stop requires ownership and no other subscriber. UART start accepts serial ports [{port, baudrate}]
+        Stop requires ownership and no other subscriber. A sole subscriber may recover
+        control after the original owner detaches/expires; GUI ownership is preserved.
+        UART start accepts serial ports [{port, baudrate}]
         plus optional profile/auto_reply_rules, executed once by the backend. serial_status.automation
         reports the validated profile/rules; borrowers subscribe with {} and compare explicit settings,
         never replace them. Shared arguments including automation remain limited to 16 KiB;
