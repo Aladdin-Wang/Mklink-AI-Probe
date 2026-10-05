@@ -37,7 +37,7 @@ def test_explicit_reattach_renews_new_session_when_old_heartbeat_is_stuck(
     original_wait, original_join = threading.Event.wait, threading.Thread.join
     # Compress only renewal/cleanup delays; requests still run in real threads.
     monkeypatch.setattr(threading.Event, 'wait', lambda event, timeout=None:
-                        original_wait(event, .01 if timeout == 20 else timeout))
+                        original_wait(event, .01 if timeout == 1 else timeout))
     monkeypatch.setattr(threading.Thread, 'join', lambda thread, timeout=None:
                         original_join(thread, .02 if timeout == 6 else timeout))
     attached = []

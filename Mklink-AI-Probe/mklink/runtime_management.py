@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from starlette.routing import Mount
 from mklink.runtime_capabilities import STREAMS, LIFECYCLE_CAPABILITIES, CAPABILITIES
 
@@ -55,6 +55,25 @@ def install_management(app, control):
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @api.websocket('/view/{key}')
+    async def live_view(socket: WebSocket, key: str):
+        if not 1 <= len(key) <= 128 or key in control.views or len(control.views) >= 128:
+            await socket.close(code=1008)
+            return
+        record = {'joined': time.monotonic(), 'expires': float('inf'), 'name': 'GUI window', 'live': True}
+        control.views[key] = record
+        try:
+            await socket.accept()
+            await socket.send_json({'registered': True})
+            while True:
+                if (await socket.receive())['type'] == 'websocket.disconnect':
+                    break
+        except WebSocketDisconnect:
+            pass
+        finally:
+            if control.views.get(key) is record:
+                control.views.pop(key, None)
+
     @api.post('/view')
     async def view(body: dict):
         key = body.get('client_id')
@@ -68,7 +87,7 @@ def install_management(app, control):
                 raise HTTPException(429, 'Too many GUI windows')
             previous = control.views.get(key, {})
             control.views[key] = {'joined': previous.get('joined', time.monotonic()),
-                                  'expires': time.monotonic()+45, 'name': 'GUI window'}
+                                  'expires': time.monotonic()+5, 'name': 'GUI window'}
         return {'registered': key in control.views, 'device_closed': False}
 
     @api.post('/detach-client')

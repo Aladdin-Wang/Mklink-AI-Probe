@@ -4,7 +4,7 @@ import { API_BASE } from '../../lib/runtimeEndpoint'
 import { tr } from '../../composables/useLanguage'
 import { useMklinkApi } from '../../composables/useMklinkApi'
 
-interface Client { id: string; name: string; kind: string; streams: string[]; expires_in: number }
+interface Client { id: string; name: string; kind: string; streams: string[]; expires_in: number | null }
 interface Runtime {
   jobs?: { job_id: string; request_id: string; action: string; state: string; error: string | null }[]
   probe_id: string; status: string; connected: boolean; busy: boolean; project_root: string

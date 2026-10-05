@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 45  # Graceful idle exit after the final local/remote client leaves.
+PROTOCOL = 46  # Graceful idle exit after the final local/remote client leaves.
 VERSION = "0.3.0"
 
 
@@ -284,7 +284,7 @@ class RuntimeClient:
             self._heartbeat.join(timeout=6)
 
     def _renew(self, stop, session_id):
-        while not stop.wait(20):
+        while not stop.wait(1):
             try:
                 request(self.info, "POST", "/_runtime/heartbeat", {"session_id": session_id}, timeout=5)
             except RuntimeErrorResponse:

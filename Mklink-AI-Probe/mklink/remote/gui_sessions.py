@@ -24,6 +24,7 @@ class Window:
     touched: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     failed: bool = False
+    presence: int = 0
 
     def snapshot(self):
         return {'endpoint': self.client.url, 'identity': self.identity,
@@ -52,7 +53,7 @@ def install_remote_windows(app, api, *, client_factory=RemoteClient):
         while True:
             await asyncio.sleep(15)
             for key, window in list(windows.items()):
-                if not window.lock.locked() and time.monotonic() - window.touched > 90:
+                if not window.presence and not window.lock.locked() and time.monotonic() - window.touched > 90:
                     await close(key)
 
     async def startup():
@@ -109,6 +110,24 @@ def install_remote_windows(app, api, *, client_factory=RemoteClient):
         if window is None: raise HTTPException(404, 'Remote window expired; reconnect explicitly')
         window.touched = time.monotonic()
         return window
+
+    @router.websocket('/{key}/presence')
+    async def live_window(socket: WebSocket, key: str):
+        window = windows.get(key)
+        if window is None or window.failed:
+            await socket.close(code=1008)
+            return
+        window.presence += 1
+        try:
+            await socket.accept()
+            await socket.send_json({'registered': True})
+            while True:
+                if (await socket.receive())['type'] == 'websocket.disconnect':
+                    break
+        finally:
+            window.presence -= 1
+            if not window.presence:
+                await close(key)
 
     @router.get('/{key}')
     async def status(key: str):

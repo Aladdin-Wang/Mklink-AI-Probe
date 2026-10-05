@@ -1,29 +1,29 @@
-import { API_BASE } from './runtimeEndpoint'
+import { API_BASE, IS_REMOTE } from './runtimeEndpoint'
 
-/** Presence only: closing a window never changes hardware ownership. */
+/** A transport-owned presence survives background timer throttling. */
 export function startSharedRuntimeView(): () => void {
-  let clientId: string | null = null
-  let timer: ReturnType<typeof setInterval> | undefined
+  let socket: WebSocket | null = null
+  let retry: ReturnType<typeof setTimeout> | undefined
   let stopped = false
-  const send = (id: string, release = false) => fetch(`${API_BASE}/api/runtime/control/view`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: id, release }), keepalive: release,
-  }).catch(() => undefined)
+  let suspended = false
   const resume = () => {
-    if (stopped || clientId !== null) return
-    // A delayed release from before navigation must not remove the restored view.
-    const id = crypto.randomUUID()
-    clientId = id
-    void send(id)
-    timer = setInterval(() => { void send(id) }, 10000)
+    if (stopped || suspended || socket !== null) return
+    const url = new URL(IS_REMOTE ? `${API_BASE}/presence` : `${API_BASE}/api/runtime/control/view/${crypto.randomUUID()}`, window.location.href)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const current = new WebSocket(url.href)
+    socket = current
+    current.onclose = () => {
+      if (socket !== current) return
+      socket = null
+      // Only presence is retried. Remote sessions require explicit reconnection.
+      if (!stopped && !suspended && !IS_REMOTE) retry = setTimeout(resume, 1000)
+    }
   }
   const suspend = () => {
-    clearInterval(timer)
-    timer = undefined
-    if (clientId === null) return
-    const id = clientId
-    clientId = null
-    void send(id, true)
+    clearTimeout(retry)
+    const current = socket
+    socket = null
+    current?.close()
   }
   const stop = () => {
     if (stopped) return
@@ -32,8 +32,12 @@ export function startSharedRuntimeView(): () => void {
     window.removeEventListener('pageshow', show)
     suspend()
   }
-  const hide = (event: PageTransitionEvent) => { event.persisted ? suspend() : stop() }
-  const show = (event: PageTransitionEvent) => { if (event.persisted) resume() }
+  const hide = (event: PageTransitionEvent) => {
+    if (event.persisted) { suspended = true; suspend() } else stop()
+  }
+  const show = (event: PageTransitionEvent) => {
+    if (event.persisted) { suspended = false; resume() }
+  }
   window.addEventListener('pagehide', hide)
   window.addEventListener('pageshow', show)
   resume()

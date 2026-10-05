@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 
-IDLE_SECONDS = 60.0
+IDLE_SECONDS = 5.0
 
 def idle_blocked(control):
     control.prune()
@@ -21,7 +21,11 @@ def check_idle(control, *, now=None, timeout=IDLE_SECONDS):
     if control.stopping:
         return False
     if idle_blocked(control):
-        control.last_activity = now
+        # Lease expiry and the idle deadline overlap. Only ongoing work extends
+        # the deadline here; renewing a lease already records real HTTP activity.
+        if (control.inflight_requests or control.operation_lock.locked()
+                or control.attach_lock.locked() or control.uart_operations or control.job_busy()):
+            control.last_activity = now
         return False
     if now-control.last_activity < timeout or not callable(control.shutdown):
         return False
@@ -34,7 +38,7 @@ def install_idle_shutdown(app, control):
     task = None
     async def monitor():
         while True:
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
             try:
                 if check_idle(control):
                     return

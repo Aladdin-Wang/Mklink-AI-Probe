@@ -158,7 +158,7 @@ watch(() => backendState.value === 'alive' ? sharedRuntime?.value === true : und
   if (shared === undefined || shared === windowLeaseMode) return
   stopWindowLease()
   windowLeaseMode = shared
-  stopWindowLease = shared ? startSharedRuntimeView() : startBrowserSessionLease(!isTauri)
+  stopWindowLease = shared || IS_REMOTE ? startSharedRuntimeView() : startBrowserSessionLease(!isTauri)
 }, { immediate: true })
 const appVersion = __APP_VERSION__
 const buildCommit = __APP_BUILD_COMMIT__

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T06:00:24.975006+00:00`
+- 更新时间：`2026-10-05T06:11:53.952122+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：149：V4 MUX帧基础已升级，应用层RX竞争修复及STM32旧RTT短测通过；共享后台协议45新增无客户端60秒空闲退出。源码双GUI登记保活/最后退出63秒释放COM通过，正在构建安装版。统一多通道与调度仍待后续；长期验证保持暂停。
+- 当前任务：149：V4帧基础升级及STM32旧RTT回归通过；协议46新增GUI连接登记、AI每秒续约/5秒过期和重叠空闲退出，源码双GUI退出5.79秒、AI强杀5.46秒且物理COM重新打开通过。正在安装补验；多通道调度未完成，长期暂停。
 - 状态：`active`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md；源码116项相关测试及新增状态轮询回归通过，真实STM32读内存、双GUI登记保活和最后退出63.24秒释放端口通过。安装版待补验。
+- **149固件与后台空闲退出**：docs/verification/runtime-idle-mux-149.md：五秒方案源码真机退出与串口释放通过；相关后端/GUI测试通过，安装补验中。
 - **统一远程GUI**：148：应用06494629安装及Skill同步，三项包内负载哈希一致；109后端、247GUI通过，测试修正ff0c5b4c三项CI通过。源码RTT及安装版Memory/符号/SuperWatch、断线禁用并保留快照、桌面代理读取与管理拒绝通过；仅同机LAN短测。
 - **远程GUI第一阶段**：147源码cd32f7e6：99后端+20GUI测试、生产构建、三个CI通过；同主机LAN真实F103内存读取/暂停运行/寄存器/RTT、双远程会话/AI共存及断线禁用通过。跨物理主机、内存写入、RTT发送、单步和新版安装仍待验收。 用户重新授权后安装及代理/包内Web短测已补验通过，详见147安装补验。
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
@@ -31,7 +31,7 @@
 ## 架构决策
 
 - 应用开发从MicroKeen/main建codex分支，经PR、CI整合；发布及合并需明确授权，标签/资产不可覆盖。
-- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议45，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
+- 0.3保留CDC：USB序列号绑定后台及MSC，本机别名不写固件；多设备不选第一台，丢失身份拒绝新操作，不重放。GUI/MCP和已迁移CLI不再有--direct；Python脚本新增共享SDK，低层Device仍供后台/专用工具使用。后台协议46，内嵌远程服务已接入共享会话，仅允许绑定物理探针后台。 工程上下文固定于后台生命周期；删除旧PUT热切换入口，换工程须显式停止该探针后台再启动。 发现统一被动MI_04枚举，删除discover/自动连接全局锁/失败遍历与保存COM；底层自动连接也只接受唯一候选。 CDC和MSC共用probes不可变进程绑定，Bridge开口前后校验，lobby拒绝CDC/MSC/目标访问，允许独立UART会话；不是原子句柄身份认证。
 - 应用MicroKeen/release主索引，旧GitHub/updates与Gitee/updates兼容；探针固件独立firmware索引。V2 RBL仅附件。
 - V4代码MicroLink_Plus/main=4bf704a；V3 MicroLinkV3/main=6a39d28；V2 MicroLinkV2/main=d32c56f，均已同步GitHub。Arm-2D/MicroBoot禁止随本任务修改、提交或上传。
 - 正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。

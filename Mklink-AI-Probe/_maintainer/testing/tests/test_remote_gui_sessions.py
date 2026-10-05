@@ -49,3 +49,13 @@ def test_limits_windows_and_reclaims_capacity(api):
     assert api.post('/remote-windows',json={'url':'ws://test:1','token':'secret'}).status_code==429
     api.post(paths[0]+'/close')
     connect(api)
+
+
+def test_live_window_close_releases_only_its_remote_client(api):
+    a,b=connect(api),connect(api,'ws://test:2')
+    with api.websocket_connect(a+'/presence') as socket:
+        assert socket.receive_json()['registered']
+        assert api.get(a).status_code==200
+    assert Client.instances[0].closed
+    assert not Client.instances[1].closed
+    assert api.get(a).status_code==404

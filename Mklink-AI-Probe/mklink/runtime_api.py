@@ -50,7 +50,7 @@ class Session:
     symbol_version: tuple | None = None
     public_id: str = field(default_factory=lambda: secrets.token_hex(8))
     joined: float = field(default_factory=time.monotonic)
-    expires: float = field(default_factory=lambda: time.monotonic() + 120)
+    expires: float = field(default_factory=lambda: time.monotonic() + 5)
     streams: set = field(default_factory=set)
     scope: str = 'target'
 
@@ -142,7 +142,7 @@ class RuntimeControl:
         clients = [{'id': s.public_id, 'kind': s.kind, 'name': s.name, 'scope': s.scope, 'streams': sorted(s.streams),
                     'age_seconds': now-s.joined, 'expires_in': max(0, s.expires-now)} for s in self.sessions.values()]
         clients += [{'id': key, 'kind': 'gui', 'name': view['name'], 'streams': [],
-                     'age_seconds': now-view['joined'], 'expires_in': max(0, view['expires']-now)} for key, view in self.views.items()]
+                     'age_seconds': now-view['joined'], 'expires_in': None if view.get('live') else max(0, view['expires']-now)} for key, view in self.views.items()]
         device = self.app.state.mklink_state.get('device')
         return {'protocol': PROTOCOL, 'version': VERSION, 'probe_id': self.info.get('probe_id'),
                 'instance_id': self.info['instance_id'], 'pid': self.info.get('pid'),
@@ -164,7 +164,7 @@ class RuntimeControl:
         session = self.sessions.get(session_id)
         if session is None:
             raise HTTPException(409, "Session expired or detached; connect again")
-        session.expires = time.monotonic() + 120
+        session.expires = time.monotonic() + 5
         return session
 
     def symbol_version(self):
