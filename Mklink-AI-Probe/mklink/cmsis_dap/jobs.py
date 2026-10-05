@@ -712,12 +712,12 @@ class OnlineFlashJobManager:
                 (job.completed_actions + fraction) / len(job.request.actions),
             )
             job.updated_at = time.monotonic()
-            completed = min(job.image.size, round(job.image.size * fraction))
+            completed = min(job.image.payload_size, round(job.image.payload_size * fraction))
             self._emit_locked(
                 job,
                 "progress",
                 message=(
-                    f"[PROGRAM] {completed} / {job.image.size} Bytes "
+                    f"[PROGRAM] {completed} / {job.image.payload_size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,
@@ -735,12 +735,12 @@ class OnlineFlashJobManager:
                 (job.completed_actions + fraction) / len(job.request.actions),
             )
             job.updated_at = time.monotonic()
-            verified = min(job.image.size, round(job.image.size * fraction))
+            verified = min(job.image.payload_size, round(job.image.payload_size * fraction))
             self._emit_locked(
                 job,
                 "progress",
                 message=(
-                    f"[VERIFY] {verified} / {job.image.size} Bytes "
+                    f"[VERIFY] {verified} / {job.image.payload_size} Bytes "
                     f"({round(fraction * 100)}%)"
                 ),
                 progress=job.total_progress,

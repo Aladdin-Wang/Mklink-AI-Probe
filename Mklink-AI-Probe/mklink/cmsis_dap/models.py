@@ -171,6 +171,11 @@ class ImageInspection:
     segments: Tuple[ImageSegment, ...] = ()
     base_address: Optional[int] = None
 
+    @property
+    def payload_size(self) -> int:
+        """Bytes represented by the image, excluding encoding and address holes."""
+        return sum(segment.length for segment in self.segments) if self.segments else self.size
+
 
 @dataclass(frozen=True)
 class JobRequest:

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T15:23:10.9032480+00:00",
+  "updated_at": "2026-10-05T15:29:35.076314+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "HPM HEX CLI共享烧录校验、真实IAB Web在线完整烧录/校验/复位/断开通过。修复OnlineFlashView canStart遗漏isBin限制，116GUI/55Skill边界测试和生产构建通过。公开Skill源码已同步但本地安装待整体更新。"
+    "current_task": "修复HEX PROGRAM/VERIFY日志按有效段统计，BIN/稀疏HEX回归117项通过；关闭测试页面后后台自动退出。接续GUI启动宽限/提示、脱机GUI、stdio MCP及全功能矩阵，安装版和本地Skill仍待最终更新。"
   },
   "milestones": [
     {

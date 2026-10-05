@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T15:23:10.9032480+00:00`
+- 更新时间：`2026-10-05T15:29:35.076314+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：HPM HEX CLI共享烧录校验、真实IAB Web在线完整烧录/校验/复位/断开通过。修复OnlineFlashView canStart遗漏isBin限制，116GUI/55Skill边界测试和生产构建通过。公开Skill源码已同步但本地安装待整体更新。
+- 当前任务：修复HEX PROGRAM/VERIFY日志按有效段统计，BIN/稀疏HEX回归117项通过；关闭测试页面后后台自动退出。接续GUI启动宽限/提示、脱机GUI、stdio MCP及全功能矩阵，安装版和本地Skill仍待最终更新。
 - 状态：`active`
 
 ## 里程碑
