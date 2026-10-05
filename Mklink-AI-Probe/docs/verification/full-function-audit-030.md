@@ -440,3 +440,13 @@ HPM侧已单次升级1a4bd0c候选（UF2 ce5c3b4544b0644039940f58548a9d37e375ffc
 真机复测bulk-dump-dap-fixed-hil：采集期间DAP暂停/读取/单步0.413秒完成；采集明确报失效。显式新采集取得两个16KiB样本，32768字节全部匹配Flash基线，随后普通读取及小块MUX恢复、后台退出。新版固件常规回归dump-bulk-after-dap-firmware-hil：1920字节MUX、1921/2048/4096字节B1每项3样本正确，4KiB测量约25Hz；parser_dropped_bytes46/47仍如实保留，不宣称全链路零丢弃。
 
 dump-memory-after-dap-firmware-hil再次验证RTT运行时Dump拒绝409、8区域非对齐快照、MUX采集、非法参数、实际CLI落盘243字节哈希一致，以及8路RTT全部显式恢复，各通道均收到独立数据。停止后后台退出。本轮未写目标Flash或改变电压，APP/Bootloader保持原状；HPM候选补验、取消/磁盘失败、矩阵其余项目和最终安装仍待推进。
+
+### HPM 新固件回归与 MUX 调试接口选择修复
+
+HPM所接V4已单次升级到固件03d72f5，UF2 SHA256 b1732bd861ad5ff8757859ee8f292d0346ef3946b6d0088ef65bb465adbaaa73；双下载器现在一致。BIN hello烧录通过；HEX末尾校验错误在目标初始化前拒绝，超过实际16MiB容量的记录在擦除前拒绝。稀疏奇数长度记录逐段读回正确，同扇区多段保留且间隔4KiB扇区未变；恢复hello BIN后，完整51244字节读回SHA256仍57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。证据hpm-dump-dap-upgrade、hpm-bin-03d72f5-hil、hpm-hex-boundaries-03d72f5-hil、hpm-final-readback-03d72f5。此轮通过原有设备端ROM入口验证固件，不冒充重新验收全部GUI/CLI部署入口。
+
+随后HPM MUX采集首轮失败（hpm-dump-bulk-03d72f5-hil）：Bridge.enable_multiplex在握手后无条件请求0x13 SWD附着，固件对JTAG明确返回status1。修复为使用现有0x10状态返回的debug_port选择：SWD1才发送非复位附着；JTAG2保留既有sysbus连接；长度不等于16或接口未识别则终止转换，不回退文本、不重放。新增SWD/JTAG各一项、损坏/未连接/未知状态四项回归；MUX/Dump相关151通过。首次命令误引用不存在的test_bridge.py，pytest未运行；纠正路径后的151才是有效结果。
+
+修复后hpm-dump-bulk-jtag-fixed-hil：15x128和单1920字节MUX配置各3个完整样本正确；1921/2048/4096字节B1各3样本全部匹配直接Flash基线，每次大块后普通读取与小块MUX恢复。4KiB测量有效8样本约25Hz；27协议帧/13完整样本，结束时有不完整尾部，未计入完整样本。clock_hz=0表示本次未取得有效时钟值，不解释成目标零时钟。B1解析丢弃46字节计数保留，CRC/丢弃帧/固件错误标志0。关闭后后台退出。
+
+STM32回归stm32-dump-jtag-selection-regression：16KiB采集期间DAP暂停/读取/单步0.441秒完成，采集明确失效；显式重启两个完整样本32768字节正确，普通读取与MUX恢复、后台退出。未更改STM32 APP或电压。固件/主机远端CI本次查询仍queued，不能写为CI成功；取消/文件失败、Flush及全矩阵剩余项继续。

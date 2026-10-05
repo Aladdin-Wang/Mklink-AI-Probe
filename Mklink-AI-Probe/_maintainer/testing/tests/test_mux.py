@@ -26,6 +26,44 @@ def peer():
     return transport, calls
 
 
+@pytest.mark.parametrize('port,attach', [(1, True), (2, False)])
+def test_bridge_mux_attach_respects_reported_debug_port(monkeypatch, tmp_path, port, attach):
+    from unittest.mock import Mock
+    from mklink.bridge import MKLinkSerialBridge
+    transport = Mock()
+    transport.request.return_value = bytes(15) + bytes([port])
+    monkeypatch.setattr('mklink.mux.MuxTransport', Mock(return_value=transport))
+    bridge = MKLinkSerialBridge.__new__(MKLinkSerialBridge)
+    bridge._cmd_lock = threading.RLock()
+    bridge._mux = None
+    bridge._mux_supported = True
+    bridge._mux_marker = tmp_path / 'mux'
+    bridge._serial = Mock()
+    assert bridge.enable_multiplex() is transport
+    assert [call.args[0] for call in transport.request.call_args_list] == ([0x10, 0x13] if attach else [0x10])
+    transport.fail.assert_not_called()
+
+
+@pytest.mark.parametrize('status', [b'', bytes(15), bytes(16), bytes(15)+b'\x03'])
+def test_bridge_mux_rejects_unknown_or_malformed_debug_port(monkeypatch, tmp_path, status):
+    from unittest.mock import Mock
+    from mklink.bridge import MKLinkSerialBridge
+    transport = Mock()
+    transport.request.return_value = status
+    monkeypatch.setattr('mklink.mux.MuxTransport', Mock(return_value=transport))
+    bridge = MKLinkSerialBridge.__new__(MKLinkSerialBridge)
+    bridge._cmd_lock = threading.RLock()
+    bridge._mux = None
+    bridge._mux_supported = True
+    bridge._mux_marker = tmp_path / 'mux'
+    bridge._serial = Mock()
+    with pytest.raises(RuntimeError, match='supported debug interface'):
+        bridge.enable_multiplex()
+    transport.request.assert_called_once_with(0x10)
+    transport.fail.assert_called_once()
+    bridge._serial.write.assert_called_once_with(b'~MKLINK-MUX1\n')
+
+
 def test_framing_claim_event_isolation_and_heartbeat():
     transport, calls = peer()
     transport.handshake()

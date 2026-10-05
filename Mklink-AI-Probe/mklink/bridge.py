@@ -363,7 +363,11 @@ class MKLinkSerialBridge:
                 self._mux_marker.write_text('MLX1', encoding='ascii')
                 self._serial.write(b'~MKLINK-MUX1\n')
                 transport.handshake()
-                transport.request(0x13)  # Non-resetting SWD attach.
+                status = transport.request(0x10)
+                if len(status) != 16 or status[15] not in (1, 2):
+                    raise RuntimeError('Multiplex target has no supported debug interface')
+                if status[15] == 1:  # DAP_PORT_SWD; JTAG uses the established sysbus.
+                    transport.request(0x13)  # Non-resetting SWD attach.
             except Exception as exc:
                 transport.fail(exc)
                 raise  # No text-mode fallback after a failed protocol transition.
