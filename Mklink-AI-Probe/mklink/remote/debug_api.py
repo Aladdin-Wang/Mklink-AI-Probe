@@ -229,7 +229,7 @@ def _peripheral_names(body, allowed):
     return names
 
 
-def peripheral_capture(device, body):
+def peripheral_capture(device, body, *, cancelled=None):
     import math
     names = _peripheral_names(body, {'names', 'duration', 'period'})
     duration, period = body.get('duration', 1.0), body.get('period', .01)
@@ -237,7 +237,7 @@ def peripheral_capture(device, body):
         raise ValueError('Capture duration and period must be finite numbers')
     if not 0 < duration <= 30 or period <= 0:
         raise ValueError('Capture requires 0 < duration <= 30 and period > 0')
-    return device.capture_peripherals(names, duration=duration, period=period)
+    return device.capture_peripherals(names, duration=duration, period=period, cancelled=cancelled)
 
 
 def create_debug_router(state, lease):
@@ -271,5 +271,5 @@ def create_debug_router(state, lease):
     add('fault-snapshot', fault_snapshot)
     add('breakpoints', breakpoints)
     add('peripherals/read', peripheral_read)
-    add('peripherals/capture', peripheral_capture)
+    add('peripherals/capture', peripheral_capture, cancellable=True)
     return router

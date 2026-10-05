@@ -405,9 +405,9 @@ def read_item(device, item):
     return value
 
 
-def capture_items(device, items, *, duration=1.0, period=0.01):
+def capture_items(device, items, *, duration=1.0, period=0.01, cancelled=None):
     import math, time
-    from .dump_memory import DumpMemoryStreamSession
+    from .dump_memory import DumpMemoryStreamSession, check_capture_cancelled
     from .superwatch import build_read_blocks, compile_frame_decoder
 
     if not math.isfinite(duration) or not 0 < duration <= 30:
@@ -424,6 +424,7 @@ def capture_items(device, items, *, duration=1.0, period=0.01):
     if not 1 <= len(blocks) <= 15:
         raise ValueError("Capture supports 1..15 register regions")
     decoder = compile_frame_decoder(items, blocks)
+    check_capture_cancelled(cancelled)
     session = DumpMemoryStreamSession(
         device._bridge, [(b.address, b.size) for b in blocks], period
     )
@@ -436,7 +437,9 @@ def capture_items(device, items, *, duration=1.0, period=0.01):
         deadline = time.monotonic() + 2.0
         collecting = False
         while time.monotonic() < deadline:
+            check_capture_cancelled(cancelled)
             for frame in session.read_frames(max_bytes=1024 * 1024):
+                check_capture_cancelled(cancelled)
                 values = decoder.decode(frame)
                 if frame.get("flags") or values is None:
                     invalid += 1

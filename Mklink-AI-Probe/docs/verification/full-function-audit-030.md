@@ -21,7 +21,7 @@
 | A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | Dump模式切换/容量/文件失败及有限采集取消已修并有实体证据；STM32 Flush SDK/CLI/MCP12KiB及八区域合计12KiB写回通过、数组恢复；HPM Flush 4KiB/八区域/CLI及拒绝边界通过；已修正测试镜像基址并重验运行推进/RTT恢复，GUI及其余故障边界继续 |
 | A10 | 调试、寄存器、断点 | 暂停/运行/单步/复位，FPB 资源耗尽，状态恢复，ARM/JTAG 差异 | STM32实体DAP六槽耗尽拒绝/释放/实际命中通过；低层负槽位写入已修、相关90项自动化通过；共享各入口/JTAG继续 |
 | A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
-| A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
+| A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 有限外设采样取消接入既有机制，103项相关回归通过；STM32 GPIOB.IDR真实TCP断连释放/读取和重采集恢复通过，其余入口及边界继续 |
 | A13 | ARM 在线烧录 | BIN/HEX、多段、扇区/整片、FLM/Pack 选择、校验、失败恢复 | 新固件STM32 DAP强制APP扇区擦写/完整读回及boot边界通过；GUI/CLI及格式/算法矩阵继续 |
 | A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM实体写入/读回、稀疏/空洞保持、错误校验/容量拒绝和在线入口有证据；旧测试BIN转HEX基址错误已发现，正确BIN基址下载/启动本轮通过，正确HEX CLI/真实MCP完整读回及启动已补验；GUI在线HEX正确布局完整读回和启动本轮通过 |
 | A15 | 脱机部署和执行 | ARM/HPM BIN/HEX，预览、MSC 身份、已有文件、传输中断、完成反馈 | HPM HEX完整GUI预览/部署/CDC触发脚本及终态查询真机通过；正确布局HEX部署/CDC触发脚本完整读回及应用启动已补验；GUI正确布局部署/触发与启动本轮通过；物理按键、MSC中断及ARM回归待验证 |
@@ -534,3 +534,10 @@ hpm-hex-correct-base-entries先检查当前ELF所有Flash内有内容的可载�
 脱机页选V4/HPM6E80/hpm6e00evk，上传同一HEX并使用专用audit-correct-hex.py脚本名；预览包含hpm.program_hex，10MHz，未启用全片擦除/安全操作。部署返回2文件，随后点击触发测试，页面显示loaded successfully、auto download finished和绿色完成提示。独立共享SDK读回51244字节与BIN完全一致，tick27616→33413，后续游标收到新日志。两次读回SHA256仍57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。证据hpm-gui-online-hex-verification.json、hpm-gui-offline-hex-verification.json和已查看的hpm-gui-correct-hex.png，仅保存在本地。
 
 开始时本轮CLI保活辅助进程持有build_workspace锁，独立验证命令被拒绝且未运行；仅结束该测试辅助进程后重试，网页独立会话保持，后台与其他进程未被强杀。最后关闭测试网页并核查后台进程退出。此次无生产代码改动，不重复无关单测；物理按键、MSC中断以及其余完整矩阵仍待验。
+### 有限外设采样复用 HTTP 断连与会话取消
+
+审计发现peripherals/capture可持续30秒，但没有接入已有有限Dump取消。路由改为使用同一_run_cancellable_capture；Device.capture_peripherals和capture_items透传可选cancelled，构造采集前、循环及逐帧调用既有check_capture_cancelled。取消抛错、不返回部分成功结果，finally仍确认session.stop，准入锁保留到工作线程清理终态。未增加独立线程、租约表或关闭共享端口，也未给写入/烧录增加中断行为。普通单次watch快照没有持续循环，本轮不改；传统多次memory_dump仍需另审。
+
+103项相关回归通过，新增启动前取消无IO、部分样本取消后stop、stop失败继续暴露，以及模拟HTTP断连时清理未完成仍持有操作/资源锁、其他RTT启动拒绝409。现有CI已包含这两个测试文件，无需重复建工作流。
+
+peripheral-http-disconnect-hil真实STM32使用现有SVD选择的GPIOB.IDR，只读15秒请求确认资源准入后断开TCP，约0.111秒资源释放。仍存活SDK读取APP基线一致，显式0.5秒新采样取得24个有效样本、无invalid/CRC/解析丢弃/固件错误标志，最后后台退出。未更改SVD选择、目标Flash、RAM或电压；这是本次有限实测，不承诺阻塞IO/stop异常下的硬时间上限，未覆盖物理USB拔插或长期测试。

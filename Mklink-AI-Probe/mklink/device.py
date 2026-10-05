@@ -2218,7 +2218,7 @@ class Device:
         self._peripheral_catalog = catalog
         return catalog.public(query) if catalog else {"selection": None, "items": []}
 
-    def capture_peripherals(self, names, *, duration=1.0, period=0.01):
+    def capture_peripherals(self, names, *, duration=1.0, period=0.01, cancelled=None):
         from .peripheral_watch import load_catalog, capture_items
 
         self._require_connected()
@@ -2226,7 +2226,7 @@ class Device:
         if catalog is None:
             raise ValueError("Select a peripheral chip first")
         return capture_items(
-            self, [catalog.resolve(n) for n in names], duration=duration, period=period
+            self, [catalog.resolve(n) for n in names], duration=duration, period=period, cancelled=cancelled
         )
 
     def read_register(self, name: str) -> int:

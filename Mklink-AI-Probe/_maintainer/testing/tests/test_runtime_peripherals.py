@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import threading
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, ANY
 
 from fastapi.testclient import TestClient
 import pytest
@@ -82,7 +82,7 @@ def test_capture_rejects_gui_conflict_without_stopping_it_or_replaying(periphera
     managers['rtt'].running=False
     device.capture_peripherals.side_effect=TimeoutError('unknown capture result')
     assert client.post('/api/device/peripherals/capture',json=body).status_code==500
-    device.capture_peripherals.assert_called_once_with(['GPIOB.12'],duration=.1,period=.01)
+    device.capture_peripherals.assert_called_once_with(['GPIOB.12'],duration=.1,period=.01,cancelled=ANY)
     assert not state['resource_manager'].get_status()
 
 
@@ -114,3 +114,42 @@ def test_capture_rejects_non_numeric_timing_before_device_call(peripheral,durati
     assert client.post('/api/device/peripherals/capture',json={'names':['GPIOB.12'],'duration':duration,'period':period}).status_code==422
     device.capture_peripherals.assert_not_called()
     assert not state['resource_manager'].get_status()
+
+
+def test_disconnected_capture_holds_admission_until_worker_cleanup(peripheral, monkeypatch):
+    import time, asyncio
+    from starlette.requests import Request
+    client,control,state,device,_,_=peripheral
+    entered,disconnect,cleaning,release=(threading.Event() for _ in range(4))
+    async def receive_disconnect():
+        while not disconnect.is_set():
+            await asyncio.sleep(.005)
+        return {'type':'http.disconnect'}
+    monkeypatch.setattr(Request,'receive',property(lambda self: receive_disconnect))
+    def worker(*args,cancelled,**kwargs):
+        entered.set()
+        deadline=time.monotonic()+5
+        while not cancelled():
+            assert time.monotonic()<deadline
+            time.sleep(.005)
+        cleaning.set()
+        assert release.wait(5)
+        raise InterruptedError('cancelled after cleanup')
+    device.capture_peripherals.side_effect=worker
+    with ThreadPoolExecutor() as pool:
+        result=pool.submit(client.post,'/api/device/peripherals/capture',
+                           json={'names':['GPIOB.IDR']})
+        assert entered.wait(5)
+        try:
+            disconnect.set()
+            assert cleaning.wait(5)
+            assert control.operation_lock.locked()
+            assert state['resource_manager'].get_status()
+            assert client.post('/api/dash/rtt/start',json={}).status_code==409
+        finally:
+            release.set()
+        response=result.result(timeout=5)
+    assert response.status_code==500 and 'cancelled after cleanup' in response.text
+    assert not control.operation_lock.locked()
+    assert not state['resource_manager'].get_status()
+

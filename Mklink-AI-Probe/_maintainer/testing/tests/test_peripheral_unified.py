@@ -250,6 +250,29 @@ def test_capture_rejects_duplicate_channels_before_io(selected):
         capture_items(object(), [item, item])
 
 
+@pytest.mark.parametrize('before_start,stop_fails', [(True,False),(False,False),(False,True)])
+def test_capture_cancel_preserves_cleanup_and_discards_partial_result(selected,monkeypatch,before_start,stop_fails):
+    events=[]
+    class Session:
+        def __init__(self,*args): events.append('construct')
+        def start(self): events.append('start')
+        def stop(self):
+            events.append('stop')
+            if stop_fails: raise TimeoutError('stop unconfirmed')
+        def read_frames(self,**kwargs):
+            events.append('read')
+            return [{'regions':[(0,b'\x00\x10\x00\x00')],'timestamp_us':1}]
+    calls=0
+    def cancelled():
+        nonlocal calls
+        calls+=1
+        return before_start or calls>=4
+    monkeypatch.setattr('mklink.dump_memory.DumpMemoryStreamSession',Session)
+    with pytest.raises(TimeoutError if stop_fails else InterruptedError):
+        capture_items(SimpleNamespace(_bridge=None),[selected[1].resolve('GPIOB.IDR')],duration=30,cancelled=cancelled)
+    assert events == ([] if before_start else ['construct','start','read','stop'])
+
+
 @pytest.mark.parametrize("address", ["0xE000E010", "0xE000EDF0"])
 def test_core_side_effects_are_filtered_even_when_svd_omits_read_action(address):
     xml = SVD.replace(b"0x40010c00", address.encode()).replace(

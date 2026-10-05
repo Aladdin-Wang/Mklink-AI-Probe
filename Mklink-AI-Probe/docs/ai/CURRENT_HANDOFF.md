@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:03:54.7974536+00:00`
+- 更新时间：`2026-10-05T21:08:28.1389639+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：真实Chrome GUI HPM在线HEX/脱机预览部署触发均补验正确0x80000400布局，独立SDK51244字节全读回、tick推进和新增RTT通过；页面已关闭。仅证据更新，物理按键/MSC中断及全矩阵继续。
+- 当前任务：外设有限采样接入既有HTTP/会话取消；103相关回归通过，STM32真实15秒GPIOB.IDR采样TCP断连0.111秒释放，其他SDK读取及24样本重采集恢复、后台退出。普通多次快照取消与全矩阵继续。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. HPM正确HEX的MCP/CLI/GUI在线/GUI脱机CDC触发启动证据已齐，不再重复。继续全矩阵尚未覆盖项（配置/符号/远程、其他有限采集取消、原生保存等），物理按键/MSC中断保留待验。最终完整回归与安装Skill尚未做。
+1. 继续普通memory_dump多次快照取消审计及全矩阵尚未覆盖项，外设capture的HTTP取消已真机通过（peripheral-http-disconnect-hil）。GUI/HPM正确HEX已补验，无需重复。最终完整回归、安装包/Skill待做。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
