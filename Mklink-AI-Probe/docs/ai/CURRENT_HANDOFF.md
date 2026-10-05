@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T00:24:39.506782+00:00`
+- 更新时间：`2026-10-05T01:23:09.703872+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：144阶段收尾：143源码相关短时回归539通过/1跳过；已知实机测试后台、端口和pytest无残留。143反馈/GUI CI通过、后台待完成，最终文档提交CI须以GitHub为准。按用户再几轮内暂停的要求，在本轮推送交接后暂停持续目标；不再自动开新一轮。
+- 当前任务：145用户授权的有限安装验收已完成：源1aca5414本地NSIS覆盖安装及Skill升级0.3.0；实际NSIS三文件哈希一致，安装版桌面/Web/Skill三个会话共享一台V4成功，AI/桌面退出后Web保留。持续目标仍暂停，长期未恢复。收益评估见报告145。
 - 状态：`paused`
 
 ## 里程碑
@@ -20,8 +20,8 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：144：143代码提交d9fc888b的相关短时回归539通过/1跳过，已知测试进程/端点清理；142双V4真实终态恢复与AI读回证据保留。不是运行中烧录/断电恢复或发布验收。142CI全通过；最终提交检查以GitHub为准。
-- **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
+- **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
+- **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
 
@@ -35,8 +35,8 @@
 
 ## 真机环境
 
-- **state**：142双V4重新枚举，各真实在线connect/disconnect作业成功；F103保持AI目标连接，HPM交接CDC后原客户端显式重附加一次。双Chrome恢复真实终态后AI仍返回原身份，双盘/profile不变，后台/端点正常清理。无烧录/复位/改压；下次先枚举，长期暂停。
-- **installer**：本地仍为0.2.3/b0e0f61；0.3.0为源码开发分支，不代表安装/升级验收。
+- **state**：145仅枚举到一台V4；安装版后台使用用户F103工程，AI读回身份前后一致。桌面proxy/AI验收进程已退出，默认浏览器Web GUI及共享后台按用户要求保留。无烧录/改压，长期暂停。
+- **installer**：本机已覆盖安装0.3.0开发版，源1aca5414；NSIS退出0，安装文件与包内负载一致，Skill完整升级。单V4三客户端短时共存已验收；不是全面发布认证。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
