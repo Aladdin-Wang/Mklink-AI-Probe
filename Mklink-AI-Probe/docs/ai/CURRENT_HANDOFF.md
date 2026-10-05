@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T18:55:01.424132+00:00`
+- 更新时间：`2026-10-05T19:04:26.256348+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：固件5ad7233传统RTT下行批量化，C泵/引擎/仲裁测试及SES/SWD布局通过，STM32已升级，HPM仍f89a562。八路传统268字节等待完成哈希/MUX互切通过；150ms即停取消剩余数据已确认。传统流DAP调试恢复及MUX8+Watch+DAP恢复通过，堆峰值10680，RTT栈前缀436。发现pending全满停止标记可达性未覆盖，下一轮优先复现修复。
+- 当前任务：固件1a4bd0c修复传统RTT满队列/DAP占用时无法停止：输入解析独立目标锁，有界溢出计数及停止回执。STM32已单次升级，45秒卷等待超时后实际恢复确认；DAP暂停下1024字节测试回执512未发/512溢出约52ms，DAP仍可读/单步。八路正常传统/MUX+Watch+DAP恢复均通过。HPM仍f89a562，安装/Skill未更新。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双V4：STM32侧5ad7233，HPM侧f89a562。STM32传统八路逐路映射、MUX八路/Watch及DAP调试恢复有限测试通过；快速stop不保证排空。两端更早烧录证据保留，不能外推到所有最新固件入口。各串口已关闭，长期验证暂停。
+- **state**：STM32侧V4为1a4bd0c，HPM侧f89a562。STM32满队列/DAP占用停止、八路传统/MUX和Watch调试恢复有限真机通过，堆峰值10680，RTT栈前缀436。各句柄已关闭；UF2运行卷45秒等待曾超时但后续恢复，不重复刷写。长期验证暂停。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 优先复现传统RTT pending全满且目标不消费时的停止标记可达性，现有测试只有256字节未满。安全设计停止与丢弃/背压语义，维持DAP优先，不以无界等待排空。继续其余矩阵；HPM尚未升级5ad7233；最终安装/Skill。
+1. 继续HPM侧固件1a4bd0c升级及BIN/HEX/堆栈回归，再推进其余全功能矩阵、原生保存、MSC并发、新固件各入口验证，最终安装/Skill。传统满队列停止已修复并通过；停止取消不是排空，计数仅针对探针暂存。跟进远端CI，不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
