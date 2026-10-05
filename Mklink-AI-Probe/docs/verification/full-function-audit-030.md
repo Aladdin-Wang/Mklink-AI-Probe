@@ -96,3 +96,9 @@ STM32 测试 APP 改为八个相同的 RTT 上/下行通道，暂停目标端 RT
 原始失败脚本无需额外attach即通过：八路256字节哈希、275组Watch、真实DAP暂停/单步/继续、目标busy拒绝与流失效通知；显式重启采集后八路均有数据、141组Watch。强制扇区擦写（smart_flash=false）并发测试也通过：APP完整读回，前20KiB Bootloader未变；包含下载/校验的DAP阶段约8.54秒，重启采集后八路及143组Watch恢复。证据为本地rtt8-dap-debug-hil.json及rtt8-dap-flash-hil.json。未据此宣称GUI/CLI/MCP全边界、HPM或硬实时延迟完成。
 
 Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加入reset_and_halt后通过并恢复APP。产品backend已有_prepare_algorithm_execution，但目前按_algorithm_reset_required条件执行；下一轮检查内置目标是否也需要该保护，避免只覆盖Pack/自定义FLM。
+
+### 内置算法的下载前状态保护
+
+检查发现PyOcdBackend以前仅为Pack/FLM、security_family=stm32f103-rdp1和少数nRF内置目标启用算法前reset-and-halt；直接指定stm32f103rc而不带security_family时会跳过。已统一该Cortex-M后端的破坏性Flash操作前置状态，保留连接/只读不复位和一次算法准备复位的行为，删除按型号重复判断。整个test_online_flash_backend.py：137通过。
+
+真实PyOcdBackend（非单独FileProgrammer）使用内置stm32f103rc，解析测试HEX、program、verify通过。计数确认program前一次reset-and-halt、verify无额外复位，boot前20KiB保持不变；随后显式启动测试APP。证据：本地rtt8-production-backend-hil.json。该结果不外推所有支持芯片真机认证。

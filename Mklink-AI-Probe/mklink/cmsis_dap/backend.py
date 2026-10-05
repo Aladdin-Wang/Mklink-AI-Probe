@@ -1253,21 +1253,11 @@ class PyOcdBackend:
                 # with under-reset selected. For example, STM32F1's algorithm
                 # clears Flash latency and assumes reset clocks; running it
                 # after a 72 MHz application can make Flash read back as FF.
-                # The built-in nRF54L algorithm has the same execution-state
-                # assumptions as an imported FLM.  If the application is
-                # running when an online job starts, invoking Init directly
-                # can leave the target in a stale context and pyOCD reports
-                # ``flash init timed out``.  Reset and halt once before any
-                # destructive operation, just as we already do for FLMs.
-                nrf54_builtin = str(session_target).casefold() in {
-                    "nrf54l",
-                    "nrf54lm20a",
-                }
-                self._algorithm_reset_required = (
-                    bool(resolved_flms or resolved_pack)
-                    or security_family == "stm32f103-rdp1"
-                    or nrf54_builtin
-                )
+                # Built-in Cortex-M algorithms have the same execution-state
+                # requirements as Pack/FLM algorithms. Defer the reset until
+                # destructive work; attaching and read-only inspection do not
+                # authorize resetting an application.
+                self._algorithm_reset_required = True
                 self._algorithm_reset_done = False
                 self._connection_arguments = {
                     "probe": probe,
@@ -2522,7 +2512,7 @@ class PyOcdBackend:
                 raise self._mapped_error(exc, FlashErrorCode.PROGRAM_FAIL) from None
 
     def _prepare_algorithm_execution(self, target: Any) -> None:
-        """Reset Pack/imported-FLM targets once before destructive work.
+        """Reset Cortex-M targets once before destructive work.
 
         Attaching to a running RTOS can retain exception/stack/MPU state that
         is unsuitable for a RAM algorithm. Connection and read-only operations
