@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:01:20.568400+00:00`
+- 更新时间：`2026-10-05T16:08:20.619595+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：RTT八路双SharedDevice历史/256字节Down哈希/借用者权限/独立关闭真机通过；发现整数组标量监视异步拖停SuperWatch，已改为候选布局预检后提交，167回归及并发真机复验通过1971样本。所有本轮会话已关闭。接续GUI八路、数组快照、启动等待、脱机GUI及剩余矩阵；最终安装未做。
+- 当前任务：真实IAB STM32八路日志/HEX/终端、曲线、0暂停/1收起恢复、八路GUI发送rx+8及7发送历史通过，页面采集已停止/标签关闭/viewport恢复。五分钟伴随会话exec48290需确认退出。尚需多字节编码/全通道交互组合、数组快照、GUI启动等待、脱机GUI及完整剩余矩阵。
 - 状态：`active`
 
 ## 里程碑
