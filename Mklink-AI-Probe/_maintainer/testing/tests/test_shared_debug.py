@@ -159,7 +159,7 @@ def test_shared_gate_rejects_during_capture_and_job(runtime,capability):
 def test_worker_holds_single_lease_without_blocking_loop(device):
     from contextlib import asynccontextmanager
     from fastapi import FastAPI
-    from route_utils import find_route
+    from httpx import ASGITransport, AsyncClient
     entered,release=threading.Event(),threading.Event()
     events=[]
     @asynccontextmanager
@@ -174,11 +174,15 @@ def test_worker_holds_single_lease_without_blocking_loop(device):
     device.read_memory.side_effect=read
     app=FastAPI();app.include_router(debug_api.create_debug_router({'device':device},lease))
     async def scenario():
-        task=asyncio.create_task(find_route(app,'/api/device/fault-snapshot').endpoint({}))
-        try:
-            assert await asyncio.to_thread(entered.wait,2)
-            assert not task.done()
-        finally:
-            release.set();await task
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            task=asyncio.create_task(client.post('/api/device/fault-snapshot', json={}))
+            try:
+                assert await asyncio.to_thread(entered.wait,2)
+                assert not task.done()
+            finally:
+                release.set()
+                response=await task
+            assert response.status_code==200
+            assert response.json()['halt_requested'] is False
         assert events==['acquire','release']
     asyncio.run(scenario())
