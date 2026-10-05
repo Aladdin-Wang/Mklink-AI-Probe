@@ -18,7 +18,7 @@
 | A06 | 工程和文件来源 | Keil/IAR/SEGGER/CMake，AXF/ELF/MAP/C 回退，文件变更、失效和重载 | 待验证 |
 | A07 | 符号、类型和变量 | 结构/数组/指针/位域/宽整数/浮点，分页与搜索，缺失符号，边界地址 | 待验证 |
 | A08 | 内存读写与导出 | 零长度/越界/非对齐/分片，读写校验、未知写入不重放，批量访问 | SDK实体4KiB/16区域/重叠乱序非对齐批读、变量写入校验恢复、14类拒绝及双客户端busy恢复通过；导出及各入口边界继续 |
-| A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | 已修空闲MUX到传统快照切换和MUX完整帧组装；STM32八区域快照/流采集/CLI文件一致性/短测及RTT冲突恢复通过；Flush与其余容量/故障边界继续 |
+| A09 | Dump/Flush/吞吐测量 | 区域重叠/大小上限/超时/取消，文件头与数据完整性，缓存边界 | Dump模式切换/容量/文件失败及有限采集取消已修并有实体证据；STM32 Flush SDK/CLI/MCP12KiB及八区域合计12KiB写回通过、数组恢复；HPM Flush/GUI及其余故障边界继续 |
 | A10 | 调试、寄存器、断点 | 暂停/运行/单步/复位，FPB 资源耗尽，状态恢复，ARM/JTAG 差异 | STM32实体DAP六槽耗尽拒绝/释放/实际命中通过；低层负槽位写入已修、相关90项自动化通过；共享各入口/JTAG继续 |
 | A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
@@ -494,3 +494,13 @@ CLI原来直接Path.write_bytes，会先截断既有导出文件，随后磁盘�
 flush-current-candidate-hil在现有STM32专用mklink_benchmark_words符号解析出的4096字节数组内测试：SDK a5填充单批4096字节并完整读回，真实stdio MCP八个非对齐区域（二批，共40字节，含00/FF/80）逐区校验，真实CLI96个非重复字节按30/30/30/6四批正确写入。12289字节、九区域和重叠请求均拒绝，每次拒绝后数组完整4096字节与拒绝前一致。finally通过既有Flush分批恢复全部原值并校验，原始SHA256 61e1679eac869a152e6eccec16d4cf37ccfe137bf0253bc4cff5e1b8d9ac67bd，所有客户端关闭后后台退出。
 
 本轮未写Flash/Bootloader、电压或升级固件；HPM Flush、12KiB整块实体边界、GUI入口及现场传输异常仍待验证。已有失败即停止后续批次、未知结果不重放保持相关自动化覆盖。远端a776e784反馈检查已成功，共享运行时检查仍queued；不是本轮新提交CI结果。
+
+### Flush 12KiB 全容量实体边界
+
+仅扩大STM32测试工程专用mklink_benchmark_words从1024到3072个uint32，初始化循环改为sizeof派生上限，未改下载器或主机生产代码。Keil0错误0警告，Code93264/RO19448/RW2616/ZI33272；新AXF SHA256 976acece4cf1fcaa393ecb15ebc89c398aef8becf32f899220bb0491d16300b0。所有有文件内容的ELF载入段均在0x08005000..0x08040000内，扇区模式更新APP并逐段读回，前20KiB Bootloader烧前/烧后完全一致，SHA256 d7f5ba1130c7f5a3f624285350a2ea347e70d0e10c7220d4ae0fc73e0835b29c。通过显式MSP/PC/VTOR启动APP，不扩大为Bootloader自动路由验证。
+
+flush12k-hil：SDK写a5、真实stdio MCP以空格HEX写55、真实CLI写3c，各12288字节单批并经工具verify及独立三次4KiB读回全字节一致。八个1536字节区域合计12288字节，分两批（9216/3072）执行和校验通过。测试客户端全部关闭、后台退出后，用独立DAP暂停/恢复原始专用数组12288字节并完整读回；这是明确的恢复动作，不是重放Flush未知结果。未将此恢复称为Flush非重复12KiB吞吐验证。
+
+flush12k-recovery-hil再次比较完整专用数组与保存原值、20KiB Bootloader与基线一致；按当前AXF符号启动RTT0–7，八路各自数据均收到，tick从120370推进到122364，主动stop/close后后台退出。证据还包括flush12k-app-flash.json与本地Keil日志。本轮仅新增实体证据与目标fixture，无主机生产变化，不重复无关自动化。
+
+RAM符号因扩容发生变化：mklink_benchmark_words仍0x20003558（现在12288字节）；rt_tick变为0x20006800，rtt_test_modes0x20007060，rx_bytes0x20007080，rx_hash0x200070a0；RTT控制块仍0x20000b88。必须从当前AXF解析，旧硬编码脚本不可直接复用。双V4仍03d72f5，HPM目标未动。HPM Flush、GUI入口和真实传输中断边界继续，1b3060bd两个CI查询仍queued。
