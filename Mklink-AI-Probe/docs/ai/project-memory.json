@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T21:26:46.9933351+00:00",
+  "updated_at": "2026-10-05T21:30:10.4252977+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "完整Python回归4261通过/1失败/3跳过；唯一失败为测试直调路由漏Request，与CI同因。已改为ASGI HTTP入口，调试/Dump/外设109项复测通过，无生产修改；完整报告full-python-7eeaf300.xml，待新CI及矩阵余项。"
+    "current_task": "当前STM32 AXF副本变更/缺失时共享变量读/观察/写均409、活动客户端阻止重载；恢复原文件后读正常，退出客户端再显式重载generation1→2，tick推进、后台退出。实体报告symbol-source-current-hil，无生产改动；上一轮完整回归唯一测试契约失败已修，109复测通过。"
   },
   "milestones": [
     {

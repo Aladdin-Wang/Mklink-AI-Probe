@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:26:46.9933351+00:00`
+- 更新时间：`2026-10-05T21:30:10.4252977+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：完整Python回归4261通过/1失败/3跳过；唯一失败为测试直调路由漏Request，与CI同因。已改为ASGI HTTP入口，调试/Dump/外设109项复测通过，无生产修改；完整报告full-python-7eeaf300.xml，待新CI及矩阵余项。
+- 当前任务：当前STM32 AXF副本变更/缺失时共享变量读/观察/写均409、活动客户端阻止重载；恢复原文件后读正常，退出客户端再显式重载generation1→2，tick推进、后台退出。实体报告symbol-source-current-hil，无生产改动；上一轮完整回归唯一测试契约失败已修，109复测通过。
 - 状态：`active`
 
 ## 里程碑
