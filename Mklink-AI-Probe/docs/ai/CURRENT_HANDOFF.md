@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T00:21:16.290384+00:00`
+- 更新时间：`2026-10-05T00:24:39.506782+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：143收尾第一轮：删除旧MCP run/模块级服务器及旁路启动清理，只保留尚有能力测试引用的注册器和builder。活动MCP/stdio 20项通过。用户要求再2–3轮后暂停：下一轮短时综合回归与交接，必要时仅加一轮阻塞修复，然后暂停目标。
-- 状态：`in_progress`
+- 当前任务：144阶段收尾：143源码相关短时回归539通过/1跳过；已知实机测试后台、端口和pytest无残留。143反馈/GUI CI通过、后台待完成，最终文档提交CI须以GitHub为准。按用户再几轮内暂停的要求，在本轮推送交接后暂停持续目标；不再自动开新一轮。
+- 状态：`paused`
 
 ## 里程碑
 
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第142节：241后端回归通过；双V4真实在线连接/断开作业和双Chrome终态恢复通过，各后台只列自身探针，无恢复重提；AI恢复读取、双盘/profile不变、端点/进程清理。HPM需显式重附加，不是运行中烧录/断电恢复。141三项CI全通过。
+- **共享后台、多探针与AI共存**：144：143代码提交d9fc888b的相关短时回归539通过/1跳过，已知测试进程/端点清理；142双V4真实终态恢复与AI读回证据保留。不是运行中烧录/断电恢复或发布验收。142CI全通过；最终提交检查以GitHub为准。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -41,9 +41,9 @@
 
 ## 下一动作
 
-1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 143后只剩一轮计划内收尾：相关短时回归、核对142/143及最终提交CI、工作区/进程清理并记录阶段报告；若本轮发现阻塞仅允许追加一轮。随后按用户要求将目标置paused并停止，等待通知。剩余旧MCP注册器及专用客户端、安全/物理中断、NSIS UAC、跨主机及长期验证保留待办，不无限扩展。
-3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
+1. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
+2. 恢复后先核对Git/草稿PR最新CI，再按144待办推进：旧MCP注册器与专用客户端迁移、补齐CI专项列表、真实运行中恢复/物理中断、安全与跨主机、NSIS安装升级验收。不得自动合并发布或改下载器固件/WinUSB。
+3. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
 
 ## 已知限制
 
