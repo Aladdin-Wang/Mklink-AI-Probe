@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T20:52:14.0382890+00:00`
+- 更新时间：`2026-10-05T20:56:30.1260971+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：定位HPM停留ROM为测试BIN基址误用0x80000000，正确应0x80000400；重新下载/完整读回/启动通过，运行中Flush三入口重验通过，原有复位恢复tick。正确HEX与各入口启动证据待补，未改生产代码。
+- 当前任务：正确0x80000400布局HPM HEX已补验真实MCP/CLI/脱机CDC脚本：各51244字节全读回、游标后新RTT、tick推进和后台退出通过；CLI陈旧首通道主通道帮助已删除。GUI及其余全矩阵继续。
 - 状态：`active`
 
 ## 里程碑
@@ -39,13 +39,13 @@
 
 ## 真机环境
 
-- **state**：双V4仍03d72f5。STM32保持上一轮12KiB fixture AXF 976acece，APP0x08005000与Boot未动。HPM相同hello BIN现已正确写到0x80000400，51244字节全读回SHA57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025；tick/RTT/复位启动通过，4KiB数组恢复，后台退出。旧基址0x80000000测试镜像禁止用作恢复。
+- **state**：双V4仍03d72f5。STM32保持上一轮12KiB fixture AXF 976acece，APP0x08005000与Boot未动。HPM相同hello BIN现已正确写到0x80000400，51244字节全读回SHA57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025；tick/RTT/复位启动通过，4KiB数组恢复，后台退出。旧基址0x80000000测试镜像禁止用作恢复。 本轮正确布局HEX经MCP/CLI/脱机脚本各烧录启动通过，最终tick9860→15720、新RTT日志，后台退出。H盘offline.hex/python/audithex.py为正确布局版本。
 - **installer**：474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 优先用正确ELF布局0x80000400的HPM BIN及hpm-hello-elf-base.hex补验HEX与GUI/CLI/MCP/脱机入口启动，不仅读回。本地旧canonical HEX/restore脚本基址错误不得复用；详见审计报告新章节。随后全矩阵与最终安装Skill；CI查询EOF待重查。
+1. 继续正确布局HPM GUI在线/脱机页面验证，随后全矩阵。MCP/CLI/脱机CDC脚本启动已通过，无需重复；见hpm-hex-correct-base-entries.json。旧canonical镜像基址错误不可复用。67ca031b两个CI仍queued；最终完整回归及安装Skill未做。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

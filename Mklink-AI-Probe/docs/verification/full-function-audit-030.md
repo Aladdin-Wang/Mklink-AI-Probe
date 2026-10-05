@@ -23,8 +23,8 @@
 | A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
 | A13 | ARM 在线烧录 | BIN/HEX、多段、扇区/整片、FLM/Pack 选择、校验、失败恢复 | 新固件STM32 DAP强制APP扇区擦写/完整读回及boot边界通过；GUI/CLI及格式/算法矩阵继续 |
-| A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM实体写入/读回、稀疏/空洞保持、错误校验/容量拒绝和在线入口有证据；旧测试BIN转HEX基址错误已发现，正确BIN基址下载/启动本轮通过，正确HEX启动及各入口重新验收待补 |
-| A15 | 脱机部署和执行 | ARM/HPM BIN/HEX，预览、MSC 身份、已有文件、传输中断、完成反馈 | HPM HEX完整GUI预览/部署/CDC触发脚本及终态查询真机通过；物理按键、MSC中断及ARM回归待验证 |
+| A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM实体写入/读回、稀疏/空洞保持、错误校验/容量拒绝和在线入口有证据；旧测试BIN转HEX基址错误已发现，正确BIN基址下载/启动本轮通过，正确HEX CLI/真实MCP完整读回及启动已补验；GUI重新验收待补 |
+| A15 | 脱机部署和执行 | ARM/HPM BIN/HEX，预览、MSC 身份、已有文件、传输中断、完成反馈 | HPM HEX完整GUI预览/部署/CDC触发脚本及终态查询真机通过；正确布局HEX部署/CDC触发脚本完整读回及应用启动已补验；GUI重验、物理按键、MSC中断及ARM回归待验证 |
 | A16 | 烧录任务生命周期 | 请求去重、超时未知终态、查询、取消、重启记录，多客户端观测 | 待验证 |
 | A17 | 算法目录/Pack/自定义 FLM | 目录完整性，目标联想，资源缺失、范围及 Bank；HPM 不走 FLM | 待验证 |
 | A18 | 选项字节/安全/OTP | 预览、确认和不可逆保护，型号限制、越界；禁止自动永久锁定测试 | 待验证；真机范围受授权约束 |
@@ -520,3 +520,10 @@ hpm-controlled-reset-wrong-image显示cmd.set_reset返回正常提示符但RAM t
 hpm-bin-correct-elf-base-hil按0x80000400下载同一51244字节BIN，hpm-correct-base-readback完整读回SHA256匹配57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。恢复后RTT出现新的tick日志，计数推进。hpm-flush-running-hil先证明tick运行，再完整执行SDK4KiB、MCP八非对齐区域、CLI96字节及三类非法请求不修改内存，最后Flush恢复4KiB原值；tick从52474推进到118777，后台退出。随后原有cmd.set_reset将tick从150586复位到1023，下一秒2061，原有HPM复位路径可以正常启动正确镜像，无需为本例增加固件补丁。最终再次RTT读取及运行恢复检查通过，关闭后后台退出。
 
 本轮没有修改下载器生产代码、目标源码或电压，明确改进的是硬件验收标准、测试镜像布局和证据。HPM正确HEX启动/多入口回归仍需补齐；全功能矩阵与最终安装仍未完成。最后一次GitHub CI查询网络EOF，未取得新状态，不能记为CI通过。
+### 正确布局 HPM HEX 的 MCP、CLI 与脱机脚本启动验收
+
+hpm-hex-correct-base-entries先检查当前ELF所有Flash内有内容的可载入section与BIN相应偏移完全一致，最小地址0x80000400，再使用上轮生成的hpm-hello-elf-base.hex。依次通过真实stdio MCP start_job(flash)、实际python -m mklink flash、部署HEX与生成脱机脚本并CDC触发三条路径烧录。每条路径结束后独立共享SDK完整读回51244字节，SHA256均57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025；开始RTT后先取一次游标，再等待新数据，第二次读取均有新HPM6E80日志且lost_bytes=0。运行计数分别21650→27493、23077→28953、9860→15720，逐次关闭后后台退出。
+
+首次CLI测试误加该命令不支持的--confirm，被参数解析拒绝且未发起烧录；修正测试参数后只继续CLI与脱机两项，没有重放已通过的MCP作业。完整报告与分入口日志保存在本地hpm-hex-correct-base-entries.json及hpm-hex-correct-*.log。物理按键触发、GUI本次页面操作、MSC中断仍未验证，不能用本次底层脚本替代。
+
+顺带删除CLI RTT帮助中陈旧的first is primary表述，改为各通道独立数据，实际rtt --help确认呈现。只有帮助文字变化，不新增镜像处理或调试实现，不重复无关自动化。67ca031b两项CI查询仍queued；下一步继续正确布局GUI入口和全矩阵。
