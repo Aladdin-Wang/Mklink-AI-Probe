@@ -35,7 +35,7 @@
 | A23 | RTT 传统串口兼容 | 普通串口助手单路映射启停，MUX 切换和解析隔离、退出释放 | 实体八路逐路传统映射Up/268字节Down哈希、退出到MUX及八路恢复通过；已改有界批写，满队列/DAP占用时停止回执通过；停止取消不保证排空，USB上游溢出仍未覆盖 |
 | A24 | SuperWatch | 标量/数组/结构、多组、写入、曲线/回放/导出、15区域/128B/周期边界 | 当前AXF数组8元素采样与内存一致、四类非法范围拒绝保留选择、八路RTT并行、Watch停止不影响RTT及重启新采样真机通过；GUI/曲线/回放/容量等继续 |
 | A25 | VOFA | 采样格式、通道/速率、显示/导出、背压，资源冲突及停止恢复 | 当前STM32三通道数据/500点历史淘汰、双SDK借用隔离、暂停恢复及停止后RTT8恢复真机通过；双WebSocket二进制顺序/Float32舍入/独立关闭真机通过，实际CLI/stdio MCP创建与借用通过，CLI强杀约5秒释放会话；失主采集唯一订阅者接管真机通过；Chrome双通道显示/暂停恢复及CSV、PNG生成内容通过；系统保存对话框等仍待验 |
-| A26 | SystemView/RTOS Trace | ARM/HPM 采集、解码/同步/溢出、启停、离线文件、RTT 通道共存 | 待验证 |
+| A26 | SystemView/RTOS Trace | ARM/HPM 采集、解码/同步/溢出、启停、离线文件、RTT 通道共存 | 当前HPM SDK双读者/暂停恢复/游标拒绝、真实MCP借用、CLI报告及Chrome时间轴通过；修复FreeRTOS隐式切换及CPU统计。ARM/实时GUI/录制重放等仍待验；SystemView仍走独占流，不宣称RTT共存 |
 | A27 | UART/串口助手 | 参数、文本/HEX/编码/发送、日志、独立端口、多窗口、拔插恢复 | 本轮相关后端747项分组与GUI39项通过；模拟生命周期及本机网络路径已验，物理UART/拔插及真实GUI继续 |
 | A28 | Modbus | 支持的功能码逐项、CRC/异常码/长度/地址、超时轮询、RTU 从站 | 相关自动化通过；FC1/2/3/4/5/6/15/16共享CLI及FC7/22/23真实编解码+模拟串口已覆盖，物理从站待验证 |
 | A29 | YMODEM | 多包/末包/重试/取消/超时/重复确认、传输资源隔离 | 协议14项及共享上传/生命周期相关测试通过，新增ACK超时重传、截断源、包间取消与尾包边界；物理接收器及重复确认剩余边界继续 |
@@ -776,3 +776,27 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 跨线程恢复只能恢复容量，不能找回Worker已缩容淘汰的历史；预分配阶段短时同时保留旧/新缓冲，不宣称进程级原子事务或峰值内存不增加。本轮不修改固件、不烧录目标；全功能矩阵/最终安装仍未完成，长期测试保持暂停。
 
 最终完整GUI回归：85文件、885项全部通过（80.03秒）；含近期Worker确认/超时/故障、主线程预分配与恢复组合。此结果不替代全Python或尚未完成的实体入口验收。
+
+
+### SystemView HPM 实体入口与报告收敛
+
+基线f099288f，当前V4固件及HPM FreeRTOS测试镜像未改。SDK正确选择目标、从当前ELF取RTT地址，启动后按实际synced状态有界等待（首次固定1.5秒检查仍在starting，不能算产品失败）。实体双SDK同游标500事件一致、借用者存在时owner stop拒绝、借用者退出后暂停/恢复、非法游标422、停止后目标运行及后台自动退出通过。
+
+真实stdio MCP借用已有SystemView，status/history取得22103事件，借用者stop拒绝且disconnect不停止owner。真实CLI systemview-report采集4959事件生成102664字节HTML，退出仍保留owner采集；最终wave_tick9991915→10001358、boot_stage4、assert_line/trap_cause0。初始状态同步3949事件、600MHz、parser/target丢弃计数0。证据reports/systemview-current-hpm.json、systemview-current-entries.json及对应脚本。
+
+实际CLI首次报告有2874事件/372切换但0任务：Python只配对显式stop，不能处理FreeRTOS隐式切换。分析器与HTML现在共用一套执行区间计算，处理下一task-start、task-stop/stop-ready、ISR挂起/恢复、调度、idle、trace-stop及overflow丢弃未完成上下文，不推测采集末尾运行片。任务CPU按连续观测时间计算，计入无task-id的idle；未知空闲不伪造0%，不发无依据的near-capacity提示；嵌套ISR总时长不重复累计。旧归一化会把约3.6%任务误报成约95%并提示饥饿。
+
+浏览器还发现HTML时间轴空白：旧代码只剥离class export，遗漏共享渲染器新增function export。现在直接内联ES模块，复用原渲染器。真实Chrome最终展示3任务和时间轴：Wave1kHz3.64%、RttEcho0.20%、Telemetry0.02%、idle94.64%、ISR0.91%；不再报CPU饥饿。截图reports/systemview-current-report-fixed.png已检查，页面关闭。早期0.5秒窗口不一定包含500ms周期Telemetry；验证要求改为高频Wave1kHz/RttEcho及有效报告，最终样本实际包含Telemetry，未伪造缺失任务。
+
+相关Python最终74通过/1跳过；跳过为可选hil_core.observe依赖缺失。没有重跑完整Python套件；上一轮完整GUI885通过，但本轮修改的Python报告以当前相关回归和实体报告验证为证。未更新安装包/Skill，未刷固件，不代表所有SystemView功能完成：STM32当前八通道fixture关闭了SystemView钩子；SystemView仍使用传统独占流，与RTT并行尚未实现/验收；实时GUI、录制/离线重放和其他故障边界保持待验。
+
+### 用户要求暂停时的剩余项
+
+用户明确选择本轮验证、提交和整理后暂停持续目标。保留原全功能目标，不标记完成，不再自动扩展下一轮。当前安装版/本地Skill仍旧，源码与安装交付不同步。
+
+- 交付：新版NSIS覆盖安装、实际安装态多客户端验证、本地Skill更新与验证尚未完成；E盘空间不足，先前构建垃圾删除被自动审批策略拒绝，未绕过清理。
+- 完整回归：当前完整GUI885通过；最新完整Python尚无全绿证据，当前SystemView相关74通过/1跳过。
+- 功能矩阵：A01–A36逐项状态以上表为准；配置、烧录任务生命周期、算法目录/Pack、安全保护边界及多个GUI/CLI/MCP入口仍有待验项，不能外推为全功能通过。
+- 实体边界：跨物理主机远程、实体UART/Modbus/YMODEM对端、拔插/断电/MSC中断、物理离线按键及原生保存等未完成；没有对应设备时保持待验。
+- SystemView：ARM fixture、实时GUI、录制/重放、与RTT通道共存仍未完成。RTT8及DAP最高优先级已有前文有限测试证据，剩余组合/边界仍以矩阵为准。
+- 长期稳定性测试继续暂停；不增加WinUSB，不改SDK/Arm2D/MicroBoot，不合并、签名或正式发布。

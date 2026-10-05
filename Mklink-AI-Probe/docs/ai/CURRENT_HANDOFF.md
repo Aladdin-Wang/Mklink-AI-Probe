@@ -4,13 +4,13 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T23:37:59.448728+00:00`
+- 更新时间：`2026-10-05T23:51:08.285604+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：主线程容量先全部预分配、Worker确认后复制最新历史统一提交；晚到通道分配失败恢复Worker容量，恢复失败禁用调整并提示刷新。122相关测试及构建通过；真实Chrome STM32第六次分配故障零Worker请求/容量保持，重试10000数据继续、后台退出。全GUI85文件885项通过；dist footer d3fcf930f2d9。下一步回到A24/A26等剩余全功能矩阵，最终安装/Skill待做；长期测试暂停。
-- 状态：`active`
+- 当前任务：用户明确要求本轮收尾后暂停持续目标，不再开启下一轮。SystemView FreeRTOS隐式切换/CPU分母与idle/嵌套ISR统计、HTML模块脚本修复；74相关Python通过1可选依赖跳过；HPM SDK/MCP/CLI及Chrome报告时间轴真机通过，后台已退出。完整GUI上轮885通过；完整Python/全矩阵/NSIS与本地Skill更新尚未完成。详见full-function-audit-030.md末尾暂停剩余清单；未合并发布、未改固件，长稳暂停。
+- 状态：`paused`
 
 ## 里程碑
 
