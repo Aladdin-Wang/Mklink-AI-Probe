@@ -20,7 +20,7 @@ def test_real_fastmcp_dump_memory_jsonrpc_result_snapshot(monkeypatch):
     )
     monkeypatch.setattr(
         "mklink.dump_memory.read_dump_memory_regions_once",
-        lambda actual_bridge, _pairs, *, timeout: (
+        lambda actual_bridge, _pairs, *, timeout, cancelled=None: (
             b"AB" if actual_bridge is bridge and timeout == 0.1 else b"",
         ),
     )

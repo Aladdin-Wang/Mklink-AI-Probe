@@ -608,6 +608,7 @@ def read_dump_memory_regions_once(
     *,
     timeout: float = 10.0,
     poll_interval: float = 0.0005,
+    cancelled=None,
 ) -> tuple[bytes, ...]:
     """Read one sample while holding the process-wide dump capture lock."""
     with exclusive_dump_memory_capture():
@@ -616,6 +617,7 @@ def read_dump_memory_regions_once(
             region_pairs,
             timeout=timeout,
             poll_interval=poll_interval,
+            cancelled=cancelled,
         )
 
 
@@ -791,6 +793,7 @@ def _read_dump_memory_regions_once_locked(
     *,
     timeout: float = 10.0,
     poll_interval: float = 0.0005,
+    cancelled=None,
 ) -> tuple[bytes, ...]:
     """Read one validated multi-region sample on an already-owned bridge.
 
@@ -829,10 +832,12 @@ def _read_dump_memory_regions_once_locked(
     deadline = time.monotonic() + max(0.001, float(timeout))
     assembler = DumpSampleAssembler(region_sizes)
     raw_tail = bytearray()
+    check_capture_cancelled(cancelled)
     _enter_dump_stream(bridge)
     try:
         bridge._write_raw((command + "\n").encode("utf-8"))
         while time.monotonic() < deadline:
+            check_capture_cancelled(cancelled)
             raw = bridge.drain_stream_bytes(max_bytes=1024 * 1024)
             if raw:
                 raw_tail.extend(raw[-4096:])
@@ -844,6 +849,7 @@ def _read_dump_memory_regions_once_locked(
                     gap_count=parser.crc_errors,
                 )
             for frame in frames:
+                check_capture_cancelled(cancelled)
                 payloads = assembler.feed(frame)
                 if payloads is not None:
                     return payloads
@@ -918,7 +924,7 @@ def validate_dump_capture(regions, sample_count=1, timeout=10.0, speed_profile=N
 
 
 def capture_memory(device, regions, *, sample_count=1, timeout=10.0, speed_profile=None,
-                   publish_sample=None, publish_gap=None):
+                   publish_sample=None, publish_gap=None, cancelled=None):
     """Capture complete samples on an already-owned bridge, with no replay.
 
     Optional publishers keep legacy sidecar wiring outside the acquisition
@@ -937,11 +943,13 @@ def capture_memory(device, regions, *, sample_count=1, timeout=10.0, speed_profi
         operation_id = f"op-{secrets.token_hex(8)}"
         samples = []
         with exclusive_dump_memory_capture():
+            check_capture_cancelled(cancelled)
             if speed_profile is not None:
                 device.set_debug_speed(speed_profile)
             for index in range(sample_count):
+                check_capture_cancelled(cancelled)
                 try:
-                    payloads = read_dump_memory_regions_once(device._bridge, pairs, timeout=float(timeout))
+                    payloads = read_dump_memory_regions_once(device._bridge, pairs, timeout=float(timeout), cancelled=cancelled)
                     if (len(payloads) != len(pairs) or any(not isinstance(data, bytes) or len(data) != size
                             for (_, size), data in zip(pairs, payloads))):
                         raise DumpMemoryReadError('dump_memory returned incomplete region coverage', gap_fact='region_gap_count')
@@ -958,6 +966,7 @@ def capture_memory(device, regions, *, sample_count=1, timeout=10.0, speed_profi
                 samples.append({'sample_index': index, 'regions': [
                     {'address': canonical_memory_address(address), 'size': len(data), 'data_hex': data.hex().upper()}
                     for (address, _), data in zip(pairs, payloads)]})
+            check_capture_cancelled(cancelled)
         response = {'sample_count': sample_count, 'region_count': len(pairs),
                     'total_bytes': sum(size for _, size in pairs) * sample_count, 'samples': samples}
         observation.complete(facts=memory_dump_facts(canonical_memory_address(pairs[0][0]),

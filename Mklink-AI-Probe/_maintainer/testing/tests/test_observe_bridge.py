@@ -1019,7 +1019,7 @@ def test_direct_mcp_dump_is_bounded_and_reuses_operation_id_across_samples(monke
     calls = []
     sidechannel = []
 
-    def read_regions(actual_bridge, pairs, *, timeout):
+    def read_regions(actual_bridge, pairs, *, timeout, cancelled=None):
         calls.append((actual_bridge, pairs, timeout))
         sample = len(calls)
         return (bytes([sample]) * 4, bytes([sample + 16]) * 2)
@@ -1106,7 +1106,7 @@ def test_direct_mcp_dump_private_publish_drop_keeps_response_and_marks_each_samp
     ))
     monkeypatch.setattr(
         "mklink.dump_memory.read_dump_memory_regions_once",
-        lambda actual_bridge, _pairs, *, timeout: (
+        lambda actual_bridge, _pairs, *, timeout, cancelled=None: (
             b"private" if actual_bridge is bridge and timeout == 0.1 else b"",
         ),
     )

@@ -228,6 +228,7 @@ def test_cancel_does_not_hide_failed_stop_confirmation():
 
 
 @pytest.mark.parametrize('path,implementation', [
+    ('','mklink.dump_memory.capture_memory'),
     ('capture','mklink.dump_memory.capture_dump_stream'),
     ('measure','mklink.dump_benchmark.measure'),
 ])
@@ -252,7 +253,7 @@ def test_disconnected_capture_holds_admission_until_worker_cleanup(batch, monkey
         raise InterruptedError('cancelled after cleanup')
     monkeypatch.setattr(implementation,worker)
     with ThreadPoolExecutor() as pool:
-        result=pool.submit(client.post,'/api/device/dump-memory/'+path,
+        result=pool.submit(client.post,'/api/device/dump-memory'+('/'+path if path else ''),
                            json={'regions':[{'address':0,'size':4}]})
         assert entered.wait(5)
         try:
@@ -319,3 +320,39 @@ def test_legacy_snapshot_leaves_mux_before_claiming_or_writing(failure):
     else:
         assert dump_memory.read_dump_memory_regions_once(bridge,[(0,4)])==(b'abcd',)
         assert events[:3]==['leave_mux','claim_legacy','write']
+
+@pytest.mark.parametrize('before_start,stop_fails', [(True,False),(False,False),(False,True)])
+def test_snapshot_cancel_during_partial_frame_confirms_stop(before_start,stop_fails):
+    from types import SimpleNamespace
+    bridge=FakeBridge([_b1_frame(1,b'A'*2048,block_index=0,block_count=2,total_size=4096)])
+    if stop_fails:
+        bridge._stop_stream_and_sync=Mock(side_effect=TimeoutError('stop unconfirmed'))
+    checks=0
+    def cancelled():
+        nonlocal checks
+        checks+=1
+        return before_start or checks>=6
+    with pytest.raises(TimeoutError if stop_fails else InterruptedError):
+        dump_memory.capture_memory(SimpleNamespace(_bridge=bridge),[{'address':0,'size':4096}],sample_count=4,cancelled=cancelled)
+    if before_start:
+        assert not bridge.calls
+    elif stop_fails:
+        bridge._stop_stream_and_sync.assert_called_once()
+    else:
+        assert bridge.calls[-1]==('exit',)
+        assert bridge.calls.count(('write',b'cmd.dump_memory(0x00000000, 4096, 0)\n'))==1
+
+
+def test_snapshot_cancel_between_samples_does_not_issue_next_read():
+    from types import SimpleNamespace
+    bridge=FakeBridge([_old_regions_frame(1,[(0,b'ABCD')])])
+    ended=False
+    def published(*args):
+        nonlocal ended
+        ended=True
+        return True
+    with pytest.raises(InterruptedError):
+        dump_memory.capture_memory(SimpleNamespace(_bridge=bridge),[{'address':0,'size':4}],sample_count=2,
+                                   publish_sample=published,cancelled=lambda:ended)
+    assert bridge.calls.count(('write',b'cmd.dump_memory(0x00000000, 4, 0)\n'))==1
+    assert bridge.calls[-1]==('exit',)

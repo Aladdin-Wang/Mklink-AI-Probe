@@ -184,11 +184,11 @@ async def _run_cancellable_capture(operation, device, body, request):
             pass
 
 
-def memory_dump(device, body):
+def memory_dump(device, body, *, cancelled=None):
     from mklink.dump_memory import capture_memory
     _fields(body, {'regions', 'sample_count', 'timeout', 'speed_profile'})
     return capture_memory(device, body.get('regions'), sample_count=body.get('sample_count', 1),
-                          timeout=body.get('timeout', 10.0), speed_profile=body.get('speed_profile'))
+                          timeout=body.get('timeout', 10.0), speed_profile=body.get('speed_profile'), cancelled=cancelled)
 
 
 def memory_flush(device, body):
@@ -262,7 +262,7 @@ def create_debug_router(state, lease):
         router.add_api_route('/' + path, endpoint, methods=['POST'], name=path)
 
     add('dump-memory/measure', memory_measure, cancellable=True)
-    add('dump-memory', memory_dump)
+    add('dump-memory', memory_dump, cancellable=True)
     add('dump-memory/capture', memory_dump_stream, cancellable=True)
     add('read-memory-regions', memory_regions)
     add('watch', watch_snapshot)
