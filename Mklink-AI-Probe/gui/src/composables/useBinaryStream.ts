@@ -12,6 +12,7 @@ export interface BinaryStreamClient {
   stop(): void
   reset(): void
   configure(capacity: number, channelCount: number): void
+  resizeWaveform?(capacity: number): void
   requestVisibleRange(requestId: number, start: number, end: number, pixelWidth: number): void
   selectSerialPort?(port: string): void
   setWaveformDetail?(enabled: boolean): void
@@ -207,6 +208,13 @@ export function useBinaryStream(
     client.reset()
   }
 
+  let configuredCapacity = options.capacity
+  function resizeWaveform(capacity: number): void {
+    if (!Number.isInteger(capacity) || capacity < 2 || capacity > 1_000_000) throw new RangeError('Invalid waveform capacity')
+    client.resizeWaveform?.(capacity)
+    configuredCapacity = capacity
+  }
+
   function configure(nextChannelCount: number): void {
     clearPresentation()
     channelCount.value = nextChannelCount
@@ -220,7 +228,7 @@ export function useBinaryStream(
     superwatchMetadata.value = null
     serialLines.value = null
     serialTerminal.value = null
-    client.configure(options.capacity, nextChannelCount)
+    client.configure(configuredCapacity, nextChannelCount)
   }
 
   function requestVisibleRange(
@@ -264,6 +272,7 @@ export function useBinaryStream(
     stop,
     reset,
     configure,
+    resizeWaveform,
     selectSerialPort,
     requestVisibleRange,
     setWaveformDetail,

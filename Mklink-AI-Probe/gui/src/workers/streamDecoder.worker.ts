@@ -29,6 +29,7 @@ export type WorkerInput =
     }
   | { type: 'visible-range'; requestId: number; start: number; end: number; pixelWidth: number }
   | { type: 'waveform-detail'; enabled: boolean }
+  | { type: 'waveform-capacity'; capacity: number }
   | { type: 'history-snapshot'; requestId: number }
   | { type: 'serial-port'; port: string }
   | { type: 'reset' }
@@ -300,6 +301,26 @@ export class StreamDecoder {
         break
       case 'waveform-detail':
         this.waveformSummaryOnly = !message.enabled
+        break
+      case 'waveform-capacity':
+        try {
+          if (!this.ring || this.systemViewMode || this.decoderMode !== 'default') {
+            throw new RangeError('waveform capacity requires a numeric decoder')
+          }
+          if (!Number.isInteger(message.capacity) || message.capacity < 2 || message.capacity > 1_000_000) {
+            throw new RangeError('waveform capacity must be an integer between 2 and 1000000')
+          }
+          if (message.capacity !== this.ring.capacity) {
+            const nextRing = this.ring.resized(message.capacity)
+            const nextScratch = new Int32Array(message.capacity)
+            this.ring = nextRing
+            this.timeIndexScratch = nextScratch
+            this.configuredCapacity = message.capacity
+          }
+          this.post(this.telemetry())
+        } catch (error) {
+          this.error('INVALID_CONFIG', error)
+        }
         break
       case 'history-snapshot':
         this.historySnapshot(message.requestId)

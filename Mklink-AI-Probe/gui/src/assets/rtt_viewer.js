@@ -2278,6 +2278,12 @@ function captureSuperwatchTimelineSpanIfReady() {
   return true;
 }
 
+var binaryCapacityRequester = null;
+function setBinaryCapacityRequester(requester) {
+  binaryCapacityRequester = requester;
+  if (requester) requester(RING_BUFFER_CAPACITY);
+}
+
 function setBufferCapacity(newCapacity) {
   newCapacity = Math.floor(Number(newCapacity));
   if (!Number.isFinite(newCapacity)) return false;
@@ -2295,6 +2301,7 @@ function setBufferCapacity(newCapacity) {
   MAX_POINTS = newCapacity;
   window.RING_BUFFER_CAPACITY = RING_BUFFER_CAPACITY;
   window.MAX_POINTS = MAX_POINTS;
+  if (binaryCapacityRequester) binaryCapacityRequester(newCapacity);
   var input = document.getElementById('buffer-input');
   if (input) input.value = String(newCapacity);
   for (var name in FIELDS) {
@@ -3402,6 +3409,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.getBinaryVisibleRange = getBinaryVisibleRange;
   binaryViewer.renderBinaryEnvelope = renderBinaryEnvelope;
   binaryViewer.setBinaryHistoryRequester = setBinaryHistoryRequester;
+  binaryViewer.setBinaryCapacityRequester = setBinaryCapacityRequester;
   binaryViewer.setBinaryDetailRequester = setBinaryDetailRequester;
   binaryViewer.setBinaryVisibleRangeRequester = setBinaryVisibleRangeRequester;
   binaryViewer.getStorageDiagnostics = getBinaryStorageDiagnostics;

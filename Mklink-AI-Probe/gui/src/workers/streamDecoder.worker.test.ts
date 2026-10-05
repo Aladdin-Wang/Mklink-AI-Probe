@@ -591,6 +591,25 @@ describe('StreamDecoder worker controller', () => {
     expect(maxEnvelopePoints).toBeLessThanOrEqual(2 * 320 * channelCount)
     expect(elapsedMs).toBeLessThan(60_000)
   }, 70_000)
+  it('resizes numeric history without resetting frame sequence or accepting invalid capacities', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 4, channelCount: 2 })
+    decoder.handle({ type: 'frame', buffer: frame(7n, 4, floats(1, 10, 2, 20, 3, 30, 4, 40), StreamType.WAVEFORM, 5_000_000n, 1), connectionGeneration: 1, frameTicket: 1 })
+    decoder.handle({ type: 'waveform-capacity', capacity: 2 })
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 2, acceptedFrames: 1, lastSequence: 7n })
+    decoder.handle({ type: 'waveform-capacity', capacity: 8 })
+    for (const capacity of [0, 1, 2.5, 1_000_001, NaN]) {
+      decoder.handle({ type: 'waveform-capacity', capacity })
+      expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_CONFIG' })
+    }
+    decoder.handle({ type: 'history-snapshot', requestId: 1 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('missing snapshot')
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([3, 30, 4, 40])
+    decoder.handle({ type: 'frame', buffer: frame(8n, 1, floats(5, 50), StreamType.WAVEFORM, 6_000_000n, 1), connectionGeneration: 1, frameTicket: 2 })
+    expect(messages.at(-1)).toMatchObject({ type: 'telemetry', bufferedSamples: 3, acceptedFrames: 2, lastSequence: 8n, transportDroppedBatches: 0 })
+  })
+
   it('emits each VOFA sample-major batch as a transferable typed envelope', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T23:06:35.921665+00:00`
+- 更新时间：`2026-10-05T23:12:08.956099+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：删除波形resize重复theme监听器；99组件测试/生产构建、真实Chrome10次resize新增监听0/浅色绘图通过，恢复默认/后台退出。dist footer ea54f3d9dedf。重要待办：Worker仍固定200000容量，UI resize只缩显示端；configure会清历史，不可直接复用。下一轮实现保留最新数据/序号的Worker resize并串联viewer/composable/client，检查SystemView多余分配及暂停/导出/通道变化。全矩阵/最终安装仍待做，长稳暂停。
+- 当前任务：Worker容量已与GUI串联，TypedRingBuffer保留最新历史resize，序号/元数据连续；默认VOFA10000/SW50000替代200000；通道变更沿用容量。196相关测试+新增composable4项/生产构建通过；真实STM32 Chrome缩到2时buffer2、扩容继续/丢包0/后台退出。全GUI85文件875项通过75.70秒。剩余容量失败确认回退、SystemView冗余分配、暂停/导出/SW组合与全矩阵/安装；长稳暂停。
 - 状态：`active`
 
 ## 里程碑

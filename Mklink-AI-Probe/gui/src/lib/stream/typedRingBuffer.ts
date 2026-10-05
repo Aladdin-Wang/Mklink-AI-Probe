@@ -53,6 +53,19 @@ export class TypedRingBuffer {
     return this.sampleCount
   }
 
+  /** Allocate a new capacity while retaining the newest samples in order. */
+  resized(capacity: number): TypedRingBuffer {
+    if (capacity === this.capacity) return this
+    const next = new TypedRingBuffer(capacity, this.channelCount)
+    const first = Math.max(0, this.sampleCount - capacity)
+    for (let logical = first; logical < this.sampleCount; logical++) {
+      const slot = (this.startSlot + logical) % this.capacity
+      const offset = slot * this.channelCount
+      next.append(this.timestamps[slot], this.values.subarray(offset, offset + this.channelCount))
+    }
+    return next
+  }
+
   timeAt(logicalIndex: number): number {
     if (!Number.isInteger(logicalIndex) || logicalIndex < 0 || logicalIndex >= this.sampleCount) {
       return Number.NaN

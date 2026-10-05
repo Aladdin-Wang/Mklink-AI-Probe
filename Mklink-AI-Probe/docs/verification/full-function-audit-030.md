@@ -723,3 +723,16 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 99项WaveformViewer测试通过，新增连续10次resize不新增主题监听器验证；生产构建通过（原有chunk提示）。真实Chrome+STM32新版dist footer ea54f3d9dedf，DOM输入/应用连续10次容量，监测新增主题监听器为0；实际切换浅色后截图vofa-theme-light.png显示两路正常曲线，已查看；恢复10000/暗色、关闭浏览器并停止SDK，后台退出。未宣称完整浏览器堆内存测量或长稳。
 
 容量问题仍未完成：WaveformViewer调用useBinaryStream固定capacity200000，setBufferCapacity目前只调整显示端；现有configure会重建Worker环并清空历史/统计。下一步需提供保留最新历史且保持序号/元数据的resize路径，并串联viewer/composable/client/worker，验证缩容淘汰、扩容不恢复已淘汰数据、通道变更/暂停/导出一致性，避免用configure重置掩盖容量问题。Worker configure还预分配SystemView相关结构，需按实际类型核对内存开销。
+
+
+### 波形 Worker 历史容量与显示端同步
+
+基线c9c06701后，TypedRingBuffer新增resized，以新typed arrays按时序保留最新min(length,capacity)样本，原环不变、同容量不分配。Worker新增waveform-capacity消息，只替换数字环、时间索引scratch和configuredCapacity，不重置连接代次、序号、元数据或丢包统计；非法容量2–1000000之外及非整数拒绝，分配完成后才提交引用。GUI经原viewer→composable→StreamClient→Worker路径传递容量，无后台/固件协议变化。后续通道重配保留当前容量。初始化由固定200000调整为VOFA10000、SuperWatch50000，与默认界面一致。
+
+底层83项通过；串联后五组196项通过，另补composable容量沿用测试后该组4项通过；生产构建通过。新增覆盖已绕回的双通道环缩容/扩容/后续append、typed array字节数、非法容量不改数据、Worker序号7→8连续/acceptedFrames不重置以及channel configure沿用16点容量。
+
+真实Chrome+STM32当前两通道，dist footer c9c06701ed98：页面应用容量2后同时显示2 pts与transport buffer2，扩回10000后继续收到数据（观测1042 pts/buffer1052），transport/backend drops保持0。已恢复默认、关闭网页和SDK，后台自然退出。证据reports/vofa-worker-shrink.json、vofa-worker-grow.json、vofa-gui-0710.py。该实体证据不等于测量浏览器总堆峰值或SuperWatch逐参数验收。
+
+剩余：Worker仍预分配SystemView事件/区间结构，需要后续按流类型延迟分配；主线程旧环与Worker环并存也需核对，暂不宣称总进程内存等于界面估算。分配失败虽不会替换Worker旧环，界面仍缺容量确认/回退路径，需继续审计。暂停/导出/元数据切换的组合与全功能矩阵继续；安装/长稳未做。
+
+本轮最终全GUI回归85文件875项全部通过（75.70秒）；仅已有Node localStorage实验警告。E盘可用702554112B，尚不开展大型安装包构建。

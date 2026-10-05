@@ -34,7 +34,7 @@ const emit = defineEmits<{
 const container = ref<HTMLDivElement>()
 const binary = useBinaryStream(
   props.mode === 'VOFA' ? 'vofa' : 'superwatch',
-  { capacity: 200000, channelCount: 1 },
+  { capacity: props.mode === 'VOFA' ? 10000 : 50000, channelCount: 1 },
 )
 let vofaChannels: Array<Record<string, unknown>> = []
 let vofaChannelSignature: string | null = null
@@ -82,6 +82,7 @@ function resetVisibleRangeRequests(): void {
 const vofaScheduler = new RenderScheduler(() => requestLatestVisibleRange(false))
 
 function attachSuperwatchRequesters(viewer: any): void {
+  viewer?.setBinaryCapacityRequester?.((capacity: number) => binary.resizeWaveform(capacity))
   if (props.mode !== 'SuperWatch' || !viewer) return
   viewer.setBinaryHistoryRequester?.(() => {
     binary.requestHistorySnapshot?.(++historyRequestId)

@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { TypedRingBuffer } from './typedRingBuffer'
 
 describe('TypedRingBuffer', () => {
+  it('resizes wrapped multi-channel history without restoring evicted samples', () => {
+    const ring = new TypedRingBuffer(3, 2)
+    for (let i = 1; i <= 5; i++) ring.append(i, Float32Array.of(i, -i))
+    const smaller = ring.resized(2)
+    expect(smaller.snapshot()).toEqual({ times: [4, 5], channels: [[4, 5], [-4, -5]] })
+    expect(smaller.timestamps.byteLength + smaller.values.byteLength).toBe(32)
+    const larger = smaller.resized(6)
+    expect(larger.snapshot()).toEqual(smaller.snapshot())
+    larger.append(6, Float32Array.of(6, -6))
+    expect(larger.snapshot()).toEqual({ times: [4, 5, 6], channels: [[4, 5, 6], [-4, -5, -6]] })
+    expect(ring.length).toBe(3)
+    expect(larger.resized(6)).toBe(larger)
+    for (const capacity of [0, -1, 1.5, NaN]) expect(() => ring.resized(capacity)).toThrow()
+  })
+
   it('overwrites the oldest sample while keeping fixed typed-array storage', () => {
     const buffer = new TypedRingBuffer(3, 1)
     const timestamps = buffer.timestamps

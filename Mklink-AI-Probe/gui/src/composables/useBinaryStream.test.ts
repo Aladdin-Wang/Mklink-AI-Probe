@@ -9,6 +9,28 @@ import type { StreamClientOptions, StreamClientState } from '../lib/stream/strea
 import type { WorkerOutput } from '../workers/streamDecoder.worker'
 
 describe('useBinaryStream', () => {
+  it('resizes without resetting presentation and retains capacity across channel changes', () => {
+    const client = { start: vi.fn(), stop: vi.fn(), reset: vi.fn(), configure: vi.fn(),
+      resizeWaveform: vi.fn(), requestVisibleRange: vi.fn(), dispose: vi.fn() }
+    let api: ReturnType<typeof useBinaryStream> | undefined
+    const wrapper = mount(defineComponent({
+      setup() {
+        api = useBinaryStream('vofa', { capacity: 10000, channelCount: 2, createClient: () => client })
+        return () => null
+      },
+    }))
+    try {
+      api!.resizeWaveform(16)
+      expect(client.resizeWaveform).toHaveBeenCalledWith(16)
+      expect(client.reset).not.toHaveBeenCalled()
+      expect(client.configure).not.toHaveBeenCalled()
+      api!.configure(3)
+      expect(client.configure).toHaveBeenCalledWith(16, 3)
+      expect(() => api!.resizeWaveform(2.5)).toThrow()
+      expect(client.resizeWaveform).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+  })
+
   it('coalesces high-rate presentation without losing sample counts or leaking across reset', () => {
     vi.useFakeTimers()
     let options: StreamClientOptions | undefined

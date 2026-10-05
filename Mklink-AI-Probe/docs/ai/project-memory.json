@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T23:06:35.921665+00:00",
+  "updated_at": "2026-10-05T23:12:08.956099+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "删除波形resize重复theme监听器；99组件测试/生产构建、真实Chrome10次resize新增监听0/浅色绘图通过，恢复默认/后台退出。dist footer ea54f3d9dedf。重要待办：Worker仍固定200000容量，UI resize只缩显示端；configure会清历史，不可直接复用。下一轮实现保留最新数据/序号的Worker resize并串联viewer/composable/client，检查SystemView多余分配及暂停/导出/通道变化。全矩阵/最终安装仍待做，长稳暂停。"
+    "current_task": "Worker容量已与GUI串联，TypedRingBuffer保留最新历史resize，序号/元数据连续；默认VOFA10000/SW50000替代200000；通道变更沿用容量。196相关测试+新增composable4项/生产构建通过；真实STM32 Chrome缩到2时buffer2、扩容继续/丢包0/后台退出。全GUI85文件875项通过75.70秒。剩余容量失败确认回退、SystemView冗余分配、暂停/导出/SW组合与全矩阵/安装；长稳暂停。"
   },
   "milestones": [
     {
