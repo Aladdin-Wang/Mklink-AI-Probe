@@ -77,7 +77,7 @@
           </button>
           <button
             v-if="viewMode === 'log'" data-testid="rtt-save-log" type="button"
-            class="icon-action" :disabled="retainedCount === 0"
+            class="icon-action" :disabled="retainedCount === 0 || savingLog" :aria-busy="savingLog"
             :title="tr('保存日志', 'Save log')" :aria-label="tr('保存日志', 'Save log')"
             @click="saveLog"
           >
@@ -93,6 +93,7 @@
           </button>
         </div>
       </div>
+      <p v-if="saveError" data-testid="rtt-save-error" role="alert">{{ saveError }}</p>
       <div v-if="viewMode === 'log' && chartEnabled && hasChartData" class="rtt-chart-shell">
         <canvas
           ref="chart" class="rtt-numeric-chart"
@@ -155,6 +156,8 @@ const hasChartData = ref(false)
 const renderPaused = ref(false)
 const collapsed = ref(false)
 const runtimeError = ref<string | null>(null)
+const savingLog = ref(false)
+const saveError = ref<string | null>(null)
 let pausedLines: VirtualLogInput[] = []
 let pausedTerminal = ''
 const rawView = ref<InstanceType<typeof RttRawView> | null>(null)
@@ -585,13 +588,21 @@ function clearVisibleOutput(): void {
   else { logPanel.value?.clear(); pausedLines = [] }
 }
 
-function saveLog(): void {
-  const raw = logPanel.value?.exportRaw() ?? new Uint8Array()
-  if (raw.byteLength) {
-    void saveBlobFile(
+async function saveLog(): Promise<void> {
+  if (savingLog.value) return
+  saveError.value = null
+  savingLog.value = true
+  try {
+    const raw = logPanel.value?.exportRaw() ?? new Uint8Array()
+    if (!raw.byteLength) return
+    await saveBlobFile(
       timestampedLogName(`rtt-${props.channel}`),
       new Blob([new Uint8Array(raw)], { type: 'application/octet-stream' }),
     )
+  } catch (error) {
+    saveError.value = `${tr('保存日志失败', 'Could not save log')}: ${error instanceof Error ? error.message : String(error)}`
+  } finally {
+    savingLog.value = false
   }
 }
 

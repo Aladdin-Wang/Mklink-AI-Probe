@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T18:15:40.506044+00:00`
+- 更新时间：`2026-10-05T18:25:26.742421+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：02f92bb6 完整 Python 回归：4162 passed、3 skipped、44 warnings，640.83秒。首轮漏配算法资源导致21失败/4夹具错误，配置并校验既有7059目标/2224算法后全量通过，未修改生产代码。RTT日志保存异步拒绝缺少界面反馈已发现未修复，下一轮优先补齐八路保存边界及真实浏览器验收。双板均f89a562；安装/Skill仍474ef405。
+- 当前任务：修复RTT各面板保存异步失败无提示：独立错误/忙状态、取消静默、重试保留日志。新增八路边界，49相关/869完整GUI通过，生产构建通过并更新dist。实体八路导出内容+浏览器文件选择器故障注入、发送历史恢复、双GUI暂停隔离通过；原生磁盘保存与慢客户端尚待验。窗口/陪测已关闭，8765无监听。安装/Skill仍474ef405。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 优先修复 RTT 日志保存异步失败无界面反馈：通道独立错误、取消静默、进行中防重复、失败可重试且保留日志；补齐八路组件和真实浏览器保存/历史/慢客户端验收。继续其余全功能矩阵、HPM新固件各入口与MSC并发；最终更新安装/Skill，不自动合并发布。完整测试须显式配置既有算法资源路径，避免重现缺失。
+1. 继续RTT八路原生保存/显示格式/跨页历史/慢客户端与新固件GUI/CLI/MCP/远程入口验收，以及其余全功能矩阵和MSC并发。已完成八路保存错误处理、导出内容/历史交互/双GUI暂停隔离；文件选择器故障注入不能替代真实磁盘保存。最终更新安装/Skill，不自动合并发布。完整Python测试须显式配置既有算法资源路径。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

@@ -372,6 +372,53 @@ describe('RttViewTab binary migration', () => {
     wrapper.unmount()
   })
 
+  it.each([0, 1, 2, 3, 4, 5, 6, 7])('isolates save failure, cancel and retry on RTT %i while acquisition continues', async (channel) => {
+    vi.useFakeTimers()
+    const streams = new Map<string, typeof mocks.binary>()
+    mocks.useBinaryStream.mockImplementation((name: string) => {
+      const state = { ...mocks.binary, rttLines: shallowRef(null), rttTerminal: shallowRef(null), waveformBatch: shallowRef(null), envelope: shallowRef(null) }
+      streams.set(name, state)
+      return state
+    })
+    mocks.status = { running: true, channels: [0, 1, 2, 3, 4, 5, 6, 7], down_buffers: [] }
+    const wrapper = mount(RttViewTab, { props: { deviceConnected: true } })
+    await flushPromises()
+    const panels = wrapper.findAllComponents({ name: 'RttChannelPanel' })
+    for (let ch = 0; ch < 8; ch++) {
+      await panels[ch]!.get('[data-testid=rtt-log-mode]').trigger('click')
+      streams.get(`rtt-${ch}`)!.rttLines.value = { type: 'rtt-lines', sequence: 1n, lines: [{ timestampNs: 1n, level: 'raw', text: `channel-${ch}` }] }
+    }
+    await nextTick(); await vi.advanceTimersByTimeAsync(100)
+    const panel = panels[channel]!
+    const neighbor = panels[(channel + 1) % 8]!
+    let rejectSave!: (reason: Error) => void
+    mocks.saveBlobFile.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject }))
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    expect(mocks.saveBlobFile).toHaveBeenCalledTimes(1)
+    expect(panel.get('[data-testid=rtt-save-log]').attributes('aria-busy')).toBe('true')
+    expect(neighbor.get('[data-testid=rtt-save-log]').attributes('disabled')).toBeUndefined()
+    await neighbor.get('[data-testid=rtt-save-log]').trigger('click')
+    streams.get(`rtt-${channel}`)!.rttLines.value = { type: 'rtt-lines', sequence: 2n, lines: [{ timestampNs: 2n, level: 'raw', text: 'during-save' }] }
+    await nextTick(); await vi.advanceTimersByTimeAsync(100)
+    rejectSave(new Error('disk full'))
+    await flushPromises()
+    expect(panel.get('[data-testid=rtt-save-error]').text()).toContain('disk full')
+    expect(neighbor.find('[data-testid=rtt-save-error]').exists()).toBe(false)
+    expect(panel.get('[data-testid=rtt-save-log]').attributes('disabled')).toBeUndefined()
+    mocks.saveBlobFile.mockResolvedValueOnce(false)
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await flushPromises()
+    expect(panel.find('[data-testid=rtt-save-error]').exists()).toBe(false)
+    await panel.get('[data-testid=rtt-save-log]').trigger('click')
+    await flushPromises()
+    const [name, blob] = mocks.saveBlobFile.mock.calls.at(-1)!
+    expect(name).toBe(`rtt-${channel}-test.log`)
+    expect(new TextDecoder().decode(await (blob as Blob).arrayBuffer())).toBe(`channel-${channel}\nduring-save\n`)
+    expect(mocks.dash.stop).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('starts and stops the binary lifecycle with dashboard controls', async () => {
     mocks.status = {
       running: true,
