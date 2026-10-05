@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T23:27:55.896231+00:00`
+- 更新时间：`2026-10-05T23:37:59.448728+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：Worker容量5秒超时关闭本页面socket/worker并拒绝pending/后续请求，不重放/不停止后台采集；worker.onerror fatal同样收尾。真实Chrome STM32丢弃一请求后超时/输入恢复、刷新tick继续、后台退出；最终118相关测试/构建通过，transport错误文本保持可见。dist footer ee18888d3fb3。下一步主线程多通道resize逐项分配仍可能部分提交，需原子化并协调Worker；全矩阵/安装待做，长稳暂停。
+- 当前任务：主线程容量先全部预分配、Worker确认后复制最新历史统一提交；晚到通道分配失败恢复Worker容量，恢复失败禁用调整并提示刷新。122相关测试及构建通过；真实Chrome STM32第六次分配故障零Worker请求/容量保持，重试10000数据继续、后台退出。全GUI85文件885项通过；dist footer d3fcf930f2d9。下一步回到A24/A26等剩余全功能矩阵，最终安装/Skill待做；长期测试暂停。
 - 状态：`active`
 
 ## 里程碑

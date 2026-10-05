@@ -2285,31 +2285,75 @@ function setBinaryCapacityRequester(requester) {
   if (requester) setBufferCapacity(RING_BUFFER_CAPACITY);
 }
 
-function setBufferCapacity(newCapacity, confirmed) {
+function prepareBufferCapacity(newCapacity) {
+  var capacity = IS_SUPERWATCH_MODE && !binaryDetailEnabled ? SUPERWATCH_MAIN_RING_CAPACITY : newCapacity;
+  var prepared = Object.create(null);
+  for (var name in FIELDS) {
+    if (FIELDS.hasOwnProperty(name)) prepared[name] = new RingBuffer(capacity);
+  }
+  return { rings: prepared, committed: false };
+}
+
+function setBufferCapacity(newCapacity, confirmed, prepared) {
   newCapacity = Math.floor(Number(newCapacity));
   if (!Number.isFinite(newCapacity)) return false;
   newCapacity = Math.max(MIN_POINTS, Math.min(MAX_BUFFER_POINTS, newCapacity));
+  if (binaryCapacityPending && !confirmed) return false;
+  try { prepared = prepared || prepareBufferCapacity(newCapacity); }
+  catch (error) {
+    var rejectedInput = document.getElementById('buffer-input');
+    if (rejectedInput) rejectedInput.value = String(RING_BUFFER_CAPACITY);
+    updateBufferMemoryEstimate();
+    showControlError(error && error.message ? error.message : String(error));
+    return false;
+  }
   if (binaryCapacityRequester && !confirmed) {
-    if (binaryCapacityPending) return false;
     binaryCapacityPending = true;
+    var previousCapacity = RING_BUFFER_CAPACITY;
+    var workerConfirmed = false;
+    var recoveryFailed = false;
     var button = document.getElementById('btn-apply-buffer');
     if (button) button.disabled = true;
     Promise.resolve().then(function() { return binaryCapacityRequester(newCapacity); })
       .then(function() {
-        if (!viewerAbortController.signal.aborted) setBufferCapacity(newCapacity, true);
+        workerConfirmed = true;
+        if (!viewerAbortController.signal.aborted) setBufferCapacity(newCapacity, true, prepared);
       })
       .catch(function(error) {
         if (viewerAbortController.signal.aborted) return;
-        var input = document.getElementById('buffer-input');
-        if (input) input.value = String(RING_BUFFER_CAPACITY);
-        updateBufferMemoryEstimate();
-        showControlError(error && error.message ? error.message : String(error));
+        // Rendering errors after commit must not roll back only the Worker.
+        return Promise.resolve().then(function() {
+          if (workerConfirmed && !prepared.committed) return binaryCapacityRequester(previousCapacity);
+        }).then(function() {
+          if (viewerAbortController.signal.aborted) return;
+          var input = document.getElementById('buffer-input');
+          if (input) input.value = String(RING_BUFFER_CAPACITY);
+          updateBufferMemoryEstimate();
+          showControlError(error && error.message ? error.message : String(error));
+        }).catch(function(restoreError) {
+          recoveryFailed = true;
+          if (viewerAbortController.signal.aborted) return;
+          var recoveryMessage = 'Capacity recovery failed; reload this view: ' + String(restoreError);
+          showControlError(recoveryMessage);
+          updateBinaryHealth({ phase: 'error', error: recoveryMessage });
+        });
       })
       .finally(function() {
-        binaryCapacityPending = false;
-        if (button) button.disabled = false;
+        binaryCapacityPending = recoveryFailed;
+        if (button) button.disabled = recoveryFailed;
       });
     return true;
+  }
+  // Refresh from current history after the asynchronous worker confirmation.
+  // Allocate any newly added channels before publishing any replacement.
+  var mainCapacity = IS_SUPERWATCH_MODE && !binaryDetailEnabled ? SUPERWATCH_MAIN_RING_CAPACITY : newCapacity;
+  for (var fieldName in FIELDS) {
+    if (!FIELDS.hasOwnProperty(fieldName)) continue;
+    if (!prepared.rings[fieldName] || prepared.rings[fieldName].capacity !== mainCapacity) prepared.rings[fieldName] = new RingBuffer(mainCapacity);
+    var source = FIELDS[fieldName].ringBuf;
+    var destination = prepared.rings[fieldName];
+    destination.clear();
+    for (var i = Math.max(0, source.count - mainCapacity); i < source.count; i++) destination.push(source.timeAt(i), source.valueAt(i));
   }
   var visibleSpanBeforeResize = null;
   if (IS_SUPERWATCH_MODE) {
@@ -2328,8 +2372,9 @@ function setBufferCapacity(newCapacity, confirmed) {
   if (input) input.value = String(newCapacity);
   for (var name in FIELDS) {
     if (!FIELDS.hasOwnProperty(name)) continue;
-    FIELDS[name].ringBuf = resizeRingBuffer(FIELDS[name].ringBuf, waveformMainRingCapacity());
+    FIELDS[name].ringBuf = prepared.rings[name];
   }
+  prepared.committed = true;
   if (IS_SUPERWATCH_MODE) {
     if (Number.isFinite(visibleSpanBeforeResize) && visibleSpanBeforeResize > 0) {
       superwatchTimelineSpan = visibleSpanBeforeResize;

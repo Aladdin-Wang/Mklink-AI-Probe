@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, shallowRef } from 'vue'
 import WaveformViewer from './WaveformViewer.vue'
@@ -606,7 +606,7 @@ describe('WaveformViewer VOFA binary transport', () => {
       button.click()
       expect(button.disabled).toBe(true)
       expect((window as any).MAX_POINTS).toBe(previous)
-      for (let i = 0; i < 8; i++) await Promise.resolve()
+      await flushPromises()
       expect(button.disabled).toBe(false)
       expect(input.value).toBe(String(previous))
       expect(document.getElementById('conn-status')?.textContent).toBe('allocation failed')
@@ -615,6 +615,94 @@ describe('WaveformViewer VOFA binary transport', () => {
       for (let i = 0; i < 8; i++) await Promise.resolve()
       expect((window as any).MAX_POINTS).toBe(2)
     } finally { runtime.cleanup() }
+  })
+
+  it('preallocates all channels before requesting a Worker resize', async () => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    const NativeArray = Float64Array
+    let allocation: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      requester.mockClear()
+      const fields = runtime.probe.fields()
+      const a = fields.A.ringBuf, b = fields.B.ringBuf
+      a.push(1, 11); b.push(1, 22)
+      let count = 0
+      allocation = vi.spyOn(globalThis, 'Float64Array').mockImplementation(function(length: number) {
+        if (++count === 6) throw new Error('second channel allocation failed')
+        return new NativeArray(length)
+      } as any)
+      expect(runtime.probe.setBufferCapacity(2)).toBe(false)
+      expect(requester).not.toHaveBeenCalled()
+      expect(fields.A.ringBuf).toBe(a)
+      expect(fields.B.ringBuf).toBe(b)
+      expect(a.latest()).toEqual({ t: 1, y: 11 })
+      expect(b.latest()).toEqual({ t: 1, y: 22 })
+      expect((window as any).MAX_POINTS).toBe(8)
+      expect(document.getElementById('conn-status')?.textContent).toBe('second channel allocation failed')
+    } finally { allocation?.mockRestore(); runtime.cleanup() }
+  })
+
+  it('includes samples arriving while a capacity acknowledgement is pending', async () => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      let acknowledge!: () => void
+      requester.mockImplementationOnce(() => new Promise<void>(resolve => { acknowledge = resolve }))
+      const fields = runtime.probe.fields()
+      fields.A.ringBuf.push(1, 11); fields.B.ringBuf.push(1, 21)
+      expect(runtime.probe.setBufferCapacity(2)).toBe(true)
+      await Promise.resolve()
+      fields.A.ringBuf.push(2, 12); fields.A.ringBuf.push(3, 13)
+      fields.B.ringBuf.push(2, 22); fields.B.ringBuf.push(3, 23)
+      acknowledge()
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      expect(fields.A.ringBuf.toArray()).toEqual([{ t: 2, y: 12 }, { t: 3, y: 13 }])
+      expect(fields.B.ringBuf.toArray()).toEqual([{ t: 2, y: 22 }, { t: 3, y: 23 }])
+      expect((window as any).MAX_POINTS).toBe(2)
+    } finally { runtime.cleanup() }
+  })
+
+  it.each([false, true])('handles late-channel allocation failure with recovery failure=%s', async (failRecovery) => {
+    const runtime = await loadRttViewerRuntime('VOFA', 8)
+    let allocation: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }])
+      const requester = vi.fn().mockResolvedValue(undefined)
+      runtime.viewer.setBinaryCapacityRequester(requester)
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      requester.mockClear()
+      let acknowledge!: () => void
+      requester.mockImplementationOnce(() => new Promise<void>(resolve => { acknowledge = resolve }))
+      if (failRecovery) requester.mockRejectedValueOnce(new Error('worker unavailable'))
+      runtime.probe.setBufferCapacity(2)
+      await Promise.resolve()
+      runtime.viewer.configureBinaryChannels([{ name: 'A' }, { name: 'B' }])
+      const fields = runtime.probe.fields()
+      const a = fields.A.ringBuf, b = fields.B.ringBuf
+      allocation = vi.spyOn(globalThis, 'Float64Array').mockImplementationOnce(function() {
+        throw new Error('late channel allocation failed')
+      } as any)
+      acknowledge()
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      allocation.mockRestore()
+      expect(requester.mock.calls.map(call => call[0])).toEqual([2, 8])
+      expect(fields.A.ringBuf).toBe(a)
+      expect(fields.B.ringBuf).toBe(b)
+      expect((window as any).MAX_POINTS).toBe(8)
+      const button = document.getElementById('btn-apply-buffer') as HTMLButtonElement
+      expect(button.disabled).toBe(failRecovery)
+      expect(document.getElementById('conn-status')?.textContent).toContain(
+        failRecovery ? 'Capacity recovery failed; reload this view' : 'late channel allocation failed',
+      )
+      if (failRecovery) expect(runtime.probe.setBufferCapacity(4)).toBe(false)
+    } finally { allocation?.mockRestore(); runtime.cleanup() }
   })
 
   it('keeps the transport failure reason visible while backend status remains running', async () => {
