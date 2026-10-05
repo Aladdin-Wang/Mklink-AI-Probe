@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T16:56:50.1485690+00:00",
+  "updated_at": "2026-10-05T17:12:04.4976856+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "双V4只读真机隔离通过：独立PID/端口、无选择拒绝、禁止换绑、独立退出后另一台可读电源；connected=false无调压。121项身份/卷/控制/遥测回归通过。两PID已自然退出；继续实际目标并发、RTT交互与其余矩阵。"
+    "current_task": "固件213cb3d恢复25项应用测试覆盖（24项整组及SBA五配置补验）。双V4各100次只读命令Pika占用未增长，历史峰值未重置；全堆和线程栈负载余量仍待测。详见full-function-audit-030.md，继续完整矩阵，安装版仍未更新。"
   },
   "milestones": [
     {

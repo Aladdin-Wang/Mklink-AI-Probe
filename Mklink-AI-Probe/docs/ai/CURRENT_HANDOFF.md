@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:56:50.1485690+00:00`
+- 更新时间：`2026-10-05T17:12:04.4976856+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：双V4只读真机隔离通过：独立PID/端口、无选择拒绝、禁止换绑、独立退出后另一台可读电源；connected=false无调压。121项身份/卷/控制/遥测回归通过。两PID已自然退出；继续实际目标并发、RTT交互与其余矩阵。
+- 当前任务：固件213cb3d恢复25项应用测试覆盖（24项整组及SBA五配置补验）。双V4各100次只读命令Pika占用未增长，历史峰值未重置；全堆和线程栈负载余量仍待测。详见full-function-audit-030.md，继续完整矩阵，安装版仍未更新。
 - 状态：`active`
 
 ## 里程碑
