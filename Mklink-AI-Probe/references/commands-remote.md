@@ -445,3 +445,24 @@ RPC `rtt.write` 接受 `data`（UTF-8文本）或 `data_hex`，必须二选一�
 每次仍限1～256字节；可指定0～7的 `channel`，省略沿用默认发送通道。
 旧 `rtt.read(timeout=...)` 继续返回默认终端文本。新服务的能力目录明确列出
 `rtt.read_channel`；旧服务不支持时应报错，不自动回退或重放写入。
+### CLI 在同一连接中采集 RTT
+
+```powershell
+python -m mklink remote --site field-a rtt --start --channels 0,1 --duration 5
+python -m mklink remote --site field-a rtt --channels 0,1 --duration 5
+```
+
+第一条显式新建采集，正在采集时会拒绝重新配置；第二条借用现有采集。
+未指定 `--start` 且当前没有采集时，沿用后台默认行为启动通道0；其他通道需要
+先显式启动。`--addr` 仅与 `--start` 一起使用，必须是目标实际RTT控制块地址。
+通道列表为互不重复的0～7，duration必须为有限正数，默认10秒。
+
+输出为逐行JSON：首行event=subscribed，数据行event=data，包含channel、
+session、cursor、data_hex、lost_bytes。原始字节不会按字符拆解，也不在CLI内
+无限累计；有丢失必须根据lost_bytes识别。时间结束、Ctrl+C或失败都退出本客户端，
+借用者不停止其他客户端采集；拥有者存在其他订阅者时，采集仍受共享归属规则保护。
+Ctrl+C退出码130，其他失败非零，未知写入/请求不自动重放。duration限制正常读取
+循环，网络请求仍有自身超时，不是故障时的硬退出期限。
+
+独立 `remote call rtt.start` 与后续 `remote call rtt.read_channel` 不共享连接，
+不能替代上述持续命令。需要发送二进制或交互读写时使用持久SDK/MCP会话。

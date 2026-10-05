@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -63,6 +64,26 @@ def _object(value: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise argparse.ArgumentTypeError("expected a JSON object")
     return parsed
+
+
+def _rtt_channels(value: str) -> list[int]:
+    try:
+        channels = [int(item.strip()) for item in value.split(',')]
+    except ValueError:
+        raise argparse.ArgumentTypeError('channels must be comma-separated integers 0..7') from None
+    if not 1 <= len(channels) <= 8 or len(set(channels)) != len(channels) or any(c < 0 or c > 7 for c in channels):
+        raise argparse.ArgumentTypeError('channels must be unique integers 0..7')
+    return channels
+
+
+def _positive_duration(value: str) -> float:
+    try:
+        duration = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError('duration must be finite and positive') from None
+    if not math.isfinite(duration) or duration <= 0:
+        raise argparse.ArgumentTypeError('duration must be finite and positive')
+    return duration
 
 
 def _token(args: argparse.Namespace) -> str:
@@ -153,6 +174,12 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("capabilities", help="show negotiated capability descriptors")
     commands.add_parser("connect", help="connect the field probe or reuse its existing connection")
     commands.add_parser("reconnect", help="connect or reconnect the field probe")
+
+    rtt = commands.add_parser('rtt', help='read RTT channel pages over one connection as JSON lines')
+    rtt.add_argument('--channels', type=_rtt_channels, default=[0])
+    rtt.add_argument('--duration', type=_positive_duration, default=10.0)
+    rtt.add_argument('--start', action='store_true', help='configure a new capture; otherwise borrow existing capture or start default channel 0')
+    rtt.add_argument('--addr', help='RTT control block address; requires --start')
 
     call = commands.add_parser("call", help="invoke a declared capability operation")
     call.add_argument("operation")
@@ -285,7 +312,28 @@ def _invoke(args: argparse.Namespace, operation: str, params: Mapping[str, Any])
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    if args.command == 'rtt' and args.addr and not args.start:
+        parser.error('--addr requires --start')
     try:
+        if args.command == 'rtt':
+            client = _client(args)
+            _require_support(client, 'stream.rtt')
+            if not client.call('agent.connect').get('connected'):
+                raise RuntimeError('Remote target connection failed')
+            configuration = ({'channels': args.channels, 'channel': args.channels[0],
+                              **({'addr': args.addr} if args.addr else {})} if args.start else {})
+            started = client.call('rtt.start', **configuration)
+            print(json.dumps({'event': 'subscribed', **started}), flush=True)
+            cursors = dict.fromkeys(args.channels, 0)
+            deadline = time.monotonic() + args.duration
+            while time.monotonic() < deadline:
+                for channel in args.channels:
+                    page = client.call('rtt.read_channel', channel=channel, cursor=cursors[channel])
+                    cursors[channel] = page['cursor']
+                    if page['data_hex'] or page['lost_bytes']:
+                        print(json.dumps({'event': 'data', **page}), flush=True)
+                time.sleep(min(.05, max(0, deadline-time.monotonic())))
+            return 0
         if args.command == "stcp":
             return _run_stcp_visitor(args)
         if args.command == "sites":
@@ -369,6 +417,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = client.call("flash.program", **params)
             _emit(result)
             return _flash_exit_code(result)
+    except KeyboardInterrupt:
+        return 130
     except Exception as exc:
         # Structured protocol errors are already public and redacted by the
         # field agent.  Other exceptions may contain local paths or secrets.

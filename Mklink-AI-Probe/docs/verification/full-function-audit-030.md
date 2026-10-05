@@ -604,3 +604,13 @@ CLI此前仅提供agent.reconnect，缺少与GUI/MCP一致的非强制连接。�
 remote-cli-connect-current-hil以实际python -m mklink remote子进程运行。仅该子进程使用报告目录内隔离的LOCALAPPDATA站点配置，令牌经环境传入；sites add后首次connect成功。本地SDK开启RTT0–7，再次CLI connect返回reused=true，采集session不变且八路读取612–1080字节。最后本地拥有者stop、CLI sites remove清除临时站点、远程服务停止、后台退出。未更改用户正常站点配置，无Flash/电压变化。此证据是CLI连接与共存，不是CLI持续RTT采集通过；独立remote call进程每次退出都会释放订阅，持续多通道CLI入口仍需设计和验证，不能将多条独立call假定为同一会话。
 
 E盘约685MiB。检查上一轮依赖测试创建的remote-mcp虚拟环境：172345138字节、无reparse链接、无使用进程；拟删除该单一临时目录，但工具自动审批返回blocked by policy，未执行删除，也未更换方式绕过。含链接运行目录、报告、固件与安装包均保留。后续大额构建前仍须处理空间，当前不因此停止其他可验证工作。
+
+### 远程 CLI 单连接多通道 RTT 持续采集
+
+新增remote rtt命令：复用非强制agent.connect与既有RTT订阅，按各通道独立cursor读取原始页并输出JSON lines，不在CLI累计历史。--start显式携带channels和可选addr新建采集；省略时沿用无配置订阅/默认通道0启动语义。duration有限正数，默认10秒；通道重复/越界/空列表、非有限或非正时长、无start指定addr均在连接前拒绝。退出通过现有close_all关闭本客户端，Ctrl+C返回130，失败不重试，不新增后台线程或采集归属表。
+
+新增13项参数/游标/数据损失保留/读取失败/中断清理测试，与CLI/文档/远程RTT共68项通过。文档新增两个真实命令后精确命令计数检查先报17/19差异，更新清单数量而保留逐命令真实解析，10项文档检查通过。
+
+remote-cli-rtt-current-hil使用实际python -m mklink remote rtt与STM32八通道。拥有者2秒采集每路720–1188字节，退出后采集停止；本地SDK启动八路后CLI借用1秒，每路628–1044字节，退出后本地仍running且session不变。所有输出页按通道验证cursor=前cursor+字节数，lost_bytes=0。最终本地stop、隔离站点移除、远程服务停止、后台退出。此为有限真机测试，不是长期稳定性或实际Ctrl+C/网络中断验收；异常路径当前为自动化证据。无Flash/电压/固件变化。
+
+E盘低空间仍未解决；上一轮临时venv删除被自动审批拒绝，本轮未重试或绕过。安装包及本地Skill尚待最终构建更新，继续其余矩阵。
