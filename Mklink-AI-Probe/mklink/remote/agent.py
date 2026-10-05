@@ -205,6 +205,7 @@ class SiteAgent:
         resource_manager: ResourceManager | None = None,
         gui_bridge=None,
     ):
+        self.active_connections = 0
         self.config = config
         self._gui_bridge = gui_bridge
         self._device_factory = device_factory
@@ -504,14 +505,18 @@ class SiteAgent:
 
     async def _handle_connection(self, websocket: Any, *_path: Any) -> None:
         client_id = secrets.token_hex(16)
+        self.active_connections += 1
         try:
             await self._serve_connection(websocket, client_id)
         finally:
-            if self._client_closed is not None:
-                try:
-                    await self._invoke_lower_level(self._client_closed, client_id)
-                except Exception:
-                    logger.exception("Site agent client cleanup failed; not retried")
+            try:
+                if self._client_closed is not None:
+                    try:
+                        await self._invoke_lower_level(self._client_closed, client_id)
+                    except Exception:
+                        logger.exception("Site agent client cleanup failed; not retried")
+            finally:
+                self.active_connections -= 1
 
     async def _serve_connection(self, websocket: Any, client_id: str) -> None:
         from websockets.exceptions import ConnectionClosed

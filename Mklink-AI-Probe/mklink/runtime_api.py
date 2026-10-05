@@ -69,6 +69,8 @@ class RuntimeControl:
         self.last_operation = None
         self.uart_operations: dict[asyncio.Task, str] = {}
         self.started = time.monotonic()
+        self.last_activity = self.started
+        self.inflight_requests = 0
         self.jobs = None
 
     @property
@@ -266,6 +268,14 @@ class RuntimeGate:
         self.app, self.control = app, control
 
     async def __call__(self, scope, receive, send):
+        try:
+            return await self._dispatch(scope, receive, send)
+        finally:
+            if scope.pop("mklink_idle_admitted", False):
+                self.control.inflight_requests -= 1
+                self.control.last_activity = time.monotonic()
+
+    async def _dispatch(self, scope, receive, send):
         if scope["type"] not in {"http", "websocket"}:
             return await self.app(scope, receive, send)
         c = self.control
@@ -303,6 +313,12 @@ class RuntimeGate:
             return await reject(401, "Open the GUI using mklink gui, or authenticate with the runtime token")
         if c.stopping:
             return await reject(503, "Runtime is stopping")
+        # Discovery alone must not keep an abandoned backend alive. Authenticated
+        # HTTP/WS work is protected until its response/connection completes.
+        if path != "/_runtime/status":
+            scope["mklink_idle_admitted"] = True
+            c.inflight_requests += 1
+            c.last_activity = time.monotonic()
         # Static assets, caches, and subscription reads never reserve the CDC.
         method = scope.get("method", "GET")
         hardware = path.startswith("/api/") and (
@@ -600,4 +616,6 @@ fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/js
     install_management(app, control)
     from mklink.runtime_jobs import install_jobs
     install_jobs(app, control)
+    from mklink.runtime_idle import install_idle_shutdown
+    install_idle_shutdown(app, control)
     return control

@@ -264,6 +264,10 @@ class EmbeddedSiteAgentController:
         self._transport = None
         self._dispatcher = None
 
+    @property
+    def active_connections(self) -> int:
+        return self._agent.active_connections if self._agent is not None else 0
+
     def status(self) -> dict[str, Any]:
         result = self.settings.public()
         if not self.settings.enabled:

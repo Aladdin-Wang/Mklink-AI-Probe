@@ -35,6 +35,7 @@ def install_remote_windows(app, api, *, client_factory=RemoteClient):
     windows = {}
     creating = 0
     reaper = None
+    app.state.remote_window_activity = lambda: bool(windows or creating)
 
     async def blocking(fn):
         return await settle(asyncio.create_task(asyncio.to_thread(fn)))

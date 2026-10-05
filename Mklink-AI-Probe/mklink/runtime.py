@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 44  # Unified remote GUI transport with fixed backend identity.
+PROTOCOL = 45  # Graceful idle exit after the final local/remote client leaves.
 VERSION = "0.3.0"
 
 
