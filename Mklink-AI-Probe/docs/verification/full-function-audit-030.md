@@ -23,8 +23,8 @@
 | A11 | HardFault | 堆栈、寄存器、源码定位，缺失符号/无效栈/未发生故障 | 已修显式零故障快照误暂停及HPM绕过检查；STM32零故障/非法SP、HPM明确拒绝及恢复实体通过；STM32真实UDF异常PSP帧/故障函数源码行及CLI/stdio MCP入口、恢复八路RTT通过，GUI/缺符号等继续 |
 | A12 | SVD/外设观察 | 型号选择、寄存器宽度/访问权限，非法 SVD、只读外设及采样边界 | 待验证 |
 | A13 | ARM 在线烧录 | BIN/HEX、多段、扇区/整片、FLM/Pack 选择、校验、失败恢复 | 新固件STM32 DAP强制APP扇区擦写/完整读回及boot边界通过；GUI/CLI及格式/算法矩阵继续 |
-| A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM实体写入/读回、稀疏/空洞保持、错误校验/容量拒绝和在线入口有证据；旧测试BIN转HEX基址错误已发现，正确BIN基址下载/启动本轮通过，正确HEX CLI/真实MCP完整读回及启动已补验；GUI重新验收待补 |
-| A15 | 脱机部署和执行 | ARM/HPM BIN/HEX，预览、MSC 身份、已有文件、传输中断、完成反馈 | HPM HEX完整GUI预览/部署/CDC触发脚本及终态查询真机通过；正确布局HEX部署/CDC触发脚本完整读回及应用启动已补验；GUI重验、物理按键、MSC中断及ARM回归待验证 |
+| A14 | HPM 在线烧录 | BIN 与新增 HEX、ROM API、多段/稀疏/跨扇区/地址映射、错误校验与越界 | 已实现；自动化及HPM实体写入/读回、稀疏/空洞保持、错误校验/容量拒绝和在线入口有证据；旧测试BIN转HEX基址错误已发现，正确BIN基址下载/启动本轮通过，正确HEX CLI/真实MCP完整读回及启动已补验；GUI在线HEX正确布局完整读回和启动本轮通过 |
+| A15 | 脱机部署和执行 | ARM/HPM BIN/HEX，预览、MSC 身份、已有文件、传输中断、完成反馈 | HPM HEX完整GUI预览/部署/CDC触发脚本及终态查询真机通过；正确布局HEX部署/CDC触发脚本完整读回及应用启动已补验；GUI正确布局部署/触发与启动本轮通过；物理按键、MSC中断及ARM回归待验证 |
 | A16 | 烧录任务生命周期 | 请求去重、超时未知终态、查询、取消、重启记录，多客户端观测 | 待验证 |
 | A17 | 算法目录/Pack/自定义 FLM | 目录完整性，目标联想，资源缺失、范围及 Bank；HPM 不走 FLM | 待验证 |
 | A18 | 选项字节/安全/OTP | 预览、确认和不可逆保护，型号限制、越界；禁止自动永久锁定测试 | 待验证；真机范围受授权约束 |
@@ -527,3 +527,10 @@ hpm-hex-correct-base-entries先检查当前ELF所有Flash内有内容的可载�
 首次CLI测试误加该命令不支持的--confirm，被参数解析拒绝且未发起烧录；修正测试参数后只继续CLI与脱机两项，没有重放已通过的MCP作业。完整报告与分入口日志保存在本地hpm-hex-correct-base-entries.json及hpm-hex-correct-*.log。物理按键触发、GUI本次页面操作、MSC中断仍未验证，不能用本次底层脚本替代。
 
 顺带删除CLI RTT帮助中陈旧的first is primary表述，改为各通道独立数据，实际rtt --help确认呈现。只有帮助文字变化，不新增镜像处理或调试实现，不重复无关自动化。67ca031b两项CI查询仍queued；下一步继续正确布局GUI入口和全矩阵。
+### 正确布局 HEX 的真实 GUI 在线及脱机验收
+
+主机affd1bf2、生产前端88de0f38002c、V4固件03d72f5，使用真实Chrome页面操作。在线选择绑定HPM下载器、HPM6E80/hpm6e00evk，上传hpm-hello-elf-base.hex，预览明确0x80000400–0x8000CC2C与51244载荷字节。点击开始后任务3bba7114-af0b-4277-bd03-30456e4d4983终态succeeded，界面显示program/verify/reset/disconnect完成。独立共享SDK全镜像读回一致、tick48374→54192，第二次RTT游标读取有新日志，网页会话未中断。
+
+脱机页选V4/HPM6E80/hpm6e00evk，上传同一HEX并使用专用audit-correct-hex.py脚本名；预览包含hpm.program_hex，10MHz，未启用全片擦除/安全操作。部署返回2文件，随后点击触发测试，页面显示loaded successfully、auto download finished和绿色完成提示。独立共享SDK读回51244字节与BIN完全一致，tick27616→33413，后续游标收到新日志。两次读回SHA256仍57169b40aa606a8c70b5761215ee8122a3000e9cb0721a434e8961c4d18ec025。证据hpm-gui-online-hex-verification.json、hpm-gui-offline-hex-verification.json和已查看的hpm-gui-correct-hex.png，仅保存在本地。
+
+开始时本轮CLI保活辅助进程持有build_workspace锁，独立验证命令被拒绝且未运行；仅结束该测试辅助进程后重试，网页独立会话保持，后台与其他进程未被强杀。最后关闭测试网页并核查后台进程退出。此次无生产代码改动，不重复无关单测；物理按键、MSC中断以及其余完整矩阵仍待验。
