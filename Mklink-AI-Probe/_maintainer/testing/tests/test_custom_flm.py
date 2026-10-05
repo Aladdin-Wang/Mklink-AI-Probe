@@ -104,3 +104,37 @@ def test_custom_flm_detects_a_tampered_persistent_payload(tmp_path: Path):
         catalog.list("Target")
 
     assert raised.value.code is FlashErrorCode.PACK_INTEGRITY_ERROR
+
+
+@pytest.mark.parametrize("operation", ["add", "remove"])
+def test_registry_replace_failure_preserves_registered_algorithm(tmp_path, monkeypatch, operation):
+    import mklink.cmsis_dap.custom_flm as module
+
+    source = tmp_path / "original.flm"
+    source.write_bytes(b"original-algorithm")
+    catalog = CustomFlmCatalog(tmp_path / "cache", parser=lambda _path: ParsedFlm())
+    original = catalog.add(source, source.name, "Target", ())
+    registry = tmp_path / "cache" / "custom-flm" / "registry.json"
+    before = registry.read_bytes()
+    real_replace = module.os.replace
+
+    def deny_registry_replace(source_path, destination):
+        if Path(destination) == registry:
+            raise PermissionError("registry replacement denied")
+        return real_replace(source_path, destination)
+
+    monkeypatch.setattr(module.os, "replace", deny_registry_replace)
+    with pytest.raises(PermissionError, match="registry replacement denied"):
+        if operation == "remove":
+            catalog.remove("Target", original.algorithm_id)
+        else:
+            candidate = tmp_path / "candidate.flm"
+            candidate.write_bytes(b"new-algorithm")
+            catalog.add(candidate, candidate.name, "OtherTarget", ())
+
+    assert registry.read_bytes() == before
+    assert catalog.list("Target") == (original,)
+    assert catalog.list("OtherTarget") == ()
+    assert Path(original.file_path).read_bytes() == b"original-algorithm"
+    assert list(registry.parent.glob("*.flm")) == [Path(original.file_path)]
+    assert not list(registry.parent.glob("*.tmp"))

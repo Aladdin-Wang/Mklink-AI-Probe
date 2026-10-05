@@ -170,3 +170,10 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 ### 固件静态内存复核
 
 本轮检查已用于HPM真机的Debug链接map：hpm_hex对象1190字节代码/24字节只读数据、hpm_hex_program 836字节代码，二者无静态RW/ZI；mux_runtime静态ZI为676字节。全镜像RW4016、ZI230877字节，其中链接器预留heap48128/stack4096；这些分区数字不能相加推断动态可用堆。Pika控制台栈4096放置AHB SRAM，HEX使用有界行/记录缓冲；尚未测量最坏调用路径的栈高水位。静态map不是运行时内存裕量验收，也不是全固件内存优化完成。
+
+
+### 完整Python回归与FLM失败边界
+
+主机a9badd2a整套运行完成：4091 passed、1 failed、3 skipped，796.79秒，证据reports/full-python-a9badd2a.xml。唯一失败为test_custom_flm_remove_deletes_unreferenced_payload的Windows WinError5原子registry替换拒绝；单独完整文件复跑5项通过，尚未证明外部占用来源，不称整套绿色。代码读取/写入路径均关闭文件句柄，未添加猜测性自动重试。新增添加/删除时替换拒绝的事务回归：旧registry及算法保持、无残余新算法或临时文件；自定义FLM及在线API共114项通过。
+
+三项跳过分别为仓库本地算法包路径检查，以及两项依赖未安装hil_core.observe的真实观察桥测试；本轮通过MKLINK_BUILTIN_FLM_ROOT使用外部现有算法包，不能把该路径检查跳过写为通过。随后GUI整套回归完成：85个文件、858项全部通过，76.91秒；存在既有Node localStorage及Vue生命周期测试警告，未据此宣称浏览器实机覆盖。
