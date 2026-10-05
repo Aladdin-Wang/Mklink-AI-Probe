@@ -350,13 +350,15 @@ export class StreamDecoder {
       if (!['default', 'serial-log', 'serial-terminal'].includes(decoderMode)) {
         throw new RangeError('unsupported decoder mode')
       }
-      this.ring = new TypedRingBuffer(capacity, channelCount)
+      const ring = new TypedRingBuffer(capacity, channelCount)
+      const scratch = new Int32Array(capacity)
+      this.ring = ring
       this.configuredCapacity = capacity
       this.decoderMode = decoderMode
       this.waveformSummaryOnly = waveformSummaryOnly
-      this.timeIndexScratch = new Int32Array(capacity)
-      this.systemViewEvents = new SystemViewEventRing<SystemViewEvent>(capacity)
-      this.systemViewIntervals = new SystemViewIntervalRing(capacity)
+      this.timeIndexScratch = scratch
+      this.systemViewEvents = null
+      this.systemViewIntervals = null
       this.systemViewMode = false
       this.currentContext = null
       this.suspendedContexts = []
@@ -891,6 +893,14 @@ export class StreamDecoder {
       }
       decodedEvents.push({ event, ticks })
     }
+    if (!this.systemViewEvents || !this.systemViewIntervals) {
+      // Numeric/UART streams do not need trace storage. Allocate both rings
+      // only after validating a trace frame, before publishing either one.
+      const events = new SystemViewEventRing<SystemViewEvent>(this.configuredCapacity)
+      const intervals = new SystemViewIntervalRing(this.configuredCapacity)
+      this.systemViewEvents = events
+      this.systemViewIntervals = intervals
+    }
     const previousSequence = this.lastDataSequence
     this.noteDataSequence(sequence)
     if (previousSequence !== null && sequence > previousSequence + 1n) {
@@ -1240,8 +1250,8 @@ export class StreamDecoder {
   private resetSession(): void {
     this.ring?.reset()
     this.systemViewMode = false
-    this.systemViewEvents?.clear()
-    this.systemViewIntervals?.clear()
+    this.systemViewEvents = null
+    this.systemViewIntervals = null
     this.currentContext = null
     this.suspendedContexts = []
     this.systemViewContextCatalog.clear()

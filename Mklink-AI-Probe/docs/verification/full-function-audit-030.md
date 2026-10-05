@@ -736,3 +736,12 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 剩余：Worker仍预分配SystemView事件/区间结构，需要后续按流类型延迟分配；主线程旧环与Worker环并存也需核对，暂不宣称总进程内存等于界面估算。分配失败虽不会替换Worker旧环，界面仍缺容量确认/回退路径，需继续审计。暂停/导出/元数据切换的组合与全功能矩阵继续；安装/长稳未做。
 
 本轮最终全GUI回归85文件875项全部通过（75.70秒）；仅已有Node localStorage实验警告。E盘可用702554112B，尚不开展大型安装包构建。
+
+
+### 非 SystemView 流的跟踪缓冲延迟分配
+
+基线bfb17551后，Worker configure不再为所有流创建SystemView事件/区间环；收到验证完成的SystemView帧后，先成功分配两个环，再提交引用并更新序号。resetSession释放两个环引用，后续跟踪帧重新分配。普通configure也先完成数字环与scratch分配再提交，避免第二次分配失败导致旧环已经被替换。
+
+79项Worker/SystemView ring测试通过，扩充跟踪configure未分配、首次帧正常、reset释放/后续帧恢复；注入Int32Array分配失败，旧通道/样本42仍可导出。生产构建通过（原有chunk提示）。真实Chrome+STM32新版dist footer bfb175516ff4，两通道正常、缩容后2 pts/buffer2、drops0，关闭页面/SDK后后台退出。证据reports/vofa-lazy-browser.json、vofa-gui-0715.py。本轮未做SystemView实体复测，不将构造跟踪帧当实体证据。
+
+按结构计算，未进入SystemView的每个Worker避免29*capacity字节typed arrays（事件ticks8、区间id4/type1/start8/end8），另省capacity个事件引用槽；不是浏览器总堆/RSS实测。界面容量请求仍缺成功确认/失败回退，需下一轮处理；不要将本轮Worker内部原子提交描述成整个GUI事务已完成。默认容量、历史resize、主线程重复历史的更大优化及全矩阵继续，安装仍未更新。

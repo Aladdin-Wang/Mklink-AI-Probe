@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T23:12:08.956099+00:00",
+  "updated_at": "2026-10-05T23:17:01.330220+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "Worker容量已与GUI串联，TypedRingBuffer保留最新历史resize，序号/元数据连续；默认VOFA10000/SW50000替代200000；通道变更沿用容量。196相关测试+新增composable4项/生产构建通过；真实STM32 Chrome缩到2时buffer2、扩容继续/丢包0/后台退出。全GUI85文件875项通过75.70秒。剩余容量失败确认回退、SystemView冗余分配、暂停/导出/SW组合与全矩阵/安装；长稳暂停。"
+    "current_task": "SystemView环按首个合法帧延迟分配、reset释放；数字configure先完成ring/scratch分配再提交。79相关测试/生产构建通过，注入分配失败保留旧历史；真实Chrome STM32收数/缩容buffer2/drops0/后台退出通过(vofa-lazy-browser)。dist footer bfb175516ff4。剩余优先界面容量确认与失败回退，主线程重复历史及全矩阵/最终安装，长稳暂停。"
   },
   "milestones": [
     {

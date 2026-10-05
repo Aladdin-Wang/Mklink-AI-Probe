@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T23:12:08.956099+00:00`
+- 更新时间：`2026-10-05T23:17:01.330220+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：Worker容量已与GUI串联，TypedRingBuffer保留最新历史resize，序号/元数据连续；默认VOFA10000/SW50000替代200000；通道变更沿用容量。196相关测试+新增composable4项/生产构建通过；真实STM32 Chrome缩到2时buffer2、扩容继续/丢包0/后台退出。全GUI85文件875项通过75.70秒。剩余容量失败确认回退、SystemView冗余分配、暂停/导出/SW组合与全矩阵/安装；长稳暂停。
+- 当前任务：SystemView环按首个合法帧延迟分配、reset释放；数字configure先完成ring/scratch分配再提交。79相关测试/生产构建通过，注入分配失败保留旧历史；真实Chrome STM32收数/缩容buffer2/drops0/后台退出通过(vofa-lazy-browser)。dist footer bfb175516ff4。剩余优先界面容量确认与失败回退，主线程重复历史及全矩阵/最终安装，长稳暂停。
 - 状态：`active`
 
 ## 里程碑

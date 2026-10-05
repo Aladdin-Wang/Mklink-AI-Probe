@@ -886,6 +886,8 @@ describe('StreamDecoder worker controller', () => {
   it('decodes SystemView records and returns only prefiltered visible intervals', () => {
     const { decoder, messages, transfers } = setup()
     decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
     decoder.handle({
       type: 'frame',
       buffer: frame(1n, 4, systemViewRecords(
@@ -911,6 +913,15 @@ describe('StreamDecoder worker controller', () => {
       visible.taskIds, visible.contextTypes, visible.starts, visible.ends,
       visible.startTicks, visible.endTicks,
     ])
+    expect((decoder as any).systemViewEvents.capacity).toBe(8)
+    decoder.handle({ type: 'reset' })
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, systemViewRecords(
+      { kind: 4, taskId: 3, ticks: 100n, timeUs: 100 },
+    ), StreamType.SYSTEMVIEW), connectionGeneration: 2, frameTicket: 1 })
+    decoder.handle({ type: 'visible-range', requestId: 10, start: 0, end: 20, pixelWidth: 100 })
+    expect(messages.at(-1)).toMatchObject({ type: 'systemview-visible', eventCount: 1 })
   })
 
   it('rejects malformed SystemView record payloads', () => {
@@ -1198,6 +1209,26 @@ describe('StreamDecoder worker controller', () => {
       backendDroppedItems: 40,
       backendDroppedBytes: 160,
     })
+  })
+
+  it('keeps the old numeric history when scratch allocation fails during reconfiguration', () => {
+    const { decoder, messages } = setup()
+    decoder.handle({ type: 'configure', capacity: 8, channelCount: 1 })
+    decoder.handle({ type: 'frame', buffer: frame(1n, 1, floats(42), StreamType.WAVEFORM, 1_000_000n, 1), connectionGeneration: 1, frameTicket: 1 })
+    const allocation = vi.spyOn(globalThis, 'Int32Array').mockImplementationOnce(function () {
+      throw new RangeError('test allocation failure')
+    } as any)
+    try {
+      decoder.handle({ type: 'configure', capacity: 16, channelCount: 2 })
+      expect(messages.at(-1)).toMatchObject({ type: 'error', code: 'INVALID_CONFIG' })
+    } finally { allocation.mockRestore() }
+    decoder.handle({ type: 'history-snapshot', requestId: 1 })
+    const snapshot = messages.at(-1)
+    if (snapshot?.type !== 'history-snapshot') throw new Error('missing snapshot')
+    expect(snapshot.channelCount).toBe(1)
+    expect(Array.from(new Float32Array(snapshot.values))).toEqual([42])
+    expect((decoder as any).systemViewEvents).toBeNull()
+    expect((decoder as any).systemViewIntervals).toBeNull()
   })
 
   it('rejects invalid configuration and numeric frame layouts as worker errors', () => {
