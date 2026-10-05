@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T16:11:59.153394+00:00",
+  "updated_at": "2026-10-05T16:16:17.083773+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "STM32真机inactive通道7失败后资源为空，恢复描述符无需stop直接重试八路通过；八路UTF8上行中文及每路10字节中文/emoji下行哈希通过，全部RAM原值恢复。上一轮浏览器伴随会话已终止且后台退出。接续GUI编码/半字符、数组快照、启动等待、HPM脱机GUI及完整剩余矩阵。"
+    "current_task": "补齐共享superwatch_snapshot_select/clear及MCP action，复用GUI现有路由；68测试通过，真实stdio MCP八元素快照与RAM一致，越界拒绝且保留旧选择、清除/停止/断开通过。继续GUI编码/半字符、GUI启动等待、HPM脱机GUI及全功能矩阵，安装/本地Skill仍待统一更新。"
   },
   "milestones": [
     {

@@ -44,6 +44,8 @@ CAPABILITIES = {
     'memory_map': ('GET', '/api/device/memory-map'),
     'superwatch_items': ('GET', '/api/dash/superwatch/items'),
     'superwatch_snapshot': ('GET', '/api/dash/superwatch/array-snapshot'),
+    'superwatch_snapshot_select': ('POST', '/api/dash/superwatch/array-snapshot/select'),
+    'superwatch_snapshot_clear': ('POST', '/api/dash/superwatch/array-snapshot/clear'),
     'superwatch_values': ('GET', '/api/dash/superwatch/latest'),
     'superwatch_add': ('POST', '/api/dash/superwatch/add'),
     'superwatch_remove': ('POST', '/api/dash/superwatch/remove'),

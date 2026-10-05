@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T16:11:59.153394+00:00`
+- 更新时间：`2026-10-05T16:16:17.083773+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：STM32真机inactive通道7失败后资源为空，恢复描述符无需stop直接重试八路通过；八路UTF8上行中文及每路10字节中文/emoji下行哈希通过，全部RAM原值恢复。上一轮浏览器伴随会话已终止且后台退出。接续GUI编码/半字符、数组快照、启动等待、HPM脱机GUI及完整剩余矩阵。
+- 当前任务：补齐共享superwatch_snapshot_select/clear及MCP action，复用GUI现有路由；68测试通过，真实stdio MCP八元素快照与RAM一致，越界拒绝且保留旧选择、清除/停止/断开通过。继续GUI编码/半字符、GUI启动等待、HPM脱机GUI及全功能矩阵，安装/本地Skill仍待统一更新。
 - 状态：`active`
 
 ## 里程碑

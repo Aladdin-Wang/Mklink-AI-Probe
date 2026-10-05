@@ -59,6 +59,7 @@ GUI 已在采集时，AI 使用以下能力：
 
 - `superwatch_start` 携带空参数：订阅现有采集，不重启；`superwatch_values`
   读取最后一行及通道元数据、序号、样本时间（毫秒）与缓存年龄。
+- `superwatch_snapshot_select` 使用 `name/start_index/count` 选择数组快照，`superwatch_snapshot_clear` 清除选择；它们修改共享视图，不自动启动采集。MCP 对应 `superwatch(action="snapshot_select"/"snapshot_clear")`。
 - `superwatch_snapshot` 读取已有数组快照；`rtt_history`、`systemview_history`
   读取后台已有历史。
 - 一次性内存/变量读写和寄存器读取在持续采集时返回 busy。旧 SuperWatch

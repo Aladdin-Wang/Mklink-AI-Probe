@@ -198,3 +198,10 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 在授权STM32测试RAM中，先关闭第7路生产使能，再把其UpBuffer大小临时设0：共享RTT start为异步受理，随后status明确running=false、error含channel7 inactive，资源表为空。恢复合法描述符/生产开关后，不调用stop直接再次start，八路采集均恢复。第一版验收脚本误把start受理视为同步成功，已按生产异步契约改为等待status终态；不是新增产品故障。
 
 切换测试程序八路为ANSI/UTF-8模式，全部上行含UTF8=测试的正确原始字节；逐路下行测试🙂（每路10字节），目标计数和滚动哈希全部匹配。结束后停止采集，描述符、模式数组和生产mask全部逐项读回恢复。证据reports/rtt8-inactive-utf8-hil.json。本项证明真机传输及共享启动失败恢复，不替代GUI中文渲染、半字符跨帧和非UTF-8编码验收。
+
+
+### 共享数组快照能力补齐
+
+审计发现共享客户端只有superwatch_snapshot读取，无法执行GUI已有的选择/清除。新增superwatch_snapshot_select/clear能力映射及MCP superwatch同名action，直接复用现有GUI路由、目录解析和有界采样；未新增硬件读取器。共享参考文档同步，68项MCP/共享后台/SDK回归通过。
+
+真实stdio MCP在STM32选择rtt_test_rx_bytes的8元素快照并启动采样，8值与一次目标RAM读取完全一致；选择start7/count2被拒绝，原start0/count8仍保持；clear后snapshot=null，随后正常停止/断开。证据reports/superwatch-array-mcp-hil.json。此项不证明所有数组类型、256元素上限或GUI快照交互已验收。

@@ -393,3 +393,25 @@ def test_attached_mcp_security_cannot_silently_switch_probes(monkeypatch):
             assert calls==['submit']
     asyncio.run(scenario())
     assert calls==['submit','detach']
+
+
+def test_array_snapshot_mcp_actions_reuse_shared_gui_routes(monkeypatch):
+    from mklink.runtime_capabilities import CAPABILITIES
+    calls = []
+    class Adapter:
+        def __init__(self, **kwargs): pass
+        def connect(self, **kwargs): return {"connected": True}
+        def close(self): pass
+        def call(self, name, body):
+            calls.append((name, body))
+            return {"snapshot": body}
+    monkeypatch.setattr(runtime_mcp, "RuntimeClient", Adapter)
+    async def scenario():
+        async with Client(runtime_mcp.build_server()) as mcp:
+            await mcp.call_tool("connect", {})
+            await mcp.call_tool("superwatch", {"action": "snapshot_select", "arguments": {"name": "samples", "start_index": 2, "count": 8}})
+            await mcp.call_tool("superwatch", {"action": "snapshot_clear", "arguments": {}})
+    asyncio.run(scenario())
+    assert calls == [("superwatch_snapshot_select", {"name": "samples", "start_index": 2, "count": 8}), ("superwatch_snapshot_clear", {})]
+    assert CAPABILITIES["superwatch_snapshot_select"] == ("POST", "/api/dash/superwatch/array-snapshot/select")
+    assert CAPABILITIES["superwatch_snapshot_clear"] == ("POST", "/api/dash/superwatch/array-snapshot/clear")
