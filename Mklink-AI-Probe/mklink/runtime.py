@@ -381,7 +381,11 @@ def _serve_runtime(*, project_root, port, probe_id):
         from mklink.observe_bridge import configure_stream_observation
         configure_stream_observation(app, host="127.0.0.1", port=info["port"],
                                      auth_token=info["token"], private_correlation=info["instance_id"])
+        # Admission has drained hardware work before shutdown. Bound the network
+        # drain too: a Windows Proactor reset can leave Server.wait_closed stuck
+        # even after ASGI handlers have exited. Lifespan cleanup must still run.
         server = uvicorn.Server(uvicorn.Config(app, log_level="info", access_log=False,
+                                              timeout_graceful_shutdown=2,
                                               ws="websockets-sansio", ws_per_message_deflate=False))
         control.shutdown = lambda: setattr(server, "should_exit", True)
         path = _private_dir(probe_id) / "endpoint.json"

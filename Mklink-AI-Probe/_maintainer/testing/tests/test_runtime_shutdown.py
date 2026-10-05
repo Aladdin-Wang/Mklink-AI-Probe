@@ -68,3 +68,32 @@ def test_backend_exits_and_releases_owner_after_stream_clients(tmp_path, monkeyp
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=5)
+
+def test_stalled_listener_drain_still_runs_lifespan_and_releases_owner(tmp_path, monkeypatch):
+    monkeypatch.setenv('MKLINK_RUNTIME_DIR',str(tmp_path/'runtime'))
+    source=Path(__file__).resolve().parents[3]
+    code="""import asyncio
+async def stalled(self):
+    await asyncio.Event().wait()
+asyncio.Server.wait_closed=stalled
+from mklink.runtime import serve_runtime
+serve_runtime(project_root=%r,port=0,probe_id='lobby')
+"""%str(tmp_path)
+    with (tmp_path/'stalled.log').open('w',encoding='utf-8') as log:
+        process=subprocess.Popen([sys.executable,'-c',code],cwd=source,
+            env=dict(os.environ,PYTHONPATH=str(source)),stdout=log,stderr=log,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        try:
+            deadline=time.monotonic()+20
+            while process.poll() is None and time.monotonic()<deadline:
+                info=discover('lobby')
+                if info:break
+                time.sleep(.02)
+            else:pytest.fail('Backend not ready')
+            assert request(info,'POST','/_runtime/stop',{'confirm':True})['status']=='stopping'
+            assert process.wait(timeout=8)==0
+            assert not (tmp_path/'runtime/probes/lobby/endpoint.json').exists()
+            with runtime_lock('owner.lock','lobby'):pass
+        finally:
+            if process.poll() is None:process.terminate();process.wait(5)
+    assert 'Application shutdown complete' in (tmp_path/'runtime/probes/lobby/runtime.log').read_text(encoding='utf-8')
