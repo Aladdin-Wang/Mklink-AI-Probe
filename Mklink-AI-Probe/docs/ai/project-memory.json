@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T19:47:23.3222164+00:00",
+  "updated_at": "2026-10-05T20:01:06.0929194+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "已修大块有限Dump/测量MUX容量退化：启动前确定容量，小块MUX/大块B1，只有有限独占调用允许；普通Watch不回退，传输失败不重放。179+188回归通过，STM321921/2048/4096各3样本全字节正确及4KiB测量、MUX重启通过。B1解析丢弃46字节计数保留。后台退出。"
+    "current_task": "已修实体DAP打断大块Dump自动从块0续传：固件03d72f5按DAP epoch终止、主机明确报失效。145主机测试/17固件检查通过。STM32新固件DAP0.413秒完成、显式重采集16KiB两样本全字节正确，小块MUX/CLI/RTT8恢复、后台退出。"
   },
   "milestones": [
     {
@@ -75,7 +75,7 @@
     "正式包、唯一备份、验收证据和依赖缓存保留；本轮清理20项约1.68GiB，48个含链接临时目录留待人工检查。mklink-issues-pr自动任务维持暂停。"
   ],
   "hardware": {
-    "state": "双V4仍1a4bd0c，STM32 APP仍0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e。Dump全流程仅只读目标，RTT8恢复后已停止、后台退出。使用当前AXF解析地址。长期验证暂停。",
+    "state": "STM32 V4为03d72f5，UF2 b1732bd861ad5ff8757859ee8f292d0346ef3946b6d0088ef65bb465adbaaa73；HPM V4仍1a4bd0c待补验。STM32 APP仍0570dee765df4207c020521a4dfea90ecca86fcebaeebbbbb2437bead9156f9e。本轮未改目标Flash/电压，所有采集已停止、后台退出。长期验证暂停。",
     "installer": "474ef405本地0.3.0 NSIS与Skill已安装；各通道能力一致，包内三负载哈希与7059目标/2224算法完整性通过，安装版Web与原生版本弹窗确认。",
     "backups": "原始实机证据、发布包与清理清单保留在本地.build。"
   },
@@ -90,7 +90,7 @@
     "Mac/Linux、跨主机Agent、物理Modbus及所有芯片组合未完整认证；新固件仅格式/CRC/发布校验，不等同于重新完成实机认证。"
   ],
   "next_actions": [
-    "核对主机CI，继续大块Dump更大容量/取消/磁盘失败和DAP实体优先级组合，再推进完整矩阵及最终安装/Skill。普通SuperWatch必须保持MUX并行语义，不自动退到独占B1。",
+    "核对主机/固件CI，补验HPM新固件，再推进大块Dump取消/磁盘失败、Flush及完整功能矩阵和最终安装/Skill。DAP持续占用时终止通知需等释放、可能先超时；不宣称立即失效。普通Watch继续MUX并行语义。",
     "用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。",
     "固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。",
     "含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。"

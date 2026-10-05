@@ -9,6 +9,8 @@ import pytest
 from mklink._types import DeviceContext, DeviceState
 from mklink.bridge import MKLinkSerialBridge
 from mklink.dump_memory import (
+    DumpMemoryParser,
+    DumpSampleAssembler,
     DumpMemoryBusyError,
     DumpMemoryReadError,
     DumpMemoryStreamSession,
@@ -19,6 +21,18 @@ from mklink.dump_memory import (
     read_dump_memory_range_once,
     read_dump_memory_regions_once,
 )
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_dap_terminal_frame_rejects_capture_before_block_coverage(partial):
+    assembler = DumpSampleAssembler([4096], ordered=True)
+    parser = DumpMemoryParser()
+    if partial:
+        block = _b1_frame(1, bytes(2048), block_index=0, block_count=2, total_size=4096)
+        assert assembler.feed(parser.feed(block)[0]) is None
+    terminal = parser.feed(_old_frame(2, b"", flags=0x10))[0]
+    with pytest.raises(DumpMemoryReadError, match="invalidated by DAP"):
+        assembler.feed(terminal)
 
 
 def _old_frame(timestamp_us, payload, *, flags=0):

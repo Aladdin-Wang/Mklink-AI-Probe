@@ -634,6 +634,13 @@ class DumpSampleAssembler:
         self.incomplete_region_count = 0
 
     def feed(self, frame):
+        # A terminal target-change frame may interrupt a partial B1 sample.
+        # Report it before sequence/coverage checks; never join epochs.
+        if int(frame.get("flags", 0)) & 0x10:
+            raise DumpMemoryReadError(
+                "Dump invalidated by DAP target change; start a new capture",
+                gap_fact="firmware_error_count",
+            )
         if self.ordered:
             timestamp = frame.get('timestamp_us')
             if type(timestamp) is not int or timestamp < 0:
