@@ -39,6 +39,7 @@ HIGH_RISK_OPERATIONS = {
 MCP_TOOLS = {
     "remote_sites",
     "remote_status",
+    "remote_connect",
     "remote_capabilities",
     "remote_call",
     "remote_upload",

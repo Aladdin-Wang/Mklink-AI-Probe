@@ -39,6 +39,11 @@ def register_tools(mcp: Any, registry: Any | None = None) -> None:
         return client_for(site).call("agent.status")
 
     @mcp.tool()
+    def remote_connect(site: str = "") -> dict[str, Any]:
+        """Attach the site's selected target, reusing an existing connection without resetting other clients."""
+        return client_for(site).call("agent.connect")
+
+    @mcp.tool()
     def remote_capabilities(site: str = "") -> dict[str, Any]:
         """Return the capabilities negotiated before any target operation."""
 

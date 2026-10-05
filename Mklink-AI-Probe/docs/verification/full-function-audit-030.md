@@ -587,3 +587,12 @@ symbol-types-current-hil逐项搜索并读取3072元素数组的0/255/256/3071�
 remote-rtt8-current-hil通过真实远程WebSocket启动STM32 RTT0–7，本地SDK借用。每路原始上行1054–2890字节与本地缓存同游标前缀一致，历史lost_bytes=0；八路分别下发256字节覆盖00–FF，目标每路rx计数+256、滚动哈希均匹配。远程拥有者关闭后本地仍running且八路可读，最后借用者退出、远程服务停止，后台自行退出。没有刷固件或写Flash；测试输入正常改变目标RTT接收统计。
 
 首轮脚本固定等待0.6秒读到空页，失败清理又由借用者请求stop得到409；原记录保留。改为4秒有界等首数据且借用者只close，未绕过资源归属。两轮间确认旧后台已退出，不重放未知写入。证据只证明本机远程RPC，不替代GUI/跨物理主机/远程断网和长稳。公开远程文档同步，安装Skill仍待最后构建更新。
+### 远程扩大回归、换代拒绝与 MCP 首次连接补齐
+
+1e2f5e05基础上先增加通道读取前/读取过程中采集session变化两项测试，确认丢弃换代页且后续不继续读取。除文件名含packag的构建测试外，全部27个test_remote文件共471通过、32条弃用警告，136.82秒；包含干净MCP依赖安装验证，不等于完整安装包验收。
+
+继续审计发现dispatcher的RTT详情覆盖了原操作清单，修复为保留清单再追加说明。远程MCP仅有remote_call且不接受agent.connect，首次目标接入缺少工具；新增remote_connect(site)，只调用已有非强制agent.connect，复用已有目标而不调用agent.reconnect。不新增设备连接实现或重连重试。公开文档与精确工具清单同步，文档检查首次因旧清单缺remote_connect失败，更新后最终相关55项通过；不把修改后的局部复测写成再次471全套通过。
+
+remote-mcp-current-hil通过真实stdio FastMCP子进程和真实WebSocket访问STM32。首次remote_connect成功，握手详情包含rtt.read_channel；remote_call启动八路，逐路读取512–864字节，与本地缓存相同游标前缀一致且lost_bytes=0。采集期间再次remote_connect返回reused且session不变。MCP退出后本地仍运行，最终本地退出/服务停止/后台自行退出。临时registry仅存在子进程内，令牌通过子进程环境传入、不落配置或报告；无Flash、电压及固件变化。报告remote-mcp-current-hil.py/json和stdio辅助脚本保存在本地。
+
+本轮不是GUI或跨主机验证。最近1e2f5e05反馈CI已成功，共享检查查询仍运行；新改动的CI待核对，安装与Skill仍待最终推进。

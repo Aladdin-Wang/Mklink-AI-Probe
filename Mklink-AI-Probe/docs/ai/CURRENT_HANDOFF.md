@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:44:03.6267396+00:00`
+- 更新时间：`2026-10-05T21:49:48.6697324+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：修复远程RTT RPC多通道缺口：channels启动、现有缓存逐通道游标读取、256字节二进制按通道发送，复用现有共享机制。117项自动化通过；STM32真实远程八路Up与本地一致、各256字节Down目标计数/哈希正确，远程退出不误停本地、最终后台退出。报告remote-rtt8-current-hil；GUI/跨主机/安装等继续。
+- 当前任务：远程27文件扩大回归471通过，新增换代读拒绝；随后修复握手操作说明及MCP首次目标连接缺口，相关55项通过。真实stdio MCP首次remote_connect、八路读取与本地一致、再次connect复用不换代、MCP退出不误停本地、最后后台退出。报告remote-mcp-current-hil；GUI/跨主机/安装仍继续。
 - 状态：`active`
 
 ## 里程碑

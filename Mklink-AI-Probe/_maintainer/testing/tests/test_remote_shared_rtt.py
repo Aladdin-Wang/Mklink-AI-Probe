@@ -161,3 +161,31 @@ def test_binary_client_helper_and_channel_cursor():
     client.call.reset_mock()
     client.rtt_read_channel(7, 123)
     client.call.assert_called_once_with('rtt.read_channel', channel=7, cursor=123)
+
+@pytest.mark.parametrize('when', ['before', 'during'])
+def test_channel_read_rejects_capture_replacement_without_returning_mixed_page(rtt, when):
+    router, _, _, manager, _, dispatch = rtt
+    dispatch('start')
+    capture = router._target._captures[('first', 'rtt')]
+    original_call = capture.client.call
+    reads = []
+    def call(name, arguments=None):
+        if name == 'rtt_read_channel':
+            reads.append(arguments)
+            manager.session = 'replacement'
+            return {'session': 'replacement', 'reset': True, 'data_hex': 'ffff', 'cursor': 2}
+        return original_call(name, arguments)
+    capture.client.call = call
+    if when == 'before':
+        manager.session = 'replacement'
+    with pytest.raises(AgentOperationError, match='capture changed'):
+        dispatch('read_channel', {'channel': 7, 'cursor': 123})
+    assert len(reads) == (1 if when == 'during' else 0)
+    with pytest.raises(AgentOperationError, match='capture changed'):
+        dispatch('read_channel', {'channel': 7, 'cursor': 123})
+    assert len(reads) == (1 if when == 'during' else 0)
+
+
+def test_rtt_handshake_advertises_channel_operation(rtt):
+    router, *_ = rtt
+    assert 'rtt.read_channel' in router.capabilities()['stream.rtt'].detail

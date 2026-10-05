@@ -290,6 +290,7 @@ mklink-remote-mcp
 
 - `remote_sites`
 - `remote_status`
+- `remote_connect`：首次目标操作前调用；已有连接会复用，不强制重连其他客户端
 - `remote_capabilities`
 - `remote_call`
 - `remote_upload`

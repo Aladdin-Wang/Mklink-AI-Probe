@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T21:44:03.6267396+00:00",
+  "updated_at": "2026-10-05T21:49:48.6697324+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "修复远程RTT RPC多通道缺口：channels启动、现有缓存逐通道游标读取、256字节二进制按通道发送，复用现有共享机制。117项自动化通过；STM32真实远程八路Up与本地一致、各256字节Down目标计数/哈希正确，远程退出不误停本地、最终后台退出。报告remote-rtt8-current-hil；GUI/跨主机/安装等继续。"
+    "current_task": "远程27文件扩大回归471通过，新增换代读拒绝；随后修复握手操作说明及MCP首次目标连接缺口，相关55项通过。真实stdio MCP首次remote_connect、八路读取与本地一致、再次connect复用不换代、MCP退出不误停本地、最后后台退出。报告remote-mcp-current-hil；GUI/跨主机/安装仍继续。"
   },
   "milestones": [
     {
