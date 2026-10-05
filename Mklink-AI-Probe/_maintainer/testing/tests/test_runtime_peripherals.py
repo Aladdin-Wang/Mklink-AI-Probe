@@ -152,4 +152,3 @@ def test_disconnected_capture_holds_admission_until_worker_cleanup(peripheral, m
     assert response.status_code==500 and 'cancelled after cleanup' in response.text
     assert not control.operation_lock.locked()
     assert not state['resource_manager'].get_status()
-
