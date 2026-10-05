@@ -329,7 +329,10 @@ def test_package_audit_covers_zip_manifest_and_recursive_archives(
     )
     entries = _recursive_archive_entries(executable)
     assert len(entries) == surfaces["archive_entries"]
-    assert len(entries) > surfaces["bundle_files"]
+    # Algorithm blobs are external bundle files. Their count is independent
+    # of the executable's Python archive; verify recursive code traversal
+    # directly instead of comparing unrelated totals.
+    assert any("::" in name and code is not None for name, _data, code in entries)
     names = [name for name, _data, _code in entries]
     assert hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest() == (
         manifest["audit"]["archive_names_sha256"]

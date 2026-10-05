@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T12:15:06.5808180Z`
+- 更新时间：`2026-10-05T12:26:01.8412431Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：全功能审计：烧录资源测试迁移至acquire_many，删除重复资源申请，64项通过；配置既有算法目录后脱机88项通过，原26项失败均已对应局部通过。远程包4环境错误重跑仍在执行，完整全套尚未复跑；DAP/八路/HPM HEX和全矩阵待推进。
+- 当前任务：全功能审计：GUI全套855通过；远程独立包5通过，唯一过期数量断言改为递归代码校验，同一新包完整审计通过。固件57ac0ba DAP显式会话仲裁已编译/布局/模拟测试通过并推送，尚未刷机。下一步生命周期与旧RTT偏移恢复，八路实体/HPM HEX和完整矩阵待推进。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 收取远程独立包重跑full-audit-remote-package.log，活跃exec会话89279；不要重复启动。之后GUI全套基线，并推进DAP会话优先/八路实体/HPM HEX。
+1. 已无运行中的基线测试。优先完成固件57ac0ba的DAP生命周期/组合命令/USB重置测试及采集旧偏移隔离，之后升级实机、八路目标程序、HPM HEX；长期暂停。
 2. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
