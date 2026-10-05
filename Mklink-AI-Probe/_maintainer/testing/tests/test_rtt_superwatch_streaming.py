@@ -1324,6 +1324,9 @@ def test_superwatch_rejects_bridge_without_dump_stream_instead_of_read_ram_fallb
         for call in events.put.call_args_list
     )
     assert manager.get_status()["acquisition_mode"] != "read-memory"
+    assert manager.get_status()["state"] == "stopped"
+    assert "read_ram fallback is disabled" in manager.get_status()["error"]
+    assert not manager._collecting.is_set()
 
 
 def test_superwatch_rejects_more_than_safe_dump_region_limit():
@@ -1344,6 +1347,8 @@ def test_superwatch_rejects_more_than_safe_dump_region_limit():
         and "more than 15 dump_memory regions" in call.args[0].get("message", "")
         for call in events.put.call_args_list
     )
+    assert manager.get_status()["state"] == "stopped"
+    assert "more than 15 dump_memory regions" in manager.get_status()["error"]
 
 
 def _symbol_write_device(tmp_path, *, write_error=None):

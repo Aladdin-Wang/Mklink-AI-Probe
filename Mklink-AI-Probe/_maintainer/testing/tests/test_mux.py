@@ -6,6 +6,7 @@ import pytest
 
 from mklink.mux import MuxTransport, MuxError, packet
 from mklink.mux_watch import MuxWatchSession
+from mklink.mux_rtt import MuxRTTSession
 from mklink.rtt_cache import RttChannelCache
 from test_shared_runtime import runtime, attach, call
 
@@ -121,6 +122,30 @@ def test_watch_bound_and_memory_write_no_retry_after_verification_mismatch():
     with pytest.raises(RuntimeError, match='mismatch'):
         watch.write(0x20000000, b'good', future)
     assert future.exception() and len(calls) == 1
+
+
+@pytest.mark.parametrize('channel', range(8))
+def test_dap_takeover_invalidates_each_rtt_channel_without_poisoning_transport(channel):
+    transport, _ = peer()
+    transport.handshake()
+    session = MuxRTTSession(transport, {}, channel=channel)
+    transport.feed(packet(0x40, 17, 1, struct.pack('<BBI', channel, 7, 100)))
+    with pytest.raises(RuntimeError, match='DAP changed the target'):
+        session.read_channels(0)
+    assert transport.ready
+    assert transport.request(4, b'control still alive') == b'control still alive'
+
+
+def test_dap_takeover_discards_partial_watch_sample_and_surfaces_reason():
+    transport, _ = peer()
+    transport.handshake()
+    watch = MuxWatchSession(transport, [(0x20000000, 256)], .1)
+    transport.feed(packet(0x41, 17, 1, struct.pack('<BBI', 0, 0, 100) + b'x' * 128))
+    assert watch.read_frames() == [] and watch._pending
+    transport.feed(packet(0x41, 17, 2, struct.pack('<BBI', 0, 7, 101)))
+    with pytest.raises(RuntimeError, match='DAP changed the target'):
+        watch.read_frames()
+    assert watch._pending == [] and watch.samples == 0 and transport.ready
 
 
 def test_shared_admission_allows_mux_memory_but_keeps_unsafe_boundaries(runtime):

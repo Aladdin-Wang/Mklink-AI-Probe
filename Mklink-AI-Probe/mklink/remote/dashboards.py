@@ -1754,6 +1754,7 @@ class SuperWatchStreamManager:
         self._binary_dropped_batches = 0
         self._binary_dropped_items = 0
         self._acquisition_mode = "idle"
+        self._error: str | None = None
         self._stream_integrity: dict[str, int] = {}
         self._write_event_seq = 0
         self._write_events = deque(maxlen=128)
@@ -1986,6 +1987,7 @@ class SuperWatchStreamManager:
         self._stop_event = stop_event
         self._generation = generation
         self._collecting.set()
+        self._error = None
         self._dump_restart.clear()
         self._running = True
         with self._read_lock:
@@ -2146,6 +2148,8 @@ class SuperWatchStreamManager:
                         continue
             except Exception as e:
                 logger.error("SuperWatch stream error: %s", e)
+                if getattr(self, "_generation", None) is generation:
+                    self._error = str(e)
                 self._bridge.put({"event": "error", "message": str(e)})
             finally:
                 with self._read_lock:
@@ -2156,6 +2160,7 @@ class SuperWatchStreamManager:
                 self._flush_binary_batch()
                 if getattr(self, "_generation", None) is generation:
                     self._running = False
+                    self._collecting.clear()
                     self._bridge.put({"event": "stopped"})
                     self._bridge.stop()
 
@@ -2776,7 +2781,7 @@ class SuperWatchStreamManager:
         return self._interval
 
     def get_status(self) -> dict:
-        if self._collecting.is_set():
+        if self._running and self._collecting.is_set():
             state = "running"
         elif self._running:
             state = "paused"
@@ -2788,6 +2793,7 @@ class SuperWatchStreamManager:
         return {
             "state": state,
             "interval": self._interval,
+            "error": self._error,
             "items": json.loads(snapshot_json),
             "metadata_version": metadata_version,
             "live_write_supported": self._live_write_supported,

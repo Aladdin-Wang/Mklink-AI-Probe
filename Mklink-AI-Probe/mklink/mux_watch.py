@@ -34,6 +34,9 @@ class MuxWatchSession:
         result = []
         for event in self.transport.drain(0x41, 255):
             index, status = event[:2]
+            if status == 7:
+                self._pending = []
+                raise RuntimeError('DAP changed the target; SuperWatch capture was invalidated. Restart capture after debugging.')
             timestamp = struct.unpack_from('<I', event, 2)[0]
             if index == 0:
                 if self._pending:

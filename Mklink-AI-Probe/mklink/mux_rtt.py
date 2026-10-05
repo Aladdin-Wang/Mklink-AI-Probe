@@ -29,6 +29,8 @@ class MuxRTTSession:
         while True:
             for ch in self.channels:
                 for frame in self.transport.drain(0x40, ch):
+                    if frame[1] == 7:
+                        raise RuntimeError('DAP changed the target; RTT capture was invalidated. Restart capture after debugging.')
                     if frame[1]:
                         raise RuntimeError('RTT target read failed')
                     result[ch].extend(frame[6:])
