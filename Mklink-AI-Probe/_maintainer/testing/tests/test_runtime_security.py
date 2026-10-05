@@ -410,6 +410,24 @@ def test_gui_start_validation_failure_is_retained_without_replay(security):
     assert not s.calls
 
 
+@pytest.mark.parametrize('mode', ['bound', 'missing', 'lobby', 'other-dap'])
+def test_shared_online_discovery_never_offers_another_probe(security, mode):
+    s = security
+    enumerated = []
+    def provider():
+        enumerated.append(True)
+        return [SimpleNamespace(unique_id=serial, product_name='MKLink')
+                for serial in (['OTHER'] if mode == 'other-dap' else ['OTHER', 'serial'])]
+    s.services.probe_provider = provider
+    if mode == 'missing': s.inventory.clear()
+    if mode == 'lobby': s.control.info['probe_id'] = 'lobby'
+    response = s.client.get('/api/online-flash/probes')
+    assert response.status_code == 200
+    assert [row['unique_id'] for row in response.json()] == (['serial'] if mode == 'bound' else [])
+    assert bool(enumerated) == (mode in {'bound', 'other-dap'})
+    assert not s.calls
+
+
 @pytest.mark.parametrize('ending', ['cancel-observer', 'stop'])
 def test_gui_job_retains_ownership_and_existing_stop_path(security, monkeypatch, ending):
     import asyncio

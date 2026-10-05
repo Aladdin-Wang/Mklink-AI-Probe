@@ -14,7 +14,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 
-PROTOCOL = 41  # Shared online submissions require a stable request ID.
+PROTOCOL = 42  # Online probe discovery is scoped to the bound runtime identity.
 VERSION = "0.3.0"
 
 

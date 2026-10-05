@@ -93,7 +93,7 @@ Windows 标准 NSIS 安装包采用 per-machine 安装，在安装结束后以�
 
 | 用途 | 端点 |
 |------|------|
-| 列出 MKLink 探针 | `GET /probes` |
+| 列出当前后台绑定的 MKLink 探针；未选择或设备缺失时为空 | `GET /probes` |
 | 搜索目标 | `GET /targets?q=...&vendor=...&installed=...` |
 | Pack 状态/更新索引 | `GET /packs/status`、`POST /packs/index/update` |
 | 安装/导入/取消/删除 Pack | `POST /packs/install`、`POST /packs/import`、`POST /packs/cancel`、`DELETE /packs/{pack_id}/{version}` |

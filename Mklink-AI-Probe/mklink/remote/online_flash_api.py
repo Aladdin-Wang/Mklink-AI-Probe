@@ -1441,8 +1441,18 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         return payload
 
     @router.get("/probes")
-    async def probes() -> object:
-        return _json_primitive(await _blocking(_enumerate_probes, services.probe_provider))
+    async def probes(request: Request) -> object:
+        control = getattr(request.app.state, 'shared_runtime', None)
+        serial = None
+        if control is not None:
+            presence = control.presence()
+            if presence['status'] != 'present':
+                return []
+            serial = presence['probe']['serial_number'].casefold()
+        records = await _blocking(_enumerate_probes, services.probe_provider)
+        if serial is not None:
+            records = [record for record in records if record.unique_id.casefold() == serial]
+        return _json_primitive(records)
 
     @router.get("/targets")
     async def targets(
