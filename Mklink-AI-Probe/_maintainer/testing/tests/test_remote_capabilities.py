@@ -66,7 +66,7 @@ async def _running_agent(**kwargs):
         await asyncio.wait_for(task, timeout=2)
 
 
-def test_capability_catalog_has_all_13_groups_and_44_unique_schema_backed_operations():
+def test_capability_catalog_has_all_13_groups_and_45_unique_schema_backed_operations():
     operations = [
         operation
         for capability in CAPABILITIES.values()
@@ -74,8 +74,8 @@ def test_capability_catalog_has_all_13_groups_and_44_unique_schema_backed_operat
     ]
 
     assert len(CAPABILITIES) == 13
-    assert len(operations) == 44
-    assert len(set(operations)) == 44
+    assert len(operations) == 45
+    assert len(set(operations)) == 45
     assert set(operations) == set(OPERATION_SCHEMAS)
     assert {
         "runtime.jobs",
@@ -103,7 +103,7 @@ def test_capability_catalog_has_all_13_groups_and_44_unique_schema_backed_operat
 
     serialized = capability_catalog()
     assert set(serialized) == set(CAPABILITIES)
-    assert sum(len(item["operations"]) for item in serialized.values()) == 44
+    assert sum(len(item["operations"]) for item in serialized.values()) == 45
 
 
 def test_every_declared_operation_has_dispatch_mapping_or_explicit_group_router():

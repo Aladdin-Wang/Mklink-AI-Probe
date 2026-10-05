@@ -448,9 +448,16 @@ class RemoteClient:
     def rtt_read(self, timeout: float = 1.0) -> dict[str, Any]:
         return self.call("rtt_read", timeout=timeout)
 
-    def rtt_write(self, data: bytes | str) -> bool:
-        text = data.decode("utf-8") if isinstance(data, bytes) else data
-        return self.call("rtt_write", data=text)['sent_bytes'] == len(text.encode('utf-8'))
+    def rtt_read_channel(self, channel: int, cursor: int = 0) -> dict[str, Any]:
+        """Read bounded raw history; retain each channel's returned cursor and loss counts."""
+        return self.call("rtt.read_channel", channel=channel, cursor=cursor)
+
+    def rtt_write(self, data: bytes | str, *, channel: int | None = None) -> bool:
+        encoded = data if isinstance(data, bytes) else data.encode('utf-8')
+        arguments = {'data_hex': data.hex()} if isinstance(data, bytes) else {'data': data}
+        if channel is not None:
+            arguments['channel'] = channel
+        return self.call("rtt_write", **arguments)['sent_bytes'] == len(encoded)
 
     def rtt_stop(self) -> dict[str, Any]:
         return self.call("rtt_stop")

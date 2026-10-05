@@ -98,7 +98,7 @@ _CAPABILITIES = {
     "stream.rtt": Capability(
         "stream.rtt",
         2,
-        ("rtt.start", "rtt.read", "rtt.write", "rtt.stop"),
+        ("rtt.start", "rtt.read", "rtt.read_channel", "rtt.write", "rtt.stop"),
     ),
     "stream.systemview": Capability(
         "stream.systemview",
@@ -201,7 +201,8 @@ _SCHEMAS = {
     "symbols.memory_map": OperationSchema("target.symbols"),
     "rtt.start": OperationSchema("stream.rtt"),
     "rtt.read": OperationSchema("stream.rtt"),
-    "rtt.write": OperationSchema("stream.rtt", ("data",)),
+    "rtt.read_channel": OperationSchema("stream.rtt"),
+    "rtt.write": OperationSchema("stream.rtt"),
     "rtt.stop": OperationSchema("stream.rtt"),
     "systemview.start": OperationSchema("stream.systemview"),
     "systemview.read": OperationSchema("stream.systemview"),

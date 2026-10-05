@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T21:37:01.4789154+00:00`
+- 更新时间：`2026-10-05T21:44:03.6267396+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：当前STM32远程服务回环及同机WLAN两组真机通过：错误/缺失/轮换旧令牌拒绝，双远程与本地会话独立退出，停止远程后本地读取正常，最终后台退出。首次漏agent.connect失败已保留并纠正测试步骤，无生产改动。报告remote-service-current-hil及remote-service-lan-current-hil；跨物理主机/GUI等继续。
+- 当前任务：修复远程RTT RPC多通道缺口：channels启动、现有缓存逐通道游标读取、256字节二进制按通道发送，复用现有共享机制。117项自动化通过；STM32真实远程八路Up与本地一致、各256字节Down目标计数/哈希正确，远程退出不误停本地、最终后台退出。报告remote-rtt8-current-hil；GUI/跨主机/安装等继续。
 - 状态：`active`
 
 ## 里程碑

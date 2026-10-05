@@ -17,7 +17,7 @@ OPERATIONS = frozenset({
     'variable.read', 'variable.write', 'symbols.status', 'symbols.parse', 'symbols.list',
     'symbols.search', 'symbols.memory_map', 'hardfault.check', 'hardfault.decode',
     'systemview.start', 'systemview.read', 'systemview.stop', 'systemview.resolve_task_names',
-    'rtt.start', 'rtt.read', 'rtt.write', 'rtt.stop',
+    'rtt.start', 'rtt.read', 'rtt.read_channel', 'rtt.write', 'rtt.stop',
 })
 
 

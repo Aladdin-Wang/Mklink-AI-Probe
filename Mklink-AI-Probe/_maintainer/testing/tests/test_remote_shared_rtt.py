@@ -112,3 +112,52 @@ def test_sdk_helpers_preserve_diagnostics_and_use_confirmed_write_count():
     assert client.rtt_write('中')
     client.call.return_value = {'sent_bytes': 1}
     assert not client.rtt_write('中')
+
+@pytest.mark.parametrize('channel', range(8))
+def test_channel_read_reuses_shared_cursor_and_binary_write(rtt, channel):
+    from unittest.mock import Mock
+    router, _, _, _, _, dispatch = rtt
+    dispatch('start')
+    capture = router._target._captures[('first', 'rtt')]
+    original_call = capture.client.call
+    page = {'channel': channel, 'cursor': 123, 'data_hex': '00ff80', 'lost_bytes': 7}
+    routed = Mock(return_value=page)
+    def call(name, arguments=None):
+        if name == 'rtt_status':
+            return original_call(name, arguments)
+        return routed(name, arguments)
+    capture.client.call = call
+    assert dispatch('read_channel', {'channel': channel, 'cursor': 120}) == page
+    routed.assert_called_once_with('rtt_read_channel', {'channel': channel, 'cursor': 120, 'session': 'capture-one'})
+    routed.reset_mock()
+    dispatch('write', {'channel': channel, 'data_hex': '00ff80'})
+    routed.assert_called_once_with('rtt_write', {'channel': channel, 'data_hex': '00ff80'})
+
+
+@pytest.mark.parametrize('action,params', [
+    ('read_channel', {'channel': True}), ('read_channel', {'channel': 8}),
+    ('read_channel', {'cursor': -1}), ('read_channel', {'cursor': True}),
+    ('write', {'data_hex': '00', 'channel': True}),
+    ('write', {'data_hex': '00', 'channel': 8}),
+    ('write', {'data_hex': '00', 'data': 'x'}),
+    ('write', {'data_hex': 'ff'*257}), ('write', {'data_hex': '0g'}),
+    ('write', {'data_hex': '0'}), ('write', {'data_hex': '00 ff'}),
+])
+def test_channel_parameters_rejected_before_data_operation(rtt, action, params):
+    _, _, calls, _, _, dispatch = rtt
+    dispatch('start')
+    with pytest.raises(RequestValidationError):
+        dispatch(action, params)
+    assert calls == ['start']
+
+
+def test_binary_client_helper_and_channel_cursor():
+    from unittest.mock import Mock
+    from mklink.remote.client import RemoteClient
+    client = object.__new__(RemoteClient)
+    client.call = Mock(return_value={'sent_bytes': 3})
+    assert client.rtt_write(b'\x00\xff\x80', channel=7)
+    client.call.assert_called_once_with('rtt_write', data_hex='00ff80', channel=7)
+    client.call.reset_mock()
+    client.rtt_read_channel(7, 123)
+    client.call.assert_called_once_with('rtt.read_channel', channel=7, cursor=123)

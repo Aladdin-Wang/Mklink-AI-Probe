@@ -20,10 +20,11 @@ class SharedRtt(SharedCapture):
 
     def dispatch(self, operation, params):
         action = operation.split('.')[1]
-        allowed = {'start': {'addr', 'channel', 'mode', 'search_size', 'encoding'},
-                   'read': {'timeout'}, 'write': {'data'}, 'stop': set()}[action]
+        allowed = {'start': {'addr', 'channel', 'channels', 'mode', 'search_size', 'encoding'},
+                   'read': {'timeout'}, 'read_channel': {'channel', 'cursor'},
+                   'write': {'data', 'data_hex', 'channel'}, 'stop': set()}[action]
         if params.keys()-allowed:
-            raise RequestValidationError('Unsupported RTT v2 parameters; read accepts timeout in 0..5 seconds')
+            raise RequestValidationError('Unsupported RTT parameters')
         if action == 'start':
             new_reader = self.reader is None
             if new_reader:
@@ -50,6 +51,14 @@ class SharedRtt(SharedCapture):
                     self._close_reader()
                     self.session = None
         status = self._status()
+        if action == 'read_channel':
+            channel, cursor = params.get('channel', 0), params.get('cursor', 0)
+            if type(channel) is not int or not 0 <= channel <= 7 or type(cursor) is not int or cursor < 0:
+                raise RequestValidationError('channel must be 0..7 and cursor a nonnegative integer')
+            result = self.client.call('rtt_read_channel', {
+                'channel': channel, 'cursor': cursor, 'session': self.session})
+            self._status()
+            return result
         if action == 'read':
             timeout = params.get('timeout', 1)
             if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 <= timeout <= 5:
@@ -60,14 +69,29 @@ class SharedRtt(SharedCapture):
             status = self._status()  # Reject mixed data if capture changed during the wait.
             return {**result, 'session': self.session,
                     'capture': {k: status.get(k) for k in ('running', 'paused', 'error', 'encoding', 'line_parser')}}
+        channel = params.get('channel')
+        if channel is not None and (type(channel) is not int or not 0 <= channel <= 7):
+            raise RequestValidationError('channel must be 0..7')
+        if ('data' in params) == ('data_hex' in params):
+            raise RequestValidationError('Supply exactly one of data or data_hex')
         data = params.get('data')
         try:
-            encoded = data.encode('utf-8') if isinstance(data, str) else b''
-        except UnicodeError:
+            if 'data_hex' in params:
+                value = params['data_hex']
+                if (not isinstance(value, str) or not 2 <= len(value) <= 512 or len(value) % 2
+                        or any(c not in '0123456789abcdefABCDEF' for c in value)):
+                    raise ValueError('Invalid HEX')
+                encoded = bytes.fromhex(value)
+            else:
+                encoded = data.encode('utf-8') if isinstance(data, str) else b''
+        except ValueError:
             encoded = b''
         if not 1 <= len(encoded) <= 256:
-            raise RequestValidationError('RTT write requires 1..256 UTF-8 bytes')
-        return self.client.call('rtt_write', {'data_hex': encoded.hex()})
+            raise RequestValidationError('RTT write requires 1..256 bytes')
+        arguments = {'data_hex': encoded.hex()}
+        if channel is not None:
+            arguments['channel'] = channel
+        return self.client.call('rtt_write', arguments)
 
     def _close_reader(self):
         reader, self.reader = self.reader, None

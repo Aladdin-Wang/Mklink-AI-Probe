@@ -381,7 +381,7 @@ with connect_remote("ws://<VPN_OR_LAN_HOST>:<端口>", token="<令牌>") as remo
 
 RTT 与 SystemView 使用同一套拥有/借用与退出规则。RTT 订阅复用共享后台的
 `rtt-terminal` 二进制通道；独立缓冲和读取不会消费另一客户端的数据。后台协议
-为34，旧后台需要先正常退出再启动，不能借旧独占模式绕过升级。
+为49，旧后台需要先正常退出再启动，不能借旧独占模式绕过升级。
 
 同一SDK连接内执行：
 
@@ -394,7 +394,7 @@ remote.rtt_write("hello\n")        # 1～256 UTF-8 字节，不自动拆分或�
 result = remote.rtt_stop()         # 借用者只退订
 ```
 
-- `rtt.start` 可传 `addr/channel/mode/search_size/encoding` 启动新采集；借用已有
+- `rtt.start` 可传 `addr/channel/channels/mode/search_size/encoding` 启动新采集；借用已有
   采集时不传配置参数。返回 `session/reused`，采集换代后旧订阅明确报错。
 - `rtt.read` 只接受 `timeout`（0～5秒，默认1秒）；旧 `duration` 参数移除。
   SDK现在返回字典，文本在 `text`，不再返回裸字符串。每客户端应用缓冲最多
@@ -422,3 +422,24 @@ result = remote.rtt_stop()         # 借用者只退订
 返回后台保留的状态及结果，`unknown` 仍需检查目标。后台最多保留64条，记录
 不存在（request_id为not_found，job_id为404）不能证明操作未执行，禁止据此自动
 重放烧录/擦除/复位。任务请求ID应在首次提交前保存，远程重连后可继续查询。
+
+### 远程 RTT 多通道原始数据
+
+`rtt.start(channels=[0,1,...,7])` 可启动目标实际支持的多通道采集；`channel`
+须包含在列表中，省略时为0。已有采集继续用无参数 `rtt_start()` 借用。
+`rtt.read_channel` 复用共享后台的每通道64KiB历史，每页最多16KiB，
+不会为各通道新增接收线程或第二份历史。客户端为每通道分别保存返回的 `cursor`，
+检查 `lost_bytes`、`session` 和 `reset`；返回 `data_hex` 保留原始二进制，
+文本按通道使用增量解码器，不能把每页单独解码后假定字符完整。
+
+```python
+page = remote.rtt_read_channel(channel=7, cursor=0)
+payload = bytes.fromhex(page['data_hex'])
+next_page = remote.rtt_read_channel(channel=7, cursor=page['cursor'])
+remote.rtt_write(b'\x00\xff\x80', channel=7)
+```
+
+RPC `rtt.write` 接受 `data`（UTF-8文本）或 `data_hex`，必须二选一，
+每次仍限1～256字节；可指定0～7的 `channel`，省略沿用默认发送通道。
+旧 `rtt.read(timeout=...)` 继续返回默认终端文本。新服务的能力目录明确列出
+`rtt.read_channel`；旧服务不支持时应报错，不自动回退或重放写入。
