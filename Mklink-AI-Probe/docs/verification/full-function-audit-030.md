@@ -161,3 +161,8 @@ HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边�
 ### HEX 进度字节数收敛
 
 任务PROGRAM/VERIFY日志改为有效数据段长度合计，不计算HEX文本编码和稀疏地址空洞；文件元数据大小保持原含义。BIN与稀疏HEX参数化回归验证25%/50%/100%日志和总进度，任务及镜像相关117项通过。本轮未重复硬件擦写：上一轮真实Web烧录正确，本次仅修改日志统计。关闭本轮创建的在线测试页面和遗留配置页面后，后台进程已自动退出；未强制终止。本地安装及其他矩阵项仍待完成。
+
+
+### HPM HEX stdio MCP 真机
+
+通过实际子进程stdio传输调用connect/start_job/job_status/disconnect，明确选择HPM探针和hpm6e00evk，单次提交HEX烧录；保留任务ID并轮询原任务，最终succeeded、success=true、verified=true、algorithm_source=hpm-rom-api，无重放。Pika输出实际16MiB/4096字节几何与loaded successfully，固件耗时约4.94秒。证据reports/hpm-mcp-hex-hil.json与hpm-mcp-server.log。此项覆盖真实MCP路由；未代替全部MCP工具验证。GUI启动提示已同步当前约5秒无人使用自动退出策略，手动开页前的启动等待仍需处理。

@@ -1767,7 +1767,7 @@ def _cli_gui(args):
         client.close()
     url = browser_url(info)
     print(f"[MKLink] Shared CDC runtime: http://127.0.0.1:{info['port']}")
-    print("[MKLink] Closing the GUI leaves the shared runtime running. Stop with: mklink runtime stop --confirm")
+    print("[MKLink] The shared runtime exits after about 5 seconds without clients or active jobs.")
     if not args.no_browser:
         webbrowser.open(url)
     return
