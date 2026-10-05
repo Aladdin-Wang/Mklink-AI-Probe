@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T11:07:33.0320579Z`
+- 更新时间：`2026-10-05T11:57:26.2939074Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：RTT各通道能力统一已交付：474ef405的0.3.0 NSIS与本地Skill已覆盖，188后端/65GUI、生产构建、源码及安装版Web/STM32/stdio MCP共存通过，安装版6.03秒退出释放COM；原生版本说明确认，三项CI通过。长期暂停，PR未合并。
+- 当前任务：新持续目标已开启：主机/Skill/下载器应用层全功能循环审计。36组矩阵见full-function-audit-030.md；静态入口497、Python测试文件190、GUI83，仅为清单。全套Python基线执行中。重点落实实体RTT八路、DAP最高优先级、HPM在线/脱机HEX；长期暂停，不增加WinUSB。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 本轮通道平等版安装交付完成，见cdc-multiplex-host.md；HPM/JTAG、跨主机和八实体通道需独立验证，长期保持暂停。
+1. 读取当前全套Python基线的实际执行结果，再推进DAP忙期让出仲裁、八路目标固件、HPM HEX及矩阵全部功能。不可将历史两路通过等同八路通过。
 2. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
