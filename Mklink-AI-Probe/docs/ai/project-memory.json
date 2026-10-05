@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-05T22:38:54.3825436+00:00",
+  "updated_at": "2026-10-05T22:47:01.437202+00:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "active",
-    "current_task": "VOFA双真实WebSocket/STM32二进制通过：反地址配置通道，小端sample-major Float32逐字节正确，16777217舍入16777216且JSON保留原值，两订阅同批及序号推进。关闭首订阅后第二方收到超过关闭前生产序号的数据seq6，全部关闭active_clients0，测试数组8B原值恢复读回/后台退出。证据vofa-binary-current-hil。继续VOFA GUI导出和CLI/MCP及全矩阵；无生产修改，最终安装未做，长稳暂停。"
+    "current_task": "VOFA实际CLI/stdio MCP实体正常创建与借用通过；CLI强杀借用4.984秒/创建5.059秒释放会话，仍有SDK时保留采集，最终后台退出。证据vofa-cli-mcp-hil。新发现created_streams失主仍保留，其他AI重新订阅无法取得stop/pause权限；下一轮先核对既有管理能力并收敛显式接管。GUI导出/MCP强杀及全矩阵、安装仍待做；无生产修改，长稳暂停。"
   },
   "milestones": [
     {

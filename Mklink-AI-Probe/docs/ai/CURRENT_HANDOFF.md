@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:38:54.3825436+00:00`
+- 更新时间：`2026-10-05T22:47:01.437202+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：VOFA双真实WebSocket/STM32二进制通过：反地址配置通道，小端sample-major Float32逐字节正确，16777217舍入16777216且JSON保留原值，两订阅同批及序号推进。关闭首订阅后第二方收到超过关闭前生产序号的数据seq6，全部关闭active_clients0，测试数组8B原值恢复读回/后台退出。证据vofa-binary-current-hil。继续VOFA GUI导出和CLI/MCP及全矩阵；无生产修改，最终安装未做，长稳暂停。
+- 当前任务：VOFA实际CLI/stdio MCP实体正常创建与借用通过；CLI强杀借用4.984秒/创建5.059秒释放会话，仍有SDK时保留采集，最终后台退出。证据vofa-cli-mcp-hil。新发现created_streams失主仍保留，其他AI重新订阅无法取得stop/pause权限；下一轮先核对既有管理能力并收敛显式接管。GUI导出/MCP强杀及全矩阵、安装仍待做；无生产修改，长稳暂停。
 - 状态：`active`
 
 ## 里程碑
