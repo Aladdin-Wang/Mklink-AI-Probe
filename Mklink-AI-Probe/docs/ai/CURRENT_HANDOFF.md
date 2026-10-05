@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T22:31:55.3564195+00:00`
+- 更新时间：`2026-10-05T22:35:38.0786747+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：修复搜索/仅已选树丢失已有browse数组快照能力，复用节点元数据和原按钮弹窗。完整GUI85文件870项通过，生产构建通过并更新dist（构建标签09776d316910）。真实Chrome STM32搜索保持下打开3072长度快照弹窗、128元素持续采样/关闭成功；后台退出。深层未加载目录能力不猜测，其他矩阵/安装继续。BrowserAct watch-search-1006已关闭，keeper stop文件已存在。E盘约671MiB。
+- 当前任务：VOFA基线18618231两组90项通过；STM32三符号通道稳定值匹配内存/tick推进，514采样保留500点且淘汰旧记录；第二SDK借用/stop409，RTT冲突409不抢占，暂停计数稳定/恢复543点，停止后APP基线和RTT8恢复，后台退出。证据vofa-current-hil。A25仍待二进制/GUI/CLI/MCP入口等；无生产修改。继续全矩阵，安装未做，长期测试暂停。
 - 状态：`active`
 
 ## 里程碑
