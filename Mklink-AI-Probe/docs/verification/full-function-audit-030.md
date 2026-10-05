@@ -365,3 +365,4 @@ HPM侧已单次升级1a4bd0c候选（UF2 ce5c3b4544b0644039940f58548a9d37e375ffc
 本地证据hpm-full-stop-upgrade.json、hpm-bin-1a4bd0c-hil.json、hpm-hex-boundaries-1a4bd0c-hil.json、hpm-final-readback-1a4bd0c.json、hpm-1a4bd0c-memory-snapshot.json。全部串口句柄已关闭。
 
 固件1a4bd0c远端CI失败暴露REPL测试桩未同步新拆分的目标flush；完整执行工作流又发现旧USB DAP恢复测试桩缺少会话状态定义。固件eabccc6只修正测试及文档，无新生产代码、无需重复刷机。REPL测试增加解析/目标I/O分开计数、锁持有断言、DAP/脱机/锁占用期间仅解析停止、REPL输出期间两者均禁止，以及SystemView单独运行。16项工作流命令现已本地全部通过，包括249087个USB发送和576个DMA模型用例。不能将之前局部测试通过等同于完整CI通过；远端推送后的结果另核对。安装包/本地Skill仍待最终资格验证，不增加WinUSB。
+远端补核：eabccc6的push与PR工作流均success（37361730510、37361736627），旧失败保留在历史记录中。

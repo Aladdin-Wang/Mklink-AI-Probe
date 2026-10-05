@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T19:13:23.0739926+00:00`
+- 更新时间：`2026-10-05T19:13:43.7364590+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：双V4均已升级1a4bd0c候选。HPM BIN/HEX错误边界、稀疏扇区和恢复后51244字节完整读回通过；堆峰值10680。固件eabccc6修复两个滞后的CI测试桩，16项工作流本地全通过；远端待查。继续其余全功能矩阵，安装/Skill尚未更新。
+- 当前任务：双V4均已升级1a4bd0c候选。HPM BIN/HEX错误边界、稀疏扇区和恢复后51244字节完整读回通过；堆峰值10680。固件eabccc6修复两个滞后的CI测试桩，16项工作流本地全通过；远端push/PR两项CI通过。继续其余全功能矩阵，安装/Skill尚未更新。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 核对固件eabccc6远端CI，继续全功能矩阵、原生保存、MSC并发、HPM调试共存及新固件各入口验证，最终安装/Skill。停止取消不是排空，计数仅针对探针暂存。不自动合并发布。
+1. 固件eabccc6远端push/PR两项CI已通过；继续全功能矩阵、原生保存、MSC并发、HPM调试共存及新固件各入口验证，最终安装/Skill。停止取消不是排空，计数仅针对探针暂存。不自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
