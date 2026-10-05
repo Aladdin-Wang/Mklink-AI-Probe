@@ -16,6 +16,14 @@ def _record(kind: int, address: int, data: bytes) -> bytes:
     return b":" + (body + bytes([-sum(body) & 255])).hex().upper().encode("ascii") + b"\n"
 
 
+def decode_hpm_hex(source: Path):
+    segments, chunks = ImageInspector.decode_hex(source, max_decoded_size=32 * 1024 * 1024)
+    for segment, payload in chunks:
+        if not 0x80000000 <= segment.start < segment.start + len(payload) <= 0x90000000:
+            raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "HPM HEX data is outside mapped XPI flash")
+    return segments, chunks
+
+
 def prepare_hpm_hex(source: Path, destination: Path):
     """Validate all input before replacing a caller-owned staging file.
 
@@ -25,10 +33,7 @@ def prepare_hpm_hex(source: Path, destination: Path):
     source, destination = Path(source), Path(destination)
     if source.resolve() == destination.resolve():
         raise ValueError("HPM HEX staging must not overwrite its source")
-    segments, chunks = ImageInspector.decode_hex(source, max_decoded_size=32 * 1024 * 1024)
-    for segment, payload in chunks:
-        if not 0x80000000 <= segment.start < segment.start + len(payload) <= 0x90000000:
-            raise FlashError(FlashErrorCode.FILE_FORMAT_ERROR, "HPM HEX data is outside mapped XPI flash")
+    segments, chunks = decode_hpm_hex(source)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".hpm-", delete=False) as stream:

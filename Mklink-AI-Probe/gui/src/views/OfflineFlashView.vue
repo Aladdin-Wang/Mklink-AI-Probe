@@ -159,7 +159,7 @@ const canBuild = computed(() => (
   && ((firmwares.value.length === 0 && Object.keys(optionByteChanges.value).length > 0
     && !securityRequested.value && !eraseAllBeforeDownload.value)
   || (firmwares.value.length > 0 && (hpmMode.value
-    ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && item.format === 'bin' && !!item.base_address)
+    ? !!hpmBoard.value && firmwares.value.every(item => (item.file || item.source_path) && (item.format === 'hex' || !!item.base_address))
     : selectedAlgorithms.value.length > 0
       && unavailableSelectedAlgorithms.value.length === 0
       && firmwares.value.every(item => (item.file || item.source_path) && item.algorithm_id && algorithms.value.some(algorithm => algorithm.id === item.algorithm_id)))))
@@ -563,10 +563,6 @@ function addFirmwareSources(sources: Array<string | File>): void {
       setError(new Error(tr('固件只支持 BIN 或 HEX', 'Only BIN or HEX firmware is supported')))
       continue
     }
-    if (hpmMode.value && suffix !== 'bin') {
-      setError(new Error(tr('HPM ROM API 只支持 BIN 固件', 'HPM ROM API supports BIN firmware only')))
-      continue
-    }
     firmwares.value.push({
       id: nextId('firmware'),
       file,
@@ -867,6 +863,7 @@ onBeforeUnmount(() => {
 
       <section class="work-panel firmware-panel" :class="{ dragging: firmwareDropActive }" data-testid="offline-firmware-drop-zone" @dragenter.prevent="firmwareDropActive = true" @dragover.prevent="firmwareDropActive = true" @dragleave.prevent="firmwareDropActive = false" @drop.prevent="dropFirmware">
         <div class="panel-heading step-heading"><div class="step-title"><span>02</span><div><h2>{{ tr('烧录顺序', 'Flash Sequence') }}</h2><small>{{ tr('固件按从上到下顺序依次写入', 'Firmware is programmed from top to bottom') }}</small></div></div><button class="btn btn-sm" type="button" @click="browseFirmware">{{ tr('添加固件', 'Add Firmware') }}</button><input class="visually-hidden" data-testid="offline-firmware-input" type="file" multiple accept=".bin,.hex" @change="addFirmware"></div>
+        <p v-if="hpmMode" class="empty-state">{{ tr('HPM HEX 使用文件内的绝对地址，需要新版 V4 固件；BIN 需填写基地址。HEX 未覆盖的完整扇区保留，覆盖扇区内的空隙会擦除。', 'HPM HEX uses absolute file addresses and requires updated V4 firmware; BIN requires a base address. Untouched sectors are preserved; gaps within touched sectors are erased.') }}</p>
         <div class="firmware-list">
           <div v-for="(item, index) in firmwares" :key="item.id" class="firmware-row" data-testid="offline-firmware-row">
             <div class="sequence-number">{{ index + 1 }}</div>

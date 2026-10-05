@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T14:59:04.1117109+00:00`
+- 更新时间：`2026-10-05T15:07:09.2964687+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：主机MKLinkFlash/Device新增HPM HEX底层路由，统一规范化/能力探测/安全复制，真实HPM烧录校验通过。V4脱机配置/整组旧固件guard/事务暂存HEX已接入，相关99项及Device/BIN28项通过。在线后端/API/GUI仍有BIN限制，脱机真实脚本执行和AI/CLI/MCP尚待。
+- 当前任务：HPM在线后端/API和脱机GUI已接入HEX；共用decode_hpm_hex，稀疏verify按实际地址/有效数据进度。264后端/API及142GUI通过。生产HpmRomBackend烧录+独立回读真机、生成部署Pika脱机脚本真实执行通过。浏览器/CLI/MCP/Skill与安装仍待验收。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 继续HpmRomBackend._validated_bin/program/verify与online_flash_api的HEX路由和稀疏校验；OfflineFlashView取消BIN限定且说明绝对地址，公开Skill/CLI/MCP文案同步。先跑相关回归再真机在线/生成脱机脚本执行。底层真机证据reports/hpm-host-hex-hil.json，边界证据hpm-hex-boundaries-hil.json。HPM固件应用代码f74af2a（文档tip233ee48），STM32ba0a1cf；端口已关闭。MSC并发拒绝仍待实机。
+1. 继续生产前端构建与真实浏览器HPM在线/脱机HEX验收；同步CLI/MCP/Skill BIN限定说明并逐入口验证。现在线上后端和load.offline真实脚本通过，证据reports/hpm-online-backend-hex-hil.json及hpm-offline-hex-hil.json；物理按键未测，不宣称浏览器通过。固件HPMf74af2a(文档tip233ee48)，STM32ba0a1cf，端口已释放。MSC并发拒绝、其他全功能矩阵继续推进。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

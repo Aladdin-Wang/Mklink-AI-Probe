@@ -696,7 +696,7 @@ describe('OfflineFlashView', () => {
     expect(wrapper.get('.trigger-log').text()).toContain('program finished')
   })
 
-  it('configures HPM BIN download without Pack or FLM algorithms', async () => {
+  it.each(['bin', 'hex'])('configures HPM %s download without Pack or FLM algorithms', async (format) => {
     onlineMocks.searchTargets.mockResolvedValue([{
       part_number: 'HPM5301xEGx', vendor: 'HPMicro', pack_id: null,
       pack_version: null, installed: true, source: 'builtin',
@@ -710,7 +710,7 @@ describe('OfflineFlashView', () => {
     const input = wrapper.get('input[type="file"][multiple]')
     Object.defineProperty(input.element, 'files', {
       configurable: true,
-      value: [new File(['bin'], 'app.bin')],
+      value: [new File(['firmware'], `app.${format}`)],
     })
     await input.trigger('change')
     await wrapper.get('[data-testid="offline-deploy"]').trigger('click')
@@ -724,6 +724,7 @@ describe('OfflineFlashView', () => {
     expect(payload.board).toBe('hpm5301evklite')
     expect(payload.algorithms).toEqual([])
     expect(payload.firmwares[0].algorithm_id).toBe('')
-    expect(payload.firmwares[0].base_address).toBe('0x80000400')
+    expect(payload.firmwares[0].base_address).toBe(format === 'bin' ? '0x80000400' : null)
+    expect(payload.firmwares[0].format).toBe(format)
   })
 })

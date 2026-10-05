@@ -142,3 +142,9 @@ MKLinkFlash.burn_hpm_hex复用prepare_hpm_hex，完整解析后探测无副作�
 实际主机burn_hpm_hex已在HPM6E通过规范化、能力检查、绑定磁盘复制、配置和烧录校验；证据reports/hpm-host-hex-hil.json。Device路由及BIN回归28项通过。脱机配置允许V4 HPM HEX，整组烧录前检查独立入口，暂存阶段统一规范化所有HEX后才修改设备文件；脱机及HEX相关99项通过（指定本地FLM资源后）。首次缺FLM环境的21项失败不属于功能回归。
 
 这是底层与部署准备验收：HpmRomBackend、online_flash_api和GUI尚有BIN限制，尚未开放完整在线流程；脱机脚本尚未实机执行，AI/CLI/MCP和Skill尚未完成HEX集成验收。持续目标未完成。
+
+### HPM 在线后端与脱机脚本真机
+
+HpmRomBackend和online_flash_api已接受HEX；共用decode_hpm_hex校验XPI边界，在线verify按真实稀疏地址分块读取，空洞不展开，进度以有效数据量计算。OfflineFlashView允许HEX且说明绝对地址、新V4固件要求及扇区空隙擦除语义。后端/API/HEX相关264项通过（API测试使用实际ImageInspector），在线/脱机GUI142项通过。
+
+生产HpmRomBackend在真实HPM6E完成51244字节HEX烧录约5.68秒、独立二进制回读校验约1.01秒。主机deploy_offline_bundle生成并复制规范HEX和真实Pika脚本，load.offline执行至loaded successfully及auto download finished，未走FLM或通用SWD复位。证据reports/hpm-online-backend-hex-hil.json及hpm-offline-hex-hil.json。这不是物理按键触发验收，也不是浏览器完整操作验收；真实浏览器、CLI/MCP/Skill、安装包及其他功能矩阵仍待推进。

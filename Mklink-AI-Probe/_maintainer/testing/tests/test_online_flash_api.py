@@ -477,7 +477,9 @@ def test_hpm_image_and_job_use_rom_api_without_pack_or_sector_geometry(app, serv
     assert request_record.board == "hpm5300evk"
 
 
-def test_hpm_image_rejects_hex_without_pack_lookup(app, services):
+def test_hpm_image_rejects_empty_hex_without_pack_lookup(app, services, tmp_path):
+    from mklink.cmsis_dap.images import ImageInspector
+    services.image_inspector = ImageInspector(snapshot_root=tmp_path / 'images')
     services.catalog.search = lambda *args, **kwargs: pytest.fail("HPM must not look up Packs")
 
     response = request(
@@ -490,6 +492,18 @@ def test_hpm_image_rejects_hex_without_pack_lookup(app, services):
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "FILE_FORMAT_ERROR"
+
+
+def test_hpm_image_accepts_sparse_hex_without_pack_lookup(app, services, tmp_path):
+    from mklink.cmsis_dap.images import ImageInspector
+    services.image_inspector = ImageInspector(snapshot_root=tmp_path / 'images')
+    from mklink.hpm_image import _record
+    services.catalog.search = lambda *args, **kwargs: pytest.fail("HPM must not look up Packs")
+    payload = _record(4, 0, b'\x80\x00') + _record(0, 0x10, b'abc') + _record(0, 0x1000, b'def') + _record(1, 0, b'')
+    response = request(app, "POST", "/api/online-flash/images/inspect",
+                       data={"part_number": "HPM5300"},
+                       files={"file": ("firmware.hex", payload)})
+    assert response.status_code == 200, response.text
 
 
 def test_hpm_algorithm_api_never_accepts_flm(app, services):

@@ -108,3 +108,30 @@ def test_offline_invalid_hex_does_not_touch_existing_bundle(tmp_path):
                             hpm_hex_files=frozenset({'bad.hex'}))
     assert (disk/'a.bin').read_bytes()==b'keep'
     assert not (disk/'bad.hex').exists()
+
+
+def test_online_backend_programs_and_verifies_only_sparse_hex_spans(tmp_path):
+    from mklink.cmsis_dap.backend import HpmRomBackend
+    from mklink.cmsis_dap.models import ImageInspection
+    from mklink.cmsis_dap.errors import FlashError as BackendError
+    path=source(tmp_path);calls=[]
+    class Device:
+        def flash(self,path,**options):
+            calls.append(options);return {'success':True}
+        def close(self): pass
+    backend=HpmRomBackend(device_factory=lambda **kwargs:Device(),port_resolver=lambda _: 'probe',verify_chunk_size=3)
+    backend.connect('probe','HPM6E80',1000000,board='hpm6e00evk')
+    image=ImageInspection('hex',file_path=str(path),format='hex')
+    backend.program(image)
+    assert calls[0]['base_address'] is None
+    memory={**{0x80000010+i:b for i,b in enumerate(b'early')},**{0x80000030+i:b for i,b in enumerate(b'late')}}
+    reads=[]
+    def read(address,size):
+        reads.append((address,size));return bytes(memory[a] for a in range(address,address+size))
+    backend.read_memory=read
+    progress=[];backend.verify(image,progress.append)
+    assert reads==[(0x80000010,3),(0x80000013,2),(0x80000030,3),(0x80000033,1)]
+    assert progress[0]==0 and progress[-1]==1 and progress==sorted(progress)
+    memory[0x80000031]=0
+    with pytest.raises(BackendError) as error: backend.verify(image)
+    assert error.value.details['address']==0x80000031

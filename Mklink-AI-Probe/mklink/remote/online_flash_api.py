@@ -1365,10 +1365,10 @@ def create_online_flash_router(services: OnlineFlashServices) -> APIRouter:
         from mklink.hpm_config import is_hpm_target
 
         target = await _blocking(_resolved_target, services.catalog, part_number) if part_number.strip() else None
-        if target and is_hpm_target(target.part_number) and source.suffix.casefold() != ".bin":
+        if target and is_hpm_target(target.part_number) and source.suffix.casefold() not in (".bin", ".hex"):
             _raise_http(FlashError(
                 FlashErrorCode.FILE_FORMAT_ERROR,
-                "HPM ROM API only supports BIN firmware",
+                "HPM ROM API supports BIN and HEX firmware",
             ))
         if target:
             regions, fingerprint, _paths = await _blocking(
