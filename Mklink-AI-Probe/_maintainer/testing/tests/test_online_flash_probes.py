@@ -563,7 +563,8 @@ def test_different_dashboard_starts_share_one_transaction_lock(monkeypatch):
     assert max_active == 1
 
 
-def test_rtt_write_endpoint_preserves_exact_binary_payload():
+@pytest.mark.parametrize("channel", [None, *range(8)])
+def test_rtt_write_endpoint_preserves_exact_binary_payload(channel):
     rtt = SimpleNamespace(running=True, write=MagicMock(return_value=4))
     managers = {
         name: rtt if name == "rtt" else SimpleNamespace(running=False)
@@ -572,18 +573,18 @@ def test_rtt_write_endpoint_preserves_exact_binary_payload():
     client, _state = _dashboard_client(managers)
 
     response = client.post(
-        "/api/dash/rtt/write", json={"data_hex": "00ff0d0a"},
+        "/api/dash/rtt/write", json={"data_hex": "00ff0d0a", "channel": channel},
     )
 
     assert response.status_code == 200
     assert response.json() == {"sent_bytes": 4}
-    rtt.write.assert_called_once_with(b"\x00\xff\r\n")
+    rtt.write.assert_called_once_with(b"\x00\xff\r\n", channel=channel)
 
 
 def test_rtt_write_endpoint_runs_device_write_outside_event_loop_thread():
     call_threads = []
 
-    def write(data):
+    def write(data, *, channel=None):
         call_threads.append(threading.get_ident())
         return len(data)
 

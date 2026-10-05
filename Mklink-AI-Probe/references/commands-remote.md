@@ -354,7 +354,7 @@ start 必须不传配置参数，不会重启或改动当前采集器。
 ```python
 from mklink.remote import connect_remote
 
-with connect_remote("ws://<现场IP>:<端口>", token="<令牌>") as remote:
+with connect_remote("ws://<VPN_OR_LAN_HOST>:<端口>", token="<令牌>") as remote:
     remote.call("agent.reconnect")
     cursor = remote.call("systemview.start")  # 已在 GUI 启动时借用同一采集
     page = remote.call("systemview.read", session=cursor["session"],

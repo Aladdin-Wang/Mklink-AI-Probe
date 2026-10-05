@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T12:04:15.9953173Z`
+- 更新时间：`2026-10-05T12:07:10.7893505Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：全功能审计推进中：36组矩阵、510个静态入口（含13个共享SDK方法）。发现DAP需显式会话仲裁，不能用共享debug_port推断；HPM逐HEX段转BIN会重复擦除共同扇区，需完整镜像策略。全套Python基线仍运行，等待最终失败摘要；长期暂停。
+- 当前任务：全功能审计：Python基线4019通过/26失败/4环境错误/3跳过。首批收敛RTT旧签名与文档占位符，新增0–7逐路路由断言，相关121通过；剩余23失败/4环境错误待排查。DAP会话仲裁和HPM共同扇区风险已记录，实体八路及全矩阵仍待完成。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 读取当前全套Python基线的实际执行结果，再推进DAP忙期让出仲裁、八路目标固件、HPM HEX及矩阵全部功能。不可将历史两路通过等同八路通过。
+1. 先排查安全算法资源21项、烧录取消2项、远程打包4环境错误；再推进DAP显式会话优先、八路目标程序和HPM HEX。基线进程已结束，不重复启动；日志full-audit-python-baseline.log。
 2. 持续架构审计按用户要求在144收尾后暂停，等待用户明确通知再恢复。长期验证单独保持暂停，不能因恢复普通开发而自动启动soak。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
