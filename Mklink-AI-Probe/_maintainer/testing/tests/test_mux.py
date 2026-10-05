@@ -89,6 +89,40 @@ def test_channel_cache_clients_do_not_consume_each_other_and_report_loss():
     assert result['reset'] and result['cursor'] == 0
 
 
+@pytest.mark.parametrize('channel', range(8))
+@pytest.mark.parametrize('excess', [-1, 0, 1, 65539])
+def test_channel_history_capacity_pages_and_session_reset(channel, excess):
+    cache = RttChannelCache()
+    cache.reset('capture-one', list(range(8)))
+    payload = bytes((index * 17 + channel) % 256 for index in range(65536 + excess))
+    # Unequal delivery chunks exercise eviction across real delivery boundaries.
+    for offset in range(0, len(payload), 997):
+        cache.append(channel, payload[offset:offset + 997])
+    cursor = 0
+    received = bytearray()
+    losses = []
+    while cursor < len(payload):
+        page = cache.read(channel, cursor, 'capture-one')
+        assert page == cache.read(channel, cursor, 'capture-one')
+        block = bytes.fromhex(page['data_hex'])
+        assert 0 < len(block) <= 16384
+        losses.append(page['lost_bytes'])
+        received.extend(block)
+        cursor = page['cursor']
+    assert received == payload[-65536:]
+    assert losses == [max(0, excess)] + [0] * (len(losses) - 1)
+    assert cache.read(channel, cursor, 'capture-one')['data_hex'] == ''
+    assert cache.read((channel + 1) % 8)['data_hex'] == ''
+    for bad in (-1, True, '0', cursor + 1):
+        with pytest.raises(ValueError):
+            cache.read(channel, bad, 'capture-one')
+    cache.reset('capture-two', list(range(8)))
+    cache.append(channel, b'new capture\x00\xff')
+    page = cache.read(channel, cursor, 'capture-one')
+    assert page['reset'] and page['lost_bytes'] == 0
+    assert bytes.fromhex(page['data_hex']) == b'new capture\x00\xff'
+
+
 def test_watch_split_and_gaps_do_not_mix_rounds():
     transport, _ = peer()
     transport.handshake()
