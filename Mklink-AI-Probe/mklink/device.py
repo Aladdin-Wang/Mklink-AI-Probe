@@ -2315,7 +2315,7 @@ class Device:
         self, fault_regs: dict[str, int] | None = None
     ) -> HardFaultReport | None:
         """Decode fault registers into a human-readable report."""
-        self._require_connected()
+        self._require_cortex_m_debug()
         if fault_regs is None:
             fault_regs = self.check_hardfault()
         if not fault_regs:
@@ -2328,6 +2328,8 @@ class Device:
 
         cfsr = fault_regs.get("SCB.CFSR", 0)
         hfsr = fault_regs.get("SCB.HFSR", 0)
+        if cfsr == 0 and hfsr == 0:
+            return None
         cfsr_flags = decode_cfsr(cfsr)
         hfsr_flags = decode_hfsr(hfsr)
 

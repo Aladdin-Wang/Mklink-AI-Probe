@@ -2231,8 +2231,11 @@ def create_app(
     async def check_hardfault():
         if not _state["device"] or not _state["device"].connected:
             raise HTTPException(status_code=400, detail="Device not connected")
-        with target_debug_lease(_state, "hardfault"):
-            return _state["device"].check_hardfault()
+        async with async_target_debug_lease(_state, "hardfault"):
+            try:
+                return await run_in_threadpool(_state["device"].check_hardfault)
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
 
     # ===================================================================
     # WebSocket — JSON-RPC (reuses DeviceDispatcher)
@@ -3616,6 +3619,8 @@ def create_app(
                     "call_stack": report.call_stack,
                     "core_registers": report.core_registers,
                 }
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
