@@ -128,3 +128,9 @@ Flash harness第一次从任意暂停状态直接执行算法发生IPSR=3，加�
 真机确认geometry为16MiB/4KiB。HEX逐记录误用BIN流水线的final标记导致第二条记录失败，已改用既有同步flash_program；最终51,244字节hello-world HEX烧录、逐段校验与复位成功，用时4.34秒。同程序BIN回归成功，固件报告822ms。初次无诊断失败发生在擦写前，新增allocation/open诊断；文件更新后进入烧录，尚未确证初次失败根因，不能据此宣称MSC/固件缓存一致性已通过。
 
 证据在本地构建根reports/hpm-hex-upgrade.json、hpm-hex-first-hil.json、hpm-bin-regression-hil.json。仍待稀疏未覆盖扇区/负面输入真机、MSC并发修改防护、内存/性能、主机在线脱机及GUI/CLI/MCP。未进行长稳，未更新安装包和Skill。
+
+### HPM HEX 边界与文件事务
+
+同名文件覆盖测试重现FatFs旧缓存问题：第二份文件仍按上一份错误文件处理。固件f74af2a为HPM BIN/HEX增加统一文件读事务，打开前拒绝脏metadata并失效干净窗口，整个预检/擦写/校验期间与MSC写互斥；MSC独立线程使用双向原子占用，不在SPI写期间持续关闭IRQ。未修改FatFs/CherryUSB SDK；既有MSC回调错误沿SDK WRITEFAULT返回。
+
+新增生产C编译测试覆盖缓存/双向占用/拒绝与释放，五项相关C harness及SES/SWD布局通过。最终固件已刷HPM，真机通过同名连续覆盖、末尾校验错误在初始化前拒绝、16MiB容量越界在擦除前拒绝、奇数长度同扇区稀疏写入回读、中间未覆盖4KiB保持一致、恢复hello BIN。证据reports/hpm-hex-boundaries-hil.json。并发MSC写拒绝尚未实机，只能引用编译回调测试；其他文件消费者也未因此获得保护。公共在线/脱机入口、内存审计和最终安装仍待推进。

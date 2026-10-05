@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T14:38:47.9838633+00:00`
+- 更新时间：`2026-10-05T14:50:08.7586353+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：固件6cfdc45已升级HPM探针：16MiB/4KiB geometry、51244字节HEX烧录校验复位4.34秒、BIN回归822ms通过。独立program_hex拒绝旧固件，SD故障编译测试及SES/SWD布局通过。HEX改用同步ROM写解决BIN流水线final标记误用。主机公共HEX入口仍未开放，持续全功能目标仍活跃。
+- 当前任务：固件f74af2a已升级HPM探针：修复同名文件覆盖时FatFs旧缓存，HPM BIN/HEX文件事务与MSC写双向互斥。五项C harness、SES/SWD布局及最终真机边界通过：校验错、容量越界、奇数长度同扇区稀疏、未覆盖4KiB保留、BIN恢复。公共HEX入口仍待接入，完整审计目标活跃。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 继续HPM稀疏未覆盖扇区/错误输入真机、MSC并发修改防护、内存检查；接入主机在线/脱机prepare_hpm_hex并用独立hpm.program_hex，禁止旧固件把HEX当BIN。HPM探针已运行6cfdc45，STM32保持ba0a1cf；端口全释放。证据见full-function-audit-030.md及本地reports/hpm-hex-first-hil.json、hpm-bin-regression-hil.json。初次无诊断打开失败原因未确证，勿算缓存一致性通过。
+1. 下一步接入主机在线/脱机prepare_hpm_hex并用独立hpm.program_hex，禁止旧固件把HEX当BIN；再GUI/CLI/MCP及技能。固件f74af2a的HPM文件事务保护仅覆盖HPM，其他文件消费者需审计；实际并发MSC拒绝尚未真机，只有生产回调编译测试。HPM已运行f74af2a，STM32保持ba0a1cf，端口已释放，HPM已恢复hello BIN。证据reports/hpm-hex-boundaries-hil.json。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
