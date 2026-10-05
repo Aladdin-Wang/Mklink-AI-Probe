@@ -993,13 +993,16 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
   const usesReset = orderedActions.includes('reset')
   const selectedResetMode = usesReset ? resetMode.value : 'default'
   const selectedResetVoltage = selectedResetMode === 'power-cycle' ? resetVoltageMv.value : null
+  const generation = recoveryGeneration
+  const selectedProbe = probeId.value
+  const current = () => !disposed && generation === recoveryGeneration && selectedProbe === probeId.value
   creatingJob.value = true
   try {
     if (selectedResetVoltage !== null && !await confirmRisk(tr(
       `即将关闭下载器 VCC 输出，等待 3 秒后以 ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)}V 恢复输出。请确认目标板支持该电压并且由下载器 VCC 供电。确定继续？`,
       `The probe will disable VCC, wait 3 seconds, then restore ${(selectedResetVoltage / 1000).toFixed(selectedResetVoltage === 5000 ? 0 : 1)} V. Confirm that the target supports this voltage and is powered by probe VCC. Continue?`,
     ))) return
-    if (disposed) return
+    if (!current()) return
     loadPending()
     if (recoveryBlocked.value) return
     const requestId = crypto.randomUUID()
@@ -1009,23 +1012,28 @@ async function startJob(customActions = actions.value, sectorAddresses?: number[
     progressOwner.value = 'flash'
     logs.value = []; lastSequence.value = 0; totalProgress.value = 0
     const result = await api.createJob({ actions: orderedActions, image_id: inspection.value?.image_id, algorithm_id: selectedAlgorithmId.value || null, probe_id: probeId.value, target_part: selectedTarget.value.part_number, frequency: frequency.value, connect_mode: connectMode.value, reset_mode: selectedResetMode, reset_voltage_mv: selectedResetVoltage, base_address: isBin.value ? parsedBase.value : null, sector_addresses: hpmMode.value ? [] : resolvedSectors, board: hpmMode.value ? hpmBoard.value : null }, requestId)
-    if (disposed) return
+    if (!current() || pendingRequest.value !== requestId) return
     jobId.value = result.job_id; jobState.value = result.job.state
     appendLog(tr(`[JOB] 已创建 ${result.job_id}`, `[JOB] Created ${result.job_id}`)); subscribe(0)
-  } catch (error) { appendLog(`[ERROR] ${message(error)}`) }
+  } catch (error) { if (current()) appendLog(`[ERROR] ${message(error)}`) }
   finally { creatingJob.value = false }
 }
 async function stopJob(): Promise<void> {
   if (!jobId.value || stopping.value) return
   const previousState = jobState.value
+  const stoppedJob = jobId.value
+  const generation = recoveryGeneration
+  const current = () => !disposed && generation === recoveryGeneration && stoppedJob === jobId.value
   jobState.value = 'stopping'; appendLog(tr('[JOB] STOPPING：等待探针安全停止', '[JOB] STOPPING: waiting for the probe to stop safely'))
   try {
-    const snapshot = await api.stopJob(jobId.value)
+    const snapshot = await api.stopJob(stoppedJob)
+    if (!current()) return
     if ((!jobState.value || !TERMINAL.has(jobState.value)) && TERMINAL.has(snapshot.state)) {
       jobState.value = snapshot.state
     }
   }
   catch (error) {
+    if (!current()) return
     if (jobState.value === 'stopping') jobState.value = previousState
     appendLog(tr(`[ERROR] 停止请求失败：${message(error)}`, `[ERROR] Stop request failed: ${message(error)}`))
   }

@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-04T23:57:05.7702689Z`
+- 更新时间：`2026-10-05T00:05:22.5188032Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：140新增人工核查后结束本地跟踪，确认后重查unknown/缺失才清凭据，不可达/运行中拒绝；storage同步跨窗口且删除不推断完成。修探针切换旧查询覆盖/阻塞竞态。110GUI短测、生产构建、完整Chrome双窗口确认流程通过。长期暂停。
+- 当前任务：141复现并修复旧提交响应在探针变更后订阅旧作业；提交/停止复用代次及ID校验，已确认终态后不接受迟到queued。存储失败无POST、丢响应只查询已补测。115GUI短测及最终构建通过，Chrome受控停止迟到错误验证通过。长期暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -20,7 +20,7 @@
 
 ## 验证证据
 
-- **共享后台、多探针与AI共存**：第140节：110GUI回归及gui140构建通过；真实Chrome双窗口storage通知、人工确认重查与清理、另一窗口不误判完成，无在线POST；服务/端口正常退出。受控记录非实机烧录/跨主机；139三项CI全通过。
+- **共享后台、多探针与AI共存**：第141节：115GUI回归及gui141-final构建通过；Chrome完整页面受控stop返回500后不污染改变的探针上下文，凭据保留；程序change模拟竞态非物理拔插。服务/端口退出。140三项CI全通过。
 - **正式版与安装**：docs/verification/v0.2.3-release-final.md；Python2459/2跳过、GUI762，NSIS/Agent实包、签名及三端索引通过。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
 - **实机与SuperWatch**：按需查docs/verification/v0.2.3-integration-20261002.md、v0.2.3-installed-f103-20261002.md；界面证据见superwatch-drag-groups-20261003.md、superwatch-inline-names-20261002.md。历史报告保留，不在交接重复流水账。
@@ -42,7 +42,7 @@
 ## 下一动作
 
 1. 用户要求长期验证暂缓，等待后续明确通知。soak104已通过停止标记正常清理，运行1312.05秒，未完成24小时验收；禁止自动恢复或另启长期验证。 后续可继续短时架构审计及验证；不启动24/72小时等长期任务。
-2. 核对140提交CI；139三项全通过。继续验证在线恢复的存储失败/丢响应和真实双探针GUI恢复/AI共存；人工结束跟踪仅移除本地凭据，不改变后台unknown，其他窗口可继续提示。审查旧MCP剩余主体及真实安全/物理中断、NSIS UAC和跨主机缺口。
+2. 核对141提交CI；140三项全通过。下一步优先真实双探针GUI恢复/AI共存短测，先重新枚举、按技能和电压边界操作；不要将受控浏览器状态当成实机作业恢复证据。继续旧MCP主体收敛，真实安全/物理中断、NSIS UAC及跨主机缺口保留。
 3. 需要清理剩余含链接目录时先人工核对链接目标，不强制删除或改ACL。
 
 ## 已知限制

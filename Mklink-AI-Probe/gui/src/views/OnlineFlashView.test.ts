@@ -703,12 +703,16 @@ async function choosePack(wrapper: ReturnType<typeof mount>) {
   await input.trigger('change')
 }
 
-async function readyAndStart(wrapper: ReturnType<typeof mount>) {
+async function readyToStart(wrapper: ReturnType<typeof mount>) {
   await vi.waitFor(() => expect(wrapper.find('[data-testid="target-DEVICE_A"]').exists()).toBe(true))
   await wrapper.get('[data-testid="target-DEVICE_A"]').trigger('click')
   await chooseFirmware(wrapper)
   await wrapper.get('[data-testid="bin-base"]').setValue('0x80000000')
   await vi.waitFor(() => expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeUndefined())
+}
+
+async function readyAndStart(wrapper: ReturnType<typeof mount>) {
+  await readyToStart(wrapper)
   await wrapper.get('[data-testid="start-job"]').trigger('click')
   if (wrapper.find('[data-testid="confirmation-accept"]').exists()) {
     await wrapper.get('[data-testid="confirmation-accept"]').trigger('click')
@@ -1169,13 +1173,102 @@ describe('online flash task workspace behavior', () => {
     }))
     const wrapper = mount(await onlineFlashView())
     await vi.waitFor(() => expect(reads).toBe(1))
-    wrapper.findComponent({name: 'ProbeSettingsPanel'}).vm.$emit('update:selected-id', 'other-probe')
+    wrapper.findComponent({name: 'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
     await vi.waitFor(() => expect(reads).toBe(2))
     rejectOld(new Error('old probe failure'))
     await flushPromises()
     expect(wrapper.text()).toContain('new-query')
     expect(wrapper.text()).not.toContain('old probe failure')
     expect(wrapper.get('[data-testid="query-online-request"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('refuses a job when its recovery receipt cannot be stored', async () => {
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    const save = localStorage.setItem.bind(localStorage)
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key.startsWith('mklink.onlineFlash.pending.')) throw new Error('receipt storage unavailable')
+      save(key, value)
+    })
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(fetch).mock.calls.some(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toBe(false)
+    expect(wrapper.text()).toContain('receipt storage unavailable')
+    wrapper.unmount()
+  })
+
+  it('queries a lost submit response without sending another job', async () => {
+    const fallback = viewFetch()
+    let requestId = ''
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        throw new Error('response lost after acceptance')
+      }
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs: [{
+        request_id: requestId, action:'online_flash',state:'succeeded',result:null,
+      }]}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(requestId)
+    expect(wrapper.get('[data-testid="start-job"]').attributes('disabled')).toBeDefined()
+    expect(localStorage.getItem(`mklink.onlineFlash.pending.mklink-1.${requestId}`)).toBe(requestId)
+    await wrapper.get('[data-testid="query-online-request"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="online-recovery"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.filter(([url, options]) => String(url).endsWith('/jobs') && options?.method === 'POST')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it.each(['probe-change', 'already-completed'])('ignores stale submit responses: %s', async mode => {
+    const fallback = viewFetch()
+    let requestId = ''
+    let resolve!: (response: Response) => void
+    const delayed = new Promise<Response>(done => { resolve = done })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs') && options?.method === 'POST') {
+        requestId = new Headers(options.headers).get('X-MKLink-Request-Id')!
+        return delayed
+      }
+      if (String(input).endsWith('/api/runtime/jobs/')) return new Response(JSON.stringify({jobs:[{request_id:requestId,action:'online_flash',state:'succeeded',result:null}]}))
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyToStart(wrapper)
+    await wrapper.get('[data-testid="start-job"]').trigger('click')
+    if (mode === 'probe-change') wrapper.findComponent({name:'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
+    else window.dispatchEvent(new StorageEvent('storage', {key:`mklink.onlineFlash.pending.mklink-1.${requestId}`}))
+    await flushPromises()
+    resolve(new Response(JSON.stringify({job_id:'old-probe-job',job:{state:'queued'}})))
+    await flushPromises()
+    expect(FakeEventSource.instances).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('old-probe-job')
+    expect(Array.from({length:localStorage.length}, (_, index) => localStorage.key(index)).some(key => key?.startsWith('mklink.onlineFlash.pending.mklink-1.'))).toBe(mode === 'probe-change')
+    wrapper.unmount()
+  })
+
+  it('ignores a delayed stop failure after its probe context changes', async () => {
+    const fallback = viewFetch()
+    let reject!: (error: Error) => void
+    const delayed = new Promise<Response>((_, fail) => { reject = fail })
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith('/jobs/job-1/stop')) return delayed
+      return fallback(input, options)
+    }))
+    const wrapper = mount(await onlineFlashView())
+    await readyAndStart(wrapper)
+    await wrapper.get('[data-testid="stop-job"]').trigger('click')
+    wrapper.findComponent({name:'ProbeSettingsPanel'}).vm.$emit('update:selectedId', 'other-probe')
+    await flushPromises()
+    reject(new Error('previous probe stop failure'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('previous probe stop failure')
+    expect(wrapper.get('[data-testid="stop-job"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
