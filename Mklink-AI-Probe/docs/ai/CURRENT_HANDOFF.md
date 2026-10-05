@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T01:39:54.912721+00:00`
+- 更新时间：`2026-10-05T01:44:39.654516+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Isolated task worktree; main and firmware source unchanged. Use Git for current commit and PR status.
-- 当前任务：146按用户调整配置：别名移到后台管理、管理置底；删除无仪表盘操作链路的旧WS连接框与composable，远程职责集中说明。45项测试/类型/生产构建与真实Chrome别名保存恢复通过。正在更新本机安装包；持续目标/长期验证仍暂停。
+- 当前任务：146已完成：别名移至后台管理、管理置底；远程入口与职责说明集中到远程服务，删除无仪表盘调用链路的旧WS框。45项测试及生产/真实Chrome通过。源154123ca本地NSIS覆盖安装与Skill同步完成，包内三文件哈希一致；Web GUI保留，持续/长期目标仍暂停。
 - 状态：`paused`
 
 ## 里程碑
@@ -36,7 +36,7 @@
 ## 真机环境
 
 - **state**：145仅枚举到一台V4；安装版后台使用用户F103工程，AI读回身份前后一致。桌面proxy/AI验收进程已退出，默认浏览器Web GUI及共享后台按用户要求保留。无烧录/改压，长期暂停。
-- **installer**：本机已覆盖安装0.3.0开发版，源1aca5414；NSIS退出0，安装文件与包内负载一致，Skill完整升级。单V4三客户端短时共存已验收；不是全面发布认证。
+- **installer**：本机0.3.0开发版已更新至154123ca，NSIS退出0，三文件与包内负载哈希一致，Skill与GUI同步；安装版新导航真实Chrome验证通过。非全面发布认证。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
