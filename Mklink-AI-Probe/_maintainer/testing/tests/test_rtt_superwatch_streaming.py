@@ -1299,6 +1299,8 @@ def test_superwatch_uses_dump_stream_and_reports_protocol_integrity():
 
         def _stop_stream_and_sync(self, command):
             self._write_raw(command)
+            from mklink._types import DeviceState
+            self.state = DeviceState.READY
             return True
 
         def drain_stream_bytes(self, max_bytes=None):

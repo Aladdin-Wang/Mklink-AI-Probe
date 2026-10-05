@@ -53,6 +53,8 @@ class Peer:
     def _exit_stream(self): pass
     def _stop_stream_and_sync(self, data):
         self.writes.append(data)
+        from mklink._types import DeviceState
+        self.state = DeviceState.READY
         return True
 
     def _write_raw(self, data):

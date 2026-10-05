@@ -3,6 +3,10 @@ import math
 import struct
 
 
+class MuxWatchCapacityError(ValueError):
+    """Configuration cannot fit the bounded multiplex sampler."""
+
+
 class MuxWatchSession:
     def __init__(self, transport, regions, period):
         self.transport = transport
@@ -11,10 +15,10 @@ class MuxWatchSession:
                       for index, (address, size) in enumerate(regions)
                       for offset in range(0, size, 128)]
         if not self.parts or len(self.parts) > 15:
-            raise ValueError('Multiplex watch allows 15 regions of at most 128 bytes; select fewer/smaller variables')
+            raise MuxWatchCapacityError('Multiplex watch allows 15 regions of at most 128 bytes; select fewer/smaller variables')
         self.period = max(2, math.ceil(period*1000))
         if self.period > 60000:
-            raise ValueError('Multiplex watch period exceeds 60 seconds')
+            raise MuxWatchCapacityError('Multiplex watch period exceeds 60 seconds')
         self._pending = []
         self._last_clock = None
         self._clock_high = 0

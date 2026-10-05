@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T19:43:17.5560452+00:00`
+- 更新时间：`2026-10-05T19:47:23.3222164+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：MUX Dump容量实测通过：15x128及单1920拆分各3样本逐字节一致，1921/2048拒绝后普通读和重新采集恢复，后台退出。发现待修能力缺口：通用大块Dump/4096字节测量总是选择MUX，受1920限制。需区分独占批量B1与并行Watch协议选择，不能缩小公开范围。
+- 当前任务：已修大块有限Dump/测量MUX容量退化：启动前确定容量，小块MUX/大块B1，只有有限独占调用允许；普通Watch不回退，传输失败不重放。179+188回归通过，STM321921/2048/4096各3样本全字节正确及4KiB测量、MUX重启通过。B1解析丢弃46字节计数保留。后台退出。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 优先修复大块有限Dump/吞吐测量被MUX1920限制的能力缺口：只在开始前选择合适协议，保留B1完整性与停止确认，失败不回退重放，普通SuperWatch不得悄然独占。再推进其他矩阵和最终安装/Skill。
+1. 核对主机CI，继续大块Dump更大容量/取消/磁盘失败和DAP实体优先级组合，再推进完整矩阵及最终安装/Skill。普通SuperWatch必须保持MUX并行语义，不自动退到独占B1。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。

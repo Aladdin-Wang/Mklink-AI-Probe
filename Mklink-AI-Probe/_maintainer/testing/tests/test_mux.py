@@ -221,3 +221,43 @@ def test_mux_watch_complete_frames_reuse_dump_coverage_validation(ordered):
             with pytest.raises(DumpMemoryReadError):assembler.feed(invalid)
         else:assert assembler.feed(invalid) is None
     watch.stop()
+
+@pytest.mark.parametrize('size,bulk',[(1920,False),(1921,False),(1921,True),(4096,True)])
+def test_finite_bulk_selects_protocol_before_hardware(size,bulk):
+    from unittest.mock import Mock
+    from mklink.dump_memory import DumpMemoryStreamSession
+    from test_dump_memory_session import FakeBridge
+    transport,_=peer();transport.handshake()
+    bridge=FakeBridge([])
+    bridge.supports_multiplex=lambda:True
+    bridge.enable_multiplex=Mock(return_value=transport)
+    bridge._leave_multiplex=Mock()
+    session=DumpMemoryStreamSession(bridge,[(0x08005000,size)],.01,allow_legacy_bulk=bulk)
+    if size>1920 and not bulk:
+        with pytest.raises(ValueError,match='15 regions'):session.start()
+        bridge.enable_multiplex.assert_not_called();bridge._leave_multiplex.assert_not_called()
+        assert not bridge.calls
+        return
+    session.start()
+    if size<=1920:
+        bridge.enable_multiplex.assert_called_once();bridge._leave_multiplex.assert_not_called()
+        assert session._mux_watch is not None
+    else:
+        bridge.enable_multiplex.assert_not_called();bridge._leave_multiplex.assert_called_once()
+        assert session._mux_watch is None and session.started
+        assert any(call[0]=='write' and b'cmd.dump_memory' in call[1] for call in bridge.calls)
+    session.stop()
+
+
+def test_finite_bulk_never_falls_back_after_mux_start_failure():
+    from unittest.mock import Mock
+    from mklink.dump_memory import DumpMemoryStreamSession
+    from test_dump_memory_session import FakeBridge
+    transport,_=peer();transport.handshake()
+    transport.request=Mock(side_effect=RuntimeError('response lost'))
+    bridge=FakeBridge([]);bridge.supports_multiplex=lambda:True
+    bridge.enable_multiplex=Mock(return_value=transport);bridge._leave_multiplex=Mock()
+    session=DumpMemoryStreamSession(bridge,[(0x08005000,4)],.01,allow_legacy_bulk=True)
+    with pytest.raises(RuntimeError,match='response lost'):session.start()
+    bridge._leave_multiplex.assert_not_called()
+    assert not bridge.calls

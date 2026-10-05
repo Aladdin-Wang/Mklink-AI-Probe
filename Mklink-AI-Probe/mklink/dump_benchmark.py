@@ -49,7 +49,7 @@ def measure(device, regions: list[tuple[int, int]], *, duration: float = 3,
     device._require_connected()
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
-    session = DumpMemoryStreamSession(device._bridge, regions, period)
+    session = DumpMemoryStreamSession(device._bridge, regions, period, allow_legacy_bulk=True)
     intervals = Counter()
     first_seen = first = last = last_complete = None
     count = 0

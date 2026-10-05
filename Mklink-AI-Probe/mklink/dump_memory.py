@@ -996,7 +996,7 @@ def capture_dump_stream(device, regions, *, period=0.0, frames=1, duration=2.0, 
     pairs = validate_dump_stream(regions, period, frames, duration, speed_profile)
     if speed_profile is not None:
         device.set_debug_speed(speed_profile)
-    session = DumpMemoryStreamSession(device._bridge, pairs, period)
+    session = DumpMemoryStreamSession(device._bridge, pairs, period, allow_legacy_bulk=True)
     assembler = DumpSampleAssembler([size for _, size in pairs], ordered=True)
     samples, result_bytes = [], 0
     deadline = time.monotonic() + 2.0
@@ -1051,6 +1051,7 @@ class DumpMemoryStreamSession:
         period: float,
         *,
         write_ranges: tuple[tuple[int, int], ...] = ARM_WRITE_RANGES,
+        allow_legacy_bulk: bool = False,
     ):
         if not region_pairs:
             raise ValueError("dump-memory requires at least one region")
@@ -1066,6 +1067,7 @@ class DumpMemoryStreamSession:
         self.region_pairs = list(region_pairs)
         self.period = float(period)
         self.write_ranges = tuple(write_ranges)
+        self.allow_legacy_bulk = allow_legacy_bulk
         self.parser = DumpMemoryParser(region_sizes=[size for _, size in region_pairs])
         self.started = False
         self._mux_watch = None
@@ -1080,15 +1082,23 @@ class DumpMemoryStreamSession:
             return
         capability = getattr(self.bridge, 'supports_multiplex', None)
         if callable(capability) and capability() is True:
-            from mklink.mux_watch import MuxWatchSession
-            self._mux_watch = MuxWatchSession(self.bridge.enable_multiplex(), self.region_pairs, self.period)
-            self._mux_watch.start()
-            self.started = True
-            return
-        from mklink._types import DeviceState
+            from mklink.mux_watch import MuxWatchSession, MuxWatchCapacityError
+            try:
+                watch = MuxWatchSession(None, self.region_pairs, self.period)
+            except MuxWatchCapacityError:
+                # Only exclusive finite bulk callers opt in. This is selection
+                # before starting IO, never recovery from a failed MUX request.
+                if not self.allow_legacy_bulk:
+                    raise
+            else:
+                watch.transport = self.bridge.enable_multiplex()
+                self._mux_watch = watch
+                watch.start()
+                self.started = True
+                return
 
         command = build_dump_mem_command(self.region_pairs, self.period)
-        self.bridge._enter_stream(DeviceState.DUMP_STREAM)
+        _enter_dump_stream(self.bridge)
         try:
             self.bridge._write_raw((command + "\n").encode("utf-8"))
         except Exception:
