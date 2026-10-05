@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-05T18:42:20.089013+00:00`
+- 更新时间：`2026-10-05T18:47:33.841580+00:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：新增八路生产WebSocket路由实际loopback TCP反压测试：停止读慢端后明确产生服务端淘汰，快端逐帧完整；强制断慢TCP回收订阅，快端继续；所有连接和server线程退出。8新测试及相关85项通过，加入CI清单。测试数据非MCU源，无生产/固件变更。传统RTT串口兼容仍待验。
+- 当前任务：传统RTT实体八路逐路映射：等待2秒后每路268字节Down计数/哈希及Up通过，其他通道不变；每次退出MUX ECHO、最终八路MUX恢复通过。首轮150ms后即停只收到30字节失败，保留证据。发现legacy每输入字节flush一次目标写，外层64字节持目标锁；下一轮优化批量处理并测快速停止/DAP让出。85主机传统RTT自动化通过，串口已关闭。
 - 状态：`active`
 
 ## 里程碑
@@ -45,7 +45,7 @@
 
 ## 下一动作
 
-1. 继续传统RTT串口映射启停/退出到命令与MUX互切，先检查固件旧RTT对控制块通道数限制，勿把8通道目标直接视为兼容。其余全功能矩阵、原生磁盘保存/跨页历史、新固件各入口、MSC并发继续；最终更新安装/Skill。八路实际TCP反压自动化已通过，检查远端CI。不自动合并发布。
+1. 优先评审并优化固件传统RTT逐字节目标写入：队列收集后有界批量flush，补停止标记/前缀超时/队列和目标满边界，编译后STM32真机比较吞吐、快速停止以及DAP优先级；勿把150ms停止未收齐误记为通过。之后继续其余全功能矩阵/原生保存/MSC并发，最终安装和Skill。禁止修改SDK/Arm2D/MicroBoot或自动合并发布。
 2. 用户已明确恢复持续全功能架构审计与短时验证；只有长期稳定性/soak仍保持暂停。不能沿用历史144批暂停普通审计的状态。
 3. 固件应用层升级已获授权，在独立分支验证；不修改SDK/Arm-2D/MicroBoot，不增加WinUSB。所有验证通过前不合并固件；主机PR不自动合并。
 4. 含链接的测试临时目录保留；需清理时先核对实际目标，不强制删除或改ACL。
