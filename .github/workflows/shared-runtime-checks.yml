@@ -34,6 +34,7 @@ jobs:
           $tests += 'test_remote_client_sessions'
           $tests += 'test_remote_cli'
           $tests += 'test_uart_session'
+          $tests += 'test_mux'
           $tests += 'test_remote_shared_modbus'
           $tests += 'test_remote_shared_serial'
           $tests += 'test_remote_shared_target'
@@ -108,7 +109,7 @@ jobs:
         working-directory: Mklink-AI-Probe
         run: |
           $paths = ./scripts/build_workspace.ps1 -Action paths | ConvertFrom-Json
-          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/views/DashboardView.test.ts', 'src/views/RemoteDashboardReuse.test.ts', 'src/lib/remoteRuntimeEndpoint.test.ts', 'src/components/dash/WaveformViewer.test.ts', 'src/components/dash/SerialMonitorTab.test.ts', 'src/components/dash/SerialAutomationPanel.test.ts', 'src/components/dash/SerialRecordingPanel.test.ts', 'src/components/dash/SerialSequencePanel.test.ts', 'src/components/dash/SerialSendExtras.test.ts', 'src/components/dash/ModbusTab.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/composables/useResourceStatus.test.ts', 'src/components/config/RuntimePanel.test.ts', 'src/views/ConfigView.test.ts', 'src/views/SiteAgentView.test.ts', 'src/components/config/RemoteConnectPanel.test.ts', 'src/composables/useMklinkApi.test.ts', 'src/components/dash/PeripheralWatchPanel.test.ts', 'src/components/dash/SuperWatchTab.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
+          ./scripts/build_workspace.ps1 -Action run -WorkingDirectory ./gui -Executable npm -ArgumentList @('test', '--', 'src/App.test.ts', 'src/views/DashboardView.test.ts', 'src/views/RemoteDashboardReuse.test.ts', 'src/lib/remoteRuntimeEndpoint.test.ts', 'src/components/dash/WaveformViewer.test.ts', 'src/components/dash/SerialMonitorTab.test.ts', 'src/components/dash/SerialAutomationPanel.test.ts', 'src/components/dash/SerialRecordingPanel.test.ts', 'src/components/dash/SerialSequencePanel.test.ts', 'src/components/dash/SerialSendExtras.test.ts', 'src/components/dash/ModbusTab.test.ts', 'src/lib/sharedRuntimeView.test.ts', 'src/lib/runtimeEndpoint.test.ts', 'src/composables/useBackendHealth.test.ts', 'src/composables/useResourceStatus.test.ts', 'src/components/config/RuntimePanel.test.ts', 'src/views/ConfigView.test.ts', 'src/views/SiteAgentView.test.ts', 'src/components/config/RemoteConnectPanel.test.ts', 'src/composables/useMklinkApi.test.ts', 'src/components/dash/PeripheralWatchPanel.test.ts', 'src/components/dash/SuperWatchTab.test.ts', 'src/components/dash/RttViewTab.test.ts', 'src/components/dash/RttChannelMonitor.test.ts', '--reporter=default', '--reporter=junit', "--outputFile.junit=$($paths.reports)/shared-gui.xml")
       - name: Check types and production bundle
         shell: pwsh
         working-directory: Mklink-AI-Probe
