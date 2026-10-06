@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T20:49:56+08:00`
+- 更新时间：`2026-10-06T21:13:39+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：本轮固件批间优化完成并推送bee9ddf：目标读取后释放锁，DLM直接组帧、按字CRC及精确时间换算，节省888B；取消估计20us阈值，1us全速，其余周期按实际读取能力运行，修复SWD超时额外等待。双V4升级48a309b9；STM/HPM单变量242k/125k，批间中位92/34us。双目标各18布局精确字节、44周期配置及OpenOCD抢占下载校验/恢复通过。报告superwatch-pipeline-20261006.md。仍有批间隙和中断抖动，非硬实时；安装/Skill仍01d89c60，长期及持续目标保持暂停。
+- 当前任务：跨批连续调度已实现并真机验证，固件863b885：跨批64位绝对发起节拍、末尾立即排空、请求发起时间戳，长延迟重新定相，停止/读错/DAP清理；双V4升级4682f9f0。两目标1ms恢复1000Hz，100us批间中位100us；HPM单变量20us约45.4k→47.3k。全速小幅变化含短测波动，仍有间隙/抖动。双目标各18字节布局、44周期配置、定时及全速OpenOCD抢占下载/恢复通过。见superwatch-crossbatch-20261006.md。安装/Skill仍01d89c60，长期及持续目标保持暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -27,7 +27,7 @@
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
-- **实机与SuperWatch**：最新批间优化见superwatch-pipeline-20261006.md：固件bee9ddf/UF2 48a309b9双V4升级，1us全速、2us以上尽力定时；单变量STM242159/HPM125056组每秒、四变量19121/36180，100us单变量9915/9922。两目标各18布局33457/33485精确样本，44周期配置，原生生产代码/CRC偏移/50000时间换算/USB/DMA/调度及SWD布局门禁通过。OpenOCD双目标启动至halt约0.31s，step/下载/校验及显式RTT/Watch恢复通过，STM Boot不变。CRC硬件候选无明显优势撤回，最终帧格式不变。前轮电源/间隔见superwatch-jitter-hpm-20261006.md；GUI/安装历史见superwatch-performance-20261006.md和gui-full-audit-20261006.md。源码时间栅格未重打包；长期保持暂停。
+- **实机与SuperWatch**：最新批间优化见superwatch-pipeline-20261006.md：固件bee9ddf/UF2 48a309b9双V4升级，1us全速、2us以上尽力定时；单变量STM242159/HPM125056组每秒、四变量19121/36180，100us单变量9915/9922。两目标各18布局33457/33485精确样本，44周期配置，原生生产代码/CRC偏移/50000时间换算/USB/DMA/调度及SWD布局门禁通过。OpenOCD双目标启动至halt约0.31s，step/下载/校验及显式RTT/Watch恢复通过，STM Boot不变。CRC硬件候选无明显优势撤回，最终帧格式不变。前轮电源/间隔见superwatch-jitter-hpm-20261006.md；GUI/安装历史见superwatch-performance-20261006.md和gui-full-audit-20261006.md。源码时间栅格未重打包；长期保持暂停。 本次跨批调度：docs/verification/superwatch-crossbatch-20261006.md：固件863b885/UF2 4682f9f0；十组原生生产测试、SES生产编译/SWD布局通过。双目标各18布局33854/33840字节精确样本；44周期扫描，定时1ms及全速RTT+Watch下OpenOCD抢占/单步/原ELF下载校验/恢复通过，STM Boot不变。基线单变量全速239.9k/127.1k，新245.7k/129.6k但小幅变化不足以保证固定提升；1ms准确平均1000Hz、100us批间中位100us是主要收益。无传输丢弃不等于连续采样。AHB+12B、ILM+278B、DLM余量392B不变。
 
 ## 架构决策
 
@@ -39,19 +39,19 @@
 
 ## 真机环境
 
-- **state**：两台V4已升级UF2 48a309b9（固件bee9ddf），STM与HPM对应目标均通过本轮精确字节和OpenOCD抢占/下载/校验/显式恢复；STM Boot不变，目标代码未改。测试连接已关闭。SDK/Arm2D/MicroBoot原状保留。
+- **state**：两台V4已升级UF2 4682f9f0（固件863b885），STM/HPM均完成跨批对比、精确字节和OpenOCD在1ms及全速的抢占/下载/校验/显式恢复；STM Boot不变，目标源码未改。测试连接已关闭。SDK/Arm2D/MicroBoot原状保留。
 - **installer**：当前安装及本地Skill为0.3.0 / 01d89c60，NSIS退出0、三负载哈希一致，双GUI暂停缩放恢复、Windows-only PATH MCP/Skill/CLI验证通过。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
 1. 继续GUI全功能矩阵：远程服务、RTOS回放、异常文件导入和剩余原生操作；尚未全覆盖。
-2. 继续减少剩余批间与中断抖动：STM/HPM单变量批间中位92/34us；跨批绝对节拍、等待空隙增量组帧仍待设计验证。不得关中断或降低DAP/电源保护优先级；不修改目标板代码，不能声称无抖动。
-3. 源码时间栅格及1us全速说明尚未重打NSIS/本地Skill，当前安装01d89c60；两下载器48a309b9短测通过，源代码CRC帧格式未改变。长期及旧持续目标保持暂停，不合并或发布。
+2. 跨批绝对节拍已完成；若继续优化全速，应评估等待空隙增量打包/CRC与USB队列工作，并量化复杂度收益。不得关必要中断或降低DAP/电源保护优先级；不改目标板源码，不声称无抖动。
+3. 源码时间栅格及1us全速说明尚未重打NSIS/本地Skill，当前安装01d89c60；两下载器4682f9f0短测通过，CRC帧格式未变。长期及旧持续目标保持暂停，不合并或发布。
 
 ## 已知限制
 
-- 最终UF2 48a309b9短测：STM/HPM单变量242k/125k组每秒，批间中位92/34us；全速最大289/169us，四变量最大270/183us；传输零丢包不等于采样连续。1us明确请求全速，其余周期保留，无法跨越实际读取耗时；旧开发固件20us规则已取消。DLM余量392B。跨批绝对时间轴/等待间隙分片组帧未实施；没有额外定时器ISR或双缓冲线程。DAP使旧采集失效须显式重启。非硬实时、未长期认证，安装/Skill仍01d89c60。
+- 最终UF2 4682f9f0短测：跨批绝对节拍已实施，定时1ms平均1000Hz、100us批间中位100us；全速单变量STM/HPM约245.7k/129.6k，扫频复测STM242.9k，短测有波动。仍有批间隙和中断抖动，传输零丢包不等于无漏采。时间戳为首个请求发起时刻，多变量非原子快照。增量组帧/CRC未实施，无额外定时器ISR或双缓冲线程；DAP使旧采集失效须显式重启。DLM余量392B。安装/Skill仍01d89c60，长期及持续目标暂停。
 - 149是MUX帧基础，尚无多通道目标调度。后台约5秒触发退出，安装版完整清理约5.4至6.05秒；异常网络排空额外最多2秒。GUI靠在线连接保活，AI每秒续约/5秒过期；未打开的远程窗口仍有90秒回收上限。长期和跨物理主机未验证。 A5已收敛。A6活动MCP已扩展只读目录检查，仍有旧能力待迁移。A7端口锁统一、旧锁兼容删除；共享后台/API/多探针/VOFA及GUI契约与构建已进入CI，准确数量看精确提交报告。bfcache生命周期已修，但本机no-store阻止原生缓存命中，仅完成单测、受控恢复事件及普通返回验证；原生命中需补验。 Python/原生标准输出已统一轮转，启动文件只记录初始化前诊断；NSIS与非Windows仍待验收。 第二十一批已修复真实TCP reset复现的二进制流订阅退出卡住，使用框架任务组接收disconnect并清理；仍不能推断覆盖所有Windows Proactor错误/休眠/长稳，继续检查实际PID退出。
 - 0.3.0第七阶段：专用CLI、低层Device调用方未全部迁移，共享SDK不是完整Device替代。共享断点仅FPBv1，未制造真实HardFault；Bootloader重枚举升级、非Windows共享MSC受限。物理擦除/恢复、操作中拔插/休眠和断电未验收；长期测试按用户要求暂停。HPM FreeRTOS SystemView已短时真机验证，其他RTOS待验。MAP/C回退仅基本全局标量，新增声明须显式重载，不等于源码与固件匹配；稀疏类型待验。VOFA现有独立Vue路由复用WaveformViewer和二进制流，通道由CLI/AI配置；Chrome显示/暂停恢复及导出内容已验，系统保存对话框/原生保存待验；Float32不保留大整数低位，后端历史500点。UART开口前后身份校验、COM别名及启停事务已统一，读错误须显式重启；Modbus执行中结果未知不重放。现有UART/Modbus共享能力及专用CLI覆盖见详细报告，嵌套循环归属、逐请求断开取消、真实从站/拔插/OS阻塞仍待验。远程RTT/SystemView版本2及双探针本机LAN短时通过。旧111候选物理MSC三文件部署/哈希/双盘保持/清理通过，不等于触发烧录。114源码将offline.deploy接入RuntimeJobs，协议35/flash.offline版本2，GUI和SDK可按request_id查询；模拟取消/日志失败/换盘/去重及真实Chrome受控查询通过，115实包LAN查询/重复请求/正常重启保留已通过，116临时磁盘生产部署子进程中断通过；117已登记强杀恢复目录，仅供人工核查、可能已清理；物理MSC中断和完整GUI真实部署仍待验。最多64条记录，缺失不代表未执行，未知结果不得重放。
 - nRF54L15在线GUI加锁/CTRL-AP解锁闭环待真机验收，用户已明确接受该限制；历史Python配方不能外推。
