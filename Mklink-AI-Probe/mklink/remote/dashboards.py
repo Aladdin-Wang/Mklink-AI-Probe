@@ -1277,7 +1277,7 @@ class SystemViewStreamManager:
 
     def _ensure_event_time_fields(self, events: list[dict]) -> None:
         p = self._parser
-        freq = _positive_int(getattr(p, "cpu_freq", 0))
+        freq = _positive_int(getattr(p, "timestamp_freq", getattr(p, "cpu_freq", 0)))
         if not freq:
             return
         for ev in events:

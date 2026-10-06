@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-07T02:37:07.9433303+08:00",
+  "updated_at": "2026-10-07T03:40:46.154599+08:00",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "in_progress",
-    "current_task": "V3应用层迁移持续验收：最新CRC修正固件已通过八通道RTT双向+Watch、18种布局34314精确样本、OpenOCD抢占下载校验恢复、安装后台/CLI/Skill MCP共存及5.5秒释放。V4共性代码原生编译通过，真机尚待验收。已修正并同步本地Skill的V3八通道能力与HPM限V4说明；未更新安装包，未合并发布，完整GUI/UART及长尾问题仍待处理。"
+    "current_task": "V3持续验收已补充安装版Web在线HEX与Trace恢复、测试板72MHz时钟修正、Watch/DAP及非对齐布局复验。本轮修正SystemView独立时间戳频率换算，135项相关测试及三次V3实机采集通过。安装包和本地Skill运行时尚未更新；独立定时器硬件、完整GUI/UART及长尾仍待验收。"
   },
   "milestones": [
     {
@@ -64,7 +64,7 @@
     },
     {
       "area": "实机与SuperWatch",
-      "result": "见superwatch-incremental-packing-20261006.md：固件cb88321/830ddd11，16配置每项两次短测；STM单变量批间94→57~63us、P99 169→125~142us；HPM34→24~26us、105→69~79us。STM全速吞吐下降2.4~4.1%；四变量STM98→85~88us/HPM71→54~56us，速率基本维持。10套原生测试、36布局最后共34083/34456字节精确样本、全速/1ms DAP抢占下载校验恢复通过；STM Bootloader保持。两目标1ms计数器698373/381072样本，各2999次+1无跳值；传输缺口/丢弃0。HPM某次100us四变量批内1879us未归因。新增分块CPU状态仅栈上，采集栈未触及1656/1488B；连接已关闭。此前报告保留；源码时间栅格未重打包，长期暂停。"
+      "result": "见superwatch-incremental-packing-20261006.md：固件cb88321/830ddd11，16配置每项两次短测；STM单变量批间94→57~63us、P99 169→125~142us；HPM34→24~26us、105→69~79us。STM全速吞吐下降2.4~4.1%；四变量STM98→85~88us/HPM71→54~56us，速率基本维持。10套原生测试、36布局最后共34083/34456字节精确样本、全速/1ms DAP抢占下载校验恢复通过；STM Bootloader保持。两目标1ms计数器698373/381072样本，各2999次+1无跳值；传输缺口/丢弃0。HPM某次100us四变量批内1879us未归因。新增分块CPU状态仅栈上，采集栈未触及1656/1488B；连接已关闭。此前报告保留；源码时间栅格未重打包，长期暂停。 docs/verification/systemview-timestamp-frequency.md：135项回归通过，V3核心时钟实机三次无溢出/解析丢包且时间比例约0.998；独立时钟为协议测试覆盖。未打包安装。"
     }
   ],
   "decisions": [
