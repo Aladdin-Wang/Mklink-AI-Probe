@@ -826,3 +826,15 @@ WaveformViewer相关98项通过，新增边界测试含默认validity、缓冲�
 专项验收检查点：配置持久化/重载/身份校验/只读配置失败不伪造零值；任务请求去重、并发占用、取消和未知结果不重放、重启恢复；内置/Pack/自定义算法来源与范围、HPM不走FLM、资源缺失/损坏拒绝；安全确认/型号/电压/镜像/日志失败在写入前拒绝。分别检查GUI参数传递、CLI退出码/输出、MCP工具错误和会话清理；真实烧录仅合法测试APP范围，不执行OTP或永久锁定。
 
 HPM5301只读工程检查：SEGGER项目目标HPM5301xEGx、board hpm5301evklite；当前ELF入口0x80003000，最小有文件数据的Flash LOAD地址0x80000400，另有0x80001000/0x80003000段；_SEGGER_RTT=0x880dc、wave_tick=0x85834、boot_stage=0x8589c。这些只是磁盘镜像事实，尚未确认实板或镜像已下载；后续真实身份/镜像匹配通过前不用于内存访问。
+
+### 有限收尾：完整回归与双板重新连接（2026-10-06）
+
+用户确认今天以前的runs已删除，恢复有限收尾执行；清理后E盘约12.78GiB可用。没有恢复旧无限目标，长期验证仍暂停。
+
+主机ce10d348基线完整Python：4314通过、3跳过、60条已有websockets弃用警告，746.56秒；包含远程服务包构建及独立MCP环境加载。两项跳过因可选hil_core.observe未安装；第三项算法测试硬编码工作树目录，未使用打包器支持的MKLINK_BUILTIN_FLM_ROOT。改为复用default_bundle_root后，算法文件组4项通过（7059目标/2224算法内容校验），两个observe测试再次明确跳过。修复后未重跑全套，不把补测数字与全套相加。
+
+GUI全量85文件/885通过，82.76秒；生产构建通过，footer ce10d3487236，仍有既有大于500kB的chunk提示。下载器应用层28组脚本首次27通过/1编译失败：Dump批量帧脚本提取新增target-changed函数却未带常量。测试改为引用生产DUMP宏后补测通过，固件分支1111a15仅改测试，不需要升级设备固件；独立USB DAP恢复测试通过IRQ/Abort、执行中reset、ring背压/回绕及重连。现有Arm-2D/MicroBoot改动保留。
+
+实体重新枚举两只稳定身份V4，逐台SharedDevice连接、device_status和会话关闭后后台退出均通过：STM32返回SWD IDCODE 0x1ba01477；用户标注HPM5301的目标返回JTAG IDCODE 0x1000563d，MCU名称为空。该IDCODE不能区分HPM具体型号，不声称硬件已自动识别为HPM5301；实际烧录前仍须结合用户板型及工程配置明确HPM5301/board/Flash布局。此次未读写目标RAM、未烧录、未改电压。
+
+本地证据：reports/run-20261006-101308-9c828f47.log、firmware-harness-audit/summary.json（保留初次失败）、Dump单项补测wrapper日志、closeout-identity-20261006.json。安装版/本地Skill仍474ef405；配置/任务/Pack/安全边界的实际入口、HPM5301烧录与读回、安装态多客户端尚未完成，不将自动化全绿等同于全矩阵通过。

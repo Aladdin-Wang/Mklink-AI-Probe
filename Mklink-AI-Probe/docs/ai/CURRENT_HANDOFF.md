@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T01:11:17.312576+00:00`
+- 更新时间：`2026-10-06T02:33:02.9781153Z`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：用户已授权有限收尾执行，增加配置/任务生命周期/Pack算法/安全保护/GUI-CLI-MCP为必验项，4轮正常路径+第5轮阻断修复，旧无限持续目标不恢复。现因用户确认runs仍在删除，等待完成通知后启动全回归；E盘仍约0.85GiB。本轮仅完成测试覆盖清单与HPM5301磁盘ELF检查，未连接或烧录、未运行测试。HPM5301 ELF entry80003000/Flash最小文件段80000400/RTT880dc，仅静态信息待实板验证。见full-function-audit-030.md末尾执行准备。
+- 当前任务：用户清理完成，有限收尾执行中，旧持续目标保持暂停。完整Python4314通过3跳过；修复算法测试资源路径后4通过、2个可选observe依赖跳过；GUI885通过/生产构建通过。固件28组首次27过，Dump测试宏缺失修复补测通过；USB DAP恢复通过。双V4逐台连接与后台退出通过，HPM仅JTAG IDCODE不能确认精确型号，未烧录新HPM5301。固件测试提交1111a15，运行固件不变。下一步专项入口及双板真机，再NSIS/Skill和安装态多客户端；见full-function-audit-030.md末尾。
 - 状态：`paused`
 
 ## 里程碑
