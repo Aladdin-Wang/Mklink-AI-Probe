@@ -419,6 +419,7 @@ var DEFAULT_TIMELINE_ZOOM = CONFIG.mode === 'SuperWatch' ? 2 : 1;
 var DEFAULT_TIMELINE_OFFSET = CONFIG.mode === 'SuperWatch' ? 1 : 0;
 var MAX_TIMELINE_ZOOM = CONFIG.mode === 'SuperWatch' ? 10000 : 100;
 var superwatchTimelineSpan = null;
+var superwatchTimelineUserAdjusted = false;
 var superwatchDefaultTimelineSpan = null;
 var superwatchTimelineCapturePending = false;
 var superwatchTimelineLag = 0;
@@ -435,6 +436,7 @@ function resetTimelineView() {
   timelineView.offset = DEFAULT_TIMELINE_OFFSET;
   if (IS_SUPERWATCH_MODE) {
     superwatchTimelineSpan = superwatchDefaultTimelineSpan;
+    superwatchTimelineUserAdjusted = false;
     superwatchTimelineLag = 0;
   }
 }
@@ -2266,9 +2268,12 @@ function captureSuperwatchTimelineSpanIfReady() {
   }
   if (!(dataSpan > 0)) return false;
   superwatchDefaultTimelineSpan = dataSpan / DEFAULT_TIMELINE_ZOOM;
+  superwatchTimelineCapturePending = false;
+  // Learning the initial buffer duration must not overwrite a later user zoom.
+  // Keep the measured default available for an explicit axis reset.
+  if (superwatchTimelineUserAdjusted) return true;
   superwatchTimelineSpan = superwatchDefaultTimelineSpan;
   superwatchTimelineLag = 0;
-  superwatchTimelineCapturePending = false;
   timelineView.offset = 1;
   return true;
 }
@@ -3797,6 +3802,7 @@ function zoomTimelineAt(clientX, deltaY) {
   var full = getFullTimeRange();
   var fullRange = full.tMax - full.tMin;
   if (!(fullRange > 0)) return;
+  if (IS_SUPERWATCH_MODE) superwatchTimelineUserAdjusted = true;
   var current = getVisibleTimeRange();
   var rect = canvas.getBoundingClientRect();
   var pointerX = Number.isFinite(clientX) ? clientX : rect.left + rect.width / 2;
