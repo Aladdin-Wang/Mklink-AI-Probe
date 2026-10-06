@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-07T03:40:46.154599+08:00`
+- 更新时间：`2026-10-07T04:01:52.007858+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：V3持续验收已补充安装版Web在线HEX与Trace恢复、测试板72MHz时钟修正、Watch/DAP及非对齐布局复验。本轮修正SystemView独立时间戳频率换算，135项相关测试及三次V3实机采集通过。安装包和本地Skill运行时尚未更新；独立定时器硬件、完整GUI/UART及长尾仍待验收。
+- 当前任务：V3持续验收：主机cb1cf41b完整Python4406通过/2跳过、GUI889通过；本地NSIS已生成，本地Skill已更新且MCP/CLI目录检查通过。桌面覆盖安装因Windows UAC取消未完成，旧安装版仍在；不可将提取包入口测试当作安装态验收。后续仍需实际新版GUI/多客户端、UART及采样长尾验证。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -27,7 +27,7 @@
 - **共享后台、多探针与AI共存**：144相关回归539通过/1跳过；1aca5414三项CI通过。145安装版单V4桌面/Web/Skill三客户端共存、正常退出隔离、健康检查通过；双探针证据仍为142源码短测。
 - **正式版与安装**：145本地0.3.0开发版NSIS覆盖安装返回0；主程序/sidecar/STCP与NSIS负载哈希一致；Skill版本/前端/7059目标2224blob验证。旧0.2.3正式版证据保留原报告。
 - **固件发布与代码同步**：docs/verification/firmware-20261003.md；UF2格式、RBL CRC/版本、三端下载哈希和索引通过；V2/V3 AP模型、V3电源及USB恢复通过。本轮未刷机。
-- **实机与SuperWatch**：见superwatch-incremental-packing-20261006.md：固件cb88321/830ddd11，16配置每项两次短测；STM单变量批间94→57~63us、P99 169→125~142us；HPM34→24~26us、105→69~79us。STM全速吞吐下降2.4~4.1%；四变量STM98→85~88us/HPM71→54~56us，速率基本维持。10套原生测试、36布局最后共34083/34456字节精确样本、全速/1ms DAP抢占下载校验恢复通过；STM Bootloader保持。两目标1ms计数器698373/381072样本，各2999次+1无跳值；传输缺口/丢弃0。HPM某次100us四变量批内1879us未归因。新增分块CPU状态仅栈上，采集栈未触及1656/1488B；连接已关闭。此前报告保留；源码时间栅格未重打包，长期暂停。 docs/verification/systemview-timestamp-frequency.md：135项回归通过，V3核心时钟实机三次无溢出/解析丢包且时间比例约0.998；独立时钟为协议测试覆盖。未打包安装。
+- **实机与SuperWatch**：见superwatch-incremental-packing-20261006.md：固件cb88321/830ddd11，16配置每项两次短测；STM单变量批间94→57~63us、P99 169→125~142us；HPM34→24~26us、105→69~79us。STM全速吞吐下降2.4~4.1%；四变量STM98→85~88us/HPM71→54~56us，速率基本维持。10套原生测试、36布局最后共34083/34456字节精确样本、全速/1ms DAP抢占下载校验恢复通过；STM Bootloader保持。两目标1ms计数器698373/381072样本，各2999次+1无跳值；传输缺口/丢弃0。HPM某次100us四变量批内1879us未归因。新增分块CPU状态仅栈上，采集栈未触及1656/1488B；连接已关闭。此前报告保留；源码时间栅格未重打包，长期暂停。 docs/verification/systemview-timestamp-frequency.md：135项回归通过，V3核心时钟实机三次无溢出/解析丢包且时间比例约0.998；独立时钟为协议测试覆盖。未打包安装。 本地包补验见同报告：4406 Python通过/2跳过、889 GUI通过；本地Skill已更新，提取sidecar与Skill MCP/CLI通过。UAC取消，桌面覆盖未完成。
 
 ## 架构决策
 
