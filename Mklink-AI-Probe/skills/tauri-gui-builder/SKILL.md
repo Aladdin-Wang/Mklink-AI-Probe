@@ -98,6 +98,10 @@ Generate only the standard NSIS by default. MSI and WebView2-offline variants re
 8. Confirm the sidecar and public Skill ZIP each contain the validated catalog
    with 7,059 targets and 2,224 content-deduplicated FLM blobs. No target with a
    missing main programming algorithm may be shipped.
+9. Start the installed `mklink-sidecar.exe mcp` through a real stdio MCP client
+   with the Windows-only PATH. Complete initialization and call `inspect_mcu`
+   and `security_status` without opening hardware. The source/Skill MCP process
+   is a separate entry point and cannot substitute for this frozen check.
 
 Do not use the removed `/api/dashboard/status` endpoint. Use the current `/api/dash/<name>/status` routes when a dashboard-specific check is needed.
 
