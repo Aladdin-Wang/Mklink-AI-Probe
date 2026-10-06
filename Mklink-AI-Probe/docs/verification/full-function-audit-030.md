@@ -838,3 +838,15 @@ GUI全量85文件/885通过，82.76秒；生产构建通过，footer ce10d348723
 实体重新枚举两只稳定身份V4，逐台SharedDevice连接、device_status和会话关闭后后台退出均通过：STM32返回SWD IDCODE 0x1ba01477；用户标注HPM5301的目标返回JTAG IDCODE 0x1000563d，MCU名称为空。该IDCODE不能区分HPM具体型号，不声称硬件已自动识别为HPM5301；实际烧录前仍须结合用户板型及工程配置明确HPM5301/board/Flash布局。此次未读写目标RAM、未烧录、未改电压。
 
 本地证据：reports/run-20261006-101308-9c828f47.log、firmware-harness-audit/summary.json（保留初次失败）、Dump单项补测wrapper日志、closeout-identity-20261006.json。安装版/本地Skill仍474ef405；配置/任务/Pack/安全边界的实际入口、HPM5301烧录与读回、安装态多客户端尚未完成，不将自动化全绿等同于全矩阵通过。
+
+### HPM5301 实体 HEX 阻断修复与双板核心复验
+
+主机63e4304b，HPM5301用户确认板型+对应ELF，BIN基址0x80000400/49612字节。BIN完整读回通过后，首次HEX命令期间串口读取失败，CLI退出1、任务状态unknown且replay=false；只读复核Flash不匹配，保留失败任务而非自动重放。定位固件非HPM6E80抽象内存写入直接解引用未对齐uint32_t源：HEX记录data偏移5，目标对齐不能保证源对齐。固件49e43d2改为const void*字节源+memcpy加载一个32位局部变量，沿用DMI错误/autoexec收尾，没有大缓冲/新协议。新增4种源偏移、1..32字、空写入及各传输失败测试；Linux CI开启UBSan，本地18组应用契约全部通过。
+
+修复候选在线CLI BIN、HEX及生成脱机脚本BIN、HEX均成功，四条路径独立读回49612字节SHA256 464c923c86167bb1208cb9f8ee9ffed63b2458a4afe56cbd634ec215debac90a一致，boot_stage4/assert_line0/tick增长；在线RTT持续收到新数据、零报告丢弃。首次RTT固定2秒检查过早，改为有界等待数据后通过，不以初始空缓存认定产品失败。测试工程沿用用户未变代码，RTT仍打印HPM6E80标签，板型依据用户和HPM5301工程，不依据日志字符串。
+
+最终UF2 ce7ba3a2c90cd9268a878dc8a979c01f99e7a390df4c10647e2a8e6b6122fae3、1605120字节，双V4均升级并确认返回；SES编译与SWD指令布局检查通过，锚点未移动。最终镜像HPM5301脱机HEX再次执行/全读回/tick/后台退出通过。物理按键触发未测，不能等同于脱机按键验收。
+
+最终镜像STM32实体8通道RTT+Watch+DAP下载/调试：8路均收到数据，每路下发256字节且目标计数和滚动哈希一致；Watch274帧；DAP单步、APP扇区重刷、全部镜像读回通过，20KiB Boot字节不变。DAP占用期间MUX目标请求返回busy、旧流明确失效；释放后显式重启8路RTT均恢复、Watch144帧。10.67秒是整个DAP下载/验证操作耗时，不是抢占延迟。堆used/peak测试前后均10680，无长稳结论。未改SDK/Arm2D/MicroBoot，未触碰OTP或电压。
+
+证据reports/closeout-hpm5301-flash-first.json、closeout-hpm5301-flash.json（原失败）、closeout-hpm5301-unknown-readback.json、closeout-hpm5301-aligned.json、closeout-hpm5301-offline.json、closeout-hpm5301-final-offline.json、closeout-rtt8-dap-flash.json及双板final-upgrade报告。下一步NSIS/本地Skill与配置/任务/Pack/安全/多入口安装态验收；不能据此宣称完整矩阵通过。

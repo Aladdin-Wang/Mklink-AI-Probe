@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-06T02:33:02.9781153Z",
+  "updated_at": "2026-10-06T02:46:29.5739078Z",
   "repository": {
     "url": "https://github.com/MicroKeen/Mklink-AI-Probe",
     "project_root": "Mklink-AI-Probe",
@@ -14,7 +14,7 @@
   },
   "current_session": {
     "status": "paused",
-    "current_task": "用户清理完成，有限收尾执行中，旧持续目标保持暂停。完整Python4314通过3跳过；修复算法测试资源路径后4通过、2个可选observe依赖跳过；GUI885通过/生产构建通过。固件28组首次27过，Dump测试宏缺失修复补测通过；USB DAP恢复通过。双V4逐台连接与后台退出通过，HPM仅JTAG IDCODE不能确认精确型号，未烧录新HPM5301。固件测试提交1111a15，运行固件不变。下一步专项入口及双板真机，再NSIS/Skill和安装态多客户端；见full-function-audit-030.md末尾。"
+    "current_task": "有限收尾继续。完整Python4314过/3跳过，算法目录修复补测4过/2可选observe跳过；GUI885过/生产构建过。发现HPM5301 HEX真实阻断，固件49e43d2修复未对齐源的抽象内存写入；18组固件契约过，双V4已升级最终UF2 ce7ba3a2。HPM5301 BIN/HEX在线及脱机脚本均读回运行通过，最终镜像脱机HEX补测过。STM32 RTT8收发+Watch+DAP调试/APP重刷及Boot保持通过。开始NSIS/Skill交付及配置/任务/Pack/安全、多入口安装态专项。旧持续目标/长期测试保持暂停，未合并发布。详情见full-function-audit-030.md末尾。"
   },
   "milestones": [
     {
