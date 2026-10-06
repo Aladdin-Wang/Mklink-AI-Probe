@@ -205,7 +205,7 @@ def ensure_runtime(*, project_root: str = ".", port: int = 8765, probe=None, dev
 
 
 def browser_url(info: dict, *, page: str = "config") -> str:
-    if page not in {"config", "vofa", "serial"}:
+    if page not in {"config", "serial"}:
         raise ValueError("Unsupported runtime browser page")
     query = f"?page={page}" if page != "config" else ""
     # Fragment is not sent in HTTP requests or access logs; login clears it.

@@ -278,13 +278,14 @@ def test_mcp_vofa_uses_generic_capability_without_private_transport(monkeypatch)
 def test_visualizer_url_selects_only_known_shared_pages():
     from mklink.runtime import browser_url
     info = {'port': 12345, 'token': 'secret'}
-    assert browser_url(info, page='vofa') == 'http://127.0.0.1:12345/_runtime/open?page=vofa#secret'
+    with pytest.raises(ValueError):
+        browser_url(info, page='vofa')
     assert browser_url(info).endswith('/_runtime/open#secret')
     with pytest.raises(ValueError):
         browser_url(info, page='https://external.invalid/')
 
 
-@pytest.mark.parametrize('option', ['--stop', '--host', '--port-http', '--max-points'])
+@pytest.mark.parametrize('option', ['--stop', '--host', '--port-http', '--max-points', '--visualize', '--no-browser'])
 def test_removed_private_vofa_server_options_fail_before_connect(monkeypatch, option):
     monkeypatch.setattr(runtime_cli, 'RuntimeClient', lambda **kw: pytest.fail('unexpected connection'))
     monkeypatch.setattr(sys, 'argv', ['mklink', 'vofa', option])

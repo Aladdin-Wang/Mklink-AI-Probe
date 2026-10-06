@@ -626,7 +626,7 @@ onUnmounted(() => {
 .rtt-channel-panel { display: flex; flex-direction: column; height: 600px; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
 header { display: flex; align-items: center; gap: 8px; }
 header h3 { flex: 1; margin: 0; font-size: 14px; }
-header button { color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+header button { color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: 12px var(--font-body); cursor: pointer; }
 .channel-content { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .rtt-view-toolbar { flex-wrap: wrap; position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 42px; padding: 7px 0; }
 .rtt-primary-tools, .rtt-secondary-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }

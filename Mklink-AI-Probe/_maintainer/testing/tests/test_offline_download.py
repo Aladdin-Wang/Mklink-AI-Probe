@@ -26,6 +26,27 @@ from mklink.remote.resource_manager import ResourceGroup
 from route_utils import find_route
 
 
+def test_lobby_offline_status_and_catalog_never_select_hardware(monkeypatch):
+    from mklink import probes
+    from mklink.remote import offline_download_api
+    monkeypatch.setattr(probes, '_bound_probe', 'lobby')
+    monkeypatch.setattr(probes, 'select_probe', lambda *a, **k: pytest.fail('Lobby selected hardware'))
+    roots = []
+    def catalog(paths, part, root):
+        roots.append(root)
+        return [{'file_name': 'local.flm', 'on_probe': False}]
+    monkeypatch.setattr(offline_download_api, 'discover_algorithms', catalog)
+    with TestClient(create_app(auth_token=None, project_root='.')) as client:
+        status = client.get('/api/offline-download/status')
+        algorithms = client.get('/api/offline-download/algorithms', params={'part_number': 'STM32F103RE'})
+    assert status.status_code == 200
+    assert status.json()['available'] is False
+    assert status.json()['disk_path'] is None
+    assert 'Select a physical probe' in status.json()['reason']
+    assert algorithms.status_code == 200 and algorithms.json()[0]['on_probe'] is False
+    assert roots == [None]
+
+
 def _config(model="V4"):
     return {
         "model": model,

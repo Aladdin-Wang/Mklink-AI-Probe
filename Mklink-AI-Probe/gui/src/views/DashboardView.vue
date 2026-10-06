@@ -20,7 +20,6 @@
           <button :class="['tab-btn', { active: tab === 'symbols' }]" @click="tab = 'symbols'">{{ tr('符号表', 'Symbols') }}</button>
         </div>
         <div class="title-right">
-          <a v-if="!IS_TAURI && !IS_REMOTE" class="device-quick-action" :href="`${API_BASE}/#/vofa`" target="_blank" rel="noopener" data-testid="vofa-page">VOFA+</a>
           <span v-if="bridgeOwner" class="resource-status-inline">
             <span class="status-dot" :class="bridgeOwner.startsWith('ai:') ? 'dot-ai' : 'dot-user'"></span>
             <span v-if="bridgeOwner.startsWith('ai:')">{{ tr('AI 正在使用设备', 'AI is using the device') }}</span>
@@ -109,7 +108,7 @@ import SerialMonitorTab from '../components/dash/SerialMonitorTab.vue'
 import ModbusTab from '../components/dash/ModbusTab.vue'
 import SystemViewTab from '../components/dash/SystemViewTab.vue'
 import { tr } from '../composables/useLanguage'
-import { API_BASE, IS_TAURI, IS_REMOTE } from '../lib/runtimeEndpoint'
+import { IS_REMOTE } from '../lib/runtimeEndpoint'
 
 const route = useRoute()
 const router = useRouter()

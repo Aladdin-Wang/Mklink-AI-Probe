@@ -6,13 +6,15 @@ const indexSource = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')
 const mainSource = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf8')
 
 describe('desktop startup splash', () => {
-  it('renders the probe image and progress UI before loading the application module', () => {
+  it('renders the vector animation and progress UI before loading the application module', () => {
     const splashOffset = indexSource.indexOf('id="startup-splash"')
     const moduleOffset = indexSource.indexOf('src="/src/main.ts"')
 
     expect(splashOffset).toBeGreaterThan(0)
     expect(moduleOffset).toBeGreaterThan(splashOffset)
-    expect(indexSource).toContain('src="/startup-probe.png"')
+    expect(indexSource).toContain('class="startup-circuit"')
+    expect(indexSource).toContain('prefers-reduced-motion:reduce')
+    expect(indexSource).not.toContain('startup-probe.png')
     expect(indexSource).toContain('role="progressbar"')
     expect(indexSource).toContain('window.__MKLINK_STARTUP__')
   })

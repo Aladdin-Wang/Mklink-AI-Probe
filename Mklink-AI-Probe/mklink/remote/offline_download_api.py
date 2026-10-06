@@ -747,7 +747,11 @@ def create_offline_download_router(
     async def status() -> object:
         from mklink.discovery import find_microkeen_disk
 
-        disk = await asyncio.to_thread(find_microkeen_disk)
+        try:
+            disk = await asyncio.to_thread(find_microkeen_disk)
+        except ConnectionError as error:
+            return {"available": False, "disk_path": None, "python_dir": None,
+                    "flm_dir": None, "reason": str(error)}
         root = Path(disk) if disk else None
         return {
             "available": root is not None,
@@ -760,7 +764,10 @@ def create_offline_download_router(
     async def algorithms(part_number: str) -> object:
         from mklink.discovery import find_microkeen_disk
 
-        disk = await asyncio.to_thread(find_microkeen_disk)
+        try:
+            disk = await asyncio.to_thread(find_microkeen_disk)
+        except ConnectionError:
+            disk = None  # Local catalog remains usable without a selected probe.
         root = Path(disk) if disk else None
         try:
             return await asyncio.to_thread(

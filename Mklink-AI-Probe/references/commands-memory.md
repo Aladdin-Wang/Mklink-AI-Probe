@@ -224,13 +224,13 @@ CDC、不启动另一台网页服务，也不使用旧 `vofa.send` / JustFloat �
 
 ```powershell
 # 按当前 AXF/ELF 的标量类型采集，支持字段和数组元素
-python -m mklink vofa rt_tick "g_config.speed" "samples[0]" --probe "电机板" --period 0.01 --visualize
+python -m mklink vofa rt_tick "g_config.speed" "samples[0]" --probe "电机板" --period 0.01
 # 裸地址必须给出类型；相邻通道会合并为对齐读取
 python -m mklink vofa 0x20000030 uint16_t 0x20000034 float --probe "电机板" --names adc,filtered
 # 连续 1..16 个 float；符号数组仍检查元素类型与边界
 python -m mklink vofa 0x20000030 3 --probe "电机板" --duration 60
 # 已有采集：不提供通道/周期，订阅它而不改变设置
-python -m mklink vofa --probe "电机板" --duration 10 --visualize
+python -m mklink vofa --probe "电机板" --duration 10
 ```
 
 新采集默认周期 0.001 秒；`--period` 要求有限正数、不超过 60 秒，实际最小值为
@@ -254,12 +254,9 @@ int8/16/32_t、uint8/16/32_t，以及 char/uchar、short/ushort、int/uint、fp3
 只解除自己。借用已有采集的 CLI 始终只解除自己。删除了旧 `--stop`；不要用新
 临时客户端代替创建者强停，可先让订阅者退出，再从创建者或 GUI 显式停止。
 
-`--visualize` 打开同一后台的独立 VOFA 页面；仪表盘右上角 VOFA+ 也可打开它。
-页面复用现有绘图组件，暂停按钮仅冻结本地绘图；停止和周期变更接受后台仲裁。
-独立页面隔离现有绘图脚本的全局状态，不与 SuperWatch 同文档挂载。停止保留
-最后曲线，重新开始恢复二进制订阅。网页本身不提供新通道编辑器，使用 CLI 或
-AI 配置。`--no-browser` 可禁用自动打开，旧 `--host`、`--port-http`、
-`--max-points` 和自定义私有 HTML 服务入口已删除。
+GUI 已移除 VOFA+ 入口和独立页面；实时曲线使用仪表盘 SuperWatch。
+VOFA 第三方兼容协议和后台能力保留。`--visualize`、`--no-browser`、旧 `--host`、
+`--port-http`、`--max-points` 和自定义私有 HTML 服务入口已删除。
 
 MCP 使用 `gui_call` 的 `vofa_start/stop/pause/resume/status/history` 能力；
 共享 SDK 使用同名 `call`，不增加专门的 MCP 服务。`vofa_history` 最多保留 500
@@ -327,7 +324,12 @@ ARM SWD 和 HPM JTAG 使用相同的 4/10/20/30 MHz 档位；20/30 MHz 必须由
 
 档位设置改变探针的调试时钟，同一连接中的 RTT、SystemView 等内存访问也使用该时钟。Keil、在线烧录和脱机脚本会按各自配置重新设置时钟；不能用 SuperWatch 的档位代替下载配置。采样报告应分别注明包含批间空隙的持续速率与批内速率，不能混用。
 
-SuperWatch 固定使用官方 `cmd.dump_memory(addr1, size1, addr2, size2, ..., period)` 二进制流协议。设备端一条命令配置所有区域后主动推送 `MPMDMPMD` 帧（64 位时间戳 + frame CRC32 校验）。同一协议也可通过公共 CLI `python -m mklink dump-memory ...` 直接使用。旧命令中的 `--dump-mem` 参数继续接受，但不再切换行为。
+SuperWatch 使用设备主动推送的二进制流，不以主机循环读内存代替。新版 V4 协商
+CDC 多路复用微秒采样；低于 20 μs 全速，20 μs 及以上定时，RTT 独立按 1 ms 轮询。
+单个对齐 4 B 变量可走批量快路径；速率依目标和区域布局而变，设置值不是速率保证。
+测峰值时单独运行 SuperWatch，共存测试另测。旧固件使用
+`cmd.dump_memory(addr1, size1, ..., period)` 的 `MPMDMPMD` 帧；旧 MUX 为毫秒采样。
+公共 CLI `python -m mklink dump-memory ...` 自动选择协议。旧 `--dump-mem` 仍接受。
 
 ```bash
 python -m mklink superwatch g_counter,g_sensor --source path/to/firmware.axf --visualize --period 0.01

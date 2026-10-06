@@ -79,7 +79,7 @@
       <button class="btn" data-testid="backend-recheck" @click="refreshHealth">{{ tr('重新检查', 'Check Again') }}</button>
     </div>
     <div class="app-main" :inert="IS_REMOTE && backendState !== 'alive'">
-      <DashboardView v-if="initialBackendReady && dashboardVisited && currentTab !== 'vofa'" v-show="currentTab === 'dashboard'" />
+      <DashboardView v-if="initialBackendReady && dashboardVisited" v-show="currentTab === 'dashboard'" />
       <router-view v-if="initialBackendReady" v-slot="{ Component, route: viewRoute }">
         <!-- Override the shared v-if branch key so cached flash pages stay distinct. -->
         <KeepAlive include="OnlineFlashView,OfflineFlashView">
@@ -176,13 +176,6 @@ const tabs = computed(() => (IS_REMOTE ? [{ key: 'dashboard', label: tr('仪表�
 ]))
 
 function navigate(key: string) {
-  // The legacy waveform script owns document-wide IDs; leave its dedicated page
-  // through a fresh document so it never shares globals with SuperWatch.
-  if (currentTab.value === 'vofa') {
-    window.location.assign(router.resolve({ name: key }).href)
-    window.location.reload()
-    return
-  }
   router.push({ name: key })
 }
 
@@ -247,7 +240,7 @@ body {
   align-items: center;
   gap: 16px;
   flex-shrink: 0;
-  height: 48px;
+  height: 56px;
 }
 .app-title {
   font-size: 17px;
@@ -263,18 +256,20 @@ body {
 .nav-tab {
   background: none;
   border: none;
-  padding: 12px 18px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  transition: color .15s, background-color .15s, border-color .15s;
   font-family: var(--font-body);
   white-space: nowrap;
 }
 .nav-tab:hover { color: var(--fg); border-bottom-color: var(--border); }
 .nav-tab.active {
+  background: var(--accent-bg);
+  border-radius: 7px 7px 0 0;
   color: var(--accent);
   border-bottom-color: var(--accent);
   font-weight: 600;
@@ -349,7 +344,7 @@ body {
   white-space: nowrap;
 }
 .language-toggle:hover { color: var(--accent); border-color: var(--accent); }
-@media (max-width: 720px) {
+@media (max-width: 1120px) {
   .app-header {
     height: auto;
     min-height: 48px;
@@ -425,8 +420,8 @@ body {
   cursor: pointer;
 }
 .app-footer {
-  flex: 0 0 22px;
-  min-height: 22px;
+  flex: 0 0 28px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -456,8 +451,8 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
 }
 .card + .card { margin-top: 16px; }
 .card-title {
@@ -493,11 +488,11 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
-.form-input:focus, .form-select:focus { border-color: var(--accent); }
+.form-input:focus, .form-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .form-select { cursor: pointer; }
 
 .btn {
-  height: 30px;
+  height: 34px;
   padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -506,7 +501,7 @@ body {
   font-weight: 500;
   color: var(--fg);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color .15s, background-color .15s, border-color .15s;
   font-family: var(--font-body);
   white-space: nowrap;
 }
@@ -520,9 +515,9 @@ body {
 .btn-primary:hover { background: var(--accent-light); color: #fff; }
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover { background: var(--danger); color: #fff; }
-.btn-sm { height: 26px; padding: 0 10px; font-size: 11px; }
+.btn-sm { height: 30px; padding: 0 10px; font-size: 11px; }
 
-.btn-group { display: flex; gap: 6px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .alert {
   padding: 10px 14px;
@@ -581,7 +576,7 @@ body {
   color: var(--muted);
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  transition: color .15s, background-color .15s, border-color .15s;
   font-family: var(--font-body);
   white-space: nowrap;
 }
@@ -600,5 +595,12 @@ pre.log-box {
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .app-main { padding: 12px; }
+  .card { padding: 14px; }
+  .form-row { flex-wrap: wrap; }
+  .form-label { width: 100%; text-align: left; }
+  .app-footer { flex-wrap: wrap; gap: 2px 10px; height: auto; font-size: 9px; }
 }
 </style>

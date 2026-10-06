@@ -173,7 +173,9 @@ def test_stop_retains_client_workers_and_lease_until_io_finishes(client_factory,
     entered, release = threading.Event(), threading.Event()
     def read(self, address, count, slave):
         entered.set()
-        assert release.wait(2)
+        # Only the test releases this I/O. A wall-clock timeout can finish it
+        # under suite load before the stop-retention assertions run.
+        release.wait()
         assert not self.closed
         return [42]
     monkeypatch.setattr(client_factory, 'read_holding_registers', read)
@@ -189,7 +191,7 @@ def test_stop_retains_client_workers_and_lease_until_io_finishes(client_factory,
         await asyncio.sleep(.005)
         assert not task.done()
         with pytest.raises(DashboardStopPending):
-            await task
+            await asyncio.wait_for(task, 2)
         assert manager.worker_alive and not manager._client.closed
         assert manager.get_status()['stopping']
         assert 'modbus_port' in rm.get_status()

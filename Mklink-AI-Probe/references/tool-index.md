@@ -54,7 +54,7 @@
 | `read-flash` | 读取 Flash 数据 |
 | `version` | 读取烧录器自身固件版本（`--all` 显示历史，`--raw` 原始输出） |
 | `power-read` | 只读 VCC 测量，支持 `--port`、`--json`；单位 mV/mA/mW，无需 AXF 或目标内存地址 |
-| `vofa` | 共享 VOFA 波形（最多 64 路、对齐合并后最多 15 组；连续 float 简写最多 16 路；支持 `--probe` / `--visualize`） |
+| `vofa` | 共享 VOFA 采集（最多 64 路、对齐合并后最多 15 组；连续 float 简写最多 16 路；支持 `--probe`，无独立 GUI 页面） |
 | `symbols` | 从 ELF/AXF 列出 RAM 变量（默认内置 pyelftools） |
 | `typeinfo` | 从 AXF DWARF 查询类型/结构体/枚举 |
 | `watch` | 按变量名读取快照（支持 `struct.field`） |

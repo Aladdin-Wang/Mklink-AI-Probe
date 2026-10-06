@@ -315,7 +315,7 @@ def run(args):
             if not started.get('reused'):
                 owned_stream = stream
             if getattr(args, 'visualize', False) and not getattr(args, 'no_browser', False):
-                webbrowser.open(browser_url(client.info, page="vofa" if stream == "vofa" else "config"))
+                webbrowser.open(browser_url(client.info))
             deadline = time.monotonic()+duration if duration else None
             print(json.dumps({'capture': stream, 'shared': True, **started}, ensure_ascii=False), flush=True)
             try:

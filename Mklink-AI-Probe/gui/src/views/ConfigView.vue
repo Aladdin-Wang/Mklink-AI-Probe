@@ -16,7 +16,7 @@ import {
 import { pickSymbolFile, type PickedFile } from '../lib/filePicker'
 import { saveBlobFile } from '../lib/downloadTextFile'
 import { refreshRttAddressForSymbol } from '../lib/rttSymbolAddress'
-import { API_BASE, IS_TAURI } from '../lib/runtimeEndpoint'
+import { IS_TAURI } from '../lib/runtimeEndpoint'
 import { sharedRuntime } from '../composables/useBackendHealth'
 import type { AxlStatus, FileSourceKind, PortInfo, ProbeFirmwareCheck, ProbeFirmwareUpgrade, ProjectConfig } from '../types/mklink'
 import ConfigSectionNav, { type ConfigSection } from '../components/config/ConfigSectionNav.vue'
@@ -50,15 +50,6 @@ const probePorts = ref<PortInfo[]>([])
 const selectedProbe = computed(() => probePorts.value.find(port => port.device === localPort.value))
 const switchingProbe = computed(() => sharedRuntime.value && localPortExplicit.value
   && !!selectedProbe.value && localPort.value !== deviceStatus.value.port)
-async function openProbeWindow() {
-  try {
-    const response = await fetch(`${API_BASE}/api/runtime/select`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ probe: selectedProbe.value?.probe_id, open_browser: true }),
-    })
-    if (!response.ok) throw new Error((await response.json()).detail)
-  } catch (error: any) { toast.error(error.message) }
-}
 const settings = ref<DesktopSettings>(loadDesktopSettings(window.localStorage))
 
 const portsLoading = ref(false)
@@ -468,9 +459,6 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div v-if="sharedRuntime && selectedProbe?.probe_id" class="form-row">
-          <button class="btn btn-sm" data-testid="open-probe-window" @click="openProbeWindow">{{ tr('打开独立窗口', 'Open separate window') }}</button>
-        </div>
         <div v-if="sharedRuntime && selectedProbe?.probe_id" class="connection-detail" data-testid="selected-probe-id">
           {{ selectedProbe.probe_id }}
         </div>
@@ -595,12 +583,14 @@ onUnmounted(() => {
 
 .section-content {
   min-width: 0;
+  max-width: 1040px;
 }
 
 .connection-detail {
   margin: -2px 0 10px;
   color: var(--muted);
-  font: 12px var(--font-mono);
+  font: 11px var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .local-panel,

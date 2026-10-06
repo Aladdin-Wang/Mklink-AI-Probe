@@ -106,13 +106,13 @@ describe('App version footer', () => {
     wrapper.unmount()
   })
 
-  it('never mounts the global SuperWatch viewer alongside the dedicated VOFA page', async () => {
+  it('keeps dashboard state mounted while navigating between tools', async () => {
     backendState.value = 'alive'
     const wrapper = mountApp()
     expect(wrapper.findComponent({ name: 'DashboardView' }).exists()).toBe(true)
-    routeName.value = 'vofa'
+    routeName.value = 'config'
     await nextTick()
-    expect(wrapper.findComponent({ name: 'DashboardView' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'DashboardView' }).exists()).toBe(true)
     wrapper.unmount()
     routeName.value = 'dashboard'
   })
@@ -179,12 +179,12 @@ describe('App version footer', () => {
   it('contains the narrow-window header overflow guard', () => {
     const source = readFileSync('src/App.vue', 'utf8')
 
-    expect(source).toContain('@media (max-width: 720px)')
+    expect(source).toContain('@media (max-width: 1120px)')
     expect(source).toContain('grid-template-columns: auto minmax(0, 1fr)')
     expect(source).toContain('.header-right .status-bar')
     expect(source).toContain('width: max-content')
     expect(source).toMatch(/\.nav-tab\s*\{[^}]*white-space:\s*nowrap/s)
-    expect(source).toMatch(/@media \(max-width: 720px\)[\s\S]*\.store-menu-panel\s*\{[^}]*position:\s*fixed[^}]*top:\s*46px[^}]*right:\s*8px/s)
+    expect(source).toMatch(/@media \(max-width: 1120px\)[\s\S]*\.store-menu-panel\s*\{[^}]*position:\s*fixed[^}]*top:\s*46px[^}]*right:\s*8px/s)
   })
 
   it('does not mount route views or poll device state before the backend API is ready', async () => {

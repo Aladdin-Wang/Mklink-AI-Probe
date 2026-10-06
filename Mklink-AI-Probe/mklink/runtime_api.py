@@ -477,7 +477,7 @@ def install_runtime(app, info):
 <p id="status">正在连接共享后台…</p><script>
 const requested = new URLSearchParams(location.search).get('page');
 const remote = /^remote[/][A-Za-z0-9_-]{32}$/.test(requested || '') ? requested.slice(7) : null;
-const page = remote ? 'dashboard' : requested === 'vofa' ? 'vofa' : requested === 'serial' ? 'dashboard?tab=serial' : 'config';
+const page = remote ? 'dashboard' : requested === 'serial' ? 'dashboard?tab=serial' : 'config';
 const token = location.hash.slice(1); history.replaceState(null, '', location.pathname);
 fetch('/_runtime/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token})})
 .then(r => {if (!r.ok) throw Error('认证失败，请重新运行 mklink gui'); location.replace((remote ? '/?remote=' + remote : '/') + '#/' + page)})

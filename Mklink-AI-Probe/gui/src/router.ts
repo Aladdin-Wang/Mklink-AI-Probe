@@ -4,6 +4,7 @@ import { IS_REMOTE } from './lib/runtimeEndpoint'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/:pathMatch(.*)*', redirect: '/config' },
     {
       path: '/',
       redirect: '/config',
@@ -17,11 +18,6 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('./views/DashboardView.vue'),
-    },
-    {
-      path: '/vofa',
-      name: 'vofa',
-      component: () => import('./views/VofaView.vue'),
     },
     {
       path: '/offline-flash',
