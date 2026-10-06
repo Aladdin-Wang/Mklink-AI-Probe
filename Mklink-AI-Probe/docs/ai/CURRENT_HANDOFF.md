@@ -4,12 +4,12 @@
 
 ## 当前断点
 
-- 更新时间：`2026-10-06T17:22:21.8891736+08:00`
+- 更新时间：`2026-10-06T17:46:48.610814+08:00`
 - 分支：`codex/v0.3.0-shared-runtime`
 - HEAD：`Based on main d4e73bd; shared CDC development continues; long-duration validation deferred at user request. Use Git for exact tip.`
 - 远端 HEAD：`Application release v0.2.3 fixed at b0e0f61; verify current main with Git.`
 - 工作树：Existing isolated host task worktree; firmware has its own codex/v4-multiplex-runtime branch and draft PR1. SDK and submodules unchanged by this task.
-- 当前任务：GUI全功能实操审计继续：1acbf856已完成NSIS覆盖、Skill及安装态MCP/CLI/双GUI，单字节约204kHz。发现并修复短历史强制1秒、冻结快照边界延迟、窄窗口裁切、Memory回读改写地址及RTT自动搜索未复用共享符号。相关186 GUI和90后端通过；正在打包最终安装复验。STM在线/脱机HEX实烧成功，在线Boot哈希不变，脱机Boot待补验。当前逐项覆盖与未测项见gui-full-audit-20261006.md；长稳及旧持续目标保持暂停。
+- 当前任务：GUI实操审计已完成01d89c60安装和Skill、双GUI缩放/Memory/MCP验证；桌面CSV确认100us采集存在最大1159us间隙。固件ded5f2b改为高速采集线程直接喂狗，取消每100ms强制休眠；STM下载器已升级ed77ec78，原始3秒100us最大266us，全速208.1kHz/最大418us，丢弃零。OpenOCD抢占、APP下载校验、Boot不变及RTT8/Watch恢复通过，固件两项CI通过。HPM尚未升级此补丁，GUI全矩阵未完成，详见gui-full-audit-20261006.md。长稳和旧持续目标仍暂停。
 - 状态：`in_progress`
 
 ## 里程碑
@@ -39,14 +39,15 @@
 
 ## 真机环境
 
-- **state**：双V4已升级最终性能固件f26dc5c7；STM32 RTT8+Watch及pyOCD/OpenOCD下载仿真、Boot不变通过；HPM5301 OpenOCD下载仿真与JTAG恢复通过。SDK/Arm2D/MicroBoot不改；无电压变化，长稳暂停。
-- **installer**：当前安装及本地Skill为0.3.0 / 1acbf856，NSIS退出0，三负载哈希一致，Windows-only PATH冻结MCP/本地Skill MCP及CLI验证通过。当前新增GUI修复仍待新包覆盖。
+- **state**：STM V4已升级采集喂狗修复ded5f2b/ed77ec78；HPM V4保留a8967f6/f26dc5c7。本轮STM OpenOCD抢占、下载校验、Boot不变及八通道RTT/Watch恢复通过；SDK/Arm2D/MicroBoot保持原状。
+- **installer**：当前安装及本地Skill为0.3.0 / 01d89c60，NSIS退出0、三负载哈希一致，双GUI暂停缩放恢复、Windows-only PATH MCP/Skill/CLI验证通过。
 - **backups**：原始实机证据、发布包与清理清单保留在本地.build。
 
 ## 下一动作
 
-1. 完成本轮NSIS覆盖安装、原生桌面缩放/首次连接与本地Skill验收，记录确切结果。
-2. 提交并推送任务分支，不合并或发布；长期和旧持续目标保持暂停。
+1. 继续GUI全功能矩阵：远程服务、RTOS回放、异常文件导入和剩余原生操作；尚未全覆盖。
+2. 继续诊断剩余约10ms周期小间隙，区分电源任务、USB背压和分批开销；不降低DAP或电源保护优先级。
+3. HPM尚未升级ded5f2b，后续需独立验证；长期及旧持续目标保持暂停，不合并或发布。
 
 ## 已知限制
 

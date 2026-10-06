@@ -967,7 +967,9 @@ function updateCollectionUI(state) {
   if (state === 'running') {
     if (IS_SUPERWATCH_MODE && previousState !== 'running') {
       if (paused) discardPausedBinarySnapshot();
-      else resetTimelineView();
+      // Continue with the user's time scale, following the newest samples.
+      superwatchTimelineLag = 0;
+      timelineView.offset = 1;
     }
     clearFrozenView();
     if (Date.now() >= controlErrorUntil) {
@@ -2978,6 +2980,11 @@ var binaryRateLastTimestampNs = null;
 var binaryRateSampleIntervals = 0;
 var frozenFullTimeRange = null;
 var frozenSharedYRange = null;
+var binaryFreezeRequester = null;
+
+function setBinaryFreezeRequester(requester) {
+  binaryFreezeRequester = typeof requester === 'function' ? requester : null;
+}
 
 function resetBinarySampleRate() {
   if (!IS_SUPERWATCH_MODE) return;
@@ -3012,6 +3019,7 @@ function updateBinarySampleRate(batch) {
 }
 
 function clearFrozenView() {
+  if (frozenFullTimeRange && binaryFreezeRequester) binaryFreezeRequester(false);
   frozenFullTimeRange = null;
   frozenSharedYRange = null;
 }
@@ -3031,6 +3039,7 @@ function freezeRenderedView() {
   if (!hasData) return false;
   frozenFullTimeRange = computeFullTimeRange();
   frozenSharedYRange = getSharedYRange();
+  if (binaryFreezeRequester) binaryFreezeRequester(true);
   return true;
 }
 
@@ -3040,7 +3049,6 @@ function discardPausedBinarySnapshot() {
     var field = FIELDS[binaryChannelNames[channel]];
     if (field && field.ringBuf) field.ringBuf.clear();
   }
-  resetTimelineView();
 }
 
 function configureBinaryChannels(channels) {
@@ -3377,6 +3385,19 @@ function renderBinaryEnvelope(envelope, renderWhilePaused) {
     return false;
   }
   canvas.dataset.binaryEnvelopeState = 'rendered';
+  // The worker can advance past the last UI summary before handling pause.
+  // Use the retained snapshot's bounds, then request its actual visible range.
+  if (IS_SUPERWATCH_MODE && paused && frozenFullTimeRange && binaryTimeOrigin !== null &&
+      Number.isFinite(envelope.frozenStartMs) && Number.isFinite(envelope.frozenEndMs) &&
+      envelope.frozenEndMs > envelope.frozenStartMs) {
+    var actualMin = envelope.frozenStartMs / 1000 - binaryTimeOrigin;
+    var actualMax = envelope.frozenEndMs / 1000 - binaryTimeOrigin;
+    if (frozenFullTimeRange.tMin !== actualMin || frozenFullTimeRange.tMax !== actualMax) {
+      frozenFullTimeRange = { tMin: actualMin, tMax: actualMax };
+      if (binaryVisibleRangeRequester) binaryVisibleRangeRequester();
+      return true;
+    }
+  }
   canvas.dataset.binaryEnvelopePoints = String(envelope.pointCount);
   binaryEnvelope = parsed;
   if (!paused || renderWhilePaused) {
@@ -3480,6 +3501,7 @@ if (typeof window !== 'undefined') {
   binaryViewer.setBinaryCapacityRequester = setBinaryCapacityRequester;
   binaryViewer.setBinaryDetailRequester = setBinaryDetailRequester;
   binaryViewer.setBinaryVisibleRangeRequester = setBinaryVisibleRangeRequester;
+  binaryViewer.setBinaryFreezeRequester = setBinaryFreezeRequester;
   binaryViewer.getStorageDiagnostics = getBinaryStorageDiagnostics;
   binaryViewer.exportBinaryHistorySnapshot = exportBinaryHistorySnapshot;
   binaryViewer.resetBinaryStream = resetBinaryStream;
@@ -3502,7 +3524,8 @@ function computeFullTimeRange() {
       Number.isFinite(binaryBufferStart) && Number.isFinite(binaryBufferEnd)) {
     var retainedMin = binaryBufferStart - binaryTimeOrigin;
     var retainedMax = binaryBufferEnd - binaryTimeOrigin;
-    if (!singleTriggerCaptureFrozen && retainedMax - retainedMin < 1) retainedMin = retainedMax - 1;
+    // Do not invent a one-second history when a high-rate buffer retains less.
+    if (retainedMax <= retainedMin) retainedMin = retainedMax - 0.000001;
     return { tMin: retainedMin, tMax: retainedMax };
   }
   var tMax = 0, tMin = Infinity;

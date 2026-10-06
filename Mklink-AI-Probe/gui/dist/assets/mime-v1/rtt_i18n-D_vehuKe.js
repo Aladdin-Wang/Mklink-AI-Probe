@@ -101,7 +101,7 @@ var I18N = {
     help_pause_items: [
       '按 <span class="help-kbd">P</span> 键暂停 / 恢复前端显示；后端采集不会停止',
       '暂停会冻结当前前端历史快照，可缩放、平移和导出已有数据',
-      '恢复时会清空冻结快照，并重新跟随最新实时窗口',
+      '恢复或重新开始时保留缩放比例，释放冻结快照并跟随最新数据',
       '暂停时，顶部状态显示为 <strong style="color:var(--warn)">paused</strong>'
     ],
     no_inspector_data: '无检查数据',
@@ -196,7 +196,7 @@ var I18N = {
     help_pause_items: [
       'Press <span class="help-kbd">P</span> to pause / resume frontend rendering; backend acquisition continues',
       'Pause freezes the current frontend history snapshot for zooming, panning, and export',
-      'Resume clears the frozen snapshot and follows the latest live window again',
+      'Resume or restart keeps your zoom scale, releases the snapshot, and follows the latest samples',
       'When paused, status shows <strong style="color:var(--warn)">paused</strong>'
     ],
     no_inspector_data: 'No inspector data',
